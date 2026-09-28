@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>التاجر الصغير — الإعدادات</title>
+<style>
+:root{
+  --bg:#f7f9fc;--surface:#fff;--surface-soft:#f5f7fb;--surface-blue:#eef4ff;
+  --border:#e4e9f1;--border-strong:#d6deea;--text:#172033;--text-2:#475467;--muted:#8491a5;
+  --primary:#255fd6;--primary-hover:#1f52bd;--primary-50:#eef4ff;--primary-100:#dce8ff;
+  --green:#14804a;--green-bg:#eaf8f0;--amber:#a15c00;--amber-bg:#fff5df;--red:#b42318;--red-bg:#fff0ee;
+  --sidebar:264px;--topbar:64px;--radius:12px;--shadow:0 1px 2px rgba(16,24,40,.04),0 1px 8px rgba(16,24,40,.035)
+}
+*{box-sizing:border-box}html,body{margin:0;min-height:100%;background:var(--bg);color:var(--text)}
+body{font-family:"IBM Plex Sans Arabic","Segoe UI",Tahoma,Arial,sans-serif;-webkit-font-smoothing:antialiased;font-size:14px}
+button,input{font:inherit}button{cursor:pointer}.num{font-variant-numeric:tabular-nums;direction:ltr;unicode-bidi:embed}
+svg{display:block}.app{min-height:100vh}
+.sidebar{position:fixed;right:0;top:0;bottom:0;width:var(--sidebar);background:var(--surface);border-left:1px solid var(--border);z-index:40;display:flex;flex-direction:column}
+.sidebar-inner{padding:18px 14px 12px;overflow:auto;scrollbar-width:none}.sidebar-inner::-webkit-scrollbar{display:none}
+.brand{display:flex;gap:11px;align-items:center;padding:0 8px 15px;border-bottom:1px solid var(--border)}
+.logo{width:42px;height:42px;border-radius:12px;background:var(--primary);color:#fff;display:grid;place-items:center;box-shadow:0 6px 16px rgba(37,95,214,.18)}
+.logo svg{width:23px;height:23px}.brand-copy{min-width:0}.brand-title{font-size:16px;font-weight:800;line-height:1.25}.brand-sub{font-size:11px;color:var(--muted);margin-top:3px}
+.branch{margin:14px 4px 8px;padding:10px 11px;border-radius:9px;background:var(--surface-soft);display:flex;justify-content:space-between;align-items:center;gap:8px;color:var(--text-2);font-size:12px}.branch b{color:var(--text);font-weight:700}.branch-left{display:flex;gap:8px;align-items:center;min-width:0}
+.nav-group{margin-top:17px}.nav-label{font-size:10px;font-weight:700;letter-spacing:.02em;color:#9aa5b5;padding:0 11px 5px}
+.nav{display:flex;flex-direction:column;gap:3px}.nav a{height:39px;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:0 11px;border-radius:9px;text-decoration:none;color:#526075;font-size:12px;font-weight:600;transition:.15s}.nav a:hover{background:var(--surface-soft);color:var(--text)}.nav a.active{background:var(--primary-50);color:var(--primary);font-weight:800;box-shadow:inset -3px 0 0 var(--primary)}
+.nav-main{display:flex;align-items:center;gap:10px}.nav svg{width:18px;height:18px;stroke-width:1.8}.badge{min-width:22px;height:22px;padding:0 6px;border-radius:999px;display:grid;place-items:center;font-size:10px;font-weight:700;background:#eef1f6;color:#58667a}.badge.alert{background:var(--red-bg);color:var(--red)}
+.side-status{margin-top:auto;padding:12px 16px;border-top:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;font-size:10px;color:var(--muted)}.online{display:flex;align-items:center;gap:6px}.dot{width:7px;height:7px;border-radius:50%;background:#20a05a}
+.topbar{position:fixed;right:var(--sidebar);left:0;top:0;height:var(--topbar);background:rgba(255,255,255,.94);backdrop-filter:blur(10px);border-bottom:1px solid var(--border);z-index:30;display:flex;align-items:center;justify-content:space-between;padding:0 24px;gap:16px}
+.top-start,.top-end{display:flex;align-items:center;gap:10px}.search{width:min(520px,44vw);height:40px;border-radius:10px;background:var(--surface-soft);border:1px solid transparent;display:flex;align-items:center;gap:9px;padding:0 11px;color:var(--muted);transition:.16s}.search:focus-within{background:#fff;border-color:#aac3fa;box-shadow:0 0 0 3px rgba(37,95,214,.08)}.search input{width:100%;border:0;outline:0;background:transparent;color:var(--text);font-size:12px}.search svg{width:18px;height:18px}.kbd{font-size:10px;color:#7c889b;background:#fff;border:1px solid var(--border);border-radius:6px;padding:2px 6px;direction:ltr}
+.quick{height:38px;border:0;border-radius:9px;background:var(--primary);color:#fff;font-size:12px;font-weight:700;padding:0 13px;display:flex;align-items:center;gap:7px;box-shadow:0 2px 5px rgba(37,95,214,.16)}.quick:hover{background:var(--primary-hover)}
+.icon-btn{width:38px;height:38px;border:0;background:transparent;border-radius:9px;color:#66758b;display:grid;place-items:center;position:relative}.icon-btn:hover{background:var(--surface-soft);color:var(--text)}.icon-btn svg{width:19px;height:19px}.notice{position:absolute;right:8px;top:7px;width:7px;height:7px;background:#e5484d;border-radius:50%;box-shadow:0 0 0 2px #fff}
+.user{display:flex;align-items:center;gap:9px;padding-right:10px;border-right:1px solid var(--border)}.avatar{width:34px;height:34px;border-radius:50%;background:#dbe2ec;color:#44546a;display:grid;place-items:center;font-weight:800;font-size:12px}.user-name{font-size:12px;font-weight:800}.user-role{font-size:10px;color:var(--muted);margin-top:2px}
+.content{margin-right:var(--sidebar);padding-top:var(--topbar);min-height:100vh}.container{max-width:1400px;margin:auto;padding:24px}
+.page-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:18px}.breadcrumb{font-size:10px;color:#94a0b1;display:flex;gap:6px;align-items:center;margin-bottom:7px}.title-row{display:flex;align-items:center;gap:9px}.title{font-size:25px;line-height:1.25;font-weight:800;letter-spacing:-.015em;margin:0}.subtitle{font-size:12px;color:var(--text-2);margin-top:5px}.saved{display:inline-flex;align-items:center;gap:6px;color:var(--green);font-size:11px;font-weight:700;padding-top:8px}.saved .dot{width:6px;height:6px}
+.context-grid{display:grid;grid-template-columns:1.25fr .85fr .9fr;gap:12px;margin-bottom:20px}.panel{background:#fff;border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow)}
+.company{padding:16px}.company-row{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}.company-main{display:flex;align-items:center;gap:12px}.company-logo{width:44px;height:44px;border-radius:10px;background:var(--primary-50);color:var(--primary);display:grid;place-items:center}.company-logo svg{width:23px;height:23px}.company h2{font-size:15px;margin:0 0 3px}.company p{margin:0;color:var(--muted);font-size:11px}.link-btn{height:34px;border:1px solid var(--border);background:#fff;border-radius:8px;color:var(--primary);padding:0 10px;font-size:11px;font-weight:700}.link-btn:hover{background:var(--primary-50)}.meta{margin-top:14px;padding-top:12px;border-top:1px solid #edf0f5;display:flex;flex-wrap:wrap;gap:10px 20px;color:#68758a;font-size:10px}.meta span{display:flex;align-items:center;gap:5px}.meta svg{width:14px;height:14px}
+.plan{padding:16px;display:flex;flex-direction:column;justify-content:space-between}.eyebrow{font-size:10px;color:#68758a;font-weight:700;margin-bottom:5px}.plan-name{font-size:16px;font-weight:800}.plan p{font-size:11px;color:var(--muted);margin:5px 0 14px}.plan-action{height:34px;border:0;border-radius:8px;background:var(--primary-50);color:var(--primary);font-size:11px;font-weight:800}.plan-action:hover{background:var(--primary-100)}
+.health{padding:16px}.health-title{display:flex;justify-content:space-between;align-items:center;font-size:12px;font-weight:800;margin-bottom:12px}.health-title span:last-child{font-size:10px;color:var(--green);background:var(--green-bg);padding:4px 7px;border-radius:999px}.usage{display:grid;grid-template-columns:78px 1fr 72px;align-items:center;gap:9px;margin:9px 0;font-size:10px;color:#5d6b80}.usage b{font-weight:700;color:var(--text-2)}.bar{height:6px;border-radius:99px;background:#edf0f5;overflow:hidden}.bar i{display:block;height:100%;background:var(--primary);border-radius:99px}.usage .num{font-size:10px;color:#6e7a8c;text-align:left}
+.workspace{display:grid;grid-template-columns:minmax(0,1fr) 310px;gap:16px;align-items:start}.settings-main{min-width:0}.settings-aside{display:flex;flex-direction:column;gap:12px;position:sticky;top:calc(var(--topbar) + 20px)}
+.section{margin-bottom:18px}.section-head{margin-bottom:9px}.section-title{font-size:13px;font-weight:800}.section-desc{font-size:10px;color:var(--muted);margin-top:3px}.cards{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.setting{min-height:86px;padding:13px 14px;background:#fff;border:1px solid var(--border);border-radius:10px;display:grid;grid-template-columns:auto 1fr auto;gap:11px;align-items:start;text-align:right;transition:.14s;position:relative}.setting:hover{border-color:#c7d3e4;box-shadow:0 4px 12px rgba(16,24,40,.045);transform:translateY(-1px)}.setting-icon{width:34px;height:34px;border-radius:9px;background:var(--primary-50);color:var(--primary);display:grid;place-items:center}.setting-icon svg{width:18px;height:18px}.setting h3{font-size:12px;margin:1px 0 4px;font-weight:800}.setting p{font-size:10px;line-height:1.6;margin:0;color:#748196}.chev{color:#9aa5b5;margin-top:7px}.chev svg{width:15px;height:15px}.setting-tag{margin-top:7px;display:inline-flex;align-items:center;padding:3px 6px;border-radius:6px;background:#f3f5f9;color:#68758a;font-size:9px;font-weight:700}.setting-tag.warn{background:var(--amber-bg);color:var(--amber)}.setting-tag.secure{background:var(--green-bg);color:var(--green)}
+.aside-card{padding:15px}.aside-title{font-size:12px;font-weight:800;margin-bottom:12px}.status-row{display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-top:1px solid #edf0f5;font-size:10px;color:#68758a}.status-row:first-of-type{border-top:0;padding-top:0}.status-value{font-weight:800;color:var(--text)}.status-value.ok{color:var(--green)}.status-value.warn{color:var(--amber)}
+.activity-item{padding:9px 0;border-top:1px solid #edf0f5}.activity-item:first-of-type{border-top:0;padding-top:0}.activity-title{font-size:10px;font-weight:700}.activity-meta{font-size:9px;color:var(--muted);margin-top:3px}.hint{padding:13px;border-radius:10px;background:var(--surface-blue);border:1px solid #dce7fb;font-size:10px;line-height:1.65;color:#51647d}.hint b{display:block;color:#2f4c77;font-size:11px;margin-bottom:3px}
+.toast{position:fixed;left:22px;bottom:22px;background:#172033;color:#fff;border-radius:9px;padding:10px 13px;font-size:11px;box-shadow:0 10px 30px rgba(16,24,40,.18);opacity:0;transform:translateY(8px);transition:.18s;z-index:100;pointer-events:none}.toast.show{opacity:1;transform:none}.mobile-menu{display:none}
+@media(max-width:1180px){.context-grid{grid-template-columns:1fr 1fr}.health{grid-column:1/-1}.workspace{grid-template-columns:1fr}.settings-aside{position:static;grid-template-columns:repeat(3,1fr);display:grid}.cards{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:860px){:root{--sidebar:0px}.sidebar{width:260px;transform:translateX(100%);transition:.2s}.sidebar.open{transform:none}.topbar{right:0}.content{margin-right:0}.mobile-menu{display:grid}.search{width:min(460px,52vw)}.context-grid{grid-template-columns:1fr}.health{grid-column:auto}.settings-aside{grid-template-columns:1fr}.user-copy{display:none}.user{border:0;padding:0}}
+@media(max-width:620px){.container{padding:16px}.topbar{padding:0 12px}.quick,.kbd{display:none}.search{width:100%}.top-start{flex:1}.top-end .icon-btn:first-child{display:none}.page-head{flex-direction:column}.cards{grid-template-columns:1fr}.context-grid{gap:10px}.meta{flex-direction:column;gap:7px}.workspace{gap:12px}}
+</style>
+</head>
+<body>
+<div class="app">
+<aside class="sidebar" id="sidebar">
+  <div class="sidebar-inner">
+    <div class="brand"><div class="logo" data-icon="store"></div><div class="brand-copy"><div class="brand-title">التاجر الصغير</div><div class="brand-sub">المحاسبة وإدارة الأعمال</div></div></div>
+    <div class="branch"><div class="branch-left"><span data-icon="branch"></span><span><b>الفرع الرئيسي</b> — رام الله</span></div><span data-icon="expand"></span></div>
+    <div class="nav-group"><div class="nav"><a href="#"><span class="nav-main"><span data-icon="dashboard"></span>الرئيسية</span></a></div></div>
+    <div class="nav-group"><div class="nav-label">المبيعات والعملاء</div><div class="nav">
+      <a href="#"><span class="nav-main"><span data-icon="receipt"></span>فواتير المبيعات</span></a><a href="#"><span class="nav-main"><span data-icon="quote"></span>عروض الأسعار</span></a><a href="#"><span class="nav-main"><span data-icon="users"></span>دليل العملاء</span></a>
+    </div></div>
+    <div class="nav-group"><div class="nav-label">المشتريات والمخزون</div><div class="nav">
+      <a href="#"><span class="nav-main"><span data-icon="cart"></span>فواتير الشراء</span></a><a href="#"><span class="nav-main"><span data-icon="truck"></span>الموردين</span></a><a href="#"><span class="nav-main"><span data-icon="box"></span>دليل الأصناف</span></a><a href="#"><span class="nav-main"><span data-icon="expiry"></span>مركز الصلاحية</span><span class="badge alert">3</span></a>
+    </div></div>
+    <div class="nav-group"><div class="nav-label">الخزينة والتقارير</div><div class="nav">
+      <a href="#"><span class="nav-main"><span data-icon="bank"></span>الخزينة والبنوك</span></a><a href="#"><span class="nav-main"><span data-icon="check"></span>حافظة الشيكات</span><span class="badge">5</span></a><a href="#"><span class="nav-main"><span data-icon="chart"></span>التقارير المالية</span></a>
+    </div></div>
+    <div class="nav-group"><div class="nav-label">النظام</div><div class="nav"><a class="active" href="#"><span class="nav-main"><span data-icon="settings"></span>إعدادات النظام</span></a></div></div>
+  </div>
+  <div class="side-status"><span class="online"><i class="dot"></i>سيرفر المحاسبة: متصل</span><span>v3.4.1</span></div>
+</aside>
+<header class="topbar">
+  <div class="top-start"><button class="icon-btn mobile-menu" id="menuBtn"><span data-icon="menu"></span></button><div class="search"><span data-icon="search"></span><input id="searchInput" placeholder="بحث في الإعدادات، الفروع، الضرائب، المستخدمين..." /><kbd class="kbd">Ctrl K</kbd></div></div>
+  <div class="top-end"><button class="quick"><span data-icon="plus"></span>إضافة سريعة<span data-icon="expand"></span></button><button class="icon-btn"><span data-icon="bell"></span><i class="notice"></i></button><button class="icon-btn"><span data-icon="help"></span></button><div class="user"><div class="avatar">أم</div><div class="user-copy"><div class="user-name">أحمد محمد</div><div class="user-role">مالك الحساب</div></div></div></div>
+</header>
+<main class="content"><div class="container">
+  <div class="page-head"><div><div class="breadcrumb"><span>لوحة التحكم</span><span>‹</span><span>الإعدادات</span></div><div class="title-row"><h1 class="title">إعدادات النظام</h1></div><div class="subtitle">إدارة بيانات الشركة، الإعدادات المالية، الصلاحيات، المستندات وخيارات النظام من مكان واحد.</div></div><div class="saved"><i class="dot"></i>النظام يعمل بصورة طبيعية</div></div>
+  <section class="context-grid">
+    <article class="panel company"><div class="company-row"><div class="company-main"><div class="company-logo" data-icon="store"></div><div><h2>مؤسسة التاجر الصغير</h2><p>تجارة المواد الغذائية والمنظفات</p></div></div><button class="link-btn" data-action="company">تعديل البيانات</button></div><div class="meta"><span><span data-icon="file"></span>الرقم الضريبي: <b class="num">123456789</b></span><span><span data-icon="phone"></span><b class="num">0597654321</b></span><span><span data-icon="pin"></span>رام الله، فلسطين</span></div></article>
+    <article class="panel plan"><div><div class="eyebrow">الخطة الحالية</div><div class="plan-name">النسخة الاحترافية</div><p>3 فروع • 10 مستخدمين • 5,000 صنف</p></div><button class="plan-action" data-action="plan">إدارة الاشتراك</button></article>
+    <article class="panel health"><div class="health-title"><span>استخدام الخطة</span><span>ضمن الحدود</span></div><div class="usage"><b>المنتجات</b><div class="bar"><i style="width:25%"></i></div><span class="num">1,245 / 5,000</span></div><div class="usage"><b>الفواتير</b><div class="bar"><i style="width:17%"></i></div><span class="num">342 / 2,000</span></div><div class="usage"><b>المستخدمون</b><div class="bar"><i style="width:40%"></i></div><span class="num">4 / 10</span></div></article>
+  </section>
+  <div class="workspace">
+    <div class="settings-main">
+      <section class="section"><div class="section-head"><div class="section-title">الهوية والإعدادات العامة</div><div class="section-desc">بيانات الشركة، اللغة، العملات والإعدادات المحلية.</div></div><div class="cards">
+        <button class="setting" data-title="بيانات الشركة والفروع"><span class="setting-icon" data-icon="store"></span><span><h3>بيانات الشركة والفروع</h3><p>الاسم التجاري، بيانات الاتصال، الفروع والمستودعات.</p></span><span class="chev" data-icon="chevron"></span></button>
+        <button class="setting" data-title="اللغات والمنطقة"><span class="setting-icon" data-icon="globe"></span><span><h3>اللغات والمنطقة</h3><p>العربية والإنجليزية، المنطقة الزمنية وتنسيق الأرقام.</p></span><span class="chev" data-icon="chevron"></span></button>
+        <button class="setting" data-title="العملات وأسعار الصرف"><span class="setting-icon" data-icon="money"></span><span><h3>العملات وأسعار الصرف</h3><p>العملة الأساسية، العملات المفعّلة وأسعار الصرف.</p><span class="setting-tag">ILS • USD • JOD</span></span><span class="chev" data-icon="chevron"></span></button>
+        <button class="setting" data-title="الضرائب"><span class="setting-icon" data-icon="percent"></span><span><h3>الضرائب</h3><p>معدلات الضريبة، شمول/استثناء الضريبة وحالة التفعيل.</p></span><span class="chev" data-icon="chevron"></span></button>
+      </div></section>
+      <section class="section"><div class="section-head"><div class="section-title">المبيعات والمشتريات والمخزون</div><div class="section-desc">القواعد الافتراضية للعمليات اليومية وحركة الأصناف.</div></div><div class="cards">
+        <button class="setting" data-title="إعدادات المبيعات"><span class="setting-icon" data-icon="receipt"></span><span><h3>إعدادات المبيعات</h3><p>شروط الاستحقاق، المستودع الافتراضي والخصومات.</p></span><span class="chev" data-icon="chevron"></span></button>
+        <button class="setting" data-title="إعدادات المشتريات"><span class="setting-icon" data-icon="cart"></span><span><h3>إعدادات المشتريات</h3><p>الاستحقاق، المستودع والتنبيه عن تكرار فاتورة المورد.</p></span><span class="chev" data-icon="chevron"></span></button>
+        <button class="setting" data-title="إعدادات المخزون"><span class="setting-icon" data-icon="box"></span><span><h3>إعدادات المخزون</h3><p>المخزون السالب، طريقة التكلفة وتنبيهات الصلاحية.</p><span class="setting-tag warn">طريقة التكلفة مقفلة في V1</span></span><span class="chev" data-icon="chevron"></span></button>
+        <button class="setting" data-title="حسابات النقد والبنوك"><span class="setting-icon" data-icon="bank"></span><span><h3>حسابات النقد والبنوك</h3><p>الصندوق، الحسابات البنكية والعملات المرتبطة بها.</p></span><span class="chev" data-icon="chevron"></span></button>
+      </div></section>
+      <section class="section"><div class="section-head"><div class="section-title">المستخدمون والأمان</div><div class="section-desc">الوصول إلى النظام، الأدوار والصلاحيات والحماية.</div></div><div class="cards">
+        <button class="setting" data-title="المستخدمون"><span class="setting-icon" data-icon="users"></span><span><h3>المستخدمون</h3><p>إضافة الموظفين، حالة الحساب وآخر تسجيل دخول.</p><span class="setting-tag">4 من 10</span></span><span class="chev" data-icon="chevron"></span></button>
+        <button class="setting" data-title="الأدوار والصلاحيات"><span class="setting-icon" data-icon="shield"></span><span><h3>الأدوار والصلاحيات</h3><p>صلاحيات المبيعات والتكلفة والأرباح والإعدادات.</p><span class="setting-tag secure">مالك الحساب فقط</span></span><span class="chev" data-icon="chevron"></span></button>
+        <button class="setting" data-title="الأمان"><span class="setting-icon" data-icon="lock"></span><span><h3>الأمان</h3><p>المصادقة الثنائية، الجلسات وتأكيد الإجراءات الحساسة.</p></span><span class="chev" data-icon="chevron"></span></button>
+        <button class="setting" data-title="سجل التدقيق"><span class="setting-icon" data-icon="history"></span><span><h3>سجل التدقيق</h3><p>مراجعة تغييرات المستخدمين والعمليات الحساسة.</p></span><span class="chev" data-icon="chevron"></span></button>
+      </div></section>
+      <section class="section"><div class="section-head"><div class="section-title">المستندات والبيانات</div><div class="section-desc">الترقيم والطباعة والمشاركة والنسخ الاحتياطي.</div></div><div class="cards">
+        <button class="setting" data-title="ترقيم المستندات"><span class="setting-icon" data-icon="number"></span><span><h3>ترقيم المستندات</h3><p>بادئات الفواتير والتسلسل وإعادة الضبط السنوية.</p></span><span class="chev" data-icon="chevron"></span></button>
+        <button class="setting" data-title="الطباعة وقوالب PDF"><span class="setting-icon" data-icon="print"></span><span><h3>الطباعة وقوالب PDF</h3><p>الشعار، الترويسة، QR، حجم الورق وتذييل المستند.</p></span><span class="chev" data-icon="chevron"></span></button>
+        <button class="setting" data-title="المشاركة والروابط"><span class="setting-icon" data-icon="share"></span><span><h3>المشاركة والروابط</h3><p>صلاحية الروابط، كلمات المرور وخيارات QR الافتراضية.</p></span><span class="chev" data-icon="chevron"></span></button>
+        <button class="setting" data-title="تصدير البيانات والنسخ الاحتياطي"><span class="setting-icon" data-icon="database"></span><span><h3>تصدير البيانات والنسخ الاحتياطي</h3><p>تنزيل بيانات الشركة، المرفقات وحالة آخر نسخة احتياطية.</p></span><span class="chev" data-icon="chevron"></span></button>
+      </div></section>
+    </div>
+    <aside class="settings-aside">
+      <article class="panel aside-card"><div class="aside-title">حالة الإعدادات</div><div class="status-row"><span>العملة الأساسية</span><span class="status-value">ILS</span></div><div class="status-row"><span>الضرائب</span><span class="status-value ok">مفعّلة 16%</span></div><div class="status-row"><span>التحقق بخطوتين</span><span class="status-value warn">2 من 4</span></div><div class="status-row"><span>آخر نسخة احتياطية</span><span class="status-value">اليوم 02:15</span></div></article>
+      <article class="panel aside-card"><div class="aside-title">آخر التغييرات</div><div class="activity-item"><div class="activity-title">تحديث سعر صرف USD</div><div class="activity-meta">أحمد محمد • منذ 34 دقيقة</div></div><div class="activity-item"><div class="activity-title">إضافة المستخدم سارة خالد</div><div class="activity-meta">أحمد محمد • أمس 16:20</div></div><div class="activity-item"><div class="activity-title">تعديل قالب فاتورة المبيعات</div><div class="activity-meta">سارة خالد • قبل يومين</div></div></article>
+      <div class="hint"><b>صلاحيات الإعدادات</b>بعض الإعدادات المالية والأمنية تظهر فقط لمالك الحساب أو المستخدم الذي يملك صلاحية الإدارة.</div>
+    </aside>
+  </div>
+</div></main>
+<div class="toast" id="toast"></div>
+</div>
+<script>
+const icons={
+store:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M4 9h16M5 9v11h14V9M3 9l2-5h14l2 5M9 13v7M15 13v7"/></svg>',
+branch:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M4 20h16M6 20V8h12v12M9 8V4h6v4M9 12h2M13 12h2M9 16h2M13 16h2"/></svg>',
+expand:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="m8 10 4-4 4 4M8 14l4 4 4-4"/></svg>',
+dashboard:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z"/></svg>',
+receipt:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M6 3h12v18l-2-1.5L14 21l-2-1.5L10 21l-2-1.5L6 21V3Z"/><path d="M9 8h6M9 12h6M9 16h4"/></svg>',
+quote:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M6 3h12v18H6zM9 8h6M9 12h6M9 16h3"/><path d="M15 16h.01"/></svg>',
+users:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="9" cy="8" r="3"/><path d="M3 20c.6-4 2.6-6 6-6s5.4 2 6 6"/><circle cx="17" cy="9" r="2"/><path d="M15 15c3 0 5 2 5.5 5"/></svg>',
+cart:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M3 4h2l2 11h10l2-7H6"/><circle cx="9" cy="19" r="1.5"/><circle cx="17" cy="19" r="1.5"/></svg>',
+truck:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M3 6h11v10H3zM14 10h4l3 3v3h-7z"/><circle cx="7" cy="18" r="2"/><circle cx="17" cy="18" r="2"/></svg>',
+box:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="m12 3 8 4-8 4-8-4 8-4ZM4 7v10l8 4 8-4V7M12 11v10"/></svg>',
+expiry:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M8 3v4M16 3v4M4 10h16M9 14l6 6M15 14l-6 6"/></svg>',
+bank:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="m3 9 9-5 9 5M5 10h14M6 10v8M10 10v8M14 10v8M18 10v8M4 20h16"/></svg>',
+check:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 10h18M8 15h3"/></svg>',
+chart:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M4 20V10M10 20V4M16 20v-7M22 20V7"/></svg>',
+settings:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-.1-1l2-1.5-2-3.5-2.5 1a7 7 0 0 0-1.8-1L14 3h-4l-.6 3a7 7 0 0 0-1.8 1l-2.5-1-2 3.5L5.1 11a7 7 0 0 0 0 2L3 14.5 5 18l2.5-1a7 7 0 0 0 1.8 1l.7 3h4l.6-3a7 7 0 0 0 1.8-1l2.5 1 2-3.5L18.9 13a7 7 0 0 0 .1-1Z"/></svg>',
+menu:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M4 7h16M4 12h16M4 17h16"/></svg>',
+search:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg>',
+plus:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 5v14M5 12h14"/></svg>',
+bell:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M6 9a6 6 0 0 1 12 0v5l2 3H4l2-3V9ZM10 20h4"/></svg>',
+help:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.8 2.8 0 1 1 4.5 2.2c-1.4 1-2 1.4-2 2.8M12 17h.01"/></svg>',
+file:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M6 2h8l4 4v16H6zM14 2v5h5M9 13h6M9 17h6"/></svg>',
+phone:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M6 3h4l1 5-2 1c1 4 3 6 6 7l1-2 5 1v4c0 1-1 2-2 2C10 21 3 14 3 5c0-1 1-2 3-2Z"/></svg>',
+pin:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 21s6-5 6-11a6 6 0 1 0-12 0c0 6 6 11 6 11Z"/><circle cx="12" cy="10" r="2"/></svg>',
+globe:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18"/></svg>',
+money:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="12" cy="12" r="3"/><path d="M7 9H5v2M17 15h2v-2"/></svg>',
+percent:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="m6 18 12-12"/><circle cx="7" cy="7" r="2"/><circle cx="17" cy="17" r="2"/></svg>',
+shield:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 3 5 6v5c0 5 3 8 7 10 4-2 7-5 7-10V6l-7-3Z"/></svg>',
+lock:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="5" y="10" width="14" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>',
+history:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5M12 7v6l4 2"/></svg>',
+number:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M10 3 8 21M16 3l-2 18M4 9h16M3 15h16"/></svg>',
+print:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M7 9V3h10v6M7 17H5a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2h-2M7 14h10v7H7z"/></svg>',
+share:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="18" cy="5" r="2.5"/><circle cx="6" cy="12" r="2.5"/><circle cx="18" cy="19" r="2.5"/><path d="m8 11 7.5-4.5M8 13l7.5 4.5"/></svg>',
+database:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v6c0 1.7 3.6 3 8 3s8-1.3 8-3V5M4 11v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/></svg>',
+chevron:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="m14 6-6 6 6 6"/></svg>'};
+document.querySelectorAll('[data-icon]').forEach(el=>{let k=el.dataset.icon;if(icons[k])el.innerHTML=icons[k]});
+document.querySelectorAll('svg').forEach(s=>{s.setAttribute('stroke-linecap','round');s.setAttribute('stroke-linejoin','round');s.setAttribute('stroke-width',s.getAttribute('stroke-width')||'1.8')});
+const toast=document.getElementById('toast');function say(t){toast.textContent=t;toast.classList.add('show');clearTimeout(window._t);window._t=setTimeout(()=>toast.classList.remove('show'),1600)}
+document.querySelectorAll('.setting').forEach(b=>b.onclick=()=>say('فتح إعداد: '+b.dataset.title));document.querySelectorAll('[data-action]').forEach(b=>b.onclick=()=>say(b.dataset.action==='company'?'فتح بيانات الشركة':'فتح إدارة الاشتراك'));
+const input=document.getElementById('searchInput');input.addEventListener('input',()=>{const q=input.value.trim().toLowerCase();document.querySelectorAll('.setting').forEach(x=>x.style.display=!q||x.innerText.toLowerCase().includes(q)?'':'none')});document.addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='k'){e.preventDefault();input.focus()}if(e.key==='Escape'){input.blur();document.getElementById('sidebar').classList.remove('open')}});document.getElementById('menuBtn').onclick=()=>document.getElementById('sidebar').classList.toggle('open');
+</script>
+</body></html>
