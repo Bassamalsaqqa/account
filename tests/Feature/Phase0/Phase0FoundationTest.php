@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Phase0;
 
+use App\Actions\Company\CreateCompanyAction;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\URL;
@@ -55,14 +56,46 @@ class Phase0FoundationTest extends TestCase
         $response->assertSee('Small Trader');
     }
 
-    public function test_locale_switcher_route_updates_session(): void
+    public function test_locale_switcher_route_updates_session_for_guest(): void
     {
-        $response = $this->get(route('locale.switch', 'en'));
+        $response = $this->post(route('locale.switch'), ['locale' => 'en']);
 
         $response->assertSessionHas('locale', 'en');
+        $response->assertRedirect();
 
-        $responseAr = $this->get(route('locale.switch', 'ar'));
+        $responseAr = $this->post(route('locale.switch'), ['locale' => 'ar']);
         $responseAr->assertSessionHas('locale', 'ar');
+        $responseAr->assertRedirect();
+    }
+
+    public function test_locale_switcher_persists_for_authenticated_user(): void
+    {
+        $user = User::factory()->create(['locale' => 'ar']);
+
+        $response = $this->actingAs($user)->post(route('locale.switch'), ['locale' => 'en']);
+
+        $response->assertSessionHas('locale', 'en');
+        $this->assertSame('en', $user->fresh()->locale);
+    }
+
+    public function test_locale_switcher_rejects_invalid_locale(): void
+    {
+        $response = $this->withSession(['locale' => 'ar'])
+            ->post(route('locale.switch'), ['locale' => 'invalid']);
+
+        $response->assertSessionHasErrors('locale');
+        $this->assertSame('ar', session('locale'));
+    }
+
+    public function test_locale_get_request_does_not_mutate_state(): void
+    {
+        $response = $this->withSession(['locale' => 'ar'])->get('/locale');
+        $response->assertStatus(405);
+        $this->assertSame('ar', session('locale'));
+
+        $responseOld = $this->withSession(['locale' => 'ar'])->get('/locale/en');
+        $responseOld->assertNotFound();
+        $this->assertSame('ar', session('locale'));
     }
 
     public function test_user_model_has_fortify_two_factor_authenticatable_trait(): void
@@ -189,13 +222,17 @@ class Phase0FoundationTest extends TestCase
             'locale' => 'ar',
         ]);
 
+        app(CreateCompanyAction::class)->execute($user, [
+            'name_ar' => 'شركة التجارة الحديثة',
+            'base_currency_code' => 'ILS',
+        ]);
+
         $response = $this->actingAs($user)
             ->withSession(['locale' => 'ar'])
             ->get('/settings');
 
         $response->assertOk();
         $response->assertSee('إعدادات النظام');
-        $response->assertSee('معاينة تصميم المرحلة 0');
         $response->assertSee('الهوية والإعدادات العامة');
         $response->assertSee('المبيعات والمشتريات والمخزون');
         $response->assertSee('المستخدمون والأمان');
@@ -211,6 +248,12 @@ class Phase0FoundationTest extends TestCase
             'locale' => 'en',
         ]);
 
+        app(CreateCompanyAction::class)->execute($user, [
+            'name_ar' => 'Modern Trade Co',
+            'name_en' => 'Modern Trade Co',
+            'base_currency_code' => 'USD',
+        ]);
+
         $response = $this->actingAs($user)
             ->withSession(['locale' => 'en'])
             ->get('/settings');
@@ -218,7 +261,6 @@ class Phase0FoundationTest extends TestCase
         $response->assertOk();
         $response->assertSee('dir="ltr"', false);
         $response->assertSee('System Settings');
-        $response->assertSee('Phase 0 Visual Proof');
         $response->assertSee('Identity & General Settings');
         $response->assertSee('Sales, Purchases & Inventory');
         $response->assertSee('Users & Security');

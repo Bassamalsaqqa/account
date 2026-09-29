@@ -1,33 +1,64 @@
 <?php
 
 use App\Livewire\Pages\SettingsIndex;
+use App\Models\Company;
+use App\Support\Tenancy\CompanyContext;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', function () {
     return redirect()->route('settings.index');
 });
 
-Route::get('locale/{locale}', function (string $locale) {
-    if (in_array($locale, ['ar', 'en'], true)) {
-        session(['locale' => $locale]);
-        if (auth()->check()) {
-            auth()->user()->update(['locale' => $locale]);
-        }
+Route::post('locale', function (Request $request) {
+    $validated = $request->validate([
+        'locale' => ['required', 'string', 'in:ar,en'],
+    ]);
+
+    $locale = $validated['locale'];
+    session(['locale' => $locale]);
+
+    if (auth()->check()) {
+        auth()->user()->update(['locale' => $locale]);
     }
 
     return redirect()->back();
 })->name('locale.switch');
 
 Route::middleware(['auth'])->group(function () {
-    Route::get('dashboard', function () {
-        return view('dashboard');
-    })->name('dashboard');
+    // Tenancy setup and selection routes (accessible without company context)
+    Route::view('companies/setup', 'tenancy.setup')
+        ->name('companies.setup');
 
-    Route::get('settings', SettingsIndex::class)
-        ->name('settings.index');
+    Route::view('companies/select', 'tenancy.select')
+        ->name('companies.select');
+
+    // Explicit CSRF-protected company switch route
+    Route::post('company/switch', function (Request $request, CompanyContext $context) {
+        $validated = $request->validate([
+            'public_id' => ['required', 'string', 'max:32'],
+        ]);
+
+        /** @var Company $company */
+        $company = Company::where('public_id', $validated['public_id'])->firstOrFail();
+
+        $context->switchCompany($request->user(), $company);
+
+        return redirect()->route('settings.index');
+    })->name('company.switch');
 
     Route::view('profile', 'profile')
         ->name('profile');
+
+    // Company-protected routes
+    Route::middleware(['company.ensure'])->group(function () {
+        Route::get('dashboard', function () {
+            return view('dashboard');
+        })->name('dashboard');
+
+        Route::get('settings', SettingsIndex::class)
+            ->name('settings.index');
+    });
 });
 
 if (app()->environment('local', 'testing')) {

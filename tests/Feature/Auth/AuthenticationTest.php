@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Auth;
 
+use App\Actions\Company\CreateCompanyAction;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -50,6 +51,12 @@ class AuthenticationTest extends TestCase
     public function test_navigation_menu_can_be_rendered(): void
     {
         $user = User::factory()->create();
+
+        app(CreateCompanyAction::class)->execute($user, [
+            'name_ar' => 'شركة تجريبية',
+            'name_en' => 'Test Company',
+            'base_currency_code' => 'ILS',
+        ]);
 
         $this->actingAs($user);
 

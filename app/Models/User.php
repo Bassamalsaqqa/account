@@ -5,15 +5,19 @@ namespace App\Models;
 use Database\Factories\UserFactory;
 use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Support\Str;
 use Laravel\Fortify\TwoFactorAuthenticatable;
+use Spatie\Permission\Traits\HasRoles;
 
 class User extends Authenticatable implements MustVerifyEmail
 {
     /** @use HasFactory<UserFactory> */
-    use HasFactory, Notifiable, TwoFactorAuthenticatable;
+    use HasFactory, HasRoles, Notifiable, TwoFactorAuthenticatable;
 
     /**
      * The attributes that are mass assignable.
@@ -26,6 +30,7 @@ class User extends Authenticatable implements MustVerifyEmail
         'email',
         'password',
         'locale',
+        'last_active_company_id',
     ];
 
     /**
@@ -55,16 +60,45 @@ class User extends Authenticatable implements MustVerifyEmail
         });
     }
 
-    /**
-     * Get the attributes that should be cast.
-     *
-     * @return array<string, string>
-     */
     protected function casts(): array
     {
         return [
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
         ];
+    }
+
+    /**
+     * @return BelongsToMany<Company, $this>
+     */
+    public function companies(): BelongsToMany
+    {
+        return $this->belongsToMany(Company::class, 'company_user')
+            ->withPivot(['status', 'is_owner', 'joined_at', 'last_accessed_at'])
+            ->withTimestamps();
+    }
+
+    /**
+     * @return BelongsToMany<Company, $this>
+     */
+    public function activeCompanies(): BelongsToMany
+    {
+        return $this->companies()->wherePivot('status', 'active');
+    }
+
+    /**
+     * @return HasMany<CompanyUser, $this>
+     */
+    public function memberships(): HasMany
+    {
+        return $this->hasMany(CompanyUser::class);
+    }
+
+    /**
+     * @return BelongsTo<Company, $this>
+     */
+    public function lastActiveCompany(): BelongsTo
+    {
+        return $this->belongsTo(Company::class, 'last_active_company_id');
     }
 }

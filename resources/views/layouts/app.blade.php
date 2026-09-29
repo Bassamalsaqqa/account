@@ -57,13 +57,26 @@
                 </div>
             </div>
 
-            <!-- Branch selector pill -->
+            <!-- Active Company Pill -->
+            @php
+                $sidebarContext = app(\App\Support\Tenancy\CompanyContext::class);
+                $sidebarCompany = $sidebarContext->hasCompany() ? $sidebarContext->company() : null;
+                $userActiveCompanies = auth()->check() ? auth()->user()->activeCompanies : collect();
+            @endphp
             <div class="mt-3 px-3 py-2 rounded-control bg-surface-soft flex items-center justify-between gap-2 text-xs text-text-secondary border border-border/50">
                 <div class="flex items-center gap-2 min-w-0">
-                    <x-icon name="branch" class="w-4 h-4 text-text-muted shrink-0" />
-                    <span class="truncate font-semibold"><b class="text-text-primary">{{ __('app.main_branch') }}</b> — {{ __('app.branch_location') }} · {{ __('app.phase_zero_preview') }}</span>
+                    <x-icon name="store" class="w-4 h-4 text-primary shrink-0" />
+                    @if($sidebarCompany)
+                        <span class="truncate font-bold text-text-primary">{{ $sidebarCompany->displayName() }}</span>
+                    @else
+                        <span class="truncate text-text-muted">{{ __('settings.no_active_company') }}</span>
+                    @endif
                 </div>
-                <x-icon name="expand" class="w-3.5 h-3.5 text-text-muted shrink-0" />
+                @if ($userActiveCompanies->count() > 1)
+                    <a href="{{ route('companies.select') }}" class="text-[10px] text-primary hover:underline font-bold shrink-0">
+                        {{ __('settings.activate') }}
+                    </a>
+                @endif
             </div>
         </div>
 
@@ -235,12 +248,16 @@
             </button>
 
             <!-- Language Switcher -->
-            <a href="{{ route('locale.switch', $isRtl ? 'en' : 'ar') }}"
-               class="h-[38px] px-2.5 rounded-control border border-border text-xs font-semibold text-text-secondary hover:bg-surface-soft hover:text-text-primary flex items-center gap-1.5 transition-colors"
-               title="{{ $isRtl ? 'Switch to English' : 'التحويل إلى العربية' }}">
-                <x-icon name="globe" class="w-4 h-4 text-text-muted" />
-                <span class="font-bold">{{ $isRtl ? 'EN' : 'عربي' }}</span>
-            </a>
+            <form method="POST" action="{{ route('locale.switch') }}" class="inline">
+                @csrf
+                <input type="hidden" name="locale" value="{{ $isRtl ? 'en' : 'ar' }}">
+                <button type="submit"
+                   class="h-[38px] px-2.5 rounded-control border border-border bg-white text-xs font-semibold text-text-secondary hover:bg-surface-soft hover:text-text-primary flex items-center gap-1.5 transition-colors cursor-pointer"
+                   title="{{ $isRtl ? 'Switch to English' : 'التحويل إلى العربية' }}">
+                    <x-icon name="globe" class="w-4 h-4 text-text-muted" />
+                    <span class="font-bold">{{ $isRtl ? 'EN' : 'عربي' }}</span>
+                </button>
+            </form>
 
             <!-- Notifications Button -->
             <button type="button" disabled aria-disabled="true" title="{{ __('app.future_module_notice') }}"

@@ -26,11 +26,15 @@
             <span class="font-extrabold text-sm text-text-primary">{{ __('app.app_name') }}</span>
         </div>
 
-        <a href="{{ route('locale.switch', app()->getLocale() === 'ar' ? 'en' : 'ar') }}"
-           class="px-2.5 py-1 rounded-control border border-border bg-white text-xs font-bold text-text-secondary hover:bg-surface-soft transition-colors flex items-center gap-1.5">
-            <x-icon name="globe" class="w-3.5 h-3.5 text-text-muted" />
-            <span>{{ app()->getLocale() === 'ar' ? 'English' : 'العربية' }}</span>
-        </a>
+        <form method="POST" action="{{ route('locale.switch') }}" class="inline">
+            @csrf
+            <input type="hidden" name="locale" value="{{ app()->getLocale() === 'ar' ? 'en' : 'ar' }}">
+            <button type="submit"
+               class="px-2.5 py-1 rounded-control border border-border bg-white text-xs font-bold text-text-secondary hover:bg-surface-soft transition-colors flex items-center gap-1.5 cursor-pointer">
+                <x-icon name="globe" class="w-3.5 h-3.5 text-text-muted" />
+                <span>{{ app()->getLocale() === 'ar' ? 'English' : 'العربية' }}</span>
+            </button>
+        </form>
     </div>
 
     <!-- Centered Form Container -->
