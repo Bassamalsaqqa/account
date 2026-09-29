@@ -21,6 +21,9 @@
 
     @php
         $isRtl = app()->getLocale() === 'ar';
+        $companyContext = app(\App\Support\Tenancy\CompanyContext::class);
+        $activeCompany = $activeCompany ?? ($companyContext->hasCompany() ? $companyContext->company() : null);
+        $englishEnabled = $englishEnabled ?? ($activeCompany ? $activeCompany->isLanguageEnabled('en') : true);
     @endphp
 
     <!-- Mobile Drawer Overlay -->
@@ -248,16 +251,31 @@
             </button>
 
             <!-- Language Switcher -->
-            <form method="POST" action="{{ route('locale.switch') }}" class="inline">
-                @csrf
-                <input type="hidden" name="locale" value="{{ $isRtl ? 'en' : 'ar' }}">
-                <button type="submit"
-                   class="h-[38px] px-2.5 rounded-control border border-border bg-white text-xs font-semibold text-text-secondary hover:bg-surface-soft hover:text-text-primary flex items-center gap-1.5 transition-colors cursor-pointer"
-                   title="{{ $isRtl ? 'Switch to English' : 'التحويل إلى العربية' }}">
-                    <x-icon name="globe" class="w-4 h-4 text-text-muted" />
-                    <span class="font-bold">{{ $isRtl ? 'EN' : 'عربي' }}</span>
-                </button>
-            </form>
+            @if ($isRtl)
+                @if ($englishEnabled)
+                    <form method="POST" action="{{ route('locale.switch') }}" class="inline">
+                        @csrf
+                        <input type="hidden" name="locale" value="en">
+                        <button type="submit"
+                           class="h-[38px] px-2.5 rounded-control border border-border bg-white text-xs font-semibold text-text-secondary hover:bg-surface-soft hover:text-text-primary flex items-center gap-1.5 transition-colors cursor-pointer"
+                           title="{{ __('app.switch_language') }}">
+                            <x-icon name="globe" class="w-4 h-4 text-text-muted" />
+                            <span class="font-bold">EN</span>
+                        </button>
+                    </form>
+                @endif
+            @else
+                <form method="POST" action="{{ route('locale.switch') }}" class="inline">
+                    @csrf
+                    <input type="hidden" name="locale" value="ar">
+                    <button type="submit"
+                       class="h-[38px] px-2.5 rounded-control border border-border bg-white text-xs font-semibold text-text-secondary hover:bg-surface-soft hover:text-text-primary flex items-center gap-1.5 transition-colors cursor-pointer"
+                       title="{{ __('app.switch_language') }}">
+                        <x-icon name="globe" class="w-4 h-4 text-text-muted" />
+                        <span class="font-bold">عربي</span>
+                    </button>
+                </form>
+            @endif
 
             <!-- Notifications Button -->
             <button type="button" disabled aria-disabled="true" title="{{ __('app.future_module_notice') }}"

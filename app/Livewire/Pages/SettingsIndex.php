@@ -67,6 +67,8 @@ class SettingsIndex extends Component
 
     public string $timezone = 'Asia/Hebron';
 
+    public bool $english_enabled = true;
+
     // Currencies
     public string $base_currency = 'ILS';
 
@@ -151,6 +153,7 @@ class SettingsIndex extends Component
         // Localization
         $this->default_locale = (string) $company->default_locale;
         $this->timezone = (string) $company->timezone;
+        $this->english_enabled = $company->isLanguageEnabled('en');
 
         // Currencies
         $this->base_currency = (string) $company->base_currency_code;
@@ -251,6 +254,13 @@ class SettingsIndex extends Component
         $this->successMessage = __('settings.identity_saved_success') ?: 'Company details saved successfully.';
     }
 
+    public function updatedEnglishEnabled(bool $value): void
+    {
+        if (! $value && $this->default_locale === 'en') {
+            $this->default_locale = 'ar';
+        }
+    }
+
     public function saveLocalization(CompanyContext $context, UpdateCompanyLocalizationAction $action): void
     {
         $company = $context->company();
@@ -259,11 +269,22 @@ class SettingsIndex extends Component
         $validated = $this->validate([
             'default_locale' => ['required', 'string', Rule::in(['ar', 'en'])],
             'timezone' => ['required', 'string', 'timezone'],
+            'english_enabled' => ['required', 'boolean'],
         ]);
 
         /** @var User $actor */
         $actor = auth()->user();
-        $action->execute($company, $validated['default_locale'], $validated['timezone'], $actor);
+        $action->execute(
+            $company,
+            $validated['default_locale'],
+            $validated['timezone'],
+            (bool) $this->english_enabled,
+            $actor
+        );
+
+        if (! $this->english_enabled) {
+            $this->default_locale = 'ar';
+        }
 
         $this->successMessage = __('settings.localization_saved_success') ?: 'Localization settings saved.';
     }

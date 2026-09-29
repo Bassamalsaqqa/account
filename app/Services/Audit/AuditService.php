@@ -2,7 +2,10 @@
 
 namespace App\Services\Audit;
 
+use App\Exceptions\CompanyReassignmentException;
 use App\Models\AuditEvent;
+use App\Support\Tenancy\CompanyContext;
+use App\Support\Tenancy\CompanyScope;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Str;
 
@@ -43,26 +46,54 @@ class AuditService
         ?array $after = null,
         ?array $meta = null,
     ): AuditEvent {
+        $context = app(CompanyContext::class);
+
+        if ($context->hasCompany()) {
+            $activeId = $context->companyId();
+            if ($companyId !== $activeId) {
+                throw new CompanyReassignmentException("Cannot log audit event for company [{$companyId}] when active company is [{$activeId}].");
+            }
+        }
+
         $actorId = $actorUserId ?? auth()->id();
 
         $ip = request()->ip();
         $userAgent = Str::limit(request()->userAgent() ?? '', 500);
 
-        return AuditEvent::create([
-            'public_id' => (string) Str::ulid(),
-            'company_id' => $companyId,
-            'actor_user_id' => $actorId,
-            'event_key' => $eventKey,
-            'subject_type' => $subject ? get_class($subject) : null,
-            'subject_id' => $subject ? (int) $subject->getKey() : null,
-            'summary' => Str::limit($summary, 500),
-            'before_json' => $before !== null ? $this->redact($before) : null,
-            'after_json' => $after !== null ? $this->redact($after) : null,
-            'meta_json' => $meta !== null ? $this->redact($meta) : null,
-            'ip_address' => $ip,
-            'user_agent' => $userAgent,
-            'created_at' => now(),
-        ]);
+        $createEvent = function () use (
+            $companyId,
+            $actorId,
+            $eventKey,
+            $subject,
+            $summary,
+            $before,
+            $after,
+            $meta,
+            $ip,
+            $userAgent
+        ): AuditEvent {
+            return AuditEvent::create([
+                'public_id' => (string) Str::ulid(),
+                'company_id' => $companyId,
+                'actor_user_id' => $actorId,
+                'event_key' => $eventKey,
+                'subject_type' => $subject ? get_class($subject) : null,
+                'subject_id' => $subject ? (int) $subject->getKey() : null,
+                'summary' => Str::limit($summary, 500),
+                'before_json' => $before !== null ? $this->redact($before) : null,
+                'after_json' => $after !== null ? $this->redact($after) : null,
+                'meta_json' => $meta !== null ? $this->redact($meta) : null,
+                'ip_address' => $ip,
+                'user_agent' => $userAgent,
+                'created_at' => now(),
+            ]);
+        };
+
+        if ($context->hasCompany()) {
+            return $createEvent();
+        }
+
+        return CompanyScope::executeWithoutScope($createEvent);
     }
 
     /**

@@ -5,10 +5,16 @@ namespace Tests\Feature\Phase1;
 use App\Actions\Company\CreateCompanyAction;
 use App\Exceptions\CompanyReassignmentException;
 use App\Exceptions\NoActiveCompanyException;
+use App\Models\AuditEvent;
 use App\Models\Company;
 use App\Models\CompanyCurrency;
+use App\Models\CompanyDocumentSettings;
+use App\Models\CompanyInventorySettings;
+use App\Models\CompanyLanguage;
+use App\Models\CompanySecuritySettings;
 use App\Models\CompanyUser;
 use App\Models\User;
+use App\Services\Audit\AuditService;
 use App\Support\Tenancy\CompanyContext;
 use App\Support\Tenancy\CompanyScope;
 use Illuminate\Auth\Access\AuthorizationException;
@@ -316,5 +322,367 @@ class CompanyTenancyTest extends TestCase
         $this->expectExceptionMessage('Cannot activate company context without a verified user.');
 
         $this->context->setCompany($this->companyA);
+    }
+
+    public function test_all_models_fail_closed_without_context(): void
+    {
+        $this->context->clear();
+
+        $this->assertSame(0, CompanyLanguage::count());
+        $this->assertSame(0, CompanyInventorySettings::count());
+        $this->assertSame(0, CompanyDocumentSettings::count());
+        $this->assertSame(0, CompanySecuritySettings::count());
+        $this->assertSame(0, AuditEvent::count());
+
+        $this->assertTrue(CompanyLanguage::all()->isEmpty());
+        $this->assertTrue(CompanyInventorySettings::all()->isEmpty());
+        $this->assertTrue(CompanyDocumentSettings::all()->isEmpty());
+        $this->assertTrue(CompanySecuritySettings::all()->isEmpty());
+        $this->assertTrue(AuditEvent::all()->isEmpty());
+    }
+
+    public function test_company_inventory_settings_creation_guard_and_mismatch_rejection(): void
+    {
+        $this->context->clear();
+
+        try {
+            CompanyInventorySettings::create(['allow_negative_stock' => false]);
+            $this->fail('Expected NoActiveCompanyException was not thrown.');
+        } catch (NoActiveCompanyException $e) {
+            $this->assertStringContainsString('Cannot create company-owned model', $e->getMessage());
+        }
+
+        $this->context->setCompany($this->companyA, $this->userA);
+
+        try {
+            CompanyInventorySettings::create([
+                'company_id' => $this->companyB->id,
+                'allow_negative_stock' => false,
+            ]);
+            $this->fail('Expected CompanyReassignmentException was not thrown.');
+        } catch (CompanyReassignmentException $e) {
+            $this->assertStringContainsString('Mismatched company_id', $e->getMessage());
+        }
+    }
+
+    public function test_company_document_settings_creation_guard_and_mismatch_rejection(): void
+    {
+        $this->context->clear();
+
+        try {
+            CompanyDocumentSettings::create(['default_document_locale' => 'ar']);
+            $this->fail('Expected NoActiveCompanyException was not thrown.');
+        } catch (NoActiveCompanyException $e) {
+            $this->assertStringContainsString('Cannot create company-owned model', $e->getMessage());
+        }
+
+        $this->context->setCompany($this->companyA, $this->userA);
+
+        try {
+            CompanyDocumentSettings::create([
+                'company_id' => $this->companyB->id,
+                'default_document_locale' => 'en',
+            ]);
+            $this->fail('Expected CompanyReassignmentException was not thrown.');
+        } catch (CompanyReassignmentException $e) {
+            $this->assertStringContainsString('Mismatched company_id', $e->getMessage());
+        }
+    }
+
+    public function test_company_security_settings_creation_guard_and_mismatch_rejection(): void
+    {
+        $this->context->clear();
+
+        try {
+            CompanySecuritySettings::create(['require_2fa_for_owner' => true]);
+            $this->fail('Expected NoActiveCompanyException was not thrown.');
+        } catch (NoActiveCompanyException $e) {
+            $this->assertStringContainsString('Cannot create company-owned model', $e->getMessage());
+        }
+
+        $this->context->setCompany($this->companyA, $this->userA);
+
+        try {
+            CompanySecuritySettings::create([
+                'company_id' => $this->companyB->id,
+                'require_2fa_for_owner' => true,
+            ]);
+            $this->fail('Expected CompanyReassignmentException was not thrown.');
+        } catch (CompanyReassignmentException $e) {
+            $this->assertStringContainsString('Mismatched company_id', $e->getMessage());
+        }
+    }
+
+    public function test_company_language_creation_guard_and_mismatch_rejection(): void
+    {
+        $this->context->clear();
+
+        try {
+            CompanyLanguage::create(['locale' => 'ar', 'enabled' => true]);
+            $this->fail('Expected NoActiveCompanyException was not thrown.');
+        } catch (NoActiveCompanyException $e) {
+            $this->assertStringContainsString('Cannot create company-owned model', $e->getMessage());
+        }
+
+        $this->context->setCompany($this->companyA, $this->userA);
+
+        try {
+            CompanyLanguage::create([
+                'company_id' => $this->companyB->id,
+                'locale' => 'fr',
+                'enabled' => true,
+            ]);
+            $this->fail('Expected CompanyReassignmentException was not thrown.');
+        } catch (CompanyReassignmentException $e) {
+            $this->assertStringContainsString('Mismatched company_id', $e->getMessage());
+        }
+    }
+
+    public function test_audit_event_creation_guard_and_mismatch_rejection(): void
+    {
+        $this->context->clear();
+
+        try {
+            AuditEvent::create([
+                'event_key' => 'test.event',
+                'summary' => 'Test event without context',
+            ]);
+            $this->fail('Expected NoActiveCompanyException was not thrown.');
+        } catch (NoActiveCompanyException $e) {
+            $this->assertStringContainsString('Cannot create company-owned model', $e->getMessage());
+        }
+
+        $this->context->setCompany($this->companyA, $this->userA);
+
+        try {
+            AuditEvent::create([
+                'company_id' => $this->companyB->id,
+                'event_key' => 'test.event',
+                'summary' => 'Test event with mismatched company',
+            ]);
+            $this->fail('Expected CompanyReassignmentException was not thrown.');
+        } catch (CompanyReassignmentException $e) {
+            $this->assertStringContainsString('Mismatched company_id', $e->getMessage());
+        }
+    }
+
+    public function test_all_models_enforce_a_b_isolation(): void
+    {
+        // Under Company A context
+        $this->context->setCompany($this->companyA, $this->userA);
+
+        $langsA = CompanyLanguage::all();
+        $this->assertTrue($langsA->isNotEmpty());
+        $this->assertTrue($langsA->every(fn ($m) => $m->company_id === $this->companyA->id));
+
+        $invA = CompanyInventorySettings::first();
+        $this->assertNotNull($invA);
+        $this->assertSame($this->companyA->id, $invA->company_id);
+
+        $docA = CompanyDocumentSettings::first();
+        $this->assertNotNull($docA);
+        $this->assertSame($this->companyA->id, $docA->company_id);
+
+        $secA = CompanySecuritySettings::first();
+        $this->assertNotNull($secA);
+        $this->assertSame($this->companyA->id, $secA->company_id);
+
+        $audA = AuditEvent::all();
+        $this->assertTrue($audA->isNotEmpty());
+        $this->assertTrue($audA->every(fn ($m) => $m->company_id === $this->companyA->id));
+
+        // Under Company B context
+        $this->context->setCompany($this->companyB, $this->userB);
+
+        $langsB = CompanyLanguage::all();
+        $this->assertTrue($langsB->isNotEmpty());
+        $this->assertTrue($langsB->every(fn ($m) => $m->company_id === $this->companyB->id));
+
+        $invB = CompanyInventorySettings::first();
+        $this->assertNotNull($invB);
+        $this->assertSame($this->companyB->id, $invB->company_id);
+
+        $docB = CompanyDocumentSettings::first();
+        $this->assertNotNull($docB);
+        $this->assertSame($this->companyB->id, $docB->company_id);
+
+        $secB = CompanySecuritySettings::first();
+        $this->assertNotNull($secB);
+        $this->assertSame($this->companyB->id, $secB->company_id);
+
+        $audB = AuditEvent::all();
+        $this->assertTrue($audB->isNotEmpty());
+        $this->assertTrue($audB->every(fn ($m) => $m->company_id === $this->companyB->id));
+    }
+
+    public function test_ownership_immutability_on_settings_and_audit(): void
+    {
+        $this->context->setCompany($this->companyA, $this->userA);
+
+        $lang = CompanyLanguage::firstOrFail();
+        try {
+            $lang->update(['company_id' => $this->companyB->id]);
+            $this->fail('Expected CompanyReassignmentException was not thrown for CompanyLanguage.');
+        } catch (CompanyReassignmentException $e) {
+            $this->assertSame('Reassigning company ownership is prohibited.', $e->getMessage());
+        }
+
+        $inv = CompanyInventorySettings::firstOrFail();
+        try {
+            $inv->update(['company_id' => $this->companyB->id]);
+            $this->fail('Expected CompanyReassignmentException was not thrown for CompanyInventorySettings.');
+        } catch (CompanyReassignmentException $e) {
+            $this->assertSame('Reassigning company ownership is prohibited.', $e->getMessage());
+        }
+
+        $doc = CompanyDocumentSettings::firstOrFail();
+        try {
+            $doc->update(['company_id' => $this->companyB->id]);
+            $this->fail('Expected CompanyReassignmentException was not thrown for CompanyDocumentSettings.');
+        } catch (CompanyReassignmentException $e) {
+            $this->assertSame('Reassigning company ownership is prohibited.', $e->getMessage());
+        }
+
+        $sec = CompanySecuritySettings::firstOrFail();
+        try {
+            $sec->update(['company_id' => $this->companyB->id]);
+            $this->fail('Expected CompanyReassignmentException was not thrown for CompanySecuritySettings.');
+        } catch (CompanyReassignmentException $e) {
+            $this->assertSame('Reassigning company ownership is prohibited.', $e->getMessage());
+        }
+
+        $audit = AuditEvent::firstOrFail();
+        try {
+            $audit->update(['company_id' => $this->companyB->id]);
+            $this->fail('Expected RuntimeException was not thrown for AuditEvent update.');
+        } catch (\RuntimeException $e) {
+            $this->assertSame('Audit events are immutable and cannot be updated.', $e->getMessage());
+        }
+
+        try {
+            $audit->delete();
+            $this->fail('Expected RuntimeException was not thrown for AuditEvent delete.');
+        } catch (\RuntimeException $e) {
+            $this->assertSame('Audit events are immutable and cannot be deleted.', $e->getMessage());
+        }
+    }
+
+    public function test_audit_service_rejects_mismatched_company_id_under_active_context(): void
+    {
+        $auditService = app(AuditService::class);
+        $this->context->setCompany($this->companyA, $this->userA);
+
+        $this->expectException(CompanyReassignmentException::class);
+        $this->expectExceptionMessage("Cannot log audit event for company [{$this->companyB->id}] when active company is [{$this->companyA->id}].");
+
+        $auditService->log(
+            companyId: $this->companyB->id,
+            eventKey: 'mismatch.test',
+            summary: 'Mismatch should fail',
+            actorUserId: $this->userA->id
+        );
+    }
+
+    public function test_audit_service_preserves_bootstrap_creation_without_context(): void
+    {
+        $auditService = app(AuditService::class);
+        $this->context->clear();
+
+        $event = $auditService->log(
+            companyId: $this->companyA->id,
+            eventKey: 'bootstrap.test',
+            summary: 'Bootstrap event recorded cleanly',
+            actorUserId: $this->userA->id,
+            before: ['password' => 'secret123', 'name' => 'Original Name'],
+            after: ['password' => 'secret456', 'name' => 'New Name']
+        );
+
+        $this->assertNotNull($event->id);
+        $this->assertSame($this->companyA->id, $event->company_id);
+
+        // Verify redaction
+        $this->assertSame('[REDACTED]', $event->before_json['password']);
+        $this->assertSame('Original Name', $event->before_json['name']);
+        $this->assertSame('[REDACTED]', $event->after_json['password']);
+        $this->assertSame('New Name', $event->after_json['name']);
+    }
+
+    public function test_audit_service_rejects_mismatched_company_id_inside_scope_bypass(): void
+    {
+        $auditService = app(AuditService::class);
+        $this->context->setCompany($this->companyA, $this->userA);
+
+        try {
+            CompanyScope::executeWithoutScope(function () use ($auditService) {
+                $auditService->log(
+                    companyId: $this->companyB->id,
+                    eventKey: 'mismatch.bypass.test',
+                    summary: 'Should fail even inside scope bypass',
+                    actorUserId: $this->userA->id
+                );
+            });
+            $this->fail('Expected CompanyReassignmentException was not thrown inside scope bypass.');
+        } catch (CompanyReassignmentException $e) {
+            $this->assertStringContainsString("Cannot log audit event for company [{$this->companyB->id}] when active company is [{$this->companyA->id}].", $e->getMessage());
+        }
+
+        // Assert no audit row was created for company B
+        $this->assertDatabaseMissing('audit_events', [
+            'company_id' => $this->companyB->id,
+            'event_key' => 'mismatch.bypass.test',
+        ]);
+    }
+
+    public function test_create_company_action_fails_when_company_context_is_active(): void
+    {
+        $this->context->setCompany($this->companyA, $this->userA);
+        $newUser = User::factory()->create();
+
+        try {
+            $this->createAction->execute($newUser, [
+                'name_ar' => 'شركة محظورة أثناء سياق نشط',
+            ]);
+            $this->fail('Expected CompanyReassignmentException when creating company with active context.');
+        } catch (CompanyReassignmentException $e) {
+            $this->assertStringContainsString('Cannot create a new company while an active company context', $e->getMessage());
+        }
+
+        $this->assertDatabaseMissing('companies', [
+            'name_ar' => 'شركة محظورة أثناء سياق نشط',
+        ]);
+    }
+
+    public function test_ordinary_active_company_audit_write_succeeds_and_remains_scoped(): void
+    {
+        $auditService = app(AuditService::class);
+        $this->context->setCompany($this->companyA, $this->userA);
+
+        // Before logging, verify company scope is not bypassed
+        $this->assertFalse(CompanyScope::isBypassed());
+
+        $scopeActiveDuringCreation = false;
+        AuditEvent::creating(function () use (&$scopeActiveDuringCreation) {
+            // Verify that during model creation, company scope is NOT bypassed
+            $scopeActiveDuringCreation = ! CompanyScope::isBypassed();
+        });
+
+        $event = $auditService->log(
+            companyId: $this->companyA->id,
+            eventKey: 'ordinary.scoped.test',
+            summary: 'Ordinary active company audit write',
+            actorUserId: $this->userA->id
+        );
+
+        $this->assertTrue($scopeActiveDuringCreation, 'Company scope should remain active (not bypassed) during ordinary audit event creation.');
+        $this->assertFalse(CompanyScope::isBypassed(), 'Company scope should remain not bypassed after audit event creation.');
+        $this->assertNotNull($event->id);
+        $this->assertSame($this->companyA->id, $event->company_id);
+
+        // Verify normal read-scoping under active context Company A
+        $this->assertTrue(AuditEvent::where('id', $event->id)->exists());
+
+        // Switch to Company B context: Company A's audit event must be invisible due to CompanyScope
+        $this->context->setCompany($this->companyB, $this->userB);
+        $this->assertFalse(AuditEvent::where('id', $event->id)->exists());
     }
 }

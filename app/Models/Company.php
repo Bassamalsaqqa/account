@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Support\Tenancy\CompanyScope;
 use Database\Factories\CompanyFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -124,5 +125,23 @@ class Company extends Model
         }
 
         return $this->name_en ?: ($this->name_ar ?? '');
+    }
+
+    public function isLanguageEnabled(string $locale): bool
+    {
+        if ($locale === 'ar') {
+            return true;
+        }
+
+        if ($this->relationLoaded('languages')) {
+            /** @var CompanyLanguage|null $lang */
+            $lang = $this->languages->firstWhere('locale', $locale);
+
+            return $lang ? (bool) $lang->enabled : false;
+        }
+
+        return CompanyScope::executeWithoutScope(function () use ($locale) {
+            return $this->languages()->where('locale', $locale)->where('enabled', true)->exists();
+        });
     }
 }

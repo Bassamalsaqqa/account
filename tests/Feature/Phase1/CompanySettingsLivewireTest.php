@@ -457,13 +457,15 @@ class CompanySettingsLivewireTest extends TestCase
 
     public function test_fresh_livewire_request_isolates_tenant_and_rejects_forged_company_id(): void
     {
-        // 1. Create second company with different data
+        // 1. Create second company with different data (clear context first to respect single active context)
+        $this->context->clear();
         $otherOwner = User::factory()->create();
         $companyB = app(CreateCompanyAction::class)->execute($otherOwner, [
             'name_ar' => 'شركة ثانية منافسة',
             'name_en' => 'Competitor Corp.',
             'base_currency_code' => 'USD',
         ]);
+        $this->context->setCompany($this->company, $this->owner);
 
         // 2. Initial real GET request authenticated as $this->owner for $this->company
         $getResponse = $this->actingAs($this->owner)

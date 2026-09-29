@@ -105,24 +105,26 @@ class CompanyRoleService
         setPermissionsTeamId($company->id);
         app(PermissionRegistrar::class)->setPermissionsTeamId($company->id);
 
-        $allPermissions = Permission::where('guard_name', 'web')->get();
-        $permissionsByKey = $allPermissions->keyBy('name');
+        $catalogPermissions = Permission::where('guard_name', 'web')
+            ->whereIn('name', self::PERMISSIONS)
+            ->get();
+        $permissionsByKey = $catalogPermissions->keyBy('name');
 
-        // 1. Owner: Company-scoped role with all permissions
+        // 1. Owner: Company-scoped role with all catalog permissions
         $ownerRole = Role::firstOrCreate([
             'company_id' => $company->id,
             'name' => 'Owner',
             'guard_name' => 'web',
         ]);
-        $ownerRole->syncPermissions($allPermissions);
+        $ownerRole->syncPermissions($catalogPermissions);
 
-        // 2. Administrator: All permissions
+        // 2. Administrator: All catalog permissions
         $adminRole = Role::firstOrCreate([
             'company_id' => $company->id,
             'name' => 'Administrator',
             'guard_name' => 'web',
         ]);
-        $adminRole->syncPermissions($allPermissions);
+        $adminRole->syncPermissions($catalogPermissions);
 
         // 3. Manager: Operational + view settings + reports, no role management
         $managerPerms = [
@@ -145,7 +147,7 @@ class CompanyRoleService
             'guard_name' => 'web',
         ]);
         $managerRole->syncPermissions(
-            $allPermissions->filter(fn ($p) => in_array($p->name, $managerPerms, true))
+            $catalogPermissions->filter(fn ($p) => in_array($p->name, $managerPerms, true))
         );
 
         // 4. Sales: Invoicing, quotes, customers, stock view, receipts
@@ -163,7 +165,7 @@ class CompanyRoleService
             'guard_name' => 'web',
         ]);
         $salesRole->syncPermissions(
-            $allPermissions->filter(fn ($p) => in_array($p->name, $salesPerms, true))
+            $catalogPermissions->filter(fn ($p) => in_array($p->name, $salesPerms, true))
         );
 
         // 5. Purchasing: Purchases, vendors, stock view, vendor payments
@@ -180,7 +182,7 @@ class CompanyRoleService
             'guard_name' => 'web',
         ]);
         $purchasingRole->syncPermissions(
-            $allPermissions->filter(fn ($p) => in_array($p->name, $purchasingPerms, true))
+            $catalogPermissions->filter(fn ($p) => in_array($p->name, $purchasingPerms, true))
         );
 
         // 6. Warehouse: Stock adjust, transfer, product manage
@@ -193,7 +195,7 @@ class CompanyRoleService
             'guard_name' => 'web',
         ]);
         $warehouseRole->syncPermissions(
-            $allPermissions->filter(fn ($p) => in_array($p->name, $warehousePerms, true))
+            $catalogPermissions->filter(fn ($p) => in_array($p->name, $warehousePerms, true))
         );
 
         // 7. Cashier: Invoicing create/view, receipts, cash view
@@ -210,7 +212,7 @@ class CompanyRoleService
             'guard_name' => 'web',
         ]);
         $cashierRole->syncPermissions(
-            $allPermissions->filter(fn ($p) => in_array($p->name, $cashierPerms, true))
+            $catalogPermissions->filter(fn ($p) => in_array($p->name, $cashierPerms, true))
         );
 
         // 8. Viewer: Read-only permissions across modules
@@ -227,7 +229,7 @@ class CompanyRoleService
             'guard_name' => 'web',
         ]);
         $viewerRole->syncPermissions(
-            $allPermissions->filter(fn ($p) => in_array($p->name, $viewerPerms, true))
+            $catalogPermissions->filter(fn ($p) => in_array($p->name, $viewerPerms, true))
         );
     }
 }

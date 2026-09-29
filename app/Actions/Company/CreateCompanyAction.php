@@ -2,6 +2,7 @@
 
 namespace App\Actions\Company;
 
+use App\Exceptions\CompanyReassignmentException;
 use App\Models\Company;
 use App\Models\CompanyCurrency;
 use App\Models\CompanyDocumentSettings;
@@ -12,6 +13,7 @@ use App\Models\CompanyUser;
 use App\Models\User;
 use App\Services\Audit\AuditService;
 use App\Services\Tenancy\CompanyRoleService;
+use App\Support\Tenancy\CompanyContext;
 use App\Support\Tenancy\CompanyScope;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -33,6 +35,11 @@ class CreateCompanyAction
      */
     public function execute(User $owner, array $data): Company
     {
+        $context = app(CompanyContext::class);
+        if ($context->hasCompany()) {
+            throw new CompanyReassignmentException("Cannot create a new company while an active company context [{$context->companyId()}] exists. Clear active context before creating a company.");
+        }
+
         $baseCurrency = strtoupper((string) ($data['base_currency_code'] ?? 'ILS'));
         if (! in_array($baseCurrency, ['ILS', 'USD', 'JOD'], true)) {
             throw new InvalidArgumentException("Base currency must be one of ILS, USD, JOD. '{$baseCurrency}' given.");

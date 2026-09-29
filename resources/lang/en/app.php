@@ -6,11 +6,11 @@ return [
     'main_branch' => 'Main Branch',
     'branch_location' => 'Ramallah',
     'accounting_server_online' => 'Accounting Engine: Connected',
-    'phase_zero_preview' => 'Phase 0 interface preview',
+    'phase_zero_preview' => 'System interface preview',
     'open_navigation' => 'Open navigation',
-    'dashboard_phase0_desc' => 'The workspace is ready. Business data arrives in later phases.',
-    'dashboard_phase0_notice' => 'The settings page shows the approved visual proof. There is no live financial or inventory data in this phase.',
-    'version' => 'Phase 0',
+    'dashboard_phase0_desc' => 'The workspace is ready. Business modules will become available soon.',
+    'dashboard_phase0_notice' => 'The settings page allows managing your company profile, localization, currencies, and members.',
+    'version' => 'v1.0',
 
     // Navigation groups & items
     'nav_dashboard' => 'Dashboard',
@@ -45,6 +45,6 @@ return [
     'login' => 'Log In',
     'switch_language' => 'العربية',
     'current_language' => 'English',
-    'future_module_notice' => 'This module is not active in Phase 0',
-    'demo_indicator' => 'Demo Presentation — Phase 0',
+    'future_module_notice' => 'This module is currently unavailable (coming soon)',
+    'demo_indicator' => 'Preview',
 ];

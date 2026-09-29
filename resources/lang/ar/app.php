@@ -6,11 +6,11 @@ return [
     'main_branch' => 'الفرع الرئيسي',
     'branch_location' => 'رام الله',
     'accounting_server_online' => 'سيرفر المحاسبة: متصل',
-    'phase_zero_preview' => 'معاينة واجهة المرحلة 0',
+    'phase_zero_preview' => 'معاينة واجهة النظام',
     'open_navigation' => 'فتح قائمة التنقل',
-    'dashboard_phase0_desc' => 'مساحة العمل جاهزة، وتبدأ بيانات الأعمال في المراحل اللاحقة.',
-    'dashboard_phase0_notice' => 'تعرض صفحة الإعدادات معاينة التصميم المعتمد. لا توجد بيانات مالية أو مخزنية فعلية في هذه المرحلة.',
-    'version' => 'المرحلة 0',
+    'dashboard_phase0_desc' => 'مساحة العمل جاهزة، وستتاح وحدات الأعمال قريباً.',
+    'dashboard_phase0_notice' => 'تتيح لك صفحة الإعدادات إدارة بيانات المنشأة، واللغات، والعملات، وفريق العمل.',
+    'version' => 'v1.0',
 
     // Navigation groups & items
     'nav_dashboard' => 'الرئيسية',
@@ -45,6 +45,6 @@ return [
     'login' => 'تسجيل الدخول',
     'switch_language' => 'English',
     'current_language' => 'العربية',
-    'future_module_notice' => 'هذه الوحدة غير مفعّلة في المرحلة 0 (Phase 0)',
-    'demo_indicator' => 'عرض توضيحي — Phase 0',
+    'future_module_notice' => 'هذه الوحدة غير متاحة حالياً (قريباً)',
+    'demo_indicator' => 'عرض توضيحي',
 ];

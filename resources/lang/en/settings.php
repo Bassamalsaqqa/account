@@ -1,8 +1,8 @@
 <?php
 
 return [
-    'phase0_proof_tag' => 'Phase 0 Visual Proof',
-    'phase0_proof_notice' => 'Static design preview for visual validation — live company settings activate in Phase 1.',
+    'phase0_proof_tag' => 'System Design Preview',
+    'phase0_proof_notice' => 'Interface design reference — company settings are fully managed below.',
     'breadcrumb_dashboard' => 'Dashboard',
     'breadcrumb_settings' => 'Settings',
     'title' => 'System Settings',
@@ -168,4 +168,11 @@ return [
     'error_user_email_already_registered' => 'A user with this email address already exists. This form only creates new accounts, and adding an existing account is currently unavailable.',
     'password_confirmation_required' => 'Password confirmation is required to perform this sensitive action. Please confirm your password to continue.',
     'confirm_password_action' => 'Confirm Password',
+    'company_languages' => 'Company Languages',
+    'always_enabled' => 'Always Enabled',
+    'default_company_language' => 'Default Company Language',
+    'timezone' => 'Timezone',
+    'status_enabled' => 'Enabled',
+    'status_disabled' => 'Disabled',
+    'error_language_disabled_for_company' => 'English is disabled for this company.',
 ];

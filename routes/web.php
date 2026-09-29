@@ -5,17 +5,28 @@ use App\Models\Company;
 use App\Support\Tenancy\CompanyContext;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
+use Illuminate\Validation\ValidationException;
 
 Route::get('/', function () {
     return redirect()->route('settings.index');
 });
 
-Route::post('locale', function (Request $request) {
+Route::post('locale', function (Request $request, CompanyContext $context) {
     $validated = $request->validate([
         'locale' => ['required', 'string', 'in:ar,en'],
     ]);
 
     $locale = $validated['locale'];
+
+    if ($context->hasCompany()) {
+        $company = $context->company();
+        if ($locale === 'en' && ! $company->isLanguageEnabled('en')) {
+            throw ValidationException::withMessages([
+                'locale' => __('settings.error_language_disabled_for_company'),
+            ]);
+        }
+    }
+
     session(['locale' => $locale]);
 
     if (auth()->check()) {

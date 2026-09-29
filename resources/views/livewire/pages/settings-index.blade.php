@@ -253,7 +253,7 @@
                                 <div class="min-w-0">
                                     <div class="flex items-center gap-1.5">
                                         <h4 class="text-xs font-extrabold text-text-muted">{{ __('settings.card_taxes_title') }}</h4>
-                                        <span class="text-[9px] px-1.5 py-0.5 rounded bg-slate-100 text-text-muted font-bold">{{ __('settings.future_phase_badge') }} 2</span>
+                                        <span class="text-[9px] px-1.5 py-0.5 rounded bg-slate-100 text-text-muted font-bold">{{ __('settings.future_phase_badge') }}</span>
                                     </div>
                                     <p class="text-[11px] text-text-muted mt-0.5 leading-snug">
                                         {{ __('settings.card_taxes_desc') }}
@@ -286,7 +286,7 @@
                                 <div class="min-w-0">
                                     <div class="flex items-center gap-1.5">
                                         <h4 class="text-xs font-extrabold text-text-muted">{{ __('settings.card_sales_title') }}</h4>
-                                        <span class="text-[9px] px-1.5 py-0.5 rounded bg-slate-100 text-text-muted font-bold">{{ __('settings.future_phase_badge') }} 4</span>
+                                        <span class="text-[9px] px-1.5 py-0.5 rounded bg-slate-100 text-text-muted font-bold">{{ __('settings.future_phase_badge') }}</span>
                                     </div>
                                     <p class="text-[11px] text-text-muted mt-0.5 leading-snug">{{ __('settings.card_sales_desc') }}</p>
                                 </div>
@@ -303,7 +303,7 @@
                                 <div class="min-w-0">
                                     <div class="flex items-center gap-1.5">
                                         <h4 class="text-xs font-extrabold text-text-muted">{{ __('settings.card_purchases_title') }}</h4>
-                                        <span class="text-[9px] px-1.5 py-0.5 rounded bg-slate-100 text-text-muted font-bold">{{ __('settings.future_phase_badge') }} 5</span>
+                                        <span class="text-[9px] px-1.5 py-0.5 rounded bg-slate-100 text-text-muted font-bold">{{ __('settings.future_phase_badge') }}</span>
                                     </div>
                                     <p class="text-[11px] text-text-muted mt-0.5 leading-snug">{{ __('settings.card_purchases_desc') }}</p>
                                 </div>
@@ -320,7 +320,7 @@
                                 <div class="min-w-0">
                                     <div class="flex items-center gap-1.5">
                                         <h4 class="text-xs font-extrabold text-text-muted">{{ __('settings.card_inventory_title') }}</h4>
-                                        <span class="text-[9px] px-1.5 py-0.5 rounded bg-slate-100 text-text-muted font-bold">{{ __('settings.future_phase_badge') }} 3</span>
+                                        <span class="text-[9px] px-1.5 py-0.5 rounded bg-slate-100 text-text-muted font-bold">{{ __('settings.future_phase_badge') }}</span>
                                     </div>
                                     <p class="text-[11px] text-text-muted mt-0.5 leading-snug">{{ __('settings.card_inventory_desc') }}</p>
                                 </div>
@@ -337,7 +337,7 @@
                                 <div class="min-w-0">
                                     <div class="flex items-center gap-1.5">
                                         <h4 class="text-xs font-extrabold text-text-muted">{{ __('settings.card_banking_title') }}</h4>
-                                        <span class="text-[9px] px-1.5 py-0.5 rounded bg-slate-100 text-text-muted font-bold">{{ __('settings.future_phase_badge') }} 2</span>
+                                        <span class="text-[9px] px-1.5 py-0.5 rounded bg-slate-100 text-text-muted font-bold">{{ __('settings.future_phase_badge') }}</span>
                                     </div>
                                     <p class="text-[11px] text-text-muted mt-0.5 leading-snug">{{ __('settings.card_banking_desc') }}</p>
                                 </div>
@@ -525,7 +525,7 @@
                                 <div class="min-w-0">
                                     <div class="flex items-center gap-1.5">
                                         <h4 class="text-xs font-extrabold text-text-muted">{{ __('settings.card_numbering_title') }}</h4>
-                                        <span class="text-[9px] px-1.5 py-0.5 rounded bg-slate-100 text-text-muted font-bold">{{ __('settings.future_phase_badge') }} 4</span>
+                                        <span class="text-[9px] px-1.5 py-0.5 rounded bg-slate-100 text-text-muted font-bold">{{ __('settings.future_phase_badge') }}</span>
                                     </div>
                                     <p class="text-[11px] text-text-muted mt-0.5 leading-snug">{{ __('settings.card_numbering_desc') }}</p>
                                 </div>
@@ -542,7 +542,7 @@
                                 <div class="min-w-0">
                                     <div class="flex items-center gap-1.5">
                                         <h4 class="text-xs font-extrabold text-text-muted">{{ __('settings.card_print_title') }}</h4>
-                                        <span class="text-[9px] px-1.5 py-0.5 rounded bg-slate-100 text-text-muted font-bold">{{ __('settings.future_phase_badge') }} 4</span>
+                                        <span class="text-[9px] px-1.5 py-0.5 rounded bg-slate-100 text-text-muted font-bold">{{ __('settings.future_phase_badge') }}</span>
                                     </div>
                                     <p class="text-[11px] text-text-muted mt-0.5 leading-snug">{{ __('settings.card_print_desc') }}</p>
                                 </div>
@@ -559,7 +559,7 @@
                                 <div class="min-w-0">
                                     <div class="flex items-center gap-1.5">
                                         <h4 class="text-xs font-extrabold text-text-muted">{{ __('settings.card_share_title') }}</h4>
-                                        <span class="text-[9px] px-1.5 py-0.5 rounded bg-slate-100 text-text-muted font-bold">{{ __('settings.future_phase_badge') }} 4</span>
+                                        <span class="text-[9px] px-1.5 py-0.5 rounded bg-slate-100 text-text-muted font-bold">{{ __('settings.future_phase_badge') }}</span>
                                     </div>
                                     <p class="text-[11px] text-text-muted mt-0.5 leading-snug">{{ __('settings.card_share_desc') }}</p>
                                 </div>
@@ -765,15 +765,46 @@
 
                     <form wire:submit="saveLocalization" class="space-y-4">
                         <div>
-                            <label class="block text-xs font-bold text-text-secondary mb-1">اللغة الافتراضية للمنشأة</label>
-                            <select wire:model="default_locale" class="w-full text-xs rounded-control border border-border p-2.5 bg-white">
-                                <option value="ar">العربية (Arabic - RTL)</option>
-                                <option value="en">English (LTR)</option>
-                            </select>
+                            <label class="block text-xs font-bold text-text-secondary mb-2">{{ __('settings.company_languages') }}</label>
+                            <div class="divide-y divide-border border border-border rounded-control p-3 bg-canvas/30 space-y-2">
+                                <div class="flex items-center justify-between py-1">
+                                    <div class="flex items-center gap-2">
+                                        <input type="checkbox" checked disabled class="rounded border-border text-primary opacity-60 w-4 h-4" />
+                                        <span class="text-xs font-bold text-text-primary">العربية (Arabic)</span>
+                                    </div>
+                                    <span class="text-[11px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                                        {{ __('settings.always_enabled') }}
+                                    </span>
+                                </div>
+
+                                <div class="flex items-center justify-between py-1 pt-2">
+                                    <div class="flex items-center gap-2">
+                                        <input type="checkbox" id="english_enabled" wire:model.live="english_enabled"
+                                               class="rounded border-border text-primary focus:ring-primary w-4 h-4 cursor-pointer" />
+                                        <label for="english_enabled" class="text-xs font-bold text-text-primary cursor-pointer">
+                                            English (الإنجليزية)
+                                        </label>
+                                    </div>
+                                    <span class="text-[11px] font-semibold {{ $english_enabled ? 'text-primary' : 'text-text-muted' }}">
+                                        {{ $english_enabled ? __('settings.status_enabled') : __('settings.status_disabled') }}
+                                    </span>
+                                </div>
+                            </div>
                         </div>
 
                         <div>
-                            <label class="block text-xs font-bold text-text-secondary mb-1">المنطقة الزمنية</label>
+                            <label class="block text-xs font-bold text-text-secondary mb-1">{{ __('settings.default_company_language') }}</label>
+                            <select wire:model="default_locale" class="w-full text-xs rounded-control border border-border p-2.5 bg-white">
+                                <option value="ar">العربية (Arabic - RTL)</option>
+                                @if ($english_enabled)
+                                    <option value="en">English (LTR)</option>
+                                @endif
+                            </select>
+                            <x-input-error :messages="$errors->get('default_locale')" class="mt-1" />
+                        </div>
+
+                        <div>
+                            <label class="block text-xs font-bold text-text-secondary mb-1">{{ __('settings.timezone') }}</label>
                             <select wire:model="timezone" class="w-full text-xs rounded-control border border-border p-2.5 bg-white font-mono text-[11px]">
                                 <option value="Asia/Hebron">Asia/Hebron (القدس / فلسطين - GMT+2/3)</option>
                                 <option value="Asia/Jerusalem">Asia/Jerusalem</option>
@@ -782,6 +813,7 @@
                                 <option value="Asia/Dubai">Asia/Dubai (الإمارات)</option>
                                 <option value="UTC">UTC (Universal Coordinated Time)</option>
                             </select>
+                            <x-input-error :messages="$errors->get('timezone')" class="mt-1" />
                         </div>
 
                         <div class="pt-3 border-t border-border flex justify-end">

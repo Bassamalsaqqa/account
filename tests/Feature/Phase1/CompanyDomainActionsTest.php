@@ -15,11 +15,13 @@ use App\Models\CompanyCurrency;
 use App\Models\CompanyLanguage;
 use App\Models\CompanyUser;
 use App\Models\User;
+use App\Services\Tenancy\CompanyRoleService;
 use App\Support\Tenancy\CompanyContext;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
 use InvalidArgumentException;
+use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 use Tests\TestCase;
 
@@ -80,7 +82,7 @@ class CompanyDomainActionsTest extends TestCase
     {
         $action = app(UpdateCompanyLocalizationAction::class);
 
-        $action->execute($this->company, 'en', 'Asia/Amman', $this->owner);
+        $action->execute($this->company, 'en', 'Asia/Amman', true, $this->owner);
 
         $this->company->refresh();
         $this->assertSame('en', $this->company->default_locale);
@@ -422,5 +424,54 @@ class CompanyDomainActionsTest extends TestCase
         // Verify state intact
         $this->assertSame('active', $secondOwner->fresh()->status);
         $this->assertSame($initialAuditCount, AuditEvent::where('company_id', $this->company->id)->count());
+    }
+
+    public function test_permission_catalog_is_authoritative_and_external_permissions_are_not_seeded(): void
+    {
+        // 1. Create an unexpected external permission in the global permissions table
+        $externalPermission = Permission::firstOrCreate([
+            'name' => 'unexpected.external.permission',
+            'guard_name' => 'web',
+        ]);
+
+        $roleService = app(CompanyRoleService::class);
+
+        // 2. Seed / reseed company roles
+        $roleService->seedCompanyRoles($this->company);
+
+        // 3. Inspect Owner and Administrator roles
+        setPermissionsTeamId($this->company->id);
+        $ownerRole = Role::where('company_id', $this->company->id)->where('name', 'Owner')->firstOrFail();
+        $adminRole = Role::where('company_id', $this->company->id)->where('name', 'Administrator')->firstOrFail();
+
+        $ownerPermNames = $ownerRole->permissions->pluck('name')->all();
+        $adminPermNames = $adminRole->permissions->pluck('name')->all();
+
+        // Assert external permission is NOT assigned to Owner or Administrator
+        $this->assertNotContains('unexpected.external.permission', $ownerPermNames);
+        $this->assertNotContains('unexpected.external.permission', $adminPermNames);
+
+        // Assert catalog permissions ARE assigned to Owner and Administrator
+        foreach (CompanyRoleService::PERMISSIONS as $expectedPerm) {
+            $this->assertContains($expectedPerm, $ownerPermNames);
+            $this->assertContains($expectedPerm, $adminPermNames);
+        }
+
+        // Assert exact count matches the blueprint catalog count
+        $this->assertCount(count(CompanyRoleService::PERMISSIONS), $ownerPermNames);
+        $this->assertCount(count(CompanyRoleService::PERMISSIONS), $adminPermNames);
+
+        // 4. Assert none of the other standard roles receive the external permission
+        $otherRoles = Role::where('company_id', $this->company->id)->whereNotIn('name', ['Owner', 'Administrator'])->get();
+        foreach ($otherRoles as $role) {
+            $this->assertNotContains('unexpected.external.permission', $role->permissions->pluck('name')->all());
+        }
+
+        // 5. Reseed again (idempotency check) and verify invariant persists
+        $roleService->seedCompanyRoles($this->company);
+        $ownerRole->refresh();
+        $adminRole->refresh();
+        $this->assertNotContains('unexpected.external.permission', $ownerRole->permissions->pluck('name')->all());
+        $this->assertNotContains('unexpected.external.permission', $adminRole->permissions->pluck('name')->all());
     }
 }

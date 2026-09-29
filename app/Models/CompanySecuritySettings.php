@@ -2,11 +2,14 @@
 
 namespace App\Models;
 
+use App\Support\Tenancy\BelongsToCompany;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class CompanySecuritySettings extends Model
 {
+    use BelongsToCompany;
+
     /**
      * @var string
      */

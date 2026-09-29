@@ -2,12 +2,18 @@
 
 namespace App\Http\Middleware;
 
+use App\Models\User;
+use App\Support\Tenancy\CompanyContext;
 use Closure;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
 
 class SetLocale
 {
+    public function __construct(
+        protected CompanyContext $context
+    ) {}
+
     /**
      * Handle an incoming request.
      *
@@ -15,21 +21,33 @@ class SetLocale
      */
     public function handle(Request $request, Closure $next): Response
     {
-        $locale = session('locale');
+        $preferredLocale = session('locale');
 
-        if (! $locale && auth()->check()) {
-            $locale = auth()->user()->locale;
+        if (! $preferredLocale && auth()->check()) {
+            /** @var User $user */
+            $user = auth()->user();
+            $preferredLocale = $user->locale;
         }
 
-        if (! $locale) {
-            $locale = config('app.locale', 'ar');
+        if (! $preferredLocale) {
+            $preferredLocale = config('app.locale', 'ar');
         }
 
-        if (! in_array($locale, ['ar', 'en'], true)) {
-            $locale = 'ar';
+        if (! in_array($preferredLocale, ['ar', 'en'], true)) {
+            $preferredLocale = 'ar';
         }
 
-        app()->setLocale($locale);
+        $effectiveLocale = $preferredLocale;
+
+        if ($this->context->hasCompany()) {
+            $company = $this->context->company();
+
+            if ($effectiveLocale === 'en' && ! $company->isLanguageEnabled('en')) {
+                $effectiveLocale = $company->default_locale ?: 'ar';
+            }
+        }
+
+        app()->setLocale($effectiveLocale);
 
         return $next($request);
     }

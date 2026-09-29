@@ -15,8 +15,8 @@ return Application::configure(basePath: dirname(__DIR__))
     )
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->web(append: [
-            SetLocale::class,
             SetCompanyContext::class,
+            SetLocale::class,
         ]);
 
         $middleware->alias([

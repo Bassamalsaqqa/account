@@ -2,6 +2,10 @@
 
 namespace App\Models;
 
+use App\Exceptions\CompanyReassignmentException;
+use App\Exceptions\NoActiveCompanyException;
+use App\Support\Tenancy\CompanyContext;
+use App\Support\Tenancy\CompanyScope;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Str;
@@ -44,12 +48,30 @@ class AuditEvent extends Model
 
     protected static function booted(): void
     {
+        static::addGlobalScope(new CompanyScope);
+
         static::creating(function (AuditEvent $event) {
             if (empty($event->public_id)) {
                 $event->public_id = (string) Str::ulid();
             }
             if (empty($event->created_at)) {
                 $event->created_at = now();
+            }
+
+            $context = app(CompanyContext::class);
+
+            if ($context->hasCompany()) {
+                $activeId = $context->companyId();
+
+                if (! empty($event->company_id) && (int) $event->company_id !== $activeId) {
+                    throw new CompanyReassignmentException("Mismatched company_id [{$event->company_id}] provided for active company [{$activeId}].");
+                }
+
+                if (empty($event->company_id)) {
+                    $event->company_id = $activeId;
+                }
+            } elseif (! CompanyScope::isBypassed()) {
+                throw new NoActiveCompanyException('Cannot create company-owned model ['.static::class.'] without active company context.');
             }
         });
 

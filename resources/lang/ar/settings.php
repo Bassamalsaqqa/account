@@ -1,8 +1,8 @@
 <?php
 
 return [
-    'phase0_proof_tag' => 'معاينة تصميم المرحلة 0',
-    'phase0_proof_notice' => 'نموذج واجهة ثابت للمصادقة البصرية — إعدادات المنشأة الحقيقية تُفعّل في المرحلة 1.',
+    'phase0_proof_tag' => 'معاينة تصميم النظام',
+    'phase0_proof_notice' => 'نموذج واجهة للمصادقة البصرية — إعدادات المنشأة الحالية مفعلة بالكامل.',
     'breadcrumb_dashboard' => 'لوحة التحكم',
     'breadcrumb_settings' => 'الإعدادات',
     'title' => 'إعدادات النظام',
@@ -168,4 +168,11 @@ return [
     'error_user_email_already_registered' => 'يوجد مستخدم مسجل بهذا البريد الإلكتروني مسبقاً. هذا النموذج مخصص لإنشاء حسابات جديدة فقط، وإضافة حساب مسجل مسبقاً غير متاحة حالياً.',
     'password_confirmation_required' => 'تأكيد كلمة المرور مطلوب لتنفيذ هذا الإجراء الحساس. يرجى تأكيد كلمة المرور للمتابعة.',
     'confirm_password_action' => 'تأكيد كلمة المرور',
+    'company_languages' => 'لغات المنشأة',
+    'always_enabled' => 'مفعّلة دائماً',
+    'default_company_language' => 'اللغة الافتراضية للمنشأة',
+    'timezone' => 'المنطقة الزمنية',
+    'status_enabled' => 'مفعّلة',
+    'status_disabled' => 'معطّلة',
+    'error_language_disabled_for_company' => 'اللغة الإنجليزية معطّلة لهذه المنشأة.',
 ];
