@@ -167,6 +167,13 @@ if [ ! -L "$PUBLIC_DIR" ]; then
     [ -f "$APP_DIR/public/robots.txt" ] && cp -p "$APP_DIR/public/robots.txt" "$PUBLIC_DIR/" || true
     [ -f "$APP_DIR/public/favicon.ico" ] && cp -p "$APP_DIR/public/favicon.ico" "$PUBLIC_DIR/" || true
 
+    # Preserve or configure Hostinger CloudLinux PHP 8.4 handler when on Hostinger
+    if [ -x "/opt/alt/php84/usr/bin/php" ] && [ -f "$PUBLIC_DIR/.htaccess" ]; then
+        if ! grep -q "x-httpd-alt-php84" "$PUBLIC_DIR/.htaccess"; then
+            sed -i '1s/^/<FilesMatch "\\.(php4|php5|php3|php2|php|phtml)$">\n    SetHandler application\/x-httpd-alt-php84\n<\/FilesMatch>\n\n/' "$PUBLIC_DIR/.htaccess"
+        fi
+    fi
+
     mkdir -p "$PUBLIC_DIR/build"
     cp -rp "$APP_DIR/public/build/"* "$PUBLIC_DIR/build/"
 fi

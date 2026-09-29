@@ -15,6 +15,12 @@ return [
     |
     */
 
+    'paths' => [
+        'password' => [
+            'confirm' => '/confirm-password',
+        ],
+    ],
+
     'guard' => 'web',
 
     /*

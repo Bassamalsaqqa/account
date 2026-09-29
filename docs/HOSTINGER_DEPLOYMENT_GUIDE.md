@@ -95,8 +95,15 @@ Follow these steps in exact chronological order on a clean server:
 ### Step 3.1: Switch Subdomain PHP Version to 8.4 & Verify CLI PHP
 1. In Hostinger hPanel, navigate to **Websites** → Select `palsync.net` (or manage subdomains).
 2. Go to **Advanced** → **PHP Configuration**.
-3. Select **PHP 8.4** and click **Update**.
-4. **Important distinction:** Web PHP (handled by LiteSpeed) and SSH CLI PHP may differ on Hostinger shared servers. In SSH, check your CLI version:
+3. Select **PHP 8.4** and click **Update** (if updating globally for the domain is desired).
+4. **Subdomain Isolation Note:** If the parent domain (`palsync.net`) hosts other active subdomains running on PHP 8.3, `account.palsync.net` can be safely isolated to PHP 8.4 without impacting sibling sites by setting the CloudLinux Alt-PHP handler in its document root (`public_html/account/.htaccess`):
+   ```apache
+   <FilesMatch "\.(php4|php5|php3|php2|php|phtml)$">
+       SetHandler application/x-httpd-alt-php84
+   </FilesMatch>
+   ```
+   The included `bin/deploy.sh` script automatically detects Hostinger's `/opt/alt/php84/usr/bin/php` and ensures this directive is preserved during public asset synchronization.
+5. **Important distinction:** Web PHP (handled by LiteSpeed/Apache) and SSH CLI PHP may differ on Hostinger shared servers. In SSH, check your CLI version:
    ```bash
    php -v
    ```
