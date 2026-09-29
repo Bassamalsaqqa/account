@@ -4,6 +4,7 @@ namespace Tests\Feature\Phase0;
 
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\URL;
 use Laravel\Fortify\TwoFactorAuthenticatable;
 use Tests\TestCase;
 
@@ -231,5 +232,51 @@ class Phase0FoundationTest extends TestCase
         $response = $this->actingAs($user)->get('/dev/ui');
         $response->assertOk();
         $response->assertSee('UI Specimen');
+    }
+
+    public function test_https_scheme_is_enforced_when_app_url_is_https(): void
+    {
+        config(['app.url' => 'https://account.palsync.net']);
+        URL::forceScheme('https');
+
+        $this->assertStringStartsWith('https://', url('/login'));
+    }
+
+    public function test_production_env_example_is_configured_for_hostinger_without_secrets(): void
+    {
+        $envPath = base_path('.env.production.example');
+        $this->assertFileExists($envPath);
+
+        $content = (string) file_get_contents($envPath);
+
+        $this->assertStringContainsString('APP_URL=https://account.palsync.net', $content);
+        $this->assertStringContainsString('REGISTRATION_ENABLED=false', $content);
+        $this->assertStringContainsString('SESSION_DRIVER=database', $content);
+        $this->assertStringContainsString('SESSION_SECURE_COOKIE=true', $content);
+        $this->assertStringContainsString('DB_HOST=127.0.0.1', $content);
+        $this->assertStringContainsString('APP_KEY=', $content);
+
+        // Verify database and secrets are strictly blank placeholders (not invented values)
+        $this->assertMatchesRegularExpression('/^APP_KEY=\s*$/m', $content);
+        $this->assertMatchesRegularExpression('/^DB_DATABASE=\s*$/m', $content);
+        $this->assertMatchesRegularExpression('/^DB_USERNAME=\s*$/m', $content);
+        $this->assertMatchesRegularExpression('/^DB_PASSWORD=\s*$/m', $content);
+
+        // Verify mail configuration requires explicit SMTP setup for password resets
+        $this->assertStringContainsString('MAIL_MAILER=smtp', $content);
+        $this->assertMatchesRegularExpression('/^MAIL_HOST=\s*$/m', $content);
+        $this->assertMatchesRegularExpression('/^MAIL_USERNAME=\s*$/m', $content);
+        $this->assertMatchesRegularExpression('/^MAIL_PASSWORD=\s*$/m', $content);
+    }
+
+    public function test_public_index_supports_shared_hosting_app_path_resolution(): void
+    {
+        $indexPath = public_path('index.php');
+        $this->assertFileExists($indexPath);
+
+        $content = (string) file_get_contents($indexPath);
+        $this->assertStringContainsString('LARAVEL_APP_PATH', $content);
+        $this->assertStringContainsString('usePublicPath', $content);
+        $this->assertStringContainsString('Configuration Error: Laravel application root not found', $content);
     }
 }
