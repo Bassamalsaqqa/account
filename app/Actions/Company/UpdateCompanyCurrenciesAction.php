@@ -5,11 +5,15 @@ declare(strict_types=1);
 namespace App\Actions\Company;
 
 use App\Domain\Accounting\Exceptions\BaseCurrencyLockedException;
+use App\Exceptions\CompanyReassignmentException;
+use App\Exceptions\NoActiveCompanyException;
 use App\Models\Company;
 use App\Models\CompanyCurrency;
+use App\Models\CompanyUser;
 use App\Models\PostingBatch;
 use App\Models\User;
 use App\Services\Audit\AuditService;
+use App\Support\Tenancy\CompanyContext;
 use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
 
@@ -24,6 +28,22 @@ class UpdateCompanyCurrenciesAction
      */
     public function execute(Company $company, string $baseCurrencyCode, array $currenciesEnabled, User $actor): Company
     {
+        $context = app(CompanyContext::class);
+
+        if (! $context->hasCompany()) {
+            throw new NoActiveCompanyException('Cannot update company currencies without an active company context.');
+        }
+
+        if ($context->companyId() !== $company->id) {
+            throw new CompanyReassignmentException("Cannot update company currencies for company [{$company->id}] when active company is [{$context->companyId()}].");
+        }
+
+        $contextUser = $context->user();
+        if ($contextUser === null || $actor->id !== $contextUser->id) {
+            $expectedId = $contextUser !== null ? (string) $contextUser->id : 'none';
+            throw new InvalidArgumentException("Supplied actor [{$actor->id}] does not match current authenticated or context user [{$expectedId}].");
+        }
+
         $baseCurrencyCode = strtoupper(trim($baseCurrencyCode));
         if (! in_array($baseCurrencyCode, ['ILS', 'USD', 'JOD'], true)) {
             throw new InvalidArgumentException("Base currency must be one of ILS, USD, JOD. '{$baseCurrencyCode}' given.");
@@ -38,6 +58,21 @@ class UpdateCompanyCurrenciesAction
             $lockedCompany = Company::where('id', $company->id)
                 ->lockForUpdate()
                 ->firstOrFail();
+
+            if ($lockedCompany->status !== 'active') {
+                throw new InvalidArgumentException("Cannot update company currencies for inactive company [{$lockedCompany->id}].");
+            }
+
+            // Lock and revalidate active persisted actor membership in target company
+            /** @var CompanyUser|null $member */
+            $member = CompanyUser::where('company_id', $lockedCompany->id)
+                ->where('user_id', $actor->id)
+                ->lockForUpdate()
+                ->first();
+
+            if ($member === null || $member->status !== 'active') {
+                throw new InvalidArgumentException("User [{$actor->id}] is not an active member of company [{$lockedCompany->id}].");
+            }
 
             $currentBase = strtoupper($lockedCompany->base_currency_code);
 

@@ -47,7 +47,7 @@ final readonly class PostingLineCommand
         }
 
         if ($hasCurrency && $hasAmount && $hasRate) {
-            if (! preg_match('/^[A-Z]{3}$/', (string) $this->transactionCurrencyCode)) {
+            if (! preg_match('/\A[A-Z]{3}\z/', (string) $this->transactionCurrencyCode)) {
                 throw new InvalidArgumentException("Line {$this->lineNumber} transactionCurrencyCode must be exactly 3 uppercase letters. Given: '{$this->transactionCurrencyCode}'.");
             }
 

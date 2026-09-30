@@ -95,13 +95,14 @@ class CompanyContext
      */
     public function clear(): void
     {
+        $user = $this->user();
+
         $this->activeCompany = null;
         $this->explicitUser = null;
 
         setPermissionsTeamId(null);
         app(PermissionRegistrar::class)->setPermissionsTeamId(null);
 
-        $user = $this->user();
         if ($user) {
             $user->unsetRelation('roles')->unsetRelation('permissions');
         }

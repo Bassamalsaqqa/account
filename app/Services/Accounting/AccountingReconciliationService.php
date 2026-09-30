@@ -43,36 +43,106 @@ class AccountingReconciliationService
 
         $execute = function () use ($company): ReconciliationReport {
             $violations = [];
-            $cid = $company->id;
-            $companyBase = strtoupper($company->base_currency_code);
 
-            // 1. Check System Accounts (must exist and be unique)
-            $requiredKeys = array_map(fn ($def) => $def->systemKey, SystemAccountsCatalog::all());
-            $accountsByKey = LedgerAccount::where('company_id', $cid)
-                ->whereNotNull('system_key')
-                ->select('system_key', DB::raw('count(*) as aggregate'))
-                ->groupBy('system_key')
-                ->pluck('aggregate', 'system_key')
-                ->all();
+            // Reload current persisted company state
+            /** @var Company $persistedCompany */
+            $persistedCompany = Company::where('id', $company->id)->firstOrFail();
+            $cid = $persistedCompany->id;
+            $companyBase = strtoupper($persistedCompany->base_currency_code);
 
-            foreach ($requiredKeys as $key) {
-                $count = $accountsByKey[$key] ?? 0;
-                if ($count === 0) {
-                    $violations[] = "Missing required system account with key [{$key}].";
-                } elseif ($count > 1) {
-                    $violations[] = "Duplicate system account key [{$key}] detected: {$count} accounts found.";
+            // 1. Currency Configuration Reconciliation (read-only)
+            $companyCurrencies = DB::table('company_currencies')
+                ->where('company_id', $cid)
+                ->get();
+
+            $standardCurrencies = ['ILS', 'USD', 'JOD'];
+            $configuredCodes = $companyCurrencies->pluck('currency_code')->map(fn ($c) => strtoupper((string) $c))->all();
+            foreach ($standardCurrencies as $sc) {
+                if (! in_array($sc, $configuredCodes, true)) {
+                    $violations[] = "Currency configuration error: missing standard currency row [{$sc}] for company [{$cid}].";
                 }
             }
 
-            // 2. Canonical Chart Hierarchy & Cross-Company Parent Leaks
+            $baseCurrencies = $companyCurrencies->filter(fn ($c) => (bool) $c->is_base);
+            if ($baseCurrencies->isEmpty()) {
+                $violations[] = "Currency configuration error: company [{$cid}] has no base currency flag.";
+            } elseif ($baseCurrencies->count() > 1) {
+                $violations[] = "Currency configuration error: company [{$cid}] has multiple base currency flags ({$baseCurrencies->count()}).";
+            }
+
+            foreach ($baseCurrencies as $flaggedBase) {
+                if (strtoupper((string) $flaggedBase->currency_code) !== $companyBase) {
+                    $violations[] = "Currency configuration mismatch: currency [{$flaggedBase->currency_code}] is flagged as base, but company base is [{$companyBase}].";
+                }
+            }
+
+            $baseRow = $companyCurrencies->first(fn ($c) => strtoupper((string) $c->currency_code) === $companyBase);
+            if ($baseRow === null) {
+                $violations[] = "Currency configuration error: missing base currency row [{$companyBase}] for company [{$cid}].";
+            } else {
+                if (! (bool) $baseRow->enabled) {
+                    $violations[] = "Currency configuration error: base currency [{$companyBase}] is disabled for company [{$cid}].";
+                }
+                if (! (bool) $baseRow->is_base) {
+                    $violations[] = "Currency configuration error: base currency row [{$companyBase}] is not flagged as base for company [{$cid}].";
+                }
+            }
+
+            // 2. Canonical System Accounts & Semantics (existence, uniqueness, and semantic conformity)
+            $accountsBySystemKey = LedgerAccount::where('company_id', $cid)
+                ->whereNotNull('system_key')
+                ->get()
+                ->groupBy('system_key');
+
             $allAccounts = LedgerAccount::where('company_id', $cid)->get()->keyBy('system_key');
+
             foreach (SystemAccountsCatalog::all() as $def) {
-                if (! isset($allAccounts[$def->systemKey])) {
+                $matching = $accountsBySystemKey->get($def->systemKey);
+                $count = $matching ? $matching->count() : 0;
+
+                if ($count === 0) {
+                    $violations[] = "Missing required system account with key [{$def->systemKey}].";
+
                     continue;
                 }
-                $acct = $allAccounts[$def->systemKey];
+
+                if ($count > 1) {
+                    $violations[] = "Duplicate system account key [{$def->systemKey}] detected: {$count} accounts found.";
+                }
+
+                /** @var LedgerAccount $acct */
+                $acct = $matching->first();
+
+                if ((int) $acct->company_id !== (int) $cid) {
+                    $violations[] = "System account [{$def->systemKey}] company_id mismatch: expected [{$cid}], found [{$acct->company_id}].";
+                }
+
+                if ($acct->code !== $def->code) {
+                    $violations[] = "System account [{$def->systemKey}] code mismatch: expected [{$def->code}], found [{$acct->code}].";
+                }
+
+                if ($acct->account_type !== $def->accountType) {
+                    $violations[] = "System account [{$def->systemKey}] account_type mismatch: expected [{$def->accountType}], found [{$acct->account_type}].";
+                }
+
+                if ($acct->normal_balance !== $def->normalBalance) {
+                    $violations[] = "System account [{$def->systemKey}] normal_balance mismatch: expected [{$def->normalBalance}], found [{$acct->normal_balance}].";
+                }
+
+                if ((bool) $acct->is_control !== $def->isControl) {
+                    $violations[] = "System account [{$def->systemKey}] is_control mismatch: expected [".($def->isControl ? 'true' : 'false').'], found ['.($acct->is_control ? 'true' : 'false').'].';
+                }
+
+                if (! (bool) $acct->is_system) {
+                    $violations[] = "System account [{$def->systemKey}] is_system mismatch: expected [true], found [false].";
+                }
+
+                if (! (bool) $acct->active) {
+                    $violations[] = "System account [{$def->systemKey}] is inactive, but required system accounts must be active.";
+                }
+
                 if ($def->parentSystemKey !== null) {
-                    $parent = $allAccounts[$def->parentSystemKey] ?? null;
+                    $parent = $allAccounts->get($def->parentSystemKey);
                     if ($parent === null || (int) $acct->parent_id !== (int) $parent->id) {
                         $violations[] = "System account [{$def->systemKey}] hierarchy mismatch: expected parent [{$def->parentSystemKey}], found parent_id [{$acct->parent_id}].";
                     }
@@ -393,13 +463,50 @@ class AccountingReconciliationService
                 $violations[] = "Duplicate idempotency key [{$dup->idempotency_key}] found with {$dup->cnt} occurrences.";
             }
 
+            // 10. Exchange Rate Integrity Check (read-only)
+            $rateRows = DB::table('exchange_rates')->where('company_id', $cid)->get();
+            $creatorIds = $rateRows->pluck('created_by')->filter()->unique()->all();
+            $validCreatorIds = empty($creatorIds)
+                ? []
+                : DB::table('users')->whereIn('id', $creatorIds)->pluck('id')->all();
+
+            foreach ($rateRows as $rateRow) {
+                $rawBase = (string) $rateRow->base_currency_code;
+                $rawCurr = (string) $rateRow->currency_code;
+
+                if (! preg_match('/\A[A-Z]{3}\z/', $rawBase) || ! preg_match('/\A[A-Z]{3}\z/', $rawCurr)) {
+                    $violations[] = "Invalid exchange rate [{$rateRow->id}]: currency code [{$rawBase}] or [{$rawCurr}] is malformed.";
+                }
+
+                if (! in_array($rawBase, ['ILS', 'USD', 'JOD'], true)) {
+                    $violations[] = "Invalid exchange rate [{$rateRow->id}]: base currency [{$rawBase}] is outside supported historical currencies (ILS, USD, JOD).";
+                }
+
+                if ($rawBase === $rawCurr) {
+                    $violations[] = "Invalid exchange rate [{$rateRow->id}]: base currency [{$rawBase}] cannot equal quote currency [{$rawCurr}].";
+                }
+
+                try {
+                    $rateDec = BigDecimal::of((string) $rateRow->rate);
+                    if ($rateDec->isNegative() || $rateDec->isZero()) {
+                        $violations[] = "Invalid exchange rate [{$rateRow->id}]: rate [{$rateRow->rate}] must be strictly positive.";
+                    }
+                } catch (\Throwable) {
+                    $violations[] = "Invalid exchange rate [{$rateRow->id}]: rate [{$rateRow->rate}] is malformed.";
+                }
+
+                if ($rateRow->created_by === null || ! in_array($rateRow->created_by, $validCreatorIds, true)) {
+                    $violations[] = "Invalid exchange rate [{$rateRow->id}]: creator user [{$rateRow->created_by}] does not exist.";
+                }
+            }
+
             // Stats (strictly read-only)
             $batchCount = DB::table('posting_batches')->where('company_id', $cid)->count();
             $lineCount = DB::table('posting_lines')->where('company_id', $cid)->count();
             $accountCount = DB::table('ledger_accounts')->where('company_id', $cid)->count();
 
             return new ReconciliationReport(
-                company: $company,
+                company: $persistedCompany,
                 isHealthy: empty($violations),
                 violations: $violations,
                 stats: [

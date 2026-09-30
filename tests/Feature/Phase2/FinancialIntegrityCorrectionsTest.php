@@ -8,6 +8,7 @@ use App\Actions\Accounting\EnsureSystemLedgerAccountsAction;
 use App\Actions\Company\CreateCompanyAction;
 use App\Actions\Company\UpdateCompanyCurrenciesAction;
 use App\Domain\Accounting\Exceptions\BaseCurrencyLockedException;
+use App\Domain\Accounting\Exceptions\SystemAccountConflictException;
 use App\Domain\Money\Exceptions\UnresolvedExchangeRateException;
 use App\Domain\Money\ValueObjects\ExchangeRate;
 use App\Domain\Money\ValueObjects\MoneyAmount;
@@ -16,6 +17,7 @@ use App\Domain\Posting\DTO\PostingLineCommand;
 use App\Domain\Posting\Exceptions\IdempotencyConflictException;
 use App\Domain\Posting\Exceptions\PostingValidationException;
 use App\Domain\Posting\Exceptions\ReversalException;
+use App\Exceptions\CompanyReassignmentException;
 use App\Exceptions\NoActiveCompanyException;
 use App\Livewire\Pages\SettingsIndex;
 use App\Models\AuditEvent;
@@ -1334,5 +1336,869 @@ class FinancialIntegrityCorrectionsTest extends TestCase
         // Assert strictly zero DB mutations
         $this->assertEquals($batchesBefore, DB::table('posting_batches')->get()->toArray());
         $this->assertEquals($linesBefore, DB::table('posting_lines')->get()->toArray());
+    }
+
+    // =========================================================================
+    // Final Invariants Tests (20260930-pr2-final-invariants-correction)
+    // =========================================================================
+
+    public function test_record_rate_stale_model_uses_locked_persisted_base_and_rejects_old_base(): void
+    {
+        // 1. Initially, company base is ILS. In memory $this->company->base_currency_code is 'ILS'.
+        // Update DB company to base USD (legitimate pre-posting change)
+        DB::table('companies')->where('id', $this->company->id)->update(['base_currency_code' => 'USD']);
+        DB::table('company_currencies')->where('company_id', $this->company->id)->update(['is_base' => false]);
+        DB::table('company_currencies')->where('company_id', $this->company->id)->where('currency_code', 'USD')->update(['is_base' => true]);
+
+        // Attempting to record rate for current base (USD) using stale model fails
+        $rateCountBefore = DB::table('exchange_rates')->where('company_id', $this->company->id)->count();
+        try {
+            $this->rateService->recordRate($this->company, 'USD', '1.0000000000', createdBy: $this->user);
+            $this->fail('Should not record rate for current persisted base currency');
+        } catch (InvalidArgumentException $e) {
+            $this->assertStringContainsString('Cannot record exchange rate for company base currency [USD]', $e->getMessage());
+        }
+        $this->assertSame($rateCountBefore, DB::table('exchange_rates')->where('company_id', $this->company->id)->count());
+
+        // Recording rate for former base (ILS) succeeds with locked base USD
+        $rate = $this->rateService->recordRate($this->company, 'ILS', '3.5000000000', createdBy: $this->user);
+        $this->assertSame('USD', $rate->base_currency_code);
+        $this->assertSame('ILS', $rate->currency_code);
+        $this->assertSame('3.5000000000', (string) $rate->rate);
+    }
+
+    public function test_record_rate_validates_disabled_currency_inactive_member_and_source(): void
+    {
+        $rateCountBefore = DB::table('exchange_rates')->where('company_id', $this->company->id)->count();
+
+        // 1. Disabled currency
+        DB::table('company_currencies')->where('company_id', $this->company->id)->where('currency_code', 'JOD')->update(['enabled' => false]);
+        try {
+            $this->rateService->recordRate($this->company, 'JOD', '0.7000000000', createdBy: $this->user);
+            $this->fail('Should not record rate for disabled currency');
+        } catch (InvalidArgumentException $e) {
+            $this->assertStringContainsString('Currency [JOD] is not enabled', $e->getMessage());
+        }
+        $this->assertSame($rateCountBefore, DB::table('exchange_rates')->where('company_id', $this->company->id)->count());
+
+        // 2. Inactive membership
+        DB::table('company_user')->where('company_id', $this->company->id)->where('user_id', $this->user->id)->update(['status' => 'inactive']);
+        try {
+            $this->rateService->recordRate($this->company, 'USD', '3.5000000000', createdBy: $this->user);
+            $this->fail('Should not record rate for inactive member');
+        } catch (InvalidArgumentException $e) {
+            $this->assertStringContainsString('is not an active member', $e->getMessage());
+        }
+        $this->assertSame($rateCountBefore, DB::table('exchange_rates')->where('company_id', $this->company->id)->count());
+
+        // Restore member status
+        DB::table('company_user')->where('company_id', $this->company->id)->where('user_id', $this->user->id)->update(['status' => 'active']);
+
+        // 3. Actor mismatch
+        $otherUser = User::factory()->create();
+        try {
+            $this->rateService->recordRate($this->company, 'USD', '3.5000000000', createdBy: $otherUser);
+            $this->fail('Should not record rate with mismatched actor');
+        } catch (InvalidArgumentException $e) {
+            $this->assertStringContainsString('conflicts with authenticated user', $e->getMessage());
+        }
+        $this->assertSame($rateCountBefore, DB::table('exchange_rates')->where('company_id', $this->company->id)->count());
+
+        // 4. Source validation: empty, oversize, uppercase, special characters
+        $badSources = ['', str_repeat('a', 33), 'MANUAL', 'manual@source', ' manual '];
+        foreach ($badSources as $badSource) {
+            try {
+                $this->rateService->recordRate($this->company, 'USD', '3.5000000000', createdBy: $this->user, source: $badSource);
+                $this->fail("Should reject invalid source [{$badSource}]");
+            } catch (InvalidArgumentException $e) {
+                $this->assertStringContainsString('Invalid exchange rate source', $e->getMessage());
+            }
+        }
+        $this->assertSame($rateCountBefore, DB::table('exchange_rates')->where('company_id', $this->company->id)->count());
+
+        // 5. Valid custom source succeeds
+        $validRate = $this->rateService->recordRate($this->company, 'USD', '3.6500000000', createdBy: $this->user, source: 'manual-reuters_01');
+        $this->assertSame('manual-reuters_01', $validRate->source);
+    }
+
+    public function test_resolve_rate_uses_current_persisted_base_and_preserves_historical_rates(): void
+    {
+        // 1. Record historical rate when base is ILS
+        $rate1 = $this->rateService->recordRate($this->company, 'USD', '3.5000000000', createdBy: $this->user);
+        $this->assertSame('ILS', $rate1->base_currency_code);
+
+        // 2. Change base to USD legitimately before any posting
+        DB::table('companies')->where('id', $this->company->id)->update(['base_currency_code' => 'USD']);
+        DB::table('company_currencies')->where('company_id', $this->company->id)->update(['is_base' => false]);
+        DB::table('company_currencies')->where('company_id', $this->company->id)->where('currency_code', 'USD')->update(['is_base' => true]);
+
+        // Record new rate under USD base
+        $rate2 = $this->rateService->recordRate($this->company, 'ILS', '3.6000000000', createdBy: $this->user);
+        $this->assertSame('USD', $rate2->base_currency_code);
+
+        // Resolving current base USD against stale $this->company (which has base_currency_code = 'ILS') returns exact 1
+        $resolvedUsd = $this->rateService->resolveRate($this->company, 'USD');
+        $this->assertTrue($resolvedUsd->isOne());
+
+        // Resolving ILS uses reloaded persisted base USD
+        $resolvedIls = $this->rateService->resolveRate($this->company, 'ILS');
+        $this->assertSame('3.6000000000', $resolvedIls->toDecimalString());
+
+        // Historical rate record with base ILS remains preserved in DB
+        $historical = DB::table('exchange_rates')->where('id', $rate1->id)->first();
+        $this->assertNotNull($historical);
+        $this->assertSame('ILS', $historical->base_currency_code);
+    }
+
+    public function test_company_currency_invariant_and_posting_rejection_and_exact_retry(): void
+    {
+        // 1. Post a valid transaction when configuration is sound
+        $validCmd = new PostingCommand(
+            company: $this->company,
+            postingDate: now(),
+            sourceType: 'sale',
+            sourceId: 5501,
+            transactionCurrencyCode: 'ILS',
+            baseCurrencyCode: 'ILS',
+            exchangeRate: ExchangeRate::one(),
+            idempotencyKey: 'idemp-currency-invariant-01',
+            postedBy: $this->user,
+            lines: [
+                PostingLineCommand::debit(1, $this->cashAccount->id, '100.000000'),
+                PostingLineCommand::credit(2, $this->revenueAccount->id, '100.000000'),
+            ]
+        );
+        $batch = $this->postingService->post($validCmd);
+        $this->assertNotNull($batch);
+
+        $initialBatchCount = DB::table('posting_batches')->where('company_id', $this->company->id)->count();
+
+        // 2. Raw corruption: Zero base flags
+        DB::table('company_currencies')->where('company_id', $this->company->id)->update(['is_base' => false]);
+
+        $newCmd = new PostingCommand(
+            company: $this->company,
+            postingDate: now(),
+            sourceType: 'sale',
+            sourceId: 5502,
+            transactionCurrencyCode: 'ILS',
+            baseCurrencyCode: 'ILS',
+            exchangeRate: ExchangeRate::one(),
+            idempotencyKey: 'idemp-currency-invariant-02',
+            postedBy: $this->user,
+            lines: [
+                PostingLineCommand::debit(1, $this->cashAccount->id, '50.000000'),
+                PostingLineCommand::credit(2, $this->revenueAccount->id, '50.000000'),
+            ]
+        );
+
+        try {
+            $this->postingService->post($newCmd);
+            $this->fail('Should reject new posting when zero base flags');
+        } catch (PostingValidationException $e) {
+            $this->assertStringContainsString('exactly one base currency must be configured', $e->getMessage());
+        }
+        $this->assertSame($initialBatchCount, DB::table('posting_batches')->where('company_id', $this->company->id)->count());
+
+        $report = $this->reconciler->reconcile($this->company);
+        $this->assertFalse($report->isHealthy);
+        $this->assertTrue(collect($report->violations)->contains(fn ($v) => str_contains($v, 'has no base currency flag')));
+
+        // 3. Exact idempotent retry remains valid even with corrupted mutable config!
+        $retriedBatch = $this->postingService->post($validCmd);
+        $this->assertSame($batch->id, $retriedBatch->id);
+
+        // 4. Raw corruption: Two base flags
+        DB::table('company_currencies')->where('company_id', $this->company->id)->update(['is_base' => true]);
+        try {
+            $this->postingService->post($newCmd);
+            $this->fail('Should reject new posting when multiple base flags');
+        } catch (PostingValidationException $e) {
+            $this->assertStringContainsString('exactly one base currency must be configured', $e->getMessage());
+        }
+        $report2 = $this->reconciler->reconcile($this->company);
+        $this->assertFalse($report2->isHealthy);
+        $this->assertTrue(collect($report2->violations)->contains(fn ($v) => str_contains($v, 'multiple base currency flags')));
+
+        // 5. Raw corruption: Disabled base row
+        DB::table('company_currencies')->where('company_id', $this->company->id)->update(['is_base' => false]);
+        DB::table('company_currencies')->where('company_id', $this->company->id)->where('currency_code', 'ILS')->update(['is_base' => true, 'enabled' => false]);
+        try {
+            $this->postingService->post($newCmd);
+            $this->fail('Should reject new posting when base is disabled');
+        } catch (PostingValidationException $e) {
+            $this->assertStringContainsString('is not properly configured or enabled', $e->getMessage());
+        }
+        $report3 = $this->reconciler->reconcile($this->company);
+        $this->assertFalse($report3->isHealthy);
+        $this->assertTrue(collect($report3->violations)->contains(fn ($v) => str_contains($v, 'base currency [ILS] is disabled')));
+
+        // 6. Raw corruption: Missing base row
+        DB::table('company_currencies')->where('company_id', $this->company->id)->where('currency_code', 'ILS')->delete();
+        try {
+            $this->postingService->post($newCmd);
+            $this->fail('Should reject new posting when base row is missing');
+        } catch (PostingValidationException $e) {
+            $this->assertTrue(
+                str_contains($e->getMessage(), 'Standard currency [ILS] is missing')
+                || str_contains($e->getMessage(), 'Company currency configuration is invalid')
+                || str_contains($e->getMessage(), 'is not properly configured or enabled')
+            );
+        }
+        $report4 = $this->reconciler->reconcile($this->company);
+        $this->assertFalse($report4->isHealthy);
+        $this->assertTrue(collect($report4->violations)->contains(fn ($v) => str_contains($v, 'missing base currency row [ILS]')));
+
+        // 7. Raw corruption: Single wrong base flag (USD flagged base instead of ILS)
+        // First restore ILS row without base flag
+        DB::table('company_currencies')->insert([
+            'company_id' => $this->company->id,
+            'currency_code' => 'ILS',
+            'enabled' => true,
+            'is_base' => false,
+            'display_order' => 1,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('company_currencies')->where('company_id', $this->company->id)->where('currency_code', 'USD')->update(['is_base' => true]);
+
+        try {
+            $this->postingService->post($newCmd);
+            $this->fail('Should reject new posting when wrong currency is flagged as base');
+        } catch (PostingValidationException $e) {
+            $this->assertStringContainsString('is not properly configured or enabled', $e->getMessage());
+        }
+        $this->assertSame($initialBatchCount, DB::table('posting_batches')->where('company_id', $this->company->id)->count());
+
+        $report5 = $this->reconciler->reconcile($this->company);
+        $this->assertFalse($report5->isHealthy);
+        $this->assertTrue(collect($report5->violations)->contains(fn ($v) => str_contains($v, 'currency [USD] is flagged as base, but company base is [ILS]')));
+        $this->assertTrue(collect($report5->violations)->contains(fn ($v) => str_contains($v, 'base currency row [ILS] is not flagged as base')));
+
+        // 8. Raw corruption: Missing non-base standard currency row (JOD deleted)
+        // Restore ILS as base
+        DB::table('company_currencies')->where('company_id', $this->company->id)->where('currency_code', 'USD')->update(['is_base' => false]);
+        DB::table('company_currencies')->where('company_id', $this->company->id)->where('currency_code', 'ILS')->update(['is_base' => true, 'enabled' => true]);
+        // Delete standard row JOD
+        DB::table('company_currencies')->where('company_id', $this->company->id)->where('currency_code', 'JOD')->delete();
+
+        try {
+            $this->postingService->post($newCmd);
+            $this->fail('Should reject new posting when non-base standard currency JOD is missing');
+        } catch (PostingValidationException $e) {
+            $this->assertStringContainsString('Standard currency [JOD] is missing', $e->getMessage());
+        }
+        $this->assertSame($initialBatchCount, DB::table('posting_batches')->where('company_id', $this->company->id)->count());
+
+        $report6 = $this->reconciler->reconcile($this->company);
+        $this->assertFalse($report6->isHealthy);
+        $this->assertTrue(collect($report6->violations)->contains(fn ($v) => str_contains($v, 'missing standard currency row [JOD]')));
+
+        // Exact retry still succeeds even with standard row missing!
+        $retriedBatch2 = $this->postingService->post($validCmd);
+        $this->assertSame($batch->id, $retriedBatch2->id);
+
+        // 9. Reconcile back to healthy 3-row config via UpdateCompanyCurrenciesAction
+        $this->currencyAction->execute($this->company, 'ILS', ['ILS' => true, 'USD' => true, 'JOD' => true], $this->user);
+        $healthyReport = $this->reconciler->reconcile($this->company);
+        $this->assertTrue($healthyReport->isHealthy);
+    }
+
+    public function test_record_rate_validates_company_currency_invariants_and_missing_standard_rows(): void
+    {
+        $initialRateCount = DB::table('exchange_rates')->where('company_id', $this->company->id)->count();
+        $initialPostingCount = DB::table('posting_batches')->where('company_id', $this->company->id)->count();
+
+        // 1. Duplicate base flag on requested currency (USD is_base = true while ILS is_base = true)
+        DB::table('company_currencies')->where('company_id', $this->company->id)->where('currency_code', 'USD')->update(['is_base' => true]);
+        try {
+            $this->rateService->recordRate($this->company, 'USD', '3.5000000000', createdBy: $this->user);
+            $this->fail('Should reject recordRate when duplicate base flags exist');
+        } catch (InvalidArgumentException $e) {
+            $this->assertStringContainsString('exactly one base currency must be configured', $e->getMessage());
+        }
+        $this->assertSame($initialRateCount, DB::table('exchange_rates')->where('company_id', $this->company->id)->count());
+        $this->assertSame($initialPostingCount, DB::table('posting_batches')->where('company_id', $this->company->id)->count());
+
+        // 2. Duplicate base flag on a third non-requested currency (JOD is_base = true while ILS is_base = true)
+        DB::table('company_currencies')->where('company_id', $this->company->id)->where('currency_code', 'USD')->update(['is_base' => false]);
+        DB::table('company_currencies')->where('company_id', $this->company->id)->where('currency_code', 'JOD')->update(['is_base' => true]);
+        try {
+            $this->rateService->recordRate($this->company, 'USD', '3.5000000000', createdBy: $this->user);
+            $this->fail('Should reject recordRate when third currency has duplicate base flag');
+        } catch (InvalidArgumentException $e) {
+            $this->assertStringContainsString('exactly one base currency must be configured', $e->getMessage());
+        }
+        $this->assertSame($initialRateCount, DB::table('exchange_rates')->where('company_id', $this->company->id)->count());
+        $this->assertSame($initialPostingCount, DB::table('posting_batches')->where('company_id', $this->company->id)->count());
+
+        // 3. Zero base flags
+        DB::table('company_currencies')->where('company_id', $this->company->id)->update(['is_base' => false]);
+        try {
+            $this->rateService->recordRate($this->company, 'USD', '3.5000000000', createdBy: $this->user);
+            $this->fail('Should reject recordRate when zero base flags exist');
+        } catch (InvalidArgumentException $e) {
+            $this->assertStringContainsString('exactly one base currency must be configured', $e->getMessage());
+        }
+        $this->assertSame($initialRateCount, DB::table('exchange_rates')->where('company_id', $this->company->id)->count());
+
+        // 4. Single wrong base flag (only USD is flagged base, ILS is not)
+        DB::table('company_currencies')->where('company_id', $this->company->id)->where('currency_code', 'USD')->update(['is_base' => true]);
+        try {
+            $this->rateService->recordRate($this->company, 'USD', '3.5000000000', createdBy: $this->user);
+            $this->fail('Should reject recordRate when wrong currency is flagged as base');
+        } catch (InvalidArgumentException $e) {
+            $this->assertStringContainsString('Base currency [ILS] configuration is invalid', $e->getMessage());
+        }
+        $this->assertSame($initialRateCount, DB::table('exchange_rates')->where('company_id', $this->company->id)->count());
+
+        // 5. Disabled base row
+        DB::table('company_currencies')->where('company_id', $this->company->id)->update(['is_base' => false]);
+        DB::table('company_currencies')->where('company_id', $this->company->id)->where('currency_code', 'ILS')->update(['is_base' => true, 'enabled' => false]);
+        try {
+            $this->rateService->recordRate($this->company, 'USD', '3.5000000000', createdBy: $this->user);
+            $this->fail('Should reject recordRate when base currency is disabled');
+        } catch (InvalidArgumentException $e) {
+            $this->assertStringContainsString('Base currency [ILS] configuration is invalid', $e->getMessage());
+        }
+        $this->assertSame($initialRateCount, DB::table('exchange_rates')->where('company_id', $this->company->id)->count());
+
+        // 6. Missing base row (ILS deleted)
+        DB::table('company_currencies')->where('company_id', $this->company->id)->where('currency_code', 'ILS')->delete();
+        try {
+            $this->rateService->recordRate($this->company, 'USD', '3.5000000000', createdBy: $this->user);
+            $this->fail('Should reject recordRate when base row is missing');
+        } catch (InvalidArgumentException $e) {
+            $this->assertTrue(
+                str_contains($e->getMessage(), 'Standard currency [ILS] is missing')
+                || str_contains($e->getMessage(), 'Base currency [ILS] configuration is invalid')
+            );
+        }
+        $this->assertSame($initialRateCount, DB::table('exchange_rates')->where('company_id', $this->company->id)->count());
+
+        // 7. Missing non-base standard row (restore ILS, delete JOD)
+        DB::table('company_currencies')->insert([
+            'company_id' => $this->company->id,
+            'currency_code' => 'ILS',
+            'enabled' => true,
+            'is_base' => true,
+            'display_order' => 1,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('company_currencies')->where('company_id', $this->company->id)->where('currency_code', 'JOD')->delete();
+        try {
+            $this->rateService->recordRate($this->company, 'USD', '3.5000000000', createdBy: $this->user);
+            $this->fail('Should reject recordRate when standard currency JOD is missing');
+        } catch (InvalidArgumentException $e) {
+            $this->assertStringContainsString('Standard currency [JOD] is missing', $e->getMessage());
+        }
+        $this->assertSame($initialRateCount, DB::table('exchange_rates')->where('company_id', $this->company->id)->count());
+        $this->assertSame($initialPostingCount, DB::table('posting_batches')->where('company_id', $this->company->id)->count());
+
+        // 8. Restore normal three-row configuration via UpdateCompanyCurrenciesAction and verify rate recording succeeds
+        $this->currencyAction->execute($this->company, 'ILS', ['ILS' => true, 'USD' => true, 'JOD' => true], $this->user);
+        $newRate = $this->rateService->recordRate($this->company, 'USD', '3.5500000000', createdBy: $this->user);
+        $this->assertSame('3.5500000000', (string) $newRate->rate);
+        $this->assertSame($initialRateCount + 1, DB::table('exchange_rates')->where('company_id', $this->company->id)->count());
+    }
+
+    public function test_update_company_currencies_action_domain_identity_guards(): void
+    {
+        $creator = app(CreateCompanyAction::class);
+        app(CompanyContext::class)->clear();
+        $companyB = $creator->execute($this->user, [
+            'name_ar' => 'شركة ثانية',
+            'base_currency_code' => 'USD',
+        ]);
+        app(CompanyContext::class)->setCompany($this->company, $this->user);
+
+        // 1. Context A, target B -> Reassignment exception
+        try {
+            $this->currencyAction->execute($companyB, 'USD', ['USD' => true, 'ILS' => true, 'JOD' => false], $this->user);
+            $this->fail('Should reject cross-company action');
+        } catch (CompanyReassignmentException $e) {
+            $this->assertStringContainsString('Cannot update company currencies for company', $e->getMessage());
+        }
+
+        // 2. Arbitrary supplied actor mismatch
+        $otherUser = User::factory()->create();
+        try {
+            $this->currencyAction->execute($this->company, 'ILS', ['ILS' => true, 'USD' => true, 'JOD' => false], $otherUser);
+            $this->fail('Should reject actor mismatch');
+        } catch (InvalidArgumentException $e) {
+            $this->assertStringContainsString('does not match current authenticated or context user', $e->getMessage());
+        }
+
+        // 3. Inactive member in target
+        DB::table('company_user')->where('company_id', $this->company->id)->where('user_id', $this->user->id)->update(['status' => 'inactive']);
+        try {
+            $this->currencyAction->execute($this->company, 'ILS', ['ILS' => true, 'USD' => true, 'JOD' => false], $this->user);
+            $this->fail('Should reject inactive member');
+        } catch (InvalidArgumentException $e) {
+            $this->assertStringContainsString('is not an active member', $e->getMessage());
+        }
+        DB::table('company_user')->where('company_id', $this->company->id)->where('user_id', $this->user->id)->update(['status' => 'active']);
+
+        // 4. No company context
+        app(CompanyContext::class)->clear();
+        try {
+            $this->currencyAction->execute($this->company, 'ILS', ['ILS' => true, 'USD' => true, 'JOD' => false], $this->user);
+            $this->fail('Should reject when no active company context');
+        } catch (NoActiveCompanyException $e) {
+            $this->assertStringContainsString('Cannot update company currencies without an active company context', $e->getMessage());
+        }
+
+        // 5. Successful owner action
+        app(CompanyContext::class)->setCompany($this->company, $this->user);
+        $updated = $this->currencyAction->execute($this->company, 'ILS', ['ILS' => true, 'USD' => true, 'JOD' => false], $this->user);
+        $this->assertSame('ILS', $updated->base_currency_code);
+    }
+
+    public function test_reconciliation_detects_system_account_semantics_and_provisioning_protects(): void
+    {
+        // 1. Wrong normal balance on sales_revenue
+        DB::table('ledger_accounts')->where('company_id', $this->company->id)->where('system_key', 'sales_revenue')->update([
+            'normal_balance' => LedgerAccount::BALANCE_DEBIT,
+        ]);
+        $ledgerBefore1a = DB::table('ledger_accounts')->get()->toArray();
+        $report1 = $this->reconciler->reconcile($this->company);
+        $this->assertEquals($ledgerBefore1a, DB::table('ledger_accounts')->get()->toArray());
+        $this->assertFalse($report1->isHealthy);
+        $this->assertTrue(collect($report1->violations)->contains(fn ($v) => str_contains($v, '[sales_revenue] normal_balance mismatch')));
+
+        $ledgerBefore1b = DB::table('ledger_accounts')->get()->toArray();
+        try {
+            $this->accountsAction->execute($this->company);
+            $this->fail('Provisioning should not overwrite semantic conflict silently');
+        } catch (SystemAccountConflictException $e) {
+            $this->assertStringContainsString('sales_revenue', $e->getMessage());
+        }
+        $this->assertEquals($ledgerBefore1b, DB::table('ledger_accounts')->get()->toArray());
+        DB::table('ledger_accounts')->where('company_id', $this->company->id)->where('system_key', 'sales_revenue')->update([
+            'normal_balance' => LedgerAccount::BALANCE_CREDIT,
+        ]);
+
+        // 2. Wrong account type on cash_control
+        DB::table('ledger_accounts')->where('company_id', $this->company->id)->where('system_key', 'cash_control')->update([
+            'account_type' => LedgerAccount::TYPE_LIABILITY,
+        ]);
+        $ledgerBefore2a = DB::table('ledger_accounts')->get()->toArray();
+        $report2 = $this->reconciler->reconcile($this->company);
+        $this->assertEquals($ledgerBefore2a, DB::table('ledger_accounts')->get()->toArray());
+        $this->assertFalse($report2->isHealthy);
+        $this->assertTrue(collect($report2->violations)->contains(fn ($v) => str_contains($v, '[cash_control] account_type mismatch')));
+
+        $ledgerBefore2b = DB::table('ledger_accounts')->get()->toArray();
+        try {
+            $this->accountsAction->execute($this->company);
+            $this->fail('Provisioning should not overwrite semantic conflict silently');
+        } catch (SystemAccountConflictException $e) {
+            $this->assertStringContainsString('cash_control', $e->getMessage());
+        }
+        $this->assertEquals($ledgerBefore2b, DB::table('ledger_accounts')->get()->toArray());
+        DB::table('ledger_accounts')->where('company_id', $this->company->id)->where('system_key', 'cash_control')->update([
+            'account_type' => LedgerAccount::TYPE_ASSET,
+        ]);
+
+        // 3. Altered code on salary_expense
+        DB::table('ledger_accounts')->where('company_id', $this->company->id)->where('system_key', 'salary_expense')->update([
+            'code' => '9999',
+        ]);
+        $ledgerBefore3a = DB::table('ledger_accounts')->get()->toArray();
+        $report3 = $this->reconciler->reconcile($this->company);
+        $this->assertEquals($ledgerBefore3a, DB::table('ledger_accounts')->get()->toArray());
+        $this->assertFalse($report3->isHealthy);
+        $this->assertTrue(collect($report3->violations)->contains(fn ($v) => str_contains($v, '[salary_expense] code mismatch')));
+
+        $ledgerBefore3b = DB::table('ledger_accounts')->get()->toArray();
+        try {
+            $this->accountsAction->execute($this->company);
+            $this->fail('Provisioning should not overwrite semantic conflict silently');
+        } catch (SystemAccountConflictException $e) {
+            $this->assertStringContainsString('salary_expense', $e->getMessage());
+        }
+        $this->assertEquals($ledgerBefore3b, DB::table('ledger_accounts')->get()->toArray());
+        DB::table('ledger_accounts')->where('company_id', $this->company->id)->where('system_key', 'salary_expense')->update([
+            'code' => '5202',
+        ]);
+
+        // 4. is_system = false on cogs
+        DB::table('ledger_accounts')->where('company_id', $this->company->id)->where('system_key', 'cogs')->update([
+            'is_system' => false,
+        ]);
+        $ledgerBefore4a = DB::table('ledger_accounts')->get()->toArray();
+        $report4 = $this->reconciler->reconcile($this->company);
+        $this->assertEquals($ledgerBefore4a, DB::table('ledger_accounts')->get()->toArray());
+        $this->assertFalse($report4->isHealthy);
+        $this->assertTrue(collect($report4->violations)->contains(fn ($v) => str_contains($v, '[cogs] is_system mismatch')));
+
+        $ledgerBefore4b = DB::table('ledger_accounts')->get()->toArray();
+        try {
+            $this->accountsAction->execute($this->company);
+            $this->fail('Provisioning should not overwrite semantic conflict silently');
+        } catch (SystemAccountConflictException $e) {
+            $this->assertStringContainsString('cogs', $e->getMessage());
+        }
+        $this->assertEquals($ledgerBefore4b, DB::table('ledger_accounts')->get()->toArray());
+        DB::table('ledger_accounts')->where('company_id', $this->company->id)->where('system_key', 'cogs')->update([
+            'is_system' => true,
+        ]);
+
+        // 5. Inactive required account on inventory
+        DB::table('ledger_accounts')->where('company_id', $this->company->id)->where('system_key', 'inventory')->update([
+            'active' => false,
+        ]);
+        $ledgerBefore5a = DB::table('ledger_accounts')->get()->toArray();
+        $report5 = $this->reconciler->reconcile($this->company);
+        $this->assertEquals($ledgerBefore5a, DB::table('ledger_accounts')->get()->toArray());
+        $this->assertFalse($report5->isHealthy);
+        $this->assertTrue(collect($report5->violations)->contains(fn ($v) => str_contains($v, '[inventory] is inactive')));
+
+        $ledgerBefore5b = DB::table('ledger_accounts')->get()->toArray();
+        try {
+            $this->accountsAction->execute($this->company);
+            $this->fail('Provisioning should not overwrite semantic conflict silently');
+        } catch (SystemAccountConflictException $e) {
+            $this->assertStringContainsString('inventory', $e->getMessage());
+        }
+        $this->assertEquals($ledgerBefore5b, DB::table('ledger_accounts')->get()->toArray());
+        DB::table('ledger_accounts')->where('company_id', $this->company->id)->where('system_key', 'inventory')->update([
+            'active' => true,
+        ]);
+    }
+
+    public function test_reconciliation_exchange_rate_integrity_and_historical_tolerance(): void
+    {
+        // 1. Valid historical rate with old base (e.g. USD when current base is ILS) is accepted
+        DB::table('exchange_rates')->insert([
+            'company_id' => $this->company->id,
+            'base_currency_code' => 'USD',
+            'currency_code' => 'ILS',
+            'rate' => '3.5000000000',
+            'effective_at' => now()->subDays(10),
+            'source' => 'manual',
+            'created_by' => $this->user->id,
+            'created_at' => now()->subDays(10),
+            'updated_at' => now()->subDays(10),
+        ]);
+
+        // 2. Valid rate for disabled currency (JOD disabled) is accepted
+        DB::table('company_currencies')->where('company_id', $this->company->id)->where('currency_code', 'JOD')->update(['enabled' => false]);
+        DB::table('exchange_rates')->insert([
+            'company_id' => $this->company->id,
+            'base_currency_code' => 'ILS',
+            'currency_code' => 'JOD',
+            'rate' => '0.2000000000',
+            'effective_at' => now()->subDays(5),
+            'source' => 'manual',
+            'created_by' => $this->user->id,
+            'created_at' => now()->subDays(5),
+            'updated_at' => now()->subDays(5),
+        ]);
+
+        // Healthy with both historical rates
+        $healthyReport = $this->reconciler->reconcile($this->company);
+        $this->assertTrue($healthyReport->isHealthy);
+
+        // 3. Bad rows: base == quote, rate <= 0, malformed codes, base outside ILS/USD/JOD
+        $badRows = [
+            [
+                'company_id' => $this->company->id,
+                'base_currency_code' => 'ILS',
+                'currency_code' => 'ILS',
+                'rate' => '1.0000000000',
+                'effective_at' => now(),
+                'source' => 'manual',
+                'created_by' => $this->user->id,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'company_id' => $this->company->id,
+                'base_currency_code' => 'ILS',
+                'currency_code' => 'USD',
+                'rate' => '0.0000000000',
+                'effective_at' => now(),
+                'source' => 'manual',
+                'created_by' => $this->user->id,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'company_id' => $this->company->id,
+                'base_currency_code' => 'EUR',
+                'currency_code' => 'USD',
+                'rate' => '1.1000000000',
+                'effective_at' => now(),
+                'source' => 'manual',
+                'created_by' => $this->user->id,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'company_id' => $this->company->id,
+                'base_currency_code' => 'ils', // raw lowercase base code
+                'currency_code' => 'USD',
+                'rate' => '3.5000000000',
+                'effective_at' => now(),
+                'source' => 'manual',
+                'created_by' => $this->user->id,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'company_id' => $this->company->id,
+                'base_currency_code' => 'ILS',
+                'currency_code' => 'Usd', // raw mixed-case quote code
+                'rate' => '3.5000000000',
+                'effective_at' => now(),
+                'source' => 'manual',
+                'created_by' => $this->user->id,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'company_id' => $this->company->id,
+                'base_currency_code' => 'ILS',
+                'currency_code' => 'U-D', // malformed non-alpha code
+                'rate' => '3.5000000000',
+                'effective_at' => now(),
+                'source' => 'manual',
+                'created_by' => $this->user->id,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'company_id' => $this->company->id,
+                'base_currency_code' => 'ILS',
+                'currency_code' => 'IL', // malformed 2-letter code
+                'rate' => '3.5000000000',
+                'effective_at' => now(),
+                'source' => 'manual',
+                'created_by' => $this->user->id,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+        ];
+
+        DB::table('exchange_rates')->insert($badRows);
+
+        $ratesBefore = DB::table('exchange_rates')->get()->toArray();
+        $unhealthyReport = $this->reconciler->reconcile($this->company);
+        $this->assertFalse($unhealthyReport->isHealthy);
+
+        $violations = collect($unhealthyReport->violations);
+        $this->assertTrue($violations->contains(fn ($v) => str_contains($v, 'base currency [ILS] cannot equal quote currency [ILS]')));
+        $this->assertTrue($violations->contains(fn ($v) => str_contains($v, 'rate [0.0000000000] must be strictly positive')));
+        $this->assertTrue($violations->contains(fn ($v) => str_contains($v, 'base currency [EUR] is outside supported historical currencies')));
+        $this->assertTrue($violations->contains(fn ($v) => str_contains($v, 'currency code [ils] or [USD] is malformed')));
+        $this->assertTrue($violations->contains(fn ($v) => str_contains($v, 'base currency [ils] is outside supported historical currencies')));
+        $this->assertTrue($violations->contains(fn ($v) => str_contains($v, 'currency code [ILS] or [Usd] is malformed')));
+        $this->assertTrue($violations->contains(fn ($v) => str_contains($v, 'currency code [ILS] or [U-D] is malformed')));
+        $this->assertTrue($violations->contains(fn ($v) => str_contains($v, 'currency code [ILS] or [IL] is malformed')));
+
+        // Strictly zero DB mutations during reconciliation
+        $this->assertEquals($ratesBefore, DB::table('exchange_rates')->get()->toArray());
+    }
+
+    public function test_company_context_clear_unsets_explicit_user_roles_and_permissions(): void
+    {
+        $explicitUser = User::factory()->create();
+        DB::table('company_user')->insert([
+            'company_id' => $this->company->id,
+            'user_id' => $explicitUser->id,
+            'status' => 'active',
+            'is_owner' => false,
+            'joined_at' => now(),
+            'last_accessed_at' => now(),
+        ]);
+        $context = app(CompanyContext::class);
+
+        $context->setCompany($this->company, $explicitUser);
+        $explicitUser->load(['roles', 'permissions']);
+        $this->assertTrue($explicitUser->relationLoaded('roles'));
+        $this->assertTrue($explicitUser->relationLoaded('permissions'));
+
+        $context->clear();
+
+        $this->assertFalse($context->hasCompany());
+        $this->assertNull(getPermissionsTeamId());
+        $this->assertFalse($explicitUser->relationLoaded('roles'));
+        $this->assertFalse($explicitUser->relationLoaded('permissions'));
+    }
+
+    public function test_posting_command_rejects_non_lowercase_source_types(): void
+    {
+        $badSources = ['Invoice', 'SALE', 'Sale', 'Sale_Order', 'Order!'];
+
+        foreach ($badSources as $badSource) {
+            try {
+                new PostingCommand(
+                    company: $this->company,
+                    postingDate: now(),
+                    sourceType: $badSource,
+                    sourceId: 7001,
+                    transactionCurrencyCode: 'ILS',
+                    baseCurrencyCode: 'ILS',
+                    exchangeRate: ExchangeRate::one(),
+                    idempotencyKey: 'test-src-'.Str::random(8),
+                    postedBy: $this->user,
+                    lines: [
+                        PostingLineCommand::debit(1, $this->cashAccount->id, '10.000000'),
+                        PostingLineCommand::credit(2, $this->revenueAccount->id, '10.000000'),
+                    ]
+                );
+                $this->fail("Expected PostingCommand to reject non-lowercase source type [{$badSource}]");
+            } catch (InvalidArgumentException $e) {
+                $this->assertStringContainsStringIgnoringCase('must be 1-64 lowercase alphanumeric', $e->getMessage());
+            }
+        }
+
+        // Valid lowercase source types succeed
+        $goodSources = ['invoice', 'sale', 'sale-order', 'pos_receipt_01'];
+        foreach ($goodSources as $goodSource) {
+            $cmd = new PostingCommand(
+                company: $this->company,
+                postingDate: now(),
+                sourceType: $goodSource,
+                sourceId: 7002,
+                transactionCurrencyCode: 'ILS',
+                baseCurrencyCode: 'ILS',
+                exchangeRate: ExchangeRate::one(),
+                idempotencyKey: 'test-src-'.Str::random(8),
+                postedBy: $this->user,
+                lines: [
+                    PostingLineCommand::debit(1, $this->cashAccount->id, '10.000000'),
+                    PostingLineCommand::credit(2, $this->revenueAccount->id, '10.000000'),
+                ]
+            );
+            $this->assertSame($goodSource, $cmd->sourceType);
+        }
+    }
+
+    public function test_strict_source_and_currency_anchoring_rejects_trailing_newlines(): void
+    {
+        // 1. PostingCommand sourceType with trailing newline
+        $newlineSources = ["sale\n", "invoice\r\n", "manual\n"];
+        foreach ($newlineSources as $ns) {
+            try {
+                new PostingCommand(
+                    company: $this->company,
+                    postingDate: now(),
+                    sourceType: $ns,
+                    sourceId: 7010,
+                    transactionCurrencyCode: 'ILS',
+                    baseCurrencyCode: 'ILS',
+                    exchangeRate: ExchangeRate::one(),
+                    idempotencyKey: 'test-newline-src-'.Str::random(8),
+                    postedBy: $this->user,
+                    lines: [
+                        PostingLineCommand::debit(1, $this->cashAccount->id, '10.000000'),
+                        PostingLineCommand::credit(2, $this->revenueAccount->id, '10.000000'),
+                    ]
+                );
+                $this->fail("Expected PostingCommand to reject sourceType with newline [{$ns}]");
+            } catch (InvalidArgumentException $e) {
+                $this->assertStringContainsString('Invalid sourceType', $e->getMessage());
+            }
+        }
+
+        // 2. PostingCommand transactionCurrencyCode with trailing newline
+        try {
+            new PostingCommand(
+                company: $this->company,
+                postingDate: now(),
+                sourceType: 'sale',
+                sourceId: 7011,
+                transactionCurrencyCode: "ILS\n",
+                baseCurrencyCode: 'ILS',
+                exchangeRate: ExchangeRate::one(),
+                idempotencyKey: 'test-newline-curr-'.Str::random(8),
+                postedBy: $this->user,
+                lines: [
+                    PostingLineCommand::debit(1, $this->cashAccount->id, '10.000000'),
+                    PostingLineCommand::credit(2, $this->revenueAccount->id, '10.000000'),
+                ]
+            );
+            $this->fail('Expected PostingCommand to reject transactionCurrencyCode with newline');
+        } catch (InvalidArgumentException $e) {
+            $this->assertStringContainsString('Invalid transactionCurrencyCode', $e->getMessage());
+        }
+
+        // 3. PostingCommand baseCurrencyCode with trailing newline
+        try {
+            new PostingCommand(
+                company: $this->company,
+                postingDate: now(),
+                sourceType: 'sale',
+                sourceId: 7012,
+                transactionCurrencyCode: 'ILS',
+                baseCurrencyCode: "ILS\n",
+                exchangeRate: ExchangeRate::one(),
+                idempotencyKey: 'test-newline-base-'.Str::random(8),
+                postedBy: $this->user,
+                lines: [
+                    PostingLineCommand::debit(1, $this->cashAccount->id, '10.000000'),
+                    PostingLineCommand::credit(2, $this->revenueAccount->id, '10.000000'),
+                ]
+            );
+            $this->fail('Expected PostingCommand to reject baseCurrencyCode with newline');
+        } catch (InvalidArgumentException $e) {
+            $this->assertStringContainsString('Invalid baseCurrencyCode', $e->getMessage());
+        }
+
+        // 4. PostingLineCommand transactionCurrencyCode with trailing newline
+        try {
+            PostingLineCommand::debit(
+                lineNumber: 1,
+                ledgerAccountId: $this->cashAccount->id,
+                amount: '10.000000',
+                transactionCurrencyCode: "USD\n",
+                transactionAmount: '2.500000',
+                exchangeRate: '4.0000000000'
+            );
+            $this->fail('Expected PostingLineCommand to reject line currency with newline');
+        } catch (InvalidArgumentException $e) {
+            $this->assertStringContainsString('transactionCurrencyCode must be exactly 3 uppercase letters', $e->getMessage());
+        }
+
+        // 5. ExchangeRateService source with trailing newline
+        $rateCountBefore = DB::table('exchange_rates')->where('company_id', $this->company->id)->count();
+        try {
+            $this->rateService->recordRate(
+                company: $this->company,
+                currencyCode: 'USD',
+                rate: '3.5000000000',
+                createdBy: $this->user,
+                source: "manual\n"
+            );
+            $this->fail('Expected recordRate to reject source with newline');
+        } catch (InvalidArgumentException $e) {
+            $this->assertStringContainsString('Invalid exchange rate source', $e->getMessage());
+        }
+        $this->assertSame($rateCountBefore, DB::table('exchange_rates')->where('company_id', $this->company->id)->count());
+
+        // 6. ExchangeRateService currencyCode with trailing newline
+        try {
+            $this->rateService->recordRate(
+                company: $this->company,
+                currencyCode: "USD\n",
+                rate: '3.5000000000',
+                createdBy: $this->user
+            );
+            $this->fail('Expected recordRate to reject currencyCode with newline');
+        } catch (InvalidArgumentException $e) {
+            $this->assertStringContainsString('Invalid currency code', $e->getMessage());
+        }
+        $this->assertSame($rateCountBefore, DB::table('exchange_rates')->where('company_id', $this->company->id)->count());
+
+        // 7. ExchangeRateService resolveRate currencyCode with trailing newline
+        try {
+            $this->rateService->resolveRate($this->company, "USD\n");
+            $this->fail('Expected resolveRate to reject currencyCode with newline');
+        } catch (InvalidArgumentException $e) {
+            $this->assertStringContainsString('Invalid currency code', $e->getMessage());
+        }
     }
 }

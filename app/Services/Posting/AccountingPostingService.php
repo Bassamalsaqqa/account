@@ -120,21 +120,41 @@ class AccountingPostingService
                 );
             }
 
-            // 4c. Lock and validate relevant CompanyCurrency rows
-            $batchTxCurrency = strtoupper($command->transactionCurrencyCode);
-            $currenciesToLock = array_unique(array_filter(array_merge(
-                [$companyBase, $batchTxCurrency],
-                array_map(fn ($l) => $l->transactionCurrencyCode !== null ? strtoupper($l->transactionCurrencyCode) : null, $command->lines)
-            )));
-
-            /** @var Collection<string, CompanyCurrency> $lockedCurrencies */
-            $lockedCurrencies = CompanyCurrency::where('company_id', $lockedCompany->id)
-                ->whereIn('currency_code', $currenciesToLock)
+            // 4c. Lock and validate all CompanyCurrency rows and base currency invariants
+            /** @var Collection<string, CompanyCurrency> $allCompanyCurrencies */
+            $allCompanyCurrencies = CompanyCurrency::where('company_id', $lockedCompany->id)
                 ->lockForUpdate()
                 ->get()
                 ->keyBy('currency_code');
 
-            if (! isset($lockedCurrencies[$batchTxCurrency]) || ! $lockedCurrencies[$batchTxCurrency]->enabled) {
+            $standardCurrencies = ['ILS', 'USD', 'JOD'];
+            foreach ($standardCurrencies as $sc) {
+                if (! isset($allCompanyCurrencies[$sc])) {
+                    throw PostingValidationException::invalidCurrency(
+                        $sc,
+                        "Standard currency [{$sc}] is missing from company [{$lockedCompany->id}] configuration."
+                    );
+                }
+            }
+
+            $baseCurrencies = $allCompanyCurrencies->filter(fn (CompanyCurrency $c) => (bool) $c->is_base);
+            if ($baseCurrencies->count() !== 1) {
+                throw PostingValidationException::invalidCurrency(
+                    $companyBase,
+                    "Company currency configuration is invalid: exactly one base currency must be configured for company [{$lockedCompany->id}], found {$baseCurrencies->count()}."
+                );
+            }
+
+            $baseRow = $allCompanyCurrencies->get($companyBase);
+            if ($baseRow === null || ! $baseRow->enabled || ! (bool) $baseRow->is_base) {
+                throw PostingValidationException::invalidCurrency(
+                    $companyBase,
+                    "Base currency [{$companyBase}] is not properly configured or enabled for company [{$lockedCompany->id}]."
+                );
+            }
+
+            $batchTxCurrency = strtoupper($command->transactionCurrencyCode);
+            if (! isset($allCompanyCurrencies[$batchTxCurrency]) || ! $allCompanyCurrencies[$batchTxCurrency]->enabled) {
                 throw PostingValidationException::invalidCurrency(
                     $batchTxCurrency,
                     "Currency is not enabled for company [{$lockedCompany->id}]"
@@ -152,7 +172,7 @@ class AccountingPostingService
             foreach ($command->lines as $line) {
                 if ($line->transactionCurrencyCode !== null) {
                     $lineCurr = strtoupper($line->transactionCurrencyCode);
-                    if (! isset($lockedCurrencies[$lineCurr]) || ! $lockedCurrencies[$lineCurr]->enabled) {
+                    if (! isset($allCompanyCurrencies[$lineCurr]) || ! $allCompanyCurrencies[$lineCurr]->enabled) {
                         throw PostingValidationException::invalidCurrency(
                             $lineCurr,
                             "Currency is not enabled for company [{$lockedCompany->id}]"
