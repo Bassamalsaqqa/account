@@ -1,7 +1,7 @@
 # Small Trader Accounting — Hostinger Production Deployment Guide
 **Target Domain:** `account.palsync.net`  
 **Hosting Platform:** Hostinger Shared Hosting (Cloud / Business Web Hosting)  
-**Execution Context:** Phase 0 Deployment Readiness  
+**Execution Context:** Production Deployment Guide
 
 ---
 

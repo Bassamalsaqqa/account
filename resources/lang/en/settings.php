@@ -35,8 +35,8 @@ return [
     // Section 1: Identity & General
     'sec_identity_title' => 'Identity & General Settings',
     'sec_identity_desc' => 'Company profile, language, active currencies, and regional defaults.',
-    'card_company_title' => 'Company & Branches',
-    'card_company_desc' => 'Trading name, contact information, branches, and warehouses.',
+    'card_company_title' => 'Company Information',
+    'card_company_desc' => 'Trading name, contact information, and address details.',
     'card_localization_title' => 'Language & Region',
     'card_localization_desc' => 'Arabic and English, timezone, and number formatting.',
     'card_currencies_title' => 'Currencies & FX Rates',

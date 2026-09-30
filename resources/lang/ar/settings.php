@@ -35,8 +35,8 @@ return [
     // Section 1: Identity & General
     'sec_identity_title' => 'الهوية والإعدادات العامة',
     'sec_identity_desc' => 'بيانات الشركة، اللغة، العملات والإعدادات المحلية.',
-    'card_company_title' => 'بيانات الشركة والفروع',
-    'card_company_desc' => 'الاسم التجاري، بيانات الاتصال، الفروع والمستودعات.',
+    'card_company_title' => 'بيانات المنشأة',
+    'card_company_desc' => 'الاسم التجاري، بيانات الاتصال، والعناوين.',
     'card_localization_title' => 'اللغات والمنطقة',
     'card_localization_desc' => 'العربية والإنجليزية، المنطقة الزمنية وتنسيق الأرقام.',
     'card_currencies_title' => 'العملات وأسعار الصرف',

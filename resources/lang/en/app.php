@@ -3,7 +3,7 @@
 return [
     'app_name' => 'Small Trader',
     'app_subtitle' => 'Accounting & Business Management',
-    'main_branch' => 'Main Branch',
+    'main_branch' => 'Company',
     'branch_location' => 'Ramallah',
     'accounting_server_online' => 'Accounting Engine: Connected',
     'phase_zero_preview' => 'System interface preview',
@@ -31,7 +31,7 @@ return [
     'nav_settings' => 'System Settings',
 
     // Topbar
-    'search_placeholder' => 'Search settings, branches, taxes, users...',
+    'search_placeholder' => 'Search settings, taxes, users...',
     'search_kbd' => 'Ctrl K',
     'quick_add' => 'Quick Add',
     'notifications' => 'Notifications',

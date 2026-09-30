@@ -11,10 +11,38 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Support\Str;
 
+/**
+ * @property int $id
+ * @property string $public_id
+ * @property string $name_ar
+ * @property string|null $name_en
+ * @property string|null $legal_name_ar
+ * @property string|null $legal_name_en
+ * @property string $base_currency_code
+ * @property string $base_currency
+ * @property string $default_locale
+ * @property string $timezone
+ * @property string|null $phone
+ * @property string|null $whatsapp
+ * @property string|null $email
+ * @property string|null $website
+ * @property string|null $address_ar
+ * @property string|null $address_en
+ * @property string|null $registration_number
+ * @property string|null $tax_number
+ * @property string|null $logo_path
+ * @property string|null $stamp_path
+ * @property string $status
+ */
 class Company extends Model
 {
     /** @use HasFactory<CompanyFactory> */
     use HasFactory;
+
+    public function getBaseCurrencyAttribute(): string
+    {
+        return $this->base_currency_code;
+    }
 
     /**
      * @var list<string>

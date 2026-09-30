@@ -2,6 +2,7 @@
 
 namespace App\Actions\Company;
 
+use App\Actions\Accounting\EnsureSystemLedgerAccountsAction;
 use App\Exceptions\CompanyReassignmentException;
 use App\Models\Company;
 use App\Models\CompanyCurrency;
@@ -25,7 +26,8 @@ class CreateCompanyAction
 {
     public function __construct(
         protected CompanyRoleService $roleService,
-        protected AuditService $auditService
+        protected AuditService $auditService,
+        protected EnsureSystemLedgerAccountsAction $ensureAccountsAction
     ) {}
 
     /**
@@ -154,7 +156,10 @@ class CreateCompanyAction
                 $ownerRole = Role::where('company_id', $company->id)->where('name', 'Owner')->firstOrFail();
                 $owner->assignRole($ownerRole);
 
-                // 8. Log initial audit event
+                // 8. Provision system chart of accounts
+                $this->ensureAccountsAction->execute($company, isSystem: true);
+
+                // 9. Log initial audit event
                 $this->auditService->log(
                     companyId: $company->id,
                     eventKey: 'company.created',

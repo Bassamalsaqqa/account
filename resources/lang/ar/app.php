@@ -3,7 +3,7 @@
 return [
     'app_name' => 'التاجر الصغير',
     'app_subtitle' => 'المحاسبة وإدارة الأعمال',
-    'main_branch' => 'الفرع الرئيسي',
+    'main_branch' => 'المنشأة',
     'branch_location' => 'رام الله',
     'accounting_server_online' => 'سيرفر المحاسبة: متصل',
     'phase_zero_preview' => 'معاينة واجهة النظام',
@@ -31,7 +31,7 @@ return [
     'nav_settings' => 'إعدادات النظام',
 
     // Topbar
-    'search_placeholder' => 'بحث في الإعدادات، الفروع، الضرائب، المستخدمين...',
+    'search_placeholder' => 'بحث في الإعدادات، الضرائب، المستخدمين...',
     'search_kbd' => 'Ctrl K',
     'quick_add' => 'إضافة سريعة',
     'notifications' => 'التنبيهات',
