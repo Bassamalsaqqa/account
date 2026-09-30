@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Services\Accounting;
 
 use App\Domain\Accounting\Catalog\SystemAccountsCatalog;
+use App\Domain\Money\ValueObjects\ExchangeRate;
+use App\Domain\Money\ValueObjects\MoneyAmount;
 use App\Exceptions\CompanyReassignmentException;
 use App\Exceptions\NoActiveCompanyException;
 use App\Models\Company;
@@ -12,7 +14,9 @@ use App\Models\LedgerAccount;
 use App\Support\Tenancy\CompanyContext;
 use App\Support\Tenancy\CompanyScope;
 use Brick\Math\BigDecimal;
+use Brick\Math\RoundingMode;
 use Illuminate\Support\Facades\DB;
+use InvalidArgumentException;
 
 class AccountingReconciliationService
 {
@@ -23,7 +27,11 @@ class AccountingReconciliationService
     {
         $context = app(CompanyContext::class);
 
-        if (! $isSystem) {
+        if ($isSystem) {
+            if ($context->hasCompany()) {
+                throw new InvalidArgumentException('System mode reconciliation requires no active company context.');
+            }
+        } else {
             if (! $context->hasCompany()) {
                 throw new NoActiveCompanyException('Cannot reconcile financial records without an active company context.');
             }
@@ -36,6 +44,7 @@ class AccountingReconciliationService
         $execute = function () use ($company): ReconciliationReport {
             $violations = [];
             $cid = $company->id;
+            $companyBase = strtoupper($company->base_currency_code);
 
             // 1. Check System Accounts (must exist and be unique)
             $requiredKeys = array_map(fn ($def) => $def->systemKey, SystemAccountsCatalog::all());
@@ -55,8 +64,61 @@ class AccountingReconciliationService
                 }
             }
 
-            // 2. Per-Batch Imbalance and Line Count Check (Empty or One-Line Batches)
-            // Uses LEFT JOIN so batches with 0 lines are detected (line_count = 0)
+            // 2. Canonical Chart Hierarchy & Cross-Company Parent Leaks
+            $allAccounts = LedgerAccount::where('company_id', $cid)->get()->keyBy('system_key');
+            foreach (SystemAccountsCatalog::all() as $def) {
+                if (! isset($allAccounts[$def->systemKey])) {
+                    continue;
+                }
+                $acct = $allAccounts[$def->systemKey];
+                if ($def->parentSystemKey !== null) {
+                    $parent = $allAccounts[$def->parentSystemKey] ?? null;
+                    if ($parent === null || (int) $acct->parent_id !== (int) $parent->id) {
+                        $violations[] = "System account [{$def->systemKey}] hierarchy mismatch: expected parent [{$def->parentSystemKey}], found parent_id [{$acct->parent_id}].";
+                    }
+                } else {
+                    if ($acct->parent_id !== null) {
+                        $violations[] = "Root system account [{$def->systemKey}] should not have a parent, but has parent_id [{$acct->parent_id}].";
+                    }
+                }
+            }
+
+            $crossCompanyParents = DB::selectOne('
+                SELECT COUNT(*) as cnt
+                FROM ledger_accounts child
+                JOIN ledger_accounts parent ON child.parent_id = parent.id
+                WHERE child.company_id = ? AND parent.company_id <> ?
+            ', [$cid, $cid]);
+
+            if (($crossCompanyParents->cnt ?? 0) > 0) {
+                $violations[] = "Cross-company parent leak: {$crossCompanyParents->cnt} accounts in company [{$cid}] point to parents in another company.";
+            }
+
+            // 3. Batch Status, Base Currency, and Rate Checks
+            $batches = DB::table('posting_batches')
+                ->where('company_id', $cid)
+                ->get();
+
+            foreach ($batches as $batch) {
+                if (! in_array($batch->status, ['posted', 'reversed'], true)) {
+                    $violations[] = "Invalid batch status [{$batch->status}] on batch [{$batch->public_id}].";
+                }
+
+                if (strtoupper($batch->base_currency_code) !== $companyBase) {
+                    $violations[] = "Invalid batch base currency [{$batch->base_currency_code}] on batch [{$batch->public_id}], expected company base [{$companyBase}].";
+                }
+
+                $batchRateDec = BigDecimal::of((string) $batch->exchange_rate);
+                if ($batchRateDec->isNegative() || $batchRateDec->isZero()) {
+                    $violations[] = "Non-positive exchange rate [{$batch->exchange_rate}] on batch [{$batch->public_id}].";
+                } else {
+                    if (strtoupper($batch->transaction_currency_code) === $companyBase && ! ExchangeRate::from((string) $batch->exchange_rate)->isOne()) {
+                        $violations[] = "Base-currency batch [{$batch->public_id}] exchange rate [{$batch->exchange_rate}] must be exactly 1.0000000000.";
+                    }
+                }
+            }
+
+            // 4. Per-Batch Imbalance and Line Count Check (Empty or One-Line Batches)
             $batchChecks = DB::select('
                 SELECT b.id, b.public_id,
                        COUNT(l.id) AS line_count,
@@ -73,12 +135,14 @@ class AccountingReconciliationService
                 if ($row->line_count < 2) {
                     $violations[] = "Invalid batch [{$row->public_id}]: batch has only {$row->line_count} line(s) (minimum 2 lines required for double entry).";
                 }
-                if ($row->total_debit != $row->total_credit) {
+                $batchDebit = BigDecimal::of((string) $row->total_debit);
+                $batchCredit = BigDecimal::of((string) $row->total_credit);
+                if (! $batchDebit->isEqualTo($batchCredit)) {
                     $violations[] = "Unbalanced batch [{$row->public_id}]: total debit ({$row->total_debit}) does not equal total credit ({$row->total_credit}).";
                 }
             }
 
-            // 3. Whole-Ledger Imbalance Check
+            // 5. Whole-Ledger Imbalance Check
             $totals = DB::selectOne('
                 SELECT COALESCE(SUM(debit_base), 0) as total_debit, COALESCE(SUM(credit_base), 0) as total_credit
                 FROM posting_lines
@@ -92,8 +156,50 @@ class AccountingReconciliationService
                 $violations[] = "Whole-ledger imbalance: total debits ({$ledgerDebit}) do not equal total credits ({$ledgerCredit}).";
             }
 
-            // 4. Bidirectional Cross-Company Linkages Check
-            // 4a. Lines in company pointing to batches of another company
+            // 6. Posting Lines: Invalid Amounts, Incomplete Metadata, and Conversion Consistency
+            $lines = DB::table('posting_lines')->where('company_id', $cid)->get();
+            foreach ($lines as $line) {
+                $debitDec = BigDecimal::of((string) $line->debit_base);
+                $creditDec = BigDecimal::of((string) $line->credit_base);
+
+                if ($debitDec->isNegative() || $creditDec->isNegative() || ($debitDec->isPositive() && $creditDec->isPositive()) || ($debitDec->isZero() && $creditDec->isZero())) {
+                    $violations[] = "Invalid posting line [{$line->id}]: amounts must be single-directional and positive.";
+                }
+
+                $hasCurr = $line->transaction_currency_code !== null;
+                $hasAmt = $line->transaction_amount !== null;
+                $hasRate = $line->exchange_rate !== null;
+
+                if (($hasCurr || $hasAmt || $hasRate) && ! ($hasCurr && $hasAmt && $hasRate)) {
+                    $violations[] = "Line [{$line->id}] of batch [{$line->posting_batch_id}] has incomplete metadata: currency, amount, and rate must either all be null or all present.";
+                } elseif ($hasCurr && $hasAmt && $hasRate) {
+                    $amtDec = BigDecimal::of((string) $line->transaction_amount);
+                    $rateDec = BigDecimal::of((string) $line->exchange_rate);
+
+                    if ($amtDec->isNegative() || $amtDec->isZero()) {
+                        $violations[] = "Line [{$line->id}] has non-positive transaction amount [{$line->transaction_amount}].";
+                    }
+                    if ($rateDec->isNegative() || $rateDec->isZero()) {
+                        $violations[] = "Line [{$line->id}] has non-positive exchange rate [{$line->exchange_rate}].";
+                    }
+
+                    if ($rateDec->isPositive() && $amtDec->isPositive()) {
+                        if (strtoupper((string) $line->transaction_currency_code) === $companyBase && ! $rateDec->isEqualTo(BigDecimal::one())) {
+                            $violations[] = "Base-currency line [{$line->id}] exchange rate [{$line->exchange_rate}] must be exactly 1.0000000000.";
+                        }
+
+                        $actualBaseDec = $debitDec->isPositive() ? $debitDec : $creditDec;
+                        $expectedBaseDec = $amtDec->multipliedBy($rateDec)->toScale(MoneyAmount::DEFAULT_SCALE, RoundingMode::HALF_UP);
+
+                        if (! $actualBaseDec->isEqualTo($expectedBaseDec)) {
+                            $violations[] = "Line [{$line->id}] conversion mismatch: positive base [{$actualBaseDec}] does not equal transaction amount [{$line->transaction_amount}] * exchange rate [{$line->exchange_rate}].";
+                        }
+                    }
+                }
+            }
+
+            // 7. Bidirectional Cross-Company Linkages Check
+            // 7a. Lines in company pointing to batches of another company
             $lineBatchMismatch = DB::selectOne('
                 SELECT COUNT(*) as cnt
                 FROM posting_lines l
@@ -105,7 +211,7 @@ class AccountingReconciliationService
                 $violations[] = "Cross-company batch leak: {$lineBatchMismatch->cnt} lines in company [{$cid}] point to batches of another company.";
             }
 
-            // 4b. Batches in company containing lines belonging to another company
+            // 7b. Batches in company containing lines belonging to another company
             $batchLineMismatch = DB::selectOne('
                 SELECT COUNT(*) as cnt
                 FROM posting_batches b
@@ -117,7 +223,7 @@ class AccountingReconciliationService
                 $violations[] = "Cross-company batch leak: {$batchLineMismatch->cnt} lines of another company linked to batches in company [{$cid}].";
             }
 
-            // 4c. Lines in company pointing to accounts of another company
+            // 7c. Lines in company pointing to accounts of another company
             $lineAccountMismatch = DB::selectOne('
                 SELECT COUNT(*) as cnt
                 FROM posting_lines l
@@ -129,7 +235,7 @@ class AccountingReconciliationService
                 $violations[] = "Cross-company account leak: {$lineAccountMismatch->cnt} lines in company [{$cid}] point to accounts of another company.";
             }
 
-            // 4d. Accounts in company containing lines belonging to another company
+            // 7d. Accounts in company containing lines belonging to another company
             $accountLineMismatch = DB::selectOne('
                 SELECT COUNT(*) as cnt
                 FROM ledger_accounts a
@@ -141,25 +247,8 @@ class AccountingReconciliationService
                 $violations[] = "Cross-company account leak: {$accountLineMismatch->cnt} lines of another company linked to accounts in company [{$cid}].";
             }
 
-            // 5. Invalid Line Amounts (negative, double positive, or double zero)
-            $invalidLines = DB::selectOne('
-                SELECT COUNT(*) as cnt
-                FROM posting_lines
-                WHERE company_id = ?
-                  AND (
-                      debit_base < 0
-                      OR credit_base < 0
-                      OR (debit_base > 0 AND credit_base > 0)
-                      OR (debit_base = 0 AND credit_base = 0)
-                  )
-            ', [$cid]);
-
-            if (($invalidLines->cnt ?? 0) > 0) {
-                $violations[] = "Invalid posting lines: {$invalidLines->cnt} lines have negative, double-sided, or zero amounts.";
-            }
-
-            // 6. Comprehensive Reversal Link Incoherence Check
-            // 6a. Batches marked 'reversed' must have reversed_by_batch_id pointing to a valid reciprocal reversal batch in the same company
+            // 8. Comprehensive Reversal Coherence & Inversion Checks
+            // 8a. Batches marked 'reversed' must have reversed_by_batch_id pointing to a valid reciprocal reversal batch in the same company
             $unlinkedReversals = DB::selectOne("
                 SELECT COUNT(*) as cnt
                 FROM posting_batches
@@ -186,7 +275,7 @@ class AccountingReconciliationService
                 $violations[] = "Mismatched reversal link: {$mismatchedReversalLinks->cnt} reversed batches fail to cross-link reciprocally to their reversal batch.";
             }
 
-            // 6b. Reversal batches (reversal_of_id IS NOT NULL) must point to an existing reversed batch in the same company that cross-links back
+            // 8b. Reversal batches (reversal_of_id IS NOT NULL) must point to an existing reversed batch in the same company that cross-links back
             $orphanReversals = DB::selectOne('
                 SELECT COUNT(*) as cnt
                 FROM posting_batches rev
@@ -200,7 +289,7 @@ class AccountingReconciliationService
                 $violations[] = "Orphan reversal: {$orphanReversals->cnt} reversal batches fail to link to a valid reversed original batch.";
             }
 
-            // 6c. A reversal batch cannot itself be marked 'reversed'
+            // 8c. A reversal batch cannot itself be marked 'reversed'
             $reversedReversals = DB::selectOne("
                 SELECT COUNT(*) as cnt
                 FROM posting_batches
@@ -213,7 +302,85 @@ class AccountingReconciliationService
                 $violations[] = "Invalid reversal status: {$reversedReversals->cnt} reversal batches are marked 'reversed'.";
             }
 
-            // 7. Duplicate Idempotency Key Check
+            // 8d. Reversal Batch Rate and Line Inversion Checks
+            $reversals = DB::table('posting_batches as rev')
+                ->join('posting_batches as orig', 'rev.reversal_of_id', '=', 'orig.id')
+                ->where('rev.company_id', $cid)
+                ->where('orig.company_id', $cid)
+                ->select(
+                    'rev.id as rev_id',
+                    'orig.id as orig_id',
+                    'rev.exchange_rate as rev_rate',
+                    'orig.exchange_rate as orig_rate'
+                )
+                ->get();
+
+            foreach ($reversals as $rev) {
+                try {
+                    $revRate = ExchangeRate::from((string) $rev->rev_rate);
+                    $origRate = ExchangeRate::from((string) $rev->orig_rate);
+                    if (! $revRate->equals($origRate)) {
+                        $violations[] = "Reversal batch [{$rev->rev_id}] exchange rate [{$rev->rev_rate}] does not match original batch [{$rev->orig_id}] rate [{$rev->orig_rate}].";
+                    }
+                } catch (\Throwable $e) {
+                    $violations[] = "Reversal batch [{$rev->rev_id}] exchange rate [{$rev->rev_rate}] or original batch [{$rev->orig_id}] rate [{$rev->orig_rate}] is invalid.";
+                }
+
+                $origBatchLines = DB::table('posting_lines')->where('posting_batch_id', $rev->orig_id)->orderBy('line_number')->get();
+                $revBatchLines = DB::table('posting_lines')->where('posting_batch_id', $rev->rev_id)->orderBy('line_number')->get();
+
+                if ($origBatchLines->count() !== $revBatchLines->count()) {
+                    $violations[] = "Reversal batch [{$rev->rev_id}] line count [{$revBatchLines->count()}] does not match original [{$origBatchLines->count()}].";
+
+                    continue;
+                }
+
+                for ($i = 0; $i < $origBatchLines->count(); $i++) {
+                    $ol = $origBatchLines[$i];
+                    $rl = $revBatchLines[$i];
+
+                    $rlDebit = BigDecimal::of((string) $rl->debit_base);
+                    $rlCredit = BigDecimal::of((string) $rl->credit_base);
+                    $olDebit = BigDecimal::of((string) $ol->debit_base);
+                    $olCredit = BigDecimal::of((string) $ol->credit_base);
+
+                    if ((int) $rl->ledger_account_id !== (int) $ol->ledger_account_id
+                        || (int) $rl->line_number !== (int) $ol->line_number
+                        || ! $rlDebit->isEqualTo($olCredit)
+                        || ! $rlCredit->isEqualTo($olDebit)
+                    ) {
+                        $violations[] = "Reversal batch [{$rev->rev_id}] line [{$rl->line_number}] does not financially invert original line [{$ol->line_number}].";
+                    }
+
+                    if (($ol->transaction_currency_code === null) !== ($rl->transaction_currency_code === null)
+                        || ($ol->transaction_currency_code !== null && $rl->transaction_currency_code !== $ol->transaction_currency_code)
+                    ) {
+                        $violations[] = "Reversal batch [{$rev->rev_id}] line [{$rl->line_number}] transaction currency code does not match original.";
+                    }
+
+                    if (($ol->transaction_amount === null) !== ($rl->transaction_amount === null)
+                        || ($ol->transaction_amount !== null && ! BigDecimal::of((string) $rl->transaction_amount)->isEqualTo(BigDecimal::of((string) $ol->transaction_amount)))
+                    ) {
+                        $violations[] = "Reversal batch [{$rev->rev_id}] line [{$rl->line_number}] transaction amount does not match original.";
+                    }
+
+                    if (($ol->exchange_rate === null) !== ($rl->exchange_rate === null)) {
+                        $violations[] = "Reversal batch [{$rev->rev_id}] line [{$rl->line_number}] exchange rate presence does not match original.";
+                    } elseif ($ol->exchange_rate !== null) {
+                        try {
+                            $rlRate = ExchangeRate::from((string) $rl->exchange_rate);
+                            $olRate = ExchangeRate::from((string) $ol->exchange_rate);
+                            if (! $rlRate->equals($olRate)) {
+                                $violations[] = "Reversal batch [{$rev->rev_id}] line [{$rl->line_number}] exchange rate does not match original.";
+                            }
+                        } catch (\Throwable $e) {
+                            $violations[] = "Reversal batch [{$rev->rev_id}] line [{$rl->line_number}] exchange rate is invalid.";
+                        }
+                    }
+                }
+            }
+
+            // 9. Duplicate Idempotency Key Check
             $duplicateKeys = DB::select('
                 SELECT idempotency_key, COUNT(*) as cnt
                 FROM posting_batches
@@ -226,7 +393,7 @@ class AccountingReconciliationService
                 $violations[] = "Duplicate idempotency key [{$dup->idempotency_key}] found with {$dup->cnt} occurrences.";
             }
 
-            // Stats (purely read-only)
+            // Stats (strictly read-only)
             $batchCount = DB::table('posting_batches')->where('company_id', $cid)->count();
             $lineCount = DB::table('posting_lines')->where('company_id', $cid)->count();
             $accountCount = DB::table('ledger_accounts')->where('company_id', $cid)->count();
@@ -245,7 +412,7 @@ class AccountingReconciliationService
             );
         };
 
-        if ($isSystem && ! $context->hasCompany()) {
+        if ($isSystem) {
             return CompanyScope::executeWithoutScope($execute);
         }
 

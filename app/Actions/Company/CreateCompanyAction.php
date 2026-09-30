@@ -156,8 +156,20 @@ class CreateCompanyAction
                 $ownerRole = Role::where('company_id', $company->id)->where('name', 'Owner')->firstOrFail();
                 $owner->assignRole($ownerRole);
 
-                // 8. Provision system chart of accounts
-                $this->ensureAccountsAction->execute($company, isSystem: true);
+                // 8. Provision system chart of accounts before activation
+                $context = app(CompanyContext::class);
+                $prevCompany = $context->hasCompany() ? $context->company() : null;
+                $prevUser = $context->user();
+                if ($prevCompany !== null) {
+                    $context->clear();
+                }
+                try {
+                    $this->ensureAccountsAction->execute($company, isSystem: true);
+                } finally {
+                    if ($prevCompany !== null) {
+                        $context->setCompany($prevCompany, $prevUser);
+                    }
+                }
 
                 // 9. Log initial audit event
                 $this->auditService->log(

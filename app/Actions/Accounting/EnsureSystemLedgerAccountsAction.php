@@ -15,6 +15,7 @@ use App\Support\Tenancy\CompanyScope;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use InvalidArgumentException;
 
 class EnsureSystemLedgerAccountsAction
 {
@@ -25,7 +26,11 @@ class EnsureSystemLedgerAccountsAction
     {
         $context = app(CompanyContext::class);
 
-        if (! $isSystem) {
+        if ($isSystem) {
+            if ($context->hasCompany()) {
+                throw new InvalidArgumentException('System mode account provisioning requires no active company context.');
+            }
+        } else {
             if (! $context->hasCompany()) {
                 throw new NoActiveCompanyException('Cannot provision system accounts without an active company context.');
             }
@@ -148,6 +153,7 @@ class EnsureSystemLedgerAccountsAction
                         'is_control' => $def->isControl,
                         'is_system' => true,
                         'active' => true,
+                        'parent_id' => null,
                     ]);
 
                     $byKey[$def->systemKey] = $created;
@@ -155,13 +161,25 @@ class EnsureSystemLedgerAccountsAction
                 }
 
                 // Pass 2: Reconcile parent account relationships
+                // Canonical chart hierarchy: set expected same-company parent for definitions with parent; definitions without parent must not retain arbitrary parents
                 foreach ($definitions as $def) {
-                    if ($def->parentSystemKey !== null && isset($byKey[$def->parentSystemKey], $byKey[$def->systemKey])) {
-                        $child = $byKey[$def->systemKey];
-                        $parent = $byKey[$def->parentSystemKey];
+                    if (! isset($byKey[$def->systemKey])) {
+                        continue;
+                    }
 
-                        if ($child->parent_id !== $parent->id) {
-                            $child->parent_id = $parent->id;
+                    $child = $byKey[$def->systemKey];
+
+                    if ($def->parentSystemKey !== null) {
+                        if (isset($byKey[$def->parentSystemKey])) {
+                            $parent = $byKey[$def->parentSystemKey];
+                            if ($child->parent_id !== $parent->id) {
+                                $child->parent_id = $parent->id;
+                                $child->save();
+                            }
+                        }
+                    } else {
+                        if ($child->parent_id !== null) {
+                            $child->parent_id = null;
                             $child->save();
                         }
                     }
@@ -169,7 +187,7 @@ class EnsureSystemLedgerAccountsAction
             });
         };
 
-        if ($isSystem && ! $context->hasCompany()) {
+        if ($isSystem) {
             CompanyScope::executeWithoutScope($provision);
         } else {
             $provision();

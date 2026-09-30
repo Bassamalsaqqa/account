@@ -834,6 +834,16 @@
                         <p class="text-xs text-text-muted mt-0.5">{{ __('settings.card_currencies_desc') }}</p>
                     </div>
 
+                    @if ($isBaseCurrencyLocked)
+                        <div class="p-3 bg-amber-50 border border-amber-200 rounded-control flex items-start gap-2.5 text-amber-800 text-xs">
+                            <x-icon name="lock" class="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                            <div>
+                                <span class="font-bold">{{ __('settings.base_currency_locked_notice') }}</span>
+                                <p class="text-[11px] text-amber-700 mt-0.5">{{ __('settings.base_currency_locked_desc') }}</p>
+                            </div>
+                        </div>
+                    @endif
+
                     <form wire:submit="saveCurrencies" class="space-y-4">
                         <div class="divide-y divide-border">
                             @foreach (['ILS' => ['name' => 'الشيكل الإسرائيلي (ILS)', 'symbol' => '₪'], 'USD' => ['name' => 'الدولار الأمريكي (USD)', 'symbol' => '$'], 'JOD' => ['name' => 'الدينار الأردني (JOD)', 'symbol' => 'د.أ']] as $code => $info)
@@ -844,7 +854,7 @@
                                                {{ $base_currency === $code ? 'disabled checked' : '' }}
                                                class="rounded border-border text-primary focus:ring-primary w-4 h-4 cursor-pointer" />
                                         <label for="curr_{{ $code }}" class="text-xs font-bold text-text-primary cursor-pointer">
-                                            {{ $info['name'] }}
+                                             {{ $info['name'] }}
                                             <span class="font-mono text-text-muted">({{ $info['symbol'] }})</span>
                                         </label>
                                     </div>
@@ -852,10 +862,16 @@
                                     <div class="flex items-center gap-2">
                                         <input type="radio" id="base_{{ $code }}" name="base_curr" value="{{ $code }}"
                                                wire:model.live="base_currency"
-                                               class="text-primary focus:ring-primary w-4 h-4 cursor-pointer" />
-                                        <label for="base_{{ $code }}" class="text-[11px] font-semibold text-text-secondary cursor-pointer">
+                                               {{ $isBaseCurrencyLocked ? 'disabled' : '' }}
+                                               class="text-primary focus:ring-primary w-4 h-4 {{ $isBaseCurrencyLocked ? 'cursor-not-allowed opacity-60' : 'cursor-pointer' }}" />
+                                        <label for="base_{{ $code }}" class="text-[11px] font-semibold text-text-secondary {{ $isBaseCurrencyLocked ? 'cursor-not-allowed opacity-60' : 'cursor-pointer' }}">
                                             {{ __('settings.status_base_currency') }}
                                         </label>
+                                        @if ($isBaseCurrencyLocked && $base_currency === $code)
+                                            <span class="text-[9px] px-1.5 py-0.5 rounded bg-slate-100 text-text-muted font-bold">
+                                                {{ __('settings.base_currency_locked_badge') }}
+                                            </span>
+                                        @endif
                                     </div>
                                 </div>
                             @endforeach

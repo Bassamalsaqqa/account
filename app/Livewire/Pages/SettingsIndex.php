@@ -10,9 +10,11 @@ use App\Actions\Company\UpdateCompanyLocalizationAction;
 use App\Actions\Company\UpdateCompanyMemberRoleAction;
 use App\Actions\Company\UpdateCompanySecurityAction;
 use App\Actions\Company\UpdateRolePermissionsAction;
+use App\Domain\Accounting\Exceptions\BaseCurrencyLockedException;
 use App\Models\AuditEvent;
 use App\Models\Company;
 use App\Models\CompanyUser;
+use App\Models\PostingBatch;
 use App\Models\User;
 use App\Support\Tenancy\CompanyContext;
 use Illuminate\Auth\Access\AuthorizationException;
@@ -300,10 +302,16 @@ class SettingsIndex extends Component
 
         /** @var User $actor */
         $actor = auth()->user();
-        $action->execute($company, $this->base_currency, $this->currencies_enabled, $actor);
 
-        $this->currencies_enabled[$this->base_currency] = true;
-        $this->successMessage = __('settings.currencies_saved_success') ?: 'Currency settings saved.';
+        try {
+            $action->execute($company, $this->base_currency, $this->currencies_enabled, $actor);
+            $this->currencies_enabled[$this->base_currency] = true;
+            $this->successMessage = __('settings.currencies_saved_success') ?: 'Currency settings saved.';
+            $this->errorMessage = null;
+        } catch (BaseCurrencyLockedException $e) {
+            $this->errorMessage = __('settings.base_currency_locked_notice') ?: $e->getMessage();
+            $this->base_currency = $company->fresh()->base_currency_code;
+        }
     }
 
     public function saveSecurity(CompanyContext $context, UpdateCompanySecurityAction $action): void
@@ -530,6 +538,11 @@ class SettingsIndex extends Component
             }
         }
 
+        $isBaseCurrencyLocked = false;
+        if ($hasCompany && $company) {
+            $isBaseCurrencyLocked = PostingBatch::where('company_id', $company->id)->exists();
+        }
+
         return view('livewire.pages.settings-index', [
             'hasCompany' => $hasCompany,
             'company' => $company,
@@ -537,6 +550,7 @@ class SettingsIndex extends Component
             'roles' => $roles,
             'allPermissions' => $allPermissions,
             'auditEvents' => $auditEvents,
+            'isBaseCurrencyLocked' => $isBaseCurrencyLocked,
         ]);
     }
 }

@@ -10,6 +10,7 @@ use App\Exceptions\CompanyReassignmentException;
 use App\Exceptions\NoActiveCompanyException;
 use App\Models\Company;
 use App\Models\CompanyCurrency;
+use App\Models\CompanyUser;
 use App\Models\ExchangeRate;
 use App\Models\User;
 use App\Support\Tenancy\CompanyContext;
@@ -39,7 +40,24 @@ class ExchangeRateService
             throw new CompanyReassignmentException("Cannot record exchange rate for company [{$company->id}] when active company is [{$context->companyId()}].");
         }
 
-        $actingUser = $createdBy ?? $context->user();
+        $authUser = $context->user();
+        if ($authUser !== null && $createdBy !== null && $createdBy->id !== $authUser->id) {
+            throw new InvalidArgumentException("Explicit createdBy user [{$createdBy->id}] conflicts with authenticated user [{$authUser->id}].");
+        }
+
+        $actingUser = $createdBy ?? $authUser;
+        if ($actingUser === null) {
+            throw new InvalidArgumentException('Authenticated user is required to record exchange rates.');
+        }
+
+        $isMember = CompanyUser::where('company_id', $company->id)
+            ->where('user_id', $actingUser->id)
+            ->where('status', 'active')
+            ->exists();
+
+        if (! $isMember) {
+            throw new InvalidArgumentException("User [{$actingUser->id}] is not an active member of company [{$company->id}].");
+        }
 
         $currencyCode = strtoupper(trim($currencyCode));
         $baseCurrency = strtoupper($company->base_currency_code);
@@ -68,7 +86,7 @@ class ExchangeRateService
             'rate' => $rateVo->toDecimalString(),
             'effective_at' => $effectiveAt ?? now(),
             'source' => $source,
-            'created_by' => $actingUser?->id,
+            'created_by' => $actingUser->id,
         ]);
     }
 
@@ -95,16 +113,16 @@ class ExchangeRateService
             return ExchangeRateValueObject::one();
         }
 
-        $query = ExchangeRate::where('company_id', $company->id)
-            ->where('currency_code', $currencyCode)
-            ->where('base_currency_code', $baseCurrency);
-
-        if ($timestamp !== null) {
-            $query->where('effective_at', '<=', $timestamp);
-        }
+        $effectiveCutoff = $timestamp ?? now();
 
         /** @var ExchangeRate|null $latest */
-        $latest = $query->orderBy('effective_at', 'desc')->orderBy('id', 'desc')->first();
+        $latest = ExchangeRate::where('company_id', $company->id)
+            ->where('currency_code', $currencyCode)
+            ->where('base_currency_code', $baseCurrency)
+            ->where('effective_at', '<=', $effectiveCutoff)
+            ->orderBy('effective_at', 'desc')
+            ->orderBy('id', 'desc')
+            ->first();
 
         if ($latest === null) {
             throw UnresolvedExchangeRateException::forCurrency($currencyCode, $baseCurrency, $timestamp);

@@ -13,6 +13,8 @@ class CompanyContext
 {
     protected ?Company $activeCompany = null;
 
+    protected ?User $explicitUser = null;
+
     /**
      * Get the currently active company.
      *
@@ -51,7 +53,7 @@ class CompanyContext
     public function user(): ?User
     {
         /** @var User|null $user */
-        $user = auth()->user();
+        $user = auth()->user() ?? $this->explicitUser;
 
         return $user;
     }
@@ -80,6 +82,7 @@ class CompanyContext
         }
 
         $this->activeCompany = $company;
+        $this->explicitUser = $targetUser;
 
         setPermissionsTeamId($company->id);
         app(PermissionRegistrar::class)->setPermissionsTeamId($company->id);
@@ -93,6 +96,7 @@ class CompanyContext
     public function clear(): void
     {
         $this->activeCompany = null;
+        $this->explicitUser = null;
 
         setPermissionsTeamId(null);
         app(PermissionRegistrar::class)->setPermissionsTeamId(null);

@@ -19,7 +19,7 @@ return new class extends Migration
             $table->decimal('rate', 20, 10);
             $table->dateTime('effective_at');
             $table->string('source', 32)->default('manual');
-            $table->foreignId('created_by')->nullable()->constrained('users')->nullOnDelete();
+            $table->foreignId('created_by')->constrained('users')->restrictOnDelete();
             $table->timestamps();
 
             $table->index(['company_id', 'currency_code', 'effective_at']);

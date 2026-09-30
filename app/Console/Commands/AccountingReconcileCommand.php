@@ -6,6 +6,7 @@ namespace App\Console\Commands;
 
 use App\Models\Company;
 use App\Services\Accounting\AccountingReconciliationService;
+use App\Support\Tenancy\CompanyContext;
 use App\Support\Tenancy\CompanyScope;
 use Illuminate\Console\Command;
 
@@ -29,46 +30,59 @@ class AccountingReconcileCommand extends Command
     {
         $publicId = $this->argument('companyPublicId');
 
-        return CompanyScope::executeWithoutScope(function () use ($reconciler, $publicId): int {
-            if ($publicId !== null) {
-                /** @var Company|null $company */
-                $company = Company::where('public_id', (string) $publicId)->first();
+        $context = app(CompanyContext::class);
+        $prevCompany = $context->hasCompany() ? $context->company() : null;
+        $prevUser = $context->user();
+        if ($prevCompany !== null) {
+            $context->clear();
+        }
 
-                if ($company === null) {
-                    $this->error("Company with public ID [{$publicId}] not found.");
+        try {
+            return CompanyScope::executeWithoutScope(function () use ($reconciler, $publicId): int {
+                if ($publicId !== null) {
+                    /** @var Company|null $company */
+                    $company = Company::where('public_id', (string) $publicId)->first();
 
-                    return self::FAILURE;
-                }
+                    if ($company === null) {
+                        $this->error("Company with public ID [{$publicId}] not found.");
 
-                $companies = collect([$company]);
-            } else {
-                $companies = Company::all();
-            }
-
-            if ($companies->isEmpty()) {
-                $this->info('No companies found in database.');
-
-                return self::SUCCESS;
-            }
-
-            $hasAnyFailures = false;
-
-            foreach ($companies as $company) {
-                $this->info("Auditing company: {$company->displayName()} ({$company->public_id})...");
-                $report = $reconciler->reconcile($company, isSystem: true);
-
-                if (! $report->isHealthy) {
-                    $hasAnyFailures = true;
-                    $this->error("INTEGRITY VIOLATIONS DETECTED for [{$company->displayName()}]:");
-                    foreach ($report->violations as $violation) {
-                        $this->line("  [x] {$violation}");
+                        return self::FAILURE;
                     }
-                } else {
-                    $this->info("Ledger integrity healthy. {$report->stats['batches_count']} batches, {$report->stats['lines_count']} lines, {$report->stats['accounts_count']} accounts verified.");
-                }
-            }
 
-            return $hasAnyFailures ? self::FAILURE : self::SUCCESS;
-        });
+                    $companies = collect([$company]);
+                } else {
+                    $companies = Company::all();
+                }
+
+                if ($companies->isEmpty()) {
+                    $this->info('No companies found in database.');
+
+                    return self::SUCCESS;
+                }
+
+                $hasAnyFailures = false;
+
+                foreach ($companies as $company) {
+                    $this->info("Auditing company: {$company->displayName()} ({$company->public_id})...");
+                    $report = $reconciler->reconcile($company, isSystem: true);
+
+                    if (! $report->isHealthy) {
+                        $hasAnyFailures = true;
+                        $this->error("INTEGRITY VIOLATIONS DETECTED for [{$company->displayName()}]:");
+                        foreach ($report->violations as $violation) {
+                            $this->line("  [x] {$violation}");
+                        }
+                    } else {
+                        $this->info("Ledger integrity healthy. {$report->stats['batches_count']} batches, {$report->stats['lines_count']} lines, {$report->stats['accounts_count']} accounts verified.");
+                    }
+                }
+
+                return $hasAnyFailures ? self::FAILURE : self::SUCCESS;
+            });
+        } finally {
+            if ($prevCompany !== null) {
+                $context->setCompany($prevCompany, $prevUser);
+            }
+        }
     }
 }

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Posting;
 
 use App\Domain\Accounting\Exceptions\ImmutableRecordException;
+use App\Domain\Money\ValueObjects\ExchangeRate;
 use App\Domain\Money\ValueObjects\MoneyAmount;
 use App\Domain\Posting\DTO\PostingCommand;
 use App\Domain\Posting\Exceptions\IdempotencyConflictException;
@@ -12,6 +13,7 @@ use App\Domain\Posting\Exceptions\PostingValidationException;
 use App\Domain\Posting\Exceptions\ReversalException;
 use App\Exceptions\CompanyReassignmentException;
 use App\Exceptions\NoActiveCompanyException;
+use App\Models\Company;
 use App\Models\CompanyCurrency;
 use App\Models\CompanyUser;
 use App\Models\LedgerAccount;
@@ -38,93 +40,31 @@ class AccountingPostingService
             throw PostingValidationException::reversalOnlyAllowedViaService();
         }
 
-        $context = app(CompanyContext::class);
-
-        // 1. Tenancy Enforcement
-        if (! $context->hasCompany()) {
-            throw new NoActiveCompanyException('Cannot post accounting transaction without an active company context.');
-        }
-
-        if ($context->companyId() !== $command->company->id) {
-            throw new CompanyReassignmentException("Cannot post for company [{$command->company->id}] when active company is [{$context->companyId()}].");
-        }
-
-        if ($command->postedBy === null) {
-            throw PostingValidationException::invalidPoster(
-                0,
-                $command->company->id,
-                'Posted by user is required for normal posting operations.'
-            );
-        }
-
-        $isMember = CompanyUser::where('company_id', $command->company->id)
-            ->where('user_id', $command->postedBy->id)
-            ->where('status', 'active')
-            ->exists();
-
-        if (! $isMember) {
-            throw PostingValidationException::invalidPoster(
-                $command->postedBy->id,
-                $command->company->id
-            );
-        }
-
-        // 2. Validate Base Currency
-        $companyBase = strtoupper($command->company->base_currency_code);
-        if (strtoupper($command->baseCurrencyCode) !== $companyBase) {
-            throw PostingValidationException::invalidCurrency(
-                $command->baseCurrencyCode,
-                "Base currency must match company base currency [{$companyBase}]"
-            );
-        }
-
-        // 3. Validate Transaction Currency is enabled
-        $txCurrency = strtoupper($command->transactionCurrencyCode);
-        $currencyEnabled = CompanyCurrency::where('company_id', $command->company->id)
-            ->where('currency_code', $txCurrency)
-            ->where('enabled', true)
-            ->exists();
-
-        if (! $currencyEnabled) {
-            throw PostingValidationException::invalidCurrency(
-                $txCurrency,
-                "Currency is not enabled for company [{$command->company->id}]"
-            );
-        }
-
-        // 4. Validate Exchange Rate
-        if ($txCurrency === $companyBase && ! $command->exchangeRate->isOne()) {
-            throw PostingValidationException::invalidCurrency(
-                $txCurrency,
-                'Exchange rate for company base currency must be exactly 1.0000000000'
-            );
-        }
-
-        // 5. Validate All Ledger Accounts belong to the company and are active
-        $accountIds = array_unique(array_map(
-            fn ($line) => $line->ledgerAccountId,
-            $command->lines
-        ));
-
-        /** @var Collection<int, LedgerAccount> $validAccounts */
-        $validAccounts = LedgerAccount::where('company_id', $command->company->id)
-            ->whereIn('id', $accountIds)
-            ->where('active', true)
-            ->get()
-            ->keyBy('id');
-
-        foreach ($accountIds as $accountId) {
-            if (! isset($validAccounts[$accountId])) {
-                throw PostingValidationException::accountNotFoundOrInactive(
-                    $accountId,
-                    $command->company->id
-                );
-            }
-        }
-
-        // 6. Persistence within atomic transaction with race-safe idempotency backstop
         return DB::transaction(function () use ($command): PostingBatch {
-            $existing = PostingBatch::where('company_id', $command->company->id)
+            $context = app(CompanyContext::class);
+
+            // 1. Tenancy Enforcement
+            if (! $context->hasCompany()) {
+                throw new NoActiveCompanyException('Cannot post accounting transaction without an active company context.');
+            }
+
+            if ($context->companyId() !== $command->company->id) {
+                throw new CompanyReassignmentException("Cannot post for company [{$command->company->id}] when active company is [{$context->companyId()}].");
+            }
+
+            // 2. Consistent lock hierarchy: Lock Company first
+            /** @var Company $lockedCompany */
+            $lockedCompany = Company::where('id', $command->company->id)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            if ($lockedCompany->status !== 'active') {
+                throw PostingValidationException::companyInactive($lockedCompany->id);
+            }
+
+            // 3. Check idempotency key BEFORE checking mutable configuration!
+            // An exact retry for a previously posted payload returns existing batch even after currency disabled / account deactivated
+            $existing = PostingBatch::where('company_id', $lockedCompany->id)
                 ->where('idempotency_key', $command->idempotencyKey)
                 ->lockForUpdate()
                 ->first();
@@ -148,10 +88,113 @@ class AccountingPostingService
                 return $existing;
             }
 
+            // 4. For NEW postings: validate mutable configuration under lock
+            // 4a. Poster membership
+            if ($command->postedBy === null) {
+                throw PostingValidationException::invalidPoster(
+                    0,
+                    $lockedCompany->id,
+                    'Posted by user is required for normal posting operations.'
+                );
+            }
+
+            /** @var CompanyUser|null $posterMembership */
+            $posterMembership = CompanyUser::where('company_id', $lockedCompany->id)
+                ->where('user_id', $command->postedBy->id)
+                ->lockForUpdate()
+                ->first();
+
+            if ($posterMembership === null || $posterMembership->status !== 'active') {
+                throw PostingValidationException::invalidPoster(
+                    $command->postedBy->id,
+                    $lockedCompany->id
+                );
+            }
+
+            // 4b. Base currency matches locked company
+            $companyBase = strtoupper($lockedCompany->base_currency_code);
+            if (strtoupper($command->baseCurrencyCode) !== $companyBase) {
+                throw PostingValidationException::invalidCurrency(
+                    $command->baseCurrencyCode,
+                    "Base currency must match company base currency [{$companyBase}]"
+                );
+            }
+
+            // 4c. Lock and validate relevant CompanyCurrency rows
+            $batchTxCurrency = strtoupper($command->transactionCurrencyCode);
+            $currenciesToLock = array_unique(array_filter(array_merge(
+                [$companyBase, $batchTxCurrency],
+                array_map(fn ($l) => $l->transactionCurrencyCode !== null ? strtoupper($l->transactionCurrencyCode) : null, $command->lines)
+            )));
+
+            /** @var Collection<string, CompanyCurrency> $lockedCurrencies */
+            $lockedCurrencies = CompanyCurrency::where('company_id', $lockedCompany->id)
+                ->whereIn('currency_code', $currenciesToLock)
+                ->lockForUpdate()
+                ->get()
+                ->keyBy('currency_code');
+
+            if (! isset($lockedCurrencies[$batchTxCurrency]) || ! $lockedCurrencies[$batchTxCurrency]->enabled) {
+                throw PostingValidationException::invalidCurrency(
+                    $batchTxCurrency,
+                    "Currency is not enabled for company [{$lockedCompany->id}]"
+                );
+            }
+
+            if ($batchTxCurrency === $companyBase && ! $command->exchangeRate->isOne()) {
+                throw PostingValidationException::invalidCurrency(
+                    $batchTxCurrency,
+                    'Exchange rate for company base currency must be exactly 1.0000000000'
+                );
+            }
+
+            // Line metadata currencies: verify enabled, and any base-currency rate is exactly 1
+            foreach ($command->lines as $line) {
+                if ($line->transactionCurrencyCode !== null) {
+                    $lineCurr = strtoupper($line->transactionCurrencyCode);
+                    if (! isset($lockedCurrencies[$lineCurr]) || ! $lockedCurrencies[$lineCurr]->enabled) {
+                        throw PostingValidationException::invalidCurrency(
+                            $lineCurr,
+                            "Currency is not enabled for company [{$lockedCompany->id}]"
+                        );
+                    }
+                    if ($lineCurr === $companyBase && $line->exchangeRate !== null && ! $line->exchangeRate->isOne()) {
+                        throw PostingValidationException::invalidCurrency(
+                            $lineCurr,
+                            'Exchange rate for company base currency must be exactly 1.0000000000'
+                        );
+                    }
+                }
+            }
+
+            // 4d. Lock and validate Ledger Accounts
+            $accountIds = array_unique(array_map(
+                fn ($line) => $line->ledgerAccountId,
+                $command->lines
+            ));
+
+            /** @var Collection<int, LedgerAccount> $validAccounts */
+            $validAccounts = LedgerAccount::where('company_id', $lockedCompany->id)
+                ->whereIn('id', $accountIds)
+                ->lockForUpdate()
+                ->get()
+                ->keyBy('id');
+
+            foreach ($accountIds as $accountId) {
+                $account = $validAccounts->get($accountId);
+                if ($account === null || ! $account->active) {
+                    throw PostingValidationException::accountNotFoundOrInactive(
+                        $accountId,
+                        $lockedCompany->id
+                    );
+                }
+            }
+
+            // 5. Persistence within atomic transaction with race-safe idempotency backstop
             try {
                 $batch = PostingBatch::create([
                     'public_id' => (string) Str::ulid(),
-                    'company_id' => $command->company->id,
+                    'company_id' => $lockedCompany->id,
                     'batch_number' => $command->batchNumber,
                     'posting_date' => $command->postingDate,
                     'status' => PostingBatch::STATUS_POSTED,
@@ -169,7 +212,7 @@ class AccountingPostingService
 
                 foreach ($command->lines as $line) {
                     PostingLine::create([
-                        'company_id' => $command->company->id,
+                        'company_id' => $lockedCompany->id,
                         'posting_batch_id' => $batch->id,
                         'ledger_account_id' => $line->ledgerAccountId,
                         'line_number' => $line->lineNumber,
@@ -187,7 +230,7 @@ class AccountingPostingService
             } catch (QueryException $e) {
                 // Handle concurrent race-condition on (company_id, idempotency_key)
                 if (str_contains($e->getMessage(), 'idempotency_key') || ($e->errorInfo[1] ?? 0) === 1062) {
-                    $raceExisting = PostingBatch::where('company_id', $command->company->id)
+                    $raceExisting = PostingBatch::where('company_id', $lockedCompany->id)
                         ->where('idempotency_key', $command->idempotencyKey)
                         ->lockForUpdate()
                         ->first();
@@ -228,36 +271,49 @@ class AccountingPostingService
             throw new InvalidArgumentException('Reversal reason cannot exceed 512 characters.');
         }
 
-        $context = app(CompanyContext::class);
-
-        // 1. Tenancy Enforcement
-        if (! $context->hasCompany()) {
-            throw new NoActiveCompanyException('Cannot reverse transaction without an active company context.');
-        }
-
-        if ($context->companyId() !== $original->company_id) {
-            throw new CompanyReassignmentException("Cannot reverse batch for company [{$original->company_id}] when active company is [{$context->companyId()}].");
-        }
-
-        $isMember = CompanyUser::where('company_id', $original->company_id)
-            ->where('user_id', $actingUser->id)
-            ->where('status', 'active')
-            ->exists();
-
-        if (! $isMember) {
-            throw PostingValidationException::invalidPoster(
-                $actingUser->id,
-                $original->company_id,
-                "User [{$actingUser->id}] is not an active member of company [{$original->company_id}]."
-            );
-        }
-
         return DB::transaction(function () use ($original, $actingUser, $reason): PostingBatch {
-            /** @var PostingBatch $lockedOriginal */
-            $lockedOriginal = PostingBatch::where('id', $original->id)
-                ->where('company_id', $original->company_id)
+            $context = app(CompanyContext::class);
+
+            // 1. Tenancy Enforcement
+            if (! $context->hasCompany()) {
+                throw new NoActiveCompanyException('Cannot reverse transaction without an active company context.');
+            }
+
+            if ($context->companyId() !== $original->company_id) {
+                throw new CompanyReassignmentException("Cannot reverse batch for company [{$original->company_id}] when active company is [{$context->companyId()}].");
+            }
+
+            // 2. Lock company row first
+            /** @var Company $lockedCompany */
+            $lockedCompany = Company::where('id', $original->company_id)
                 ->lockForUpdate()
                 ->firstOrFail();
+
+            if ($lockedCompany->status !== 'active') {
+                throw ReversalException::companyInactive($lockedCompany->id);
+            }
+
+            // 3. Lock original batch
+            /** @var PostingBatch $lockedOriginal */
+            $lockedOriginal = PostingBatch::where('id', $original->id)
+                ->where('company_id', $lockedCompany->id)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            // 4. Revalidate active membership within transaction under lock
+            /** @var CompanyUser|null $member */
+            $member = CompanyUser::where('company_id', $lockedCompany->id)
+                ->where('user_id', $actingUser->id)
+                ->lockForUpdate()
+                ->first();
+
+            if ($member === null || $member->status !== 'active') {
+                throw PostingValidationException::invalidPoster(
+                    $actingUser->id,
+                    $lockedCompany->id,
+                    "User [{$actingUser->id}] is not an active member of company [{$lockedCompany->id}]."
+                );
+            }
 
             // Repeat reversal idempotency: validate existing reversal reciprocal coherence
             if ($lockedOriginal->isReversed()) {
@@ -436,6 +492,13 @@ class AccountingPostingService
             );
         }
 
+        // Exact batch exchange rate equality
+        if (! ExchangeRate::from((string) $reversal->exchange_rate)->equals(ExchangeRate::from((string) $original->exchange_rate))) {
+            throw ReversalException::incoherentReversalState(
+                "Reversal batch [{$reversal->id}] exchange rate [{$reversal->exchange_rate}] does not match original batch rate [{$original->exchange_rate}]."
+            );
+        }
+
         // Validate inverse lines
         $origLines = $original->lines()->orderBy('line_number')->get();
         $revLines = $reversal->lines()->orderBy('line_number')->get();
@@ -452,25 +515,50 @@ class AccountingPostingService
 
             if ((int) $revLine->ledger_account_id !== (int) $origLine->ledger_account_id
                 || (int) $revLine->line_number !== (int) $origLine->line_number
-                || ! MoneyAmount::from($revLine->debit_base)->equals(MoneyAmount::from($origLine->credit_base))
-                || ! MoneyAmount::from($revLine->credit_base)->equals(MoneyAmount::from($origLine->debit_base))
-                || $revLine->transaction_currency_code !== $origLine->transaction_currency_code
+                || ! MoneyAmount::from((string) $revLine->debit_base)->equals(MoneyAmount::from((string) $origLine->credit_base))
+                || ! MoneyAmount::from((string) $revLine->credit_base)->equals(MoneyAmount::from((string) $origLine->debit_base))
             ) {
                 throw ReversalException::incoherentReversalState(
                     "Reversal batch [{$reversal->id}] line [{$revLine->line_number}] does not reciprocate original line [{$origLine->line_number}]."
                 );
             }
 
-            if ($origLine->transaction_amount === null) {
-                if ($revLine->transaction_amount !== null) {
+            // Line transaction currency: null symmetry and exact equality
+            if (($origLine->transaction_currency_code === null) !== ($revLine->transaction_currency_code === null)) {
+                throw ReversalException::incoherentReversalState(
+                    "Reversal batch [{$reversal->id}] line [{$revLine->line_number}] transaction currency code presence does not match original."
+                );
+            }
+            if ($origLine->transaction_currency_code !== null && $revLine->transaction_currency_code !== $origLine->transaction_currency_code) {
+                throw ReversalException::incoherentReversalState(
+                    "Reversal batch [{$reversal->id}] line [{$revLine->line_number}] transaction currency code [{$revLine->transaction_currency_code}] does not match original [{$origLine->transaction_currency_code}]."
+                );
+            }
+
+            // Line transaction amount: null symmetry and exact equality
+            if (($origLine->transaction_amount === null) !== ($revLine->transaction_amount === null)) {
+                throw ReversalException::incoherentReversalState(
+                    "Reversal batch [{$reversal->id}] line [{$revLine->line_number}] transaction amount presence does not match original."
+                );
+            }
+            if ($origLine->transaction_amount !== null) {
+                if (! MoneyAmount::from((string) $revLine->transaction_amount)->equals(MoneyAmount::from((string) $origLine->transaction_amount))) {
                     throw ReversalException::incoherentReversalState(
                         "Reversal batch [{$reversal->id}] line [{$revLine->line_number}] transaction amount does not match original."
                     );
                 }
-            } else {
-                if ($revLine->transaction_amount === null || ! MoneyAmount::from($revLine->transaction_amount)->equals(MoneyAmount::from($origLine->transaction_amount))) {
+            }
+
+            // Line exchange rate: null symmetry and exact equality
+            if (($origLine->exchange_rate === null) !== ($revLine->exchange_rate === null)) {
+                throw ReversalException::incoherentReversalState(
+                    "Reversal batch [{$reversal->id}] line [{$revLine->line_number}] exchange rate presence does not match original."
+                );
+            }
+            if ($origLine->exchange_rate !== null) {
+                if (! ExchangeRate::from((string) $revLine->exchange_rate)->equals(ExchangeRate::from((string) $origLine->exchange_rate))) {
                     throw ReversalException::incoherentReversalState(
-                        "Reversal batch [{$reversal->id}] line [{$revLine->line_number}] transaction amount does not match original."
+                        "Reversal batch [{$reversal->id}] line [{$revLine->line_number}] exchange rate does not match original."
                     );
                 }
             }

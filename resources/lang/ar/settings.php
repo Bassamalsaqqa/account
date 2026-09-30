@@ -175,4 +175,7 @@ return [
     'status_enabled' => 'مفعّلة',
     'status_disabled' => 'معطّلة',
     'error_language_disabled_for_company' => 'اللغة الإنجليزية معطّلة لهذه المنشأة.',
+    'base_currency_locked_notice' => 'العملة الأساسية مقفلة نهائياً لوجود قيود محاسبية مسجلة في دفتر الأستاذ العام.',
+    'base_currency_locked_badge' => 'مقفل لوجود قيود مسجلة',
+    'base_currency_locked_desc' => 'بمجرد تسجيل عمليات مالية، لا يمكن تعديل العملة الأساسية للمنشأة لحماية سلامة دفتر الأستاذ العام.',
 ];

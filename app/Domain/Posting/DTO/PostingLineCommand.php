@@ -7,6 +7,7 @@ namespace App\Domain\Posting\DTO;
 use App\Domain\Money\ValueObjects\ExchangeRate;
 use App\Domain\Money\ValueObjects\MoneyAmount;
 use App\Domain\Posting\Exceptions\PostingValidationException;
+use InvalidArgumentException;
 
 final readonly class PostingLineCommand
 {
@@ -25,7 +26,7 @@ final readonly class PostingLineCommand
         }
 
         if ($this->description !== null && mb_strlen($this->description) > 512) {
-            throw new \InvalidArgumentException('Line description cannot exceed 512 characters.');
+            throw new InvalidArgumentException('Line description cannot exceed 512 characters.');
         }
 
         $debitPositive = $this->debitBase->isPositive();
@@ -34,6 +35,38 @@ final readonly class PostingLineCommand
         // Exactly one direction must be positive, neither can be negative
         if ($this->debitBase->isNegative() || $this->creditBase->isNegative() || ($debitPositive && $creditPositive) || (! $debitPositive && ! $creditPositive)) {
             throw PostingValidationException::lineMustHaveSingleDirection($this->lineNumber);
+        }
+
+        // Metadata presence check: all 3 must be null, or all 3 must be present
+        $hasCurrency = $this->transactionCurrencyCode !== null;
+        $hasAmount = $this->transactionAmount !== null;
+        $hasRate = $this->exchangeRate !== null;
+
+        if (($hasCurrency || $hasAmount || $hasRate) && ! ($hasCurrency && $hasAmount && $hasRate)) {
+            throw new InvalidArgumentException("Line {$this->lineNumber} metadata is incomplete: transactionCurrencyCode, transactionAmount, and exchangeRate must either all be null or all present.");
+        }
+
+        if ($hasCurrency && $hasAmount && $hasRate) {
+            if (! preg_match('/^[A-Z]{3}$/', (string) $this->transactionCurrencyCode)) {
+                throw new InvalidArgumentException("Line {$this->lineNumber} transactionCurrencyCode must be exactly 3 uppercase letters. Given: '{$this->transactionCurrencyCode}'.");
+            }
+
+            if (! $this->transactionAmount->isPositive()) {
+                throw new InvalidArgumentException("Line {$this->lineNumber} transactionAmount must be positive.");
+            }
+
+            if (! $this->exchangeRate->getValue()->isPositive()) {
+                throw new InvalidArgumentException("Line {$this->lineNumber} exchangeRate must be positive.");
+            }
+
+            $positiveBase = $debitPositive ? $this->debitBase : $this->creditBase;
+            $expectedBase = $this->exchangeRate->toBase($this->transactionAmount);
+
+            if (! $positiveBase->equals($expectedBase)) {
+                throw new InvalidArgumentException(
+                    "Line {$this->lineNumber} conversion mismatch: positive base amount [{$positiveBase->toDecimalString()}] does not equal transactionAmount [{$this->transactionAmount->toDecimalString()}] * exchangeRate [{$this->exchangeRate->toDecimalString()}], expected [{$expectedBase->toDecimalString()}]."
+                );
+            }
         }
     }
 

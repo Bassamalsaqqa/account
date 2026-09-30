@@ -38,6 +38,22 @@ final readonly class PostingCommand
             throw new InvalidArgumentException("sourceId must be a positive integer. Given: {$this->sourceId}.");
         }
 
+        if ($this->sourceType === '' || trim($this->sourceType) === '' || strlen($this->sourceType) > 64 || ! preg_match('/^[a-zA-Z0-9_-]+$/', $this->sourceType)) {
+            throw new InvalidArgumentException("Invalid sourceType [{$this->sourceType}]. Must be 1-64 alphanumeric, dash, or underscore characters.");
+        }
+
+        if ($this->idempotencyKey === '' || trim($this->idempotencyKey) === '' || strlen($this->idempotencyKey) > 191) {
+            throw new InvalidArgumentException('Invalid idempotencyKey. Must be 1-191 characters.');
+        }
+
+        if (! preg_match('/^[A-Z]{3}$/', $this->transactionCurrencyCode)) {
+            throw new InvalidArgumentException("Invalid transactionCurrencyCode [{$this->transactionCurrencyCode}]. Must be exactly 3 uppercase letters.");
+        }
+
+        if (! preg_match('/^[A-Z]{3}$/', $this->baseCurrencyCode)) {
+            throw new InvalidArgumentException("Invalid baseCurrencyCode [{$this->baseCurrencyCode}]. Must be exactly 3 uppercase letters.");
+        }
+
         if ($this->description !== null && mb_strlen($this->description) > 512) {
             throw new InvalidArgumentException('Description cannot exceed 512 characters.');
         }
@@ -89,11 +105,11 @@ final readonly class PostingCommand
             return false;
         }
 
-        if (strtoupper($batch->transaction_currency_code) !== strtoupper($this->transactionCurrencyCode)) {
+        if ($batch->transaction_currency_code !== $this->transactionCurrencyCode) {
             return false;
         }
 
-        if (strtoupper($batch->base_currency_code) !== strtoupper($this->baseCurrencyCode)) {
+        if ($batch->base_currency_code !== $this->baseCurrencyCode) {
             return false;
         }
 
@@ -150,7 +166,7 @@ final readonly class PostingCommand
             if (($dbLine->transaction_currency_code === null) !== ($cmdLine->transactionCurrencyCode === null)) {
                 return false;
             }
-            if ($cmdLine->transactionCurrencyCode !== null && strtoupper((string) $dbLine->transaction_currency_code) !== strtoupper($cmdLine->transactionCurrencyCode)) {
+            if ($cmdLine->transactionCurrencyCode !== null && (string) $dbLine->transaction_currency_code !== $cmdLine->transactionCurrencyCode) {
                 return false;
             }
 

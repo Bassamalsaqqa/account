@@ -175,4 +175,7 @@ return [
     'status_enabled' => 'Enabled',
     'status_disabled' => 'Disabled',
     'error_language_disabled_for_company' => 'English is disabled for this company.',
+    'base_currency_locked_notice' => 'The base currency is permanently locked because journal entries have already been posted to the general ledger.',
+    'base_currency_locked_badge' => 'Locked by posting history',
+    'base_currency_locked_desc' => 'Once financial transactions are posted, the company base currency cannot be modified to protect general ledger integrity.',
 ];

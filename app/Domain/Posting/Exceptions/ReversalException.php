@@ -27,4 +27,9 @@ final class ReversalException extends DomainException
     {
         return new self("Incoherent reversal state detected: {$message}");
     }
+
+    public static function companyInactive(int $companyId): self
+    {
+        return new self("Cannot reverse accounting transaction for inactive company [{$companyId}].");
+    }
 }

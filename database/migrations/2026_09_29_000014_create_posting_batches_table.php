@@ -25,7 +25,7 @@ return new class extends Migration
             $table->decimal('exchange_rate', 20, 10);
             $table->string('description', 512)->nullable();
             $table->string('idempotency_key', 191);
-            $table->foreignId('posted_by')->nullable()->constrained('users')->nullOnDelete();
+            $table->foreignId('posted_by')->constrained('users')->restrictOnDelete();
             $table->dateTime('posted_at');
             $table->foreignId('reversal_of_id')->nullable()->constrained('posting_batches')->nullOnDelete();
             $table->foreignId('reversed_by_batch_id')->nullable()->constrained('posting_batches')->nullOnDelete();

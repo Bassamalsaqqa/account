@@ -1,9 +1,13 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Actions\Company;
 
+use App\Domain\Accounting\Exceptions\BaseCurrencyLockedException;
 use App\Models\Company;
 use App\Models\CompanyCurrency;
+use App\Models\PostingBatch;
 use App\Models\User;
 use App\Services\Audit\AuditService;
 use Illuminate\Support\Facades\DB;
@@ -28,16 +32,37 @@ class UpdateCompanyCurrenciesAction
         // Base currency is unconditionally enabled
         $currenciesEnabled[$baseCurrencyCode] = true;
 
-        return DB::transaction(function () use ($company, $baseCurrencyCode, $currenciesEnabled, $actor) {
+        return DB::transaction(function () use ($company, $baseCurrencyCode, $currenciesEnabled, $actor): Company {
+            // Lock and reload company first
+            /** @var Company $lockedCompany */
+            $lockedCompany = Company::where('id', $company->id)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            $currentBase = strtoupper($lockedCompany->base_currency_code);
+
+            // If requested base currency differs from locked company base currency, check posting history
+            if ($baseCurrencyCode !== $currentBase) {
+                $hasPostings = PostingBatch::where('company_id', $lockedCompany->id)->exists();
+                if ($hasPostings) {
+                    throw BaseCurrencyLockedException::forCompany($lockedCompany->id, $currentBase, $baseCurrencyCode);
+                }
+            }
+
+            // Lock existing company currency rows after checks pass
+            $existingCurrencies = CompanyCurrency::where('company_id', $lockedCompany->id)
+                ->lockForUpdate()
+                ->get();
+
             $before = [
-                'base_currency_code' => $company->base_currency_code,
-                'currencies' => $company->companyCurrencies->pluck('enabled', 'currency_code')->toArray(),
+                'base_currency_code' => $lockedCompany->base_currency_code,
+                'currencies' => $existingCurrencies->pluck('enabled', 'currency_code')->toArray(),
             ];
 
-            $company->update(['base_currency_code' => $baseCurrencyCode]);
+            $lockedCompany->update(['base_currency_code' => $baseCurrencyCode]);
 
             // Clear all base currency flags first to maintain single-base invariant
-            CompanyCurrency::where('company_id', $company->id)->update(['is_base' => false]);
+            CompanyCurrency::where('company_id', $lockedCompany->id)->update(['is_base' => false]);
 
             $order = 1;
             foreach (['ILS', 'USD', 'JOD'] as $code) {
@@ -45,7 +70,7 @@ class UpdateCompanyCurrenciesAction
                 $isEnabled = $isBase ? true : (bool) ($currenciesEnabled[$code] ?? false);
 
                 CompanyCurrency::updateOrCreate(
-                    ['company_id' => $company->id, 'currency_code' => $code],
+                    ['company_id' => $lockedCompany->id, 'currency_code' => $code],
                     [
                         'enabled' => $isEnabled,
                         'is_base' => $isBase,
@@ -55,11 +80,11 @@ class UpdateCompanyCurrenciesAction
             }
 
             $this->audit->log(
-                companyId: $company->id,
+                companyId: $lockedCompany->id,
                 eventKey: 'company.currencies_updated',
                 summary: "Currency settings updated by {$actor->name}",
                 actorUserId: $actor->id,
-                subject: $company,
+                subject: $lockedCompany,
                 before: $before,
                 after: [
                     'base_currency_code' => $baseCurrencyCode,
@@ -67,7 +92,7 @@ class UpdateCompanyCurrenciesAction
                 ]
             );
 
-            return $company;
+            return $lockedCompany->fresh(['companyCurrencies']) ?? $lockedCompany;
         });
     }
 }

@@ -51,4 +51,9 @@ final class PostingValidationException extends DomainException
     {
         return new self('Reversal postings and links can only be created via AccountingReversalService.');
     }
+
+    public static function companyInactive(int $companyId): self
+    {
+        return new self("Cannot post accounting transaction for inactive company [{$companyId}].");
+    }
 }

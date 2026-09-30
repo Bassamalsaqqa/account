@@ -6,6 +6,7 @@ namespace App\Console\Commands;
 
 use App\Actions\Accounting\EnsureSystemLedgerAccountsAction;
 use App\Models\Company;
+use App\Support\Tenancy\CompanyContext;
 use App\Support\Tenancy\CompanyScope;
 use Illuminate\Console\Command;
 
@@ -29,42 +30,55 @@ class AccountingBootstrapCommand extends Command
     {
         $publicId = $this->argument('companyPublicId');
 
-        return CompanyScope::executeWithoutScope(function () use ($action, $publicId): int {
-            if ($publicId !== null) {
-                /** @var Company|null $company */
-                $company = Company::where('public_id', (string) $publicId)->first();
+        $context = app(CompanyContext::class);
+        $prevCompany = $context->hasCompany() ? $context->company() : null;
+        $prevUser = $context->user();
+        if ($prevCompany !== null) {
+            $context->clear();
+        }
 
-                if ($company === null) {
-                    $this->error("Company with public ID [{$publicId}] not found.");
+        try {
+            return CompanyScope::executeWithoutScope(function () use ($action, $publicId): int {
+                if ($publicId !== null) {
+                    /** @var Company|null $company */
+                    $company = Company::where('public_id', (string) $publicId)->first();
 
-                    return self::FAILURE;
+                    if ($company === null) {
+                        $this->error("Company with public ID [{$publicId}] not found.");
+
+                        return self::FAILURE;
+                    }
+
+                    $this->info("Provisioning system accounts for company: {$company->displayName()} ({$company->public_id})...");
+                    $action->execute($company, isSystem: true);
+                    $this->info("System accounts provisioned successfully for [{$company->displayName()}].");
+
+                    return self::SUCCESS;
                 }
 
-                $this->info("Provisioning system accounts for company: {$company->displayName()} ({$company->public_id})...");
-                $action->execute($company, isSystem: true);
-                $this->info("System accounts provisioned successfully for [{$company->displayName()}].");
+                $companies = Company::all();
+
+                if ($companies->isEmpty()) {
+                    $this->info('No companies found in database. System accounts will be provisioned on company creation.');
+
+                    return self::SUCCESS;
+                }
+
+                $count = 0;
+                foreach ($companies as $company) {
+                    $this->line("Provisioning company: {$company->displayName()} ({$company->public_id})...");
+                    $action->execute($company, isSystem: true);
+                    $count++;
+                }
+
+                $this->info("Successfully provisioned system chart of accounts for {$count} company/companies.");
 
                 return self::SUCCESS;
+            });
+        } finally {
+            if ($prevCompany !== null) {
+                $context->setCompany($prevCompany, $prevUser);
             }
-
-            $companies = Company::all();
-
-            if ($companies->isEmpty()) {
-                $this->info('No companies found in database. System accounts will be provisioned on company creation.');
-
-                return self::SUCCESS;
-            }
-
-            $count = 0;
-            foreach ($companies as $company) {
-                $this->line("Provisioning company: {$company->displayName()} ({$company->public_id})...");
-                $action->execute($company, isSystem: true);
-                $count++;
-            }
-
-            $this->info("Successfully provisioned system chart of accounts for {$count} company/companies.");
-
-            return self::SUCCESS;
-        });
+        }
     }
 }
