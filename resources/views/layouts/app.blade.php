@@ -143,19 +143,30 @@
                             <span>{{ __('app.nav_vendors') }}</span>
                         </div>
                     </span>
-                    <span title="{{ __('app.future_module_notice') }}" class="flex items-center justify-between h-[38px] px-3 rounded-control text-text-muted opacity-60 cursor-not-allowed">
+                    <a href="{{ route('products.index') }}"
+                       class="flex items-center justify-between h-[38px] px-3 rounded-control text-text-secondary hover:bg-surface-soft hover:text-text-primary font-semibold transition-colors
+                              {{ request()->routeIs('products.*') ? 'bg-primary-50 text-primary! font-bold shadow-[inset_3px_0_0_#255fd6] rtl:shadow-[inset_-3px_0_0_#255fd6]' : '' }}">
                         <div class="flex items-center gap-2.5">
                             <x-icon name="box" class="w-4.5 h-4.5" />
                             <span>{{ __('app.nav_products') }}</span>
                         </div>
-                    </span>
-                    <span title="{{ __('app.future_module_notice') }}" class="flex items-center justify-between h-[38px] px-3 rounded-control text-text-muted opacity-60 cursor-not-allowed">
+                    </a>
+                    <a href="{{ route('inventory.overview') }}"
+                       class="flex items-center justify-between h-[38px] px-3 rounded-control text-text-secondary hover:bg-surface-soft hover:text-text-primary font-semibold transition-colors
+                              {{ request()->routeIs('inventory.overview', 'inventory.movements', 'inventory.adjustments.*', 'inventory.transfers.*') ? 'bg-primary-50 text-primary! font-bold shadow-[inset_3px_0_0_#255fd6] rtl:shadow-[inset_-3px_0_0_#255fd6]' : '' }}">
+                        <div class="flex items-center gap-2.5">
+                            <x-icon name="store" class="w-4.5 h-4.5" />
+                            <span>{{ __('app.nav_inventory_overview') }}</span>
+                        </div>
+                    </a>
+                    <a href="{{ route('inventory.expiry') }}"
+                       class="flex items-center justify-between h-[38px] px-3 rounded-control text-text-secondary hover:bg-surface-soft hover:text-text-primary font-semibold transition-colors
+                              {{ request()->routeIs('inventory.expiry') ? 'bg-primary-50 text-primary! font-bold shadow-[inset_3px_0_0_#255fd6] rtl:shadow-[inset_-3px_0_0_#255fd6]' : '' }}">
                         <div class="flex items-center gap-2.5">
                             <x-icon name="expiry" class="w-4.5 h-4.5" />
                             <span>{{ __('app.nav_expiry_center') }}</span>
                         </div>
-                        <x-badge variant="alert">3</x-badge>
-                    </span>
+                    </a>
                 </div>
             </div>
 

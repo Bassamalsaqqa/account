@@ -3,6 +3,8 @@
 namespace App\Actions\Company;
 
 use App\Actions\Accounting\EnsureSystemLedgerAccountsAction;
+use App\Actions\Inventory\EnsureDefaultUnitsAction;
+use App\Actions\Inventory\EnsureDefaultWarehouseAction;
 use App\Exceptions\CompanyReassignmentException;
 use App\Models\Company;
 use App\Models\CompanyCurrency;
@@ -27,7 +29,9 @@ class CreateCompanyAction
     public function __construct(
         protected CompanyRoleService $roleService,
         protected AuditService $auditService,
-        protected EnsureSystemLedgerAccountsAction $ensureAccountsAction
+        protected EnsureSystemLedgerAccountsAction $ensureAccountsAction,
+        protected EnsureDefaultUnitsAction $ensureUnitsAction,
+        protected EnsureDefaultWarehouseAction $ensureWarehouseAction
     ) {}
 
     /**
@@ -120,10 +124,15 @@ class CreateCompanyAction
                     ]);
                 }
 
-                // 5. Settings tables
+                // 5. Phase 3 Catalog & Inventory Foundations (Units & Default Warehouse)
+                $this->ensureUnitsAction->execute($company);
+                $defaultWarehouse = $this->ensureWarehouseAction->execute($company, $owner->id);
+
+                // 6. Settings tables
                 CompanyInventorySettings::create([
                     'company_id' => $company->id,
                     'allow_negative_stock' => false,
+                    'default_warehouse_id' => $defaultWarehouse->id,
                     'default_cost_method' => 'moving_average',
                     'default_expiry_warning_days' => 30,
                 ]);
@@ -147,16 +156,16 @@ class CreateCompanyAction
                     'public_share_default_expiry_days' => 30,
                 ]);
 
-                // 6. Seed company roles and permissions
+                // 7. Seed company roles and permissions
                 $this->roleService->seedCompanyRoles($company);
 
-                // 7. Assign Owner role
+                // 8. Assign Owner role
                 setPermissionsTeamId($company->id);
                 app(PermissionRegistrar::class)->setPermissionsTeamId($company->id);
                 $ownerRole = Role::where('company_id', $company->id)->where('name', 'Owner')->firstOrFail();
                 $owner->assignRole($ownerRole);
 
-                // 8. Provision system chart of accounts before activation
+                // 9. Provision system chart of accounts before activation
                 $context = app(CompanyContext::class);
                 $prevCompany = $context->hasCompany() ? $context->company() : null;
                 $prevUser = $context->user();
@@ -171,7 +180,7 @@ class CreateCompanyAction
                     }
                 }
 
-                // 9. Log initial audit event
+                // 10. Log initial audit event
                 $this->auditService->log(
                     companyId: $company->id,
                     eventKey: 'company.created',

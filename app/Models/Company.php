@@ -144,6 +144,46 @@ class Company extends Model
         return $this->hasMany(AuditEvent::class);
     }
 
+    /**
+     * @return HasMany<Product, $this>
+     */
+    public function products(): HasMany
+    {
+        return $this->hasMany(Product::class);
+    }
+
+    /**
+     * @return HasMany<Warehouse, $this>
+     */
+    public function warehouses(): HasMany
+    {
+        return $this->hasMany(Warehouse::class);
+    }
+
+    /**
+     * @return HasMany<ProductCategory, $this>
+     */
+    public function categories(): HasMany
+    {
+        return $this->hasMany(ProductCategory::class);
+    }
+
+    /**
+     * @return HasMany<Unit, $this>
+     */
+    public function units(): HasMany
+    {
+        return $this->hasMany(Unit::class);
+    }
+
+    /**
+     * @return HasMany<Brand, $this>
+     */
+    public function brands(): HasMany
+    {
+        return $this->hasMany(Brand::class);
+    }
+
     public function displayName(?string $locale = null): string
     {
         $loc = $locale ?: app()->getLocale();

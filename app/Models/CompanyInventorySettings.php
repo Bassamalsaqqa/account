@@ -26,6 +26,7 @@ class CompanyInventorySettings extends Model
     protected $fillable = [
         'company_id',
         'allow_negative_stock',
+        'default_warehouse_id',
         'default_cost_method',
         'default_expiry_warning_days',
     ];
@@ -37,6 +38,7 @@ class CompanyInventorySettings extends Model
     {
         return [
             'allow_negative_stock' => 'boolean',
+            'default_warehouse_id' => 'integer',
             'default_expiry_warning_days' => 'integer',
         ];
     }
@@ -47,5 +49,13 @@ class CompanyInventorySettings extends Model
     public function company(): BelongsTo
     {
         return $this->belongsTo(Company::class);
+    }
+
+    /**
+     * @return BelongsTo<Warehouse, $this>
+     */
+    public function defaultWarehouse(): BelongsTo
+    {
+        return $this->belongsTo(Warehouse::class, 'default_warehouse_id');
     }
 }

@@ -8,6 +8,7 @@
     "require": {
         "php": "^8.4",
         "brick/math": "^0.14",
+        "intervention/image": "^4.3",
         "laravel/fortify": "^1.40",
         "laravel/framework": "^13.0",
         "laravel/tinker": "^3.0",
