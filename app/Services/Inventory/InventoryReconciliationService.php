@@ -566,6 +566,23 @@ class InventoryReconciliationService
                     }
                 }
 
+                // Check default sale and default purchase singleton invariants
+                $activeUnits = $prodUList->where('active', true);
+                $activeSaleDefaults = $activeUnits->where('is_default_sale', true);
+                $activePurchaseDefaults = $activeUnits->where('is_default_purchase', true);
+
+                if ($activeSaleDefaults->count() === 0) {
+                    $cacheDiscrepancies[] = "Product [{$prod->id}] has no active default sale unit configured.";
+                } elseif ($activeSaleDefaults->count() > 1) {
+                    $cacheDiscrepancies[] = "Product [{$prod->id}] has multiple [{$activeSaleDefaults->count()}] active default sale units configured.";
+                }
+
+                if ($activePurchaseDefaults->count() === 0) {
+                    $cacheDiscrepancies[] = "Product [{$prod->id}] has no active default purchase unit configured.";
+                } elseif ($activePurchaseDefaults->count() > 1) {
+                    $cacheDiscrepancies[] = "Product [{$prod->id}] has multiple [{$activePurchaseDefaults->count()}] active default purchase units configured.";
+                }
+
                 // Positive-stock product must be active
                 $costState = $costStates->get($prod->id);
                 $prodCompanyQty = $costState !== null ? BigDecimal::of((string) $costState->quantity_base) : BigDecimal::zero();

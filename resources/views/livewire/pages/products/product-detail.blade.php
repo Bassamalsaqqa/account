@@ -339,6 +339,8 @@
                             <th class="p-3.5">{{ __('inventory.unit') }}</th>
                             <th class="p-3.5 text-center">{{ __('inventory.conversion_factor_to_base') }}</th>
                             <th class="p-3.5 text-center">{{ __('common.type') }}</th>
+                            <th class="p-3.5 text-center">{{ __('inventory.default_sale_unit') }}</th>
+                            <th class="p-3.5 text-center">{{ __('inventory.default_purchase_unit') }}</th>
                             <th class="p-3.5 text-center">{{ __('common.status') }}</th>
                         </tr>
                     </thead>
@@ -359,6 +361,20 @@
                                     @endif
                                 </td>
                                 <td class="p-3.5 text-center">
+                                    @if ($pu->is_default_sale)
+                                        <span class="text-success font-bold">&#10003;</span>
+                                    @else
+                                        <span class="text-text-muted">&times;</span>
+                                    @endif
+                                </td>
+                                <td class="p-3.5 text-center">
+                                    @if ($pu->is_default_purchase)
+                                        <span class="text-success font-bold">&#10003;</span>
+                                    @else
+                                        <span class="text-text-muted">&times;</span>
+                                    @endif
+                                </td>
+                                <td class="p-3.5 text-center">
                                     @if ($pu->active)
                                         <x-badge variant="success">{{ __('common.active') }}</x-badge>
                                     @else
@@ -368,7 +384,7 @@
                             </tr>
                         @empty
                             <tr>
-                                <td colspan="4" class="p-6 text-center text-text-muted">
+                                <td colspan="6" class="p-6 text-center text-text-muted">
                                     {{ __('inventory.no_units_registered') }}
                                 </td>
                             </tr>

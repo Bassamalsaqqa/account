@@ -264,11 +264,11 @@
                     <div class="flex items-center gap-3 pb-1">
                         <label class="flex items-center gap-1.5 text-xs text-text-secondary cursor-pointer">
                             <input type="checkbox" wire:model="new_alt_sell" class="rounded border-border text-primary w-3.5 h-3.5" />
-                            <span>{{ __('inventory.sell_enabled') }}</span>
+                            <span>{{ __('inventory.default_sale_unit') }}</span>
                         </label>
                         <label class="flex items-center gap-1.5 text-xs text-text-secondary cursor-pointer">
                             <input type="checkbox" wire:model="new_alt_purchase" class="rounded border-border text-primary w-3.5 h-3.5" />
-                            <span>{{ __('inventory.purchase_enabled') }}</span>
+                            <span>{{ __('inventory.default_purchase_unit') }}</span>
                         </label>
                     </div>
                     <div>
@@ -287,38 +287,51 @@
                                 <tr>
                                     <th class="p-2.5">{{ __('inventory.unit') }}</th>
                                     <th class="p-2.5">{{ __('inventory.conversion_factor_to_base') }} (→ {{ app()->getLocale() === 'en' ? ($product->baseUnit?->name_en ?: $product->baseUnit?->name_ar) : $product->baseUnit?->name_ar }})</th>
-                                    <th class="p-2.5 text-center">{{ __('inventory.sell_enabled') }}</th>
-                                    <th class="p-2.5 text-center">{{ __('inventory.purchase_enabled') }}</th>
+                                    <th class="p-2.5 text-center">{{ __('inventory.default_sale_unit') }}</th>
+                                    <th class="p-2.5 text-center">{{ __('inventory.default_purchase_unit') }}</th>
                                     <th class="p-2.5 text-center w-16"></th>
                                 </tr>
                             </thead>
                             <tbody class="divide-y divide-border">
                                 @foreach ($productUnits as $pu)
                                     <tr>
-                                        <td class="p-2.5 font-bold text-text-primary">{{ app()->getLocale() === 'en' ? ($pu->unit?->name_en ?: $pu->unit?->name_ar) : $pu->unit?->name_ar }}</td>
-                                        <td class="p-2.5 font-mono dir-ltr">1 {{ app()->getLocale() === 'en' ? ($pu->unit?->name_en ?: $pu->unit?->name_ar) : $pu->unit?->name_ar }} = {{ $pu->conversion_to_base }} {{ app()->getLocale() === 'en' ? ($product->baseUnit?->name_en ?: $product->baseUnit?->name_ar) : $product->baseUnit?->name_ar }}</td>
+                                        <td class="p-2.5 font-bold text-text-primary">
+                                            <div class="flex items-center gap-1.5">
+                                                <span>{{ app()->getLocale() === 'en' ? ($pu->unit?->name_en ?: $pu->unit?->name_ar) : $pu->unit?->name_ar }}</span>
+                                                @if ($pu->is_base)
+                                                    <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-primary/10 text-primary">{{ __('inventory.base_unit_badge') }}</span>
+                                                @endif
+                                            </div>
+                                        </td>
+                                        <td class="p-2.5 font-mono dir-ltr">
+                                            @if ($pu->is_base)
+                                                1.000000 ({{ __('inventory.base_unit_badge') }})
+                                            @else
+                                                1 {{ app()->getLocale() === 'en' ? ($pu->unit?->name_en ?: $pu->unit?->name_ar) : $pu->unit?->name_ar }} = {{ $pu->conversion_to_base }} {{ app()->getLocale() === 'en' ? ($product->baseUnit?->name_en ?: $product->baseUnit?->name_ar) : $product->baseUnit?->name_ar }}
+                                            @endif
+                                        </td>
                                         <td class="p-2.5 text-center">
-                                            @if ($pu->sell_enabled)
+                                            @if ($pu->is_default_sale)
                                                 <span class="text-success font-bold">&#10003;</span>
                                             @else
                                                 <span class="text-text-muted">&times;</span>
                                             @endif
                                         </td>
                                         <td class="p-2.5 text-center">
-                                            @if ($pu->purchase_enabled)
+                                            @if ($pu->is_default_purchase)
                                                 <span class="text-success font-bold">&#10003;</span>
                                             @else
                                                 <span class="text-text-muted">&times;</span>
                                             @endif
                                         </td>
                                         <td class="p-2.5 text-center">
-                                            @if (! $hasMovements)
+                                            @if ($pu->is_base)
+                                                <span class="text-text-muted">-</span>
+                                            @else
                                                 <button type="button" wire:click="removeAlternateUnit({{ $pu->id }})"
                                                         class="text-danger hover:underline text-xs">
                                                     {{ __('inventory.delete') }}
                                                 </button>
-                                            @else
-                                                <span class="text-text-muted text-[10px]" title="{{ __('inventory.locked_due_to_movements') }}">{{ __('inventory.locked_due_to_movements') }}</span>
                                             @endif
                                         </td>
                                     </tr>

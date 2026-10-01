@@ -345,6 +345,7 @@ class ProductCatalogService
      * Add or update alternate unit under transaction locks.
      * Existing units with movement history cannot have conversion factor mutated.
      * Adding NEW units is allowed even after movement history.
+     * Enforces singleton active default sale and purchase invariants per product.
      */
     public function addOrUpdateAlternateUnit(
         Product $product,
@@ -360,6 +361,7 @@ class ProductCatalogService
             $isDefaultSale,
             $isDefaultPurchase
         ): ProductUnit {
+            Company::where('id', $product->company_id)->lockForUpdate()->firstOrFail();
             /** @var Product $lockedProduct */
             $lockedProduct = Product::where('id', $product->id)->lockForUpdate()->firstOrFail();
 
@@ -372,15 +374,37 @@ class ProductCatalogService
                 throw InvalidUnitConversionException::zeroOrNegative((string) $convBd);
             }
 
+            // Lock all ProductUnits for this product
+            ProductUnit::where('company_id', $lockedProduct->company_id)
+                ->where('product_id', $lockedProduct->id)
+                ->lockForUpdate()
+                ->get();
+
             /** @var ProductUnit|null $existingUnit */
             $existingUnit = ProductUnit::where('company_id', $lockedProduct->company_id)
                 ->where('product_id', $lockedProduct->id)
                 ->where('unit_id', $unitId)
-                ->lockForUpdate()
                 ->first();
 
             if ($existingUnit !== null) {
-                $this->conversionService->assertCanMutateConversion($lockedProduct, $unitId);
+                $existingConv = BigDecimal::of((string) $existingUnit->conversion_to_base);
+                if (! $existingConv->isEqualTo($convBd)) {
+                    $this->conversionService->assertCanMutateConversion($lockedProduct, $unitId);
+                }
+
+                if ($isDefaultSale) {
+                    ProductUnit::where('company_id', $lockedProduct->company_id)
+                        ->where('product_id', $lockedProduct->id)
+                        ->where('id', '!=', $existingUnit->id)
+                        ->update(['is_default_sale' => false]);
+                }
+
+                if ($isDefaultPurchase) {
+                    ProductUnit::where('company_id', $lockedProduct->company_id)
+                        ->where('product_id', $lockedProduct->id)
+                        ->where('id', '!=', $existingUnit->id)
+                        ->update(['is_default_purchase' => false]);
+                }
 
                 $existingUnit->update([
                     'conversion_to_base' => (string) $convBd->toScale(6),
@@ -389,11 +413,123 @@ class ProductCatalogService
                     'active' => true,
                 ]);
 
-                return $existingUnit;
+                // Check if unsetting default sale or purchase requires base fallback
+                $needsSaleFallback = false;
+                if (! $isDefaultSale) {
+                    $hasOtherSaleDefault = ProductUnit::where('company_id', $lockedProduct->company_id)
+                        ->where('product_id', $lockedProduct->id)
+                        ->where('active', true)
+                        ->where('is_default_sale', true)
+                        ->where('id', '!=', $existingUnit->id)
+                        ->exists();
+
+                    if (! $hasOtherSaleDefault) {
+                        $needsSaleFallback = true;
+                    }
+                }
+
+                $needsPurchaseFallback = false;
+                if (! $isDefaultPurchase) {
+                    $hasOtherPurchaseDefault = ProductUnit::where('company_id', $lockedProduct->company_id)
+                        ->where('product_id', $lockedProduct->id)
+                        ->where('active', true)
+                        ->where('is_default_purchase', true)
+                        ->where('id', '!=', $existingUnit->id)
+                        ->exists();
+
+                    if (! $hasOtherPurchaseDefault) {
+                        $needsPurchaseFallback = true;
+                    }
+                }
+
+                // If fallback to base is needed for either dimension, validate healthy base BEFORE any mutation
+                $baseUnitToPromote = null;
+                if ($needsSaleFallback || $needsPurchaseFallback) {
+                    $baseUnitToPromote = $this->conversionService->getHealthyBaseUnit($lockedProduct);
+                }
+
+                if ($isDefaultSale) {
+                    ProductUnit::where('company_id', $lockedProduct->company_id)
+                        ->where('product_id', $lockedProduct->id)
+                        ->where('id', '!=', $existingUnit->id)
+                        ->update(['is_default_sale' => false]);
+                }
+
+                if ($isDefaultPurchase) {
+                    ProductUnit::where('company_id', $lockedProduct->company_id)
+                        ->where('product_id', $lockedProduct->id)
+                        ->where('id', '!=', $existingUnit->id)
+                        ->update(['is_default_purchase' => false]);
+                }
+
+                $existingUnit->update([
+                    'conversion_to_base' => (string) $convBd->toScale(6),
+                    'is_default_sale' => $isDefaultSale,
+                    'is_default_purchase' => $isDefaultPurchase,
+                    'active' => true,
+                ]);
+
+                if ($baseUnitToPromote !== null) {
+                    $baseUpdates = [];
+                    if ($needsSaleFallback) {
+                        $baseUpdates['is_default_sale'] = true;
+                    }
+                    if ($needsPurchaseFallback) {
+                        $baseUpdates['is_default_purchase'] = true;
+                    }
+                    $baseUnitToPromote->update($baseUpdates);
+                }
+
+                return $existingUnit->fresh() ?? $existingUnit;
             }
 
-            // Adding new alternate unit — allowed even if product has movement history
-            return ProductUnit::create([
+            // Check if adding new unit with false defaults requires base fallback
+            $needsSaleFallback = false;
+            if (! $isDefaultSale) {
+                $hasSaleDefault = ProductUnit::where('company_id', $lockedProduct->company_id)
+                    ->where('product_id', $lockedProduct->id)
+                    ->where('active', true)
+                    ->where('is_default_sale', true)
+                    ->exists();
+
+                if (! $hasSaleDefault) {
+                    $needsSaleFallback = true;
+                }
+            }
+
+            $needsPurchaseFallback = false;
+            if (! $isDefaultPurchase) {
+                $hasPurchaseDefault = ProductUnit::where('company_id', $lockedProduct->company_id)
+                    ->where('product_id', $lockedProduct->id)
+                    ->where('active', true)
+                    ->where('is_default_purchase', true)
+                    ->exists();
+
+                if (! $hasPurchaseDefault) {
+                    $needsPurchaseFallback = true;
+                }
+            }
+
+            // Validate healthy base BEFORE creating unit or mutating if fallback is needed
+            $baseUnitToPromote = null;
+            if ($needsSaleFallback || $needsPurchaseFallback) {
+                $baseUnitToPromote = $this->conversionService->getHealthyBaseUnit($lockedProduct);
+            }
+
+            // Adding new alternate unit — demote others if setting default
+            if ($isDefaultSale) {
+                ProductUnit::where('company_id', $lockedProduct->company_id)
+                    ->where('product_id', $lockedProduct->id)
+                    ->update(['is_default_sale' => false]);
+            }
+
+            if ($isDefaultPurchase) {
+                ProductUnit::where('company_id', $lockedProduct->company_id)
+                    ->where('product_id', $lockedProduct->id)
+                    ->update(['is_default_purchase' => false]);
+            }
+
+            $newUnit = ProductUnit::create([
                 'company_id' => $lockedProduct->company_id,
                 'product_id' => $lockedProduct->id,
                 'unit_id' => $unitId,
@@ -403,17 +539,32 @@ class ProductCatalogService
                 'is_default_purchase' => $isDefaultPurchase,
                 'active' => true,
             ]);
+
+            if ($baseUnitToPromote !== null) {
+                $baseUpdates = [];
+                if ($needsSaleFallback) {
+                    $baseUpdates['is_default_sale'] = true;
+                }
+                if ($needsPurchaseFallback) {
+                    $baseUpdates['is_default_purchase'] = true;
+                }
+                $baseUnitToPromote->update($baseUpdates);
+            }
+
+            return $newUnit;
         });
     }
 
     /**
      * Remove alternate unit under transaction locks.
      * Removal of base unit is strictly forbidden.
-     * Removal of unit referenced in stock movements is forbidden.
+     * Removal of unit referenced in stock movements or barcodes is forbidden.
+     * Promotes healthy base unit for any dimension for which target was default.
      */
     public function removeAlternateUnit(Product $product, int $productUnitId): void
     {
         DB::transaction(function () use ($product, $productUnitId): void {
+            Company::where('id', $product->company_id)->lockForUpdate()->firstOrFail();
             /** @var Product $lockedProduct */
             $lockedProduct = Product::where('id', $product->id)->lockForUpdate()->firstOrFail();
 
@@ -432,6 +583,16 @@ class ProductCatalogService
                 throw new InvalidArgumentException(__('inventory.cannot_remove_base_unit'));
             }
 
+            // Reject if referenced by product barcodes
+            $hasLinkedBarcodes = ProductBarcode::where('company_id', $lockedProduct->company_id)
+                ->where('product_id', $lockedProduct->id)
+                ->where('unit_id', $targetUnit->unit_id)
+                ->exists();
+
+            if ($hasLinkedBarcodes) {
+                throw new InvalidArgumentException(__('inventory.cannot_remove_unit_with_barcodes'));
+            }
+
             $hasMovements = StockMovement::where('company_id', $lockedProduct->company_id)
                 ->where('product_id', $lockedProduct->id)
                 ->where('unit_id', $targetUnit->unit_id)
@@ -439,6 +600,23 @@ class ProductCatalogService
 
             if ($hasMovements) {
                 throw new HistoricalConversionLockedException(__('inventory.cannot_remove_unit_with_movement_history'));
+            }
+
+            // When removable alternate is default sale and/or purchase, promote the existing healthy base ProductUnit
+            $promoteSale = (bool) $targetUnit->is_default_sale;
+            $promotePurchase = (bool) $targetUnit->is_default_purchase;
+
+            if ($promoteSale || $promotePurchase) {
+                $baseUnit = $this->conversionService->getHealthyBaseUnit($lockedProduct);
+
+                $updates = [];
+                if ($promoteSale) {
+                    $updates['is_default_sale'] = true;
+                }
+                if ($promotePurchase) {
+                    $updates['is_default_purchase'] = true;
+                }
+                $baseUnit->update($updates);
             }
 
             $targetUnit->delete();

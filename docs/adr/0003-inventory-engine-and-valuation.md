@@ -87,9 +87,9 @@ Small Trader Accounting (`التاجر الصغير`) requires an authoritative,
   - Warehouse updates enforce that the effective resulting default warehouse must be active; setting an inactive warehouse as default or deactivating an active default is rejected, preserving an active default warehouse.
 
 ### 6. Traceable Lots, FEFO, and Expiry Boundary
-- **Traceability:** Products configured with `track_expiry = true` require lots with `received_date` and `expiry_date`.
+- **Traceability:** Products configured with `track_expiry = true` receive stock into distinct lots with `received_date`; `lot_number` and `expiry_date` are optional (nullable). A null expiry date denotes an unknown date: the lot is never considered expired, is eligible for normal consumption, is sorted after all dated eligible lots in FEFO allocation, and cannot be disposed of under expiry disposal (since no date establishes expiry).
 - **FEFO Allocation Order:**
-  - Candidate lots are sorted by `expiry_date ASC` (soonest expiring first), then `received_date ASC`, then `id ASC`.
+  - Candidate eligible lots are sorted by `expiry_date ASC` with nulls last (soonest expiring first, then null-expiry lots), then `received_date ASC`, then `id ASC`.
 - **Calendar Expiry Boundary:**
   - The expiry date is the **last valid calendar day**.
   - Equal movement date and expiry date (`movement_date === expiry_date`) allows normal issue/allocation and strictly forbids expiry disposal.

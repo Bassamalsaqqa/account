@@ -6,12 +6,14 @@ namespace Tests\Feature\Phase3;
 
 use App\Actions\Company\CreateCompanyAction;
 use App\Actions\Inventory\AdjustStockAction;
+use App\Actions\Inventory\DisposeExpiredStockAction;
 use App\Actions\Inventory\PostOpeningStockAction;
 use App\Domain\Accounting\Exceptions\ImmutableRecordException;
 use App\Domain\Inventory\DTO\StockMovementCommand;
 use App\Domain\Inventory\DTO\StockMovementLineCommand;
 use App\Domain\Inventory\DTO\StockTransferCommand;
 use App\Domain\Inventory\DTO\StockTransferLineCommand;
+use App\Domain\Inventory\Exceptions\HistoricalConversionLockedException;
 use App\Domain\Inventory\Exceptions\IdempotencyConflictException;
 use App\Domain\Inventory\Exceptions\InvalidInventoryMovementException;
 use App\Domain\Inventory\Exceptions\InvalidUnitConversionException;
@@ -33,6 +35,7 @@ use App\Models\StockMovement;
 use App\Models\Unit;
 use App\Models\User;
 use App\Models\Warehouse;
+use App\Services\Inventory\FefoAllocationService;
 use App\Services\Inventory\InventoryMovementService;
 use App\Services\Inventory\InventoryRebuildService;
 use App\Services\Inventory\InventoryReconciliationService;
@@ -132,6 +135,8 @@ class Phase3IntegrityCorrectionTest extends TestCase
             'unit_id' => $this->unitPiece->id,
             'conversion_to_base' => '1.000000',
             'is_base' => true,
+            'is_default_sale' => true,
+            'is_default_purchase' => true,
             'active' => true,
         ]);
 
@@ -1175,5 +1180,647 @@ class Phase3IntegrityCorrectionTest extends TestCase
             unitCostBase: '1.000000',
             lotNumber: str_repeat('ط', 129),
         );
+    }
+
+    public function test_singleton_active_sale_and_purchase_defaults_at_creation_and_mutation(): void
+    {
+        $catalogService = app(ProductCatalogService::class);
+
+        $product = $catalogService->createProduct($this->company, [
+            'name_ar' => 'منتج الوحدات الافتراضية',
+            'base_unit_id' => $this->unitPiece->id,
+            'product_type' => Product::TYPE_STOCK,
+            'track_stock' => true,
+            'active' => true,
+            'created_by' => $this->owner->id,
+        ], $this->owner->id);
+
+        // Base unit is initially both defaults
+        $basePu = ProductUnit::where('product_id', $product->id)->where('is_base', true)->firstOrFail();
+        $this->assertTrue($basePu->is_default_sale);
+        $this->assertTrue($basePu->is_default_purchase);
+        $this->assertSame(1, ProductUnit::where('product_id', $product->id)->where('is_default_sale', true)->count());
+        $this->assertSame(1, ProductUnit::where('product_id', $product->id)->where('is_default_purchase', true)->count());
+
+        // Add Box as default sale, not purchase
+        $boxPu = $catalogService->addOrUpdateAlternateUnit($product, $this->unitBox->id, '12.000000', true, false);
+        $basePu->refresh();
+        $this->assertTrue($boxPu->is_default_sale);
+        $this->assertFalse($boxPu->is_default_purchase);
+        $this->assertFalse($basePu->is_default_sale);
+        $this->assertTrue($basePu->is_default_purchase);
+
+        // Add Pallet as default purchase, not sale
+        $unitPallet = Unit::create([
+            'company_id' => $this->company->id,
+            'name_ar' => 'طبلية',
+            'code' => 'pallet',
+            'allow_fractions' => false,
+            'decimal_places' => 0,
+            'active' => true,
+            'created_by' => $this->owner->id,
+        ]);
+        $palletPu = $catalogService->addOrUpdateAlternateUnit($product, $unitPallet->id, '120.000000', false, true);
+
+        $basePu->refresh();
+        $boxPu->refresh();
+        // Independently differing defaults: Box is sale default, Pallet is purchase default, Base is neither
+        $this->assertTrue($boxPu->is_default_sale);
+        $this->assertFalse($boxPu->is_default_purchase);
+        $this->assertFalse($palletPu->is_default_sale);
+        $this->assertTrue($palletPu->is_default_purchase);
+        $this->assertFalse($basePu->is_default_sale);
+        $this->assertFalse($basePu->is_default_purchase);
+        $this->assertSame(1, ProductUnit::where('product_id', $product->id)->where('is_default_sale', true)->count());
+        $this->assertSame(1, ProductUnit::where('product_id', $product->id)->where('is_default_purchase', true)->count());
+
+        // Unsetting Pallet default purchase without choosing another falls back to Base
+        $catalogService->addOrUpdateAlternateUnit($product, $unitPallet->id, '120.000000', false, false);
+        $basePu->refresh();
+        $palletPu->refresh();
+        $this->assertFalse($palletPu->is_default_purchase);
+        $this->assertTrue($basePu->is_default_purchase);
+        $this->assertSame(1, ProductUnit::where('product_id', $product->id)->where('is_default_purchase', true)->count());
+    }
+
+    public function test_same_factor_default_update_after_movements_succeeds_but_changed_factor_fails(): void
+    {
+        $catalogService = app(ProductCatalogService::class);
+        $movementService = app(InventoryMovementService::class);
+
+        $product = $catalogService->createProduct($this->company, [
+            'name_ar' => 'منتج تحويل الحركات',
+            'base_unit_id' => $this->unitPiece->id,
+            'product_type' => Product::TYPE_STOCK,
+            'track_stock' => true,
+            'active' => true,
+            'created_by' => $this->owner->id,
+        ], $this->owner->id);
+
+        $boxPu = $catalogService->addOrUpdateAlternateUnit($product, $this->unitBox->id, '12.000000', false, false);
+
+        // Post opening stock using Box unit to create movement history
+        $movementService->record(new StockMovementCommand(
+            companyId: $this->company->id,
+            movementType: StockMovement::TYPE_OPENING_BALANCE,
+            movementDate: '2026-10-01',
+            lines: [
+                new StockMovementLineCommand(
+                    productId: $product->id,
+                    warehouseId: $this->warehouse->id,
+                    quantity: Quantity::of(5),
+                    unitId: $this->unitBox->id,
+                    unitCostBase: '120.000000',
+                ),
+            ],
+            sourceType: 'opening_stock',
+            sourceId: 1,
+            idempotencyKey: 'hist-unit-01',
+            createdBy: $this->owner->id,
+        ));
+
+        $initialMovement = StockMovement::where('company_id', $this->company->id)->where('product_id', $product->id)->firstOrFail();
+        $initialSnapshotCost = $initialMovement->unit_cost_base;
+        $initialSnapshotQty = $initialMovement->quantity_delta_base;
+
+        // Updating with SAME factor 12 (exact decimal) and changing default sale SUCCEEDS
+        $updatedBoxPu = $catalogService->addOrUpdateAlternateUnit($product, $this->unitBox->id, '12.000000', true, false);
+        $this->assertTrue($updatedBoxPu->is_default_sale);
+
+        // Movement snapshots remain completely unchanged
+        $initialMovement->refresh();
+        $this->assertSame($initialSnapshotCost, $initialMovement->unit_cost_base);
+        $this->assertSame($initialSnapshotQty, $initialMovement->quantity_delta_base);
+
+        // Updating with CHANGED factor (e.g. 24) FAILS closed
+        $this->expectException(HistoricalConversionLockedException::class);
+        $catalogService->addOrUpdateAlternateUnit($product, $this->unitBox->id, '24.000000', true, false);
+    }
+
+    public function test_linked_barcode_alternate_unit_removal_is_rejected_without_mutation(): void
+    {
+        $catalogService = app(ProductCatalogService::class);
+
+        $product = $catalogService->createProduct($this->company, [
+            'name_ar' => 'منتج باركود وحدة',
+            'base_unit_id' => $this->unitPiece->id,
+            'product_type' => Product::TYPE_STOCK,
+            'track_stock' => true,
+            'active' => true,
+            'created_by' => $this->owner->id,
+        ], $this->owner->id);
+
+        $boxPu = $catalogService->addOrUpdateAlternateUnit($product, $this->unitBox->id, '12.000000', false, false);
+        $barcode = $catalogService->addBarcode($product, '6281000012345', $this->unitBox->id, false);
+
+        $this->assertSame($this->unitBox->id, $barcode->unit_id);
+
+        // Attempting to remove Box unit when referenced by barcode must throw InvalidArgumentException
+        $thrown = false;
+        try {
+            $catalogService->removeAlternateUnit($product, $boxPu->id);
+        } catch (\InvalidArgumentException $e) {
+            $thrown = true;
+        }
+
+        $this->assertTrue($thrown, 'Expected InvalidArgumentException when removing unit referenced by barcode.');
+        // Verify no mutation: Box ProductUnit still exists
+        $this->assertDatabaseHas('product_units', [
+            'id' => $boxPu->id,
+            'company_id' => $this->company->id,
+            'product_id' => $product->id,
+        ]);
+        $this->assertDatabaseHas('product_barcodes', [
+            'id' => $barcode->id,
+            'unit_id' => $this->unitBox->id,
+        ]);
+    }
+
+    public function test_alternate_unit_removal_promotes_base_for_default_dimensions(): void
+    {
+        $catalogService = app(ProductCatalogService::class);
+
+        // Case A: Alternate is default sale only -> removal promotes Base to default sale
+        $productA = $catalogService->createProduct($this->company, [
+            'name_ar' => 'منتج فحص الترقية أ',
+            'base_unit_id' => $this->unitPiece->id,
+            'product_type' => Product::TYPE_STOCK,
+            'track_stock' => true,
+            'active' => true,
+            'created_by' => $this->owner->id,
+        ], $this->owner->id);
+        $boxA = $catalogService->addOrUpdateAlternateUnit($productA, $this->unitBox->id, '12.000000', true, false);
+        $baseA = ProductUnit::where('product_id', $productA->id)->where('is_base', true)->firstOrFail();
+        $this->assertFalse($baseA->is_default_sale);
+
+        $catalogService->removeAlternateUnit($productA, $boxA->id);
+        $baseA->refresh();
+        $this->assertTrue($baseA->is_default_sale);
+        $this->assertTrue($baseA->is_default_purchase);
+        $this->assertDatabaseMissing('product_units', ['id' => $boxA->id]);
+
+        // Case B: Alternate is default purchase only -> removal promotes Base to default purchase
+        $productB = $catalogService->createProduct($this->company, [
+            'name_ar' => 'منتج فحص الترقية ب',
+            'base_unit_id' => $this->unitPiece->id,
+            'product_type' => Product::TYPE_STOCK,
+            'track_stock' => true,
+            'active' => true,
+            'created_by' => $this->owner->id,
+        ], $this->owner->id);
+        $boxB = $catalogService->addOrUpdateAlternateUnit($productB, $this->unitBox->id, '12.000000', false, true);
+        $baseB = ProductUnit::where('product_id', $productB->id)->where('is_base', true)->firstOrFail();
+        $this->assertFalse($baseB->is_default_purchase);
+
+        $catalogService->removeAlternateUnit($productB, $boxB->id);
+        $baseB->refresh();
+        $this->assertTrue($baseB->is_default_sale);
+        $this->assertTrue($baseB->is_default_purchase);
+
+        // Case C: Alternate is BOTH default sale and purchase -> removal promotes Base to both
+        $productC = $catalogService->createProduct($this->company, [
+            'name_ar' => 'منتج فحص الترقية ج',
+            'base_unit_id' => $this->unitPiece->id,
+            'product_type' => Product::TYPE_STOCK,
+            'track_stock' => true,
+            'active' => true,
+            'created_by' => $this->owner->id,
+        ], $this->owner->id);
+        $boxC = $catalogService->addOrUpdateAlternateUnit($productC, $this->unitBox->id, '12.000000', true, true);
+        $baseC = ProductUnit::where('product_id', $productC->id)->where('is_base', true)->firstOrFail();
+        $this->assertFalse($baseC->is_default_sale);
+        $this->assertFalse($baseC->is_default_purchase);
+
+        $catalogService->removeAlternateUnit($productC, $boxC->id);
+        $baseC->refresh();
+        $this->assertTrue($baseC->is_default_sale);
+        $this->assertTrue($baseC->is_default_purchase);
+
+        // Case D: Alternate is NEITHER default sale NOR default purchase (non-default alternate removal)
+        $productD = $catalogService->createProduct($this->company, [
+            'name_ar' => 'منتج فحص الترقية د',
+            'base_unit_id' => $this->unitPiece->id,
+            'product_type' => Product::TYPE_STOCK,
+            'track_stock' => true,
+            'active' => true,
+            'created_by' => $this->owner->id,
+        ], $this->owner->id);
+        $boxD = $catalogService->addOrUpdateAlternateUnit($productD, $this->unitBox->id, '12.000000', false, false);
+        $baseD = ProductUnit::where('product_id', $productD->id)->where('is_base', true)->firstOrFail();
+        $this->assertTrue($baseD->is_default_sale);
+        $this->assertTrue($baseD->is_default_purchase);
+        $this->assertFalse($boxD->is_default_sale);
+        $this->assertFalse($boxD->is_default_purchase);
+
+        $catalogService->removeAlternateUnit($productD, $boxD->id);
+        $baseD->refresh();
+        $this->assertTrue($baseD->is_default_sale);
+        $this->assertTrue($baseD->is_default_purchase);
+        $this->assertDatabaseMissing('product_units', ['id' => $boxD->id]);
+    }
+
+    public function test_reconciliation_detects_zero_or_multiple_active_defaults_as_config_discrepancies(): void
+    {
+        $catalogService = app(ProductCatalogService::class);
+        $reconciliationService = app(InventoryReconciliationService::class);
+
+        $product = $catalogService->createProduct($this->company, [
+            'name_ar' => 'منتج فحص المطابقة',
+            'base_unit_id' => $this->unitPiece->id,
+            'product_type' => Product::TYPE_STOCK,
+            'track_stock' => true,
+            'active' => true,
+            'created_by' => $this->owner->id,
+        ], $this->owner->id);
+
+        // Baseline: healthy
+        $report = $reconciliationService->auditCompany($this->company);
+        $this->assertTrue($report->isHealthy);
+
+        // Case 1: Corrupt configuration: zero active default sale rows
+        ProductUnit::where('product_id', $product->id)->update(['is_default_sale' => false]);
+        $before1 = ProductUnit::where('product_id', $product->id)->orderBy('id')->get()->toArray();
+
+        $report1 = $reconciliationService->auditCompany($this->company);
+        $this->assertFalse($report1->isHealthy);
+        $this->assertEmpty($report1->historyCorruptions);
+        $this->assertContains("Product [{$product->id}] has no active default sale unit configured.", $report1->cacheDiscrepancies);
+        $this->assertEquals($before1, ProductUnit::where('product_id', $product->id)->orderBy('id')->get()->toArray());
+
+        // Restore healthy baseline
+        ProductUnit::where('product_id', $product->id)->where('is_base', true)->update(['is_default_sale' => true]);
+
+        // Case 2: Corrupt configuration: multiple active default sale rows
+        $boxSale = ProductUnit::create([
+            'company_id' => $this->company->id,
+            'product_id' => $product->id,
+            'unit_id' => $this->unitBox->id,
+            'conversion_to_base' => '12.000000',
+            'is_base' => false,
+            'is_default_sale' => true,
+            'is_default_purchase' => false,
+            'active' => true,
+        ]);
+        $before2 = ProductUnit::where('product_id', $product->id)->orderBy('id')->get()->toArray();
+
+        $report2 = $reconciliationService->auditCompany($this->company);
+        $this->assertFalse($report2->isHealthy);
+        $this->assertEmpty($report2->historyCorruptions);
+        $this->assertContains("Product [{$product->id}] has multiple [2] active default sale units configured.", $report2->cacheDiscrepancies);
+        $this->assertEquals($before2, ProductUnit::where('product_id', $product->id)->orderBy('id')->get()->toArray());
+
+        // Clean up extra sale default
+        $boxSale->delete();
+
+        // Case 3: Corrupt configuration: zero active default purchase rows
+        ProductUnit::where('product_id', $product->id)->update(['is_default_purchase' => false]);
+        $before3 = ProductUnit::where('product_id', $product->id)->orderBy('id')->get()->toArray();
+
+        $report3 = $reconciliationService->auditCompany($this->company);
+        $this->assertFalse($report3->isHealthy);
+        $this->assertEmpty($report3->historyCorruptions);
+        $this->assertContains("Product [{$product->id}] has no active default purchase unit configured.", $report3->cacheDiscrepancies);
+        $this->assertEquals($before3, ProductUnit::where('product_id', $product->id)->orderBy('id')->get()->toArray());
+
+        // Restore healthy baseline
+        ProductUnit::where('product_id', $product->id)->where('is_base', true)->update(['is_default_purchase' => true]);
+
+        // Case 4: Corrupt configuration: multiple active default purchase rows
+        $boxPurchase = ProductUnit::create([
+            'company_id' => $this->company->id,
+            'product_id' => $product->id,
+            'unit_id' => $this->unitBox->id,
+            'conversion_to_base' => '12.000000',
+            'is_base' => false,
+            'is_default_sale' => false,
+            'is_default_purchase' => true,
+            'active' => true,
+        ]);
+        $before4 = ProductUnit::where('product_id', $product->id)->orderBy('id')->get()->toArray();
+
+        $report4 = $reconciliationService->auditCompany($this->company);
+        $this->assertFalse($report4->isHealthy);
+        $this->assertEmpty($report4->historyCorruptions);
+        $this->assertContains("Product [{$product->id}] has multiple [2] active default purchase units configured.", $report4->cacheDiscrepancies);
+        $this->assertEquals($before4, ProductUnit::where('product_id', $product->id)->orderBy('id')->get()->toArray());
+    }
+
+    public function test_null_expiry_ordering_after_dated_lots_and_null_expiry_disposal_rejection(): void
+    {
+        $movementService = app(InventoryMovementService::class);
+        $fefoService = app(FefoAllocationService::class);
+        $disposeAction = app(DisposeExpiredStockAction::class);
+
+        $product = Product::create([
+            'company_id' => $this->company->id,
+            'name_ar' => 'منتج صلاحية اختياري',
+            'sku' => 'PRD-EXP-NULL-01',
+            'base_unit_id' => $this->unitPiece->id,
+            'product_type' => Product::TYPE_STOCK,
+            'track_stock' => true,
+            'track_expiry' => true,
+            'active' => true,
+            'created_by' => $this->owner->id,
+        ]);
+
+        ProductUnit::create([
+            'company_id' => $this->company->id,
+            'product_id' => $product->id,
+            'unit_id' => $this->unitPiece->id,
+            'conversion_to_base' => '1.000000',
+            'is_base' => true,
+            'is_default_sale' => true,
+            'is_default_purchase' => true,
+            'active' => true,
+        ]);
+
+        // Inbound Lot 1: Exp 2027-06-30 (later dated)
+        $movementService->record(new StockMovementCommand(
+            companyId: $this->company->id,
+            movementType: StockMovement::TYPE_OPENING_BALANCE,
+            movementDate: '2026-10-01',
+            lines: [
+                new StockMovementLineCommand(
+                    productId: $product->id,
+                    warehouseId: $this->warehouse->id,
+                    quantity: Quantity::of(10),
+                    unitCostBase: '5.000000',
+                    lotNumber: 'LOT-EXP-LATER',
+                    expiryDate: '2027-06-30',
+                ),
+            ],
+            sourceType: 'opening_stock',
+            sourceId: 1,
+            idempotencyKey: 'exp-lot-1',
+            createdBy: $this->owner->id,
+        ));
+
+        // Inbound Lot 2: Exp 2027-01-31 (earlier dated)
+        $movementService->record(new StockMovementCommand(
+            companyId: $this->company->id,
+            movementType: StockMovement::TYPE_OPENING_BALANCE,
+            movementDate: '2026-10-01',
+            lines: [
+                new StockMovementLineCommand(
+                    productId: $product->id,
+                    warehouseId: $this->warehouse->id,
+                    quantity: Quantity::of(10),
+                    unitCostBase: '5.000000',
+                    lotNumber: 'LOT-EXP-EARLY',
+                    expiryDate: '2027-01-31',
+                ),
+            ],
+            sourceType: 'opening_stock',
+            sourceId: 2,
+            idempotencyKey: 'exp-lot-2',
+            createdBy: $this->owner->id,
+        ));
+
+        // Inbound Lot 3: Null expiry date (unknown date, never expired, sorted last)
+        $movementService->record(new StockMovementCommand(
+            companyId: $this->company->id,
+            movementType: StockMovement::TYPE_OPENING_BALANCE,
+            movementDate: '2026-10-01',
+            lines: [
+                new StockMovementLineCommand(
+                    productId: $product->id,
+                    warehouseId: $this->warehouse->id,
+                    quantity: Quantity::of(10),
+                    unitCostBase: '5.000000',
+                    lotNumber: 'LOT-NO-EXPIRY',
+                    expiryDate: null,
+                ),
+            ],
+            sourceType: 'opening_stock',
+            sourceId: 3,
+            idempotencyKey: 'exp-lot-3',
+            createdBy: $this->owner->id,
+        ));
+
+        $lotLater = InventoryLot::where('product_id', $product->id)->where('lot_number', 'LOT-EXP-LATER')->firstOrFail();
+        $lotEarly = InventoryLot::where('product_id', $product->id)->where('lot_number', 'LOT-EXP-EARLY')->firstOrFail();
+        $lotNull = InventoryLot::where('product_id', $product->id)->where('lot_number', 'LOT-NO-EXPIRY')->firstOrFail();
+
+        $this->assertNull($lotNull->expiry_date);
+
+        // FEFO allocation for 25 units should take:
+        // 1. All 10 of LOT-EXP-EARLY (2027-01-31)
+        // 2. All 10 of LOT-EXP-LATER (2027-06-30)
+        // 3. 5 of LOT-NO-EXPIRY (Nulls last)
+        $allocations = $fefoService->allocate($product, $this->warehouse, Quantity::of(25));
+        $this->assertCount(3, $allocations);
+        $this->assertSame($lotEarly->id, $allocations[0]['lot_id']);
+        $this->assertTrue(Quantity::of(10)->isEqualTo($allocations[0]['quantity']));
+
+        $this->assertSame($lotLater->id, $allocations[1]['lot_id']);
+        $this->assertTrue(Quantity::of(10)->isEqualTo($allocations[1]['quantity']));
+
+        $this->assertSame($lotNull->id, $allocations[2]['lot_id']);
+        $this->assertTrue(Quantity::of(5)->isEqualTo($allocations[2]['quantity']));
+
+        // Attempting expiry disposal on null-expiry lot must be rejected
+        $thrown = false;
+        try {
+            $disposeAction->execute(
+                company: $this->company,
+                product: $product,
+                warehouse: $this->warehouse,
+                lotId: $lotNull->id,
+                quantity: Quantity::of(1),
+                reason: 'Disposing undated lot',
+                user: $this->owner,
+                idempotencyKey: 'disp-null-exp-01',
+                movementDate: '2027-12-31',
+            );
+        } catch (InvalidInventoryMovementException $e) {
+            $thrown = true;
+            $this->assertStringContainsString('is not expired', $e->getMessage());
+        }
+
+        $this->assertTrue($thrown, 'Expected InvalidInventoryMovementException when disposing lot with null expiry date.');
+    }
+
+    public function test_default_removal_rejects_inactive_base_without_mutation(): void
+    {
+        $catalog = app(ProductCatalogService::class);
+        $product = $catalog->createProduct($this->company, [
+            'name_ar' => 'منتج رفض الحذف مع أساس غير نشط',
+            'base_unit_id' => $this->unitPiece->id,
+            'product_type' => Product::TYPE_STOCK,
+            'track_stock' => true,
+            'active' => true,
+        ], $this->owner->id);
+
+        $alternate = $catalog->addOrUpdateAlternateUnit($product, $this->unitBox->id, '12.000000', true, true);
+        DB::table('product_units')->where('product_id', $product->id)->where('is_base', true)->update(['active' => false]);
+        $before = DB::table('product_units')->where('product_id', $product->id)->orderBy('id')->get()->toArray();
+
+        $rejected = false;
+        try {
+            $catalog->removeAlternateUnit($product, $alternate->id);
+        } catch (InvalidUnitConversionException $e) {
+            $rejected = true;
+        }
+
+        $this->assertTrue($rejected, 'Default removal must reject unhealthy inactive base configuration.');
+        $this->assertEquals($before, DB::table('product_units')->where('product_id', $product->id)->orderBy('id')->get()->toArray());
+    }
+
+    public function test_default_removal_rejects_invalid_base_factor_without_mutation(): void
+    {
+        $catalog = app(ProductCatalogService::class);
+        $product = $catalog->createProduct($this->company, [
+            'name_ar' => 'منتج رفض الحذف مع معامل أساس فاسد',
+            'base_unit_id' => $this->unitPiece->id,
+            'product_type' => Product::TYPE_STOCK,
+            'track_stock' => true,
+            'active' => true,
+        ], $this->owner->id);
+
+        $alternate = $catalog->addOrUpdateAlternateUnit($product, $this->unitBox->id, '12.000000', true, true);
+        DB::table('product_units')->where('product_id', $product->id)->where('is_base', true)->update(['conversion_to_base' => '2.000000']);
+        $before = DB::table('product_units')->where('product_id', $product->id)->orderBy('id')->get()->toArray();
+
+        $rejected = false;
+        try {
+            $catalog->removeAlternateUnit($product, $alternate->id);
+        } catch (InvalidUnitConversionException $e) {
+            $rejected = true;
+        }
+
+        $this->assertTrue($rejected, 'Default removal must reject corrupt base conversion.');
+        $this->assertEquals($before, DB::table('product_units')->where('product_id', $product->id)->orderBy('id')->get()->toArray());
+    }
+
+    public function test_unsetting_default_cannot_promote_inactive_base(): void
+    {
+        $catalog = app(ProductCatalogService::class);
+        $product = $catalog->createProduct($this->company, [
+            'name_ar' => 'منتج إلغاء الافتراضي مع أساس غير نشط',
+            'base_unit_id' => $this->unitPiece->id,
+            'product_type' => Product::TYPE_STOCK,
+            'track_stock' => true,
+            'active' => true,
+        ], $this->owner->id);
+
+        $alternate = $catalog->addOrUpdateAlternateUnit($product, $this->unitBox->id, '12.000000', true, true);
+        DB::table('product_units')->where('product_id', $product->id)->where('is_base', true)->update(['active' => false]);
+        $before = DB::table('product_units')->where('product_id', $product->id)->orderBy('id')->get()->toArray();
+
+        $rejected = false;
+        try {
+            $catalog->addOrUpdateAlternateUnit($product, $this->unitBox->id, '12.000000', false, false);
+        } catch (InvalidUnitConversionException $e) {
+            $rejected = true;
+        }
+
+        $this->assertTrue($rejected, 'Unsetting defaults must not leave zero active defaults by promoting an inactive base.');
+        $this->assertEquals($before, DB::table('product_units')->where('product_id', $product->id)->orderBy('id')->get()->toArray());
+    }
+
+    public function test_fallback_rejects_missing_multiple_or_mismatched_base_or_inactive_declared_unit_without_mutation(): void
+    {
+        $catalog = app(ProductCatalogService::class);
+        $product = $catalog->createProduct($this->company, [
+            'name_ar' => 'منتج فحص حالات الأساس غير الصحيح',
+            'base_unit_id' => $this->unitPiece->id,
+            'product_type' => Product::TYPE_STOCK,
+            'track_stock' => true,
+            'active' => true,
+        ], $this->owner->id);
+
+        $alternate = $catalog->addOrUpdateAlternateUnit($product, $this->unitBox->id, '12.000000', true, true);
+        $barcode = $catalog->addBarcode($product, '6281009999999', $this->unitPiece->id, false);
+
+        // Subcase 1: Missing base ProductUnit row
+        DB::table('product_units')->where('product_id', $product->id)->where('is_base', true)->delete();
+        $beforeUnits = DB::table('product_units')->where('product_id', $product->id)->orderBy('id')->get()->toArray();
+        $beforeBarcodes = DB::table('product_barcodes')->where('product_id', $product->id)->orderBy('id')->get()->toArray();
+
+        $rejected = false;
+        try {
+            $catalog->removeAlternateUnit($product, $alternate->id);
+        } catch (InvalidUnitConversionException $e) {
+            $rejected = true;
+            $this->assertStringContainsString('no base ProductUnit row', $e->getMessage());
+        }
+        $this->assertTrue($rejected);
+        $this->assertEquals($beforeUnits, DB::table('product_units')->where('product_id', $product->id)->orderBy('id')->get()->toArray());
+        $this->assertEquals($beforeBarcodes, DB::table('product_barcodes')->where('product_id', $product->id)->orderBy('id')->get()->toArray());
+
+        // Restore base row
+        ProductUnit::create([
+            'company_id' => $this->company->id,
+            'product_id' => $product->id,
+            'unit_id' => $this->unitPiece->id,
+            'conversion_to_base' => '1.000000',
+            'is_base' => true,
+            'is_default_sale' => false,
+            'is_default_purchase' => false,
+            'active' => true,
+        ]);
+
+        // Subcase 2: Multiple base ProductUnit rows
+        $extraUnit = Unit::create([
+            'company_id' => $this->company->id,
+            'name_ar' => 'وحدة إضافية',
+            'code' => 'extra_base_unit',
+            'allow_fractions' => false,
+            'decimal_places' => 0,
+            'active' => true,
+            'created_by' => $this->owner->id,
+        ]);
+        $extraBase = ProductUnit::create([
+            'company_id' => $this->company->id,
+            'product_id' => $product->id,
+            'unit_id' => $extraUnit->id,
+            'conversion_to_base' => '1.000000',
+            'is_base' => true,
+            'is_default_sale' => false,
+            'is_default_purchase' => false,
+            'active' => true,
+        ]);
+        $beforeUnits = DB::table('product_units')->where('product_id', $product->id)->orderBy('id')->get()->toArray();
+
+        $rejected = false;
+        try {
+            $catalog->removeAlternateUnit($product, $alternate->id);
+        } catch (InvalidUnitConversionException $e) {
+            $rejected = true;
+            $this->assertStringContainsString('multiple [2] base unit rows', $e->getMessage());
+        }
+        $this->assertTrue($rejected);
+        $this->assertEquals($beforeUnits, DB::table('product_units')->where('product_id', $product->id)->orderBy('id')->get()->toArray());
+        $extraBase->delete();
+
+        // Subcase 3: Base row unit_id mismatch with Product.base_unit_id
+        DB::table('product_units')->where('product_id', $product->id)->where('is_base', true)->update(['unit_id' => $extraUnit->id]);
+        $beforeUnits = DB::table('product_units')->where('product_id', $product->id)->orderBy('id')->get()->toArray();
+
+        $rejected = false;
+        try {
+            $catalog->removeAlternateUnit($product, $alternate->id);
+        } catch (InvalidUnitConversionException $e) {
+            $rejected = true;
+            $this->assertStringContainsString('does not match product base_unit_id', $e->getMessage());
+        }
+        $this->assertTrue($rejected);
+        $this->assertEquals($beforeUnits, DB::table('product_units')->where('product_id', $product->id)->orderBy('id')->get()->toArray());
+        DB::table('product_units')->where('product_id', $product->id)->where('is_base', true)->update(['unit_id' => $this->unitPiece->id]);
+
+        // Subcase 4: Declared Unit inactive
+        $this->unitPiece->update(['active' => false]);
+        $beforeUnits = DB::table('product_units')->where('product_id', $product->id)->orderBy('id')->get()->toArray();
+
+        $rejected = false;
+        try {
+            $catalog->removeAlternateUnit($product, $alternate->id);
+        } catch (InvalidUnitConversionException $e) {
+            $rejected = true;
+            $this->assertStringContainsString('declared base unit', $e->getMessage());
+        }
+        $this->assertTrue($rejected);
+        $this->assertEquals($beforeUnits, DB::table('product_units')->where('product_id', $product->id)->orderBy('id')->get()->toArray());
+        $this->unitPiece->update(['active' => true]);
     }
 }

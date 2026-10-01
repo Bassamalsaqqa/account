@@ -468,7 +468,7 @@ class InventoryMovementService
 
     /**
      * Handle lot creation or consumption for expiry-tracked products.
-     * Validates that disposal lots are actually expired (movement_date >= expiry_date).
+     * Validates that disposal lots are actually expired (movement_date > expiry_date).
      */
     private function handleLotAllocation(
         Company $company,

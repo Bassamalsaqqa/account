@@ -114,7 +114,25 @@ final class UnitConversionService
             throw new InvalidUnitConversionException("Unit [{$unit->id}] is inactive.");
         }
 
-        // 3. Product declared base unit must exist, belong to same company, and be active
+        // 3 & 4. Validate and fetch healthy base ProductUnit
+        $baseRow = $this->getHealthyBaseUnit($product);
+
+        // 5. ProductUnit base flag vs product base_unit_id coherence
+        $isDeclaredBase = (int) $product->base_unit_id === (int) $productUnit->unit_id;
+        if ($isDeclaredBase && ! $productUnit->is_base) {
+            throw new InvalidUnitConversionException("Product [{$product->id}] declared base unit [{$productUnit->unit_id}] must have is_base=true.");
+        }
+        if (! $isDeclaredBase && $productUnit->is_base) {
+            throw new InvalidUnitConversionException("ProductUnit [{$productUnit->id}] has is_base=true but unit [{$productUnit->unit_id}] does not match declared product base unit [{$product->base_unit_id}].");
+        }
+    }
+
+    /**
+     * Validate and retrieve the healthy base ProductUnit for a product under locks.
+     */
+    public function getHealthyBaseUnit(Product $product): ProductUnit
+    {
+        // 1. Product declared base unit must exist, belong to same company, and be active
         /** @var Unit|null $declaredBaseUnit */
         $declaredBaseUnit = Unit::where('company_id', $product->company_id)->where('id', $product->base_unit_id)->first();
         if ($declaredBaseUnit === null) {
@@ -124,10 +142,11 @@ final class UnitConversionService
             throw new InvalidUnitConversionException("Product [{$product->id}] declared base unit [{$declaredBaseUnit->id}] is inactive.");
         }
 
-        // 4. Exactly one base row invariant per product matching products.base_unit_id
+        // 2. Exactly one base row invariant per product matching products.base_unit_id
         $baseRows = ProductUnit::where('company_id', $product->company_id)
             ->where('product_id', $product->id)
             ->where('is_base', true)
+            ->lockForUpdate()
             ->get();
 
         if ($baseRows->isEmpty()) {
@@ -151,14 +170,7 @@ final class UnitConversionService
             throw new InvalidUnitConversionException("Base ProductUnit must have conversion factor of exactly 1.000000. Given [{$baseConv}].");
         }
 
-        // 5. ProductUnit base flag vs product base_unit_id coherence
-        $isDeclaredBase = (int) $product->base_unit_id === (int) $productUnit->unit_id;
-        if ($isDeclaredBase && ! $productUnit->is_base) {
-            throw new InvalidUnitConversionException("Product [{$product->id}] declared base unit [{$productUnit->unit_id}] must have is_base=true.");
-        }
-        if (! $isDeclaredBase && $productUnit->is_base) {
-            throw new InvalidUnitConversionException("ProductUnit [{$productUnit->id}] has is_base=true but unit [{$productUnit->unit_id}] does not match declared product base unit [{$product->base_unit_id}].");
-        }
+        return $baseRow;
     }
 
     /**
