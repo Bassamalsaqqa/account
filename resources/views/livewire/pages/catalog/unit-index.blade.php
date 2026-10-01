@@ -5,14 +5,14 @@
                 <x-icon name="dashboard" class="w-6 h-6 text-primary" />
                 <span>{{ __('inventory.units') }}</span>
             </h1>
-            <p class="text-xs text-text-secondary mt-1">تعريف وإدارة وحدات القياس، الرموز، وإمكانية الكسور العشرية</p>
+            <p class="text-xs text-text-secondary mt-1">{{ __('inventory.unit_subtitle') }}</p>
         </div>
 
         @if ($canManage)
             <button type="button" wire:click="openCreateModal"
                     class="inline-flex items-center gap-2 px-4 py-2 bg-primary hover:bg-primary-hover text-white text-xs font-bold rounded-control shadow-button transition-colors">
                 <x-icon name="plus" class="w-4 h-4" />
-                <span>إضافة وحدة جديدة</span>
+                <span>{{ __('inventory.add_unit') }}</span>
             </button>
         @endif
     </div>
@@ -29,12 +29,12 @@
             <table class="w-full text-xs text-right rtl:text-right ltr:text-left">
                 <thead class="bg-surface-soft border-b border-border text-text-secondary font-bold">
                     <tr>
-                        <th class="p-3.5">الرمز (Code)</th>
-                        <th class="p-3.5">اسم الوحدة</th>
-                        <th class="p-3.5">المختصر</th>
-                        <th class="p-3.5 text-center">يقبل الكسور</th>
-                        <th class="p-3.5 text-center">الخانات العشرية</th>
-                        <th class="p-3.5 text-center">الحالة</th>
+                        <th class="p-3.5">{{ __('inventory.unit_code') }}</th>
+                        <th class="p-3.5">{{ __('inventory.unit_name') }}</th>
+                        <th class="p-3.5">{{ __('inventory.abbreviation') }}</th>
+                        <th class="p-3.5 text-center">{{ __('inventory.allows_decimals') }}</th>
+                        <th class="p-3.5 text-center">{{ __('inventory.decimal_places') }}</th>
+                        <th class="p-3.5 text-center">{{ __('inventory.status') }}</th>
                         @if ($canManage)
                             <th class="p-3.5 text-center w-20"></th>
                         @endif
@@ -57,9 +57,9 @@
                             </td>
                             <td class="p-3.5 text-center">
                                 @if ($unit->allow_fractions)
-                                    <span class="text-success font-bold">&#10003; نعم</span>
-                                @else
-                                    <span class="text-text-muted">لا</span>
+                                    <span class="text-success font-bold">&#10003; {{ __('inventory.yes') }}</span>
+                                 @else
+                                    <span class="text-text-muted">{{ __('inventory.no') }}</span>
                                 @endif
                             </td>
                             <td class="p-3.5 text-center font-mono text-text-secondary">
@@ -76,7 +76,7 @@
                                 <td class="p-3.5 text-center">
                                     <button type="button" wire:click="openEditModal({{ $unit->id }})"
                                             class="text-primary hover:underline font-bold text-xs">
-                                        تعديل
+                                        {{ __('inventory.edit') }}
                                     </button>
                                 </td>
                             @endif
@@ -84,7 +84,7 @@
                     @empty
                         <tr>
                             <td colspan="{{ $canManage ? 7 : 6 }}" class="p-6 text-center text-text-muted">
-                                لا توجد وحدات قياس مسجلة.
+                                {{ __('inventory.no_units_registered_catalog') }}
                             </td>
                         </tr>
                     @endforelse
@@ -99,15 +99,15 @@
             <div class="bg-white rounded-card border border-border shadow-xl w-full max-w-md p-6 space-y-4">
                 <div class="flex items-center justify-between border-b border-border pb-3">
                     <h3 class="font-extrabold text-sm text-text-primary">
-                        {{ $editingId ? 'تعديل وحدة القياس' : 'إضافة وحدة قياس جديدة' }}
+                        {{ $editingId ? __('inventory.edit_unit') : __('inventory.add_unit') }}
                     </h3>
                     <button type="button" wire:click="$set('showModal', false)" class="text-text-muted hover:text-text-primary text-base font-bold">&times;</button>
                 </div>
 
                 <div class="space-y-3 text-xs">
                     <div>
-                        <label class="block font-bold text-text-secondary mb-1">رمز الوحدة (Code بالإنجليزية) *</label>
-                        <input type="text" wire:model="code" dir="ltr" placeholder="مثال: carton أو box" class="w-full h-8 px-2.5 rounded-control border border-border text-xs font-mono" />
+                        <label class="block font-bold text-text-secondary mb-1">{{ __('inventory.unit_code_label') }} *</label>
+                        <input type="text" wire:model="code" dir="ltr" placeholder="{{ __('inventory.unit_code_placeholder') }}" class="w-full h-8 px-2.5 rounded-control border border-border text-xs font-mono" />
                         @error('code') <span class="text-danger text-[10px]">{{ $message }}</span> @enderror
                     </div>
                     <div>
@@ -123,11 +123,11 @@
                     <div class="grid grid-cols-2 gap-2">
                         <div>
                             <label class="block font-bold text-text-secondary mb-1">{{ __('inventory.symbol_ar') }}</label>
-                            <input type="text" wire:model="symbol_ar" dir="rtl" placeholder="مثال: كرتونة" class="w-full h-8 px-2.5 rounded-control border border-border text-xs" />
+                            <input type="text" wire:model="symbol_ar" dir="rtl" placeholder="{{ __('inventory.symbol_ar_placeholder') }}" class="w-full h-8 px-2.5 rounded-control border border-border text-xs" />
                         </div>
                         <div>
                             <label class="block font-bold text-text-secondary mb-1">{{ __('inventory.symbol_en') }}</label>
-                            <input type="text" wire:model="symbol_en" dir="ltr" placeholder="مثال: ctn" class="w-full h-8 px-2.5 rounded-control border border-border text-xs font-mono" />
+                            <input type="text" wire:model="symbol_en" dir="ltr" placeholder="{{ __('inventory.symbol_en_placeholder') }}" class="w-full h-8 px-2.5 rounded-control border border-border text-xs font-mono" />
                         </div>
                     </div>
                     <div class="p-3 rounded-control bg-surface-soft border border-border space-y-2">
@@ -153,11 +153,11 @@
                 <div class="flex items-center justify-end gap-2 pt-3 border-t border-border">
                     <button type="button" wire:click="$set('showModal', false)"
                             class="px-3.5 py-1.5 rounded-control border border-border text-text-secondary hover:bg-surface-soft text-xs font-semibold">
-                        إلغاء
+                        {{ __('inventory.cancel') }}
                     </button>
                     <button type="button" wire:click="save"
                             class="px-4 py-1.5 rounded-control bg-primary text-white hover:bg-primary-hover text-xs font-bold shadow-button">
-                        حفظ
+                        {{ __('inventory.save') }}
                     </button>
                 </div>
             </div>

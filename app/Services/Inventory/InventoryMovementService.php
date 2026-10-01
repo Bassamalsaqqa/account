@@ -78,12 +78,19 @@ class InventoryMovementService
 
         // 3. Permission authorization
         if ($command->movementType === StockMovement::TYPE_OPENING_BALANCE) {
-            if (! $authUser->hasAnyPermission(['inventory.product.manage', 'inventory.stock.adjust']) && ! $authUser->hasRole('owner')) {
+            if (! $authUser->hasPermissionTo('inventory.stock.adjust') || ! $authUser->hasPermissionTo('inventory.cost.view')) {
                 throw new AuthorizationException('User does not have permission to post opening stock.');
             }
         } else {
-            if (! $authUser->hasPermissionTo('inventory.stock.adjust') && ! $authUser->hasRole('owner')) {
+            if (! $authUser->hasPermissionTo('inventory.stock.adjust')) {
                 throw new AuthorizationException('User does not have permission to adjust inventory.');
+            }
+            if ($command->movementType === StockMovement::TYPE_ADJUSTMENT_INCREASE) {
+                foreach ($command->lines as $line) {
+                    if ($line->unitCostBase !== null && ! $authUser->hasPermissionTo('inventory.cost.view')) {
+                        throw new AuthorizationException('User does not have permission to specify explicit unit cost.');
+                    }
+                }
             }
         }
 
@@ -106,6 +113,7 @@ class InventoryMovementService
             }
 
             // 3. Idempotency Check — authoritative operation identity & payload comparison
+            $requestHash = $this->computeMovementRequestHash($command);
             $expectedKeys = $this->resolveExpectedMovementKeys($command);
 
             /** @var InventoryOperation|null $existingOp */
@@ -120,6 +128,10 @@ class InventoryMovementService
 
                 if ($existingOp->line_count !== count($command->lines)) {
                     throw new IdempotencyConflictException("Idempotency key [{$command->idempotencyKey}] was previously used with a different line count ({$existingOp->line_count} vs ".count($command->lines).').');
+                }
+
+                if ($existingOp->request_hash !== null && $existingOp->request_hash !== $requestHash) {
+                    throw new IdempotencyConflictException("Idempotency key [{$command->idempotencyKey}] was previously used with different request parameters.");
                 }
 
                 /** @var Collection<int, StockMovement> $existingMovements */
@@ -240,6 +252,7 @@ class InventoryMovementService
             $operation = InventoryOperation::create([
                 'company_id' => $company->id,
                 'idempotency_key' => $command->idempotencyKey,
+                'request_hash' => $requestHash,
                 'operation_type' => InventoryOperation::TYPE_MOVEMENT,
                 'line_count' => count($command->lines),
                 'created_by' => $command->createdBy,
@@ -260,22 +273,6 @@ class InventoryMovementService
                     ->with('unit')
                     ->lockForUpdate()
                     ->first();
-
-                if ($prodUnit === null && $unitId === $product->base_unit_id) {
-                    $prodUnit = ProductUnit::firstOrCreate(
-                        [
-                            'company_id' => $company->id,
-                            'product_id' => $product->id,
-                            'unit_id' => $product->base_unit_id,
-                        ],
-                        [
-                            'conversion_to_base' => '1.000000',
-                            'is_base' => true,
-                            'active' => true,
-                        ]
-                    );
-                    $prodUnit->load('unit');
-                }
 
                 if ($prodUnit === null) {
                     throw new InvalidInventoryMovementException("Unit [{$unitId}] is not an active configured unit for product [{$product->id}].");
@@ -360,21 +357,31 @@ class InventoryMovementService
 
                 if ($isInbound) {
                     if ($line->unitCostBase === null) {
-                        throw InvalidInventoryMovementException::missingCostForInbound($product->id);
-                    }
-                    if (! is_numeric($line->unitCostBase)) {
-                        throw new InvalidInventoryMovementException("Inbound unit cost must be numeric. Given [{$line->unitCostBase}].");
-                    }
-                    $inUnitCost = BigDecimal::of($line->unitCostBase);
-                    if ($inUnitCost->isNegative()) {
-                        throw new InvalidInventoryMovementException("Inbound unit cost cannot be negative. Given [{$inUnitCost}].");
-                    }
-                    if ($inUnitCost->stripTrailingZeros()->getScale() > 6) {
-                        throw new InvalidInventoryMovementException("Inbound unit cost [{$line->unitCostBase}] exceeds maximum precision of 6 decimal places.");
-                    }
-                    $maxCost = BigDecimal::of('99999999999999.999999');
-                    if ($inUnitCost->isGreaterThan($maxCost)) {
-                        throw new InvalidInventoryMovementException("Inbound unit cost [{$line->unitCostBase}] exceeds DECIMAL(20,6) boundary.");
+                        if ($command->movementType === StockMovement::TYPE_ADJUSTMENT_INCREASE) {
+                            if ($oldCompanyQty->isLessThanOrEqualTo(0)) {
+                                throw new InvalidInventoryMovementException(
+                                    "Stock adjustment increase without explicit unit cost requires positive existing company stock for product [{$product->id}]. Please specify an explicit unit cost authorized by valuation permissions."
+                                );
+                            }
+                            $inUnitCost = $oldCompanyAvg;
+                        } else {
+                            throw InvalidInventoryMovementException::missingCostForInbound($product->id);
+                        }
+                    } else {
+                        if (! is_numeric($line->unitCostBase)) {
+                            throw new InvalidInventoryMovementException("Inbound unit cost must be numeric. Given [{$line->unitCostBase}].");
+                        }
+                        $inUnitCost = BigDecimal::of($line->unitCostBase);
+                        if ($inUnitCost->isNegative()) {
+                            throw new InvalidInventoryMovementException("Inbound unit cost cannot be negative. Given [{$inUnitCost}].");
+                        }
+                        if ($inUnitCost->stripTrailingZeros()->getScale() > 6) {
+                            throw new InvalidInventoryMovementException("Inbound unit cost [{$line->unitCostBase}] exceeds maximum precision of 6 decimal places.");
+                        }
+                        $maxCost = BigDecimal::of('99999999999999.999999');
+                        if ($inUnitCost->isGreaterThan($maxCost)) {
+                            throw new InvalidInventoryMovementException("Inbound unit cost [{$line->unitCostBase}] exceeds DECIMAL(20,6) boundary.");
+                        }
                     }
 
                     $lineValDelta = $quantityBase->toBigDecimal()->multipliedBy($inUnitCost)->toScale(6, RoundingMode::HALF_UP);
@@ -621,16 +628,19 @@ class InventoryMovementService
                 throw new IdempotencyConflictException("Idempotency key [{$command->idempotencyKey}] was previously used with different quantity.");
             }
 
-            // Cost comparison: inbound requires and compares unit cost; outbound forbids command unit cost
+            // Cost comparison: inbound compares unit cost if explicit, or allows null for adjustment increase; outbound forbids command unit cost
             $isInbound = in_array($command->movementType, [StockMovement::TYPE_OPENING_BALANCE, StockMovement::TYPE_ADJUSTMENT_INCREASE], true);
             if ($isInbound) {
-                if ($cmdLine->unitCostBase === null) {
-                    throw new IdempotencyConflictException("Idempotency key [{$command->idempotencyKey}] was previously used with a unit cost.");
-                }
-                $existingCost = BigDecimal::of((string) $m->unit_cost_base)->toScale(6, RoundingMode::HALF_UP);
-                $cmdCost = BigDecimal::of($cmdLine->unitCostBase)->toScale(6, RoundingMode::HALF_UP);
-                if (! $existingCost->isEqualTo($cmdCost)) {
-                    throw new IdempotencyConflictException("Idempotency key [{$command->idempotencyKey}] was previously used with different unit cost.");
+                if ($cmdLine->unitCostBase !== null) {
+                    $existingCost = BigDecimal::of((string) $m->unit_cost_base)->toScale(6, RoundingMode::HALF_UP);
+                    $cmdCost = BigDecimal::of($cmdLine->unitCostBase)->toScale(6, RoundingMode::HALF_UP);
+                    if (! $existingCost->isEqualTo($cmdCost)) {
+                        throw new IdempotencyConflictException("Idempotency key [{$command->idempotencyKey}] was previously used with different unit cost.");
+                    }
+                } else {
+                    if ($command->movementType !== StockMovement::TYPE_ADJUSTMENT_INCREASE) {
+                        throw new IdempotencyConflictException("Idempotency key [{$command->idempotencyKey}] was previously used with a unit cost.");
+                    }
                 }
             } else {
                 if ($cmdLine->unitCostBase !== null) {
@@ -700,7 +710,7 @@ class InventoryMovementService
         }
 
         // 3. Permission authorization
-        if (! $authUser->hasPermissionTo('inventory.stock.transfer') && ! $authUser->hasRole('owner')) {
+        if (! $authUser->hasPermissionTo('inventory.stock.transfer')) {
             throw new AuthorizationException('User does not have permission to transfer stock.');
         }
 
@@ -728,6 +738,7 @@ class InventoryMovementService
             }
 
             // 4. Idempotency Check — authoritative operation identity & transfer payload comparison
+            $requestHash = $this->computeTransferRequestHash($command);
             $expectedKeys = $this->resolveExpectedTransferKeys($command);
 
             /** @var InventoryOperation|null $existingOp */
@@ -742,6 +753,10 @@ class InventoryMovementService
 
                 if ($existingOp->line_count !== count($command->lines)) {
                     throw new IdempotencyConflictException("Idempotency key [{$command->idempotencyKey}] was previously used with a different line count ({$existingOp->line_count} vs ".count($command->lines).').');
+                }
+
+                if ($existingOp->request_hash !== null && $existingOp->request_hash !== $requestHash) {
+                    throw new IdempotencyConflictException("Idempotency key [{$command->idempotencyKey}] was previously used with different transfer parameters.");
                 }
 
                 /** @var Collection<int, StockMovement> $existingMovements */
@@ -860,6 +875,7 @@ class InventoryMovementService
             $operation = InventoryOperation::create([
                 'company_id' => $company->id,
                 'idempotency_key' => $command->idempotencyKey,
+                'request_hash' => $requestHash,
                 'operation_type' => InventoryOperation::TYPE_TRANSFER,
                 'line_count' => count($command->lines),
                 'created_by' => $command->createdBy,
@@ -878,22 +894,6 @@ class InventoryMovementService
                     ->with('unit')
                     ->lockForUpdate()
                     ->first();
-
-                if ($prodUnit === null && $unitId === $product->base_unit_id) {
-                    $prodUnit = ProductUnit::firstOrCreate(
-                        [
-                            'company_id' => $company->id,
-                            'product_id' => $product->id,
-                            'unit_id' => $product->base_unit_id,
-                        ],
-                        [
-                            'conversion_to_base' => '1.000000',
-                            'is_base' => true,
-                            'active' => true,
-                        ]
-                    );
-                    $prodUnit->load('unit');
-                }
 
                 if ($prodUnit === null) {
                     throw new InvalidInventoryMovementException("Unit [{$unitId}] is not an active configured unit for product [{$product->id}].");
@@ -1253,5 +1253,67 @@ class InventoryMovementService
         }
 
         return $expectedKeys;
+    }
+
+    /**
+     * Compute deterministic canonical request fingerprint (SHA-256) for stock movement commands.
+     */
+    public function computeMovementRequestHash(StockMovementCommand $command): string
+    {
+        $payload = [
+            'op' => InventoryOperation::TYPE_MOVEMENT,
+            'company_id' => (int) $command->companyId,
+            'movement_type' => $command->movementType,
+            'movement_date' => $command->movementDate,
+            'source_type' => $command->sourceType,
+            'source_id' => (int) $command->sourceId,
+            'source_line_id' => $command->sourceLineId !== null ? (int) $command->sourceLineId : null,
+            'reason' => $command->reason,
+            'created_by' => (int) $command->createdBy,
+            'lines' => array_map(function (StockMovementLineCommand $line): array {
+                return [
+                    'product_id' => (int) $line->productId,
+                    'warehouse_id' => (int) $line->warehouseId,
+                    'quantity' => (string) $line->quantity->toScale(6, RoundingMode::HALF_UP),
+                    'unit_id' => $line->unitId !== null ? (int) $line->unitId : null,
+                    'unit_cost_base' => $line->unitCostBase !== null
+                        ? (string) BigDecimal::of($line->unitCostBase)->toScale(6, RoundingMode::HALF_UP)
+                        : null,
+                    'lot_id' => $line->lotId !== null ? (int) $line->lotId : null,
+                    'lot_number' => $line->lotNumber,
+                    'expiry_date' => $line->expiryDate !== null ? substr($line->expiryDate, 0, 10) : null,
+                ];
+            }, $command->lines),
+        ];
+
+        return hash('sha256', (string) json_encode($payload, JSON_THROW_ON_ERROR));
+    }
+
+    /**
+     * Compute deterministic canonical request fingerprint (SHA-256) for stock transfer commands.
+     */
+    public function computeTransferRequestHash(StockTransferCommand $command): string
+    {
+        $payload = [
+            'op' => InventoryOperation::TYPE_TRANSFER,
+            'company_id' => (int) $command->companyId,
+            'source_warehouse_id' => (int) $command->sourceWarehouseId,
+            'destination_warehouse_id' => (int) $command->destinationWarehouseId,
+            'movement_date' => $command->movementDate,
+            'source_type' => $command->sourceType,
+            'source_id' => (int) $command->sourceId,
+            'reason' => $command->reason,
+            'created_by' => (int) $command->createdBy,
+            'lines' => array_map(function (StockTransferLineCommand $line): array {
+                return [
+                    'product_id' => (int) $line->productId,
+                    'quantity' => (string) $line->quantity->toScale(6, RoundingMode::HALF_UP),
+                    'unit_id' => $line->unitId !== null ? (int) $line->unitId : null,
+                    'lot_id' => $line->lotId !== null ? (int) $line->lotId : null,
+                ];
+            }, $command->lines),
+        ];
+
+        return hash('sha256', (string) json_encode($payload, JSON_THROW_ON_ERROR));
     }
 }

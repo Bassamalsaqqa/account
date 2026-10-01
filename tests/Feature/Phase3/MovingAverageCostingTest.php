@@ -12,12 +12,14 @@ use App\Domain\Inventory\ValueObjects\Quantity;
 use App\Models\Company;
 use App\Models\InventoryCostState;
 use App\Models\Product;
+use App\Models\ProductUnit;
 use App\Models\StockMovement;
 use App\Models\Unit;
 use App\Models\User;
 use App\Models\Warehouse;
 use App\Services\Inventory\InventoryMovementService;
 use App\Support\Tenancy\CompanyContext;
+use Brick\Math\BigDecimal;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
 use Tests\TestCase;
@@ -65,6 +67,17 @@ class MovingAverageCostingTest extends TestCase
             'track_expiry' => false,
             'active' => true,
             'created_by' => $this->user->id,
+        ]);
+
+        ProductUnit::create([
+            'company_id' => $this->company->id,
+            'product_id' => $this->product->id,
+            'unit_id' => $this->unitPiece->id,
+            'conversion_to_base' => '1.000000',
+            'is_base' => true,
+            'is_default_sale' => true,
+            'is_default_purchase' => true,
+            'active' => true,
         ]);
 
         $this->service = app(InventoryMovementService::class);
@@ -330,8 +343,12 @@ class MovingAverageCostingTest extends TestCase
         $this->assertSame('0.000000', $costState->average_cost_base);
 
         // Sum of all movement value deltas must equal exactly zero
-        $totalMovementValue = StockMovement::where('product_id', $this->product->id)->sum('value_delta_base');
-        $this->assertEquals(0, (float) $totalMovementValue, 'Total movement value delta sum must be exactly 0 after full depletion');
+        $movements = StockMovement::where('product_id', $this->product->id)->get();
+        $totalMovementValue = $movements->reduce(
+            fn (BigDecimal $carry, StockMovement $m) => $carry->plus(BigDecimal::of((string) $m->value_delta_base)),
+            BigDecimal::zero()
+        );
+        $this->assertSame('0.000000', (string) $totalMovementValue->toScale(6), 'Total movement value delta sum must be exactly 0 after full depletion');
     }
 
     public function test_negative_unit_cost_is_strictly_rejected(): void

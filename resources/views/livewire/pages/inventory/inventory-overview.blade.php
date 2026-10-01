@@ -6,7 +6,7 @@
                 <x-icon name="box" class="w-6 h-6 text-primary" />
                 <span>{{ __('inventory.inventory_overview') }}</span>
             </h1>
-            <p class="text-xs text-text-secondary mt-1">متابعة أرصدة المخزون، المؤشرات التشغيلية، وحركات المستودعات</p>
+            <p class="text-xs text-text-secondary mt-1">{{ __('inventory.inventory_overview_subtitle') }}</p>
         </div>
 
         <div class="flex flex-wrap items-center gap-2">
@@ -14,7 +14,7 @@
                 <a href="{{ route('inventory.opening-stock.create') }}"
                    class="inline-flex items-center gap-1.5 px-3 py-2 bg-white border border-border hover:bg-surface-soft text-text-primary text-xs font-bold rounded-control transition-colors">
                     <x-icon name="plus" class="w-4 h-4 text-primary" />
-                    <span>رصيد افتتاحي</span>
+                    <span>{{ __('inventory.opening_stock') }}</span>
                 </a>
                 <a href="{{ route('inventory.adjustments.create') }}"
                    class="inline-flex items-center gap-1.5 px-3 py-2 bg-white border border-border hover:bg-surface-soft text-text-primary text-xs font-bold rounded-control transition-colors">
@@ -41,12 +41,12 @@
     <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <!-- Products Count -->
         <x-card padding="p-4" class="space-y-1">
-            <div class="text-[11px] font-bold text-text-muted uppercase tracking-wider">الأصناف النشطة</div>
+            <div class="text-[11px] font-bold text-text-muted uppercase tracking-wider">{{ __('inventory.active_products_metric') }}</div>
             <div class="text-2xl font-extrabold font-mono tabular-nums text-text-primary">
                 {{ $productsCount }}
             </div>
             <a href="{{ route('products.index') }}" class="text-[11px] text-primary hover:underline font-bold block pt-1">
-                عرض دليل الأصناف &larr;
+                {{ __('inventory.view_catalog_link') }} &larr;
             </a>
         </x-card>
 
@@ -57,18 +57,18 @@
                 {{ $warehousesCount }}
             </div>
             <a href="{{ route('warehouses.index') }}" class="text-[11px] text-primary hover:underline font-bold block pt-1">
-                إدارة المستودعات &larr;
+                {{ __('inventory.manage_warehouses_link') }} &larr;
             </a>
         </x-card>
 
         <!-- Expiring Soon Lots -->
         <x-card padding="p-4" class="space-y-1">
-            <div class="text-[11px] font-bold text-text-muted uppercase tracking-wider">دفعات قريبة الانتهاء</div>
+            <div class="text-[11px] font-bold text-text-muted uppercase tracking-wider">{{ __('inventory.expiring_lots_metric') }}</div>
             <div class="text-2xl font-extrabold font-mono tabular-nums {{ $expiringLotsCount > 0 ? 'text-danger' : 'text-text-primary' }}">
                 {{ $expiringLotsCount }}
             </div>
             <a href="{{ route('inventory.expiry') }}" class="text-[11px] text-primary hover:underline font-bold block pt-1">
-                مركز متابعة الصلاحية &larr;
+                {{ __('inventory.expiry_center_link') }} &larr;
             </a>
         </x-card>
 
@@ -80,15 +80,15 @@
                     {{ $totalValuation }}
                     <span class="text-xs font-normal text-text-secondary font-arabic">{{ $company->base_currency_code }}</span>
                 </div>
-                <div class="text-[11px] text-text-muted pt-1">إجمالي تقييم بضاعة المخزون</div>
+                <div class="text-[11px] text-text-muted pt-1">{{ __('inventory.total_inventory_valuation') }}</div>
             </x-card>
         @else
             <x-card padding="p-4" class="space-y-1">
-                <div class="text-[11px] font-bold text-text-muted uppercase tracking-wider">الأصناف منخفضة الرصيد</div>
+                <div class="text-[11px] font-bold text-text-muted uppercase tracking-wider">{{ __('inventory.low_stock_metric') }}</div>
                 <div class="text-2xl font-extrabold font-mono tabular-nums {{ $lowStockProducts->count() > 0 ? 'text-warning' : 'text-text-primary' }}">
                     {{ $lowStockProducts->count() }}
                 </div>
-                <div class="text-[11px] text-text-muted pt-1">تجاوزت حد إعادة الطلب</div>
+                <div class="text-[11px] text-text-muted pt-1">{{ __('inventory.exceeded_reorder_point') }}</div>
             </x-card>
         @endif
     </div>
@@ -100,9 +100,9 @@
             <div class="p-4 border-b border-border bg-surface-soft flex items-center justify-between">
                 <div class="flex items-center gap-2">
                     <x-icon name="alert" class="w-4 h-4 text-warning" />
-                    <h2 class="text-xs font-bold text-text-primary uppercase tracking-wider">تنبيهات انخفاض الرصيد (حد إعادة الطلب)</h2>
+                    <h2 class="text-xs font-bold text-text-primary uppercase tracking-wider">{{ __('inventory.low_stock_alerts') }}</h2>
                 </div>
-                <span class="text-[11px] font-mono text-text-muted">{{ $lowStockProducts->count() }} أصناف</span>
+                <span class="text-[11px] font-mono text-text-muted">{{ $lowStockProducts->count() }} {{ __('inventory.items_count_suffix') }}</span>
             </div>
 
             <div class="divide-y divide-border">
@@ -125,7 +125,7 @@
                     </div>
                 @empty
                     <div class="p-8 text-center text-text-muted text-xs">
-                        لا توجد أصناف تحت حد إعادة الطلب حالياً.
+                        {{ __('inventory.no_low_stock_items') }}
                     </div>
                 @endforelse
             </div>
@@ -136,10 +136,10 @@
             <div class="p-4 border-b border-border bg-surface-soft flex items-center justify-between">
                 <div class="flex items-center gap-2">
                     <x-icon name="receipt" class="w-4 h-4 text-primary" />
-                    <h2 class="text-xs font-bold text-text-primary uppercase tracking-wider">أحدث الحركات المخزنية</h2>
+                    <h2 class="text-xs font-bold text-text-primary uppercase tracking-wider">{{ __('inventory.latest_stock_movements') }}</h2>
                 </div>
                 <a href="{{ route('inventory.movements') }}" class="text-[11px] text-primary hover:underline font-bold">
-                    عرض السجل بالكامل &larr;
+                    {{ __('inventory.view_full_ledger') }} &larr;
                 </a>
             </div>
 

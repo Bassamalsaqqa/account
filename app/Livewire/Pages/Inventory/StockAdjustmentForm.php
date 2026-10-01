@@ -124,9 +124,16 @@ class StockAdjustmentForm extends Component
             }
         }
 
+        $rawCost = trim($this->unit_cost_base);
+        $isCostProvided = $rawCost !== '';
+
+        if (! $canViewCost && $isCostProvided) {
+            abort(403);
+        }
+
         $cost = null;
-        if ($canViewCost && $validated['unit_cost_base'] !== '') {
-            $cost = $validated['unit_cost_base'];
+        if ($canViewCost && $isCostProvided) {
+            $cost = $rawCost;
         }
 
         if (empty($this->formIdempotencyKey)) {

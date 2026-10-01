@@ -21,6 +21,10 @@ final readonly class StockMovementCommand
         public ?int $sourceLineId = null,
         public ?string $reason = null,
     ) {
+        if ($this->companyId <= 0) {
+            throw new \InvalidArgumentException("Company ID must be a positive integer. Given [{$this->companyId}].");
+        }
+
         if (empty($this->lines)) {
             throw new \InvalidArgumentException('Stock movement command must contain at least one line.');
         }
@@ -47,16 +51,35 @@ final readonly class StockMovementCommand
             throw new \InvalidArgumentException("Movement type [{$this->movementType}] is not a recognized Phase3 canonical type.");
         }
 
-        if (! preg_match('/\A[a-z0-9_-]+\z/', $this->sourceType)) {
-            throw new \InvalidArgumentException("Invalid source type [{$this->sourceType}].");
+        // Canonical lowercase source type with schema length (VARCHAR(64))
+        if (strlen($this->sourceType) > 64 || ! preg_match('/\A[a-z0-9_-]+\z/', $this->sourceType)) {
+            throw new \InvalidArgumentException("Invalid source type [{$this->sourceType}]. Must be lowercase alphanumeric with underscores/hyphens and max 64 characters.");
         }
 
         if ($this->sourceId <= 0) {
             throw new \InvalidArgumentException("Source ID must be a positive integer. Given [{$this->sourceId}].");
         }
 
+        if ($this->sourceLineId !== null && $this->sourceLineId <= 0) {
+            throw new \InvalidArgumentException("Source line ID must be a positive integer. Given [{$this->sourceLineId}].");
+        }
+
         if ($this->createdBy <= 0) {
             throw new \InvalidArgumentException("Actor (createdBy) must be a positive integer. Given [{$this->createdBy}].");
+        }
+
+        // Valid canonical Y-m-d movement date
+        if (! preg_match('/\A\d{4}-\d{2}-\d{2}\z/', $this->movementDate)) {
+            throw new \InvalidArgumentException("Movement date [{$this->movementDate}] must be in canonical Y-m-d format.");
+        }
+        [$year, $month, $day] = explode('-', $this->movementDate);
+        if (! checkdate((int) $month, (int) $day, (int) $year)) {
+            throw new \InvalidArgumentException("Movement date [{$this->movementDate}] is not a valid calendar date.");
+        }
+
+        // Reason length bounded (VARCHAR(512) in schema)
+        if ($this->reason !== null && mb_strlen($this->reason, 'UTF-8') > 512) {
+            throw new \InvalidArgumentException('Reason exceeds maximum allowed length of 512 characters.');
         }
     }
 }

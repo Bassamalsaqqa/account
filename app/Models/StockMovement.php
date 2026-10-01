@@ -6,6 +6,7 @@ namespace App\Models;
 
 use App\Domain\Accounting\Exceptions\ImmutableRecordException;
 use App\Support\Tenancy\BelongsToCompany;
+use Brick\Math\BigDecimal;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -174,11 +175,11 @@ class StockMovement extends Model
 
     public function isInbound(): bool
     {
-        return (float) $this->quantity_delta_base > 0;
+        return BigDecimal::of((string) $this->quantity_delta_base)->isPositive();
     }
 
     public function isOutbound(): bool
     {
-        return (float) $this->quantity_delta_base < 0;
+        return BigDecimal::of((string) $this->quantity_delta_base)->isNegative();
     }
 }

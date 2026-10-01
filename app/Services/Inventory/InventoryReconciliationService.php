@@ -11,10 +11,13 @@ use App\Models\InventoryBalance;
 use App\Models\InventoryCostState;
 use App\Models\InventoryLot;
 use App\Models\InventoryLotBalance;
+use App\Models\InventoryOperation;
 use App\Models\LedgerAccount;
 use App\Models\PostingLine;
 use App\Models\Product;
+use App\Models\ProductUnit;
 use App\Models\StockMovement;
+use App\Models\Unit;
 use App\Models\Warehouse;
 use App\Support\Tenancy\CompanyContext;
 use App\Support\Tenancy\CompanyScope;
@@ -124,6 +127,61 @@ class InventoryReconciliationService
                 }
                 if (in_array($m->movement_type, $outboundTypes, true) && $delta->isPositive()) {
                     $historyCorruptions[] = "Movement [{$m->id}] type [{$m->movement_type}] should have negative quantity but has [{$m->quantity_delta_base}].";
+                }
+
+                // Check operation provenance
+                if ($m->getAttribute('inventory_operation_id') === null) {
+                    $historyCorruptions[] = "Movement [{$m->id}] has no associated inventory operation.";
+                } else {
+                    /** @var InventoryOperation|null $op */
+                    $op = InventoryOperation::withoutGlobalScopes()->find($m->inventory_operation_id);
+                    if ($op === null) {
+                        $historyCorruptions[] = "Movement [{$m->id}] references non-existent operation [{$m->inventory_operation_id}].";
+                    } elseif ((int) $op->company_id !== (int) $companyId) {
+                        $historyCorruptions[] = "Movement [{$m->id}] references operation [{$op->id}] belonging to another company [{$op->company_id}].";
+                    } else {
+                        if ((int) $m->created_by !== (int) $op->created_by) {
+                            $historyCorruptions[] = "Movement [{$m->id}] actor [{$m->created_by}] does not match operation [{$op->id}] creator [{$op->created_by}].";
+                        }
+                        if (! in_array($op->operation_type, [InventoryOperation::TYPE_MOVEMENT, InventoryOperation::TYPE_TRANSFER], true)) {
+                            $historyCorruptions[] = "Movement [{$m->id}] references operation [{$op->id}] with invalid operation_type [{$op->operation_type}].";
+                        } elseif ($op->operation_type === InventoryOperation::TYPE_TRANSFER && ! in_array($m->movement_type, [StockMovement::TYPE_TRANSFER_IN, StockMovement::TYPE_TRANSFER_OUT], true)) {
+                            $historyCorruptions[] = "Movement [{$m->id}] type [{$m->movement_type}] does not match transfer operation [{$op->id}].";
+                        } elseif ($op->operation_type === InventoryOperation::TYPE_MOVEMENT && in_array($m->movement_type, [StockMovement::TYPE_TRANSFER_IN, StockMovement::TYPE_TRANSFER_OUT], true)) {
+                            $historyCorruptions[] = "Movement [{$m->id}] transfer type [{$m->movement_type}] does not match movement operation [{$op->id}].";
+                        }
+                    }
+                }
+            }
+
+            // Check operation line count and orphan operations
+            $movementsByOp = $movements->groupBy('inventory_operation_id');
+            $operations = InventoryOperation::where('company_id', $companyId)->get();
+            foreach ($operations as $op) {
+                if (! in_array($op->operation_type, [InventoryOperation::TYPE_MOVEMENT, InventoryOperation::TYPE_TRANSFER], true)) {
+                    $historyCorruptions[] = "Operation [{$op->id}] has invalid operation_type [{$op->operation_type}]. Valid types are [movement, transfer].";
+
+                    continue;
+                }
+
+                $opMovements = $movementsByOp->get($op->id, collect());
+                $movementCount = $opMovements->count();
+
+                if ($movementCount === 0) {
+                    $historyCorruptions[] = "Operation [{$op->id}] has no associated stock movements (orphan operation).";
+
+                    continue;
+                }
+
+                if ($op->operation_type === InventoryOperation::TYPE_MOVEMENT) {
+                    if ($movementCount !== (int) $op->line_count) {
+                        $historyCorruptions[] = "Operation [{$op->id}] line_count [{$op->line_count}] does not match associated movement count [{$movementCount}].";
+                    }
+                } elseif ($op->operation_type === InventoryOperation::TYPE_TRANSFER) {
+                    $expectedCount = (int) $op->line_count * 2;
+                    if ($movementCount !== $expectedCount) {
+                        $historyCorruptions[] = "Transfer operation [{$op->id}] line_count [{$op->line_count}] expected [{$expectedCount}] movements but found [{$movementCount}].";
+                    }
                 }
             }
 
@@ -467,6 +525,80 @@ class InventoryReconciliationService
                 }
             } elseif (! $totalValuation->isZero() && $glRelevantMovements->isNotEmpty()) {
                 $cacheDiscrepancies[] = "Inventory has positive valuation [{$totalValuation}] but no inventory control account exists.";
+            }
+
+            // Check I: Master-data configuration and lifecycle consistency (Cache / Config Discrepancies)
+            $units = Unit::where('company_id', $companyId)->get()->keyBy('id');
+            $productUnits = ProductUnit::where('company_id', $companyId)->get();
+            $productUnitsByProd = $productUnits->groupBy('product_id');
+
+            // 1. Declared base unit existence and exact base-row invariant per product
+            foreach ($products as $prod) {
+                if ($prod->getAttribute('base_unit_id') === null) {
+                    $cacheDiscrepancies[] = "Product [{$prod->id}] has no declared base unit.";
+                } else {
+                    $baseUnit = $units->get($prod->base_unit_id);
+                    if ($baseUnit === null) {
+                        $cacheDiscrepancies[] = "Product [{$prod->id}] base unit [{$prod->base_unit_id}] does not exist or does not belong to company [{$companyId}].";
+                    } elseif (! $baseUnit->active) {
+                        $cacheDiscrepancies[] = "Product [{$prod->id}] base unit [{$baseUnit->id}] is inactive.";
+                    }
+                }
+
+                $prodUList = $productUnitsByProd->get($prod->id, collect());
+                $baseRows = $prodUList->where('is_base', true);
+                if ($baseRows->count() === 0) {
+                    $cacheDiscrepancies[] = "Product [{$prod->id}] has no base ProductUnit configured.";
+                } elseif ($baseRows->count() > 1) {
+                    $cacheDiscrepancies[] = "Product [{$prod->id}] has multiple [{$baseRows->count()}] base ProductUnit rows.";
+                } else {
+                    /** @var ProductUnit $baseRow */
+                    $baseRow = $baseRows->first();
+                    if ($prod->getAttribute('base_unit_id') !== null && (int) $baseRow->unit_id !== (int) $prod->base_unit_id) {
+                        $cacheDiscrepancies[] = "Product [{$prod->id}] base ProductUnit unit_id [{$baseRow->unit_id}] does not match products.base_unit_id [{$prod->base_unit_id}].";
+                    }
+                    $factor = BigDecimal::of((string) $baseRow->conversion_to_base);
+                    if (! $factor->isEqualTo(BigDecimal::one())) {
+                        $cacheDiscrepancies[] = "Product [{$prod->id}] base ProductUnit conversion factor is [{$factor}], expected 1.000000.";
+                    }
+                    if (! $baseRow->active) {
+                        $cacheDiscrepancies[] = "Product [{$prod->id}] base ProductUnit is inactive.";
+                    }
+                }
+
+                // Positive-stock product must be active
+                $costState = $costStates->get($prod->id);
+                $prodCompanyQty = $costState !== null ? BigDecimal::of((string) $costState->quantity_base) : BigDecimal::zero();
+                if ($prodCompanyQty->isPositive() && ! $prod->active) {
+                    $cacheDiscrepancies[] = "Product [{$prod->id}] has positive stock [{$prodCompanyQty}] but is marked inactive.";
+                }
+            }
+
+            // 2. ProductUnit positive factor and company coherence
+            foreach ($productUnits as $pu) {
+                if (! $products->has($pu->product_id)) {
+                    $cacheDiscrepancies[] = "ProductUnit [{$pu->id}] references non-existent or foreign product [{$pu->product_id}].";
+                }
+                if (! $units->has($pu->unit_id)) {
+                    $cacheDiscrepancies[] = "ProductUnit [{$pu->id}] references non-existent or foreign unit [{$pu->unit_id}].";
+                }
+                $puFactor = BigDecimal::of((string) $pu->conversion_to_base);
+                if ($puFactor->isLessThanOrEqualTo(0)) {
+                    $cacheDiscrepancies[] = "ProductUnit [{$pu->id}] has non-positive conversion factor [{$puFactor}].";
+                }
+            }
+
+            // 3. Inactive warehouse with positive stock
+            foreach ($warehouses as $wh) {
+                if (! $wh->active) {
+                    $whBalances = $balances->where('warehouse_id', $wh->id);
+                    foreach ($whBalances as $b) {
+                        $bQty = BigDecimal::of((string) $b->quantity_base);
+                        if ($bQty->isPositive()) {
+                            $cacheDiscrepancies[] = "Inactive warehouse [{$wh->id}] has positive balance [{$bQty}] for product [{$b->product_id}].";
+                        }
+                    }
+                }
             }
 
             $allDiscrepancies = array_values(array_unique(array_merge($historyCorruptions, $cacheDiscrepancies)));

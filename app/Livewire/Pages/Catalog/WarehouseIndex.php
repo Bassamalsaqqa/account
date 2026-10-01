@@ -9,6 +9,7 @@ use App\Models\CompanyInventorySettings;
 use App\Models\StockMovement;
 use App\Models\User;
 use App\Models\Warehouse;
+use App\Services\Inventory\ProductCatalogService;
 use App\Support\Tenancy\CompanyContext;
 use Illuminate\Contracts\View\View;
 use Illuminate\Support\Facades\DB;
@@ -77,7 +78,7 @@ class WarehouseIndex extends Component
         $this->showModal = true;
     }
 
-    public function save(CompanyContext $context): void
+    public function save(CompanyContext $context, ProductCatalogService $catalogService): void
     {
         /** @var User $user */
         $user = auth()->user();
@@ -110,76 +111,41 @@ class WarehouseIndex extends Component
             return;
         }
 
-        DB::transaction(function () use ($company, $validated, $user) {
-            // Global lock order: Company first, then Warehouses
-            Company::where('id', $company->id)->lockForUpdate()->firstOrFail();
-            Warehouse::where('company_id', $company->id)->lockForUpdate()->get();
+        $data = [
+            'code' => mb_strtolower($validated['code']),
+            'name_ar' => $validated['name_ar'],
+            'name_en' => $validated['name_en'] ?: null,
+            'address_ar' => $validated['address_ar'] ?: null,
+            'address_en' => $validated['address_en'] ?: null,
+            'is_default' => (bool) $validated['is_default'],
+            'active' => (bool) $validated['active'],
+        ];
 
-            $isDefault = (bool) $validated['is_default'];
-            $isActive = (bool) $validated['active'];
-
-            // Invariant: Cannot remove default status from the sole active default warehouse
-            // without designating a replacement in the same save.
-            if (! $isDefault && $this->editingId !== null) {
-                $currentWarehouse = Warehouse::where('company_id', $company->id)->where('id', $this->editingId)->first();
-                if ($currentWarehouse?->is_default) {
-                    $otherActiveDefault = Warehouse::where('company_id', $company->id)
-                        ->where('is_default', true)
-                        ->where('active', true)
-                        ->where('id', '!=', $this->editingId)
-                        ->exists();
-                    if (! $otherActiveDefault) {
-                        $this->errorMessage = __('inventory.cannot_remove_default_from_sole_warehouse');
-
-                        return;
-                    }
-                }
-            }
-
-            // Invariant: Cannot deactivate the sole active default warehouse
-            if (! $isActive && $this->editingId !== null) {
-                $currentWarehouse = Warehouse::where('company_id', $company->id)->where('id', $this->editingId)->first();
-                if ($currentWarehouse?->is_default) {
-                    $this->errorMessage = __('inventory.cannot_deactivate_default_warehouse');
-
-                    return;
-                }
-            }
-
-            if ($isDefault) {
-                Warehouse::where('company_id', $company->id)->update(['is_default' => false]);
-            }
-
-            $data = [
-                'code' => mb_strtolower($validated['code']),
-                'name_ar' => $validated['name_ar'],
-                'name_en' => $validated['name_en'] ?: null,
-                'address_ar' => $validated['address_ar'] ?: null,
-                'address_en' => $validated['address_en'] ?: null,
-                'is_default' => $isDefault,
-                'active' => $isActive,
-            ];
-
+        try {
             if ($this->editingId !== null) {
-                /** @var Warehouse $warehouse */
-                $warehouse = Warehouse::where('company_id', $company->id)->where('id', $this->editingId)->firstOrFail();
-                $warehouse->update($data);
+                $catalogService->updateWarehouse($company, $this->editingId, $data);
             } else {
-                $data['company_id'] = $company->id;
-                $data['created_by'] = $user->id;
-                $warehouse = Warehouse::create($data);
-            }
-
-            if ($isDefault) {
-                CompanyInventorySettings::where('company_id', $company->id)->update([
-                    'default_warehouse_id' => $warehouse->id,
-                ]);
+                DB::transaction(function () use ($company, $data, $user) {
+                    Company::where('id', $company->id)->lockForUpdate()->firstOrFail();
+                    if ($data['is_default']) {
+                        Warehouse::where('company_id', $company->id)->update(['is_default' => false]);
+                    }
+                    $data['company_id'] = $company->id;
+                    $data['created_by'] = $user->id;
+                    $warehouse = Warehouse::create($data);
+                    if ($data['is_default']) {
+                        CompanyInventorySettings::where('company_id', $company->id)->update([
+                            'default_warehouse_id' => $warehouse->id,
+                        ]);
+                    }
+                });
             }
 
             $this->successMessage = __('inventory.warehouse_saved_success');
-        });
-
-        $this->showModal = false;
+            $this->showModal = false;
+        } catch (\Throwable $e) {
+            $this->errorMessage = $e->getMessage();
+        }
     }
 
     public function deleteWarehouse(int $id, CompanyContext $context): void

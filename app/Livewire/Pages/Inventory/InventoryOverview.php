@@ -60,7 +60,7 @@ class InventoryOverview extends Component
         $allTrackedProducts = Product::where('company_id', $company->id)
             ->where('active', true)
             ->where('track_stock', true)
-            ->whereNotNull('minimum_stock')
+            ->whereNotNull('minimum_stock_base')
             ->with(['baseUnit'])
             ->get();
 

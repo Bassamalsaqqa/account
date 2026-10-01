@@ -47,7 +47,7 @@ class OpeningStockForm extends Component
     {
         /** @var User $user */
         $user = auth()->user();
-        if (! $user->hasPermissionTo('inventory.stock.adjust')) {
+        if (! $user->hasPermissionTo('inventory.stock.adjust') || ! $user->hasPermissionTo('inventory.cost.view')) {
             abort(403);
         }
 
@@ -84,7 +84,7 @@ class OpeningStockForm extends Component
     {
         /** @var User $user */
         $user = auth()->user();
-        if (! $user->hasPermissionTo('inventory.stock.adjust')) {
+        if (! $user->hasPermissionTo('inventory.stock.adjust') || ! $user->hasPermissionTo('inventory.cost.view')) {
             abort(403);
         }
 

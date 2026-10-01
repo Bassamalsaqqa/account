@@ -7,11 +7,13 @@ namespace App\Actions\Inventory;
 use App\Domain\Inventory\DTO\StockMovementCommand;
 use App\Domain\Inventory\DTO\StockMovementLineCommand;
 use App\Domain\Inventory\Exceptions\InvalidInventoryMovementException;
+use App\Domain\Inventory\Exceptions\InventorySecurityException;
 use App\Domain\Inventory\ValueObjects\Quantity;
 use App\Domain\Money\ValueObjects\ExchangeRate;
 use App\Domain\Posting\DTO\PostingCommand;
 use App\Domain\Posting\DTO\PostingLineCommand;
 use App\Models\Company;
+use App\Models\CompanyUser;
 use App\Models\LedgerAccount;
 use App\Models\PostingBatch;
 use App\Models\Product;
@@ -23,6 +25,7 @@ use App\Services\Posting\AccountingPostingService;
 use App\Support\Tenancy\CompanyContext;
 use Brick\Math\BigDecimal;
 use Carbon\Carbon;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\DB;
 
 class PostOpeningStockAction
@@ -49,12 +52,23 @@ class PostOpeningStockAction
         ?string $movementDate = null,
         ?string $reason = null,
     ): array {
-        // Require matching company context — no auto-activation
+        // 1. Require matching company context — no auto-activation
         $context = app(CompanyContext::class);
         if (! $context->hasCompany() || $context->companyId() !== $company->id) {
             throw new InvalidInventoryMovementException(
                 "Active company context does not match target company [{$company->id}]. Activate the correct company context before calling this action."
             );
+        }
+
+        // 2. Authenticated actor validation
+        $authUser = auth()->user();
+        if ($authUser !== null && (int) $authUser->id !== (int) $user->id) {
+            throw new InventorySecurityException("Authenticated user does not match action actor [{$user->id}].");
+        }
+
+        // 3. Permission authorization: requires stock.adjust AND cost.view, no role bypass
+        if (! $user->hasPermissionTo('inventory.stock.adjust') || ! $user->hasPermissionTo('inventory.cost.view')) {
+            throw new AuthorizationException('Opening stock requires both inventory.stock.adjust and inventory.cost.view permissions.');
         }
 
         return DB::transaction(function () use (
@@ -71,11 +85,27 @@ class PostOpeningStockAction
             $movementDate,
             $reason,
         ): array {
+            // Locked company check
+            /** @var Company $lockedCompany */
+            $lockedCompany = Company::where('id', $company->id)->lockForUpdate()->firstOrFail();
+            if ($lockedCompany->status !== 'active') {
+                throw new InvalidInventoryMovementException("Cannot execute stock movements on inactive company [{$lockedCompany->id}].");
+            }
+
+            // Locked active membership check
+            $companyUser = CompanyUser::where('company_id', $lockedCompany->id)
+                ->where('user_id', $user->id)
+                ->lockForUpdate()
+                ->first();
+            if (! $companyUser || $companyUser->status !== 'active') {
+                throw new InvalidInventoryMovementException("Actor [{$user->id}] is not an active member of company [{$lockedCompany->id}].");
+            }
+
             $date = $movementDate ?? now()->toDateString();
 
             // 1. Record Inventory Movement
             $movementCommand = new StockMovementCommand(
-                companyId: $company->id,
+                companyId: $lockedCompany->id,
                 movementType: StockMovement::TYPE_OPENING_BALANCE,
                 movementDate: $date,
                 lines: [
@@ -90,7 +120,7 @@ class PostOpeningStockAction
                     ),
                 ],
                 sourceType: 'opening_stock',
-                sourceId: $company->id,
+                sourceId: $lockedCompany->id,
                 idempotencyKey: "{$idempotencyKey}:inv",
                 createdBy: $user->id,
                 reason: $reason ?? 'Opening Stock Balance',
@@ -106,20 +136,20 @@ class PostOpeningStockAction
 
             if ($movementValue->isPositive()) {
                 /** @var LedgerAccount $inventoryAccount */
-                $inventoryAccount = LedgerAccount::where('company_id', $company->id)
+                $inventoryAccount = LedgerAccount::where('company_id', $lockedCompany->id)
                     ->where('system_key', 'inventory')
                     ->firstOrFail();
 
                 /** @var LedgerAccount $obeAccount */
-                $obeAccount = LedgerAccount::where('company_id', $company->id)
+                $obeAccount = LedgerAccount::where('company_id', $lockedCompany->id)
                     ->where('system_key', 'opening_balance_equity')
                     ->firstOrFail();
 
-                $currency = $company->base_currency;
+                $currency = $lockedCompany->base_currency;
                 $valStr = (string) $movementValue->toScale(6);
 
                 $postingCommand = new PostingCommand(
-                    company: $company,
+                    company: $lockedCompany,
                     postingDate: Carbon::parse($date),
                     sourceType: 'opening_stock',
                     sourceId: $movement->id,

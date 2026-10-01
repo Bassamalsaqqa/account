@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Domain\Accounting\Exceptions\ImmutableRecordException;
 use App\Support\Tenancy\BelongsToCompany;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Model;
@@ -16,6 +17,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property string $idempotency_key
  * @property string $operation_type
  * @property int $line_count
+ * @property string|null $request_hash
  * @property int $created_by
  * @property CarbonImmutable $created_at
  * @property CarbonImmutable $updated_at
@@ -36,6 +38,7 @@ class InventoryOperation extends Model
         'idempotency_key',
         'operation_type',
         'line_count',
+        'request_hash',
         'created_by',
     ];
 
@@ -47,6 +50,17 @@ class InventoryOperation extends Model
         'line_count' => 'integer',
         'created_by' => 'integer',
     ];
+
+    protected static function booted(): void
+    {
+        static::updating(function (): void {
+            throw new ImmutableRecordException('Inventory operations are immutable and cannot be updated once persisted.');
+        });
+
+        static::deleting(function (): void {
+            throw new ImmutableRecordException('Inventory operations are immutable and cannot be deleted.');
+        });
+    }
 
     /**
      * @return BelongsTo<Company, $this>

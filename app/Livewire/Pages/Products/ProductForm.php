@@ -350,7 +350,7 @@ class ProductForm extends Component
         try {
             $imageService->store($this->product, $this->new_image, $user);
             $this->new_image = null;
-            $this->successMessage = 'Image uploaded successfully.';
+            $this->successMessage = __('inventory.image_uploaded_success');
         } catch (\Throwable $e) {
             $this->errorMessage = $e->getMessage();
         }
@@ -371,7 +371,7 @@ class ProductForm extends Component
 
         if ($image) {
             $imageService->delete($image);
-            $this->successMessage = 'Image deleted.';
+            $this->successMessage = __('inventory.image_deleted_success');
         }
     }
 
@@ -390,7 +390,7 @@ class ProductForm extends Component
 
         if ($image) {
             $imageService->setPrimary($image);
-            $this->successMessage = 'Primary image updated.';
+            $this->successMessage = __('inventory.primary_image_updated_success');
         }
     }
 

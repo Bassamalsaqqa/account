@@ -18,6 +18,7 @@ use App\Models\InventoryCostState;
 use App\Models\InventoryLot;
 use App\Models\InventoryLotBalance;
 use App\Models\Product;
+use App\Models\ProductUnit;
 use App\Models\StockMovement;
 use App\Models\Unit;
 use App\Models\User;
@@ -88,6 +89,17 @@ class WarehouseTransferTest extends TestCase
             'created_by' => $this->user->id,
         ]);
 
+        ProductUnit::create([
+            'company_id' => $this->company->id,
+            'product_id' => $this->product->id,
+            'unit_id' => $this->unitPiece->id,
+            'conversion_to_base' => '1.000000',
+            'is_base' => true,
+            'is_default_sale' => true,
+            'is_default_purchase' => true,
+            'active' => true,
+        ]);
+
         $this->productExpiry = Product::create([
             'company_id' => $this->company->id,
             'name_ar' => 'جبنة بيضاء بلدية',
@@ -98,6 +110,17 @@ class WarehouseTransferTest extends TestCase
             'track_expiry' => true,
             'active' => true,
             'created_by' => $this->user->id,
+        ]);
+
+        ProductUnit::create([
+            'company_id' => $this->company->id,
+            'product_id' => $this->productExpiry->id,
+            'unit_id' => $this->unitPiece->id,
+            'conversion_to_base' => '1.000000',
+            'is_base' => true,
+            'is_default_sale' => true,
+            'is_default_purchase' => true,
+            'active' => true,
         ]);
 
         $this->service = app(InventoryMovementService::class);

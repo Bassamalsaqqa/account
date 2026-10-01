@@ -9,12 +9,16 @@ use App\Domain\Inventory\Exceptions\InvalidInventoryMovementException;
 use App\Domain\Inventory\Exceptions\InvalidUnitConversionException;
 use App\Domain\Inventory\Services\UnitConversionService;
 use App\Models\Company;
+use App\Models\CompanyInventorySettings;
+use App\Models\InventoryBalance;
+use App\Models\InventoryCostState;
 use App\Models\InventoryLot;
 use App\Models\Product;
 use App\Models\ProductBarcode;
 use App\Models\ProductUnit;
 use App\Models\StockMovement;
 use App\Models\Unit;
+use App\Models\Warehouse;
 use Brick\Math\BigDecimal;
 use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
@@ -63,7 +67,8 @@ class ProductCatalogService
 
     /**
      * Update product under transaction locks.
-     * Reconciles base unit row if base_unit_id changed (only allowed when no movements exist).
+     * Reconciles base unit row if base_unit_id changed (only allowed for healthy pristine products).
+     * Guards deactivation of stock-tracked products with positive quantity.
      *
      * @param  array<string, mixed>  $data
      */
@@ -97,51 +102,126 @@ class ProductCatalogService
                 if (! $lockedProduct->track_expiry && isset($data['track_expiry']) && (bool) $data['track_expiry']) {
                     throw new InvalidArgumentException(__('inventory.cannot_enable_expiry_tracking_with_history'));
                 }
+            }
 
-                if (isset($data['base_unit_id']) && (int) $data['base_unit_id'] !== (int) $lockedProduct->base_unit_id) {
+            // Section 7: Base unit change allowed only for healthy pristine Product
+            if (isset($data['base_unit_id']) && (int) $data['base_unit_id'] !== (int) $lockedProduct->base_unit_id) {
+                $newBaseUnitId = (int) $data['base_unit_id'];
+
+                if ($hasMovements) {
                     throw HistoricalConversionLockedException::cannotMutateConversion(
                         $lockedProduct->id,
                         (int) $lockedProduct->base_unit_id
                     );
                 }
-            }
 
-            // If base_unit_id changed prior to any movements:
-            if (isset($data['base_unit_id']) && (int) $data['base_unit_id'] !== (int) $lockedProduct->base_unit_id) {
-                $newBaseUnitId = (int) $data['base_unit_id'];
-
-                // 1. Reconcile or create the target base unit row
-                $targetUnit = ProductUnit::where('company_id', $lockedProduct->company_id)
+                // Check for alternate ProductUnit configuration
+                $hasAlternateUnits = ProductUnit::where('company_id', $lockedProduct->company_id)
                     ->where('product_id', $lockedProduct->id)
-                    ->where('unit_id', $newBaseUnitId)
-                    ->lockForUpdate()
-                    ->first();
-
-                if ($targetUnit !== null) {
-                    $targetUnit->update([
-                        'conversion_to_base' => '1.000000',
-                        'is_base' => true,
-                        'active' => true,
-                    ]);
-                } else {
-                    ProductUnit::create([
-                        'company_id' => $lockedProduct->company_id,
-                        'product_id' => $lockedProduct->id,
-                        'unit_id' => $newBaseUnitId,
-                        'conversion_to_base' => '1.000000',
-                        'is_base' => true,
-                        'is_default_sale' => true,
-                        'is_default_purchase' => true,
-                        'active' => true,
-                    ]);
+                    ->where('is_base', false)
+                    ->exists();
+                if ($hasAlternateUnits) {
+                    throw new HistoricalConversionLockedException("Cannot change base unit: product [{$lockedProduct->id}] has alternate unit configurations. Alternate units must be removed first.");
                 }
 
-                // 2. Remove is_base flag from any other units so exactly one base unit row exists
+                // Check for unit-linked barcode
+                $hasUnitBarcodes = ProductBarcode::where('company_id', $lockedProduct->company_id)
+                    ->where('product_id', $lockedProduct->id)
+                    ->whereNotNull('unit_id')
+                    ->exists();
+                if ($hasUnitBarcodes) {
+                    throw new HistoricalConversionLockedException("Cannot change base unit: product [{$lockedProduct->id}] has unit-linked barcodes.");
+                }
+
+                // Check for lot / balance / cost history dependency
+                $hasLots = InventoryLot::where('company_id', $lockedProduct->company_id)
+                    ->where('product_id', $lockedProduct->id)
+                    ->exists();
+                $hasBalances = InventoryBalance::where('company_id', $lockedProduct->company_id)
+                    ->where('product_id', $lockedProduct->id)
+                    ->where('quantity_base', '!=', '0.000000')
+                    ->exists();
+                $hasCostHistory = InventoryCostState::where('company_id', $lockedProduct->company_id)
+                    ->where('product_id', $lockedProduct->id)
+                    ->where('quantity_base', '!=', '0.000000')
+                    ->exists();
+
+                if ($hasLots || $hasBalances || $hasCostHistory) {
+                    throw new HistoricalConversionLockedException("Cannot change base unit: product [{$lockedProduct->id}] has inventory lots or active balance/cost history.");
+                }
+
+                // Validate current declared Unit and ProductUnit configuration before allowing base switch
+                /** @var Unit|null $currentDeclaredUnit */
+                $currentDeclaredUnit = Unit::where('company_id', $lockedProduct->company_id)
+                    ->where('id', $lockedProduct->base_unit_id)
+                    ->first();
+                if ($currentDeclaredUnit === null || ! $currentDeclaredUnit->active) {
+                    throw new InvalidUnitConversionException("Cannot change base unit: product [{$lockedProduct->id}] has invalid or inactive current declared base unit [{$lockedProduct->base_unit_id}].");
+                }
+
+                $baseUnits = ProductUnit::where('company_id', $lockedProduct->company_id)
+                    ->where('product_id', $lockedProduct->id)
+                    ->where('is_base', true)
+                    ->lockForUpdate()
+                    ->get();
+
+                if ($baseUnits->count() !== 1) {
+                    throw new InvalidUnitConversionException("Cannot change base unit: product [{$lockedProduct->id}] has invalid base unit configuration (expected exactly 1 base ProductUnit, found {$baseUnits->count()}).");
+                }
+
+                /** @var ProductUnit $currentBase */
+                $currentBase = $baseUnits->first();
+                if ((int) $currentBase->unit_id !== (int) $lockedProduct->base_unit_id) {
+                    throw new InvalidUnitConversionException("Cannot change base unit: product [{$lockedProduct->id}] base ProductUnit unit_id [{$currentBase->unit_id}] does not match product base_unit_id [{$lockedProduct->base_unit_id}].");
+                }
+
+                if (! $currentBase->active) {
+                    throw new InvalidUnitConversionException("Cannot change base unit: product [{$lockedProduct->id}] base ProductUnit is inactive.");
+                }
+
+                if (BigDecimal::of((string) $currentBase->conversion_to_base)->compareTo(BigDecimal::one()) !== 0) {
+                    throw new InvalidUnitConversionException("Cannot change base unit: product [{$lockedProduct->id}] base ProductUnit has invalid conversion_to_base [{$currentBase->conversion_to_base}].");
+                }
+
+                // Target unit must exist in same company and be active
+                /** @var Unit|null $targetUnit */
+                $targetUnit = Unit::where('company_id', $lockedProduct->company_id)
+                    ->where('id', $newBaseUnitId)
+                    ->first();
+                if ($targetUnit === null || ! $targetUnit->active) {
+                    throw new InvalidUnitConversionException("Target base unit [{$newBaseUnitId}] does not exist or is inactive in company [{$lockedProduct->company_id}].");
+                }
+
+                // Pristine product: safely replace sole base row under locks
                 ProductUnit::where('company_id', $lockedProduct->company_id)
                     ->where('product_id', $lockedProduct->id)
-                    ->where('unit_id', '!=', $newBaseUnitId)
-                    ->where('is_base', true)
                     ->delete();
+
+                ProductUnit::create([
+                    'company_id' => $lockedProduct->company_id,
+                    'product_id' => $lockedProduct->id,
+                    'unit_id' => $newBaseUnitId,
+                    'conversion_to_base' => '1.000000',
+                    'is_base' => true,
+                    'is_default_sale' => true,
+                    'is_default_purchase' => true,
+                    'active' => true,
+                ]);
+            }
+
+            // Section 8: Deactivation guard for stock-tracked product with positive stock
+            if (isset($data['active']) && ! $data['active'] && $lockedProduct->active) {
+                if ($lockedProduct->track_stock) {
+                    /** @var InventoryCostState|null $costState */
+                    $costState = InventoryCostState::where('company_id', $lockedProduct->company_id)
+                        ->where('product_id', $lockedProduct->id)
+                        ->lockForUpdate()
+                        ->first();
+                    $currentQty = $costState !== null ? BigDecimal::of((string) $costState->quantity_base) : BigDecimal::zero();
+                    if ($currentQty->isPositive()) {
+                        throw new InvalidInventoryMovementException("Cannot deactivate product [{$lockedProduct->id}] with positive stock [{$currentQty}]. Stock must be zero before deactivation.");
+                    }
+                }
             }
 
             $data['updated_by'] = $actorId;
@@ -149,6 +229,116 @@ class ProductCatalogService
 
             return $lockedProduct;
         });
+    }
+
+    /**
+     * Update warehouse under company locks with domain deactivation guards.
+     *
+     * @param  array<string, mixed>  $data
+     */
+    public function updateWarehouse(Company $company, Warehouse|int $warehouse, array $data): Warehouse
+    {
+        return DB::transaction(function () use ($company, $warehouse, $data): Warehouse {
+            Company::where('id', $company->id)->lockForUpdate()->firstOrFail();
+            $warehouseId = $warehouse instanceof Warehouse ? $warehouse->id : $warehouse;
+            /** @var Warehouse $lockedWarehouse */
+            $lockedWarehouse = Warehouse::where('company_id', $company->id)->where('id', $warehouseId)->lockForUpdate()->firstOrFail();
+
+            $resultingDefault = array_key_exists('is_default', $data) ? (bool) $data['is_default'] : (bool) $lockedWarehouse->is_default;
+            $resultingActive = array_key_exists('active', $data) ? (bool) $data['active'] : (bool) $lockedWarehouse->active;
+
+            // 1. Inactive warehouse can NEVER be or become a default warehouse
+            if ($resultingDefault && ! $resultingActive) {
+                throw new InvalidInventoryMovementException(__('inventory.cannot_deactivate_default_warehouse'));
+            }
+
+            // 2. Cannot remove default status from sole active default warehouse
+            if (! $resultingDefault && $lockedWarehouse->is_default) {
+                $otherActiveDefault = Warehouse::where('company_id', $company->id)
+                    ->where('is_default', true)
+                    ->where('active', true)
+                    ->where('id', '!=', $lockedWarehouse->id)
+                    ->exists();
+                if (! $otherActiveDefault) {
+                    throw new InvalidInventoryMovementException(__('inventory.cannot_remove_default_from_sole_warehouse'));
+                }
+            }
+
+            // 3. Deactivation guards: cannot deactivate warehouse with positive stock
+            if (! $resultingActive && $lockedWarehouse->active) {
+                $hasPositiveStock = InventoryBalance::where('company_id', $company->id)
+                    ->where('warehouse_id', $lockedWarehouse->id)
+                    ->where('quantity_base', '>', 0)
+                    ->exists();
+
+                if ($hasPositiveStock) {
+                    throw new InvalidInventoryMovementException("Cannot deactivate warehouse [{$lockedWarehouse->id}] with positive inventory balance. Adjust or transfer stock to zero first.");
+                }
+            }
+
+            if ($resultingDefault && ! $lockedWarehouse->is_default) {
+                Warehouse::where('company_id', $company->id)->where('id', '!=', $lockedWarehouse->id)->update(['is_default' => false]);
+            }
+
+            $lockedWarehouse->update($data);
+
+            if ($resultingDefault) {
+                CompanyInventorySettings::where('company_id', $company->id)->update([
+                    'default_warehouse_id' => $lockedWarehouse->id,
+                ]);
+            }
+
+            return $lockedWarehouse;
+        });
+    }
+
+    /**
+     * Deactivate warehouse under company locks with domain guards.
+     */
+    public function deactivateWarehouse(Company $company, Warehouse|int $warehouse): Warehouse
+    {
+        return $this->updateWarehouse($company, $warehouse, ['active' => false]);
+    }
+
+    /**
+     * Update unit under company locks with domain deactivation guards.
+     *
+     * @param  array<string, mixed>  $data
+     */
+    public function updateUnit(Company $company, Unit|int $unit, array $data): Unit
+    {
+        return DB::transaction(function () use ($company, $unit, $data): Unit {
+            Company::where('id', $company->id)->lockForUpdate()->firstOrFail();
+            $unitId = $unit instanceof Unit ? $unit->id : $unit;
+            /** @var Unit $lockedUnit */
+            $lockedUnit = Unit::where('company_id', $company->id)->where('id', $unitId)->lockForUpdate()->firstOrFail();
+
+            $isActive = isset($data['active']) ? (bool) $data['active'] : (bool) $lockedUnit->active;
+
+            // Invariant: Unit used as base by an active Product cannot deactivate
+            if (! $isActive && $lockedUnit->active) {
+                $isUsedAsBaseByActiveProduct = Product::where('company_id', $company->id)
+                    ->where('base_unit_id', $lockedUnit->id)
+                    ->where('active', true)
+                    ->exists();
+
+                if ($isUsedAsBaseByActiveProduct) {
+                    throw new InvalidInventoryMovementException("Cannot deactivate unit [{$lockedUnit->id}]: it is currently used as the base unit for one or more active products.");
+                }
+            }
+
+            $lockedUnit->update($data);
+
+            return $lockedUnit;
+        });
+    }
+
+    /**
+     * Deactivate unit under company locks with domain guards.
+     */
+    public function deactivateUnit(Company $company, Unit|int $unit): Unit
+    {
+        return $this->updateUnit($company, $unit, ['active' => false]);
     }
 
     /**
@@ -163,7 +353,13 @@ class ProductCatalogService
         bool $isDefaultSale,
         bool $isDefaultPurchase
     ): ProductUnit {
-        return DB::transaction(function () use ($product, $unitId, $conversionToBase, $isDefaultSale, $isDefaultPurchase): ProductUnit {
+        return DB::transaction(function () use (
+            $product,
+            $unitId,
+            $conversionToBase,
+            $isDefaultSale,
+            $isDefaultPurchase
+        ): ProductUnit {
             /** @var Product $lockedProduct */
             $lockedProduct = Product::where('id', $product->id)->lockForUpdate()->firstOrFail();
 
@@ -173,7 +369,7 @@ class ProductCatalogService
 
             $convBd = BigDecimal::of($conversionToBase);
             if ($convBd->isLessThanOrEqualTo(0)) {
-                throw InvalidUnitConversionException::zeroOrNegative($conversionToBase);
+                throw InvalidUnitConversionException::zeroOrNegative((string) $convBd);
             }
 
             /** @var ProductUnit|null $existingUnit */
@@ -184,15 +380,10 @@ class ProductCatalogService
                 ->first();
 
             if ($existingUnit !== null) {
-                // If mutating conversion factor of an existing unit, verify movement locks
-                $currentConv = BigDecimal::of((string) $existingUnit->conversion_to_base);
-                if (! $convBd->isEqualTo($currentConv)) {
-                    $this->conversionService->assertCanMutateConversion($lockedProduct, $unitId);
-                }
+                $this->conversionService->assertCanMutateConversion($lockedProduct, $unitId);
 
                 $existingUnit->update([
                     'conversion_to_base' => (string) $convBd->toScale(6),
-                    'is_base' => false,
                     'is_default_sale' => $isDefaultSale,
                     'is_default_purchase' => $isDefaultPurchase,
                     'active' => true,

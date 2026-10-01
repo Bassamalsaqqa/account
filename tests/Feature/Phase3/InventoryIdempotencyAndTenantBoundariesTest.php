@@ -17,8 +17,10 @@ use App\Models\Company;
 use App\Models\CompanyUser;
 use App\Models\InventoryBalance;
 use App\Models\InventoryCostState;
+use App\Models\InventoryOperation;
 use App\Models\Product;
 use App\Models\ProductCategory;
+use App\Models\ProductUnit;
 use App\Models\StockMovement;
 use App\Models\Unit;
 use App\Models\User;
@@ -99,6 +101,17 @@ class InventoryIdempotencyAndTenantBoundariesTest extends TestCase
             'created_by' => $this->owner->id,
         ]);
 
+        ProductUnit::create([
+            'company_id' => $this->companyA->id,
+            'product_id' => $this->productStandard->id,
+            'unit_id' => $this->unitPiece->id,
+            'conversion_to_base' => '1.000000',
+            'is_base' => true,
+            'is_default_sale' => true,
+            'is_default_purchase' => true,
+            'active' => true,
+        ]);
+
         $this->productExpiry = Product::create([
             'company_id' => $this->companyA->id,
             'name_ar' => 'منتج بصلاحية',
@@ -109,6 +122,17 @@ class InventoryIdempotencyAndTenantBoundariesTest extends TestCase
             'track_expiry' => true,
             'active' => true,
             'created_by' => $this->owner->id,
+        ]);
+
+        ProductUnit::create([
+            'company_id' => $this->companyA->id,
+            'product_id' => $this->productExpiry->id,
+            'unit_id' => $this->unitPiece->id,
+            'conversion_to_base' => '1.000000',
+            'is_base' => true,
+            'is_default_sale' => true,
+            'is_default_purchase' => true,
+            'active' => true,
         ]);
 
         $this->service = app(InventoryMovementService::class);
@@ -377,9 +401,19 @@ class InventoryIdempotencyAndTenantBoundariesTest extends TestCase
     {
         $key = (string) Str::ulid();
 
+        $op = InventoryOperation::create([
+            'company_id' => $this->companyA->id,
+            'operation_type' => 'movement',
+            'idempotency_key' => $key,
+            'request_hash' => hash('sha256', 'test_key_'.$key),
+            'line_count' => 1,
+            'created_by' => $this->owner->id,
+        ]);
+
         // Directly insert row into stock_movements
         StockMovement::create([
             'company_id' => $this->companyA->id,
+            'inventory_operation_id' => $op->id,
             'product_id' => $this->productStandard->id,
             'warehouse_id' => $this->warehouseA1->id,
             'movement_type' => StockMovement::TYPE_OPENING_BALANCE,
@@ -400,6 +434,7 @@ class InventoryIdempotencyAndTenantBoundariesTest extends TestCase
         $this->expectException(UniqueConstraintViolationException::class);
         StockMovement::create([
             'company_id' => $this->companyA->id,
+            'inventory_operation_id' => $op->id,
             'product_id' => $this->productStandard->id,
             'warehouse_id' => $this->warehouseA1->id,
             'movement_type' => StockMovement::TYPE_OPENING_BALANCE,

@@ -15,6 +15,7 @@ use App\Livewire\Pages\Products\ProductIndex;
 use App\Models\Company;
 use App\Models\CompanyUser;
 use App\Models\Product;
+use App\Models\ProductUnit;
 use App\Models\Unit;
 use App\Models\User;
 use App\Models\Warehouse;
@@ -97,6 +98,17 @@ class InventorySecurityAndCostMaskingTest extends TestCase
             'default_sale_price_base' => '120.000000',
             'active' => true,
             'created_by' => $this->ownerUser->id,
+        ]);
+
+        ProductUnit::create([
+            'company_id' => $this->companyA->id,
+            'product_id' => $this->productA->id,
+            'unit_id' => $unit->id,
+            'conversion_to_base' => '1.000000',
+            'is_base' => true,
+            'is_default_sale' => true,
+            'is_default_purchase' => true,
+            'active' => true,
         ]);
 
         // Post opening stock with sensitive cost: 10 @ 75.50 = 755.00 ILS

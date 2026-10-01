@@ -14,6 +14,7 @@ use App\Models\Company;
 use App\Models\InventoryBalance;
 use App\Models\InventoryCostState;
 use App\Models\Product;
+use App\Models\ProductUnit;
 use App\Models\StockMovement;
 use App\Models\Unit;
 use App\Models\User;
@@ -91,6 +92,17 @@ class InventoryReconciliationAndRebuildTest extends TestCase
             'created_by' => $this->user->id,
         ]);
 
+        ProductUnit::create([
+            'company_id' => $this->company->id,
+            'product_id' => $this->productStandard->id,
+            'unit_id' => $this->unitPiece->id,
+            'conversion_to_base' => '1.000000',
+            'is_base' => true,
+            'is_default_sale' => true,
+            'is_default_purchase' => true,
+            'active' => true,
+        ]);
+
         $this->productExpiry = Product::create([
             'company_id' => $this->company->id,
             'name_ar' => 'مايونيز برطمان',
@@ -101,6 +113,17 @@ class InventoryReconciliationAndRebuildTest extends TestCase
             'track_expiry' => true,
             'active' => true,
             'created_by' => $this->user->id,
+        ]);
+
+        ProductUnit::create([
+            'company_id' => $this->company->id,
+            'product_id' => $this->productExpiry->id,
+            'unit_id' => $this->unitPiece->id,
+            'conversion_to_base' => '1.000000',
+            'is_base' => true,
+            'is_default_sale' => true,
+            'is_default_purchase' => true,
+            'active' => true,
         ]);
 
         $this->movementService = app(InventoryMovementService::class);
@@ -235,6 +258,17 @@ class InventoryReconciliationAndRebuildTest extends TestCase
             'created_by' => $this->user->id,
         ]);
 
+        ProductUnit::create([
+            'company_id' => $this->company->id,
+            'product_id' => $productPhantom->id,
+            'unit_id' => $this->unitPiece->id,
+            'conversion_to_base' => '1.000000',
+            'is_base' => true,
+            'is_default_sale' => true,
+            'is_default_purchase' => true,
+            'active' => true,
+        ]);
+
         // Insert artificial phantom cache row
         InventoryBalance::create([
             'company_id' => $this->company->id,
@@ -262,6 +296,17 @@ class InventoryReconciliationAndRebuildTest extends TestCase
             'track_expiry' => false,
             'active' => true,
             'created_by' => $this->user->id,
+        ]);
+
+        ProductUnit::create([
+            'company_id' => $this->company->id,
+            'product_id' => $productPhantom->id,
+            'unit_id' => $this->unitPiece->id,
+            'conversion_to_base' => '1.000000',
+            'is_base' => true,
+            'is_default_sale' => true,
+            'is_default_purchase' => true,
+            'active' => true,
         ]);
 
         InventoryBalance::create([

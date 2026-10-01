@@ -5,7 +5,7 @@
                 <x-icon name="truck" class="w-6 h-6 text-primary" />
                 <span>{{ __('inventory.warehouses') }}</span>
             </h1>
-            <p class="text-xs text-text-secondary mt-1">إدارة المستودعات، المواقع، وتحديد المستودع الافتراضي للحركات</p>
+            <p class="text-xs text-text-secondary mt-1">{{ __('inventory.warehouse_subtitle') }}</p>
         </div>
 
         @if ($canManage)
@@ -38,8 +38,8 @@
                         <th class="p-3.5">{{ __('inventory.warehouse_code') }}</th>
                         <th class="p-3.5">{{ __('inventory.warehouse') }}</th>
                         <th class="p-3.5">{{ __('inventory.address') }}</th>
-                        <th class="p-3.5 text-center">الافتراضي</th>
-                        <th class="p-3.5 text-center">الحالة</th>
+                        <th class="p-3.5 text-center">{{ __('inventory.is_default_short') }}</th>
+                        <th class="p-3.5 text-center">{{ __('inventory.status') }}</th>
                         @if ($canManage)
                             <th class="p-3.5 text-center w-24"></th>
                         @endif
@@ -62,7 +62,7 @@
                             </td>
                             <td class="p-3.5 text-center">
                                 @if ($wh->is_default)
-                                    <x-badge variant="info">الافتراضي</x-badge>
+                                    <x-badge variant="info">{{ __('inventory.is_default_short') }}</x-badge>
                                 @else
                                     <span class="text-text-muted">—</span>
                                 @endif
@@ -79,13 +79,13 @@
                                     <div class="flex items-center justify-center gap-2">
                                         <button type="button" wire:click="openEditModal({{ $wh->id }})"
                                                 class="text-primary hover:underline font-bold text-xs">
-                                            تعديل
+                                            {{ __('inventory.edit') }}
                                         </button>
                                         @if (! $wh->is_default)
                                             <button type="button" wire:click="deleteWarehouse({{ $wh->id }})"
-                                                    onclick="confirm('هل أنت متأكد من حذف هذا المستودع؟') || event.stopImmediatePropagation()"
+                                                    onclick="confirm('{{ __('inventory.confirm_delete_warehouse') }}') || event.stopImmediatePropagation()"
                                                     class="text-danger hover:underline text-xs">
-                                                حذف
+                                                {{ __('inventory.delete') }}
                                             </button>
                                         @endif
                                     </div>
@@ -95,7 +95,7 @@
                     @empty
                         <tr>
                             <td colspan="{{ $canManage ? 6 : 5 }}" class="p-6 text-center text-text-muted">
-                                لا توجد مستودعات مسجلة.
+                                {{ __('inventory.no_warehouses_registered') }}
                             </td>
                         </tr>
                     @endforelse
@@ -118,7 +118,7 @@
                 <div class="space-y-3 text-xs">
                     <div>
                         <label class="block font-bold text-text-secondary mb-1">{{ __('inventory.warehouse_code') }} *</label>
-                        <input type="text" wire:model="code" dir="ltr" placeholder="مثال: WH-MAIN" class="w-full h-8 px-2.5 rounded-control border border-border text-xs font-mono" />
+                        <input type="text" wire:model="code" dir="ltr" placeholder="{{ __('inventory.warehouse_code_placeholder') }}" class="w-full h-8 px-2.5 rounded-control border border-border text-xs font-mono" />
                         @error('code') <span class="text-danger text-[10px]">{{ $message }}</span> @enderror
                     </div>
                     <div>
@@ -132,7 +132,7 @@
                         @error('name_en') <span class="text-danger text-[10px]">{{ $message }}</span> @enderror
                     </div>
                     <div>
-                        <label class="block font-bold text-text-secondary mb-1">{{ __('inventory.address') }} (عربي)</label>
+                        <label class="block font-bold text-text-secondary mb-1">{{ __('inventory.address') }} ({{ __('inventory.name_ar') }})</label>
                         <textarea wire:model="address_ar" dir="rtl" rows="2" class="w-full p-2 rounded-control border border-border text-xs"></textarea>
                     </div>
                     <div class="p-3 rounded-control bg-surface-soft border border-border space-y-2">
@@ -140,7 +140,7 @@
                             <input type="checkbox" wire:model="is_default" class="rounded border-border text-primary w-4 h-4" />
                             <span class="font-bold text-text-primary">{{ __('inventory.is_default') }}</span>
                         </label>
-                        <p class="text-[10px] text-text-muted pr-6">المستودع المعتمد افتراضياً للعمليات في النظام.</p>
+                        <p class="text-[10px] text-text-muted pr-6">{{ __('inventory.default_warehouse_hint') }}</p>
                     </div>
                     <div class="pt-1">
                         <label class="flex items-center gap-2 cursor-pointer select-none">
@@ -153,11 +153,11 @@
                 <div class="flex items-center justify-end gap-2 pt-3 border-t border-border">
                     <button type="button" wire:click="$set('showModal', false)"
                             class="px-3.5 py-1.5 rounded-control border border-border text-text-secondary hover:bg-surface-soft text-xs font-semibold">
-                        إلغاء
+                        {{ __('inventory.cancel') }}
                     </button>
                     <button type="button" wire:click="save"
                             class="px-4 py-1.5 rounded-control bg-primary text-white hover:bg-primary-hover text-xs font-bold shadow-button">
-                        حفظ
+                        {{ __('inventory.save') }}
                     </button>
                 </div>
             </div>

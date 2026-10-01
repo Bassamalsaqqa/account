@@ -16,6 +16,7 @@ use App\Models\LedgerAccount;
 use App\Models\PostingBatch;
 use App\Models\PostingLine;
 use App\Models\Product;
+use App\Models\ProductUnit;
 use App\Models\StockMovement;
 use App\Models\Unit;
 use App\Models\User;
@@ -78,6 +79,17 @@ class InventoryAccountingIntegrationTest extends TestCase
             'created_by' => $this->user->id,
         ]);
 
+        ProductUnit::create([
+            'company_id' => $this->company->id,
+            'product_id' => $this->productStandard->id,
+            'unit_id' => $this->unitPiece->id,
+            'conversion_to_base' => '1.000000',
+            'is_base' => true,
+            'is_default_sale' => true,
+            'is_default_purchase' => true,
+            'active' => true,
+        ]);
+
         $this->productExpiry = Product::create([
             'company_id' => $this->company->id,
             'name_ar' => 'دجاج مجمد',
@@ -88,6 +100,17 @@ class InventoryAccountingIntegrationTest extends TestCase
             'track_expiry' => true,
             'active' => true,
             'created_by' => $this->user->id,
+        ]);
+
+        ProductUnit::create([
+            'company_id' => $this->company->id,
+            'product_id' => $this->productExpiry->id,
+            'unit_id' => $this->unitPiece->id,
+            'conversion_to_base' => '1.000000',
+            'is_base' => true,
+            'is_default_sale' => true,
+            'is_default_purchase' => true,
+            'active' => true,
         ]);
 
         $this->inventoryAccount = LedgerAccount::where('company_id', $this->company->id)->where('system_key', 'inventory')->firstOrFail();

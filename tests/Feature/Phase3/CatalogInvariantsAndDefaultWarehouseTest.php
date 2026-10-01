@@ -315,7 +315,7 @@ class CatalogInvariantsAndDefaultWarehouseTest extends TestCase
             'active' => true,
         ]);
 
-        ProductUnit::create([
+        $altUnit = ProductUnit::create([
             'company_id' => $this->company->id,
             'product_id' => $product->id,
             'unit_id' => $this->unitBox->id,
@@ -324,13 +324,29 @@ class CatalogInvariantsAndDefaultWarehouseTest extends TestCase
             'active' => true,
         ]);
 
+        // 1. Must reject when alternate units exist
         Livewire::test(ProductForm::class, ['publicId' => $product->public_id])
             ->set('base_unit_id', $this->unitBox->id)
             ->call('save')
-            ->assertHasNoErrors();
+            ->assertSet('errorMessage', "Cannot change base unit: product [{$product->id}] has alternate unit configurations. Alternate units must be removed first.");
+
+        $product->refresh();
+        $this->assertSame($this->unitPiece->id, $product->base_unit_id);
+
+        // 2. Remove alternate unit -> Product is now pristine -> Base change succeeds
+        $altUnit->delete();
+
+        Livewire::test(ProductForm::class, ['publicId' => $product->public_id])
+            ->set('base_unit_id', $this->unitBox->id)
+            ->call('save')
+            ->assertHasNoErrors()
+            ->assertSet('errorMessage', null);
+
+        $product->refresh();
+        $this->assertSame($this->unitBox->id, $product->base_unit_id);
 
         $baseRows = ProductUnit::where('product_id', $product->id)->where('is_base', true)->get();
-        $this->assertCount(1, $baseRows, 'Pre-history base unit changes must leave exactly one base row.');
+        $this->assertCount(1, $baseRows, 'Pristine base unit change must leave exactly one base row.');
         $this->assertSame($this->unitBox->id, $baseRows->first()->unit_id);
         $this->assertSame('1.000000', $baseRows->first()->conversion_to_base);
     }

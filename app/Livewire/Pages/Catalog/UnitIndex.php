@@ -6,6 +6,7 @@ namespace App\Livewire\Pages\Catalog;
 
 use App\Models\Unit;
 use App\Models\User;
+use App\Services\Inventory\ProductCatalogService;
 use App\Support\Tenancy\CompanyContext;
 use Illuminate\Contracts\View\View;
 use Illuminate\Validation\Rule;
@@ -76,7 +77,7 @@ class UnitIndex extends Component
         $this->showModal = true;
     }
 
-    public function save(CompanyContext $context): void
+    public function save(CompanyContext $context, ProductCatalogService $catalogService): void
     {
         /** @var User $user */
         $user = auth()->user();
@@ -115,18 +116,19 @@ class UnitIndex extends Component
             'active' => (bool) $validated['active'],
         ];
 
-        if ($this->editingId !== null) {
-            Unit::where('company_id', $company->id)
-                ->where('id', $this->editingId)
-                ->update($data);
-            $this->successMessage = __('inventory.unit_saved_success');
-        } else {
-            $data['company_id'] = $company->id;
-            Unit::create($data);
-            $this->successMessage = __('inventory.unit_saved_success');
-        }
+        try {
+            if ($this->editingId !== null) {
+                $catalogService->updateUnit($company, $this->editingId, $data);
+            } else {
+                $data['company_id'] = $company->id;
+                Unit::create($data);
+            }
 
-        $this->showModal = false;
+            $this->successMessage = __('inventory.unit_saved_success');
+            $this->showModal = false;
+        } catch (\Throwable $e) {
+            $this->errorMessage = $e->getMessage();
+        }
     }
 
     public function render(CompanyContext $context): View

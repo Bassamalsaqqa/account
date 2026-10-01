@@ -5,7 +5,7 @@
                 <x-icon name="dashboard" class="w-6 h-6 text-primary" />
                 <span>{{ __('inventory.categories') }}</span>
             </h1>
-            <p class="text-xs text-text-secondary mt-1">تنظيم الأصناف في مجموعات وتصنيفات رئيسية وفرعية</p>
+            <p class="text-xs text-text-secondary mt-1">{{ __('inventory.category_subtitle') }}</p>
         </div>
 
         @if ($canManage)
@@ -35,11 +35,11 @@
             <table class="w-full text-xs text-right rtl:text-right ltr:text-left">
                 <thead class="bg-surface-soft border-b border-border text-text-secondary font-bold">
                     <tr>
-                        <th class="p-3.5">اسم التصنيف</th>
-                        <th class="p-3.5">التصنيف الأب</th>
-                        <th class="p-3.5 text-center">الترتيب</th>
-                        <th class="p-3.5 text-center">عدد الأصناف</th>
-                        <th class="p-3.5 text-center">الحالة</th>
+                        <th class="p-3.5">{{ __('inventory.category_name') }}</th>
+                        <th class="p-3.5">{{ __('inventory.parent_category') }}</th>
+                        <th class="p-3.5 text-center">{{ __('inventory.sort_order') }}</th>
+                        <th class="p-3.5 text-center">{{ __('inventory.products_count') }}</th>
+                        <th class="p-3.5 text-center">{{ __('inventory.status') }}</th>
                         @if ($canManage)
                             <th class="p-3.5 text-center w-24"></th>
                         @endif
@@ -75,12 +75,12 @@
                                     <div class="flex items-center justify-center gap-2">
                                         <button type="button" wire:click="openEditModal({{ $cat->id }})"
                                                 class="text-primary hover:underline font-bold text-xs">
-                                            تعديل
+                                            {{ __('inventory.edit') }}
                                         </button>
                                         <button type="button" wire:click="deleteCategory({{ $cat->id }})"
-                                                onclick="confirm('هل أنت متأكد من حذف هذا التصنيف؟') || event.stopImmediatePropagation()"
+                                                onclick="confirm('{{ __('inventory.confirm_delete_category') }}') || event.stopImmediatePropagation()"
                                                 class="text-danger hover:underline text-xs">
-                                            حذف
+                                            {{ __('inventory.delete') }}
                                         </button>
                                     </div>
                                 </td>
@@ -89,7 +89,7 @@
                     @empty
                         <tr>
                             <td colspan="{{ $canManage ? 6 : 5 }}" class="p-6 text-center text-text-muted">
-                                لا توجد تصنيفات معرفة حالياً.
+                                {{ __('inventory.no_categories_defined') }}
                             </td>
                         </tr>
                     @endforelse
@@ -104,24 +104,24 @@
             <div class="bg-white rounded-card border border-border shadow-xl w-full max-w-md p-6 space-y-4">
                 <div class="flex items-center justify-between border-b border-border pb-3">
                     <h3 class="font-extrabold text-sm text-text-primary">
-                        {{ $editingId ? 'تعديل التصنيف' : 'إضافة تصنيف جديد' }}
+                        {{ $editingId ? __('inventory.edit_category') : __('inventory.add_category') }}
                     </h3>
                     <button type="button" wire:click="$set('showModal', false)" class="text-text-muted hover:text-text-primary text-base font-bold">&times;</button>
                 </div>
 
                 <div class="space-y-3 text-xs">
                     <div>
-                        <label class="block font-bold text-text-secondary mb-1">اسم التصنيف (بالعربية) *</label>
+                        <label class="block font-bold text-text-secondary mb-1">{{ __('inventory.category_name_ar') }} *</label>
                         <input type="text" wire:model="name_ar" dir="rtl" class="w-full h-8 px-2.5 rounded-control border border-border text-xs" />
                         @error('name_ar') <span class="text-danger text-[10px]">{{ $message }}</span> @enderror
                     </div>
                     <div>
-                        <label class="block font-bold text-text-secondary mb-1">اسم التصنيف (بالإنجليزية)</label>
+                        <label class="block font-bold text-text-secondary mb-1">{{ __('inventory.category_name_en') }}</label>
                         <input type="text" wire:model="name_en" dir="ltr" class="w-full h-8 px-2.5 rounded-control border border-border text-xs" />
                         @error('name_en') <span class="text-danger text-[10px]">{{ $message }}</span> @enderror
                     </div>
                     <div>
-                        <label class="block font-bold text-text-secondary mb-1">التصنيف الأب</label>
+                        <label class="block font-bold text-text-secondary mb-1">{{ __('inventory.parent_category') }}</label>
                         <select wire:model="parent_id" class="w-full h-8 px-2.5 rounded-control border border-border text-xs">
                             <option value="">{{ __('inventory.none_root') }}</option>
                             @foreach ($categories as $c)
@@ -146,11 +146,11 @@
                 <div class="flex items-center justify-end gap-2 pt-3 border-t border-border">
                     <button type="button" wire:click="$set('showModal', false)"
                             class="px-3.5 py-1.5 rounded-control border border-border text-text-secondary hover:bg-surface-soft text-xs font-semibold">
-                        إلغاء
+                        {{ __('inventory.cancel') }}
                     </button>
                     <button type="button" wire:click="save"
                             class="px-4 py-1.5 rounded-control bg-primary text-white hover:bg-primary-hover text-xs font-bold shadow-button">
-                        حفظ
+                        {{ __('inventory.save') }}
                     </button>
                 </div>
             </div>

@@ -10,6 +10,7 @@ use App\Domain\Inventory\ValueObjects\Quantity;
 use App\Models\Product;
 use App\Models\ProductUnit;
 use App\Models\StockMovement;
+use App\Models\Unit;
 use Brick\Math\BigDecimal;
 use Brick\Math\RoundingMode;
 
@@ -87,41 +88,76 @@ final class UnitConversionService
     /**
      * Validate product declared base unit correspondence and exactly-one base row invariant.
      */
-    private function validateProductBaseInvariants(ProductUnit $productUnit): void
+    public function validateProductBaseInvariants(ProductUnit $productUnit): void
     {
+        /** @var Product|null $product */
         $product = $productUnit->product ?? Product::find($productUnit->product_id);
         if ($product === null) {
-            return;
+            throw new InvalidUnitConversionException("ProductUnit [{$productUnit->id}] references non-existent product [{$productUnit->product_id}].");
         }
 
-        // 1. Company tenant isolation
+        // 1. Company tenant isolation between Product and ProductUnit
         if ((int) $product->company_id !== (int) $productUnit->company_id) {
             throw new InvalidUnitConversionException("ProductUnit company [{$productUnit->company_id}] does not match Product company [{$product->company_id}].");
         }
 
-        // 2. Base unit correspondence
-        $isDeclaredBase = (int) $product->base_unit_id === (int) $productUnit->unit_id;
-
-        if ($isDeclaredBase) {
-            if (! $productUnit->is_base) {
-                throw new InvalidUnitConversionException("Product [{$product->id}] declared base unit [{$productUnit->unit_id}] must have is_base=true.");
-            }
-            $conv = BigDecimal::of((string) $productUnit->conversion_to_base);
-            if (! $conv->isEqualTo(BigDecimal::one())) {
-                throw new InvalidUnitConversionException("Product [{$product->id}] declared base unit must have conversion factor of exactly 1.000000. Given [{$conv}].");
-            }
-        } elseif ($productUnit->is_base) {
-            throw new InvalidUnitConversionException("ProductUnit [{$productUnit->id}] has is_base=true but unit [{$productUnit->unit_id}] does not match declared product base unit [{$product->base_unit_id}].");
+        // 2. Unit referenced by ProductUnit must exist, belong to same company, and be active
+        /** @var Unit|null $unit */
+        $unit = $productUnit->unit ?? Unit::find($productUnit->unit_id);
+        if ($unit === null) {
+            throw new InvalidUnitConversionException("ProductUnit [{$productUnit->id}] references non-existent unit [{$productUnit->unit_id}].");
+        }
+        if ((int) $unit->company_id !== (int) $product->company_id) {
+            throw new InvalidUnitConversionException("Unit [{$unit->id}] company [{$unit->company_id}] does not match Product company [{$product->company_id}].");
+        }
+        if (! $unit->active) {
+            throw new InvalidUnitConversionException("Unit [{$unit->id}] is inactive.");
         }
 
-        // 3. Exactly one base row invariant per product: never allow multiple base unit rows
-        $baseCount = ProductUnit::where('company_id', $product->company_id)
+        // 3. Product declared base unit must exist, belong to same company, and be active
+        /** @var Unit|null $declaredBaseUnit */
+        $declaredBaseUnit = Unit::where('company_id', $product->company_id)->where('id', $product->base_unit_id)->first();
+        if ($declaredBaseUnit === null) {
+            throw new InvalidUnitConversionException("Product [{$product->id}] declared base unit [{$product->base_unit_id}] does not exist in company [{$product->company_id}].");
+        }
+        if (! $declaredBaseUnit->active) {
+            throw new InvalidUnitConversionException("Product [{$product->id}] declared base unit [{$declaredBaseUnit->id}] is inactive.");
+        }
+
+        // 4. Exactly one base row invariant per product matching products.base_unit_id
+        $baseRows = ProductUnit::where('company_id', $product->company_id)
             ->where('product_id', $product->id)
             ->where('is_base', true)
-            ->count();
+            ->get();
 
-        if ($baseCount > 1) {
-            throw new InvalidUnitConversionException("Product [{$product->id}] has multiple [{$baseCount}] base unit rows.");
+        if ($baseRows->isEmpty()) {
+            throw new InvalidUnitConversionException("Product [{$product->id}] has no base ProductUnit row.");
+        }
+
+        if ($baseRows->count() > 1) {
+            throw new InvalidUnitConversionException("Product [{$product->id}] has multiple [{$baseRows->count()}] base unit rows.");
+        }
+
+        /** @var ProductUnit $baseRow */
+        $baseRow = $baseRows->first();
+        if ((int) $baseRow->unit_id !== (int) $product->base_unit_id) {
+            throw new InvalidUnitConversionException("Base ProductUnit unit_id [{$baseRow->unit_id}] does not match product base_unit_id [{$product->base_unit_id}].");
+        }
+        if (! $baseRow->active) {
+            throw new InvalidUnitConversionException("Base ProductUnit for product [{$product->id}] is inactive.");
+        }
+        $baseConv = BigDecimal::of((string) $baseRow->conversion_to_base);
+        if (! $baseConv->isEqualTo(BigDecimal::one())) {
+            throw new InvalidUnitConversionException("Base ProductUnit must have conversion factor of exactly 1.000000. Given [{$baseConv}].");
+        }
+
+        // 5. ProductUnit base flag vs product base_unit_id coherence
+        $isDeclaredBase = (int) $product->base_unit_id === (int) $productUnit->unit_id;
+        if ($isDeclaredBase && ! $productUnit->is_base) {
+            throw new InvalidUnitConversionException("Product [{$product->id}] declared base unit [{$productUnit->unit_id}] must have is_base=true.");
+        }
+        if (! $isDeclaredBase && $productUnit->is_base) {
+            throw new InvalidUnitConversionException("ProductUnit [{$productUnit->id}] has is_base=true but unit [{$productUnit->unit_id}] does not match declared product base unit [{$product->base_unit_id}].");
         }
     }
 
