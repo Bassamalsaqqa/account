@@ -20,6 +20,7 @@ use App\Domain\Inventory\Exceptions\InvalidUnitConversionException;
 use App\Domain\Inventory\ValueObjects\Quantity;
 use App\Livewire\Pages\Inventory\OpeningStockForm;
 use App\Livewire\Pages\Inventory\StockAdjustmentForm;
+use App\Livewire\Pages\Products\ProductForm;
 use App\Models\Company;
 use App\Models\CompanyInventorySettings;
 use App\Models\CompanyUser;
@@ -41,6 +42,7 @@ use App\Services\Inventory\InventoryRebuildService;
 use App\Services\Inventory\InventoryReconciliationService;
 use App\Services\Inventory\ProductCatalogService;
 use App\Support\Tenancy\CompanyContext;
+use App\Support\Tenancy\CompanyScope;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -1822,5 +1824,399 @@ class Phase3IntegrityCorrectionTest extends TestCase
         $this->assertTrue($rejected);
         $this->assertEquals($beforeUnits, DB::table('product_units')->where('product_id', $product->id)->orderBy('id')->get()->toArray());
         $this->unitPiece->update(['active' => true]);
+    }
+
+    public function test_unit_deactivation_guard_with_product_unit_references(): void
+    {
+        $catalog = app(ProductCatalogService::class);
+        $this->actingAs($this->owner);
+
+        // 1. Unreferenced Unit can deactivate
+        $unreferencedUnit = Unit::create([
+            'company_id' => $this->company->id,
+            'code' => 'unreferenced_unit',
+            'name_ar' => 'وحدة غير مستخدمة',
+            'name_en' => 'Unreferenced Unit',
+            'allow_fractions' => false,
+            'decimal_places' => 0,
+            'active' => true,
+        ]);
+        $deactivated = $catalog->deactivateUnit($this->company, $unreferencedUnit);
+        $this->assertFalse((bool) $deactivated->fresh()->active);
+
+        // Already-inactive / no-op behavior succeeds without error and does not mutate other records
+        $beforeAllUnits = DB::table('units')->where('company_id', $this->company->id)->orderBy('id')->get()->toArray();
+        $catalog->deactivateUnit($this->company, $unreferencedUnit);
+        $this->assertEquals($beforeAllUnits, DB::table('units')->where('company_id', $this->company->id)->orderBy('id')->get()->toArray());
+
+        // 2. Base referenced by active ProductUnit cannot deactivate
+        $product = $this->createTrackedProduct('PRD-DEACT-GUARD-1');
+        $baseUnit = $this->unitPiece;
+        $beforeBaseUnit = $baseUnit->fresh()->toArray();
+        $beforeProductUnits = DB::table('product_units')->where('product_id', $product->id)->orderBy('id')->get()->toArray();
+
+        $rejectedBase = false;
+        try {
+            $catalog->deactivateUnit($this->company, $baseUnit);
+        } catch (InvalidInventoryMovementException $e) {
+            $rejectedBase = true;
+            $this->assertStringContainsString('Cannot deactivate unit', $e->getMessage());
+        }
+        $this->assertTrue($rejectedBase);
+        $this->assertEquals($beforeBaseUnit, $baseUnit->fresh()->toArray());
+        $this->assertEquals($beforeProductUnits, DB::table('product_units')->where('product_id', $product->id)->orderBy('id')->get()->toArray());
+
+        // 3. Alternate configured for neither default cannot deactivate
+        $altNeitherUnit = Unit::create([
+            'company_id' => $this->company->id,
+            'code' => 'alt_neither_unit',
+            'name_ar' => 'وحدة بديلة عادية',
+            'name_en' => 'Alternate Neither Unit',
+            'allow_fractions' => false,
+            'decimal_places' => 0,
+            'active' => true,
+        ]);
+        $catalog->addOrUpdateAlternateUnit($product, $altNeitherUnit->id, '2.000000', false, false);
+        $beforeAltNeither = $altNeitherUnit->fresh()->toArray();
+        $beforeProductUnits = DB::table('product_units')->where('product_id', $product->id)->orderBy('id')->get()->toArray();
+
+        $rejectedNeither = false;
+        try {
+            $catalog->deactivateUnit($this->company, $altNeitherUnit);
+        } catch (InvalidInventoryMovementException $e) {
+            $rejectedNeither = true;
+            $this->assertSame(__('inventory.cannot_deactivate_unit_in_use'), $e->getMessage());
+        }
+        $this->assertTrue($rejectedNeither);
+        $this->assertEquals($beforeAltNeither, $altNeitherUnit->fresh()->toArray());
+        $this->assertEquals($beforeProductUnits, DB::table('product_units')->where('product_id', $product->id)->orderBy('id')->get()->toArray());
+
+        // 4. Alternate default sale cannot deactivate
+        $altSaleUnit = Unit::create([
+            'company_id' => $this->company->id,
+            'code' => 'alt_sale_unit',
+            'name_ar' => 'وحدة بيع افتراضية',
+            'name_en' => 'Alternate Sale Unit',
+            'allow_fractions' => false,
+            'decimal_places' => 0,
+            'active' => true,
+        ]);
+        $catalog->addOrUpdateAlternateUnit($product, $altSaleUnit->id, '5.000000', true, false);
+        $beforeAltSale = $altSaleUnit->fresh()->toArray();
+        $beforeProductUnits = DB::table('product_units')->where('product_id', $product->id)->orderBy('id')->get()->toArray();
+
+        $rejectedSale = false;
+        try {
+            $catalog->deactivateUnit($this->company, $altSaleUnit);
+        } catch (InvalidInventoryMovementException $e) {
+            $rejectedSale = true;
+            $this->assertSame(__('inventory.cannot_deactivate_unit_in_use'), $e->getMessage());
+        }
+        $this->assertTrue($rejectedSale);
+        $this->assertEquals($beforeAltSale, $altSaleUnit->fresh()->toArray());
+        $this->assertEquals($beforeProductUnits, DB::table('product_units')->where('product_id', $product->id)->orderBy('id')->get()->toArray());
+
+        // 5. Alternate default purchase cannot deactivate
+        $altPurchaseUnit = Unit::create([
+            'company_id' => $this->company->id,
+            'code' => 'alt_purch_unit',
+            'name_ar' => 'وحدة شراء افتراضية',
+            'name_en' => 'Alternate Purchase Unit',
+            'allow_fractions' => false,
+            'decimal_places' => 0,
+            'active' => true,
+        ]);
+        $catalog->addOrUpdateAlternateUnit($product, $altPurchaseUnit->id, '10.000000', false, true);
+        $beforeAltPurch = $altPurchaseUnit->fresh()->toArray();
+        $beforeProductUnits = DB::table('product_units')->where('product_id', $product->id)->orderBy('id')->get()->toArray();
+
+        $rejectedPurch = false;
+        try {
+            $catalog->deactivateUnit($this->company, $altPurchaseUnit);
+        } catch (InvalidInventoryMovementException $e) {
+            $rejectedPurch = true;
+            $this->assertSame(__('inventory.cannot_deactivate_unit_in_use'), $e->getMessage());
+        }
+        $this->assertTrue($rejectedPurch);
+        $this->assertEquals($beforeAltPurch, $altPurchaseUnit->fresh()->toArray());
+        $this->assertEquals($beforeProductUnits, DB::table('product_units')->where('product_id', $product->id)->orderBy('id')->get()->toArray());
+    }
+
+    public function test_add_or_update_alternate_unit_validates_active_target_unit(): void
+    {
+        $catalog = app(ProductCatalogService::class);
+        $this->actingAs($this->owner);
+        $product = $this->createTrackedProduct('PRD-TARGET-UNIT-VAL');
+
+        // Setup an inactive unit in same company
+        $inactiveUnit = Unit::create([
+            'company_id' => $this->company->id,
+            'code' => 'inactive_target_unit',
+            'name_ar' => 'وحدة معطلة',
+            'name_en' => 'Inactive Unit',
+            'allow_fractions' => false,
+            'decimal_places' => 0,
+            'active' => false,
+        ]);
+
+        // 1. Inactive same-company target rejected on creation
+        $beforeProductUnits = DB::table('product_units')->where('product_id', $product->id)->orderBy('id')->get()->toArray();
+        $rejectedInactive = false;
+        try {
+            $catalog->addOrUpdateAlternateUnit($product, $inactiveUnit->id, '3.000000', false, false);
+        } catch (InvalidInventoryMovementException $e) {
+            $rejectedInactive = true;
+            $this->assertSame(__('inventory.cannot_use_inactive_unit'), $e->getMessage());
+        }
+        $this->assertTrue($rejectedInactive, 'Inactive target unit must be rejected.');
+        $this->assertEquals($beforeProductUnits, DB::table('product_units')->where('product_id', $product->id)->orderBy('id')->get()->toArray());
+
+        // 2. Foreign target rejected
+        $otherCompany = CompanyScope::executeWithoutScope(fn () => Company::create([
+            'name_ar' => 'شركة أخرى للاختبار',
+            'base_currency_code' => 'USD',
+            'status' => 'active',
+        ]));
+        $foreignUnit = CompanyScope::executeWithoutScope(fn () => Unit::create([
+            'company_id' => $otherCompany->id,
+            'code' => 'foreign_unit_test',
+            'name_ar' => 'وحدة أجنبية',
+            'name_en' => 'Foreign Unit',
+            'allow_fractions' => false,
+            'decimal_places' => 0,
+            'active' => true,
+        ]));
+
+        $beforeProductUnits = DB::table('product_units')->where('product_id', $product->id)->orderBy('id')->get()->toArray();
+        $rejectedForeign = false;
+        try {
+            $catalog->addOrUpdateAlternateUnit($product, $foreignUnit->id, '4.000000', false, false);
+        } catch (\InvalidArgumentException $e) {
+            $rejectedForeign = true;
+            $this->assertStringContainsString('does not exist in company', $e->getMessage());
+        }
+        $this->assertTrue($rejectedForeign, 'Foreign target unit must be rejected.');
+        $this->assertEquals($beforeProductUnits, DB::table('product_units')->where('product_id', $product->id)->orderBy('id')->get()->toArray());
+
+        // 3. Existing alternate referencing raw-deactivated Unit cannot update/reactivate
+        $activeUnit = Unit::create([
+            'company_id' => $this->company->id,
+            'code' => 'to_be_deactivated_unit',
+            'name_ar' => 'وحدة ستعطل خام',
+            'name_en' => 'Raw Deactivated Unit',
+            'allow_fractions' => false,
+            'decimal_places' => 0,
+            'active' => true,
+        ]);
+        $catalog->addOrUpdateAlternateUnit($product, $activeUnit->id, '5.000000', false, false);
+
+        // Raw-deactivate the unit in database
+        DB::table('units')->where('id', $activeUnit->id)->update(['active' => 0]);
+
+        $beforeProductUnits = DB::table('product_units')->where('product_id', $product->id)->orderBy('id')->get()->toArray();
+        $rejectedExistingDeactivated = false;
+        try {
+            $catalog->addOrUpdateAlternateUnit($product, $activeUnit->id, '5.000000', true, false);
+        } catch (InvalidInventoryMovementException $e) {
+            $rejectedExistingDeactivated = true;
+            $this->assertSame(__('inventory.cannot_use_inactive_unit'), $e->getMessage());
+        }
+        $this->assertTrue($rejectedExistingDeactivated, 'Existing alternate with inactive unit must reject update.');
+        $this->assertEquals($beforeProductUnits, DB::table('product_units')->where('product_id', $product->id)->orderBy('id')->get()->toArray());
+    }
+
+    public function test_duplicate_mutation_removal_and_atomic_fallback_in_alternate_unit_update(): void
+    {
+        $catalog = app(ProductCatalogService::class);
+        $this->actingAs($this->owner);
+        $product = $this->createTrackedProduct('PRD-DUP-MUT-CLEAN');
+
+        // Create alternate unit
+        $altUnit = Unit::create([
+            'company_id' => $this->company->id,
+            'code' => 'alt_dup_test',
+            'name_ar' => 'وحدة اختبار التكرار',
+            'name_en' => 'Alt Dup Test',
+            'allow_fractions' => false,
+            'decimal_places' => 0,
+            'active' => true,
+        ]);
+        $pu = $catalog->addOrUpdateAlternateUnit($product, $altUnit->id, '6.000000', true, true);
+        $this->assertTrue($pu->is_default_sale);
+        $this->assertTrue($pu->is_default_purchase);
+
+        // Corrupt base unit to test that unsetting alternate defaults validates healthy base BEFORE any mutation commits
+        DB::table('product_units')->where('product_id', $product->id)->where('is_base', true)->update(['conversion_to_base' => '1.500000']);
+        $beforeProductUnits = DB::table('product_units')->where('product_id', $product->id)->orderBy('id')->get()->toArray();
+
+        $rejected = false;
+        try {
+            $catalog->addOrUpdateAlternateUnit($product, $altUnit->id, '6.000000', false, false);
+        } catch (InvalidUnitConversionException $e) {
+            $rejected = true;
+            $this->assertStringContainsString('1.500000', $e->getMessage());
+        }
+        $this->assertTrue($rejected, 'Must reject fallback to corrupt base before any mutation.');
+        // Verify zero mutations committed: existingUnit remains unchanged, default flags not flipped
+        $this->assertEquals($beforeProductUnits, DB::table('product_units')->where('product_id', $product->id)->orderBy('id')->get()->toArray());
+
+        // Restore healthy base
+        DB::table('product_units')->where('product_id', $product->id)->where('is_base', true)->update(['conversion_to_base' => '1.000000']);
+
+        // Now update existing unit: unsetting defaults cleanly promotes healthy base exactly once
+        $updatedPu = $catalog->addOrUpdateAlternateUnit($product, $altUnit->id, '6.000000', false, false);
+        $this->assertFalse($updatedPu->is_default_sale);
+        $this->assertFalse($updatedPu->is_default_purchase);
+
+        $basePu = ProductUnit::where('product_id', $product->id)->where('is_base', true)->firstOrFail();
+        $this->assertTrue($basePu->is_default_sale);
+        $this->assertTrue($basePu->is_default_purchase);
+    }
+
+    public function test_product_form_intentional_defaults_and_reset(): void
+    {
+        Permission::findOrCreate('inventory.product.manage', 'web');
+        $this->owner->givePermissionTo('inventory.product.manage');
+        $this->actingAs($this->owner);
+
+        $product = $this->createTrackedProduct('PRD-FORM-INTENT');
+
+        $altUnit = Unit::create([
+            'company_id' => $this->company->id,
+            'code' => 'alt_form_unit_1',
+            'name_ar' => 'وحدة النموذج 1',
+            'name_en' => 'Form Unit 1',
+            'allow_fractions' => false,
+            'decimal_places' => 0,
+            'active' => true,
+        ]);
+
+        $altUnit2 = Unit::create([
+            'company_id' => $this->company->id,
+            'code' => 'alt_form_unit_2',
+            'name_ar' => 'وحدة النموذج 2',
+            'name_en' => 'Form Unit 2',
+            'allow_fractions' => false,
+            'decimal_places' => 0,
+            'active' => true,
+        ]);
+
+        $component = Livewire::test(ProductForm::class, ['product' => $product]);
+
+        // 1. Assert initial default checkboxes are visibly false
+        $this->assertFalse($component->get('new_alt_sell'));
+        $this->assertFalse($component->get('new_alt_purchase'));
+
+        // 2. Submit ordinary alternate without changing booleans
+        $component->set('new_alt_unit_id', $altUnit->id)
+            ->set('new_alt_conversion', '10')
+            ->call('addAlternateUnit');
+
+        $component->assertHasNoErrors();
+        $this->assertEquals(__('inventory.product_saved_success'), $component->get('successMessage'));
+
+        // Assert base remains both defaults, alternate has neither
+        $basePu = ProductUnit::where('product_id', $product->id)->where('is_base', true)->firstOrFail();
+        $this->assertTrue((bool) $basePu->is_default_sale);
+        $this->assertTrue((bool) $basePu->is_default_purchase);
+
+        $altPu1 = ProductUnit::where('product_id', $product->id)->where('unit_id', $altUnit->id)->firstOrFail();
+        $this->assertFalse((bool) $altPu1->is_default_sale);
+        $this->assertFalse((bool) $altPu1->is_default_purchase);
+
+        // Assert checkboxes reset to false
+        $this->assertFalse($component->get('new_alt_sell'));
+        $this->assertFalse($component->get('new_alt_purchase'));
+        $this->assertNull($component->get('new_alt_unit_id'));
+        $this->assertSame('', $component->get('new_alt_conversion'));
+
+        // 3. Submit explicit sale-default selection
+        $component->set('new_alt_unit_id', $altUnit2->id)
+            ->set('new_alt_conversion', '20')
+            ->set('new_alt_sell', true)
+            ->set('new_alt_purchase', false)
+            ->call('addAlternateUnit');
+
+        $component->assertHasNoErrors();
+
+        // Alternate 2 is now default sale, base remains default purchase
+        $altPu2 = ProductUnit::where('product_id', $product->id)->where('unit_id', $altUnit2->id)->firstOrFail();
+        $this->assertTrue((bool) $altPu2->is_default_sale);
+        $this->assertFalse((bool) $altPu2->is_default_purchase);
+
+        $basePuFresh = $basePu->fresh();
+        $this->assertFalse((bool) $basePuFresh->is_default_sale);
+        $this->assertTrue((bool) $basePuFresh->is_default_purchase);
+
+        // Assert form reset both checkboxes back to false
+        $this->assertFalse($component->get('new_alt_sell'));
+        $this->assertFalse($component->get('new_alt_purchase'));
+    }
+
+    public function test_reconciliation_reports_active_product_unit_referencing_inactive_unit_as_cache_discrepancy(): void
+    {
+        $catalog = app(ProductCatalogService::class);
+        $this->actingAs($this->owner);
+        $reconciliation = app(InventoryReconciliationService::class);
+
+        $product = $this->createTrackedProduct('PRD-RECON-INACTIVE-UNIT');
+
+        // Create alternate unit
+        $altUnit = Unit::create([
+            'company_id' => $this->company->id,
+            'code' => 'alt_recon_unit',
+            'name_ar' => 'وحدة مطابقة بديلة',
+            'name_en' => 'Alt Recon Unit',
+            'allow_fractions' => false,
+            'decimal_places' => 0,
+            'active' => true,
+        ]);
+        $altPu = $catalog->addOrUpdateAlternateUnit($product, $altUnit->id, '12.000000', true, false);
+
+        // Verify initially healthy
+        $initialReport = $reconciliation->auditCompany($this->company);
+        $this->assertTrue($initialReport->isHealthy);
+        $this->assertEmpty($initialReport->historyCorruptions);
+        $this->assertEmpty($initialReport->cacheDiscrepancies);
+
+        // Raw-deactivate the alternate unit in DB
+        DB::table('units')->where('id', $altUnit->id)->update(['active' => 0]);
+
+        $beforeUnits = DB::table('units')->where('company_id', $this->company->id)->orderBy('id')->get()->toArray();
+        $beforeProductUnits = DB::table('product_units')->where('product_id', $product->id)->orderBy('id')->get()->toArray();
+
+        // Run reconciliation
+        $report = $reconciliation->auditCompany($this->company);
+
+        // Assert report is unhealthy
+        $this->assertFalse($report->isHealthy);
+        // Assert NOT a history corruption
+        $this->assertEmpty($report->historyCorruptions);
+        // Assert classified as cache / configuration discrepancy
+        $this->assertNotEmpty($report->cacheDiscrepancies);
+        $found = false;
+        foreach ($report->cacheDiscrepancies as $disc) {
+            if (str_contains($disc, "ProductUnit [{$altPu->id}]") && str_contains($disc, 'references inactive unit')) {
+                $found = true;
+                break;
+            }
+        }
+        $this->assertTrue($found, 'Reconciliation must report active ProductUnit referencing inactive Unit as cache discrepancy.');
+
+        // Assert strictly read-only: snapshots completely unchanged
+        $this->assertEquals($beforeUnits, DB::table('units')->where('company_id', $this->company->id)->orderBy('id')->get()->toArray());
+        $this->assertEquals($beforeProductUnits, DB::table('product_units')->where('product_id', $product->id)->orderBy('id')->get()->toArray());
+
+        // Now test inactive ProductUnit: when ProductUnit itself is inactive, it should NOT be reported as active ProductUnit referencing inactive Unit
+        DB::table('product_units')->where('id', $altPu->id)->update(['active' => 0]);
+        $report2 = $reconciliation->auditCompany($this->company);
+        $inactivePuDisc = false;
+        foreach ($report2->cacheDiscrepancies as $disc) {
+            if (str_contains($disc, "ProductUnit [{$altPu->id}]") && str_contains($disc, 'is active but references inactive unit')) {
+                $inactivePuDisc = true;
+                break;
+            }
+        }
+        $this->assertFalse($inactivePuDisc, 'Inactive ProductUnit must not trigger active ProductUnit -> inactive Unit discrepancy.');
     }
 }

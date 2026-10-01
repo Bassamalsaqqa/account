@@ -23,6 +23,12 @@
             <button type="button" wire:click="$set('successMessage', null)" class="text-success hover:opacity-75">&times;</button>
         </div>
     @endif
+    @if ($errorMessage)
+        <div class="p-3.5 rounded-control bg-danger-bg border border-danger/30 text-danger text-xs font-semibold flex items-center justify-between">
+            <span>{{ $errorMessage }}</span>
+            <button type="button" wire:click="$set('errorMessage', null)" class="text-danger hover:opacity-75">&times;</button>
+        </div>
+    @endif
 
     <x-card padding="p-0">
         <div class="overflow-x-auto">
@@ -103,6 +109,13 @@
                     </h3>
                     <button type="button" wire:click="$set('showModal', false)" class="text-text-muted hover:text-text-primary text-base font-bold">&times;</button>
                 </div>
+
+                @if ($errorMessage)
+                    <div class="p-3 rounded-control bg-danger-bg border border-danger/30 text-danger text-xs font-semibold flex items-center justify-between">
+                        <span>{{ $errorMessage }}</span>
+                        <button type="button" wire:click="$set('errorMessage', null)" class="text-danger hover:opacity-75">&times;</button>
+                    </div>
+                @endif
 
                 <div class="space-y-3 text-xs">
                     <div>

@@ -70,6 +70,8 @@ return [
     'default_purchase_unit' => 'Default Purchase Unit',
     'base_unit_badge' => 'Base Unit',
     'cannot_remove_unit_with_barcodes' => 'Cannot remove unit referenced by product barcodes.',
+    'cannot_deactivate_unit_in_use' => 'Cannot deactivate unit: it is currently configured as an active unit for one or more products.',
+    'cannot_use_inactive_unit' => 'Cannot add or update alternate unit: target unit is inactive.',
     'barcodes' => 'Barcodes',
     'add_barcode' => 'Add Barcode',
     'barcode' => 'Barcode',

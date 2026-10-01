@@ -598,6 +598,12 @@ class InventoryReconciliationService
                 }
                 if (! $units->has($pu->unit_id)) {
                     $cacheDiscrepancies[] = "ProductUnit [{$pu->id}] references non-existent or foreign unit [{$pu->unit_id}].";
+                } else {
+                    /** @var Unit $referencedUnit */
+                    $referencedUnit = $units->get($pu->unit_id);
+                    if ($pu->active && ! $referencedUnit->active) {
+                        $cacheDiscrepancies[] = "ProductUnit [{$pu->id}] for product [{$pu->product_id}] is active but references inactive unit [{$pu->unit_id}].";
+                    }
                 }
                 $puFactor = BigDecimal::of((string) $pu->conversion_to_base);
                 if ($puFactor->isLessThanOrEqualTo(0)) {

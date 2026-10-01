@@ -71,9 +71,9 @@ class ProductForm extends Component
 
     public string $new_alt_conversion = '';
 
-    public bool $new_alt_sell = true;
+    public bool $new_alt_sell = false;
 
-    public bool $new_alt_purchase = true;
+    public bool $new_alt_purchase = false;
 
     // Barcodes
     public string $new_barcode = '';
@@ -252,6 +252,8 @@ class ProductForm extends Component
 
             $this->new_alt_unit_id = null;
             $this->new_alt_conversion = '';
+            $this->new_alt_sell = false;
+            $this->new_alt_purchase = false;
             $this->successMessage = __('inventory.product_saved_success');
         } catch (\Throwable $e) {
             $this->errorMessage = $e->getMessage();

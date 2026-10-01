@@ -325,6 +325,15 @@ class ProductCatalogService
                 if ($isUsedAsBaseByActiveProduct) {
                     throw new InvalidInventoryMovementException("Cannot deactivate unit [{$lockedUnit->id}]: it is currently used as the base unit for one or more active products.");
                 }
+
+                $isReferencedByActiveProductUnit = ProductUnit::where('company_id', $company->id)
+                    ->where('unit_id', $lockedUnit->id)
+                    ->where('active', true)
+                    ->exists();
+
+                if ($isReferencedByActiveProductUnit) {
+                    throw new InvalidInventoryMovementException(__('inventory.cannot_deactivate_unit_in_use'));
+                }
             }
 
             $lockedUnit->update($data);
@@ -369,6 +378,20 @@ class ProductCatalogService
                 throw new InvalidArgumentException(__('inventory.cannot_add_base_as_alternate'));
             }
 
+            /** @var Unit|null $targetUnit */
+            $targetUnit = Unit::where('company_id', $lockedProduct->company_id)
+                ->where('id', $unitId)
+                ->lockForUpdate()
+                ->first();
+
+            if ($targetUnit === null) {
+                throw new InvalidArgumentException("Target unit [{$unitId}] does not exist in company [{$lockedProduct->company_id}].");
+            }
+
+            if (! $targetUnit->active) {
+                throw new InvalidInventoryMovementException(__('inventory.cannot_use_inactive_unit'));
+            }
+
             $convBd = BigDecimal::of($conversionToBase);
             if ($convBd->isLessThanOrEqualTo(0)) {
                 throw InvalidUnitConversionException::zeroOrNegative((string) $convBd);
@@ -391,27 +414,6 @@ class ProductCatalogService
                 if (! $existingConv->isEqualTo($convBd)) {
                     $this->conversionService->assertCanMutateConversion($lockedProduct, $unitId);
                 }
-
-                if ($isDefaultSale) {
-                    ProductUnit::where('company_id', $lockedProduct->company_id)
-                        ->where('product_id', $lockedProduct->id)
-                        ->where('id', '!=', $existingUnit->id)
-                        ->update(['is_default_sale' => false]);
-                }
-
-                if ($isDefaultPurchase) {
-                    ProductUnit::where('company_id', $lockedProduct->company_id)
-                        ->where('product_id', $lockedProduct->id)
-                        ->where('id', '!=', $existingUnit->id)
-                        ->update(['is_default_purchase' => false]);
-                }
-
-                $existingUnit->update([
-                    'conversion_to_base' => (string) $convBd->toScale(6),
-                    'is_default_sale' => $isDefaultSale,
-                    'is_default_purchase' => $isDefaultPurchase,
-                    'active' => true,
-                ]);
 
                 // Check if unsetting default sale or purchase requires base fallback
                 $needsSaleFallback = false;

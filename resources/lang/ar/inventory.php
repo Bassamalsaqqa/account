@@ -70,6 +70,8 @@ return [
     'default_purchase_unit' => 'وحدة الشراء الافتراضية',
     'base_unit_badge' => 'الوحدة الأساسية',
     'cannot_remove_unit_with_barcodes' => 'لا يمكن حذف وحدة مرتبطة بباركود للمنتج.',
+    'cannot_deactivate_unit_in_use' => 'لا يمكن تعطيل الوحدة: هي حالياً مستخدمة كوحدة نشطة لصنف واحد أو أكثر.',
+    'cannot_use_inactive_unit' => 'لا يمكن إضافة أو تحديث الوحدة البديلة: الوحدة المحددة غير نشطة.',
     'barcodes' => 'الباركودات',
     'add_barcode' => 'إضافة باركود',
     'barcode' => 'الباركود',
