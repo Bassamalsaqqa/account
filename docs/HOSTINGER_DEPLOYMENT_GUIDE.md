@@ -182,6 +182,8 @@ scp -r public/build u556956644@account.palsync.net:/home/u556956644/domains/pals
 
 Verify that `/home/u556956644/domains/palsync.net/accounting/public/build/manifest.json` exists before proceeding.
 
+During deployment, `bin/deploy.sh` normalizes compiled build directories to `0755` and regular static files to `0644`, both in `accounting/public/build` and in the separated public root after copying. This prevents restrictive SCP/ZIP permissions from blocking public asset access. For a public-root symlink, normalizing the source build is sufficient. Application-private files and user uploads are not affected.
+
 ### Step 3.8: Bootstrap Initial Login User
 Because public self-registration is strictly disabled by default, run the interactive user creation command:
 ```bash
