@@ -44,6 +44,18 @@ cleanup_on_error() {
 }
 trap 'cleanup_on_error $LINENO' ERR
 
+normalize_static_build_permissions() {
+    local build_dir="$1"
+
+    if [ ! -d "$build_dir" ]; then
+        echo "ERROR: Build directory not found: $build_dir" >&2
+        return 1
+    fi
+
+    find "$build_dir" -type d -exec chmod 0755 {} +
+    find "$build_dir" -type f -exec chmod 0644 {} +
+}
+
 echo "===> [1/7] Pre-flight verification..."
 
 # 1. Directory and environment checks
@@ -124,6 +136,8 @@ if [ ! -d "$APP_DIR/public/build" ] || [ ! -f "$APP_DIR/public/build/manifest.js
     exit 1
 fi
 
+normalize_static_build_permissions "$APP_DIR/public/build"
+
 echo "===> [2/7] Entering maintenance mode..."
 "$PHP_BIN" artisan down --retry=60 || true
 MAINTENANCE_ACTIVE=1
@@ -176,6 +190,7 @@ if [ ! -L "$PUBLIC_DIR" ]; then
 
     mkdir -p "$PUBLIC_DIR/build"
     cp -rp "$APP_DIR/public/build/"* "$PUBLIC_DIR/build/"
+    normalize_static_build_permissions "$PUBLIC_DIR/build"
 fi
 
 echo "===> [7/7] Exiting maintenance mode..."
