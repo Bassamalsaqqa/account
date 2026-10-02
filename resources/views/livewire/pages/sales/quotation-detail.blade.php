@@ -54,6 +54,14 @@
                     </button>
                 @endif
 
+                @if ($canReturnToDraft)
+                    <button type="button"
+                            wire:click="returnToDraft"
+                            class="px-3 py-1.5 rounded-control border border-border text-xs font-bold text-text-secondary hover:bg-surface-soft transition-colors">
+                        {{ __('sales.return_to_draft') }}
+                    </button>
+                @endif
+
                 @if ($canEdit)
                     <a href="{{ route('quotations.edit', $quotation->public_id) }}"
                        class="px-3 py-1.5 rounded-control border border-border text-xs font-bold text-text-secondary hover:bg-surface-soft transition-colors">

@@ -290,4 +290,5 @@ return [
     'money_type_bank' => 'Bank',
     'price_permission_required' => 'Price changes require permission',
     'discount_permission_required' => 'Discount changes require permission',
+    'return_to_draft' => 'Return to Draft',
 ];

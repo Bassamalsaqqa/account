@@ -65,6 +65,13 @@ class QuotationDetail extends Component
         }
     }
 
+    public function returnToDraft(): void
+    {
+        $this->quotation->transition(Quotation::STATUS_DRAFT, auth()->user());
+        $this->quotation->refresh();
+        session()->flash('success', __('sales.updated_successfully'));
+    }
+
     public function markAsAccepted(): void
     {
         $user = auth()->user();
@@ -144,13 +151,15 @@ class QuotationDetail extends Component
     public function render(): View
     {
         $user = auth()->user();
-        $canEdit = $user->hasPermissionTo('sales.quote.edit') && in_array($this->quotation->status, [Quotation::STATUS_SENT], true);
+        $canEdit = $user->hasPermissionTo('sales.quote.edit') && $this->quotation->status === Quotation::STATUS_DRAFT;
+        $canReturnToDraft = $user->hasPermissionTo('sales.quote.edit') && $this->quotation->status === Quotation::STATUS_SENT;
         $canSend = $user->hasPermissionTo('sales.quote.send') && $this->quotation->status === Quotation::STATUS_DRAFT;
         $canConvert = $user->hasPermissionTo('sales.quote.convert') && $this->quotation->status === Quotation::STATUS_ACCEPTED;
         $canShare = $user->hasPermissionTo('sales.document.share');
 
         return view('livewire.pages.sales.quotation-detail', [
             'canEdit' => $canEdit,
+            'canReturnToDraft' => $canReturnToDraft,
             'canSend' => $canSend,
             'canConvert' => $canConvert,
             'canShare' => $canShare,

@@ -305,6 +305,9 @@ class SalesInvoice extends Model
         });
 
         static::deleting(function (self $invoice): void {
+            if ($invoice->getOriginal('quotation_id') !== null) {
+                throw new ImmutableRecordException('Quotation-linked sales invoices cannot be deleted.');
+            }
             $originalStatus = $invoice->getOriginal('status');
             if ($originalStatus === self::STATUS_POSTED || $originalStatus === self::STATUS_VOID) {
                 throw new ImmutableRecordException('Posted or voided sales invoices cannot be deleted.');

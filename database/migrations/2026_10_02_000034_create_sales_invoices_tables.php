@@ -20,7 +20,7 @@ return new class extends Migration
             $table->string('invoice_number', 64)->nullable();
             $table->foreignId('customer_id')->constrained('customers')->restrictOnDelete();
             $table->foreignId('warehouse_id')->nullable()->constrained('warehouses')->restrictOnDelete();
-            $table->foreignId('quotation_id')->nullable()->constrained('quotations')->nullOnDelete();
+            $table->foreignId('quotation_id')->nullable()->constrained('quotations')->restrictOnDelete();
             $table->char('currency_code', 3);
             $table->decimal('exchange_rate', 20, 10);
             $table->date('issue_date');
@@ -113,6 +113,11 @@ return new class extends Migration
             $table->index(['company_id', 'sales_invoice_id'], 'si_lot_alloc_invoice_idx');
             $table->index(['company_id', 'sales_invoice_line_id'], 'si_lot_alloc_line_idx');
         });
+
+        Schema::table('quotations', function (Blueprint $table) {
+            $table->foreign('converted_to_invoice_id', 'quotes_converted_invoice_fk')
+                ->references('id')->on('sales_invoices')->restrictOnDelete();
+        });
     }
 
     /**
@@ -120,6 +125,10 @@ return new class extends Migration
      */
     public function down(): void
     {
+        // Break the reciprocal FK before dropping the referenced invoice table.
+        Schema::table('quotations', function (Blueprint $table) {
+            $table->dropForeign('quotes_converted_invoice_fk');
+        });
         Schema::dropIfExists('sales_invoice_lot_allocations');
         Schema::dropIfExists('sales_invoice_lines');
         Schema::dropIfExists('sales_invoices');

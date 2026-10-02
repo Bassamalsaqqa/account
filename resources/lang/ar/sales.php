@@ -290,4 +290,5 @@ return [
     'money_type_bank' => 'بنك',
     'price_permission_required' => 'تغيير السعر يتطلب صلاحية',
     'discount_permission_required' => 'تغيير الخصم يتطلب صلاحية',
+    'return_to_draft' => 'إعادة إلى مسودة',
 ];
