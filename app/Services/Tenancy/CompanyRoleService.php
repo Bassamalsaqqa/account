@@ -77,6 +77,7 @@ class CompanyRoleService
         'money.bank.view',
         'money.receipt.view',
         'money.receipt.create',
+        'money.receipt.allocate',
         'money.receipt.reverse',
         'money.vendor_payment.create',
         'money.check.manage',
@@ -175,7 +176,7 @@ class CompanyRoleService
             'inventory.stock.view', 'inventory.stock.adjust', 'inventory.stock.transfer', 'inventory.cost.view', 'inventory.product.manage',
             'customers.view', 'customers.manage', 'customers.statement.view',
             'vendors.view', 'vendors.manage', 'vendors.statement.view',
-            'money.cash.view', 'money.bank.view', 'money.receipt.view', 'money.receipt.create', 'money.receipt.reverse',
+            'money.cash.view', 'money.bank.view', 'money.receipt.view', 'money.receipt.create', 'money.receipt.allocate', 'money.receipt.reverse',
             'money.vendor_payment.create', 'money.check.manage', 'money.expense.manage',
             'reports.sales.view', 'reports.profit.view', 'reports.cost.view', 'reports.financial.view', 'reports.tax.view',
         ];
@@ -196,7 +197,7 @@ class CompanyRoleService
             'sales.statement.view', 'sales.document.share', 'sales.document.pdf',
             'customers.view', 'customers.manage', 'customers.statement.view',
             'inventory.stock.view',
-            'money.receipt.view', 'money.receipt.create',
+            'money.receipt.view', 'money.receipt.create', 'money.receipt.allocate',
             'reports.sales.view',
         ];
         $salesRole = Role::firstOrCreate([
@@ -246,7 +247,7 @@ class CompanyRoleService
             'inventory.stock.view',
             'money.cash.view',
             'money.receipt.view',
-            'money.receipt.create',
+            'money.receipt.create', 'money.receipt.allocate',
         ];
         $cashierRole = Role::firstOrCreate([
             'company_id' => $company->id,

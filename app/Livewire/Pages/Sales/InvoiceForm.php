@@ -404,7 +404,7 @@ class InvoiceForm extends Component
             'currency_code' => ['required', 'string', 'size:3'],
             'exchange_rate' => ['required', 'numeric', 'gt:0'],
             'issue_date' => ['required', 'date'],
-            'due_date' => ['required', 'date', 'after_or_equal:issue_date'],
+            'due_date' => ['nullable', 'date', 'after_or_equal:issue_date'],
             'lines' => ['required', 'array', 'min:1'],
             'lines.*.item_description' => ['required', 'string', 'max:255'],
             'lines.*.quantity' => ['required', 'numeric', 'gt:0'],

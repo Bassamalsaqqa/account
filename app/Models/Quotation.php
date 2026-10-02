@@ -42,6 +42,9 @@ use Illuminate\Support\Str;
  * @property array<string, mixed>|null $company_snapshot
  * @property int|null $converted_to_invoice_id
  * @property Carbon|null $converted_at
+ * @property Carbon|null $sent_at
+ * @property Carbon|null $accepted_at
+ * @property bool $include_product_images
  * @property int|null $created_by
  * @property int|null $updated_by
  * @property \Illuminate\Support\Carbon|null $created_at
@@ -91,7 +94,7 @@ class Quotation extends Model
         'customer_snapshot',
         'company_snapshot',
         'converted_to_invoice_id',
-        'converted_at',
+        'converted_at', 'sent_at', 'accepted_at', 'include_product_images',
         'created_by',
         'updated_by',
     ];
@@ -115,7 +118,7 @@ class Quotation extends Model
             'grand_total_currency' => 'string',
             'customer_snapshot' => 'array',
             'company_snapshot' => 'array',
-            'converted_at' => 'datetime',
+            'converted_at' => 'datetime', 'sent_at' => 'datetime', 'accepted_at' => 'datetime', 'include_product_images' => 'boolean',
         ];
     }
 
@@ -128,17 +131,24 @@ class Quotation extends Model
             app(SalesActorGuard::class)->lockAndAuthorize((int) $this->company_id, $actor, $permission);
             $locked = self::query()->lockForUpdate()->findOrFail($this->id);
             $allowed = [
-                self::STATUS_DRAFT => [self::STATUS_SENT, self::STATUS_CONVERTED],
-                self::STATUS_SENT => [self::STATUS_DRAFT, self::STATUS_ACCEPTED, self::STATUS_REJECTED, self::STATUS_EXPIRED, self::STATUS_CONVERTED],
+                self::STATUS_DRAFT => [self::STATUS_SENT],
+                self::STATUS_SENT => [self::STATUS_DRAFT, self::STATUS_ACCEPTED, self::STATUS_REJECTED, self::STATUS_EXPIRED],
                 self::STATUS_ACCEPTED => [self::STATUS_EXPIRED, self::STATUS_CONVERTED],
             ];
             if (! in_array($target, $allowed[$locked->status] ?? [], true)) {
                 throw new \InvalidArgumentException('Invalid quotation transition.');
             }
             $before = $locked->status;
+            // Preserve first send and acceptance timestamps across an audited return to draft.
+            if ($target === self::STATUS_SENT && $locked->sent_at === null) {
+                $locked->sent_at = now();
+            }
+            if ($target === self::STATUS_ACCEPTED && $locked->accepted_at === null) {
+                $locked->accepted_at = now();
+            }
             if ($target === self::STATUS_CONVERTED) {
                 $invoice = SalesInvoice::query()->find($convertedInvoice?->id);
-                if ($invoice === null || (int) $invoice->quotation_id !== (int) $locked->id) {
+                if ($invoice === null || (int) $invoice->quotation_id !== (int) $locked->id || (int) $invoice->company_id !== (int) $locked->company_id || (int) $invoice->customer_id !== (int) $locked->customer_id) {
                     throw new \InvalidArgumentException('Conversion requires the linked invoice draft.');
                 }
                 $locked->converted_to_invoice_id = $invoice->id;
@@ -169,7 +179,7 @@ class Quotation extends Model
             if (($quote->isDirty('status') || $originalStatus !== self::STATUS_DRAFT) && ! $quote->transitioning) {
                 throw new ImmutableRecordException('Quotation history requires a canonical transition; editing requires draft state.');
             }
-            if ($quote->transitioning && array_diff(array_keys($quote->getDirty()), ['status', 'converted_to_invoice_id', 'converted_at', 'updated_by', 'updated_at']) !== []) {
+            if ($quote->transitioning && array_diff(array_keys($quote->getDirty()), ['status', 'converted_to_invoice_id', 'converted_at', 'sent_at', 'accepted_at', 'updated_by', 'updated_at']) !== []) {
                 throw new ImmutableRecordException('A state transition cannot change quotation economics.');
             }
 
@@ -197,7 +207,7 @@ class Quotation extends Model
             if (($quote->isDirty('status') || $originalStatus !== self::STATUS_DRAFT) && ! $quote->transitioning) {
                 throw new ImmutableRecordException('Quotation history requires a canonical transition; editing requires draft state.');
             }
-            if ($quote->transitioning && array_diff(array_keys($quote->getDirty()), ['status', 'converted_to_invoice_id', 'converted_at', 'updated_by', 'updated_at']) !== []) {
+            if ($quote->transitioning && array_diff(array_keys($quote->getDirty()), ['status', 'converted_to_invoice_id', 'converted_at', 'sent_at', 'accepted_at', 'updated_by', 'updated_at']) !== []) {
                 throw new ImmutableRecordException('A state transition cannot change quotation economics.');
             }
             if ($originalStatus !== self::STATUS_DRAFT) {

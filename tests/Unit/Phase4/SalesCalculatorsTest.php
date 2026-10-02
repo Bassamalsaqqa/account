@@ -51,7 +51,7 @@ class SalesCalculatorsTest extends TestCase
         $input = new SalesLineCalculationInput(
             quantity: '3',
             unitPrice: '10.33',
-            taxRate: '0.160000',
+            taxRate: '16.000000',
             taxInclusive: false,
             currencyMinorUnits: 2,
             exchangeRate: '3.5000000000',
@@ -83,7 +83,7 @@ class SalesCalculatorsTest extends TestCase
         $input = new SalesLineCalculationInput(
             quantity: '1',
             unitPrice: '100.00',
-            taxRate: '0.160000',
+            taxRate: '16.000000',
             taxInclusive: true,
             currencyMinorUnits: 2,
             exchangeRate: '1.0000000000',
@@ -135,7 +135,7 @@ class SalesCalculatorsTest extends TestCase
         $input1 = new SalesLineCalculationInput(
             quantity: '2',
             unitPrice: '50.00',
-            taxRate: '0.160000',
+            taxRate: '16.000000',
             taxInclusive: false,
             currencyMinorUnits: 2,
             exchangeRate: '1',

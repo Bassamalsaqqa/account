@@ -4,15 +4,23 @@ declare(strict_types=1);
 
 namespace App\Livewire\Pages\Sales\Settings;
 
+use App\Actions\Sales\UpdateDocumentSequenceAction;
 use App\Models\DocumentSequence;
+use App\Services\Sales\SalesActorGuard;
 use App\Support\Tenancy\CompanyContext;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Contracts\View\View;
+use Illuminate\Support\Facades\DB;
 use Livewire\Attributes\Layout;
+use Livewire\Attributes\Locked;
 use Livewire\Component;
 
 #[Layout('layouts.app')]
 class DocumentSequenceSettings extends Component
 {
+    #[Locked]
+    public int $settingsCompanyId;
+
     /**
      * @var list<array{
      *     id: int,
@@ -28,18 +36,18 @@ class DocumentSequenceSettings extends Component
 
     public function mount(CompanyContext $context): void
     {
+        $this->settingsCompanyId = (int) $context->companyId();
         $company = $context->company();
         $user = auth()->user();
 
-        if (! $user->hasRole(['Owner', 'Administrator'])) {
-            abort(403, 'Unauthorized.');
-        }
+        $this->authorizeSettings();
 
         $this->loadSequences();
     }
 
     public function loadSequences(): void
     {
+        $this->authorizeSettings();
         $company = app(CompanyContext::class)->company();
         $seqs = DocumentSequence::where('company_id', $company->id)->get();
 
@@ -59,25 +67,35 @@ class DocumentSequenceSettings extends Component
 
     public function updateSequence(int $index): void
     {
+        $this->authorizeSettings();
         $company = app(CompanyContext::class)->company();
         $item = $this->sequences[$index] ?? null;
         if (! $item) {
             return;
         }
 
-        $seq = DocumentSequence::where('company_id', $company->id)->findOrFail($item['id']);
-        $seq->update([
-            'prefix' => strtoupper(trim($item['prefix'])),
-            'padding' => max(1, min(10, (int) $item['padding'])),
-            'reset_policy' => in_array($item['reset_policy'], ['yearly', 'never'], true) ? $item['reset_policy'] : 'yearly',
-        ]);
+        app(UpdateDocumentSequenceAction::class)->execute($company, auth()->user(), $item['id'], $item);
 
         session()->flash('success', __('sales.updated_successfully'));
         $this->loadSequences();
     }
 
+    private function authorizeSettings(): void
+    {
+        try {
+            DB::transaction(function (): void {
+                app(SalesActorGuard::class)->lockAndAuthorize(
+                    $this->settingsCompanyId, auth()->user(), 'settings.sequences.manage');
+            });
+        } catch (AuthorizationException $e) {
+            abort(403);
+        }
+    }
+
     public function render(): View
     {
+        $this->authorizeSettings();
+
         return view('livewire.pages.sales.settings.document-sequence-settings');
     }
 }

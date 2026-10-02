@@ -89,11 +89,10 @@
             <!-- Due Date -->
             <div>
                 <label class="block text-xs font-bold text-text-primary mb-1">
-                    {{ __('sales.due_date') }} <span class="text-danger">*</span>
+                    {{ __('sales.due_date') }}
                 </label>
                 <input type="date"
                        wire:model="due_date"
-                       required
                        class="w-full h-9 px-3 rounded-control border border-border bg-canvas text-xs text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden" />
                 @error('due_date') <span class="text-danger text-[11px] mt-1 block">{{ $message }}</span> @enderror
             </div>
@@ -219,7 +218,7 @@
                                            required
                                            min="0"
                                            dir="ltr"
-                                           @if (! $canChangePrice) readonly title="Permission required to change price" @endif
+                                           @if (! $canChangePrice) readonly title="{{ __('sales.price_permission_required') }}" @endif
                                            class="w-full h-8 px-2 rounded-control border border-border bg-canvas text-xs font-mono {{ ! $canChangePrice ? 'opacity-70 bg-slate-100 cursor-not-allowed' : '' }}" />
                                 </td>
 
@@ -227,7 +226,7 @@
                                     <div class="flex gap-1">
                                         <select wire:model.change="lines.{{ $index }}.discount_type"
                                                 wire:change="recalculate"
-                                                @if (! $canChangeDiscount) disabled title="Permission required to change discount" @endif
+                                                @if (! $canChangeDiscount) disabled title="{{ __('sales.discount_permission_required') }}" @endif
                                                 class="w-20 h-8 px-1 rounded-control border border-border bg-canvas text-[11px] {{ ! $canChangeDiscount ? 'opacity-70 cursor-not-allowed' : '' }}">
                                             <option value="none">{{ __('sales.none') }}</option>
                                             <option value="fixed">{{ __('sales.fixed') }}</option>

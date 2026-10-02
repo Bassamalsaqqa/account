@@ -4,9 +4,12 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Services\Sales\SalesActorGuard;
 use App\Support\Tenancy\BelongsToCompany;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Facades\DB;
 
 class CustomerPaymentAllocation extends Model
 {
@@ -25,6 +28,8 @@ class CustomerPaymentAllocation extends Model
         'base_amount_applied_to_receivable',
         'settlement_base_value',
         'realized_fx_gain_loss_base',
+        'application_event_id',
+        'prior_posting_batch_id',
     ];
 
     /**
@@ -46,9 +51,11 @@ class CustomerPaymentAllocation extends Model
     {
         static::creating(function (self $alloc): void {
             $payment = CustomerPayment::withoutGlobalScopes()->find($alloc->customer_payment_id);
-            if ($payment === null || $payment->is_reversed || $payment->posting_batch_id !== null) {
+            if ($payment === null || $payment->is_reversed || ($payment->posting_batch_id !== null && ! $alloc->canonicalApplicationAppend)
+                || ($alloc->application_event_id !== null && ! $alloc->canonicalApplicationAppend)) {
                 throw new \InvalidArgumentException('Cannot add allocations to a reversed customer payment.');
             }
+            $alloc->prior_posting_batch_id = (int) DB::table('posting_batches')->where('company_id', $payment->company_id)->max('id');
             if ($alloc->sales_invoice_id) {
                 $invoice = SalesInvoice::withoutGlobalScopes()->find($alloc->sales_invoice_id);
                 if ($invoice === null || (int) $invoice->company_id !== (int) $payment->company_id || (int) $alloc->company_id !== (int) $payment->company_id || (int) $invoice->customer_id !== (int) $payment->customer_id || $invoice->currency_code !== $payment->currency_code) {
@@ -64,6 +71,41 @@ class CustomerPaymentAllocation extends Model
         static::deleting(function () {
             throw new \InvalidArgumentException('CustomerPaymentAllocation records cannot be deleted.');
         });
+    }
+
+    private bool $canonicalApplicationAppend = false;
+
+    /** @param array<string, mixed> $values */
+    public static function appendCanonicalApplication(CustomerPaymentApplicationEvent $event, array $values, User $actor): self
+    {
+        app(SalesActorGuard::class)->lockAndAuthorize((int) $event->company_id, $actor, 'money.receipt.allocate');
+        if (! $event->consumePreparedAllocation($values)) {
+            throw new \InvalidArgumentException('An allocation requires the exact newly prepared canonical application event.');
+        }
+        $allocation = new self($values + ['application_event_id' => $event->id, 'company_id' => $event->company_id, 'customer_payment_id' => $event->customer_payment_id]);
+        $allocation->canonicalApplicationAppend = true;
+        try {
+            $allocation->save();
+        } finally {
+            $allocation->canonicalApplicationAppend = false;
+        }
+
+        return $allocation;
+    }
+
+    /** @param Builder<self> $query
+     * @return Builder<self>
+     */
+    public function scopeActive($query)
+    {
+        return $query->whereHas('customerPayment', fn ($q) => $q->where('is_reversed', false))
+            ->where(fn ($q) => $q->whereNull('application_event_id')->orWhereHas('applicationEvent', fn ($e) => $e->whereNotNull('applied_at')->whereNull('reversed_at')));
+    }
+
+    /** @return BelongsTo<CustomerPaymentApplicationEvent, $this> */
+    public function applicationEvent(): BelongsTo
+    {
+        return $this->belongsTo(CustomerPaymentApplicationEvent::class, 'application_event_id');
     }
 
     /**

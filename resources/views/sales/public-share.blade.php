@@ -152,6 +152,9 @@
                                 <tr>
                                     <td class="py-2.5 px-3 text-slate-400">{{ $idx + 1 }}</td>
                                     <td class="py-2.5 px-3 font-bold text-slate-900">
+                                        @if(isset($line['image']))
+                                            <img src="{{ $line['image'] }}" alt="" class="h-16 w-16 object-contain" />
+                                        @endif
                                         {{ $line['item_description'] }}
                                     </td>
                                     <td class="py-2.5 px-3 font-mono" dir="ltr">

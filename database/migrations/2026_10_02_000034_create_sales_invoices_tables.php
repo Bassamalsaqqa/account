@@ -24,7 +24,7 @@ return new class extends Migration
             $table->char('currency_code', 3);
             $table->decimal('exchange_rate', 20, 10);
             $table->date('issue_date');
-            $table->date('due_date');
+            $table->date('due_date')->nullable();
             $table->string('status', 32)->default('draft'); // draft, posted, void
             $table->decimal('subtotal_base', 20, 6)->default(0);
             $table->decimal('discount_total_base', 20, 6)->default(0);
@@ -52,6 +52,7 @@ return new class extends Migration
             $table->timestamps();
 
             $table->unique(['company_id', 'invoice_number']);
+            $table->unique(['company_id', 'quotation_id'], 'si_company_quotation_unique');
             $table->index(['company_id', 'status', 'issue_date']);
             $table->index(['company_id', 'customer_id', 'due_date']);
         });

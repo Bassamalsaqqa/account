@@ -378,7 +378,7 @@ final class RemainingSalesIntegrityTest extends SalesInvoicePostingAndFefoTest
         $taxAccount = LedgerAccount::create(['company_id' => $this->company->id, 'code' => '2199',
             'name_ar' => 'Configured output tax', 'account_type' => 'liability', 'normal_balance' => 'credit', 'active' => true, 'is_control' => false]);
         $tax = TaxRate::create(['company_id' => $this->company->id, 'code' => 'INC20', 'name_ar' => 'Tax',
-            'rate' => '0.20', 'calculation' => 'inclusive', 'active' => true, 'sales_tax_account_id' => $taxAccount->id]);
+            'rate' => '20.000000', 'calculation' => 'inclusive', 'active' => true, 'sales_tax_account_id' => $taxAccount->id]);
         $invoice = $this->posted(['quantity' => '3', 'unit_price' => '40', 'discount_type' => 'fixed', 'discount_value' => '12', 'tax_rate_id' => $tax->id]);
         $this->assertSame('108.000000', $invoice->grand_total_currency);
         $this->assertSame('18.000000', $invoice->tax_total_currency);

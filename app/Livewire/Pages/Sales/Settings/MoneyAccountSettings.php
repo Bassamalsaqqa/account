@@ -5,16 +5,24 @@ declare(strict_types=1);
 namespace App\Livewire\Pages\Sales\Settings;
 
 use App\Actions\Sales\CreateMoneyAccountAction;
+use App\Actions\Sales\UpdateMoneyAccountAction;
 use App\Models\MoneyAccount;
+use App\Services\Sales\SalesActorGuard;
 use App\Support\Tenancy\CompanyContext;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Contracts\View\View;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Livewire\Attributes\Layout;
+use Livewire\Attributes\Locked;
 use Livewire\Component;
 
 #[Layout('layouts.app')]
 class MoneyAccountSettings extends Component
 {
+    #[Locked]
+    public int $settingsCompanyId;
+
     public bool $showFormModal = false;
 
     public ?int $editingAccountId = null;
@@ -39,10 +47,9 @@ class MoneyAccountSettings extends Component
 
     public function mount(CompanyContext $context): void
     {
+        $this->settingsCompanyId = (int) $context->companyId();
         $user = auth()->user();
-        if (! $user->hasRole(['Owner', 'Administrator'])) {
-            abort(403, 'Unauthorized.');
-        }
+        $this->authorizeSettings();
 
         $company = $context->company();
         $this->currency_code = $company->base_currency_code;
@@ -50,6 +57,7 @@ class MoneyAccountSettings extends Component
 
     public function newAccount(): void
     {
+        $this->authorizeSettings();
         $company = app(CompanyContext::class)->company();
 
         $this->editingAccountId = null;
@@ -68,6 +76,7 @@ class MoneyAccountSettings extends Component
 
     public function editAccount(int $id): void
     {
+        $this->authorizeSettings();
         $company = app(CompanyContext::class)->company();
         $acc = MoneyAccount::where('company_id', $company->id)->findOrFail($id);
 
@@ -87,6 +96,7 @@ class MoneyAccountSettings extends Component
 
     public function save(CreateMoneyAccountAction $createAction): void
     {
+        $this->authorizeSettings();
         $company = app(CompanyContext::class)->company();
         $user = auth()->user();
 
@@ -106,7 +116,9 @@ class MoneyAccountSettings extends Component
 
         if ($this->editingAccountId !== null) {
             $acc = MoneyAccount::where('company_id', $company->id)->findOrFail($this->editingAccountId);
-            $acc->update([
+            app(UpdateMoneyAccountAction::class)->execute($company, $user, $acc->id, [
+                'account_type' => $this->account_type,
+                'currency_code' => $this->currency_code,
                 'name_ar' => trim($this->name_ar),
                 'name_en' => $this->name_en ? trim($this->name_en) : null,
                 'bank_name' => $this->bank_name,
@@ -126,6 +138,7 @@ class MoneyAccountSettings extends Component
                 'account_number' => $this->account_number,
                 'iban' => $this->iban,
                 'sort_order' => $this->sort_order,
+                'is_active' => $this->is_active,
             ]);
             session()->flash('success', __('sales.created_successfully'));
         }
@@ -133,8 +146,21 @@ class MoneyAccountSettings extends Component
         $this->showFormModal = false;
     }
 
+    private function authorizeSettings(): void
+    {
+        try {
+            DB::transaction(function (): void {
+                app(SalesActorGuard::class)->lockAndAuthorize(
+                    $this->settingsCompanyId, auth()->user(), 'settings.money_accounts.manage');
+            });
+        } catch (AuthorizationException $e) {
+            abort(403);
+        }
+    }
+
     public function render(CompanyContext $context): View
     {
+        $this->authorizeSettings();
         $company = $context->company();
         $accounts = MoneyAccount::with('ledgerAccount')
             ->where('company_id', $company->id)

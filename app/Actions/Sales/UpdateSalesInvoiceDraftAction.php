@@ -114,10 +114,10 @@ class UpdateSalesInvoiceDraftAction
             $currency = $data['currency_code'] ?? $lockedInvoice->currency_code;
             $fx = isset($data['exchange_rate']) ? ExchangeRate::from($data['exchange_rate'])->getValue() : BigDecimal::of((string) $lockedInvoice->exchange_rate);
             $issueDate = $data['issue_date'] ?? (string) $lockedInvoice->issue_date->format('Y-m-d');
-            $dueDate = $data['due_date'] ?? $lockedInvoice->due_date?->format('Y-m-d');
+            $dueDate = array_key_exists('due_date', $data) ? ($data['due_date'] ?: null) : $lockedInvoice->due_date?->format('Y-m-d');
 
             app(SalesDocumentRules::class)->header($company, $currency, $fx, $issueDate, $data['document_locale'] ?? $lockedInvoice->document_locale);
-            if ($dueDate !== null && $dueDate !== '') {
+            if ($dueDate !== null) {
                 app(SalesDocumentRules::class)->date($dueDate);
             }
             if (! isset($data['lines']) && ($currency !== $lockedInvoice->currency_code || ! $fx->isEqualTo($lockedInvoice->exchange_rate))) {

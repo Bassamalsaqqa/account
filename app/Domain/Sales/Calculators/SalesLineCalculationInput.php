@@ -43,7 +43,7 @@ final readonly class SalesLineCalculationInput
         $this->unitPrice = $unitPrice instanceof BigDecimal ? $unitPrice : BigDecimal::of((string) $unitPrice);
         $this->discountType = $discountType;
         $this->discountValue = $discountValue instanceof BigDecimal ? $discountValue : BigDecimal::of((string) $discountValue);
-        $this->taxRate = $taxRate !== null ? ($taxRate instanceof BigDecimal ? $taxRate : BigDecimal::of((string) $taxRate)) : null;
+        $this->taxRate = $taxRate !== null ? TaxPercentage::parse($taxRate instanceof BigDecimal ? $taxRate : (string) $taxRate) : null;
         $this->taxInclusive = $taxInclusive;
         $this->currencyMinorUnits = $currencyMinorUnits;
         $this->exchangeRate = $exchangeRate instanceof BigDecimal ? $exchangeRate : BigDecimal::of((string) $exchangeRate);

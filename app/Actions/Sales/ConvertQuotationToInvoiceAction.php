@@ -26,7 +26,7 @@ use InvalidArgumentException;
 class ConvertQuotationToInvoiceAction
 {
     /**
-     * Idempotently convert an accepted/sent quotation into a sales invoice draft.
+     * Idempotently convert an accepted quotation into a sales invoice draft.
      */
     public function execute(Quotation $quotation, User $user, ?int $warehouseId = null): SalesInvoice
     {
@@ -62,17 +62,13 @@ class ConvertQuotationToInvoiceAction
             // Idempotent retry: if already converted and invoice exists, return that invoice
             if ($lockedQuote->isConverted() && $lockedQuote->converted_to_invoice_id !== null) {
                 $existingInvoice = SalesInvoice::find($lockedQuote->converted_to_invoice_id);
-                if ($existingInvoice !== null) {
+                if ($existingInvoice !== null && (int) $existingInvoice->quotation_id === (int) $lockedQuote->id && (int) $existingInvoice->company_id === (int) $lockedQuote->company_id && (int) $existingInvoice->customer_id === (int) $lockedQuote->customer_id) {
                     return $existingInvoice->load('lines');
                 }
             }
 
-            if ($lockedQuote->status === Quotation::STATUS_REJECTED) {
-                throw new InvalidArgumentException('Cannot convert a rejected quotation.');
-            }
-
-            if ($lockedQuote->status === Quotation::STATUS_EXPIRED) {
-                throw new InvalidArgumentException('Cannot convert an expired quotation.');
+            if (! $lockedQuote->isAccepted()) {
+                throw new InvalidArgumentException('Only accepted quotations may be converted.');
             }
 
             /** @var Customer $customer */
@@ -104,7 +100,7 @@ class ConvertQuotationToInvoiceAction
             $dueDate = Carbon::today($company->timezone)->addDays(30)->toDateString();
 
             // Create SalesInvoice draft
-            $invoice = SalesInvoice::create([
+            $invoice = SalesInvoice::createFromAcceptedQuotation($lockedQuote, $user, [
                 'public_id' => (string) Str::ulid(),
                 'company_id' => $company->id,
                 'invoice_number' => null, // Draft has NO final number

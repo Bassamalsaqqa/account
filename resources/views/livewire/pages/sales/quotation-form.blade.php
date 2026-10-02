@@ -1,4 +1,5 @@
 <div class="max-w-5xl mx-auto space-y-6">
+    <label class="flex items-center gap-2 text-sm"><input type="checkbox" wire:model="include_product_images">{{ __('sales.include_product_images') }}</label>
     <!-- Header -->
     <div class="flex items-center justify-between gap-4">
         <div>

@@ -68,7 +68,7 @@
             <div>
                 <div class="text-[11px] font-bold text-text-muted uppercase tracking-wider mb-2">
                     {{ __('sales.aging_analysis') }}
-                </div>
+                </div><div class="p-3 text-xs">{{ __('sales.aging_unspecified') }}: <span dir="ltr">{{ $currencyStatement['aging']['unspecified'] }}</span></div>
                 <div class="grid grid-cols-2 sm:grid-cols-5 gap-3 text-center text-xs">
                     <div class="p-3 rounded-control bg-canvas border border-border">
                         <div class="text-[10px] text-text-muted font-bold">{{ __('sales.aging_current') }}</div>

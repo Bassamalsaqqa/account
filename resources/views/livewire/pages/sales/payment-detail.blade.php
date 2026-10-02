@@ -26,6 +26,9 @@
             </div>
 
             <div class="flex flex-wrap items-center gap-2">
+                @if($canAllocate)
+                    <button type="button" wire:click="openCreditForm" class="px-3 py-2 bg-primary text-white rounded-control text-xs font-bold">{{ __('sales.allocate_customer_credit') }}</button>
+                @endif
                 @if ($canReverse)
                     <button type="button"
                             wire:click="$set('showReverseModal', true)"
@@ -68,6 +71,25 @@
     </div>
 
     <!-- Allocations Table -->
+    <div class="bg-white p-4 rounded-card text-sm">{{ __('sales.credit_available') }}: <span dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($payment->unallocated_amount, $payment->currency_code) }} {{ $payment->currency_code }}</span></div>
+    @if($showCreditForm)
+        <form wire:submit="applyCredit" class="bg-white p-4 rounded-card space-y-4">
+            <h2 class="font-bold">{{ __('sales.allocate_customer_credit') }}</h2>
+            <label class="block text-sm">{{ __('sales.application_date') }}<input type="date" wire:model="applicationDate" class="block border border-border p-2 rounded-control" required></label>
+            @error('applicationDate')<p class="text-danger text-xs">{{ $message }}</p>@enderror
+            @foreach($openInvoices as $invoice)
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 border-b border-border pb-3">
+                    <span dir="ltr">{{ $invoice['number'] }}</span>
+                    <span>{{ __('sales.invoice_outstanding') }}: <span dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($invoice['outstanding'], $payment->currency_code) }} {{ $payment->currency_code }}</span></span>
+                    <label>{{ __('sales.allocated') }}<input type="text" inputmode="decimal" wire:model="creditAmounts.{{ $invoice['id'] }}" class="block w-full border border-border rounded-control p-2" dir="ltr"></label>
+                    @error('creditAmounts.'.$invoice['id'])<p class="text-danger text-xs">{{ $message }}</p>@enderror
+                </div>
+            @endforeach
+            @error('creditAmounts')<p class="text-danger">{{ $message }}</p>@enderror
+            <button type="submit" class="px-4 py-2 bg-primary text-white rounded-control">{{ __('sales.save') }}</button>
+            <button type="button" wire:click="$set('showCreditForm', false)" class="px-4 py-2 border border-border rounded-control">{{ __('sales.cancel') }}</button>
+        </form>
+    @endif
     <div class="bg-white rounded-card border border-border shadow-xs overflow-hidden">
         <div class="p-4 border-b border-border font-bold text-sm text-text-primary">
             {{ __('sales.invoice_allocations') }}
@@ -79,7 +101,7 @@
                         <th class="py-2.5 px-4 text-start">{{ __('sales.invoice_number') }}</th>
                         <th class="py-2.5 px-4 text-start">{{ __('sales.date') }}</th>
                         <th class="py-2.5 px-4 text-start">{{ __('sales.allocated') }}</th>
-                        <th class="py-2.5 px-4 text-start">{{ __('sales.realized_fx') }}</th>
+                        @if($canViewFx)<th class="py-2.5 px-4 text-start">{{ __('sales.realized_fx') }}</th>@endif
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-border">
@@ -92,9 +114,9 @@
                             </td>
                             <td class="py-2.5 px-4" dir="ltr">{{ $alloc->salesInvoice->issue_date ? $alloc->salesInvoice->issue_date->toDateString() : '—' }}</td>
                             <td class="py-2.5 px-4 font-bold" dir="ltr">
-                                {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($alloc->payment_currency_amount, $payment->currency_code) }} {{ $payment->currency_code }}
+                                {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($alloc->allocated_amount, $payment->currency_code) }} {{ $payment->currency_code }}
                             </td>
-                            <td class="py-2.5 px-4 font-mono" dir="ltr">
+                            @if($canViewFx)<td class="py-2.5 px-4 font-mono" dir="ltr">
                                 @php
                                     $fxVal = $alloc->realized_fx_gain_loss_base;
                                     $isPos = \App\Domain\Sales\Formatters\SalesMoneyFormatter::isPositive($fxVal);
@@ -103,7 +125,7 @@
                                 <span class="{{ $isPos ? 'text-success font-bold' : ($isNeg ? 'text-danger font-bold' : 'text-text-muted') }}">
                                     {{ ! \App\Domain\Sales\Formatters\SalesMoneyFormatter::isZero($fxVal) ? ($isPos ? '+' : '') . \App\Domain\Sales\Formatters\SalesMoneyFormatter::format($fxVal) : '—' }}
                                 </span>
-                            </td>
+                            </td>@endif
                         </tr>
                     @empty
                         <tr>
@@ -120,7 +142,7 @@
             <div class="space-y-3 max-w-md">
                 @if ($payment->reference_number)
                     <div>
-                        <span class="font-bold text-text-primary block">Reference #:</span>
+                        <span class="font-bold text-text-primary block">{{ __('sales.reference_number') }}</span>
                         <p class="text-text-secondary text-[11px]">{{ $payment->reference_number }}</p>
                     </div>
                 @endif

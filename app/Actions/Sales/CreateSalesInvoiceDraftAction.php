@@ -61,6 +61,10 @@ class CreateSalesInvoiceDraftAction
      */
     public function execute(Company $company, User $user, array $data): SalesInvoice
     {
+        if (($data['quotation_id'] ?? null) !== null) {
+            throw new InvalidArgumentException('Only canonical quotation conversion may link an invoice.');
+        }
+
         return DB::transaction(function () use ($company, $user, $data): SalesInvoice {
             // Lock company FOR UPDATE
             Company::where('id', $company->id)->lockForUpdate()->firstOrFail();
@@ -98,12 +102,11 @@ class CreateSalesInvoiceDraftAction
             $currency = strtoupper(trim($data['currency_code']));
             $fx = ExchangeRate::from($data['exchange_rate'])->getValue();
             $issueDate = $data['issue_date'];
-            $dueDate = $data['due_date'] ?? null;
-            if ($dueDate === null) {
-                throw new InvalidArgumentException('An invoice due date is required.');
+            $dueDate = ($data['due_date'] ?? null) ?: null;
+            if ($dueDate !== null) {
+                app(SalesDocumentRules::class)->date($dueDate);
             }
-            app(SalesDocumentRules::class)->date($dueDate);
-            if ($dueDate < $issueDate) {
+            if ($dueDate !== null && $dueDate < $issueDate) {
                 throw new InvalidArgumentException('Due date must not precede the invoice date.');
             }
             $documentLocale = $data['document_locale'] ?? $customer->preferred_locale ?? 'ar';
@@ -247,7 +250,7 @@ class CreateSalesInvoiceDraftAction
                 'invoice_number' => null, // Draft has NO number
                 'customer_id' => $customer->id,
                 'warehouse_id' => $warehouseId,
-                'quotation_id' => $data['quotation_id'] ?? null,
+                'quotation_id' => null,
                 'currency_code' => $currency,
                 'exchange_rate' => (string) $fx->toScale(10),
                 'issue_date' => $issueDate,

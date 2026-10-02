@@ -275,8 +275,11 @@ class CustomerPayment extends Model
 
     public function getUnallocatedAmountAttribute(): string
     {
+        if ($this->is_reversed) {
+            return '0.000000';
+        }
         $allocated = BigDecimal::zero();
-        foreach ($this->allocations as $alloc) {
+        foreach ($this->allocations()->active()->get() as $alloc) {
             $allocated = $allocated->plus(BigDecimal::of((string) $alloc->allocated_amount));
         }
 
@@ -285,8 +288,11 @@ class CustomerPayment extends Model
 
     public function getUnallocatedAmountBaseAttribute(): string
     {
+        if ($this->is_reversed) {
+            return '0.000000';
+        }
         $allocatedBase = BigDecimal::zero();
-        foreach ($this->allocations as $alloc) {
+        foreach ($this->allocations()->active()->get() as $alloc) {
             $allocatedBase = $allocatedBase->plus(BigDecimal::of((string) $alloc->settlement_base_value));
         }
 

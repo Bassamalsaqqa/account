@@ -146,7 +146,7 @@ class QuotationDetail extends Component
         $user = auth()->user();
         $canEdit = $user->hasPermissionTo('sales.quote.edit') && in_array($this->quotation->status, [Quotation::STATUS_SENT], true);
         $canSend = $user->hasPermissionTo('sales.quote.send') && $this->quotation->status === Quotation::STATUS_DRAFT;
-        $canConvert = $user->hasPermissionTo('sales.quote.convert') && in_array($this->quotation->status, [Quotation::STATUS_SENT, Quotation::STATUS_ACCEPTED], true);
+        $canConvert = $user->hasPermissionTo('sales.quote.convert') && $this->quotation->status === Quotation::STATUS_ACCEPTED;
         $canShare = $user->hasPermissionTo('sales.document.share');
 
         return view('livewire.pages.sales.quotation-detail', [

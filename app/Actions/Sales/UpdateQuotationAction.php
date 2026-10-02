@@ -42,6 +42,7 @@ class UpdateQuotationAction
      *     expiry_date?: ?string,
      *     status?: string,
      *     document_locale?: string,
+     *     include_product_images?: mixed,
      *     notes?: ?string,
      *     terms?: ?string,
      *     lines?: list<array{
@@ -234,6 +235,12 @@ class UpdateQuotationAction
             $lockedQuote->issue_date = $issueDate;
             $lockedQuote->expiry_date = $expiryDate;
             $lockedQuote->document_locale = $data['document_locale'] ?? $lockedQuote->document_locale;
+            if (array_key_exists('include_product_images', $data)) {
+                if (! is_bool($data['include_product_images'])) {
+                    throw new InvalidArgumentException('Product image option must be boolean.');
+                }
+                $lockedQuote->include_product_images = $data['include_product_images'];
+            }
             $lockedQuote->updated_by = $user->id;
             $lockedQuote->save();
 

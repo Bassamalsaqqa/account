@@ -29,6 +29,7 @@ class CreateMoneyAccountAction
      *     account_number?: ?string,
      *     iban?: ?string,
      *     sort_order?: int,
+     *     is_active?: bool,
      * }  $data
      */
     public function execute(Company $company, User $user, array $data): MoneyAccount
@@ -60,6 +61,9 @@ class CreateMoneyAccountAction
     /** @param array<string, mixed> $data */
     private function create(Company $company, User $user, array $data): MoneyAccount
     {
+        if (array_key_exists('is_active', $data) && ! is_bool($data['is_active'])) {
+            throw new InvalidArgumentException('Money account active state must be a boolean.');
+        }
         $type = $data['account_type'];
         if (! in_array($type, [MoneyAccount::TYPE_CASH, MoneyAccount::TYPE_BANK], true)) {
             throw new InvalidArgumentException("Invalid money account type [{$type}].");
@@ -116,7 +120,7 @@ class CreateMoneyAccountAction
             'bank_name' => $data['bank_name'] ?? null,
             'account_number' => $data['account_number'] ?? null,
             'iban' => $data['iban'] ?? null,
-            'is_active' => true,
+            'is_active' => $data['is_active'] ?? true,
             'sort_order' => $data['sort_order'] ?? 0,
             'created_by' => $user->id,
         ]);

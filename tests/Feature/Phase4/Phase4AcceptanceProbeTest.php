@@ -98,7 +98,7 @@ final class Phase4AcceptanceProbeTest extends SalesInvoicePostingAndFefoTest
 
     public function test_probe_inclusive_tax_posts_balanced_revenue(): void
     {
-        $tax = TaxRate::create(['company_id' => $this->company->id, 'code' => 'INC20', 'name_ar' => 'Tax', 'rate' => '0.20', 'calculation' => 'inclusive', 'active' => true]);
+        $tax = TaxRate::create(['company_id' => $this->company->id, 'code' => 'INC20', 'name_ar' => 'Tax', 'rate' => '20.000000', 'calculation' => 'inclusive', 'active' => true]);
         $invoice = $this->posted('120', ['tax_rate_id' => $tax->id]);
         $this->assertTrue($invoice->isPosted());
     }

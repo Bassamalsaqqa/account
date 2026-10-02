@@ -11,6 +11,7 @@ use App\Domain\Sales\Calculators\SalesLineCalculationInput;
 use App\Domain\Sales\Calculators\SalesLineCalculator;
 use App\Exceptions\NoActiveCompanyException;
 use App\Models\Company;
+use App\Models\CompanyDocumentSettings;
 use App\Models\Customer;
 use App\Models\DocumentSequence;
 use App\Models\Product;
@@ -47,6 +48,7 @@ class CreateQuotationAction
      *     notes?: ?string,
      *     terms?: ?string,
      *     document_locale?: string,
+     *     include_product_images?: mixed,
      *     lines: list<array{
      *         product_id?: ?int,
      *         product_unit_id?: ?int,
@@ -62,6 +64,9 @@ class CreateQuotationAction
     public function execute(Company $company, User $user, array $data): Quotation
     {
         return DB::transaction(function () use ($company, $user, $data): Quotation {
+            if (array_key_exists('include_product_images', $data) && ! is_bool($data['include_product_images'])) {
+                throw new InvalidArgumentException('The quotation product-image option must be a boolean.');
+            }
             $context = app(CompanyContext::class);
             if (! $context->hasCompany() || (int) $context->companyId() !== (int) $company->id) {
                 throw new NoActiveCompanyException("Active company context does not match company [{$company->id}].");
@@ -230,6 +235,7 @@ class CreateQuotationAction
                 'issue_date' => $issueDate,
                 'expiry_date' => $expiryDate,
                 'status' => Quotation::STATUS_DRAFT,
+                'include_product_images' => $data['include_product_images'] ?? (bool) CompanyDocumentSettings::where('company_id', $company->id)->value('show_product_images_on_quotes'),
                 'pricing_tier' => $data['pricing_tier'] ?? 'regular',
                 'subtotal_base' => (string) $totals->subtotalBase,
                 'discount_total_base' => (string) $totals->discountTotalBase,

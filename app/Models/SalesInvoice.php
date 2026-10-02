@@ -144,6 +144,30 @@ class SalesInvoice extends Model
 
     private bool $completingPost = false;
 
+    private bool $creatingFromQuotation = false;
+
+    /** @param array<string, mixed> $attributes */
+    public static function createFromAcceptedQuotation(Quotation $quotation, User $actor, array $attributes): self
+    {
+        app(SalesActorGuard::class)->lockAndAuthorize((int) $quotation->company_id, $actor, 'sales.quote.convert');
+        $locked = Quotation::query()->lockForUpdate()->findOrFail($quotation->id);
+        if (! $locked->isAccepted() || $locked->converted_to_invoice_id !== null
+            || (int) ($attributes['company_id'] ?? 0) !== (int) $locked->company_id
+            || (int) ($attributes['customer_id'] ?? 0) !== (int) $locked->customer_id
+            || (int) ($attributes['quotation_id'] ?? 0) !== (int) $locked->id) {
+            throw new ImmutableRecordException('A linked invoice requires the locked accepted quotation and matching customer/company.');
+        }
+        $invoice = new self($attributes);
+        $invoice->creatingFromQuotation = true;
+        try {
+            $invoice->save();
+        } finally {
+            $invoice->creatingFromQuotation = false;
+        }
+
+        return $invoice;
+    }
+
     public function completeCanonicalPost(PostingBatch $batch, User $actor): void
     {
         app(SalesActorGuard::class)->lockAndAuthorize((int) $this->company_id, $actor, 'sales.invoice.post');
@@ -187,6 +211,9 @@ class SalesInvoice extends Model
     protected static function booted(): void
     {
         static::creating(function (self $invoice): void {
+            if ($invoice->quotation_id !== null && ! $invoice->creatingFromQuotation) {
+                throw new ImmutableRecordException('Only accepted quotation conversion can create a linked invoice.');
+            }
             if ($invoice->status !== self::STATUS_DRAFT || $invoice->posting_batch_id !== null) {
                 throw new ImmutableRecordException('Documents must be created as drafts.');
             }
@@ -200,6 +227,16 @@ class SalesInvoice extends Model
         });
 
         static::updating(function (self $invoice): void {
+            if ($invoice->isDirty('quotation_id')) {
+                throw new ImmutableRecordException('The quotation link is immutable.');
+            }
+            if ($invoice->quotation_id !== null) {
+                $quote = Quotation::withoutGlobalScopes()->find($invoice->quotation_id);
+                if ($quote === null || (int) $quote->company_id !== (int) $invoice->company_id || (int) $quote->customer_id !== (int) $invoice->customer_id
+                    || $quote->status !== Quotation::STATUS_CONVERTED || (int) $quote->converted_to_invoice_id !== (int) $invoice->id) {
+                    throw new ImmutableRecordException('Linked quotation provenance must remain coherent.');
+                }
+            }
             $originalStatus = $invoice->getOriginal('status');
             if ($originalStatus === self::STATUS_DRAFT && ($invoice->status !== self::STATUS_DRAFT || $invoice->isDirty('posting_batch_id')) && ! $invoice->completingPost) {
                 throw new ImmutableRecordException('Only canonical posting can finalize a draft.');
@@ -410,7 +447,7 @@ class SalesInvoice extends Model
         $paidTotal = BigDecimal::zero();
         $allocations = CustomerPaymentAllocation::query()
             ->where('sales_invoice_id', $this->id)
-            ->whereHas('customerPayment', fn ($q) => $q->where('is_reversed', false))
+            ->active()
             ->get();
 
         foreach ($allocations as $alloc) {

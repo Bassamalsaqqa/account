@@ -44,6 +44,8 @@ class QuotationForm extends Component
 
     public string $document_locale = 'ar';
 
+    public bool $include_product_images = false;
+
     /**
      * @var list<array{
      *     id?: ?int,
@@ -88,7 +90,7 @@ class QuotationForm extends Component
                 ->where('public_id', $publicId)
                 ->firstOrFail();
 
-            if (! in_array($this->quotation->status, [Quotation::STATUS_DRAFT, Quotation::STATUS_SENT], true)) {
+            if (! in_array($this->quotation->status, [Quotation::STATUS_DRAFT], true)) {
                 abort(400, 'Cannot edit quotation in status: '.$this->quotation->status);
             }
 
@@ -101,6 +103,7 @@ class QuotationForm extends Component
             $this->notes = $this->quotation->notes;
             $this->terms = $this->quotation->terms;
             $this->document_locale = $this->quotation->document_locale ?? 'ar';
+            $this->include_product_images = $this->quotation->include_product_images;
 
             $this->lines = [];
             foreach ($this->quotation->lines as $line) {
@@ -128,6 +131,7 @@ class QuotationForm extends Component
             $this->currency_code = $company->base_currency_code;
             $this->issue_date = Carbon::now()->toDateString();
             $this->document_locale = $company->default_locale ?? 'ar';
+            $this->include_product_images = (bool) $company->documentSettings?->show_product_images_on_quotes;
 
             $this->lines = [
                 [
@@ -315,6 +319,7 @@ class QuotationForm extends Component
             'notes' => $this->notes,
             'terms' => $this->terms,
             'document_locale' => $this->document_locale,
+            'include_product_images' => $this->include_product_images,
             'lines' => $dtoLines,
         ];
 

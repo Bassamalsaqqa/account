@@ -7,6 +7,8 @@ namespace App\Actions\Sales;
 use App\Exceptions\NoActiveCompanyException;
 use App\Models\Company;
 use App\Models\CustomerPayment;
+use App\Models\CustomerPaymentApplicationEvent;
+use App\Models\PostingBatch;
 use App\Models\User;
 use App\Services\Posting\AccountingReversalService;
 use App\Services\Sales\SalesActorGuard;
@@ -50,6 +52,23 @@ class ReverseCustomerPaymentAction
 
             if ($lockedPayment->is_reversed) {
                 return $lockedPayment;
+            }
+
+            $events = CustomerPaymentApplicationEvent::where('company_id', $lockedPayment->company_id)
+                ->where('customer_payment_id', $lockedPayment->id)->whereNull('reversed_at')->orderByDesc('id')->lockForUpdate()->get();
+            foreach ($events as $event) {
+                if ($event->applied_at === null) {
+                    throw new \InvalidArgumentException('Incomplete credit application prevents receipt reversal.');
+                }
+                $eventReversal = null;
+                if ($event->posting_batch_id !== null) {
+                    $eventBatch = PostingBatch::where('company_id', $lockedPayment->company_id)->findOrFail($event->posting_batch_id);
+                    if ($eventBatch->isReversed()) {
+                        throw new \InvalidArgumentException('Credit application reversal provenance is inconsistent.');
+                    }
+                    $eventReversal = $this->accountingReversalService->reverse($eventBatch, $user, $reason ?? 'Receipt credit application reversal');
+                }
+                $event->completeCanonicalReversal($eventReversal, $user, $reason);
             }
 
             $reversalBatch = null;

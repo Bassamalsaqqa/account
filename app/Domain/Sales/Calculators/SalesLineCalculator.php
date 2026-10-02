@@ -52,7 +52,7 @@ final class SalesLineCalculator
         $total = $netBeforeTax;
 
         if ($input->taxRate !== null && $input->taxRate->isPositive()) {
-            $rate = $input->taxRate;
+            $rate = $input->taxRate->dividedBy(100, 8);
 
             if ($input->taxInclusive) {
                 // Inclusive: gross = netBeforeTax (discounted amount contains tax)

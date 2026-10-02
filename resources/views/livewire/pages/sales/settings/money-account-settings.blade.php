@@ -14,7 +14,7 @@
             <button type="button"
                     wire:click="newAccount"
                     class="px-3.5 py-1.5 rounded-control bg-primary text-white text-xs font-bold hover:bg-primary-hover transition-colors shadow-xs">
-                + Add Account
+                {{ __('sales.add_account') }}
             </button>
             <a href="{{ route('settings.index') }}"
                class="px-3 py-1.5 rounded-control bg-surface-soft text-text-secondary hover:text-text-primary text-xs font-bold transition-colors">
@@ -34,20 +34,20 @@
             <table class="w-full text-start text-xs border-collapse">
                 <thead>
                     <tr class="border-b border-border bg-surface-soft text-text-muted font-bold text-[11px] uppercase">
-                        <th class="py-3 px-4 text-start">Type</th>
-                        <th class="py-3 px-4 text-start">Name</th>
-                        <th class="py-3 px-4 text-start">Currency</th>
-                        <th class="py-3 px-4 text-start">Bank / IBAN</th>
-                        <th class="py-3 px-4 text-start">GL Ledger Account</th>
-                        <th class="py-3 px-4 text-start">Status</th>
-                        <th class="py-3 px-4 text-end">Action</th>
+                        <th class="py-3 px-4 text-start">{{ __('sales.type') }}</th>
+                        <th class="py-3 px-4 text-start">{{ __('sales.name') }}</th>
+                        <th class="py-3 px-4 text-start">{{ __('sales.currency') }}</th>
+                        <th class="py-3 px-4 text-start">{{ __('sales.bank_details') }} / IBAN</th>
+                        <th class="py-3 px-4 text-start">{{ __('sales.ledger_account') }}</th>
+                        <th class="py-3 px-4 text-start">{{ __('sales.status') }}</th>
+                        <th class="py-3 px-4 text-end">{{ __('sales.action') }}</th>
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-border">
                     @forelse ($accounts as $acc)
                         <tr>
                             <td class="py-3 px-4 font-bold text-text-primary uppercase text-[11px]">
-                                {{ $acc->account_type }}
+                                {{ __('sales.money_type_'.$acc->account_type) }}
                             </td>
                             <td class="py-3 px-4 font-bold">
                                 {{ $acc->displayName() }}
@@ -63,23 +63,23 @@
                             </td>
                             <td class="py-3 px-4">
                                 @if ($acc->is_active)
-                                    <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-success-bg text-success">Active</span>
+                                    <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-success-bg text-success">{{ __('sales.active') }}</span>
                                 @else
-                                    <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600">Inactive</span>
+                                    <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600">{{ __('sales.inactive') }}</span>
                                 @endif
                             </td>
                             <td class="py-3 px-4 text-end">
                                 <button type="button"
                                         wire:click="editAccount({{ $acc->id }})"
                                         class="px-2.5 py-1 rounded-control bg-surface-soft hover:bg-slate-200 text-text-primary text-xs font-bold transition-colors">
-                                    Edit
+                                    {{ __('sales.edit') }}
                                 </button>
                             </td>
                         </tr>
                     @empty
                         <tr>
                             <td colspan="7" class="py-6 text-center text-text-muted">
-                                No money accounts configured.
+                                {{ __('sales.no_money_accounts') }}
                             </td>
                         </tr>
                     @endforelse
@@ -93,31 +93,31 @@
         <div class="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4">
             <div class="bg-white rounded-card border border-border shadow-xl max-w-md w-full p-6 space-y-4">
                 <h3 class="font-bold text-base text-text-primary">
-                    {{ $editingAccountId ? 'Edit Money Account' : 'New Money Account' }}
+                    {{ $editingAccountId ? __('sales.edit_money_account') : __('sales.new_money_account') }}
                 </h3>
 
                 <form wire:submit="save" class="space-y-3 text-xs">
                     <div>
-                        <label class="block font-bold text-text-primary mb-1">Type <span class="text-danger">*</span></label>
+                        <label class="block font-bold text-text-primary mb-1">{{ __('sales.type') }} <span class="text-danger">*</span></label>
                         <select wire:model="account_type" @disabled($editingAccountId !== null) class="w-full h-8 px-2 rounded-control border border-border">
-                            <option value="cash">Cash (الصندوق)</option>
-                            <option value="bank">Bank (البنك)</option>
+                            <option value="cash">{{ __('sales.cash') }}</option>
+                            <option value="bank">{{ __('sales.bank') }}</option>
                         </select>
                     </div>
 
                     <div>
-                        <label class="block font-bold text-text-primary mb-1">Name (Arabic) <span class="text-danger">*</span></label>
-                        <input type="text" wire:model="name_ar" placeholder="صندوق المبيعات الرئيسي" required class="w-full h-8 px-2 rounded-control border border-border" />
+                        <label class="block font-bold text-text-primary mb-1">{{ __('sales.name_ar') }} <span class="text-danger">*</span></label>
+                        <input type="text" wire:model="name_ar" required class="w-full h-8 px-2 rounded-control border border-border" />
                         @error('name_ar') <span class="text-danger text-[11px] block mt-0.5">{{ $message }}</span> @enderror
                     </div>
 
                     <div>
-                        <label class="block font-bold text-text-primary mb-1">Name (English)</label>
-                        <input type="text" wire:model="name_en" placeholder="Main Cash Register" class="w-full h-8 px-2 rounded-control border border-border" />
+                        <label class="block font-bold text-text-primary mb-1">{{ __('sales.name_en') }}</label>
+                        <input type="text" wire:model="name_en" class="w-full h-8 px-2 rounded-control border border-border" />
                     </div>
 
                     <div>
-                        <label class="block font-bold text-text-primary mb-1">Currency <span class="text-danger">*</span></label>
+                        <label class="block font-bold text-text-primary mb-1">{{ __('sales.currency') }} <span class="text-danger">*</span></label>
                         <select wire:model="currency_code" @disabled($editingAccountId !== null) class="w-full h-8 px-2 rounded-control border border-border">
                             @foreach ($currencies as $curr)
                                 <option value="{{ $curr->currency_code }}">{{ $curr->currency_code }}</option>
@@ -127,12 +127,12 @@
 
                     @if ($account_type === 'bank')
                         <div>
-                            <label class="block font-bold text-text-primary mb-1">Bank Name</label>
-                            <input type="text" wire:model="bank_name" placeholder="Bank of Palestine" class="w-full h-8 px-2 rounded-control border border-border" />
+                            <label class="block font-bold text-text-primary mb-1">{{ __('sales.bank_name') }}</label>
+                            <input type="text" wire:model="bank_name" class="w-full h-8 px-2 rounded-control border border-border" />
                         </div>
                         <div class="grid grid-cols-2 gap-3">
                             <div>
-                                <label class="block font-bold text-text-primary mb-1">Account Number</label>
+                                <label class="block font-bold text-text-primary mb-1">{{ __('sales.account_number') }}</label>
                                 <input type="text" wire:model="account_number" dir="ltr" class="w-full h-8 px-2 rounded-control border border-border font-mono" />
                             </div>
                             <div>
@@ -144,15 +144,15 @@
 
                     <div class="flex items-center gap-2 pt-2">
                         <input type="checkbox" wire:model="is_active" id="accActive" class="rounded" />
-                        <label for="accActive" class="font-bold text-text-primary">Active</label>
+                        <label for="accActive" class="font-bold text-text-primary">{{ __('sales.active') }}</label>
                     </div>
 
                     <div class="flex justify-end gap-2 pt-3 border-t border-border">
                         <button type="button" wire:click="$set('showFormModal', false)" class="px-3 py-1.5 rounded-control border border-border text-xs font-bold">
-                            Cancel
+                            {{ __('sales.cancel') }}
                         </button>
                         <button type="submit" class="px-4 py-1.5 rounded-control bg-primary text-white text-xs font-bold">
-                            Save
+                            {{ __('sales.save') }}
                         </button>
                     </div>
                 </form>

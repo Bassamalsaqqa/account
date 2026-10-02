@@ -35,7 +35,7 @@ class PdfRendererService
 
     public function renderQuotation(Quotation $quotation, ?string $qrUrl = null): string
     {
-        return $this->renderDocument(app(DocumentDataBuilder::class)->build($quotation), $qrUrl);
+        return $this->renderDocument(app(DocumentDataBuilder::class)->build($quotation, forPdf: true), $qrUrl);
     }
 
     public function renderReturn(SalesReturn $return, ?string $qrUrl = null): string

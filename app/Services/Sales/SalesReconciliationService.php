@@ -371,7 +371,7 @@ class SalesReconciliationService
                 }
             }
 
-            $violations = array_merge($violations, app(SalesHistoryAudit::class)->audit((int) $cid));
+            $violations = array_merge($violations, array_merge(app(SalesHistoryAudit::class)->audit((int) $cid), app(SalesCorrectionAudit::class)->audit((int) $cid)));
 
             $stats = [
                 'customers_count' => Customer::where('company_id', $cid)->count(),

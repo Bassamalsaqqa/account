@@ -36,7 +36,7 @@ final class DocumentDataBuilder
         return $result;
     }
 
-    public function build(SalesInvoice|Quotation|SalesReturn|CustomerPayment $source): DocumentData
+    public function build(SalesInvoice|Quotation|SalesReturn|CustomerPayment $source, bool $forPdf = false): DocumentData
     {
         $locale = $source->getAttribute('document_locale') ?: 'ar';
         if (! in_array($locale, ['ar', 'en'], true)) {
@@ -77,11 +77,17 @@ final class DocumentDataBuilder
                     'sku' => $line->product_sku, 'quantity' => (string) $line->quantity,
                     'unit_price' => (string) $line->unit_price, 'discount' => (string) $line->line_discount,
                     'tax' => (string) $line->line_tax, 'total' => (string) $line->line_total];
+                if ($source instanceof Quotation && $source->include_product_images) {
+                    $image = app(QuotationMedia::class)->primary((int) $source->company_id, $line->product_id, $forPdf);
+                    if ($image !== null) {
+                        $lines[array_key_last($lines)]['image'] = $image;
+                    }
+                }
             }
         } else {
             $document['reference'] = $source->reference_number;
             $document['money_account'] = $source->getAttribute('money_account_snapshot')['name_'.$locale] ?? null;
-            foreach ($source->allocations()->where('company_id', $source->company_id)->get() as $allocation) {
+            foreach ($source->allocations()->where('company_id', $source->company_id)->whereNull('application_event_id')->get() as $allocation) {
                 $lines[] = ['item_description' => $allocation->salesInvoice->invoice_number ?? '', 'quantity' => '1',
                     'unit_name' => null, 'sku' => null, 'unit_price' => (string) $allocation->allocated_amount,
                     'discount' => '0', 'tax' => '0', 'total' => (string) $allocation->allocated_amount];

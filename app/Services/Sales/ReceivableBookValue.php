@@ -12,15 +12,12 @@ use Brick\Math\RoundingMode;
 
 final class ReceivableBookValue
 {
-    public function relief(SalesInvoice $invoice, BigDecimal $amount, ?int $excludingReturnId = null, ?int $beforePaymentId = null): BigDecimal
+    public function relief(SalesInvoice $invoice, BigDecimal $amount, ?int $excludingReturnId = null): BigDecimal
     {
         $usedAmount = BigDecimal::zero();
         $usedBase = BigDecimal::zero();
         $allocations = CustomerPaymentAllocation::where('company_id', $invoice->company_id)->where('sales_invoice_id', $invoice->id)
-            ->whereHas('customerPayment', fn ($q) => $q->where('is_reversed', false));
-        if ($beforePaymentId !== null) {
-            $allocations->where('customer_payment_id', '<', $beforePaymentId);
-        }
+            ->active()->lockForUpdate();
         foreach ($allocations->get() as $allocation) {
             $usedAmount = $usedAmount->plus($allocation->allocated_amount);
             $usedBase = $usedBase->plus($allocation->base_amount_applied_to_receivable);
@@ -29,7 +26,7 @@ final class ReceivableBookValue
         if ($excludingReturnId !== null) {
             $returns->where('id', '!=', $excludingReturnId);
         }
-        foreach ($returns->get() as $return) {
+        foreach ($returns->lockForUpdate()->get() as $return) {
             $usedAmount = $usedAmount->plus($return->grand_total_currency);
             $usedBase = $usedBase->plus($return->grand_total_base);
         }

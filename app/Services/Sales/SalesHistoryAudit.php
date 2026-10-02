@@ -130,20 +130,20 @@ final class SalesHistoryAudit
             $amount = BigDecimal::zero();
             $gain = BigDecimal::zero();
             $loss = BigDecimal::zero();
-            foreach (DB::table('customer_payment_allocations')->where('customer_payment_id', $payment->id)->orderBy('id')->get() as $allocation) {
+            foreach (DB::table('customer_payment_allocations')->where('customer_payment_id', $payment->id)->whereNull('application_event_id')->orderBy('id')->get() as $allocation) {
                 $invoice = DB::table('sales_invoices')->where('company_id', $companyId)->where('id', $allocation->sales_invoice_id)->first();
                 if ($invoice === null || (int) $allocation->company_id !== $companyId || (int) $invoice->customer_id !== (int) $payment->customer_id || $invoice->currency_code !== $payment->currency_code) {
                     $errors[] = "Payment [{$payment->id}] allocation provenance mismatch.";
 
                     continue;
                 }
-                $prior = $this->priorRelief($companyId, (int) $invoice->id, (int) $payment->posting_batch_id);
+                $prior = app(ReceivableReliefHistory::class)->before($companyId, (int) $invoice->id, (int) $allocation->prior_posting_batch_id, (int) $allocation->id);
                 $targetAmount = $prior['amount']->plus($allocation->allocated_amount);
                 $targetBase = $targetAmount->isEqualTo($invoice->grand_total_currency) ? BigDecimal::of($invoice->grand_total_base) : $targetAmount->multipliedBy($invoice->exchange_rate)->toScale(6, RoundingMode::HALF_UP);
                 $book = $targetBase->minus($prior['base']);
                 $amount = $amount->plus($allocation->allocated_amount);
                 $settlement = $amount->multipliedBy($payment->exchange_rate)->toScale(6, RoundingMode::HALF_UP)->minus($settled);
-                if (! $book->isEqualTo($allocation->base_amount_applied_to_receivable) || ! $settlement->isEqualTo($allocation->settlement_base_value)
+                if ($targetAmount->isGreaterThan($invoice->grand_total_currency) || ! $book->isEqualTo($allocation->base_amount_applied_to_receivable) || ! $settlement->isEqualTo($allocation->settlement_base_value)
                     || ! $settlement->minus($book)->isEqualTo($allocation->realized_fx_gain_loss_base) || ! BigDecimal::of($allocation->invoice_exchange_rate)->isEqualTo($invoice->exchange_rate)
                     || ! BigDecimal::of($allocation->payment_exchange_rate)->isEqualTo($payment->exchange_rate)) {
                     $errors[] = "Payment [{$payment->id}] cumulative AR/settlement/FX mismatch.";
@@ -169,27 +169,6 @@ final class SalesHistoryAudit
         return $errors;
     }
 
-    /** @return array{amount: BigDecimal, base: BigDecimal} */
-    private function priorRelief(int $companyId, int $invoiceId, int $batchId): array
-    {
-        $amount = BigDecimal::zero();
-        $base = BigDecimal::zero();
-        $payments = DB::table('customer_payment_allocations as a')->join('customer_payments as p', 'p.id', '=', 'a.customer_payment_id')
-            ->where('p.company_id', $companyId)->where('a.sales_invoice_id', $invoiceId)->where('p.posting_batch_id', '<', $batchId)
-            ->where(fn ($q) => $q->whereNull('p.reversal_posting_batch_id')->orWhere('p.reversal_posting_batch_id', '>', $batchId))->get(['a.allocated_amount', 'a.base_amount_applied_to_receivable']);
-        foreach ($payments as $payment) {
-            $amount = $amount->plus($payment->allocated_amount);
-            $base = $base->plus($payment->base_amount_applied_to_receivable);
-        }
-        foreach (DB::table('sales_returns')->where('company_id', $companyId)->where('sales_invoice_id', $invoiceId)->where('posting_batch_id', '<', $batchId)
-            ->where(fn ($q) => $q->whereNull('void_posting_batch_id')->orWhere('void_posting_batch_id', '>', $batchId))->get() as $return) {
-            $amount = $amount->plus($return->grand_total_currency);
-            $base = $base->plus($return->grand_total_base);
-        }
-
-        return ['amount' => $amount, 'base' => $base];
-    }
-
     /** @param array<int, BigDecimal> $values */
     private function add(array &$values, int $account, BigDecimal $amount): void
     {
@@ -199,7 +178,7 @@ final class SalesHistoryAudit
     /** @param array<int, BigDecimal> $expected
      * @return list<string>
      */
-    private function batch(int $companyId, int $id, string $source, int $sourceId, array $expected): array
+    public function batch(int $companyId, int $id, string $source, int $sourceId, array $expected): array
     {
         $errors = [];
         $batch = DB::table('posting_batches')->where('company_id', $companyId)->where('id', $id)->first();
@@ -229,7 +208,7 @@ final class SalesHistoryAudit
     }
 
     /** @return list<string> */
-    private function reversal(int $companyId, int $originalId, int $reversalId): array
+    public function reversal(int $companyId, int $originalId, int $reversalId): array
     {
         $reversal = DB::table('posting_batches')->where('company_id', $companyId)->where('id', $reversalId)->first();
         $original = DB::table('posting_batches')->where('company_id', $companyId)->where('id', $originalId)->first();

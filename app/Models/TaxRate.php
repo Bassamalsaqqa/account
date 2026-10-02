@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Domain\Sales\Calculators\TaxPercentage;
 use App\Support\Tenancy\BelongsToCompany;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -64,6 +65,9 @@ class TaxRate extends Model
 
     protected static function booted(): void
     {
+        static::saving(function (self $taxRate): void {
+            $taxRate->rate = (string) TaxPercentage::parse($taxRate->getAttributes()['rate'] ?? null);
+        });
         static::creating(function (self $taxRate): void {
             if (empty($taxRate->public_id)) {
                 $taxRate->public_id = (string) Str::ulid();

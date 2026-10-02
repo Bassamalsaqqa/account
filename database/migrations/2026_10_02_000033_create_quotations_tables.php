@@ -40,6 +40,9 @@ return new class extends Migration
             $table->json('company_snapshot')->nullable();
             $table->unsignedBigInteger('converted_to_invoice_id')->nullable();
             $table->timestamp('converted_at')->nullable();
+            $table->dateTime('sent_at')->nullable();
+            $table->dateTime('accepted_at')->nullable();
+            $table->boolean('include_product_images')->default(false);
             $table->foreignId('created_by')->constrained('users')->restrictOnDelete();
             $table->foreignId('updated_by')->nullable()->constrained('users')->restrictOnDelete();
             $table->timestamps();

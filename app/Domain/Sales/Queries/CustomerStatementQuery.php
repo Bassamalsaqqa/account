@@ -277,6 +277,7 @@ class CustomerStatementQuery
             ->where('status', SalesInvoice::STATUS_POSTED)
             ->get();
 
+        $unspecified = BigDecimal::zero();
         $current = BigDecimal::zero();
         $days1_30 = BigDecimal::zero();
         $days31_60 = BigDecimal::zero();
@@ -289,6 +290,11 @@ class CustomerStatementQuery
                 continue;
             }
 
+            if ($inv->due_date === null) {
+                $unspecified = $unspecified->plus($outstanding);
+
+                continue;
+            }
             $dueDate = Carbon::parse($inv->due_date, $companyTz)->startOfDay();
             $diffDays = $dueDate->diffInDays($today, false); // positive if overdue
 
@@ -306,9 +312,10 @@ class CustomerStatementQuery
             }
         }
 
-        $total = $current->plus($days1_30)->plus($days31_60)->plus($days61_90)->plus($days90Plus);
+        $total = $unspecified->plus($current)->plus($days1_30)->plus($days31_60)->plus($days61_90)->plus($days90Plus);
 
         return [
+            'unspecified' => (string) $unspecified->toScale($minorUnits),
             'current' => (string) $current->toScale($minorUnits),
             'days_1_30' => (string) $days1_30->toScale($minorUnits),
             'days_31_60' => (string) $days31_60->toScale($minorUnits),

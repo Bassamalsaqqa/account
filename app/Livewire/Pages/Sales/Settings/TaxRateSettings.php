@@ -4,17 +4,25 @@ declare(strict_types=1);
 
 namespace App\Livewire\Pages\Sales\Settings;
 
+use App\Actions\Sales\SaveTaxRateAction;
 use App\Models\LedgerAccount;
 use App\Models\TaxRate;
+use App\Services\Sales\SalesActorGuard;
 use App\Support\Tenancy\CompanyContext;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Contracts\View\View;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Livewire\Attributes\Layout;
+use Livewire\Attributes\Locked;
 use Livewire\Component;
 
 #[Layout('layouts.app')]
 class TaxRateSettings extends Component
 {
+    #[Locked]
+    public int $settingsCompanyId;
+
     public bool $showFormModal = false;
 
     public ?int $editingTaxId = null;
@@ -35,10 +43,9 @@ class TaxRateSettings extends Component
 
     public function mount(CompanyContext $context): void
     {
+        $this->settingsCompanyId = (int) $context->companyId();
         $user = auth()->user();
-        if (! $user->hasRole(['Owner', 'Administrator'])) {
-            abort(403, 'Unauthorized.');
-        }
+        $this->authorizeSettings();
 
         $company = $context->company();
         $defaultTaxOutput = LedgerAccount::where('company_id', $company->id)
@@ -52,6 +59,7 @@ class TaxRateSettings extends Component
 
     public function newTaxRate(): void
     {
+        $this->authorizeSettings();
         $this->editingTaxId = null;
         $this->code = '';
         $this->name_ar = '';
@@ -74,6 +82,7 @@ class TaxRateSettings extends Component
 
     public function editTaxRate(int $id): void
     {
+        $this->authorizeSettings();
         $company = app(CompanyContext::class)->company();
         $tax = TaxRate::where('company_id', $company->id)->findOrFail($id);
 
@@ -91,6 +100,7 @@ class TaxRateSettings extends Component
 
     public function save(): void
     {
+        $this->authorizeSettings();
         $company = app(CompanyContext::class)->company();
 
         $this->validate([
@@ -102,9 +112,9 @@ class TaxRateSettings extends Component
                     ->where('company_id', $company->id)
                     ->ignore($this->editingTaxId),
             ],
-            'name_ar' => ['required', 'string', 'max:255'],
-            'name_en' => ['nullable', 'string', 'max:255'],
-            'rate' => ['required', 'numeric', 'min:0', 'max:100'],
+            'name_ar' => ['required', 'string', 'max:128'],
+            'name_en' => ['nullable', 'string', 'max:128'],
+            'rate' => ['required', 'string', 'regex:/^\d+(?:\.\d{1,6})?$/D'],
             'calculation' => ['required', 'string', 'in:exclusive,inclusive'],
             'sales_tax_account_id' => [
                 'required',
@@ -124,29 +134,41 @@ class TaxRateSettings extends Component
             'active' => $this->active,
         ];
 
-        if ($this->editingTaxId !== null) {
-            $tax = TaxRate::where('company_id', $company->id)->findOrFail($this->editingTaxId);
-            $tax->update($payload);
-            session()->flash('success', __('sales.updated_successfully'));
-        } else {
-            TaxRate::create(array_merge($payload, [
-                'company_id' => $company->id,
-            ]));
-            session()->flash('success', __('sales.created_successfully'));
+        try {
+            app(SaveTaxRateAction::class)->execute($company, auth()->user(), $payload, $this->editingTaxId);
+        } catch (\InvalidArgumentException $exception) {
+            $this->addError('rate', __('sales.invalid_tax_configuration'));
+
+            return;
         }
+        session()->flash('success', __('sales.updated_successfully'));
 
         $this->showFormModal = false;
     }
 
+    private function authorizeSettings(): void
+    {
+        try {
+            DB::transaction(function (): void {
+                app(SalesActorGuard::class)->lockAndAuthorize(
+                    $this->settingsCompanyId, auth()->user(), 'settings.taxes.manage');
+            });
+        } catch (AuthorizationException $e) {
+            abort(403);
+        }
+    }
+
     public function render(CompanyContext $context): View
     {
+        $this->authorizeSettings();
         $company = $context->company();
         $taxRates = TaxRate::with('salesTaxAccount')
             ->where('company_id', $company->id)
             ->get();
 
         $accounts = LedgerAccount::where('company_id', $company->id)
-            ->where('active', true)
+            ->where('active', true)->where('is_control', false)->where('account_type', 'liability')->where('normal_balance', 'credit')
+            ->where(fn ($query) => $query->where('system_key', 'tax_output')->orWhere('parent_id', LedgerAccount::where('company_id', $company->id)->where('system_key', 'tax_output')->value('id')))
             ->orderBy('code')
             ->get();
 
