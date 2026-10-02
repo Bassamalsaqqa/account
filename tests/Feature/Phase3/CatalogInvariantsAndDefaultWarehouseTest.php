@@ -10,6 +10,7 @@ use App\Domain\Inventory\DTO\StockMovementLineCommand;
 use App\Domain\Inventory\Exceptions\HistoricalConversionLockedException;
 use App\Domain\Inventory\Services\UnitConversionService;
 use App\Domain\Inventory\ValueObjects\Quantity;
+use App\Livewire\Pages\Catalog\UnitIndex;
 use App\Livewire\Pages\Catalog\WarehouseIndex;
 use App\Livewire\Pages\Products\ProductForm;
 use App\Models\Company;
@@ -349,5 +350,42 @@ class CatalogInvariantsAndDefaultWarehouseTest extends TestCase
         $this->assertCount(1, $baseRows, 'Pristine base unit change must leave exactly one base row.');
         $this->assertSame($this->unitBox->id, $baseRows->first()->unit_id);
         $this->assertSame('1.000000', $baseRows->first()->conversion_to_base);
+    }
+
+    public function test_unit_index_correctly_renders_allows_fraction_status_in_arabic_and_english(): void
+    {
+        // 1. Arabic locale
+        app()->setLocale('ar');
+        $arTest = Livewire::test(UnitIndex::class);
+        $arHtml = $arTest->html();
+
+        // Fraction units show Yes (نعم)
+        $this->assertStringContainsString('كيلوغرام', $arHtml);
+        $this->assertStringContainsString('لتر', $arHtml);
+        $this->assertStringContainsString('متر', $arHtml);
+        $this->assertStringContainsString('غرام', $arHtml);
+        $this->assertStringContainsString('نعم', $arHtml);
+
+        // Discrete units show No (لا)
+        $this->assertStringContainsString('قطعة', $arHtml);
+        $this->assertStringContainsString('كرتونة', $arHtml);
+        $this->assertStringContainsString('صندوق', $arHtml);
+        $this->assertStringContainsString('لا', $arHtml);
+
+        // 2. English locale
+        app()->setLocale('en');
+        $enTest = Livewire::test(UnitIndex::class);
+        $enHtml = $enTest->html();
+
+        // Fraction units show Yes
+        $this->assertStringContainsString('Kilogram', $enHtml);
+        $this->assertStringContainsString('Liter', $enHtml);
+        $this->assertStringContainsString('Meter', $enHtml);
+        $this->assertStringContainsString('Yes', $enHtml);
+
+        // Discrete units show No
+        $this->assertStringContainsString('Piece', $enHtml);
+        $this->assertStringContainsString('Carton', $enHtml);
+        $this->assertStringContainsString('No', $enHtml);
     }
 }

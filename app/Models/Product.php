@@ -250,6 +250,11 @@ class Product extends Model
             : $this->name_ar;
     }
 
+    public function displayName(): string
+    {
+        return $this->name();
+    }
+
     public function isStock(): bool
     {
         return $this->product_type === self::TYPE_STOCK;

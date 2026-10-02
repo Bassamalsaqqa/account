@@ -113,6 +113,14 @@ class Company extends Model
     }
 
     /**
+     * @return HasMany<CompanyCurrency, $this>
+     */
+    public function currencies(): HasMany
+    {
+        return $this->companyCurrencies();
+    }
+
+    /**
      * @return HasOne<CompanyInventorySettings, $this>
      */
     public function inventorySettings(): HasOne

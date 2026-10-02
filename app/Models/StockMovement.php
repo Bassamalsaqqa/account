@@ -36,6 +36,10 @@ class StockMovement extends Model
 
     public const string TYPE_EXPIRY_DISPOSAL = 'expiry_disposal';
 
+    public const string TYPE_SALE = 'sale';
+
+    public const string TYPE_SALE_RETURN = 'sale_return';
+
     /**
      * @var list<string>
      */

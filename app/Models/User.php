@@ -101,4 +101,9 @@ class User extends Authenticatable implements MustVerifyEmail
     {
         return $this->belongsTo(Company::class, 'last_active_company_id');
     }
+
+    public function belongsToCompany(int|string $companyId): bool
+    {
+        return $this->memberships()->where('company_id', $companyId)->where('status', 'active')->exists();
+    }
 }
