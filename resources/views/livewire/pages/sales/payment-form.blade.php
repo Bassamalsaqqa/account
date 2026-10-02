@@ -122,11 +122,11 @@
             <!-- Reference Number -->
             <div class="md:col-span-3">
                 <label class="block text-xs font-bold text-text-primary mb-1">
-                    Reference / Cheque / Transfer Slip #
+                    {{ __('sales.payment_reference') }}
                 </label>
                 <input type="text"
                        wire:model="reference_number"
-                       placeholder="e.g. TR-998822"
+                       placeholder="{{ __('sales.payment_reference_placeholder') }}"
                        class="w-full h-9 px-3 rounded-control border border-border bg-canvas text-xs text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden" />
             </div>
         </div>
@@ -141,7 +141,7 @@
                     <button type="button"
                             wire:click="autoAllocate"
                             class="px-2.5 py-1 rounded-control bg-surface-soft hover:bg-primary-50 text-text-secondary hover:text-primary text-xs font-bold transition-colors">
-                        ⚡ Auto Allocate
+                        ⚡ {{ __('sales.auto_allocate') }}
                     </button>
                 @endif
             </div>
