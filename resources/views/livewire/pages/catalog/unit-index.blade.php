@@ -62,7 +62,7 @@
                                 {{ $unit->symbol_ar ?? $unit->symbol_en ?? '—' }}
                             </td>
                             <td class="p-3.5 text-center">
-                                @if ($unit->allow_fractions)
+                                @if ($unit->allows_fraction)
                                     <span class="text-success font-bold">&#10003; {{ __('inventory.yes') }}</span>
                                  @else
                                     <span class="text-text-muted">{{ __('inventory.no') }}</span>
