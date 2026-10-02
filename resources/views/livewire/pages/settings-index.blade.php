@@ -243,24 +243,44 @@
                             <x-icon name="chevron" class="w-4 h-4 text-text-muted shrink-0 mt-1 rtl:rotate-180 group-hover:text-primary transition-colors" />
                         </div>
 
-                        <!-- Taxes (Future Phase 2) -->
-                        <div x-show="matches('{{ __('settings.card_taxes_title') }} {{ __('settings.card_taxes_desc') }}')"
-                             class="bg-white/60 border border-border/70 rounded-card p-3.5 flex items-start justify-between gap-3 opacity-75">
-                            <div class="flex items-start gap-3 min-w-0">
-                                <div class="w-9 h-9 rounded-control bg-slate-100 text-slate-400 grid place-items-center shrink-0">
-                                    <x-icon name="percent" class="w-5 h-5" />
-                                </div>
-                                <div class="min-w-0">
-                                    <div class="flex items-center gap-1.5">
-                                        <h4 class="text-xs font-extrabold text-text-muted">{{ __('settings.card_taxes_title') }}</h4>
-                                        <span class="text-[9px] px-1.5 py-0.5 rounded bg-slate-100 text-text-muted font-bold">{{ __('settings.future_phase_badge') }}</span>
+                        <!-- Taxes -->
+                        @if (auth()->user()->hasRole(['Owner', 'Administrator']))
+                            <a href="{{ route('settings.taxes') }}"
+                               x-show="matches('{{ __('settings.card_taxes_title') }} {{ __('settings.card_taxes_desc') }}')"
+                               class="bg-white border border-border hover:border-primary/60 rounded-card p-3.5 shadow-panel hover:shadow-panel-hover hover:-translate-y-0.5 transition-all flex items-start justify-between gap-3 group cursor-pointer">
+                                <div class="flex items-start gap-3 min-w-0">
+                                    <div class="w-9 h-9 rounded-control bg-primary-50 text-primary grid place-items-center shrink-0 group-hover:bg-primary group-hover:text-white transition-colors">
+                                        <x-icon name="percent" class="w-5 h-5" />
                                     </div>
-                                    <p class="text-[11px] text-text-muted mt-0.5 leading-snug">
-                                        {{ __('settings.card_taxes_desc') }}
-                                    </p>
+                                    <div class="min-w-0">
+                                        <h4 class="text-xs font-extrabold text-text-primary group-hover:text-primary transition-colors">
+                                            {{ __('settings.card_taxes_title') }}
+                                        </h4>
+                                        <p class="text-[11px] text-text-muted mt-0.5 leading-snug">
+                                            {{ __('settings.card_taxes_desc') }}
+                                        </p>
+                                    </div>
                                 </div>
+                                <x-icon name="chevron" class="w-4 h-4 text-text-muted shrink-0 mt-1 rtl:rotate-180 group-hover:text-primary transition-colors" />
+                            </a>
+                        @else
+                            <div x-show="matches('{{ __('settings.card_taxes_title') }} {{ __('settings.card_taxes_desc') }}')"
+                                 class="bg-slate-50/70 border border-border/80 rounded-card p-3.5 flex items-start justify-between gap-3 opacity-60 cursor-not-allowed">
+                                <div class="flex items-start gap-3 min-w-0">
+                                    <div class="w-9 h-9 rounded-control bg-slate-200 text-slate-400 grid place-items-center shrink-0">
+                                        <x-icon name="percent" class="w-5 h-5" />
+                                    </div>
+                                    <div class="min-w-0">
+                                        <div class="flex items-center gap-1.5">
+                                            <h4 class="text-xs font-extrabold text-text-muted">{{ __('settings.card_taxes_title') }}</h4>
+                                            <span class="text-[9px] px-1.5 py-0.5 rounded bg-slate-200 text-text-muted font-bold">{{ __('settings.restricted_card_notice') }}</span>
+                                        </div>
+                                        <p class="text-[11px] text-text-muted mt-0.5 leading-snug">{{ __('settings.card_taxes_desc') }}</p>
+                                    </div>
+                                </div>
+                                <x-icon name="lock" class="w-4 h-4 text-text-muted shrink-0 mt-1" />
                             </div>
-                        </div>
+                        @endif
                     </div>
                 </section>
 
@@ -328,21 +348,41 @@
                         </div>
 
                         <!-- Banking -->
-                        <div x-show="matches('{{ __('settings.card_banking_title') }} {{ __('settings.card_banking_desc') }}')"
-                             class="bg-white/60 border border-border/70 rounded-card p-3.5 flex items-start justify-between gap-3 opacity-75">
-                            <div class="flex items-start gap-3 min-w-0">
-                                <div class="w-9 h-9 rounded-control bg-slate-100 text-slate-400 grid place-items-center shrink-0">
-                                    <x-icon name="bank" class="w-5 h-5" />
-                                </div>
-                                <div class="min-w-0">
-                                    <div class="flex items-center gap-1.5">
-                                        <h4 class="text-xs font-extrabold text-text-muted">{{ __('settings.card_banking_title') }}</h4>
-                                        <span class="text-[9px] px-1.5 py-0.5 rounded bg-slate-100 text-text-muted font-bold">{{ __('settings.future_phase_badge') }}</span>
+                        @if (auth()->user()->hasRole(['Owner', 'Administrator']))
+                            <a href="{{ route('settings.money-accounts') }}"
+                               x-show="matches('{{ __('settings.card_banking_title') }} {{ __('settings.card_banking_desc') }}')"
+                               class="bg-white border border-border hover:border-primary/60 rounded-card p-3.5 shadow-panel hover:shadow-panel-hover hover:-translate-y-0.5 transition-all flex items-start justify-between gap-3 group cursor-pointer">
+                                <div class="flex items-start gap-3 min-w-0">
+                                    <div class="w-9 h-9 rounded-control bg-primary-50 text-primary grid place-items-center shrink-0 group-hover:bg-primary group-hover:text-white transition-colors">
+                                        <x-icon name="bank" class="w-5 h-5" />
                                     </div>
-                                    <p class="text-[11px] text-text-muted mt-0.5 leading-snug">{{ __('settings.card_banking_desc') }}</p>
+                                    <div class="min-w-0">
+                                        <h4 class="text-xs font-extrabold text-text-primary group-hover:text-primary transition-colors">
+                                            {{ __('settings.card_banking_title') }}
+                                        </h4>
+                                        <p class="text-[11px] text-text-muted mt-0.5 leading-snug">{{ __('settings.card_banking_desc') }}</p>
+                                    </div>
                                 </div>
+                                <x-icon name="chevron" class="w-4 h-4 text-text-muted shrink-0 mt-1 rtl:rotate-180 group-hover:text-primary transition-colors" />
+                            </a>
+                        @else
+                            <div x-show="matches('{{ __('settings.card_banking_title') }} {{ __('settings.card_banking_desc') }}')"
+                                 class="bg-slate-50/70 border border-border/80 rounded-card p-3.5 flex items-start justify-between gap-3 opacity-60 cursor-not-allowed">
+                                <div class="flex items-start gap-3 min-w-0">
+                                    <div class="w-9 h-9 rounded-control bg-slate-200 text-slate-400 grid place-items-center shrink-0">
+                                        <x-icon name="bank" class="w-5 h-5" />
+                                    </div>
+                                    <div class="min-w-0">
+                                        <div class="flex items-center gap-1.5">
+                                            <h4 class="text-xs font-extrabold text-text-muted">{{ __('settings.card_banking_title') }}</h4>
+                                            <span class="text-[9px] px-1.5 py-0.5 rounded bg-slate-200 text-text-muted font-bold">{{ __('settings.restricted_card_notice') }}</span>
+                                        </div>
+                                        <p class="text-[11px] text-text-muted mt-0.5 leading-snug">{{ __('settings.card_banking_desc') }}</p>
+                                    </div>
+                                </div>
+                                <x-icon name="lock" class="w-4 h-4 text-text-muted shrink-0 mt-1" />
                             </div>
-                        </div>
+                        @endif
                     </div>
                 </section>
 
@@ -516,21 +556,41 @@
 
                     <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         <!-- Document Numbering -->
-                        <div x-show="matches('{{ __('settings.card_numbering_title') }} {{ __('settings.card_numbering_desc') }}')"
-                             class="bg-white/60 border border-border/70 rounded-card p-3.5 flex items-start justify-between gap-3 opacity-75">
-                            <div class="flex items-start gap-3 min-w-0">
-                                <div class="w-9 h-9 rounded-control bg-slate-100 text-slate-400 grid place-items-center shrink-0">
-                                    <x-icon name="number" class="w-5 h-5" />
-                                </div>
-                                <div class="min-w-0">
-                                    <div class="flex items-center gap-1.5">
-                                        <h4 class="text-xs font-extrabold text-text-muted">{{ __('settings.card_numbering_title') }}</h4>
-                                        <span class="text-[9px] px-1.5 py-0.5 rounded bg-slate-100 text-text-muted font-bold">{{ __('settings.future_phase_badge') }}</span>
+                        @if (auth()->user()->hasRole(['Owner', 'Administrator']))
+                            <a href="{{ route('settings.sequences') }}"
+                               x-show="matches('{{ __('settings.card_numbering_title') }} {{ __('settings.card_numbering_desc') }}')"
+                               class="bg-white border border-border hover:border-primary/60 rounded-card p-3.5 shadow-panel hover:shadow-panel-hover hover:-translate-y-0.5 transition-all flex items-start justify-between gap-3 group cursor-pointer">
+                                <div class="flex items-start gap-3 min-w-0">
+                                    <div class="w-9 h-9 rounded-control bg-primary-50 text-primary grid place-items-center shrink-0 group-hover:bg-primary group-hover:text-white transition-colors">
+                                        <x-icon name="number" class="w-5 h-5" />
                                     </div>
-                                    <p class="text-[11px] text-text-muted mt-0.5 leading-snug">{{ __('settings.card_numbering_desc') }}</p>
+                                    <div class="min-w-0">
+                                        <h4 class="text-xs font-extrabold text-text-primary group-hover:text-primary transition-colors">
+                                            {{ __('settings.card_numbering_title') }}
+                                        </h4>
+                                        <p class="text-[11px] text-text-muted mt-0.5 leading-snug">{{ __('settings.card_numbering_desc') }}</p>
+                                    </div>
                                 </div>
+                                <x-icon name="chevron" class="w-4 h-4 text-text-muted shrink-0 mt-1 rtl:rotate-180 group-hover:text-primary transition-colors" />
+                            </a>
+                        @else
+                            <div x-show="matches('{{ __('settings.card_numbering_title') }} {{ __('settings.card_numbering_desc') }}')"
+                                 class="bg-slate-50/70 border border-border/80 rounded-card p-3.5 flex items-start justify-between gap-3 opacity-60 cursor-not-allowed">
+                                <div class="flex items-start gap-3 min-w-0">
+                                    <div class="w-9 h-9 rounded-control bg-slate-200 text-slate-400 grid place-items-center shrink-0">
+                                        <x-icon name="number" class="w-5 h-5" />
+                                    </div>
+                                    <div class="min-w-0">
+                                        <div class="flex items-center gap-1.5">
+                                            <h4 class="text-xs font-extrabold text-text-muted">{{ __('settings.card_numbering_title') }}</h4>
+                                            <span class="text-[9px] px-1.5 py-0.5 rounded bg-slate-200 text-text-muted font-bold">{{ __('settings.restricted_card_notice') }}</span>
+                                        </div>
+                                        <p class="text-[11px] text-text-muted mt-0.5 leading-snug">{{ __('settings.card_numbering_desc') }}</p>
+                                    </div>
+                                </div>
+                                <x-icon name="lock" class="w-4 h-4 text-text-muted shrink-0 mt-1" />
                             </div>
-                        </div>
+                        @endif
 
                         <!-- Print & PDF -->
                         <div x-show="matches('{{ __('settings.card_print_title') }} {{ __('settings.card_print_desc') }}')"

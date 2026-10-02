@@ -20,6 +20,8 @@ final readonly class StockMovementLineCommand
         public ?int $lotId = null,
         public ?string $lotNumber = null,
         public ?string $expiryDate = null,
+        public ?string $valueDeltaBase = null,
+        public ?int $originalMovementId = null,
     ) {
         if ($this->productId <= 0) {
             throw new InvalidArgumentException("Product ID must be a positive integer. Given [{$this->productId}].");
@@ -63,12 +65,33 @@ final readonly class StockMovementLineCommand
             if ($bd->isNegative()) {
                 throw new InvalidInventoryMovementException("Inbound unit cost cannot be negative. Given [{$this->unitCostBase}].");
             }
-            if ($bd->stripTrailingZeros()->getScale() > 6) {
+            if ($bd->strippedOfTrailingZeros()->getScale() > 6) {
                 throw new InvalidInventoryMovementException("Inbound unit cost [{$this->unitCostBase}] exceeds maximum precision of 6 decimal places.");
             }
             $max = BigDecimal::of('99999999999999.999999');
             if ($bd->isGreaterThan($max)) {
                 throw new InvalidInventoryMovementException("Inbound unit cost [{$this->unitCostBase}] exceeds DECIMAL(20,6) boundary.");
+            }
+        }
+
+        if ($this->originalMovementId !== null && $this->originalMovementId <= 0) {
+            throw new InvalidInventoryMovementException('Original movement ID must be positive.');
+        }
+
+        if ($this->valueDeltaBase !== null) {
+            if (! is_numeric($this->valueDeltaBase)) {
+                throw new InvalidInventoryMovementException("Inbound value delta must be numeric. Given [{$this->valueDeltaBase}].");
+            }
+            $vdb = BigDecimal::of($this->valueDeltaBase);
+            if ($vdb->isNegative()) {
+                throw new InvalidInventoryMovementException("Inbound value delta cannot be negative. Given [{$this->valueDeltaBase}].");
+            }
+            if ($vdb->strippedOfTrailingZeros()->getScale() > 6) {
+                throw new InvalidInventoryMovementException("Inbound value delta [{$this->valueDeltaBase}] exceeds maximum precision of 6 decimal places.");
+            }
+            $max = BigDecimal::of('99999999999999.999999');
+            if ($vdb->isGreaterThan($max)) {
+                throw new InvalidInventoryMovementException("Inbound value delta [{$this->valueDeltaBase}] exceeds DECIMAL(20,6) boundary.");
             }
         }
     }

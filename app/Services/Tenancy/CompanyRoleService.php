@@ -23,9 +23,12 @@ class CompanyRoleService
         'settings.roles.view',
         'settings.roles.manage',
         'settings.accounting.manage',
+        'settings.sequences.manage',
+        'settings.taxes.manage',
+        'settings.money_accounts.manage',
         'audit.events.view',
 
-        // Sales (catalog only in Phase 1)
+        // Sales & Documents
         'sales.invoice.view',
         'sales.invoice.create',
         'sales.invoice.edit_draft',
@@ -33,8 +36,20 @@ class CompanyRoleService
         'sales.invoice.void',
         'sales.invoice.change_price',
         'sales.invoice.change_discount',
+        'sales.quote.view',
+        'sales.quote.create',
+        'sales.quote.edit',
+        'sales.quote.send',
+        'sales.quote.convert',
         'sales.quote.manage',
+        'sales.return.view',
+        'sales.return.create',
+        'sales.return.post',
+        'sales.return.void',
         'sales.return.manage',
+        'sales.statement.view',
+        'sales.document.share',
+        'sales.document.pdf',
 
         // Purchasing (catalog only in Phase 1)
         'purchasing.purchase.view',
@@ -49,7 +64,7 @@ class CompanyRoleService
         'inventory.cost.view',
         'inventory.product.manage',
 
-        // Customers & Vendors (catalog only in Phase 1)
+        // Customers & Vendors
         'customers.view',
         'customers.manage',
         'customers.statement.view',
@@ -57,10 +72,12 @@ class CompanyRoleService
         'vendors.manage',
         'vendors.statement.view',
 
-        // Money & Banking (catalog only in Phase 1)
+        // Money & Banking
         'money.cash.view',
         'money.bank.view',
+        'money.receipt.view',
         'money.receipt.create',
+        'money.receipt.reverse',
         'money.vendor_payment.create',
         'money.check.manage',
         'money.expense.manage',
@@ -91,6 +108,21 @@ class CompanyRoleService
                 'name' => $permission,
                 'guard_name' => 'web',
             ]);
+        }
+    }
+
+    /** Existing-company upgrade preserves customized role grants; Owner retains the static catalog. */
+    public function upgradeSalesCatalog(Company $company): void
+    {
+        $this->ensurePermissionsExist();
+        $previousTeam = getPermissionsTeamId();
+        try {
+            setPermissionsTeamId($company->id);
+            $owner = Role::where('company_id', $company->id)->where('name', 'Owner')->where('guard_name', 'web')->firstOrFail();
+            $owner->givePermissionTo(self::PERMISSIONS);
+        } finally {
+            setPermissionsTeamId($previousTeam);
+            app(PermissionRegistrar::class)->forgetCachedPermissions();
         }
     }
 
@@ -130,15 +162,21 @@ class CompanyRoleService
         $managerPerms = [
             'settings.company.view',
             'settings.users.view',
+            'settings.sequences.manage',
+            'settings.taxes.manage',
+            'settings.money_accounts.manage',
             'audit.events.view',
             'sales.invoice.view', 'sales.invoice.create', 'sales.invoice.edit_draft', 'sales.invoice.post',
             'sales.invoice.void', 'sales.invoice.change_price', 'sales.invoice.change_discount',
-            'sales.quote.manage', 'sales.return.manage',
+            'sales.quote.view', 'sales.quote.create', 'sales.quote.edit', 'sales.quote.send', 'sales.quote.convert', 'sales.quote.manage',
+            'sales.return.view', 'sales.return.create', 'sales.return.post', 'sales.return.void', 'sales.return.manage',
+            'sales.statement.view', 'sales.document.share', 'sales.document.pdf',
             'purchasing.purchase.view', 'purchasing.purchase.create', 'purchasing.purchase.post', 'purchasing.return.manage',
             'inventory.stock.view', 'inventory.stock.adjust', 'inventory.stock.transfer', 'inventory.cost.view', 'inventory.product.manage',
             'customers.view', 'customers.manage', 'customers.statement.view',
             'vendors.view', 'vendors.manage', 'vendors.statement.view',
-            'money.cash.view', 'money.bank.view', 'money.receipt.create', 'money.vendor_payment.create', 'money.check.manage', 'money.expense.manage',
+            'money.cash.view', 'money.bank.view', 'money.receipt.view', 'money.receipt.create', 'money.receipt.reverse',
+            'money.vendor_payment.create', 'money.check.manage', 'money.expense.manage',
             'reports.sales.view', 'reports.profit.view', 'reports.cost.view', 'reports.financial.view', 'reports.tax.view',
         ];
         $managerRole = Role::firstOrCreate([
@@ -150,13 +188,15 @@ class CompanyRoleService
             $catalogPermissions->filter(fn ($p) => in_array($p->name, $managerPerms, true))
         );
 
-        // 4. Sales: Invoicing, quotes, customers, stock view, receipts
+        // 4. Sales: Invoicing, quotes, customers, stock view, receipts, returns, documents
         $salesPerms = [
-            'sales.invoice.view', 'sales.invoice.create', 'sales.invoice.edit_draft',
-            'sales.quote.manage',
+            'sales.invoice.view', 'sales.invoice.create', 'sales.invoice.edit_draft', 'sales.invoice.post',
+            'sales.quote.view', 'sales.quote.create', 'sales.quote.edit', 'sales.quote.send', 'sales.quote.convert', 'sales.quote.manage',
+            'sales.return.view', 'sales.return.create', 'sales.return.post', 'sales.return.manage',
+            'sales.statement.view', 'sales.document.share', 'sales.document.pdf',
             'customers.view', 'customers.manage', 'customers.statement.view',
             'inventory.stock.view',
-            'money.receipt.create',
+            'money.receipt.view', 'money.receipt.create',
             'reports.sales.view',
         ];
         $salesRole = Role::firstOrCreate([
@@ -186,24 +226,26 @@ class CompanyRoleService
         );
 
         // 6. Warehouse: Stock adjust, transfer, product manage
-        $warehousePerms = [
-            'inventory.stock.view', 'inventory.stock.adjust', 'inventory.stock.transfer', 'inventory.product.manage',
-        ];
         $warehouseRole = Role::firstOrCreate([
             'company_id' => $company->id,
             'name' => 'Warehouse',
             'guard_name' => 'web',
         ]);
+        $warehousePerms = [
+            'inventory.stock.view', 'inventory.stock.adjust', 'inventory.stock.transfer', 'inventory.product.manage',
+        ];
         $warehouseRole->syncPermissions(
             $catalogPermissions->filter(fn ($p) => in_array($p->name, $warehousePerms, true))
         );
 
-        // 7. Cashier: Invoicing create/view, receipts, cash view
+        // 7. Cashier: Invoicing create/view, receipts, cash view, statements, pdf
         $cashierPerms = [
             'sales.invoice.view', 'sales.invoice.create',
-            'customers.view',
+            'customers.view', 'customers.statement.view',
+            'sales.statement.view', 'sales.document.pdf',
             'inventory.stock.view',
             'money.cash.view',
+            'money.receipt.view',
             'money.receipt.create',
         ];
         $cashierRole = Role::firstOrCreate([
@@ -218,9 +260,10 @@ class CompanyRoleService
         // 8. Viewer: Read-only permissions across modules
         $viewerPerms = [
             'settings.company.view', 'settings.users.view', 'settings.roles.view',
-            'sales.invoice.view', 'purchasing.purchase.view',
-            'inventory.stock.view', 'customers.view', 'vendors.view',
-            'money.cash.view', 'money.bank.view',
+            'sales.invoice.view', 'sales.quote.view', 'sales.return.view',
+            'sales.statement.view', 'purchasing.purchase.view',
+            'inventory.stock.view', 'customers.view', 'customers.statement.view', 'vendors.view',
+            'money.cash.view', 'money.bank.view', 'money.receipt.view',
             'reports.sales.view',
         ];
         $viewerRole = Role::firstOrCreate([

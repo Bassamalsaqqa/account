@@ -5,6 +5,7 @@ namespace App\Actions\Company;
 use App\Actions\Accounting\EnsureSystemLedgerAccountsAction;
 use App\Actions\Inventory\EnsureDefaultUnitsAction;
 use App\Actions\Inventory\EnsureDefaultWarehouseAction;
+use App\Actions\Sales\EnsureDefaultMoneyAccountAction;
 use App\Exceptions\CompanyReassignmentException;
 use App\Models\Company;
 use App\Models\CompanyCurrency;
@@ -15,6 +16,7 @@ use App\Models\CompanySecuritySettings;
 use App\Models\CompanyUser;
 use App\Models\User;
 use App\Services\Audit\AuditService;
+use App\Services\Sales\DocumentSequenceService;
 use App\Services\Tenancy\CompanyRoleService;
 use App\Support\Tenancy\CompanyContext;
 use App\Support\Tenancy\CompanyScope;
@@ -31,7 +33,9 @@ class CreateCompanyAction
         protected AuditService $auditService,
         protected EnsureSystemLedgerAccountsAction $ensureAccountsAction,
         protected EnsureDefaultUnitsAction $ensureUnitsAction,
-        protected EnsureDefaultWarehouseAction $ensureWarehouseAction
+        protected EnsureDefaultWarehouseAction $ensureWarehouseAction,
+        protected DocumentSequenceService $sequenceService,
+        protected EnsureDefaultMoneyAccountAction $ensureDefaultMoneyAccountAction
     ) {}
 
     /**
@@ -180,7 +184,11 @@ class CreateCompanyAction
                     }
                 }
 
-                // 10. Log initial audit event
+                // 10. Provision Phase 4 defaults (Document Sequences & Default Cash Account)
+                $this->sequenceService->ensureDefaultSequences($company->id);
+                $this->ensureDefaultMoneyAccountAction->execute($company, $owner);
+
+                // 11. Log initial audit event
                 $this->auditService->log(
                     companyId: $company->id,
                     eventKey: 'company.created',

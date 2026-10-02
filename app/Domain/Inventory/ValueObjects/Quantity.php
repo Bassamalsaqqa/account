@@ -19,7 +19,7 @@ final class Quantity implements Stringable
 
     private function __construct(BigDecimal $amount)
     {
-        if ($amount->stripTrailingZeros()->getScale() > self::DEFAULT_SCALE) {
+        if ($amount->strippedOfTrailingZeros()->getScale() > self::DEFAULT_SCALE) {
             throw InvalidQuantityException::excessiveScale((string) $amount, self::DEFAULT_SCALE);
         }
 
@@ -151,7 +151,7 @@ final class Quantity implements Stringable
             : ($factor instanceof BigDecimal ? $factor : BigDecimal::of((string) $factor));
 
         $res = $this->amount->multipliedBy($factorBd);
-        if ($res->stripTrailingZeros()->getScale() > self::DEFAULT_SCALE) {
+        if ($res->strippedOfTrailingZeros()->getScale() > self::DEFAULT_SCALE) {
             $res = $res->toScale(self::DEFAULT_SCALE, $roundingMode);
         }
 
@@ -190,7 +190,7 @@ final class Quantity implements Stringable
         }
 
         $allowedDecimals = (int) $unit->decimal_places;
-        if ($this->amount->stripTrailingZeros()->getScale() > $allowedDecimals) {
+        if ($this->amount->strippedOfTrailingZeros()->getScale() > $allowedDecimals) {
             throw InvalidQuantityException::excessiveScale((string) $this->amount, $allowedDecimals);
         }
     }

@@ -342,6 +342,20 @@ class InventoryReconciliationService
                         $inUnitCost = BigDecimal::of((string) $m->unit_cost_base);
                         $expectedValDelta = $delta->multipliedBy($inUnitCost)->toScale(6, RoundingMode::HALF_UP);
 
+                        if ($m->movement_type === StockMovement::TYPE_SALE_RETURN) {
+                            try {
+                                $original = StockMovement::withoutGlobalScopes()->where('company_id', $m->company_id)->find($m->reversal_of_id);
+                                if ($original === null || ! BigDecimal::of($m->unit_cost_base)->isEqualTo($original->unit_cost_base)) {
+                                    throw new \InvalidArgumentException('Historical unit-cost snapshot differs from the original sale.');
+                                }
+                                $expectedValDelta = app(HistoricalSaleCost::class)->value((int) $m->company_id, (int) $m->reversal_of_id,
+                                    (int) $m->product_id, (int) $m->warehouse_id, $m->lot_id, (string) $m->source_type,
+                                    (int) $m->source_id, $delta, (int) $m->id);
+                            } catch (\Throwable $exception) {
+                                $historyCorruptions[] = "Movement [{$m->id}] historical compensation corrupt: {$exception->getMessage()}";
+                            }
+                        }
+
                         if (! $valDeltaStored->isEqualTo($expectedValDelta)) {
                             $historyCorruptions[] = "Movement [{$m->id}] for product [{$product->id}] inbound value delta corrupt: stored [{$valDeltaStored}] vs expected [{$expectedValDelta}].";
                         }

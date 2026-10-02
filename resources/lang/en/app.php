@@ -17,6 +17,8 @@ return [
     'nav_group_sales_customers' => 'Sales & Customers',
     'nav_sales_invoices' => 'Sales Invoices',
     'nav_quotes' => 'Quotations',
+    'nav_sales_returns' => 'Sales Returns',
+    'nav_customer_payments' => 'Customer Receipts',
     'nav_customers' => 'Customers Directory',
     'nav_group_purchasing_inventory' => 'Purchasing & Inventory',
     'nav_purchase_invoices' => 'Purchase Invoices',

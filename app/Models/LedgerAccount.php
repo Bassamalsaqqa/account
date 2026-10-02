@@ -67,6 +67,15 @@ class LedgerAccount extends Model
         });
     }
 
+    public function displayName(?string $locale = null): string
+    {
+        $loc = $locale ?? app()->getLocale();
+
+        return ($loc === 'en' && ! empty($this->name_en))
+            ? (string) $this->name_en
+            : (string) $this->name_ar;
+    }
+
     /**
      * @return BelongsTo<Company, $this>
      */

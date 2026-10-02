@@ -81,6 +81,14 @@ class InventoryMovementService
             if (! $authUser->hasPermissionTo('inventory.stock.adjust') || ! $authUser->hasPermissionTo('inventory.cost.view')) {
                 throw new AuthorizationException('User does not have permission to post opening stock.');
             }
+        } elseif ($command->movementType === StockMovement::TYPE_SALE) {
+            if (! $authUser->hasPermissionTo($command->sourceType === 'sales_return_void' ? 'sales.return.void' : 'sales.invoice.post')) {
+                throw new AuthorizationException('User does not have permission to post sales invoice movements.');
+            }
+        } elseif ($command->movementType === StockMovement::TYPE_SALE_RETURN) {
+            if (! $authUser->hasPermissionTo($command->sourceType === 'sales_invoice_void' ? 'sales.invoice.void' : 'sales.return.post')) {
+                throw new AuthorizationException('User does not have permission to post sales return movements.');
+            }
         } else {
             if (! $authUser->hasPermissionTo('inventory.stock.adjust')) {
                 throw new AuthorizationException('User does not have permission to adjust inventory.');
@@ -91,6 +99,16 @@ class InventoryMovementService
                         throw new AuthorizationException('User does not have permission to specify explicit unit cost.');
                     }
                 }
+            }
+        }
+
+        foreach ($command->lines as $line) {
+            if ($command->movementType === StockMovement::TYPE_SALE_RETURN) {
+                if ($line->originalMovementId === null || $line->valueDeltaBase === null) {
+                    throw new InvalidInventoryMovementException('Sales compensation requires an original immutable sale movement and exact historical value.');
+                }
+            } elseif ($line->originalMovementId !== null || $line->valueDeltaBase !== null) {
+                throw new InvalidInventoryMovementException('Ordinary inventory operations cannot override their calculated value or historical source.');
             }
         }
 
@@ -290,6 +308,7 @@ class InventoryMovementService
                     StockMovement::TYPE_OPENING_BALANCE,
                     StockMovement::TYPE_TRANSFER_IN,
                     StockMovement::TYPE_ADJUSTMENT_INCREASE,
+                    StockMovement::TYPE_SALE_RETURN,
                 ], true);
 
                 $signedDeltaBase = $isInbound ? $quantityBase->toBigDecimal() : $quantityBase->toBigDecimal()->negated();
@@ -375,7 +394,7 @@ class InventoryMovementService
                         if ($inUnitCost->isNegative()) {
                             throw new InvalidInventoryMovementException("Inbound unit cost cannot be negative. Given [{$inUnitCost}].");
                         }
-                        if ($inUnitCost->stripTrailingZeros()->getScale() > 6) {
+                        if ($inUnitCost->strippedOfTrailingZeros()->getScale() > 6) {
                             throw new InvalidInventoryMovementException("Inbound unit cost [{$line->unitCostBase}] exceeds maximum precision of 6 decimal places.");
                         }
                         $maxCost = BigDecimal::of('99999999999999.999999');
@@ -384,7 +403,19 @@ class InventoryMovementService
                         }
                     }
 
-                    $lineValDelta = $quantityBase->toBigDecimal()->multipliedBy($inUnitCost)->toScale(6, RoundingMode::HALF_UP);
+                    if ($line->originalMovementId !== null) {
+                        $lineValDelta = app(HistoricalSaleCost::class)->value(
+                            $company->id, $line->originalMovementId, $product->id, $warehouse->id, $lotId,
+                            $command->sourceType, $command->sourceId, $quantityBase->toBigDecimal()
+                        );
+                        $original = StockMovement::where('id', $line->originalMovementId)->firstOrFail();
+                        if (! BigDecimal::of((string) $original->unit_cost_base)->isEqualTo($inUnitCost)
+                            || ! $lineValDelta->isEqualTo(BigDecimal::of((string) $line->valueDeltaBase))) {
+                            throw new InvalidInventoryMovementException('Historical compensation cost/value does not match the original sale allocation.');
+                        }
+                    } else {
+                        $lineValDelta = $quantityBase->toBigDecimal()->multipliedBy($inUnitCost)->toScale(6, RoundingMode::HALF_UP);
+                    }
                     $newCompanyQty = $oldCompanyQty->plus($quantityBase->toBigDecimal());
                     $newCompanyVal = $oldCompanyVal->plus($lineValDelta);
                     $newCompanyAvg = $newCompanyQty->isZero()
@@ -437,6 +468,7 @@ class InventoryMovementService
                 $movement = StockMovement::create([
                     'company_id' => $company->id,
                     'inventory_operation_id' => $operation->id,
+                    'reversal_of_id' => $line->originalMovementId,
                     'product_id' => $product->id,
                     'warehouse_id' => $warehouse->id,
                     'lot_id' => $lotId,
@@ -629,7 +661,7 @@ class InventoryMovementService
             }
 
             // Cost comparison: inbound compares unit cost if explicit, or allows null for adjustment increase; outbound forbids command unit cost
-            $isInbound = in_array($command->movementType, [StockMovement::TYPE_OPENING_BALANCE, StockMovement::TYPE_ADJUSTMENT_INCREASE], true);
+            $isInbound = in_array($command->movementType, [StockMovement::TYPE_OPENING_BALANCE, StockMovement::TYPE_ADJUSTMENT_INCREASE, StockMovement::TYPE_SALE_RETURN], true);
             if ($isInbound) {
                 if ($cmdLine->unitCostBase !== null) {
                     $existingCost = BigDecimal::of((string) $m->unit_cost_base)->toScale(6, RoundingMode::HALF_UP);
@@ -1282,6 +1314,10 @@ class InventoryMovementService
                     'lot_id' => $line->lotId !== null ? (int) $line->lotId : null,
                     'lot_number' => $line->lotNumber,
                     'expiry_date' => $line->expiryDate !== null ? substr($line->expiryDate, 0, 10) : null,
+                    'original_movement_id' => $line->originalMovementId,
+                    'value_delta_base' => $line->valueDeltaBase !== null
+                        ? (string) BigDecimal::of($line->valueDeltaBase)->toScale(6, RoundingMode::HALF_UP)
+                        : null,
                 ];
             }, $command->lines),
         ];

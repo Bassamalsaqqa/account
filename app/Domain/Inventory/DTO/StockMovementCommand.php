@@ -46,6 +46,8 @@ final readonly class StockMovementCommand
             'adjustment_decrease',
             'damage_or_loss',
             'expiry_disposal',
+            'sale',
+            'sale_return',
         ];
         if (! in_array($this->movementType, $allowed, true)) {
             throw new \InvalidArgumentException("Movement type [{$this->movementType}] is not a recognized Phase3 canonical type.");

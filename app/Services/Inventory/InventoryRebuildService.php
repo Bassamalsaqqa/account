@@ -190,6 +190,16 @@ class InventoryRebuildService
                             // Inbound: use snapshotted unit_cost_base (not recomputed)
                             $inUnitCost = BigDecimal::of((string) $m->unit_cost_base);
                             $lineVal = $delta->multipliedBy($inUnitCost)->toScale(6, RoundingMode::HALF_UP);
+                            $valDeltaStored = BigDecimal::of((string) $m->value_delta_base);
+                            if ($m->movement_type === StockMovement::TYPE_SALE_RETURN) {
+                                try {
+                                    $lineVal = app(HistoricalSaleCost::class)->value((int) $m->company_id, (int) $m->reversal_of_id,
+                                        (int) $m->product_id, (int) $m->warehouse_id, $m->lot_id, (string) $m->source_type,
+                                        (int) $m->source_id, $delta, (int) $m->id);
+                                } catch (\Throwable $exception) {
+                                    throw new RuntimeException("Invalid historical compensation [{$m->id}].", previous: $exception);
+                                }
+                            }
                             $runningQty = $runningQty->plus($delta);
                             $runningVal = $runningVal->plus($lineVal);
                             $runningAvg = $runningQty->isZero() ? BigDecimal::zero() : $runningVal->dividedBy($runningQty, 6, RoundingMode::HALF_UP);

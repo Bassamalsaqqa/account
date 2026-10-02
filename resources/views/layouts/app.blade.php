@@ -104,24 +104,46 @@
                     {{ __('app.nav_group_sales_customers') }}
                 </div>
                 <div class="space-y-0.5">
-                    <span title="{{ __('app.future_module_notice') }}" class="flex items-center justify-between h-[38px] px-3 rounded-control text-text-muted opacity-60 cursor-not-allowed">
+                    <a href="{{ route('invoices.index') }}"
+                       class="flex items-center justify-between h-[38px] px-3 rounded-control text-text-secondary hover:bg-surface-soft hover:text-text-primary font-semibold transition-colors
+                              {{ request()->routeIs('invoices.*') ? 'bg-primary-50 text-primary! font-bold shadow-[inset_3px_0_0_#255fd6] rtl:shadow-[inset_-3px_0_0_#255fd6]' : '' }}">
                         <div class="flex items-center gap-2.5">
                             <x-icon name="receipt" class="w-4.5 h-4.5" />
                             <span>{{ __('app.nav_sales_invoices') }}</span>
                         </div>
-                    </span>
-                    <span title="{{ __('app.future_module_notice') }}" class="flex items-center justify-between h-[38px] px-3 rounded-control text-text-muted opacity-60 cursor-not-allowed">
+                    </a>
+                    <a href="{{ route('quotations.index') }}"
+                       class="flex items-center justify-between h-[38px] px-3 rounded-control text-text-secondary hover:bg-surface-soft hover:text-text-primary font-semibold transition-colors
+                              {{ request()->routeIs('quotations.*') ? 'bg-primary-50 text-primary! font-bold shadow-[inset_3px_0_0_#255fd6] rtl:shadow-[inset_-3px_0_0_#255fd6]' : '' }}">
                         <div class="flex items-center gap-2.5">
                             <x-icon name="quote" class="w-4.5 h-4.5" />
                             <span>{{ __('app.nav_quotes') }}</span>
                         </div>
-                    </span>
-                    <span title="{{ __('app.future_module_notice') }}" class="flex items-center justify-between h-[38px] px-3 rounded-control text-text-muted opacity-60 cursor-not-allowed">
+                    </a>
+                    <a href="{{ route('returns.index') }}"
+                       class="flex items-center justify-between h-[38px] px-3 rounded-control text-text-secondary hover:bg-surface-soft hover:text-text-primary font-semibold transition-colors
+                              {{ request()->routeIs('returns.*') ? 'bg-primary-50 text-primary! font-bold shadow-[inset_3px_0_0_#255fd6] rtl:shadow-[inset_-3px_0_0_#255fd6]' : '' }}">
+                        <div class="flex items-center gap-2.5">
+                            <x-icon name="history" class="w-4.5 h-4.5" />
+                            <span>{{ __('app.nav_sales_returns') }}</span>
+                        </div>
+                    </a>
+                    <a href="{{ route('payments.index') }}"
+                       class="flex items-center justify-between h-[38px] px-3 rounded-control text-text-secondary hover:bg-surface-soft hover:text-text-primary font-semibold transition-colors
+                              {{ request()->routeIs('payments.*') ? 'bg-primary-50 text-primary! font-bold shadow-[inset_3px_0_0_#255fd6] rtl:shadow-[inset_-3px_0_0_#255fd6]' : '' }}">
+                        <div class="flex items-center gap-2.5">
+                            <x-icon name="money" class="w-4.5 h-4.5" />
+                            <span>{{ __('app.nav_customer_payments') }}</span>
+                        </div>
+                    </a>
+                    <a href="{{ route('customers.index') }}"
+                       class="flex items-center justify-between h-[38px] px-3 rounded-control text-text-secondary hover:bg-surface-soft hover:text-text-primary font-semibold transition-colors
+                              {{ request()->routeIs('customers.*') ? 'bg-primary-50 text-primary! font-bold shadow-[inset_3px_0_0_#255fd6] rtl:shadow-[inset_-3px_0_0_#255fd6]' : '' }}">
                         <div class="flex items-center gap-2.5">
                             <x-icon name="users" class="w-4.5 h-4.5" />
                             <span>{{ __('app.nav_customers') }}</span>
                         </div>
-                    </span>
+                    </a>
                 </div>
             </div>
 

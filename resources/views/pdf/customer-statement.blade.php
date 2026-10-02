@@ -1,0 +1,1 @@
+@include('pdf.document', ['data' => app(\App\Services\Sales\DocumentDataBuilder::class)->statement(['customer' => $customer, 'from_date' => $from_date, 'to_date' => $to_date, 'currencies' => $currencies]), 'qrDataUri' => null])

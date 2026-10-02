@@ -100,6 +100,15 @@ class Warehouse extends Model
             : $this->name_ar;
     }
 
+    public function displayName(?string $locale = null): string
+    {
+        $loc = $locale ?? app()->getLocale();
+
+        return ($loc === 'en' && ! empty($this->name_en))
+            ? $this->name_en
+            : $this->name_ar;
+    }
+
     /**
      * @param  Builder<self>  $query
      * @return Builder<self>

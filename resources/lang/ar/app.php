@@ -17,6 +17,8 @@ return [
     'nav_group_sales_customers' => 'المبيعات والعملاء',
     'nav_sales_invoices' => 'فواتير المبيعات',
     'nav_quotes' => 'عروض الأسعار',
+    'nav_sales_returns' => 'مردودات المبيعات',
+    'nav_customer_payments' => 'سندات القبض',
     'nav_customers' => 'دليل العملاء',
     'nav_group_purchasing_inventory' => 'المشتريات والمخزون',
     'nav_purchase_invoices' => 'فواتير الشراء',
