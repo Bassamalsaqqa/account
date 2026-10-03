@@ -214,9 +214,9 @@ return [
 
     // Settings
     'settings_sequences' => 'Document Sequences',
-    'settings_sequences_desc' => 'Configure prefixes, number padding and yearly reset policy for sales documents',
+    'settings_sequences_desc' => 'Configure document prefixes, number padding and yearly reset policy',
     'settings_taxes' => 'Tax Rates & VAT',
-    'settings_taxes_desc' => 'Manage inclusive/exclusive sales tax rates and associate them with ledger accounts',
+    'settings_taxes_desc' => 'Manage inclusive/exclusive tax rates and their Sales/Output and Purchase/Input Tax accounts',
     'settings_money_accounts' => 'Money Accounts (Cash & Bank)',
     'settings_money_accounts_desc' => 'Manage cash registers and bank accounts for receiving payments',
     'share_revoked' => 'Public link revoked.',
@@ -241,8 +241,8 @@ return [
     'no_money_accounts' => 'No money accounts configured.',
     'select_tax_account' => '-- Select GL Account --',
     'sales_tax_account' => 'Sales GL Account',
-    'exclusive' => 'Exclusive (إضافية)',
-    'inclusive' => 'Inclusive (شاملة)',
+    'exclusive' => 'Exclusive',
+    'inclusive' => 'Inclusive',
     'add_tax_rate' => 'Add Tax Rate',
     'account_number' => 'Account Number',
     'document_type' => 'Document Type',

@@ -5,6 +5,7 @@ namespace App\Actions\Company;
 use App\Actions\Accounting\EnsureSystemLedgerAccountsAction;
 use App\Actions\Inventory\EnsureDefaultUnitsAction;
 use App\Actions\Inventory\EnsureDefaultWarehouseAction;
+use App\Actions\Purchasing\EnsurePurchasingFoundationAction;
 use App\Actions\Sales\EnsureDefaultMoneyAccountAction;
 use App\Exceptions\CompanyReassignmentException;
 use App\Models\Company;
@@ -187,6 +188,7 @@ class CreateCompanyAction
                 // 10. Provision Phase 4 defaults (Document Sequences & Default Cash Account)
                 $this->sequenceService->ensureDefaultSequences($company->id);
                 $this->ensureDefaultMoneyAccountAction->execute($company, $owner);
+                app(EnsurePurchasingFoundationAction::class)->execute($company);
 
                 // 11. Log initial audit event
                 $this->auditService->log(

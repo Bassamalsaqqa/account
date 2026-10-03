@@ -20,6 +20,12 @@ class DocumentSequence extends Model
 
     public const string TYPE_CUSTOMER_PAYMENT = 'customer_payment';
 
+    public const string TYPE_PURCHASE = 'purchase';
+
+    public const string TYPE_PURCHASE_RETURN = 'purchase_return';
+
+    public const string TYPE_VENDOR_PAYMENT = 'vendor_payment';
+
     /**
      * @var list<string>
      */

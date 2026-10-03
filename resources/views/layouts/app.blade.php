@@ -159,12 +159,16 @@
                             <span>{{ __('app.nav_purchase_invoices') }}</span>
                         </div>
                     </span>
-                    <span title="{{ __('app.future_module_notice') }}" class="flex items-center justify-between h-[38px] px-3 rounded-control text-text-muted opacity-60 cursor-not-allowed">
+                    @can('vendors.view')
+                    <a href="{{ route('vendors.index') }}"
+                       class="flex items-center justify-between h-[38px] px-3 rounded-control text-text-secondary hover:bg-surface-soft hover:text-text-primary font-semibold transition-colors
+                              {{ request()->routeIs('vendors.*') ? 'bg-primary-50 text-primary! font-bold shadow-[inset_3px_0_0_#255fd6] rtl:shadow-[inset_-3px_0_0_#255fd6]' : '' }}">
                         <div class="flex items-center gap-2.5">
                             <x-icon name="truck" class="w-4.5 h-4.5" />
                             <span>{{ __('app.nav_vendors') }}</span>
                         </div>
-                    </span>
+                    </a>
+                    @endcan
                     <a href="{{ route('products.index') }}"
                        class="flex items-center justify-between h-[38px] px-3 rounded-control text-text-secondary hover:bg-surface-soft hover:text-text-primary font-semibold transition-colors
                               {{ request()->routeIs('products.*') ? 'bg-primary-50 text-primary! font-bold shadow-[inset_3px_0_0_#255fd6] rtl:shadow-[inset_-3px_0_0_#255fd6]' : '' }}">

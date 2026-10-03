@@ -314,21 +314,22 @@
                         </div>
 
                         <!-- Purchases -->
-                        <div x-show="matches('{{ __('settings.card_purchases_title') }} {{ __('settings.card_purchases_desc') }}')"
-                             class="bg-white/60 border border-border/70 rounded-card p-3.5 flex items-start justify-between gap-3 opacity-75">
+                        @can('settings.purchases.manage')
+                        <a href="{{ route('settings.purchases') }}" x-show="matches('{{ __('settings.card_purchases_title') }} {{ __('settings.card_purchases_desc') }}')"
+                             class="bg-white border border-border hover:border-primary/60 rounded-card p-3.5 flex items-start justify-between gap-3">
                             <div class="flex items-start gap-3 min-w-0">
-                                <div class="w-9 h-9 rounded-control bg-slate-100 text-slate-400 grid place-items-center shrink-0">
+                                <div class="w-9 h-9 rounded-control bg-primary-soft text-primary grid place-items-center shrink-0">
                                     <x-icon name="cart" class="w-5 h-5" />
                                 </div>
                                 <div class="min-w-0">
                                     <div class="flex items-center gap-1.5">
-                                        <h4 class="text-xs font-extrabold text-text-muted">{{ __('settings.card_purchases_title') }}</h4>
-                                        <span class="text-[9px] px-1.5 py-0.5 rounded bg-slate-100 text-text-muted font-bold">{{ __('settings.future_phase_badge') }}</span>
+                                        <h4 class="text-xs font-extrabold text-text-primary">{{ __('settings.card_purchases_title') }}</h4>
                                     </div>
                                     <p class="text-[11px] text-text-muted mt-0.5 leading-snug">{{ __('settings.card_purchases_desc') }}</p>
                                 </div>
                             </div>
-                        </div>
+                        </a>
+                        @endcan
 
                         <!-- Inventory -->
                         <div x-show="matches('{{ __('settings.card_inventory_title') }} {{ __('settings.card_inventory_desc') }}')"
