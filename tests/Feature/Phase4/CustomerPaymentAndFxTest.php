@@ -10,6 +10,7 @@ use App\Actions\Sales\CreateSalesInvoiceDraftAction;
 use App\Actions\Sales\PostCustomerPaymentAction;
 use App\Actions\Sales\PostSalesInvoiceAction;
 use App\Actions\Sales\ReverseCustomerPaymentAction;
+use App\Livewire\Pages\Sales\PaymentForm;
 use App\Models\Company;
 use App\Models\Customer;
 use App\Models\CustomerPayment;
@@ -22,6 +23,8 @@ use App\Support\Tenancy\CompanyContext;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use InvalidArgumentException;
+use Livewire\Livewire;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 class CustomerPaymentAndFxTest extends TestCase
@@ -104,6 +107,49 @@ class CustomerPaymentAndFxTest extends TestCase
         ]);
 
         return $postAction->execute($invoice, $this->user);
+    }
+
+    public static function receiptFormLocales(): array
+    {
+        return [
+            'Arabic' => ['ar', 'رقم المرجع / مرجع التحويل', 'مثال: TR-998822', 'توزيع تلقائي'],
+            'English' => ['en', 'Reference / Transfer Reference #', 'e.g. TR-998822', 'Auto Allocate'],
+        ];
+    }
+
+    #[DataProvider('receiptFormLocales')]
+    public function test_receipt_form_localizes_reference_and_auto_allocation_controls(
+        string $locale,
+        string $referenceLabel,
+        string $referencePlaceholder,
+        string $autoAllocationLabel,
+    ): void {
+        $invoice = $this->createAndPostInvoice('ILS', '1.0000000000', '100.000000');
+        $this->assertSame(SalesInvoice::STATUS_POSTED, $invoice->status);
+        $this->assertTrue($invoice->calculateOutstanding()->isPositive());
+
+        app()->setLocale($locale);
+
+        $component = Livewire::test(PaymentForm::class, ['customer_id' => $this->customer->id]);
+        $allocations = $component->get('allocations');
+        $this->assertCount(1, $allocations);
+        $this->assertSame($invoice->id, $allocations[0]['sales_invoice_id']);
+
+        $component
+            ->assertSee($invoice->invoice_number)
+            ->assertSeeHtml('wire:click="autoAllocate"')
+            ->assertSee($referenceLabel)
+            ->assertSeeHtml('placeholder="'.$referencePlaceholder.'"')
+            ->assertSee($autoAllocationLabel)
+            ->assertDontSee('Reference / Cheque / Transfer Slip #')
+            ->assertSet('document_locale', $this->company->default_locale);
+
+        if ($locale === 'ar') {
+            $component
+                ->assertDontSee('Reference / Transfer Reference #')
+                ->assertDontSee('e.g. TR-998822')
+                ->assertDontSee('Auto Allocate');
+        }
     }
 
     public function test_check_method_is_strictly_prohibited(): void
