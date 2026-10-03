@@ -30,10 +30,12 @@ final class SaveTaxRateAction
                 'name_en' => ['nullable', 'string', 'max:128'],
                 'calculation' => ['required', Rule::in(['exclusive', 'inclusive'])],
                 'sales_tax_account_id' => ['required', 'integer'],
+                'purchase_tax_account_id' => ['nullable', 'integer', 'min:1'],
                 'active' => ['required', 'boolean'],
             ])->validate();
+
+            // Validate output (sales) tax account
             $account = LedgerAccount::where('company_id', $company->id)->lockForUpdate()->find($values['sales_tax_account_id']);
-            // A configured output-tax account must belong to the output-tax liability hierarchy.
             $output = LedgerAccount::where('company_id', $company->id)->where('system_key', 'tax_output')->firstOrFail();
             if ($account === null || ! $account->active || $account->is_control
                 || $account->account_type !== LedgerAccount::TYPE_LIABILITY
@@ -41,11 +43,29 @@ final class SaveTaxRateAction
                 || ((int) $account->id !== (int) $output->id && (int) $account->parent_id !== (int) $output->id)) {
                 throw new InvalidArgumentException(__('sales.invalid_sales_tax_account'));
             }
+
+            // Validate input (purchase) tax account — null is always valid
+            if (($values['purchase_tax_account_id'] ?? null) !== null) {
+                $purchaseAccount = LedgerAccount::where('company_id', $company->id)->lockForUpdate()->find($values['purchase_tax_account_id']);
+                $inputParent = LedgerAccount::where('company_id', $company->id)->where('system_key', 'tax_input')->first();
+                if ($purchaseAccount === null || ! $purchaseAccount->active || $purchaseAccount->is_control
+                    || $purchaseAccount->account_type !== LedgerAccount::TYPE_ASSET
+                    || $purchaseAccount->normal_balance !== LedgerAccount::BALANCE_DEBIT
+                    || $inputParent === null || ! $inputParent->active
+                    || ((int) $purchaseAccount->id !== (int) $inputParent->id && (int) $purchaseAccount->parent_id !== (int) $inputParent->id)) {
+                    throw new InvalidArgumentException(__('purchasing.invalid_purchase_tax_account'));
+                }
+            }
+
             $tax = $id === null ? new TaxRate : TaxRate::where('company_id', $company->id)->lockForUpdate()->findOrFail($id);
             $before = $tax->exists ? $tax->only(array_keys($values)) : null;
             $tax->fill($values + ['company_id' => $company->id]);
             $tax->rate = (string) $rate;
             $tax->code = strtoupper(trim($values['code']));
+            // Null purchase account is stored as null; omitted key leaves existing value
+            if (array_key_exists('purchase_tax_account_id', $values)) {
+                $tax->purchase_tax_account_id = $values['purchase_tax_account_id'] === null ? null : (int) $values['purchase_tax_account_id'];
+            }
             $tax->save();
             app(AuditService::class)->log((int) $company->id, 'settings.tax.saved', 'Tax configuration saved', $actor->id, $tax, $before, $tax->only(array_merge(array_keys($values), ['rate'])));
 

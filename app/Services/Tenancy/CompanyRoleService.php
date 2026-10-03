@@ -26,6 +26,7 @@ class CompanyRoleService
         'settings.sequences.manage',
         'settings.taxes.manage',
         'settings.money_accounts.manage',
+        'settings.purchases.manage',
         'audit.events.view',
 
         // Sales & Documents
@@ -166,6 +167,7 @@ class CompanyRoleService
             'settings.sequences.manage',
             'settings.taxes.manage',
             'settings.money_accounts.manage',
+            'settings.purchases.manage',
             'audit.events.view',
             'sales.invoice.view', 'sales.invoice.create', 'sales.invoice.edit_draft', 'sales.invoice.post',
             'sales.invoice.void', 'sales.invoice.change_price', 'sales.invoice.change_discount',

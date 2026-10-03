@@ -145,6 +145,14 @@ class Company extends Model
     }
 
     /**
+     * @return HasOne<CompanyPurchaseSetting, $this>
+     */
+    public function purchaseSettings(): HasOne
+    {
+        return $this->hasOne(CompanyPurchaseSetting::class);
+    }
+
+    /**
      * @return HasMany<AuditEvent, $this>
      */
     public function auditEvents(): HasMany

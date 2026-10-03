@@ -47,7 +47,10 @@ class SalesBootstrapTest extends TestCase
     public function test_new_company_creation_automatically_provisions_sequences_and_cash_account(): void
     {
         // 1. Verify 4 document sequences exist
-        $sequences = DocumentSequence::where('company_id', $this->company->id)->get();
+        $sequences = DocumentSequence::where('company_id', $this->company->id)->whereIn('document_type', [
+            DocumentSequence::TYPE_QUOTATION, DocumentSequence::TYPE_SALES_INVOICE,
+            DocumentSequence::TYPE_SALES_RETURN, DocumentSequence::TYPE_CUSTOMER_PAYMENT,
+        ])->get();
         $this->assertCount(4, $sequences);
 
         $types = $sequences->pluck('document_type')->all();

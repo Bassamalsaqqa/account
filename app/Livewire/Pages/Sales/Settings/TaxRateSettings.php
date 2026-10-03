@@ -39,6 +39,8 @@ class TaxRateSettings extends Component
 
     public ?int $sales_tax_account_id = null;
 
+    public ?int $purchase_tax_account_id = null;
+
     public bool $active = true;
 
     public function mount(CompanyContext $context): void
@@ -67,6 +69,7 @@ class TaxRateSettings extends Component
         $this->rate = '16.00';
         $this->calculation = 'exclusive';
         $this->active = true;
+        $this->purchase_tax_account_id = null;
 
         $company = app(CompanyContext::class)->company();
         $defaultTaxOutput = LedgerAccount::where('company_id', $company->id)
@@ -93,6 +96,7 @@ class TaxRateSettings extends Component
         $this->rate = (string) $tax->rate;
         $this->calculation = $tax->calculation;
         $this->sales_tax_account_id = $tax->sales_tax_account_id;
+        $this->purchase_tax_account_id = $tax->purchase_tax_account_id;
         $this->active = (bool) $tax->active;
 
         $this->showFormModal = true;
@@ -122,6 +126,7 @@ class TaxRateSettings extends Component
                 Rule::exists('ledger_accounts', 'id')->where('company_id', $company->id),
             ],
             'active' => ['boolean'],
+            'purchase_tax_account_id' => ['nullable', 'integer', 'min:1'],
         ]);
 
         $payload = [
@@ -131,6 +136,7 @@ class TaxRateSettings extends Component
             'rate' => $this->rate,
             'calculation' => $this->calculation,
             'sales_tax_account_id' => $this->sales_tax_account_id,
+            'purchase_tax_account_id' => $this->purchase_tax_account_id,
             'active' => $this->active,
         ];
 
@@ -162,7 +168,7 @@ class TaxRateSettings extends Component
     {
         $this->authorizeSettings();
         $company = $context->company();
-        $taxRates = TaxRate::with('salesTaxAccount')
+        $taxRates = TaxRate::with(['salesTaxAccount', 'purchaseTaxAccount'])
             ->where('company_id', $company->id)
             ->get();
 
@@ -172,9 +178,16 @@ class TaxRateSettings extends Component
             ->orderBy('code')
             ->get();
 
+        $inputId = LedgerAccount::where('company_id', $company->id)->where('system_key', 'tax_input')->where('active', true)->value('id');
+        $purchaseAccounts = LedgerAccount::where('company_id', $company->id)
+            ->where('active', true)->where('is_control', false)->where('account_type', 'asset')->where('normal_balance', 'debit')
+            ->where(fn ($query) => $query->where('id', $inputId ?? 0)->orWhere('parent_id', $inputId ?? 0))
+            ->orderBy('code')->get();
+
         return view('livewire.pages.sales.settings.tax-rate-settings', [
             'taxRates' => $taxRates,
             'accounts' => $accounts,
+            'purchaseAccounts' => $purchaseAccounts,
         ]);
     }
 }

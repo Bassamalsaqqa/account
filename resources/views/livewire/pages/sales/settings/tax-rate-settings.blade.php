@@ -38,7 +38,8 @@
                         <th class="py-3 px-4 text-start">{{ __('sales.name') }}</th>
                         <th class="py-3 px-4 text-start">{{ __('sales.rate_percent') }}</th>
                         <th class="py-3 px-4 text-start">{{ __('sales.type') }}</th>
-                        <th class="py-3 px-4 text-start">{{ __('sales.sales_tax_account') }}</th>
+                        <th class="py-3 px-4 text-start">{{ __('purchasing.sales_tax_account') }}</th>
+                        <th class="py-3 px-4 text-start">{{ __('purchasing.purchase_tax_account') }}</th>
                         <th class="py-3 px-4 text-start">{{ __('sales.status') }}</th>
                         <th class="py-3 px-4 text-end">{{ __('sales.action') }}</th>
                     </tr>
@@ -61,6 +62,9 @@
                             <td class="py-3 px-4 text-text-muted">
                                 {{ $tax->salesTaxAccount?->code }} - {{ $tax->salesTaxAccount?->displayName() }}
                             </td>
+                            <td class="py-3 px-4 text-text-secondary">
+                                {{ $tax->purchaseTaxAccount?->displayName() ?? __('purchasing.not_configured') }}
+                            </td>
                             <td class="py-3 px-4">
                                 @if ($tax->active)
                                     <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-success-bg text-success">{{ __('sales.active') }}</span>
@@ -78,7 +82,7 @@
                         </tr>
                     @empty
                         <tr>
-                            <td colspan="7" class="py-6 text-center text-text-muted">
+                            <td colspan="8" class="py-6 text-center text-text-muted">
                                 {{ __('sales.no_tax_rates') }}
                             </td>
                         </tr>
@@ -91,7 +95,7 @@
     <!-- Modal Form -->
     @if ($showFormModal)
         <div class="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4">
-            <div class="bg-white rounded-card border border-border shadow-xl max-w-md w-full p-6 space-y-4">
+            <div class="bg-white rounded-card border border-border shadow-xl max-w-md w-full p-6 space-y-4 max-h-[90dvh] overflow-y-auto">
                 <h3 class="font-bold text-base text-text-primary">
                     {{ $editingTaxId ? __('sales.edit_tax_rate') : __('sales.new_tax_rate') }}
                 </h3>
@@ -131,7 +135,7 @@
                     </div>
 
                     <div>
-                        <label class="block font-bold text-text-primary mb-1">{{ __('sales.sales_tax_account') }} <span class="text-danger">*</span></label>
+                        <label class="block font-bold text-text-primary mb-1">{{ __('purchasing.sales_tax_account') }} <span class="text-danger">*</span></label>
                         <select wire:model="sales_tax_account_id" required class="w-full h-8 px-2 rounded-control border border-border">
                             <option value="">{{ __('sales.select_tax_account') }}</option>
                             @foreach ($accounts as $acc)
@@ -139,6 +143,18 @@
                             @endforeach
                         </select>
                         @error('sales_tax_account_id') <span class="text-danger text-[11px] block mt-0.5">{{ $message }}</span> @enderror
+                    </div>
+
+                    <div>
+                        <label for="purchaseTaxAccount" class="block font-bold text-text-primary mb-1">{{ __('purchasing.purchase_tax_account') }}</label>
+                        <select id="purchaseTaxAccount" wire:model="purchase_tax_account_id" class="w-full h-10 px-2 rounded-control border border-border">
+                            <option value="">{{ __('purchasing.not_configured') }}</option>
+                            @foreach ($purchaseAccounts as $account)
+                                <option value="{{ $account->id }}">{{ $account->code }} — {{ $account->displayName() }}</option>
+                            @endforeach
+                        </select>
+                        <p class="text-text-secondary text-[11px] mt-1">{{ __('purchasing.purchase_tax_account_hint') }}</p>
+                        @error('purchase_tax_account_id') <span class="text-danger text-[11px]">{{ $message }}</span> @enderror
                     </div>
 
                     <div class="flex items-center gap-2 pt-2">

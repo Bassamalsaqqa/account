@@ -40,7 +40,7 @@
                     @forelse ($sequences as $idx => $seq)
                         <tr>
                             <td class="py-3 px-4 font-bold text-text-primary">
-                                {{ __('sales.' . $seq['document_type']) }}
+                                {{ __(in_array($seq['document_type'], ['purchase', 'purchase_return', 'vendor_payment'], true) ? 'purchasing.' . $seq['document_type'] . '_sequence_type' : 'sales.' . $seq['document_type']) }}
                             </td>
                             <td class="py-3 px-4">
                                 <input type="text"

@@ -17,6 +17,10 @@ use App\Livewire\Pages\Inventory\StockTransferForm;
 use App\Livewire\Pages\Products\ProductDetail;
 use App\Livewire\Pages\Products\ProductForm;
 use App\Livewire\Pages\Products\ProductIndex;
+use App\Livewire\Pages\Purchasing\Settings\PurchaseSettingsForm;
+use App\Livewire\Pages\Purchasing\VendorDetail;
+use App\Livewire\Pages\Purchasing\VendorForm;
+use App\Livewire\Pages\Purchasing\VendorIndex;
 use App\Livewire\Pages\Sales\CustomerStatementView;
 use App\Livewire\Pages\Sales\InvoiceDetail;
 use App\Livewire\Pages\Sales\InvoiceForm;
@@ -154,6 +158,15 @@ Route::middleware(['auth'])->group(function () {
         Route::get('settings/sequences', DocumentSequenceSettings::class)->name('settings.sequences');
         Route::get('settings/taxes', TaxRateSettings::class)->name('settings.taxes');
         Route::get('settings/money-accounts', MoneyAccountSettings::class)->name('settings.money-accounts');
+
+        // Phase 5A Purchasing Settings
+        Route::get('settings/purchases', PurchaseSettingsForm::class)->name('settings.purchases');
+
+        // Phase 5A Vendors
+        Route::get('vendors', VendorIndex::class)->name('vendors.index');
+        Route::get('vendors/create', VendorForm::class)->name('vendors.create');
+        Route::get('vendors/{publicId}/edit', VendorForm::class)->name('vendors.edit');
+        Route::get('vendors/{publicId}', VendorDetail::class)->name('vendors.show');
 
         // Phase 4 PDFs
         Route::get('pdf/quotation/{publicId}', [PdfDocumentController::class, 'quotation'])->name('pdf.quotation');

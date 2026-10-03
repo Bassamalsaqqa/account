@@ -16,6 +16,10 @@ class DocumentSequenceService
         DocumentSequence::TYPE_SALES_INVOICE => 'INV',
         DocumentSequence::TYPE_SALES_RETURN => 'RET',
         DocumentSequence::TYPE_CUSTOMER_PAYMENT => 'RCT',
+        // Purchasing defaults are provisioned separately; Sales bootstrap remains unchanged.
+        DocumentSequence::TYPE_PURCHASE => 'PUR',
+        DocumentSequence::TYPE_PURCHASE_RETURN => 'PRT',
+        DocumentSequence::TYPE_VENDOR_PAYMENT => 'VPM',
     ];
 
     /**
@@ -146,13 +150,21 @@ class DocumentSequenceService
     }
 
     /**
-     * Ensure default sequences exist for all document types for a company.
+     * Ensure default sequences exist for all Sales document types for a company.
+     * Purchasing defaults use separate idempotent foundation provisioning.
      */
     public function ensureDefaultSequences(int $companyId, ?int $year = null): void
     {
         $effectiveYear = $year ?? (int) Carbon::now()->year;
 
-        foreach (self::DEFAULT_PREFIXES as $type => $prefix) {
+        $salesTypes = [
+            DocumentSequence::TYPE_QUOTATION => 'QTN',
+            DocumentSequence::TYPE_SALES_INVOICE => 'INV',
+            DocumentSequence::TYPE_SALES_RETURN => 'RET',
+            DocumentSequence::TYPE_CUSTOMER_PAYMENT => 'RCT',
+        ];
+
+        foreach ($salesTypes as $type => $prefix) {
             DocumentSequence::firstOrCreate(
                 [
                     'company_id' => $companyId,
@@ -166,6 +178,22 @@ class DocumentSequenceService
                     'reset_policy' => 'yearly',
                 ]
             );
+        }
+    }
+
+    /** Ensure configuration only; never advance numbers or replace customized sequences. */
+    public function ensurePurchaseSequences(int $companyId, ?int $year = null): void
+    {
+        $effectiveYear = $year ?? (int) Carbon::now()->year;
+        foreach ([DocumentSequence::TYPE_PURCHASE, DocumentSequence::TYPE_PURCHASE_RETURN, DocumentSequence::TYPE_VENDOR_PAYMENT] as $type) {
+            if (DocumentSequence::where('company_id', $companyId)->where('document_type', $type)->exists()) {
+                continue;
+            }
+            DocumentSequence::firstOrCreate([
+                'company_id' => $companyId, 'document_type' => $type, 'year' => $effectiveYear,
+            ], [
+                'prefix' => self::DEFAULT_PREFIXES[$type], 'next_number' => 1, 'padding' => 4, 'reset_policy' => 'yearly',
+            ]);
         }
     }
 }
