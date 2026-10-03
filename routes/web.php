@@ -17,6 +17,9 @@ use App\Livewire\Pages\Inventory\StockTransferForm;
 use App\Livewire\Pages\Products\ProductDetail;
 use App\Livewire\Pages\Products\ProductForm;
 use App\Livewire\Pages\Products\ProductIndex;
+use App\Livewire\Pages\Purchasing\PurchaseDetail;
+use App\Livewire\Pages\Purchasing\PurchaseForm;
+use App\Livewire\Pages\Purchasing\PurchaseIndex;
 use App\Livewire\Pages\Purchasing\Settings\PurchaseSettingsForm;
 use App\Livewire\Pages\Purchasing\VendorDetail;
 use App\Livewire\Pages\Purchasing\VendorForm;
@@ -163,6 +166,11 @@ Route::middleware(['auth'])->group(function () {
         Route::get('settings/purchases', PurchaseSettingsForm::class)->name('settings.purchases');
 
         // Phase 5A Vendors
+        Route::get('purchases', PurchaseIndex::class)->name('purchases.index');
+        Route::get('purchases/create', PurchaseForm::class)->name('purchases.create');
+        Route::get('purchases/{publicId}/edit', PurchaseForm::class)->name('purchases.edit');
+        Route::get('purchases/{publicId}', PurchaseDetail::class)->name('purchases.show');
+
         Route::get('vendors', VendorIndex::class)->name('vendors.index');
         Route::get('vendors/create', VendorForm::class)->name('vendors.create');
         Route::get('vendors/{publicId}/edit', VendorForm::class)->name('vendors.edit');

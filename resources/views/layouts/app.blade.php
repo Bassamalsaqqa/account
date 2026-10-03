@@ -153,12 +153,14 @@
                     {{ __('app.nav_group_purchasing_inventory') }}
                 </div>
                 <div class="space-y-0.5">
-                    <span title="{{ __('app.future_module_notice') }}" class="flex items-center justify-between h-[38px] px-3 rounded-control text-text-muted opacity-60 cursor-not-allowed">
+                    @can('purchasing.purchase.view')
+                    <a href="{{ route('purchases.index') }}" class="flex items-center justify-between h-[38px] px-3 rounded-control text-text-secondary hover:bg-surface-soft hover:text-text-primary font-semibold {{ request()->routeIs('purchases.*') ? 'bg-primary-50 text-primary!' : '' }}">
                         <div class="flex items-center gap-2.5">
                             <x-icon name="cart" class="w-4.5 h-4.5" />
                             <span>{{ __('app.nav_purchase_invoices') }}</span>
                         </div>
-                    </span>
+                    </a>
+                    @endcan
                     @can('vendors.view')
                     <a href="{{ route('vendors.index') }}"
                        class="flex items-center justify-between h-[38px] px-3 rounded-control text-text-secondary hover:bg-surface-soft hover:text-text-primary font-semibold transition-colors
