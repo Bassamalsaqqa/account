@@ -163,5 +163,7 @@ return [
     'language_en' => 'English',
     'no_notes' => 'No notes.',
     'not_configured' => 'Not configured',
+    'currency_changed_reenter_costs' => 'The currency changed. Enter unit costs and any discounts again in the selected currency.',
+    'exchange_rate_required' => 'Enter the exchange rate for the selected currency before saving.',
     'payment_terms_hint' => 'Leave blank when no default is agreed. Enter 0–3650 days.',
 ];

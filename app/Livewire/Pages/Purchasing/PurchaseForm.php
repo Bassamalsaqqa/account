@@ -51,6 +51,12 @@ class PurchaseForm extends Component
 
     public string $currency_code = 'ILS';
 
+    #[Locked]
+    public bool $currencyManuallySelected = false;
+
+    #[Locked]
+    public string $previousCurrencyCode = 'ILS';
+
     public string $exchange_rate = '1.0000000000';
 
     public string $document_locale = 'ar';
@@ -86,6 +92,7 @@ class PurchaseForm extends Component
             foreach (app(PurchaseDraftBuilder::class)->editableData($purchase) as $key => $value) {
                 $this->{$key} = $value;
             }
+            $this->currencyManuallySelected = true;
         } else {
             $this->purchase_date = now($company->timezone)->format('Y-m-d');
             $this->due_date = app(PurchaseDocumentRules::class)->defaultDueDate($company, $this->purchase_date);
@@ -98,6 +105,7 @@ class PurchaseForm extends Component
             }
             $this->addLine();
         }
+        $this->previousCurrencyCode = $this->currency_code;
         $this->recalculate();
     }
 
@@ -112,15 +120,41 @@ class PurchaseForm extends Component
         if ($this->vendor_id !== null) {
             $vendor = app(PurchaseDocumentRules::class)->vendor($company, $this->vendor_id);
             $this->document_locale = app(PurchaseDocumentRules::class)->defaultLocale($company, $vendor);
+            if (! $this->currencyManuallySelected) {
+                $this->initializeCurrency($company, app(PurchaseDocumentRules::class)->defaultCurrency($company, $vendor));
+            }
         }
     }
 
     public function updatedCurrencyCode(): void
     {
         $company = $this->authorizeForm();
-        if ($this->currency_code === $company->base_currency_code) {
+        $this->currencyManuallySelected = true;
+        $this->initializeCurrency($company, $this->currency_code);
+    }
+
+    private function initializeCurrency(Company $company, string $currency): void
+    {
+        $changed = $currency !== $this->previousCurrencyCode;
+        $this->currency_code = $currency;
+        if ($currency === $company->base_currency_code) {
             $this->exchange_rate = '1.0000000000';
+        } elseif ($changed) {
+            // No authoritative quote exists; require a rate for the new currency.
+            $this->exchange_rate = '';
         }
+        if ($changed) {
+            foreach ($this->lines as &$line) {
+                if (! empty($line['product_id'])) {
+                    // Supplier costs and discounts cannot be reinterpreted in another currency.
+                    $line['unit_cost'] = '';
+                    $line['discount_type'] = 'none';
+                    $line['discount_value'] = '0';
+                    $this->addError('currency', __('purchasing.currency_changed_reenter_costs'));
+                }
+            }
+        }
+        $this->previousCurrencyCode = $currency;
         $this->recalculate();
     }
 
@@ -213,6 +247,7 @@ class PurchaseForm extends Component
     {
         $this->authorizeForm();
         $this->resetErrorBag('calculation');
+        $this->resetErrorBag('exchange_rate');
         $results = [];
         try {
             foreach ($this->lines as $index => $line) {
@@ -225,12 +260,16 @@ class PurchaseForm extends Component
             $total = app(SalesDocumentTotalsCalculator::class)->calculate($results);
             $this->totals = ['subtotal' => (string) $total->subtotalCurrency, 'discount' => (string) $total->discountTotalCurrency,
                 'tax' => (string) $total->taxTotalCurrency, 'total' => (string) $total->grandTotalCurrency];
+            $this->resetErrorBag('currency');
         } catch (\InvalidArgumentException|MathException|ModelNotFoundException|InvalidMoneyException|InvalidQuantityException|InvalidUnitConversionException $exception) {
             $this->totals = [];
             foreach ($this->lines as &$line) {
                 unset($line['preview_total']);
             }
             $this->addError('calculation', __('purchasing.invalid_line_amounts'));
+            if ($this->exchange_rate === '') {
+                $this->addError('exchange_rate', __('purchasing.exchange_rate_required'));
+            }
         }
     }
 

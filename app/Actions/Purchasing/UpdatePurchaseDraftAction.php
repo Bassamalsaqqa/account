@@ -23,7 +23,7 @@ final class UpdatePurchaseDraftAction
             $guard->lockAndAuthorize((int) $company->id, $actor, 'purchasing.cost.view');
             $locked = Purchase::where('company_id', $company->id)->lockForUpdate()->findOrFail($purchase->id);
             $locked->assertMutableDraft();
-            $before = $locked->only(['vendor_id', 'warehouse_id', 'currency_code', 'grand_total_currency']);
+            $before = $locked->only(['vendor_id', 'warehouse_id', 'currency_code']);
             $draft = app(PurchaseDraftBuilder::class)->prepare($company, $data, $locked);
             $locked->fill($draft->header)->fill(['updated_by' => $actor->id])->save();
             app(PurchaseDraftWriter::class)->replaceLines($locked, $draft);

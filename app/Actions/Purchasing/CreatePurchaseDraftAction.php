@@ -25,7 +25,7 @@ final class CreatePurchaseDraftAction
             $draft = app(PurchaseDraftBuilder::class)->prepare($company, $data);
             $purchase = Purchase::create($draft->header + ['company_id' => $company->id, 'created_by' => $actor->id]);
             app(PurchaseDraftWriter::class)->replaceLines($purchase, $draft);
-            app(AuditService::class)->log($company->id, 'purchase.draft.created', 'Purchase draft created', $actor->id, $purchase, null, $purchase->only(['vendor_id', 'warehouse_id', 'currency_code', 'grand_total_currency']));
+            app(AuditService::class)->log($company->id, 'purchase.draft.created', 'Purchase draft created', $actor->id, $purchase, null, $purchase->only(['vendor_id', 'warehouse_id', 'currency_code']));
 
             return $purchase->load('lines.lots');
         });

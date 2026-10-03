@@ -63,6 +63,12 @@ final class PurchaseDocumentRules
             ? $vendor->preferred_locale : $company->default_locale;
     }
 
+    public function defaultCurrency(Company $company, Vendor $vendor): string
+    {
+        return $vendor->default_currency_code !== null && $company->currencies()->where('currency_code', $vendor->default_currency_code)->where('enabled', true)->exists()
+            ? $vendor->default_currency_code : $company->base_currency_code;
+    }
+
     public function validateModelHeader(Company $company, Purchase $purchase): void
     {
         $this->vendor($company, (int) $purchase->vendor_id);

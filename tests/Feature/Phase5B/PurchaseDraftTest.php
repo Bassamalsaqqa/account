@@ -13,6 +13,7 @@ use App\Domain\Inventory\Exceptions\InvalidQuantityException;
 use App\Livewire\Pages\Purchasing\PurchaseDetail;
 use App\Livewire\Pages\Purchasing\PurchaseForm;
 use App\Livewire\Pages\Purchasing\PurchaseIndex;
+use App\Models\AuditEvent;
 use App\Models\Company;
 use App\Models\CompanyPurchaseSetting;
 use App\Models\LedgerAccount;
@@ -38,6 +39,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
+use Livewire\Features\SupportLockedProperties\CannotUpdateLockedPropertyException;
 use Livewire\Livewire;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Spatie\Permission\Models\Role;
@@ -560,6 +562,169 @@ class PurchaseDraftTest extends TestCase
         $this->assertSame('3.5000000000', $purchase->exchange_rate);
         $this->company->languages()->where('locale', 'en')->update(['enabled' => false]);
         $this->assertSame('ar', app(PurchaseDocumentRules::class)->defaultLocale($this->company, $this->vendor));
+    }
+
+    public function test_vendor_usd_default_requires_explicit_fx_before_saving_a_new_draft(): void
+    {
+        $this->vendor->update(['default_currency_code' => 'USD']);
+        $before = $this->effects();
+        $form = Livewire::test(PurchaseForm::class)->assertSet('currencyManuallySelected', false)->call('selectProduct', 0, $this->product->id)
+            ->set('vendor_id', $this->vendor->id)->assertSet('currency_code', 'USD')->assertSet('exchange_rate', '')
+            ->assertHasErrors('exchange_rate')->set('lines.0.unit_cost', '6.67')
+            ->call('save')->assertHasErrors('draft');
+        $this->assertDatabaseCount('purchases', 0);
+        $form->set('exchange_rate', '3.6')->call('selectProduct', 0, $this->product->id)
+            ->assertSet('lines.0.unit_cost', '6.67')->call('save')->assertHasNoErrors();
+        $purchase = Purchase::firstOrFail();
+        $this->assertSame('USD', $purchase->currency_code);
+        $this->assertSame('3.6000000000', $purchase->exchange_rate);
+        $this->assertSame($before, $this->effects());
+    }
+
+    public static function vendorCurrencyFallbacks(): array
+    {
+        return ['base' => ['ILS', true], 'none' => [null, true], 'disabled' => ['USD', false]];
+    }
+
+    #[DataProvider('vendorCurrencyFallbacks')]
+    public function test_vendor_currency_defaults_fall_back_to_base_safely(?string $default, bool $enabled): void
+    {
+        $this->vendor->update(['default_currency_code' => $default]);
+        if (! $enabled) {
+            $this->company->currencies()->where('currency_code', 'USD')->update(['enabled' => false]);
+        }
+        Livewire::test(PurchaseForm::class)->set('exchange_rate', '3.6')->set('vendor_id', $this->vendor->id)
+            ->assertSet('currency_code', 'ILS')->assertSet('exchange_rate', '1.0000000000')
+            ->assertSet('currencyManuallySelected', false);
+    }
+
+    public function test_explicit_currency_choice_survives_subsequent_vendor_selection(): void
+    {
+        $this->vendor->update(['default_currency_code' => 'USD']);
+        Livewire::test(PurchaseForm::class)->set('currency_code', 'JOD')->assertSet('currencyManuallySelected', true)
+            ->assertSet('exchange_rate', '')->set('exchange_rate', '5.1')->set('vendor_id', $this->vendor->id)
+            ->assertSet('currency_code', 'JOD')->assertSet('exchange_rate', '5.1');
+    }
+
+    public function test_existing_draft_currency_and_fx_remain_authoritative_on_mount_and_unrelated_edits(): void
+    {
+        $purchase = $this->create(['currency_code' => 'USD', 'exchange_rate' => '3.55']);
+        $this->vendor->update(['default_currency_code' => 'JOD']);
+        Livewire::test(PurchaseForm::class, ['publicId' => $purchase->public_id])
+            ->assertSet('currencyManuallySelected', true)->assertSet('currency_code', 'USD')->assertSet('exchange_rate', '3.5500000000')
+            ->set('vendor_id', $this->vendor->id)->set('notes', 'Keep saved currency')->call('save')->assertHasNoErrors();
+        $this->assertSame('USD', $purchase->fresh()->currency_code);
+        $this->assertSame('3.5500000000', $purchase->fresh()->exchange_rate);
+        $this->assertSame('24.000000', $purchase->fresh()->lines->sole()->unit_cost);
+    }
+
+    public static function currencyMessages(): array
+    {
+        return [['ar'], ['en']];
+    }
+
+    #[DataProvider('currencyMessages')]
+    public function test_currency_initialization_clears_existing_costs_and_discounts_until_reentered(string $locale): void
+    {
+        app()->setLocale($locale);
+        $this->vendor->update(['default_currency_code' => 'USD']);
+        $form = Livewire::test(PurchaseForm::class)->call('selectProduct', 0, $this->product->id)->call('addLot', 0)
+            ->set('lines.0.unit_cost', '123.45')->set('lines.0.discount_type', 'fixed')->set('lines.0.discount_value', '5')
+            ->set('vendor_id', $this->vendor->id)->assertSet('currency_code', 'USD')->assertSet('exchange_rate', '')
+            ->assertSet('lines.0.unit_cost', '')->assertSet('lines.0.discount_type', 'none')->assertSet('lines.0.discount_value', '0')
+            ->assertSet('lines.0.product_unit_id', $this->carton->id)->assertSet('lines.0.lots.0.quantity', '1')
+            ->assertSet('totals', [])->assertHasErrors('currency')->assertSee(__('purchasing.currency_changed_reenter_costs'))
+            ->assertSee(__('purchasing.exchange_rate_required'))->set('exchange_rate', '3.6')->call('save')->assertHasErrors('draft');
+        $this->assertDatabaseCount('purchases', 0);
+        $form->set('lines.0.unit_cost', '7')->assertHasNoErrors(['currency', 'calculation'])->call('save')->assertHasNoErrors();
+        $this->assertSame('7.000000', Purchase::firstOrFail()->lines->sole()->unit_cost);
+    }
+
+    public function test_another_default_vendor_in_same_currency_does_not_reset_entered_fx_or_cost(): void
+    {
+        $this->vendor->update(['default_currency_code' => 'USD']);
+        $another = app(VendorCatalogService::class)->save($this->company, $this->owner, ['name_ar' => 'مورد آخر', 'default_currency_code' => 'USD']);
+        Livewire::test(PurchaseForm::class)->set('vendor_id', $this->vendor->id)->set('exchange_rate', '3.6')
+            ->call('selectProduct', 0, $this->product->id)->set('lines.0.unit_cost', '8')
+            ->set('vendor_id', $another->id)->assertSet('currency_code', 'USD')->assertSet('exchange_rate', '3.6')
+            ->assertSet('lines.0.unit_cost', '8')->assertSet('currencyManuallySelected', false);
+    }
+
+    public function test_changing_default_vendor_back_to_base_clears_foreign_fx_and_cost(): void
+    {
+        $this->vendor->update(['default_currency_code' => 'USD']);
+        $baseVendor = app(VendorCatalogService::class)->save($this->company, $this->owner, ['name_ar' => 'مورد محلي', 'default_currency_code' => 'ILS']);
+        Livewire::test(PurchaseForm::class)->set('vendor_id', $this->vendor->id)->set('exchange_rate', '3.6')
+            ->call('selectProduct', 0, $this->product->id)->set('vendor_id', $baseVendor->id)
+            ->assertSet('currency_code', 'ILS')->assertSet('exchange_rate', '1.0000000000')->assertSet('lines.0.unit_cost', '');
+    }
+
+    public function test_disabled_currency_remains_rejected_by_canonical_action_despite_ui_flag(): void
+    {
+        $this->vendor->update(['default_currency_code' => 'USD']);
+        $this->company->currencies()->where('currency_code', 'USD')->update(['enabled' => false]);
+        $before = $this->effects();
+        try {
+            $this->create(['currency_code' => 'USD', 'exchange_rate' => '3.6', 'currencyManuallySelected' => false]);
+            $this->fail('Disabled submitted currency accepted.');
+        } catch (\InvalidArgumentException) {
+            $this->assertDatabaseCount('purchases', 0);
+            $this->assertSame($before, $this->effects());
+        }
+    }
+
+    public static function currencyStateFields(): array
+    {
+        return [['currencyManuallySelected', false], ['previousCurrencyCode', 'JOD']];
+    }
+
+    #[DataProvider('currencyStateFields')]
+    public function test_saved_currency_defaulting_state_cannot_be_forged_by_client(string $field, mixed $value): void
+    {
+        $purchase = $this->create(['currency_code' => 'USD', 'exchange_rate' => '3.55']);
+        $form = Livewire::test(PurchaseForm::class, ['publicId' => $purchase->public_id]);
+        $this->expectException(CannotUpdateLockedPropertyException::class);
+        $form->set($field, $value);
+    }
+
+    public function test_explicit_currency_change_on_saved_draft_requires_new_fx_and_cost(): void
+    {
+        $purchase = $this->create(['currency_code' => 'USD', 'exchange_rate' => '3.55']);
+        Livewire::test(PurchaseForm::class, ['publicId' => $purchase->public_id])->set('currency_code', 'JOD')
+            ->assertSet('exchange_rate', '')->assertSet('lines.0.unit_cost', '')->set('exchange_rate', '5.1')
+            ->set('lines.0.unit_cost', '9.123')->call('save')->assertHasNoErrors();
+        $this->assertSame('JOD', $purchase->fresh()->currency_code);
+        $this->assertSame('5.1000000000', $purchase->fresh()->exchange_rate);
+        $this->assertSame('9.123000', $purchase->fresh()->lines->sole()->unit_cost);
+    }
+
+    public function test_purchase_audit_events_persist_only_non_monetary_operational_fields(): void
+    {
+        $purchase = $this->create(['lines' => [['product_id' => $this->product->id, 'quantity' => '1', 'unit_cost' => '8765.43',
+            'discount_type' => 'fixed', 'discount_value' => '123.45']]]);
+        app(UpdatePurchaseDraftAction::class)->execute($purchase, $this->owner, ['currency_code' => 'USD', 'exchange_rate' => '3.55']);
+        $actor = $this->customActor(['audit.events.view', 'purchasing.purchase.view']);
+        $this->assertTrue($actor->hasPermissionTo('audit.events.view'));
+        $this->assertFalse($actor->hasPermissionTo('purchasing.cost.view'));
+        $events = AuditEvent::where('company_id', $this->company->id)->where('subject_id', $purchase->id)
+            ->whereIn('event_key', ['purchase.draft.created', 'purchase.draft.updated'])->orderBy('id')->get();
+        $this->assertCount(2, $events);
+        foreach ($events as $event) {
+            $this->assertSame(['vendor_id' => $this->vendor->id, 'warehouse_id' => $purchase->warehouse_id,
+                'currency_code' => $event->event_key === 'purchase.draft.created' ? 'ILS' : 'USD'], $event->after_json);
+            $this->assertSame($event->event_key === 'purchase.draft.created' ? null : [
+                'vendor_id' => $this->vendor->id, 'warehouse_id' => $purchase->warehouse_id, 'currency_code' => 'ILS',
+            ], $event->before_json);
+            $this->assertNull($event->meta_json);
+            $this->assertSame($event->event_key === 'purchase.draft.created' ? 'Purchase draft created' : 'Purchase draft updated', $event->summary);
+            $serialized = json_encode([$event->before_json, $event->after_json, $event->meta_json, $event->summary], JSON_THROW_ON_ERROR);
+            foreach (['grand_total_currency', 'subtotal_currency', 'discount_total_currency', 'tax_total_currency', 'grand_total_base',
+                'subtotal_base', 'discount_total_base', 'tax_total_base', 'unit_cost', 'line_discount', 'line_tax', 'line_total',
+                'exchange_rate', '8765.43', '123.45'] as $sensitive) {
+                $this->assertStringNotContainsString($sensitive, $serialized);
+            }
+        }
+        Livewire::test(PurchaseDetail::class, ['publicId' => $purchase->public_id])->assertDontSee('8765.43')->assertDontSee('unit_cost');
     }
 
     public function test_permission_catalog_and_existing_role_upgrade_preserve_customization(): void
