@@ -1,0 +1,148 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Models;
+
+use App\Domain\Accounting\Exceptions\ImmutableRecordException;
+use App\Domain\Money\ValueObjects\MoneyAmount;
+use App\Services\Purchasing\PurchaseDocumentRules;
+use App\Support\Tenancy\BelongsToCompany;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Str;
+
+/**
+ * @property int $id
+ * @property int $company_id
+ * @property string $public_id
+ * @property int $vendor_id
+ * @property int $warehouse_id
+ * @property string $status
+ * @property string $currency_code
+ * @property string $base_currency_code
+ * @property string $document_locale
+ * @property Carbon $purchase_date
+ * @property Carbon|null $due_date
+ * @property string|null $vendor_invoice_number
+ * @property string|null $notes
+ * @property string $grand_total_currency
+ * @property string $grand_total_base
+ */
+class Purchase extends Model
+{
+    use BelongsToCompany;
+
+    public const string STATUS_DRAFT = 'draft';
+
+    public const string STATUS_POSTED = 'posted';
+
+    public const string STATUS_VOID = 'void';
+
+    /** @var list<string> */
+    public const RESERVED_FIELDS = ['purchase_number', 'posting_batch_id', 'posted_at', 'posted_by', 'voided_at', 'voided_by', 'void_reason', 'void_posting_batch_id'];
+
+    /** @var list<string> */
+    protected $fillable = [
+        'public_id', 'company_id', 'purchase_number', 'vendor_id', 'vendor_invoice_number',
+        'warehouse_id', 'status', 'purchase_date', 'due_date', 'currency_code', 'base_currency_code',
+        'exchange_rate', 'document_locale', 'subtotal_currency', 'discount_total_currency',
+        'tax_total_currency', 'grand_total_currency', 'subtotal_base', 'discount_total_base',
+        'tax_total_base', 'grand_total_base', 'notes', 'vendor_snapshot', 'company_snapshot',
+        'posting_batch_id', 'posted_at', 'posted_by', 'voided_at', 'voided_by', 'void_reason',
+        'void_posting_batch_id', 'created_by', 'updated_by',
+    ];
+
+    /** @var array<string, mixed> */
+    protected $attributes = ['status' => self::STATUS_DRAFT];
+
+    protected function casts(): array
+    {
+        return [
+            'purchase_date' => 'date:Y-m-d', 'due_date' => 'date:Y-m-d',
+            'vendor_snapshot' => 'array', 'company_snapshot' => 'array',
+            'posted_at' => 'datetime', 'voided_at' => 'datetime',
+        ];
+    }
+
+    public function setPurchaseDateAttribute(string $value): void
+    {
+        app(PurchaseDocumentRules::class)->date($value);
+        $this->attributes['purchase_date'] = $value;
+    }
+
+    public function setDueDateAttribute(?string $value): void
+    {
+        if ($value !== null) {
+            app(PurchaseDocumentRules::class)->date($value);
+        }
+        $this->attributes['due_date'] = $value;
+    }
+
+    protected static function booted(): void
+    {
+        static::saving(function (self $purchase): void {
+            if ($purchase->exists) {
+                $purchase->assertMutableDraft();
+                if ($purchase->isDirty(['company_id', 'public_id', 'created_by'])) {
+                    throw new ImmutableRecordException('Purchase ownership and identity are immutable.');
+                }
+            }
+            if (! $purchase->isDraft()) {
+                throw new ImmutableRecordException('Phase 5B permits Purchase drafts only.');
+            }
+            foreach (self::RESERVED_FIELDS as $field) {
+                if ($purchase->getAttribute($field) !== null) {
+                    throw new ImmutableRecordException('Purchase drafts cannot carry posting, void or numbering effects.');
+                }
+            }
+            foreach (['subtotal_currency', 'discount_total_currency', 'tax_total_currency', 'grand_total_currency', 'subtotal_base', 'discount_total_base', 'tax_total_base', 'grand_total_base'] as $field) {
+                $amount = MoneyAmount::from($purchase->getAttributes()[$field] ?? null);
+                if ($amount->getAmount()->isNegative()) {
+                    throw new \InvalidArgumentException('Purchase totals cannot be negative.');
+                }
+                $purchase->setAttribute($field, (string) $amount);
+            }
+            $company = Company::findOrFail($purchase->company_id);
+            app(PurchaseDocumentRules::class)->validateModelHeader($company, $purchase);
+        });
+        static::creating(function (self $purchase): void {
+            $purchase->public_id ??= (string) Str::ulid();
+        });
+        static::deleting(fn (self $purchase) => $purchase->assertMutableDraft());
+    }
+
+    public function isDraft(): bool
+    {
+        return $this->status === self::STATUS_DRAFT;
+    }
+
+    public function assertMutableDraft(): void
+    {
+        // Read persisted lifecycle rather than trusting a stale or caller-modified model.
+        if (! $this->exists || self::where('company_id', $this->getRawOriginal('company_id'))
+            ->whereKey($this->id)->value('status') !== self::STATUS_DRAFT) {
+            throw new ImmutableRecordException('Only persisted Purchase drafts are mutable.');
+        }
+    }
+
+    /** @return BelongsTo<Vendor, $this> */
+    public function vendor(): BelongsTo
+    {
+        return $this->belongsTo(Vendor::class)->withTrashed();
+    }
+
+    /** @return BelongsTo<Warehouse, $this> */
+    public function warehouse(): BelongsTo
+    {
+        return $this->belongsTo(Warehouse::class)->withTrashed();
+    }
+
+    /** @return HasMany<PurchaseLine, $this> */
+    public function lines(): HasMany
+    {
+        return $this->hasMany(PurchaseLine::class)->orderBy('line_number');
+    }
+}

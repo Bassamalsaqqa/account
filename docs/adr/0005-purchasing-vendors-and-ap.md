@@ -1,6 +1,6 @@
 # ADR 0005: Purchasing, Vendors and Accounts Payable
 
-Status: Proposed for independent Phase 5A review. Not merged or deployed.
+Status: Phase 5A accepted; Phase 5B draft decisions proposed for independent review.
 
 ## Context and checkpoints
 
@@ -79,6 +79,45 @@ financial functionality.
   to canonical GL and immutable stock history. Reconciliation is read-only.
 - Purchase and Vendor financial public sharing is not exposed because cost/vendor
   data is sensitive. No new cost access is granted by Vendor identity permissions.
+
+## Phase 5B draft decisions
+
+- Purchases, lines and line lots represent mutable document drafts and receiving
+  intent only. Number, posting/void fields, inventory valuation, movement and
+  received-lot links remain null. No sequence, stock, cost-state or ledger write
+  occurs. Direct non-draft creation/lifecycle changes fail closed; future posting
+  requires a separately reviewed canonical transition.
+- Company-first authenticated actor checks precede atomic header/line/lot
+  replacement. Active same-company Vendor, warehouse, stock Product, ProductUnit
+  and TaxRate are revalidated. Exactly one active default Purchase unit is required;
+  the Sales default is irrelevant. Quantity conversion must be exact and respect
+  both selected and base Unit fraction rules.
+- New due dates follow nullable payment terms: null means no date, zero means the
+  purchase date. Editing a null date preserves it. Receiving defaults use an active
+  purchase warehouse, then the active inventory default; otherwise selection is
+  required. UI locale and document locale remain independent.
+- Suggestions use selected-unit configured Purchase price, otherwise Product base
+  Purchase cost times conversion, otherwise zero, divided by document FX and rounded
+  to currency minor units. Actual supplier costs are editable and never update
+  Product defaults or establish historical vendor prices.
+- Accepted Sales calculation primitives provide percentage-point tax and exact
+  currency rounding. Purchase validation rejects excessive discounts instead of
+  silently capping them. Document totals sum stored rounded lines, including their
+  six-decimal base equivalents. Input Tax configuration does not change the
+  supplier document total; recoverability and posting snapshots belong to 5C.
+- Expiry lot intent may be partial but cannot exceed line quantity. Valid past
+  expiry dates and repeated external lot numbers are allowed. Non-expiry products
+  reject lot rows. Product/unit changes clear UI lot intent; server validation
+  rejects retained incompatible lot provenance independently.
+- Duplicate supplier invoice numbers are trimmed, scoped to company/Vendor and
+  warning-only when configured. There is no uniqueness constraint.
+- purchasing.cost.view and purchasing.purchase.edit_draft are static permissions.
+  Create/edit requires cost access. Index/detail use explicit presentation fields
+  and omit costs, discounts, tax amounts and totals when unauthorized. Read services
+  and stale components reauthorize. New Manager/Purchasing defaults include these
+  permissions; existing-company upgrades preserve customized non-owner roles.
+- No Purchase posting, AP, receipts, returns, payments, financial read models,
+  PDFs/public shares or Phase 6/7 functionality is introduced in 5B.
 
 ## Verification
 

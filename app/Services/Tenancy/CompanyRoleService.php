@@ -55,8 +55,10 @@ class CompanyRoleService
         // Purchasing (catalog only in Phase 1)
         'purchasing.purchase.view',
         'purchasing.purchase.create',
+        'purchasing.purchase.edit_draft',
         'purchasing.purchase.post',
         'purchasing.return.manage',
+        'purchasing.cost.view',
 
         // Inventory (catalog only in Phase 1)
         'inventory.stock.view',
@@ -174,7 +176,7 @@ class CompanyRoleService
             'sales.quote.view', 'sales.quote.create', 'sales.quote.edit', 'sales.quote.send', 'sales.quote.convert', 'sales.quote.manage',
             'sales.return.view', 'sales.return.create', 'sales.return.post', 'sales.return.void', 'sales.return.manage',
             'sales.statement.view', 'sales.document.share', 'sales.document.pdf',
-            'purchasing.purchase.view', 'purchasing.purchase.create', 'purchasing.purchase.post', 'purchasing.return.manage',
+            'purchasing.purchase.view', 'purchasing.purchase.create', 'purchasing.purchase.edit_draft', 'purchasing.purchase.post', 'purchasing.return.manage', 'purchasing.cost.view',
             'inventory.stock.view', 'inventory.stock.adjust', 'inventory.stock.transfer', 'inventory.cost.view', 'inventory.product.manage',
             'customers.view', 'customers.manage', 'customers.statement.view',
             'vendors.view', 'vendors.manage', 'vendors.statement.view',
@@ -213,7 +215,7 @@ class CompanyRoleService
 
         // 5. Purchasing: Purchases, vendors, stock view, vendor payments
         $purchasingPerms = [
-            'purchasing.purchase.view', 'purchasing.purchase.create', 'purchasing.purchase.post',
+            'purchasing.purchase.view', 'purchasing.purchase.create', 'purchasing.purchase.edit_draft', 'purchasing.purchase.post', 'purchasing.cost.view',
             'purchasing.return.manage',
             'vendors.view', 'vendors.manage', 'vendors.statement.view',
             'inventory.stock.view',
