@@ -20,6 +20,7 @@ use App\Models\AuditEvent;
 use App\Models\Company;
 use App\Models\InventoryCostState;
 use App\Models\LedgerAccount;
+use App\Models\PostingBatch;
 use App\Models\Product;
 use App\Models\ProductUnit;
 use App\Models\Purchase;
@@ -35,6 +36,7 @@ use App\Services\Inventory\InventoryRebuildService;
 use App\Services\Inventory\InventoryReconciliationService;
 use App\Services\Inventory\ProductCatalogService;
 use App\Services\Posting\AccountingPostingService;
+use App\Services\Purchasing\PurchaseAcquisitionValue;
 use App\Services\Purchasing\PurchaseReadModel;
 use App\Services\Purchasing\VendorCatalogService;
 use App\Services\Sales\SalesReconciliationService;
@@ -112,6 +114,111 @@ class PurchasePostingTest extends TestCase
         }
 
         return $result;
+    }
+
+    /** @return list<StockMovement> */
+    protected function receiptInTransaction(StockMovementCommand $command): array
+    {
+        return DB::transaction(fn () => app(InventoryMovementService::class)->recordPurchaseReceipt($command));
+    }
+
+    protected function exactExpiryReceipt(Purchase $draft): StockMovementCommand
+    {
+        $line = $draft->lines()->with('lots', 'productUnit')->sole();
+        $valuation = app(PurchaseAcquisitionValue::class);
+        $value = $valuation->line($line, null);
+        $cost = $valuation->unitCost($line, $value);
+        $values = $valuation->lots($line, $value);
+        $parts = [];
+        foreach ($line->lots as $index => $lot) {
+            $parts[] = new StockMovementLineCommand($line->product_id, $draft->warehouse_id,
+                Quantity::of($lot->quantity), $line->productUnit->unit_id, $cost,
+                lotNumber: $lot->lot_number, expiryDate: $lot->expiry_date?->format('Y-m-d'), valueDeltaBase: (string) $values[$index]);
+        }
+
+        return new StockMovementCommand($draft->company_id, StockMovement::TYPE_PURCHASE,
+            $draft->purchase_date->format('Y-m-d'), $parts, 'purchase', $draft->id,
+            'purchase_'.$draft->id.'_line_'.$line->id.'_stock', $this->owner->id, $line->id);
+    }
+
+    public function test_exact_draft_receipt_cannot_be_committed_through_generic_inventory_record(): void
+    {
+        $draft = $this->expiryDraft();
+        $command = $this->exactExpiryReceipt($draft);
+        $this->assertTrue($this->owner->hasPermissionTo('purchasing.purchase.post'));
+        $this->assertTrue($this->owner->hasPermissionTo('purchasing.cost.view'));
+        $before = $this->state();
+        try {
+            app(InventoryMovementService::class)->record($command);
+            $this->fail('Standalone Purchase receipt accepted.');
+        } catch (InvalidInventoryMovementException $exception) {
+            $this->assertStringContainsString('canonical Purchase posting', $exception->getMessage());
+        }
+        $this->assertSame($before, $this->state());
+        // The very same persisted intent succeeds only through complete Purchase POST.
+        $posted = $this->postPurchase($draft);
+        $this->assertSame('posted', $posted->status);
+        $this->assertDatabaseCount('stock_movements', 3);
+        $this->assertDatabaseCount('inventory_lots', 3);
+        $this->assertDatabaseCount('posting_batches', 1);
+        $this->assertSame('1.000000', $this->accountNet($posted, 'inventory'));
+        $this->assertSame('-1.000000', $this->accountNet($posted, 'accounts_payable'));
+    }
+
+    public function test_purchase_receipt_and_completion_require_an_existing_outer_transaction(): void
+    {
+        $draft = $this->expiryDraft();
+        $command = $this->exactExpiryReceipt($draft);
+        $line = $draft->lines->first();
+        $lot = $line->lots->first();
+        $before = $this->state();
+        $connection = DB::getDefaultConnection();
+        // RefreshDatabase owns the fixture transaction. A second real connection
+        // has no transaction; the boundary must reject before any database reads.
+        config(['database.connections.purchase_boundary' => config('database.connections.'.$connection)]);
+        DB::setDefaultConnection('purchase_boundary');
+        try {
+            $this->assertSame(0, DB::transactionLevel());
+            try {
+                app(InventoryMovementService::class)->recordPurchaseReceipt($command);
+                $this->fail('Receipt opened an independent transaction.');
+            } catch (InvalidInventoryMovementException $exception) {
+                $this->assertStringContainsString('existing outer', $exception->getMessage());
+            }
+            foreach ([
+                fn () => $line->completeCanonicalReceipt(new StockMovement, null, $this->owner),
+                fn () => $lot->completeCanonicalReceipt(new StockMovement, $this->owner),
+                fn () => $draft->completeCanonicalPost(new PostingBatch, 'PUR-INVALID', $this->owner),
+            ] as $complete) {
+                try {
+                    $complete();
+                    $this->fail('Completion opened an independent transaction.');
+                } catch (ImmutableRecordException $exception) {
+                    $this->assertStringContainsString('existing outer', $exception->getMessage());
+                }
+            }
+            $this->assertSame(0, DB::transactionLevel());
+        } finally {
+            DB::setDefaultConnection($connection);
+            DB::purge('purchase_boundary');
+        }
+        $this->assertSame($before, $this->state());
+    }
+
+    #[DataProvider('invalidOverrides')]
+    public function test_dedicated_purchase_receipt_rejects_other_movement_types(string $type): void
+    {
+        $before = $this->state();
+        $command = new StockMovementCommand($this->company->id, $type, '2026-10-04',
+            [new StockMovementLineCommand($this->product->id, $this->warehouse->id, Quantity::of('1'), $this->unit->unit_id, '1')],
+            'opening', 1, 'not-a-purchase', $this->owner->id);
+        try {
+            $this->receiptInTransaction($command);
+            $this->fail('Ordinary movement accepted through Purchase API.');
+        } catch (InvalidInventoryMovementException $exception) {
+            $this->assertStringContainsString('only Purchase', $exception->getMessage());
+        }
+        $this->assertSame($before, $this->state());
     }
 
     protected function tax(?int $account = null, string $mode = 'exclusive', string $code = 'VAT16'): TaxRate
@@ -330,7 +437,13 @@ class PurchasePostingTest extends TestCase
     {
         $draft = $this->expiryDraft();
         $before = $this->state();
-        $this->mock(AccountingPostingService::class, fn ($mock) => $mock->shouldReceive('post')->once()->andThrow(new \RuntimeException('Accounting failed')));
+        $this->mock(AccountingPostingService::class, fn ($mock) => $mock->shouldReceive('post')->once()->andReturnUsing(function () {
+            $this->assertDatabaseCount('stock_movements', 3);
+            $this->assertDatabaseCount('inventory_lots', 3);
+            $this->assertDatabaseCount('inventory_operations', 1);
+            $this->assertGreaterThan(0, DB::transactionLevel());
+            throw new \RuntimeException('Accounting failed');
+        }));
         try {
             $this->postPurchase($draft);
             $this->fail('Posting succeeded after accounting failure.');
@@ -342,20 +455,23 @@ class PurchasePostingTest extends TestCase
 
     public function test_inventory_failure_on_later_line_rolls_back_earlier_receipt_and_number(): void
     {
-        $draft = $this->create(['lines' => [
-            ['product_id' => $this->product->id, 'quantity' => '1', 'unit_cost' => '10'],
-            ['product_id' => $this->product->id, 'quantity' => '1', 'unit_cost' => '20'],
+        $draft = $this->expiryDraft(changes: ['lines' => [
+            ['product_id' => $this->product->id, 'quantity' => '1', 'unit_cost' => '10', 'lots' => [['product_unit_id' => $this->unit->id, 'quantity' => '1', 'lot_number' => 'FIRST']]],
+            ['product_id' => $this->product->id, 'quantity' => '1', 'unit_cost' => '20', 'lots' => [['product_unit_id' => $this->unit->id, 'quantity' => '1', 'lot_number' => 'SECOND']]],
         ]]);
         $before = $this->state();
         $real = new InventoryMovementService;
         $calls = 0;
         $this->mock(InventoryMovementService::class, function ($mock) use ($real, &$calls): void {
-            $mock->shouldReceive('record')->twice()->andReturnUsing(function ($command) use ($real, &$calls) {
+            $mock->shouldReceive('recordPurchaseReceipt')->twice()->andReturnUsing(function ($command) use ($real, &$calls) {
                 if (++$calls === 2) {
+                    $this->assertDatabaseCount('stock_movements', 1);
+                    $this->assertDatabaseCount('inventory_lots', 1);
+                    $this->assertGreaterThan(0, DB::transactionLevel());
                     throw new \RuntimeException('Second receipt failed');
                 }
 
-                return $real->record($command);
+                return $real->recordPurchaseReceipt($command);
             });
         });
         try {
@@ -547,7 +663,7 @@ class PurchasePostingTest extends TestCase
         $key = 'purchase_'.$posted->id.'_line_'.$line->id.'_stock';
         $original = new StockMovementCommand($this->company->id, 'purchase', '2026-10-04', [$stockLine], 'purchase', $posted->id, $key, $this->owner->id, $line->id);
         $before = $this->state();
-        $this->assertSame($line->stock_movement_id, app(InventoryMovementService::class)->record($original)[0]->id);
+        $this->assertSame($line->stock_movement_id, $this->receiptInTransaction($original)[0]->id);
         $changed = new StockMovementLineCommand(
             $field === 'product' ? 999 : $this->product->id,
             $field === 'warehouse' ? 999 : $this->warehouse->id,
@@ -558,7 +674,7 @@ class PurchasePostingTest extends TestCase
             expiryDate: $field === 'expiry' ? '2028-01-01' : null,
             valueDeltaBase: $field === 'value' ? '100.000001' : '100.000000');
         try {
-            app(InventoryMovementService::class)->record(new StockMovementCommand($this->company->id, 'purchase', '2026-10-04', [$changed], 'purchase', $posted->id, $key, $this->owner->id,
+            $this->receiptInTransaction(new StockMovementCommand($this->company->id, 'purchase', '2026-10-04', [$changed], 'purchase', $posted->id, $key, $this->owner->id,
                 $field === 'source line' ? 999 : $line->id, $field === 'reason' ? 'Changed' : null));
             $this->fail('Changed receipt intent accepted.');
         } catch (IdempotencyConflictException) {
@@ -595,7 +711,7 @@ class PurchasePostingTest extends TestCase
     {
         $before = $this->state();
         try {
-            app(InventoryMovementService::class)->record(new StockMovementCommand($this->company->id, 'purchase', '2026-10-04',
+            $this->receiptInTransaction(new StockMovementCommand($this->company->id, 'purchase', '2026-10-04',
                 [new StockMovementLineCommand($this->product->id, $this->warehouse->id, Quantity::of('1'), $this->unit->unit_id,
                     $case === 'missing cost' ? null : '1', valueDeltaBase: $case === 'missing value' ? null : '1', originalMovementId: $case === 'historical original' ? 1 : null)],
                 $case === 'wrong source' ? 'opening' : 'purchase', 1, 'bad-purchase', $this->owner->id, $case === 'missing source line' ? null : 1));
@@ -610,7 +726,7 @@ class PurchasePostingTest extends TestCase
         $role = Role::where('company_id', $this->company->id)->where('name', 'Owner')->sole();
         $role->revokePermissionTo('purchasing.purchase.post');
         $this->expectException(AuthorizationException::class);
-        app(InventoryMovementService::class)->record(new StockMovementCommand($this->company->id, 'purchase', '2026-10-04',
+        $this->receiptInTransaction(new StockMovementCommand($this->company->id, 'purchase', '2026-10-04',
             [new StockMovementLineCommand($this->product->id, $this->warehouse->id, Quantity::of('1'), $this->unit->unit_id, '1', valueDeltaBase: '1')],
             'purchase', 1, 'unauthorized-purchase', $this->owner->id, 1));
     }

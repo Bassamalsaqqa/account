@@ -78,6 +78,9 @@ class Purchase extends Model
 
     public function completeCanonicalPost(PostingBatch $batch, string $number, User $actor): void
     {
+        if (DB::transactionLevel() === 0) {
+            throw new ImmutableRecordException('Purchase completion requires an existing outer posting transaction.');
+        }
         DB::transaction(function () use ($batch, $number, $actor): void {
             $company = app(SalesActorGuard::class)->lockAndAuthorize((int) $this->company_id, $actor, 'purchasing.purchase.post');
             app(SalesActorGuard::class)->lockAndAuthorize((int) $this->company_id, $actor, 'purchasing.cost.view');

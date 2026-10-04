@@ -66,6 +66,9 @@ class PurchaseLine extends Model
 
     public function completeCanonicalReceipt(StockMovement $firstMovement, ?int $taxAccountId, User $actor): void
     {
+        if (DB::transactionLevel() === 0) {
+            throw new ImmutableRecordException('Purchase receipt completion requires an existing outer posting transaction.');
+        }
         DB::transaction(function () use ($firstMovement, $taxAccountId, $actor): void {
             app(SalesActorGuard::class)->lockAndAuthorize((int) $this->company_id, $actor, 'purchasing.purchase.post');
             app(SalesActorGuard::class)->lockAndAuthorize((int) $this->company_id, $actor, 'purchasing.cost.view');

@@ -8,6 +8,35 @@ use Tests\TestCase;
 
 class PurchasePostingArchitectureTest extends TestCase
 {
+    public function test_only_purchase_posting_can_call_the_dedicated_receipt_entrypoint(): void
+    {
+        $callers = [];
+        $definitions = [];
+        $files = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator(app_path()));
+        foreach ($files as $file) {
+            if (! $file->isFile() || $file->getExtension() !== 'php') {
+                continue;
+            }
+            $previous = null;
+            foreach (token_get_all(file_get_contents($file->getPathname())) as $token) {
+                if (is_array($token) && in_array($token[0], [T_WHITESPACE, T_COMMENT, T_DOC_COMMENT], true)) {
+                    continue;
+                }
+                if (is_array($token) && $token[0] === T_STRING && strcasecmp($token[1], 'recordPurchaseReceipt') === 0) {
+                    $path = str_replace('\\', '/', $file->getPathname());
+                    if (is_array($previous) && $previous[0] === T_FUNCTION) {
+                        $definitions[] = $path;
+                    } else {
+                        $callers[] = $path;
+                    }
+                }
+                $previous = $token;
+            }
+        }
+        $this->assertSame([str_replace('\\', '/', app_path('Actions/Purchasing/PostPurchaseAction.php'))], $callers);
+        $this->assertSame([str_replace('\\', '/', app_path('Services/Inventory/InventoryMovementService.php'))], $definitions);
+    }
+
     public function test_purchasing_uses_exact_values_and_canonical_stock_and_accounting_writers(): void
     {
         $files = array_merge(

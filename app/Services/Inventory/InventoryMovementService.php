@@ -58,6 +58,33 @@ class InventoryMovementService
      */
     public function record(StockMovementCommand $command): array
     {
+        if ($command->movementType === StockMovement::TYPE_PURCHASE) {
+            throw new InvalidInventoryMovementException('Purchase receipts must be recorded by canonical Purchase posting inside its outer transaction.');
+        }
+
+        return $this->recordMovement($command);
+    }
+
+    /**
+     * Purchase posting only: the caller owns the stock + accounting transaction.
+     *
+     * @return list<StockMovement>
+     */
+    public function recordPurchaseReceipt(StockMovementCommand $command): array
+    {
+        if ($command->movementType !== StockMovement::TYPE_PURCHASE) {
+            throw new InvalidInventoryMovementException('The Purchase receipt entrypoint accepts only Purchase movements.');
+        }
+        if (DB::transactionLevel() === 0) {
+            throw new InvalidInventoryMovementException('Purchase receipts require an existing outer Purchase posting transaction.');
+        }
+
+        return $this->recordMovement($command);
+    }
+
+    /** @return list<StockMovement> */
+    private function recordMovement(StockMovementCommand $command): array
+    {
         // 0. Standalone transfer types rejected
         if (in_array($command->movementType, [StockMovement::TYPE_TRANSFER_IN, StockMovement::TYPE_TRANSFER_OUT], true)) {
             throw new InvalidInventoryMovementException('Transfer movements cannot be recorded via single-movement record(); use transfer() for paired transfers.');

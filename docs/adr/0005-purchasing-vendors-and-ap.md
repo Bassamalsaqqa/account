@@ -136,6 +136,14 @@ financial functionality.
   It requires Purchase post and purchasing cost permissions, never generic stock
   adjustment authority. New movements validate their persisted receiving intent;
   idempotent retries retain the complete request fingerprint.
+- Generic inventory `record()` rejects Purchase commands before authorization,
+  idempotency or persistence. The dedicated `recordPurchaseReceipt()` entrypoint
+  requires an existing outer transaction and uses the same internal inventory
+  engine. Its only permitted production caller is `PostPurchaseAction`, enforced
+  by a source architecture test. Named line/lot/Purchase completion methods also
+  require an outer transaction; they validate existing canonical provenance and
+  cannot manufacture stock. Posted retries validate history without replaying
+  the inventory command.
 - One inventory command per Purchase line retains its source line identity. Full
   expiry allocation is mandatory at posting. Ordered lot values round HALF_UP to
   six decimals, with the final lot taking the exact remaining value. Rounded unit

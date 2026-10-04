@@ -67,7 +67,7 @@ final class PostPurchaseAction
                     $parts[] = new StockMovementLineCommand((int) $line->product_id, (int) $locked->warehouse_id,
                         Quantity::of($line->quantity), (int) $line->productUnit->unit_id, $cost, valueDeltaBase: (string) $value);
                 }
-                $movements = app(InventoryMovementService::class)->record(new StockMovementCommand((int) $company->id,
+                $movements = app(InventoryMovementService::class)->recordPurchaseReceipt(new StockMovementCommand((int) $company->id,
                     StockMovement::TYPE_PURCHASE, $locked->purchase_date->format('Y-m-d'), $parts, 'purchase', (int) $locked->id,
                     'purchase_'.$locked->id.'_line_'.$line->id.'_stock', (int) $actor->id, (int) $line->id));
                 foreach ($line->lots as $index => $lot) {
