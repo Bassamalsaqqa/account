@@ -100,7 +100,7 @@ final class PurchaseDraftBuilder
             ->whereIn('id', array_column($validated['lines'], 'product_id'))->orderBy('id')->lockForUpdate()->get()->keyBy('id');
         foreach ($validated['lines'] as $index => $line) {
             $raw = $data['lines'][$index];
-            foreach (['inventory_unit_cost_base', 'stock_movement_id', 'quantity_base', 'purchase_id', 'company_id'] as $reserved) {
+            foreach (['inventory_unit_cost_base', 'stock_movement_id', 'purchase_tax_account_id', 'quantity_base', 'purchase_id', 'company_id'] as $reserved) {
                 if (array_key_exists($reserved, $raw)) {
                     throw ValidationException::withMessages(['lines' => __('purchasing.draft_effects_forbidden')]);
                 }
@@ -185,8 +185,8 @@ final class PurchaseDraftBuilder
             'currency_code' => $validated['currency_code'], 'base_currency_code' => $company->base_currency_code,
             'exchange_rate' => (string) ExchangeRate::from($rate)->getValue(),
             'document_locale' => $locale, 'notes' => $validated['notes'] ?? null,
-            'vendor_snapshot' => $vendor->only(['name_ar', 'name_en', 'business_name_ar', 'business_name_en', 'phone', 'email', 'tax_number', 'address_ar', 'address_en', 'city_ar', 'city_en', 'postal_code', 'country_code']),
-            'company_snapshot' => $company->only(['name_ar', 'name_en', 'phone', 'email', 'tax_number', 'address_ar', 'address_en']),
+            'vendor_snapshot' => app(PurchaseIdentitySnapshot::class)->vendor($vendor),
+            'company_snapshot' => app(PurchaseIdentitySnapshot::class)->company($company),
             'subtotal_currency' => (string) $totals->subtotalCurrency, 'discount_total_currency' => (string) $totals->discountTotalCurrency,
             'tax_total_currency' => (string) $totals->taxTotalCurrency, 'grand_total_currency' => (string) $totals->grandTotalCurrency,
             'subtotal_base' => (string) $totals->subtotalBase, 'discount_total_base' => (string) $totals->discountTotalBase,

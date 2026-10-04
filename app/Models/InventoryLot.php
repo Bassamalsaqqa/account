@@ -13,6 +13,10 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
 
+/**
+ * @property Carbon|null $expiry_date
+ * @property Carbon $received_date
+ */
 class InventoryLot extends Model
 {
     use BelongsToCompany;

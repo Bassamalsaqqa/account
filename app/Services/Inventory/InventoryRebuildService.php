@@ -11,6 +11,7 @@ use App\Models\InventoryCostState;
 use App\Models\InventoryLotBalance;
 use App\Models\Product;
 use App\Models\StockMovement;
+use App\Services\Purchasing\PurchaseStockProvenance;
 use App\Support\Tenancy\CompanyContext;
 use App\Support\Tenancy\CompanyScope;
 use Brick\Math\BigDecimal;
@@ -191,7 +192,9 @@ class InventoryRebuildService
                             $inUnitCost = BigDecimal::of((string) $m->unit_cost_base);
                             $lineVal = $delta->multipliedBy($inUnitCost)->toScale(6, RoundingMode::HALF_UP);
                             $valDeltaStored = BigDecimal::of((string) $m->value_delta_base);
-                            if ($m->movement_type === StockMovement::TYPE_SALE_RETURN) {
+                            if ($m->movement_type === StockMovement::TYPE_PURCHASE) {
+                                $lineVal = app(PurchaseStockProvenance::class)->value($m);
+                            } elseif ($m->movement_type === StockMovement::TYPE_SALE_RETURN) {
                                 try {
                                     $lineVal = app(HistoricalSaleCost::class)->value((int) $m->company_id, (int) $m->reversal_of_id,
                                         (int) $m->product_id, (int) $m->warehouse_id, $m->lot_id, (string) $m->source_type,

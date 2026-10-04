@@ -10,8 +10,10 @@ use Brick\Math\BigDecimal;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
 
+/** @property Carbon $movement_date */
 class StockMovement extends Model
 {
     use BelongsToCompany;
@@ -39,6 +41,8 @@ class StockMovement extends Model
     public const string TYPE_SALE = 'sale';
 
     public const string TYPE_SALE_RETURN = 'sale_return';
+
+    public const string TYPE_PURCHASE = 'purchase';
 
     /**
      * @var list<string>

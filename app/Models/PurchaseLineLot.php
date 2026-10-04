@@ -8,11 +8,13 @@ use App\Domain\Accounting\Exceptions\ImmutableRecordException;
 use App\Domain\Inventory\Services\UnitConversionService;
 use App\Domain\Inventory\ValueObjects\Quantity;
 use App\Services\Purchasing\PurchaseDocumentRules;
+use App\Services\Sales\SalesActorGuard;
 use App\Support\Tenancy\BelongsToCompany;
 use Brick\Math\BigDecimal;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
 /**
@@ -46,6 +48,41 @@ class PurchaseLineLot extends Model
         $this->attributes['expiry_date'] = $value;
     }
 
+    private bool $completingReceipt = false;
+
+    public function completeCanonicalReceipt(StockMovement $movement, User $actor): void
+    {
+        if (DB::transactionLevel() === 0) {
+            throw new ImmutableRecordException('Purchase lot completion requires an existing outer posting transaction.');
+        }
+        DB::transaction(function () use ($movement, $actor): void {
+            app(SalesActorGuard::class)->lockAndAuthorize((int) $this->company_id, $actor, 'purchasing.purchase.post');
+            app(SalesActorGuard::class)->lockAndAuthorize((int) $this->company_id, $actor, 'purchasing.cost.view');
+            $line = $this->mutableLine();
+            $record = StockMovement::where('company_id', $this->company_id)->findOrFail($movement->id);
+            $lot = InventoryLot::where('company_id', $this->company_id)->findOrFail($record->lot_id);
+            if (! $this->exists || $this->isDirty() || $this->stock_movement_id !== null || $this->created_inventory_lot_id !== null
+                || $record->movement_type !== StockMovement::TYPE_PURCHASE || $record->source_type !== 'purchase'
+                || (int) $record->source_id !== (int) $line->purchase_id || (int) $record->source_line_id !== (int) $line->id
+                || (int) $record->product_id !== (int) $line->product_id || (int) $record->warehouse_id !== (int) $line->purchase->warehouse_id
+                || ! BigDecimal::of($record->source_quantity)->isEqualTo($this->quantity)
+                || ! BigDecimal::of($record->quantity_delta_base)->isEqualTo($this->quantity_base)
+                || $lot->source_type !== 'purchase' || (int) $lot->source_id !== (int) $line->purchase_id
+                || (int) $lot->source_line_id !== (int) $line->id || $lot->lot_number !== $this->lot_number
+                || $lot->expiry_date?->format('Y-m-d') !== $this->expiry_date?->format('Y-m-d')) {
+                throw new ImmutableRecordException('Canonical lot receipt provenance is required.');
+            }
+            $this->completingReceipt = true;
+            try {
+                $this->created_inventory_lot_id = $lot->id;
+                $this->stock_movement_id = $record->id;
+                $this->save();
+            } finally {
+                $this->completingReceipt = false;
+            }
+        });
+    }
+
     protected static function booted(): void
     {
         static::creating(function (self $lot): void {
@@ -53,6 +90,13 @@ class PurchaseLineLot extends Model
         });
         static::saving(function (self $lot): void {
             $line = $lot->mutableLine();
+            if ($lot->completingReceipt) {
+                if (array_diff(array_keys($lot->getDirty()), ['created_inventory_lot_id', 'stock_movement_id', 'updated_at']) !== []) {
+                    throw new ImmutableRecordException('Only received lot provenance may change during completion.');
+                }
+
+                return;
+            }
             if ($lot->exists && $lot->isDirty(['purchase_line_id', 'company_id', 'public_id'])) {
                 throw new ImmutableRecordException('Receiving intent provenance is immutable.');
             }

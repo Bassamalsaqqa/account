@@ -19,6 +19,7 @@ use App\Models\ProductUnit;
 use App\Models\StockMovement;
 use App\Models\Unit;
 use App\Models\Warehouse;
+use App\Services\Purchasing\PurchaseStockProvenance;
 use App\Support\Tenancy\CompanyContext;
 use App\Support\Tenancy\CompanyScope;
 use Brick\Math\BigDecimal;
@@ -120,7 +121,7 @@ class InventoryReconciliationService
                 }
                 // Movement sign must match inbound/outbound convention
                 $delta = BigDecimal::of((string) $m->quantity_delta_base);
-                $inboundTypes = [StockMovement::TYPE_OPENING_BALANCE, StockMovement::TYPE_TRANSFER_IN, StockMovement::TYPE_ADJUSTMENT_INCREASE];
+                $inboundTypes = [StockMovement::TYPE_OPENING_BALANCE, StockMovement::TYPE_TRANSFER_IN, StockMovement::TYPE_ADJUSTMENT_INCREASE, StockMovement::TYPE_PURCHASE];
                 $outboundTypes = [StockMovement::TYPE_TRANSFER_OUT, StockMovement::TYPE_ADJUSTMENT_DECREASE, StockMovement::TYPE_DAMAGE_OR_LOSS, StockMovement::TYPE_EXPIRY_DISPOSAL];
                 if (in_array($m->movement_type, $inboundTypes, true) && $delta->isNegative()) {
                     $historyCorruptions[] = "Movement [{$m->id}] type [{$m->movement_type}] should have positive quantity but has [{$m->quantity_delta_base}].";
@@ -342,7 +343,13 @@ class InventoryReconciliationService
                         $inUnitCost = BigDecimal::of((string) $m->unit_cost_base);
                         $expectedValDelta = $delta->multipliedBy($inUnitCost)->toScale(6, RoundingMode::HALF_UP);
 
-                        if ($m->movement_type === StockMovement::TYPE_SALE_RETURN) {
+                        if ($m->movement_type === StockMovement::TYPE_PURCHASE) {
+                            try {
+                                $expectedValDelta = app(PurchaseStockProvenance::class)->value($m);
+                            } catch (\Throwable $exception) {
+                                $historyCorruptions[] = "Movement [{$m->id}] Purchase acquisition provenance corrupt: {$exception->getMessage()}";
+                            }
+                        } elseif ($m->movement_type === StockMovement::TYPE_SALE_RETURN) {
                             try {
                                 $original = StockMovement::withoutGlobalScopes()->where('company_id', $m->company_id)->find($m->reversal_of_id);
                                 if ($original === null || ! BigDecimal::of($m->unit_cost_base)->isEqualTo($original->unit_cost_base)) {
