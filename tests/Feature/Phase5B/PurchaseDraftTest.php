@@ -10,6 +10,7 @@ use App\Actions\Purchasing\EnsurePurchasingFoundationAction;
 use App\Actions\Purchasing\UpdatePurchaseDraftAction;
 use App\Domain\Accounting\Exceptions\ImmutableRecordException;
 use App\Domain\Inventory\Exceptions\InvalidQuantityException;
+use App\Domain\Money\Exceptions\InvalidMoneyException;
 use App\Livewire\Pages\Purchasing\PurchaseDetail;
 use App\Livewire\Pages\Purchasing\PurchaseForm;
 use App\Livewire\Pages\Purchasing\PurchaseIndex;
@@ -129,12 +130,133 @@ class PurchaseDraftTest extends TestCase
         $this->assertNull($line->stock_movement_id);
         $this->assertNull($line->inventory_unit_cost_base);
         $this->assertSame('مورد الاختبار', $purchase->vendor_snapshot['name_ar']);
-        $purchase = app(UpdatePurchaseDraftAction::class)->execute($purchase, $this->owner, ['exchange_rate' => '3.5', 'currency_code' => 'USD']);
+        $purchase = app(UpdatePurchaseDraftAction::class)->execute($purchase, $this->owner, [
+            'exchange_rate' => '3.5', 'currency_code' => 'USD', 'lines' => $this->payload()['lines'],
+        ]);
         $this->assertSame('48.000000', $purchase->grand_total_currency);
         $this->assertSame('168.000000', $purchase->grand_total_base);
         $this->assertSame($before, $this->effects());
         $this->assertDatabaseHas('audit_events', ['event_key' => 'purchase.draft.created']);
         $this->assertDatabaseHas('audit_events', ['event_key' => 'purchase.draft.updated']);
+    }
+
+    private function taxedReceivingLine(string $cost = '24'): array
+    {
+        $tax = TaxRate::firstOrCreate(['company_id' => $this->company->id, 'code' => 'CURRENCY16'],
+            ['name_ar' => 'ضريبة', 'rate' => '16.000000', 'calculation' => 'exclusive', 'active' => true]);
+
+        return ['product_id' => $this->product->id, 'product_unit_id' => $this->carton->id,
+            'quantity' => '2', 'unit_cost' => $cost, 'discount_type' => 'fixed', 'discount_value' => '2',
+            'tax_rate_id' => $tax->id, 'lots' => [['product_unit_id' => $this->carton->id,
+                'quantity' => '1', 'lot_number' => 'CURRENCY-LOT', 'expiry_date' => '2027-01-01']]];
+    }
+
+    private function draftState(): array
+    {
+        $state = $this->effects();
+        foreach (['purchases', 'purchase_lines', 'purchase_line_lots', 'audit_events'] as $table) {
+            $state[$table] = DB::table($table)->orderBy('id')->get()->toJson();
+        }
+
+        return $state;
+    }
+
+    public static function incompleteCurrencyChanges(): array
+    {
+        return [['missing lines'], ['missing fx'], ['missing both'], ['empty lines'],
+            ['missing cost'], ['null fx'], ['empty fx'], ['invalid fx']];
+    }
+
+    #[DataProvider('incompleteCurrencyChanges')]
+    public function test_currency_change_requires_explicit_valid_fx_and_replacement_lines_atomically(string $case): void
+    {
+        $line = $this->taxedReceivingLine();
+        $purchase = $this->create(['lines' => [$line]]);
+        $before = $this->draftState();
+        $request = ['currency_code' => 'USD', 'exchange_rate' => '3.55', 'lines' => [$line], 'notes' => 'Must roll back'];
+        if (in_array($case, ['missing lines', 'missing both'], true)) {
+            unset($request['lines']);
+        }
+        if (in_array($case, ['missing fx', 'missing both'], true)) {
+            unset($request['exchange_rate']);
+        }
+        if ($case === 'empty lines') {
+            $request['lines'] = [];
+        } elseif ($case === 'missing cost') {
+            unset($request['lines'][0]['unit_cost']);
+        } elseif ($case === 'null fx') {
+            $request['exchange_rate'] = null;
+        } elseif ($case === 'empty fx') {
+            $request['exchange_rate'] = '';
+        } elseif ($case === 'invalid fx') {
+            $request['exchange_rate'] = '-3.55';
+        }
+        // Caller model state is untrusted; the action compares the locked persisted draft.
+        $purchase->currency_code = 'USD';
+        try {
+            app(UpdatePurchaseDraftAction::class)->execute($purchase, $this->owner, $request);
+            $this->fail('Incomplete currency replacement accepted.');
+        } catch (ValidationException|\InvalidArgumentException|InvalidMoneyException $exception) {
+            if ($exception instanceof ValidationException) {
+                if (in_array($case, ['missing lines', 'missing both', 'empty lines'], true)) {
+                    $this->assertArrayHasKey('lines', $exception->errors());
+                }
+                if (in_array($case, ['missing fx', 'missing both', 'null fx', 'empty fx'], true)) {
+                    $this->assertArrayHasKey('exchange_rate', $exception->errors());
+                }
+            }
+            $this->assertSame($before, $this->draftState());
+        }
+    }
+
+    public function test_currency_change_accepts_complete_explicit_supplier_amount_replacement(): void
+    {
+        $purchase = $this->create(['lines' => [$this->taxedReceivingLine()]]);
+        $before = $this->effects();
+        $replacement = $this->taxedReceivingLine('7.25');
+        $replacement['discount_value'] = '1.50';
+        $purchase = app(UpdatePurchaseDraftAction::class)->execute($purchase, $this->owner,
+            ['currency_code' => 'USD', 'exchange_rate' => '3.55', 'lines' => [$replacement]]);
+        $this->assertSame('USD', $purchase->currency_code);
+        $this->assertSame('3.5500000000', $purchase->exchange_rate);
+        $line = $purchase->lines->sole();
+        $this->assertSame('7.250000', $line->unit_cost);
+        $this->assertSame('1.500000', $line->discount_value);
+        $this->assertSame('16.000000', $line->tax_rate_snapshot);
+        $this->assertSame('15.080000', $purchase->grand_total_currency);
+        $this->assertSame('53.534000', $purchase->grand_total_base);
+        $this->assertSame('12.000000', $line->lots->sole()->quantity_base);
+        $this->assertSame($before, $this->effects());
+    }
+
+    public static function unchangedCurrencyRequests(): array
+    {
+        return [['fx', true], ['fx', false], ['notes', true], ['notes', false]];
+    }
+
+    #[DataProvider('unchangedCurrencyRequests')]
+    public function test_same_currency_partial_updates_preserve_supplier_amounts(string $field, bool $explicitCurrency): void
+    {
+        $purchase = $this->create(['currency_code' => 'USD', 'exchange_rate' => '3.5', 'lines' => [$this->taxedReceivingLine()]]);
+        $original = app(PurchaseDraftBuilder::class)->editableData($purchase)['lines'];
+        $before = $this->effects();
+        $request = $field === 'fx' ? ['exchange_rate' => '3.55'] : ['notes' => 'Safe partial edit'];
+        if ($explicitCurrency) {
+            $request['currency_code'] = 'USD';
+        }
+        $purchase = app(UpdatePurchaseDraftAction::class)->execute($purchase, $this->owner, $request);
+        $this->assertSame('USD', $purchase->currency_code);
+        $this->assertSame($field === 'fx' ? '3.5500000000' : '3.5000000000', $purchase->exchange_rate);
+        $current = app(PurchaseDraftBuilder::class)->editableData($purchase)['lines'];
+        // Mutable draft replacement may generate new identities; economic/receiving intent stays exact.
+        foreach ([$original, $current] as $index => $lines) {
+            unset($lines[0]['public_id'], $lines[0]['lots'][0]['public_id']);
+            $normalized[$index] = $lines;
+        }
+        $this->assertSame($normalized[0], $normalized[1]);
+        $this->assertSame('53.360000', $purchase->grand_total_currency);
+        $this->assertSame($field === 'fx' ? '189.428000' : '186.760000', $purchase->grand_total_base);
+        $this->assertSame($before, $this->effects());
     }
 
     public static function terms(): array
@@ -702,7 +824,7 @@ class PurchaseDraftTest extends TestCase
     {
         $purchase = $this->create(['lines' => [['product_id' => $this->product->id, 'quantity' => '1', 'unit_cost' => '8765.43',
             'discount_type' => 'fixed', 'discount_value' => '123.45']]]);
-        app(UpdatePurchaseDraftAction::class)->execute($purchase, $this->owner, ['currency_code' => 'USD', 'exchange_rate' => '3.55']);
+        app(UpdatePurchaseDraftAction::class)->execute($purchase, $this->owner, ['notes' => 'Audit a safe header edit']);
         $actor = $this->customActor(['audit.events.view', 'purchasing.purchase.view']);
         $this->assertTrue($actor->hasPermissionTo('audit.events.view'));
         $this->assertFalse($actor->hasPermissionTo('purchasing.cost.view'));
@@ -711,7 +833,7 @@ class PurchaseDraftTest extends TestCase
         $this->assertCount(2, $events);
         foreach ($events as $event) {
             $this->assertSame(['vendor_id' => $this->vendor->id, 'warehouse_id' => $purchase->warehouse_id,
-                'currency_code' => $event->event_key === 'purchase.draft.created' ? 'ILS' : 'USD'], $event->after_json);
+                'currency_code' => 'ILS'], $event->after_json);
             $this->assertSame($event->event_key === 'purchase.draft.created' ? null : [
                 'vendor_id' => $this->vendor->id, 'warehouse_id' => $purchase->warehouse_id, 'currency_code' => 'ILS',
             ], $event->before_json);

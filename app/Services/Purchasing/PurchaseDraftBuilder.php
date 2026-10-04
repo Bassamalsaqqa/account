@@ -32,6 +32,18 @@ final class PurchaseDraftBuilder
         }
         $rules = app(PurchaseDocumentRules::class);
         if ($existing !== null) {
+            if (array_key_exists('currency_code', $data) && $data['currency_code'] !== $existing->currency_code) {
+                $errors = [];
+                foreach (['exchange_rate', 'lines'] as $field) {
+                    if (! array_key_exists($field, $data)) {
+                        $errors[$field] = __('purchasing.currency_change_requires_replacement');
+                    }
+                }
+                if ($errors !== []) {
+                    throw ValidationException::withMessages($errors);
+                }
+                Validator::make($data, ['exchange_rate' => ['required']])->validate();
+            }
             $data = array_replace($this->editableData($existing), $data);
         }
         $data['vendor_invoice_number'] = isset($data['vendor_invoice_number']) && is_string($data['vendor_invoice_number'])
