@@ -36,7 +36,9 @@ use Illuminate\Validation\ValidationException;
 use InvalidArgumentException;
 use Livewire\Livewire;
 use PHPUnit\Framework\Attributes\DataProvider;
+use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
+use Spatie\Permission\PermissionRegistrar;
 use Tests\TestCase;
 
 class PurchasingFoundationTest extends TestCase
@@ -444,6 +446,51 @@ class PurchasingFoundationTest extends TestCase
         foreach (['posting_batches', 'posting_lines', 'stock_movements', 'customers', 'sales_invoices', 'tax_rates'] as $table) {
             $this->assertDatabaseCount($table, 0);
         }
+    }
+
+    public function test_bootstrap_restores_missing_static_permissions_only_to_owner_and_is_idempotent(): void
+    {
+        $missing = ['purchasing.purchase.edit_draft', 'purchasing.cost.view'];
+        $roles = Role::where('company_id', $this->company->id)->where('name', '!=', 'Owner')->get();
+        foreach ($roles as $role) {
+            $role->syncPermissions(['vendors.view']);
+        }
+        $owner = Role::where('company_id', $this->company->id)->where('name', 'Owner')->firstOrFail();
+        $owner->revokePermissionTo($missing);
+        Permission::whereIn('name', $missing)->get()->each->delete();
+        app(PermissionRegistrar::class)->forgetCachedPermissions();
+        $this->assertSame(0, Permission::whereIn('name', $missing)->count());
+        $roleGrants = fn () => DB::table('role_has_permissions')->whereIn('role_id', $roles->pluck('id'))
+            ->orderBy('role_id')->orderBy('permission_id')->get()->toJson();
+        $customGrants = $roleGrants();
+        DocumentSequence::where('document_type', 'purchase')->firstOrFail()
+            ->update(['prefix' => 'CUSTOM-PUR', 'next_number' => 73, 'padding' => 8, 'reset_policy' => 'never', 'year' => 0]);
+        DocumentSequence::where('document_type', 'sales_invoice')->firstOrFail()->update(['prefix' => 'CUSTOM-INV', 'next_number' => 42]);
+        $tables = ['company_purchase_settings', 'document_sequences', 'companies', 'users', 'company_user',
+            'model_has_roles', 'vendors', 'customers', 'products', 'purchases', 'purchase_lines', 'purchase_line_lots',
+            'sales_invoices', 'sales_returns', 'customer_payments', 'posting_batches', 'posting_lines',
+            'stock_movements', 'inventory_lots', 'inventory_balances', 'inventory_cost_states'];
+        $snapshot = function () use ($tables): array {
+            $result = [];
+            foreach ($tables as $table) {
+                $result[$table] = DB::table($table)->get()->toJson();
+            }
+
+            return $result;
+        };
+        $before = $snapshot();
+        app(CompanyContext::class)->clear();
+        for ($run = 0; $run < 2; $run++) {
+            $this->assertSame(0, Artisan::call('purchasing:bootstrap', ['--all' => true]));
+            $this->assertSame(2, Permission::whereIn('name', $missing)->where('guard_name', 'web')->count());
+            foreach ($missing as $permission) {
+                $this->assertTrue($owner->fresh()->hasPermissionTo($permission));
+            }
+            $this->assertSame($customGrants, $roleGrants());
+            $this->assertSame($before, $snapshot());
+        }
+        $this->activate();
+        $this->assertFalse(Role::where('company_id', $this->company->id)->where('name', 'Purchasing')->firstOrFail()->hasPermissionTo('inventory.cost.view'));
     }
 
     public function test_existing_company_configuration_is_provisioned_without_consuming_numbers(): void

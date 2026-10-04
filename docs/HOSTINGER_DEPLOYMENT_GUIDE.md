@@ -219,6 +219,8 @@ In hPanel → **Advanced** → **Cron Jobs**, add a custom cron job:
 ## 5. Deployment Update & Rollback Procedures
 
 ### Standard Update Workflow
+After migration handling and before cache warming, `bin/deploy.sh` runs `purchasing:bootstrap --all`, including with `--skip-migrate`. Provisioning failures stop deployment. This idempotent step ensures missing Purchase settings, sequence definitions and static permissions, and grants the current catalog to Owner. It preserves customized non-owner roles and existing sequence configuration/counters, consumes no document numbers and creates no business, accounting or stock transactions.
+
 Before updating, ensure pre-compiled frontend assets have been built (`npm run build`), transferred to `accounting/public/build`, and take a database backup:
 ```bash
 cd /home/u556956644/domains/palsync.net/accounting
