@@ -26,6 +26,8 @@ use App\Models\Product;
 use App\Models\ProductUnit;
 use App\Models\StockMovement;
 use App\Models\Warehouse;
+use App\Services\Purchasing\PurchasePostingScope;
+use App\Services\Purchasing\PurchaseReceiptCapability;
 use App\Services\Purchasing\PurchaseReceiptIntent;
 use App\Services\Sales\SalesActorGuard;
 use App\Support\Tenancy\CompanyContext;
@@ -70,7 +72,7 @@ class InventoryMovementService
      *
      * @return list<StockMovement>
      */
-    public function recordPurchaseReceipt(StockMovementCommand $command): array
+    public function recordPurchaseReceipt(StockMovementCommand $command, ?PurchaseReceiptCapability $capability = null): array
     {
         if ($command->movementType !== StockMovement::TYPE_PURCHASE) {
             throw new InvalidInventoryMovementException('The Purchase receipt entrypoint accepts only Purchase movements.');
@@ -78,6 +80,7 @@ class InventoryMovementService
         if (DB::transactionLevel() === 0) {
             throw new InvalidInventoryMovementException('Purchase receipts require an existing outer Purchase posting transaction.');
         }
+        app(PurchasePostingScope::class)->assertReceipt($command, $capability);
 
         return $this->recordMovement($command);
     }

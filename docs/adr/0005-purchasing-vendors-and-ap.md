@@ -138,9 +138,17 @@ financial functionality.
   idempotent retries retain the complete request fingerprint.
 - Generic inventory `record()` rejects Purchase commands before authorization,
   idempotency or persistence. The dedicated `recordPurchaseReceipt()` entrypoint
-  requires an existing outer transaction and uses the same internal inventory
-  engine. Its only permitted production caller is `PostPurchaseAction`, enforced
-  by a source architecture test. Named line/lot/Purchase completion methods also
+  requires an active opaque Purchase-posting capability, not merely an arbitrary
+  transaction, and uses the same internal inventory engine. A request-scoped
+  `PurchasePostingScope` binds capability object identity to company, Purchase,
+  actor, connection/PDO and the actual pending Laravel transaction record.
+  Only an executing `PostPurchaseAction` can activate it: the action proves
+  ownership with private invocation state that has no public setter. Scope and
+  action state clear in `finally`, including failures; expired/forged tokens and
+  same-level replacement transactions fail closed. Nested scopes are rejected.
+  Capabilities cannot be cloned or serialized and are never stored. Architecture
+  tests additionally restrict both activation and receipt call sites to the action.
+  Named line/lot/Purchase completion methods also
   require an outer transaction; they validate existing canonical provenance and
   cannot manufacture stock. Posted retries validate history without replaying
   the inventory command.

@@ -4,11 +4,21 @@ declare(strict_types=1);
 
 namespace Tests\Feature\Phase5C;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 class PurchasePostingArchitectureTest extends TestCase
 {
-    public function test_only_purchase_posting_can_call_the_dedicated_receipt_entrypoint(): void
+    public static function canonicalBoundaries(): array
+    {
+        return [
+            ['recordPurchaseReceipt', 'Services/Inventory/InventoryMovementService.php'],
+            ['withinCanonicalPosting', 'Services/Purchasing/PurchasePostingScope.php'],
+        ];
+    }
+
+    #[DataProvider('canonicalBoundaries')]
+    public function test_only_purchase_posting_can_enter_the_canonical_runtime_boundary(string $method, string $definition): void
     {
         $callers = [];
         $definitions = [];
@@ -22,7 +32,7 @@ class PurchasePostingArchitectureTest extends TestCase
                 if (is_array($token) && in_array($token[0], [T_WHITESPACE, T_COMMENT, T_DOC_COMMENT], true)) {
                     continue;
                 }
-                if (is_array($token) && $token[0] === T_STRING && strcasecmp($token[1], 'recordPurchaseReceipt') === 0) {
+                if (is_array($token) && $token[0] === T_STRING && strcasecmp($token[1], $method) === 0) {
                     $path = str_replace('\\', '/', $file->getPathname());
                     if (is_array($previous) && $previous[0] === T_FUNCTION) {
                         $definitions[] = $path;
@@ -34,7 +44,7 @@ class PurchasePostingArchitectureTest extends TestCase
             }
         }
         $this->assertSame([str_replace('\\', '/', app_path('Actions/Purchasing/PostPurchaseAction.php'))], $callers);
-        $this->assertSame([str_replace('\\', '/', app_path('Services/Inventory/InventoryMovementService.php'))], $definitions);
+        $this->assertSame([str_replace('\\', '/', app_path($definition))], $definitions);
     }
 
     public function test_purchasing_uses_exact_values_and_canonical_stock_and_accounting_writers(): void

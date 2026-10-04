@@ -37,7 +37,9 @@ use App\Services\Inventory\InventoryReconciliationService;
 use App\Services\Inventory\ProductCatalogService;
 use App\Services\Posting\AccountingPostingService;
 use App\Services\Purchasing\PurchaseAcquisitionValue;
+use App\Services\Purchasing\PurchasePostingScope;
 use App\Services\Purchasing\PurchaseReadModel;
+use App\Services\Purchasing\PurchaseReceiptCapability;
 use App\Services\Purchasing\VendorCatalogService;
 use App\Services\Sales\SalesReconciliationService;
 use App\Support\Tenancy\CompanyContext;
@@ -119,7 +121,26 @@ class PurchasePostingTest extends TestCase
     /** @return list<StockMovement> */
     protected function receiptInTransaction(StockMovementCommand $command): array
     {
-        return DB::transaction(fn () => app(InventoryMovementService::class)->recordPurchaseReceipt($command));
+        $purchase = Purchase::where('company_id', $this->company->id)->findOrFail($command->sourceId);
+
+        return $this->withinTestPostingScope($purchase, fn ($capability) => app(InventoryMovementService::class)->recordPurchaseReceipt($command, $capability));
+    }
+
+    protected function withinTestPostingScope(Purchase $purchase, \Closure $callback): mixed
+    {
+        return DB::transaction(function () use ($purchase, $callback) {
+            $scope = app(PurchasePostingScope::class);
+            $owner = new PostPurchaseAction;
+            // Test-only authority setup: production cannot set this private owner
+            // state, and must enter it through PostPurchaseAction.execute().
+            $ownership = new \ReflectionProperty($owner, 'activePostingScope');
+            $ownership->setValue($owner, $scope);
+            try {
+                return $scope->withinCanonicalPosting($owner, $purchase, $this->owner, $callback);
+            } finally {
+                $ownership->setValue($owner, null);
+            }
+        });
     }
 
     protected function exactExpiryReceipt(Purchase $draft): StockMovementCommand
@@ -205,6 +226,182 @@ class PurchasePostingTest extends TestCase
         $this->assertSame($before, $this->state());
     }
 
+    public function test_arbitrary_transaction_cannot_commit_an_exact_purchase_receipt_without_capability(): void
+    {
+        $draft = $this->expiryDraft();
+        $command = $this->exactExpiryReceipt($draft);
+        $before = $this->state();
+        try {
+            DB::transaction(fn () => app(InventoryMovementService::class)->recordPurchaseReceipt($command));
+            $this->fail('Arbitrary transaction committed a Purchase receipt.');
+        } catch (InvalidInventoryMovementException $exception) {
+            $this->assertStringContainsString('canonical posting capability', $exception->getMessage());
+        }
+        $this->assertSame($before, $this->state());
+    }
+
+    public function test_arbitrary_caller_cannot_activate_a_canonical_scope_with_an_idle_action(): void
+    {
+        $draft = $this->expiryDraft();
+        $before = $this->state();
+        try {
+            DB::transaction(fn () => app(PurchasePostingScope::class)->withinCanonicalPosting(
+                new PostPurchaseAction, $draft, $this->owner, fn ($capability) => app(InventoryMovementService::class)->recordPurchaseReceipt($this->exactExpiryReceipt($draft), $capability)));
+            $this->fail('Idle action minted a canonical capability.');
+        } catch (InvalidInventoryMovementException $exception) {
+            $this->assertStringContainsString('executing canonical', $exception->getMessage());
+        }
+        $this->assertSame($before, $this->state());
+    }
+
+    public function test_canonical_action_execution_authority_cannot_be_cloned(): void
+    {
+        $this->expectException(\Error::class);
+        clone new PostPurchaseAction;
+    }
+
+    public static function capabilityMismatches(): array
+    {
+        return [['purchase'], ['actor'], ['company'], ['source type'], ['forged identity'], ['authenticated actor'], ['company context']];
+    }
+
+    #[DataProvider('capabilityMismatches')]
+    public function test_receipt_capability_cannot_cross_its_bound_identity(string $case): void
+    {
+        $draft = $this->expiryDraft();
+        $other = $this->expiryDraft();
+        $command = $this->exactExpiryReceipt($case === 'purchase' ? $other : $draft);
+        $before = $this->state();
+        $this->withinTestPostingScope($draft, function ($capability) use ($case, $command): void {
+            $changed = new StockMovementCommand($case === 'company' ? $command->companyId + 1 : $command->companyId,
+                $command->movementType, $command->movementDate, $command->lines,
+                $case === 'source type' ? 'opening' : $command->sourceType, $command->sourceId,
+                $command->idempotencyKey, $case === 'actor' ? $command->createdBy + 1 : $command->createdBy, $command->sourceLineId);
+            if ($case === 'authenticated actor') {
+                auth()->setUser(new User);
+            } elseif ($case === 'company context') {
+                app(CompanyContext::class)->clear();
+            }
+            try {
+                app(InventoryMovementService::class)->recordPurchaseReceipt($changed, $case === 'forged identity' ? new PurchaseReceiptCapability : $capability);
+                $this->fail('Mismatched capability accepted.');
+            } catch (InvalidInventoryMovementException $exception) {
+                $this->assertStringContainsString('matching canonical', $exception->getMessage());
+            } finally {
+                $this->activate($this->owner);
+            }
+        });
+        $this->assertSame($before, $this->state());
+    }
+
+    public function test_receipt_capability_cannot_move_to_another_database_connection(): void
+    {
+        $draft = $this->expiryDraft();
+        $command = $this->exactExpiryReceipt($draft);
+        $before = $this->state();
+        $this->withinTestPostingScope($draft, function ($capability) use ($command): void {
+            $connection = DB::getDefaultConnection();
+            config(['database.connections.purchase_other' => config('database.connections.'.$connection)]);
+            DB::setDefaultConnection('purchase_other');
+            DB::beginTransaction();
+            try {
+                app(InventoryMovementService::class)->recordPurchaseReceipt($command, $capability);
+                $this->fail('Capability moved to another connection.');
+            } catch (InvalidInventoryMovementException $exception) {
+                $this->assertStringContainsString('matching canonical', $exception->getMessage());
+            } finally {
+                DB::rollBack();
+                DB::setDefaultConnection($connection);
+                DB::purge('purchase_other');
+            }
+        });
+        $this->assertSame($before, $this->state());
+    }
+
+    #[DataProvider('scopeExits')]
+    public function test_receipt_capability_expires_after_normal_or_exceptional_scope_exit(bool $throws): void
+    {
+        $draft = $this->expiryDraft();
+        $command = $this->exactExpiryReceipt($draft);
+        $before = $this->state();
+        $captured = null;
+        try {
+            $this->withinTestPostingScope($draft, function ($capability) use (&$captured, $throws): void {
+                $captured = $capability;
+                $this->assertTrue(app(PurchasePostingScope::class)->isActive($capability));
+                if ($throws) {
+                    throw new \RuntimeException('Scope failed');
+                }
+            });
+        } catch (\RuntimeException $exception) {
+            $this->assertTrue($throws);
+            $this->assertSame('Scope failed', $exception->getMessage());
+        }
+        $this->assertInstanceOf(PurchaseReceiptCapability::class, $captured);
+        $this->assertFalse(app(PurchasePostingScope::class)->isActive($captured));
+        try {
+            DB::transaction(fn () => app(InventoryMovementService::class)->recordPurchaseReceipt($command, $captured));
+            $this->fail('Expired capability reused in a fresh transaction.');
+        } catch (InvalidInventoryMovementException $exception) {
+            $this->assertStringContainsString('matching canonical', $exception->getMessage());
+        }
+        $this->assertSame($before, $this->state());
+    }
+
+    public static function scopeExits(): array
+    {
+        return [[false], [true]];
+    }
+
+    public function test_receipt_capability_cannot_survive_transaction_rollback_and_replacement(): void
+    {
+        $draft = $this->expiryDraft();
+        $command = $this->exactExpiryReceipt($draft);
+        $before = $this->state();
+        $this->withinTestPostingScope($draft, function ($capability) use ($command): void {
+            $level = DB::transactionLevel();
+            DB::rollBack();
+            DB::beginTransaction();
+            $this->assertSame($level, DB::transactionLevel());
+            $this->assertFalse(app(PurchasePostingScope::class)->isActive($capability));
+            try {
+                app(InventoryMovementService::class)->recordPurchaseReceipt($command, $capability);
+                $this->fail('Same-level replacement transaction reused old authority.');
+            } catch (InvalidInventoryMovementException $exception) {
+                $this->assertStringContainsString('matching canonical', $exception->getMessage());
+            }
+        });
+        $this->assertSame($before, $this->state());
+    }
+
+    public function test_nested_scope_fails_without_replacing_existing_authority(): void
+    {
+        $draft = $this->expiryDraft();
+        $before = $this->state();
+        $this->withinTestPostingScope($draft, function ($capability) use ($draft): void {
+            try {
+                $this->withinTestPostingScope($draft, fn () => null);
+                $this->fail('Nested scope replaced active authority.');
+            } catch (InvalidInventoryMovementException $exception) {
+                $this->assertStringContainsString('non-reentrant', $exception->getMessage());
+            }
+            $this->assertTrue(app(PurchasePostingScope::class)->isActive($capability));
+        });
+        $this->assertSame($before, $this->state());
+    }
+
+    public static function ephemeralAuthorityClasses(): array
+    {
+        return [[PurchaseReceiptCapability::class], [PurchasePostingScope::class]];
+    }
+
+    #[DataProvider('ephemeralAuthorityClasses')]
+    public function test_receipt_authority_cannot_be_serialized(string $class): void
+    {
+        $this->expectException(\LogicException::class);
+        serialize(new $class);
+    }
+
     #[DataProvider('invalidOverrides')]
     public function test_dedicated_purchase_receipt_rejects_other_movement_types(string $type): void
     {
@@ -213,7 +410,7 @@ class PurchasePostingTest extends TestCase
             [new StockMovementLineCommand($this->product->id, $this->warehouse->id, Quantity::of('1'), $this->unit->unit_id, '1')],
             'opening', 1, 'not-a-purchase', $this->owner->id);
         try {
-            $this->receiptInTransaction($command);
+            DB::transaction(fn () => app(InventoryMovementService::class)->recordPurchaseReceipt($command));
             $this->fail('Ordinary movement accepted through Purchase API.');
         } catch (InvalidInventoryMovementException $exception) {
             $this->assertStringContainsString('only Purchase', $exception->getMessage());
@@ -437,13 +634,25 @@ class PurchasePostingTest extends TestCase
     {
         $draft = $this->expiryDraft();
         $before = $this->state();
-        $this->mock(AccountingPostingService::class, fn ($mock) => $mock->shouldReceive('post')->once()->andReturnUsing(function () {
-            $this->assertDatabaseCount('stock_movements', 3);
-            $this->assertDatabaseCount('inventory_lots', 3);
-            $this->assertDatabaseCount('inventory_operations', 1);
-            $this->assertGreaterThan(0, DB::transactionLevel());
-            throw new \RuntimeException('Accounting failed');
-        }));
+        $captured = null;
+        $real = new InventoryMovementService;
+        $this->mock(InventoryMovementService::class, function ($mock) use ($real, &$captured): void {
+            $mock->shouldReceive('recordPurchaseReceipt')->once()->andReturnUsing(function ($command, $capability) use ($real, &$captured) {
+                $captured = $capability;
+
+                return $real->recordPurchaseReceipt($command, $capability);
+            });
+        });
+        $this->mock(AccountingPostingService::class, function ($mock) use (&$captured): void {
+            $mock->shouldReceive('post')->once()->andReturnUsing(function () use (&$captured) {
+                $this->assertDatabaseCount('stock_movements', 3);
+                $this->assertDatabaseCount('inventory_lots', 3);
+                $this->assertDatabaseCount('inventory_operations', 1);
+                $this->assertGreaterThan(0, DB::transactionLevel());
+                $this->assertTrue(app(PurchasePostingScope::class)->isActive($captured));
+                throw new \RuntimeException('Accounting failed');
+            });
+        });
         try {
             $this->postPurchase($draft);
             $this->fail('Posting succeeded after accounting failure.');
@@ -451,6 +660,8 @@ class PurchasePostingTest extends TestCase
             $this->assertSame('Accounting failed', $exception->getMessage());
             $this->assertSame($before, $this->state());
         }
+        $this->assertInstanceOf(PurchaseReceiptCapability::class, $captured);
+        $this->assertFalse(app(PurchasePostingScope::class)->isActive($captured));
     }
 
     public function test_inventory_failure_on_later_line_rolls_back_earlier_receipt_and_number(): void
@@ -462,16 +673,19 @@ class PurchasePostingTest extends TestCase
         $before = $this->state();
         $real = new InventoryMovementService;
         $calls = 0;
-        $this->mock(InventoryMovementService::class, function ($mock) use ($real, &$calls): void {
-            $mock->shouldReceive('recordPurchaseReceipt')->twice()->andReturnUsing(function ($command) use ($real, &$calls) {
+        $captured = null;
+        $this->mock(InventoryMovementService::class, function ($mock) use ($real, &$calls, &$captured): void {
+            $mock->shouldReceive('recordPurchaseReceipt')->twice()->andReturnUsing(function ($command, $capability) use ($real, &$calls, &$captured) {
+                $captured = $capability;
                 if (++$calls === 2) {
                     $this->assertDatabaseCount('stock_movements', 1);
                     $this->assertDatabaseCount('inventory_lots', 1);
                     $this->assertGreaterThan(0, DB::transactionLevel());
+                    $this->assertTrue(app(PurchasePostingScope::class)->isActive($capability));
                     throw new \RuntimeException('Second receipt failed');
                 }
 
-                return $real->recordPurchaseReceipt($command);
+                return $real->recordPurchaseReceipt($command, $capability);
             });
         });
         try {
@@ -481,6 +695,8 @@ class PurchasePostingTest extends TestCase
             $this->assertSame('Second receipt failed', $exception->getMessage());
             $this->assertSame($before, $this->state());
         }
+        $this->assertInstanceOf(PurchaseReceiptCapability::class, $captured);
+        $this->assertFalse(app(PurchasePostingScope::class)->isActive($captured));
     }
 
     public static function bypasses(): array
@@ -709,12 +925,14 @@ class PurchasePostingTest extends TestCase
     #[DataProvider('invalidPurchaseCommands')]
     public function test_purchase_movement_requires_explicit_cost_value_and_source_line(string $case): void
     {
+        $draft = $this->create();
+        $line = $draft->lines->sole();
         $before = $this->state();
         try {
             $this->receiptInTransaction(new StockMovementCommand($this->company->id, 'purchase', '2026-10-04',
                 [new StockMovementLineCommand($this->product->id, $this->warehouse->id, Quantity::of('1'), $this->unit->unit_id,
                     $case === 'missing cost' ? null : '1', valueDeltaBase: $case === 'missing value' ? null : '1', originalMovementId: $case === 'historical original' ? 1 : null)],
-                $case === 'wrong source' ? 'opening' : 'purchase', 1, 'bad-purchase', $this->owner->id, $case === 'missing source line' ? null : 1));
+                $case === 'wrong source' ? 'opening' : 'purchase', $draft->id, 'bad-purchase', $this->owner->id, $case === 'missing source line' ? null : $line->id));
             $this->fail('Invalid Purchase movement accepted.');
         } catch (InvalidInventoryMovementException) {
             $this->assertSame($before, $this->state());
@@ -723,12 +941,13 @@ class PurchasePostingTest extends TestCase
 
     public function test_purchase_inventory_path_checks_purchase_authority_even_for_adjustment_user(): void
     {
+        $draft = $this->create();
         $role = Role::where('company_id', $this->company->id)->where('name', 'Owner')->sole();
         $role->revokePermissionTo('purchasing.purchase.post');
         $this->expectException(AuthorizationException::class);
         $this->receiptInTransaction(new StockMovementCommand($this->company->id, 'purchase', '2026-10-04',
             [new StockMovementLineCommand($this->product->id, $this->warehouse->id, Quantity::of('1'), $this->unit->unit_id, '1', valueDeltaBase: '1')],
-            'purchase', 1, 'unauthorized-purchase', $this->owner->id, 1));
+            'purchase', $draft->id, 'unauthorized-purchase', $this->owner->id, $draft->lines->sole()->id));
     }
 
     public static function incoherentPosted(): array
