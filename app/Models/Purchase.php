@@ -35,6 +35,7 @@ use Illuminate\Support\Str;
  * @property string $grand_total_base
  * @property Carbon|null $posted_at
  * @property array<string, mixed>|null $vendor_snapshot
+ * @property array<string, mixed>|null $company_snapshot
  * @property string $exchange_rate
  */
 class Purchase extends Model

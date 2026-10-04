@@ -127,6 +127,11 @@ financial functionality.
   calculation drift; it does not rewrite agreed economics. Tax percentage/mode
   uses the saved Draft snapshot, while current validated Input Tax configuration
   determines recoverability at posting.
+- Draft party/company identity reflects the latest Draft save. Canonical POST
+  refreshes the existing Purchase identity snapshot fields from the locked current
+  Vendor/company through `PurchaseIdentitySnapshot`, shared with Draft building.
+  Refresh commits with stock/GL/lifecycle or rolls back with them. Posted identity
+  remains frozen; coherent retries do not refresh it from live master data.
 - A nullable restrictive `purchase_lines.purchase_tax_account_id` retains the
   historical Input Tax account. Null means tax is capitalized. Inventory base
   value is exact stored line total minus separately recoverable tax. Supplier

@@ -630,9 +630,67 @@ class PurchasePostingTest extends TestCase
         }
     }
 
+    public function test_posting_refreshes_identity_then_freezes_it_on_reads_and_retries(): void
+    {
+        $draft = $this->create();
+        $draftVendor = $draft->vendor_snapshot;
+        $draftCompany = $draft->company_snapshot;
+        $vendorIdentity = [
+            'name_ar' => 'مورد وقت الترحيل', 'name_en' => 'Posting-time Vendor',
+            'business_name_ar' => 'تجارة وقت الترحيل', 'business_name_en' => 'Posting-time Trading',
+            'phone' => '0591234567', 'email' => 'vendor-post@example.test', 'tax_number' => 'V-POST',
+            'address_ar' => 'عنوان المورد عند الترحيل', 'address_en' => 'Vendor posting address',
+            'city_ar' => 'الخليل', 'city_en' => 'Hebron', 'postal_code' => 'P-POST', 'country_code' => 'PS',
+        ];
+        $companyIdentity = [
+            'name_ar' => 'شركة وقت الترحيل', 'name_en' => 'Posting-time Company',
+            'phone' => '022123456', 'email' => 'company-post@example.test', 'tax_number' => 'C-POST',
+            'address_ar' => 'عنوان الشركة عند الترحيل', 'address_en' => 'Company posting address',
+        ];
+        $this->vendor->update($vendorIdentity);
+        $this->company->update($companyIdentity);
+        $this->assertSame($draftVendor, $draft->fresh()->vendor_snapshot);
+        $this->assertSame($draftCompany, $draft->fresh()->company_snapshot);
+
+        $posted = $this->postPurchase($draft);
+        $this->assertNotSame($draftVendor, $posted->vendor_snapshot);
+        $this->assertNotSame($draftCompany, $posted->company_snapshot);
+        $this->assertSame($vendorIdentity, $posted->vendor_snapshot);
+        $this->assertSame($companyIdentity, $posted->company_snapshot);
+        $readModel = app(PurchaseReadModel::class);
+        $views = [];
+        foreach (['ar', 'en'] as $locale) {
+            app()->setLocale($locale);
+            $views[$locale] = $readModel->detail($posted, true);
+            $this->assertSame($vendorIdentity['name_'.$locale], $views[$locale]['vendor_name']);
+        }
+
+        $this->vendor->update(['name_ar' => 'مورد بعد الترحيل', 'name_en' => 'Later Vendor', 'phone' => '0599999999']);
+        $this->company->update(['name_ar' => 'شركة بعد الترحيل', 'name_en' => 'Later Company', 'email' => 'later@example.test']);
+        $beforeRetry = $this->state();
+        $retried = $this->postPurchase($posted);
+        $this->assertSame($beforeRetry, $this->state());
+        $this->assertSame($vendorIdentity, $retried->vendor_snapshot);
+        $this->assertSame($companyIdentity, $retried->company_snapshot);
+        foreach (['ar', 'en'] as $locale) {
+            app()->setLocale($locale);
+            $this->assertSame($views[$locale], $readModel->detail($retried, true));
+        }
+        try {
+            $retried->update(['vendor_snapshot' => $draftVendor, 'company_snapshot' => $draftCompany]);
+            $this->fail('Posted identity was mutable.');
+        } catch (ImmutableRecordException) {
+            $this->assertSame($beforeRetry, $this->state());
+        }
+    }
+
     public function test_accounting_failure_rolls_back_receipts_lots_provenance_and_sequence(): void
     {
         $draft = $this->expiryDraft();
+        $draftVendor = $draft->vendor_snapshot;
+        $draftCompany = $draft->company_snapshot;
+        $this->vendor->update(['name_ar' => 'مورد جديد قبل الفشل', 'name_en' => 'Changed before failure']);
+        $this->company->update(['name_ar' => 'شركة جديدة قبل الفشل', 'name_en' => 'Changed company before failure']);
         $before = $this->state();
         $captured = null;
         $real = new InventoryMovementService;
@@ -643,13 +701,18 @@ class PurchasePostingTest extends TestCase
                 return $real->recordPurchaseReceipt($command, $capability);
             });
         });
-        $this->mock(AccountingPostingService::class, function ($mock) use (&$captured): void {
-            $mock->shouldReceive('post')->once()->andReturnUsing(function () use (&$captured) {
+        $this->mock(AccountingPostingService::class, function ($mock) use (&$captured, $draft, $draftVendor, $draftCompany): void {
+            $mock->shouldReceive('post')->once()->andReturnUsing(function () use (&$captured, $draft, $draftVendor, $draftCompany) {
                 $this->assertDatabaseCount('stock_movements', 3);
                 $this->assertDatabaseCount('inventory_lots', 3);
                 $this->assertDatabaseCount('inventory_operations', 1);
                 $this->assertGreaterThan(0, DB::transactionLevel());
                 $this->assertTrue(app(PurchasePostingScope::class)->isActive($captured));
+                $provisional = $draft->fresh();
+                $this->assertNotSame($draftVendor, $provisional->vendor_snapshot);
+                $this->assertNotSame($draftCompany, $provisional->company_snapshot);
+                $this->assertSame($this->vendor->name_en, $provisional->vendor_snapshot['name_en']);
+                $this->assertSame($this->company->name_en, $provisional->company_snapshot['name_en']);
                 throw new \RuntimeException('Accounting failed');
             });
         });
@@ -660,6 +723,8 @@ class PurchasePostingTest extends TestCase
             $this->assertSame('Accounting failed', $exception->getMessage());
             $this->assertSame($before, $this->state());
         }
+        $this->assertSame($draftVendor, $draft->fresh()->vendor_snapshot);
+        $this->assertSame($draftCompany, $draft->fresh()->company_snapshot);
         $this->assertInstanceOf(PurchaseReceiptCapability::class, $captured);
         $this->assertFalse(app(PurchasePostingScope::class)->isActive($captured));
     }

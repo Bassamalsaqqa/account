@@ -18,6 +18,7 @@ use App\Services\Inventory\InventoryMovementService;
 use App\Services\Posting\AccountingPostingService;
 use App\Services\Purchasing\PurchaseAcquisitionValue;
 use App\Services\Purchasing\PurchaseDraftIntegrity;
+use App\Services\Purchasing\PurchaseIdentitySnapshot;
 use App\Services\Purchasing\PurchaseInputTaxAccount;
 use App\Services\Purchasing\PurchasePostingCommandBuilder;
 use App\Services\Purchasing\PurchasePostingScope;
@@ -55,7 +56,7 @@ final class PostPurchaseAction
 
                 return $locked;
             }
-            $locked->vendor()->where('company_id', $company->id)->lockForUpdate()->firstOrFail();
+            $vendor = $locked->vendor()->where('company_id', $company->id)->lockForUpdate()->firstOrFail();
             $locked->warehouse()->where('company_id', $company->id)->lockForUpdate()->firstOrFail();
             $locked->setRelation('lines', $locked->lines()->withoutGlobalScopes()->lockForUpdate()->get());
             foreach ($locked->lines as $line) {
@@ -67,6 +68,10 @@ final class PostPurchaseAction
                 $tax = $line->tax_rate_id === null ? null : TaxRate::where('company_id', $company->id)->where('active', true)->lockForUpdate()->findOrFail($line->tax_rate_id);
                 $taxAccounts[$line->id] = app(PurchaseInputTaxAccount::class)->resolve((int) $company->id, $tax?->purchase_tax_account_id)?->id;
             }
+            $identity = app(PurchaseIdentitySnapshot::class);
+            $locked->vendor_snapshot = $identity->vendor($vendor);
+            $locked->company_snapshot = $identity->company($company);
+            $locked->save();
             $scope = app(PurchasePostingScope::class);
             $this->activePostingScope = $scope;
             try {
