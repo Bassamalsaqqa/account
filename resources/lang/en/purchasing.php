@@ -1,6 +1,15 @@
 <?php
 
 return [
+    'post_purchase' => 'Post Purchase',
+    'post_confirmation' => 'Posting receives inventory, records the amount owed to the vendor, and locks this purchase. Continue?',
+    'purchase_posted' => 'Purchase posted successfully.',
+    'posted_notice' => 'Posted purchase. Its details are locked. Posted at:',
+    'purchase_number' => 'Purchase number',
+    'received_lots' => 'Received lots',
+    'lots_must_be_complete' => 'Allocate the full line quantity to receiving lots before posting.',
+    'post_integrity_failed' => 'The purchase cannot be posted. Check active vendor, warehouse, products, units, taxes, amounts and receiving lots; edit and save the draft again.',
+    'positive_post_total_required' => 'A posted purchase must have a positive supplier total.',
     // Purchase drafts (Phase 5B)
     'purchases' => 'Purchase Invoices',
     'purchase_draft' => 'Purchase Draft',

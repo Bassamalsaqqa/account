@@ -26,10 +26,15 @@ final class PurchaseReadModel
     /** @return array<string, mixed> */
     private function buildDetail(Purchase $purchase, bool $withCost): array
     {
-        $data = $purchase->only(['public_id', 'vendor_invoice_number', 'status', 'currency_code', 'document_locale', 'notes']);
+        $data = $purchase->only(['public_id', 'purchase_number', 'vendor_invoice_number', 'status', 'currency_code', 'document_locale', 'notes']);
+        $data['posted_at'] = $purchase->posted_at?->format('Y-m-d H:i');
         $data['purchase_date'] = $purchase->purchase_date->format('Y-m-d');
         $data['due_date'] = $purchase->due_date?->format('Y-m-d');
         $data['vendor_name'] = $purchase->vendor->displayName();
+        if (! $purchase->isDraft()) {
+            $snapshot = $purchase->vendor_snapshot ?? [];
+            $data['vendor_name'] = app()->getLocale() === 'en' ? ($snapshot['name_en'] ?? $snapshot['name_ar'] ?? '') : ($snapshot['name_ar'] ?? '');
+        }
         $data['warehouse_name'] = $purchase->warehouse->displayName();
         if ($withCost) {
             $data += $purchase->only(['exchange_rate', 'subtotal_currency', 'discount_total_currency', 'tax_total_currency', 'grand_total_currency']);

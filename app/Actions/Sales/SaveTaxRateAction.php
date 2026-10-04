@@ -10,6 +10,7 @@ use App\Models\LedgerAccount;
 use App\Models\TaxRate;
 use App\Models\User;
 use App\Services\Audit\AuditService;
+use App\Services\Purchasing\PurchaseInputTaxAccount;
 use App\Services\Sales\SalesActorGuard;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
@@ -46,15 +47,7 @@ final class SaveTaxRateAction
 
             // Validate input (purchase) tax account — null is always valid
             if (($values['purchase_tax_account_id'] ?? null) !== null) {
-                $purchaseAccount = LedgerAccount::where('company_id', $company->id)->lockForUpdate()->find($values['purchase_tax_account_id']);
-                $inputParent = LedgerAccount::where('company_id', $company->id)->where('system_key', 'tax_input')->first();
-                if ($purchaseAccount === null || ! $purchaseAccount->active || $purchaseAccount->is_control
-                    || $purchaseAccount->account_type !== LedgerAccount::TYPE_ASSET
-                    || $purchaseAccount->normal_balance !== LedgerAccount::BALANCE_DEBIT
-                    || $inputParent === null || ! $inputParent->active
-                    || ((int) $purchaseAccount->id !== (int) $inputParent->id && (int) $purchaseAccount->parent_id !== (int) $inputParent->id)) {
-                    throw new InvalidArgumentException(__('purchasing.invalid_purchase_tax_account'));
-                }
+                app(PurchaseInputTaxAccount::class)->resolve((int) $company->id, (int) $values['purchase_tax_account_id']);
             }
 
             $tax = $id === null ? new TaxRate : TaxRate::where('company_id', $company->id)->lockForUpdate()->findOrFail($id);

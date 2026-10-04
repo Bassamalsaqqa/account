@@ -1,6 +1,6 @@
 # ADR 0005: Purchasing, Vendors and Accounts Payable
 
-Status: Phase 5A accepted; Phase 5B draft decisions proposed for independent review.
+Status: Phases 5A/5B accepted; Phase 5C posting proposed for independent review.
 
 ## Context and checkpoints
 
@@ -119,9 +119,55 @@ financial functionality.
 - No Purchase posting, AP, receipts, returns, payments, financial read models,
   PDFs/public shares or Phase 6/7 functionality is introduced in 5B.
 
+## Phase 5C posting decisions
+
+- `PostPurchaseAction` holds Company then Purchase locks and coordinates sequence,
+  stock receipts, lot creation, account snapshots, GL and lifecycle in one outer
+  transaction. A persisted Draft integrity check rejects master/configuration or
+  calculation drift; it does not rewrite agreed economics. Tax percentage/mode
+  uses the saved Draft snapshot, while current validated Input Tax configuration
+  determines recoverability at posting.
+- A nullable restrictive `purchase_lines.purchase_tax_account_id` retains the
+  historical Input Tax account. Null means tax is capitalized. Inventory base
+  value is exact stored line total minus separately recoverable tax. Supplier
+  liability remains the exact sum of stored line totals in both currencies.
+- `purchase` is a first-class inbound movement with explicit six-decimal cost and
+  exact value, no historical-original override, and Purchase source/line identity.
+  It requires Purchase post and purchasing cost permissions, never generic stock
+  adjustment authority. New movements validate their persisted receiving intent;
+  idempotent retries retain the complete request fingerprint.
+- One inventory command per Purchase line retains its source line identity. Full
+  expiry allocation is mandatory at posting. Ordered lot values round HALF_UP to
+  six decimals, with the final lot taking the exact remaining value. Rounded unit
+  cost is presentation/history metadata; immutable movement value is acquisition
+  authority. Reconciliation and rebuild verify Purchase provenance and use that
+  exact value rather than quantity times rounded unit cost.
+- GL uses canonical accounting posting only: Dr Inventory, optional Dr Input Tax,
+  Cr AP. Exact component residuals use the accepted same-account base-only
+  residual primitive, with truthful transaction metadata on converted lines.
+  Zero-value journal lines are never invented. A wholly zero-value Draft remains
+  editable but cannot post: this checkpoint requires a valid nonzero canonical
+  PostingBatch. Zero-value receipt policy requires separate review.
+  Positive transaction-currency components that round to zero base value also
+  fail closed if the canonical GL cannot retain their currency metadata. Posted
+  Inventory/Input Tax/AP transaction amounts must match their source exactly.
+- Named model completion methods may attach only exact receipt/posting provenance
+  under fresh authorization; ordinary updates remain prohibited. Posted headers,
+  lines and receiving intent are immutable. Retry checks complete source stock,
+  lots and exact batch content before returning; corrupted history is reported,
+  never repaired. Purchase numbers are assigned only at POST and roll back with
+  all other effects on failure.
+- Generic posting audit stores lifecycle/number/batch identity only. Cost-redacted
+  readers receive no costs, amounts, FX or stock/accounting provenance identifiers.
+  UI confirmation explains inventory receipt, vendor liability and locking.
+- Returns, voids, Vendor payments/statements, PDFs/shares, landed costs, expenses
+  and checks remain outside Phase 5C.
+
 ## Verification
 
 Disposable local MariaDB is authoritative for tenant/RBAC, validation, role upgrade,
 Input Tax, Sales regressions, sequence preservation and migration round-trip tests.
-Arabic RTL and English LTR Vendor/configuration screens use existing responsive
-tokens and components. No Phase 5A financial posting, stock movement or AP tables.
+Arabic RTL and English LTR screens use existing responsive tokens and components.
+Phase 5C tests additionally verify exact receipt/GL equality, lot residuals,
+immutable provenance, authorization, idempotency and atomic rollback. Phase 5A/5B
+retain their configuration-only and side-effect-free Draft boundaries.

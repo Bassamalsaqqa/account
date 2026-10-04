@@ -100,7 +100,7 @@ final class PurchaseDraftBuilder
             ->whereIn('id', array_column($validated['lines'], 'product_id'))->orderBy('id')->lockForUpdate()->get()->keyBy('id');
         foreach ($validated['lines'] as $index => $line) {
             $raw = $data['lines'][$index];
-            foreach (['inventory_unit_cost_base', 'stock_movement_id', 'quantity_base', 'purchase_id', 'company_id'] as $reserved) {
+            foreach (['inventory_unit_cost_base', 'stock_movement_id', 'purchase_tax_account_id', 'quantity_base', 'purchase_id', 'company_id'] as $reserved) {
                 if (array_key_exists($reserved, $raw)) {
                     throw ValidationException::withMessages(['lines' => __('purchasing.draft_effects_forbidden')]);
                 }

@@ -54,7 +54,7 @@ class PurchaseIndex extends Component
     {
         $company = $this->authorizePurchasing('purchasing.purchase.view');
         $withCost = auth()->user()->hasPermissionTo('purchasing.cost.view');
-        $fields = ['id', 'public_id', 'company_id', 'vendor_id', 'purchase_date', 'vendor_invoice_number', 'status', 'currency_code'];
+        $fields = ['id', 'public_id', 'company_id', 'vendor_id', 'purchase_date', 'purchase_number', 'vendor_invoice_number', 'status', 'currency_code'];
         if ($withCost) {
             $fields[] = 'grand_total_currency';
         }

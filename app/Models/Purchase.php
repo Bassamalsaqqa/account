@@ -7,11 +7,14 @@ namespace App\Models;
 use App\Domain\Accounting\Exceptions\ImmutableRecordException;
 use App\Domain\Money\ValueObjects\MoneyAmount;
 use App\Services\Purchasing\PurchaseDocumentRules;
+use App\Services\Purchasing\PurchasePostingCommandBuilder;
+use App\Services\Sales\SalesActorGuard;
 use App\Support\Tenancy\BelongsToCompany;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
 /**
@@ -30,6 +33,9 @@ use Illuminate\Support\Str;
  * @property string|null $notes
  * @property string $grand_total_currency
  * @property string $grand_total_base
+ * @property Carbon|null $posted_at
+ * @property array<string, mixed>|null $vendor_snapshot
+ * @property string $exchange_rate
  */
 class Purchase extends Model
 {
@@ -64,7 +70,36 @@ class Purchase extends Model
             'purchase_date' => 'date:Y-m-d', 'due_date' => 'date:Y-m-d',
             'vendor_snapshot' => 'array', 'company_snapshot' => 'array',
             'posted_at' => 'datetime', 'voided_at' => 'datetime',
+            'exchange_rate' => 'string',
         ];
+    }
+
+    private bool $completingPost = false;
+
+    public function completeCanonicalPost(PostingBatch $batch, string $number, User $actor): void
+    {
+        DB::transaction(function () use ($batch, $number, $actor): void {
+            $company = app(SalesActorGuard::class)->lockAndAuthorize((int) $this->company_id, $actor, 'purchasing.purchase.post');
+            app(SalesActorGuard::class)->lockAndAuthorize((int) $this->company_id, $actor, 'purchasing.cost.view');
+            $this->assertMutableDraft();
+            $persisted = PostingBatch::where('company_id', $this->company_id)->findOrFail($batch->id);
+            if ($this->isDirty() || trim($number) === '' || (int) $persisted->posted_by !== (int) $actor->id
+                || $persisted->idempotency_key !== 'purchase_'.$this->id.'_posting' || $persisted->status !== 'posted'
+                || ! app(PurchasePostingCommandBuilder::class)->build($company, $this, $number, $actor)->matchesBatch($persisted)) {
+                throw new ImmutableRecordException('Coherent canonical Purchase posting is required.');
+            }
+            $this->completingPost = true;
+            try {
+                $this->status = self::STATUS_POSTED;
+                $this->purchase_number = $number;
+                $this->posting_batch_id = $persisted->id;
+                $this->posted_at = now();
+                $this->posted_by = $actor->id;
+                $this->save();
+            } finally {
+                $this->completingPost = false;
+            }
+        });
     }
 
     public function setPurchaseDateAttribute(string $value): void
@@ -91,7 +126,12 @@ class Purchase extends Model
                 }
             }
             if (! $purchase->isDraft()) {
-                throw new ImmutableRecordException('Phase 5B permits Purchase drafts only.');
+                if (! $purchase->completingPost || $purchase->status !== self::STATUS_POSTED
+                    || array_diff(array_keys($purchase->getDirty()), ['status', 'purchase_number', 'posting_batch_id', 'posted_at', 'posted_by', 'updated_at']) !== []) {
+                    throw new ImmutableRecordException('Only canonical posting may finalize a persisted Purchase Draft.');
+                }
+
+                return;
             }
             foreach (self::RESERVED_FIELDS as $field) {
                 if ($purchase->getAttribute($field) !== null) {
@@ -138,6 +178,18 @@ class Purchase extends Model
     public function warehouse(): BelongsTo
     {
         return $this->belongsTo(Warehouse::class)->withTrashed();
+    }
+
+    /** @return BelongsTo<PostingBatch, $this> */
+    public function postingBatch(): BelongsTo
+    {
+        return $this->belongsTo(PostingBatch::class);
+    }
+
+    /** @return BelongsTo<User, $this> */
+    public function poster(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'posted_by');
     }
 
     /** @return HasMany<PurchaseLine, $this> */

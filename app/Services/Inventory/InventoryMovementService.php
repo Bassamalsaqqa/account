@@ -26,6 +26,8 @@ use App\Models\Product;
 use App\Models\ProductUnit;
 use App\Models\StockMovement;
 use App\Models\Warehouse;
+use App\Services\Purchasing\PurchaseReceiptIntent;
+use App\Services\Sales\SalesActorGuard;
 use App\Support\Tenancy\CompanyContext;
 use Brick\Math\BigDecimal;
 use Brick\Math\RoundingMode;
@@ -81,6 +83,11 @@ class InventoryMovementService
             if (! $authUser->hasPermissionTo('inventory.stock.adjust') || ! $authUser->hasPermissionTo('inventory.cost.view')) {
                 throw new AuthorizationException('User does not have permission to post opening stock.');
             }
+        } elseif ($command->movementType === StockMovement::TYPE_PURCHASE) {
+            DB::transaction(function () use ($command, $authUser): void {
+                app(SalesActorGuard::class)->lockAndAuthorize($command->companyId, $authUser, 'purchasing.purchase.post');
+                app(SalesActorGuard::class)->lockAndAuthorize($command->companyId, $authUser, 'purchasing.cost.view');
+            });
         } elseif ($command->movementType === StockMovement::TYPE_SALE) {
             if (! $authUser->hasPermissionTo($command->sourceType === 'sales_return_void' ? 'sales.return.void' : 'sales.invoice.post')) {
                 throw new AuthorizationException('User does not have permission to post sales invoice movements.');
@@ -107,6 +114,11 @@ class InventoryMovementService
                 if ($line->originalMovementId === null || $line->valueDeltaBase === null) {
                     throw new InvalidInventoryMovementException('Sales compensation requires an original immutable sale movement and exact historical value.');
                 }
+            } elseif ($command->movementType === StockMovement::TYPE_PURCHASE) {
+                if ($line->unitCostBase === null || $line->valueDeltaBase === null || $line->originalMovementId !== null
+                    || $command->sourceType !== 'purchase' || $command->sourceLineId === null) {
+                    throw new InvalidInventoryMovementException('Purchase receipts require explicit acquisition cost/value and Purchase line provenance.');
+                }
             } elseif ($line->originalMovementId !== null || $line->valueDeltaBase !== null) {
                 throw new InvalidInventoryMovementException('Ordinary inventory operations cannot override their calculated value or historical source.');
             }
@@ -128,6 +140,11 @@ class InventoryMovementService
 
             if (! $companyUser || $companyUser->status !== 'active') {
                 throw new InvalidInventoryMovementException("Actor [{$command->createdBy}] is not an active member of company [{$company->id}].");
+            }
+
+            if ($command->movementType === StockMovement::TYPE_PURCHASE) {
+                app(SalesActorGuard::class)->lockAndAuthorize((int) $company->id, auth()->user(), 'purchasing.purchase.post');
+                app(SalesActorGuard::class)->lockAndAuthorize((int) $company->id, auth()->user(), 'purchasing.cost.view');
             }
 
             // 3. Idempotency Check — authoritative operation identity & payload comparison
@@ -195,6 +212,10 @@ class InventoryMovementService
                 ->first();
             if ($legacyChild0 !== null && count($command->lines) === 1) {
                 throw new IdempotencyConflictException("Idempotency key [{$command->idempotencyKey}] was previously used with a different number of lines.");
+            }
+
+            if ($command->movementType === StockMovement::TYPE_PURCHASE) {
+                app(PurchaseReceiptIntent::class)->validate($command);
             }
 
             // 4. Gather and sort entity IDs for deadlock-free locking
@@ -309,6 +330,7 @@ class InventoryMovementService
                     StockMovement::TYPE_TRANSFER_IN,
                     StockMovement::TYPE_ADJUSTMENT_INCREASE,
                     StockMovement::TYPE_SALE_RETURN,
+                    StockMovement::TYPE_PURCHASE,
                 ], true);
 
                 $signedDeltaBase = $isInbound ? $quantityBase->toBigDecimal() : $quantityBase->toBigDecimal()->negated();
@@ -413,6 +435,8 @@ class InventoryMovementService
                             || ! $lineValDelta->isEqualTo(BigDecimal::of((string) $line->valueDeltaBase))) {
                             throw new InvalidInventoryMovementException('Historical compensation cost/value does not match the original sale allocation.');
                         }
+                    } elseif ($command->movementType === StockMovement::TYPE_PURCHASE) {
+                        $lineValDelta = BigDecimal::of($line->valueDeltaBase)->toScale(6);
                     } else {
                         $lineValDelta = $quantityBase->toBigDecimal()->multipliedBy($inUnitCost)->toScale(6, RoundingMode::HALF_UP);
                     }
@@ -661,7 +685,7 @@ class InventoryMovementService
             }
 
             // Cost comparison: inbound compares unit cost if explicit, or allows null for adjustment increase; outbound forbids command unit cost
-            $isInbound = in_array($command->movementType, [StockMovement::TYPE_OPENING_BALANCE, StockMovement::TYPE_ADJUSTMENT_INCREASE, StockMovement::TYPE_SALE_RETURN], true);
+            $isInbound = in_array($command->movementType, [StockMovement::TYPE_OPENING_BALANCE, StockMovement::TYPE_ADJUSTMENT_INCREASE, StockMovement::TYPE_SALE_RETURN, StockMovement::TYPE_PURCHASE], true);
             if ($isInbound) {
                 if ($cmdLine->unitCostBase !== null) {
                     $existingCost = BigDecimal::of((string) $m->unit_cost_base)->toScale(6, RoundingMode::HALF_UP);
@@ -686,7 +710,7 @@ class InventoryMovementService
                     throw new IdempotencyConflictException("Idempotency key [{$command->idempotencyKey}] was previously used with different lot assignment.");
                 }
             } else {
-                if ($cmdLine->lotNumber !== null || $cmdLine->expiryDate !== null) {
+                if ($cmdLine->lotNumber !== null || $cmdLine->expiryDate !== null || ($command->movementType === StockMovement::TYPE_PURCHASE && $m->lot_id !== null)) {
                     if ($m->lot_id === null) {
                         throw new IdempotencyConflictException("Idempotency key [{$command->idempotencyKey}] was previously used without a lot.");
                     }
@@ -711,6 +735,9 @@ class InventoryMovementService
             }
 
             // Reason comparison
+            if ($cmdLine->valueDeltaBase !== null && ! BigDecimal::of($m->value_delta_base)->isEqualTo($cmdLine->valueDeltaBase)) {
+                throw new IdempotencyConflictException('Exact acquisition value differs from the existing movement.');
+            }
             if ($m->reason !== $command->reason) {
                 throw new IdempotencyConflictException("Idempotency key [{$command->idempotencyKey}] was previously used with different reason.");
             }
