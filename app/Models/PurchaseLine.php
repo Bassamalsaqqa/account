@@ -178,4 +178,10 @@ class PurchaseLine extends Model
     {
         return $this->hasMany(PurchaseLineLot::class)->orderBy('id');
     }
+
+    /** @return HasMany<PurchaseReturnLine, $this> */
+    public function returnLines(): HasMany
+    {
+        return $this->hasMany(PurchaseReturnLine::class);
+    }
 }

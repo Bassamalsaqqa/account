@@ -1,6 +1,6 @@
 # ADR 0005: Purchasing, Vendors and Accounts Payable
 
-Status: Phases 5A/5B accepted; Phase 5C posting proposed for independent review.
+Status: Phases 5A/5B/5C accepted; Phase 5D purchase returns proposed for independent review.
 
 ## Context and checkpoints
 
@@ -184,11 +184,43 @@ financial functionality.
 - Returns, voids, Vendor payments/statements, PDFs/shares, landed costs, expenses
   and checks remain outside Phase 5C.
 
+## Phase 5D Purchase Returns decisions
+
+- Purchase Returns strictly require a coherently posted Purchase invoice.
+  Drafts carry no sequence consumption, stock effects, or accounting entries.
+  Number sequence PRT is allocated only inside the canonical POST transaction.
+- Returns inherit original currency, base currency, and saved exchange rate;
+  return exchange rates are immutable historical facts, not market settlements.
+- Commercial allocation derives attributable historical book components independently:
+  A = AP relief base, T = recoverable input tax relief, H = A - T (commercial inventory),
+  I = actual inventory carrying value removed, D = I - H (COGS valuation adjustment).
+  If D > 0: Dr COGS D / Cr Inventory D. If D < 0: Dr Inventory abs(D) / Cr COGS abs(D).
+  Net Inventory credit strictly equals I (the exact sum of movement values).
+- Zero-value returns (A=0, T=0, I=0, D=0) record canonical stock movements with posting_batch_id null.
+  Any nonzero financial effect requires a valid canonical posting batch.
+- Inventory issues use dedicated type `purchase_return` issued from the original receiving
+  warehouse and exact original receipt movements and lots.
+  Pure moving-average revaluation updates current company value: partial return requires
+  historical target <= old value; final depletion (newQty == 0) removes the exact old value,
+  clearing any accumulated fractional residual.
+- Expired vendor lots are returnable for `purchase_return` only; normal expiry checks remain
+  enforced for all other outbound operations.
+- Inactive stock products and inactive/soft-deleted original vendors are permitted for
+  corrective purchase returns provided company ownership, stock type, and provenance coherency hold.
+  The original receiving warehouse must remain active.
+- If the original historical input tax account is now inactive, or the original currency is disabled,
+  posting fails closed and rolls back atomically; no silent account rerouting or currency bypass.
+- Dedicated `recordPurchaseReturnIssue()` requires connection/PDO/transaction-bound
+  `PurchaseReturnPostingScope` and `PurchaseReturnIssueCapability`, owned exclusively by
+  `PostPurchaseReturnAction`.
+- Posted returns, lines, and allocations are immutable. No return void or reversal is supported.
+  Read models redact all sensitive cost and financial fields when `purchasing.cost.view` is absent.
+
 ## Verification
 
 Disposable local MariaDB is authoritative for tenant/RBAC, validation, role upgrade,
 Input Tax, Sales regressions, sequence preservation and migration round-trip tests.
 Arabic RTL and English LTR screens use existing responsive tokens and components.
-Phase 5C tests additionally verify exact receipt/GL equality, lot residuals,
+Phase 5C and 5D tests additionally verify exact receipt/GL equality, lot residuals,
 immutable provenance, authorization, idempotency and atomic rollback. Phase 5A/5B
 retain their configuration-only and side-effect-free Draft boundaries.

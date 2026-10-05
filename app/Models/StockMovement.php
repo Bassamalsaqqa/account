@@ -44,6 +44,8 @@ class StockMovement extends Model
 
     public const string TYPE_PURCHASE = 'purchase';
 
+    public const string TYPE_PURCHASE_RETURN = 'purchase_return';
+
     /**
      * @var list<string>
      */

@@ -16,9 +16,13 @@ use App\Models\LedgerAccount;
 use App\Models\PostingLine;
 use App\Models\Product;
 use App\Models\ProductUnit;
+use App\Models\PurchaseReturn;
 use App\Models\StockMovement;
 use App\Models\Unit;
 use App\Models\Warehouse;
+use App\Services\Purchasing\HistoricalPurchaseReceiptValue;
+use App\Services\Purchasing\PurchaseReturnStockProvenance;
+use App\Services\Purchasing\PurchaseReturnValuation;
 use App\Services\Purchasing\PurchaseStockProvenance;
 use App\Support\Tenancy\CompanyContext;
 use App\Support\Tenancy\CompanyScope;
@@ -371,45 +375,93 @@ class InventoryReconciliationService
                         $runningVal = $runningVal->plus($expectedValDelta);
                         $runningAvg = $runningQty->isZero() ? BigDecimal::zero() : $runningVal->dividedBy($runningQty, 6, RoundingMode::HALF_UP);
                     } else {
-                        // Outbound: unit_cost_base must snapshot pre-movement running average cost
-                        $outUnitCost = BigDecimal::of((string) $m->unit_cost_base);
-                        if (! $outUnitCost->isEqualTo($runningAvg)) {
-                            $historyCorruptions[] = "Movement [{$m->id}] for product [{$product->id}] outbound unit cost snapshot corrupt: stored [{$outUnitCost}] vs expected [{$runningAvg}].";
-                        }
-
                         $absDelta = $delta->abs();
                         if ($runningQty->isLessThan($absDelta)) {
                             $historyCorruptions[] = "Movement [{$m->id}] for product [{$product->id}] exceeds available company stock: requested [{$absDelta}] vs running [{$runningQty}].";
                         }
 
-                        if ($runningQty->isEqualTo($absDelta)) {
-                            // Full depletion: value delta MUST exactly negate previous running value so remaining value is exactly zero
-                            $expectedValDelta = $runningVal->negated()->toScale(6, RoundingMode::HALF_UP);
-                            if (! $valDeltaStored->isEqualTo($expectedValDelta)) {
-                                $historyCorruptions[] = "Movement [{$m->id}] for product [{$product->id}] full depletion value delta corrupt: stored [{$valDeltaStored}] vs expected [{$expectedValDelta}].";
-                            }
-                            $runningQty = BigDecimal::zero();
-                            $runningVal = BigDecimal::zero();
-                            $runningAvg = BigDecimal::zero();
-                        } elseif ($runningQty->isGreaterThan($absDelta)) {
-                            // Partial depletion: preserve moving average cost snapshot until zero quantity
-                            $outVal = $absDelta->multipliedBy($runningAvg)->toScale(6, RoundingMode::HALF_UP);
-                            if ($outVal->isGreaterThan($runningVal)) {
-                                $outVal = $runningVal;
-                            }
-                            $expectedValDelta = $outVal->negated();
+                        if ($m->movement_type === StockMovement::TYPE_PURCHASE_RETURN) {
+                            try {
+                                $original = StockMovement::withoutGlobalScopes()->where('company_id', $m->company_id)->find($m->reversal_of_id);
+                                if ($original === null || $original->movement_type !== StockMovement::TYPE_PURCHASE) {
+                                    throw new \InvalidArgumentException('Purchase return movement must reference original purchase movement.');
+                                }
+                                $expectedTarget = app(HistoricalPurchaseReceiptValue::class)->target(
+                                    (int) $m->company_id,
+                                    (int) $m->reversal_of_id,
+                                    $absDelta,
+                                    (int) $m->id
+                                );
+                                $valuation = PurchaseReturnValuation::compute(
+                                    $runningQty,
+                                    $runningVal,
+                                    $absDelta,
+                                    $expectedTarget
+                                );
+                                $expectedValDelta = $valuation->actualRemoved->negated();
+                                $expectedUnitCost = $valuation->actualRemoved->isZero()
+                                    ? BigDecimal::zero()
+                                    : $valuation->actualRemoved->dividedBy($absDelta, 6, RoundingMode::HALF_UP);
 
-                            if (! $valDeltaStored->isEqualTo($expectedValDelta)) {
-                                $historyCorruptions[] = "Movement [{$m->id}] for product [{$product->id}] partial depletion value delta corrupt: stored [{$valDeltaStored}] vs expected [{$expectedValDelta}].";
-                            }
+                                $outUnitCost = BigDecimal::of((string) $m->unit_cost_base);
+                                if (! $outUnitCost->isEqualTo($expectedUnitCost)) {
+                                    $historyCorruptions[] = "Movement [{$m->id}] for product [{$product->id}] purchase return unit cost snapshot corrupt: stored [{$outUnitCost}] vs expected [{$expectedUnitCost}].";
+                                }
+                                if (! $valDeltaStored->isEqualTo($expectedValDelta)) {
+                                    $historyCorruptions[] = "Movement [{$m->id}] for product [{$product->id}] purchase return value delta corrupt: stored [{$valDeltaStored}] vs expected [{$expectedValDelta}].";
+                                }
 
-                            $runningQty = $runningQty->minus($absDelta);
-                            $runningVal = $runningVal->plus($expectedValDelta);
+                                try {
+                                    app(PurchaseReturnStockProvenance::class)->value($m, true);
+                                } catch (\Throwable $provEx) {
+                                    $historyCorruptions[] = "Movement [{$m->id}] purchase return provenance corrupt: {$provEx->getMessage()}";
+                                }
+
+                                $runningQty = $valuation->newCompanyQty;
+                                $runningVal = $valuation->newCompanyVal;
+                                $runningAvg = $valuation->newCompanyAvg;
+                            } catch (\Throwable $exception) {
+                                $historyCorruptions[] = "Movement [{$m->id}] purchase return valuation corrupt: {$exception->getMessage()}";
+                                $runningQty = $runningQty->isGreaterThanOrEqualTo($absDelta) ? $runningQty->minus($absDelta) : BigDecimal::zero();
+                                $runningVal = $runningVal->isGreaterThanOrEqualTo($valDeltaStored->abs()) ? $runningVal->minus($valDeltaStored->abs()) : BigDecimal::zero();
+                                $runningAvg = $runningQty->isZero() ? BigDecimal::zero() : $runningVal->dividedBy($runningQty, 6, RoundingMode::HALF_UP);
+                            }
                         } else {
-                            // Outbound exceeds runningQty (already flagged as corruption above)
-                            $runningQty = BigDecimal::zero();
-                            $runningVal = BigDecimal::zero();
-                            $runningAvg = BigDecimal::zero();
+                            // Outbound: unit_cost_base must snapshot pre-movement running average cost
+                            $outUnitCost = BigDecimal::of((string) $m->unit_cost_base);
+                            if (! $outUnitCost->isEqualTo($runningAvg)) {
+                                $historyCorruptions[] = "Movement [{$m->id}] for product [{$product->id}] outbound unit cost snapshot corrupt: stored [{$outUnitCost}] vs expected [{$runningAvg}].";
+                            }
+
+                            if ($runningQty->isEqualTo($absDelta)) {
+                                // Full depletion: value delta MUST exactly negate previous running value so remaining value is exactly zero
+                                $expectedValDelta = $runningVal->negated()->toScale(6, RoundingMode::HALF_UP);
+                                if (! $valDeltaStored->isEqualTo($expectedValDelta)) {
+                                    $historyCorruptions[] = "Movement [{$m->id}] for product [{$product->id}] full depletion value delta corrupt: stored [{$valDeltaStored}] vs expected [{$expectedValDelta}].";
+                                }
+                                $runningQty = BigDecimal::zero();
+                                $runningVal = BigDecimal::zero();
+                                $runningAvg = BigDecimal::zero();
+                            } elseif ($runningQty->isGreaterThan($absDelta)) {
+                                // Partial depletion: preserve moving average cost snapshot until zero quantity
+                                $outVal = $absDelta->multipliedBy($runningAvg)->toScale(6, RoundingMode::HALF_UP);
+                                if ($outVal->isGreaterThan($runningVal)) {
+                                    $outVal = $runningVal;
+                                }
+                                $expectedValDelta = $outVal->negated();
+
+                                if (! $valDeltaStored->isEqualTo($expectedValDelta)) {
+                                    $historyCorruptions[] = "Movement [{$m->id}] for product [{$product->id}] partial depletion value delta corrupt: stored [{$valDeltaStored}] vs expected [{$expectedValDelta}].";
+                                }
+
+                                $runningQty = $runningQty->minus($absDelta);
+                                $runningVal = $runningVal->plus($expectedValDelta);
+                            } else {
+                                // Outbound exceeds runningQty (already flagged as corruption above)
+                                $runningQty = BigDecimal::zero();
+                                $runningVal = BigDecimal::zero();
+                                $runningAvg = BigDecimal::zero();
+                            }
                         }
                     }
 
@@ -511,6 +563,21 @@ class InventoryReconciliationService
                     if (! $outCost->isEqualTo($inCost)) {
                         $historyCorruptions[] = "Transfer operation [{$key}] out cost [{$outCost}] != in cost [{$inCost}].";
                     }
+                }
+            }
+
+            // Check I: Purchase return immutable provenance and document integrity audit
+            $postedReturns = PurchaseReturn::withoutGlobalScopes()
+                ->where('company_id', $companyId)
+                ->where('status', PurchaseReturn::STATUS_POSTED)
+                ->with(['lines.allocations'])
+                ->get();
+
+            foreach ($postedReturns as $pReturn) {
+                try {
+                    PurchaseReturnStockProvenance::validatePostedReturnIntegrity($pReturn);
+                } catch (\Throwable $e) {
+                    $historyCorruptions[] = "Purchase return [{$pReturn->id}] document or provenance corrupt: {$e->getMessage()}";
                 }
             }
 

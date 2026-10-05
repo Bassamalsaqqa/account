@@ -10,6 +10,7 @@ use App\Policies\CompanyUserPolicy;
 use App\Policies\RolePolicy;
 use App\Services\Audit\AuditService;
 use App\Services\Purchasing\PurchasePostingScope;
+use App\Services\Purchasing\PurchaseReturnPostingScope;
 use App\Support\Tenancy\CompanyContext;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\URL;
@@ -27,6 +28,7 @@ class AppServiceProvider extends ServiceProvider
         $this->app->singleton(CompanyContext::class, fn () => new CompanyContext);
         $this->app->singleton(AuditService::class, fn () => new AuditService);
         $this->app->scoped(PurchasePostingScope::class, fn () => new PurchasePostingScope);
+        $this->app->scoped(PurchaseReturnPostingScope::class, fn () => new PurchaseReturnPostingScope);
     }
 
     /**

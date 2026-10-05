@@ -49,6 +49,7 @@ final readonly class StockMovementCommand
             'sale',
             'sale_return',
             'purchase',
+            'purchase_return',
         ];
         if (! in_array($this->movementType, $allowed, true)) {
             throw new \InvalidArgumentException("Movement type [{$this->movementType}] is not a recognized Phase3 canonical type.");

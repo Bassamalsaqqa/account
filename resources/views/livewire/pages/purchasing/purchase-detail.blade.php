@@ -1,7 +1,10 @@
 <div class="space-y-5">
     <header class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div class="min-w-0"><a href="{{ route('purchases.index') }}" class="text-xs text-primary">{{ __('purchasing.purchases') }}</a><h1 class="text-2xl font-bold mt-1 break-words">{{ $document['purchase_number'] ?? __('purchasing.purchase_draft') }}</h1><p class="text-sm mt-1">{{ __('purchasing.'.$document['status']) }}</p></div>
-        @if($canEdit)<a href="{{ route('purchases.edit', $document['public_id']) }}" class="inline-flex h-11 items-center justify-center px-4 rounded-control bg-primary text-white text-sm font-bold">{{ __('purchasing.edit_purchase') }}</a>@endif
+        <div class="flex items-center gap-3">
+            @if($canCreateReturn)<a href="{{ route('purchase-returns.create', $document['public_id']) }}" class="inline-flex h-11 items-center justify-center px-4 rounded-control border border-border bg-surface text-sm font-bold hover:bg-surface-soft">{{ __('purchasing.create_purchase_return') }}</a>@endif
+            @if($canEdit)<a href="{{ route('purchases.edit', $document['public_id']) }}" class="inline-flex h-11 items-center justify-center px-4 rounded-control bg-primary text-white text-sm font-bold">{{ __('purchasing.edit_purchase') }}</a>@endif
+        </div>
     </header>
     @if($document['status'] === 'draft')<p class="p-3 rounded-control bg-info-bg text-info text-sm">{{ __('purchasing.draft_notice') }}</p>@else<p class="p-3 rounded-control bg-success-bg text-success text-sm">{{ __('purchasing.posted_notice') }} <bdi>{{ $document['posted_at'] }}</bdi></p>@endif
     @error('post')<p role="alert" class="p-3 bg-danger-bg text-danger rounded-control text-sm">{{ $message }}</p>@enderror
