@@ -31,4 +31,35 @@ trait AuthorizesPurchasingPages
             abort(403);
         }
     }
+
+    protected function authorizePaymentFinancialRead(): Company
+    {
+        abort_unless(auth()->check(), 403);
+        $context = app(CompanyContext::class);
+        if (! $context->hasCompany() || (int) $context->companyId() !== $this->pageCompanyId) {
+            abort(403);
+        }
+
+        $user = auth()->user();
+        if (! $user->fresh()?->belongsToCompany($this->pageCompanyId)) {
+            abort(403);
+        }
+
+        setPermissionsTeamId($this->pageCompanyId);
+        $user->unsetRelation('roles')->unsetRelation('permissions');
+        if (! $user->hasPermissionTo('purchasing.cost.view')) {
+            abort(403);
+        }
+
+        $hasAnyReadPerm = $user->hasPermissionTo('money.vendor_payment.create')
+            || $user->hasPermissionTo('money.vendor_payment.allocate')
+            || $user->hasPermissionTo('money.vendor_payment.reverse')
+            || $user->hasPermissionTo('vendors.statement.view');
+
+        if (! $hasAnyReadPerm) {
+            abort(403);
+        }
+
+        return $context->company();
+    }
 }

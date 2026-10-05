@@ -19,7 +19,16 @@
             @forelse($purchases as $purchase)
                 <tr wire:key="purchase-{{ $purchase->public_id }}"><td class="px-4 py-4"><bdi>{{ $purchase->purchase_date->format('Y-m-d') }}</bdi></td>
                     <td class="px-4 py-4"><a class="font-bold text-primary" href="{{ route('purchases.show', $purchase->public_id) }}">{{ $purchase->vendor->displayName() }}</a><p class="mt-1"><bdi>{{ $purchase->purchase_number ?? __('purchasing.draft') }}</bdi></p></td>
-                    <td class="px-4 py-4"><bdi>{{ $purchase->vendor_invoice_number ?? '—' }}</bdi></td><td class="px-4 py-4">{{ __('purchasing.'.$purchase->status) }}</td><td class="px-4 py-4"><bdi>{{ $purchase->currency_code }}</bdi></td>
+                    <td class="px-4 py-4"><bdi>{{ $purchase->vendor_invoice_number ?? '—' }}</bdi></td>
+                    <td class="px-4 py-4">
+                        <div>{{ __('purchasing.'.$purchase->status) }}</div>
+                        @if($withCost && $purchase->isPosted() && isset($payablePositions[$purchase->id]))
+                            <span class="inline-block mt-1 px-2 py-0.5 rounded-full text-[10px] font-bold {{ $payablePositions[$purchase->id]->status === 'settled' ? 'bg-success-bg text-success' : ($payablePositions[$purchase->id]->status === 'partially_paid' ? 'bg-warning-bg text-warning' : ($payablePositions[$purchase->id]->status === 'credit' ? 'bg-info-bg text-info' : 'bg-surface-soft text-text-secondary')) }}">
+                                {{ __('purchasing.'.$payablePositions[$purchase->id]->status) }}
+                            </span>
+                        @endif
+                    </td>
+                    <td class="px-4 py-4"><bdi>{{ $purchase->currency_code }}</bdi></td>
                     @if($withCost)<td class="px-4 py-4"><bdi>{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::format($purchase->grand_total_currency, $purchase->currency_code) }}</bdi></td>@endif
                 </tr>
             @empty<tr><td colspan="6" class="p-8 text-center text-text-secondary">{{ __('purchasing.no_purchases') }}</td></tr>@endforelse
@@ -28,7 +37,17 @@
         <div class="md:hidden divide-y divide-border">
             @forelse($purchases as $purchase)
                 <article class="p-4 space-y-3" wire:key="purchase-mobile-{{ $purchase->public_id }}">
-                    <div class="flex justify-between gap-3"><a href="{{ route('purchases.show', $purchase->public_id) }}" class="font-bold text-primary text-sm">{{ $purchase->vendor->displayName() }}</a><span class="text-xs">{{ __('purchasing.'.$purchase->status) }}</span></div>
+                    <div class="flex justify-between gap-3">
+                        <a href="{{ route('purchases.show', $purchase->public_id) }}" class="font-bold text-primary text-sm">{{ $purchase->vendor->displayName() }}</a>
+                        <div class="text-end">
+                            <span class="text-xs">{{ __('purchasing.'.$purchase->status) }}</span>
+                            @if($withCost && $purchase->isPosted() && isset($payablePositions[$purchase->id]))
+                                <span class="inline-block px-1.5 py-0.5 rounded-full text-[10px] font-bold {{ $payablePositions[$purchase->id]->status === 'settled' ? 'bg-success-bg text-success' : ($payablePositions[$purchase->id]->status === 'partially_paid' ? 'bg-warning-bg text-warning' : ($payablePositions[$purchase->id]->status === 'credit' ? 'bg-info-bg text-info' : 'bg-surface-soft text-text-secondary')) }}">
+                                    {{ __('purchasing.'.$payablePositions[$purchase->id]->status) }}
+                                </span>
+                            @endif
+                        </div>
+                    </div>
                     <dl class="grid grid-cols-2 gap-3 text-xs">
                         <div><dt class="text-text-secondary">{{ __('purchasing.purchase_number') }}</dt><dd><bdi>{{ $purchase->purchase_number ?? __('purchasing.draft') }}</bdi></dd></div>
                         <div><dt class="text-text-secondary">{{ __('purchasing.purchase_date') }}</dt><dd><bdi>{{ $purchase->purchase_date->format('Y-m-d') }}</bdi></dd></div>

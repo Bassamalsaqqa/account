@@ -216,11 +216,47 @@ financial functionality.
 - Posted returns, lines, and allocations are immutable. No return void or reversal is supported.
   Read models redact all sensitive cost and financial fields when `purchasing.cost.view` is absent.
 
+## Phase 5E Vendor Payments and Accounts Payable decisions
+
+- Vendor Payments use active same-company MoneyAccounts (Cash/Bank) under canonical
+  cash_control/bank_control parent accounts. Cheques and cross-currency allocations are Phase 6.
+- No mutable vendor balance, purchase paid_amount, or payment_status columns exist.
+  Purchase payable positions (`outstanding`, `credit`, `settled`, `partially_paid`, `unpaid`)
+  and Vendor balances derive purely from posted invoices, posted returns, and active allocations.
+- Historical AP relief uses cumulative residual tracking (`PayableBookValue` and `PayableReliefHistory`).
+  Payment settlement residual tracks exact conversion; difference S - B is realized FX
+  (delta > 0: FX Loss, delta < 0: FX Gain; opposite sign of Accounts Receivable).
+- Unallocated payment balances remain as debit AP vendor advances at payment-date rate;
+  later applications append immutable `VendorPaymentApplicationEvent` and `VendorPaymentAllocation`
+  records without a second cash movement; zero-FX applications complete with null posting batch.
+- Request-scoped runtime authority (`VendorPaymentPostingScope`, `VendorPaymentApplicationScope`)
+  binds exact tenant, actor, models, DB connection/PDO, and transaction record.
+  Provisional constructors, initial allocation append, and lifecycle completion require active capability.
+- Coherent reversal in one atomic transaction reverses dependent application events newest to oldest,
+  then original payment batch via `AccountingReversalService`; inactive/soft-deleted entities do not block reversal.
+- Historical validation reconstructs complete canonical posting commands, including
+  transaction metadata and same-AP-account base residuals. Original Payment batches
+  use initial allocations only; application batches are independently reconstructed.
+  Persisted accounting boundaries and allocation append order preserve old relief
+  after later Returns, applications, and reversals. Corrupt history is never repaired.
+- Reversal completion requires a separate live `VendorPaymentReversalScope` capability.
+  Its prepared event order binds each dependent reversal and the final Payment
+  reversal to the same outer transaction, including applications without a GL batch.
+- An inactive/soft-deleted Vendor may receive a fully allocated historical settlement,
+  but no new advance. MoneyAccount balances remain ledger-derived; Phase 5E adds no
+  insufficient-funds or overdraft restriction.
+- Purchase-Return-created Vendor credit is visible in balances, statements, and net
+  aging position. It is not automatically allocated to another Purchase; only
+  unallocated Vendor Payment advances have an explicit application workflow.
+- Centralized financial read authorization requires `purchasing.cost.view` AND at least one of
+  (`money.vendor_payment.create`, `allocate`, `reverse`, `vendors.statement.view`).
+  Sensitive financial fields are redacted on the server; CSS hiding is prohibited.
+
 ## Verification
 
 Disposable local MariaDB is authoritative for tenant/RBAC, validation, role upgrade,
 Input Tax, Sales regressions, sequence preservation and migration round-trip tests.
 Arabic RTL and English LTR screens use existing responsive tokens and components.
-Phase 5C and 5D tests additionally verify exact receipt/GL equality, lot residuals,
-immutable provenance, authorization, idempotency and atomic rollback. Phase 5A/5B
-retain their configuration-only and side-effect-free Draft boundaries.
+Phase 5C, 5D, and 5E tests additionally verify exact receipt/GL equality, lot residuals,
+immutable provenance, authorization, idempotency, AP book relief, realized FX, and atomic rollback.
+Phase 5A/5B retain their configuration-only and side-effect-free Draft boundaries.

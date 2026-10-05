@@ -17,6 +17,9 @@ use App\Livewire\Pages\Inventory\StockTransferForm;
 use App\Livewire\Pages\Products\ProductDetail;
 use App\Livewire\Pages\Products\ProductForm;
 use App\Livewire\Pages\Products\ProductIndex;
+use App\Livewire\Pages\Purchasing\PaymentDetail as VendorPaymentDetail;
+use App\Livewire\Pages\Purchasing\PaymentForm as VendorPaymentForm;
+use App\Livewire\Pages\Purchasing\PaymentIndex as VendorPaymentIndex;
 use App\Livewire\Pages\Purchasing\PurchaseDetail;
 use App\Livewire\Pages\Purchasing\PurchaseForm;
 use App\Livewire\Pages\Purchasing\PurchaseIndex;
@@ -184,6 +187,11 @@ Route::middleware(['auth'])->group(function () {
         Route::get('vendors/create', VendorForm::class)->name('vendors.create');
         Route::get('vendors/{publicId}/edit', VendorForm::class)->name('vendors.edit');
         Route::get('vendors/{publicId}', VendorDetail::class)->name('vendors.show');
+
+        // Phase 5E Vendor Payments
+        Route::get('vendor-payments', VendorPaymentIndex::class)->name('vendor-payments.index');
+        Route::get('vendor-payments/create', VendorPaymentForm::class)->name('vendor-payments.create');
+        Route::get('vendor-payments/{publicId}', VendorPaymentDetail::class)->name('vendor-payments.show');
 
         // Phase 4 PDFs
         Route::get('pdf/quotation/{publicId}', [PdfDocumentController::class, 'quotation'])->name('pdf.quotation');

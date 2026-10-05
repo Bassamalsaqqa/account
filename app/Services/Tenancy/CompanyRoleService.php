@@ -83,6 +83,8 @@ class CompanyRoleService
         'money.receipt.allocate',
         'money.receipt.reverse',
         'money.vendor_payment.create',
+        'money.vendor_payment.allocate',
+        'money.vendor_payment.reverse',
         'money.check.manage',
         'money.expense.manage',
 
@@ -181,7 +183,7 @@ class CompanyRoleService
             'customers.view', 'customers.manage', 'customers.statement.view',
             'vendors.view', 'vendors.manage', 'vendors.statement.view',
             'money.cash.view', 'money.bank.view', 'money.receipt.view', 'money.receipt.create', 'money.receipt.allocate', 'money.receipt.reverse',
-            'money.vendor_payment.create', 'money.check.manage', 'money.expense.manage',
+            'money.vendor_payment.create', 'money.vendor_payment.allocate', 'money.vendor_payment.reverse', 'money.check.manage', 'money.expense.manage',
             'reports.sales.view', 'reports.profit.view', 'reports.cost.view', 'reports.financial.view', 'reports.tax.view',
         ];
         $managerRole = Role::firstOrCreate([
@@ -220,6 +222,8 @@ class CompanyRoleService
             'vendors.view', 'vendors.manage', 'vendors.statement.view',
             'inventory.stock.view',
             'money.vendor_payment.create',
+            'money.vendor_payment.allocate',
+            'money.vendor_payment.reverse',
         ];
         $purchasingRole = Role::firstOrCreate([
             'company_id' => $company->id,

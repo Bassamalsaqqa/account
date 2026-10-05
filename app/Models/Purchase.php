@@ -7,9 +7,11 @@ namespace App\Models;
 use App\Domain\Accounting\Exceptions\ImmutableRecordException;
 use App\Domain\Money\ValueObjects\MoneyAmount;
 use App\Services\Purchasing\PurchaseDocumentRules;
+use App\Services\Purchasing\PurchasePayablePosition;
 use App\Services\Purchasing\PurchasePostingCommandBuilder;
 use App\Services\Sales\SalesActorGuard;
 use App\Support\Tenancy\BelongsToCompany;
+use Brick\Math\BigDecimal;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -211,5 +213,26 @@ class Purchase extends Model
     public function returns(): HasMany
     {
         return $this->hasMany(PurchaseReturn::class)->orderBy('id');
+    }
+
+    /** @return HasMany<VendorPaymentAllocation, $this> */
+    public function paymentAllocations(): HasMany
+    {
+        return $this->hasMany(VendorPaymentAllocation::class);
+    }
+
+    public function payablePosition(): PurchasePayablePosition
+    {
+        return PurchasePayablePosition::forPurchase($this);
+    }
+
+    public function calculateOutstanding(): BigDecimal
+    {
+        return $this->payablePosition()->outstanding;
+    }
+
+    public function derivedPaymentStatus(): string
+    {
+        return $this->payablePosition()->status;
     }
 }

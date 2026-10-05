@@ -9,6 +9,7 @@ use App\Support\Tenancy\BelongsToCompany;
 use App\Support\Tenancy\CompanyContext;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Validator;
@@ -158,5 +159,21 @@ class Vendor extends Model
     public function updater(): BelongsTo
     {
         return $this->belongsTo(User::class, 'updated_by');
+    }
+
+    /**
+     * @return HasMany<Purchase, $this>
+     */
+    public function purchases(): HasMany
+    {
+        return $this->hasMany(Purchase::class);
+    }
+
+    /**
+     * @return HasMany<VendorPayment, $this>
+     */
+    public function payments(): HasMany
+    {
+        return $this->hasMany(VendorPayment::class);
     }
 }

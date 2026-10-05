@@ -23,6 +23,7 @@ return [
     'nav_group_purchasing_inventory' => 'Purchasing & Inventory',
     'nav_purchase_invoices' => 'Purchase Invoices',
     'nav_purchase_returns' => 'Purchase Returns',
+    'nav_vendor_payments' => 'Vendor Payments',
     'nav_vendors' => 'Vendors',
     'nav_products' => 'Product Catalog',
     'nav_inventory_overview' => 'Inventory Overview',
