@@ -163,6 +163,11 @@ class Purchase extends Model
         return $this->status === self::STATUS_DRAFT;
     }
 
+    public function isPosted(): bool
+    {
+        return $this->status === self::STATUS_POSTED;
+    }
+
     public function assertMutableDraft(): void
     {
         // Read persisted lifecycle rather than trusting a stale or caller-modified model.
@@ -200,5 +205,11 @@ class Purchase extends Model
     public function lines(): HasMany
     {
         return $this->hasMany(PurchaseLine::class)->orderBy('line_number');
+    }
+
+    /** @return HasMany<PurchaseReturn, $this> */
+    public function returns(): HasMany
+    {
+        return $this->hasMany(PurchaseReturn::class)->orderBy('id');
     }
 }

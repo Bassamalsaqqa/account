@@ -44,6 +44,7 @@ class PurchaseDetail extends Component
             'document' => app(PurchaseReadModel::class)->detail($purchase, $withCost), 'withCost' => $withCost,
             'canEdit' => $purchase->isDraft() && $withCost && auth()->user()->hasPermissionTo('purchasing.purchase.edit_draft'),
             'canPost' => $purchase->isDraft() && $withCost && auth()->user()->hasPermissionTo('purchasing.purchase.post'),
+            'canCreateReturn' => $purchase->isPosted() && $withCost && auth()->user()->hasPermissionTo('purchasing.return.manage'),
             'duplicateWarning' => app(DuplicateVendorInvoice::class)->exists($company->id, $purchase->vendor_id, $purchase->vendor_invoice_number, $purchase->id),
         ]);
     }

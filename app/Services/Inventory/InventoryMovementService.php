@@ -26,9 +26,13 @@ use App\Models\Product;
 use App\Models\ProductUnit;
 use App\Models\StockMovement;
 use App\Models\Warehouse;
+use App\Services\Purchasing\HistoricalPurchaseReceiptValue;
 use App\Services\Purchasing\PurchasePostingScope;
 use App\Services\Purchasing\PurchaseReceiptCapability;
 use App\Services\Purchasing\PurchaseReceiptIntent;
+use App\Services\Purchasing\PurchaseReturnIssueCapability;
+use App\Services\Purchasing\PurchaseReturnPostingScope;
+use App\Services\Purchasing\PurchaseReturnValuation;
 use App\Services\Sales\SalesActorGuard;
 use App\Support\Tenancy\CompanyContext;
 use Brick\Math\BigDecimal;
@@ -63,6 +67,27 @@ class InventoryMovementService
         if ($command->movementType === StockMovement::TYPE_PURCHASE) {
             throw new InvalidInventoryMovementException('Purchase receipts must be recorded by canonical Purchase posting inside its outer transaction.');
         }
+        if ($command->movementType === StockMovement::TYPE_PURCHASE_RETURN) {
+            throw new InvalidInventoryMovementException('Purchase returns must be recorded by canonical Purchase Return posting inside its outer transaction.');
+        }
+
+        return $this->recordMovement($command);
+    }
+
+    /**
+     * Purchase Return posting only: the caller owns the stock + accounting transaction.
+     *
+     * @return list<StockMovement>
+     */
+    public function recordPurchaseReturnIssue(StockMovementCommand $command, ?PurchaseReturnIssueCapability $capability = null): array
+    {
+        if ($command->movementType !== StockMovement::TYPE_PURCHASE_RETURN) {
+            throw new InvalidInventoryMovementException('The Purchase Return issue entrypoint accepts only Purchase Return movements.');
+        }
+        if (DB::transactionLevel() === 0) {
+            throw new InvalidInventoryMovementException('Purchase return issues require an existing outer Purchase Return posting transaction.');
+        }
+        app(PurchaseReturnPostingScope::class)->assertIssue($command, $capability);
 
         return $this->recordMovement($command);
     }
@@ -118,6 +143,11 @@ class InventoryMovementService
                 app(SalesActorGuard::class)->lockAndAuthorize($command->companyId, $authUser, 'purchasing.purchase.post');
                 app(SalesActorGuard::class)->lockAndAuthorize($command->companyId, $authUser, 'purchasing.cost.view');
             });
+        } elseif ($command->movementType === StockMovement::TYPE_PURCHASE_RETURN) {
+            DB::transaction(function () use ($command, $authUser): void {
+                app(SalesActorGuard::class)->lockAndAuthorize($command->companyId, $authUser, 'purchasing.return.manage');
+                app(SalesActorGuard::class)->lockAndAuthorize($command->companyId, $authUser, 'purchasing.cost.view');
+            });
         } elseif ($command->movementType === StockMovement::TYPE_SALE) {
             if (! $authUser->hasPermissionTo($command->sourceType === 'sales_return_void' ? 'sales.return.void' : 'sales.invoice.post')) {
                 throw new AuthorizationException('User does not have permission to post sales invoice movements.');
@@ -149,6 +179,11 @@ class InventoryMovementService
                     || $command->sourceType !== 'purchase' || $command->sourceLineId === null) {
                     throw new InvalidInventoryMovementException('Purchase receipts require explicit acquisition cost/value and Purchase line provenance.');
                 }
+            } elseif ($command->movementType === StockMovement::TYPE_PURCHASE_RETURN) {
+                if ($line->originalMovementId === null || $line->valueDeltaBase !== null
+                    || $command->sourceType !== 'purchase_return' || $command->sourceLineId === null) {
+                    throw new InvalidInventoryMovementException('Purchase return issue requires original receipt movement provenance.');
+                }
             } elseif ($line->originalMovementId !== null || $line->valueDeltaBase !== null) {
                 throw new InvalidInventoryMovementException('Ordinary inventory operations cannot override their calculated value or historical source.');
             }
@@ -174,6 +209,9 @@ class InventoryMovementService
 
             if ($command->movementType === StockMovement::TYPE_PURCHASE) {
                 app(SalesActorGuard::class)->lockAndAuthorize((int) $company->id, auth()->user(), 'purchasing.purchase.post');
+                app(SalesActorGuard::class)->lockAndAuthorize((int) $company->id, auth()->user(), 'purchasing.cost.view');
+            } elseif ($command->movementType === StockMovement::TYPE_PURCHASE_RETURN) {
+                app(SalesActorGuard::class)->lockAndAuthorize((int) $company->id, auth()->user(), 'purchasing.return.manage');
                 app(SalesActorGuard::class)->lockAndAuthorize((int) $company->id, auth()->user(), 'purchasing.cost.view');
             }
 
@@ -266,7 +304,7 @@ class InventoryMovementService
             }
 
             foreach ($lockedProducts as $prod) {
-                if (! $prod->active) {
+                if (! $prod->active && $command->movementType !== StockMovement::TYPE_PURCHASE_RETURN) {
                     throw InvalidInventoryMovementException::inactiveProduct($prod->id);
                 }
                 if (! $prod->track_stock || $prod->product_type !== Product::TYPE_STOCK) {
@@ -488,27 +526,58 @@ class InventoryMovementService
                         );
                     }
 
-                    $movementUnitCost = $oldCompanyAvg;
-                    $newCompanyQty = $oldCompanyQty->minus($quantityBase->toBigDecimal());
-
-                    if ($newCompanyQty->isZero()) {
-                        // Full depletion: movement value equals exact remaining value in cost state
-                        // This prevents GL residual from rounding (qty * avg may differ from cached value)
-                        $movementValueDelta = $oldCompanyVal->negated();
-                        $newCompanyVal = BigDecimal::zero();
-                        $newCompanyAvg = BigDecimal::zero();
-                        $movementUnitCost = $oldCompanyAvg;
-                    } else {
-                        // Partial depletion: preserve moving average cost snapshot until zero quantity
-                        // Never produce negative remaining value
-                        $outVal = $quantityBase->toBigDecimal()->multipliedBy($oldCompanyAvg)->toScale(6, RoundingMode::HALF_UP);
-                        if ($outVal->isGreaterThan($oldCompanyVal)) {
-                            $outVal = $oldCompanyVal;
+                    if ($command->movementType === StockMovement::TYPE_PURCHASE_RETURN) {
+                        if ($line->originalMovementId === null) {
+                            throw new InvalidInventoryMovementException('Purchase return movement requires an original receipt movement ID.');
                         }
-                        $movementValueDelta = $outVal->negated();
-                        $newCompanyVal = $oldCompanyVal->minus($outVal);
-                        $newCompanyAvg = $oldCompanyAvg;
+                        $historicalTarget = app(HistoricalPurchaseReceiptValue::class)->target(
+                            companyId: (int) $company->id,
+                            originalMovementId: (int) $line->originalMovementId,
+                            requestedBaseQty: $quantityBase->toBigDecimal(),
+                            beforeMovementId: null,
+                            expectedPurchaseId: null,
+                            expectedPurchaseLineId: null,
+                            expectedProductId: (int) $product->id,
+                            expectedWarehouseId: (int) $warehouse->id,
+                            expectedLotId: $lotId
+                        );
+
+                        $valuation = PurchaseReturnValuation::compute(
+                            $oldCompanyQty,
+                            $oldCompanyVal,
+                            $quantityBase->toBigDecimal(),
+                            $historicalTarget
+                        );
+                        $newCompanyQty = $valuation->newCompanyQty;
+                        $newCompanyVal = $valuation->newCompanyVal;
+                        $newCompanyAvg = $valuation->newCompanyAvg;
+                        $movementValueDelta = $valuation->actualRemoved->negated();
+                        $movementUnitCost = $valuation->actualRemoved->isZero()
+                            ? BigDecimal::zero()
+                            : $valuation->actualRemoved->dividedBy($quantityBase->toBigDecimal(), 6, RoundingMode::HALF_UP);
+                    } else {
                         $movementUnitCost = $oldCompanyAvg;
+                        $newCompanyQty = $oldCompanyQty->minus($quantityBase->toBigDecimal());
+
+                        if ($newCompanyQty->isZero()) {
+                            // Full depletion: movement value equals exact remaining value in cost state
+                            // This prevents GL residual from rounding (qty * avg may differ from cached value)
+                            $movementValueDelta = $oldCompanyVal->negated();
+                            $newCompanyVal = BigDecimal::zero();
+                            $newCompanyAvg = BigDecimal::zero();
+                            $movementUnitCost = $oldCompanyAvg;
+                        } else {
+                            // Partial depletion: preserve moving average cost snapshot until zero quantity
+                            // Never produce negative remaining value
+                            $outVal = $quantityBase->toBigDecimal()->multipliedBy($oldCompanyAvg)->toScale(6, RoundingMode::HALF_UP);
+                            if ($outVal->isGreaterThan($oldCompanyVal)) {
+                                $outVal = $oldCompanyVal;
+                            }
+                            $movementValueDelta = $outVal->negated();
+                            $newCompanyVal = $oldCompanyVal->minus($outVal);
+                            $newCompanyAvg = $oldCompanyAvg;
+                            $movementUnitCost = $oldCompanyAvg;
+                        }
                     }
                 }
 
@@ -615,7 +684,8 @@ class InventoryMovementService
                 }
             } else {
                 // Normal outbound stock issue excludes expired lots
-                if ($lotExpiry !== null && $lotExpiry < $movementDate) {
+                if ($command->movementType !== StockMovement::TYPE_PURCHASE_RETURN
+                    && $lotExpiry !== null && $lotExpiry < $movementDate) {
                     throw new InvalidInventoryMovementException(
                         "Lot [{$lot->id}] has expired as of [{$movementDate}] (expiry: [{$lotExpiry}]) and cannot be consumed for regular operations."
                     );
@@ -698,6 +768,10 @@ class InventoryMovementService
 
             if ((int) ($m->source_line_id ?? 0) !== (int) ($command->sourceLineId ?? 0)) {
                 throw new IdempotencyConflictException("Idempotency key [{$command->idempotencyKey}] was previously used with different source line ID.");
+            }
+
+            if ((int) ($m->reversal_of_id ?? 0) !== (int) ($cmdLine->originalMovementId ?? 0)) {
+                throw new IdempotencyConflictException("Idempotency key [{$command->idempotencyKey}] was previously used with different original movement ID.");
             }
 
             // Unit comparison

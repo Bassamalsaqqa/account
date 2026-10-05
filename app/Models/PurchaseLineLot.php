@@ -13,6 +13,7 @@ use App\Support\Tenancy\BelongsToCompany;
 use Brick\Math\BigDecimal;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -137,5 +138,17 @@ class PurchaseLineLot extends Model
     public function purchaseLine(): BelongsTo
     {
         return $this->belongsTo(PurchaseLine::class);
+    }
+
+    /** @return BelongsTo<InventoryLot, $this> */
+    public function inventoryLot(): BelongsTo
+    {
+        return $this->belongsTo(InventoryLot::class, 'created_inventory_lot_id');
+    }
+
+    /** @return HasMany<PurchaseReturnAllocation, $this> */
+    public function returnAllocations(): HasMany
+    {
+        return $this->hasMany(PurchaseReturnAllocation::class);
     }
 }

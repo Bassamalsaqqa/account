@@ -11,6 +11,9 @@ use App\Models\InventoryCostState;
 use App\Models\InventoryLotBalance;
 use App\Models\Product;
 use App\Models\StockMovement;
+use App\Services\Purchasing\HistoricalPurchaseReceiptValue;
+use App\Services\Purchasing\PurchaseReturnStockProvenance;
+use App\Services\Purchasing\PurchaseReturnValuation;
 use App\Services\Purchasing\PurchaseStockProvenance;
 use App\Support\Tenancy\CompanyContext;
 use App\Support\Tenancy\CompanyScope;
@@ -208,16 +211,44 @@ class InventoryRebuildService
                             $runningAvg = $runningQty->isZero() ? BigDecimal::zero() : $runningVal->dividedBy($runningQty, 6, RoundingMode::HALF_UP);
                         } elseif ($delta->isNegative()) {
                             $absDelta = $delta->abs();
-                            $runningQty = $runningQty->minus($absDelta);
-                            if ($runningQty->isZero()) {
-                                // Full depletion: reset value and average to 0 (GL residual elimination policy)
-                                $runningVal = BigDecimal::zero();
-                                $runningAvg = BigDecimal::zero();
+                            if ($m->movement_type === StockMovement::TYPE_PURCHASE_RETURN) {
+                                try {
+                                    $expectedTarget = app(HistoricalPurchaseReceiptValue::class)->target(
+                                        (int) $m->company_id,
+                                        (int) $m->reversal_of_id,
+                                        $absDelta,
+                                        (int) $m->id
+                                    );
+                                    $valuation = PurchaseReturnValuation::compute(
+                                        $runningQty,
+                                        $runningVal,
+                                        $absDelta,
+                                        $expectedTarget
+                                    );
+                                    if (! BigDecimal::of((string) $m->value_delta_base)->isEqualTo($valuation->actualRemoved->negated())) {
+                                        throw new RuntimeException("Corrupted movement value for purchase return [{$m->id}].");
+                                    }
+
+                                    app(PurchaseReturnStockProvenance::class)->value($m, true);
+
+                                    $runningQty = $valuation->newCompanyQty;
+                                    $runningVal = $valuation->newCompanyVal;
+                                    $runningAvg = $valuation->newCompanyAvg;
+                                } catch (\Throwable $exception) {
+                                    throw new RuntimeException("Corrupted purchase return history [{$m->id}]: {$exception->getMessage()}", previous: $exception);
+                                }
                             } else {
-                                // Use snapshotted value_delta_base (not recomputed avg * qty)
-                                // This ensures replay exactly matches the live engine including residual elimination
-                                $lineVal = BigDecimal::of((string) $m->value_delta_base);
-                                $runningVal = $runningVal->plus($lineVal);
+                                $runningQty = $runningQty->minus($absDelta);
+                                if ($runningQty->isZero()) {
+                                    // Full depletion: reset value and average to 0 (GL residual elimination policy)
+                                    $runningVal = BigDecimal::zero();
+                                    $runningAvg = BigDecimal::zero();
+                                } else {
+                                    // Use snapshotted value_delta_base (not recomputed avg * qty)
+                                    // This ensures replay exactly matches the live engine including residual elimination
+                                    $lineVal = BigDecimal::of((string) $m->value_delta_base);
+                                    $runningVal = $runningVal->plus($lineVal);
+                                }
                             }
                         }
                     }

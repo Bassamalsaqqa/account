@@ -20,6 +20,9 @@ use App\Livewire\Pages\Products\ProductIndex;
 use App\Livewire\Pages\Purchasing\PurchaseDetail;
 use App\Livewire\Pages\Purchasing\PurchaseForm;
 use App\Livewire\Pages\Purchasing\PurchaseIndex;
+use App\Livewire\Pages\Purchasing\PurchaseReturnDetail;
+use App\Livewire\Pages\Purchasing\PurchaseReturnForm;
+use App\Livewire\Pages\Purchasing\PurchaseReturnIndex;
 use App\Livewire\Pages\Purchasing\Settings\PurchaseSettingsForm;
 use App\Livewire\Pages\Purchasing\VendorDetail;
 use App\Livewire\Pages\Purchasing\VendorForm;
@@ -170,6 +173,12 @@ Route::middleware(['auth'])->group(function () {
         Route::get('purchases/create', PurchaseForm::class)->name('purchases.create');
         Route::get('purchases/{publicId}/edit', PurchaseForm::class)->name('purchases.edit');
         Route::get('purchases/{publicId}', PurchaseDetail::class)->name('purchases.show');
+
+        // Phase 5D Purchase Returns
+        Route::get('purchases/{publicId}/returns/create', PurchaseReturnForm::class)->name('purchase-returns.create');
+        Route::get('purchase-returns', PurchaseReturnIndex::class)->name('purchase-returns.index');
+        Route::get('purchase-returns/{publicId}', PurchaseReturnDetail::class)->name('purchase-returns.show');
+        Route::get('purchase-returns/{publicId}/edit', PurchaseReturnForm::class)->name('purchase-returns.edit');
 
         Route::get('vendors', VendorIndex::class)->name('vendors.index');
         Route::get('vendors/create', VendorForm::class)->name('vendors.create');

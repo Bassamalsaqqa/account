@@ -22,6 +22,7 @@ return [
     'nav_customers' => 'دليل العملاء',
     'nav_group_purchasing_inventory' => 'المشتريات والمخزون',
     'nav_purchase_invoices' => 'فواتير الشراء',
+    'nav_purchase_returns' => 'مردودات المشتريات',
     'nav_vendors' => 'الموردين',
     'nav_products' => 'دليل الأصناف',
     'nav_inventory_overview' => 'إدارة المخزون',

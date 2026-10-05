@@ -160,6 +160,12 @@
                             <span>{{ __('app.nav_purchase_invoices') }}</span>
                         </div>
                     </a>
+                    <a href="{{ route('purchase-returns.index') }}" class="flex items-center justify-between h-[38px] px-3 rounded-control text-text-secondary hover:bg-surface-soft hover:text-text-primary font-semibold {{ request()->routeIs('purchase-returns.*') ? 'bg-primary-50 text-primary!' : '' }}">
+                        <div class="flex items-center gap-2.5">
+                            <x-icon name="history" class="w-4.5 h-4.5" />
+                            <span>{{ __('app.nav_purchase_returns') }}</span>
+                        </div>
+                    </a>
                     @endcan
                     @can('vendors.view')
                     <a href="{{ route('vendors.index') }}"
