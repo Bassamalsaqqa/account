@@ -39,7 +39,7 @@ class PurchaseDetail extends Component
         $company = $this->authorizePurchasing('purchasing.purchase.view');
         $purchase = Purchase::where('company_id', $company->id)->where('public_id', $this->publicId)->firstOrFail();
         $withCost = auth()->user()->hasPermissionTo('purchasing.cost.view');
-        $payablePosition = ($withCost && $purchase->isPosted()) ? $purchase->payablePosition() : null;
+        $payablePosition = ($this->canReadVendorFinancials() && $purchase->isPosted()) ? $purchase->payablePosition() : null;
 
         return view('livewire.pages.purchasing.purchase-detail', [
             'document' => app(PurchaseReadModel::class)->detail($purchase, $withCost),

@@ -78,7 +78,7 @@ class PurchaseIndex extends Component
 
         $purchases = $query->orderByDesc('purchase_date')->orderByDesc('id')->paginate(15);
         $payablePositions = [];
-        if ($withCost) {
+        if ($this->canReadVendorFinancials()) {
             $postedPurchases = $purchases->getCollection()->filter(fn ($p) => $p->status === Purchase::STATUS_POSTED);
             if ($postedPurchases->isNotEmpty()) {
                 $postedPurchases->load(['returns', 'paymentAllocations.vendorPayment']);
