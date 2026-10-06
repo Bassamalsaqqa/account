@@ -277,9 +277,11 @@ implemented decisions and candidate Phase 5F boundaries alongside future constra
   with non-null `purchase_number` and `posted_at`) constitute historical purchase and price history.
   Drafts, voids, deleted documents, and cross-company records are strictly excluded.
 - **Snapshot Preservation Across Master-Data Lifecycle**: Historical price records read line-level
-  snapshots (`product_name`, `product_sku`, `unit_name`, `vendor_name`, `vendor_code`) rather than
-  mutable master data. History remains fully visible, accurate, and intact even when products or
-  vendors are soft deleted, renamed, or deactivated.
+  snapshots (`product_name_ar/en`, `product_sku`, `unit_name_ar/en`, and Vendor name/address/contact fields in `vendor_snapshot`) rather than
+  mutable master data. Missing/malformed historical display identity fails closed; language fallback
+  stays within persisted snapshots. Vendor code is not frozen by the current Purchase snapshot contract
+  and remains null unless explicitly present in a historical snapshot. Retired Product identity remains
+  visible but its Product-detail link is suppressed; the Purchase link remains available when authorized.
 - **Purchase Returns Invariant**: Corrective purchase returns record return movements and relief,
   but never erase, diminish, or rewrite the original purchase price history line or its vendor charge.
 - **Deterministic, Company-Scoped Query Contract**:
@@ -307,8 +309,11 @@ implemented decisions and candidate Phase 5F boundaries alongside future constra
     explanatory caption in the UI. It is never confused with or substituted for moving-average inventory
     valuation (`InventoryCostState`).
 - **Canonical Coherence and History Invariants**:
-  - History queries reject corrupted or incoherent purchase sources using canonical `validatePosted()` validation
-    on distinct loaded purchase documents in bounded batches.
+  - `PurchaseHistoryProvenance` validates all selected lines in one joined read: exact same-company
+    Purchase/line/master ownership, Posted number/actor/timestamp metadata, and the referenced Posted
+    original batch with `source_type = purchase` and `source_id = Purchase.id`. Normal history reads
+    do not replay inventory lots, stock movements or posting lines; deep `validatePosted()` remains
+    authoritative for reconciliation and posting retries outside this read model.
   - Stored null SKUs remain null and are never overwritten by subsequent mutable product master SKUs.
   - Unsnapshotted vendor codes remain null and are never invented or fallen back from mutable master vendor data.
 - **Server-Side Security, Centralized Guard, and Cost Protection**:
@@ -351,4 +356,4 @@ and zero database mutations.
 
 ### Bounded history reads
 
-Vendor product summary counts and quantities refer only to the latest 100 coherent posted Purchase lines, explicitly labeled in the UI; they are not all-time totals. All contributing documents are canonically validated. Batched form hints rank latest rows per Product in SQL and hydrate only those rows (at most 100 Products), so old history is not hydrated or validated merely to show a latest-price hint. Product identities are validated against persisted same-company rows, including retired master records. No pagination or price cache is implied.
+Vendor product summary counts and quantities refer only to the latest 100 coherent posted Purchase lines, explicitly labeled in the UI; they are not all-time totals. All contributing lines pass the lightweight batched canonical-source provenance check. Batched form hints rank latest rows per Product in SQL and hydrate only those rows (at most 100 Products), so old history is not hydrated merely to show a latest-price hint. No deep posting replay occurs during history rendering. Product identities are validated against persisted same-company rows, including retired master records. No pagination or price cache is implied.

@@ -8,6 +8,7 @@ use App\Models\Purchase;
 use App\Models\PurchaseLine;
 use Brick\Math\BigDecimal;
 use Brick\Math\RoundingMode;
+use InvalidArgumentException;
 
 final readonly class PurchasePriceHistoryItem
 {
@@ -60,31 +61,28 @@ final readonly class PurchasePriceHistoryItem
             $purchase = Purchase::where('company_id', $line->company_id)->findOrFail($line->purchase_id);
         }
 
-        $vendorSnapshot = (array) ($purchase->vendor_snapshot ?? []);
-        $vendor = $purchase->vendor;
-
-        $vendorName = $locale === 'en'
-            ? ($vendorSnapshot['name_en'] ?? $vendorSnapshot['name_ar'] ?? ($vendor !== null ? ($vendor->name_en ?? $vendor->name_ar) : ''))
-            : ($vendorSnapshot['name_ar'] ?? $vendorSnapshot['name_en'] ?? ($vendor !== null ? ($vendor->name_ar ?? $vendor->name_en) : ''));
-
-        if ($vendorName === '') {
-            $vendorName = (string) ($vendorSnapshot['business_name_ar'] ?? $vendorSnapshot['business_name_en'] ?? ($vendor !== null ? $vendor->displayName() : ''));
+        $vendorSnapshot = $purchase->vendor_snapshot;
+        if (! is_array($vendorSnapshot)) {
+            throw new InvalidArgumentException(__('purchasing.post_integrity_failed'));
         }
+        $vendor = $purchase->vendor;
+        $nameKeys = $locale === 'en'
+            ? ['name_en', 'name_ar', 'business_name_en', 'business_name_ar']
+            : ['name_ar', 'name_en', 'business_name_ar', 'business_name_en'];
+        $vendorName = self::historicalName(array_map(fn ($key) => $vendorSnapshot[$key] ?? null, $nameKeys));
 
         $vendorCode = isset($vendorSnapshot['code']) && (string) $vendorSnapshot['code'] !== ''
             ? (string) $vendorSnapshot['code']
             : null;
 
         $product = $line->product;
-        $productName = $locale === 'en'
-            ? ($line->product_name_en ?: $line->product_name_ar ?: ($product !== null ? ($product->name_en ?: $product->name_ar) : ''))
-            : ($line->product_name_ar ?: $line->product_name_en ?: ($product !== null ? ($product->name_ar ?: $product->name_en) : ''));
-
+        $productName = self::historicalName($locale === 'en'
+            ? [$line->product_name_en, $line->product_name_ar]
+            : [$line->product_name_ar, $line->product_name_en]);
         $productSku = $line->product_sku !== null ? (string) $line->product_sku : null;
-
-        $unitName = $locale === 'en'
-            ? ($line->unit_name_en ?: $line->unit_name_ar ?: '')
-            : ($line->unit_name_ar ?: $line->unit_name_en ?: '');
+        $unitName = self::historicalName($locale === 'en'
+            ? [$line->unit_name_en, $line->unit_name_ar]
+            : [$line->unit_name_ar, $line->unit_name_en]);
 
         // Derive historical tax-exclusive net commercial amount in base currency: (line_total_base - line_tax_base)
         $lineTotalBase = BigDecimal::of((string) $line->line_total_base);
@@ -107,7 +105,7 @@ final readonly class PurchasePriceHistoryItem
             vendor_name: $vendorName,
             vendor_code: $vendorCode,
             product_id: (int) $line->product_id,
-            product_public_id: $product?->public_id,
+            product_public_id: $product !== null && ! $product->trashed() ? $product->public_id : null,
             product_sku: $productSku,
             product_name: $productName,
             product_unit_id: (int) $line->product_unit_id,
@@ -134,6 +132,24 @@ final readonly class PurchasePriceHistoryItem
             tax_inclusive: (bool) $line->tax_inclusive,
             tax_rate_snapshot: $line->tax_rate_snapshot !== null ? (string) $line->tax_rate_snapshot : null,
         );
+    }
+
+    /** @param list<mixed> $names */
+    private static function historicalName(array $names): string
+    {
+        foreach ($names as $name) {
+            if ($name === null) {
+                continue;
+            }
+            if (! is_string($name)) {
+                throw new InvalidArgumentException(__('purchasing.post_integrity_failed'));
+            }
+            if (trim($name) !== '') {
+                return $name;
+            }
+        }
+
+        throw new InvalidArgumentException(__('purchasing.post_integrity_failed'));
     }
 
     /**

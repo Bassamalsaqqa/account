@@ -28,6 +28,7 @@ use App\Support\Tenancy\CompanyContext;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Spatie\Permission\Models\Role;
 use Tests\TestCase;
 
@@ -805,5 +806,127 @@ class PurchasePriceHistoryQueriesTest extends TestCase
         $forgedProduct->id = 999999999;
         $this->expectException(AuthorizationException::class);
         app(ProductPurchaseHistoryQuery::class)->execute($forgedProduct, $this->company->id);
+    }
+
+    public function test_correction02_history_query_cost_is_batched_without_deep_posting_replay(): void
+    {
+        for ($i = 0; $i < 8; $i++) {
+            $this->createAndPostPurchase();
+        }
+        $queries = [];
+        DB::listen(function ($event) use (&$queries): void {
+            $queries[] = $event->sql;
+        });
+        $query = app(ProductPurchaseHistoryQuery::class);
+        $this->assertCount(1, $query->execute($this->product, $this->company->id, limit: 1));
+        $smallCount = count($queries);
+        $queries = [];
+        $this->assertCount(8, $query->execute($this->product, $this->company->id, limit: 8));
+        $this->assertLessThanOrEqual($smallCount + 1, count($queries), 'Rendered Purchase count must not add per-document replay queries.');
+        $this->assertDoesNotMatchRegularExpression('/(stock_movements|posting_lines|purchase_line_lots|inventory_lots|inventory_cost_states)/i', implode("\n", $queries));
+
+        foreach (['ProductPurchaseHistoryQuery', 'VendorProductHistoryQuery', 'VendorProductPriceHistoryQuery'] as $name) {
+            $source = file_get_contents(app_path('Domain/Purchasing/Queries/'.$name.'.php'));
+            $this->assertStringNotContainsString('PurchasePostingCommandBuilder', $source);
+            $this->assertStringNotContainsString('validatePosted', $source);
+        }
+    }
+
+    /** @return array<string, array{string}> */
+    public static function correction02InvalidProvenance(): array
+    {
+        return [
+            'foreign batch company' => ['foreign_company'],
+            'wrong batch type' => ['wrong_type'],
+            'wrong batch source' => ['wrong_source'],
+            'wrong canonical batch pointer' => ['wrong_pointer'],
+            'batch not posted' => ['reversed_batch'],
+            'missing posting actor' => ['missing_actor'],
+        ];
+    }
+
+    #[DataProvider('correction02InvalidProvenance')]
+    public function test_correction02_lightweight_provenance_rejects_damaged_source(string $damage): void
+    {
+        $purchase = $this->createAndPostPurchase();
+        if ($damage === 'foreign_company') {
+            app(CompanyContext::class)->clear();
+            $otherOwner = User::factory()->create();
+            $otherCompany = app(CreateCompanyAction::class)->execute($otherOwner, ['name_ar' => 'شركة أخرى']);
+            $this->activate($this->company, $this->owner);
+            DB::table('posting_batches')->where('id', $purchase->posting_batch_id)->update(['company_id' => $otherCompany->id]);
+        } elseif ($damage === 'wrong_pointer') {
+            $otherPurchase = $this->createAndPostPurchase();
+            DB::table('purchases')->where('id', $purchase->id)->update(['posting_batch_id' => $otherPurchase->posting_batch_id]);
+        } elseif ($damage === 'missing_actor') {
+            DB::table('purchases')->where('id', $purchase->id)->update(['posted_by' => null]);
+        } else {
+            $changes = match ($damage) {
+                'wrong_type' => ['source_type' => 'vendor_payment'],
+                'wrong_source' => ['source_id' => 999999999],
+                'reversed_batch' => ['status' => 'reversed'],
+            };
+            DB::table('posting_batches')->where('id', $purchase->posting_batch_id)->update($changes);
+        }
+        $this->expectException(\InvalidArgumentException::class);
+        app(ProductPurchaseHistoryQuery::class)->execute($this->product, $this->company->id);
+    }
+
+    public function test_correction02_all_history_paths_reject_wrong_original_batch(): void
+    {
+        $purchase = $this->createAndPostPurchase();
+        DB::table('posting_batches')->where('id', $purchase->posting_batch_id)->update(['source_type' => 'vendor_payment']);
+        $reads = [
+            fn () => app(VendorProductHistoryQuery::class)->execute($this->vendor, $this->company->id),
+            fn () => app(VendorProductHistoryQuery::class)->productsSupplied($this->vendor, $this->company->id),
+            fn () => app(VendorProductPriceHistoryQuery::class)->execute($this->vendor, $this->product, $this->company->id),
+            fn () => app(VendorProductPriceHistoryQuery::class)->latestForProducts($this->vendor, [$this->product->id], $this->company->id),
+        ];
+        foreach ($reads as $read) {
+            try {
+                $read();
+                $this->fail('Corrupt original batch metadata must not become price history.');
+            } catch (\InvalidArgumentException $exception) {
+                $this->assertNotEmpty($exception->getMessage());
+            }
+        }
+    }
+
+    public function test_correction02_nonposted_purchase_is_not_price_history(): void
+    {
+        $purchase = $this->createAndPostPurchase();
+        DB::table('purchases')->where('id', $purchase->id)->update(['status' => Purchase::STATUS_DRAFT]);
+        $this->assertCount(0, app(ProductPurchaseHistoryQuery::class)->execute($this->product, $this->company->id));
+        $this->assertCount(0, app(VendorProductHistoryQuery::class)->execute($this->vendor, $this->company->id));
+        $this->assertSame([], app(VendorProductPriceHistoryQuery::class)->latestForProducts($this->vendor, [$this->product->id], $this->company->id));
+    }
+
+    /** @return array<string, array{string}> */
+    public static function correction02DamagedSnapshots(): array
+    {
+        return [
+            'missing vendor name' => ['vendor_missing'],
+            'malformed vendor name' => ['vendor_malformed'],
+            'missing product names' => ['product'],
+            'missing unit names' => ['unit'],
+        ];
+    }
+
+    #[DataProvider('correction02DamagedSnapshots')]
+    public function test_correction02_damaged_identity_never_uses_current_master_names(string $damage): void
+    {
+        $purchase = $this->createAndPostPurchase();
+        $this->vendor->update(['name_ar' => 'CURRENT VENDOR MUST NOT APPEAR']);
+        $this->product->update(['name_ar' => 'CURRENT PRODUCT MUST NOT APPEAR']);
+        if (str_starts_with($damage, 'vendor_')) {
+            $snapshot = $damage === 'vendor_missing' ? [] : ['name_ar' => ['invalid' => 'name']];
+            DB::table('purchases')->where('id', $purchase->id)->update(['vendor_snapshot' => json_encode($snapshot, JSON_THROW_ON_ERROR)]);
+        } elseif ($damage === 'product') {
+            DB::table('purchase_lines')->where('purchase_id', $purchase->id)->update(['product_name_ar' => '', 'product_name_en' => '']);
+        } else {
+            DB::table('purchase_lines')->where('purchase_id', $purchase->id)->update(['unit_name_ar' => '', 'unit_name_en' => '']);
+        }
+        $this->expectException(\InvalidArgumentException::class);
+        app(ProductPurchaseHistoryQuery::class)->execute($this->product, $this->company->id);
     }
 }

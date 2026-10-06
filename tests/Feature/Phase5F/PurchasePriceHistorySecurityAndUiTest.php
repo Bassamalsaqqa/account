@@ -577,4 +577,22 @@ class PurchasePriceHistorySecurityAndUiTest extends TestCase
             ->assertSee('ILS')
             ->assertSee('قطعة');
     }
+
+    public function test_correction02_retired_product_keeps_history_and_purchase_link_without_dead_product_link(): void
+    {
+        $purchase = $this->postPurchase();
+        $historicalName = $this->product->name_ar;
+        $historicalSku = $this->product->sku;
+        $productUrl = route('products.show', $this->product->public_id);
+        $this->product->delete();
+
+        Livewire::actingAs($this->owner)
+            ->test(VendorDetail::class, ['publicId' => $this->vendor->public_id])
+            ->set('activeTab', 'products')
+            ->assertOk()
+            ->assertSee($historicalName)
+            ->assertSee($historicalSku)
+            ->assertSee(route('purchases.show', $purchase->public_id))
+            ->assertDontSee($productUrl);
+    }
 }

@@ -7,7 +7,6 @@ namespace App\Domain\Purchasing\Queries;
 use App\Models\Product;
 use App\Models\Purchase;
 use App\Models\PurchaseLine;
-use App\Services\Purchasing\PurchasePostingCommandBuilder;
 use Illuminate\Support\Collection;
 
 class ProductPurchaseHistoryQuery
@@ -46,7 +45,6 @@ class ProductPurchaseHistoryQuery
             ->with([
                 'purchase.vendor' => fn ($q) => $q->withTrashed(),
                 'product' => fn ($q) => $q->withTrashed(),
-                'productUnit.unit',
             ])
             ->orderByDesc('purchases.purchase_date')
             ->orderByDesc('purchases.id')
@@ -54,14 +52,7 @@ class ProductPurchaseHistoryQuery
             ->limit($boundedLimit)
             ->get();
 
-        $validatedPurchases = [];
-        foreach ($lines as $line) {
-            $p = $line->purchase;
-            if ($p !== null && ! isset($validatedPurchases[$p->id])) {
-                app(PurchasePostingCommandBuilder::class)->validatePosted($p);
-                $validatedPurchases[$p->id] = true;
-            }
-        }
+        app(PurchaseHistoryProvenance::class)->assertLines($lines, $companyId);
 
         return $lines->map(fn (PurchaseLine $line) => PurchasePriceHistoryItem::fromLine($line));
     }

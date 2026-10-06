@@ -8,7 +8,6 @@ use App\Models\Product;
 use App\Models\Purchase;
 use App\Models\PurchaseLine;
 use App\Models\Vendor;
-use App\Services\Purchasing\PurchasePostingCommandBuilder;
 use Illuminate\Support\Collection;
 
 class VendorProductPriceHistoryQuery
@@ -40,7 +39,6 @@ class VendorProductPriceHistoryQuery
             ->with([
                 'purchase.vendor' => fn ($q) => $q->withTrashed(),
                 'product' => fn ($q) => $q->withTrashed(),
-                'productUnit.unit',
             ])
             ->orderByDesc('purchases.purchase_date')
             ->orderByDesc('purchases.id')
@@ -48,14 +46,7 @@ class VendorProductPriceHistoryQuery
             ->limit($boundedLimit)
             ->get();
 
-        $validatedPurchases = [];
-        foreach ($lines as $line) {
-            $p = $line->purchase;
-            if ($p !== null && ! isset($validatedPurchases[$p->id])) {
-                app(PurchasePostingCommandBuilder::class)->validatePosted($p);
-                $validatedPurchases[$p->id] = true;
-            }
-        }
+        app(PurchaseHistoryProvenance::class)->assertLines($lines, $companyId);
 
         return $lines->map(fn (PurchaseLine $line) => PurchasePriceHistoryItem::fromLine($line));
     }
@@ -111,19 +102,12 @@ class VendorProductPriceHistoryQuery
             ->with([
                 'purchase.vendor' => fn ($q) => $q->withTrashed(),
                 'product' => fn ($q) => $q->withTrashed(),
-                'productUnit.unit',
             ])
             ->get();
 
+        app(PurchaseHistoryProvenance::class)->assertLines($lines, $companyId);
         $result = [];
-        $validatedPurchases = [];
         foreach ($lines as $line) {
-            $p = $line->purchase;
-            if ($p !== null && ! isset($validatedPurchases[$p->id])) {
-                app(PurchasePostingCommandBuilder::class)->validatePosted($p);
-                $validatedPurchases[$p->id] = true;
-            }
-
             if (! isset($result[$line->product_id])) {
                 $result[$line->product_id] = PurchasePriceHistoryItem::fromLine($line);
             }
