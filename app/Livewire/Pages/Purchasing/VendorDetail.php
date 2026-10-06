@@ -47,8 +47,9 @@ class VendorDetail extends Component
             ->where('public_id', $publicId)
             ->firstOrFail();
 
-        $this->statementFrom = Carbon::now()->startOfYear()->toDateString();
-        $this->statementTo = Carbon::now()->toDateString();
+        $companyNow = Carbon::now($company->timezone);
+        $this->statementFrom = $companyNow->copy()->startOfYear()->toDateString();
+        $this->statementTo = $companyNow->toDateString();
     }
 
     public function updatedActiveTab(): void

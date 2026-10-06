@@ -91,7 +91,7 @@ class PaymentForm extends Component
 
         $this->vendor_id = $vendor_id;
         $this->document_locale = $company->default_locale;
-        $this->payment_date = Carbon::now()->toDateString();
+        $this->payment_date = Carbon::now($company->timezone)->toDateString();
 
         $defaultAccount = MoneyAccount::where('company_id', $company->id)
             ->where('is_active', true)
