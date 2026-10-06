@@ -13,6 +13,7 @@ use App\Services\Purchasing\PayablesReconciliationService;
 use App\Services\Purchasing\VendorPaymentApplicationScope;
 use App\Services\Purchasing\VendorPaymentReversalScope;
 use App\Support\Tenancy\CompanyContext;
+use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 
 final class VendorPaymentScopeRegressionTest extends Phase5ETestCase
@@ -89,6 +90,8 @@ final class VendorPaymentScopeRegressionTest extends Phase5ETestCase
 
     public function test_reversal_capability_requires_exact_event_and_dependent_order(): void
     {
+        $this->travelTo(Carbon::parse('2026-10-06 22:30:00', 'UTC'));
+        $this->company->update(['timezone' => 'Asia/Hebron']);
         $purchase = $this->createAndPostPurchase(['currency_code' => 'USD', 'exchange_rate' => '3.5']);
         $payment = $this->payment();
         $event = app(ApplyVendorPaymentCreditAction::class)->execute($payment, $this->owner, ['application_date' => '2026-10-03', 'idempotency_key' => 'scope-app', 'allocations' => [['purchase_id' => $purchase->id, 'allocated_amount' => '40']]]);
@@ -98,7 +101,7 @@ final class VendorPaymentScopeRegressionTest extends Phase5ETestCase
         $cap = null;
         $i = 0;
         $mock = \Mockery::mock(AccountingReversalService::class);
-        $mock->shouldReceive('reverse')->twice()->andReturnUsing(function ($batch, $actor, $reason) use ($scope, $real, $payment, $event, &$action, &$cap, &$i) {
+        $mock->shouldReceive('reverse')->twice()->andReturnUsing(function ($batch, $actor, $reason, $reversalDate) use ($scope, $real, $payment, $event, &$action, &$cap, &$i) {
             $cap = (new \ReflectionProperty($scope, 'active'))->getValue($scope);
             $eventId = $i++ === 0 ? $event->id : null;
             $assert = fn () => $scope->assertReversal($cap, $this->company->id, $payment->id, $this->owner->id, $eventId);
@@ -111,13 +114,16 @@ final class VendorPaymentScopeRegressionTest extends Phase5ETestCase
             $this->reject(fn () => $scope->assertReversal($cap, $this->company->id, $payment->id, $this->owner->id, $event->id + 1));
             $this->exercise($scope, $cap, $assert, fn () => $scope->withinCanonicalReversal($action, $payment, $this->owner, [], fn () => null));
 
-            return $real->reverse($batch, $actor, $reason);
+            $this->assertSame('2026-10-07', $reversalDate);
+
+            return $real->reverse($batch, $actor, $reason, $reversalDate);
         });
         app()->instance(AccountingReversalService::class, $mock);
         $action = app(ReverseVendorPaymentAction::class);
         $action->execute($payment, $this->owner);
         $this->assertFalse($scope->isActive($cap));
         $this->assertTrue($payment->fresh()->is_reversed);
+        $this->assertSame('2026-10-07', $payment->fresh()->reversalPostingBatch->posting_date->toDateString());
     }
 
     public function test_every_allocation_financial_component_and_boundary_is_audited(): void

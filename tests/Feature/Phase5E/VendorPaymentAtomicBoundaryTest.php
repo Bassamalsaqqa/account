@@ -133,7 +133,7 @@ final class VendorPaymentAtomicBoundaryTest extends Phase5ETestCase
         $captured = null;
         $order = [];
         $mock = \Mockery::mock(AccountingReversalService::class);
-        $mock->shouldReceive('reverse')->twice()->andReturnUsing(function ($batch, $actor, $reason) use ($real, $scope, &$captured, &$order, $eventA, $eventB) {
+        $mock->shouldReceive('reverse')->twice()->andReturnUsing(function ($batch, $actor, $reason, $reversalDate) use ($real, $scope, &$captured, &$order, $eventA, $eventB) {
             $captured = (new \ReflectionProperty($scope, 'active'))->getValue($scope);
             $this->assertTrue($scope->isActive($captured));
             $order[] = $batch->id;
@@ -144,7 +144,7 @@ final class VendorPaymentAtomicBoundaryTest extends Phase5ETestCase
             }
             $this->assertSame($eventB->posting_batch_id, $batch->id);
 
-            return $real->reverse($batch, $actor, $reason);
+            return $real->reverse($batch, $actor, $reason, $reversalDate);
         });
         app()->instance(AccountingReversalService::class, $mock);
         try {
@@ -154,9 +154,9 @@ final class VendorPaymentAtomicBoundaryTest extends Phase5ETestCase
             $this->assertSame('Injected dependent reversal failure', $exception->getMessage());
         }
         $this->assertSame([$eventB->posting_batch_id, $eventA->posting_batch_id], $order);
-        $this->assertSame($before,$this->state());
+        $this->assertSame($before, $this->state());
         $this->assertFalse($scope->isActive($captured));
-        $this->assertSame('70.000000',(string) $a->fresh()->payablePosition()->outstanding);
-        $this->assertSame('60.000000',(string) $b->fresh()->payablePosition()->outstanding);
+        $this->assertSame('70.000000', (string) $a->fresh()->payablePosition()->outstanding);
+        $this->assertSame('60.000000', (string) $b->fresh()->payablePosition()->outstanding);
     }
 }
