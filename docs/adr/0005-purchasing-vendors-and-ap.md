@@ -1,16 +1,15 @@
 # ADR 0005: Purchasing, Vendors and Accounts Payable
 
-Status: Phases 5A/5B/5C/5D accepted and deployed; Phase 5E implemented in PR #12 and pending final merge/deployment acceptance.
+Status: Complete (Phases 5A, 5B, 5C, 5D, and 5E accepted, merged to main, and deployed to production). Phase 5F unstarted.
 
 ## Context and checkpoints
 
 Purchasing extends the accepted company-scoped Sales, accounting and inventory
-boundaries. Phases 5A/5B/5C/5D are accepted and deployed: Phase 5A covers the
+boundaries. Phases 5A/5B/5C/5D/5E are accepted and deployed: Phase 5A covers the
 Vendor/purchasing foundation; Phase 5B covers Purchase drafts; Phase 5C covers
-Purchase posting, AP, Inventory and Input Tax; Phase 5D covers Purchase Returns.
-Phase 5E Vendor Payments, AP settlement, balances, statements and aging is
-implemented in PR #12 and pending final merge/deployment acceptance. Phase 5F
-and later functionality remain future. This ADR records implemented and accepted
+Purchase posting, AP, Inventory and Input Tax; Phase 5D covers Purchase Returns;
+Phase 5E covers Vendor Payments, AP settlement, balances, statements and aging.
+Phase 5F and later functionality remain future. This ADR records implemented and accepted
 financial decisions alongside remaining future constraints.
 
 ## Phase 5A decisions
