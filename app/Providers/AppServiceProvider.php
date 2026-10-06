@@ -11,6 +11,9 @@ use App\Policies\RolePolicy;
 use App\Services\Audit\AuditService;
 use App\Services\Purchasing\PurchasePostingScope;
 use App\Services\Purchasing\PurchaseReturnPostingScope;
+use App\Services\Purchasing\VendorPaymentApplicationScope;
+use App\Services\Purchasing\VendorPaymentPostingScope;
+use App\Services\Purchasing\VendorPaymentReversalScope;
 use App\Support\Tenancy\CompanyContext;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\URL;
@@ -29,6 +32,9 @@ class AppServiceProvider extends ServiceProvider
         $this->app->singleton(AuditService::class, fn () => new AuditService);
         $this->app->scoped(PurchasePostingScope::class, fn () => new PurchasePostingScope);
         $this->app->scoped(PurchaseReturnPostingScope::class, fn () => new PurchaseReturnPostingScope);
+        $this->app->scoped(VendorPaymentPostingScope::class, fn () => new VendorPaymentPostingScope);
+        $this->app->scoped(VendorPaymentApplicationScope::class, fn () => new VendorPaymentApplicationScope);
+        $this->app->scoped(VendorPaymentReversalScope::class, fn () => new VendorPaymentReversalScope);
     }
 
     /**

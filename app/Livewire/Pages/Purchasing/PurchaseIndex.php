@@ -7,6 +7,7 @@ namespace App\Livewire\Pages\Purchasing;
 use App\Livewire\Pages\Purchasing\Concerns\AuthorizesPurchasingPages;
 use App\Models\Purchase;
 use App\Models\Vendor;
+use App\Services\Purchasing\PurchasePayablePosition;
 use App\Support\Tenancy\CompanyContext;
 use Illuminate\Contracts\View\View;
 use Livewire\Attributes\Layout;
@@ -57,6 +58,7 @@ class PurchaseIndex extends Component
         $fields = ['id', 'public_id', 'company_id', 'vendor_id', 'purchase_date', 'purchase_number', 'vendor_invoice_number', 'status', 'currency_code'];
         if ($withCost) {
             $fields[] = 'grand_total_currency';
+            $fields[] = 'grand_total_base';
         }
         $term = trim($this->search);
         $query = Purchase::where('company_id', $company->id)->select($fields)
@@ -74,10 +76,22 @@ class PurchaseIndex extends Component
             $query->where('vendor_id', $this->vendorFilter);
         }
 
+        $purchases = $query->orderByDesc('purchase_date')->orderByDesc('id')->paginate(15);
+        $payablePositions = [];
+        if ($this->canReadVendorFinancials()) {
+            $postedPurchases = $purchases->getCollection()->filter(fn ($p) => $p->status === Purchase::STATUS_POSTED);
+            if ($postedPurchases->isNotEmpty()) {
+                $postedPurchases->load(['returns', 'paymentAllocations.vendorPayment']);
+                $payablePositions = PurchasePayablePosition::forPurchases($postedPurchases);
+            }
+        }
+
         return view('livewire.pages.purchasing.purchase-index', [
-            'purchases' => $query->orderByDesc('purchase_date')->orderByDesc('id')->paginate(15),
+            'purchases' => $purchases,
+            'payablePositions' => $payablePositions,
             'vendors' => Vendor::where('company_id', $company->id)->orderBy('name_ar')->get(['id', 'name_ar', 'name_en']),
-            'withCost' => $withCost, 'canCreate' => $withCost && auth()->user()->hasPermissionTo('purchasing.purchase.create'),
+            'withCost' => $withCost,
+            'canCreate' => $withCost && auth()->user()->hasPermissionTo('purchasing.purchase.create'),
         ]);
     }
 }

@@ -167,6 +167,21 @@
                         </div>
                     </a>
                     @endcan
+                    @if(auth()->check() && auth()->user()->can('purchasing.cost.view') && (
+                        auth()->user()->can('money.vendor_payment.create') ||
+                        auth()->user()->can('money.vendor_payment.allocate') ||
+                        auth()->user()->can('money.vendor_payment.reverse') ||
+                        auth()->user()->can('vendors.statement.view')
+                    ))
+                    <a href="{{ route('vendor-payments.index') }}"
+                       class="flex items-center justify-between h-[38px] px-3 rounded-control text-text-secondary hover:bg-surface-soft hover:text-text-primary font-semibold transition-colors
+                              {{ request()->routeIs('vendor-payments.*') ? 'bg-primary-50 text-primary! font-bold shadow-[inset_3px_0_0_#255fd6] rtl:shadow-[inset_-3px_0_0_#255fd6]' : '' }}">
+                        <div class="flex items-center gap-2.5">
+                            <x-icon name="money" class="w-4.5 h-4.5" />
+                            <span>{{ __('app.nav_vendor_payments') }}</span>
+                        </div>
+                    </a>
+                    @endif
                     @can('vendors.view')
                     <a href="{{ route('vendors.index') }}"
                        class="flex items-center justify-between h-[38px] px-3 rounded-control text-text-secondary hover:bg-surface-soft hover:text-text-primary font-semibold transition-colors
