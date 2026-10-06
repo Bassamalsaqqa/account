@@ -61,7 +61,7 @@ class PostVendorPaymentAction
      *     money_account_id: int,
      *     payment_date: string,
      *     payment_method: string,
-     *     document_locale?: string,
+     *     document_locale?: ?string,
      *     amount: string|BigDecimal,
      *     exchange_rate: string|BigDecimal,
      *     reference_number?: ?string,
@@ -130,6 +130,8 @@ class PostVendorPaymentAction
             $allocationsForHash[] = ['purchase_id' => $id, 'allocated_amount' => (string) $amount->toScale(6)];
         }
         $data['allocations'] = $allocationsForHash;
+        $data['document_locale'] = isset($data['document_locale']) && trim((string) $data['document_locale']) !== ''
+            ? $data['document_locale'] : null;
 
         $canonicalData = [
             'company_id' => (int) $company->id,
