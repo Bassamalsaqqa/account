@@ -6,6 +6,7 @@ namespace App\Livewire\Pages\Purchasing;
 
 use App\Actions\Purchasing\PostVendorPaymentAction;
 use App\Livewire\Pages\Purchasing\Concerns\AuthorizesPurchasingPages;
+use App\Models\Currency;
 use App\Models\MoneyAccount;
 use App\Models\Purchase;
 use App\Models\Vendor;
@@ -355,10 +356,14 @@ class PaymentForm extends Component
             })->orderBy('name_ar')->get();
         $accounts = MoneyAccount::where('company_id', $this->pageCompanyId)->where('is_active', true)->orderBy('sort_order')->get();
 
+        $minorUnits = (int) Currency::findOrFail($this->currency_code)->getAttribute('minor_units');
+        $paymentAmountMinimum = (string) BigDecimal::one()->dividedBy(BigDecimal::of(10)->power($minorUnits), $minorUnits);
+
         return view('livewire.pages.purchasing.payment-form', [
             'company' => $company,
             'vendors' => $vendors,
             'accounts' => $accounts,
+            'paymentAmountMinimum' => $paymentAmountMinimum,
         ]);
     }
 }

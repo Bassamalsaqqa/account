@@ -346,7 +346,7 @@ class VendorPayment extends Model
      */
     public function moneyAccount(): BelongsTo
     {
-        return $this->belongsTo(MoneyAccount::class);
+        return $this->belongsTo(MoneyAccount::class)->withTrashed();
     }
 
     /**

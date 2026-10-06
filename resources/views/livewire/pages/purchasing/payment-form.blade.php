@@ -99,7 +99,7 @@
                        wire:model.blur="amount"
                        wire:change="recalculateAllocations"
                        required
-                       min="0.01"
+                       min="{{ $paymentAmountMinimum }}"
                        dir="ltr"
                        class="w-full h-9 px-3 rounded-control border border-border bg-canvas text-xs font-mono font-bold text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden text-start" />
                 @error('amount') <span class="text-danger text-[11px] mt-1 block">{{ $message }}</span> @enderror
