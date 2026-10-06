@@ -283,7 +283,7 @@
                 <div class="p-3 border-t border-border">{{ $tabPayments->links() }}</div>
             @endif
         </div>
-    @elseif ($activeTab === 'statement' && $canStatement && $statementData !== null)
+    @elseif ($activeTab === 'statement' && $canStatement)
         <div class="space-y-6">
             <!-- Date Filters -->
             <div class="bg-white p-4 rounded-card border border-border flex flex-wrap gap-4 items-center">
@@ -295,6 +295,10 @@
                 </div>
             </div>
 
+            @error('statementDates')
+                <p role="alert" class="text-sm text-danger">{{ $message }}</p>
+            @enderror
+            @if ($statementData !== null)
             @forelse ($statementData['currencies'] as $currKey => $s)
                 <div class="bg-white rounded-card border border-border p-6 space-y-6">
                     <div class="flex items-center justify-between border-b border-border pb-3">
@@ -400,6 +404,7 @@
             @empty
                 <p class="text-xs text-text-muted py-6 text-center bg-white rounded-card border border-border">{{ __('purchasing.no_purchases') }}</p>
             @endforelse
+            @endif
         </div>
     @endif
 </div>

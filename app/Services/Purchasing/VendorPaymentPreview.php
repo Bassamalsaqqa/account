@@ -15,7 +15,7 @@ final class VendorPaymentPreview
      */
     public function calculate(string $amount, string $exchangeRate, array $allocations, string $currency): array
     {
-        $rate = BigDecimal::of($exchangeRate !== '' ? $exchangeRate : '1');
+        $rate = $exchangeRate !== '' ? BigDecimal::of($exchangeRate) : null;
         $total = BigDecimal::zero();
 
         foreach ($allocations as &$allocation) {
@@ -27,10 +27,10 @@ final class VendorPaymentPreview
 
             $purchaseRate = BigDecimal::of((string) ($allocation['purchase_exchange_rate'] ?? '1'));
             $book = $allocated->multipliedBy($purchaseRate)->toScale(6, RoundingMode::HALF_UP);
-            $settlement = $allocated->multipliedBy($rate)->toScale(6, RoundingMode::HALF_UP);
-
-            // AP orientation: delta = S - B; positive is FX LOSS, negative is FX GAIN
-            $allocation['preview_fx'] = (string) $settlement->minus($book);
+            // Missing explicit FX must not display a fabricated rate-one estimate.
+            // AP orientation: delta = S - B; positive is FX LOSS, negative is FX GAIN.
+            $allocation['preview_fx'] = $rate === null ? null
+                : (string) $allocated->multipliedBy($rate)->toScale(6, RoundingMode::HALF_UP)->minus($book);
         }
         unset($allocation);
 

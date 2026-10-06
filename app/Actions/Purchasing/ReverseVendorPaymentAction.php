@@ -15,6 +15,7 @@ use App\Services\Audit\AuditService;
 use App\Services\Posting\AccountingReversalService;
 use App\Services\Purchasing\VendorPaymentPostedIntegrityValidator;
 use App\Services\Purchasing\VendorPaymentReversalScope;
+use App\Services\Purchasing\VendorPaymentValidationException;
 use App\Services\Sales\SalesActorGuard;
 use App\Support\Tenancy\CompanyContext;
 use Carbon\Carbon;
@@ -88,6 +89,12 @@ class ReverseVendorPaymentAction
                 ->orderByDesc('id')
                 ->lockForUpdate()
                 ->get();
+
+            // An inverse cannot economically precede any activity it undoes.
+            if ($reversalDate < $lockedPayment->payment_date->toDateString()
+                || $events->contains(fn (VendorPaymentApplicationEvent $event): bool => $event->application_date->toDateString() > $reversalDate)) {
+                throw new VendorPaymentValidationException('purchasing.reversal_before_activity_date');
+            }
 
             $scope = app(VendorPaymentReversalScope::class);
             $this->activeReversalScope = $scope;

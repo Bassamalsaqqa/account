@@ -293,4 +293,6 @@ return [
     'statement_credit' => 'Payable Increase (Cr)',
     'statement_debit' => 'Payable Reduction (Dr)',
     'opening_balance' => 'Opening Balance',
+    'reversal_before_activity_date' => 'A payment cannot be reversed before its payment date or latest advance application date.',
+    'statement_dates_invalid' => 'Enter valid dates with From on or before To.',
 ];

@@ -41,6 +41,12 @@ final class VendorPaymentApplicationIntegrityValidator
                 throw new ImmutableRecordException('Unexpected application accounting reversal.');
             }
         }
+        if ($event->reversed_at !== null) {
+            $parentReversal = PostingBatch::where('company_id', $event->company_id)->findOrFail($payment->reversal_posting_batch_id);
+            if ($parentReversal->posting_date->toDateString() < $event->application_date->toDateString()) {
+                throw new ImmutableRecordException('Vendor Payment reversal predates its dependent application.');
+            }
+        }
         if ($event->reversed_at !== null && $expectedReversalDate !== null
             && $event->reversed_at->copy()->setTimezone(Company::findOrFail($event->company_id)->timezone)->toDateString() !== $expectedReversalDate) {
             throw new ImmutableRecordException('Application reversal timestamp disagrees with its business date.');

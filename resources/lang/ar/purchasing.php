@@ -293,4 +293,6 @@ return [
     'statement_credit' => 'زيادة المستحق (دائن)',
     'statement_debit' => 'تخفيض المستحق (مدين)',
     'opening_balance' => 'الرصيد الافتتاحي',
+    'reversal_before_activity_date' => 'لا يمكن عكس الدفعة قبل تاريخها أو تاريخ آخر تطبيق للسلفة.',
+    'statement_dates_invalid' => 'أدخل تواريخ صحيحة بحيث لا يتجاوز تاريخ البداية تاريخ النهاية.',
 ];

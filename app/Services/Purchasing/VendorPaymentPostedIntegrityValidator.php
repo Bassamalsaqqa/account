@@ -25,6 +25,10 @@ final class VendorPaymentPostedIntegrityValidator
                 throw new ImmutableRecordException('Incomplete Vendor Payment reversal.');
             }
             $this->commands->assertReversal($batch, (int) $payment->reversal_posting_batch_id, (int) $payment->reversed_by, $expectedReversalDate);
+            $reversal = PostingBatch::where('company_id', $payment->company_id)->findOrFail($payment->reversal_posting_batch_id);
+            if ($reversal->posting_date->toDateString() < $payment->payment_date->toDateString()) {
+                throw new ImmutableRecordException('Vendor Payment reversal predates its original business date.');
+            }
             // At completion the locked Company determines the local business date.
             // Historical retries use the persisted date, never today's timezone.
             if ($expectedReversalDate !== null && $payment->reversed_at->copy()->setTimezone(Company::findOrFail($payment->company_id)->timezone)->toDateString() !== $expectedReversalDate) {

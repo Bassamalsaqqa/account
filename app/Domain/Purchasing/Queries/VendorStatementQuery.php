@@ -12,10 +12,13 @@ use App\Models\PurchaseReturn;
 use App\Models\Vendor;
 use App\Models\VendorPayment;
 use App\Services\Purchasing\PurchasePayableAsOf;
+use App\Services\Purchasing\VendorPaymentValidationException;
+use App\Services\Sales\SalesDocumentRules;
 use App\Support\Tenancy\CompanyContext;
 use Brick\Math\BigDecimal;
 use Carbon\Carbon;
 use Illuminate\Auth\Access\AuthorizationException;
+use InvalidArgumentException;
 
 class VendorStatementQuery
 {
@@ -90,8 +93,19 @@ class VendorStatementQuery
     {
         $companyId = (int) $vendor->company_id;
         $companyTz = Company::findOrFail($companyId)->timezone;
-        $asOf = Carbon::parse($toDate ?? Carbon::now($companyTz)->toDateString(), $companyTz)->startOfDay();
-        $cutoffDate = $asOf->toDateString();
+        $cutoffDate = $toDate ?? Carbon::now($companyTz)->toDateString();
+        try {
+            app(SalesDocumentRules::class)->date($cutoffDate);
+            if ($fromDate !== null) {
+                app(SalesDocumentRules::class)->date($fromDate);
+            }
+        } catch (InvalidArgumentException $exception) {
+            throw new VendorPaymentValidationException('purchasing.statement_dates_invalid');
+        }
+        if ($fromDate !== null && $fromDate > $cutoffDate) {
+            throw new VendorPaymentValidationException('purchasing.statement_dates_invalid');
+        }
+        $asOf = Carbon::parse($cutoffDate, $companyTz)->startOfDay();
 
         // 1. Gather all posted transactions for this vendor
         $purchases = Purchase::query()

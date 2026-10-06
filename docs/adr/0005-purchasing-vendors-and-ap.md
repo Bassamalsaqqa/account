@@ -222,6 +222,8 @@ financial decisions alongside remaining future constraints.
 
 - Vendor Payments use active same-company MoneyAccounts (Cash/Bank) under canonical
   cash_control/bank_control parent accounts. Cheques and cross-currency allocations are Phase 6.
+  Foreign-account selection requires explicit settlement FX; only base-currency
+  selection defaults to one. Missing FX produces no estimated settlement difference.
 - No mutable vendor balance, purchase paid_amount, or payment_status columns exist.
   Purchase payable positions (`outstanding`, `credit`, `settled`, `partially_paid`, `unpaid`)
   and Vendor balances derive purely from posted invoices, posted returns, and active allocations.
@@ -256,6 +258,11 @@ financial decisions alongside remaining future constraints.
 
 - Vendor Payment reversal supplies one explicit Company-local business date to all dependent and parent accounting reversals. Absolute lifecycle timestamps remain timestamps. The captured Company-local lifecycle date is checked before commit; date inconsistency fails atomically. Historical statements and aging use the persisted reversal business date, so later Company timezone changes do not reinterpret old reversals. Historical validation requires dependent reversal batches to share the parent reversal date. Shared reversal callers that omit an explicit business date retain their existing default.
 
+- Reversal cannot precede the original Payment or any dependent application business
+  date, including zero-GL applications. Future activity remains reversible when the
+  Company-local current date reaches it; reversal never silently uses a future date.
+- Statement filters require canonical date-only values and From on or before the
+  effective To cutoff. Invalid ranges produce no statement or aging summary.
 - Statement aging uses the same company-local end-of-day cutoff as the statement
   closing balance. Purchase/Return/payment/application business dates and reversal
   business dates determine historical positions; later activity does not rewrite them.

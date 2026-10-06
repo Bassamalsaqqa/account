@@ -11,6 +11,7 @@ use App\Models\Purchase;
 use App\Models\PurchaseReturn;
 use App\Models\Vendor;
 use App\Models\VendorPayment;
+use App\Services\Purchasing\VendorPaymentValidationException;
 use App\Support\Tenancy\CompanyContext;
 use Carbon\Carbon;
 use Illuminate\Contracts\View\View;
@@ -108,7 +109,12 @@ class VendorDetail extends Component
                     ->orderByDesc('id')
                     ->paginate(15);
             } elseif ($this->activeTab === 'statement' && $canStatement) {
-                $statementData = $statementQuery->execute($this->vendor, $this->statementFrom ?: null, $this->statementTo ?: null);
+                $this->resetErrorBag('statementDates');
+                try {
+                    $statementData = $statementQuery->execute($this->vendor, $this->statementFrom ?: null, $this->statementTo ?: null);
+                } catch (VendorPaymentValidationException $exception) {
+                    $this->addError('statementDates', __($exception->translationKey));
+                }
             }
         }
 

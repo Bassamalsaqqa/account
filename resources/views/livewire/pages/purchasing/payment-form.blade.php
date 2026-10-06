@@ -183,11 +183,11 @@
                                     <td class="py-2.5 px-3 font-mono" dir="ltr">
                                         @php
                                             $fxVal = $alloc['preview_fx'];
-                                            $isPos = \App\Domain\Sales\Formatters\SalesMoneyFormatter::isPositive($fxVal);
-                                            $isNeg = \App\Domain\Sales\Formatters\SalesMoneyFormatter::isNegative($fxVal);
+                                            $isPos = $fxVal !== null && \App\Domain\Sales\Formatters\SalesMoneyFormatter::isPositive($fxVal);
+                                            $isNeg = $fxVal !== null && \App\Domain\Sales\Formatters\SalesMoneyFormatter::isNegative($fxVal);
                                         @endphp
                                         <span class="{{ $isPos ? 'text-danger font-bold' : ($isNeg ? 'text-success font-bold' : 'text-text-muted') }}">
-                                            @if (! \App\Domain\Sales\Formatters\SalesMoneyFormatter::isZero($fxVal))
+                                            @if ($fxVal !== null && ! \App\Domain\Sales\Formatters\SalesMoneyFormatter::isZero($fxVal))
                                                 {{ $isPos ? '+' . \App\Domain\Sales\Formatters\SalesMoneyFormatter::format($fxVal) . ' (' . __('purchasing.realized_fx_loss') . ')' : \App\Domain\Sales\Formatters\SalesMoneyFormatter::format($fxVal) . ' (' . __('purchasing.realized_fx_gain') . ')' }}
                                             @else
                                                 —

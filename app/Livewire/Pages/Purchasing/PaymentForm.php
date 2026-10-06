@@ -55,7 +55,7 @@ class PaymentForm extends Component
      *     outstanding: string,
      *     allocated_amount: string,
      *     purchase_exchange_rate: string,
-     *     preview_fx: string,
+     *     preview_fx: ?string,
      * }>
      */
     public array $allocations = [];
@@ -136,6 +136,8 @@ class PaymentForm extends Component
             }
         }
 
+        // Foreign settlement FX is explicit operator intent, never a stale default.
+        $this->exchange_rate = $this->currency_code === $company->base_currency_code ? '1.0000000000' : '';
         $this->refreshDocumentLocale();
         $this->loadOpenPurchases();
 
@@ -168,14 +170,12 @@ class PaymentForm extends Component
     public function updatedMoneyAccountId(): void
     {
         if ($this->money_account_id !== null) {
-            $account = MoneyAccount::find($this->money_account_id);
+            $account = MoneyAccount::where('company_id', $this->pageCompanyId)->where('is_active', true)->find($this->money_account_id);
             if ($account !== null) {
                 $this->currency_code = $account->currency_code;
                 $this->payment_method = $account->account_type === MoneyAccount::TYPE_BANK ? 'bank_transfer' : 'cash';
                 $company = app(CompanyContext::class)->company();
-                if ($this->currency_code === $company->base_currency_code) {
-                    $this->exchange_rate = '1.0000000000';
-                }
+                $this->exchange_rate = $this->currency_code === $company->base_currency_code ? '1.0000000000' : '';
             }
         }
         $this->loadOpenPurchases();

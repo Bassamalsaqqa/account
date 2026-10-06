@@ -140,7 +140,8 @@ class PaymentDetail extends Component
         try {
             $this->payment = $reverseAction->execute($this->payment, auth()->user(), $this->reversalReason);
         } catch (ImmutableRecordException|\InvalidArgumentException $exception) {
-            $this->addError('reversalReason', __('purchasing.payment_request_invalid'));
+            $this->addError('reversalReason', $exception instanceof VendorPaymentValidationException
+                ? __($exception->translationKey) : __('purchasing.payment_request_invalid'));
 
             return;
         }
