@@ -7,6 +7,7 @@ namespace App\Services\Purchasing;
 use App\Exceptions\CompanyReassignmentException;
 use App\Exceptions\NoActiveCompanyException;
 use App\Models\Company;
+use App\Models\PostingBatch;
 use App\Models\Purchase;
 use App\Models\PurchaseReturn;
 use App\Models\Vendor;
@@ -16,7 +17,6 @@ use App\Models\VendorPaymentApplicationEvent;
 use App\Support\Tenancy\CompanyContext;
 use App\Support\Tenancy\CompanyScope;
 use Illuminate\Database\Query\JoinClause;
-use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
 
 class PayablesReconciliationService
@@ -183,7 +183,9 @@ class PayablesReconciliationService
         $violations = [];
 
         foreach ($sources as $type => [$table, $lifecycleColumn, $requiredStatus]) {
-            $batches = DB::table('posting_batches as batches')
+            $batches = PostingBatch::withoutGlobalScopes()
+                ->from('posting_batches as batches')
+                ->toBase()
                 ->leftJoin($table.' as sources', function (JoinClause $join): void {
                     $join->on('batches.source_id', '=', 'sources.id')
                         ->on('batches.company_id', '=', 'sources.company_id');

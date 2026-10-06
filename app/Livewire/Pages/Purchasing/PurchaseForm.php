@@ -10,6 +10,7 @@ use App\Domain\Inventory\Exceptions\InvalidQuantityException;
 use App\Domain\Inventory\Exceptions\InvalidUnitConversionException;
 use App\Domain\Money\Exceptions\InvalidMoneyException;
 use App\Domain\Purchasing\PurchaseCalculator;
+use App\Domain\Purchasing\Queries\VendorProductPriceHistoryQuery;
 use App\Domain\Sales\Calculators\SalesDocumentTotalsCalculator;
 use App\Livewire\Pages\Purchasing\Concerns\AuthorizesPurchasingPages;
 use App\Models\Company;
@@ -316,6 +317,36 @@ class PurchaseForm extends Component
         }
         $except = $this->publicId === null ? null : Purchase::where('company_id', $company->id)->where('public_id', $this->publicId)->value('id');
 
+        $lastPriceHints = [];
+        if ($this->vendor_id !== null && auth()->check() && auth()->user()->can('purchasing.cost.view')) {
+            $productIds = collect($this->lines)
+                ->pluck('product_id')
+                ->filter()
+                ->map(fn ($id) => (int) $id)
+                ->unique()
+                ->values()
+                ->all();
+
+            if (! empty($productIds)) {
+                $hintsByProduct = app(VendorProductPriceHistoryQuery::class)
+                    ->latestForProducts($this->vendor_id, $productIds, $company->id);
+
+                foreach ($this->lines as $index => $line) {
+                    $pid = (int) ($line['product_id'] ?? 0);
+                    if ($pid > 0 && isset($hintsByProduct[$pid])) {
+                        $item = $hintsByProduct[$pid];
+                        $lastPriceHints[$index] = [
+                            'unit_cost' => $item->unit_cost,
+                            'currency_code' => $item->currency_code,
+                            'unit_name' => $item->unit_name,
+                            'purchase_date' => $item->purchase_date,
+                            'purchase_number' => $item->purchase_number,
+                        ];
+                    }
+                }
+            }
+        }
+
         return view('livewire.pages.purchasing.purchase-form', [
             'products' => $products->orderBy('name_ar')->limit(50)->get(['id', 'name_ar', 'name_en', 'sku']),
             'vendors' => Vendor::where('company_id', $company->id)->where('status', 'active')->orderBy('name_ar')->get(),
@@ -325,6 +356,7 @@ class PurchaseForm extends Component
             'taxes' => TaxRate::where('company_id', $company->id)->where('active', true)->get(),
             'unitOptions' => $unitOptions, 'expiryLines' => $expiryLines,
             'duplicateWarning' => app(DuplicateVendorInvoice::class)->exists($company->id, $this->vendor_id, $this->vendor_invoice_number, $except),
+            'lastPriceHints' => $lastPriceHints,
         ]);
     }
 }

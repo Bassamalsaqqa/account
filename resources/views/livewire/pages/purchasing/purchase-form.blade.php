@@ -27,7 +27,29 @@
                         @foreach($products as $product)<option value="{{ $product->id }}" @selected(($line['product_id'] ?? null) == $product->id)>{{ $product->displayName() }} {{ $product->sku }}</option>@endforeach
                     </select></div>
                     <div class="lg:col-span-2"><label for="line-unit-{{ $index }}" class="block text-xs text-text-secondary mb-1">{{ __('purchasing.unit') }}</label><select id="line-unit-{{ $index }}" wire:change="changeUnit({{ $index }}, $event.target.value)" class="w-full h-11 px-2 border border-border rounded-control text-sm" @disabled(empty($line['product_id']))><option value="">{{ __('purchasing.select_unit') }}</option>@foreach($unitOptions[$index] ?? [] as $unit)<option value="{{ $unit->id }}" @selected(($line['product_unit_id'] ?? null) == $unit->id)>{{ $unit->unit->name() }}</option>@endforeach</select></div>
-                    @foreach(['quantity', 'unit_cost'] as $field)<div class="lg:col-span-2"><label for="line-{{ $field }}-{{ $index }}" class="block text-xs text-text-secondary mb-1">{{ __('purchasing.'.$field) }}</label><input id="line-{{ $field }}-{{ $index }}" wire:model.live.debounce.400ms="lines.{{ $index }}.{{ $field }}" inputmode="decimal" dir="ltr" class="w-full min-w-0 h-11 px-2 border border-border rounded-control text-sm" /></div>@endforeach
+                    @foreach(['quantity', 'unit_cost'] as $field)
+                        <div class="lg:col-span-2">
+                            <label for="line-{{ $field }}-{{ $index }}" class="block text-xs text-text-secondary mb-1">{{ __('purchasing.'.$field) }}</label>
+                            <input id="line-{{ $field }}-{{ $index }}" wire:model.live.debounce.400ms="lines.{{ $index }}.{{ $field }}" inputmode="decimal" dir="ltr" class="w-full min-w-0 h-11 px-2 border border-border rounded-control text-sm" />
+                            @if($field === 'unit_cost' && isset($lastPriceHints[$index]))
+                                <p class="text-[11px] text-text-muted mt-1 leading-tight" dir="{{ app()->getLocale() === 'ar' ? 'rtl' : 'ltr' }}">
+                                    @php
+                                        $hintPrice = (string) $lastPriceHints[$index]['unit_cost'];
+                                        $hintTrimmed = strpos($hintPrice, '.') !== false ? rtrim(rtrim($hintPrice, '0'), '.') : $hintPrice;
+                                        $hintParts = explode('.', $hintTrimmed);
+                                        $hintDecimals = isset($hintParts[1]) ? strlen($hintParts[1]) : 0;
+                                        $formattedHintPrice = $hintDecimals > 2 ? $hintTrimmed : \App\Domain\Sales\Formatters\SalesMoneyFormatter::format($hintPrice, $lastPriceHints[$index]['currency_code']);
+                                    @endphp
+                                    {{ __('purchasing.last_purchased_hint', [
+                                        'price' => $formattedHintPrice,
+                                        'currency' => $lastPriceHints[$index]['currency_code'],
+                                        'unit' => $lastPriceHints[$index]['unit_name'] ?: '—',
+                                        'date' => $lastPriceHints[$index]['purchase_date'],
+                                    ]) }}
+                                </p>
+                            @endif
+                        </div>
+                    @endforeach
                     <div class="col-span-2 lg:col-span-2"><span class="block text-xs text-text-secondary mb-1">{{ __('purchasing.line_total') }}</span><output class="block h-11 px-2 py-3 text-sm font-bold bg-surface-soft rounded-control"><bdi>{{ isset($line['preview_total']) ? \App\Domain\Sales\Formatters\SalesMoneyFormatter::format($line['preview_total'], $currency_code) : '—' }} {{ $currency_code }}</bdi></output></div>
                 </div>
                 <div class="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
