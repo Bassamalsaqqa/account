@@ -230,7 +230,11 @@
                                 </span>
                             </td>
                             <td class="py-2.5 px-4 text-text-secondary">
-                                @if ($alloc->application_event_id === null)
+                                @if ($payment->is_reversed || $alloc->applicationEvent?->reversed_at !== null)
+                                    <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-danger-bg text-danger">
+                                        {{ __('purchasing.reversed') }}
+                                    </span>
+                                @elseif ($alloc->application_event_id === null)
                                     <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-surface-soft text-text-secondary">
                                         {{ __('purchasing.posted') }}
                                     </span>
