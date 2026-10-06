@@ -64,10 +64,14 @@ class VendorDetail extends Component
         $this->vendor = Vendor::withTrashed()->where('company_id', $company->id)->findOrFail($this->vendor->id);
 
         $canManage = $user->hasPermissionTo('vendors.manage');
-        $withCost = $user->hasPermissionTo('purchasing.cost.view');
+        $withCost = $this->canReadVendorFinancials();
         $canStatement = $withCost && $user->hasPermissionTo('vendors.statement.view');
-        $canCreatePurchase = $withCost && $user->hasPermissionTo('purchasing.purchase.create');
+        $canCreatePurchase = $user->hasPermissionTo('purchasing.cost.view') && $user->hasPermissionTo('purchasing.purchase.create');
         $canCreatePayment = $withCost && $user->hasPermissionTo('money.vendor_payment.create');
+
+        if ($this->activeTab === 'payments') {
+            $this->authorizePaymentFinancialRead();
+        }
 
         if (! $withCost && $this->activeTab !== 'overview') {
             $this->activeTab = 'overview';
@@ -96,7 +100,6 @@ class VendorDetail extends Component
                     ->orderByDesc('id')
                     ->paginate(15);
             } elseif ($this->activeTab === 'payments') {
-                $this->authorizePaymentFinancialRead();
                 $tabPayments = VendorPayment::with('moneyAccount')
                     ->where('company_id', $company->id)
                     ->where('vendor_id', $this->vendor->id)

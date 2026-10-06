@@ -34,32 +34,28 @@ trait AuthorizesPurchasingPages
 
     protected function authorizePaymentFinancialRead(): Company
     {
-        abort_unless(auth()->check(), 403);
-        $context = app(CompanyContext::class);
-        if (! $context->hasCompany() || (int) $context->companyId() !== $this->pageCompanyId) {
-            abort(403);
-        }
+        abort_unless($this->canReadVendorFinancials(), 403);
 
+        return app(CompanyContext::class)->company();
+    }
+
+    protected function canReadVendorFinancials(): bool
+    {
+        $context = app(CompanyContext::class);
         $user = auth()->user();
-        if (! $user->fresh()?->belongsToCompany($this->pageCompanyId)) {
-            abort(403);
+        if ($user === null || ! $context->hasCompany()
+            || (int) $context->companyId() !== $this->pageCompanyId
+            || ! $user->fresh()?->belongsToCompany($this->pageCompanyId)) {
+            return false;
         }
 
         setPermissionsTeamId($this->pageCompanyId);
         $user->unsetRelation('roles')->unsetRelation('permissions');
-        if (! $user->hasPermissionTo('purchasing.cost.view')) {
-            abort(403);
-        }
 
-        $hasAnyReadPerm = $user->hasPermissionTo('money.vendor_payment.create')
-            || $user->hasPermissionTo('money.vendor_payment.allocate')
-            || $user->hasPermissionTo('money.vendor_payment.reverse')
-            || $user->hasPermissionTo('vendors.statement.view');
-
-        if (! $hasAnyReadPerm) {
-            abort(403);
-        }
-
-        return $context->company();
+        return $user->hasPermissionTo('purchasing.cost.view')
+            && ($user->hasPermissionTo('money.vendor_payment.create')
+                || $user->hasPermissionTo('money.vendor_payment.allocate')
+                || $user->hasPermissionTo('money.vendor_payment.reverse')
+                || $user->hasPermissionTo('vendors.statement.view'));
     }
 }

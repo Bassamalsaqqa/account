@@ -105,7 +105,7 @@ class PayablesReconciliationService
             }
             foreach (PurchaseReturn::where('company_id', $cid)->where('status', Purchase::STATUS_POSTED)->get() as $return) {
                 try {
-                    app(PurchaseReturnPostedIntegrityValidator::class)->validate($return);
+                    app(PurchaseReturnPostingCommandBuilder::class)->validatePosted($return);
                 } catch (\Throwable $e) {
                     $violations[] = "Purchase Return [ID {$return->id}] integrity failure: {$e->getMessage()}";
                 }

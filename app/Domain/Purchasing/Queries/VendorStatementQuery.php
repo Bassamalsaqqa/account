@@ -10,6 +10,7 @@ use App\Models\Purchase;
 use App\Models\PurchaseReturn;
 use App\Models\Vendor;
 use App\Models\VendorPayment;
+use App\Services\Purchasing\PurchasePayableAsOf;
 use App\Support\Tenancy\CompanyContext;
 use Brick\Math\BigDecimal;
 use Carbon\Carbon;
@@ -87,6 +88,9 @@ class VendorStatementQuery
     private function read(Vendor $vendor, ?string $fromDate = null, ?string $toDate = null): array
     {
         $companyId = (int) $vendor->company_id;
+        $companyTz = Company::findOrFail($companyId)->timezone;
+        $asOf = Carbon::parse($toDate ?? Carbon::now($companyTz)->toDateString(), $companyTz)->startOfDay();
+        $cutoffDate = $asOf->toDateString();
 
         // 1. Gather all posted transactions for this vendor
         $purchases = Purchase::query()
@@ -99,7 +103,6 @@ class VendorStatementQuery
             ->where('company_id', $companyId)
             ->where('vendor_id', $vendor->id)
             ->where('status', Purchase::STATUS_POSTED)
-            ->whereNotNull('posting_batch_id')
             ->get();
 
         $payments = VendorPayment::query()
@@ -168,7 +171,7 @@ class VendorStatementQuery
 
             // If reversed, record reversal credit on the reversal date
             if ($pay->is_reversed && $pay->reversed_at !== null) {
-                $revDate = $pay->reversed_at->format('Y-m-d');
+                $revDate = $pay->reversed_at->copy()->setTimezone($companyTz)->format('Y-m-d');
                 $rawRows[] = [
                     'id' => (int) $pay->id,
                     'date' => $revDate,
@@ -218,7 +221,10 @@ class VendorStatementQuery
 
                 $date = $row['date'];
                 $isBefore = $fromDate !== null && $date < $fromDate;
-                $isAfter = $toDate !== null && $date > $toDate;
+                $isAfter = $date > $cutoffDate;
+                if ($isAfter) {
+                    continue;
+                }
 
                 // Running balance in AP = credits - debits
                 $netEffect = $row['credit']->minus($row['debit']);
@@ -227,10 +233,6 @@ class VendorStatementQuery
                     $openingBalance = $openingBalance->plus($netEffect);
                     $runningBalance = $runningBalance->plus($netEffect);
 
-                    continue;
-                }
-
-                if ($isAfter) {
                     continue;
                 }
 
@@ -250,7 +252,7 @@ class VendorStatementQuery
                 ];
             }
 
-            $aging = $this->calculateAging($vendor, $curr);
+            $aging = $this->calculateAging($vendor, $curr, $asOf, $runningBalance);
 
             $resultCurrencies[$curr] = [
                 'currency' => $curr,
@@ -294,17 +296,16 @@ class VendorStatementQuery
      *     net_vendor_credit: string,
      * }
      */
-    protected function calculateAging(Vendor $vendor, string $currency): array
+    protected function calculateAging(Vendor $vendor, string $currency, Carbon $asOf, BigDecimal $signedBalance): array
     {
-        $company = Company::find($vendor->company_id);
-        $companyTz = $company->timezone ?? config('app.timezone', 'UTC');
-        $today = Carbon::now($companyTz)->startOfDay();
+        $companyTz = $asOf->getTimezone()->getName();
         $minorUnits = in_array($currency, ['JOD', 'KWD', 'BHD', 'OMR'], true) ? 3 : 2;
 
         $purchases = Purchase::query()
             ->where('company_id', $vendor->company_id)
             ->where('vendor_id', $vendor->id)
             ->where('currency_code', $currency)
+            ->where('purchase_date', '<=', $asOf->toDateString())
             ->where('status', Purchase::STATUS_POSTED)
             ->get();
 
@@ -316,8 +317,9 @@ class VendorStatementQuery
         $days90Plus = BigDecimal::zero();
         $grossOpen = BigDecimal::zero();
 
+        $positions = app(PurchasePayableAsOf::class)->forPurchases($purchases, $asOf);
         foreach ($purchases as $pur) {
-            $outstanding = $pur->calculateOutstanding();
+            $outstanding = $positions[(int) $pur->id];
             if ($outstanding->isLessThanOrEqualTo(0)) {
                 continue;
             }
@@ -331,7 +333,7 @@ class VendorStatementQuery
             }
 
             $dueDate = Carbon::parse($pur->due_date, $companyTz)->startOfDay();
-            $diffDays = $dueDate->diffInDays($today, false); // positive if overdue
+            $diffDays = $dueDate->diffInDays($asOf, false); // positive if overdue
 
             if ($diffDays <= 0) {
                 $current = $current->plus($outstanding);
@@ -346,31 +348,8 @@ class VendorStatementQuery
             }
         }
 
-        // Signed vendor balance = Purchases - Returns - active Payments
-        $totalPurchases = Purchase::where('company_id', $vendor->company_id)
-            ->where('vendor_id', $vendor->id)
-            ->where('currency_code', $currency)
-            ->where('status', Purchase::STATUS_POSTED)
-            ->sum('grand_total_currency');
-
-        $totalReturns = PurchaseReturn::where('company_id', $vendor->company_id)
-            ->where('vendor_id', $vendor->id)
-            ->where('currency_code', $currency)
-            ->where('status', Purchase::STATUS_POSTED)
-            ->whereNotNull('posting_batch_id')
-            ->sum('grand_total_currency');
-
-        $totalActivePayments = VendorPayment::where('company_id', $vendor->company_id)
-            ->where('vendor_id', $vendor->id)
-            ->where('currency_code', $currency)
-            ->where('is_reversed', false)
-            ->whereNotNull('posting_batch_id')
-            ->sum('amount');
-
-        $signedBalance = BigDecimal::of((string) $totalPurchases)
-            ->minus(BigDecimal::of((string) $totalReturns))
-            ->minus(BigDecimal::of((string) $totalActivePayments));
-
+        // Reuse the statement closing principal balance: identical business-date cutoff,
+        // including reversals in company-local time; applications add no principal.
         $unappliedCredit = $grossOpen->minus($signedBalance);
         if ($unappliedCredit->isNegative()) {
             $unappliedCredit = BigDecimal::zero();

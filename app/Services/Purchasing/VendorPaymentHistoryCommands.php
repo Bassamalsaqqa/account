@@ -35,7 +35,7 @@ final class VendorPaymentHistoryCommands
         $cid = (int) $payment->company_id;
         $company = Company::findOrFail($cid);
         $vendor = Vendor::withTrashed()->where('company_id', $cid)->findOrFail($payment->vendor_id);
-        $money = MoneyAccount::where('company_id', $cid)->findOrFail($payment->money_account_id);
+        $money = MoneyAccount::withTrashed()->where('company_id', $cid)->findOrFail($payment->money_account_id);
         $amount = $this->positive($payment->amount, $payment->currency_code);
         $fx = ExchangeRate::from($payment->exchange_rate);
         $base = $amount->multipliedBy($fx->getValue())->toScale(6, RoundingMode::HALF_UP);

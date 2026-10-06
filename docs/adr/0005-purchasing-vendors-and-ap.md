@@ -254,6 +254,13 @@ financial decisions alongside remaining future constraints.
   (`money.vendor_payment.create`, `allocate`, `reverse`, `vendors.statement.view`).
   Sensitive financial fields are redacted on the server; CSS hiding is prohibited.
 
+- Statement aging uses the same company-local end-of-day cutoff as the statement
+  closing balance. Purchase/Return/payment/application business dates and reversal
+  instants determine historical positions; later activity does not rewrite them.
+- Payables reconciliation validates exact canonical purchasing/payment source
+  batches, not equality with the entire AP control account. Legitimate AP opening
+  balances can exist outside the Vendor source subledger.
+
 ## Verification
 
 Disposable local MariaDB is authoritative for tenant/RBAC, validation, role upgrade,
