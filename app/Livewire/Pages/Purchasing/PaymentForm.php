@@ -6,6 +6,7 @@ namespace App\Livewire\Pages\Purchasing;
 
 use App\Actions\Purchasing\PostVendorPaymentAction;
 use App\Livewire\Pages\Purchasing\Concerns\AuthorizesPurchasingPages;
+use App\Models\CompanyCurrency;
 use App\Models\Currency;
 use App\Models\MoneyAccount;
 use App\Models\Purchase;
@@ -16,6 +17,7 @@ use App\Support\Tenancy\CompanyContext;
 use Brick\Math\BigDecimal;
 use Carbon\Carbon;
 use Illuminate\Contracts\View\View;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Str;
 use Livewire\Attributes\Layout;
 use Livewire\Component;
@@ -93,8 +95,7 @@ class PaymentForm extends Component
         $this->document_locale = $company->default_locale;
         $this->payment_date = Carbon::now($company->timezone)->toDateString();
 
-        $defaultAccount = MoneyAccount::where('company_id', $company->id)
-            ->where('is_active', true)
+        $defaultAccount = $this->eligibleMoneyAccounts()
             ->orderBy('sort_order')
             ->first();
 
@@ -116,9 +117,8 @@ class PaymentForm extends Component
                 $position = $purchase->payablePosition();
                 if ($position->hasOutstanding()) {
                     $this->vendor_id = $purchase->vendor_id;
-                    $matchingAccount = MoneyAccount::where('company_id', $company->id)
+                    $matchingAccount = $this->eligibleMoneyAccounts()
                         ->where('currency_code', $purchase->currency_code)
-                        ->where('is_active', true)
                         ->first();
 
                     $this->money_account_id = $matchingAccount?->id;
@@ -170,8 +170,10 @@ class PaymentForm extends Component
     public function updatedMoneyAccountId(): void
     {
         if ($this->money_account_id !== null) {
-            $account = MoneyAccount::where('company_id', $this->pageCompanyId)->where('is_active', true)->find($this->money_account_id);
-            if ($account !== null) {
+            $account = $this->eligibleMoneyAccounts()->find($this->money_account_id);
+            if ($account === null) {
+                $this->money_account_id = null;
+            } else {
                 $this->currency_code = $account->currency_code;
                 $this->payment_method = $account->account_type === MoneyAccount::TYPE_BANK ? 'bank_transfer' : 'cash';
                 $company = app(CompanyContext::class)->company();
@@ -343,6 +345,15 @@ class PaymentForm extends Component
         return redirect()->route('vendor-payments.show', $payment->public_id);
     }
 
+    /** @return Builder<MoneyAccount> */
+    private function eligibleMoneyAccounts(): Builder
+    {
+        return MoneyAccount::where('company_id', $this->pageCompanyId)
+            ->where('is_active', true)
+            ->whereIn('currency_code', CompanyCurrency::where('company_id', $this->pageCompanyId)
+                ->where('enabled', true)->select('currency_code'));
+    }
+
     public function render(CompanyContext $context): View
     {
         $this->authorizePurchasing('purchasing.cost.view');
@@ -354,7 +365,7 @@ class PaymentForm extends Component
                 $query->where(fn ($active) => $active->where('status', 'active')->whereNull('deleted_at'))
                     ->orWhereHas('purchases', fn ($purchase) => $purchase->where('status', Purchase::STATUS_POSTED));
             })->orderBy('name_ar')->get();
-        $accounts = MoneyAccount::where('company_id', $this->pageCompanyId)->where('is_active', true)->orderBy('sort_order')->get();
+        $accounts = $this->eligibleMoneyAccounts()->orderBy('sort_order')->get();
 
         $minorUnits = (int) Currency::findOrFail($this->currency_code)->getAttribute('minor_units');
         $paymentAmountMinimum = (string) BigDecimal::one()->dividedBy(BigDecimal::of(10)->power($minorUnits), $minorUnits);

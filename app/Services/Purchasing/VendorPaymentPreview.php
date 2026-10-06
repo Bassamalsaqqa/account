@@ -19,7 +19,8 @@ final class VendorPaymentPreview
         $total = BigDecimal::zero();
 
         foreach ($allocations as &$allocation) {
-            $allocated = BigDecimal::of((string) ($allocation['allocated_amount'] ?? '0'));
+            $allocationInput = (string) ($allocation['allocated_amount'] ?? '0');
+            $allocated = BigDecimal::of(trim($allocationInput) === '' ? '0' : $allocationInput);
             if ($allocated->isNegative()) {
                 $allocated = BigDecimal::zero();
             }
