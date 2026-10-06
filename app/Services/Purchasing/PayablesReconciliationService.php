@@ -15,6 +15,8 @@ use App\Models\VendorPaymentAllocation;
 use App\Models\VendorPaymentApplicationEvent;
 use App\Support\Tenancy\CompanyContext;
 use App\Support\Tenancy\CompanyScope;
+use Illuminate\Database\Query\JoinClause;
+use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
 
 class PayablesReconciliationService
@@ -145,6 +147,8 @@ class PayablesReconciliationService
                 }
             }
 
+            $violations = array_merge($violations, $this->canonicalSourceBatchViolations($cid));
+
             $stats['violations_count'] = count($violations);
 
             return new PayablesReconciliationReport(
@@ -160,5 +164,67 @@ class PayablesReconciliationService
         }
 
         return $execute();
+    }
+
+    /**
+     * Audit only original Purchasing/AP namespaces; reversals and opening balances
+     * retain their own accounting semantics. Source-side exact validators run above.
+     *
+     * @return list<string>
+     */
+    private function canonicalSourceBatchViolations(int $companyId): array
+    {
+        $sources = [
+            'purchase' => ['purchases', 'status', Purchase::STATUS_POSTED],
+            'purchase_return' => ['purchase_returns', 'status', PurchaseReturn::STATUS_POSTED],
+            'vendor_payment' => ['vendor_payments', 'posted_at', null],
+            'vendor_payment_application' => ['vendor_payment_application_events', 'applied_at', null],
+        ];
+        $violations = [];
+
+        foreach ($sources as $type => [$table, $lifecycleColumn, $requiredStatus]) {
+            $batches = DB::table('posting_batches as batches')
+                ->leftJoin($table.' as sources', function (JoinClause $join): void {
+                    $join->on('batches.source_id', '=', 'sources.id')
+                        ->on('batches.company_id', '=', 'sources.company_id');
+                })
+                ->where('batches.company_id', $companyId)
+                ->where('batches.source_type', $type)
+                ->orderBy('batches.id')
+                ->get([
+                    'batches.id', 'batches.source_id', 'sources.id as owner_id',
+                    'sources.posting_batch_id as owner_batch_id',
+                    'sources.'.$lifecycleColumn.' as owner_lifecycle',
+                ]);
+            $seen = [];
+
+            foreach ($batches as $batch) {
+                $label = "Canonical source provenance failure: batch [{$batch->id}], {$type} [{$batch->source_id}]";
+                if (isset($seen[$batch->source_id])) {
+                    $violations[] = "{$label} duplicates original batch [{$seen[$batch->source_id]}].";
+                } else {
+                    $seen[$batch->source_id] = $batch->id;
+                }
+
+                if ($batch->owner_id === null) {
+                    $violations[] = "{$label} has no same-company source record.";
+
+                    continue;
+                }
+
+                if (($requiredStatus === null && $batch->owner_lifecycle === null)
+                    || ($requiredStatus !== null && $batch->owner_lifecycle !== $requiredStatus)) {
+                    $violations[] = "{$label} references an uncompleted source event.";
+                }
+
+                if ($batch->owner_batch_id === null) {
+                    $violations[] = "{$label} is not owned by the source; its canonical posting batch is null.";
+                } elseif ((int) $batch->owner_batch_id !== (int) $batch->id) {
+                    $violations[] = "{$label} is not owned by the source, which references batch [{$batch->owner_batch_id}].";
+                }
+            }
+        }
+
+        return $violations;
     }
 }
