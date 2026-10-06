@@ -32,9 +32,8 @@ final class PurchasePayableAsOf
             throw new InvalidArgumentException('Historical payable positions require matching company context.');
         }
         $date = $asOf->toDateString();
-        // Eloquent timestamps use the application's storage timezone. Business dates
-        // are local dates; reversal instants must be compared to the local day's end.
-        $end = $asOf->copy()->endOfDay()->setTimezone(config('app.timezone', 'UTC'))->format('Y-m-d H:i:s');
+        // Reversal batches persist the Company-local business date at execution.
+        // Do not reinterpret historical reversal instants in today's timezone.
         $result = [];
         foreach ($purchases as $purchase) {
             if ((int) $purchase->company_id !== $companyId || ! $purchase->isPosted()
@@ -55,20 +54,23 @@ final class PurchasePayableAsOf
 
         $allocations = VendorPaymentAllocation::query()
             ->join('vendor_payments as payment', 'payment.id', '=', 'vendor_payment_allocations.vendor_payment_id')
+            ->leftJoin('posting_batches as payment_reversal', function ($join) use ($companyId): void {
+                $join->on('payment_reversal.id', '=', 'payment.reversal_posting_batch_id')->where('payment_reversal.company_id', $companyId);
+            })
             ->leftJoin('vendor_payment_application_events as event', 'event.id', '=', 'vendor_payment_allocations.application_event_id')
             ->where('vendor_payment_allocations.company_id', $companyId)
             ->where('payment.company_id', $companyId)
             ->whereIn('vendor_payment_allocations.purchase_id', $ids)
             ->whereNotNull('payment.posted_at')->whereNotNull('payment.posting_batch_id')
             ->where('payment.payment_date', '<=', $date)
-            ->where(fn ($q) => $q->whereNull('payment.reversed_at')->orWhere('payment.reversed_at', '>', $end))
-            ->where(function ($q) use ($companyId, $date, $end): void {
+            ->where(fn ($q) => $q->whereNull('payment.reversed_at')->orWhere('payment_reversal.posting_date', '>', $date))
+            ->where(function ($q) use ($companyId, $date): void {
                 $q->whereNull('vendor_payment_allocations.application_event_id')
-                    ->orWhere(function ($event) use ($companyId, $date, $end): void {
+                    ->orWhere(function ($event) use ($companyId, $date): void {
                         $event->where('event.company_id', $companyId)
                             ->whereColumn('event.vendor_payment_id', 'payment.id')
                             ->whereNotNull('event.applied_at')->where('event.application_date', '<=', $date)
-                            ->where(fn ($rev) => $rev->whereNull('event.reversed_at')->orWhere('event.reversed_at', '>', $end));
+                            ->where(fn ($rev) => $rev->whereNull('event.reversed_at')->orWhere('payment_reversal.posting_date', '>', $date));
                     });
             })
             ->selectRaw('vendor_payment_allocations.purchase_id, SUM(vendor_payment_allocations.allocated_amount) as relief')

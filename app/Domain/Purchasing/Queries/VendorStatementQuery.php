@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Purchasing\Queries;
 
+use App\Domain\Accounting\Exceptions\ImmutableRecordException;
 use App\Exceptions\NoActiveCompanyException;
 use App\Models\Company;
 use App\Models\Purchase;
@@ -105,7 +106,7 @@ class VendorStatementQuery
             ->where('status', Purchase::STATUS_POSTED)
             ->get();
 
-        $payments = VendorPayment::query()
+        $payments = VendorPayment::query()->with('reversalPostingBatch')
             ->where('company_id', $companyId)
             ->where('vendor_id', $vendor->id)
             ->whereNotNull('posting_batch_id')
@@ -171,7 +172,12 @@ class VendorStatementQuery
 
             // If reversed, record reversal credit on the reversal date
             if ($pay->is_reversed && $pay->reversed_at !== null) {
-                $revDate = $pay->reversed_at->copy()->setTimezone($companyTz)->format('Y-m-d');
+                // The immutable business date survives later Company timezone changes.
+                $reversal = $pay->reversalPostingBatch;
+                if ($reversal === null || (int) $reversal->company_id !== $companyId || (int) $reversal->reversal_of_id !== (int) $pay->posting_batch_id) {
+                    throw new ImmutableRecordException('Vendor statement reversal provenance is incoherent.');
+                }
+                $revDate = $reversal->posting_date->toDateString();
                 $rawRows[] = [
                     'id' => (int) $pay->id,
                     'date' => $revDate,

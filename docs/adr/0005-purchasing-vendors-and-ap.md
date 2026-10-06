@@ -254,9 +254,11 @@ financial decisions alongside remaining future constraints.
   (`money.vendor_payment.create`, `allocate`, `reverse`, `vendors.statement.view`).
   Sensitive financial fields are redacted on the server; CSS hiding is prohibited.
 
+- Vendor Payment reversal supplies one explicit Company-local business date to all dependent and parent accounting reversals. Absolute lifecycle timestamps remain timestamps. The captured Company-local lifecycle date is checked before commit; date inconsistency fails atomically. Historical statements and aging use the persisted reversal business date, so later Company timezone changes do not reinterpret old reversals. Historical validation requires dependent reversal batches to share the parent reversal date. Shared reversal callers that omit an explicit business date retain their existing default.
+
 - Statement aging uses the same company-local end-of-day cutoff as the statement
   closing balance. Purchase/Return/payment/application business dates and reversal
-  instants determine historical positions; later activity does not rewrite them.
+  business dates determine historical positions; later activity does not rewrite them.
 - Payables reconciliation validates exact canonical purchasing/payment source
   batches, not equality with the entire AP control account. Legitimate AP opening
   balances can exist outside the Vendor source subledger.

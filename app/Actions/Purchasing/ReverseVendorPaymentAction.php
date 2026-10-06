@@ -17,6 +17,7 @@ use App\Services\Purchasing\VendorPaymentPostedIntegrityValidator;
 use App\Services\Purchasing\VendorPaymentReversalScope;
 use App\Services\Sales\SalesActorGuard;
 use App\Support\Tenancy\CompanyContext;
+use Carbon\Carbon;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
@@ -57,7 +58,7 @@ class ReverseVendorPaymentAction
         }
 
         return DB::transaction(function () use ($payment, $user, $reason): VendorPayment {
-            Company::where('id', $payment->company_id)->lockForUpdate()->firstOrFail();
+            $lockedCompany = Company::where('id', $payment->company_id)->lockForUpdate()->firstOrFail();
             app(SalesActorGuard::class)->lockAndAuthorize((int) $payment->company_id, $user, 'money.vendor_payment.reverse');
             app(SalesActorGuard::class)->lockAndAuthorize((int) $payment->company_id, $user, 'purchasing.cost.view');
 
@@ -77,6 +78,9 @@ class ReverseVendorPaymentAction
 
             $this->integrityValidator->validate($lockedPayment);
 
+            // One Company-local business date for the complete reversal.
+            $reversalDate = Carbon::now($lockedCompany->timezone)->toDateString();
+
             // 1. Reverse dependent application events newest to oldest
             $events = VendorPaymentApplicationEvent::where('company_id', $lockedPayment->company_id)
                 ->where('vendor_payment_id', $lockedPayment->id)
@@ -88,7 +92,7 @@ class ReverseVendorPaymentAction
             $scope = app(VendorPaymentReversalScope::class);
             $this->activeReversalScope = $scope;
             try {
-                $scope->withinCanonicalReversal($this, $lockedPayment, $user, $events->pluck('id')->map(fn ($id): int => (int) $id)->all(), function ($capability) use ($events, $lockedPayment, $user, $reason): void {
+                $scope->withinCanonicalReversal($this, $lockedPayment, $user, $events->pluck('id')->map(fn ($id): int => (int) $id)->all(), function ($capability) use ($events, $lockedPayment, $user, $reason, $reversalDate): void {
                     foreach ($events as $event) {
                         if ($event->applied_at === null) {
                             throw new InvalidArgumentException('Incomplete credit application prevents vendor payment reversal.');
@@ -103,7 +107,8 @@ class ReverseVendorPaymentAction
                             $eventReversal = $this->accountingReversalService->reverse(
                                 $eventBatch,
                                 $user,
-                                $reason ?? 'Vendor payment advance application reversal'
+                                $reason ?? 'Vendor payment advance application reversal',
+                                $reversalDate
                             );
                         }
 
@@ -119,7 +124,8 @@ class ReverseVendorPaymentAction
                     $reversalBatch = $this->accountingReversalService->reverse(
                         $originalBatch,
                         $user,
-                        $reason ?? "Reversal of Vendor Payment {$lockedPayment->payment_number}"
+                        $reason ?? "Reversal of Vendor Payment {$lockedPayment->payment_number}",
+                        $reversalDate
                     );
 
                     $lockedPayment->completeCanonicalReversal($reversalBatch, $user, $reason, $capability);
@@ -128,6 +134,10 @@ class ReverseVendorPaymentAction
             } finally {
                 $this->activeReversalScope = null;
             }
+
+            // Verify the persisted reversal date against its Company-local lifecycle
+            // timestamp before commit; a clock crossing rolls back the entire event.
+            $this->integrityValidator->validate($lockedPayment->fresh(), expectedReversalDate: $reversalDate);
 
             // Safe nonmonetary audit event
             app(AuditService::class)->log(

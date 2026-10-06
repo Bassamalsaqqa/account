@@ -284,14 +284,20 @@ class AccountingPostingService
      * Authoritative internal double-entry reversal write operation.
      * Persists reversal batch, inverse lines, and reciprocal status linkage in one atomic transaction.
      */
-    public function reverse(PostingBatch $original, User $actingUser, ?string $reason = null): PostingBatch
+    public function reverse(PostingBatch $original, User $actingUser, ?string $reason = null, ?string $postingDate = null): PostingBatch
     {
         // Upfront validation of caller-supplied reason: reject excessive text before any DB writes/transactions
         if ($reason !== null && mb_strlen($reason) > 512) {
             throw new InvalidArgumentException('Reversal reason cannot exceed 512 characters.');
         }
 
-        return DB::transaction(function () use ($original, $actingUser, $reason): PostingBatch {
+        // Explicit business dates are date-only values, never timezone-converted.
+        if ($postingDate !== null && (! preg_match('/^\d{4}-\d{2}-\d{2}$/D', $postingDate)
+            || ! checkdate((int) substr($postingDate, 5, 2), (int) substr($postingDate, 8, 2), (int) substr($postingDate, 0, 4)))) {
+            throw new InvalidArgumentException('Reversal posting date must be a valid YYYY-MM-DD date.');
+        }
+
+        return DB::transaction(function () use ($original, $actingUser, $reason, $postingDate): PostingBatch {
             $context = app(CompanyContext::class);
 
             // 1. Tenancy Enforcement
@@ -407,7 +413,7 @@ class AccountingPostingService
                 'public_id' => (string) Str::ulid(),
                 'company_id' => $lockedOriginal->company_id,
                 'batch_number' => null,
-                'posting_date' => now()->toDateString(),
+                'posting_date' => $postingDate ?? now()->toDateString(),
                 'status' => PostingBatch::STATUS_POSTED,
                 'source_type' => 'reversal',
                 'source_id' => (int) $lockedOriginal->id,

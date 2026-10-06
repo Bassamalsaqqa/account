@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Purchasing;
 
 use App\Domain\Accounting\Exceptions\ImmutableRecordException;
+use App\Models\Company;
 use App\Models\PostingBatch;
 use App\Models\VendorPaymentApplicationEvent;
 
@@ -12,7 +13,7 @@ final class VendorPaymentApplicationIntegrityValidator
 {
     public function __construct(private readonly VendorPaymentHistoryCommands $commands) {}
 
-    public function validate(VendorPaymentApplicationEvent $event, ?PostingBatch $pendingBatch = null, bool $completing = false): void
+    public function validate(VendorPaymentApplicationEvent $event, ?PostingBatch $pendingBatch = null, bool $completing = false, ?string $expectedReversalDate = null): void
     {
         if (! $completing && $event->applied_at === null) {
             throw new ImmutableRecordException('Incomplete advance application.');
@@ -34,10 +35,15 @@ final class VendorPaymentApplicationIntegrityValidator
                 if ($event->reversal_posting_batch_id === null || $event->reversed_by === null) {
                     throw new ImmutableRecordException('Incomplete application reversal.');
                 }
-                $this->commands->assertReversal($batch, (int) $event->reversal_posting_batch_id, (int) $event->reversed_by);
+                $this->commands->assertReversal($batch, (int) $event->reversal_posting_batch_id, (int) $event->reversed_by,
+                    $expectedReversalDate ?? $payment->reversalPostingBatch()->firstOrFail()->posting_date->toDateString());
             } elseif ($batch->status !== 'posted' || $batch->reversed_by_batch_id !== null) {
                 throw new ImmutableRecordException('Unexpected application accounting reversal.');
             }
+        }
+        if ($event->reversed_at !== null && $expectedReversalDate !== null
+            && $event->reversed_at->copy()->setTimezone(Company::findOrFail($event->company_id)->timezone)->toDateString() !== $expectedReversalDate) {
+            throw new ImmutableRecordException('Application reversal timestamp disagrees with its business date.');
         }
         if (($event->reversed_at === null && ($event->reversed_by !== null || $event->reversal_posting_batch_id !== null))
             || ($event->reversed_at !== null && ($event->reversed_by === null || ($command === null && $event->reversal_posting_batch_id !== null)))) {

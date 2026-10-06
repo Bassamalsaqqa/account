@@ -175,7 +175,7 @@ final class VendorPaymentHistoryCommands
         }
     }
 
-    public function assertReversal(PostingBatch $original, int $reversalId, int $actorId): void
+    public function assertReversal(PostingBatch $original, int $reversalId, int $actorId, ?string $expectedPostingDate = null): void
     {
         $rev = PostingBatch::where('company_id', $original->company_id)->findOrFail($reversalId);
         $this->require($original->status === 'reversed' && (int) $original->reversed_by_batch_id === $reversalId
@@ -184,6 +184,9 @@ final class VendorPaymentHistoryCommands
             && $rev->reversed_by_batch_id === null && $rev->posted_at !== null && (int) $rev->posted_by === $actorId
             && $rev->transaction_currency_code === $original->transaction_currency_code && $rev->base_currency_code === $original->base_currency_code
             && BigDecimal::of($rev->exchange_rate)->isEqualTo($original->exchange_rate), 'Canonical reversal linkage');
+        if ($expectedPostingDate !== null) {
+            $this->require($rev->posting_date->toDateString() === $expectedPostingDate, 'Canonical reversal business date');
+        }
         $rows = $original->lines()->orderBy('line_number')->get();
         $inverse = $rev->lines()->orderBy('line_number')->get();
         $this->require($rows->count() === $inverse->count(), 'Reversal line count');

@@ -22,7 +22,7 @@ class AccountingReversalService
      * Atomically reverse a posted batch by creating an inverse batch and cross-linking records.
      * Orchestration facade delegating authoritative persistence to AccountingPostingService.
      */
-    public function reverse(PostingBatch $batch, ?User $user = null, ?string $reason = null): PostingBatch
+    public function reverse(PostingBatch $batch, ?User $user = null, ?string $reason = null, ?string $postingDate = null): PostingBatch
     {
         if ($reason !== null && mb_strlen($reason) > 512) {
             throw new \InvalidArgumentException('Reversal reason cannot exceed 512 characters.');
@@ -56,6 +56,6 @@ class AccountingReversalService
             );
         }
 
-        return $this->postingService->reverse($batch, $actingUser, $reason);
+        return $this->postingService->reverse($batch, $actingUser, $reason, $postingDate);
     }
 }
