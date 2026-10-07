@@ -6,10 +6,14 @@ namespace Tests\Feature\Phase6;
 
 use App\Actions\Accounting\PostOpeningBalancesAction;
 use App\Actions\Money\EnsureMoneyFoundationAction;
+use App\Actions\Money\IssueCheckAction;
+use App\Actions\Money\ReceiveCheckAction;
 use App\Models\DocumentSequence;
 use App\Models\LedgerAccount;
 use App\Services\Accounting\AccountingReconciliationService;
+use App\Services\Money\CustomerPaymentHistory;
 use App\Services\Money\MoneyReconciliationService;
+use App\Services\Purchasing\VendorPaymentPostedIntegrityValidator;
 use App\Support\Tenancy\CompanyContext;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -98,5 +102,33 @@ final class MoneyProvenanceTest extends Phase6TestCase
         }
         $this->assertSame(0, DB::table('money_transfers')->count());
         $this->assertSame(0, DB::table('checks')->count());
+    }
+
+    public static function checkDirections(): array
+    {
+        return [['incoming'], ['outgoing']];
+    }
+
+    #[DataProvider('checkDirections')]
+    public function test_check_initial_settlement_and_payment_request_have_one_exact_allocation_intent(string $direction): void
+    {
+        $incoming = $direction === 'incoming';
+        $document = $incoming ? $this->invoice() : $this->createAndPostPurchase(['currency_code' => 'USD', 'exchange_rate' => '3.50']);
+        $data = $this->checkIntent($direction, [[($incoming ? 'sales_invoice_id' : 'purchase_id') => $document->id, 'allocated_amount' => '100']]);
+        if ($incoming) {
+            $data['party_id'] = $document->customer_id;
+        }
+        $check = app($incoming ? ReceiveCheckAction::class : IssueCheckAction::class)->execute($this->company, $this->owner, $data);
+        $payment = $incoming ? $check->customerPayment : $check->vendorPayment;
+        $this->assertTrue($document->fresh()->calculateOutstanding()->isZero());
+        $this->assertSame('100.000000', $payment->allocations->sole()->allocated_amount);
+        $this->assertTrue(app(MoneyReconciliationService::class)->reconcile($this->company)->isHealthy);
+        $payload = $check->getAttribute('request_payload');
+        $payload['allocations'] = [];
+        $hash = hash('sha256', json_encode($payload, JSON_THROW_ON_ERROR));
+        DB::table('checks')->where('id', $check->id)->update(['request_payload' => json_encode($payload, JSON_THROW_ON_ERROR), 'request_hash' => $hash]);
+        DB::table('check_events')->where('check_id', $check->id)->update(['request_payload' => json_encode($payload, JSON_THROW_ON_ERROR), 'request_hash' => $hash]);
+        app($incoming ? CustomerPaymentHistory::class : VendorPaymentPostedIntegrityValidator::class)->validate($payment->fresh());
+        $this->assertFalse(app(MoneyReconciliationService::class)->reconcile($this->company)->isHealthy);
     }
 }

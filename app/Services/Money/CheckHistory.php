@@ -98,6 +98,17 @@ final class CheckHistory
             || Carbon::parse($payment->payment_date)->toDateString() !== $check->received_issued_date->toDateString() || (int) $payment->created_by !== (int) $check->created_by) {
             throw new InvalidArgumentException('Check has no exact canonical linked Payment.');
         }
+        $documentKey = $incoming ? 'sales_invoice_id' : 'purchase_id';
+        $initialIntent = [];
+        foreach ($payment->allocations()->whereNull('application_event_id')->orderBy($documentKey)->get() as $allocation) {
+            $initialIntent[] = PaymentAllocationIntent::historicalRow($documentKey, (int) $allocation->getAttribute($documentKey),
+                $allocation->allocated_amount, $allocation->payment_currency_amount, (int) $payment->allocation_version);
+        }
+        if ($initialIntent !== PaymentAllocationIntent::normalize($payload['allocations'] ?? [], $documentKey)
+            || $payment->idempotency_key !== 'check-payment:'.$check->public_id
+            || $payment->reference_number !== $check->check_number || $payment->notes !== $check->notes) {
+            throw new InvalidArgumentException('Check request does not own its linked Payment initial intent.');
+        }
         if (! $incoming) {
             app(VendorPaymentPostedIntegrityValidator::class)->validate($payment);
         } else {
