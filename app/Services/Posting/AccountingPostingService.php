@@ -13,6 +13,8 @@ use App\Domain\Posting\Exceptions\PostingValidationException;
 use App\Domain\Posting\Exceptions\ReversalException;
 use App\Exceptions\CompanyReassignmentException;
 use App\Exceptions\NoActiveCompanyException;
+use App\Models\Check;
+use App\Models\CheckEvent;
 use App\Models\Company;
 use App\Models\CompanyCurrency;
 use App\Models\CompanyUser;
@@ -21,6 +23,7 @@ use App\Models\MoneyAccount;
 use App\Models\PostingBatch;
 use App\Models\PostingLine;
 use App\Models\User;
+use App\Services\Money\MoneyAccountLedger;
 use App\Services\Money\MoneyEventScope;
 use App\Support\Tenancy\CompanyContext;
 use Illuminate\Database\Eloquent\Collection;
@@ -161,8 +164,11 @@ class AccountingPostingService
                 );
             }
 
+            // Canonically prepared Check clearance settles an already-frozen route.
+            // Retirement may not block that currency or Bank child ledger; other accounts remain strict.
+            $frozenBank = $this->frozenCheckClearanceBank($command);
             $batchTxCurrency = strtoupper($command->transactionCurrencyCode);
-            if (! isset($allCompanyCurrencies[$batchTxCurrency]) || ! $allCompanyCurrencies[$batchTxCurrency]->enabled) {
+            if (! isset($allCompanyCurrencies[$batchTxCurrency]) || (! $allCompanyCurrencies[$batchTxCurrency]->enabled && $batchTxCurrency !== $frozenBank?->currency_code)) {
                 throw PostingValidationException::invalidCurrency(
                     $batchTxCurrency,
                     "Currency is not enabled for company [{$lockedCompany->id}]"
@@ -180,7 +186,7 @@ class AccountingPostingService
             foreach ($command->lines as $line) {
                 if ($line->transactionCurrencyCode !== null) {
                     $lineCurr = strtoupper($line->transactionCurrencyCode);
-                    if (! isset($allCompanyCurrencies[$lineCurr]) || ! $allCompanyCurrencies[$lineCurr]->enabled) {
+                    if (! isset($allCompanyCurrencies[$lineCurr]) || (! $allCompanyCurrencies[$lineCurr]->enabled && $lineCurr !== $frozenBank?->currency_code)) {
                         throw PostingValidationException::invalidCurrency(
                             $lineCurr,
                             "Currency is not enabled for company [{$lockedCompany->id}]"
@@ -210,7 +216,7 @@ class AccountingPostingService
 
             foreach ($accountIds as $accountId) {
                 $account = $validAccounts->get($accountId);
-                if ($account === null || ! $account->active) {
+                if ($account === null || (! $account->active && $accountId !== $frozenBank?->ledger_account_id)) {
                     throw PostingValidationException::accountNotFoundOrInactive(
                         $accountId,
                         $lockedCompany->id
@@ -305,6 +311,37 @@ class AccountingPostingService
                 throw $e;
             }
         });
+    }
+
+    /** Only called after the exact one-use MoneyEventScope command authorization. */
+    private function frozenCheckClearanceBank(PostingCommand $command): ?MoneyAccount
+    {
+        if ($command->sourceType !== 'check_event') {
+            return null;
+        }
+        $event = CheckEvent::where('company_id', $command->company->id)->whereKey($command->sourceId)->first();
+        $check = $event === null ? null : Check::where('company_id', $command->company->id)->whereKey($event->check_id)->first();
+        if ($event === null || $check === null || $event->event_type !== 'clear' || $event->posting_batch_id !== null
+            || $event->completed_at !== null || $command->transactionCurrencyCode !== $check->currency_code) {
+            throw new InvalidArgumentException('Check clearance requires its canonical pending event.');
+        }
+        if ($check->direction === 'incoming') {
+            $deposit = $check->events()->where('event_type', 'deposit')->whereNotNull('completed_at')->where('id', '<', $event->id)->first();
+            if ($check->status !== 'deposited' || $deposit === null || $deposit->money_account_id !== $event->money_account_id
+                || $deposit->ledger_account_id !== $event->ledger_account_id) {
+                throw new InvalidArgumentException('Check clearance must retain its completed deposit route.');
+            }
+        } elseif ($check->direction !== 'outgoing' || $check->status !== 'issued' || $check->drawn_money_account_id !== $event->money_account_id) {
+            throw new InvalidArgumentException('Check clearance must retain its issued Bank route.');
+        }
+        $bank = MoneyAccount::withTrashed()->where('company_id', $command->company->id)->whereKey($event->money_account_id)->lockForUpdate()->first();
+        if ($bank === null || $bank->account_type !== MoneyAccount::TYPE_BANK || $bank->currency_code !== $check->currency_code
+            || $bank->ledger_account_id !== $event->ledger_account_id) {
+            throw new InvalidArgumentException('Check clearance Bank provenance mismatch.');
+        }
+        app(MoneyAccountLedger::class)->validate($bank);
+
+        return $bank;
     }
 
     /**

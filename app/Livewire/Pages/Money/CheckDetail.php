@@ -60,6 +60,9 @@ class CheckDetail extends Component
         $check = $this->instrument();
         $this->authorizeCheckDirection($check->direction, true);
         $rules = ['eventDate' => 'required|date_format:Y-m-d', 'notes' => 'nullable|string|max:2000'];
+        if (in_array($type, ['return', 'cancel'], true)) {
+            $rules['notes'] = 'nullable|string|max:500';
+        }
         if ($type === 'deposit') {
             $rules['bankId'] = 'required|integer|min:1';
         }
