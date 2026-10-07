@@ -1,6 +1,6 @@
 # ADR 0005: Purchasing, Vendors and Accounts Payable
 
-Status: Phase 5F Implemented / Awaiting Independent Review (Phases 5A, 5B, 5C, 5D, and 5E accepted, merged to main, and deployed to production; Phase 5F implemented on candidate branch awaiting independent review).
+Status: Phase 5 Complete / Accepted Source / Merged / Deployed. Phases 5A, 5B, 5C, 5D, 5E, and 5F are accepted, merged to main, and deployed to production.
 
 ## Context and checkpoints
 
@@ -12,7 +12,14 @@ Phase 5E covers Vendor Payments, AP settlement, balances, statements and aging.
 Phase 5F completes the Purchasing history vertical with read-only Purchase and Vendor
 price history queries, comparative metrics, and UI integrations. Phase 6 and later
 functionality (cheques, expense bills, landed costs) remain unstarted. This ADR records
-implemented decisions and candidate Phase 5F boundaries alongside future constraints.
+implemented and accepted decisions alongside future constraints.
+
+Phase 5F accepted source `eee3b8284320aec498a0ec6de13873e3791aca65` was merged
+through PR #13 on 2026-10-07 at `f0eb9f860042c27b2e8024a8e79d373654d80773`.
+The merge preserves the accepted source tree exactly. That integration commit was
+deployed on 2026-10-07 after verified backup, data preservation, healthy reconciliations
+and read-only live smoke. Record-dependent history checks remain source-tested because
+production had no Products, Vendors or Purchases; no sample business data was created.
 
 ## Phase 5A decisions
 

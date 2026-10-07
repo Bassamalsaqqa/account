@@ -4920,21 +4920,17 @@ Customer
 
 ## Phase 5 — Purchasing vertical
 
-Complete (Phases 5A–5E deployed):
+Complete / Accepted Source / Merged / Deployed (Phases 5A–5F; Phase 5F merged through PR #13 and deployed on 2026-10-07. Phase 6 remains unstarted):
 
 ```text
 Vendor
 → Purchase
-→ Stock
+→ Inventory
 → Accounting
-→ Vendor payment
-→ Statement
-```
-
-Candidate (Phase 5F implemented / awaiting independent review):
-
-```text
-→ price history
+→ Purchase Returns
+→ Vendor Payment / AP
+→ Statement / Aging
+→ Purchase / Vendor Price History
 ```
 
 ## Phase 6 — Money/checks
