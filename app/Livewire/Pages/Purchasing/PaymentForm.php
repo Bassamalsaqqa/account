@@ -56,6 +56,8 @@ class PaymentForm extends Component
      *     grand_total: string,
      *     outstanding: string,
      *     allocated_amount: string,
+     *     document_currency_code: string,
+     *     payment_currency_amount?: string,
      *     purchase_exchange_rate: string,
      *     preview_fx: ?string,
      * }>
@@ -207,7 +209,7 @@ class PaymentForm extends Component
         $purchases = Purchase::with(['returns', 'paymentAllocations.vendorPayment'])
             ->where('company_id', $company->id)
             ->where('vendor_id', $this->vendor_id)
-            ->where('currency_code', $this->currency_code)
+            ->whereIn('currency_code', CompanyCurrency::where('company_id', $company->id)->where('enabled', true)->select('currency_code'))
             ->where('status', Purchase::STATUS_POSTED)
             ->orderByRaw('CASE WHEN due_date IS NOT NULL THEN 0 ELSE 1 END, due_date ASC, purchase_date ASC, id ASC')
             ->get();
@@ -226,6 +228,7 @@ class PaymentForm extends Component
                     'grand_total' => (string) $purchase->grand_total_currency,
                     'outstanding' => (string) $position->outstanding,
                     'allocated_amount' => '0.00',
+                    'document_currency_code' => $purchase->currency_code,
                     'purchase_exchange_rate' => (string) $purchase->exchange_rate,
                     'preview_fx' => '0.00',
                 ];
@@ -240,6 +243,9 @@ class PaymentForm extends Component
         $remaining = BigDecimal::of($this->amount !== '' ? $this->amount : '0');
 
         foreach ($this->allocations as $idx => $alloc) {
+            if ($alloc['document_currency_code'] !== $this->currency_code) {
+                continue;
+            }
             $due = BigDecimal::of($alloc['outstanding']);
             if ($remaining->isPositive()) {
                 $allocAmount = $remaining->isGreaterThanOrEqualTo($due) ? $due : $remaining;
@@ -300,12 +306,27 @@ class PaymentForm extends Component
                     return null;
                 }
 
-                $allocatedSum = $allocatedSum->plus($amt);
+                $paymentAmount = $alloc['document_currency_code'] === $this->currency_code ? $amt
+                    : BigDecimal::of(trim($alloc['payment_currency_amount'] ?? '') === '' ? '0' : $alloc['payment_currency_amount']);
+                if (! $paymentAmount->isPositive()) {
+                    $this->addError('allocations', __('money.payment_amount_required'));
+
+                    return null;
+                }
+                $allocatedSum = $allocatedSum->plus($paymentAmount);
                 $allocList[] = [
                     'purchase_id' => (int) $alloc['purchase_id'],
                     'allocated_amount' => (string) $amt,
+                    ...($alloc['document_currency_code'] !== $this->currency_code ? ['payment_currency_amount' => (string) $paymentAmount] : []),
                 ];
             }
+        }
+
+        if (collect($allocList)->contains(fn ($row) => isset($row['payment_currency_amount']))) {
+            foreach ($allocList as &$row) {
+                $row['payment_currency_amount'] ??= $row['allocated_amount'];
+            }
+            unset($row);
         }
 
         if ($allocatedSum->isGreaterThan($pmtAmount)) {

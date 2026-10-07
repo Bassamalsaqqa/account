@@ -497,13 +497,15 @@ class PurchasingFoundationTest extends TestCase
     {
         DocumentSequence::whereIn('document_type', ['purchase', 'purchase_return', 'vendor_payment'])->delete();
         CompanyPurchaseSetting::query()->delete();
-        $salesBefore = DB::table('document_sequences')->get()->toJson();
+        $transferBefore = DB::table('document_sequences')->where('document_type', 'money_transfer')->get()->toJson();
+        $salesBefore = DB::table('document_sequences')->whereIn('document_type', ['quotation', 'sales_invoice', 'sales_return', 'customer_payment'])->get()->toJson();
         app(CompanyContext::class)->clear();
         app(EnsurePurchasingFoundationAction::class)->execute($this->company);
         app(EnsurePurchasingFoundationAction::class)->execute($this->company);
         $this->activate();
         $this->assertSame($salesBefore, DB::table('document_sequences')->whereIn('document_type', ['quotation', 'sales_invoice', 'sales_return', 'customer_payment'])->get()->toJson());
-        $this->assertDatabaseCount('document_sequences', 7);
+        $this->assertDatabaseCount('document_sequences', 8);
+        $this->assertSame($transferBefore, DB::table('document_sequences')->where('document_type', 'money_transfer')->get()->toJson());
         $this->assertDatabaseCount('company_purchase_settings', 1);
         foreach (['purchase' => 'PUR', 'purchase_return' => 'PRT', 'vendor_payment' => 'VPM'] as $type => $prefix) {
             $this->assertDatabaseHas('document_sequences', ['company_id' => $this->company->id, 'document_type' => $type, 'prefix' => $prefix, 'next_number' => 1]);

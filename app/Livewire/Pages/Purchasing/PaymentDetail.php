@@ -7,10 +7,9 @@ namespace App\Livewire\Pages\Purchasing;
 use App\Actions\Purchasing\ApplyVendorPaymentCreditAction;
 use App\Actions\Purchasing\ReverseVendorPaymentAction;
 use App\Domain\Accounting\Exceptions\ImmutableRecordException;
+use App\Domain\Money\Queries\SettlementTargetsQuery;
 use App\Livewire\Pages\Purchasing\Concerns\AuthorizesPurchasingPages;
-use App\Models\Purchase;
 use App\Models\VendorPayment;
-use App\Services\Purchasing\PurchasePayablePosition;
 use App\Services\Purchasing\VendorPaymentValidationException;
 use App\Support\Tenancy\CompanyContext;
 use Brick\Math\BigDecimal;
@@ -46,6 +45,9 @@ class PaymentDetail extends Component
      */
     public array $creditAmounts = [];
 
+    /** @var array<int, string> */
+    public array $creditPaymentAmounts = [];
+
     public function boot(CompanyContext $context): void
     {
         if (isset($this->pageCompanyId)) {
@@ -76,6 +78,7 @@ class PaymentDetail extends Component
         $this->applicationDate = Carbon::now(app(CompanyContext::class)->company()->timezone)->toDateString();
         $this->applicationKey = 'credit:'.Str::ulid();
         $this->creditAmounts = [];
+        $this->creditPaymentAmounts = [];
         $this->showCreditForm = true;
     }
 
@@ -89,12 +92,14 @@ class PaymentDetail extends Component
             'creditAmounts.*' => ['nullable', 'string', 'regex:/^\d+(?:\.\d{1,6})?$/D'],
         ]);
 
+        $targets = collect(app(SettlementTargetsQuery::class)->forParty((int) $this->payment->company_id, (int) $this->payment->vendor_id, 'vendor', 'allocate'))->keyBy('id');
         $allocations = [];
         foreach ($this->creditAmounts as $id => $amount) {
             if (trim((string) $amount) !== '' && ! BigDecimal::of((string) $amount)->isZero()) {
                 $allocations[] = [
                     'purchase_id' => (int) $id,
                     'allocated_amount' => (string) $amount,
+                    'payment_currency_amount' => ($targets->get($id)['currency'] ?? null) === $this->payment->currency_code ? (string) $amount : ($this->creditPaymentAmounts[$id] ?? ''),
                 ];
             }
         }
@@ -155,34 +160,14 @@ class PaymentDetail extends Component
         $this->authorizePaymentFinancialRead();
 
         $user = auth()->user();
-        $canReverse = $user->hasPermissionTo('money.vendor_payment.reverse') && ! $this->payment->is_reversed;
+        $canReverse = $user->hasPermissionTo('money.vendor_payment.reverse') && ! $this->payment->is_reversed && $this->payment->check_id === null;
         $canAllocate = $user->hasPermissionTo('money.vendor_payment.allocate') && ! $this->payment->is_reversed
             && BigDecimal::of($this->payment->unallocated_amount)->isPositive();
 
         $openPurchases = [];
         if ($this->showCreditForm) {
-            $purchases = Purchase::with(['returns', 'paymentAllocations.vendorPayment'])
-                ->where('company_id', $this->payment->company_id)
-                ->where('vendor_id', $this->payment->vendor_id)
-                ->where('currency_code', $this->payment->currency_code)
-                ->where('status', Purchase::STATUS_POSTED)
-                ->orderBy('purchase_date')
-                ->get();
-
-            $positions = PurchasePayablePosition::forPurchases($purchases);
-            foreach ($purchases as $purchase) {
-                $pos = $positions[$purchase->id] ?? null;
-                if ($pos !== null && $pos->hasOutstanding()) {
-                    $openPurchases[] = [
-                        'id' => $purchase->id,
-                        'number' => $purchase->purchase_number ?? (string) $purchase->id,
-                        'date' => $purchase->purchase_date->toDateString(),
-                        'grand_total' => (string) $purchase->grand_total_currency,
-                        'outstanding' => (string) $pos->outstanding->toScale(6),
-                        'exchange_rate' => (string) $purchase->exchange_rate,
-                    ];
-                }
-            }
+            $this->authorizePurchasing('money.vendor_payment.allocate');
+            $openPurchases = app(SettlementTargetsQuery::class)->forParty((int) $this->payment->company_id, (int) $this->payment->vendor_id, 'vendor', 'allocate');
         }
 
         return view('livewire.pages.purchasing.payment-detail', [

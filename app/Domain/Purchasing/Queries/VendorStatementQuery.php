@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Purchasing\Queries;
 
 use App\Domain\Accounting\Exceptions\ImmutableRecordException;
+use App\Domain\Money\Queries\CrossCurrencySettlementQuery;
 use App\Exceptions\NoActiveCompanyException;
 use App\Models\Company;
 use App\Models\Purchase;
@@ -206,6 +207,16 @@ class VendorStatementQuery
                     'created_at' => $pay->reversed_at,
                 ];
             }
+        }
+
+        foreach (app(CrossCurrencySettlementQuery::class)->legs((int) $companyId, [(int) $vendor->id], 'vendor') as $leg) {
+            $currencies[$leg['currency']] = true;
+            $effect = BigDecimal::of($leg['amount']);
+            $rawRows[] = ['id' => $leg['id'], 'date' => $leg['date'], 'due_date' => null, 'type' => 'currency_allocation', 'number' => $leg['number'],
+                'reference' => $leg['number'], 'description' => __('money.currency_allocation'), 'currency' => $leg['currency'],
+                'debit' => $effect->isNegative() ? $effect->abs() : BigDecimal::zero(),
+                'credit' => $effect->isPositive() ? $effect : BigDecimal::zero(),
+                'created_at' => $leg['created_at'], 'invoice' => null];
         }
 
         // Sort all rows deterministically: date ASC, created_at ASC, id ASC

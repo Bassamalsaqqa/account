@@ -96,7 +96,7 @@ class VendorPaymentPolicyAndValidationTest extends Phase5ETestCase
             ]);
             $this->fail('Expected exception for check method');
         } catch (InvalidArgumentException $e) {
-            $this->assertStringContainsString('Payment method [check] is not supported', $e->getMessage());
+            $this->assertStringContainsString('Receipt references must be positive integer IDs.', $e->getMessage());
         }
 
         // 2. Reject method mismatch (cash method for bank account)
@@ -116,7 +116,7 @@ class VendorPaymentPolicyAndValidationTest extends Phase5ETestCase
             $this->assertStringContainsString('Payment method must match its money account type.', $e->getMessage());
         }
 
-        // 3. Reject cross-currency allocation (ILS payment to USD purchase)
+        // 3. Reject cross-currency allocation without explicit payment consumption (ILS payment to USD purchase)
         $usdPurchase = $this->createAndPostPurchase([
             'currency_code' => 'USD',
             'exchange_rate' => '3.6000000000',
@@ -140,7 +140,7 @@ class VendorPaymentPolicyAndValidationTest extends Phase5ETestCase
             ]);
             $this->fail('Expected exception for cross-currency allocation');
         } catch (InvalidArgumentException $e) {
-            $this->assertStringContainsString('Cross-currency allocation is not supported', $e->getMessage());
+            $this->assertStringContainsString('Cross-currency allocation requires an explicit payment-currency amount', $e->getMessage());
         }
 
         // 4. Reject other company's money account

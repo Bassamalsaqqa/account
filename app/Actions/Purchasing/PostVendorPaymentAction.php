@@ -18,6 +18,9 @@ use App\Models\Vendor;
 use App\Models\VendorPayment;
 use App\Models\VendorPaymentAllocation;
 use App\Services\Audit\AuditService;
+use App\Services\Money\CheckPaymentSource;
+use App\Services\Money\MoneyEventScope;
+use App\Services\Money\PaymentAllocationIntent;
 use App\Services\Posting\AccountingPostingService;
 use App\Services\Purchasing\PayableBookValue;
 use App\Services\Purchasing\PurchaseIdentitySnapshot;
@@ -58,7 +61,8 @@ class PostVendorPaymentAction
     /**
      * @param array{
      *     vendor_id: int,
-     *     money_account_id: int,
+     *     money_account_id: int|null,
+     *     check_id?: int,
      *     payment_date: string,
      *     payment_method: string,
      *     document_locale?: ?string,
@@ -70,6 +74,7 @@ class PostVendorPaymentAction
      *     allocations?: list<array{
      *         purchase_id: int,
      *         allocated_amount: string|BigDecimal,
+     *         payment_currency_amount?: string|BigDecimal,
      *     }>
      * } $data
      */
@@ -102,7 +107,7 @@ class PostVendorPaymentAction
         $idempotencyKey = ReceiptRequestValues::key($idempotencyKey);
         app(SalesDocumentRules::class)->date((string) $data['payment_date']);
 
-        foreach (['vendor_id', 'money_account_id'] as $field) {
+        foreach (['vendor_id'] as $field) {
             $data[$field] = ReceiptRequestValues::id($data[$field]);
         }
         foreach (['amount' => 6, 'exchange_rate' => 10] as $field => $scale) {
@@ -110,25 +115,19 @@ class PostVendorPaymentAction
         }
 
         $method = (string) $data['payment_method'];
-        if (! in_array($method, [VendorPayment::METHOD_CASH, VendorPayment::METHOD_BANK], true)) {
-            throw new InvalidArgumentException("Payment method [{$method}] is not supported. Only cash and bank transfers are accepted in this phase. Checks and cards are strictly prohibited.");
+        if ($method === 'check') {
+            $data['check_id'] = ReceiptRequestValues::id($data['check_id'] ?? null);
+            $data['money_account_id'] = null;
+        } else {
+            $data['money_account_id'] = ReceiptRequestValues::id($data['money_account_id']);
+        }
+        if (! in_array($method, [VendorPayment::METHOD_CASH, VendorPayment::METHOD_BANK, 'check'], true)) {
+            throw new InvalidArgumentException("Payment method [{$method}] is not supported. Use cash, bank transfer or a canonical Check instrument.");
         }
 
         // Deduplicate and group allocations by purchase_id
-        $grouped = [];
-        foreach ($data['allocations'] ?? [] as $allocation) {
-            $id = ReceiptRequestValues::id($allocation['purchase_id']);
-            $amount = BigDecimal::of(ReceiptRequestValues::decimal($allocation['allocated_amount'], 6));
-            if (! $amount->isPositive()) {
-                throw new InvalidArgumentException(__('purchasing.credit_amount_positive'));
-            }
-            $grouped[$id] = ($grouped[$id] ?? BigDecimal::zero())->plus($amount);
-        }
-        ksort($grouped, SORT_NUMERIC);
-        $allocationsForHash = [];
-        foreach ($grouped as $id => $amount) {
-            $allocationsForHash[] = ['purchase_id' => $id, 'allocated_amount' => (string) $amount->toScale(6)];
-        }
+        $allocationVersion = PaymentAllocationIntent::version($data['allocations'] ?? []);
+        $allocationsForHash = PaymentAllocationIntent::normalize($data['allocations'] ?? [], 'purchase_id');
         $data['allocations'] = $allocationsForHash;
         $data['document_locale'] = isset($data['document_locale']) && trim((string) $data['document_locale']) !== ''
             ? $data['document_locale'] : null;
@@ -137,7 +136,7 @@ class PostVendorPaymentAction
             'company_id' => (int) $company->id,
             'actor_id' => (int) $user->id,
             'vendor_id' => (int) $data['vendor_id'],
-            'money_account_id' => (int) $data['money_account_id'],
+            'money_account_id' => $data['money_account_id'] === null ? null : (int) $data['money_account_id'],
             'payment_date' => (string) $data['payment_date'],
             'payment_method' => $method,
             'amount' => (string) BigDecimal::of((string) $data['amount'])->toScale(6, RoundingMode::HALF_UP),
@@ -148,9 +147,12 @@ class PostVendorPaymentAction
             'document_locale' => $data['document_locale'] ?? null,
         ];
 
+        if ($method === 'check') {
+            $canonicalData['check_id'] = (int) $data['check_id'];
+        }
         $requestHash = hash('sha256', json_encode($canonicalData, JSON_THROW_ON_ERROR));
 
-        return DB::transaction(function () use ($company, $user, $data, $method, $idempotencyKey, $requestHash): VendorPayment {
+        return DB::transaction(function () use ($company, $user, $data, $method, $idempotencyKey, $requestHash, $allocationVersion): VendorPayment {
             // 1. Lock Company FOR UPDATE
             /** @var Company $lockedCompany */
             $lockedCompany = Company::where('id', $company->id)->lockForUpdate()->firstOrFail();
@@ -209,55 +211,63 @@ class PostVendorPaymentAction
                 }
             }
 
-            // 4. Lock MoneyAccount FOR UPDATE
-            /** @var MoneyAccount $moneyAccount */
-            $moneyAccount = MoneyAccount::where('company_id', $lockedCompany->id)
-                ->where('id', $data['money_account_id'])
-                ->lockForUpdate()
-                ->firstOrFail();
+            $check = null;
+            $moneyAccount = null;
+            if ($method === 'check') {
+                $check = app(CheckPaymentSource::class)->instrument((int) $lockedCompany->id, $user, $data, 'outgoing');
+                $currency = $check->currency_code;
+                $cashLedger = app(CheckPaymentSource::class)->ledger($check);
+            } else {
+                // 4. Lock MoneyAccount FOR UPDATE
+                /** @var MoneyAccount $moneyAccount */
+                $moneyAccount = MoneyAccount::where('company_id', $lockedCompany->id)
+                    ->where('id', $data['money_account_id'])
+                    ->lockForUpdate()
+                    ->firstOrFail();
 
-            if (! $moneyAccount->is_active) {
-                throw new InvalidArgumentException("Money account [{$moneyAccount->id}] is inactive.");
+                if (! $moneyAccount->is_active) {
+                    throw new InvalidArgumentException("Money account [{$moneyAccount->id}] is inactive.");
+                }
+
+                $currency = $moneyAccount->currency_code;
+                if (! in_array($moneyAccount->account_type, [MoneyAccount::TYPE_CASH, MoneyAccount::TYPE_BANK], true)
+                    || (($method === VendorPayment::METHOD_CASH) !== ($moneyAccount->account_type === MoneyAccount::TYPE_CASH))) {
+                    throw new InvalidArgumentException('Payment method must match its money account type.');
+                }
+
+                if (! CompanyCurrency::where('company_id', $lockedCompany->id)->where('currency_code', $currency)->where('enabled', true)->exists()) {
+                    throw new InvalidArgumentException('Payment currency is not enabled.');
+                }
+
+                /** @var LedgerAccount|null $cashLedger */
+                $cashLedger = LedgerAccount::where('company_id', $lockedCompany->id)
+                    ->where('id', $moneyAccount->ledger_account_id)
+                    ->where('active', true)
+                    ->where('is_control', false)
+                    ->where('account_type', LedgerAccount::TYPE_ASSET)
+                    ->where('normal_balance', LedgerAccount::BALANCE_DEBIT)
+                    ->lockForUpdate()
+                    ->first();
+
+                if ($cashLedger === null) {
+                    throw new InvalidArgumentException('Money account ledger must be an active, non-control asset account with debit normal balance.');
+                }
+
+                // Verify cash / bank parent control account
+                $parentControl = LedgerAccount::where('company_id', $lockedCompany->id)
+                    ->where('id', $cashLedger->parent_id)
+                    ->where('is_control', true)
+                    ->lockForUpdate()
+                    ->first();
+
+                if ($method === VendorPayment::METHOD_CASH && $parentControl?->system_key !== 'cash_control') {
+                    throw new InvalidArgumentException('Cash account ledger must be a child of cash_control.');
+                }
+                if ($method === VendorPayment::METHOD_BANK && $parentControl?->system_key !== 'bank_control') {
+                    throw new InvalidArgumentException('Bank account ledger must be a child of bank_control.');
+                }
+
             }
-
-            $currency = $moneyAccount->currency_code;
-            if (! in_array($moneyAccount->account_type, [MoneyAccount::TYPE_CASH, MoneyAccount::TYPE_BANK], true)
-                || (($method === VendorPayment::METHOD_CASH) !== ($moneyAccount->account_type === MoneyAccount::TYPE_CASH))) {
-                throw new InvalidArgumentException('Payment method must match its money account type.');
-            }
-
-            if (! CompanyCurrency::where('company_id', $lockedCompany->id)->where('currency_code', $currency)->where('enabled', true)->exists()) {
-                throw new InvalidArgumentException('Payment currency is not enabled.');
-            }
-
-            /** @var LedgerAccount|null $cashLedger */
-            $cashLedger = LedgerAccount::where('company_id', $lockedCompany->id)
-                ->where('id', $moneyAccount->ledger_account_id)
-                ->where('active', true)
-                ->where('is_control', false)
-                ->where('account_type', LedgerAccount::TYPE_ASSET)
-                ->where('normal_balance', LedgerAccount::BALANCE_DEBIT)
-                ->lockForUpdate()
-                ->first();
-
-            if ($cashLedger === null) {
-                throw new InvalidArgumentException('Money account ledger must be an active, non-control asset account with debit normal balance.');
-            }
-
-            // Verify cash / bank parent control account
-            $parentControl = LedgerAccount::where('company_id', $lockedCompany->id)
-                ->where('id', $cashLedger->parent_id)
-                ->where('is_control', true)
-                ->lockForUpdate()
-                ->first();
-
-            if ($method === VendorPayment::METHOD_CASH && $parentControl?->system_key !== 'cash_control') {
-                throw new InvalidArgumentException('Cash account ledger must be a child of cash_control.');
-            }
-            if ($method === VendorPayment::METHOD_BANK && $parentControl?->system_key !== 'bank_control') {
-                throw new InvalidArgumentException('Bank account ledger must be a child of bank_control.');
-            }
-
             if ($currency === $lockedCompany->base_currency_code && ! BigDecimal::of((string) $data['exchange_rate'])->isEqualTo(1)) {
                 throw new InvalidArgumentException('Base currency rate must equal one.');
             }
@@ -314,22 +324,15 @@ class PostVendorPaymentAction
                     throw new InvalidArgumentException("Cannot allocate payment to purchase [{$purchase->id}] belonging to another vendor.");
                 }
 
-                if ($purchase->currency_code !== $currency) {
-                    throw new InvalidArgumentException("Cross-currency allocation is not supported. Payment currency [{$currency}] does not match purchase [{$purchase->id}] currency [{$purchase->currency_code}].");
+                if (! CompanyCurrency::where('company_id', $lockedCompany->id)->where('currency_code', $purchase->currency_code)->where('enabled', true)->exists()) {
+                    throw new InvalidArgumentException('Document currency is not enabled.');
                 }
-
                 if ($paymentDate < $purchase->purchase_date->format('Y-m-d')) {
-                    throw new InvalidArgumentException("Direct allocation payment date [{$paymentDate}] cannot precede purchase date [{$purchase->purchase_date->format('Y-m-d')}].");
+                    throw new InvalidArgumentException('Direct payment allocation cannot precede purchase date.');
                 }
-
-                try {
-                    $allocAmt = BigDecimal::of((string) $allocInput['allocated_amount'])->toScale($minorUnits, RoundingMode::UNNECESSARY);
-                } catch (RoundingNecessaryException $e) {
-                    throw new InvalidArgumentException("Allocation amount precision exceeds {$minorUnits} decimals.");
-                }
-                if ($allocAmt->isLessThanOrEqualTo(0)) {
-                    continue;
-                }
+                $amounts = PaymentAllocationIntent::amounts($allocInput, $purchase->currency_code, $currency);
+                $allocAmt = $amounts['document'];
+                $paymentConsumed = $amounts['payment'];
 
                 $purId = (int) $purchase->id;
                 if (! isset($remainingOutstandingByPurchase[$purId])) {
@@ -341,7 +344,7 @@ class PostVendorPaymentAction
                 }
 
                 $remainingOutstandingByPurchase[$purId] = $remainingOutstandingByPurchase[$purId]->minus($allocAmt);
-                $allocatedTotal = $allocatedTotal->plus($allocAmt);
+                $allocatedTotal = $allocatedTotal->plus($paymentConsumed);
 
                 $purFx = BigDecimal::of((string) $purchase->exchange_rate)->toScale(10, RoundingMode::HALF_UP);
                 $apReliefBase = app(PayableBookValue::class)->relief($purchase, $allocAmt);
@@ -369,6 +372,7 @@ class PostVendorPaymentAction
                 $preparedAllocations[] = [
                     'purchase_id' => $purchase->id,
                     'allocated_amount' => (string) $allocAmt->toScale(6),
+                    'payment_currency_amount' => (string) $paymentConsumed->toScale(6),
                     'purchase_exchange_rate' => (string) $purFx->toScale(10),
                     'payment_exchange_rate' => (string) $paymentFx->toScale(10),
                     'base_amount_applied_to_payable' => (string) $apReliefBase->toScale(6),
@@ -418,6 +422,7 @@ class PostVendorPaymentAction
                         $lockedCompany,
                         $vendor,
                         $moneyAccount,
+                        $check,
                         $paymentNumber,
                         $paymentDate,
                         $method,
@@ -432,19 +437,21 @@ class PostVendorPaymentAction
                         $documentLocale,
                         $vendorSnapshot,
                         $companySnapshot,
-                        $preparedAllocations
+                        $preparedAllocations,
+                        $allocationVersion
                     ): VendorPayment {
                         $payment = VendorPayment::recordProvisionalPayment($capability, [
                             'public_id' => (string) Str::ulid(),
                             'company_id' => $lockedCompany->id,
                             'payment_number' => $paymentNumber,
                             'vendor_id' => $vendor->id,
-                            'money_account_id' => $moneyAccount->id,
+                            'money_account_id' => $moneyAccount?->id, 'check_id' => $check?->id,
                             'payment_date' => $paymentDate,
                             'payment_method' => $method,
                             'currency_code' => $currency,
                             'base_currency_code' => $lockedCompany->base_currency_code,
                             'amount' => (string) $totalAmount->toScale(6),
+                            'allocation_version' => $allocationVersion,
                             'exchange_rate' => (string) $paymentFx->toScale(10),
                             'amount_base' => (string) $paymentAmountBase->toScale(6),
                             'reference_number' => $data['reference_number'] ?? null,
@@ -463,6 +470,9 @@ class PostVendorPaymentAction
 
                         $cmd = app(VendorPaymentHistoryCommands::class)->payment($payment);
 
+                        if ($check !== null) {
+                            app(MoneyEventScope::class)->prepareCheckPaymentCommand($cmd, (int) $check->id, 'outgoing');
+                        }
                         $batch = $this->accountingPostingService->post($cmd);
                         $payment->completeCanonicalPost($batch, $user, $capability);
 

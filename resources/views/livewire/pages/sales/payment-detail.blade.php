@@ -57,7 +57,7 @@
             </div>
             <div>
                 <span class="text-text-muted block text-[11px]">{{ __('sales.money_account') }}</span>
-                <span class="font-bold text-text-primary">{{ $payment->moneyAccount?->displayName() ?? '—' }}</span>
+                <span class="font-bold text-text-primary">{{ $payment->check_id !== null ? __('money.check').' #'.$payment->checkInstrument?->check_number : ($payment->moneyAccount?->displayName() ?? '—') }}</span>
             </div>
             <div>
                 <span class="text-text-muted block text-[11px]">{{ __('sales.payment_method') }}</span>
@@ -80,8 +80,12 @@
             @foreach($openInvoices as $invoice)
                 <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 border-b border-border pb-3">
                     <span dir="ltr">{{ $invoice['number'] }}</span>
-                    <span>{{ __('sales.invoice_outstanding') }}: <span dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($invoice['outstanding'], $payment->currency_code) }} {{ $payment->currency_code }}</span></span>
+                    <span>{{ __('sales.invoice_outstanding') }}: <span dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($invoice['outstanding'], $invoice['currency']) }} {{ $invoice['currency'] }}</span></span>
                     <label>{{ __('sales.allocated') }}<input type="text" inputmode="decimal" wire:model="creditAmounts.{{ $invoice['id'] }}" class="block w-full border border-border rounded-control p-2" dir="ltr"></label>
+                            <span class="text-xs" dir="ltr">{{ $invoice['currency'] }}</span>
+                            @if($invoice['currency'] !== $payment->currency_code)
+                            <label class="block text-xs">{{ __('money.payment_consumed') }} ({{ $payment->currency_code }})<input type="text" inputmode="decimal" wire:model="creditPaymentAmounts.{{ $invoice['id'] }}" class="w-full border-border rounded-control p-2" dir="ltr" /></label>
+                            @endif
                     @error('creditAmounts.'.$invoice['id'])<p class="text-danger text-xs">{{ $message }}</p>@enderror
                 </div>
             @endforeach
@@ -114,7 +118,7 @@
                             </td>
                             <td class="py-2.5 px-4" dir="ltr">{{ $alloc->salesInvoice->issue_date ? $alloc->salesInvoice->issue_date->toDateString() : '—' }}</td>
                             <td class="py-2.5 px-4 font-bold" dir="ltr">
-                                {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($alloc->allocated_amount, $payment->currency_code) }} {{ $payment->currency_code }}
+                                {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($alloc->allocated_amount, $alloc->salesInvoice->currency_code) }} {{ $alloc->salesInvoice->currency_code }}<span class="block text-xs text-text-muted">{{ __('money.payment_consumed') }}: {{ $alloc->payment_currency_amount }} {{ $payment->currency_code }}</span>
                             </td>
                             @if($canViewFx)<td class="py-2.5 px-4 font-mono" dir="ltr">
                                 @php

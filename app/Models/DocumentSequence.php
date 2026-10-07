@@ -26,6 +26,8 @@ class DocumentSequence extends Model
 
     public const string TYPE_VENDOR_PAYMENT = 'vendor_payment';
 
+    public const string TYPE_MONEY_TRANSFER = 'money_transfer';
+
     /**
      * @var list<string>
      */

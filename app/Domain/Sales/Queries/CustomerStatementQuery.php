@@ -4,12 +4,14 @@ declare(strict_types=1);
 
 namespace App\Domain\Sales\Queries;
 
+use App\Domain\Money\Queries\CrossCurrencySettlementQuery;
 use App\Exceptions\NoActiveCompanyException;
 use App\Models\Customer;
 use App\Models\CustomerPayment;
 use App\Models\PublicShare;
 use App\Models\SalesInvoice;
 use App\Models\SalesReturn;
+use App\Services\Money\ReceivablePositionAsOf;
 use App\Support\Tenancy\CompanyContext;
 use Brick\Math\BigDecimal;
 use Carbon\Carbon;
@@ -157,7 +159,7 @@ class CustomerStatementQuery
             // If reversed, also record the reversal debit
             if ($pay->is_reversed && $pay->reversed_at !== null) {
                 $rawRows[] = [
-                    'date' => (string) $pay->reversed_at->format('Y-m-d'),
+                    'date' => $pay->reversalPostingBatch->posting_date->toDateString(),
                     'due_date' => null,
                     'type' => 'payment_reversal',
                     'number' => "REV-{$pay->payment_number}",
@@ -173,6 +175,16 @@ class CustomerStatementQuery
         }
 
         // Sort all rows chronologically: date ASC, created_at ASC
+        foreach (app(CrossCurrencySettlementQuery::class)->legs((int) $companyId, [(int) $customer->id], 'customer') as $leg) {
+            $currencies[$leg['currency']] = true;
+            $effect = BigDecimal::of($leg['amount']);
+            $rawRows[] = ['id' => $leg['id'], 'date' => $leg['date'], 'due_date' => null, 'type' => 'currency_allocation', 'number' => $leg['number'],
+                'reference' => $leg['number'], 'description' => __('money.currency_allocation'), 'currency' => $leg['currency'],
+                'debit' => $effect->isPositive() ? $effect : BigDecimal::zero(),
+                'credit' => $effect->isNegative() ? $effect->abs() : BigDecimal::zero(),
+                'created_at' => $leg['created_at'], 'invoice' => null];
+        }
+
         usort($rawRows, function ($a, $b) {
             $cmp = strcmp($a['date'], $b['date']);
             if ($cmp !== 0) {
@@ -231,7 +243,7 @@ class CustomerStatementQuery
             }
 
             // Calculate aging for invoices in this currency
-            $aging = $this->calculateAging($customer, $curr);
+            $aging = $this->calculateAging($customer, $curr, $toDate);
 
             $resultCurrencies[$curr] = [
                 'currency' => $curr,
@@ -264,10 +276,10 @@ class CustomerStatementQuery
      *     total: string,
      * }
      */
-    protected function calculateAging(Customer $customer, string $currency): array
+    protected function calculateAging(Customer $customer, string $currency, ?string $asOfDate = null): array
     {
         $companyTz = $customer->company->timezone ?? config('app.timezone', 'UTC');
-        $today = Carbon::now($companyTz)->startOfDay();
+        $today = $asOfDate === null ? Carbon::now($companyTz)->startOfDay() : Carbon::parse($asOfDate, $companyTz)->startOfDay();
         $minorUnits = in_array($currency, ['JOD', 'KWD', 'BHD', 'OMR'], true) ? 3 : 2;
 
         $invoices = SalesInvoice::query()
@@ -275,6 +287,7 @@ class CustomerStatementQuery
             ->where('customer_id', $customer->id)
             ->where('currency_code', $currency)
             ->where('status', SalesInvoice::STATUS_POSTED)
+            ->where('issue_date', '<=', $today->toDateString())
             ->get();
 
         $unspecified = BigDecimal::zero();
@@ -285,7 +298,7 @@ class CustomerStatementQuery
         $days90Plus = BigDecimal::zero();
 
         foreach ($invoices as $inv) {
-            $outstanding = $inv->calculateOutstanding();
+            $outstanding = app(ReceivablePositionAsOf::class)->outstanding($inv, $today->toDateString());
             if ($outstanding->isLessThanOrEqualTo(0)) {
                 continue;
             }

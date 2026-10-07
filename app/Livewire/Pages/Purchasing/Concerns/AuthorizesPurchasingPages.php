@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Livewire\Pages\Purchasing\Concerns;
 
 use App\Models\Company;
+use App\Services\Purchasing\VendorFinancialRead;
 use App\Services\Sales\SalesActorGuard;
 use App\Support\Tenancy\CompanyContext;
 use Illuminate\Auth\Access\AuthorizationException;
@@ -41,21 +42,6 @@ trait AuthorizesPurchasingPages
 
     protected function canReadVendorFinancials(): bool
     {
-        $context = app(CompanyContext::class);
-        $user = auth()->user();
-        if ($user === null || ! $context->hasCompany()
-            || (int) $context->companyId() !== $this->pageCompanyId
-            || ! $user->fresh()?->belongsToCompany($this->pageCompanyId)) {
-            return false;
-        }
-
-        setPermissionsTeamId($this->pageCompanyId);
-        $user->unsetRelation('roles')->unsetRelation('permissions');
-
-        return $user->hasPermissionTo('purchasing.cost.view')
-            && ($user->hasPermissionTo('money.vendor_payment.create')
-                || $user->hasPermissionTo('money.vendor_payment.allocate')
-                || $user->hasPermissionTo('money.vendor_payment.reverse')
-                || $user->hasPermissionTo('vendors.statement.view'));
+        return app(VendorFinancialRead::class)->allows($this->pageCompanyId);
     }
 }

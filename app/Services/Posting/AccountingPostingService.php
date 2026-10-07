@@ -17,9 +17,11 @@ use App\Models\Company;
 use App\Models\CompanyCurrency;
 use App\Models\CompanyUser;
 use App\Models\LedgerAccount;
+use App\Models\MoneyAccount;
 use App\Models\PostingBatch;
 use App\Models\PostingLine;
 use App\Models\User;
+use App\Services\Money\MoneyEventScope;
 use App\Support\Tenancy\CompanyContext;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\QueryException;
@@ -35,6 +37,12 @@ class AccountingPostingService
      */
     public function post(PostingCommand $command): PostingBatch
     {
+        if (in_array($command->sourceType, ['money_transfer', 'check_event'], true)) {
+            app(MoneyEventScope::class)->assertCommand($command);
+        }
+        if (in_array($command->sourceType, ['customer_payment', 'vendor_payment'], true) && DB::table($command->sourceType === 'customer_payment' ? 'customer_payments' : 'vendor_payments')->where('company_id', $command->company->id)->where('id', $command->sourceId)->whereNotNull('check_id')->exists()) {
+            app(MoneyEventScope::class)->assertCommand($command);
+        }
         // Reversal batches cannot be created via post(). Use AccountingReversalService.
         if ($command->sourceType === 'reversal') {
             throw PostingValidationException::reversalOnlyAllowedViaService();
@@ -210,6 +218,25 @@ class AccountingPostingService
                 }
             }
 
+            // MoneyAccount currency is authoritative for new transaction metadata.
+            // Legacy base-only opening balances remain accepted; exact residuals need a truthful paired currency line.
+            $moneyAccounts = MoneyAccount::withTrashed()->where('company_id', $lockedCompany->id)->whereIn('ledger_account_id', $accountIds)->get()->keyBy('ledger_account_id');
+            foreach ($moneyAccounts as $ledgerId => $moneyAccount) {
+                $hasCurrencyLine = false;
+                foreach ($command->lines as $line) {
+                    if ($line->ledgerAccountId !== $ledgerId || $line->transactionCurrencyCode === null) {
+                        continue;
+                    }
+                    if ($line->transactionCurrencyCode !== $moneyAccount->currency_code) {
+                        throw new InvalidArgumentException('MoneyAccount posting currency must match the configured account currency.');
+                    }
+                    $hasCurrencyLine = true;
+                }
+                if (in_array($command->sourceType, ['money_transfer', 'customer_payment', 'vendor_payment', 'check_event'], true) && ! $hasCurrencyLine) {
+                    throw new InvalidArgumentException('Canonical Money movement requires truthful transaction-currency metadata.');
+                }
+            }
+
             // 5. Persistence within atomic transaction with race-safe idempotency backstop
             try {
                 $batch = PostingBatch::create([
@@ -286,6 +313,12 @@ class AccountingPostingService
      */
     public function reverse(PostingBatch $original, User $actingUser, ?string $reason = null, ?string $postingDate = null): PostingBatch
     {
+        if (in_array($original->source_type, ['customer_payment', 'vendor_payment'], true) && DB::table($original->source_type === 'customer_payment' ? 'customer_payments' : 'vendor_payments')->where('company_id', $original->company_id)->where('id', $original->source_id)->whereNotNull('check_id')->exists()) {
+            app(MoneyEventScope::class)->assertReversal($original, $actingUser, $postingDate);
+        }
+        if (in_array($original->source_type, ['money_transfer', 'check_event'], true)) {
+            app(MoneyEventScope::class)->assertReversal($original, $actingUser, $postingDate);
+        }
         // Upfront validation of caller-supplied reason: reject excessive text before any DB writes/transactions
         if ($reason !== null && mb_strlen($reason) > 512) {
             throw new InvalidArgumentException('Reversal reason cannot exceed 512 characters.');

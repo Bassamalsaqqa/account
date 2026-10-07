@@ -200,6 +200,9 @@
                             <span>{{ __('app.nav_products') }}</span>
                         </div>
                     </a>
+                    @if(auth()->user()->can('money.cash.view') || auth()->user()->can('money.bank.view') || auth()->user()->can('money.transfer.view') || auth()->user()->can('money.check.view'))
+                    <a href="{{ route('money.overview') }}" class="flex items-center gap-3 px-3 py-2 text-sm rounded-control hover:bg-primary-50 text-text-secondary">{{ __('money.title') }}</a>
+                    @endif
                     <a href="{{ route('inventory.overview') }}"
                        class="flex items-center justify-between h-[38px] px-3 rounded-control text-text-secondary hover:bg-surface-soft hover:text-text-primary font-semibold transition-colors
                               {{ request()->routeIs('inventory.overview', 'inventory.movements', 'inventory.adjustments.*', 'inventory.transfers.*') ? 'bg-primary-50 text-primary! font-bold shadow-[inset_3px_0_0_#255fd6] rtl:shadow-[inset_-3px_0_0_#255fd6]' : '' }}">
@@ -225,19 +228,18 @@
                     {{ __('app.nav_group_treasury_reports') }}
                 </div>
                 <div class="space-y-0.5">
-                    <span title="{{ __('app.future_module_notice') }}" class="flex items-center justify-between h-[38px] px-3 rounded-control text-text-muted opacity-60 cursor-not-allowed">
-                        <div class="flex items-center gap-2.5">
-                            <x-icon name="bank" class="w-4.5 h-4.5" />
-                            <span>{{ __('app.nav_treasury_banks') }}</span>
-                        </div>
-                    </span>
-                    <span title="{{ __('app.future_module_notice') }}" class="flex items-center justify-between h-[38px] px-3 rounded-control text-text-muted opacity-60 cursor-not-allowed">
-                        <div class="flex items-center gap-2.5">
-                            <x-icon name="check" class="w-4.5 h-4.5" />
-                            <span>{{ __('app.nav_checkbook') }}</span>
-                        </div>
-                        <x-badge>5</x-badge>
-                    </span>
+                    @if(auth()->user()->can('money.cash.view') || auth()->user()->can('money.bank.view'))
+                    <a href="{{ route('money.overview') }}" class="flex items-center gap-2.5 h-[38px] px-3 rounded-control text-text-secondary hover:bg-primary-50">
+                        <x-icon name="bank" class="w-4.5 h-4.5" />
+                        <span>{{ __('app.nav_treasury_banks') }}</span>
+                    </a>
+                    @endif
+                    @can('money.check.view')
+                    <a href="{{ route('money.checks.index') }}" class="flex items-center gap-2.5 h-[38px] px-3 rounded-control text-text-secondary hover:bg-primary-50">
+                        <x-icon name="check" class="w-4.5 h-4.5" />
+                        <span>{{ __('app.nav_checkbook') }}</span>
+                    </a>
+                    @endcan
                     <span title="{{ __('app.future_module_notice') }}" class="flex items-center justify-between h-[38px] px-3 rounded-control text-text-muted opacity-60 cursor-not-allowed">
                         <div class="flex items-center gap-2.5">
                             <x-icon name="chart" class="w-4.5 h-4.5" />

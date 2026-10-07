@@ -6,6 +6,7 @@ namespace App\Models;
 
 use App\Actions\Sales\ApplyCustomerPaymentCreditAction;
 use App\Domain\Accounting\Exceptions\ImmutableRecordException;
+use App\Services\Money\PaymentAllocationIntent;
 use App\Services\Sales\ReceiptRequestValues;
 use App\Services\Sales\SalesActorGuard;
 use App\Services\Sales\SalesDocumentRules;
@@ -17,6 +18,7 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
 
 /**
+ * @property int $allocation_version
  * @property Carbon|null $applied_at
  * @property Carbon|null $reversed_at
  */
@@ -53,16 +55,17 @@ class CustomerPaymentApplicationEvent extends Model
         if ($payment->posting_batch_id === null || $payment->is_reversed || $allocations === []) {
             throw new ImmutableRecordException('Credit application requires a posted active receipt and allocations.');
         }
-        $intent = array_map(fn (array $row): array => ['sales_invoice_id' => (int) $row['sales_invoice_id'], 'allocated_amount' => (string) $row['allocated_amount']], $allocations);
+        $version = (int) ($attributes['allocation_version'] ?? 1);
+        $intent = array_map(fn (array $row): array => PaymentAllocationIntent::historicalRow('sales_invoice_id', (int) $row['sales_invoice_id'], (string) $row['allocated_amount'], (string) $row['payment_currency_amount'], $version), $allocations);
         if (count(array_unique(array_column($intent, 'sales_invoice_id'))) !== count($intent)) {
             throw new ImmutableRecordException('Canonical application allocations must be aggregated once per invoice.');
         }
-        $expected = app(ApplyCustomerPaymentCreditAction::class)->prepare($payment, $intent);
+        $expected = app(ApplyCustomerPaymentCreditAction::class)->prepare($payment, $intent, $attributes['application_date']);
         if ($expected !== $allocations || ($attributes['request_hash'] ?? null) !== ApplyCustomerPaymentCreditAction::requestHash(
             (int) $payment->company_id, (int) $payment->id, (int) $actor->id, (string) $attributes['application_date'], $intent)) {
             throw new ImmutableRecordException('Credit application allocations must match authoritative exact calculations and request identity.');
         }
-        $event = new self(['application_date' => $attributes['application_date'], 'idempotency_key' => $attributes['idempotency_key'], 'request_hash' => $attributes['request_hash'], 'company_id' => $payment->company_id, 'customer_payment_id' => $payment->id,
+        $event = new self(['application_date' => $attributes['application_date'], 'idempotency_key' => $attributes['idempotency_key'], 'request_hash' => $attributes['request_hash'], 'allocation_version' => $version, 'company_id' => $payment->company_id, 'customer_payment_id' => $payment->id,
             'public_id' => (string) Str::ulid(), 'applied_by' => $actor->id, 'created_at' => now()]);
         $event->recordingApplication = true;
         try {

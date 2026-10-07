@@ -20,6 +20,11 @@ use App\Models\LedgerAccount;
 use App\Models\MoneyAccount;
 use App\Models\SalesInvoice;
 use App\Models\User;
+use App\Services\Money\CheckPaymentSource;
+use App\Services\Money\CustomerPaymentHistory;
+use App\Services\Money\MoneyAccountLedger;
+use App\Services\Money\MoneyEventScope;
+use App\Services\Money\PaymentAllocationIntent;
 use App\Services\Posting\AccountingPostingService;
 use App\Services\Sales\DocumentSequenceService;
 use App\Services\Sales\ReceiptRequestValues;
@@ -46,7 +51,8 @@ class PostCustomerPaymentAction
     /**
      * @param  array{
      *     customer_id: int,
-     *     money_account_id: int,
+     *     money_account_id: int|null,
+     *     check_id?: int,
      *     payment_date: string,
      *     payment_method: string,
      *     document_locale?: string,
@@ -58,6 +64,7 @@ class PostCustomerPaymentAction
      *     allocations?: list<array{
      *         sales_invoice_id: int,
      *         allocated_amount: string|BigDecimal,
+     *         payment_currency_amount?: string|BigDecimal,
      *     }>
      * }  $data
      */
@@ -89,35 +96,32 @@ class PostCustomerPaymentAction
 
         $idempotencyKey = ReceiptRequestValues::key($idempotencyKey);
         app(SalesDocumentRules::class)->date((string) $data['payment_date']);
-        foreach (['customer_id', 'money_account_id'] as $field) {
+        foreach (['customer_id'] as $field) {
             $data[$field] = ReceiptRequestValues::id($data[$field]);
         }
         foreach (['amount' => 6, 'exchange_rate' => 10] as $field => $scale) {
             $data[$field] = ReceiptRequestValues::decimal($data[$field], $scale);
         }
         $method = $data['payment_method'];
-        if (! in_array($method, [CustomerPayment::METHOD_CASH, CustomerPayment::METHOD_BANK], true)) {
+        if ($method === 'check') {
+            $data['check_id'] = ReceiptRequestValues::id($data['check_id'] ?? null);
+            $data['money_account_id'] = null;
+        } else {
+            $data['money_account_id'] = ReceiptRequestValues::id($data['money_account_id']);
+        }
+        if (! in_array($method, [CustomerPayment::METHOD_CASH, CustomerPayment::METHOD_BANK, 'check'], true)) {
             throw new InvalidArgumentException("Payment method [{$method}] is not supported. Only cash and bank transfers are accepted in this phase. Checks are strictly prohibited.");
         }
 
-        $grouped = [];
-        foreach ($data['allocations'] ?? [] as $allocation) {
-            $id = ReceiptRequestValues::id($allocation['sales_invoice_id']);
-            $amount = BigDecimal::of(ReceiptRequestValues::decimal($allocation['allocated_amount'], 6));
-            $grouped[$id] = ($grouped[$id] ?? BigDecimal::zero())->plus($amount);
-        }
-        ksort($grouped, SORT_NUMERIC);
-        $allocationsForHash = [];
-        foreach ($grouped as $id => $amount) {
-            $allocationsForHash[] = ['sales_invoice_id' => $id, 'allocated_amount' => (string) $amount->toScale(6)];
-        }
+        $allocationVersion = PaymentAllocationIntent::version($data['allocations'] ?? []);
+        $allocationsForHash = PaymentAllocationIntent::normalize($data['allocations'] ?? [], 'sales_invoice_id');
         $data['allocations'] = $allocationsForHash;
 
         $canonicalData = [
             'company_id' => (int) $company->id,
             'actor_id' => (int) $user->id,
             'customer_id' => (int) $data['customer_id'],
-            'money_account_id' => (int) $data['money_account_id'],
+            'money_account_id' => $data['money_account_id'] === null ? null : (int) $data['money_account_id'],
             'payment_date' => (string) $data['payment_date'],
             'payment_method' => (string) $method,
             'amount' => (string) BigDecimal::of((string) $data['amount'])->toScale(6, RoundingMode::HALF_UP),
@@ -128,9 +132,12 @@ class PostCustomerPaymentAction
             'document_locale' => $data['document_locale'] ?? null,
         ];
 
+        if ($method === 'check') {
+            $canonicalData['check_id'] = (int) $data['check_id'];
+        }
         $requestHash = hash('sha256', json_encode($canonicalData, JSON_THROW_ON_ERROR));
 
-        return DB::transaction(function () use ($company, $user, $data, $method, $idempotencyKey, $requestHash): CustomerPayment {
+        return DB::transaction(function () use ($company, $user, $data, $method, $idempotencyKey, $requestHash, $allocationVersion): CustomerPayment {
             // 1. Lock Company FOR UPDATE
             /** @var Company $lockedCompany */
             $lockedCompany = Company::where('id', $company->id)->lockForUpdate()->firstOrFail();
@@ -151,6 +158,8 @@ class PostCustomerPaymentAction
                     throw new IdempotencyConflictException("Idempotency key [{$idempotencyKey}] was already used with a different request payload.");
                 }
 
+                app(CustomerPaymentHistory::class)->validate($existing);
+
                 return $existing->load(['allocations', 'postingBatch', 'customer', 'moneyAccount']);
             }
 
@@ -166,21 +175,30 @@ class PostCustomerPaymentAction
                 throw new InvalidArgumentException('Receipt document language must be enabled.');
             }
 
-            // 3. Lock MoneyAccount FOR UPDATE
-            /** @var MoneyAccount $moneyAccount */
-            $moneyAccount = MoneyAccount::where('company_id', $lockedCompany->id)->where('id', $data['money_account_id'])->lockForUpdate()->firstOrFail();
-            if (! $moneyAccount->is_active) {
-                throw new InvalidArgumentException("Money account [{$moneyAccount->id}] is inactive.");
-            }
+            $check = null;
+            $moneyAccount = null;
+            if ($method === 'check') {
+                $check = app(CheckPaymentSource::class)->instrument((int) $lockedCompany->id, $user, $data, 'incoming');
+                $currency = $check->currency_code;
+                $cashLedger = app(CheckPaymentSource::class)->ledger($check);
+            } else {
+                // 3. Lock MoneyAccount FOR UPDATE
+                /** @var MoneyAccount $moneyAccount */
+                $moneyAccount = MoneyAccount::where('company_id', $lockedCompany->id)->where('id', $data['money_account_id'])->lockForUpdate()->firstOrFail();
+                if (! $moneyAccount->is_active) {
+                    throw new InvalidArgumentException("Money account [{$moneyAccount->id}] is inactive.");
+                }
 
-            $currency = $moneyAccount->currency_code;
-            if (($method === CustomerPayment::METHOD_CASH) !== ($moneyAccount->account_type === MoneyAccount::TYPE_CASH)) {
-                throw new InvalidArgumentException('Receipt method must match its money account type.');
+                $currency = $moneyAccount->currency_code;
+                if (($method === CustomerPayment::METHOD_CASH) !== ($moneyAccount->account_type === MoneyAccount::TYPE_CASH)) {
+                    throw new InvalidArgumentException('Receipt method must match its money account type.');
+                }
+                if (! CompanyCurrency::where('company_id', $lockedCompany->id)->where('currency_code', $currency)->where('enabled', true)->exists()) {
+                    throw new InvalidArgumentException('Receipt currency is not enabled.');
+                }
+                $cashLedger = LedgerAccount::where('company_id', $lockedCompany->id)->where('id', $moneyAccount->ledger_account_id)->where('active', true)->where('is_control', false)->lockForUpdate()->firstOrFail();
+                app(MoneyAccountLedger::class)->validate($moneyAccount, true);
             }
-            if (! CompanyCurrency::where('company_id', $lockedCompany->id)->where('currency_code', $currency)->where('enabled', true)->exists()) {
-                throw new InvalidArgumentException('Receipt currency is not enabled.');
-            }
-            $cashLedger = LedgerAccount::where('company_id', $lockedCompany->id)->where('id', $moneyAccount->ledger_account_id)->where('active', true)->where('is_control', false)->lockForUpdate()->firstOrFail();
             if ($currency === $lockedCompany->base_currency_code && ! BigDecimal::of($data['exchange_rate'])->isEqualTo(1)) {
                 throw new InvalidArgumentException('Base currency rate must equal one.');
             }
@@ -229,14 +247,15 @@ class PostCustomerPaymentAction
                     throw new InvalidArgumentException("Cannot allocate payment to invoice [{$invoice->id}] belonging to another customer.");
                 }
 
-                if ($invoice->currency_code !== $currency) {
-                    throw new InvalidArgumentException("Cross-currency allocation is not supported. Payment currency [{$currency}] does not match invoice [{$invoice->id}] currency [{$invoice->currency_code}].");
+                if (! CompanyCurrency::where('company_id', $lockedCompany->id)->where('currency_code', $invoice->currency_code)->where('enabled', true)->exists()) {
+                    throw new InvalidArgumentException('Document currency is not enabled.');
                 }
-
-                $allocAmt = BigDecimal::of((string) $allocInput['allocated_amount'])->toScale($minorUnits, RoundingMode::UNNECESSARY);
-                if ($allocAmt->isLessThanOrEqualTo(0)) {
-                    continue;
+                if ($paymentDate < Carbon::parse($invoice->issue_date)->toDateString()) {
+                    throw new InvalidArgumentException('Direct payment allocation cannot precede its document date.');
                 }
+                $amounts = PaymentAllocationIntent::amounts($allocInput, $invoice->currency_code, $currency);
+                $allocAmt = $amounts['document'];
+                $paymentConsumed = $amounts['payment'];
 
                 $invId = (int) $invoice->id;
                 if (! isset($remainingOutstandingByInvoice[$invId])) {
@@ -248,7 +267,7 @@ class PostCustomerPaymentAction
                 }
 
                 $remainingOutstandingByInvoice[$invId] = $remainingOutstandingByInvoice[$invId]->minus($allocAmt);
-                $allocatedTotal = $allocatedTotal->plus($allocAmt);
+                $allocatedTotal = $allocatedTotal->plus($paymentConsumed);
 
                 $invFx = BigDecimal::of((string) $invoice->exchange_rate)->toScale(10, RoundingMode::HALF_UP);
                 $receivableReliefBase = app(ReceivableBookValue::class)->relief($invoice, $allocAmt);
@@ -267,6 +286,8 @@ class PostCustomerPaymentAction
                 $preparedAllocations[] = [
                     'sales_invoice_id' => $invoice->id,
                     'allocated_amount' => (string) $allocAmt->toScale(6),
+                    'payment_currency_amount' => (string) $paymentConsumed->toScale(6),
+                    'document_currency_code' => $invoice->currency_code,
                     'invoice_exchange_rate' => (string) $invFx->toScale(10),
                     'payment_exchange_rate' => (string) $paymentFx->toScale(10),
                     'base_amount_applied_to_receivable' => (string) $receivableReliefBase->toScale(6),
@@ -321,7 +342,7 @@ class PostCustomerPaymentAction
                     ledgerAccountId: $arAccount->id,
                     debitBase: MoneyAmount::from('0.000000'),
                     creditBase: MoneyAmount::from((string) $allocBase->toScale(6)),
-                    transactionCurrencyCode: $currency,
+                    transactionCurrencyCode: $pAlloc['document_currency_code'],
                     transactionAmount: MoneyAmount::from((string) $allocAmt->toScale(6)),
                     exchangeRate: $invFx,
                     description: "Customer Receipt {$paymentNumber} AR Relief Inv #{$pAlloc['sales_invoice_id']}",
@@ -370,11 +391,12 @@ class PostCustomerPaymentAction
                 'company_id' => $lockedCompany->id,
                 'payment_number' => $paymentNumber,
                 'customer_id' => $customer->id,
-                'money_account_id' => $moneyAccount->id,
+                'money_account_id' => $moneyAccount?->id, 'check_id' => $check?->id,
                 'payment_date' => $paymentDate,
                 'payment_method' => $method,
                 'currency_code' => $currency,
                 'amount' => (string) $totalAmount->toScale(6),
+                'allocation_version' => $allocationVersion,
                 'exchange_rate' => (string) $paymentFx->toScale(10),
                 'amount_base' => (string) $paymentAmountBase->toScale(6),
                 'reference_number' => $data['reference_number'] ?? null,
@@ -384,12 +406,13 @@ class PostCustomerPaymentAction
                 'created_by' => $user->id,
                 'company_snapshot' => $lockedCompany->only(['name_ar', 'name_en', 'phone', 'email', 'address_ar', 'address_en', 'tax_number']),
                 'customer_snapshot' => $customer->only(['name_ar', 'name_en', 'business_name_ar', 'business_name_en', 'business_name', 'address_line_1_ar', 'address_line_1_en', 'phone', 'email', 'address_ar', 'address_en']),
-                'money_account_snapshot' => $moneyAccount->only(['name_ar', 'name_en']),
+                'money_account_snapshot' => $moneyAccount?->only(['name_ar', 'name_en']) ?? [],
                 'document_locale' => $documentLocale,
             ]);
 
             // Save allocations
             foreach ($preparedAllocations as $allocData) {
+                unset($allocData['document_currency_code']);
                 CustomerPaymentAllocation::create(array_merge($allocData, [
                     'company_id' => $lockedCompany->id,
                     'customer_payment_id' => $payment->id,
@@ -411,9 +434,14 @@ class PostCustomerPaymentAction
                 lines: $postingLines,
             );
 
+            if ($check !== null) {
+                app(MoneyEventScope::class)->prepareCheckPaymentCommand($finalPostingCmd, (int) $check->id, 'incoming');
+            }
             $batch = $this->accountingPostingService->post($finalPostingCmd);
 
             $payment->completeCanonicalPost($batch, $user);
+
+            app(CustomerPaymentHistory::class)->validate($payment);
 
             return $payment->fresh(['allocations', 'customer', 'moneyAccount', 'postingBatch']);
         });

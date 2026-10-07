@@ -55,7 +55,7 @@ class PaymentIndex extends Component
 
         $canCreate = $user->hasPermissionTo('money.receipt.create');
 
-        $query = CustomerPayment::with(['customer', 'moneyAccount', 'allocations'])
+        $query = CustomerPayment::with(['customer', 'moneyAccount', 'checkInstrument', 'allocations'])
             ->where('company_id', $company->id);
 
         if (trim($this->search) !== '') {

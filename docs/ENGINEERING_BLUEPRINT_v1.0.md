@@ -4920,7 +4920,7 @@ Customer
 
 ## Phase 5 — Purchasing vertical
 
-Complete / Accepted Source / Merged / Deployed (Phases 5A–5F; Phase 5F merged through PR #13 and deployed on 2026-10-07. Phase 6 remains unstarted):
+Complete / Accepted Source / Merged / Deployed (Phases 5A–5F; Phase 5F merged through PR #13 and deployed on 2026-10-07. Phase 6 is an implemented candidate awaiting independent review):
 
 ```text
 Vendor
@@ -4934,6 +4934,8 @@ Vendor
 ```
 
 ## Phase 6 — Money/checks
+
+Implemented candidate / Awaiting Independent Review; see ADR 0006. Not merged or deployed.
 
 - Cash/Bank;
 - transfers;

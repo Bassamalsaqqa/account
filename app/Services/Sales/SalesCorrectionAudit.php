@@ -8,6 +8,7 @@ use App\Actions\Sales\ApplyCustomerPaymentCreditAction;
 use App\Domain\Sales\Calculators\SalesLineCalculationInput;
 use App\Domain\Sales\Calculators\SalesLineCalculator;
 use App\Models\SalesInvoice;
+use App\Services\Money\PaymentAllocationIntent;
 use Brick\Math\BigDecimal;
 use Brick\Math\RoundingMode;
 use Illuminate\Support\Facades\DB;
@@ -78,11 +79,21 @@ final class SalesCorrectionAudit
             $intent = [];
             $expected = [];
             foreach ($rows as $row) {
-                $intent[] = ['sales_invoice_id' => (int) $row->sales_invoice_id, 'allocated_amount' => $row->allocated_amount];
+                $intent[] = PaymentAllocationIntent::historicalRow('sales_invoice_id', (int) $row->sales_invoice_id, $row->allocated_amount, $row->payment_currency_amount, (int) $event->allocation_version);
                 $invoice = DB::table('sales_invoices')->where('id', $row->sales_invoice_id)->first();
                 if ($invoice === null || $invoice->posting_batch_id === null || (int) $row->company_id !== $companyId || (int) $row->customer_payment_id !== (int) $payment->id
-                    || (int) $invoice->company_id !== $companyId || (int) $invoice->customer_id !== (int) $payment->customer_id || $invoice->currency_code !== $payment->currency_code) {
+                    || (int) $invoice->company_id !== $companyId || (int) $invoice->customer_id !== (int) $payment->customer_id) {
                     $errors[] = "$label allocation tenant/customer/currency mismatch.";
+
+                    continue;
+                }
+                try {
+                    PaymentAllocationIntent::amounts(['allocated_amount' => $row->allocated_amount, 'payment_currency_amount' => $row->payment_currency_amount], $invoice->currency_code, $payment->currency_code);
+                    if ((int) $event->allocation_version === 1 && ! BigDecimal::of($row->allocated_amount)->isEqualTo($row->payment_currency_amount)) {
+                        throw new \InvalidArgumentException('Legacy allocation amount mismatch.');
+                    }
+                } catch (\Throwable $exception) {
+                    $errors[] = 'Payment dual-currency allocation precision/provenance mismatch: '.$exception->getMessage();
 
                     continue;
                 }
@@ -130,7 +141,7 @@ final class SalesCorrectionAudit
             $base = BigDecimal::zero();
             foreach (DB::table('customer_payment_allocations')->where('customer_payment_id', $payment->id)->orderBy('id')->get() as $allocation) {
                 // Replay all allocations at their original append order, including applications later reversed with the receipt.
-                $amount = $amount->plus($allocation->allocated_amount);
+                $amount = $amount->plus($allocation->payment_currency_amount);
                 $target = $amount->isEqualTo($payment->amount) ? BigDecimal::of($payment->amount_base)
                     : $amount->multipliedBy($payment->exchange_rate)->toScale(6, RoundingMode::HALF_UP);
                 if ($amount->isGreaterThan($payment->amount) || ! $target->minus($base)->isEqualTo($allocation->settlement_base_value)) {

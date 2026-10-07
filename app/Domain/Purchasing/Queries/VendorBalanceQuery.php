@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Purchasing\Queries;
 
+use App\Domain\Money\Queries\CrossCurrencySettlementQuery;
 use App\Models\Purchase;
 use App\Models\PurchaseReturn;
 use App\Models\VendorPayment;
@@ -81,6 +82,14 @@ final class VendorBalanceQuery
             $entry = $result[$id][$currency] ?? $this->emptyEntry();
             $entry['paid'] = (string) BigDecimal::of((string) $row->getAttribute('total'))->toScale(6);
             $entry['balance'] = (string) BigDecimal::of($entry['balance'])->minus($entry['paid'])->toScale(6);
+            $result[$id][$currency] = $entry;
+        }
+
+        foreach (app(CrossCurrencySettlementQuery::class)->legs((int) $companyId, $vendorIds, 'vendor', true) as $leg) {
+            $id = $leg['party_id'];
+            $currency = $leg['currency'];
+            $entry = $result[$id][$currency] ?? $this->emptyEntry();
+            $entry['balance'] = (string) BigDecimal::of($entry['balance'])->plus($leg['amount'])->toScale(6);
             $result[$id][$currency] = $entry;
         }
 

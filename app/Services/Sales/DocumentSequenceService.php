@@ -20,6 +20,7 @@ class DocumentSequenceService
         DocumentSequence::TYPE_PURCHASE => 'PUR',
         DocumentSequence::TYPE_PURCHASE_RETURN => 'PRT',
         DocumentSequence::TYPE_VENDOR_PAYMENT => 'VPM',
+        DocumentSequence::TYPE_MONEY_TRANSFER => 'TRF',
     ];
 
     /**

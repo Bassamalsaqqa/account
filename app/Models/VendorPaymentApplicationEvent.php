@@ -6,6 +6,7 @@ namespace App\Models;
 
 use App\Actions\Purchasing\ApplyVendorPaymentCreditAction;
 use App\Domain\Accounting\Exceptions\ImmutableRecordException;
+use App\Services\Money\PaymentAllocationIntent;
 use App\Services\Purchasing\VendorPaymentApplicationCapability;
 use App\Services\Purchasing\VendorPaymentApplicationIntegrityValidator;
 use App\Services\Purchasing\VendorPaymentApplicationScope;
@@ -34,6 +35,7 @@ use InvalidArgumentException;
  * @property int|null $posting_batch_id
  * @property int|null $reversal_posting_batch_id
  * @property int $applied_by
+ * @property int $allocation_version
  * @property Carbon|null $applied_at
  * @property int|null $reversed_by
  * @property Carbon|null $reversed_at
@@ -104,11 +106,8 @@ class VendorPaymentApplicationEvent extends Model
             throw new ImmutableRecordException('Credit application requires a posted active vendor payment and allocations.');
         }
 
-        $intent = array_map(fn (array $row): array => [
-            'purchase_id' => (int) $row['purchase_id'],
-            'allocated_amount' => (string) $row['allocated_amount'],
-        ], $allocations);
-
+        $version = (int) ($attributes['allocation_version'] ?? 1);
+        $intent = array_map(fn (array $row): array => PaymentAllocationIntent::historicalRow('purchase_id', (int) $row['purchase_id'], (string) $row['allocated_amount'], (string) $row['payment_currency_amount'], $version), $allocations);
         if (count(array_unique(array_column($intent, 'purchase_id'))) !== count($intent)) {
             throw new ImmutableRecordException('Canonical application allocations must be aggregated once per purchase.');
         }
@@ -130,7 +129,7 @@ class VendorPaymentApplicationEvent extends Model
             'vendor_payment_id' => $payment->id,
             'application_date' => $attributes['application_date'],
             'idempotency_key' => $attributes['idempotency_key'],
-            'request_hash' => $attributes['request_hash'],
+            'request_hash' => $attributes['request_hash'], 'allocation_version' => $version,
             'applied_by' => $actor->id,
             'created_at' => now(),
         ]);

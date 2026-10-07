@@ -10,9 +10,14 @@ use App\Models\CustomerPayment;
 use App\Models\CustomerPaymentApplicationEvent;
 use App\Models\PostingBatch;
 use App\Models\User;
+use App\Services\Money\CustomerApplicationHistory;
+use App\Services\Money\CustomerPaymentHistory;
+use App\Services\Money\MoneyEventScope;
 use App\Services\Posting\AccountingReversalService;
 use App\Services\Sales\SalesActorGuard;
+use App\Services\Sales\SalesDocumentRules;
 use App\Support\Tenancy\CompanyContext;
+use Carbon\Carbon;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\DB;
 
@@ -22,7 +27,7 @@ class ReverseCustomerPaymentAction
         protected AccountingReversalService $accountingReversalService,
     ) {}
 
-    public function execute(CustomerPayment $payment, User $user, ?string $reason = null): CustomerPayment
+    public function execute(CustomerPayment $payment, User $user, ?string $reason = null, ?string $businessDate = null): CustomerPayment
     {
         $context = app(CompanyContext::class);
         if (! $context->hasCompany() || (int) $context->companyId() !== (int) $payment->company_id) {
@@ -43,12 +48,22 @@ class ReverseCustomerPaymentAction
             throw new AuthorizationException('User does not have permission to reverse customer receipts.');
         }
 
-        return DB::transaction(function () use ($payment, $user, $reason): CustomerPayment {
-            Company::where('id', $payment->company_id)->lockForUpdate()->firstOrFail();
+        return DB::transaction(function () use ($payment, $user, $reason, $businessDate): CustomerPayment {
+            $company = Company::where('id', $payment->company_id)->lockForUpdate()->firstOrFail();
             app(SalesActorGuard::class)->lockAndAuthorize((int) $payment->company_id, $user, 'money.receipt.reverse');
 
             /** @var CustomerPayment $lockedPayment */
             $lockedPayment = CustomerPayment::where('id', $payment->id)->lockForUpdate()->firstOrFail();
+
+            if ($lockedPayment->check_id !== null) {
+                app(MoneyEventScope::class)->assertCheckTransition((int) $lockedPayment->check_id, (int) $company->id, $user);
+            }
+            app(CustomerPaymentHistory::class)->validate($lockedPayment);
+            $reversalDate = $businessDate ?? Carbon::now($company->timezone)->toDateString();
+            app(SalesDocumentRules::class)->date($reversalDate);
+            if ($reversalDate < Carbon::parse($lockedPayment->payment_date)->toDateString()) {
+                throw new \InvalidArgumentException('Receipt reversal cannot precede receipt date.');
+            }
 
             if ($lockedPayment->is_reversed) {
                 return $lockedPayment;
@@ -57,6 +72,10 @@ class ReverseCustomerPaymentAction
             $events = CustomerPaymentApplicationEvent::where('company_id', $lockedPayment->company_id)
                 ->where('customer_payment_id', $lockedPayment->id)->whereNull('reversed_at')->orderByDesc('id')->lockForUpdate()->get();
             foreach ($events as $event) {
+                app(CustomerApplicationHistory::class)->validate($event);
+                if ($reversalDate < Carbon::parse($event->application_date)->toDateString()) {
+                    throw new \InvalidArgumentException('Reversal cannot precede credit application.');
+                }
                 if ($event->applied_at === null) {
                     throw new \InvalidArgumentException('Incomplete credit application prevents receipt reversal.');
                 }
@@ -66,7 +85,7 @@ class ReverseCustomerPaymentAction
                     if ($eventBatch->isReversed()) {
                         throw new \InvalidArgumentException('Credit application reversal provenance is inconsistent.');
                     }
-                    $eventReversal = $this->accountingReversalService->reverse($eventBatch, $user, $reason ?? 'Receipt credit application reversal');
+                    $eventReversal = $this->accountingReversalService->reverse($eventBatch, $user, $reason ?? 'Receipt credit application reversal', $reversalDate);
                 }
                 $event->completeCanonicalReversal($eventReversal, $user, $reason);
             }
@@ -78,7 +97,8 @@ class ReverseCustomerPaymentAction
                     $reversalBatch = $this->accountingReversalService->reverse(
                         $batch,
                         $user,
-                        $reason ?? "Reversal of Customer Receipt {$lockedPayment->payment_number}"
+                        $reason ?? "Reversal of Customer Receipt {$lockedPayment->payment_number}",
+                        $reversalDate
                     );
                 }
             }
@@ -87,6 +107,11 @@ class ReverseCustomerPaymentAction
                 throw new \InvalidArgumentException('Canonical accounting reversal is required before reversing a receipt.');
             }
             $lockedPayment->completeCanonicalReversal($reversalBatch, $user, $reason);
+
+            app(CustomerPaymentHistory::class)->validate($lockedPayment);
+            foreach ($events as $event) {
+                app(CustomerApplicationHistory::class)->validate($event->fresh());
+            }
 
             return $lockedPayment->fresh(['allocations', 'customer', 'moneyAccount', 'postingBatch', 'reversalPostingBatch']);
         });
