@@ -42,6 +42,26 @@ final class Check extends Model
         return ['received_issued_date' => 'date:Y-m-d', 'due_date' => 'date:Y-m-d', 'party_snapshot' => 'array', 'bank_snapshot' => 'array', 'request_payload' => 'array'];
     }
 
+    public function partyDisplayName(?string $locale = null): string
+    {
+        $locale ??= app()->getLocale();
+        $snapshot = $this->getAttribute('party_snapshot');
+        $keys = $locale === 'en'
+            ? ['name_en', 'name_ar', 'name', 'payee_name', 'business_name_en', 'business_name_ar', 'business_name']
+            : ['name_ar', 'name_en', 'name', 'payee_name', 'business_name_ar', 'business_name_en', 'business_name'];
+
+        if (is_array($snapshot)) {
+            foreach ($keys as $key) {
+                $name = $snapshot[$key] ?? null;
+                if (is_string($name) && trim($name) !== '') {
+                    return $name;
+                }
+            }
+        }
+
+        return __('money.unavailable', [], $locale);
+    }
+
     /** @return list<string> */
     protected function completionFields(): array
     {

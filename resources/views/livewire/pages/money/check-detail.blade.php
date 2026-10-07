@@ -3,7 +3,7 @@
 <h1 class="text-2xl font-bold">{{ __('money.'.$check->direction) }} <bdi>{{ $check->check_number }}</bdi>
 </h1>
 <section class="rounded-card border border-border bg-white p-4 sm:p-6 space-y-3">
-<p class="font-semibold">{{ $sourceAdapter->partyDisplayName() }}</p>
+<p class="font-semibold">{{ $check->partyDisplayName() }}</p>
 <p class="text-2xl font-bold" dir="ltr">{{ $check->amount }} {{ $check->currency_code }}</p>
 <p>{{ __('money.'.$check->status) }} · {{ __('money.due_date') }}: {{ $check->due_date->toDateString() }}</p>
 <p>{{ $check->bank_name }}</p>
