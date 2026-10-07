@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Sales;
 
 use App\Services\Inventory\HistoricalSaleCost;
+use App\Services\Money\PaymentAllocationIntent;
 use Brick\Math\BigDecimal;
 use Brick\Math\RoundingMode;
 use Illuminate\Support\Facades\DB;
@@ -120,11 +121,14 @@ final class SalesHistoryAudit
         foreach (DB::table('customer_payments')->where('company_id', $companyId)->get() as $payment) {
             $expected = [];
             $account = DB::table('money_accounts')->where('company_id', $companyId)->where('id', $payment->money_account_id)->first();
+            $check = $payment->payment_method === 'check' ? DB::table('checks')->where('company_id', $companyId)->where('id', $payment->check_id)->first() : null;
             $base = BigDecimal::of($payment->amount)->multipliedBy($payment->exchange_rate)->toScale(6, RoundingMode::HALF_UP);
-            if ($account === null || ! $base->isEqualTo($payment->amount_base)) {
+            if (($check === null && $account === null) || ! $base->isEqualTo($payment->amount_base)
+                || ($check !== null && ($check->direction !== 'incoming' || (int) $check->customer_id !== (int) $payment->customer_id || $payment->money_account_id !== null
+                    || $check->currency_code !== $payment->currency_code || ! BigDecimal::of($check->amount)->isEqualTo($payment->amount)))) {
                 $errors[] = "Payment [{$payment->id}] money account/amount mismatch.";
             }
-            $this->add($expected, (int) ($account->ledger_account_id ?? 0), $base);
+            $this->add($expected, (int) ($check !== null ? ($accounts['checks_in_hand'] ?? 0) : ($account->ledger_account_id ?? 0)), $base);
             $applied = BigDecimal::zero();
             $settled = BigDecimal::zero();
             $amount = BigDecimal::zero();
@@ -132,8 +136,18 @@ final class SalesHistoryAudit
             $loss = BigDecimal::zero();
             foreach (DB::table('customer_payment_allocations')->where('customer_payment_id', $payment->id)->whereNull('application_event_id')->orderBy('id')->get() as $allocation) {
                 $invoice = DB::table('sales_invoices')->where('company_id', $companyId)->where('id', $allocation->sales_invoice_id)->first();
-                if ($invoice === null || (int) $allocation->company_id !== $companyId || (int) $invoice->customer_id !== (int) $payment->customer_id || $invoice->currency_code !== $payment->currency_code) {
+                if ($invoice === null || (int) $allocation->company_id !== $companyId || (int) $invoice->customer_id !== (int) $payment->customer_id) {
                     $errors[] = "Payment [{$payment->id}] allocation provenance mismatch.";
+
+                    continue;
+                }
+                try {
+                    PaymentAllocationIntent::amounts(['allocated_amount' => $allocation->allocated_amount, 'payment_currency_amount' => $allocation->payment_currency_amount], $invoice->currency_code, $payment->currency_code);
+                    if ((int) $payment->allocation_version === 1 && ! BigDecimal::of($allocation->allocated_amount)->isEqualTo($allocation->payment_currency_amount)) {
+                        throw new \InvalidArgumentException('Legacy allocation amount mismatch.');
+                    }
+                } catch (\Throwable $exception) {
+                    $errors[] = 'Payment dual-currency allocation precision/provenance mismatch: '.$exception->getMessage();
 
                     continue;
                 }
@@ -141,7 +155,7 @@ final class SalesHistoryAudit
                 $targetAmount = $prior['amount']->plus($allocation->allocated_amount);
                 $targetBase = $targetAmount->isEqualTo($invoice->grand_total_currency) ? BigDecimal::of($invoice->grand_total_base) : $targetAmount->multipliedBy($invoice->exchange_rate)->toScale(6, RoundingMode::HALF_UP);
                 $book = $targetBase->minus($prior['base']);
-                $amount = $amount->plus($allocation->allocated_amount);
+                $amount = $amount->plus($allocation->payment_currency_amount);
                 $settlement = $amount->multipliedBy($payment->exchange_rate)->toScale(6, RoundingMode::HALF_UP)->minus($settled);
                 if ($targetAmount->isGreaterThan($invoice->grand_total_currency) || ! $book->isEqualTo($allocation->base_amount_applied_to_receivable) || ! $settlement->isEqualTo($allocation->settlement_base_value)
                     || ! $settlement->minus($book)->isEqualTo($allocation->realized_fx_gain_loss_base) || ! BigDecimal::of($allocation->invoice_exchange_rate)->isEqualTo($invoice->exchange_rate)

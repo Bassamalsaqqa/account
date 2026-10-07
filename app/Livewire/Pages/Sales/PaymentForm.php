@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace App\Livewire\Pages\Sales;
 
 use App\Actions\Sales\PostCustomerPaymentAction;
+use App\Models\CompanyCurrency;
 use App\Models\Customer;
-use App\Models\MoneyAccount;
 use App\Models\SalesInvoice;
+use App\Services\Money\EligibleMoneyAccounts;
+use App\Services\Money\MoneyActorGuard;
 use App\Services\Sales\ReceiptPreview;
 use App\Support\Tenancy\CompanyContext;
 use Brick\Math\BigDecimal;
@@ -15,6 +17,7 @@ use Carbon\Carbon;
 use Illuminate\Contracts\View\View;
 use Illuminate\Support\Str;
 use Livewire\Attributes\Layout;
+use Livewire\Attributes\Locked;
 use Livewire\Component;
 
 #[Layout('layouts.app')]
@@ -48,6 +51,8 @@ class PaymentForm extends Component
      *     grand_total: string,
      *     outstanding: string,
      *     allocated_amount: string,
+     *     document_currency_code: string,
+     *     payment_currency_amount?: string,
      *     invoice_exchange_rate: string,
      *     preview_fx: string,
      * }>
@@ -60,12 +65,23 @@ class PaymentForm extends Component
 
     public string $idempotency_key = '';
 
+    #[Locked]
+    public int $pageCompanyId;
+
+    public function boot(CompanyContext $context): void
+    {
+        if (isset($this->pageCompanyId)) {
+            app(MoneyActorGuard::class)->authorize($this->pageCompanyId, 'money.receipt.create');
+        }
+    }
+
     public function mount(CompanyContext $context, ?int $customer_id = null, ?int $invoice_id = null): void
     {
         $customer_id ??= request()->integer('customer_id') ?: null;
         $invoice_id ??= request()->integer('invoice_id') ?: null;
         $this->idempotency_key = (string) Str::ulid();
         $company = $context->company();
+        $this->pageCompanyId = (int) $company->id;
         $user = auth()->user();
 
         if (! $user->hasPermissionTo('money.receipt.create')) {
@@ -74,29 +90,30 @@ class PaymentForm extends Component
 
         $this->customer_id = $customer_id;
         $this->document_locale = $company->default_locale;
-        $this->payment_date = Carbon::now()->toDateString();
+        $this->payment_date = Carbon::now($company->timezone)->toDateString();
 
-        $defaultAccount = MoneyAccount::where('company_id', $company->id)
-            ->where('is_active', true)
+        $defaultAccount = app(EligibleMoneyAccounts::class)->query((int) $company->id)
             ->orderBy('sort_order')
             ->first();
 
         if ($defaultAccount !== null) {
             $this->money_account_id = $defaultAccount->id;
             $this->currency_code = $defaultAccount->currency_code;
+            $this->payment_method = $defaultAccount->account_type === 'bank' ? 'bank_transfer' : 'cash';
         }
 
         if ($invoice_id !== null) {
             $inv = SalesInvoice::where('company_id', $company->id)->find($invoice_id);
             if ($inv !== null) {
                 $this->customer_id = $inv->customer_id;
-                $accWithCurr = MoneyAccount::where('company_id', $company->id)
+                $accWithCurr = app(EligibleMoneyAccounts::class)->query((int) $company->id)
                     ->where('currency_code', $inv->currency_code)
                     ->where('is_active', true)
                     ->first();
                 if ($accWithCurr !== null) {
                     $this->money_account_id = $accWithCurr->id;
                     $this->currency_code = $accWithCurr->currency_code;
+                    $this->payment_method = $accWithCurr->account_type === 'bank' ? 'bank_transfer' : 'cash';
                 }
                 $this->amount = (string) $inv->calculateOutstanding();
             }
@@ -113,13 +130,12 @@ class PaymentForm extends Component
     public function updatedMoneyAccountId(): void
     {
         if ($this->money_account_id !== null) {
-            $account = MoneyAccount::find($this->money_account_id);
+            $account = app(EligibleMoneyAccounts::class)->query((int) app(CompanyContext::class)->companyId())->find($this->money_account_id);
             if ($account !== null) {
                 $this->currency_code = $account->currency_code;
+                $this->payment_method = $account->account_type === 'bank' ? 'bank_transfer' : 'cash';
                 $company = app(CompanyContext::class)->company();
-                if ($this->currency_code === $company->base_currency_code) {
-                    $this->exchange_rate = '1.0000000000';
-                }
+                $this->exchange_rate = $this->currency_code === $company->base_currency_code ? '1.0000000000' : '';
             }
         }
         $this->loadOpenInvoices();
@@ -144,7 +160,7 @@ class PaymentForm extends Component
         $invoices = SalesInvoice::with('allocations')
             ->where('company_id', $company->id)
             ->where('customer_id', $this->customer_id)
-            ->where('currency_code', $this->currency_code)
+            ->whereIn('currency_code', CompanyCurrency::where('company_id', $company->id)->where('enabled', true)->select('currency_code'))
             ->where('status', SalesInvoice::STATUS_POSTED)
             ->orderBy('issue_date')
             ->get();
@@ -161,6 +177,7 @@ class PaymentForm extends Component
                     'grand_total' => (string) $inv->grand_total,
                     'outstanding' => (string) $outstanding,
                     'allocated_amount' => '0.00',
+                    'document_currency_code' => $inv->currency_code,
                     'invoice_exchange_rate' => (string) $inv->exchange_rate,
                     'preview_fx' => '0.00',
                 ];
@@ -175,6 +192,9 @@ class PaymentForm extends Component
         $remaining = BigDecimal::of($this->amount ?: '0');
 
         foreach ($this->allocations as $idx => $alloc) {
+            if ($alloc['document_currency_code'] !== $this->currency_code) {
+                continue;
+            }
             $due = BigDecimal::of($alloc['outstanding']);
             if ($remaining->isPositive()) {
                 $allocAmount = $remaining->isGreaterThanOrEqualTo($due) ? $due : $remaining;
@@ -190,10 +210,23 @@ class PaymentForm extends Component
 
     public function recalculateAllocations(): void
     {
+        $this->validate($this->allocationRules());
         $preview = app(ReceiptPreview::class)->calculate($this->amount, $this->exchange_rate, $this->allocations, $this->currency_code);
         $this->allocations = $preview['allocations'];
         $this->allocatedTotal = $preview['allocated'];
         $this->unallocatedAmount = $preview['unallocated'];
+    }
+
+    /** @return array<string, list<string>> */
+    private function allocationRules(): array
+    {
+        // Blank edits are zero; nonblank input must be an exact decimal before preview or posting.
+        $decimal = ['nullable', 'string', 'regex:/^(?:\s*|-?\d+(?:\.\d{1,6})?)$/D'];
+
+        return [
+            'allocations.*.allocated_amount' => $decimal,
+            'allocations.*.payment_currency_amount' => $decimal,
+        ];
     }
 
     public function save(PostCustomerPaymentAction $postAction): mixed
@@ -214,6 +247,7 @@ class PaymentForm extends Component
             'exchange_rate' => ['required', 'numeric', 'gt:0'],
             'reference_number' => ['nullable', 'string', 'max:100'],
             'notes' => ['nullable', 'string'],
+            ...$this->allocationRules(),
         ]);
 
         $pmtAmount = BigDecimal::of($this->amount);
@@ -221,7 +255,7 @@ class PaymentForm extends Component
         $allocatedSum = BigDecimal::zero();
 
         foreach ($this->allocations as $alloc) {
-            $amt = BigDecimal::of($alloc['allocated_amount'] ?: '0');
+            $amt = BigDecimal::of(trim((string) $alloc['allocated_amount']) === '' ? '0' : $alloc['allocated_amount']);
             if ($amt->isPositive()) {
                 $maxDue = BigDecimal::of($alloc['outstanding']);
                 if ($amt->isGreaterThan($maxDue)) {
@@ -230,12 +264,27 @@ class PaymentForm extends Component
                     return null;
                 }
 
-                $allocatedSum = $allocatedSum->plus($amt);
+                $paymentAmount = $alloc['document_currency_code'] === $this->currency_code ? $amt
+                    : BigDecimal::of(trim($alloc['payment_currency_amount'] ?? '') === '' ? '0' : $alloc['payment_currency_amount']);
+                if (! $paymentAmount->isPositive()) {
+                    $this->addError('allocations', __('money.payment_amount_required'));
+
+                    return null;
+                }
+                $allocatedSum = $allocatedSum->plus($paymentAmount);
                 $allocList[] = [
                     'sales_invoice_id' => (int) $alloc['sales_invoice_id'],
                     'allocated_amount' => (string) $amt,
+                    ...($alloc['document_currency_code'] !== $this->currency_code ? ['payment_currency_amount' => (string) $paymentAmount] : []),
                 ];
             }
+        }
+
+        if (collect($allocList)->contains(fn ($row) => isset($row['payment_currency_amount']))) {
+            foreach ($allocList as &$row) {
+                $row['payment_currency_amount'] ??= $row['allocated_amount'];
+            }
+            unset($row);
         }
 
         if ($allocatedSum->isGreaterThan($pmtAmount)) {
@@ -266,9 +315,10 @@ class PaymentForm extends Component
 
     public function render(CompanyContext $context): View
     {
+        app(MoneyActorGuard::class)->authorize($this->pageCompanyId, 'money.receipt.create');
         $company = $context->company();
         $customers = Customer::where('company_id', $company->id)->where('status', 'active')->orderBy('name_ar')->get();
-        $accounts = MoneyAccount::where('company_id', $company->id)->where('is_active', true)->orderBy('sort_order')->get();
+        $accounts = app(EligibleMoneyAccounts::class)->query((int) $company->id)->orderBy('sort_order')->get();
 
         return view('livewire.pages.sales.payment-form', [
             'company' => $company,

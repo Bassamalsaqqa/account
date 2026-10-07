@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Sales\Queries;
 
+use App\Domain\Money\Queries\CrossCurrencySettlementQuery;
 use App\Models\CustomerPayment;
 use App\Models\SalesInvoice;
 use App\Models\SalesReturn;
@@ -44,6 +45,14 @@ final class CustomerBalanceQuery
                 $balance['outstanding'] = (string) BigDecimal::of($balance['outstanding'])->plus($amount);
                 $result[$id][$currency] = $balance;
             }
+        }
+
+        foreach (app(CrossCurrencySettlementQuery::class)->legs((int) $companyId, $customerIds, 'customer', true) as $leg) {
+            $id = $leg['party_id'];
+            $currency = $leg['currency'];
+            $entry = $result[$id][$currency] ?? ['invoiced' => '0.000000', 'outstanding' => '0.000000'];
+            $entry['outstanding'] = (string) BigDecimal::of($entry['outstanding'])->plus($leg['amount'])->toScale(6);
+            $result[$id][$currency] = $entry;
         }
 
         return $result;

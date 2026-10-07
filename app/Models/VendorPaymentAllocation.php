@@ -23,6 +23,7 @@ use InvalidArgumentException;
  * @property int $company_id
  * @property int $vendor_payment_id
  * @property int $purchase_id
+ * @property string $payment_currency_amount
  * @property string $allocated_amount
  * @property string $purchase_exchange_rate
  * @property string $payment_exchange_rate
@@ -46,6 +47,7 @@ class VendorPaymentAllocation extends Model
         'vendor_payment_id',
         'purchase_id',
         'allocated_amount',
+        'payment_currency_amount',
         'purchase_exchange_rate',
         'payment_exchange_rate',
         'base_amount_applied_to_payable',
@@ -62,6 +64,7 @@ class VendorPaymentAllocation extends Model
     {
         return [
             'allocated_amount' => 'string',
+            'payment_currency_amount' => 'string',
             'purchase_exchange_rate' => 'string',
             'payment_exchange_rate' => 'string',
             'base_amount_applied_to_payable' => 'string',
@@ -132,8 +135,7 @@ class VendorPaymentAllocation extends Model
                 $purchase = Purchase::withoutGlobalScopes()->find($alloc->purchase_id);
                 if ($purchase === null || (int) $purchase->company_id !== (int) $payment->company_id
                     || (int) $alloc->company_id !== (int) $payment->company_id
-                    || (int) $purchase->vendor_id !== (int) $payment->vendor_id
-                    || $purchase->currency_code !== $payment->currency_code) {
+                    || (int) $purchase->vendor_id !== (int) $payment->vendor_id) {
                     throw new InvalidArgumentException('Vendor payment and allocated purchase must belong to the same company, vendor, and currency.');
                 }
             }

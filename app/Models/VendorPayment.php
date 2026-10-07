@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Models;
 
 use App\Domain\Accounting\Exceptions\ImmutableRecordException;
+use App\Services\Money\MoneyEventScope;
 use App\Services\Purchasing\VendorPaymentHistoryCommands;
 use App\Services\Purchasing\VendorPaymentPostedIntegrityValidator;
 use App\Services\Purchasing\VendorPaymentPostingCapability;
@@ -27,7 +28,9 @@ use InvalidArgumentException;
  * @property int $company_id
  * @property string $payment_number
  * @property int $vendor_id
- * @property int $money_account_id
+ * @property int|null $money_account_id
+ * @property int|null $check_id
+ * @property int $allocation_version
  * @property \Illuminate\Support\Carbon|Carbon|string $payment_date
  * @property string $payment_method
  * @property string $currency_code
@@ -73,11 +76,13 @@ class VendorPayment extends Model
         'payment_number',
         'vendor_id',
         'money_account_id',
+        'check_id',
         'payment_date',
         'payment_method',
         'currency_code',
         'base_currency_code',
         'amount',
+        'allocation_version',
         'exchange_rate',
         'amount_base',
         'reference_number',
@@ -236,6 +241,11 @@ class VendorPayment extends Model
     protected static function booted(): void
     {
         static::creating(function (self $payment): void {
+            if ($payment->payment_method === 'check') {
+                app(MoneyEventScope::class)->checkForPayment((int) $payment->check_id, (int) $payment->company_id, User::findOrFail($payment->created_by), 'outgoing');
+            } elseif ($payment->check_id !== null) {
+                throw new InvalidArgumentException('Cash/Bank payment cannot own a Check.');
+            }
             if ($payment->posting_batch_id !== null || $payment->is_reversed || $payment->posted_at !== null) {
                 throw new InvalidArgumentException('A vendor payment cannot be born with forged posting/reversal metadata.');
             }
@@ -344,6 +354,13 @@ class VendorPayment extends Model
     /**
      * @return BelongsTo<MoneyAccount, $this>
      */
+    /** @return BelongsTo<Check, $this> */
+    public function checkInstrument(): BelongsTo
+    {
+        return $this->belongsTo(Check::class, 'check_id');
+    }
+
+    /** @return BelongsTo<MoneyAccount, $this> */
     public function moneyAccount(): BelongsTo
     {
         return $this->belongsTo(MoneyAccount::class)->withTrashed();
@@ -419,7 +436,7 @@ class VendorPayment extends Model
     {
         $allocated = BigDecimal::zero();
         foreach ($this->allocations()->active()->get() as $alloc) {
-            $allocated = $allocated->plus(BigDecimal::of((string) $alloc->allocated_amount));
+            $allocated = $allocated->plus(BigDecimal::of((string) $alloc->payment_currency_amount));
         }
 
         return (string) $allocated->toScale(6);
@@ -442,7 +459,7 @@ class VendorPayment extends Model
         }
         $allocated = BigDecimal::zero();
         foreach ($this->allocations()->active()->get() as $alloc) {
-            $allocated = $allocated->plus(BigDecimal::of((string) $alloc->allocated_amount));
+            $allocated = $allocated->plus(BigDecimal::of((string) $alloc->payment_currency_amount));
         }
 
         return (string) BigDecimal::of((string) $this->amount)->minus($allocated)->toScale(6);

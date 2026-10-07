@@ -5,6 +5,7 @@ namespace App\Actions\Company;
 use App\Actions\Accounting\EnsureSystemLedgerAccountsAction;
 use App\Actions\Inventory\EnsureDefaultUnitsAction;
 use App\Actions\Inventory\EnsureDefaultWarehouseAction;
+use App\Actions\Money\EnsureMoneyFoundationAction;
 use App\Actions\Purchasing\EnsurePurchasingFoundationAction;
 use App\Actions\Sales\EnsureDefaultMoneyAccountAction;
 use App\Exceptions\CompanyReassignmentException;
@@ -189,6 +190,7 @@ class CreateCompanyAction
                 $this->sequenceService->ensureDefaultSequences($company->id);
                 $this->ensureDefaultMoneyAccountAction->execute($company, $owner);
                 app(EnsurePurchasingFoundationAction::class)->execute($company);
+                app(EnsureMoneyFoundationAction::class)->execute($company);
 
                 // 11. Log initial audit event
                 $this->auditService->log(

@@ -72,7 +72,7 @@
             </div>
             <div>
                 <span class="text-text-muted block text-[11px]">{{ __('purchasing.money_account') }}</span>
-                <span class="font-bold text-text-primary">{{ $payment->moneyAccount?->displayName() ?? '—' }}</span>
+                <span class="font-bold text-text-primary">{{ $payment->check_id !== null ? __('money.check').' #'.$payment->checkInstrument?->check_number : ($payment->moneyAccount?->displayName() ?? '—') }}</span>
             </div>
             <div>
                 <span class="text-text-muted block text-[11px]">{{ __('purchasing.payment_method') }}</span>
@@ -146,11 +146,11 @@
                         </div>
                         <div>
                             <span class="text-text-muted block text-[10px] uppercase">{{ __('purchasing.total') }}</span>
-                            <span class="font-mono" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($purchase['grand_total'], $payment->currency_code) }}</span>
+                            <span class="font-mono" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($purchase['outstanding'], $purchase['currency']) }} {{ $purchase['currency'] }}</span>
                         </div>
                         <div>
                             <span class="text-text-muted block text-[10px] uppercase">{{ __('purchasing.outstanding_balance') }}</span>
-                            <span class="font-mono font-bold text-danger" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($purchase['outstanding'], $payment->currency_code) }}</span>
+                            <span class="font-mono font-bold text-danger" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($purchase['outstanding'], $purchase['currency']) }} {{ $purchase['currency'] }}</span>
                         </div>
                         <div>
                             <label class="block text-[10px] text-text-muted uppercase mb-1">{{ __('purchasing.allocated') }}</label>
@@ -160,7 +160,12 @@
                                    placeholder="0.00"
                                    class="w-full h-8 px-2 rounded-control border border-border bg-white text-xs font-mono font-bold text-end"
                                    dir="ltr" />
+                            <span class="text-xs" dir="ltr">{{ $purchase['currency'] }}</span>
+                            @if($purchase['currency'] !== $payment->currency_code)
+                            <label class="block text-xs">{{ __('money.payment_consumed') }} ({{ $payment->currency_code }})<input type="text" inputmode="decimal" wire:model="creditPaymentAmounts.{{ $purchase['id'] }}" class="w-full border-border rounded-control p-2" dir="ltr" /></label>
+                            @endif
                             @error('creditAmounts.' . $purchase['id']) <span class="text-danger text-[11px] block mt-1">{{ $message }}</span> @enderror
+                            @error('creditPaymentAmounts.' . $purchase['id']) <span class="text-danger text-[11px] block mt-1">{{ $message }}</span> @enderror
                         </div>
                     </div>
                 @empty
@@ -213,7 +218,7 @@
                                 {{ $alloc->purchase?->purchase_date ? $alloc->purchase->purchase_date->toDateString() : '—' }}
                             </td>
                             <td class="py-2.5 px-4 font-bold" dir="ltr">
-                                {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($alloc->allocated_amount, $payment->currency_code) }} {{ $payment->currency_code }}
+                                {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($alloc->allocated_amount, $alloc->purchase->currency_code) }} {{ $alloc->purchase->currency_code }}<span class="block text-xs text-text-muted">{{ __('money.payment_consumed') }}: {{ $alloc->payment_currency_amount }} {{ $payment->currency_code }}</span>
                             </td>
                             <td class="py-2.5 px-4 font-mono" dir="ltr">
                                 @php

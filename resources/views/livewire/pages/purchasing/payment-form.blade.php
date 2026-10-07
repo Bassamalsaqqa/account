@@ -153,61 +153,21 @@
                     {{ $vendor_id ? __('purchasing.no_open_purchases') : __('purchasing.select_vendor') }}
                 </div>
             @else
-                <div class="overflow-x-auto mt-4">
-                    <table class="w-full text-start text-xs border-collapse">
-                        <thead>
-                            <tr class="border-b border-border bg-surface-soft text-text-muted font-bold text-[11px] uppercase">
-                                <th class="py-2.5 px-3 text-start">{{ __('purchasing.purchase_number') }}</th>
-                                <th class="py-2.5 px-3 text-start">{{ __('purchasing.purchase_date') }}</th>
-                                <th class="py-2.5 px-3 text-start">{{ __('purchasing.due_date') }}</th>
-                                <th class="py-2.5 px-3 text-start">{{ __('purchasing.total') }}</th>
-                                <th class="py-2.5 px-3 text-start">{{ __('purchasing.outstanding_balance') }}</th>
-                                <th class="py-2.5 px-3 text-start">{{ __('purchasing.realized_fx') }}</th>
-                                <th class="py-2.5 px-3 text-end w-36">{{ __('purchasing.allocated') }}</th>
-                            </tr>
-                        </thead>
-                        <tbody class="divide-y divide-border">
-                            @foreach ($allocations as $idx => $alloc)
-                                <tr>
-                                    <td class="py-2.5 px-3 font-mono font-bold" dir="ltr">
-                                        {{ $alloc['purchase_number'] }}
-                                    </td>
-                                    <td class="py-2.5 px-3" dir="ltr">{{ $alloc['purchase_date'] }}</td>
-                                    <td class="py-2.5 px-3" dir="ltr">{{ $alloc['due_date'] ?? '—' }}</td>
-                                    <td class="py-2.5 px-3 font-mono" dir="ltr">
-                                        {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($alloc['grand_total'], $currency_code) }}
-                                    </td>
-                                    <td class="py-2.5 px-3 font-mono font-bold text-danger" dir="ltr">
-                                        {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($alloc['outstanding'], $currency_code) }}
-                                    </td>
-                                    <td class="py-2.5 px-3 font-mono" dir="ltr">
-                                        @php
-                                            $fxVal = $alloc['preview_fx'];
-                                            $isPos = $fxVal !== null && \App\Domain\Sales\Formatters\SalesMoneyFormatter::isPositive($fxVal);
-                                            $isNeg = $fxVal !== null && \App\Domain\Sales\Formatters\SalesMoneyFormatter::isNegative($fxVal);
-                                        @endphp
-                                        <span class="{{ $isPos ? 'text-danger font-bold' : ($isNeg ? 'text-success font-bold' : 'text-text-muted') }}">
-                                            @if ($fxVal !== null && ! \App\Domain\Sales\Formatters\SalesMoneyFormatter::isZero($fxVal))
-                                                {{ $isPos ? '+' . \App\Domain\Sales\Formatters\SalesMoneyFormatter::format($fxVal) . ' (' . __('purchasing.realized_fx_loss') . ')' : \App\Domain\Sales\Formatters\SalesMoneyFormatter::format($fxVal) . ' (' . __('purchasing.realized_fx_gain') . ')' }}
-                                            @else
-                                                —
-                                            @endif
-                                        </span>
-                                    </td>
-                                    <td class="py-2.5 px-3 text-end">
-                                        <input type="number"
-                                               step="any"
-                                               wire:model.blur="allocations.{{ $idx }}.allocated_amount"
-                                               wire:change="recalculateAllocations"
-                                               min="0"
-                                               max="{{ $alloc['outstanding'] }}"
-                                               dir="ltr"
-                                               class="w-28 h-8 px-2 rounded-control border border-border bg-canvas text-xs font-mono text-end font-bold text-primary" />
-                                    </td>
-                                </tr>
-                            @endforeach
-                        </tbody>
-                    </table>
+                <div class="space-y-3 mt-4">
+                    @foreach ($allocations as $idx => $alloc)
+                    <section class="rounded-control border border-border p-3 space-y-2" wire:key="allocation-{{ $alloc['purchase_id'] }}">
+                        <div class="flex flex-wrap justify-between gap-2"><span dir="ltr" class="font-mono text-sm">{{ $alloc['purchase_number'] }}</span><span dir="ltr" class="text-sm">{{ $alloc['outstanding'] }} {{ $alloc['document_currency_code'] }}</span></div>
+                        <div class="grid sm:grid-cols-2 gap-3">
+                            <label class="block text-sm">{{ __('money.document_amount') }} ({{ $alloc['document_currency_code'] }})<input type="text" inputmode="decimal" wire:model.blur="allocations.{{ $idx }}.allocated_amount" wire:change="recalculateAllocations" dir="ltr" class="w-full rounded-control border-border" /></label>
+                            @error('allocations.'.$idx.'.allocated_amount') <p class="text-danger text-xs">{{ $message }}</p> @enderror
+                            @if($alloc['document_currency_code'] !== $currency_code)
+                            <label class="block text-sm">{{ __('money.payment_consumed') }} ({{ $currency_code }})<input type="text" inputmode="decimal" wire:model.blur="allocations.{{ $idx }}.payment_currency_amount" wire:change="recalculateAllocations" dir="ltr" class="w-full rounded-control border-border" /></label>
+                            @error('allocations.'.$idx.'.payment_currency_amount') <p class="text-danger text-xs">{{ $message }}</p> @enderror
+                            @endif
+                        </div>
+                        <p class="text-xs text-text-muted">{{ __('money.fx_preview') }}: <span dir="ltr">{{ $alloc['preview_fx'] ?? '—' }} {{ $company->base_currency_code }}</span></p>
+                    </section>
+                    @endforeach
                 </div>
             @endif
 

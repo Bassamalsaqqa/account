@@ -12,11 +12,13 @@ use App\Models\User;
 use App\Models\VendorPayment;
 use App\Models\VendorPaymentApplicationEvent;
 use App\Services\Audit\AuditService;
+use App\Services\Money\MoneyEventScope;
 use App\Services\Posting\AccountingReversalService;
 use App\Services\Purchasing\VendorPaymentPostedIntegrityValidator;
 use App\Services\Purchasing\VendorPaymentReversalScope;
 use App\Services\Purchasing\VendorPaymentValidationException;
 use App\Services\Sales\SalesActorGuard;
+use App\Services\Sales\SalesDocumentRules;
 use App\Support\Tenancy\CompanyContext;
 use Carbon\Carbon;
 use Illuminate\Auth\Access\AuthorizationException;
@@ -37,7 +39,7 @@ class ReverseVendorPaymentAction
         protected VendorPaymentPostedIntegrityValidator $integrityValidator,
     ) {}
 
-    public function execute(VendorPayment $payment, User $user, ?string $reason = null): VendorPayment
+    public function execute(VendorPayment $payment, User $user, ?string $reason = null, ?string $businessDate = null): VendorPayment
     {
         $context = app(CompanyContext::class);
         if (! $context->hasCompany() || (int) $context->companyId() !== (int) $payment->company_id) {
@@ -58,13 +60,17 @@ class ReverseVendorPaymentAction
             throw new AuthorizationException('User does not have permission to reverse vendor payments.');
         }
 
-        return DB::transaction(function () use ($payment, $user, $reason): VendorPayment {
+        return DB::transaction(function () use ($payment, $user, $reason, $businessDate): VendorPayment {
             $lockedCompany = Company::where('id', $payment->company_id)->lockForUpdate()->firstOrFail();
             app(SalesActorGuard::class)->lockAndAuthorize((int) $payment->company_id, $user, 'money.vendor_payment.reverse');
             app(SalesActorGuard::class)->lockAndAuthorize((int) $payment->company_id, $user, 'purchasing.cost.view');
 
             /** @var VendorPayment $lockedPayment */
             $lockedPayment = VendorPayment::where('id', $payment->id)->lockForUpdate()->firstOrFail();
+
+            if ($lockedPayment->check_id !== null) {
+                app(MoneyEventScope::class)->assertCheckTransition((int) $lockedPayment->check_id, (int) $lockedCompany->id, $user);
+            }
 
             if ($lockedPayment->is_reversed) {
                 // Verify coherent reversal state on idempotent retry
@@ -80,7 +86,8 @@ class ReverseVendorPaymentAction
             $this->integrityValidator->validate($lockedPayment);
 
             // One Company-local business date for the complete reversal.
-            $reversalDate = Carbon::now($lockedCompany->timezone)->toDateString();
+            $reversalDate = $businessDate ?? Carbon::now($lockedCompany->timezone)->toDateString();
+            app(SalesDocumentRules::class)->date($reversalDate);
 
             // 1. Reverse dependent application events newest to oldest
             $events = VendorPaymentApplicationEvent::where('company_id', $lockedPayment->company_id)
@@ -91,7 +98,7 @@ class ReverseVendorPaymentAction
                 ->get();
 
             // An inverse cannot economically precede any activity it undoes.
-            if ($reversalDate < $lockedPayment->payment_date->toDateString()
+            if ($reversalDate < Carbon::parse($lockedPayment->payment_date)->toDateString()
                 || $events->contains(fn (VendorPaymentApplicationEvent $event): bool => $event->application_date->toDateString() > $reversalDate)) {
                 throw new VendorPaymentValidationException('purchasing.reversal_before_activity_date');
             }
@@ -144,7 +151,7 @@ class ReverseVendorPaymentAction
 
             // Verify the persisted reversal date against its Company-local lifecycle
             // timestamp before commit; a clock crossing rolls back the entire event.
-            $this->integrityValidator->validate($lockedPayment->fresh(), expectedReversalDate: $reversalDate);
+            $this->integrityValidator->validate($lockedPayment->fresh(), expectedReversalDate: $businessDate === null ? $reversalDate : null);
 
             // Safe nonmonetary audit event
             app(AuditService::class)->log(

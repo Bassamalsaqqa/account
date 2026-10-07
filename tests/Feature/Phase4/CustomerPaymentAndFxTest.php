@@ -152,12 +152,12 @@ class CustomerPaymentAndFxTest extends TestCase
         }
     }
 
-    public function test_check_method_is_strictly_prohibited(): void
+    public function test_check_method_requires_a_canonical_instrument(): void
     {
         $action = app(PostCustomerPaymentAction::class);
 
         $this->expectException(InvalidArgumentException::class);
-        $this->expectExceptionMessage('Checks are strictly prohibited');
+        $this->expectExceptionMessage('Receipt references must be positive integer IDs.');
 
         $action->execute($this->company, $this->user, [
             'customer_id' => $this->customer->id,
@@ -170,14 +170,14 @@ class CustomerPaymentAndFxTest extends TestCase
         ]);
     }
 
-    public function test_cross_currency_allocation_is_rejected(): void
+    public function test_cross_currency_allocation_requires_explicit_payment_consumption(): void
     {
         $usdInvoice = $this->createAndPostInvoice('USD', '3.5000000000', '100.000000');
 
         $action = app(PostCustomerPaymentAction::class);
 
         $this->expectException(InvalidArgumentException::class);
-        $this->expectExceptionMessage('Cross-currency allocation is not supported');
+        $this->expectExceptionMessage('Cross-currency allocation requires an explicit payment-currency amount');
 
         // Trying to allocate ILS payment to USD invoice
         $action->execute($this->company, $this->user, [

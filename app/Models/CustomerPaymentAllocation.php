@@ -11,6 +11,10 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Facades\DB;
 
+/**
+ * @property string $allocated_amount
+ * @property string $payment_currency_amount
+ */
 class CustomerPaymentAllocation extends Model
 {
     use BelongsToCompany;
@@ -23,6 +27,7 @@ class CustomerPaymentAllocation extends Model
         'customer_payment_id',
         'sales_invoice_id',
         'allocated_amount',
+        'payment_currency_amount',
         'invoice_exchange_rate',
         'payment_exchange_rate',
         'base_amount_applied_to_receivable',
@@ -39,6 +44,7 @@ class CustomerPaymentAllocation extends Model
     {
         return [
             'allocated_amount' => 'string',
+            'payment_currency_amount' => 'string',
             'invoice_exchange_rate' => 'string',
             'payment_exchange_rate' => 'string',
             'base_amount_applied_to_receivable' => 'string',
@@ -58,7 +64,7 @@ class CustomerPaymentAllocation extends Model
             $alloc->prior_posting_batch_id = (int) DB::table('posting_batches')->where('company_id', $payment->company_id)->max('id');
             if ($alloc->sales_invoice_id) {
                 $invoice = SalesInvoice::withoutGlobalScopes()->find($alloc->sales_invoice_id);
-                if ($invoice === null || (int) $invoice->company_id !== (int) $payment->company_id || (int) $alloc->company_id !== (int) $payment->company_id || (int) $invoice->customer_id !== (int) $payment->customer_id || $invoice->currency_code !== $payment->currency_code) {
+                if ($invoice === null || (int) $invoice->company_id !== (int) $payment->company_id || (int) $alloc->company_id !== (int) $payment->company_id || (int) $invoice->customer_id !== (int) $payment->customer_id) {
                     throw new \InvalidArgumentException('Customer payment and allocated invoice must belong to the same company.');
                 }
             }

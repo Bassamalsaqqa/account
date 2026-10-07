@@ -4,15 +4,22 @@ declare(strict_types=1);
 
 namespace App\Domain\Sales\Queries;
 
+use App\Domain\Money\Queries\CrossCurrencySettlementQuery;
 use App\Exceptions\NoActiveCompanyException;
 use App\Models\Customer;
 use App\Models\CustomerPayment;
+use App\Models\PostingBatch;
 use App\Models\PublicShare;
 use App\Models\SalesInvoice;
 use App\Models\SalesReturn;
+use App\Services\Money\ReceivablePositionAsOf;
 use App\Support\Tenancy\CompanyContext;
 use Brick\Math\BigDecimal;
 use Carbon\Carbon;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Database\Eloquent\Model;
+use InvalidArgumentException;
 
 class CustomerStatementQuery
 {
@@ -65,7 +72,7 @@ class CustomerStatementQuery
     {
         if ($share->subject_type !== PublicShare::SUBJECT_CUSTOMER_STATEMENT || (int) $share->company_id !== (int) $customer->company_id
             || (int) $share->subject_id !== (int) $customer->id || ! $share->is_active || $share->isExpired()) {
-            throw new \InvalidArgumentException('Statement share does not authorize this customer.');
+            throw new InvalidArgumentException('Statement share does not authorize this customer.');
         }
 
         return $this->read($customer);
@@ -76,18 +83,14 @@ class CustomerStatementQuery
     {
         $companyId = $customer->company_id;
 
-        // 1. Gather all posted transactions for this customer
-        $invoices = SalesInvoice::query()
+        // Historical lifecycle follows financial business dates, not today's status.
+        $invoices = $this->documentsAtCutoff(SalesInvoice::query()
             ->where('company_id', $companyId)
-            ->where('customer_id', $customer->id)
-            ->where('status', SalesInvoice::STATUS_POSTED)
-            ->get();
+            ->where('customer_id', $customer->id), $toDate);
 
-        $returns = SalesReturn::query()
+        $returns = $this->documentsAtCutoff(SalesReturn::query()
             ->where('company_id', $companyId)
-            ->where('customer_id', $customer->id)
-            ->where('status', SalesReturn::STATUS_POSTED)
-            ->get();
+            ->where('customer_id', $customer->id), $toDate);
 
         $payments = CustomerPayment::query()
             ->where('company_id', $companyId)
@@ -157,7 +160,7 @@ class CustomerStatementQuery
             // If reversed, also record the reversal debit
             if ($pay->is_reversed && $pay->reversed_at !== null) {
                 $rawRows[] = [
-                    'date' => (string) $pay->reversed_at->format('Y-m-d'),
+                    'date' => $pay->reversalPostingBatch->posting_date->toDateString(),
                     'due_date' => null,
                     'type' => 'payment_reversal',
                     'number' => "REV-{$pay->payment_number}",
@@ -173,6 +176,16 @@ class CustomerStatementQuery
         }
 
         // Sort all rows chronologically: date ASC, created_at ASC
+        foreach (app(CrossCurrencySettlementQuery::class)->legs((int) $companyId, [(int) $customer->id], 'customer') as $leg) {
+            $currencies[$leg['currency']] = true;
+            $effect = BigDecimal::of($leg['amount']);
+            $rawRows[] = ['id' => $leg['id'], 'date' => $leg['date'], 'due_date' => null, 'type' => 'currency_allocation', 'number' => $leg['number'],
+                'reference' => $leg['number'], 'description' => __('money.currency_allocation'), 'currency' => $leg['currency'],
+                'debit' => $effect->isPositive() ? $effect : BigDecimal::zero(),
+                'credit' => $effect->isNegative() ? $effect->abs() : BigDecimal::zero(),
+                'created_at' => $leg['created_at'], 'invoice' => null];
+        }
+
         usort($rawRows, function ($a, $b) {
             $cmp = strcmp($a['date'], $b['date']);
             if ($cmp !== 0) {
@@ -231,7 +244,7 @@ class CustomerStatementQuery
             }
 
             // Calculate aging for invoices in this currency
-            $aging = $this->calculateAging($customer, $curr);
+            $aging = $this->calculateAging($customer, $curr, $toDate);
 
             $resultCurrencies[$curr] = [
                 'currency' => $curr,
@@ -264,18 +277,17 @@ class CustomerStatementQuery
      *     total: string,
      * }
      */
-    protected function calculateAging(Customer $customer, string $currency): array
+    protected function calculateAging(Customer $customer, string $currency, ?string $asOfDate = null): array
     {
         $companyTz = $customer->company->timezone ?? config('app.timezone', 'UTC');
-        $today = Carbon::now($companyTz)->startOfDay();
+        $today = $asOfDate === null ? Carbon::now($companyTz)->startOfDay() : Carbon::parse($asOfDate, $companyTz)->startOfDay();
         $minorUnits = in_array($currency, ['JOD', 'KWD', 'BHD', 'OMR'], true) ? 3 : 2;
 
-        $invoices = SalesInvoice::query()
+        $invoices = $this->documentsAtCutoff(SalesInvoice::query()
             ->where('company_id', $customer->company_id)
             ->where('customer_id', $customer->id)
             ->where('currency_code', $currency)
-            ->where('status', SalesInvoice::STATUS_POSTED)
-            ->get();
+            ->where('issue_date', '<=', $today->toDateString()), $asOfDate);
 
         $unspecified = BigDecimal::zero();
         $current = BigDecimal::zero();
@@ -285,7 +297,7 @@ class CustomerStatementQuery
         $days90Plus = BigDecimal::zero();
 
         foreach ($invoices as $inv) {
-            $outstanding = $inv->calculateOutstanding();
+            $outstanding = app(ReceivablePositionAsOf::class)->outstanding($inv, $today->toDateString());
             if ($outstanding->isLessThanOrEqualTo(0)) {
                 continue;
             }
@@ -323,5 +335,52 @@ class CustomerStatementQuery
             'days_90_plus' => (string) $days90Plus->toScale($minorUnits),
             'total' => (string) $total->toScale($minorUnits),
         ];
+    }
+
+    /**
+     * @template T of Model
+     *
+     * @param  Builder<T>  $query
+     * @return Collection<int|string, T>
+     */
+    private function documentsAtCutoff(Builder $query, ?string $date): Collection
+    {
+        if ($date === null) {
+            return $query->where('status', 'posted')->get();
+        }
+
+        $documents = $query->whereIn('status', ['posted', 'void'])->where('issue_date', '<=', $date)
+            ->with(['postingBatch', 'voidPostingBatch'])->get();
+        foreach ($documents as $key => $document) {
+            if (! $document instanceof SalesInvoice && ! $document instanceof SalesReturn) {
+                throw new InvalidArgumentException('Statement lifecycle selection requires a Sales document.');
+            }
+            if (! $document->isVoid()) {
+                continue;
+            }
+
+            $original = $document->postingBatch;
+            $inverse = $document->voidPostingBatch;
+            $sourceType = $document instanceof SalesInvoice ? 'sales_invoice' : 'sales_return';
+            if ($original === null || $inverse === null
+                || (int) $original->company_id !== (int) $document->company_id
+                || (int) $inverse->company_id !== (int) $document->company_id
+                || $original->source_type !== $sourceType || (int) $original->source_id !== (int) $document->id
+                || $original->status !== PostingBatch::STATUS_REVERSED
+                || (int) $original->reversed_by_batch_id !== (int) $inverse->id
+                || $inverse->source_type !== 'reversal' || $inverse->status !== PostingBatch::STATUS_POSTED
+                || (int) $inverse->source_id !== (int) $original->id
+                || (int) $inverse->reversal_of_id !== (int) $original->id
+                || $inverse->getRawOriginal('posting_date') === null || $original->getRawOriginal('posting_date') === null
+                || $inverse->posting_date->lt($original->posting_date)) {
+                throw new InvalidArgumentException('Historical statement requires coherent canonical void provenance.');
+            }
+
+            if ($inverse->posting_date->toDateString() <= $date) {
+                $documents->forget($key);
+            }
+        }
+
+        return $documents;
     }
 }

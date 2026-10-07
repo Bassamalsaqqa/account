@@ -13,13 +13,18 @@ use App\Domain\Posting\Exceptions\PostingValidationException;
 use App\Domain\Posting\Exceptions\ReversalException;
 use App\Exceptions\CompanyReassignmentException;
 use App\Exceptions\NoActiveCompanyException;
+use App\Models\Check;
+use App\Models\CheckEvent;
 use App\Models\Company;
 use App\Models\CompanyCurrency;
 use App\Models\CompanyUser;
 use App\Models\LedgerAccount;
+use App\Models\MoneyAccount;
 use App\Models\PostingBatch;
 use App\Models\PostingLine;
 use App\Models\User;
+use App\Services\Money\MoneyAccountLedger;
+use App\Services\Money\MoneyEventScope;
 use App\Support\Tenancy\CompanyContext;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\QueryException;
@@ -35,6 +40,12 @@ class AccountingPostingService
      */
     public function post(PostingCommand $command): PostingBatch
     {
+        if (in_array($command->sourceType, ['money_transfer', 'check_event'], true)) {
+            app(MoneyEventScope::class)->assertCommand($command);
+        }
+        if (in_array($command->sourceType, ['customer_payment', 'vendor_payment'], true) && DB::table($command->sourceType === 'customer_payment' ? 'customer_payments' : 'vendor_payments')->where('company_id', $command->company->id)->where('id', $command->sourceId)->whereNotNull('check_id')->exists()) {
+            app(MoneyEventScope::class)->assertCommand($command);
+        }
         // Reversal batches cannot be created via post(). Use AccountingReversalService.
         if ($command->sourceType === 'reversal') {
             throw PostingValidationException::reversalOnlyAllowedViaService();
@@ -153,8 +164,11 @@ class AccountingPostingService
                 );
             }
 
+            // Canonically prepared Check clearance settles an already-frozen route.
+            // Retirement may not block that currency or Bank child ledger; other accounts remain strict.
+            $frozenBank = $this->frozenCheckClearanceBank($command);
             $batchTxCurrency = strtoupper($command->transactionCurrencyCode);
-            if (! isset($allCompanyCurrencies[$batchTxCurrency]) || ! $allCompanyCurrencies[$batchTxCurrency]->enabled) {
+            if (! isset($allCompanyCurrencies[$batchTxCurrency]) || (! $allCompanyCurrencies[$batchTxCurrency]->enabled && $batchTxCurrency !== $frozenBank?->currency_code)) {
                 throw PostingValidationException::invalidCurrency(
                     $batchTxCurrency,
                     "Currency is not enabled for company [{$lockedCompany->id}]"
@@ -172,7 +186,7 @@ class AccountingPostingService
             foreach ($command->lines as $line) {
                 if ($line->transactionCurrencyCode !== null) {
                     $lineCurr = strtoupper($line->transactionCurrencyCode);
-                    if (! isset($allCompanyCurrencies[$lineCurr]) || ! $allCompanyCurrencies[$lineCurr]->enabled) {
+                    if (! isset($allCompanyCurrencies[$lineCurr]) || (! $allCompanyCurrencies[$lineCurr]->enabled && $lineCurr !== $frozenBank?->currency_code)) {
                         throw PostingValidationException::invalidCurrency(
                             $lineCurr,
                             "Currency is not enabled for company [{$lockedCompany->id}]"
@@ -202,11 +216,30 @@ class AccountingPostingService
 
             foreach ($accountIds as $accountId) {
                 $account = $validAccounts->get($accountId);
-                if ($account === null || ! $account->active) {
+                if ($account === null || (! $account->active && $accountId !== $frozenBank?->ledger_account_id)) {
                     throw PostingValidationException::accountNotFoundOrInactive(
                         $accountId,
                         $lockedCompany->id
                     );
+                }
+            }
+
+            // MoneyAccount currency is authoritative for new transaction metadata.
+            // Legacy base-only opening balances remain accepted; exact residuals need a truthful paired currency line.
+            $moneyAccounts = MoneyAccount::withTrashed()->where('company_id', $lockedCompany->id)->whereIn('ledger_account_id', $accountIds)->get()->keyBy('ledger_account_id');
+            foreach ($moneyAccounts as $ledgerId => $moneyAccount) {
+                $hasCurrencyLine = false;
+                foreach ($command->lines as $line) {
+                    if ($line->ledgerAccountId !== $ledgerId || $line->transactionCurrencyCode === null) {
+                        continue;
+                    }
+                    if ($line->transactionCurrencyCode !== $moneyAccount->currency_code) {
+                        throw new InvalidArgumentException('MoneyAccount posting currency must match the configured account currency.');
+                    }
+                    $hasCurrencyLine = true;
+                }
+                if (in_array($command->sourceType, ['money_transfer', 'customer_payment', 'vendor_payment', 'check_event'], true) && ! $hasCurrencyLine) {
+                    throw new InvalidArgumentException('Canonical Money movement requires truthful transaction-currency metadata.');
                 }
             }
 
@@ -280,12 +313,49 @@ class AccountingPostingService
         });
     }
 
+    /** Only called after the exact one-use MoneyEventScope command authorization. */
+    private function frozenCheckClearanceBank(PostingCommand $command): ?MoneyAccount
+    {
+        if ($command->sourceType !== 'check_event') {
+            return null;
+        }
+        $event = CheckEvent::where('company_id', $command->company->id)->whereKey($command->sourceId)->first();
+        $check = $event === null ? null : Check::where('company_id', $command->company->id)->whereKey($event->check_id)->first();
+        if ($event === null || $check === null || $event->event_type !== 'clear' || $event->posting_batch_id !== null
+            || $event->completed_at !== null || $command->transactionCurrencyCode !== $check->currency_code) {
+            throw new InvalidArgumentException('Check clearance requires its canonical pending event.');
+        }
+        if ($check->direction === 'incoming') {
+            $deposit = $check->events()->where('event_type', 'deposit')->whereNotNull('completed_at')->where('id', '<', $event->id)->first();
+            if ($check->status !== 'deposited' || $deposit === null || $deposit->money_account_id !== $event->money_account_id
+                || $deposit->ledger_account_id !== $event->ledger_account_id) {
+                throw new InvalidArgumentException('Check clearance must retain its completed deposit route.');
+            }
+        } elseif ($check->direction !== 'outgoing' || $check->status !== 'issued' || $check->drawn_money_account_id !== $event->money_account_id) {
+            throw new InvalidArgumentException('Check clearance must retain its issued Bank route.');
+        }
+        $bank = MoneyAccount::withTrashed()->where('company_id', $command->company->id)->whereKey($event->money_account_id)->lockForUpdate()->first();
+        if ($bank === null || $bank->account_type !== MoneyAccount::TYPE_BANK || $bank->currency_code !== $check->currency_code
+            || $bank->ledger_account_id !== $event->ledger_account_id) {
+            throw new InvalidArgumentException('Check clearance Bank provenance mismatch.');
+        }
+        app(MoneyAccountLedger::class)->validate($bank);
+
+        return $bank;
+    }
+
     /**
      * Authoritative internal double-entry reversal write operation.
      * Persists reversal batch, inverse lines, and reciprocal status linkage in one atomic transaction.
      */
     public function reverse(PostingBatch $original, User $actingUser, ?string $reason = null, ?string $postingDate = null): PostingBatch
     {
+        if (in_array($original->source_type, ['customer_payment', 'vendor_payment'], true) && DB::table($original->source_type === 'customer_payment' ? 'customer_payments' : 'vendor_payments')->where('company_id', $original->company_id)->where('id', $original->source_id)->whereNotNull('check_id')->exists()) {
+            app(MoneyEventScope::class)->assertReversal($original, $actingUser, $postingDate);
+        }
+        if (in_array($original->source_type, ['money_transfer', 'check_event'], true)) {
+            app(MoneyEventScope::class)->assertReversal($original, $actingUser, $postingDate);
+        }
         // Upfront validation of caller-supplied reason: reject excessive text before any DB writes/transactions
         if ($reason !== null && mb_strlen($reason) > 512) {
             throw new InvalidArgumentException('Reversal reason cannot exceed 512 characters.');

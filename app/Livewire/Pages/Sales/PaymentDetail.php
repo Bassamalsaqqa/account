@@ -6,8 +6,9 @@ namespace App\Livewire\Pages\Sales;
 
 use App\Actions\Sales\ApplyCustomerPaymentCreditAction;
 use App\Actions\Sales\ReverseCustomerPaymentAction;
+use App\Domain\Money\Queries\SettlementTargetsQuery;
 use App\Models\CustomerPayment;
-use App\Models\SalesInvoice;
+use App\Services\Money\MoneyActorGuard;
 use App\Services\Sales\SalesActorGuard;
 use App\Support\Tenancy\CompanyContext;
 use Brick\Math\BigDecimal;
@@ -16,6 +17,7 @@ use Illuminate\Contracts\View\View;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Livewire\Attributes\Layout;
+use Livewire\Attributes\Locked;
 use Livewire\Component;
 
 #[Layout('layouts.app')]
@@ -36,12 +38,26 @@ class PaymentDetail extends Component
     /** @var array<int, string> */
     public array $creditAmounts = [];
 
+    /** @var array<int, string> */
+    public array $creditPaymentAmounts = [];
+
+    #[Locked]
+    public int $pageCompanyId;
+
+    public function boot(): void
+    {
+        if (isset($this->pageCompanyId)) {
+            app(MoneyActorGuard::class)->authorize($this->pageCompanyId, 'money.receipt.view');
+        }
+    }
+
     public function openCreditForm(): void
     {
         $this->authorizeCredit();
         $this->applicationDate = now(app(CompanyContext::class)->company()->timezone)->toDateString();
         $this->applicationKey = 'credit:'.Str::ulid();
         $this->creditAmounts = [];
+        $this->creditPaymentAmounts = [];
         $this->showCreditForm = true;
     }
 
@@ -59,11 +75,20 @@ class PaymentDetail extends Component
     public function applyCredit(ApplyCustomerPaymentCreditAction $action): void
     {
         $this->authorizeCredit();
-        $this->validate(['applicationDate' => ['required', 'date'], 'creditAmounts.*' => ['nullable', 'string', 'regex:/^\\d+(?:\\.\\d{1,6})?$/D']]);
+        $this->validate([
+            'applicationDate' => ['required', 'date'],
+            'creditAmounts.*' => ['nullable', 'string', 'regex:/^\\d+(?:\\.\\d{1,6})?$/D'],
+            'creditPaymentAmounts.*' => ['filled', 'string', 'regex:/^\\d+(?:\\.\\d{1,6})?$/D'],
+        ]);
+        $targets = collect(app(SettlementTargetsQuery::class)->forParty((int) $this->payment->company_id, (int) $this->payment->customer_id, 'customer', 'allocate'))->keyBy('id');
         $allocations = [];
         foreach ($this->creditAmounts as $id => $amount) {
             if (trim($amount) !== '' && ! BigDecimal::of($amount)->isZero()) {
-                $allocations[] = ['sales_invoice_id' => (int) $id, 'allocated_amount' => $amount];
+                if (($targets->get($id)['currency'] ?? null) !== $this->payment->currency_code) {
+                    $this->validate(['creditPaymentAmounts.'.$id => ['required', 'string', 'regex:/^\\d+(?:\\.\\d{1,6})?$/D']]);
+                }
+                $allocations[] = ['sales_invoice_id' => (int) $id, 'allocated_amount' => $amount,
+                    'payment_currency_amount' => ($targets->get($id)['currency'] ?? null) === $this->payment->currency_code ? (string) $amount : ($this->creditPaymentAmounts[$id] ?? ''), ];
             }
         }
         try {
@@ -81,6 +106,7 @@ class PaymentDetail extends Component
     public function mount(string $publicId, CompanyContext $context): void
     {
         $company = $context->company();
+        $this->pageCompanyId = (int) $company->id;
         $user = auth()->user();
 
         if (! $user->hasPermissionTo('money.receipt.view')) {
@@ -113,21 +139,16 @@ class PaymentDetail extends Component
 
     public function render(): View
     {
+        app(MoneyActorGuard::class)->authorize($this->pageCompanyId, 'money.receipt.view');
         $user = auth()->user();
-        $canReverse = $user->hasPermissionTo('money.receipt.reverse') && ! $this->payment->is_reversed;
+        $canReverse = $user->hasPermissionTo('money.receipt.reverse') && ! $this->payment->is_reversed && $this->payment->check_id === null;
 
         $canAllocate = $user->hasPermissionTo('money.receipt.allocate') && ! $this->payment->is_reversed
             && BigDecimal::of($this->payment->unallocated_amount)->isPositive();
         $openInvoices = [];
         if ($this->showCreditForm) {
             $this->authorizeCredit();
-            foreach (SalesInvoice::where('company_id', $this->payment->company_id)->where('customer_id', $this->payment->customer_id)
-                ->where('currency_code', $this->payment->currency_code)->where('status', 'posted')->orderBy('issue_date')->get() as $invoice) {
-                $outstanding = $invoice->calculateOutstanding();
-                if ($outstanding->isPositive()) {
-                    $openInvoices[] = ['id' => $invoice->id, 'number' => $invoice->invoice_number, 'outstanding' => (string) $outstanding->toScale(6)];
-                }
-            }
+            $openInvoices = app(SettlementTargetsQuery::class)->forParty((int) $this->payment->company_id, (int) $this->payment->customer_id, 'customer', 'allocate');
         }
 
         return view('livewire.pages.sales.payment-detail', [

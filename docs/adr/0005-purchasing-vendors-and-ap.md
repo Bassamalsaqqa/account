@@ -10,8 +10,9 @@ Vendor/purchasing foundation; Phase 5B covers Purchase drafts; Phase 5C covers
 Purchase posting, AP, Inventory and Input Tax; Phase 5D covers Purchase Returns;
 Phase 5E covers Vendor Payments, AP settlement, balances, statements and aging.
 Phase 5F completes the Purchasing history vertical with read-only Purchase and Vendor
-price history queries, comparative metrics, and UI integrations. Phase 6 and later
-functionality (cheques, expense bills, landed costs) remain unstarted. This ADR records
+price history queries, comparative metrics, and UI integrations. Phase 6 Money/checks
+is an implemented candidate awaiting independent review (ADR 0006); later expense
+bills and landed costs remain unstarted. This ADR records
 implemented and accepted decisions alongside future constraints.
 
 Phase 5F accepted source `eee3b8284320aec498a0ec6de13873e3791aca65` was merged

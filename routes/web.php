@@ -14,6 +14,14 @@ use App\Livewire\Pages\Inventory\OpeningStockForm;
 use App\Livewire\Pages\Inventory\StockAdjustmentForm;
 use App\Livewire\Pages\Inventory\StockMovementIndex;
 use App\Livewire\Pages\Inventory\StockTransferForm;
+use App\Livewire\Pages\Money\AccountDetail;
+use App\Livewire\Pages\Money\CheckDetail;
+use App\Livewire\Pages\Money\CheckForm;
+use App\Livewire\Pages\Money\CheckIndex;
+use App\Livewire\Pages\Money\Overview;
+use App\Livewire\Pages\Money\TransferDetail;
+use App\Livewire\Pages\Money\TransferForm;
+use App\Livewire\Pages\Money\TransferIndex;
 use App\Livewire\Pages\Products\ProductDetail;
 use App\Livewire\Pages\Products\ProductForm;
 use App\Livewire\Pages\Products\ProductIndex;
@@ -192,6 +200,18 @@ Route::middleware(['auth'])->group(function () {
         Route::get('vendor-payments', VendorPaymentIndex::class)->name('vendor-payments.index');
         Route::get('vendor-payments/create', VendorPaymentForm::class)->name('vendor-payments.create');
         Route::get('vendor-payments/{publicId}', VendorPaymentDetail::class)->name('vendor-payments.show');
+
+        // Phase 6 operational Money
+        Route::get('money', Overview::class)->name('money.overview');
+        Route::get('money/cash', Overview::class)->defaults('type', 'cash')->name('money.cash');
+        Route::get('money/bank', Overview::class)->defaults('type', 'bank')->name('money.bank');
+        Route::get('money/accounts/{publicId}', AccountDetail::class)->name('money.accounts.show');
+        Route::get('money/transfers', TransferIndex::class)->name('money.transfers.index');
+        Route::get('money/transfers/create', TransferForm::class)->name('money.transfers.create');
+        Route::get('money/transfers/{publicId}', TransferDetail::class)->name('money.transfers.show');
+        Route::get('money/checks', CheckIndex::class)->name('money.checks.index');
+        Route::get('money/checks/create/{direction}', CheckForm::class)->whereIn('direction', ['incoming', 'outgoing'])->name('money.checks.create');
+        Route::get('money/checks/{publicId}', CheckDetail::class)->name('money.checks.show');
 
         // Phase 4 PDFs
         Route::get('pdf/quotation/{publicId}', [PdfDocumentController::class, 'quotation'])->name('pdf.quotation');

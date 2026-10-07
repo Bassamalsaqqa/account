@@ -15,6 +15,7 @@ use App\Models\User;
 use App\Models\VendorPayment;
 use App\Models\VendorPaymentApplicationEvent;
 use App\Services\Audit\AuditService;
+use App\Services\Money\PaymentAllocationIntent;
 use App\Services\Posting\AccountingPostingService;
 use App\Services\Purchasing\PayableBookValue;
 use App\Services\Purchasing\PurchasePostingCommandBuilder;
@@ -28,7 +29,6 @@ use App\Services\Sales\SalesActorGuard;
 use App\Services\Sales\SalesDocumentRules;
 use App\Services\Sales\SalesPostingLines;
 use Brick\Math\BigDecimal;
-use Brick\Math\Exception\RoundingNecessaryException;
 use Brick\Math\RoundingMode;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -59,28 +59,14 @@ final class ApplyVendorPaymentCreditAction
         $key = ReceiptRequestValues::key($data['idempotency_key']);
         app(SalesDocumentRules::class)->date($data['application_date']);
 
-        $grouped = [];
-        foreach ($data['allocations'] as $input) {
-            $id = ReceiptRequestValues::id($input['purchase_id']);
-            $amount = BigDecimal::of(ReceiptRequestValues::decimal($input['allocated_amount'], 6));
-            if (! $amount->isPositive()) {
-                throw new VendorPaymentValidationException('purchasing.credit_amount_positive');
-            }
-            $grouped[$id] = ($grouped[$id] ?? BigDecimal::zero())->plus($amount);
+        $version = PaymentAllocationIntent::version($data['allocations']);
+        $intent = PaymentAllocationIntent::normalize($data['allocations'], 'purchase_id');
+        if ($intent === []) {
+            throw new \InvalidArgumentException('Application requires a positive allocation.');
         }
-        if ($grouped === []) {
-            throw new VendorPaymentValidationException('purchasing.credit_amount_positive');
-        }
-
-        ksort($grouped, SORT_NUMERIC);
-        $intent = [];
-        foreach ($grouped as $id => $amount) {
-            $intent[] = ['purchase_id' => $id, 'allocated_amount' => (string) $amount->toScale(6)];
-        }
-
         $hash = self::requestHash((int) $payment->company_id, (int) $payment->id, (int) $actor->id, (string) $data['application_date'], $intent);
 
-        return DB::transaction(function () use ($payment, $actor, $data, $key, $hash, $intent): VendorPaymentApplicationEvent {
+        return DB::transaction(function () use ($payment, $actor, $data, $key, $hash, $intent, $version): VendorPaymentApplicationEvent {
             $company = app(SalesActorGuard::class)->lockAndAuthorize((int) $payment->company_id, $actor, 'money.vendor_payment.allocate');
             app(SalesActorGuard::class)->lockAndAuthorize((int) $payment->company_id, $actor, 'purchasing.cost.view');
 
@@ -189,11 +175,11 @@ final class ApplyVendorPaymentCreditAction
                     (int) $locked->id,
                     $actor,
                     $prepared,
-                    function (VendorPaymentApplicationCapability $capability) use ($company, $locked, $actor, $appDate, $key, $hash, $prepared, $lines): VendorPaymentApplicationEvent {
+                    function (VendorPaymentApplicationCapability $capability) use ($company, $locked, $actor, $appDate, $key, $hash, $prepared, $lines, $version): VendorPaymentApplicationEvent {
                         $event = VendorPaymentApplicationEvent::recordCanonicalApplication(
                             $locked,
                             $actor,
-                            ['application_date' => $appDate, 'idempotency_key' => $key, 'request_hash' => $hash],
+                            ['application_date' => $appDate, 'idempotency_key' => $key, 'request_hash' => $hash, 'allocation_version' => $version],
                             $prepared,
                             $capability
                         );
@@ -255,7 +241,7 @@ final class ApplyVendorPaymentCreditAction
         foreach ($intent as $input) {
             /** @var Purchase|null $purchase */
             $purchase = Purchase::where('company_id', $payment->company_id)->lockForUpdate()->find($input['purchase_id']);
-            if ($purchase === null || ! $purchase->isPosted() || (int) $purchase->vendor_id !== (int) $payment->vendor_id || $purchase->currency_code !== $payment->currency_code) {
+            if ($purchase === null || ! $purchase->isPosted() || (int) $purchase->vendor_id !== (int) $payment->vendor_id) {
                 throw new VendorPaymentValidationException('purchasing.application_purchase_invalid');
             }
 
@@ -268,18 +254,17 @@ final class ApplyVendorPaymentCreditAction
                 }
             }
 
-            try {
-                $amount = BigDecimal::of((string) $input['allocated_amount'])->toScale($minor, RoundingMode::UNNECESSARY);
-            } catch (RoundingNecessaryException $exception) {
-                throw new VendorPaymentValidationException('purchasing.application_precision_invalid');
+            if (CompanyCurrency::where('company_id', $payment->company_id)->whereIn('currency_code', array_unique([$payment->currency_code, $purchase->currency_code]))->where('enabled', true)->count() !== count(array_unique([$payment->currency_code, $purchase->currency_code]))) {
+                throw new \InvalidArgumentException('Payment and document currencies must be enabled.');
             }
-
-            if (! $amount->isPositive() || $amount->isGreaterThan($remaining) || $amount->isGreaterThan($purchase->calculateOutstanding())) {
-                throw new VendorPaymentValidationException('purchasing.application_exceeds_available');
+            $amounts = PaymentAllocationIntent::amounts($input, $purchase->currency_code, $payment->currency_code);
+            $amount = $amounts['document'];
+            $consumed = $amounts['payment'];
+            if ($consumed->isGreaterThan($remaining) || $amount->isGreaterThan($purchase->calculateOutstanding())) {
+                throw new \InvalidArgumentException('Application exceeds payment credit or document outstanding.');
             }
-
             $book = app(PayableBookValue::class)->relief($purchase, $amount);
-            $usedAmount = $usedAmount->plus($amount);
+            $usedAmount = $usedAmount->plus($consumed);
 
             $targetBase = $usedAmount->isEqualTo(BigDecimal::of((string) $payment->amount))
                 ? BigDecimal::of((string) $payment->amount_base)
@@ -295,7 +280,7 @@ final class ApplyVendorPaymentCreditAction
 
             $prepared[] = [
                 'purchase_id' => $purchase->id,
-                'allocated_amount' => (string) $amount->toScale(6),
+                'allocated_amount' => (string) $amount->toScale(6), 'payment_currency_amount' => (string) $consumed->toScale(6),
                 'purchase_exchange_rate' => (string) $purchase->exchange_rate,
                 'payment_exchange_rate' => (string) $payment->exchange_rate,
                 'base_amount_applied_to_payable' => (string) $book->toScale(6),
@@ -304,7 +289,7 @@ final class ApplyVendorPaymentCreditAction
             ];
 
             $usedBase = $targetBase;
-            $remaining = $remaining->minus($amount);
+            $remaining = $remaining->minus($consumed);
         }
 
         return $prepared;

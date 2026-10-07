@@ -10,6 +10,7 @@ use App\Domain\Money\ValueObjects\ExchangeRate;
 use App\Domain\Money\ValueObjects\MoneyAmount;
 use App\Domain\Posting\DTO\PostingCommand;
 use App\Domain\Posting\DTO\PostingLineCommand;
+use App\Models\Check;
 use App\Models\Company;
 use App\Models\LedgerAccount;
 use App\Models\MoneyAccount;
@@ -20,6 +21,8 @@ use App\Models\Vendor;
 use App\Models\VendorPayment;
 use App\Models\VendorPaymentAllocation;
 use App\Models\VendorPaymentApplicationEvent;
+use App\Services\Money\CheckPaymentSource;
+use App\Services\Money\PaymentAllocationIntent;
 use App\Services\Sales\SalesPostingLines;
 use Brick\Math\BigDecimal;
 use Brick\Math\RoundingMode;
@@ -35,24 +38,25 @@ final class VendorPaymentHistoryCommands
         $cid = (int) $payment->company_id;
         $company = Company::findOrFail($cid);
         $vendor = Vendor::withTrashed()->where('company_id', $cid)->findOrFail($payment->vendor_id);
-        $money = MoneyAccount::withTrashed()->where('company_id', $cid)->findOrFail($payment->money_account_id);
+        $check = $payment->payment_method === 'check' ? Check::where('company_id', $cid)->findOrFail($payment->check_id) : null;
+        $money = $check !== null ? null : MoneyAccount::withTrashed()->where('company_id', $cid)->findOrFail($payment->money_account_id);
         $amount = $this->positive($payment->amount, $payment->currency_code);
         $fx = ExchangeRate::from($payment->exchange_rate);
         $base = $amount->multipliedBy($fx->getValue())->toScale(6, RoundingMode::HALF_UP);
         $this->require($base->isPositive() && $base->isEqualTo($payment->amount_base), 'amount_base mismatch');
+        if ($check !== null) {
+            $this->require($payment->money_account_id === null && $check->direction === 'outgoing' && (int) $check->vendor_id === (int) $payment->vendor_id && $check->currency_code === $payment->currency_code && BigDecimal::of($check->amount)->isEqualTo($payment->amount) && BigDecimal::of($check->exchange_rate)->isEqualTo($payment->exchange_rate) && $check->received_issued_date->toDateString() === Carbon::parse($payment->payment_date)->toDateString(), 'Check payment identity');
+        }
         $this->require($payment->base_currency_code === $company->base_currency_code
-            && $money->currency_code === $payment->currency_code
-            && in_array($money->account_type, [MoneyAccount::TYPE_CASH, MoneyAccount::TYPE_BANK], true)
+            && ($check !== null || ($money !== null && $money->currency_code === $payment->currency_code && in_array($money->account_type, ['cash', 'bank'], true) && in_array($payment->payment_method, ['cash', 'bank_transfer'], true) && (($payment->payment_method === 'cash') === ($money->account_type === 'cash'))))
             && ($payment->currency_code !== $payment->base_currency_code || $fx->getValue()->isEqualTo(1))
-            && in_array($payment->payment_method, ['cash', 'bank_transfer'], true)
-            && (($payment->payment_method === 'cash') === ($money->account_type === MoneyAccount::TYPE_CASH))
             && in_array($payment->document_locale, ['ar', 'en'], true)
             && trim($payment->payment_number) !== '' && trim((string) $payment->idempotency_key) !== '', 'Payment identity');
         $accounts = $this->accounts($cid);
         $lines = [];
         $locale = $payment->document_locale;
         $name = (string) ($payment->vendor_snapshot['name_'.$locale] ?? $payment->vendor_snapshot['name_ar'] ?? '');
-        $this->append($lines, (int) $money->ledger_account_id, false, $base, "Vendor Payment {$payment->payment_number} - {$name}", $payment->currency_code, $amount, $fx);
+        $this->append($lines, (int) ($check !== null ? app(CheckPaymentSource::class)->ledger($check, false)->id : $money->ledger_account_id), false, $base, "Vendor Payment {$payment->payment_number} - {$name}", $payment->currency_code, $amount, $fx);
         $used = BigDecimal::zero();
         $settled = BigDecimal::zero();
         $loss = BigDecimal::zero();
@@ -63,10 +67,12 @@ final class VendorPaymentHistoryCommands
         foreach ($rows as $row) {
             $this->require(! isset($seen[$row->purchase_id]), 'Duplicate initial allocation');
             $seen[$row->purchase_id] = true;
-            $purchase = $this->purchase($payment, $row, $payment->payment_date->format('Y-m-d'));
-            $value = $this->positive($row->allocated_amount, $payment->currency_code);
+            $purchase = $this->purchase($payment, $row, Carbon::parse($payment->payment_date)->toDateString());
+            $value = $this->positive($row->allocated_amount, $purchase->currency_code);
             $book = $this->book($purchase, $row, $value);
-            $used = $used->plus($value);
+            $paid = $this->positive($row->payment_currency_amount, $payment->currency_code);
+            PaymentAllocationIntent::amounts(['allocated_amount' => (string) $value, 'payment_currency_amount' => (string) $paid], $purchase->currency_code, $payment->currency_code);
+            $used = $used->plus($paid);
             $this->require($used->isLessThanOrEqualTo($amount), 'Payment over-allocation');
             $target = $used->isEqualTo($amount) ? $base : $used->multipliedBy($fx->getValue())->toScale(6, RoundingMode::HALF_UP);
             $segment = $target->minus($settled);
@@ -79,8 +85,8 @@ final class VendorPaymentHistoryCommands
             if ($delta->isNegative()) {
                 $gain = $gain->plus($delta->abs());
             }
-            $this->append($lines, $accounts['accounts_payable'], true, $book, "Vendor Payment {$payment->payment_number} AP Relief Pur #{$purchase->id}", $payment->currency_code, $value, ExchangeRate::from($purchase->exchange_rate));
-            $intent[] = ['purchase_id' => (int) $purchase->id, 'allocated_amount' => (string) $value->toScale(6)];
+            $this->append($lines, $accounts['accounts_payable'], true, $book, "Vendor Payment {$payment->payment_number} AP Relief Pur #{$purchase->id}", $purchase->currency_code, $value, ExchangeRate::from($purchase->exchange_rate));
+            $intent[] = PaymentAllocationIntent::historicalRow('purchase_id', (int) $purchase->id, (string) $value->toScale(6), (string) $paid->toScale(6), (int) $payment->allocation_version);
         }
         $advance = $amount->minus($used);
         if ($advance->isPositive()) {
@@ -95,12 +101,15 @@ final class VendorPaymentHistoryCommands
         usort($intent, fn (array $a, array $b): int => $a['purchase_id'] <=> $b['purchase_id']);
         $payload = [
             'company_id' => $cid, 'actor_id' => (int) $payment->created_by,
-            'vendor_id' => (int) $vendor->id, 'money_account_id' => (int) $money->id,
-            'payment_date' => $payment->payment_date->format('Y-m-d'), 'payment_method' => $payment->payment_method,
+            'vendor_id' => (int) $vendor->id, 'money_account_id' => $money?->id,
+            'payment_date' => Carbon::parse($payment->payment_date)->toDateString(), 'payment_method' => $payment->payment_method,
             'amount' => (string) $amount->toScale(6), 'exchange_rate' => (string) $fx->getValue()->toScale(10),
             'reference_number' => $this->text($payment->reference_number), 'notes' => $this->text($payment->notes),
             'allocations' => $intent, 'document_locale' => null,
         ];
+        if ($check !== null) {
+            $payload['check_id'] = (int) $check->id;
+        }
         $implicit = hash('sha256', json_encode($payload, JSON_THROW_ON_ERROR));
         $payload['document_locale'] = $payment->document_locale;
         $explicit = hash('sha256', json_encode($payload, JSON_THROW_ON_ERROR));
@@ -117,14 +126,14 @@ final class VendorPaymentHistoryCommands
         // Validate the original financial event separately; avoid event recursion.
         app(VendorPaymentPostedIntegrityValidator::class)->validate($payment, includeApplications: false);
         $date = $event->application_date->format('Y-m-d');
-        $this->require($date >= $payment->payment_date->format('Y-m-d') && trim($event->idempotency_key) !== '', 'Application date/key');
+        $this->require($date >= Carbon::parse($payment->payment_date)->toDateString() && trim($event->idempotency_key) !== '', 'Application date/key');
         $rows = $event->allocations()->orderBy('id')->get();
         $this->require($rows->isNotEmpty(), 'Application allocations');
         $first = (int) $rows->first()->id;
         $used = BigDecimal::zero();
         $usedBase = BigDecimal::zero();
         foreach ($payment->allocations()->where('id', '<', $first)->get() as $prior) {
-            $used = $used->plus($prior->allocated_amount);
+            $used = $used->plus($prior->payment_currency_amount);
             $usedBase = $usedBase->plus($prior->settlement_base_value);
         }
         $accounts = $this->accounts((int) $event->company_id);
@@ -136,9 +145,11 @@ final class VendorPaymentHistoryCommands
                 && (int) $row->application_event_id === (int) $event->id && ! isset($seen[$row->purchase_id]), 'Application parent/set');
             $seen[$row->purchase_id] = true;
             $purchase = $this->purchase($payment, $row, $date);
-            $value = $this->positive($row->allocated_amount, $payment->currency_code);
+            $value = $this->positive($row->allocated_amount, $purchase->currency_code);
             $book = $this->book($purchase, $row, $value);
-            $used = $used->plus($value);
+            $paid = $this->positive($row->payment_currency_amount, $payment->currency_code);
+            PaymentAllocationIntent::amounts(['allocated_amount' => (string) $value, 'payment_currency_amount' => (string) $paid], $purchase->currency_code, $payment->currency_code);
+            $used = $used->plus($paid);
             $this->require($used->isLessThanOrEqualTo($payment->amount), 'Advance over-consumption');
             $target = $used->isEqualTo($payment->amount) ? BigDecimal::of($payment->amount_base)
                 : $used->multipliedBy($payment->exchange_rate)->toScale(6, RoundingMode::HALF_UP);
@@ -153,7 +164,7 @@ final class VendorPaymentHistoryCommands
                 $this->append($lines, $accounts['accounts_payable'], true, $delta->abs(), 'Vendor advance application AP delta');
                 $this->append($lines, $accounts['fx_gain'], false, $delta->abs(), 'Vendor advance application realized FX gain');
             }
-            $intent[] = ['purchase_id' => (int) $purchase->id, 'allocated_amount' => (string) $value->toScale(6)];
+            $intent[] = PaymentAllocationIntent::historicalRow('purchase_id', (int) $purchase->id, (string) $value->toScale(6), (string) $paid->toScale(6), (int) $event->allocation_version);
         }
         usort($intent, fn (array $a, array $b): int => $a['purchase_id'] <=> $b['purchase_id']);
         $this->require($event->request_hash === ApplyVendorPaymentCreditAction::requestHash((int) $event->company_id,
@@ -206,7 +217,7 @@ final class VendorPaymentHistoryCommands
         $purchase = Purchase::where('company_id', $payment->company_id)->findOrFail($row->purchase_id);
         $this->require((int) $row->company_id === (int) $payment->company_id
             && (int) $row->vendor_payment_id === (int) $payment->id
-            && (int) $purchase->vendor_id === (int) $payment->vendor_id && $purchase->currency_code === $payment->currency_code
+            && (int) $purchase->vendor_id === (int) $payment->vendor_id
             && $date >= $purchase->purchase_date->format('Y-m-d'), 'Allocation source identity/date');
         app(PurchasePostingCommandBuilder::class)->validatePosted($purchase);
 

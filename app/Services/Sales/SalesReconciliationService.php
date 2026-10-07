@@ -9,6 +9,7 @@ use App\Exceptions\NoActiveCompanyException;
 use App\Models\Company;
 use App\Models\Customer;
 use App\Models\CustomerPayment;
+use App\Models\CustomerPaymentApplicationEvent;
 use App\Models\MoneyAccount;
 use App\Models\Quotation;
 use App\Models\SalesInvoice;
@@ -16,6 +17,7 @@ use App\Models\SalesInvoiceLine;
 use App\Models\SalesInvoiceLotAllocation;
 use App\Models\SalesReturn;
 use App\Models\StockMovement;
+use App\Services\Money\PaymentAllocationIntent;
 use App\Support\Tenancy\CompanyContext;
 use App\Support\Tenancy\CompanyScope;
 use Brick\Math\BigDecimal;
@@ -315,7 +317,10 @@ class SalesReconciliationService
 
                 $totalAllocated = BigDecimal::zero();
                 foreach ($payment->allocations as $allocation) {
-                    $totalAllocated = $totalAllocated->plus(BigDecimal::of((string) $allocation->allocated_amount));
+                    $event = $allocation->application_event_id === null ? null : CustomerPaymentApplicationEvent::where('company_id', $cid)->find($allocation->application_event_id);
+                    if (! $payment->is_reversed && ($allocation->application_event_id === null || ($event !== null && $event->applied_at !== null && $event->reversed_at === null))) {
+                        $totalAllocated = $totalAllocated->plus($allocation->payment_currency_amount);
+                    }
 
                     $inv = SalesInvoice::find($allocation->sales_invoice_id);
                     if ($inv === null) {
@@ -324,8 +329,10 @@ class SalesReconciliationService
                         if ($inv->customer_id !== $payment->customer_id) {
                             $violations[] = "Payment [ID {$payment->id}] allocation [ID {$allocation->id}] customer mismatch (payment customer: {$payment->customer_id}, invoice customer: {$inv->customer_id}).";
                         }
-                        if ($inv->currency_code !== $payment->currency_code) {
-                            $violations[] = "Payment [ID {$payment->id}] allocation [ID {$allocation->id}] currency mismatch (payment: {$payment->currency_code}, invoice: {$inv->currency_code}).";
+                        try {
+                            PaymentAllocationIntent::amounts(['allocated_amount' => $allocation->allocated_amount, 'payment_currency_amount' => $allocation->payment_currency_amount], $inv->currency_code, $payment->currency_code);
+                        } catch (\Throwable $exception) {
+                            $violations[] = "Payment [ID {$payment->id}] allocation currency/precision mismatch: {$exception->getMessage()}";
                         }
 
                         // Realized FX check: settlement_base - base_applied

@@ -80,11 +80,11 @@
                                 </a>
                             </td>
                             <td class="py-3 px-4 text-text-secondary">
-                                {{ $pmt->moneyAccount?->displayName() ?? '—' }}
+                                {{ $pmt->checkInstrument?->check_number ?? $pmt->moneyAccount?->displayName() ?? '—' }}
                             </td>
                             <td class="py-3 px-4">
                                 <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-surface-soft text-text-secondary">
-                                    {{ __('sales.' . $pmt->payment_method) }}
+                                    {{ $pmt->payment_method === 'check' ? __('money.check') : __('sales.' . $pmt->payment_method) }}
                                 </span>
                             </td>
                             <td class="py-3 px-4" dir="ltr">

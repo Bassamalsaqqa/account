@@ -70,7 +70,7 @@ class PaymentIndex extends Component
         $user = auth()->user();
         $canCreate = $user->hasPermissionTo('money.vendor_payment.create');
 
-        $query = VendorPayment::with(['vendor', 'moneyAccount', 'allocations'])
+        $query = VendorPayment::with(['vendor', 'moneyAccount', 'checkInstrument', 'allocations'])
             ->where('company_id', $companyId);
 
         if (trim($this->search) !== '') {

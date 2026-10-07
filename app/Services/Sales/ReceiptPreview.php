@@ -14,14 +14,22 @@ final class ReceiptPreview
      */
     public function calculate(string $amount, string $exchangeRate, array $allocations, string $currency): array
     {
-        $rate = BigDecimal::of($exchangeRate ?: '1');
+        $rate = trim($exchangeRate) === '' ? null : BigDecimal::of($exchangeRate);
         $total = BigDecimal::zero();
         foreach ($allocations as &$allocation) {
-            $allocated = BigDecimal::of((string) ($allocation['allocated_amount'] ?: '0'));
-            $total = $total->plus($allocated);
+            $allocated = BigDecimal::of(trim((string) ($allocation['allocated_amount'] ?? '')) === '' ? '0' : $allocation['allocated_amount']);
+            if ($allocated->isNegative()) {
+                $allocated = BigDecimal::zero();
+            }
+            $sameCurrency = ($allocation['document_currency_code'] ?? $currency) === $currency;
+            $paymentInput = $sameCurrency ? (string) $allocated : (string) ($allocation['payment_currency_amount'] ?? '0');
+            $consumed = BigDecimal::of(trim($paymentInput) === '' ? '0' : $paymentInput);
+            if ($consumed->isNegative() || $allocated->isZero()) {
+                $consumed = BigDecimal::zero();
+            }
+            $total = $total->plus($consumed);
             $book = $allocated->multipliedBy((string) $allocation['invoice_exchange_rate'])->toScale(6, RoundingMode::HALF_UP);
-            $settlement = $allocated->multipliedBy($rate)->toScale(6, RoundingMode::HALF_UP);
-            $allocation['preview_fx'] = (string) $settlement->minus($book);
+            $allocation['preview_fx'] = $rate === null ? null : (string) $consumed->multipliedBy($rate)->toScale(6, RoundingMode::HALF_UP)->minus($book);
         }
         unset($allocation);
         $scale = $currency === 'JOD' ? 3 : 2;

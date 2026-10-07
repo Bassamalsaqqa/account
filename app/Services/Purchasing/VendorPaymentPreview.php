@@ -24,14 +24,20 @@ final class VendorPaymentPreview
             if ($allocated->isNegative()) {
                 $allocated = BigDecimal::zero();
             }
-            $total = $total->plus($allocated);
+            $sameCurrency = ($allocation['document_currency_code'] ?? $currency) === $currency;
+            $paymentInput = $sameCurrency ? (string) $allocated : (string) ($allocation['payment_currency_amount'] ?? '0');
+            $consumed = BigDecimal::of(trim($paymentInput) === '' ? '0' : $paymentInput);
+            if ($consumed->isNegative() || $allocated->isZero()) {
+                $consumed = BigDecimal::zero();
+            }
+            $total = $total->plus($consumed);
 
             $purchaseRate = BigDecimal::of((string) ($allocation['purchase_exchange_rate'] ?? '1'));
             $book = $allocated->multipliedBy($purchaseRate)->toScale(6, RoundingMode::HALF_UP);
             // Missing explicit FX must not display a fabricated rate-one estimate.
             // AP orientation: delta = S - B; positive is FX LOSS, negative is FX GAIN.
             $allocation['preview_fx'] = $rate === null ? null
-                : (string) $allocated->multipliedBy($rate)->toScale(6, RoundingMode::HALF_UP)->minus($book);
+                : (string) $consumed->multipliedBy($rate)->toScale(6, RoundingMode::HALF_UP)->minus($book);
         }
         unset($allocation);
 
