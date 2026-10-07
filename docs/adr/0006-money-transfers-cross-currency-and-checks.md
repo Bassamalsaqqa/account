@@ -15,6 +15,13 @@ running totals include preceding history before pagination. Accounts, source
 links, recent activity and operational registers remain company/permission scoped.
 There is no stored balance, price cache or insufficient-funds/overdraft rule.
 
+Money activity and movement rows enforce the original source's financial-read
+authority, including reversals. Vendor Payment rows require VendorFinancialRead;
+outgoing Check rows require Check view plus purchasing cost view. Filtering precedes
+limits/pagination. If an account has hidden movements, per-row running base/native
+values are unavailable rather than disclosing hidden effects or fabricating a
+visible-only balance. Authorized aggregate account balances remain ledger-derived.
+
 ## Canonical Money event authority
 
 Only the final concrete Transfer posting/reversal and Check receipt/issue/transition

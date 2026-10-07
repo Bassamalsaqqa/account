@@ -24,12 +24,12 @@
 </p>
 </div>
 <div class="text-sm">
-<p>{{ __('money.running_base') }}: <bdi>{{ $movement->running_base }} {{ $balance['base_currency_code'] }}</bdi>
+<p>{{ __('money.running_base') }}: <bdi>{{ $movement->running_base ?? __('money.unavailable') }} {{ $balance['base_currency_code'] }}</bdi>
 </p>
 <p>{{ __('money.transaction') }}: <bdi>{{ $movement->transaction_amount ?? '—' }} {{ $movement->transaction_currency_code }}</bdi>
 </p>
 </div>
-<p class="text-xs">{{ __('money.running_currency') }}: <bdi>{{ $account->currency_code === $balance['base_currency_code'] ? $movement->running_base : ($movement->unknown_currency_lines == 0 ? $movement->known_running_currency : __('money.unavailable')) }} {{ $account->currency_code }}</bdi>
+<p class="text-xs">{{ __('money.running_currency') }}: <bdi>{{ $movement->running_base === null ? __('money.unavailable') : ($account->currency_code === $balance['base_currency_code'] ? $movement->running_base : ($movement->unknown_currency_lines == 0 ? $movement->known_running_currency : __('money.unavailable'))) }} {{ $account->currency_code }}</bdi>
 </p>
 </article>@empty<p class="text-text-secondary">{{ __('money.empty') }}</p>
 @endforelse

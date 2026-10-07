@@ -26,6 +26,7 @@ final class MoneyActivityQuery
         return DB::table('posting_batches as b')->join('posting_lines as l', 'l.posting_batch_id', '=', 'b.id')
             ->join('money_accounts as m', 'm.ledger_account_id', '=', 'l.ledger_account_id')
             ->where('b.company_id', $companyId)->where('l.company_id', $companyId)->where('m.company_id', $companyId)->whereIn('l.ledger_account_id', $accounts)
+            ->whereIn('b.id', app(MoneyMovementVisibility::class)->visibleBatchIds($companyId))
             ->select('l.id', 'm.public_id as account_public_id', 'm.name_ar', 'm.name_en', 'm.currency_code', 'b.posting_date', 'b.source_type', 'b.source_id', 'b.reversal_of_id', 'l.description', 'l.debit_base', 'l.credit_base', 'l.transaction_amount', 'l.transaction_currency_code')
             ->orderByDesc('b.posting_date')->orderByDesc('b.id')->orderByDesc('l.id')->limit(12)->get();
     }
