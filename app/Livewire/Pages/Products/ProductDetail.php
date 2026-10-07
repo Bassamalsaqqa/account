@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Livewire\Pages\Products;
 
+use App\Domain\Purchasing\Queries\ProductPurchaseHistoryQuery;
 use App\Models\InventoryBalance;
 use App\Models\InventoryCostState;
 use App\Models\InventoryLotBalance;
@@ -38,7 +39,17 @@ class ProductDetail extends Component
 
     public function setTab(string $tab): void
     {
-        if (in_array($tab, ['overview', 'warehouses', 'lots', 'movements', 'units', 'barcodes', 'images'], true)) {
+        /** @var User $user */
+        $user = auth()->user();
+        $canViewPurchasingCost = $user->hasPermissionTo('purchasing.cost.view');
+
+        if ($tab === 'purchase_history' && ! $canViewPurchasingCost) {
+            $this->activeTab = 'overview';
+
+            return;
+        }
+
+        if (in_array($tab, ['overview', 'warehouses', 'lots', 'movements', 'units', 'barcodes', 'images', 'purchase_history'], true)) {
             $this->activeTab = $tab;
         }
     }
@@ -52,6 +63,13 @@ class ProductDetail extends Component
         $user = auth()->user();
         $canViewCost = $user->hasPermissionTo('inventory.cost.view');
         $canManageProduct = $user->hasPermissionTo('inventory.product.manage');
+        $canViewPurchasingCost = $user->hasPermissionTo('purchasing.cost.view');
+        $canViewPurchases = $user->hasPermissionTo('purchasing.purchase.view');
+        $canViewVendors = $user->hasPermissionTo('vendors.view');
+
+        if ($this->activeTab === 'purchase_history' && ! $canViewPurchasingCost) {
+            $this->activeTab = 'overview';
+        }
 
         // Balances by warehouse
         $warehouseBalances = InventoryBalance::where('company_id', $company->id)
@@ -85,6 +103,11 @@ class ProductDetail extends Component
                 ->first();
         }
 
+        $purchaseHistory = collect();
+        if ($canViewPurchasingCost && $this->activeTab === 'purchase_history') {
+            $purchaseHistory = app(ProductPurchaseHistoryQuery::class)->execute($this->product, $company->id, limit: 20);
+        }
+
         return view('livewire.pages.products.product-detail', [
             'product' => $this->product,
             'warehouseBalances' => $warehouseBalances,
@@ -93,6 +116,10 @@ class ProductDetail extends Component
             'costState' => $costState,
             'canViewCost' => $canViewCost,
             'canManageProduct' => $canManageProduct,
+            'canViewPurchasingCost' => $canViewPurchasingCost,
+            'canViewPurchases' => $canViewPurchases,
+            'canViewVendors' => $canViewVendors,
+            'purchaseHistory' => $purchaseHistory,
             'company' => $company,
         ]);
     }

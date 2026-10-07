@@ -4920,7 +4920,7 @@ Customer
 
 ## Phase 5 — Purchasing vertical
 
-Complete:
+Complete (Phases 5A–5E deployed):
 
 ```text
 Vendor
@@ -4929,6 +4929,11 @@ Vendor
 → Accounting
 → Vendor payment
 → Statement
+```
+
+Candidate (Phase 5F implemented / awaiting independent review):
+
+```text
 → price history
 ```
 

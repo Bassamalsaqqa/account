@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Livewire\Pages\Purchasing;
 
 use App\Domain\Purchasing\Queries\VendorBalanceQuery;
+use App\Domain\Purchasing\Queries\VendorProductHistoryQuery;
+use App\Domain\Purchasing\Queries\VendorProductPriceHistoryQuery;
 use App\Domain\Purchasing\Queries\VendorStatementQuery;
 use App\Livewire\Pages\Purchasing\Concerns\AuthorizesPurchasingPages;
 use App\Models\Purchase;
@@ -38,6 +40,9 @@ class VendorDetail extends Component
 
     public ?string $statementTo = null;
 
+    #[Url(as: 'product_id')]
+    public ?int $selectedProductId = null;
+
     public function mount(string $publicId, CompanyContext $context): void
     {
         $this->pageCompanyId = (int) $context->companyId();
@@ -55,6 +60,13 @@ class VendorDetail extends Component
 
     public function updatedActiveTab(): void
     {
+        $this->selectedProductId = null;
+        $this->resetPage();
+    }
+
+    public function selectProductFilter(?int $productId): void
+    {
+        $this->selectedProductId = $productId;
         $this->resetPage();
     }
 
@@ -67,6 +79,9 @@ class VendorDetail extends Component
 
         $canManage = $user->hasPermissionTo('vendors.manage');
         $withCost = $this->canReadVendorFinancials();
+        $canViewCost = $user->hasPermissionTo('purchasing.cost.view');
+        $canViewPurchases = $user->hasPermissionTo('purchasing.purchase.view');
+        $canViewProducts = $user->hasAnyPermission(['inventory.stock.view', 'inventory.product.manage']);
         $canStatement = $withCost && $user->hasPermissionTo('vendors.statement.view');
         $canCreatePurchase = $user->hasPermissionTo('purchasing.cost.view') && $user->hasPermissionTo('purchasing.purchase.create');
         $canCreatePayment = $withCost && $user->hasPermissionTo('money.vendor_payment.create');
@@ -75,7 +90,11 @@ class VendorDetail extends Component
             $this->authorizePaymentFinancialRead();
         }
 
-        if (! $withCost && $this->activeTab !== 'overview') {
+        if ($this->activeTab === 'products') {
+            if (! $canViewCost) {
+                $this->activeTab = 'overview';
+            }
+        } elseif (! $withCost && $this->activeTab !== 'overview') {
             $this->activeTab = 'overview';
         }
 
@@ -84,6 +103,17 @@ class VendorDetail extends Component
         $tabReturns = [];
         $tabPayments = [];
         $statementData = null;
+        $vendorProducts = collect();
+        $vendorPriceLines = collect();
+
+        if ($canViewCost && $this->activeTab === 'products') {
+            $vendorProducts = app(VendorProductHistoryQuery::class)->productsSupplied($this->vendor, $company->id);
+            if ($this->selectedProductId !== null) {
+                $vendorPriceLines = app(VendorProductPriceHistoryQuery::class)->execute($this->vendor, $this->selectedProductId, $company->id, limit: 20);
+            } else {
+                $vendorPriceLines = app(VendorProductHistoryQuery::class)->execute($this->vendor, $company->id, limit: 20);
+            }
+        }
 
         if ($withCost) {
             $balancesByVendor = app(VendorBalanceQuery::class)->execute([$this->vendor->id]);
@@ -121,6 +151,9 @@ class VendorDetail extends Component
         return view('livewire.pages.purchasing.vendor-detail', [
             'canManage' => $canManage,
             'withCost' => $withCost,
+            'canViewCost' => $canViewCost,
+            'canViewPurchases' => $canViewPurchases,
+            'canViewProducts' => $canViewProducts,
             'canStatement' => $canStatement,
             'canCreatePurchase' => $canCreatePurchase,
             'canCreatePayment' => $canCreatePayment,
@@ -129,6 +162,9 @@ class VendorDetail extends Component
             'tabReturns' => $tabReturns,
             'tabPayments' => $tabPayments,
             'statementData' => $statementData,
+            'vendorProducts' => $vendorProducts,
+            'vendorPriceLines' => $vendorPriceLines,
+            'selectedProductId' => $this->selectedProductId,
             'company' => $company,
         ]);
     }

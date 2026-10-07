@@ -114,25 +114,32 @@
         @endif
     </div>
 
-    @if ($withCost)
+    @if ($withCost || $canViewCost)
         <!-- Tabs Navigation -->
-        <div class="border-b border-border flex items-center gap-4 text-xs font-bold">
+        <div class="border-b border-border flex items-center gap-4 text-xs font-bold overflow-x-auto [&>button]:shrink-0 [&>button]:whitespace-nowrap">
             <button type="button" wire:click="$set('activeTab', 'overview')" class="pb-3 border-b-2 cursor-pointer transition-colors {{ $activeTab === 'overview' ? 'border-primary text-primary' : 'border-transparent text-text-secondary hover:text-text-primary' }}">
                 {{ __('purchasing.vendor_details') }}
             </button>
-            <button type="button" wire:click="$set('activeTab', 'purchases')" class="pb-3 border-b-2 cursor-pointer transition-colors {{ $activeTab === 'purchases' ? 'border-primary text-primary' : 'border-transparent text-text-secondary hover:text-text-primary' }}">
-                {{ __('purchasing.purchases') }}
-            </button>
-            <button type="button" wire:click="$set('activeTab', 'returns')" class="pb-3 border-b-2 cursor-pointer transition-colors {{ $activeTab === 'returns' ? 'border-primary text-primary' : 'border-transparent text-text-secondary hover:text-text-primary' }}">
-                {{ __('purchasing.purchase_returns') }}
-            </button>
-            <button type="button" wire:click="$set('activeTab', 'payments')" class="pb-3 border-b-2 cursor-pointer transition-colors {{ $activeTab === 'payments' ? 'border-primary text-primary' : 'border-transparent text-text-secondary hover:text-text-primary' }}">
-                {{ __('purchasing.vendor_payments') }}
-            </button>
-            @if ($canStatement)
-                <button type="button" wire:click="$set('activeTab', 'statement')" class="pb-3 border-b-2 cursor-pointer transition-colors {{ $activeTab === 'statement' ? 'border-primary text-primary' : 'border-transparent text-text-secondary hover:text-text-primary' }}">
-                    {{ __('purchasing.statement') }} & {{ __('purchasing.aging') }}
+            @if ($canViewCost)
+                <button type="button" wire:click="$set('activeTab', 'products')" class="pb-3 border-b-2 cursor-pointer transition-colors {{ $activeTab === 'products' ? 'border-primary text-primary' : 'border-transparent text-text-secondary hover:text-text-primary' }}">
+                    {{ __('purchasing.products_and_prices') }}
                 </button>
+            @endif
+            @if ($withCost)
+                <button type="button" wire:click="$set('activeTab', 'purchases')" class="pb-3 border-b-2 cursor-pointer transition-colors {{ $activeTab === 'purchases' ? 'border-primary text-primary' : 'border-transparent text-text-secondary hover:text-text-primary' }}">
+                    {{ __('purchasing.purchases') }}
+                </button>
+                <button type="button" wire:click="$set('activeTab', 'returns')" class="pb-3 border-b-2 cursor-pointer transition-colors {{ $activeTab === 'returns' ? 'border-primary text-primary' : 'border-transparent text-text-secondary hover:text-text-primary' }}">
+                    {{ __('purchasing.purchase_returns') }}
+                </button>
+                <button type="button" wire:click="$set('activeTab', 'payments')" class="pb-3 border-b-2 cursor-pointer transition-colors {{ $activeTab === 'payments' ? 'border-primary text-primary' : 'border-transparent text-text-secondary hover:text-text-primary' }}">
+                    {{ __('purchasing.vendor_payments') }}
+                </button>
+                @if ($canStatement)
+                    <button type="button" wire:click="$set('activeTab', 'statement')" class="pb-3 border-b-2 cursor-pointer transition-colors {{ $activeTab === 'statement' ? 'border-primary text-primary' : 'border-transparent text-text-secondary hover:text-text-primary' }}">
+                        {{ __('purchasing.statement') }} & {{ __('purchasing.aging') }}
+                    </button>
+                @endif
             @endif
         </div>
     @endif
@@ -405,6 +412,191 @@
                 <p class="text-xs text-text-muted py-6 text-center bg-white rounded-card border border-border">{{ __('purchasing.no_purchases') }}</p>
             @endforelse
             @endif
+        </div>
+    @elseif ($activeTab === 'products' && $canViewCost)
+        <div class="space-y-6">
+            <!-- Commercial Comparison Metric Explanatory Banner -->
+            <div class="p-3.5 bg-surface-soft border border-border rounded-card text-xs text-text-secondary flex items-start gap-2.5">
+                <span class="text-primary font-bold mt-0.5" aria-hidden="true">ℹ</span>
+                <div>
+                    <span class="font-bold text-text-primary block mb-0.5">{{ __('purchasing.net_commercial_price_per_base_unit') }}</span>
+                    <span>{{ __('purchasing.commercial_price_metric_explanation') }}</span>
+                </div>
+            </div>
+
+            <!-- Supplied Products Summary -->
+            <div class="bg-white rounded-card border border-border overflow-hidden">
+                <div class="p-4 border-b border-border flex flex-wrap items-center justify-between gap-3">
+                    <div><h3 class="text-sm font-extrabold text-text-primary">{{ __('purchasing.supplied_products') }}</h3>
+                    <p class="text-xs text-text-muted mt-1">{{ __('purchasing.supplied_products_window', ['count' => \App\Domain\Purchasing\Queries\VendorProductHistoryQuery::SUMMARY_LINE_LIMIT]) }}</p></div>
+                    @if ($selectedProductId !== null)
+                        <button type="button" wire:click="selectProductFilter(null)" class="text-xs text-primary font-bold hover:underline">
+                            {{ __('purchasing.all_supplied_products') }}
+                        </button>
+                    @endif
+                </div>
+
+                @if ($vendorProducts->isNotEmpty())
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-xs">
+                            <thead class="bg-surface-soft text-text-muted font-bold text-[11px] uppercase">
+                                <tr>
+                                    <th class="py-2.5 px-4 text-start">{{ __('purchasing.product') }}</th>
+                                    <th class="py-2.5 px-4 text-start">{{ __('purchasing.last_purchase_date') }}</th>
+                                    <th class="py-2.5 px-4 text-end">{{ __('purchasing.last_price') }}</th>
+                                    <th class="py-2.5 px-4 text-end">{{ __('purchasing.net_commercial_price_per_base_unit') }}</th>
+                                    <th class="py-2.5 px-4 text-center">{{ __('purchasing.total_purchases') }}</th>
+                                    <th class="py-2.5 px-4 text-end">{{ __('purchasing.total_quantity') }}</th>
+                                    <th class="py-2.5 px-4 text-center"></th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-border">
+                                @foreach ($vendorProducts as $p)
+                                    <tr class="hover:bg-canvas transition-colors {{ $selectedProductId === $p['product_id'] ? 'bg-primary-50/50' : '' }}">
+                                        <td class="py-3 px-4 font-bold text-text-primary">
+                                            @if ($p['product_public_id'] && $canViewProducts)
+                                                <a href="{{ route('products.show', $p['product_public_id']) }}" class="text-primary hover:underline">
+                                                    {{ $p['product_name'] }}
+                                                </a>
+                                            @else
+                                                {{ $p['product_name'] }}
+                                            @endif
+                                            @if ($p['product_sku'])
+                                                <span class="block text-[10px] text-text-muted font-mono">{{ $p['product_sku'] }}</span>
+                                            @endif
+                                        </td>
+                                        <td class="py-3 px-4 text-text-secondary whitespace-nowrap font-mono" dir="ltr">
+                                            {{ $p['latest_purchase_date'] }}
+                                        </td>
+                                        <td class="py-3 px-4 text-end font-mono font-bold whitespace-nowrap" dir="ltr">
+                                            {{ strpos($p['latest_unit_cost'], '.') !== false ? rtrim(rtrim($p['latest_unit_cost'], '0'), '.') : $p['latest_unit_cost'] }}
+                                            <span class="text-[10px] font-normal text-text-muted">{{ $p['latest_currency_code'] }} / {{ $p['latest_unit_name'] }}</span>
+                                        </td>
+                                        <td class="py-3 px-4 text-end font-mono font-bold text-primary whitespace-nowrap" dir="ltr">
+                                            @if ($p['latest_net_commercial_price_per_base_unit'] !== null)
+                                                {{ $p['latest_net_commercial_price_per_base_unit'] }}
+                                                <span class="text-[10px] font-normal text-text-muted">{{ $p['base_currency_code'] }}</span>
+                                            @else
+                                                —
+                                            @endif
+                                        </td>
+                                        <td class="py-3 px-4 text-center font-mono">
+                                            {{ $p['purchases_count'] }}
+                                        </td>
+                                        <td class="py-3 px-4 text-end font-mono" dir="ltr">
+                                            {{ strpos($p['total_quantity_base'], '.') !== false ? rtrim(rtrim($p['total_quantity_base'], '0'), '.') : $p['total_quantity_base'] }}
+                                        </td>
+                                        <td class="py-3 px-4 text-center whitespace-nowrap">
+                                            @if ($selectedProductId === $p['product_id'])
+                                                <button type="button" wire:click="selectProductFilter(null)" class="px-2.5 py-1 bg-surface-soft border border-border rounded text-[11px] font-bold text-text-secondary hover:text-text-primary">
+                                                    {{ __('purchasing.all_products') }}
+                                                </button>
+                                            @else
+                                                <button type="button" wire:click="selectProductFilter({{ $p['product_id'] }})" class="px-2.5 py-1 bg-primary text-white rounded text-[11px] font-bold hover:opacity-90">
+                                                    {{ __('purchasing.filter_by_product') }}
+                                                </button>
+                                            @endif
+                                        </td>
+                                    </tr>
+                                @endforeach
+                            </tbody>
+                        </table>
+                    </div>
+                @else
+                    <p class="text-xs text-text-muted py-6 text-center">{{ __('purchasing.no_supplied_products') }}</p>
+                @endif
+            </div>
+
+            <!-- Recent Purchase Price History Lines -->
+            <div class="bg-white rounded-card border border-border overflow-hidden">
+                <div class="p-4 border-b border-border flex flex-wrap items-center justify-between gap-3">
+                    <h3 class="text-sm font-extrabold text-text-primary">{{ __('purchasing.purchase_price_history') }}</h3>
+                    @if ($selectedProductId !== null)
+                        <span class="text-xs bg-primary-100 text-primary px-2.5 py-1 rounded-full font-bold">
+                            {{ __('purchasing.filter_by_product') }}: {{ $vendorPriceLines->first()?->product_name }}
+                        </span>
+                    @endif
+                </div>
+
+                @if ($vendorPriceLines->isNotEmpty())
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-xs">
+                            <thead class="bg-surface-soft text-text-muted font-bold text-[11px] uppercase">
+                                <tr>
+                                    <th class="py-2.5 px-4 text-start">{{ __('purchasing.purchase_number') }}</th>
+                                    <th class="py-2.5 px-4 text-start">{{ __('purchasing.purchase_date') }}</th>
+                                    <th class="py-2.5 px-4 text-start">{{ __('purchasing.product') }}</th>
+                                    <th class="py-2.5 px-4 text-start">{{ __('purchasing.unit') }}</th>
+                                    <th class="py-2.5 px-4 text-end">{{ __('purchasing.quantity') }}</th>
+                                    <th class="py-2.5 px-4 text-end">{{ __('purchasing.raw_unit_cost') }}</th>
+                                    <th class="py-2.5 px-4 text-end">{{ __('purchasing.discount') }}</th>
+                                    <th class="py-2.5 px-4 text-end">{{ __('purchasing.net_commercial_price_per_base_unit') }}</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-border">
+                                @foreach ($vendorPriceLines as $line)
+                                    <tr class="hover:bg-canvas transition-colors">
+                                        <td class="py-3 px-4 font-mono font-bold whitespace-nowrap">
+                                            @if ($canViewPurchases)
+                                                <a href="{{ route('purchases.show', $line->purchase_public_id) }}" class="text-primary hover:underline">
+                                                    {{ $line->purchase_number }}
+                                                </a>
+                                            @else
+                                                <span class="text-text-secondary">{{ $line->purchase_number }}</span>
+                                            @endif
+                                        </td>
+                                        <td class="py-3 px-4 text-text-secondary whitespace-nowrap font-mono" dir="ltr">
+                                            {{ $line->purchase_date }}
+                                        </td>
+                                        <td class="py-3 px-4 font-bold text-text-primary">
+                                            @if ($line->product_public_id && $canViewProducts)
+                                                <a href="{{ route('products.show', $line->product_public_id) }}" class="text-primary hover:underline">
+                                                    {{ $line->product_name }}
+                                                </a>
+                                            @else
+                                                {{ $line->product_name }}
+                                            @endif
+                                            @if ($line->product_sku)
+                                                <span class="block text-[10px] text-text-muted font-mono">{{ $line->product_sku }}</span>
+                                            @endif
+                                        </td>
+                                        <td class="py-3 px-4 text-text-secondary whitespace-nowrap">
+                                            {{ $line->unit_name }}
+                                        </td>
+                                        <td class="py-3 px-4 text-end font-mono" dir="ltr">
+                                            {{ strpos($line->quantity, '.') !== false ? rtrim(rtrim($line->quantity, '0'), '.') : $line->quantity }}
+                                        </td>
+                                        <td class="py-3 px-4 text-end font-mono font-bold whitespace-nowrap" dir="ltr">
+                                            {{ strpos($line->unit_cost, '.') !== false ? rtrim(rtrim($line->unit_cost, '0'), '.') : $line->unit_cost }}
+                                            <span class="text-[10px] font-normal text-text-muted">{{ $line->currency_code }}</span>
+                                        </td>
+                                        <td class="py-3 px-4 text-end font-mono whitespace-nowrap" dir="ltr">
+                                            @if ($line->discount_type && $line->discount_type !== 'none')
+                                                <span class="text-danger">
+                                                    {{ strpos($line->discount_value, '.') !== false ? rtrim(rtrim($line->discount_value, '0'), '.') : $line->discount_value }}
+                                                    {{ $line->discount_type === 'percent' ? '%' : $line->currency_code }}
+                                                </span>
+                                            @else
+                                                <span class="text-text-muted">—</span>
+                                            @endif
+                                        </td>
+                                        <td class="py-3 px-4 text-end font-mono font-bold text-primary whitespace-nowrap" dir="ltr">
+                                            @if ($line->net_commercial_price_per_base_unit !== null)
+                                                {{ $line->net_commercial_price_per_base_unit }}
+                                                <span class="text-[10px] font-normal text-text-muted">{{ $line->base_currency_code }}</span>
+                                            @else
+                                                —
+                                            @endif
+                                        </td>
+                                    </tr>
+                                @endforeach
+                            </tbody>
+                        </table>
+                    </div>
+                @else
+                    <p class="text-xs text-text-muted py-6 text-center">{{ __('purchasing.no_price_history') }}</p>
+                @endif
+            </div>
         </div>
     @endif
 </div>

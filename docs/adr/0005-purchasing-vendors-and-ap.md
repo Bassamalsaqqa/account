@@ -1,6 +1,6 @@
 # ADR 0005: Purchasing, Vendors and Accounts Payable
 
-Status: Complete (Phases 5A, 5B, 5C, 5D, and 5E accepted, merged to main, and deployed to production). Phase 5F unstarted.
+Status: Phase 5F Implemented / Awaiting Independent Review (Phases 5A, 5B, 5C, 5D, and 5E accepted, merged to main, and deployed to production; Phase 5F implemented on candidate branch awaiting independent review).
 
 ## Context and checkpoints
 
@@ -9,8 +9,10 @@ boundaries. Phases 5A/5B/5C/5D/5E are accepted and deployed: Phase 5A covers the
 Vendor/purchasing foundation; Phase 5B covers Purchase drafts; Phase 5C covers
 Purchase posting, AP, Inventory and Input Tax; Phase 5D covers Purchase Returns;
 Phase 5E covers Vendor Payments, AP settlement, balances, statements and aging.
-Phase 5F and later functionality remain future. This ADR records implemented and accepted
-financial decisions alongside remaining future constraints.
+Phase 5F completes the Purchasing history vertical with read-only Purchase and Vendor
+price history queries, comparative metrics, and UI integrations. Phase 6 and later
+functionality (cheques, expense bills, landed costs) remain unstarted. This ADR records
+implemented decisions and candidate Phase 5F boundaries alongside future constraints.
 
 ## Phase 5A decisions
 
@@ -269,6 +271,77 @@ financial decisions alongside remaining future constraints.
   batches, not equality with the entire AP control account. Legitimate AP opening
   balances can exist outside the Vendor source subledger.
 
+## Phase 5F Purchase and Vendor Price History decisions
+
+- **Authoritative History Source**: Only coherent, posted purchases (`Purchase::STATUS_POSTED`
+  with non-null `purchase_number` and `posted_at`) constitute historical purchase and price history.
+  Drafts, voids, deleted documents, and cross-company records are strictly excluded.
+- **Snapshot Preservation Across Master-Data Lifecycle**: Historical price records read line-level
+  snapshots (`product_name_ar/en`, `product_sku`, `unit_name_ar/en`, and Vendor name/address/contact fields in `vendor_snapshot`) rather than
+  mutable master data. Missing/malformed historical display identity fails closed; language fallback
+  stays within persisted snapshots. Vendor code is not frozen by the current Purchase snapshot contract
+  and remains null unless explicitly present in a historical snapshot. Retired Product identity remains
+  visible but its Product-detail link is suppressed; the Purchase link remains available when authorized.
+- **Purchase Returns Invariant**: Corrective purchase returns record return movements and relief,
+  but never erase, diminish, or rewrite the original purchase price history line or its vendor charge.
+- **Deterministic, Company-Scoped Query Contract**:
+  - `ProductPurchaseHistoryQuery`: Retrieves recent authoritative purchase price lines for a product
+    across all vendors, scoped strictly to the authenticated tenant company, with deterministic
+    ordering (`purchases.purchase_date` DESC, `purchases.id` DESC, `purchase_lines.line_number` ASC)
+    and bounded recent-line limits (1–100 items).
+  - `VendorProductHistoryQuery`: Retrieves recent purchase price lines for a vendor across products,
+    and provides a `productsSupplied()` aggregation summarizing distinct products supplied with
+    latest purchase date, latest unit cost, latest net commercial price per base unit, distinct Purchase
+    count, and cumulative base quantity within the advertised recent-line window.
+  - `VendorProductPriceHistoryQuery`: Queries historical price lines for a specific vendor + product
+    pair, and provides a `latest()` convenience helper.
+- **Historical Net Commercial Price per Base Unit Metric**:
+  - Raw historical unit prices (`unit_cost`), transaction currency, line discount, and unit are displayed
+    faithfully with preserved precision (no rounding to currency minor units).
+  - For cross-transaction and cross-unit comparison, the system derives an explicitly labeled comparative
+    metric: **Historical Net Commercial Price per Base Unit**, derived from persisted tax-separated book components:
+    `net_commercial_price_per_base_unit = (line_total_base - line_tax_base) / quantity_base`
+  - Arithmetic uses exact `BigDecimal` operations with 6 decimal places and `RoundingMode::HALF_UP`.
+  - The metric reflects commercial price after line discounts, strictly excludes both inclusive and exclusive
+    tax, applies the historical transaction exchange rate, and normalizes to the product's base unit in company
+    base currency.
+  - If `quantity_base` is zero or negative, the metric is omitted (`null`). The metric is accompanied by an
+    explanatory caption in the UI. It is never confused with or substituted for moving-average inventory
+    valuation (`InventoryCostState`).
+- **Canonical Coherence and History Invariants**:
+  - `PurchaseHistoryProvenance` validates all selected lines in one joined read: exact same-company
+    Purchase/line/master ownership, Posted number/actor/timestamp metadata, and the referenced Posted
+    original batch with `source_type = purchase` and `source_id = Purchase.id`. Normal history reads
+    do not replay inventory lots, stock movements or posting lines; deep `validatePosted()` remains
+    authoritative for reconciliation and posting retries outside this read model.
+  - Stored null SKUs remain null and are never overwritten by subsequent mutable product master SKUs.
+  - Unsnapshotted vendor codes remain null and are never invented or fallen back from mutable master vendor data.
+- **Server-Side Security, Centralized Guard, and Cost Protection**:
+  - Centralized `PurchasingHistoryGuard` validates authentication, active company context matching requested company,
+    active company user membership, same-company entity ownership, and `purchasing.cost.view` permission for all
+    query entry points.
+  - When `purchasing.cost.view` is absent, the Purchase Price History tab on `ProductDetail` and the Products
+    tab on `VendorDetail` are completely omitted from the rendered UI, and no price, discount, or cost data
+    is serialized or transmitted to the client. CSS-only redaction is strictly prohibited.
+  - Stale Livewire requests that attempt to activate price history tabs without `purchasing.cost.view`
+    reauthorize server-side and automatically revert to the `overview` tab.
+  - Surface permissions remain enforced: `inventory.stock.view` or `inventory.product.manage` for product
+    access, and `vendors.view` for vendor access.
+  - Transaction hyperlinks to `purchases.show` require `purchasing.purchase.view`; when absent, document
+    numbers render as plain text. Product links in vendor history require product view permissions.
+  - The lightweight hint on `PurchaseForm` displays the last unit cost, original unit, and date for the selected vendor
+    and product pair only when `purchasing.cost.view` is held; it is batched via `latestForProducts` to avoid N+1 queries,
+    purely informational, and never overwrites, mutates, or sets draft line unit costs or default catalog prices.
+- **Bounded Queries and Aggregation Accuracy**:
+  - `productsSupplied` summary is bounded to the latest 100 posted lines (up to 50 product summaries by default, clamped 1-100) and counts distinct purchase documents
+    within that window, rather than counting purchase lines as documents.
+  - Zero database migrations, zero price cache tables, and zero `last_vendor_price` columns are introduced.
+  - Read queries and UI interactions cause zero mutations to `purchases`, `purchase_lines`, `posting_batches`,
+    `posting_lines`, `stock_movements`, `inventory_balances`, or `inventory_cost_states`.
+  - Query performance relies on existing composite indexes on `purchases` (`company_id, status, purchase_date`
+    and `company_id, vendor_id, purchase_date`) and `purchase_lines` (`company_id, product_id` and
+    `company_id, purchase_id`), verified via MariaDB `EXPLAIN` to utilize index scans.
+
 ## Verification
 
 Disposable local MariaDB is authoritative for tenant/RBAC, validation, role upgrade,
@@ -277,3 +350,10 @@ Arabic RTL and English LTR screens use existing responsive tokens and components
 Phase 5C, 5D, and 5E tests additionally verify exact receipt/GL equality, lot residuals,
 immutable provenance, authorization, idempotency, AP book relief, realized FX, and atomic rollback.
 Phase 5A/5B retain their configuration-only and side-effect-free Draft boundaries.
+Phase 5F tests verify exact comparative net commercial pricing, tenant isolation, snapshot preservation
+after entity retirement, returns preservation, authorization gating, redaction without cost view,
+and zero database mutations.
+
+### Bounded history reads
+
+Vendor product summary counts and quantities refer only to the latest 100 coherent posted Purchase lines, explicitly labeled in the UI; they are not all-time totals. All contributing lines pass the lightweight batched canonical-source provenance check. Batched form hints rank latest rows per Product in SQL and hydrate only those rows (at most 100 Products), so old history is not hydrated merely to show a latest-price hint. No deep posting replay occurs during history rendering. Product identities are validated against persisted same-company rows, including retired master records. No pagination or price cache is implied.
