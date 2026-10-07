@@ -1,6 +1,6 @@
 # ADR 0006: Money, Transfers, Cross-Currency Settlement and Checks
 
-Status: Phase 6 implemented candidate / awaiting independent review. Not merged or deployed.
+Status: Phase 6 Complete / Accepted Source / Merged / Deployed. Phase 6 accepted source `3d32c80a2b437c8e7245e7c5b4f6ee16298ca172` merged through PR #14 on 2026-10-07 at `51adf805a85de72c3f15c764bc2eac7786f4efd1`. Deployed to production on 2026-10-07. Phase 7 remains unstarted.
 
 Baseline: `2c878a18bb8f82b83c83b007d99b4789ee3f84b3` (Phase 5 complete).
 
@@ -149,5 +149,5 @@ Private Check images are optional and not implemented in this candidate. No OCR,
 endorsement/factoring, bank feeds, bank-statement matching, automatic live FX,
 card processing or new overdraft policy. Check settlement Bank currency must equal
 instrument currency. Operational Money views are not the Phase 8 reporting suite.
-No Phase 7 expenses, payroll, employees or landed cost is included. This candidate
-does not authorize merge, deployment or Hostinger access.
+No Phase 7 expenses, payroll, employees or landed cost is included. Phase 7
+remains unstarted.
