@@ -165,6 +165,7 @@
                             <label class="block text-xs">{{ __('money.payment_consumed') }} ({{ $payment->currency_code }})<input type="text" inputmode="decimal" wire:model="creditPaymentAmounts.{{ $purchase['id'] }}" class="w-full border-border rounded-control p-2" dir="ltr" /></label>
                             @endif
                             @error('creditAmounts.' . $purchase['id']) <span class="text-danger text-[11px] block mt-1">{{ $message }}</span> @enderror
+                            @error('creditPaymentAmounts.' . $purchase['id']) <span class="text-danger text-[11px] block mt-1">{{ $message }}</span> @enderror
                         </div>
                     </div>
                 @empty

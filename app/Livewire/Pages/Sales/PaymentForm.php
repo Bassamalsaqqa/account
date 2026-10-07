@@ -210,10 +210,23 @@ class PaymentForm extends Component
 
     public function recalculateAllocations(): void
     {
+        $this->validate($this->allocationRules());
         $preview = app(ReceiptPreview::class)->calculate($this->amount, $this->exchange_rate, $this->allocations, $this->currency_code);
         $this->allocations = $preview['allocations'];
         $this->allocatedTotal = $preview['allocated'];
         $this->unallocatedAmount = $preview['unallocated'];
+    }
+
+    /** @return array<string, list<string>> */
+    private function allocationRules(): array
+    {
+        // Blank edits are zero; nonblank input must be an exact decimal before preview or posting.
+        $decimal = ['nullable', 'string', 'regex:/^(?:\s*|-?\d+(?:\.\d{1,6})?)$/D'];
+
+        return [
+            'allocations.*.allocated_amount' => $decimal,
+            'allocations.*.payment_currency_amount' => $decimal,
+        ];
     }
 
     public function save(PostCustomerPaymentAction $postAction): mixed
@@ -234,6 +247,7 @@ class PaymentForm extends Component
             'exchange_rate' => ['required', 'numeric', 'gt:0'],
             'reference_number' => ['nullable', 'string', 'max:100'],
             'notes' => ['nullable', 'string'],
+            ...$this->allocationRules(),
         ]);
 
         $pmtAmount = BigDecimal::of($this->amount);
@@ -241,7 +255,7 @@ class PaymentForm extends Component
         $allocatedSum = BigDecimal::zero();
 
         foreach ($this->allocations as $alloc) {
-            $amt = BigDecimal::of($alloc['allocated_amount'] ?: '0');
+            $amt = BigDecimal::of(trim((string) $alloc['allocated_amount']) === '' ? '0' : $alloc['allocated_amount']);
             if ($amt->isPositive()) {
                 $maxDue = BigDecimal::of($alloc['outstanding']);
                 if ($amt->isGreaterThan($maxDue)) {

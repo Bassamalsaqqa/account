@@ -75,11 +75,18 @@ class PaymentDetail extends Component
     public function applyCredit(ApplyCustomerPaymentCreditAction $action): void
     {
         $this->authorizeCredit();
-        $this->validate(['applicationDate' => ['required', 'date'], 'creditAmounts.*' => ['nullable', 'string', 'regex:/^\\d+(?:\\.\\d{1,6})?$/D']]);
+        $this->validate([
+            'applicationDate' => ['required', 'date'],
+            'creditAmounts.*' => ['nullable', 'string', 'regex:/^\\d+(?:\\.\\d{1,6})?$/D'],
+            'creditPaymentAmounts.*' => ['filled', 'string', 'regex:/^\\d+(?:\\.\\d{1,6})?$/D'],
+        ]);
         $targets = collect(app(SettlementTargetsQuery::class)->forParty((int) $this->payment->company_id, (int) $this->payment->customer_id, 'customer', 'allocate'))->keyBy('id');
         $allocations = [];
         foreach ($this->creditAmounts as $id => $amount) {
             if (trim($amount) !== '' && ! BigDecimal::of($amount)->isZero()) {
+                if (($targets->get($id)['currency'] ?? null) !== $this->payment->currency_code) {
+                    $this->validate(['creditPaymentAmounts.'.$id => ['required', 'string', 'regex:/^\\d+(?:\\.\\d{1,6})?$/D']]);
+                }
                 $allocations[] = ['sales_invoice_id' => (int) $id, 'allocated_amount' => $amount,
                     'payment_currency_amount' => ($targets->get($id)['currency'] ?? null) === $this->payment->currency_code ? (string) $amount : ($this->creditPaymentAmounts[$id] ?? ''), ];
             }

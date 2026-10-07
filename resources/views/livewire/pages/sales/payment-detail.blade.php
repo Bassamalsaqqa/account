@@ -87,6 +87,7 @@
                             <label class="block text-xs">{{ __('money.payment_consumed') }} ({{ $payment->currency_code }})<input type="text" inputmode="decimal" wire:model="creditPaymentAmounts.{{ $invoice['id'] }}" class="w-full border-border rounded-control p-2" dir="ltr" /></label>
                             @endif
                     @error('creditAmounts.'.$invoice['id'])<p class="text-danger text-xs">{{ $message }}</p>@enderror
+                    @error('creditPaymentAmounts.'.$invoice['id'])<p class="text-danger text-xs">{{ $message }}</p>@enderror
                 </div>
             @endforeach
             @error('creditAmounts')<p class="text-danger">{{ $message }}</p>@enderror

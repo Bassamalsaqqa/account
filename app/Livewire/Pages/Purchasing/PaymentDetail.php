@@ -90,12 +90,16 @@ class PaymentDetail extends Component
         $this->validate([
             'applicationDate' => ['required', 'date'],
             'creditAmounts.*' => ['nullable', 'string', 'regex:/^\d+(?:\.\d{1,6})?$/D'],
+            'creditPaymentAmounts.*' => ['filled', 'string', 'regex:/^\d+(?:\.\d{1,6})?$/D'],
         ]);
 
         $targets = collect(app(SettlementTargetsQuery::class)->forParty((int) $this->payment->company_id, (int) $this->payment->vendor_id, 'vendor', 'allocate'))->keyBy('id');
         $allocations = [];
         foreach ($this->creditAmounts as $id => $amount) {
             if (trim((string) $amount) !== '' && ! BigDecimal::of((string) $amount)->isZero()) {
+                if (($targets->get($id)['currency'] ?? null) !== $this->payment->currency_code) {
+                    $this->validate(['creditPaymentAmounts.'.$id => ['required', 'string', 'regex:/^\d+(?:\.\d{1,6})?$/D']]);
+                }
                 $allocations[] = [
                     'purchase_id' => (int) $id,
                     'allocated_amount' => (string) $amount,
