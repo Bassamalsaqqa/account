@@ -82,6 +82,13 @@ final class AllocateLandedCostAction
 
             app(Phase7History::class)->validate($lockedExpense);
 
+            $purchaseDate = $lockedPurchase->purchase_date->toDateString();
+            $expenseDate = $lockedExpense->expense_date->toDateString();
+
+            if ($expenseDate > $purchaseDate) {
+                throw new InvalidArgumentException("Expense date [{$expenseDate}] cannot be after purchase date [{$purchaseDate}].");
+            }
+
             // An expense cannot span purchases
             $otherPurchaseAllocations = LandedCostAllocation::where('company_id', $company->id)
                 ->where('expense_id', $lockedExpense->id)

@@ -28,7 +28,11 @@
                 <select wire:model.live="employeeId" class="w-full rounded-control border border-border bg-white px-3 py-2 text-sm focus:border-primary focus:ring-primary" required>
                     <option value="">{{ __('payroll.select_employee') }}</option>
                     @foreach($employees as $emp)
-                        <option value="{{ $emp->id }}">{{ $emp->name }} ({{ $emp->code }})</option>
+                        @php
+                            $isRetired = (! $emp->active) || ($emp->deleted_at !== null);
+                            $statusSuffix = $isRetired ? ' — ' . ($emp->deleted_at !== null ? __('payroll.archived') : __('payroll.inactive')) : '';
+                        @endphp
+                        <option value="{{ $emp->id }}">{{ $emp->name }} ({{ $emp->code }}){{ $statusSuffix }}</option>
                     @endforeach
                 </select>
                 @error('employeeId') <span class="text-xs text-rose-600">{{ $message }}</span> @enderror

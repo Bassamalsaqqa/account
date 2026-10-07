@@ -78,7 +78,7 @@ final class PayrollReadService
         $hasManage = app(Phase7FinancialRead::class)->allows($companyId, 'employees.manage');
 
         if (! $hasSalaryView) {
-            $employee = Employee::where('company_id', $companyId)->select($this->identityColumns())->findOrFail($employee->id);
+            $employee = Employee::withTrashed()->where('company_id', $companyId)->select($this->identityColumns())->findOrFail($employee->id);
             $employee->setAttribute('default_salary', null);
             $employee->setAttribute('salary_currency_code', null);
         }
@@ -284,6 +284,6 @@ final class PayrollReadService
     /** @return list<string> */
     public function identityColumns(): array
     {
-        return ['id', 'public_id', 'company_id', 'code', 'name', 'phone', 'job_title', 'hire_date', 'active', 'notes', 'created_at', 'updated_at'];
+        return ['id', 'public_id', 'company_id', 'code', 'name', 'phone', 'job_title', 'hire_date', 'active', 'notes', 'created_at', 'updated_at', 'deleted_at'];
     }
 }

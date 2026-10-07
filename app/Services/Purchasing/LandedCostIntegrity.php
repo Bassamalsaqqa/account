@@ -35,7 +35,7 @@ final class LandedCostIntegrity
             $expense = Expense::where('company_id', $cid)->findOrFail($id);
             app(Phase7History::class)->validate($expense);
             $this->require($expense->status === 'posted' && $expense->classification === 'landed_cost'
-                && $expense->expense_date->lte($purchase->purchase_date), 'Eligible expense/chronology');
+                && $expense->expense_date->toDateString() <= $purchase->purchase_date->toDateString(), 'Eligible expense/chronology');
             $all = LandedCostAllocation::withoutGlobalScopes()->where('expense_id', $id)->whereIn('status', ['draft', 'locked'])->get();
             $sum = BigDecimal::zero();
             $seen = [];

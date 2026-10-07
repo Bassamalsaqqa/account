@@ -37,7 +37,7 @@ final class PurchaseReadModel
         }
         $data['warehouse_name'] = $purchase->warehouse->displayName();
         if ($withCost) {
-            $data += $purchase->only(['exchange_rate', 'subtotal_currency', 'discount_total_currency', 'tax_total_currency', 'grand_total_currency']);
+            $data += $purchase->only(['exchange_rate', 'subtotal_currency', 'discount_total_currency', 'tax_total_currency', 'grand_total_currency', 'base_currency_code']);
             $data['total_landed_cost_base'] = (string) $purchase->lines()->sum('landed_cost_allocated_base');
         }
         $fields = ['id', 'public_id', 'company_id', 'purchase_id', 'line_number', 'item_description', 'quantity', 'quantity_base',

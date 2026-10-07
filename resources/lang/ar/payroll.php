@@ -16,6 +16,7 @@ return [
     'salary_currency' => 'عملة الراتب',
     'active' => 'على رأس عمله',
     'inactive' => 'متوقف / غير نشط',
+    'archived' => 'مؤرشف',
     'notes' => 'ملاحظات',
     'status' => 'الحالة',
     'empty_employees' => 'لا يوجد موظفون مسجلون.',

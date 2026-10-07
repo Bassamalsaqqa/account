@@ -186,10 +186,7 @@ final class PostSalaryPaymentAction implements Phase7EventOwner
                 throw new InvalidArgumentException("Payment currency [{$currencyCode}] is not enabled in this company.");
             }
 
-            $employee = Employee::where('company_id', $lockedCompany->id)->lockForUpdate()->findOrFail($employeeId);
-            if (! $employee->active) {
-                throw new InvalidArgumentException("Employee [{$employee->code}] is inactive.");
-            }
+            $employee = Employee::withTrashed()->where('company_id', $lockedCompany->id)->lockForUpdate()->findOrFail($employeeId);
 
             $check = null;
             $cashLedgerAccount = null;

@@ -47,8 +47,15 @@ class EmployeeDetail extends Component
     {
         $this->authorizeMoney('payroll.advance.manage');
 
+        $employeeId = Employee::withTrashed()
+            ->where('company_id', $this->pageCompanyId)
+            ->where('public_id', $this->publicId)
+            ->value('id');
+
+        abort_if($employeeId === null, 404);
+
         $advance = EmployeeAdvance::where('company_id', $this->pageCompanyId)
-            ->where('employee_id', Employee::where('company_id', $this->pageCompanyId)->where('public_id', $this->publicId)->value('id'))
+            ->where('employee_id', $employeeId)
             ->findOrFail($advanceId);
 
         $this->validate([
@@ -75,8 +82,15 @@ class EmployeeDetail extends Component
     {
         $this->authorizeMoney('payroll.salary.reverse');
 
+        $employeeId = Employee::withTrashed()
+            ->where('company_id', $this->pageCompanyId)
+            ->where('public_id', $this->publicId)
+            ->value('id');
+
+        abort_if($employeeId === null, 404);
+
         $entry = SalaryEntry::where('company_id', $this->pageCompanyId)
-            ->where('employee_id', Employee::where('company_id', $this->pageCompanyId)->where('public_id', $this->publicId)->value('id'))
+            ->where('employee_id', $employeeId)
             ->findOrFail($entryId);
 
         $this->validate([
@@ -103,8 +117,15 @@ class EmployeeDetail extends Component
     {
         $this->authorizeMoney('payroll.salary.reverse');
 
+        $employeeId = Employee::withTrashed()
+            ->where('company_id', $this->pageCompanyId)
+            ->where('public_id', $this->publicId)
+            ->value('id');
+
+        abort_if($employeeId === null, 404);
+
         $payment = SalaryPayment::where('company_id', $this->pageCompanyId)
-            ->where('employee_id', Employee::where('company_id', $this->pageCompanyId)->where('public_id', $this->publicId)->value('id'))
+            ->where('employee_id', $employeeId)
             ->findOrFail($paymentId);
 
         $this->validate([
@@ -131,8 +152,18 @@ class EmployeeDetail extends Component
     {
         $this->authorizeMoney('employees.view');
 
-        $employee = Employee::where('company_id', $this->pageCompanyId)->when(! $this->canMoney('payroll.salary.view'), fn ($q) => $q->select(app(PayrollReadService::class)->identityColumns()))
+        $employee = Employee::withTrashed()
+            ->where('company_id', $this->pageCompanyId)
+            ->when(! $this->canMoney('payroll.salary.view'), fn ($q) => $q->select(app(PayrollReadService::class)->identityColumns()))
             ->where('public_id', $this->publicId)
+            ->where(function ($q) {
+                $q->whereNull('deleted_at')
+                    ->orWhere(function ($delQ) {
+                        $delQ->whereHas('advances')
+                            ->orWhereHas('salaryEntries')
+                            ->orWhereHas('salaryPayments');
+                    });
+            })
             ->firstOrFail();
 
         $readService = app(PayrollReadService::class);

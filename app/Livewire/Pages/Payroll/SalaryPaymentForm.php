@@ -18,6 +18,7 @@ use Carbon\Carbon;
 use Illuminate\Contracts\View\View;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Locked;
 use Livewire\Attributes\Url;
@@ -76,7 +77,9 @@ class SalaryPaymentForm extends Component
         $this->requestKey = (string) Str::uuid();
 
         if ($this->employeePublicId !== null) {
-            $emp = Employee::where('company_id', $this->pageCompanyId)->when(! $this->canMoney('payroll.salary.view'), fn ($q) => $q->select(app(PayrollReadService::class)->identityColumns()))
+            $emp = Employee::withTrashed()
+                ->where('company_id', $this->pageCompanyId)
+                ->when(! $this->canMoney('payroll.salary.view'), fn ($q) => $q->select(app(PayrollReadService::class)->identityColumns()))
                 ->where('public_id', $this->employeePublicId)
                 ->first();
             if ($emp !== null) {
@@ -92,7 +95,10 @@ class SalaryPaymentForm extends Component
 
     public function updatedEmployeeId(): void
     {
-        $emp = Employee::where('company_id', $this->pageCompanyId)->find($this->employeeId);
+        $emp = Employee::withTrashed()
+            ->where('company_id', $this->pageCompanyId)
+            ->when(! $this->canMoney('payroll.salary.view'), fn ($q) => $q->select(app(PayrollReadService::class)->identityColumns()))
+            ->find($this->employeeId);
         if ($emp !== null && $this->canMoney('payroll.salary.view') && $emp->salary_currency_code) {
             $this->currencyCode = $emp->salary_currency_code;
         }
@@ -136,7 +142,7 @@ class SalaryPaymentForm extends Component
         }
 
         $rules = [
-            'employeeId' => 'required|integer|exists:employees,id',
+            'employeeId' => ['required', 'integer', Rule::exists('employees', 'id')->where('company_id', $this->pageCompanyId)],
             'paymentDate' => 'required|date_format:Y-m-d',
             'currencyCode' => 'required|string|size:3',
             'exchangeRate' => 'required|numeric|gt:0',
@@ -215,7 +221,7 @@ class SalaryPaymentForm extends Component
                 'idempotency_key' => $this->requestKey,
             ]);
 
-            $emp = Employee::where('company_id', $this->pageCompanyId)->select(['id', 'public_id'])->findOrFail($this->employeeId);
+            $emp = Employee::withTrashed()->where('company_id', $this->pageCompanyId)->select(['id', 'public_id'])->findOrFail($this->employeeId);
             session()->flash('success', __('payroll.payment_success'));
             $this->redirect(route('employees.show', $emp->public_id), navigate: true);
         } catch (\InvalidArgumentException|MathException|ModelNotFoundException $e) {
@@ -227,8 +233,26 @@ class SalaryPaymentForm extends Component
     {
         $this->authorizeMoney('payroll.salary.pay');
 
-        $employees = Employee::where('company_id', $this->pageCompanyId)->when(! $this->canMoney('payroll.salary.view'), fn ($q) => $q->select(app(PayrollReadService::class)->identityColumns()))
-            ->where('active', true)
+        $companyId = $this->pageCompanyId;
+
+        $employees = Employee::withTrashed()
+            ->where('company_id', $companyId)
+            ->when(! $this->canMoney('payroll.salary.view'), fn ($q) => $q->select(app(PayrollReadService::class)->identityColumns()))
+            ->where(function ($q) use ($companyId) {
+                $q->where(function ($activeQ) {
+                    $activeQ->where('active', true)
+                        ->whereNull('deleted_at');
+                })->orWhere(function ($retiredQ) use ($companyId) {
+                    $retiredQ->where(function ($sub) {
+                        $sub->where('active', false)
+                            ->orWhereNotNull('deleted_at');
+                    })->whereHas('salaryEntries', function ($entryQ) use ($companyId) {
+                        $entryQ->where('company_id', $companyId)
+                            ->where('status', 'posted')
+                            ->whereRaw('(salary_entries.net_payable - (SELECT COALESCE(SUM(spa.allocated_amount), 0) FROM salary_payment_allocations spa WHERE spa.salary_entry_id = salary_entries.id AND spa.company_id = '.(int) $companyId.' AND spa.status = "active")) > 0');
+                    });
+                });
+            })
             ->orderBy('name')
             ->get();
 
@@ -242,7 +266,7 @@ class SalaryPaymentForm extends Component
         }
         $unpaidEntries = [];
         if ($this->employeeId !== null && $this->canMoney('payroll.salary.view')) {
-            $emp = Employee::where('company_id', $this->pageCompanyId)->find($this->employeeId);
+            $emp = Employee::withTrashed()->where('company_id', $this->pageCompanyId)->find($this->employeeId);
             if ($emp !== null) {
                 $positions = app(PayrollReadService::class)->salaryPositions($emp, auth()->user());
                 $unpaidEntries = array_filter($positions, fn ($p) => $p['is_unpaid'] && $p['currency_code'] === $this->currencyCode);

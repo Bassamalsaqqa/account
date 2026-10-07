@@ -179,7 +179,7 @@ final class CheckCreation
                 $partySnapshot = ['payee_name' => $intent['expense_data']['description'] ?? 'مصروف'];
             }
         } elseif ($sourceType === 'employee_advance' || $sourceType === 'salary_payment') {
-            $employee = Employee::where('company_id', $company->id)->lockForUpdate()->findOrFail($intent['employee_id']);
+            $employee = Employee::withTrashed()->where('company_id', $company->id)->lockForUpdate()->findOrFail($intent['employee_id']);
             $partySnapshot = [
                 'employee_id' => (int) $employee->id,
                 'code' => $employee->code,

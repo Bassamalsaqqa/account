@@ -33,9 +33,9 @@
                     @if($withCost)
                         @foreach(['unit_cost', 'line_discount', 'line_tax', 'line_total'] as $field)<div><dt class="text-xs text-text-secondary">{{ __('purchasing.'.$field) }}</dt><dd><bdi>{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::format($line[$field], $document['currency_code']) }}</bdi></dd></div>@endforeach
                         @if(!empty($line['landed_cost_allocated_base']) && \Brick\Math\BigDecimal::of($line['landed_cost_allocated_base'])->isPositive())
-                            <div><dt class="text-xs text-text-secondary">{{ __('purchasing.landed_cost') }}</dt><dd><bdi>{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::format($line['landed_cost_allocated_base'], $document['currency_code']) }}</bdi></dd></div>
+                            <div><dt class="text-xs text-text-secondary">{{ __('purchasing.landed_cost') }}</dt><dd><bdi>{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::format($line['landed_cost_allocated_base'], $document['base_currency_code']) }} {{ $document['base_currency_code'] }}</bdi></dd></div>
                             @if(!empty($line['inventory_unit_cost_base']))
-                                <div><dt class="text-xs text-text-secondary">{{ __('purchasing.inventory_unit_cost') }}</dt><dd><bdi>{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::format($line['inventory_unit_cost_base'], $document['currency_code']) }}</bdi></dd></div>
+                                <div><dt class="text-xs text-text-secondary">{{ __('purchasing.inventory_unit_cost') }}</dt><dd><bdi>{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::format($line['inventory_unit_cost_base'], $document['base_currency_code']) }} {{ $document['base_currency_code'] }}</bdi></dd></div>
                             @endif
                         @endif
                     @endif
@@ -53,7 +53,7 @@
             @if(!empty($document['total_landed_cost_base']) && \Brick\Math\BigDecimal::of($document['total_landed_cost_base'])->isPositive())
                 <div class="col-span-full border-t border-border pt-3 flex justify-between items-center text-sm">
                     <span class="font-bold text-text-secondary">{{ __('purchasing.total_landed_cost') }}</span>
-                    <p class="font-bold font-mono" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::format($document['total_landed_cost_base'], $document['currency_code']) }} {{ $document['currency_code'] }}</p>
+                    <p class="font-bold font-mono" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::format($document['total_landed_cost_base'], $document['base_currency_code']) }} {{ $document['base_currency_code'] }}</p>
                 </div>
             @endif
         </section>
@@ -64,7 +64,7 @@
                 <h2 class="font-bold text-sm text-text-primary">{{ __('purchasing.landed_costs') }}</h2>
                 @if(!empty($document['total_landed_cost_base']) && \Brick\Math\BigDecimal::of($document['total_landed_cost_base'])->isPositive())
                     <span class="text-xs font-semibold text-text-secondary">
-                        {{ __('purchasing.total_landed_cost') }}: <bdi class="font-mono text-text-primary">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::format($document['total_landed_cost_base'], $document['currency_code']) }} {{ $document['currency_code'] }}</bdi>
+                        {{ __('purchasing.total_landed_cost') }}: <bdi class="font-mono text-text-primary">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::format($document['total_landed_cost_base'], $document['base_currency_code']) }} {{ $document['base_currency_code'] }}</bdi>
                     </span>
                 @endif
             </div>
@@ -90,7 +90,7 @@
                             </div>
                             <div class="flex items-center gap-3">
                                 <span class="font-bold font-mono text-sm" dir="ltr">
-                                    {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::format($allocations->sum('allocated_base'), $document['currency_code']) }} {{ $document['currency_code'] }}
+                                    {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::format($allocations->sum('allocated_base'), $document['base_currency_code']) }} {{ $document['base_currency_code'] }}
                                 </span>
                                 @if($canManageLanded)
                                     <button type="button" wire:click="removeLandedCost({{ $expenseId }})" wire:confirm="{{ __('purchasing.remove_landed_cost') }}?" class="px-2.5 py-1 rounded bg-danger/10 text-danger hover:bg-danger/20 font-semibold transition-colors">

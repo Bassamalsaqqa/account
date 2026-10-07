@@ -18,22 +18,22 @@
             </div>
         </div>
         <div class="flex flex-wrap items-center gap-2">
-            @if($detail['has_manage'])
+            @if($detail['has_manage'] && ! $employee->trashed())
                 <a href="{{ route('employees.edit', $employee->public_id) }}" class="inline-flex items-center rounded-control border border-border bg-white px-3 py-2 text-sm font-semibold text-text-secondary hover:bg-surface-soft">
                     {{ __('payroll.edit_employee') }}
                 </a>
             @endif
-            @if($detail['has_advance_manage'] && $employee->active)
+            @if($detail['has_advance_manage'] && $employee->active && ! $employee->trashed())
                 <a href="{{ route('payroll.advances.create', ['employee' => $employee->public_id]) }}" class="inline-flex items-center rounded-control border border-border bg-white px-3 py-2 text-sm font-semibold text-text-secondary hover:bg-surface-soft">
                     {{ __('payroll.create_advance') }}
                 </a>
             @endif
-            @if($canPostSalary && $employee->active)
+            @if($canPostSalary && $employee->active && ! $employee->trashed())
                 <a href="{{ route('payroll.salary-entries.create', ['employee' => $employee->public_id]) }}" class="inline-flex items-center rounded-control bg-primary px-3 py-2 text-sm font-semibold text-white hover:bg-primary-hover">
                     {{ __('payroll.create_salary_entry') }}
                 </a>
             @endif
-            @if($canPaySalary && $employee->active)
+            @if($canPaySalary)
                 <a href="{{ route('payroll.salary-payments.create', ['employee' => $employee->public_id]) }}" class="inline-flex items-center rounded-control bg-emerald-600 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-700">
                     {{ __('payroll.create_salary_payment') }}
                 </a>
@@ -89,7 +89,11 @@
                 </div>
                 <div>
                     <span class="block text-xs font-semibold text-text-muted uppercase">{{ __('payroll.status') }}</span>
-                    @if($employee->active)
+                    @if($employee->trashed())
+                        <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-rose-100 text-rose-800">
+                            {{ __('payroll.archived') }}
+                        </span>
+                    @elseif($employee->active)
                         <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-emerald-100 text-emerald-800">
                             {{ __('payroll.active') }}
                         </span>

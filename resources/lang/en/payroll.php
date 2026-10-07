@@ -16,6 +16,7 @@ return [
     'salary_currency' => 'Salary Currency',
     'active' => 'Active',
     'inactive' => 'Inactive',
+    'archived' => 'Archived',
     'notes' => 'Notes',
     'status' => 'Status',
     'empty_employees' => 'No employees recorded.',

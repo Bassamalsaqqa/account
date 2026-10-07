@@ -72,10 +72,13 @@ class PurchaseDetail extends Component
                     ->whereIn('status', [LandedCostAllocation::STATUS_DRAFT, LandedCostAllocation::STATUS_LOCKED])
                     ->pluck('expense_id');
 
+                $purchaseDate = $purchase->purchase_date->toDateString();
+
                 $availableExpenses = Expense::where('company_id', $company->id)
                     ->where('status', Expense::STATUS_POSTED)
                     ->whereNull('reversed_at')
                     ->where('classification', Expense::CLASSIFICATION_LANDED_COST)
+                    ->where('expense_date', '<=', $purchaseDate)
                     ->whereNotIn('id', $alreadyAllocatedExpenseIds)
                     ->orderByDesc('expense_date')
                     ->get();

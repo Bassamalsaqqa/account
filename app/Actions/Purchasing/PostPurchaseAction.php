@@ -103,7 +103,7 @@ final class PostPurchaseAction
                             if ($expense === null || $expense->status !== Expense::STATUS_POSTED || $expense->reversed_at !== null || $expense->classification !== Expense::CLASSIFICATION_LANDED_COST) {
                                 throw new \InvalidArgumentException(__('purchasing.post_integrity_failed'));
                             }
-                            if ($locked->purchase_date->lt($expense->expense_date)) {
+                            if ($locked->purchase_date->toDateString() < $expense->expense_date->toDateString()) {
                                 throw new \InvalidArgumentException('The purchase business date cannot precede the attached landed cost expense date.');
                             }
 

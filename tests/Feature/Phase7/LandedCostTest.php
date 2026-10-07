@@ -303,7 +303,25 @@ class LandedCostTest extends Phase7TestCase
             ['product_id' => $this->stockProduct1->id, 'quantity' => '10', 'unit_cost' => '100', 'lots' => []],
         ], '2026-10-02');
 
-        app(AllocateLandedCostAction::class)->execute($purchase, $expense, LandedCostAllocation::METHOD_VALUE, $this->owner);
+        // AllocateLandedCostAction rejects post-dated expense before allocation mutation
+        try {
+            app(AllocateLandedCostAction::class)->execute($purchase, $expense, LandedCostAllocation::METHOD_VALUE, $this->owner);
+            $this->fail('Expected AllocateLandedCostAction to reject post-dated expense.');
+        } catch (InvalidArgumentException $e) {
+            $this->assertStringContainsString('cannot be after purchase date', $e->getMessage());
+        }
+
+        // Canonical posting defense fails closed if bypassed
+        $line = $purchase->lines()->first();
+        LandedCostAllocation::create([
+            'company_id' => $this->company->id,
+            'purchase_id' => $purchase->id,
+            'purchase_line_id' => $line->id,
+            'expense_id' => $expense->id,
+            'allocation_method' => LandedCostAllocation::METHOD_VALUE,
+            'allocated_base' => '100.000000',
+            'status' => LandedCostAllocation::STATUS_DRAFT,
+        ]);
 
         $this->expectException(InvalidArgumentException::class);
         $this->expectExceptionMessage('Eligible expense/chronology');
