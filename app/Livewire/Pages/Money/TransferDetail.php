@@ -38,7 +38,7 @@ class TransferDetail extends Component
     public function reverse(): void
     {
         $this->authorizeMoney('money.transfer.reverse');
-        $this->validate(['reason' => 'nullable|string|max:2000']);
+        $this->validate(['reason' => 'nullable|string|max:500']);
         try {
             app(ReverseMoneyTransferAction::class)->execute($this->transfer(), auth()->user(), reason: $this->reason);
         } catch (\InvalidArgumentException $exception) {
