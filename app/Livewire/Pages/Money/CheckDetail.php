@@ -59,7 +59,11 @@ class CheckDetail extends Component
     {
         $check = $this->instrument();
         $this->authorizeCheckDirection($check->direction, true);
-        $this->validate(['eventDate' => 'required|date_format:Y-m-d', 'notes' => 'nullable|string|max:2000']);
+        $rules = ['eventDate' => 'required|date_format:Y-m-d', 'notes' => 'nullable|string|max:2000'];
+        if ($type === 'deposit') {
+            $rules['bankId'] = 'required|integer|min:1';
+        }
+        $this->validate($rules);
         try {
             app(TransitionCheckAction::class)->execute($check, auth()->user(), ['event_type' => $type, 'event_date' => $this->eventDate,
                 'idempotency_key' => $this->requestKey, 'money_account_id' => $type === 'deposit' ? $this->bankId : null, 'exchange_rate' => $this->rate, 'notes' => $this->notes]);

@@ -151,7 +151,13 @@ final class CheckHistory
                 if (! $incoming || $state !== 'received' || $event->to_status !== 'deposited' || $event->posting_batch_id !== null) {
                     throw new InvalidArgumentException('Check deposit provenance mismatch.');
                 }
-                $bank = MoneyAccount::withTrashed()->where('company_id', $check->company_id)->findOrFail($event->money_account_id);
+                if ($event->money_account_id === null) {
+                    throw new InvalidArgumentException('Check deposit history is missing its settlement Bank.');
+                }
+                $bank = MoneyAccount::withTrashed()->where('company_id', $check->company_id)->find($event->money_account_id);
+                if ($bank === null) {
+                    throw new InvalidArgumentException('Check deposit history has no same-company settlement Bank.');
+                }
                 $ledger = app(MoneyAccountLedger::class)->validate($bank);
                 if ($bank->account_type !== 'bank' || $bank->currency_code !== $check->currency_code || $event->ledger_account_id !== $ledger->id
                     || $event->exchange_rate !== null || $event->settlement_base !== null || $event->fx_gain_loss_base !== null) {

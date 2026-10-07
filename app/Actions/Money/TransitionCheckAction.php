@@ -53,6 +53,9 @@ final class TransitionCheckAction implements MoneyEventOwner
             'event_type' => $type, 'event_date' => $date,
             'money_account_id' => isset($data['money_account_id']) ? ReceiptRequestValues::id($data['money_account_id']) : null,
             'exchange_rate' => $type === 'clear' ? ReceiptRequestValues::decimal($data['exchange_rate'], 10) : null, 'notes' => MoneyValues::text($data['notes'] ?? null)];
+        if ($type === 'deposit' && $intent['money_account_id'] === null) {
+            throw new InvalidArgumentException('Check deposit requires a settlement Bank.');
+        }
         $hash = hash('sha256', json_encode($intent, JSON_THROW_ON_ERROR));
 
         return DB::transaction(function () use ($check, $actor, $key, $type, $date, $intent, $hash): CheckEvent {
@@ -92,10 +95,16 @@ final class TransitionCheckAction implements MoneyEventOwner
                     throw new InvalidArgumentException('Only an eligible due Check may clear.');
                 }
                 $bankId = $incoming ? ($type === 'deposit' ? $intent['money_account_id'] : $events->last()->money_account_id) : $check->drawn_money_account_id;
+                if ($bankId === null) {
+                    throw new InvalidArgumentException('Check settlement Bank is missing from intent or recorded history.');
+                }
                 if ($intent['money_account_id'] !== null && $type === 'clear' && (int) $intent['money_account_id'] !== (int) $bankId) {
                     throw new InvalidArgumentException('Clearance must use the recorded settlement Bank.');
                 }
-                $bank = MoneyAccount::where('company_id', $company->id)->lockForUpdate()->findOrFail($bankId);
+                $bank = MoneyAccount::where('company_id', $company->id)->lockForUpdate()->find($bankId);
+                if ($bank === null) {
+                    throw new InvalidArgumentException('Check settlement Bank is unavailable in this Company.');
+                }
                 $ledger = app(MoneyAccountLedger::class)->validate($bank, true);
                 if ($bank->account_type !== 'bank' || $bank->currency_code !== $check->currency_code) {
                     throw new InvalidArgumentException('Check Bank currency mismatch.');
