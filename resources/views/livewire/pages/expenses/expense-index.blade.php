@@ -98,7 +98,7 @@
                                 {{ $exp->expense_date->toDateString() }}
                             </td>
                             <td class="px-4 py-3 text-text-secondary">
-                                {{ $exp->category ? (app()->getLocale() === 'en' ? ($exp->category->name_en ?: $exp->category->name_ar) : $exp->category->name_ar) : '-' }}
+                                {{ app()->getLocale() === 'en' ? ($exp->category_snapshot['name_en'] ?: $exp->category_snapshot['name_ar']) : ($exp->category_snapshot['name_ar'] ?: $exp->category_snapshot['name_en']) }}
                             </td>
                             <td class="px-4 py-3 text-text-secondary max-w-xs truncate" title="{{ $exp->description }}">
                                 {{ $exp->description }}

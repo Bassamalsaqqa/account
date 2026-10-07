@@ -32,6 +32,7 @@
                         <span class="block text-xs text-text-muted">{{ __('expenses.operating_hint') }}</span>
                     </div>
                 </label>
+                @if($canLandedCost)
                 <label class="flex items-start gap-3 p-3 rounded-control border cursor-pointer {{ $classification === 'landed_cost' ? 'border-primary bg-primary-50' : 'border-border' }}">
                     <input type="radio" wire:model.live="classification" value="landed_cost" class="mt-1 text-primary focus:ring-primary">
                     <div>
@@ -39,6 +40,7 @@
                         <span class="block text-xs text-text-muted">{{ __('expenses.landed_cost_hint') }}</span>
                     </div>
                 </label>
+                @endif
             </div>
         </div>
 
