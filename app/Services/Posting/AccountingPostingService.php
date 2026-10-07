@@ -25,6 +25,7 @@ use App\Models\PostingLine;
 use App\Models\User;
 use App\Services\Money\MoneyAccountLedger;
 use App\Services\Money\MoneyEventScope;
+use App\Services\Phase7\Phase7EventScope;
 use App\Support\Tenancy\CompanyContext;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\QueryException;
@@ -40,11 +41,23 @@ class AccountingPostingService
      */
     public function post(PostingCommand $command): PostingBatch
     {
+        if (in_array($command->sourceType, ['expense', 'employee_advance', 'salary_entry', 'salary_payment'], true)) {
+            app(Phase7EventScope::class)->assertCommand($command);
+        }
         if (in_array($command->sourceType, ['money_transfer', 'check_event'], true)) {
             app(MoneyEventScope::class)->assertCommand($command);
         }
-        if (in_array($command->sourceType, ['customer_payment', 'vendor_payment'], true) && DB::table($command->sourceType === 'customer_payment' ? 'customer_payments' : 'vendor_payments')->where('company_id', $command->company->id)->where('id', $command->sourceId)->whereNotNull('check_id')->exists()) {
-            app(MoneyEventScope::class)->assertCommand($command);
+        if (in_array($command->sourceType, ['customer_payment', 'vendor_payment', 'expense', 'employee_advance', 'salary_payment'], true)) {
+            $table = match ($command->sourceType) {
+                'customer_payment' => 'customer_payments',
+                'vendor_payment' => 'vendor_payments',
+                'expense' => 'expenses',
+                'employee_advance' => 'employee_advances',
+                'salary_payment' => 'salary_payments',
+            };
+            if (DB::table($table)->where('company_id', $command->company->id)->where('id', $command->sourceId)->whereNotNull('check_id')->exists()) {
+                app(MoneyEventScope::class)->assertCommand($command);
+            }
         }
         // Reversal batches cannot be created via post(). Use AccountingReversalService.
         if ($command->sourceType === 'reversal') {
@@ -350,6 +363,9 @@ class AccountingPostingService
      */
     public function reverse(PostingBatch $original, User $actingUser, ?string $reason = null, ?string $postingDate = null): PostingBatch
     {
+        if (in_array($original->source_type, ['expense', 'employee_advance', 'salary_entry', 'salary_payment'], true)) {
+            app(Phase7EventScope::class)->assertReversal($original, $actingUser, $postingDate);
+        }
         if (in_array($original->source_type, ['customer_payment', 'vendor_payment'], true) && DB::table($original->source_type === 'customer_payment' ? 'customer_payments' : 'vendor_payments')->where('company_id', $original->company_id)->where('id', $original->source_id)->whereNotNull('check_id')->exists()) {
             app(MoneyEventScope::class)->assertReversal($original, $actingUser, $postingDate);
         }

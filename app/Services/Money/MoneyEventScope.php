@@ -190,7 +190,14 @@ final class MoneyEventScope
     public function prepareCheckPaymentCommand(PostingCommand $command, int $checkId, string $direction): void
     {
         $check = $this->checkForPayment($checkId, (int) $command->company->id, $command->postedBy, $direction);
-        $table = $direction === 'incoming' ? 'customer_payments' : 'vendor_payments';
+        $table = match ($command->sourceType) {
+            'customer_payment' => 'customer_payments',
+            'vendor_payment' => 'vendor_payments',
+            'expense' => 'expenses',
+            'employee_advance' => 'employee_advances',
+            'salary_payment' => 'salary_payments',
+            default => throw new LogicException("Unsupported check payment command source type: {$command->sourceType}"),
+        };
         if (! DB::table($table)->where('company_id', $this->companyId)->where('id', $command->sourceId)->where('check_id', $check->id)->whereNull('posting_batch_id')->exists()) {
             throw new LogicException('Check Payment command does not belong to the prepared instrument.');
         }

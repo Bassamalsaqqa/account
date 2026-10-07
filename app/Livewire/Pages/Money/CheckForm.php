@@ -70,6 +70,9 @@ class CheckForm extends Component
     private function authorizeForm(): Company
     {
         $company = $this->authorizeCheckDirection($this->direction, true);
+        if ($this->direction === 'outgoing') {
+            $this->authorizeMoney('purchasing.cost.view');
+        }
         $this->authorizeMoney($this->direction === 'incoming' ? 'money.receipt.create' : 'money.vendor_payment.create');
 
         return $company;

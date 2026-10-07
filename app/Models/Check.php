@@ -65,4 +65,22 @@ final class Check extends Model
     {
         return $this->hasOne(VendorPayment::class);
     }
+
+    /** @return HasOne<Expense, $this> */
+    public function expense(): HasOne
+    {
+        return $this->hasOne(Expense::class);
+    }
+
+    /** @return HasOne<EmployeeAdvance, $this> */
+    public function employeeAdvance(): HasOne
+    {
+        return $this->hasOne(EmployeeAdvance::class);
+    }
+
+    /** @return HasOne<SalaryPayment, $this> */
+    public function salaryPayment(): HasOne
+    {
+        return $this->hasOne(SalaryPayment::class);
+    }
 }

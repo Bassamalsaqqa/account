@@ -12,7 +12,7 @@ use InvalidArgumentException;
 /** Exact acquisition value is authoritative; rounded unit cost is only a snapshot. */
 final class PurchaseAcquisitionValue
 {
-    public function line(PurchaseLine $line, ?int $taxAccountId): BigDecimal
+    public function commercial(PurchaseLine $line, ?int $taxAccountId): BigDecimal
     {
         $value = BigDecimal::of($line->line_total_base)->minus($taxAccountId === null ? '0' : $line->line_tax_base);
         if ($value->isNegative()) {
@@ -20,6 +20,18 @@ final class PurchaseAcquisitionValue
         }
 
         return $value->toScale(6);
+    }
+
+    public function line(PurchaseLine $line, ?int $taxAccountId, bool $includeLanded = true): BigDecimal
+    {
+        $commercial = $this->commercial($line, $taxAccountId);
+        if (! $includeLanded) {
+            return $commercial;
+        }
+
+        $landed = BigDecimal::of($line->landed_cost_allocated_base ?? '0');
+
+        return $commercial->plus($landed)->toScale(6);
     }
 
     public function unitCost(PurchaseLine $line, BigDecimal $value): string

@@ -14,6 +14,7 @@ use App\Services\Money\MoneyEventScope;
 use App\Services\Sales\ReceiptRequestValues;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\DB;
+use InvalidArgumentException;
 
 final class IssueCheckAction implements MoneyEventOwner
 {
@@ -29,15 +30,38 @@ final class IssueCheckAction implements MoneyEventOwner
     {
         $key = ReceiptRequestValues::key($data['idempotency_key']);
         $intent = app(CheckCreation::class)->intent($company, $actor, $data, 'outgoing');
+        $sourceType = (string) ($intent['source_type'] ?? 'vendor_payment');
 
-        return DB::transaction(function () use ($company, $actor, $intent, $key): Check {
+        return DB::transaction(function () use ($company, $actor, $intent, $key, $sourceType, $data): Check {
             $company = Company::lockForUpdate()->findOrFail($company->id);
             if ((int) auth()->id() !== (int) $actor->id) {
                 throw new AuthorizationException('Actor mismatch.');
             }
             app(MoneyActorGuard::class)->authorize((int) $company->id, 'money.check.outgoing.manage');
-            app(MoneyActorGuard::class)->authorize((int) $company->id, 'money.vendor_payment.create');
-            app(MoneyActorGuard::class)->authorize((int) $company->id, 'purchasing.cost.view');
+
+            match ($sourceType) {
+                'vendor_payment' => [
+                    app(MoneyActorGuard::class)->authorize((int) $company->id, 'money.vendor_payment.create'),
+                    app(MoneyActorGuard::class)->authorize((int) $company->id, 'purchasing.cost.view'),
+                ],
+                'expense' => [
+                    app(MoneyActorGuard::class)->authorize((int) $company->id, 'money.expense.manage'),
+                    (($intent['expense_data']['classification'] ?? $data['classification'] ?? 'operating') === 'landed_cost')
+                        ? [
+                            app(MoneyActorGuard::class)->authorize((int) $company->id, 'purchasing.cost.view'),
+                            app(MoneyActorGuard::class)->authorize((int) $company->id, 'purchasing.landed_cost.manage'),
+                        ]
+                        : null,
+                ],
+                'employee_advance' => [
+                    app(MoneyActorGuard::class)->authorize((int) $company->id, 'payroll.advance.manage'),
+                ],
+                'salary_payment' => [
+                    app(MoneyActorGuard::class)->authorize((int) $company->id, 'payroll.salary.pay'),
+                ],
+                default => throw new InvalidArgumentException("Unsupported outgoing check source type [{$sourceType}]."),
+            };
+
             if (($existing = app(CheckCreation::class)->existing($intent, $key)) !== null) {
                 return $existing;
             }

@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\ExpenseAttachmentController;
 use App\Http\Controllers\PdfDocumentController;
 use App\Http\Controllers\PublicShareController;
 use App\Livewire\Pages\Catalog\CategoryIndex;
@@ -8,6 +9,10 @@ use App\Livewire\Pages\Catalog\WarehouseIndex;
 use App\Livewire\Pages\Customers\CustomerDetail;
 use App\Livewire\Pages\Customers\CustomerForm;
 use App\Livewire\Pages\Customers\CustomerIndex;
+use App\Livewire\Pages\Expenses\ExpenseCategoryIndex;
+use App\Livewire\Pages\Expenses\ExpenseDetail;
+use App\Livewire\Pages\Expenses\ExpenseForm;
+use App\Livewire\Pages\Expenses\ExpenseIndex;
 use App\Livewire\Pages\Inventory\ExpiryCenter;
 use App\Livewire\Pages\Inventory\InventoryOverview;
 use App\Livewire\Pages\Inventory\OpeningStockForm;
@@ -22,6 +27,12 @@ use App\Livewire\Pages\Money\Overview;
 use App\Livewire\Pages\Money\TransferDetail;
 use App\Livewire\Pages\Money\TransferForm;
 use App\Livewire\Pages\Money\TransferIndex;
+use App\Livewire\Pages\Payroll\EmployeeAdvanceForm;
+use App\Livewire\Pages\Payroll\EmployeeDetail;
+use App\Livewire\Pages\Payroll\EmployeeForm;
+use App\Livewire\Pages\Payroll\EmployeeIndex;
+use App\Livewire\Pages\Payroll\SalaryEntryForm;
+use App\Livewire\Pages\Payroll\SalaryPaymentForm;
 use App\Livewire\Pages\Products\ProductDetail;
 use App\Livewire\Pages\Products\ProductForm;
 use App\Livewire\Pages\Products\ProductIndex;
@@ -212,6 +223,22 @@ Route::middleware(['auth'])->group(function () {
         Route::get('money/checks', CheckIndex::class)->name('money.checks.index');
         Route::get('money/checks/create/{direction}', CheckForm::class)->whereIn('direction', ['incoming', 'outgoing'])->name('money.checks.create');
         Route::get('money/checks/{publicId}', CheckDetail::class)->name('money.checks.show');
+
+        // Phase 7 Expenses
+        Route::get('expenses', ExpenseIndex::class)->name('expenses.index');
+        Route::get('expenses/create', ExpenseForm::class)->name('expenses.create');
+        Route::get('expenses/{publicId}', ExpenseDetail::class)->name('expenses.show');
+        Route::get('settings/expense-categories', ExpenseCategoryIndex::class)->name('expenses.categories');
+        Route::get('attachments/expenses/{publicId}', [ExpenseAttachmentController::class, 'download'])->name('attachments.expenses.download');
+
+        // Phase 7 Employees & Payroll
+        Route::get('employees', EmployeeIndex::class)->name('employees.index');
+        Route::get('employees/create', EmployeeForm::class)->name('employees.create');
+        Route::get('employees/{publicId}/edit', EmployeeForm::class)->name('employees.edit');
+        Route::get('employees/{publicId}', EmployeeDetail::class)->name('employees.show');
+        Route::get('payroll/advances/create', EmployeeAdvanceForm::class)->name('payroll.advances.create');
+        Route::get('payroll/salary-entries/create', SalaryEntryForm::class)->name('payroll.salary-entries.create');
+        Route::get('payroll/salary-payments/create', SalaryPaymentForm::class)->name('payroll.salary-payments.create');
 
         // Phase 4 PDFs
         Route::get('pdf/quotation/{publicId}', [PdfDocumentController::class, 'quotation'])->name('pdf.quotation');

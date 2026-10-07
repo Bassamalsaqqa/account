@@ -240,6 +240,16 @@
                         <span>{{ __('app.nav_checkbook') }}</span>
                     </a>
                     @endcan
+                    @can('money.expense.view')
+                    <a href="{{ route('expenses.index') }}"
+                       class="flex items-center justify-between h-[38px] px-3 rounded-control text-text-secondary hover:bg-surface-soft hover:text-text-primary font-semibold transition-colors
+                              {{ request()->routeIs('expenses.*') ? 'bg-primary-50 text-primary! font-bold shadow-[inset_3px_0_0_#255fd6] rtl:shadow-[inset_-3px_0_0_#255fd6]' : '' }}">
+                        <div class="flex items-center gap-2.5">
+                            <x-icon name="receipt" class="w-4.5 h-4.5" />
+                            <span>{{ __('app.nav_expenses') }}</span>
+                        </div>
+                    </a>
+                    @endcan
                     <span title="{{ __('app.future_module_notice') }}" class="flex items-center justify-between h-[38px] px-3 rounded-control text-text-muted opacity-60 cursor-not-allowed">
                         <div class="flex items-center gap-2.5">
                             <x-icon name="chart" class="w-4.5 h-4.5" />
@@ -248,6 +258,25 @@
                     </span>
                 </div>
             </div>
+
+            <!-- HR & Payroll -->
+            @can('employees.view')
+            <div class="space-y-1">
+                <div class="px-3 text-[10px] font-bold tracking-wider text-text-muted uppercase">
+                    {{ __('app.nav_group_hr_payroll') }}
+                </div>
+                <div class="space-y-0.5">
+                    <a href="{{ route('employees.index') }}"
+                       class="flex items-center justify-between h-[38px] px-3 rounded-control text-text-secondary hover:bg-surface-soft hover:text-text-primary font-semibold transition-colors
+                              {{ request()->routeIs('employees.*', 'payroll.*') ? 'bg-primary-50 text-primary! font-bold shadow-[inset_3px_0_0_#255fd6] rtl:shadow-[inset_-3px_0_0_#255fd6]' : '' }}">
+                        <div class="flex items-center gap-2.5">
+                            <x-icon name="users" class="w-4.5 h-4.5" />
+                            <span>{{ __('app.nav_employees') }}</span>
+                        </div>
+                    </a>
+                </div>
+            </div>
+            @endcan
 
             <!-- System -->
             <div class="space-y-1 pt-1">

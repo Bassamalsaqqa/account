@@ -4935,7 +4935,7 @@ Vendor
 
 ## Phase 6 — Money/checks
 
-Complete / Accepted Source / Merged / Deployed (Phase 6 accepted source `3d32c80a2b437c8e7245e7c5b4f6ee16298ca172` merged through PR #14 at `51adf805a85de72c3f15c764bc2eac7786f4efd1` and deployed on 2026-10-07; see ADR 0006. Phase 7 remains unstarted).
+Complete / Accepted Source / Merged / Deployed (Phase 6 accepted source `3d32c80a2b437c8e7245e7c5b4f6ee16298ca172` merged through PR #14 at `51adf805a85de72c3f15c764bc2eac7786f4efd1` and deployed on 2026-10-07; see ADR 0006. Phase 7 implementation candidate awaits independent review).
 
 - Cash/Bank;
 - transfers;
@@ -5581,3 +5581,8 @@ Next action:
 7. only then hand it Phase 1.
 
 That sequence is intentional.
+
+
+### Phase 7 source candidate checkpoint
+
+Phase 7 Expenses / Payroll-Lite / Draft Landed Cost is implemented and awaiting independent review. See ADR 0007 for canonical event authority, source-aware Check/Money security, exact payroll residuals and draft-only capitalization. Not accepted, merged or deployed. Phase 8 remains unstarted.

@@ -7,6 +7,7 @@ namespace App\Services\Purchasing;
 use App\Domain\Money\ValueObjects\ExchangeRate;
 use App\Domain\Money\ValueObjects\MoneyAmount;
 use App\Domain\Posting\DTO\PostingCommand;
+use App\Domain\Posting\DTO\PostingLineCommand;
 use App\Models\Company;
 use App\Models\LedgerAccount;
 use App\Models\Purchase;
@@ -20,7 +21,8 @@ final class PurchasePostingCommandBuilder
 {
     public function build(Company $company, Purchase $purchase, string $number, User $actor, bool $requirePosted = false): PostingCommand
     {
-        $inventoryBase = BigDecimal::zero();
+        $commercialInventoryBase = BigDecimal::zero();
+        $totalLandedBase = BigDecimal::zero();
         $inventoryCurrency = BigDecimal::zero();
         $taxes = [];
         $movementCount = 0;
@@ -59,7 +61,10 @@ final class PurchasePostingCommandBuilder
             if (! $actual->isEqualTo($expected)) {
                 throw new InvalidArgumentException(__('purchasing.post_integrity_failed'));
             }
-            $inventoryBase = $inventoryBase->plus($actual);
+            $lineCommercial = app(PurchaseAcquisitionValue::class)->commercial($line, $line->purchase_tax_account_id);
+            $lineLanded = BigDecimal::of($line->landed_cost_allocated_base ?? '0');
+            $commercialInventoryBase = $commercialInventoryBase->plus($lineCommercial);
+            $totalLandedBase = $totalLandedBase->plus($lineLanded);
             $inventoryCurrency = $inventoryCurrency->plus(BigDecimal::of($line->line_total)->minus($line->purchase_tax_account_id === null ? '0' : $line->line_tax));
             if ($line->purchase_tax_account_id !== null) {
                 $id = (int) $line->purchase_tax_account_id;
@@ -68,13 +73,13 @@ final class PurchasePostingCommandBuilder
                 $taxes[$id]['currency'] = $taxes[$id]['currency']->plus($line->line_tax);
             }
         }
-        $totalBase = $inventoryBase;
-        $totalCurrency = $inventoryCurrency;
+        $commercialTotalBase = $commercialInventoryBase;
+        $commercialTotalCurrency = $inventoryCurrency;
         foreach ($taxes as $tax) {
-            $totalBase = $totalBase->plus($tax['base']);
-            $totalCurrency = $totalCurrency->plus($tax['currency']);
+            $commercialTotalBase = $commercialTotalBase->plus($tax['base']);
+            $commercialTotalCurrency = $commercialTotalCurrency->plus($tax['currency']);
         }
-        if (! $totalBase->isEqualTo($purchase->grand_total_base) || ! $totalCurrency->isEqualTo($purchase->grand_total_currency)
+        if (! $commercialTotalBase->isEqualTo($purchase->grand_total_base) || ! $commercialTotalCurrency->isEqualTo($purchase->grand_total_currency)
             || StockMovement::where('company_id', $purchase->company_id)->where('source_type', 'purchase')->where('source_id', $purchase->id)->count() !== $movementCount) {
             throw new InvalidArgumentException(__('purchasing.post_integrity_failed'));
         }
@@ -83,16 +88,41 @@ final class PurchasePostingCommandBuilder
         $rate = ExchangeRate::from($purchase->exchange_rate);
         $lines = [];
         $append = app(SalesPostingLines::class);
-        $append->append($lines, 1, (int) $inventory->id, MoneyAmount::from($inventoryBase), MoneyAmount::zero(),
+        $append->append($lines, 1, (int) $inventory->id, MoneyAmount::from($commercialInventoryBase), MoneyAmount::zero(),
             $purchase->currency_code, MoneyAmount::from($inventoryCurrency), $rate, 'Purchase inventory');
         ksort($taxes);
         foreach ($taxes as $accountId => $tax) {
             $append->append($lines, count($lines) + 1, $accountId, MoneyAmount::from($tax['base']), MoneyAmount::zero(),
                 $purchase->currency_code, MoneyAmount::from($tax['currency']), $rate, 'Purchase Input Tax');
         }
-        $append->append($lines, count($lines) + 1, (int) $payable->id, MoneyAmount::zero(), MoneyAmount::from($totalBase),
-            $purchase->currency_code, MoneyAmount::from($totalCurrency), $rate, 'Purchase supplier liability');
-        $currencyComponents = [(int) $inventory->id => $inventoryCurrency, (int) $payable->id => $totalCurrency->negated()];
+        $append->append($lines, count($lines) + 1, (int) $payable->id, MoneyAmount::zero(), MoneyAmount::from($commercialTotalBase),
+            $purchase->currency_code, MoneyAmount::from($commercialTotalCurrency), $rate, 'Purchase supplier liability');
+
+        if ($totalLandedBase->isPositive()) {
+            $clearing = LedgerAccount::where('company_id', $company->id)->where('system_key', 'landed_cost_clearing')->firstOrFail();
+            $lines[] = new PostingLineCommand(
+                count($lines) + 1,
+                (int) $inventory->id,
+                MoneyAmount::from($totalLandedBase),
+                MoneyAmount::zero(),
+                null,
+                null,
+                null,
+                'Purchase landed cost capitalization'
+            );
+            $lines[] = new PostingLineCommand(
+                count($lines) + 1,
+                (int) $clearing->id,
+                MoneyAmount::zero(),
+                MoneyAmount::from($totalLandedBase),
+                null,
+                null,
+                null,
+                'Purchase landed cost clearing'
+            );
+        }
+
+        $currencyComponents = [(int) $inventory->id => $inventoryCurrency, (int) $payable->id => $commercialTotalCurrency->negated()];
         foreach ($taxes as $accountId => $tax) {
             $currencyComponents[$accountId] = $tax['currency'];
         }
@@ -125,6 +155,7 @@ final class PurchasePostingCommandBuilder
             || $batch->idempotency_key !== 'purchase_'.$purchase->id.'_posting') {
             throw new InvalidArgumentException(__('purchasing.post_integrity_failed'));
         }
+        app(LandedCostIntegrity::class)->validate($purchase, true);
         $company = Company::findOrFail($purchase->company_id);
         $actor = User::findOrFail($purchase->posted_by);
         if (! $this->build($company, $purchase, $purchase->purchase_number, $actor, true)->matchesBatch($batch)) {

@@ -20,7 +20,7 @@
 <bdi class="font-semibold">{{ $check->check_number }}</bdi>
 <p class="text-xs">{{ __('money.'.$check->direction) }}</p>
 </div>
-<p class="text-sm">{{ $check->party_snapshot['name_'.app()->getLocale()] ?? $check->party_snapshot['name_ar'] ?? '' }}</p>
+<p class="text-sm">{{ $check->party_snapshot['name_'.app()->getLocale()] ?? $check->party_snapshot['name_ar'] ?? $check->party_snapshot['name'] ?? $check->party_snapshot['payee_name'] ?? '' }}</p>
 <div>
 <bdi>{{ $check->amount }} {{ $check->currency_code }}</bdi>
 <p class="text-xs">{{ __('money.due_date') }}: {{ $check->due_date->toDateString() }}</p>

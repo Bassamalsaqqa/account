@@ -16,11 +16,14 @@ class DocumentSequenceService
         DocumentSequence::TYPE_SALES_INVOICE => 'INV',
         DocumentSequence::TYPE_SALES_RETURN => 'RET',
         DocumentSequence::TYPE_CUSTOMER_PAYMENT => 'RCT',
-        // Purchasing defaults are provisioned separately; Sales bootstrap remains unchanged.
         DocumentSequence::TYPE_PURCHASE => 'PUR',
         DocumentSequence::TYPE_PURCHASE_RETURN => 'PRT',
         DocumentSequence::TYPE_VENDOR_PAYMENT => 'VPM',
         DocumentSequence::TYPE_MONEY_TRANSFER => 'TRF',
+        DocumentSequence::TYPE_EXPENSE => 'EXP',
+        DocumentSequence::TYPE_EMPLOYEE_ADVANCE => 'ADV',
+        DocumentSequence::TYPE_SALARY_ENTRY => 'SAL',
+        DocumentSequence::TYPE_SALARY_PAYMENT => 'SLP',
     ];
 
     /**
@@ -194,6 +197,32 @@ class DocumentSequenceService
                 'company_id' => $companyId, 'document_type' => $type, 'year' => $effectiveYear,
             ], [
                 'prefix' => self::DEFAULT_PREFIXES[$type], 'next_number' => 1, 'padding' => 4, 'reset_policy' => 'yearly',
+            ]);
+        }
+    }
+
+    /** Ensure Phase 7 configuration only; never advance numbers or replace customized sequences. */
+    public function ensurePhase7Sequences(int $companyId, ?int $year = null): void
+    {
+        $effectiveYear = $year ?? (int) Carbon::now()->year;
+        foreach ([
+            DocumentSequence::TYPE_EXPENSE,
+            DocumentSequence::TYPE_EMPLOYEE_ADVANCE,
+            DocumentSequence::TYPE_SALARY_ENTRY,
+            DocumentSequence::TYPE_SALARY_PAYMENT,
+        ] as $type) {
+            if (DocumentSequence::where('company_id', $companyId)->where('document_type', $type)->exists()) {
+                continue;
+            }
+            DocumentSequence::firstOrCreate([
+                'company_id' => $companyId,
+                'document_type' => $type,
+                'year' => $effectiveYear,
+            ], [
+                'prefix' => self::DEFAULT_PREFIXES[$type],
+                'next_number' => 1,
+                'padding' => 4,
+                'reset_policy' => 'yearly',
             ]);
         }
     }

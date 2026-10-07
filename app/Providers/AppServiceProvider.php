@@ -10,6 +10,7 @@ use App\Policies\CompanyUserPolicy;
 use App\Policies\RolePolicy;
 use App\Services\Audit\AuditService;
 use App\Services\Money\MoneyEventScope;
+use App\Services\Phase7\Phase7EventScope;
 use App\Services\Purchasing\PurchasePostingScope;
 use App\Services\Purchasing\PurchaseReturnPostingScope;
 use App\Services\Purchasing\VendorPaymentApplicationScope;
@@ -37,6 +38,7 @@ class AppServiceProvider extends ServiceProvider
         $this->app->scoped(VendorPaymentApplicationScope::class, fn () => new VendorPaymentApplicationScope);
         $this->app->scoped(VendorPaymentReversalScope::class, fn () => new VendorPaymentReversalScope);
         $this->app->scoped(MoneyEventScope::class, fn () => new MoneyEventScope);
+        $this->app->scoped(Phase7EventScope::class, fn () => new Phase7EventScope);
     }
 
     /**

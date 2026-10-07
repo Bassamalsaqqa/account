@@ -32,6 +32,12 @@
                     <div><dt class="text-xs text-text-secondary">{{ __('purchasing.quantity') }}</dt><dd><bdi>{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatQuantity($line['quantity']) }}</bdi> {{ $line['unit_name'] }}</dd></div>
                     @if($withCost)
                         @foreach(['unit_cost', 'line_discount', 'line_tax', 'line_total'] as $field)<div><dt class="text-xs text-text-secondary">{{ __('purchasing.'.$field) }}</dt><dd><bdi>{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::format($line[$field], $document['currency_code']) }}</bdi></dd></div>@endforeach
+                        @if(!empty($line['landed_cost_allocated_base']) && \Brick\Math\BigDecimal::of($line['landed_cost_allocated_base'])->isPositive())
+                            <div><dt class="text-xs text-text-secondary">{{ __('purchasing.landed_cost') }}</dt><dd><bdi>{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::format($line['landed_cost_allocated_base'], $document['currency_code']) }}</bdi></dd></div>
+                            @if(!empty($line['inventory_unit_cost_base']))
+                                <div><dt class="text-xs text-text-secondary">{{ __('purchasing.inventory_unit_cost') }}</dt><dd><bdi>{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::format($line['inventory_unit_cost_base'], $document['currency_code']) }}</bdi></dd></div>
+                            @endif
+                        @endif
                     @endif
                 </dl>
                 @if(count($line['lots']))
@@ -44,6 +50,106 @@
     @if($withCost)
         <section class="bg-surface border border-border rounded-card p-4 grid grid-cols-2 md:grid-cols-4 gap-4">
             @foreach(['subtotal_currency' => 'subtotal', 'discount_total_currency' => 'discount', 'tax_total_currency' => 'tax', 'grand_total_currency' => 'total'] as $field => $label)<div><span class="text-xs text-text-secondary">{{ __('purchasing.'.$label) }}</span><p class="font-bold mt-1"><bdi>{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::format($document[$field], $document['currency_code']) }} {{ $document['currency_code'] }}</bdi></p></div>@endforeach
+            @if(!empty($document['total_landed_cost_base']) && \Brick\Math\BigDecimal::of($document['total_landed_cost_base'])->isPositive())
+                <div class="col-span-full border-t border-border pt-3 flex justify-between items-center text-sm">
+                    <span class="font-bold text-text-secondary">{{ __('purchasing.total_landed_cost') }}</span>
+                    <p class="font-bold font-mono" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::format($document['total_landed_cost_base'], $document['currency_code']) }} {{ $document['currency_code'] }}</p>
+                </div>
+            @endif
+        </section>
+
+        <!-- Landed Costs Section -->
+        <section class="bg-surface border border-border rounded-card p-4 space-y-4">
+            <div class="flex flex-wrap items-center justify-between gap-2 border-b border-border pb-3">
+                <h2 class="font-bold text-sm text-text-primary">{{ __('purchasing.landed_costs') }}</h2>
+                @if(!empty($document['total_landed_cost_base']) && \Brick\Math\BigDecimal::of($document['total_landed_cost_base'])->isPositive())
+                    <span class="text-xs font-semibold text-text-secondary">
+                        {{ __('purchasing.total_landed_cost') }}: <bdi class="font-mono text-text-primary">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::format($document['total_landed_cost_base'], $document['currency_code']) }} {{ $document['currency_code'] }}</bdi>
+                    </span>
+                @endif
+            </div>
+
+            @if($landedError)
+                <p role="alert" class="p-3 bg-danger-bg text-danger rounded-control text-xs">{{ $landedError }}</p>
+            @endif
+
+            @if($landedAllocations->isNotEmpty())
+                <div class="space-y-3">
+                    @foreach($landedAllocations as $expenseId => $allocations)
+                        @php $expense = $allocations->first()->expense; @endphp
+                        <div class="border border-border/80 rounded-control p-3 bg-surface-soft flex flex-wrap items-center justify-between gap-3 text-xs">
+                            <div>
+                                <span class="font-bold text-primary">{{ $expense->expense_number }}</span>
+                                <span class="text-text-secondary mx-1">·</span>
+                                <span class="text-text-secondary">{{ $expense->description }}</span>
+                                <span class="text-text-secondary mx-1">·</span>
+                                <span class="text-text-muted">{{ $expense->expense_date->toDateString() }}</span>
+                                <div class="mt-1 text-text-secondary">
+                                    {{ __('purchasing.allocation_method') }}: <span class="font-semibold">{{ __('purchasing.method_'.$allocations->first()->allocation_method) }}</span>
+                                </div>
+                            </div>
+                            <div class="flex items-center gap-3">
+                                <span class="font-bold font-mono text-sm" dir="ltr">
+                                    {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::format($allocations->sum('allocated_base'), $document['currency_code']) }} {{ $document['currency_code'] }}
+                                </span>
+                                @if($canManageLanded)
+                                    <button type="button" wire:click="removeLandedCost({{ $expenseId }})" wire:confirm="{{ __('purchasing.remove_landed_cost') }}?" class="px-2.5 py-1 rounded bg-danger/10 text-danger hover:bg-danger/20 font-semibold transition-colors">
+                                        {{ __('purchasing.remove_landed_cost') }}
+                                    </button>
+                                @endif
+                            </div>
+                        </div>
+                    @endforeach
+                </div>
+            @endif
+
+            @if($canManageLanded)
+                <div class="border-t border-border pt-3 space-y-3">
+                    <h3 class="text-xs font-bold text-text-secondary">{{ __('purchasing.attach_landed_cost') }}</h3>
+                    @if($availableExpenses->isNotEmpty())
+                        <div class="grid sm:grid-cols-3 gap-3">
+                            <div>
+                                <label class="block text-xs font-medium text-text-secondary mb-1">{{ __('purchasing.select_expense') }}</label>
+                                <select wire:model.live="selectedExpenseId" class="w-full text-xs rounded-control border border-border bg-white px-2.5 py-2">
+                                    <option value="">-- {{ __('purchasing.select_expense') }} --</option>
+                                    @foreach($availableExpenses as $availExp)
+                                        <option value="{{ $availExp->id }}">
+                                            {{ $availExp->expense_number }} - {{ $availExp->description }} ({{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::format($availExp->amount, $availExp->currency_code) }} {{ $availExp->currency_code }})
+                                        </option>
+                                    @endforeach
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-xs font-medium text-text-secondary mb-1">{{ __('purchasing.allocation_method') }}</label>
+                                <select wire:model.live="allocationMethod" class="w-full text-xs rounded-control border border-border bg-white px-2.5 py-2">
+                                    <option value="value">{{ __('purchasing.method_value') }}</option>
+                                    <option value="quantity">{{ __('purchasing.method_quantity') }}</option>
+                                    <option value="manual">{{ __('purchasing.method_manual') }}</option>
+                                </select>
+                            </div>
+                            <div class="flex items-end">
+                                <button type="button" wire:click="attachLandedCost" wire:loading.attr="disabled" class="h-9 px-4 rounded-control bg-primary text-white text-xs font-bold hover:bg-primary-hover disabled:opacity-50">
+                                    {{ __('purchasing.attach_landed_cost') }}
+                                </button>
+                            </div>
+                        </div>
+
+                        @if($allocationMethod === 'manual' && $selectedExpenseId)
+                            <div class="p-3 bg-surface-soft border border-border rounded-control space-y-2">
+                                <h4 class="text-xs font-bold text-text-secondary">{{ __('purchasing.method_manual') }}</h4>
+                                @foreach($document['lines'] as $line)
+                                    <div class="flex items-center justify-between gap-3 text-xs">
+                                        <span>{{ $line['item_description'] }} ({{ $line['quantity'] }} {{ $line['unit_name'] }})</span>
+                                        <input type="text" wire:model="manualAllocations.{{ $line['id'] }}" placeholder="0.00" class="w-32 rounded border border-border bg-white px-2 py-1 text-xs text-end font-mono">
+                                    </div>
+                                @endforeach
+                            </div>
+                        @endif
+                    @else
+                        <p class="text-xs text-text-muted italic">{{ __('purchasing.no_available_expenses') }}</p>
+                    @endif
+                </div>
+            @endif
         </section>
         @if($payablePosition !== null)
             <section class="bg-surface border border-border rounded-card p-4 grid grid-cols-2 md:grid-cols-4 gap-4 text-xs">

@@ -9,6 +9,8 @@ use App\Domain\Inventory\DTO\StockMovementLineCommand;
 use App\Domain\Inventory\Exceptions\InvalidInventoryMovementException;
 use App\Domain\Inventory\ValueObjects\Quantity;
 use App\Models\DocumentSequence;
+use App\Models\Expense;
+use App\Models\LandedCostAllocation;
 use App\Models\Purchase;
 use App\Models\StockMovement;
 use App\Models\TaxRate;
@@ -16,6 +18,7 @@ use App\Models\User;
 use App\Services\Audit\AuditService;
 use App\Services\Inventory\InventoryMovementService;
 use App\Services\Posting\AccountingPostingService;
+use App\Services\Purchasing\LandedCostIntegrity;
 use App\Services\Purchasing\PurchaseAcquisitionValue;
 use App\Services\Purchasing\PurchaseDraftIntegrity;
 use App\Services\Purchasing\PurchaseIdentitySnapshot;
@@ -25,6 +28,7 @@ use App\Services\Purchasing\PurchasePostingScope;
 use App\Services\Purchasing\PurchaseReceiptCapability;
 use App\Services\Sales\DocumentSequenceService;
 use App\Services\Sales\SalesActorGuard;
+use Brick\Math\BigDecimal;
 use Illuminate\Support\Facades\DB;
 
 final class PostPurchaseAction
@@ -77,9 +81,53 @@ final class PostPurchaseAction
             try {
                 return $scope->withinCanonicalPosting($this, $locked, $actor, function (PurchaseReceiptCapability $capability) use ($company, $locked, $actor, $taxAccounts, $builder): Purchase {
                     $number = app(DocumentSequenceService::class)->generateNextNumber((int) $company->id, DocumentSequence::TYPE_PURCHASE, (int) $locked->purchase_date->format('Y'));
+
+                    $draftAllocations = LandedCostAllocation::where('company_id', $company->id)
+                        ->where('purchase_id', $locked->id)
+                        ->where('status', LandedCostAllocation::STATUS_DRAFT)
+                        ->lockForUpdate()
+                        ->get();
+
+                    app(LandedCostIntegrity::class)->validate($locked, false);
+                    $lineLandedMap = [];
+                    if ($draftAllocations->isNotEmpty()) {
+                        $expenseIds = $draftAllocations->pluck('expense_id')->unique();
+                        $expenses = Expense::where('company_id', $company->id)
+                            ->whereIn('id', $expenseIds)
+                            ->lockForUpdate()
+                            ->get()
+                            ->keyBy('id');
+
+                        foreach ($expenseIds as $expenseId) {
+                            $expense = $expenses->get($expenseId);
+                            if ($expense === null || $expense->status !== Expense::STATUS_POSTED || $expense->reversed_at !== null || $expense->classification !== Expense::CLASSIFICATION_LANDED_COST) {
+                                throw new \InvalidArgumentException(__('purchasing.post_integrity_failed'));
+                            }
+                            if ($locked->purchase_date->lt($expense->expense_date)) {
+                                throw new \InvalidArgumentException('The purchase business date cannot precede the attached landed cost expense date.');
+                            }
+
+                            $expAllocations = $draftAllocations->where('expense_id', $expenseId);
+                            $allocSum = BigDecimal::zero();
+                            foreach ($expAllocations as $alloc) {
+                                $allocSum = $allocSum->plus($alloc->allocated_base);
+                            }
+                            if (! $allocSum->isEqualTo($expense->base_amount)) {
+                                throw new \InvalidArgumentException(__('purchasing.post_integrity_failed'));
+                            }
+                        }
+
+                        foreach ($draftAllocations as $alloc) {
+                            $lineId = (int) $alloc->purchase_line_id;
+                            $lineLandedMap[$lineId] = ($lineLandedMap[$lineId] ?? BigDecimal::zero())->plus($alloc->allocated_base);
+                        }
+                    }
+
                     $valuation = app(PurchaseAcquisitionValue::class);
                     foreach ($locked->lines as $line) {
-                        $value = $valuation->line($line, $taxAccounts[$line->id]);
+                        $lineLandedBase = isset($lineLandedMap[$line->id]) ? (string) $lineLandedMap[$line->id]->toScale(6) : '0.000000';
+                        $commercialValue = $valuation->commercial($line, $taxAccounts[$line->id]);
+                        $value = $commercialValue->plus($lineLandedBase)->toScale(6);
                         $cost = $valuation->unitCost($line, $value);
                         $parts = [];
                         if ($line->lots->isNotEmpty()) {
@@ -99,8 +147,13 @@ final class PostPurchaseAction
                         foreach ($line->lots as $index => $lot) {
                             $lot->completeCanonicalReceipt($movements[$index], $actor);
                         }
-                        $line->completeCanonicalReceipt($movements[0], $taxAccounts[$line->id], $actor);
+                        $line->completeCanonicalReceipt($movements[0], $taxAccounts[$line->id], $actor, $lineLandedBase);
                     }
+
+                    foreach ($draftAllocations as $allocation) {
+                        $allocation->completeCanonicalAllocation($capability);
+                    }
+
                     $batch = app(AccountingPostingService::class)->post($builder->build($company, $locked, $number, $actor));
                     $locked->completeCanonicalPost($batch, $number, $actor);
                     app(AuditService::class)->log((int) $company->id, 'purchase.posted', 'Purchase posted', $actor->id, $locked,
