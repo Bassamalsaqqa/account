@@ -130,21 +130,26 @@ class EnsureSystemLedgerAccountsAction
                     }
 
                     // System key does not exist yet. Check if preferred code is occupied
-                    if (isset($byCode[$def->code])) {
-                        $conflict = $byCode[$def->code];
-                        throw SystemAccountConflictException::codeConflict(
-                            $def->systemKey,
-                            $def->code,
-                            $conflict->id,
-                            $conflict->system_key
-                        );
+                    $codeToUse = $def->code;
+                    if (isset($byCode[$codeToUse])) {
+                        $conflict = $byCode[$codeToUse];
+                        if ($conflict->system_key === null) {
+                            throw SystemAccountConflictException::codeConflict($def->systemKey, $def->code, $conflict->id, $conflict->name_en);
+                        } else {
+                            throw SystemAccountConflictException::codeConflict(
+                                $def->systemKey,
+                                $def->code,
+                                $conflict->id,
+                                $conflict->system_key
+                            );
+                        }
                     }
 
                     // Create the system account
                     $created = LedgerAccount::create([
                         'public_id' => (string) Str::ulid(),
                         'company_id' => $company->id,
-                        'code' => $def->code,
+                        'code' => $codeToUse,
                         'system_key' => $def->systemKey,
                         'name_ar' => $def->nameAr,
                         'name_en' => $def->nameEn,

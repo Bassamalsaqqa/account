@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Purchasing;
 
 use App\Domain\Inventory\DTO\StockMovementCommand;
+use App\Models\LandedCostAllocation;
 use App\Models\Purchase;
 use App\Models\TaxRate;
 use Brick\Math\BigDecimal;
@@ -21,6 +22,21 @@ final class PurchaseReceiptIntent
         $line->load('lots', 'productUnit');
         $tax = $line->tax_rate_id === null ? null : TaxRate::where('company_id', $command->companyId)->where('active', true)->lockForUpdate()->findOrFail($line->tax_rate_id);
         $account = app(PurchaseInputTaxAccount::class)->resolve($command->companyId, $tax?->purchase_tax_account_id);
+
+        $landedAllocations = LandedCostAllocation::where('company_id', $command->companyId)
+            ->where('purchase_id', $purchase->id)
+            ->where('purchase_line_id', $line->id)
+            ->where('status', LandedCostAllocation::STATUS_DRAFT)
+            ->get();
+
+        if ($landedAllocations->isNotEmpty()) {
+            $sumLanded = BigDecimal::zero();
+            foreach ($landedAllocations as $alloc) {
+                $sumLanded = $sumLanded->plus($alloc->allocated_base);
+            }
+            $line->landed_cost_allocated_base = (string) $sumLanded->toScale(6);
+        }
+
         $value = app(PurchaseAcquisitionValue::class)->line($line, $account?->id);
         $cost = app(PurchaseAcquisitionValue::class)->unitCost($line, $value);
         $values = $line->lots->isEmpty() ? [$value] : app(PurchaseAcquisitionValue::class)->lots($line, $value);

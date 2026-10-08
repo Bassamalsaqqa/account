@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Money\Queries;
 
 use App\Services\Money\MoneyActorGuard;
+use App\Services\Phase7\Phase7FinancialRead;
 use App\Services\Purchasing\VendorFinancialRead;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\DB;
@@ -29,6 +30,7 @@ final class MoneySourceLinksQuery
         $links = [];
         foreach (['customer_payment' => ['customer_payments', 'money.receipt.view', 'payments.show'],
             'vendor_payment' => ['vendor_payments', 'vendors.statement.view', 'vendor-payments.show'],
+            'expense' => ['expenses', 'money.expense.view', 'expenses.show'],
             'money_transfer' => ['money_transfers', 'money.transfer.view', 'money.transfers.show'],
             'check_event' => ['check_events', 'money.check.view', 'money.checks.show']] as $type => [$table, $permission, $route]) {
             $ids = $sources[$type] ?? [];
@@ -43,9 +45,12 @@ final class MoneySourceLinksQuery
                 continue;
             }
             $query = DB::table($table)->where($table.'.company_id', $companyId)->whereIn($table.'.id', array_values($ids));
+            if ($type === 'expense') {
+                $query->whereIn('expenses.id', app(Phase7FinancialRead::class)->visibleExpenseIds($companyId));
+            }
             if ($type === 'check_event') {
                 $query->join('checks', 'checks.id', '=', 'check_events.check_id')->where('checks.company_id', $companyId)
-                    ->when(! $this->allowed($companyId, 'purchasing.cost.view'), fn ($q) => $q->where('checks.direction', 'incoming'));
+                    ->whereIn('checks.id', app(Phase7FinancialRead::class)->visibleCheckIds($companyId));
                 $found = $query->pluck('checks.public_id', 'check_events.id');
             } else {
                 $found = $query->pluck('public_id', 'id');

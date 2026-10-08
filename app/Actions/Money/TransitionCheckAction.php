@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace App\Actions\Money;
 
-use App\Actions\Purchasing\ReverseVendorPaymentAction;
-use App\Actions\Sales\ReverseCustomerPaymentAction;
 use App\Exceptions\IdempotencyConflictException;
 use App\Models\Check;
 use App\Models\CheckEvent;
@@ -14,6 +12,7 @@ use App\Models\MoneyAccount;
 use App\Models\PostingBatch;
 use App\Models\User;
 use App\Services\Audit\AuditService;
+use App\Services\Money\CheckFinancialSourceResolver;
 use App\Services\Money\CheckHistory;
 use App\Services\Money\MoneyAccountLedger;
 use App\Services\Money\MoneyActorGuard;
@@ -67,9 +66,16 @@ final class TransitionCheckAction implements MoneyEventOwner
             $check = Check::where('company_id', $company->id)->lockForUpdate()->findOrFail($check->id);
             $incoming = $check->direction === 'incoming';
             app(MoneyActorGuard::class)->authorize((int) $company->id, 'money.check.'.($incoming ? 'incoming' : 'outgoing').'.manage');
-            if (! $incoming) {
-                app(MoneyActorGuard::class)->authorize((int) $company->id, 'purchasing.cost.view');
+
+            $source = app(CheckFinancialSourceResolver::class)->resolve($check);
+
+            if ($type === 'clear') {
+                $source->authorizeRead((int) $company->id, $actor);
+            } elseif (in_array($type, ['return', 'cancel'], true)) {
+                $source->authorizeReverse((int) $company->id, $actor);
+                $source->assertCanReverse($check, $intent['notes']);
             }
+
             $existing = CheckEvent::where('company_id', $company->id)->where('idempotency_key', $key)->lockForUpdate()->first();
             if ($existing !== null) {
                 if ($existing->request_hash !== $hash) {
@@ -127,7 +133,7 @@ final class TransitionCheckAction implements MoneyEventOwner
             };
             $this->activeScope = $scope = app(MoneyEventScope::class);
             try {
-                return $scope->within($this, (int) $company->id, $actor, function ($capability) use ($scope, $check, $actor, $key, $type, $date, $intent, $hash, $bank, $ledger, $settlement, $gain, $to, $incoming, $events): CheckEvent {
+                return $scope->within($this, (int) $company->id, $actor, function ($capability) use ($scope, $check, $actor, $key, $type, $date, $intent, $hash, $bank, $ledger, $settlement, $gain, $to, $events, $source): CheckEvent {
                     $scope->prepareCheck($capability, $check);
                     $values = ['public_id' => (string) Str::ulid(), 'company_id' => (int) $check->company_id, 'check_id' => (int) $check->id,
                         'event_type' => $type, 'from_status' => $check->status, 'to_status' => $to, 'event_date' => $date,
@@ -148,12 +154,10 @@ final class TransitionCheckAction implements MoneyEventOwner
                             $scope->prepareReversal($capability, $original, $date);
                             $completion['reversal_posting_batch_id'] = app(AccountingReversalService::class)->reverse($original, $actor, $intent['notes'], $date)->id;
                         }
-                        $payment = $incoming ? $check->customerPayment()->firstOrFail() : $check->vendorPayment()->firstOrFail();
-                        $original = PostingBatch::where('company_id', $check->company_id)->findOrFail($payment->posting_batch_id);
+                        $original = PostingBatch::where('company_id', $check->company_id)->findOrFail($source->postingBatchId());
                         $scope->prepareReversal($capability, $original, $date);
-                        $payment = $incoming ? app(ReverseCustomerPaymentAction::class)->execute($payment, $actor, $intent['notes'], $date)
-                            : app(ReverseVendorPaymentAction::class)->execute($payment, $actor, $intent['notes'], $date);
-                        $completion['payment_reversal_posting_batch_id'] = $payment->reversal_posting_batch_id;
+                        $reversalBatchId = $source->executeReversal($check, $actor, $intent['notes'], $date, $capability);
+                        $completion['payment_reversal_posting_batch_id'] = $reversalBatchId;
                     }
                     $scope->prepareRecord($capability, CheckEvent::class.':'.$event->id, $completion);
                     $event->complete($capability, $completion);

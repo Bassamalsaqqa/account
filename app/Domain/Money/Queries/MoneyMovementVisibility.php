@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Money\Queries;
 
 use App\Services\Money\MoneyActorGuard;
+use App\Services\Phase7\Phase7FinancialRead;
 use App\Services\Purchasing\VendorFinancialRead;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\Query\Builder;
@@ -36,14 +37,24 @@ final class MoneyMovementVisibility
                 $join->on('instrument.id', '=', 'event.check_id')->where('instrument.company_id', $companyId);
             })
             ->where('vb.company_id', $companyId)
-            ->where(function (Builder $query) use ($type, $canVendor, $canOutgoing): void {
-                $query->whereNotIn(DB::raw($type), ['vendor_payment', 'check_event']);
+            ->where(function (Builder $query) use ($type, $sourceId, $companyId, $canVendor): void {
+                $query->whereNotIn(DB::raw($type), ['vendor_payment', 'check_event', 'expense', 'employee_advance', 'salary_payment']);
+                $policy = app(Phase7FinancialRead::class);
+                $query->orWhere(function (Builder $expenses) use ($type, $sourceId, $companyId, $policy): void {
+                    $expenses->whereRaw("($type) = ?", ['expense'])->whereIn(DB::raw($sourceId), $policy->visibleExpenseIds($companyId));
+                });
+                if ($policy->advance($companyId)) {
+                    $query->orWhereRaw("($type) = ?", ['employee_advance']);
+                }
+                if ($policy->allows($companyId, 'payroll.salary.view')) {
+                    $query->orWhereRaw("($type) = ?", ['salary_payment']);
+                }
                 if ($canVendor) {
                     $query->orWhereRaw("($type) = ?", ['vendor_payment']);
                 }
-                $query->orWhere(function (Builder $checks) use ($type, $canOutgoing): void {
+                $query->orWhere(function (Builder $checks) use ($type, $companyId): void {
                     $checks->whereRaw("($type) = ?", ['check_event'])
-                        ->whereIn('instrument.direction', $canOutgoing ? ['incoming', 'outgoing'] : ['incoming']);
+                        ->whereIn('instrument.id', app(Phase7FinancialRead::class)->visibleCheckIds($companyId, false));
                 });
             })
             ->select('vb.id');

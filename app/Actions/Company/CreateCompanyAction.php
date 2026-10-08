@@ -2,6 +2,7 @@
 
 namespace App\Actions\Company;
 
+use App\Actions\Accounting\EnsurePhase7FoundationAction;
 use App\Actions\Accounting\EnsureSystemLedgerAccountsAction;
 use App\Actions\Inventory\EnsureDefaultUnitsAction;
 use App\Actions\Inventory\EnsureDefaultWarehouseAction;
@@ -191,6 +192,7 @@ class CreateCompanyAction
                 $this->ensureDefaultMoneyAccountAction->execute($company, $owner);
                 app(EnsurePurchasingFoundationAction::class)->execute($company);
                 app(EnsureMoneyFoundationAction::class)->execute($company);
+                app(EnsurePhase7FoundationAction::class)->execute($company);
 
                 // 11. Log initial audit event
                 $this->auditService->log(

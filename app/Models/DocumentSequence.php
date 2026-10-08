@@ -28,6 +28,14 @@ class DocumentSequence extends Model
 
     public const string TYPE_MONEY_TRANSFER = 'money_transfer';
 
+    public const string TYPE_EXPENSE = 'expense';
+
+    public const string TYPE_EMPLOYEE_ADVANCE = 'employee_advance';
+
+    public const string TYPE_SALARY_ENTRY = 'salary_entry';
+
+    public const string TYPE_SALARY_PAYMENT = 'salary_payment';
+
     /**
      * @var list<string>
      */

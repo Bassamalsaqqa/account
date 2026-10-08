@@ -59,6 +59,7 @@ class CompanyRoleService
         'purchasing.purchase.post',
         'purchasing.return.manage',
         'purchasing.cost.view',
+        'purchasing.landed_cost.manage',
 
         // Inventory (catalog only in Phase 1)
         'inventory.stock.view',
@@ -74,6 +75,15 @@ class CompanyRoleService
         'vendors.view',
         'vendors.manage',
         'vendors.statement.view',
+
+        // Employees & Payroll
+        'employees.view',
+        'employees.manage',
+        'payroll.salary.view',
+        'payroll.salary.post',
+        'payroll.salary.pay',
+        'payroll.salary.reverse',
+        'payroll.advance.manage',
 
         // Money & Banking
         'money.cash.view',
@@ -92,7 +102,9 @@ class CompanyRoleService
         'money.check.view',
         'money.check.incoming.manage',
         'money.check.outgoing.manage',
+        'money.expense.view',
         'money.expense.manage',
+        'money.expense.reverse',
 
         // Reports (catalog only in Phase 1)
         'reports.sales.view',
@@ -185,11 +197,15 @@ class CompanyRoleService
             'sales.return.view', 'sales.return.create', 'sales.return.post', 'sales.return.void', 'sales.return.manage',
             'sales.statement.view', 'sales.document.share', 'sales.document.pdf',
             'purchasing.purchase.view', 'purchasing.purchase.create', 'purchasing.purchase.edit_draft', 'purchasing.purchase.post', 'purchasing.return.manage', 'purchasing.cost.view',
+            'purchasing.landed_cost.manage',
             'inventory.stock.view', 'inventory.stock.adjust', 'inventory.stock.transfer', 'inventory.cost.view', 'inventory.product.manage',
             'customers.view', 'customers.manage', 'customers.statement.view',
             'vendors.view', 'vendors.manage', 'vendors.statement.view',
+            'employees.view', 'employees.manage',
+            'payroll.salary.view', 'payroll.salary.post', 'payroll.salary.pay', 'payroll.salary.reverse', 'payroll.advance.manage',
             'money.cash.view', 'money.bank.view', 'money.receipt.view', 'money.receipt.create', 'money.receipt.allocate', 'money.receipt.reverse',
-            'money.vendor_payment.create', 'money.vendor_payment.allocate', 'money.vendor_payment.reverse', 'money.check.manage', 'money.expense.manage',
+            'money.vendor_payment.create', 'money.vendor_payment.allocate', 'money.vendor_payment.reverse', 'money.check.manage',
+            'money.expense.view', 'money.expense.manage', 'money.expense.reverse',
             'money.transfer.view', 'money.transfer.create', 'money.transfer.reverse',
             'money.check.view', 'money.check.incoming.manage', 'money.check.outgoing.manage',
             'reports.sales.view', 'reports.profit.view', 'reports.cost.view', 'reports.financial.view', 'reports.tax.view',
@@ -227,9 +243,11 @@ class CompanyRoleService
         // 5. Purchasing: Purchases, vendors, stock view, vendor payments
         $purchasingPerms = [
             'purchasing.purchase.view', 'purchasing.purchase.create', 'purchasing.purchase.edit_draft', 'purchasing.purchase.post', 'purchasing.cost.view',
+            'purchasing.landed_cost.manage',
             'purchasing.return.manage',
             'vendors.view', 'vendors.manage', 'vendors.statement.view',
             'inventory.stock.view',
+            'money.expense.view',
             'money.vendor_payment.create',
             'money.vendor_payment.allocate',
             'money.vendor_payment.reverse',

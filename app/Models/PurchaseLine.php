@@ -42,6 +42,7 @@ use Illuminate\Support\Str;
  * @property string $unit_conversion_ratio
  * @property string|null $tax_rate_snapshot
  * @property string|null $inventory_unit_cost_base
+ * @property string|null $landed_cost_allocated_base
  */
 class PurchaseLine extends Model
 {
@@ -54,22 +55,22 @@ class PurchaseLine extends Model
         'line_discount', 'tax_rate_id', 'tax_rate_snapshot', 'tax_inclusive', 'line_subtotal', 'line_tax',
         'line_total', 'line_subtotal_base', 'line_discount_base', 'line_tax_base', 'line_total_base',
         'unit_conversion_ratio', 'unit_name_ar', 'unit_name_en', 'product_sku', 'product_name_ar',
-        'product_name_en', 'inventory_unit_cost_base', 'stock_movement_id', 'purchase_tax_account_id',
+        'product_name_en', 'inventory_unit_cost_base', 'landed_cost_allocated_base', 'stock_movement_id', 'purchase_tax_account_id',
     ];
 
     protected function casts(): array
     {
-        return ['tax_inclusive' => 'boolean', 'inventory_unit_cost_base' => 'string'];
+        return ['tax_inclusive' => 'boolean', 'inventory_unit_cost_base' => 'string', 'landed_cost_allocated_base' => 'string'];
     }
 
     private bool $completingReceipt = false;
 
-    public function completeCanonicalReceipt(StockMovement $firstMovement, ?int $taxAccountId, User $actor): void
+    public function completeCanonicalReceipt(StockMovement $firstMovement, ?int $taxAccountId, User $actor, ?string $landedCostAllocatedBase = null): void
     {
         if (DB::transactionLevel() === 0) {
             throw new ImmutableRecordException('Purchase receipt completion requires an existing outer posting transaction.');
         }
-        DB::transaction(function () use ($firstMovement, $taxAccountId, $actor): void {
+        DB::transaction(function () use ($firstMovement, $taxAccountId, $actor, $landedCostAllocatedBase): void {
             app(SalesActorGuard::class)->lockAndAuthorize((int) $this->company_id, $actor, 'purchasing.purchase.post');
             app(SalesActorGuard::class)->lockAndAuthorize((int) $this->company_id, $actor, 'purchasing.cost.view');
             $this->assertMutableDraft();
@@ -85,6 +86,7 @@ class PurchaseLine extends Model
             try {
                 $this->purchase_tax_account_id = $taxAccountId;
                 $this->stock_movement_id = $firstMovement->id;
+                $this->landed_cost_allocated_base = $landedCostAllocatedBase ?? '0.000000';
                 $value = app(PurchaseAcquisitionValue::class)->line($this, $taxAccountId);
                 $this->inventory_unit_cost_base = app(PurchaseAcquisitionValue::class)->unitCost($this, $value);
                 $this->save();
@@ -111,7 +113,7 @@ class PurchaseLine extends Model
         static::saving(function (self $line): void {
             $line->assertMutableDraft();
             if ($line->completingReceipt) {
-                if (array_diff(array_keys($line->getDirty()), ['purchase_tax_account_id', 'stock_movement_id', 'inventory_unit_cost_base', 'updated_at']) !== []) {
+                if (array_diff(array_keys($line->getDirty()), ['purchase_tax_account_id', 'stock_movement_id', 'inventory_unit_cost_base', 'landed_cost_allocated_base', 'updated_at']) !== []) {
                     throw new ImmutableRecordException('Receipt completion may only attach posting provenance.');
                 }
 
@@ -122,6 +124,9 @@ class PurchaseLine extends Model
             }
             if ($line->inventory_unit_cost_base !== null || $line->stock_movement_id !== null || $line->purchase_tax_account_id !== null) {
                 throw new ImmutableRecordException('Purchase draft lines cannot carry inventory effects.');
+            }
+            if ($line->isDirty('landed_cost_allocated_base')) {
+                throw new ImmutableRecordException('Purchase draft lines cannot carry landed cost snapshot before receipt completion.');
             }
             foreach (['unit_cost', 'discount_value', 'line_discount', 'line_subtotal', 'line_tax', 'line_total', 'line_subtotal_base', 'line_discount_base', 'line_tax_base', 'line_total_base'] as $field) {
                 $amount = MoneyAmount::from($line->getAttributes()[$field] ?? null);
@@ -183,5 +188,11 @@ class PurchaseLine extends Model
     public function returnLines(): HasMany
     {
         return $this->hasMany(PurchaseReturnLine::class);
+    }
+
+    /** @return HasMany<LandedCostAllocation, $this> */
+    public function landedCostAllocations(): HasMany
+    {
+        return $this->hasMany(LandedCostAllocation::class, 'purchase_line_id')->orderBy('id');
     }
 }

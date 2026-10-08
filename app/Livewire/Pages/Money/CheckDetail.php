@@ -7,10 +7,12 @@ namespace App\Livewire\Pages\Money;
 use App\Actions\Money\TransitionCheckAction;
 use App\Livewire\Pages\Money\Concerns\AuthorizesMoneyPages;
 use App\Models\Check;
+use App\Services\Money\CheckFinancialSourceResolver;
 use App\Services\Money\EligibleMoneyAccounts;
 use App\Support\Tenancy\CompanyContext;
 use Brick\Math\Exception\MathException;
 use Carbon\Carbon;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Contracts\View\View;
 use Illuminate\Support\Str;
 use Livewire\Attributes\Layout;
@@ -52,13 +54,21 @@ class CheckDetail extends Component
         $check = Check::where('company_id', $this->pageCompanyId)->where('public_id', $this->publicId)->firstOrFail();
         $this->authorizeCheckDirection($check->direction);
 
+        $adapter = app(CheckFinancialSourceResolver::class)->resolve($check);
+        $adapter->authorizeRead($this->pageCompanyId, auth()->user());
+
         return $check;
     }
 
     public function recordTransition(string $type): void
     {
         $check = $this->instrument();
-        $this->authorizeCheckDirection($check->direction, true);
+        $adapter = app(CheckFinancialSourceResolver::class)->resolve($check);
+        $this->authorizeMoney('money.check.'.$check->direction.'.manage');
+        if (in_array($type, ['return', 'cancel'], true)) {
+            $adapter->authorizeReverse($this->pageCompanyId, auth()->user());
+        }
+
         $rules = ['eventDate' => 'required|date_format:Y-m-d', 'notes' => 'nullable|string|max:2000'];
         if (in_array($type, ['return', 'cancel'], true)) {
             $rules['notes'] = 'nullable|string|max:500';
@@ -79,11 +89,21 @@ class CheckDetail extends Component
     public function render(): View
     {
         $check = $this->instrument();
+        $adapter = app(CheckFinancialSourceResolver::class)->resolve($check);
         $canManage = $this->canMoney('money.check.'.$check->direction.'.manage');
-        $canUndo = $canManage && $this->canMoney($check->direction === 'incoming' ? 'money.receipt.reverse' : 'money.vendor_payment.reverse');
-        $payment = $check->direction === 'incoming' ? $check->customerPayment()->firstOrFail() : $check->vendorPayment()->firstOrFail();
+        $canUndo = false;
+        if ($canManage) {
+            try {
+                $adapter->authorizeReverse($this->pageCompanyId, auth()->user());
+                $canUndo = true;
+            } catch (AuthorizationException) {
+                $canUndo = false;
+            }
+        }
+        $payment = $adapter->sourceModel();
 
         return view('livewire.pages.money.check-detail', ['check' => $check, 'events' => $check->events()->get(), 'payment' => $payment,
+            'sourceAdapter' => $adapter,
             'banks' => $canManage ? app(EligibleMoneyAccounts::class)->query($this->pageCompanyId, 'bank')->where('currency_code', $check->currency_code)->get() : collect(), 'canManage' => $canManage, 'canUndo' => $canUndo]);
     }
 }

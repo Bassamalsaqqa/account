@@ -10,15 +10,17 @@ use App\Domain\Posting\DTO\PostingCommand;
 use App\Models\Check;
 use App\Models\CheckEvent;
 use App\Models\Company;
+use App\Models\CustomerPayment;
 use App\Models\LedgerAccount;
 use App\Models\MoneyAccount;
 use App\Models\PostingBatch;
 use App\Models\User;
+use App\Models\VendorPayment;
+use App\Services\Money\Sources\CustomerPaymentCheckSourceAdapter;
+use App\Services\Money\Sources\VendorPaymentCheckSourceAdapter;
 use App\Services\Purchasing\VendorPaymentHistoryCommands;
-use App\Services\Purchasing\VendorPaymentPostedIntegrityValidator;
 use App\Services\Sales\SalesPostingLines;
 use Brick\Math\BigDecimal;
-use Carbon\Carbon;
 use InvalidArgumentException;
 
 final class CheckHistory
@@ -70,19 +72,42 @@ final class CheckHistory
             || ($payload['company_id'] ?? null) !== (int) $check->company_id || ($payload['actor_id'] ?? null) !== (int) $check->created_by
             || ($payload['direction'] ?? null) !== $check->direction || ($payload['date'] ?? null) !== $check->received_issued_date->toDateString()
             || ($payload['due_date'] ?? null) !== $check->due_date->toDateString() || ($payload['currency_code'] ?? null) !== $check->currency_code
-            || ($payload['check_number'] ?? null) !== $check->check_number || ($payload['party_id'] ?? null) !== (int) $check->getAttribute($incoming ? 'customer_id' : 'vendor_id')
+            || ($payload['check_number'] ?? null) !== $check->check_number
             || ($payload['bank_name'] ?? null) !== $check->bank_name || ($payload['drawer'] ?? null) !== $check->drawer
             || ($payload['notes'] ?? null) !== $check->notes || ($payload['drawn_money_account_id'] ?? null) !== $check->drawn_money_account_id
             || ! BigDecimal::of($payload['amount'] ?? '0')->isEqualTo($check->amount) || ! BigDecimal::of($payload['exchange_rate'] ?? '0')->isEqualTo($check->exchange_rate)) {
             throw new InvalidArgumentException('Check request identity mismatch.');
         }
+
+        $source = app(CheckFinancialSourceResolver::class)->resolve($check);
+
+        // Check party_id if legacy payment
+        if ($source instanceof CustomerPaymentCheckSourceAdapter || $source instanceof VendorPaymentCheckSourceAdapter) {
+            if (($payload['party_id'] ?? null) !== (int) $check->getAttribute($incoming ? 'customer_id' : 'vendor_id')) {
+                throw new InvalidArgumentException('Check request party identity mismatch.');
+            }
+        }
+
         $amount = MoneyValues::amount($check->amount, $check->currency_code);
         $rate = MoneyValues::rate($check->exchange_rate, $check->currency_code, $company->base_currency_code);
         if (! in_array($check->direction, ['incoming', 'outgoing'], true) || ! MoneyValues::base($amount, $rate)->isEqualTo($check->amount_base)
-            || $check->base_currency_code !== $company->base_currency_code || trim($check->check_number) === ''
-            || ($incoming ? ($check->customer_id === null || $check->vendor_id !== null || $check->drawn_money_account_id !== null) : ($check->vendor_id === null || $check->customer_id !== null || $check->drawn_money_account_id === null))) {
+            || $check->base_currency_code !== $company->base_currency_code || trim($check->check_number) === '') {
             throw new InvalidArgumentException('Check immutable identity/base mismatch.');
         }
+
+        if ($incoming) {
+            if ($check->customer_id === null || $check->vendor_id !== null || $check->drawn_money_account_id !== null) {
+                throw new InvalidArgumentException('Incoming check party/drawn account mismatch.');
+            }
+        } else {
+            if ($check->customer_id !== null || $check->drawn_money_account_id === null) {
+                throw new InvalidArgumentException('Outgoing check customer/drawn account mismatch.');
+            }
+            if ($source instanceof VendorPaymentCheckSourceAdapter && $check->vendor_id === null) {
+                throw new InvalidArgumentException('Vendor payment check requires non-null vendor.');
+            }
+        }
+
         if (! $incoming) {
             $drawnBank = MoneyAccount::withTrashed()->where('company_id', $company->id)->findOrFail($check->drawn_money_account_id);
             app(MoneyAccountLedger::class)->validate($drawnBank);
@@ -90,32 +115,29 @@ final class CheckHistory
                 throw new InvalidArgumentException('Outgoing Check historical Bank provenance mismatch.');
             }
         }
-        $payment = $incoming ? $check->customerPayment()->firstOrFail() : $check->vendorPayment()->firstOrFail();
-        if ((int) $payment->company_id !== (int) $check->company_id || $payment->payment_method !== 'check' || $payment->money_account_id !== null
-            || (int) $payment->getAttribute($incoming ? 'customer_id' : 'vendor_id') !== (int) $check->getAttribute($incoming ? 'customer_id' : 'vendor_id')
-            || $payment->currency_code !== $check->currency_code || ! BigDecimal::of($payment->amount)->isEqualTo($amount)
-            || ! BigDecimal::of($payment->exchange_rate)->isEqualTo($rate) || ! BigDecimal::of($payment->amount_base)->isEqualTo($check->amount_base)
-            || Carbon::parse($payment->payment_date)->toDateString() !== $check->received_issued_date->toDateString() || (int) $payment->created_by !== (int) $check->created_by) {
-            throw new InvalidArgumentException('Check has no exact canonical linked Payment.');
+
+        // Delegate source integrity check to the adapter
+        $source->validateIntegrity($check);
+
+        // Legacy allocations intent check for CustomerPayment / VendorPayment
+        if ($source instanceof CustomerPaymentCheckSourceAdapter || $source instanceof VendorPaymentCheckSourceAdapter) {
+            /** @var CustomerPayment|VendorPayment $payment */
+            $payment = $source->sourceModel();
+            $documentKey = $incoming ? 'sales_invoice_id' : 'purchase_id';
+            $initialIntent = [];
+            foreach ($payment->allocations()->whereNull('application_event_id')->orderBy($documentKey)->get() as $allocation) {
+                $initialIntent[] = PaymentAllocationIntent::historicalRow($documentKey, (int) $allocation->getAttribute($documentKey),
+                    $allocation->allocated_amount, $allocation->payment_currency_amount, (int) $payment->allocation_version);
+            }
+            if ($initialIntent !== PaymentAllocationIntent::normalize($payload['allocations'] ?? [], $documentKey)
+                || $payment->idempotency_key !== 'check-payment:'.$check->public_id
+                || $payment->reference_number !== $check->check_number || $payment->notes !== $check->notes) {
+                throw new InvalidArgumentException('Check request does not own its linked Payment initial intent.');
+            }
         }
-        $documentKey = $incoming ? 'sales_invoice_id' : 'purchase_id';
-        $initialIntent = [];
-        foreach ($payment->allocations()->whereNull('application_event_id')->orderBy($documentKey)->get() as $allocation) {
-            $initialIntent[] = PaymentAllocationIntent::historicalRow($documentKey, (int) $allocation->getAttribute($documentKey),
-                $allocation->allocated_amount, $allocation->payment_currency_amount, (int) $payment->allocation_version);
-        }
-        if ($initialIntent !== PaymentAllocationIntent::normalize($payload['allocations'] ?? [], $documentKey)
-            || $payment->idempotency_key !== 'check-payment:'.$check->public_id
-            || $payment->reference_number !== $check->check_number || $payment->notes !== $check->notes) {
-            throw new InvalidArgumentException('Check request does not own its linked Payment initial intent.');
-        }
-        if (! $incoming) {
-            app(VendorPaymentPostedIntegrityValidator::class)->validate($payment);
-        } else {
-            app(CustomerPaymentHistory::class)->validate($payment);
-        }
-        $batch = PostingBatch::where('company_id', $check->company_id)->findOrFail($payment->posting_batch_id);
-        if ($batch->source_type !== ($incoming ? 'customer_payment' : 'vendor_payment') || (int) $batch->source_id !== (int) $payment->id
+
+        $batch = PostingBatch::where('company_id', $check->company_id)->findOrFail($source->postingBatchId());
+        if ($batch->source_type !== $source->sourceType() || (int) $batch->source_id !== (int) $source->sourceId()
             || $batch->posting_date->toDateString() !== $check->received_issued_date->toDateString()) {
             throw new InvalidArgumentException('Check original Payment batch provenance mismatch.');
         }
@@ -124,6 +146,7 @@ final class CheckHistory
         if (! BigDecimal::of((string) ($controlNet ?? '0'))->isEqualTo($incoming ? $check->amount_base : BigDecimal::of($check->amount_base)->negated())) {
             throw new InvalidArgumentException('Check initial control carrying value mismatch.');
         }
+
         $state = null;
         $lastDate = $check->received_issued_date->toDateString();
         $cleared = null;
@@ -132,6 +155,7 @@ final class CheckHistory
         if ($events->isEmpty()) {
             throw new InvalidArgumentException('Check event history is missing.');
         }
+
         foreach ($events as $index => $event) {
             $eventPayload = $event->getAttribute('request_payload');
             if (! is_array($eventPayload) || hash('sha256', json_encode($eventPayload, JSON_THROW_ON_ERROR)) !== $event->request_hash) {
@@ -179,8 +203,8 @@ final class CheckHistory
                     throw new InvalidArgumentException('Terminal Check event cannot invent settlement values.');
                 }
                 if (! in_array($state, $incoming ? ['received', 'deposited', 'cleared'] : ['issued'], true) || ($state === 'cleared' && $event->event_type === 'cancel')
-                    || $event->to_status !== ($event->event_type === 'return' ? 'returned' : 'cancelled') || $event->posting_batch_id !== null || ! $payment->is_reversed
-                    || (int) $event->payment_reversal_posting_batch_id !== (int) $payment->reversal_posting_batch_id) {
+                    || $event->to_status !== ($event->event_type === 'return' ? 'returned' : 'cancelled') || $event->posting_batch_id !== null || ! $source->isReversed()
+                    || (int) $event->payment_reversal_posting_batch_id !== (int) $source->reversalPostingBatchId()) {
                     throw new InvalidArgumentException('Check terminal Payment reversal mismatch.');
                 }
                 app(VendorPaymentHistoryCommands::class)->assertReversal($batch, (int) $event->payment_reversal_posting_batch_id, (int) $event->actor_id, $date);
@@ -206,7 +230,8 @@ final class CheckHistory
             $state = $event->to_status;
             $lastDate = $date;
         }
-        if ($state !== $check->status || $payment->is_reversed !== in_array($state, ['returned', 'cancelled'], true)
+
+        if ($state !== $check->status || $source->isReversed() !== in_array($state, ['returned', 'cancelled'], true)
             || ($cleared !== null && $state === 'cleared' && PostingBatch::findOrFail($cleared->posting_batch_id)->status !== 'posted')) {
             throw new InvalidArgumentException('Check lifecycle projection mismatch.');
         }

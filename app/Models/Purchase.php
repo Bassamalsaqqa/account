@@ -221,6 +221,12 @@ class Purchase extends Model
         return $this->hasMany(VendorPaymentAllocation::class);
     }
 
+    /** @return HasMany<LandedCostAllocation, $this> */
+    public function landedCostAllocations(): HasMany
+    {
+        return $this->hasMany(LandedCostAllocation::class)->orderBy('id');
+    }
+
     public function payablePosition(): PurchasePayablePosition
     {
         return PurchasePayablePosition::forPurchase($this);

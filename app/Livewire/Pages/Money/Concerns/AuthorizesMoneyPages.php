@@ -49,11 +49,7 @@ trait AuthorizesMoneyPages
         if (! in_array($direction, ['incoming', 'outgoing'], true)) {
             throw new AuthorizationException('Invalid Check direction.');
         }
-        $company = $this->authorizeMoney($manage ? 'money.check.'.$direction.'.manage' : 'money.check.view');
-        if ($direction === 'outgoing') {
-            $this->authorizeMoney('purchasing.cost.view');
-        }
 
-        return $company;
+        return $this->authorizeMoney($manage ? 'money.check.'.$direction.'.manage' : 'money.check.view');
     }
 }

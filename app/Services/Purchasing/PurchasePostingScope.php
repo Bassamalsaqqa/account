@@ -7,6 +7,7 @@ namespace App\Services\Purchasing;
 use App\Actions\Purchasing\PostPurchaseAction;
 use App\Domain\Inventory\DTO\StockMovementCommand;
 use App\Domain\Inventory\Exceptions\InvalidInventoryMovementException;
+use App\Models\LandedCostAllocation;
 use App\Models\Purchase;
 use App\Models\StockMovement;
 use App\Models\User;
@@ -112,6 +113,15 @@ final class PurchasePostingScope
             || $command->createdBy !== $this->actorId || (int) auth()->id() !== $this->actorId
             || ! $context->hasCompany() || (int) $context->companyId() !== $this->companyId) {
             throw new InvalidInventoryMovementException('Purchase receipt requires the active matching canonical posting capability.');
+        }
+    }
+
+    public function assertLandedAllocation(LandedCostAllocation $allocation, PurchaseReceiptCapability $capability): void
+    {
+        if (! $this->isActive($capability) || (int) $allocation->company_id !== $this->companyId
+            || (int) $allocation->purchase_id !== $this->purchaseId || $allocation->status !== 'draft'
+            || $allocation->isDirty() || (int) auth()->id() !== $this->actorId) {
+            throw new InvalidInventoryMovementException('Exact canonical landed allocation required.');
         }
     }
 
