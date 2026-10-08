@@ -112,6 +112,11 @@ class CompanyRoleService
         'reports.cost.view',
         'reports.financial.view',
         'reports.tax.view',
+        'reports.purchases.view',
+        'reports.inventory.view',
+        'reports.money.view',
+        'reports.expenses.view',
+        'reports.payroll.view',
     ];
 
     /**
@@ -137,6 +142,21 @@ class CompanyRoleService
 
     /** Existing-company upgrade preserves customized role grants; Owner retains the static catalog. */
     public function upgradeSalesCatalog(Company $company): void
+    {
+        $this->ensurePermissionsExist();
+        $previousTeam = getPermissionsTeamId();
+        try {
+            setPermissionsTeamId($company->id);
+            $owner = Role::where('company_id', $company->id)->where('name', 'Owner')->where('guard_name', 'web')->firstOrFail();
+            $owner->givePermissionTo(self::PERMISSIONS);
+        } finally {
+            setPermissionsTeamId($previousTeam);
+            app(PermissionRegistrar::class)->forgetCachedPermissions();
+        }
+    }
+
+    /** Existing-company upgrade preserves customized role grants; Owner retains the static catalog. */
+    public function upgradeReportingCatalog(Company $company): void
     {
         $this->ensurePermissionsExist();
         $previousTeam = getPermissionsTeamId();
@@ -209,6 +229,7 @@ class CompanyRoleService
             'money.transfer.view', 'money.transfer.create', 'money.transfer.reverse',
             'money.check.view', 'money.check.incoming.manage', 'money.check.outgoing.manage',
             'reports.sales.view', 'reports.profit.view', 'reports.cost.view', 'reports.financial.view', 'reports.tax.view',
+            'reports.purchases.view', 'reports.inventory.view', 'reports.money.view', 'reports.expenses.view', 'reports.payroll.view',
         ];
         $managerRole = Role::firstOrCreate([
             'company_id' => $company->id,
@@ -252,6 +273,7 @@ class CompanyRoleService
             'money.vendor_payment.allocate',
             'money.vendor_payment.reverse',
             'money.check.view', 'money.check.outgoing.manage',
+            'reports.purchases.view',
         ];
         $purchasingRole = Role::firstOrCreate([
             'company_id' => $company->id,
@@ -270,6 +292,7 @@ class CompanyRoleService
         ]);
         $warehousePerms = [
             'inventory.stock.view', 'inventory.stock.adjust', 'inventory.stock.transfer', 'inventory.product.manage',
+            'reports.inventory.view',
         ];
         $warehouseRole->syncPermissions(
             $catalogPermissions->filter(fn ($p) => in_array($p->name, $warehousePerms, true))
@@ -304,6 +327,8 @@ class CompanyRoleService
             'money.cash.view', 'money.bank.view', 'money.receipt.view',
             'money.transfer.view', 'money.check.view',
             'reports.sales.view',
+            'reports.purchases.view',
+            'reports.inventory.view',
         ];
         $viewerRole = Role::firstOrCreate([
             'company_id' => $company->id,
