@@ -2344,7 +2344,11 @@ Vendor
 
 ## Phase 7 — Expenses/employees/landed cost
 
+COMPLETE / ACCEPTED / MERGED / AWAITING DEPLOYMENT. Accepted source `e8a5dee856bc06da48b1313f8776d723af309b5e` merged through PR #15 at `c07559c92816f838532e4b9d1c1537065f50ad5c` on 2026-10-08. Corrections 01–03 are independently accepted; provenance and outcomes are recorded in ADR 0007. Production deployment is pending separate authorization.
+
 ## Phase 8 — Reports
+
+PLANNED / UNSTARTED.
 
 ## Phase 9 — Documents/catalog/QR/sharing
 

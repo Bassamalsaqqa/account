@@ -1,8 +1,20 @@
 # ADR 0007 — Expenses, payroll-lite, employee advances and landed cost
 
-Status: Implemented / Awaiting Independent Review.
+Status: COMPLETE / ACCEPTED / MERGED / AWAITING DEPLOYMENT.
 Baseline: `a98e8e492b6cbef65593cf16a3108fd94d5997ed` (Phase 6 complete).
-No merge or deployment. Phase 8 remains unstarted.
+Accepted source: `e8a5dee856bc06da48b1313f8776d723af309b5e`.
+PR: [#15](https://github.com/Bassamalsaqqa/account/pull/15), merged on 2026-10-08 through normal merge commit `c07559c92816f838532e4b9d1c1537065f50ad5c`.
+Accepted and merged tree: `6d783943249ce3f085196ae67adf82ce91055ed8` (exact equality).
+Deployment: NOT YET DEPLOYED. Separate Product Owner deployment authorization is required.
+Phase 8: PLANNED / UNSTARTED.
+
+## Accepted correction checkpoints
+
+All three corrections received independent architect source acceptance before merge:
+
+1. **Correction 01** (`e1f08198e67bf0ccbee085e7352206ed32e34423`): inactive/archived Employees remain eligible to settle recognized salary obligations and retain authorized historical readback; new Advances and Salary Entries remain blocked after retirement. Purchase acquisition amounts use the stored base currency. Landed Cost chronology is enforced before allocation mutations, and backwards Purchase-date edits roll back atomically when they invalidate an allocation.
+2. **Correction 02** (`20cded4189e83c36eae46cbb86e3e00300ef9a0a`): every new permanent Expense upload is either owned by the canonical Expense or removed, including failed submissions and Cash/Bank/Check retries. Landed Cost classification follows fresh capability checks. Expense Index uses the frozen bilingual category snapshot while preserving category-ID filters and financial redaction.
+3. **Correction 03** (`e8a5dee856bc06da48b1313f8776d723af309b5e`): Check Index and Detail share snapshot-only party formatting, preserving Customer/Vendor/Employee/payee identity across master-data changes, bilingual fallbacks and existing source authorization.
 
 ## Authority and immutable history
 
@@ -86,4 +98,4 @@ Three additive migrations create nine tables and default-zero `purchase_lines.la
 
 ## Scope
 
-Payroll-lite only. No attendance, leave, statutory payroll, recurring automation, approvals, retroactive landed revaluation, Phase 8 reporting or Phase 9 documents. Independent acceptance, normal Git integration and separate deployment authorization remain pending.
+Payroll-lite only. No attendance, leave, statutory payroll, recurring automation, approvals, retroactive landed revaluation, Phase 8 reporting or Phase 9 documents. Independent source acceptance and normal Git integration are complete. Deployment remains pending separate authorization; Phase 8 remains planned and unstarted.

@@ -4935,7 +4935,7 @@ Vendor
 
 ## Phase 6 — Money/checks
 
-Complete / Accepted Source / Merged / Deployed (Phase 6 accepted source `3d32c80a2b437c8e7245e7c5b4f6ee16298ca172` merged through PR #14 at `51adf805a85de72c3f15c764bc2eac7786f4efd1` and deployed on 2026-10-07; see ADR 0006. Phase 7 implementation candidate awaits independent review).
+Complete / Accepted Source / Merged / Deployed (Phase 6 accepted source `3d32c80a2b437c8e7245e7c5b4f6ee16298ca172` merged through PR #14 at `51adf805a85de72c3f15c764bc2eac7786f4efd1` and deployed on 2026-10-07; see ADR 0006).
 
 - Cash/Bank;
 - transfers;
@@ -4946,7 +4946,11 @@ Complete / Accepted Source / Merged / Deployed (Phase 6 accepted source `3d32c80
 
 ## Phase 7 — Expenses, employees, landed cost
 
+COMPLETE / ACCEPTED / MERGED / AWAITING DEPLOYMENT. Accepted source `e8a5dee856bc06da48b1313f8776d723af309b5e` merged through PR #15 at `c07559c92816f838532e4b9d1c1537065f50ad5c` on 2026-10-08 with exact accepted-tree preservation. Corrections 01–03 are independently accepted; see ADR 0007 for outcomes and provenance. Phase 7 is not yet deployed.
+
 ## Phase 8 — Reporting
+
+PLANNED / UNSTARTED.
 
 ## Phase 9 — Documents, QR, catalogs and sharing hardening
 
@@ -5583,6 +5587,6 @@ Next action:
 That sequence is intentional.
 
 
-### Phase 7 source candidate checkpoint
+### Phase 7 accepted source checkpoint
 
-Phase 7 Expenses / Payroll-Lite / Draft Landed Cost is implemented and awaiting independent review. See ADR 0007 for canonical event authority, source-aware Check/Money security, exact payroll residuals and draft-only capitalization. Not accepted, merged or deployed. Phase 8 remains unstarted.
+Phase 7 Expenses / Payroll-Lite / Draft Landed Cost is complete, independently accepted and merged through PR #15. See ADR 0007 for exact accepted-source/merge identities, Corrections 01–03, canonical event authority, source-aware Check/Money security, exact payroll residuals and draft-only capitalization. Deployment awaits separate Product Owner authorization. Phase 8 remains planned and unstarted.
