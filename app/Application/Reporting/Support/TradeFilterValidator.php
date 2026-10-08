@@ -34,11 +34,15 @@ final class TradeFilterValidator
                 }
             }
         }
-        if (isset($raw['period']) && is_string($raw['period'])) {
-            $raw['preset'] = $raw['period'];
-            unset($raw['period']);
+        if ($input instanceof ReportFilters) {
+            $f = $input->validateForCompany($company, $defaultPeriod);
+        } else {
+            if (isset($raw['period']) && is_string($raw['period'])) {
+                $raw['preset'] = $raw['period'];
+                unset($raw['period']);
+            }
+            $f = ReportFilters::fromArray($company, $raw, $defaultPeriod);
         }
-        $f = ReportFilters::fromArray($company, $raw, $defaultPeriod);
         foreach (['customer_id' => $f->customerId, 'vendor_id' => $f->vendorId, 'product_id' => $f->productId,
             'category_id' => $f->categoryId, 'warehouse_id' => $f->warehouseId, 'employee_id' => $f->employeeId,
             'money_account_id' => $f->moneyAccountId, 'currency_code' => $f->currencyCode,

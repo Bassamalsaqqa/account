@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Application\Reporting\Support;
 
 use App\Application\Reporting\DTO\ReportFilters;
+use App\Application\Reporting\DTO\ReportPeriod;
 use App\Application\Reporting\DTO\ReportResult;
 use App\Application\Reporting\Exceptions\InvalidReportFilterException;
 use App\Application\Reporting\Exceptions\ReportingException;
@@ -21,9 +22,11 @@ final class OperationalReportRead
      * @param  list<string>  $allowed
      * @param  array<string,list<string>>  $choices
      */
-    public static function filters(Company $company, ReportFilters|array $input, array $allowed, array $choices = []): ReportFilters
+    public static function filters(Company $company, ReportFilters|array $input, array $allowed, array $choices = [], ?ReportPeriod $defaultPeriod = null): ReportFilters
     {
-        $f = ReportFilters::fromArray($company, $input instanceof ReportFilters ? $input->toArray() : $input);
+        $f = $input instanceof ReportFilters
+            ? $input->validateForCompany($company, $defaultPeriod)
+            : ReportFilters::fromArray($company, $input, $defaultPeriod);
         foreach ($f->toArray() as $field => $value) {
             if (in_array($field, ['period', 'page', 'per_page'], true) || $value === null) {
                 continue;

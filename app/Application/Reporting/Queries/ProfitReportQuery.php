@@ -55,7 +55,9 @@ final class ProfitReportQuery
 
         // 2. Validate filters
         $company = $this->guard->company($company, $actor);
-        $validatedFilters = ReportFilters::fromArray($company, $filters instanceof ReportFilters ? $filters->toArray() : $filters);
+        $validatedFilters = $filters instanceof ReportFilters
+            ? $filters->validateForCompany($company)
+            : ReportFilters::fromArray($company, $filters);
         foreach (['customer_id', 'vendor_id', 'product_id', 'category_id', 'warehouse_id', 'employee_id', 'money_account_id', 'currency_code', 'status', 'grouping', 'sort'] as $field) {
             if ($validatedFilters->toArray()[$field] !== null) {
                 throw new InvalidReportFilterException("Filter [$field] is not supported by the GL Profit report.");

@@ -39,6 +39,7 @@ final readonly class ReportFilters
         public ?string $sort = null,
         public int $page = 1,
         public int $perPage = 50,
+        public bool $isExplicitPeriod = true,
     ) {
         if ($page < 1 || $perPage < 1 || $perPage > 100) {
             throw new InvalidReportFilterException('Pagination requires a positive page and per_page between 1 and 100.');
@@ -48,6 +49,86 @@ final readonly class ReportFilters
                 throw new InvalidReportFilterException('Entity identities must be positive integers.');
             }
         }
+    }
+
+    public function validateForCompany(Company $company, ?ReportPeriod $defaultPeriod = null): self
+    {
+        $isExplicit = $this->isExplicitPeriod;
+        if (! $this->isExplicitPeriod && $defaultPeriod !== null) {
+            $period = $defaultPeriod;
+        } else {
+            $period = $this->period;
+        }
+
+        if ($period->timezone !== (string) $company->timezone) {
+            $period = new ReportPeriod(
+                $period->preset,
+                $period->startDate,
+                $period->endDate,
+                (string) $company->timezone,
+            );
+        }
+
+        $models = [
+            'customer_id' => [Customer::class, $this->customerId],
+            'vendor_id' => [Vendor::class, $this->vendorId],
+            'product_id' => [Product::class, $this->productId],
+            'warehouse_id' => [Warehouse::class, $this->warehouseId],
+            'employee_id' => [Employee::class, $this->employeeId],
+            'money_account_id' => [MoneyAccount::class, $this->moneyAccountId],
+        ];
+        foreach ($models as $field => [$modelClass, $id]) {
+            if ($id !== null) {
+                /** @var class-string<Model> $modelClass */
+                if (! $modelClass::withoutGlobalScopes()->where('company_id', $company->id)->whereKey($id)->exists()) {
+                    throw InvalidReportFilterException::foreignEntity($field, $id, (int) $company->id);
+                }
+            }
+        }
+
+        $currency = $this->currencyCode !== null ? strtoupper($this->currencyCode) : null;
+        if ($currency !== null && ! CompanyCurrency::withoutGlobalScopes()->where('company_id', $company->id)->where('currency_code', $currency)->exists()) {
+            throw new InvalidReportFilterException('Currency is not configured for this company.');
+        }
+
+        return new self(
+            period: $period,
+            customerId: $this->customerId,
+            vendorId: $this->vendorId,
+            productId: $this->productId,
+            categoryId: $this->categoryId,
+            warehouseId: $this->warehouseId,
+            employeeId: $this->employeeId,
+            moneyAccountId: $this->moneyAccountId,
+            currencyCode: $currency,
+            status: $this->status,
+            grouping: $this->grouping,
+            sort: $this->sort,
+            page: $this->page,
+            perPage: $this->perPage,
+            isExplicitPeriod: $isExplicit,
+        );
+    }
+
+    public function withPeriod(ReportPeriod $period, bool $isExplicit = true): self
+    {
+        return new self(
+            period: $period,
+            customerId: $this->customerId,
+            vendorId: $this->vendorId,
+            productId: $this->productId,
+            categoryId: $this->categoryId,
+            warehouseId: $this->warehouseId,
+            employeeId: $this->employeeId,
+            moneyAccountId: $this->moneyAccountId,
+            currencyCode: $this->currencyCode,
+            status: $this->status,
+            grouping: $this->grouping,
+            sort: $this->sort,
+            page: $this->page,
+            perPage: $this->perPage,
+            isExplicitPeriod: $isExplicit,
+        );
     }
 
     /**
@@ -67,6 +148,7 @@ final readonly class ReportFilters
             throw InvalidReportFilterException::foreignEntity('company_id', $input['company_id'], (int) $company->id);
         }
 
+        $isExplicitPeriod = true;
         $periodInput = $input['period'] ?? null;
         if ($periodInput instanceof ReportPeriod) {
             $period = new ReportPeriod($periodInput->preset, $periodInput->startDate, $periodInput->endDate, (string) $company->timezone);
@@ -92,7 +174,12 @@ final readonly class ReportFilters
                 if ($preset === ReportPeriod::PRESET_CUSTOM) {
                     throw new InvalidReportFilterException('Custom period requires explicit start_date and end_date.');
                 }
-                $period = ReportPeriod::fromPreset($preset ?? ReportPeriod::PRESET_THIS_MONTH, $company);
+                if ($preset !== null) {
+                    $period = ReportPeriod::fromPreset($preset, $company);
+                } else {
+                    $isExplicitPeriod = false;
+                    $period = $defaultPeriod ?? ReportPeriod::fromPreset(ReportPeriod::PRESET_THIS_MONTH, $company);
+                }
             } else {
                 if ($startDate === null || $endDate === null) {
                     throw new InvalidReportFilterException('Period requires both start_date and end_date.');
@@ -112,8 +199,11 @@ final readonly class ReportFilters
                 self::text($input['to'] ?? $input['end_date'] ?? null, 'to') ?? '',
                 $company,
             );
+        } elseif (isset($input['preset'])) {
+            $period = ReportPeriod::fromPreset(self::text($input['preset'], 'preset') ?? 'this_month', $company);
         } else {
-            $period = $defaultPeriod ?? ReportPeriod::fromPreset(self::text($input['preset'] ?? 'this_month', 'preset') ?? 'this_month', $company);
+            $isExplicitPeriod = false;
+            $period = $defaultPeriod ?? ReportPeriod::fromPreset('this_month', $company);
         }
 
         $ids = [];
@@ -148,6 +238,7 @@ final readonly class ReportFilters
             sort: self::text($input['sort'] ?? null, 'sort'),
             page: self::positiveInteger($input['page'] ?? 1, 'page'),
             perPage: self::positiveInteger($input['per_page'] ?? 50, 'per_page'),
+            isExplicitPeriod: $isExplicitPeriod,
         );
     }
 

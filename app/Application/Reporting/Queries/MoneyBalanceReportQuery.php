@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Application\Reporting\Queries;
 
 use App\Application\Reporting\DTO\ReportFilters;
+use App\Application\Reporting\DTO\ReportPeriod;
 use App\Application\Reporting\DTO\ReportResult;
 use App\Application\Reporting\Exceptions\ReportingException;
 use App\Application\Reporting\Security\ReportingGuard;
@@ -24,7 +25,8 @@ final class MoneyBalanceReportQuery
     {
         $company = $this->guard->company($company, $actor);
         $user = $this->guard->authorize($company, $actor, 'reports.money.view');
-        $f = Read::filters($company, $filters, ['money_account_id', 'currency_code', 'grouping'], ['grouping' => ['cash', 'bank']]);
+        $defaultPeriod = ReportPeriod::fromPreset(ReportPeriod::PRESET_TODAY, $company);
+        $f = Read::filters($company, $filters, ['money_account_id', 'currency_code', 'grouping'], ['grouping' => ['cash', 'bank']], $defaultPeriod);
 
         $types = [];
         foreach (['cash', 'bank'] as $type) {

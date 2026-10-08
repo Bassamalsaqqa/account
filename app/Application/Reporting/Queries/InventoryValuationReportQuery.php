@@ -27,8 +27,8 @@ final class InventoryValuationReportQuery
         InventoryReportHelper::validateFilters($company, $f);
         $cost = $this->guard->allows($company, ReportPermissionCatalog::INVENTORY_VALUATION, $actor);
         $q = InventoryReportRead::positions($company, $f, $cost);
-        $totals = ['total_quantity' => Read::decimal((string) (clone $q)->sum('on_hand_base')), 'products_count' => (clone $q)->count(),
-            'in_stock_count' => (clone $q)->where('on_hand_base', '>', 0)->count()];
+        $totals = ['total_quantity' => Read::decimal((string) (clone $q)->sum('on_hand_base')), 'products_count' => (clone $q)->distinct()->count('product_id'),
+            'in_stock_count' => (clone $q)->where('on_hand_base', '>', 0)->distinct()->count('product_id')];
         if ($cost) {
             $totals['total_valuation'] = Read::decimal((string) (clone $q)->sum('value_base'));
         }

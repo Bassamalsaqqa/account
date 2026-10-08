@@ -19,7 +19,7 @@
         @error('filters')<p class="text-sm text-danger" role="alert">{{ $message }}</p>@enderror
     </form>
     @if($missing)<p class="rounded-card bg-white border border-border p-5 text-sm text-text-secondary">{{ __('reports.select_required') }}</p>@endif
-    @if($definition['current'])<p class="text-xs text-text-secondary">{{ __('reports.current_balance') }}</p>@endif
+    @if($definition['current'] && (!isset($result->meta['as_of_date']) || $result->meta['as_of_date'] === \App\Application\Reporting\DTO\ReportPeriod::fromPreset(\App\Application\Reporting\DTO\ReportPeriod::PRESET_TODAY, $company)->endDate))<p class="text-xs text-text-secondary">{{ __('reports.current_balance') }}</p>@endif
     @if($result)
         <div class="flex flex-wrap gap-x-6 gap-y-2 text-xs text-text-secondary"><span>{{ __('reports.base_currency') }}: <bdi>{{ $company->base_currency_code }}</bdi></span>@if(isset($result->meta['as_of_date']))<span>{{ __('reports.as_of') }}: <bdi>{{ $result->meta['as_of_date'] }}</bdi></span>@elseif(isset($result->filters['period']['start_date']))<span><bdi>{{ $result->filters['period']['start_date'] }} — {{ $result->filters['period']['end_date'] }}</bdi></span>@endif</div>
         @if($totals)<section class="rounded-card bg-white border border-border p-5"><h2 class="font-bold text-sm mb-4">{{ __('reports.summary') }}</h2><dl class="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-x-6 gap-y-4">@foreach($totals as $total)<div><dt class="text-xs text-text-secondary">{{ $total['label'] }}</dt><dd class="mt-1 text-sm font-bold tabular-nums"><bdi>{{ $total['value'] }} {{ $total['currency'] }}</bdi></dd></div>@endforeach</dl></section>@endif

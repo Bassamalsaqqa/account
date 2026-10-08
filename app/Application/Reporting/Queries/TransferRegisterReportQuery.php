@@ -62,7 +62,10 @@ final class TransferRegisterReportQuery
                     'from_account_name' => MoneyReportHelper::extractPartyName(Read::snapshot($r->from_account_snapshot)),
                     'to_account_name' => MoneyReportHelper::extractPartyName(Read::snapshot($r->to_account_snapshot)),
                     'from_currency_code' => (string) $r->from_currency_code, 'to_currency_code' => (string) $r->to_currency_code,
-                    'from_exchange_rate' => (string) $r->from_exchange_rate, 'to_exchange_rate' => (string) $r->to_exchange_rate, 'is_reversal' => (bool) $r->is_reversal];
+                    'from_exchange_rate' => (string) $r->from_exchange_rate, 'to_exchange_rate' => (string) $r->to_exchange_rate,
+                    'is_reversal' => (bool) $r->is_reversal,
+                    'status' => $r->is_reversal ? 'reversal' : 'original',
+                ];
                 foreach (['from_amount', 'to_amount', 'base_value_from', 'base_value_to', 'fx_gain_loss_base'] as $column) {
                     $row[$column] = Read::decimal((string) $r->$column);
                 }

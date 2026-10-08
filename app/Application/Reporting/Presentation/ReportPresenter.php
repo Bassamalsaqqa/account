@@ -55,7 +55,7 @@ final class ReportPresenter
     }
 
     /** @param array<string, mixed> $row */
-    private function isColumnPresentInRow(array $row, string $key): bool
+    public function isColumnPresentInRow(array $row, string $key): bool
     {
         if (array_key_exists($key, $row)) {
             return true;

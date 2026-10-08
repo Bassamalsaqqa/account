@@ -423,6 +423,7 @@ final class TradeEventActivity
 
         if ($filters->categoryId !== null) {
             $lines->where('p.category_id', $filters->categoryId);
+            $inverseLines->where('p.category_id', $filters->categoryId);
             $returnLines->where('p.category_id', $filters->categoryId);
             $inverseReturnLines->where('p.category_id', $filters->categoryId);
         }

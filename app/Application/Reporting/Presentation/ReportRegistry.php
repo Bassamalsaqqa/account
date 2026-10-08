@@ -330,26 +330,22 @@ final class ReportRegistry
                     'type' => 'text',
                 ],
                 2 => [
-                    'key' => 'product_name',
-                    'type' => 'text',
-                ],
-                3 => [
                     'key' => 'customer_name',
                     'type' => 'text',
                 ],
-                4 => [
+                3 => [
                     'key' => 'revenue_base',
                     'type' => 'decimal',
                 ],
-                5 => [
+                4 => [
                     'key' => 'cogs_base',
                     'type' => 'decimal',
                 ],
-                6 => [
+                5 => [
                     'key' => 'gross_profit_base',
                     'type' => 'decimal',
                 ],
-                7 => [
+                6 => [
                     'key' => 'gross_margin',
                     'type' => 'decimal',
                 ],
@@ -1963,13 +1959,19 @@ final class ReportRegistry
                 4 => 'status',
                 5 => 'page',
                 6 => 'per_page',
+                7 => 'grouping',
             ],
             'required' => [
             ],
             'defaults' => [
+                'grouping' => 'warehouse',
             ],
             'current' => false,
             'options' => [
+                'grouping' => [
+                    0 => 'product',
+                    1 => 'warehouse',
+                ],
             ],
         ],
         'inventory.movements' => [
@@ -2120,26 +2122,22 @@ final class ReportRegistry
                     'type' => 'text',
                 ],
                 2 => [
-                    'key' => 'category_name',
-                    'type' => 'text',
-                ],
-                3 => [
                     'key' => 'unit_code',
                     'type' => 'text',
                 ],
-                4 => [
+                3 => [
                     'key' => 'quantity_on_hand',
                     'type' => 'decimal',
                 ],
-                5 => [
+                4 => [
                     'key' => 'minimum_stock',
                     'type' => 'decimal',
                 ],
-                6 => [
+                5 => [
                     'key' => 'shortage_quantity',
                     'type' => 'decimal',
                 ],
-                7 => [
+                6 => [
                     'key' => 'stock_status',
                     'type' => 'text',
                 ],
@@ -2359,7 +2357,7 @@ final class ReportRegistry
             'name_ar' => 'تحويلات المخزون',
             'columns' => [
                 0 => [
-                    'key' => 'movement_date',
+                    'key' => 'transfer_date',
                     'type' => 'text',
                 ],
                 1 => [
@@ -2379,7 +2377,11 @@ final class ReportRegistry
                     'type' => 'text',
                 ],
                 5 => [
-                    'key' => 'quantity_base',
+                    'key' => 'quantity_transferred',
+                    'type' => 'decimal',
+                ],
+                6 => [
+                    'key' => 'unit_cost_base',
                     'type' => 'decimal',
                 ],
             ],
@@ -2423,7 +2425,7 @@ final class ReportRegistry
                 ],
                 3 => [
                     'key' => 'lot_number',
-                    'type' => 'decimal',
+                    'type' => 'text',
                 ],
                 4 => [
                     'key' => 'expiry_date',
@@ -2720,7 +2722,7 @@ final class ReportRegistry
                     'type' => 'text',
                 ],
                 3 => [
-                    'key' => 'from_currency',
+                    'key' => 'from_currency_code',
                     'type' => 'text',
                 ],
                 4 => [
@@ -2732,7 +2734,7 @@ final class ReportRegistry
                     'type' => 'text',
                 ],
                 6 => [
-                    'key' => 'to_currency',
+                    'key' => 'to_currency_code',
                     'type' => 'text',
                 ],
                 7 => [
@@ -2740,14 +2742,18 @@ final class ReportRegistry
                     'type' => 'decimal',
                 ],
                 8 => [
-                    'key' => 'base_value',
+                    'key' => 'base_value_from',
                     'type' => 'decimal',
                 ],
                 9 => [
-                    'key' => 'fx_gain_loss_base',
+                    'key' => 'base_value_to',
                     'type' => 'decimal',
                 ],
                 10 => [
+                    'key' => 'fx_gain_loss_base',
+                    'type' => 'decimal',
+                ],
+                11 => [
                     'key' => 'status',
                     'type' => 'text',
                 ],
@@ -2789,7 +2795,7 @@ final class ReportRegistry
                 ],
                 2 => [
                     'key' => 'party_name',
-                    'type' => 'decimal',
+                    'type' => 'text',
                 ],
                 3 => [
                     'key' => 'received_issued_date',
@@ -3410,7 +3416,7 @@ final class ReportRegistry
                 ],
                 2 => [
                     'key' => 'party_name',
-                    'type' => 'decimal',
+                    'type' => 'text',
                 ],
                 3 => [
                     'key' => 'received_issued_date',
@@ -3490,7 +3496,7 @@ final class ReportRegistry
                 ],
                 2 => [
                     'key' => 'party_name',
-                    'type' => 'decimal',
+                    'type' => 'text',
                 ],
                 3 => [
                     'key' => 'received_issued_date',
@@ -3570,7 +3576,7 @@ final class ReportRegistry
                 ],
                 2 => [
                     'key' => 'party_name',
-                    'type' => 'decimal',
+                    'type' => 'text',
                 ],
                 3 => [
                     'key' => 'received_issued_date',
@@ -3650,7 +3656,7 @@ final class ReportRegistry
                 ],
                 2 => [
                     'key' => 'party_name',
-                    'type' => 'decimal',
+                    'type' => 'text',
                 ],
                 3 => [
                     'key' => 'received_issued_date',
@@ -3721,30 +3727,14 @@ final class ReportRegistry
             'name_ar' => 'المصروفات حسب الفترة',
             'columns' => [
                 0 => [
-                    'key' => 'period_key',
+                    'key' => 'period',
                     'type' => 'text',
                 ],
                 1 => [
-                    'key' => 'currency_code',
-                    'type' => 'text',
-                ],
-                2 => [
-                    'key' => 'type_label',
-                    'type' => 'text',
-                ],
-                3 => [
-                    'key' => 'category_name',
-                    'type' => 'text',
-                ],
-                4 => [
-                    'key' => 'total',
-                    'type' => 'decimal',
-                ],
-                5 => [
                     'key' => 'total_base',
                     'type' => 'decimal',
                 ],
-                6 => [
+                2 => [
                     'key' => 'transaction_count',
                     'type' => 'decimal',
                 ],
@@ -3855,31 +3845,11 @@ final class ReportRegistry
             'name_ar' => 'المصروفات حسب العملة',
             'columns' => [
                 0 => [
-                    'key' => 'period_key',
-                    'type' => 'text',
-                ],
-                1 => [
                     'key' => 'currency_code',
                     'type' => 'text',
                 ],
-                2 => [
-                    'key' => 'type_label',
-                    'type' => 'text',
-                ],
-                3 => [
-                    'key' => 'category_name',
-                    'type' => 'text',
-                ],
-                4 => [
-                    'key' => 'total',
-                    'type' => 'decimal',
-                ],
-                5 => [
-                    'key' => 'total_base',
-                    'type' => 'decimal',
-                ],
-                6 => [
-                    'key' => 'transaction_count',
+                1 => [
+                    'key' => 'total_amount',
                     'type' => 'decimal',
                 ],
             ],
@@ -3928,30 +3898,14 @@ final class ReportRegistry
             'name_ar' => 'اتجاه المصروفات',
             'columns' => [
                 0 => [
-                    'key' => 'period_key',
+                    'key' => 'period',
                     'type' => 'text',
                 ],
                 1 => [
-                    'key' => 'currency_code',
-                    'type' => 'text',
-                ],
-                2 => [
-                    'key' => 'type_label',
-                    'type' => 'text',
-                ],
-                3 => [
-                    'key' => 'category_name',
-                    'type' => 'text',
-                ],
-                4 => [
-                    'key' => 'total',
-                    'type' => 'decimal',
-                ],
-                5 => [
                     'key' => 'total_base',
                     'type' => 'decimal',
                 ],
-                6 => [
+                2 => [
                     'key' => 'transaction_count',
                     'type' => 'decimal',
                 ],
@@ -4001,30 +3955,18 @@ final class ReportRegistry
             'name_ar' => 'مصروفات الوقود',
             'columns' => [
                 0 => [
-                    'key' => 'period_key',
-                    'type' => 'text',
-                ],
-                1 => [
-                    'key' => 'currency_code',
-                    'type' => 'text',
-                ],
-                2 => [
-                    'key' => 'type_label',
-                    'type' => 'text',
-                ],
-                3 => [
                     'key' => 'category_name',
                     'type' => 'text',
                 ],
-                4 => [
-                    'key' => 'total',
-                    'type' => 'decimal',
+                1 => [
+                    'key' => 'category_code',
+                    'type' => 'text',
                 ],
-                5 => [
+                2 => [
                     'key' => 'total_base',
                     'type' => 'decimal',
                 ],
-                6 => [
+                3 => [
                     'key' => 'transaction_count',
                     'type' => 'decimal',
                 ],
@@ -4074,30 +4016,18 @@ final class ReportRegistry
             'name_ar' => 'مصروفات التوصيل',
             'columns' => [
                 0 => [
-                    'key' => 'period_key',
-                    'type' => 'text',
-                ],
-                1 => [
-                    'key' => 'currency_code',
-                    'type' => 'text',
-                ],
-                2 => [
-                    'key' => 'type_label',
-                    'type' => 'text',
-                ],
-                3 => [
                     'key' => 'category_name',
                     'type' => 'text',
                 ],
-                4 => [
-                    'key' => 'total',
-                    'type' => 'decimal',
+                1 => [
+                    'key' => 'category_code',
+                    'type' => 'text',
                 ],
-                5 => [
+                2 => [
                     'key' => 'total_base',
                     'type' => 'decimal',
                 ],
-                6 => [
+                3 => [
                     'key' => 'transaction_count',
                     'type' => 'decimal',
                 ],
@@ -4147,30 +4077,18 @@ final class ReportRegistry
             'name_ar' => 'مصروفات النقل',
             'columns' => [
                 0 => [
-                    'key' => 'period_key',
-                    'type' => 'text',
-                ],
-                1 => [
-                    'key' => 'currency_code',
-                    'type' => 'text',
-                ],
-                2 => [
-                    'key' => 'type_label',
-                    'type' => 'text',
-                ],
-                3 => [
                     'key' => 'category_name',
                     'type' => 'text',
                 ],
-                4 => [
-                    'key' => 'total',
-                    'type' => 'decimal',
+                1 => [
+                    'key' => 'category_code',
+                    'type' => 'text',
                 ],
-                5 => [
+                2 => [
                     'key' => 'total_base',
                     'type' => 'decimal',
                 ],
-                6 => [
+                3 => [
                     'key' => 'transaction_count',
                     'type' => 'decimal',
                 ],
@@ -4422,6 +4340,18 @@ final class ReportRegistry
             ],
         ],
     ];
+
+    /** @return array<string, array<string, mixed>> */
+    public function all(): array
+    {
+        return self::DEFINITIONS;
+    }
+
+    /** @return list<string> */
+    public function keys(): array
+    {
+        return array_keys(self::DEFINITIONS);
+    }
 
     /** @return array<string, mixed> */
     public function definition(string $key): array
