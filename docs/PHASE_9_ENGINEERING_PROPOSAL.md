@@ -1,6 +1,6 @@
 ﻿# Phase 9 engineering proposal — continuity and reconciliation
 
-Status: **PLANNING CONTRACT FINALIZED — READY FOR OWNER-AUTHORIZED MERGE**. C1–C5 independently accepted under [review 5473385333](https://github.com/Bassamalsaqqa/account/pull/17#pullrequestreview-5473385333); the pre-approved catalog-media addendum is incorporated. Phase 9 runtime implementation remains **UNSTARTED**.
+Status: **IMPLEMENTED / INDEPENDENT SOURCE ACCEPTANCE PENDING**. Planning PR #17 was merged at `3f82b947d319d519cea6d25cecd7724bfc909672`. C1–C5 and the catalog-media addendum remain frozen. The [source handoff](PHASE_9_SOURCE_ACCEPTANCE_HANDOFF.md) and [ADR 0009](adr/0009-documents-secure-sharing-and-catalogs.md) record implementation and actual QA; merge/deployment require separate Owner authorization.
 
 The single current execution contract is [Phase 9 P9-0 discovery and execution lock](PHASE_9_P0_DISCOVERY_AND_EXECUTION_LOCK.md). It reconciles this earlier proposal with the complete [Product Owner roadmap](ACCOUNTING_PHASE_9_FULL_ENGINEERING_ROADMAP_AND_FUTURE_AI_MOBILE_V1.md), accepted source, Master Specification, Blueprint and ADRs 0004–0008. The owner roadmap copy retains its original bytes; the execution lock explicitly supersedes its stale production-verification checkpoint.
 
@@ -26,4 +26,4 @@ The original 242-line proposal and seven-file production documentation reconcili
 
 The execution lock supplies the evidence inventory, updated documents/RBAC matrix, public threat contract, proposed additive migrations, concrete UI flows, unchanged AGY package dependencies, carried discovery test/PDF results and precise C1–C5 negative acceptance matrix. The five policy decisions are closed; resource budgets remain proposed measurement targets. Correction 01 runs documentation/Git verification only, with no runtime tests or discovery repeated.
 
-This finalized documentation PR awaits explicit Owner-authorized merge; the final addendum requires only documentation/Git checks, not another architecture review or application tests. It does not authorize implementation, merge, migration or deployment. Begin P9-A only after explicit Product Owner implementation authorization.
+The preceding discovery and correction results describe the accepted planning checkpoint. The Owner subsequently authorized P9-A–F implementation and additive local schema work. The implementation handoff supersedes the former UNSTARTED status; production acceptance and the original roadmap are preserved. The P9-0 lock remains the policy authority, and no implementation PR merge or deployment is authorized.

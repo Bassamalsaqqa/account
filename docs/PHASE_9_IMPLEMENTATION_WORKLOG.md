@@ -161,3 +161,23 @@ deliberate catalog expiry/password access-edit flow completes management of expi
 stable links; it cannot bypass publication or priced authorization.
 
 The accepted roadmap and Owner files are unchanged. No merge or production access.
+
+## P9-F — accepted internally
+
+Final source integration `6656b4908bc286b86023fbb6b3aa4ccb9577485b` completes the deliberate catalog access-edit UI,
+localized accessibility/loading/error states and inherited fixture reconciliation.
+AGY access (`7a38ca48…`) and final UI (`ccefbb2c…`) handbacks were collected and
+independently corrected/reviewed. AGY browser QA (`94d27b08…`) passed 457 document
+and 198 access checks. Lead screenshot review caught clipped mobile document menus;
+the final independent matrix then passed 511 checks including actual viewport bounds.
+
+Final Phase 9: **103 tests / 1,512 assertions**. Remaining Phase 8/9/unit: **362 /
+13,931**. Corrected inherited: **119 / 713**. Tail profile/schema safety: **22 / 86**.
+Deduplicated segmented broad coverage: **2,000 / 2,000**; no unresolved failures.
+This is not a single uninterrupted or uniform-SHA broad run. Pint, Larastan Level 6,
+Blade compilation and production Vite build passed; actual PDFs, 87 decoded barcode
+labels and two decoded QR symbols are retained. See the
+[source acceptance handoff](PHASE_9_SOURCE_ACCEPTANCE_HANDOFF.md) for exact limits,
+worker acceptance, migration preservation and final Git/release boundaries.
+
+No merge, deployment, production access or Phase 10–13 implementation occurred.
