@@ -1,6 +1,6 @@
 ﻿# Phase 9 engineering proposal — continuity and reconciliation
 
-Status: **P9-0 DISCOVERY COMPLETE / EXECUTION CONTRACT AWAITING ARCHITECT REVIEW**. Phase 9 runtime implementation remains **UNSTARTED**.
+Status: **ARCHITECTURE ACCEPTED IN PRINCIPLE / CORRECTION 01 READY FOR FINAL ARCHITECT ACCEPTANCE** under [review 5473032255](https://github.com/Bassamalsaqqa/account/pull/17#pullrequestreview-5473032255). Phase 9 runtime implementation remains **UNSTARTED**.
 
 The single current execution contract is [Phase 9 P9-0 discovery and execution lock](PHASE_9_P0_DISCOVERY_AND_EXECUTION_LOCK.md). It reconciles this earlier proposal with the complete [Product Owner roadmap](ACCOUNTING_PHASE_9_FULL_ENGINEERING_ROADMAP_AND_FUTURE_AI_MOBILE_V1.md), accepted source, Master Specification, Blueprint and ADRs 0004–0008. The owner roadmap copy retains its original bytes; the execution lock explicitly supersedes its stale production-verification checkpoint.
 
@@ -12,13 +12,17 @@ The original 242-line proposal and seven-file production documentation reconcili
 - Preserve existing Sales outputs and add four required private Purchasing outputs: Purchase, Purchase Return, Vendor Payment and Vendor Statement. Evaluate and defer broader Expense, stock, Money, Payroll and blanket report PDF coverage.
 - Correct exact currency/Unit/lifecycle presentation without changing accounting, stock, allocations, numbering or canonical posting writers.
 - Add source-specific secure receipt sharing, issued Customer Statement snapshots, revision-aware quotation grants and selected live catalogs. Purchase/Vendor/Payroll/Expense/stock finance remains private.
-- Recommend fixed issuance statement data, replacing the prior fixed-filter/live-recomputation recommendation. Preserve and explicitly label legacy live statement links; never fabricate historical issuance data.
+- C1: adopt confirmed Option A: new financial links initially return a neutral document-free GET/HEAD landing; CSRF-protected View Document POST establishes bounded exact-share/revision access for every HTML/PDF/print/API read. Password optional for Quotation/Invoice/Return/Receipt, mandatory with finite expiry for Statements; preserve and label legacy disclosure with revoke/reissue.
+- C2: freeze new public receipt disclosure to issued facts and original allocation/currency/settlement legs. Later payment applications appear only in a separate private section; changed public scope requires authorized preview/reissue, with no payment-writer changes.
+- C3: Owner receives new Phase 9 capabilities by default; existing non-owner grants remain unchanged. New-company Administrator gets no new protected publication/share/price/settings capabilities automatically. Owner may explicitly delegate; ordinary role management cannot self-escalate into them.
+- C4: freeze approved catalog image/thumbnail identity per published item/revision. Product primary-image changes cannot update it; unavailable approved media gives a placeholder/omission. Explicit approved publication advances revision at the same link.
+- C5: adopt fixed issuance Statements as immutable versioned allowlisted canonical JSON, SHA-256 integrity and encrypted `MEDIUMTEXT`/equivalent private storage; proposed caps 2 MiB plaintext/4 MiB ciphertext/1,000 entries require measurement. Atomic snapshot/share issuance and payload-aware retries reject failure before an active grant; no live fallback. Retain `APP_PREVIOUS_KEYS`, encrypted-backup/key recovery and no secret/full-DTO logs. Label legacy live Statements and offer revoke/reissue without retrospective fabrication.
 - Catalog prices are OFF server-side by default. Optional explicit item selling prices use one approved currency, configured Unit and clear tax basis; catalog updates are deliberate and keep the same managed public link.
 - Include bounded barcode labels as explicitly requested in the latest kickoff; camera scanning stays deferred.
 - Copy/Web Share/WhatsApp/mailto require a deliberate user action. No automatic delivery or SMTP integration.
 - Use P9-A–F package names and dependencies from the execution lock, replacing the earlier P0–P7 decomposition.
 - Keep Phase 10 hardening, Phase 11 API/command readiness, Phase 12 optional mic/text AI interpretation and Phase 13 optional mobile separate. No AI/mobile code in Phase 9.
 
-The execution lock supplies the evidence inventory, full documents/RBAC matrix, public threat contract, proposed additive migrations, concrete UI flows, AGY package ownership, discovery test/PDF results, acceptance matrix and remaining architect decisions. No minor technical decision requires a Product Owner approval cycle.
+The execution lock supplies the evidence inventory, updated documents/RBAC matrix, public threat contract, proposed additive migrations, concrete UI flows, unchanged AGY package dependencies, carried discovery test/PDF results and precise C1–C5 negative acceptance matrix. The five policy decisions are closed; resource budgets remain proposed measurement targets. Correction 01 runs documentation/Git verification only, with no runtime tests or discovery repeated.
 
 This documentation PR does not authorize implementation, merge, migration or deployment. Stop for one independent architect review of the exact planning commit; begin P9-A only after accepted scope and explicit Product Owner implementation authorization.
