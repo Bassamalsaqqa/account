@@ -1,11 +1,11 @@
 # ADR 0008 — Reporting, Operational Analytics & Dashboard
 
-Status: COMPLETE / ACCEPTED / MERGED / AWAITING DEPLOYMENT.
+Status: COMPLETE / ACCEPTED / MERGED / DEPLOYED / PRODUCTION VERIFIED.
 Baseline: `d201a385a16e64eadb849b0b7d252e1365ae6a31` (Phase 7 accepted baseline).
 Branch: `phase/8-reporting-dashboard`.
 Target Phase: Phase 8 (Reporting & Dashboard).
-Deployment: NOT YET DEPLOYED. Production requires separate Owner authorization and a verified healthy Phase 7 baseline.
-Phase Status: Phase 7 production deployment/verification remains outstanding; Phase 8 is complete, independently accepted and merged, awaiting deployment; Phase 9 is unstarted.
+Deployment: Owner-authorized rollout on 2026-10-09 at `96c310f30a07e97ab8e04d5afbf0b2bb805f4317`; live tree `a71f567ba54b16b30d4d1d4643a14a960e0ff98f` exactly matches accepted Phase 8 source. Codex independently verified production on 2026-10-09; see [production acceptance](../PHASE_7_8_PRODUCTION_ACCEPTANCE.md).
+Phase Status: Phases 7 and 8 are complete, accepted, merged, deployed and production verified. Phase 9 implementation remains unstarted; its engineering proposal awaits architect review.
 
 ---
 
@@ -253,4 +253,4 @@ All review threads were resolved before merge. Accepted-source execution evidenc
 
 Post-merge verification consists of source/tree identity, exact ancestry, documentation-only diffs, Git parity and tracked-worktree/index cleanliness. No runtime changes, migrations, deployment, Hostinger access or Phase 9 work are part of finalization.
 
-The statement-hydration, synchronous CSV capacity, and streaming-revocation limits in sections 4–6 remain accepted V1 boundaries. Phase 7 production deployment and healthy-baseline verification remain a separate outstanding gate, followed by separately authorized Phase 8 deployment. See [Phase 8 source acceptance handoff](../PHASE_8_SOURCE_ACCEPTANCE_HANDOFF.md).
+The statement-hydration, synchronous CSV capacity, and streaming-revocation limits in sections 4–6 remain accepted V1 boundaries. The previously outstanding Phase 7 prerequisite and Phase 8 deployment gates were completed under Owner authorization and independently verified on 2026-10-09. See [Phase 8 source acceptance handoff](../PHASE_8_SOURCE_ACCEPTANCE_HANDOFF.md) and [production acceptance](../PHASE_7_8_PRODUCTION_ACCEPTANCE.md); production verification is separate from the pre-merge source-test evidence above.

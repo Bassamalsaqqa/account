@@ -1,6 +1,6 @@
 # Phase 8 source acceptance and merge handoff
 
-Status: **COMPLETE / ACCEPTED / MERGED / AWAITING DEPLOYMENT**.
+Status: **COMPLETE / ACCEPTED / MERGED / DEPLOYED / PRODUCTION VERIFIED**.
 Date: 2026-10-09. Phase 9: **UNSTARTED**.
 
 ## Exact source identities
@@ -33,11 +33,11 @@ Merge/finalization did not rerun these suites: exact accepted/merged tree equali
 
 ## Deployment gates and accepted limitations
 
-- **Phase 7 production deployment and healthy-baseline verification remain outstanding.** This finalization performs no production verification and does not treat earlier worker claims as independent production evidence.
-- **Phase 8 is not deployed.** Deployment requires separate Owner authorization after the Phase 7 production gate is verified healthy. This document is a source handoff, not an executable deployment authorization.
+- **Phase 7 prerequisite deployment and production verification completed on 2026-10-09.** Owner-authorized deployment was executed by AGY; Codex subsequently verified the live prerequisite, applied migrations/bootstrap, preservation and reconciliations independently.
+- **Phase 8 deployed and production verified on 2026-10-09.** The live release is `96c310f30a07e97ab8e04d5afbf0b2bb805f4317`, tree `a71f567ba54b16b30d4d1d4643a14a960e0ff98f`, exactly preserving accepted source. See [independent production acceptance](PHASE_7_8_PRODUCTION_ACCEPTANCE.md) for backup hashes, checks, evidence boundaries and limitations. This source handoff is not authorization for another deployment.
 - Customer/Vendor statements hydrate complete accepted history before pagination and repeat that calculation per export page. The accepted scalability limitation remains documented.
 - Synchronous CSV preparation is bounded to **50,000 rows / 50 MiB / 30 seconds**. Capacity failures occur before delivery; exports use a private repeatable-read spool with cleanup.
 - Live authorization is checked before each **64 KiB** delivery chunk. Revocation stops future chunks; HTTP cannot recall bytes already transmitted or retroactively turn a started 200 into a 403.
 - The local 10,000-row aggregation benchmark demonstrates pipeline improvement and exact equality; it is not a production latency SLA.
 
-No runtime changes, migrations, canonical accounting/inventory writer changes, production access, Hostinger access, deployment or Phase 9 implementation are included in this finalization.
+The original source-merge finalization included no runtime changes, migrations, canonical accounting/inventory writer changes, production/Hostinger access, deployment or Phase 9 implementation. The later Owner-authorized deployment and independent read-only verification are recorded separately in the production acceptance report. Phase 9 remains unstarted; its [engineering proposal](PHASE_9_ENGINEERING_PROPOSAL.md) awaits architect review.

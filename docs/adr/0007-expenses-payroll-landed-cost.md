@@ -1,12 +1,12 @@
 # ADR 0007 — Expenses, payroll-lite, employee advances and landed cost
 
-Status: COMPLETE / ACCEPTED / MERGED / AWAITING DEPLOYMENT.
+Status: COMPLETE / ACCEPTED / MERGED / DEPLOYED / PRODUCTION VERIFIED.
 Baseline: `a98e8e492b6cbef65593cf16a3108fd94d5997ed` (Phase 6 complete).
 Accepted source: `e8a5dee856bc06da48b1313f8776d723af309b5e`.
 PR: [#15](https://github.com/Bassamalsaqqa/account/pull/15), merged on 2026-10-08 through normal merge commit `c07559c92816f838532e4b9d1c1537065f50ad5c`.
 Accepted and merged tree: `6d783943249ce3f085196ae67adf82ce91055ed8` (exact equality).
-Deployment: NOT YET DEPLOYED. Separate Product Owner deployment authorization is required.
-Phase 8: PLANNED / UNSTARTED.
+Deployment: Owner-authorized Phase 7 deployment through `c07559c92816f838532e4b9d1c1537065f50ad5c` on 2026-10-09, followed by the accepted Phase 8 release. Codex independently verified the live Phase 7 prerequisite, applied schema/bootstrap, preservation and healthy reconciliations on 2026-10-09; see [production acceptance](../PHASE_7_8_PRODUCTION_ACCEPTANCE.md).
+Phase 8: COMPLETE / ACCEPTED / MERGED / DEPLOYED / PRODUCTION VERIFIED. Phase 9 remains UNSTARTED; its proposal awaits architect review.
 
 ## Accepted correction checkpoints
 
