@@ -77,3 +77,49 @@ exclude them. Existing-role upgrade preserves non-Owner grants. Protected grant 
 role assignment actions require a current same-company Owner; default role titles
 alone do not grant delegation authority. `documents:bootstrap` is an explicit local
 or future approved release command; it has not been run against production.
+
+## P9-B — private Purchasing outputs accepted internally
+
+Lead review accepted the bounded AGY adapters after replacing duplicate line reads
+with `PurchaseReadModel` / `PurchaseReturnReadModel`, removing missing-provenance
+currency fallbacks and omitting unavailable historical warehouse/account identity.
+Four private routes and matching detail-screen View / Print / PDF actions enforce
+source/output intersections, cost redaction and fresh delivery authorization.
+Vendor Statements use the existing canonical query; Vendor Payments retain the
+exact `VendorFinancialRead` intersection and separate original/later allocations.
+No financial, inventory, numbering or lifecycle writer changed.
+
+AGY baseline `91a32942bba0fc96a7578e9843e2887e80748cef`, conversation
+`525d1447-85ef-43a6-82de-bde7821331c0`. Six allowlisted new files collected;
+worker-reported lint/PDF checks are not counted as lead acceptance. Independently
+executed disposable MariaDB: **8 tests / 117 assertions passed**, including actual
+AR/EN four-output PDF export, native ILS/USD/JOD, cross-currency settlement legs,
+restricted quantity-only output and economic zero-write fingerprints. PDF raster
+inspection verified readable shaping, layout and currency columns; browser actions
+remain in the final integrated gate. Larastan Level 6 for the new B classes passed.
+
+## P9-C — integration in progress
+
+New issued financial shares use a neutral first GET/HEAD, deliberate CSRF POST,
+15-minute exact-token/revision/password-bound unlock and fresh validity checks on
+every HTML/JSON/print/PDF delivery. Ordinary shares default 30 days/max 365;
+Statements default seven/max 30 and require a password. The nullable additive
+MEDIUMTEXT issuance migration preserves genuine legacy rows and retained schema
+on code rollback. No issued-content failure falls back to a live financial query.
+
+Fixed canonical encrypted receipts/Statements, company-owned grant lifetime,
+legacy labels, restricted management, canonical APP_URL links and smaller guest
+PDF budgets are integrated. Lead-reviewed additional tests exposed and verified
+the correction of guest quotation scoping. Worker-led regression execution:
+**9 tests / 269 assertions passed**; lead independently ran the earlier combined
+changed-domain gate (**23 tests / 292 assertions**). Final lead execution, actual
+browser UX, simultaneous-process concurrency and release evidence remain pending.
+
+## P9-D / P9-E
+
+Catalog schema/security is lead-owned. Approved revisions and immutable publication
+request receipts prevent a delayed retry from creating another revision. Frozen
+same-company image references validate actual bytes and path containment; images
+remain public marketing assets under accepted Option A. AGY owns isolated catalog
+presentation/composer and barcode-label files at baseline `91a32942...`; lead
+integration/acceptance is pending. The accepted roadmap and Owner files are unchanged.

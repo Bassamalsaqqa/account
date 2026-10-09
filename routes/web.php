@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\ExpenseAttachmentController;
 use App\Http\Controllers\PdfDocumentController;
+use App\Http\Controllers\PurchasingDocumentController;
 use App\Http\Controllers\PublicShareController;
 use App\Http\Controllers\ReportCsvController;
 use App\Http\Middleware\PrivateDocumentResponse;
@@ -249,6 +250,10 @@ Route::middleware(['auth'])->group(function () {
         Route::get('payroll/salary-payments/create', SalaryPaymentForm::class)->name('payroll.salary-payments.create');
 
         // Phase 4 PDFs
+        Route::get('pdf/purchase/{publicId}', [PurchasingDocumentController::class, 'purchase'])->name('pdf.purchase');
+        Route::get('pdf/purchase-return/{publicId}', [PurchasingDocumentController::class, 'return'])->name('pdf.purchase-return');
+        Route::get('pdf/vendor-payment/{publicId}', [PurchasingDocumentController::class, 'payment'])->name('pdf.vendor-payment');
+        Route::get('pdf/vendor-statement/{publicId}', [PurchasingDocumentController::class, 'statement'])->name('pdf.vendor-statement');
         Route::get('pdf/quotation/{publicId}', [PdfDocumentController::class, 'quotation'])->middleware(PrivateDocumentResponse::class.':sales.quote.view')->name('pdf.quotation');
         Route::get('pdf/invoice/{publicId}', [PdfDocumentController::class, 'invoice'])->middleware(PrivateDocumentResponse::class.':sales.invoice.view')->name('pdf.invoice');
         Route::get('pdf/return/{publicId}', [PdfDocumentController::class, 'return'])->middleware(PrivateDocumentResponse::class.':sales.return.view')->name('pdf.return');
