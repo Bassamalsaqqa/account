@@ -2,13 +2,15 @@
 
 use App\Http\Controllers\ExpenseAttachmentController;
 use App\Http\Controllers\PdfDocumentController;
-use App\Http\Controllers\PurchasingDocumentController;
+use App\Http\Controllers\PublicCatalogController;
 use App\Http\Controllers\PublicShareController;
+use App\Http\Controllers\PurchasingDocumentController;
 use App\Http\Controllers\ReportCsvController;
 use App\Http\Middleware\PrivateDocumentResponse;
 use App\Livewire\Pages\Catalog\CategoryIndex;
 use App\Livewire\Pages\Catalog\UnitIndex;
 use App\Livewire\Pages\Catalog\WarehouseIndex;
+use App\Livewire\Pages\Catalogs\CatalogComposer;
 use App\Livewire\Pages\Customers\CustomerDetail;
 use App\Livewire\Pages\Customers\CustomerForm;
 use App\Livewire\Pages\Customers\CustomerIndex;
@@ -36,6 +38,7 @@ use App\Livewire\Pages\Payroll\EmployeeForm;
 use App\Livewire\Pages\Payroll\EmployeeIndex;
 use App\Livewire\Pages\Payroll\SalaryEntryForm;
 use App\Livewire\Pages\Payroll\SalaryPaymentForm;
+use App\Livewire\Pages\Products\BarcodeLabels;
 use App\Livewire\Pages\Products\ProductDetail;
 use App\Livewire\Pages\Products\ProductForm;
 use App\Livewire\Pages\Products\ProductIndex;
@@ -200,6 +203,10 @@ Route::middleware(['auth'])->group(function () {
         Route::get('settings/documents', DocumentSettingsForm::class)->name('settings.documents');
 
         // Phase 5A Vendors
+        Route::get('barcode-labels', BarcodeLabels::class)->name('labels.index');
+        Route::get('catalogs', CatalogComposer::class)->name('catalogs.index');
+        Route::get('catalogs/create', CatalogComposer::class)->name('catalogs.create');
+        Route::get('catalogs/{publicId}', CatalogComposer::class)->name('catalogs.edit');
         Route::get('purchases', PurchaseIndex::class)->name('purchases.index');
         Route::get('purchases/create', PurchaseForm::class)->name('purchases.create');
         Route::get('purchases/{publicId}/edit', PurchaseForm::class)->name('purchases.edit');
@@ -273,3 +280,5 @@ if (app()->environment('local', 'testing')) {
 }
 
 require __DIR__.'/auth.php';
+
+Route::match(['GET', 'POST'], 'catalog/{token}', [PublicCatalogController::class, 'show'])->name('public.catalog');

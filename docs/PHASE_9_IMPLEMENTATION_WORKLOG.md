@@ -130,11 +130,34 @@ Web Share visibility was corrected after the browser caught an Alpine binding
 error. No external message was sent. Final-source QA and PR publication remain
 the P9-F release gate.
 
-## P9-D / P9-E
+## P9-D / P9-E — accepted internally; final access renewal integration
 
 Catalog schema/security is lead-owned. Approved revisions and immutable publication
 request receipts prevent a delayed retry from creating another revision. Frozen
 same-company image references validate actual bytes and path containment; images
-remain public marketing assets under accepted Option A. AGY owns isolated catalog
-presentation/composer and barcode-label files at baseline `91a32942...`; lead
-integration/acceptance is pending. The accepted roadmap and Owner files are unchanged.
+remain public marketing assets under accepted Option A. Catalog domain tests passed
+**7 / 56**, public-route negatives **8 / 509**, composer **12 / 55**, with genuine
+selection beyond the first 100 Products. Actual AR/EN public PDFs were rendered.
+
+AGY catalog presentation handback completed from `91a32942...`, conversation
+`812fb882-2536-41c9-b9c0-a4b9271b4445`; Codex independently corrected fresh guards,
+price acknowledgement, revision handling, image provenance and modal accessibility.
+The barcode relay ended during an interruption without a completion receipt.
+Its seven allowlisted files were preserved and collected as a partial snapshot;
+Codex finished implementation and acceptance rather than claiming worker success.
+
+Barcode rendering was corrected after actual PDF inspection exposed blank-page
+pagination. A separate simple mPDF sheet template keeps A4 labels readable; the
+browser template supports intentional printing. Decoding at 300 dpi passed all
+**24 Arabic / 14 English / 49 UPC-E** symbols. Piece/carton identity, exact stored
+codes, checksum validation, quiet zones, sheet boundaries and overwide rejection
+are tested. No barcode registration or alternate Product master is invented.
+
+The responsive browser gate passed **125 matrix checks + 33 interaction checks**,
+30 AR/EN desktop/tablet/mobile states and 37 screenshots. Both native-share controls
+were fixed and retested after a real browser exception. No final JS errors or HTTP
+500s. Three final formatting/error-state/PDF tests passed **3 / 38**. A separate
+deliberate catalog expiry/password access-edit flow completes management of expired
+stable links; it cannot bypass publication or priced authorization.
+
+The accepted roadmap and Owner files are unchanged. No merge or production access.
