@@ -4946,15 +4946,15 @@ Complete / Accepted Source / Merged / Deployed (Phase 6 accepted source `3d32c80
 
 ## Phase 7 — Expenses, employees, landed cost
 
-COMPLETE / ACCEPTED / MERGED / AWAITING DEPLOYMENT. Accepted source `e8a5dee856bc06da48b1313f8776d723af309b5e` merged through PR #15 at `c07559c92816f838532e4b9d1c1537065f50ad5c` on 2026-10-08 with exact accepted-tree preservation. Corrections 01–03 are independently accepted; see ADR 0007 for outcomes and provenance. Phase 7 is not yet deployed.
+COMPLETE / ACCEPTED / MERGED / DEPLOYED / PRODUCTION VERIFIED. Accepted source `e8a5dee856bc06da48b1313f8776d723af309b5e` merged through PR #15 at `c07559c92816f838532e4b9d1c1537065f50ad5c` on 2026-10-08 with exact accepted-tree preservation. Corrections 01–03 are independently accepted; see ADR 0007 for outcomes and provenance. Owner-authorized deployment and independent production verification completed on 2026-10-09; see `docs/PHASE_7_8_PRODUCTION_ACCEPTANCE.md`.
 
 ## Phase 8 — Reporting
 
-COMPLETE / ACCEPTED / MERGED / AWAITING DEPLOYMENT. Accepted source `e8e3e28fb040875d3b55ad403bea54a037e71437` merged through PR #16 at `96c310f30a07e97ab8e04d5afbf0b2bb805f4317` on 2026-10-09, with exact accepted-tree preservation. Independent acceptance review: `5471206252`. Corrections 01–03 are accepted; see ADR 0008 and `docs/PHASE_8_SOURCE_ACCEPTANCE_HANDOFF.md` for provenance, verification and operational limits. Phase 8 is not deployed. Phase 7 production deployment and healthy-baseline verification remain a separate outstanding gate.
+COMPLETE / ACCEPTED / MERGED / DEPLOYED / PRODUCTION VERIFIED. Accepted source `e8e3e28fb040875d3b55ad403bea54a037e71437` merged through PR #16 at `96c310f30a07e97ab8e04d5afbf0b2bb805f4317` on 2026-10-09, with exact accepted-tree preservation. Independent acceptance review: `5471206252`. Corrections 01–03 are accepted; see ADR 0008 and `docs/PHASE_8_SOURCE_ACCEPTANCE_HANDOFF.md` for provenance and operational limits. The exact merge release is deployed, and Codex independently verified accepted tree `a71f567ba54b16b30d4d1d4643a14a960e0ff98f`, backups, preserved grants/counters and six healthy reconciliations on 2026-10-09. See `docs/PHASE_7_8_PRODUCTION_ACCEPTANCE.md` for evidence and limitations.
 
 ## Phase 9 — Documents, QR, catalogs and sharing hardening
 
-UNSTARTED.
+Runtime implementation UNSTARTED. P9-0 discovery/planning is complete. `docs/PHASE_9_P0_DISCOVERY_AND_EXECUTION_LOCK.md` is the single reconciled execution contract awaiting architect review and explicit Owner implementation authorization; `docs/PHASE_9_ENGINEERING_PROPOSAL.md` is its continuity index. The complete Owner roadmap is preserved unchanged under `docs/ACCOUNTING_PHASE_9_FULL_ENGINEERING_ROADMAP_AND_FUTURE_AI_MOBILE_V1.md`.
 
 ## Phase 10 — Production hardening
 
@@ -4965,6 +4965,10 @@ UNSTARTED.
 - regression suite;
 - responsive QA;
 - RTL/PDF QA.
+
+## Planned future sequencing — Phases 11–13
+
+Phase 11 prepares authenticated Company-scoped, versioned draft/preview/confirm commands and APIs with exact decimals, revision-bound confirmation, retries and idempotency through existing canonical actions. Phase 12 may add optional mic/text interpretation, deterministic entity resolution, server-calculated preview, explicit confirmation, secure server-side provider credentials, budget/privacy limits and manual fallback; the LLM is not a financial writer. Phase 13 optionally evaluates PWA/native clients against actual use and device/offline requirements, retaining one backend. All are future decision-gated work, not Phase 9 implementation. Phase 10 critical security/recovery gates precede new exposure.
 
 ---
 
@@ -5591,8 +5595,8 @@ That sequence is intentional.
 
 ### Phase 7 accepted source checkpoint
 
-Phase 7 Expenses / Payroll-Lite / Draft Landed Cost is complete, independently accepted and merged through PR #15. See ADR 0007 for exact accepted-source/merge identities, Corrections 01–03, canonical event authority, source-aware Check/Money security, exact payroll residuals and draft-only capitalization. Deployment awaits separate Product Owner authorization.
+Phase 7 Expenses / Payroll-Lite / Draft Landed Cost is complete, independently accepted, merged through PR #15, deployed and production verified on 2026-10-09. See ADR 0007 for accepted-source/merge identities, Corrections 01–03, canonical event authority, source-aware Check/Money security, exact payroll residuals and draft-only capitalization. See `docs/PHASE_7_8_PRODUCTION_ACCEPTANCE.md` for independent verification after the Owner-authorized rollout.
 
 ### Phase 8 accepted source checkpoint
 
-Phase 8 Reporting & Dashboard is complete, independently accepted and merged through PR #16 at `96c310f30a07e97ab8e04d5afbf0b2bb805f4317` from exact source `e8e3e28fb040875d3b55ad403bea54a037e71437`. The accepted candidate passed the final Phase 8 gate (253 tests / 12,390 assertions), disposable-schema support (10 / 29), and 16/16 AR/EN desktop/mobile browser checks before merge; those suites were not repeated for an identical merge tree. See ADR 0008 and `docs/PHASE_8_SOURCE_ACCEPTANCE_HANDOFF.md` for Corrections 01–03, accepted-source evidence and tree preservation. Customer/Vendor statement full-history hydration, bounded CSV capacity (50,000 rows / 50 MiB / 30 seconds), and best-effort streaming revocation remain explicit limits. Phase 8 awaits deployment; Phase 7 production verification remains a separate outstanding gate. Phase 9 is unstarted.
+Phase 8 Reporting & Dashboard is complete, independently accepted, merged through PR #16 at `96c310f30a07e97ab8e04d5afbf0b2bb805f4317` from exact source `e8e3e28fb040875d3b55ad403bea54a037e71437`, deployed and production verified on 2026-10-09. The accepted candidate passed the final Phase 8 gate (253 tests / 12,390 assertions), disposable-schema support (10 / 29), and 16/16 AR/EN desktop/mobile browser checks before merge; those suites were not repeated for an identical merge tree or production verification. See ADR 0008 and `docs/PHASE_8_SOURCE_ACCEPTANCE_HANDOFF.md` for Corrections 01–03, accepted-source evidence and tree preservation, and `docs/PHASE_7_8_PRODUCTION_ACCEPTANCE.md` for independent production checks. Customer/Vendor statement full-history hydration, bounded CSV capacity (50,000 rows / 50 MiB / 30 seconds), and best-effort streaming revocation remain explicit limits. Phase 9 implementation is unstarted; its proposal awaits architect review.

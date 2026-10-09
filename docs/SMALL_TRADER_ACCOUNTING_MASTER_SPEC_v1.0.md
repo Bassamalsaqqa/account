@@ -2344,15 +2344,15 @@ Vendor
 
 ## Phase 7 — Expenses/employees/landed cost
 
-COMPLETE / ACCEPTED / MERGED / AWAITING DEPLOYMENT. Accepted source `e8a5dee856bc06da48b1313f8776d723af309b5e` merged through PR #15 at `c07559c92816f838532e4b9d1c1537065f50ad5c` on 2026-10-08. Corrections 01–03 are independently accepted; provenance and outcomes are recorded in ADR 0007. Production deployment is pending separate authorization.
+COMPLETE / ACCEPTED / MERGED / DEPLOYED / PRODUCTION VERIFIED. Accepted source `e8a5dee856bc06da48b1313f8776d723af309b5e` merged through PR #15 at `c07559c92816f838532e4b9d1c1537065f50ad5c` on 2026-10-08. Corrections 01–03 are independently accepted; provenance and outcomes are recorded in ADR 0007. Owner-authorized deployment and independent production verification completed on 2026-10-09; see `docs/PHASE_7_8_PRODUCTION_ACCEPTANCE.md`.
 
 ## Phase 8 — Reports
 
-COMPLETE / ACCEPTED / MERGED / AWAITING DEPLOYMENT. Accepted source `e8e3e28fb040875d3b55ad403bea54a037e71437` merged through PR #16 at `96c310f30a07e97ab8e04d5afbf0b2bb805f4317` on 2026-10-09, with exact accepted-tree preservation. Independent acceptance review: `5471206252`. Corrections 01–03 are accepted; see ADR 0008 and `docs/PHASE_8_SOURCE_ACCEPTANCE_HANDOFF.md` for provenance, verification and operational limits. Phase 8 is not deployed. Phase 7 production deployment and healthy-baseline verification remain a separate outstanding gate.
+COMPLETE / ACCEPTED / MERGED / DEPLOYED / PRODUCTION VERIFIED. Accepted source `e8e3e28fb040875d3b55ad403bea54a037e71437` merged through PR #16 at `96c310f30a07e97ab8e04d5afbf0b2bb805f4317` on 2026-10-09, with exact accepted-tree preservation. Independent acceptance review: `5471206252`. Corrections 01–03 are accepted; see ADR 0008 and `docs/PHASE_8_SOURCE_ACCEPTANCE_HANDOFF.md` for source provenance and operational limits. Exact live release/tree, Phase 7 prerequisite, backups and six healthy reconciliations were independently verified on 2026-10-09; see `docs/PHASE_7_8_PRODUCTION_ACCEPTANCE.md`.
 
 ## Phase 9 — Documents/catalog/QR/sharing
 
-UNSTARTED.
+Runtime implementation UNSTARTED. P9-0 discovery/planning is complete; the single reconciled execution contract is `docs/PHASE_9_P0_DISCOVERY_AND_EXECUTION_LOCK.md`, awaiting independent architect review and explicit Owner implementation authorization. `docs/PHASE_9_ENGINEERING_PROPOSAL.md` retains continuity with the preserved prior proposal. The complete Owner roadmap is copied unchanged to `docs/ACCOUNTING_PHASE_9_FULL_ENGINEERING_ROADMAP_AND_FUTURE_AI_MOBILE_V1.md`.
 
 ## Phase 10 — Production hardening
 
@@ -2365,6 +2365,10 @@ UNSTARTED.
 - performance;
 - backup/restore;
 - Hostinger deployment.
+
+## Planned future sequencing — Phases 11–13
+
+After Phase 10 hardening: Phase 11 authenticated, tenant-scoped, versioned and idempotent command/API readiness; Phase 12 optional contextual microphone/text instructions that build server-validated proposals and require explicit authenticated confirmation before canonical actions; Phase 13 optional PWA/native mobile decision based on usage and device/offline needs. One accounting backend remains authoritative. These are planning goals, not implemented or authorized features; no AI, voice, API or native mobile implementation belongs to Phase 9. See the P9-0 execution lock for safety contracts and decision gates.
 
 ---
 
