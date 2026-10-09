@@ -12,6 +12,7 @@ final readonly class DocumentData
      * @param  array<string, string|null>  $document
      * @param  list<array<string, string|null>>  $lines
      * @param  array<string, mixed>|null  $statement
+     * @param  array<string, string|bool|null>  $presentation Current decorative options, never historical identity or economics.
      */
     public function __construct(
         public string $type,
@@ -21,12 +22,14 @@ final readonly class DocumentData
         public array $document,
         public array $lines = [],
         public ?array $statement = null,
+        public array $presentation = [],
     ) {}
 
     /** @return array<string, mixed> */
     public function toArray(): array
     {
         return ['type' => $this->type, 'document_locale' => $this->locale, 'company' => $this->company,
-            'customer' => $this->customer, 'document' => $this->document, 'lines' => $this->lines, 'statement' => $this->statement];
+            'customer' => $this->customer, 'document' => $this->document, 'lines' => $this->lines, 'statement' => $this->statement,
+            'presentation' => $this->presentation];
     }
 }
