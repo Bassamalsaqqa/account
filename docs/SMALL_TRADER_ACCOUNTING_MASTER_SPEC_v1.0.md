@@ -2352,7 +2352,7 @@ COMPLETE / ACCEPTED / MERGED / DEPLOYED / PRODUCTION VERIFIED. Accepted source `
 
 ## Phase 9 — Documents/catalog/QR/sharing
 
-UNSTARTED. A reuse-first engineering proposal is prepared in `docs/PHASE_9_ENGINEERING_PROPOSAL.md` for architect review; no implementation has begun.
+Runtime implementation UNSTARTED. P9-0 discovery/planning is complete; the single reconciled execution contract is `docs/PHASE_9_P0_DISCOVERY_AND_EXECUTION_LOCK.md`, awaiting independent architect review and explicit Owner implementation authorization. `docs/PHASE_9_ENGINEERING_PROPOSAL.md` retains continuity with the preserved prior proposal. The complete Owner roadmap is copied unchanged to `docs/ACCOUNTING_PHASE_9_FULL_ENGINEERING_ROADMAP_AND_FUTURE_AI_MOBILE_V1.md`.
 
 ## Phase 10 — Production hardening
 
@@ -2365,6 +2365,10 @@ UNSTARTED. A reuse-first engineering proposal is prepared in `docs/PHASE_9_ENGIN
 - performance;
 - backup/restore;
 - Hostinger deployment.
+
+## Planned future sequencing — Phases 11–13
+
+After Phase 10 hardening: Phase 11 authenticated, tenant-scoped, versioned and idempotent command/API readiness; Phase 12 optional contextual microphone/text instructions that build server-validated proposals and require explicit authenticated confirmation before canonical actions; Phase 13 optional PWA/native mobile decision based on usage and device/offline needs. One accounting backend remains authoritative. These are planning goals, not implemented or authorized features; no AI, voice, API or native mobile implementation belongs to Phase 9. See the P9-0 execution lock for safety contracts and decision gates.
 
 ---
 

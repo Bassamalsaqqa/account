@@ -4954,7 +4954,7 @@ COMPLETE / ACCEPTED / MERGED / DEPLOYED / PRODUCTION VERIFIED. Accepted source `
 
 ## Phase 9 — Documents, QR, catalogs and sharing hardening
 
-UNSTARTED. Engineering proposal prepared in `docs/PHASE_9_ENGINEERING_PROPOSAL.md`; architect review is required before implementation.
+Runtime implementation UNSTARTED. P9-0 discovery/planning is complete. `docs/PHASE_9_P0_DISCOVERY_AND_EXECUTION_LOCK.md` is the single reconciled execution contract awaiting architect review and explicit Owner implementation authorization; `docs/PHASE_9_ENGINEERING_PROPOSAL.md` is its continuity index. The complete Owner roadmap is preserved unchanged under `docs/ACCOUNTING_PHASE_9_FULL_ENGINEERING_ROADMAP_AND_FUTURE_AI_MOBILE_V1.md`.
 
 ## Phase 10 — Production hardening
 
@@ -4965,6 +4965,10 @@ UNSTARTED. Engineering proposal prepared in `docs/PHASE_9_ENGINEERING_PROPOSAL.m
 - regression suite;
 - responsive QA;
 - RTL/PDF QA.
+
+## Planned future sequencing — Phases 11–13
+
+Phase 11 prepares authenticated Company-scoped, versioned draft/preview/confirm commands and APIs with exact decimals, revision-bound confirmation, retries and idempotency through existing canonical actions. Phase 12 may add optional mic/text interpretation, deterministic entity resolution, server-calculated preview, explicit confirmation, secure server-side provider credentials, budget/privacy limits and manual fallback; the LLM is not a financial writer. Phase 13 optionally evaluates PWA/native clients against actual use and device/offline requirements, retaining one backend. All are future decision-gated work, not Phase 9 implementation. Phase 10 critical security/recovery gates precede new exposure.
 
 ---
 

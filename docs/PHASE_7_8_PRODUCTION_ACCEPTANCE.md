@@ -139,3 +139,7 @@ AGY's deployment execution, maintenance/backup creation, migrations, repeated bo
 Documentation reconciliation and the [Phase 9 proposal](PHASE_9_ENGINEERING_PROPOSAL.md) are prepared on a separate local documentation branch. They await architect review; they are not a production rollout or a Phase 9 implementation. Main/origin remain at the verification baseline. All nine Owner files are preserved byte-for-byte.
 
 Codex performed authorized read-only Hostinger access, no deployment, no financial/configuration mutation, no schema change, no merge and no Phase 9 coding.
+
+## P9-0 continuity — no production rerun
+
+The subsequent [Phase 9 P9-0 execution lock](PHASE_9_P0_DISCOVERY_AND_EXECUTION_LOCK.md) carries this acceptance and its exact evidence forward. English responsive browser coverage and intentionally omitted live restricted-role tests remain non-blocking coverage boundaries; P9-F covers changed interfaces with disposable fixtures and Phase 10 completes application-wide hardening. Backup restoration remains an explicit Phase 10 recovery gate. The three unattributed browser message-channel errors remain observations pending clean-browser investigation, not established production defects. P9-0 used local source/disposable-fixture discovery only, with no Hostinger access, live tests or new deployment.
