@@ -4950,7 +4950,7 @@ COMPLETE / ACCEPTED / MERGED / AWAITING DEPLOYMENT. Accepted source `e8a5dee856b
 
 ## Phase 8 — Reporting
 
-PLANNED / UNSTARTED.
+Phase 8 Implemented / Awaiting Independent Review.
 
 ## Phase 9 — Documents, QR, catalogs and sharing hardening
 
@@ -5589,4 +5589,8 @@ That sequence is intentional.
 
 ### Phase 7 accepted source checkpoint
 
-Phase 7 Expenses / Payroll-Lite / Draft Landed Cost is complete, independently accepted and merged through PR #15. See ADR 0007 for exact accepted-source/merge identities, Corrections 01–03, canonical event authority, source-aware Check/Money security, exact payroll residuals and draft-only capitalization. Deployment awaits separate Product Owner authorization. Phase 8 remains planned and unstarted.
+Phase 7 Expenses / Payroll-Lite / Draft Landed Cost is complete, independently accepted and merged through PR #15. See ADR 0007 for exact accepted-source/merge identities, Corrections 01–03, canonical event authority, source-aware Check/Money security, exact payroll residuals and draft-only capitalization. Deployment awaits separate Product Owner authorization.
+
+### Phase 8 implementation checkpoint
+
+Phase 8 Reporting & Dashboard is complete, tested with 143 passing tests (1072 assertions) and zero economic writes, and is awaiting independent review. See ADR 0008 for architectural decisions, exact BigDecimal arithmetic, dual-layer authorization, query families, CSV export streaming, and performance choices. Phase 9 remains planned and unstarted.

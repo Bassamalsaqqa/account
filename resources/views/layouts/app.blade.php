@@ -98,6 +98,10 @@
                 </a>
             </div>
 
+            @if($sidebarCompany && app(\App\Application\Reporting\Presentation\ReportRegistry::class)->visible($sidebarCompany) !== [])
+            <a href="{{ route('reports.index') }}" class="flex items-center gap-2.5 h-[39px] px-3 rounded-control text-sm font-semibold text-text-secondary hover:bg-surface-soft {{ request()->routeIs('reports.*') ? 'bg-primary-50 text-primary' : '' }}"><x-icon name="chart" class="w-4.5 h-4.5" /><span>{{ __('reports.title') }}</span></a>
+            @endif
+
             <!-- Sales & Customers -->
             <div class="space-y-1">
                 <div class="px-3 text-[10px] font-bold tracking-wider text-text-muted uppercase">

@@ -3,6 +3,7 @@
 use App\Http\Controllers\ExpenseAttachmentController;
 use App\Http\Controllers\PdfDocumentController;
 use App\Http\Controllers\PublicShareController;
+use App\Http\Controllers\ReportCsvController;
 use App\Livewire\Pages\Catalog\CategoryIndex;
 use App\Livewire\Pages\Catalog\UnitIndex;
 use App\Livewire\Pages\Catalog\WarehouseIndex;
@@ -49,6 +50,9 @@ use App\Livewire\Pages\Purchasing\Settings\PurchaseSettingsForm;
 use App\Livewire\Pages\Purchasing\VendorDetail;
 use App\Livewire\Pages\Purchasing\VendorForm;
 use App\Livewire\Pages\Purchasing\VendorIndex;
+use App\Livewire\Pages\Reporting\Dashboard;
+use App\Livewire\Pages\Reporting\ReportHub;
+use App\Livewire\Pages\Reporting\ReportView;
 use App\Livewire\Pages\Sales\CustomerStatementView;
 use App\Livewire\Pages\Sales\InvoiceDetail;
 use App\Livewire\Pages\Sales\InvoiceForm;
@@ -128,9 +132,10 @@ Route::middleware(['auth'])->group(function () {
 
     // Company-protected routes
     Route::middleware(['company.ensure'])->group(function () {
-        Route::get('dashboard', function () {
-            return view('dashboard');
-        })->name('dashboard');
+        Route::get('dashboard', Dashboard::class)->name('dashboard');
+        Route::get('reports', ReportHub::class)->name('reports.index');
+        Route::get('reports/{reportKey}/csv', ReportCsvController::class)->where('reportKey', '[a-z][a-z0-9.\-]*')->name('reports.export');
+        Route::get('reports/{reportKey}', ReportView::class)->where('reportKey', '[a-z][a-z0-9.\-]*')->name('reports.show');
 
         Route::get('settings', SettingsIndex::class)
             ->name('settings.index');
