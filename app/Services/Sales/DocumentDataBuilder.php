@@ -71,6 +71,12 @@ final class DocumentDataBuilder
         }
         $document['notes'] = $source->getAttribute('notes');
         $document['terms'] = $isPayment ? null : $source->getAttribute('terms');
+        if ($source instanceof SalesInvoice) {
+            $document['due_date'] = $source->due_date?->format('Y-m-d');
+        }
+        if ($source instanceof Quotation) {
+            $document['valid_until'] = $source->expiry_date?->format('Y-m-d');
+        }
         $batch = $source->getAttribute('posting_batch_id') === null ? null : PostingBatch::where('company_id', $source->company_id)->findOrFail($source->getAttribute('posting_batch_id'));
         $document['base_currency_code'] = $batch?->base_currency_code;
         $document['exchange_rate'] = $source->getAttribute('exchange_rate');
@@ -90,7 +96,7 @@ final class DocumentDataBuilder
             }
             foreach ($source->lines()->where('company_id', $source->company_id)->orderBy('line_number')->get() as $line) {
                 $lines[] = ['line_number' => (string) $line->line_number,
-                    'item_description' => $line->getAttribute('product_name_'.$locale) ?: $line->item_description,
+                    'item_description' => DocumentDescription::choose($line->item_description, $line->getAttribute('product_name_ar'), $line->getAttribute('product_name_en'), $locale),
                     'unit_name' => $line->getAttribute('unit_name_'.$locale) ?: $line->unit_name_ar,
                     'sku' => $line->product_sku, 'quantity' => (string) $line->quantity,
                     'unit_price' => (string) $line->unit_price, 'discount' => (string) $line->line_discount,

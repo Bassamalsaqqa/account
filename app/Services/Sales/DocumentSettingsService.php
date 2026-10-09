@@ -16,7 +16,7 @@ use Illuminate\Support\Str;
 
 final class DocumentSettingsService
 {
-    public function uploadLogo(Company $company, User $actor, UploadedFile $file): void
+    public function uploadLogo(Company $company, User $actor, UploadedFile $file): string
     {
         $path = null;
         try {
@@ -35,6 +35,11 @@ final class DocumentSettingsService
                 Company::whereKey($company->id)->update(['logo_path' => $path]);
                 app(AuditService::class)->log(companyId: $company->id, eventKey: 'settings.logo_updated', summary: 'Current decorative logo updated', actorUserId: $actor->id, subject: $company);
             });
+            if (! is_string($path)) {
+                throw new \RuntimeException('Logo storage did not complete.');
+            }
+
+            return $path;
         } catch (\Throwable $error) {
             if (is_string($path)) {
                 Storage::disk('public')->delete($path);

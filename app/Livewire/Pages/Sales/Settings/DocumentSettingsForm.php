@@ -10,6 +10,7 @@ use App\Support\Tenancy\CompanyContext;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Contracts\View\View;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Locked;
 use Livewire\Component;
@@ -81,23 +82,31 @@ class DocumentSettingsForm extends Component
         $company = $context->company();
         $actor = auth()->user();
 
-        $settings = DB::transaction(function () use ($company, $actor) {
-            $settings = app(DocumentSettingsService::class)->save($company, $actor, [
-                'default_document_locale' => $this->default_document_locale,
-                'show_logo' => $this->show_logo,
-                'show_qr_by_default' => $this->show_qr_by_default,
-                'show_product_images_on_quotes' => $this->show_product_images_on_quotes,
-                'invoice_footer_ar' => $this->invoice_footer_ar,
-                'invoice_footer_en' => $this->invoice_footer_en,
-                'quotation_terms_ar' => $this->quotation_terms_ar,
-                'quotation_terms_en' => $this->quotation_terms_en,
-            ]);
-            if ($this->logo !== null) {
-                app(DocumentSettingsService::class)->uploadLogo($company, $actor, $this->logo);
-            }
+        $writtenLogo = null;
+        try {
+            $settings = DB::transaction(function () use ($company, $actor, &$writtenLogo) {
+                $settings = app(DocumentSettingsService::class)->save($company, $actor, [
+                    'default_document_locale' => $this->default_document_locale,
+                    'show_logo' => $this->show_logo,
+                    'show_qr_by_default' => $this->show_qr_by_default,
+                    'show_product_images_on_quotes' => $this->show_product_images_on_quotes,
+                    'invoice_footer_ar' => $this->invoice_footer_ar,
+                    'invoice_footer_en' => $this->invoice_footer_en,
+                    'quotation_terms_ar' => $this->quotation_terms_ar,
+                    'quotation_terms_en' => $this->quotation_terms_en,
+                ]);
+                if ($this->logo !== null) {
+                    $writtenLogo = app(DocumentSettingsService::class)->uploadLogo($company, $actor, $this->logo);
+                }
 
-            return $settings;
-        });
+                return $settings;
+            });
+        } catch (\Throwable $error) {
+            if (is_string($writtenLogo)) {
+                Storage::disk('public')->delete($writtenLogo);
+            }
+            throw $error;
+        }
         $this->reset('logo');
 
         $this->default_document_locale = (string) $settings->default_document_locale;

@@ -163,7 +163,11 @@
 <body>
     @if($printControls ?? false)
         <div class="print-controls" style="margin-bottom:16px;">
-            <button type="button" onclick="window.print()" style="min-height:44px;padding:8px 20px;">{{ __('documents.print') }}</button>
+            <button id="document-print" type="button" style="min-height:44px;padding:8px 20px;">{{ __('documents.print') }}</button>
+            @foreach($publicLinks ?? [] as $label => $url)
+                <a href="{{ $url }}" style="display:inline-block;min-height:44px;padding:8px 16px;">{{ __('documents.'.$label) }}</a>
+            @endforeach
+            <script nonce="{{ request()->attributes->get('document_csp_nonce', '') }}">document.getElementById('document-print').addEventListener('click', function () { window.print(); });</script>
         </div>
     @endif
     @php
@@ -294,7 +298,7 @@
         @foreach($data->statement['currencies'] as $currency => $group)
             <h3>{{ $currency }}</h3>
             @if(isset($group['opening_balance']))
-                <p><strong>{{ $transDoc('opening_balance') }}:</strong> <span class="number" dir="ltr">{{ $group['opening_balance'] }} {{ $currency }}</span></p>
+                <p><strong>{{ $transDoc('opening_balance') }}:</strong> <span class="number" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($group['opening_balance'], $currency) }} {{ $currency }}</span></p>
             @endif
             <table class="data-table">
                 <thead>
@@ -311,14 +315,14 @@
                         <tr>
                             <td class="date" dir="ltr">{{ $entry['date'] }}</td>
                             <td class="code" dir="ltr">{{ $entry['number'] }}<br>{{ $transDoc($entry['type'] ?? '') }}</td>
-                            <td class="number" dir="ltr">{{ $entry['debit'] }}</td>
-                            <td class="number" dir="ltr">{{ $entry['credit'] }}</td>
-                            <td class="number" dir="ltr">{{ $entry['balance'] }}</td>
+                            <td class="number" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($entry['debit'], $currency) }}</td>
+                            <td class="number" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($entry['credit'], $currency) }}</td>
+                            <td class="number" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($entry['balance'], $currency) }}</td>
                         </tr>
                     @endforeach
                 </tbody>
             </table>
-            <p><strong>{{ $transDoc('closing_balance') }}:</strong> <span class="number" dir="ltr">{{ $group['closing_balance'] }} {{ $currency }}</span></p>
+            <p><strong>{{ $transDoc('closing_balance') }}:</strong> <span class="number" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($group['closing_balance'], $currency) }} {{ $currency }}</span></p>
             @if(isset($group['aging']))
                 <h4>{{ $transDoc('aging') }}</h4>
                 <table class="data-table"><tbody>

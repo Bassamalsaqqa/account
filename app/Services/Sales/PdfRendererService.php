@@ -26,7 +26,8 @@ class PdfRendererService
         $url = parse_url($content);
         $host = parse_url((string) config('app.url'), PHP_URL_HOST);
         if ($url === false || ($url['scheme'] ?? '') !== 'https' || ($url['host'] ?? null) !== $host
-            || isset($url['user']) || isset($url['pass']) || strlen($content) > 2048) {
+            || isset($url['user']) || isset($url['pass']) || isset($url['query']) || isset($url['fragment'])
+            || ! preg_match('#^/(?:share|catalog)/[A-Za-z0-9]{40}$#D', $url['path'] ?? '') || strlen($content) > 2048) {
             throw new InvalidArgumentException('QR requires an application-owned HTTPS URL.');
         }
         $qrCode = new QrCode($content);
@@ -62,11 +63,20 @@ class PdfRendererService
         return $this->renderDocument(app(DocumentDataBuilder::class)->statement($statementData));
     }
 
-    public function renderDocument(DocumentData $data, ?string $qrUrl = null): string
+    public function renderDocument(DocumentData $data, ?string $qrUrl = null, bool $guest = false): string
     {
+        if ($guest) {
+            $entries = 0;
+            foreach ($data->statement['currencies'] ?? [] as $group) {
+                $entries += count($group['entries'] ?? []);
+            }
+            if (count($data->lines) > 100 || $entries > 250) {
+                throw new InvalidArgumentException('Public PDF exceeds the guest preparation budget.');
+            }
+        }
         $html = app(DocumentRenderer::class)->html($data, $qrUrl && ($data->presentation['show_qr'] ?? false) ? $this->generateQrDataUri($qrUrl) : null);
 
-        return $this->renderHtml($html, __('documents.'.$data->type, [], $data->locale).' '.($data->document['number'] ?? ''), $data->locale === 'ar');
+        return $this->renderHtml($html, __('documents.'.$data->type, [], $data->locale).' '.($data->document['number'] ?? ''), $data->locale === 'ar', $guest);
     }
 
     public function renderSalesInvoice(SalesInvoice $invoice, ?string $qrUrl = null): string
@@ -93,7 +103,7 @@ class PdfRendererService
     /**
      * Internal method to build mPDF instance and render PDF binary.
      */
-    protected function renderHtml(string $html, string $title, bool $isRtl = true): string
+    protected function renderHtml(string $html, string $title, bool $isRtl = true, bool $guest = false): string
     {
         if (strlen($html) > DocumentRenderLimits::MAX_PDF_BYTES
             || preg_match('/(?:src|href)\s*=\s*["\']\s*(?:https?:|file:|ftp:|\/\/)/i', $html)
@@ -126,12 +136,12 @@ class PdfRendererService
             $mpdf->SetHTMLHeader('<div dir="'.$direction.'" style="font-size:9pt;border-bottom:1px solid #dce3ec;">'.$safeTitle.'</div>');
             $mpdf->SetHTMLFooter('<div style="text-align:center;font-size:9pt;direction:ltr;">{PAGENO} / {nbpg}</div>');
             $mpdf->WriteHTML($html);
-            if ($mpdf->page > DocumentRenderLimits::MAX_PAGES) {
+            if ($mpdf->page > ($guest ? 20 : DocumentRenderLimits::MAX_PAGES)) {
                 throw new InvalidArgumentException('PDF exceeds the supported page limit.');
             }
             $bytes = $mpdf->Output('', 'S');
-            if (strlen($bytes) > DocumentRenderLimits::MAX_PDF_BYTES
-                || hrtime(true) - $started > DocumentRenderLimits::MAX_SECONDS * 1_000_000_000) {
+            if (strlen($bytes) > ($guest ? 4 * 1024 * 1024 : DocumentRenderLimits::MAX_PDF_BYTES)
+                || hrtime(true) - $started > ($guest ? 10 : DocumentRenderLimits::MAX_SECONDS) * 1_000_000_000) {
                 throw new InvalidArgumentException('PDF exceeds the measured delivery budget.');
             }
 

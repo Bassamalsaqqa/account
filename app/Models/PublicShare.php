@@ -44,10 +44,14 @@ class PublicShare extends Model
 
     public const string SUBJECT_CUSTOMER_STATEMENT = 'customer_statement';
 
+    public const string SUBJECT_CUSTOMER_PAYMENT = 'customer_payment';
+
     /**
      * @var list<string>
      */
     protected $fillable = [
+        'access_profile', 'content_version', 'encrypted_snapshot', 'content_hash', 'subject_revision',
+        'request_key', 'request_hash', 'issued_at',
         'public_id',
         'company_id',
         'subject_type',
@@ -70,6 +74,7 @@ class PublicShare extends Model
     protected function casts(): array
     {
         return [
+            'content_version' => 'integer', 'issued_at' => 'datetime',
             'is_active' => 'boolean',
             'expires_at' => 'datetime',
             'last_viewed_at' => 'datetime',
@@ -121,7 +126,7 @@ class PublicShare extends Model
             return false;
         }
 
-        return Carbon::now()->greaterThan($this->expires_at);
+        return Carbon::now()->greaterThanOrEqualTo($this->expires_at);
     }
 
     public function isValid(): bool

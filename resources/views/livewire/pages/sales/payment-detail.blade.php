@@ -195,4 +195,8 @@
             </div>
         </div>
     @endif
+
+    @if(! $payment->is_reversed && collect(['sales.document.share', 'money.receipt.view', 'money.receipt.share'])->every(fn ($permission) => auth()->user()->can($permission)))
+        <livewire:financial-share-manager subject-type="customer_payment" :subject-id="$payment->id" :key="'financial-share-'.$payment->public_id" />
+    @endif
 </div>

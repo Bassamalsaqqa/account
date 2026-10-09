@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 return [
+    'unspecified' => 'دون تاريخ استحقاق',
     'from_date' => 'من', 'to_date' => 'حتى', 'aging' => 'أعمار الذمم المستحقة',
     'current' => 'حالي', 'days_1_30' => '١–٣٠ يوماً', 'days_31_60' => '٣١–٦٠ يوماً', 'days_61_90' => '٦١–٩٠ يوماً', 'days_90_plus' => 'أكثر من ٩٠ يوماً',
     'return' => 'مرتجع', 'payment' => 'دفعة', 'payment_reversal' => 'عكس دفعة', 'currency_allocation' => 'تسوية عملة', 'application' => 'تخصيص لاحق', 'application_reversal' => 'عكس تخصيص',

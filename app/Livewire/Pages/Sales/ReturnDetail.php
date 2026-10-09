@@ -46,15 +46,6 @@ class ReturnDetail extends Component
             ->where('public_id', $publicId)
             ->firstOrFail();
 
-        $activeShare = PublicShare::where('company_id', $company->id)
-            ->where('subject_type', PublicShare::SUBJECT_SALES_RETURN)
-            ->where('subject_id', $this->return->id)
-            ->where('is_active', true)
-            ->first();
-
-        if ($activeShare !== null && $activeShare->isValid()) {
-            $this->shareUrl = $user->hasPermissionTo('sales.document.share') ? app(PublicShareService::class)->urlFor($activeShare, $user) : null;
-        }
     }
 
     public function postReturn(PostSalesReturnAction $postAction): void

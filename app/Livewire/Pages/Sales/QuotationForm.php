@@ -130,7 +130,7 @@ class QuotationForm extends Component
 
             $this->currency_code = $company->base_currency_code;
             $this->issue_date = Carbon::now()->toDateString();
-            $this->document_locale = $company->documentSettings?->default_document_locale ?? $company->default_locale ?? 'ar';
+            $this->document_locale = $company->documentSettings->default_document_locale ?? $company->default_locale ?? 'ar';
             $this->terms = $company->documentSettings?->getAttribute('quotation_terms_'.$this->document_locale);
             $this->include_product_images = (bool) $company->documentSettings?->show_product_images_on_quotes;
 

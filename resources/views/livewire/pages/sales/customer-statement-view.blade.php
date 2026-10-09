@@ -141,4 +141,8 @@
             {{ __('sales.no_statement_data') }}
         </div>
     @endforelse
+
+    @if(true && collect(['sales.document.share', 'sales.statement.view', 'customers.statement.view'])->every(fn ($permission) => auth()->user()->can($permission)))
+        <livewire:financial-share-manager subject-type="customer_statement" :subject-id="$customer->id" :key="'financial-share-'.$customer->public_id" />
+    @endif
 </div>

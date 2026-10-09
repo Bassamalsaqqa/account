@@ -98,7 +98,7 @@ restricted quantity-only output and economic zero-write fingerprints. PDF raster
 inspection verified readable shaping, layout and currency columns; browser actions
 remain in the final integrated gate. Larastan Level 6 for the new B classes passed.
 
-## P9-C — integration in progress
+## P9-C — accepted internally
 
 New issued financial shares use a neutral first GET/HEAD, deliberate CSRF POST,
 15-minute exact-token/revision/password-bound unlock and fresh validity checks on
@@ -109,11 +109,26 @@ on code rollback. No issued-content failure falls back to a live financial query
 
 Fixed canonical encrypted receipts/Statements, company-owned grant lifetime,
 legacy labels, restricted management, canonical APP_URL links and smaller guest
-PDF budgets are integrated. Lead-reviewed additional tests exposed and verified
-the correction of guest quotation scoping. Worker-led regression execution:
-**9 tests / 269 assertions passed**; lead independently ran the earlier combined
-changed-domain gate (**23 tests / 292 assertions**). Final lead execution, actual
-browser UX, simultaneous-process concurrency and release evidence remain pending.
+PDF budgets are integrated. Lead independently verified the changed-domain gate
+(**29 tests / 479 assertions**) and the integrated Phase 9 gate (**91 / 1,387**).
+The latter includes actual two-process MariaDB issuance/publication races and
+economic zero-write checks. Guest quotation scope, alternate-format bypasses,
+revision retirement and original receipt disclosure are covered.
+
+Two additional strict-mode storage/recovery tests passed (**2 / 44**). Local
+`max_allowed_packet` is 1,048,576 bytes; a single 873,104-byte ciphertext roundtrip
+preserved exact SHA/scope. A synthetic near-2MiB plaintext envelope produced
+3,728,244 bytes and was rejected before any new grant/audit. Issuance now measures
+that transport budget with a 64KiB reserve rather than claiming the application
+ceilings are hosting guarantees. Scoped encrypted-backup/key recovery restored
+the original real Statement and denied missing keys without live recomputation.
+No local/global database setting was raised. The operational procedure is in
+[key recovery](PHASE_9_ISSUANCE_KEY_RECOVERY.md).
+
+Actual browser issuance, recovery and deliberate guest first view passed. Native
+Web Share visibility was corrected after the browser caught an Alpine binding
+error. No external message was sent. Final-source QA and PR publication remain
+the P9-F release gate.
 
 ## P9-D / P9-E
 

@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Middleware\EnsureCompanyContext;
+use App\Http\Middleware\PublicDocumentHeaders;
 use App\Http\Middleware\SetCompanyContext;
 use App\Http\Middleware\SetLocale;
 use Illuminate\Foundation\Application;
@@ -14,6 +15,7 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
+        $middleware->web(prepend: [PublicDocumentHeaders::class]);
         $middleware->web(append: [
             SetCompanyContext::class,
             SetLocale::class,

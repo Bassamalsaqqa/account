@@ -12,12 +12,12 @@ use App\Models\Quotation;
 use App\Models\SalesInvoice;
 use App\Models\SalesReturn;
 use App\Models\User;
+use App\Services\Audit\AuditService;
 use App\Support\Tenancy\CompanyScope;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Str;
 use InvalidArgumentException;
 
 class PublicShareService
@@ -25,6 +25,7 @@ class PublicShareService
     /**
      * Create a public share for an eligible document.
      *
+     * @param  array<string,mixed>  $scope
      * @return array{share: PublicShare, raw_token: string, url: string}
      */
     public function createShare(
@@ -33,71 +34,11 @@ class PublicShareService
         string $subjectType,
         int $subjectId,
         ?Carbon $expiresAt = null,
-        ?string $password = null
+        ?string $password = null,
+        ?string $requestKey = null,
+        array $scope = [],
     ): array {
-        return DB::transaction(function () use ($company, $user, $subjectType, $subjectId, $expiresAt, $password): array {
-            app(SalesActorGuard::class)->lockAndAuthorize((int) $company->id, $user, 'sales.document.share');
-            $allowedTypes = [
-                PublicShare::SUBJECT_QUOTATION,
-                PublicShare::SUBJECT_SALES_INVOICE,
-                PublicShare::SUBJECT_SALES_RETURN,
-                PublicShare::SUBJECT_CUSTOMER_STATEMENT,
-            ];
-
-            if (! in_array($subjectType, $allowedTypes, true)) {
-                throw new InvalidArgumentException("Subject type [{$subjectType}] is not eligible for public sharing.");
-            }
-
-            // Validate subject exists and belongs to company
-            if ($subjectType === PublicShare::SUBJECT_QUOTATION) {
-                $quote = Quotation::where('company_id', $company->id)->where('id', $subjectId)->firstOrFail();
-                if ($quote->isDraft()) {
-                    throw new InvalidArgumentException('Draft quotations cannot be publicly shared.');
-                }
-            } elseif ($subjectType === PublicShare::SUBJECT_SALES_INVOICE) {
-                $inv = SalesInvoice::where('company_id', $company->id)->where('id', $subjectId)->firstOrFail();
-                if (! $inv->isPosted()) {
-                    throw new InvalidArgumentException('Only posted sales invoices can be publicly shared.');
-                }
-            } elseif ($subjectType === PublicShare::SUBJECT_SALES_RETURN) {
-                $ret = SalesReturn::where('company_id', $company->id)->where('id', $subjectId)->firstOrFail();
-                if (! $ret->isPosted()) {
-                    throw new InvalidArgumentException('Only posted sales returns can be publicly shared.');
-                }
-            } elseif ($subjectType === PublicShare::SUBJECT_CUSTOMER_STATEMENT) {
-                Customer::where('company_id', $company->id)->where('id', $subjectId)->firstOrFail();
-            }
-
-            $rawToken = Str::random(40);
-            $tokenHash = hash('sha256', $rawToken);
-            $encryptedToken = Crypt::encryptString($rawToken);
-
-            $passwordHash = $password !== null && trim($password) !== ''
-                ? Hash::make($password)
-                : null;
-
-            $share = PublicShare::create([
-                'public_id' => (string) Str::ulid(),
-                'company_id' => $company->id,
-                'subject_type' => $subjectType,
-                'subject_id' => $subjectId,
-                'token_lookup_hash' => $tokenHash,
-                'encrypted_token' => $encryptedToken,
-                'is_active' => true,
-                'expires_at' => $expiresAt,
-                'password_hash' => $passwordHash,
-                'view_count' => 0,
-                'created_by' => $user->id,
-            ]);
-
-            $url = route('public.share', ['token' => $rawToken]);
-
-            return [
-                'share' => $share,
-                'raw_token' => $rawToken,
-                'url' => $url,
-            ];
-        });
+        return app(IssuedFinancialShares::class)->create($company, $user, $subjectType, $subjectId, $expiresAt, $password, $requestKey, $scope);
     }
 
     /**
@@ -105,6 +46,9 @@ class PublicShareService
      */
     public function resolveShare(string $rawToken, ?string $password = null): PublicShare
     {
+        if (! preg_match('/^[A-Za-z0-9]{40}$/D', $rawToken)) {
+            throw new InvalidArgumentException('Invalid share token.');
+        }
         $tokenHash = hash('sha256', $rawToken);
 
         /** @var PublicShare|null $share */
@@ -127,9 +71,7 @@ class PublicShareService
         $this->buildWhitelistedData($share);
 
         // Increment view count and update last viewed
-        $share->view_count = $share->view_count + 1;
-        $share->last_viewed_at = Carbon::now();
-        $share->save();
+        app(IssuedFinancialShares::class)->recordView($share);
 
         return $share;
     }
@@ -141,6 +83,9 @@ class PublicShareService
      */
     public function resolvePublicShare(string $rawToken, ?string $password = null): array
     {
+        if (! preg_match('/^[A-Za-z0-9]{40}$/D', $rawToken)) {
+            throw new InvalidArgumentException('Invalid share token.');
+        }
         $tokenHash = hash('sha256', $rawToken);
 
         /** @var PublicShare|null $share */
@@ -167,15 +112,13 @@ class PublicShareService
             }
         }
 
-        // Increment view count and update last viewed
-        $share->view_count = $share->view_count + 1;
-        $share->last_viewed_at = Carbon::now();
-        $share->save();
-
         try {
-            return ['status' => 'success', 'data' => $this->buildWhitelistedData($share)];
+            $data = $this->buildWhitelistedData($share);
+            app(IssuedFinancialShares::class)->recordView($share);
+
+            return ['status' => 'success', 'data' => $data];
         } catch (\Throwable $exception) {
-            report($exception);
+            // Public failures never log tokens, secret material or financial content.
 
             return ['status' => 'invalid'];
         }
@@ -187,25 +130,28 @@ class PublicShareService
     public function revokeShare(PublicShare $share, User $user): void
     {
         DB::transaction(function () use ($share, $user): void {
-            app(SalesActorGuard::class)->lockAndAuthorize((int) $share->company_id, $user, 'sales.document.share');
-            $locked = PublicShare::whereKey($share->id)->lockForUpdate()->firstOrFail();
+            app(FinancialSharePolicy::class)->authorize((int) $share->company_id, $user, $share->subject_type);
+            $locked = PublicShare::where('company_id', $share->company_id)->whereKey($share->id)->lockForUpdate()->firstOrFail();
             $locked->is_active = false;
             $locked->revoked_at = Carbon::now();
             $locked->revoked_by = $user->id;
             $locked->save();
+            app(AuditService::class)->log(companyId: (int) $share->company_id, eventKey: 'share.revoked', summary: 'Financial share revoked', actorUserId: $user->id, subject: $locked);
         });
     }
 
     public function urlFor(PublicShare $share, User $user): string
     {
         return DB::transaction(function () use ($share, $user): string {
-            app(SalesActorGuard::class)->lockAndAuthorize((int) $share->company_id, $user, 'sales.document.share');
-            $locked = PublicShare::whereKey($share->id)->firstOrFail();
+            app(FinancialSharePolicy::class)->authorize((int) $share->company_id, $user, $share->subject_type);
+            $locked = PublicShare::where('company_id', $share->company_id)->whereKey($share->id)->firstOrFail();
             if (! $locked->is_active || $locked->isExpired()) {
                 throw new InvalidArgumentException('Share is no longer active.');
             }
+            app(IssuedFinancialShares::class)->valid($locked);
+            app(AuditService::class)->log(companyId: (int) $locked->company_id, eventKey: 'share.recovered', summary: 'Financial share link recovered', actorUserId: $user->id, subject: $locked);
 
-            return route('public.share', ['token' => Crypt::decryptString($locked->encrypted_token)]);
+            return app(ManagedPublicUrl::class)->make('share', Crypt::decryptString($locked->encrypted_token));
         });
     }
 
@@ -216,7 +162,13 @@ class PublicShareService
      */
     public function buildWhitelistedData(PublicShare $share): array
     {
-        $fresh = PublicShare::withoutGlobalScopes()->findOrFail($share->id);
+        if ($share->access_profile === IssuedFinancialShares::PROFILE) {
+            $issued = app(IssuedFinancialShares::class);
+            $fresh = $issued->authorized($share, request());
+
+            return $issued->content($fresh)->toArray();
+        }
+        $fresh = app(IssuedFinancialShares::class)->valid($share);
         if (! $fresh->is_active || $fresh->isExpired()) {
             throw new InvalidArgumentException('Share is no longer active.');
         }
@@ -225,6 +177,8 @@ class PublicShareService
             $type = $fresh->subject_type;
             if ($type === PublicShare::SUBJECT_CUSTOMER_STATEMENT) {
                 $customer = Customer::where('company_id', $fresh->company_id)->whereKey($fresh->subject_id)->firstOrFail();
+
+                app(DocumentRenderLimits::class)->assertStatementSource((int) $fresh->company_id, (int) $customer->id);
 
                 return app(DocumentDataBuilder::class)->statement(app(CustomerStatementQuery::class)->executeForShare($fresh, $customer))->toArray();
             }

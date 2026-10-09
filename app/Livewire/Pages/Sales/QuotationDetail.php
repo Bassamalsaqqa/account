@@ -41,15 +41,6 @@ class QuotationDetail extends Component
             ->where('public_id', $publicId)
             ->firstOrFail();
 
-        $activeShare = PublicShare::where('company_id', $company->id)
-            ->where('subject_type', PublicShare::SUBJECT_QUOTATION)
-            ->where('subject_id', $this->quotation->id)
-            ->where('is_active', true)
-            ->first();
-
-        if ($activeShare !== null && $activeShare->isValid()) {
-            $this->shareUrl = auth()->user()->hasPermissionTo('sales.document.share') ? app(PublicShareService::class)->urlFor($activeShare, auth()->user()) : null;
-        }
     }
 
     public function markAsSent(): void

@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 return [
+    'unspecified' => 'No due date',
     'from_date' => 'From', 'to_date' => 'Through', 'aging' => 'Outstanding aging',
     'current' => 'Current', 'days_1_30' => '1–30 days', 'days_31_60' => '31–60 days', 'days_61_90' => '61–90 days', 'days_90_plus' => 'Over 90 days',
     'return' => 'Return', 'payment' => 'Payment', 'payment_reversal' => 'Payment reversal', 'currency_allocation' => 'Currency settlement', 'application' => 'Later application', 'application_reversal' => 'Application reversal',
