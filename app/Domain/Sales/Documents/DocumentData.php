@@ -12,7 +12,8 @@ final readonly class DocumentData
      * @param  array<string, string|null>  $document
      * @param  list<array<string, string|null>>  $lines
      * @param  array<string, mixed>|null  $statement
-     * @param  array<string, string|bool|null>  $presentation Current decorative options, never historical identity or economics.
+     * @param  array<string, string|bool|null>  $presentation  Current decorative options, never historical identity or economics.
+     * @param  list<array<string, string|null>>  $applications  Authenticated private appendix only; public builders leave this empty.
      */
     public function __construct(
         public string $type,
@@ -23,6 +24,7 @@ final readonly class DocumentData
         public array $lines = [],
         public ?array $statement = null,
         public array $presentation = [],
+        public array $applications = [],
     ) {}
 
     /** @return array<string, mixed> */
@@ -30,6 +32,6 @@ final readonly class DocumentData
     {
         return ['type' => $this->type, 'document_locale' => $this->locale, 'company' => $this->company,
             'customer' => $this->customer, 'document' => $this->document, 'lines' => $this->lines, 'statement' => $this->statement,
-            'presentation' => $this->presentation];
+            'presentation' => $this->presentation, 'applications' => $this->applications];
     }
 }

@@ -6,6 +6,7 @@ use App\Models\Company;
 use App\Models\CompanyUser;
 use App\Models\User;
 use App\Services\Audit\AuditService;
+use App\Services\Tenancy\ProtectedDocumentDelegation;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use InvalidArgumentException;
@@ -30,6 +31,10 @@ class AddCompanyMemberAction
         }
 
         return DB::transaction(function () use ($company, $userData, $roleName, $actor) {
+            $delegation = app(ProtectedDocumentDelegation::class);
+            $delegation->authorize((int) $company->id, $actor, 'settings.users.manage', false);
+            $role = Role::where('company_id', $company->id)->where('name', $roleName)->firstOrFail();
+            $delegation->authorize((int) $company->id, $actor, 'settings.users.manage', $delegation->roleIsProtected($role));
             // Truthful new user creation: reject existing user emails to protect credentials and avoid silent password discarding
             if (User::where('email', $userData['email'])->exists()) {
                 throw new InvalidArgumentException(__('settings.error_user_email_already_registered') ?: 'A user with this email address already exists. To preserve account security, credentials cannot be overwritten via new user creation. Please use the add-existing user flow.');

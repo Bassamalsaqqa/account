@@ -8,13 +8,14 @@ use App\Domain\Sales\Documents\DocumentData;
 
 final class DocumentRenderer
 {
-    public function html(DocumentData $data, ?string $qrDataUri = null): string
+    public function html(DocumentData $data, ?string $qrDataUri = null, bool $printControls = false): string
     {
+        app(DocumentRenderLimits::class)->assertDocument($data);
         $previousLocale = app()->getLocale();
         try {
             app()->setLocale($data->locale);
 
-            return view('pdf.document', ['data' => $data, 'qrDataUri' => $qrDataUri])->render();
+            return view('pdf.document', ['data' => $data, 'qrDataUri' => $qrDataUri, 'printControls' => $printControls])->render();
         } finally {
             app()->setLocale($previousLocale);
         }

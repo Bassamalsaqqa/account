@@ -37,11 +37,7 @@
                     </button>
                 @endif
 
-                <a href="{{ route('pdf.payment', $payment->public_id) }}"
-                   target="_blank"
-                   class="px-3 py-1.5 rounded-control border border-border text-xs font-bold text-text-secondary hover:bg-surface-soft transition-colors flex items-center gap-1">
-                    📄 {{ __('sales.print') }}
-                </a>
+                <x-document-actions route-name="pdf.payment" :parameters="['publicId' => $payment->public_id]" :permissions="['sales.document.pdf', 'money.receipt.view']" />
 
                 <a href="{{ route('payments.index') }}"
                    class="px-3 py-1.5 rounded-control bg-surface-soft text-text-secondary hover:text-text-primary text-xs font-bold transition-colors">

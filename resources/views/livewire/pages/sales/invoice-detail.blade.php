@@ -69,11 +69,7 @@
                     </button>
                 @endif
 
-                <a href="{{ route('pdf.invoice', $invoice->public_id) }}"
-                   target="_blank"
-                   class="px-3 py-1.5 rounded-control border border-border text-xs font-bold text-text-secondary hover:bg-surface-soft transition-colors flex items-center gap-1">
-                    📄 {{ __('sales.print') }}
-                </a>
+                <x-document-actions route-name="pdf.invoice" :parameters="['publicId' => $invoice->public_id]" :permissions="['sales.document.pdf', 'sales.invoice.view']" />
 
                 @if ($canShare)
                     <button type="button"

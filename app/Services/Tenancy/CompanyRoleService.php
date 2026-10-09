@@ -9,12 +9,33 @@ use Spatie\Permission\PermissionRegistrar;
 
 class CompanyRoleService
 {
+    public const PHASE9_PERMISSIONS = [
+        'settings.documents.manage', 'purchasing.document.pdf', 'money.receipt.share',
+        'catalogs.view', 'catalogs.manage', 'catalogs.publish', 'catalogs.share',
+        'catalogs.revoke', 'catalogs.show_prices', 'inventory.barcode_labels.print',
+    ];
+
+    public const PROTECTED_PERMISSIONS = [
+        'settings.documents.manage', 'money.receipt.share', 'catalogs.publish',
+        'catalogs.share', 'catalogs.show_prices',
+    ];
+
     /**
      * Complete blueprint permission catalog.
      *
      * @var list<string>
      */
     public const PERMISSIONS = [
+        'settings.documents.manage',
+        'purchasing.document.pdf',
+        'money.receipt.share',
+        'catalogs.view',
+        'catalogs.manage',
+        'catalogs.publish',
+        'catalogs.share',
+        'catalogs.revoke',
+        'catalogs.show_prices',
+        'inventory.barcode_labels.print',
         // Settings & Tenancy
         'settings.company.view',
         'settings.company.manage',
@@ -194,13 +215,13 @@ class CompanyRoleService
         ]);
         $ownerRole->syncPermissions($catalogPermissions);
 
-        // 2. Administrator: All catalog permissions
+        // New Phase 9 capabilities require explicit Owner delegation.
         $adminRole = Role::firstOrCreate([
             'company_id' => $company->id,
             'name' => 'Administrator',
             'guard_name' => 'web',
         ]);
-        $adminRole->syncPermissions($catalogPermissions);
+        $adminRole->syncPermissions($catalogPermissions->reject(fn ($permission) => in_array($permission->name, self::PHASE9_PERMISSIONS, true)));
 
         // 3. Manager: Operational + view settings + reports, no role management
         $managerPerms = [

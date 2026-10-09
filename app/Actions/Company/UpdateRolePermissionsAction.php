@@ -6,6 +6,7 @@ use App\Models\Company;
 use App\Models\User;
 use App\Services\Audit\AuditService;
 use App\Services\Tenancy\CompanyRoleService;
+use App\Services\Tenancy\ProtectedDocumentDelegation;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
@@ -36,6 +37,14 @@ class UpdateRolePermissionsAction
         }
 
         DB::transaction(function () use ($company, $role, $permissionName, $enable, $actor) {
+            app(ProtectedDocumentDelegation::class)->authorize(
+                (int) $company->id, $actor, 'settings.roles.manage',
+                in_array($permissionName, CompanyRoleService::PROTECTED_PERMISSIONS, true)
+            );
+            $role = Role::where('company_id', $company->id)->whereKey($role->id)->lockForUpdate()->firstOrFail();
+            if ($role->name === 'Owner') {
+                throw new AuthorizationException('Owner role permissions are immutable.');
+            }
             setPermissionsTeamId($company->id);
             app(PermissionRegistrar::class)->setPermissionsTeamId($company->id);
 
