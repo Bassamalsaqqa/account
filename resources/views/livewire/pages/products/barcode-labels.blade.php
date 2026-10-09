@@ -37,12 +37,12 @@
             <div class="flex items-center gap-6 text-sm">
                 <div>
                     <span class="text-gray-500">@lang('labels.total_distinct'):</span>
-                    <span class="font-bold text-gray-900 ml-1 mr-1">{{ $this->distinctBarcodesCount() }} / 100</span>
+                    <span class="font-bold text-gray-900 mx-1"><bdi class="tabular-nums" dir="ltr">{{ $this->distinctBarcodesCount() }} / 100</bdi></span>
                 </div>
                 <div>
                     <span class="text-gray-500">@lang('labels.total_labels'):</span>
-                    <span class="font-bold {{ $this->totalLabelsCount() > 500 ? 'text-red-600' : 'text-blue-600' }} ml-1 mr-1">
-                        {{ $this->totalLabelsCount() }} / 500
+                    <span class="font-bold {{ $this->totalLabelsCount() > 500 ? 'text-red-600' : 'text-blue-600' }} mx-1">
+                        <bdi class="tabular-nums" dir="ltr">{{ $this->totalLabelsCount() }} / 500</bdi>
                     </span>
                 </div>
             </div>
@@ -72,9 +72,9 @@
             </div>
         </div>
 
-        @foreach($errors->all() as $error)<p role="alert" class="text-sm text-red-700">{{ $error }}</p>@endforeach
+        @foreach($errors->all() as $error)<p role="alert" aria-live="assertive" class="text-sm text-red-700">{{ $error }}</p>@endforeach
         @if($errorMessage)
-            <div class="mt-4 p-3 bg-red-50 border border-red-200 text-red-700 text-sm rounded-md" role="alert">
+            <div class="mt-4 p-3 bg-red-50 border border-red-200 text-red-700 text-sm rounded-md" role="alert" aria-live="assertive">
                 {{ $errorMessage }}
             </div>
         @endif
@@ -118,7 +118,7 @@
                             @endphp
                             <tr class="hover:bg-gray-50 transition">
                                 <td class="py-3 px-3 font-medium text-gray-900">
-                                    <div>{{ $p?->sku }}</div>
+                                    <div><bdi dir="ltr">{{ $p?->sku }}</bdi></div>
                                     <div class="text-xs text-gray-500">{{ $locale === 'ar' ? ($p?->name_ar ?: $p?->name_en) : ($p?->name_en ?: $p?->name_ar) }}</div>
                                 </td>
                                 <td class="py-3 px-3">
@@ -133,7 +133,8 @@
                                         <button
                                             type="button"
                                             wire:click="removeBarcode({{ $b->id }})"
-                                            class="min-h-[44px] min-w-[44px] inline-flex items-center justify-center px-3 py-1.5 text-xs font-medium text-red-600 hover:text-red-800 bg-red-50 hover:bg-red-100 rounded-md transition"
+                                            wire:loading.attr="disabled"
+                                            class="min-h-[44px] min-w-[44px] inline-flex items-center justify-center px-3 py-1.5 text-xs font-medium text-red-600 hover:text-red-800 bg-red-50 hover:bg-red-100 rounded-md transition disabled:opacity-50"
                                             aria-label="@lang('labels.remove') {{ $b->barcode }}"
                                         >
                                             @lang('labels.remove')
@@ -142,7 +143,8 @@
                                         <button
                                             type="button"
                                             wire:click="selectBarcode({{ $b->id }})"
-                                            class="min-h-[44px] min-w-[44px] inline-flex items-center justify-center px-3 py-1.5 text-xs font-medium text-blue-700 hover:text-blue-900 bg-blue-50 hover:bg-blue-100 rounded-md transition"
+                                            wire:loading.attr="disabled"
+                                            class="min-h-[44px] min-w-[44px] inline-flex items-center justify-center px-3 py-1.5 text-xs font-medium text-blue-700 hover:text-blue-900 bg-blue-50 hover:bg-blue-100 rounded-md transition disabled:opacity-50"
                                             aria-label="@lang('labels.select') {{ $b->barcode }}"
                                         >
                                             + @lang('labels.select')
@@ -188,19 +190,21 @@
                             @endphp
                             <tr class="hover:bg-gray-50 transition">
                                 <td class="py-3 px-3">
-                                    <div class="font-medium text-gray-900 text-xs">{{ $sp?->sku }}</div>
+                                    <div class="font-medium text-gray-900 text-xs"><bdi dir="ltr">{{ $sp?->sku }}</bdi></div>
                                     <div class="font-mono text-xs text-gray-700" dir="ltr">{{ $sb->barcode }}</div>
                                     <div class="text-xs text-gray-500">
                                         {{ $su ? ($locale === 'ar' ? ($su->name_ar ?: $su->name_en) : ($su->name_en ?: $su->name_ar)) : ($locale === 'ar' ? 'الأساسية' : 'Base') }}
                                     </div>
                                 </td>
                                 <td class="py-3 px-3 text-center">
-                                    <label for="qty-{{ $sb->id }}" class="sr-only">@lang('labels.quantity')</label>
+                                    <label for="qty-{{ $sb->id }}" class="sr-only">@lang('labels.quantity') ({{ $sb->barcode }})</label>
                                     <input
                                         type="number"
                                         id="qty-{{ $sb->id }}"
                                         min="1"
                                         max="500"
+                                        inputmode="numeric"
+                                        dir="ltr"
                                         value="{{ $qty }}"
                                         wire:change="updateQuantity({{ $sb->id }}, $event.target.value)"
                                         class="w-20 h-11 min-h-[44px] text-center rounded-md border-gray-300 shadow-sm text-sm focus:border-blue-500 focus:ring-blue-500 px-2 py-1 mx-auto"
@@ -210,10 +214,11 @@
                                     <button
                                         type="button"
                                         wire:click="removeBarcode({{ $sb->id }})"
-                                        class="min-h-[44px] min-w-[44px] inline-flex items-center justify-center p-2 text-red-600 hover:text-red-800 hover:bg-red-50 rounded-md transition"
+                                        wire:loading.attr="disabled"
+                                        class="min-h-[44px] min-w-[44px] inline-flex items-center justify-center p-2 text-red-600 hover:text-red-800 hover:bg-red-50 rounded-md transition disabled:opacity-50"
                                         aria-label="@lang('labels.remove') {{ $sb->barcode }}"
                                     >
-                                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <svg class="w-5 h-5" aria-hidden="true" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                                         </svg>
                                     </button>
@@ -260,7 +265,7 @@
                     <iframe
                         id="labels-preview-frame"
                         srcdoc="{{ $previewHtml }}"
-                        class="w-full min-h-[600px] h-full border border-gray-300 bg-white rounded shadow-inner"
+                        class="w-full min-h-[350px] sm:min-h-[600px] h-full border border-gray-300 bg-white rounded shadow-inner"
                         title="@lang('labels.preview_modal_title')"
                     ></iframe>
                 </div>

@@ -14,6 +14,7 @@ use App\Services\Sales\IssuedFinancialShares;
 use App\Services\Sales\PdfRendererService;
 use App\Services\Sales\PublicShareService;
 use App\Support\Tenancy\CompanyContext;
+use Illuminate\Contracts\Encryption\DecryptException;
 use Illuminate\Contracts\View\View;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
@@ -92,15 +93,25 @@ final class FinancialShareManager extends Component
     public function recover(string $publicId): void
     {
         $this->authorizeShare();
-        $this->url = app(PublicShareService::class)->urlFor($this->managed($publicId), auth()->user());
+        $this->url = null;
         $this->qr = null;
+        try {
+            $this->url = app(PublicShareService::class)->urlFor($this->managed($publicId), auth()->user());
+        } catch (\InvalidArgumentException|DecryptException) {
+            $this->addError('share', __('sharing.issuance_unavailable'));
+        }
     }
 
     public function showQr(): void
     {
         $this->authorizeShare();
         if ($this->url !== null) {
-            $this->qr = app(PdfRendererService::class)->generateQrDataUri($this->url);
+            try {
+                $this->qr = app(PdfRendererService::class)->generateQrDataUri($this->url);
+            } catch (\InvalidArgumentException) {
+                $this->qr = null;
+                $this->addError('share', __('sharing.issuance_unavailable'));
+            }
         }
     }
 
@@ -120,26 +131,33 @@ final class FinancialShareManager extends Component
     public function render(): View
     {
         $this->authorizeShare();
-        $preview = DB::transaction(function () {
-            $this->authorizeShare();
-            $source = app(FinancialSharePolicy::class)->source($this->companyId, $this->subjectType, $this->subjectId);
-            if ($source instanceof Customer) {
-                $dates = Validator::make(['from' => $this->from, 'to' => $this->to], [
-                    'from' => ['nullable', 'date_format:Y-m-d'],
-                    'to' => array_filter(['nullable', 'date_format:Y-m-d', $this->from ? 'after_or_equal:from' : null]),
-                ]);
-                if ($dates->fails()) {
-                    return null;
+        $previewError = null;
+        try {
+            $preview = DB::transaction(function () {
+                $this->authorizeShare();
+                $source = app(FinancialSharePolicy::class)->source($this->companyId, $this->subjectType, $this->subjectId);
+                if ($source instanceof Customer) {
+                    $dates = Validator::make(['from' => $this->from, 'to' => $this->to], [
+                        'from' => ['nullable', 'date_format:Y-m-d'],
+                        'to' => array_filter(['nullable', 'date_format:Y-m-d', $this->from ? 'after_or_equal:from' : null]),
+                    ]);
+                    if ($dates->fails()) {
+                        return null;
+                    }
+                    app(DocumentRenderLimits::class)->assertStatementSource($this->companyId, $source->id);
+                    $from = is_string($this->from) && preg_match('/^\d{4}-\d{2}-\d{2}$/D', $this->from) ? $this->from : null;
+                    $to = is_string($this->to) && preg_match('/^\d{4}-\d{2}-\d{2}$/D', $this->to) ? $this->to : now(app(CompanyContext::class)->company()->timezone)->format('Y-m-d');
+
+                    return app(DocumentDataBuilder::class)->statement(app(CustomerStatementQuery::class)->execute($source, $from, $to), in_array($this->locale, ['ar', 'en'], true) ? $this->locale : 'ar');
                 }
-                app(DocumentRenderLimits::class)->assertStatementSource($this->companyId, $source->id);
-                $from = is_string($this->from) && preg_match('/^\d{4}-\d{2}-\d{2}$/D', $this->from) ? $this->from : null;
-                $to = is_string($this->to) && preg_match('/^\d{4}-\d{2}-\d{2}$/D', $this->to) ? $this->to : now(app(CompanyContext::class)->company()->timezone)->format('Y-m-d');
 
-                return app(DocumentDataBuilder::class)->statement(app(CustomerStatementQuery::class)->execute($source, $from, $to), in_array($this->locale, ['ar', 'en'], true) ? $this->locale : 'ar');
-            }
-
-            return app(DocumentDataBuilder::class)->build($source, locale: in_array($this->locale, ['ar', 'en'], true) ? $this->locale : 'ar');
-        });
+                return app(DocumentDataBuilder::class)->build($source, locale: in_array($this->locale, ['ar', 'en'], true) ? $this->locale : 'ar');
+            });
+        } catch (\InvalidArgumentException) {
+            // A supported bound/source refusal must not break the private detail screen.
+            $preview = null;
+            $previewError = __('sharing.issuance_unavailable');
+        }
 
         $this->authorizeShare();
         $shares = PublicShare::where('company_id', $this->companyId)->where('subject_type', $this->subjectType)->where('subject_id', $this->subjectId)->latest('id')->limit(50)->get();
@@ -153,6 +171,6 @@ final class FinancialShareManager extends Component
             }
         }
 
-        return view('livewire.financial-share-manager', ['preview' => $preview, 'shares' => $shares, 'available' => $available]);
+        return view('livewire.financial-share-manager', ['preview' => $preview, 'previewError' => $previewError, 'shares' => $shares, 'available' => $available]);
     }
 }

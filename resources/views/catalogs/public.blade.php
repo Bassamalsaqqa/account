@@ -427,6 +427,22 @@
             margin-bottom: 12px;
         }
 
+        .sr-only {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            padding: 0;
+            margin: -1px;
+            overflow: hidden;
+            clip: rect(0, 0, 0, 0);
+            white-space: nowrap;
+            border: 0;
+        }
+
+        .tabular-nums {
+            font-variant-numeric: tabular-nums;
+        }
+
         /* Footer */
         footer {
             background-color: var(--surface);
@@ -468,7 +484,7 @@
     @if($unavailable)
         <div class="centered-card-wrapper">
             <div class="centered-card">
-                <svg class="centered-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <svg class="centered-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <circle cx="12" cy="12" r="10"></circle>
                     <line x1="4.93" y1="4.93" x2="19.07" y2="19.07"></line>
                 </svg>
@@ -479,7 +495,7 @@
     @elseif($requiresPassword)
         <div class="centered-card-wrapper">
             <div class="centered-card">
-                <svg class="centered-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <svg class="centered-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
                     <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
                 </svg>
@@ -489,11 +505,12 @@
                 <form method="POST" action="{{ ('/catalog/'.($token ?? '')) }}">
                     @csrf
                     @if(session('error') || $errors->has('password'))
-                        <div class="error-message">
+                        <div class="error-message" role="alert" aria-live="assertive" id="password-error">
                             {{ session('error') ?: $errors->first('password') }}
                         </div>
                     @endif
-                    <input type="password" name="password" required minlength="8" maxlength="128" placeholder="{{ __('catalogs.enter_password') }}" class="form-input" autocomplete="current-password" autofocus>
+                    <label for="catalog-password" class="sr-only">{{ __('catalogs.enter_password') }}</label>
+                    <input id="catalog-password" type="password" name="password" required minlength="8" maxlength="128" placeholder="{{ __('catalogs.enter_password') }}" class="form-input" autocomplete="current-password" autofocus @if(session('error') || $errors->has('password')) aria-describedby="password-error" aria-invalid="true" @endif>
                     <button type="submit" class="btn btn-primary" style="width: 100%;">
                         {{ __('catalogs.unlock_catalog') }}
                     </button>
@@ -513,24 +530,24 @@
                         @if(!empty($data['company']['phone']) || !empty($data['company']['email']))
                             <div class="company-contact">
                                 @if(!empty($data['company']['phone']))
-                                    <span>{{ $isRtl ? 'هاتف: ' : 'Tel: ' }}{{ $data['company']['phone'] }}</span>
+                                    <span>{{ $isRtl ? 'هاتف: ' : 'Tel: ' }}<bdi dir="ltr">{{ $data['company']['phone'] }}</bdi></span>
                                 @endif
                                 @if(!empty($data['company']['email']))
-                                    <span>{{ $isRtl ? 'بريد: ' : 'Email: ' }}{{ $data['company']['email'] }}</span>
+                                    <span>{{ $isRtl ? 'بريد: ' : 'Email: ' }}<bdi dir="ltr">{{ $data['company']['email'] }}</bdi></span>
                                 @endif
                             </div>
                         @endif
                     </div>
 
                     <div class="header-actions">
-                        <span class="badge-revision">{{ __('catalogs.revision') }} {{ $data['revision'] ?? 1 }}</span>
+                        <span class="badge-revision">{{ __('catalogs.revision') }} <bdi class="tabular-nums">{{ $data['revision'] ?? 1 }}</bdi></span>
 
                         @php
                             $targetLocale = $locale === 'ar' ? 'en' : 'ar';
                             $langParams = array_merge(request()->query(), ['locale' => $targetLocale]);
                             $langUrl = ('/catalog/'.($token ?? '')) . '?' . http_build_query($langParams);
                         @endphp
-                        <a href="{{ $langUrl }}" class="btn btn-secondary">
+                        <a href="{{ $langUrl }}" class="btn btn-secondary" hreflang="{{ $targetLocale }}" lang="{{ $targetLocale }}">
                             {{ $locale === 'ar' ? 'English' : 'العربية' }}
                         </a>
 
@@ -555,7 +572,7 @@
                 @if($isPriced && !empty($data['tax_basis']))
                     <div class="tax-banner">
                         <span><strong>{{ __('catalogs.tax_basis') }}:</strong> {{ $data['tax_basis'] }}</span>
-                        <span><strong>{{ __('catalogs.currency') }}:</strong> {{ $data['currency_code'] }}</span>
+                        <span><strong>{{ __('catalogs.currency') }}:</strong> <bdi dir="ltr">{{ $data['currency_code'] }}</bdi></span>
                     </div>
                 @endif
 
@@ -567,7 +584,7 @@
                                     <img src="{{ $item['image'] }}" alt="{{ $item['name'] }}" loading="lazy" class="product-image">
                                 @else
                                     <div class="image-placeholder">
-                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
                                             <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
                                             <circle cx="8.5" cy="8.5" r="1.5"></circle>
                                             <polyline points="21 15 16 10 5 21"></polyline>
@@ -584,7 +601,7 @@
                                 </div>
 
                                 @if(!empty($item['sku']))
-                                    <div class="product-sku">SKU: {{ $item['sku'] }}</div>
+                                    <div class="product-sku">SKU: <bdi dir="ltr">{{ $item['sku'] }}</bdi></div>
                                 @endif
 
                                 @if(!empty($item['description']))
@@ -595,7 +612,7 @@
                                     <div class="card-footer-row">
                                         @if($item['price'] !== null)
                                             <div>
-                                                <span class="price-badge">{{ $item['price'] }}</span>
+                                                <span class="price-badge"><bdi class="tabular-nums" dir="ltr">{{ $item['price'] }}</bdi></span>
                                                 <span class="price-currency">{{ $data['currency_code'] ?? '' }}</span>
                                             </div>
                                         @else
@@ -613,14 +630,14 @@
                 </div>
 
                 @if($totalPages > 1)
-                    <nav class="pagination-container" aria-label="Pagination">
+                    <nav class="pagination-container" aria-label="{{ $isRtl ? 'التنقل بين الصفحات' : 'Pagination' }}">
                         @for($p = 1; $p <= min(11, $totalPages); $p++)
                             @php
                                 $pageParams = array_merge(request()->query(), ['page' => $p]);
                                 $pageUrl = ('/catalog/'.($token ?? '')) . '?' . http_build_query($pageParams);
                             @endphp
-                            <a href="{{ $pageUrl }}" class="page-link {{ $p === $currentPage ? 'active' : '' }}" {{ $p === $currentPage ? 'aria-current="page"' : '' }}>
-                                {{ $p }}
+                            <a href="{{ $pageUrl }}" class="page-link {{ $p === $currentPage ? 'active' : '' }}" {{ $p === $currentPage ? 'aria-current="page"' : '' }} aria-label="{{ __('catalogs.page_info', ['current' => $p, 'total' => $totalPages]) }}">
+                                <bdi class="tabular-nums">{{ $p }}</bdi>
                             </a>
                         @endfor
                     </nav>

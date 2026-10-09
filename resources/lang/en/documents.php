@@ -121,6 +121,8 @@ return [
     'quotation_terms_help' => 'Default terms and conditions copied to new quotation drafts (up to 5000 chars).',
     'save' => 'Save Changes',
     'saving' => 'Saving...',
+    'uploading' => 'Uploading...',
+    'pagination' => 'Pagination',
     'settings_saved_successfully' => 'Document settings saved successfully.',
     'access_denied' => 'You are not authorized to manage document settings.',
 ];

@@ -16,6 +16,7 @@ use App\Services\Catalogs\CatalogRenderer;
 use App\Services\Catalogs\CatalogService;
 use App\Support\Tenancy\CompanyContext;
 use Illuminate\Contracts\View\View;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
@@ -103,6 +104,24 @@ class CatalogComposer extends Component
 
     public ?string $shareExpires = null;
 
+    #[Locked]
+    public ?string $expectedState = null;
+
+    #[Locked]
+    public bool $hasPassword = false;
+
+    #[Locked]
+    public ?string $currentExpires = null;
+
+    #[Locked]
+    public bool $hasExistingShare = false;
+
+    public ?string $linkAccessExpires = null;
+
+    public ?string $linkAccessPassword = null;
+
+    public bool $editingLinkAccess = false;
+
     public bool $showPreviewModal = false;
 
     /** @var array<string, mixed>|null */
@@ -189,6 +208,13 @@ class CatalogComposer extends Component
         $this->priceAcknowledged = false;
         $this->url = null;
         $this->qr = null;
+        $this->hasExistingShare = false;
+        $this->editingLinkAccess = false;
+        $this->expectedState = null;
+        $this->hasPassword = false;
+        $this->currentExpires = null;
+        $this->linkAccessExpires = null;
+        $this->linkAccessPassword = null;
 
         if (auth()->user()->hasPermissionTo('catalogs.share')) {
             $share = PublicShare::where('company_id', $this->companyId)
@@ -196,6 +222,8 @@ class CatalogComposer extends Component
                 ->where('subject_id', $catalog->id)
                 ->where('is_active', true)
                 ->first();
+
+            $this->hasExistingShare = ($share !== null);
 
             if ($share !== null && $share->isValid()) {
                 try {
@@ -221,6 +249,13 @@ class CatalogComposer extends Component
         $this->requestKey = null;
         $this->url = null;
         $this->qr = null;
+        $this->hasExistingShare = false;
+        $this->editingLinkAccess = false;
+        $this->expectedState = null;
+        $this->hasPassword = false;
+        $this->currentExpires = null;
+        $this->linkAccessExpires = null;
+        $this->linkAccessPassword = null;
         $this->status = 'draft';
         $this->publishedRevision = 0;
         $this->publishedAt = null;
@@ -568,12 +603,117 @@ class CatalogComposer extends Component
 
             $this->url = $result['url'];
             $this->sharePassword = null;
+            $this->hasExistingShare = true;
+            $this->editingLinkAccess = false;
             $this->showShareModal = true;
             session()->flash('success', __('catalogs.link_created'));
         } catch (InvalidArgumentException $e) {
+            $this->showShareModal = true;
             $this->addError('share', $e->getMessage());
         } catch (\Throwable) {
+            $this->showShareModal = true;
             $this->addError('share', __('catalogs.unexpected_error'));
+        }
+    }
+
+    public function openLinkAccess(): void
+    {
+        $this->resetErrorBag('linkAccess');
+        $this->authorizeFresh('catalogs.share');
+        abort_if($this->catalogId === null, 403, 'Catalog required.');
+
+        try {
+            $settings = app(CatalogService::class)->linkSettings($this->catalogId);
+
+            $this->expectedState = $settings['state'];
+            $this->hasPassword = (bool) $settings['has_password'];
+            $this->currentExpires = $settings['expires'];
+
+            $this->linkAccessExpires = $settings['expires'];
+            $this->linkAccessPassword = null;
+
+            $this->hasExistingShare = true;
+            $this->editingLinkAccess = true;
+            $this->showShareModal = true;
+        } catch (InvalidArgumentException $e) {
+            $this->addError('linkAccess', $e->getMessage());
+        } catch (\Throwable $e) {
+            if ($e instanceof ModelNotFoundException) {
+                throw $e;
+            }
+            $this->addError('linkAccess', __('catalogs.unexpected_error'));
+        }
+    }
+
+    public function closeLinkAccess(): void
+    {
+        $this->editingLinkAccess = false;
+        $this->linkAccessPassword = null;
+        $this->resetErrorBag('linkAccess');
+    }
+
+    public function updateLinkAccess(): void
+    {
+        $this->resetErrorBag('linkAccess');
+        $this->authorizeFresh('catalogs.share');
+        abort_if($this->catalogId === null, 403, 'Catalog required.');
+
+        $expectedState = $this->expectedState;
+        abort_if($expectedState === null || $expectedState === '', 422, 'Expected state required.');
+
+        if ($this->linkAccessExpires === '') {
+            $this->linkAccessExpires = null;
+        }
+        if ($this->linkAccessPassword === '') {
+            $this->linkAccessPassword = null;
+        }
+
+        $this->validate([
+            'linkAccessExpires' => ['nullable', 'date_format:Y-m-d', 'after:today'],
+            'linkAccessPassword' => ['nullable', 'string', 'min:8', 'max:128'],
+        ], [
+            'linkAccessExpires.date_format' => __('catalogs.access_expiry_invalid'),
+            'linkAccessExpires.after' => __('catalogs.access_expiry_invalid'),
+            'linkAccessPassword.min' => __('catalogs.access_password_invalid'),
+            'linkAccessPassword.max' => __('catalogs.access_password_invalid'),
+        ]);
+
+        try {
+            $url = app(CatalogService::class)->updateLinkAccess(
+                $this->catalogId,
+                $expectedState,
+                $this->linkAccessExpires,
+                $this->linkAccessPassword
+            );
+
+            $refreshed = app(CatalogService::class)->linkSettings($this->catalogId);
+            $this->expectedState = $refreshed['state'];
+            $this->hasPassword = (bool) $refreshed['has_password'];
+            $this->currentExpires = $refreshed['expires'];
+            $this->linkAccessExpires = $refreshed['expires'];
+
+            $this->url = $url;
+            $this->linkAccessPassword = null;
+            $this->sharePassword = null;
+            $this->qr = null;
+
+            $this->hasExistingShare = true;
+            $this->editingLinkAccess = false;
+            $this->showShareModal = true;
+
+            session()->flash('success', __('catalogs.link_access_updated'));
+        } catch (InvalidArgumentException $e) {
+            $message = match ($e->getMessage()) {
+                'Catalog access settings changed. Reload before saving.' => __('catalogs.access_stale'),
+                'An active published catalog is required.' => __('catalogs.access_requires_active'),
+                default => __('catalogs.access_unavailable'),
+            };
+            $this->addError('linkAccess', $message);
+        } catch (\Throwable $e) {
+            if ($e instanceof ModelNotFoundException) {
+                throw $e;
+            }
+            $this->addError('linkAccess', __('catalogs.unexpected_error'));
         }
     }
 

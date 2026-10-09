@@ -12,6 +12,7 @@ use App\Models\Customer;
 use App\Models\PublicShare;
 use App\Models\SalesInvoice;
 use App\Services\Sales\DocumentDataBuilder;
+use App\Services\Sales\DocumentRenderLimits;
 use App\Services\Sales\IssuedDocumentContent;
 use App\Services\Sales\PublicShareService;
 use Illuminate\Auth\Access\AuthorizationException;
@@ -63,6 +64,27 @@ class FinancialSharesTest extends Phase5ETestCase
             ->call('create')->assertHasErrors('share')->assertSet('url', null)
             ->assertSee(__('sharing.issuance_unavailable'));
         $this->assertSame(0, PublicShare::count());
+    }
+
+    public function test_share_manager_handles_bounded_preview_and_expired_recovery_without_an_active_token(): void
+    {
+        $invoice = $this->invoice();
+        $limits = \Mockery::mock(new DocumentRenderLimits);
+        $limits->shouldReceive('assertStatementSource')->andThrow(new InvalidArgumentException('Supported history bound exceeded.'));
+        $this->app->instance(DocumentRenderLimits::class, $limits);
+        Livewire::test(FinancialShareManager::class, ['subjectType' => PublicShare::SUBJECT_CUSTOMER_STATEMENT, 'subjectId' => $invoice->customer_id])
+            ->assertViewHas('preview', null)
+            ->assertViewHas('previewError', __('sharing.issuance_unavailable'))
+            ->set('password', 'statement-password')->call('create')->assertHasErrors('share')
+            ->assertSet('url', null);
+        $this->assertSame(0, PublicShare::count());
+
+        $this->app->forgetInstance(DocumentRenderLimits::class);
+        $share = $this->share($invoice);
+        $share['share']->update(['expires_at' => now()->subMinute()]);
+        Livewire::test(FinancialShareManager::class, ['subjectType' => PublicShare::SUBJECT_SALES_INVOICE, 'subjectId' => $invoice->id])
+            ->call('recover', $share['share']->public_id)->assertHasErrors('share')->assertSet('url', null);
+        $this->assertSame(1, PublicShare::count());
     }
 
     public function test_first_get_head_and_direct_formats_disclose_no_financial_identity(): void

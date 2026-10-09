@@ -20,6 +20,7 @@ use App\Services\Sales\SalesActorGuard;
 use App\Support\Tenancy\CompanyContext;
 use App\Support\Tenancy\CompanyScope;
 use Brick\Math\BigDecimal;
+use Carbon\Carbon;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
@@ -334,7 +335,7 @@ final class CatalogService
                 throw new InvalidArgumentException('Catalog access settings changed. Reload before saving.');
             }
             if (! $samePassword || ! $sameExpiry) {
-                $grant->expires_at = $expires;
+                $grant->expires_at = $expires === null ? null : Carbon::parse($expires);
                 if ($password !== null && ! $samePassword) {
                     $grant->password_hash = Hash::make($password);
                 }

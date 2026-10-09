@@ -495,6 +495,9 @@ class PurchasingFoundationTest extends TestCase
 
     public function test_existing_company_configuration_is_provisioned_without_consuming_numbers(): void
     {
+        $sequenceCount = DocumentSequence::count();
+        $unrelatedBefore = DB::table('document_sequences')
+            ->whereNotIn('document_type', ['purchase', 'purchase_return', 'vendor_payment'])->orderBy('id')->get()->toJson();
         DocumentSequence::whereIn('document_type', ['purchase', 'purchase_return', 'vendor_payment'])->delete();
         CompanyPurchaseSetting::query()->delete();
         $transferBefore = DB::table('document_sequences')->where('document_type', 'money_transfer')->get()->toJson();
@@ -504,7 +507,9 @@ class PurchasingFoundationTest extends TestCase
         app(EnsurePurchasingFoundationAction::class)->execute($this->company);
         $this->activate();
         $this->assertSame($salesBefore, DB::table('document_sequences')->whereIn('document_type', ['quotation', 'sales_invoice', 'sales_return', 'customer_payment'])->get()->toJson());
-        $this->assertDatabaseCount('document_sequences', 8);
+        $this->assertDatabaseCount('document_sequences', $sequenceCount);
+        $this->assertSame($unrelatedBefore, DB::table('document_sequences')
+            ->whereNotIn('document_type', ['purchase', 'purchase_return', 'vendor_payment'])->orderBy('id')->get()->toJson());
         $this->assertSame($transferBefore, DB::table('document_sequences')->where('document_type', 'money_transfer')->get()->toJson());
         $this->assertDatabaseCount('company_purchase_settings', 1);
         foreach (['purchase' => 'PUR', 'purchase_return' => 'PRT', 'vendor_payment' => 'VPM'] as $type => $prefix) {

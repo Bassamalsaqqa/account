@@ -23,35 +23,35 @@ class PurchasingDocumentsTest extends Phase5ETestCase
 {
     public function test_routes_reauthorize_redacted_output_and_preserve_native_currency_payment_legs(): void
     {
-        $purchase = $this->createAndPostPurchase(['currency_code'=>'USD','exchange_rate'=>'3.5',
-            'lines'=>[['product_id'=>$this->product->id,'quantity'=>'10','unit_cost'=>'10']]]);
-        $payment = app(PostVendorPaymentAction::class)->execute($this->company,$this->owner,[
-            'vendor_id'=>$this->vendor->id,'money_account_id'=>$this->ilsCashAccount->id,'payment_date'=>'2026-10-03',
-            'payment_method'=>'cash','amount'=>'330','exchange_rate'=>'1','idempotency_key'=>'p9-b-cross-currency',
-            'allocations'=>[['purchase_id'=>$purchase->id,'allocated_amount'=>'100','payment_currency_amount'=>'330']]]);
-        $dto = app(PurchasingDocumentBuilder::class)->build($payment,'en');
-        $this->assertSame('USD',$dto['lines'][0]['currency_code']);
-        $this->assertSame('100.000000',$dto['lines'][0]['allocated_amount']);
-        $this->assertSame('ILS',$dto['lines'][0]['payment_currency_code']);
-        $this->assertSame('330.000000',$dto['lines'][0]['payment_currency_amount']);
-        $this->assertSame('330.000000',$dto['lines'][0]['settlement_base_value']);
+        $purchase = $this->createAndPostPurchase(['currency_code' => 'USD', 'exchange_rate' => '3.5',
+            'lines' => [['product_id' => $this->product->id, 'quantity' => '10', 'unit_cost' => '10']]]);
+        $payment = app(PostVendorPaymentAction::class)->execute($this->company, $this->owner, [
+            'vendor_id' => $this->vendor->id, 'money_account_id' => $this->ilsCashAccount->id, 'payment_date' => '2026-10-03',
+            'payment_method' => 'cash', 'amount' => '330', 'exchange_rate' => '1', 'idempotency_key' => 'p9-b-cross-currency',
+            'allocations' => [['purchase_id' => $purchase->id, 'allocated_amount' => '100', 'payment_currency_amount' => '330']]]);
+        $dto = app(PurchasingDocumentBuilder::class)->build($payment, 'en');
+        $this->assertSame('USD', $dto['lines'][0]['currency_code']);
+        $this->assertSame('100.000000', $dto['lines'][0]['allocated_amount']);
+        $this->assertSame('ILS', $dto['lines'][0]['payment_currency_code']);
+        $this->assertSame('330.000000', $dto['lines'][0]['payment_currency_amount']);
+        $this->assertSame('330.000000', $dto['lines'][0]['settlement_base_value']);
         $before = $this->economicSnapshot();
-        $this->get(route('pdf.vendor-payment',$payment->public_id).'?format=print&locale=en')->assertOk()->assertSee('USD')->assertSee('ILS');
-        $this->get(route('pdf.purchase',$purchase->public_id).'?download=1&locale=en')->assertOk()->assertHeader('Content-Type','application/pdf')->assertHeader('X-Robots-Tag','noindex, nofollow');
-        $jod = $this->createAndPostPurchase(['currency_code'=>'JOD','exchange_rate'=>'5',
-            'lines'=>[['product_id'=>$this->product->id,'quantity'=>'1','unit_cost'=>'12.345']]]);
-        $jodDto = app(PurchasingDocumentBuilder::class)->build($jod,'ar');
-        $this->assertSame('12.345000',$jodDto['document']['grand_total']);
-        $this->assertSame('JOD',$jodDto['document']['currency_code']);
-        File::put(base_path('.ai/delegations/phase9-implementation/pdf/purchase-jod-ar.pdf'),app(PurchasingDocumentRenderer::class)->pdf($jodDto));
+        $this->get(route('pdf.vendor-payment', $payment->public_id).'?format=print&locale=en')->assertOk()->assertSee('USD')->assertSee('ILS');
+        $this->get(route('pdf.purchase', $purchase->public_id).'?download=1&locale=en')->assertOk()->assertHeader('Content-Type', 'application/pdf')->assertHeader('X-Robots-Tag', 'noindex, nofollow');
+        $jod = $this->createAndPostPurchase(['currency_code' => 'JOD', 'exchange_rate' => '5',
+            'lines' => [['product_id' => $this->product->id, 'quantity' => '1', 'unit_cost' => '12.345']]]);
+        $jodDto = app(PurchasingDocumentBuilder::class)->build($jod, 'ar');
+        $this->assertSame('12.345000', $jodDto['document']['grand_total']);
+        $this->assertSame('JOD', $jodDto['document']['currency_code']);
+        File::put(base_path('.ai/delegations/phase9-implementation/pdf/purchase-jod-ar.pdf'), app(PurchasingDocumentRenderer::class)->pdf($jodDto));
         $before = $this->economicSnapshot();
-        $this->get(route('pdf.vendor-statement',$this->vendor->public_id).'?format=print&locale=en')->assertOk()->assertSee('USD')->assertSee('JOD');
-        $this->assertSame($before,$this->economicSnapshot());
-        $actor = $this->customActor(['purchasing.purchase.view','purchasing.document.pdf']);
+        $this->get(route('pdf.vendor-statement', $this->vendor->public_id).'?format=print&locale=en')->assertOk()->assertSee('USD')->assertSee('JOD');
+        $this->assertSame($before, $this->economicSnapshot());
+        $actor = $this->customActor(['purchasing.purchase.view', 'purchasing.document.pdf']);
         $this->activate($actor);
-        $this->get(route('pdf.purchase',$purchase->public_id).'?format=print&locale=en')->assertOk()->assertSee('Quantity Only')->assertDontSee('Grand Total')->assertDontSee('3.500000');
-        $this->get(route('pdf.vendor-payment',$payment->public_id))->assertForbidden();
-        $this->get(route('pdf.vendor-statement',$this->vendor->public_id))->assertForbidden();
+        $this->get(route('pdf.purchase', $purchase->public_id).'?format=print&locale=en')->assertOk()->assertSee('Quantity Only')->assertDontSee('Grand Total')->assertDontSee('3.500000');
+        $this->get(route('pdf.vendor-payment', $payment->public_id))->assertForbidden();
+        $this->get(route('pdf.vendor-statement', $this->vendor->public_id))->assertForbidden();
     }
 
     public function test_purchase_exact_values_and_posted_snapshots_survive_master_changes(): void

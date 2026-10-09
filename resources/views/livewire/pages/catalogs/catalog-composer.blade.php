@@ -652,8 +652,108 @@
                     </button>
                 </div>
 
-                @if($errors->any())<p role="alert" class="mb-3 text-sm text-rose-700">{{ $errors->first() }}</p>@endif
-                @if($url)
+                @error('general')<p role="alert" class="mb-3 text-sm text-rose-700">{{ $message }}</p>@enderror
+                @error('share')<p role="alert" class="mb-3 text-sm text-rose-700">{{ $message }}</p>@enderror
+                @error('linkAccess')<p role="alert" class="mb-3 text-sm text-rose-700">{{ $message }}</p>@enderror
+                @if($errors->has('sharePassword') || $errors->has('shareExpires'))
+                    <p role="alert" class="mb-3 text-sm text-rose-700">{{ $errors->first('sharePassword') ?: $errors->first('shareExpires') }}</p>
+                @endif
+
+                @if($editingLinkAccess)
+                    <!-- Edit Link Access Form -->
+                    <div class="space-y-4">
+                        <div class="flex items-center justify-between pb-2 border-b border-slate-100">
+                            <h4 class="text-sm font-semibold text-slate-800">{{ __('catalogs.edit_link_access') }}</h4>
+                            @if($url)
+                                <button type="button" wire:click="closeLinkAccess" class="text-xs text-indigo-600 hover:text-indigo-800 font-medium min-h-[44px] px-2 flex items-center">
+                                    &larr; {{ __('catalogs.back_to_link') }}
+                                </button>
+                            @endif
+                        </div>
+
+                        <!-- Truthful Current Status Card (no secrets) -->
+                        <div class="p-3 bg-slate-50 border border-slate-200 rounded-lg text-xs space-y-1.5 text-slate-700">
+                            <div class="font-semibold text-slate-800">{{ __('catalogs.current_link_status') }}</div>
+                            <div class="flex justify-between items-center">
+                                <span class="text-slate-500">{{ __('catalogs.current_expiry') }}:</span>
+                                <span class="font-medium text-slate-800">{{ $currentExpires ?: __('catalogs.no_expiry') }}</span>
+                            </div>
+                            <div class="flex justify-between items-center">
+                                <span class="text-slate-500">{{ __('catalogs.password_protection') }}:</span>
+                                <span class="font-medium {{ $hasPassword ? 'text-emerald-700' : 'text-slate-600' }}">
+                                    {{ $hasPassword ? __('catalogs.status_password_protected') : __('catalogs.status_no_password') }}
+                                </span>
+                            </div>
+                        </div>
+
+                        <!-- Explanatory Notice -->
+                        <div class="p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-900 space-y-1">
+                            <p>{{ __('catalogs.link_access_help_password') }}</p>
+                            <p>{{ __('catalogs.link_access_help_expiry') }}</p>
+                        </div>
+
+                        <!-- Password input -->
+                        <div>
+                            <label for="link-access-password" class="block text-xs font-semibold text-slate-700 mb-1">
+                                {{ __('catalogs.new_password_label') }}
+                            </label>
+                            <input
+                                id="link-access-password"
+                                type="password"
+                                wire:model="linkAccessPassword"
+                                minlength="8"
+                                maxlength="128"
+                                placeholder="{{ __('catalogs.password_placeholder_keep') }}"
+                                class="w-full min-h-[44px] px-3 py-2 text-sm rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                            >
+                            @error('linkAccessPassword') <p role="alert" class="text-xs text-rose-600 mt-1">{{ $message }}</p> @enderror
+                        </div>
+
+                        <!-- Expiry input -->
+                        <div>
+                            <label for="link-access-expires" class="block text-xs font-semibold text-slate-700 mb-1">
+                                {{ __('catalogs.expiry_date') }}
+                            </label>
+                            <input
+                                id="link-access-expires"
+                                type="date"
+                                wire:model="linkAccessExpires"
+                                class="w-full min-h-[44px] px-3 py-2 text-sm rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                            >
+                            @error('linkAccessExpires') <p role="alert" class="text-xs text-rose-600 mt-1">{{ $message }}</p> @enderror
+                        </div>
+
+                        <!-- Action Buttons -->
+                        <div class="flex items-center gap-2 pt-2">
+                            <button
+                                type="button"
+                                wire:click="updateLinkAccess"
+                                wire:loading.attr="disabled"
+                                class="flex-1 min-h-[44px] bg-indigo-600 hover:bg-indigo-700 text-white font-medium text-sm rounded-lg flex items-center justify-center transition-colors disabled:opacity-50"
+                            >
+                                <span wire:loading.remove wire:target="updateLinkAccess">{{ __('catalogs.save_link_access') }}</span>
+                                <span wire:loading wire:target="updateLinkAccess">{{ __('catalogs.saving') }}</span>
+                            </button>
+                            @if($url)
+                                <button
+                                    type="button"
+                                    wire:click="closeLinkAccess"
+                                    class="min-h-[44px] px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-sm font-medium transition-colors"
+                                >
+                                    {{ __('catalogs.cancel') }}
+                                </button>
+                            @else
+                                <button
+                                    type="button"
+                                    wire:click="$set('showShareModal', false)"
+                                    class="min-h-[44px] px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-sm font-medium transition-colors"
+                                >
+                                    {{ __('catalogs.close') }}
+                                </button>
+                            @endif
+                        </div>
+                    </div>
+                @elseif($url)
                     <div class="space-y-4">
                         <div class="p-3 bg-slate-50 border border-slate-200 rounded-lg text-xs break-all font-mono select-all text-slate-800">
                             {{ $url }}
@@ -709,9 +809,33 @@
                             </button>
                         </div>
 
+                        <!-- Edit Link Access Action -->
+                        <button
+                            type="button"
+                            wire:click="openLinkAccess"
+                            class="w-full min-h-[44px] px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 rounded-lg text-xs font-medium flex items-center justify-center gap-1.5 mt-2 transition-colors"
+                        >
+                            {{ __('catalogs.edit_link_access') }}
+                        </button>
+
                         <p class="text-xs text-slate-500 mt-2">
                             {{ __('catalogs.recovering_existing') }}
                         </p>
+                    </div>
+                @elseif($hasExistingShare)
+                    <!-- Expired or Unavailable Link with Renewal Action -->
+                    <div class="space-y-4">
+                        <div class="p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-900">
+                            {{ __('catalogs.link_expired_notice') }}
+                        </div>
+
+                        <button
+                            type="button"
+                            wire:click="openLinkAccess"
+                            class="w-full min-h-[44px] bg-indigo-600 hover:bg-indigo-700 text-white font-medium text-sm rounded-lg flex items-center justify-center transition-colors"
+                        >
+                            {{ __('catalogs.renew_link_access') }}
+                        </button>
                     </div>
                 @else
                     <!-- Initial Link Creation Form -->

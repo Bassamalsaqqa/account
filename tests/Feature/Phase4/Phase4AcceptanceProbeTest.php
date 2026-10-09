@@ -110,6 +110,8 @@ final class Phase4AcceptanceProbeTest extends SalesInvoicePostingAndFefoTest
         $link = $service->createShare($this->company, $this->user, 'sales_invoice', $invoice->id);
         app(CompanyContext::class)->clear();
         auth()->logout();
+        $this->get($link['url'])->assertOk()->assertDontSee($invoice->invoice_number);
+        $this->unlockShare($link['url']);
         $result = $service->resolvePublicShare($link['raw_token']);
         $this->assertCount(1, $result['data']['lines'], 'Public document lost lines without tenant context');
     }
@@ -120,8 +122,23 @@ final class Phase4AcceptanceProbeTest extends SalesInvoicePostingAndFefoTest
         $oldName = $invoice->customer_snapshot['name_ar'];
         $link = app(PublicShareService::class)->createShare($this->company, $this->user, 'sales_invoice', $invoice->id);
         $this->customer->update(['name_ar' => 'Renamed after posting']);
+        app(CompanyContext::class)->clear();
+        auth()->logout();
+        $this->unlockShare($link['url']);
         $data = app(PublicShareService::class)->buildWhitelistedData($link['share']);
         $this->assertSame($oldName, $data['customer']['name'], 'Share must use historical customer identity');
+    }
+
+    private function unlockShare(string $url): void
+    {
+        // Exercise real web/session confirmation with CSRF enabled, not a fabricated unlock.
+        $this->app->instance('env', 'phase9-csrf-test');
+        try {
+            $this->withSession(['_token' => 'phase4-share-confirmation'])
+                ->post($url, ['_token' => 'phase4-share-confirmation'])->assertRedirect($url);
+        } finally {
+            $this->app->instance('env', 'testing');
+        }
     }
 
     public function test_probe_return_preserves_original_discount(): void

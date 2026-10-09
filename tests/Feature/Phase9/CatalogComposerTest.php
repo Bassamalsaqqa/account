@@ -8,11 +8,13 @@ use App\Actions\Company\CreateCompanyAction;
 use App\Livewire\Pages\Catalogs\CatalogComposer;
 use App\Models\Catalog;
 use App\Models\Product;
+use App\Models\PublicShare;
 use App\Models\User;
 use App\Services\Catalogs\CatalogService;
 use App\Services\Inventory\ProductCatalogService;
 use App\Support\Tenancy\CompanyContext;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
 use Livewire\Features\SupportLockedProperties\CannotUpdateLockedPropertyException;
 use Livewire\Livewire;
 use Tests\Feature\Phase5E\Phase5ETestCase;
@@ -192,6 +194,127 @@ class CatalogComposerTest extends Phase5ETestCase
         $component = Livewire::test(CatalogComposer::class, ['publicId' => $catalog->public_id])->call('previewPublication');
         $this->expectException(CannotUpdateLockedPropertyException::class);
         $component->set('previewPayload', ['currency_code' => 'ILS', 'items' => []]);
+    }
+
+    public function test_open_and_save_link_access_renews_expired_link_without_changing_url_or_revision(): void
+    {
+        $catalog = $this->catalog();
+        Livewire::test(CatalogComposer::class, ['publicId' => $catalog->public_id])
+            ->call('previewPublication')->assertHasNoErrors()
+            ->call('publish')->assertHasNoErrors();
+        $this->assertSame('active', $catalog->fresh()->status);
+
+        $link = app(CatalogService::class)->share($catalog->id, 'initial-secret-123', now()->addDay()->format('Y-m-d'));
+        $share = PublicShare::where('company_id', $this->company->id)->where('subject_type', 'product_catalog')->where('subject_id', $catalog->id)->firstOrFail();
+        $share->update(['expires_at' => now()->subDay()]);
+        $this->assertFalse($share->fresh()->isValid());
+
+        $component = Livewire::test(CatalogComposer::class, ['publicId' => $catalog->public_id]);
+        $this->assertNull($component->get('url'));
+
+        $component->call('openLinkAccess')->assertHasNoErrors();
+        $this->assertTrue($component->get('hasPassword'));
+        $this->assertSame(now()->subDay()->format('Y-m-d'), $component->get('currentExpires'));
+        $this->assertNotNull($component->get('expectedState'));
+
+        $newExpiry = now()->addDays(7)->format('Y-m-d');
+        $component->set('linkAccessExpires', $newExpiry)
+            ->set('linkAccessPassword', '')
+            ->call('updateLinkAccess')->assertHasNoErrors();
+
+        $this->assertSame($link['url'], $component->get('url'));
+        $this->assertSame($newExpiry, $share->fresh()->expires_at?->format('Y-m-d'));
+        $this->assertTrue(Hash::check('initial-secret-123', $share->fresh()->password_hash));
+        $this->assertTrue($share->fresh()->isValid());
+        $this->assertSame(1, $catalog->fresh()->published_revision);
+        $this->assertNull($component->get('qr'));
+    }
+
+    public function test_link_access_password_preserved_when_blank_and_updated_when_nonempty(): void
+    {
+        $catalog = $this->catalog();
+        Livewire::test(CatalogComposer::class, ['publicId' => $catalog->public_id])
+            ->call('previewPublication')->assertHasNoErrors()
+            ->call('publish')->assertHasNoErrors();
+
+        app(CatalogService::class)->share($catalog->id, 'original-password-123', now()->addDays(2)->format('Y-m-d'));
+        $share = PublicShare::where('company_id', $this->company->id)->where('subject_type', 'product_catalog')->where('subject_id', $catalog->id)->firstOrFail();
+
+        $component = Livewire::test(CatalogComposer::class, ['publicId' => $catalog->public_id])
+            ->call('openLinkAccess')->assertHasNoErrors();
+
+        $component->set('linkAccessPassword', 'replaced-password-456')
+            ->call('updateLinkAccess')->assertHasNoErrors();
+
+        $this->assertTrue(Hash::check('replaced-password-456', $share->fresh()->password_hash));
+
+        $component->call('openLinkAccess')->assertHasNoErrors()
+            ->set('linkAccessExpires', now()->addDays(10)->format('Y-m-d'))
+            ->set('linkAccessPassword', '')
+            ->call('updateLinkAccess')->assertHasNoErrors();
+
+        $this->assertTrue(Hash::check('replaced-password-456', $share->fresh()->password_hash));
+        $this->assertSame(now()->addDays(10)->format('Y-m-d'), $share->fresh()->expires_at?->format('Y-m-d'));
+
+        // Deliberately clearing expiry must not recover an old value from another form field.
+        $component->call('openLinkAccess')->set('linkAccessExpires', '')
+            ->set('linkAccessPassword', '')->call('updateLinkAccess')->assertHasNoErrors();
+        $this->assertNull($share->fresh()->expires_at);
+        $this->assertTrue(Hash::check('replaced-password-456', $share->fresh()->password_hash));
+    }
+
+    public function test_stale_expected_state_rejected_during_concurrent_link_access_edit(): void
+    {
+        $catalog = $this->catalog();
+        Livewire::test(CatalogComposer::class, ['publicId' => $catalog->public_id])
+            ->call('previewPublication')->assertHasNoErrors()
+            ->call('publish')->assertHasNoErrors();
+
+        app(CatalogService::class)->share($catalog->id, 'password-123', now()->addDays(2)->format('Y-m-d'));
+
+        $component = Livewire::test(CatalogComposer::class, ['publicId' => $catalog->public_id])
+            ->call('openLinkAccess')->assertHasNoErrors();
+
+        $service = app(CatalogService::class);
+        $settings = $service->linkSettings($catalog->id);
+        $service->updateLinkAccess($catalog->id, $settings['state'], now()->addDays(3)->format('Y-m-d'), 'concurrent-pwd-999');
+
+        $component->set('linkAccessExpires', now()->addDays(4)->format('Y-m-d'))
+            ->call('updateLinkAccess')->assertHasErrors('linkAccess');
+    }
+
+    public function test_open_link_access_denied_when_share_permission_revoked(): void
+    {
+        $catalog = $this->catalog();
+        $actor = $this->customActor(['catalogs.view', 'catalogs.manage', 'inventory.stock.view']);
+        $this->activate($actor);
+
+        Livewire::test(CatalogComposer::class, ['publicId' => $catalog->public_id])
+            ->call('openLinkAccess')->assertForbidden();
+    }
+
+    public function test_foreign_catalog_denied_for_link_access(): void
+    {
+        $foreignOwner = User::factory()->create();
+        app(CompanyContext::class)->clear();
+        $foreignCompany = app(CreateCompanyAction::class)->execute($foreignOwner, ['name_ar' => 'شركة أخرى 2', 'base_currency_code' => 'ILS']);
+        $this->actingAs($foreignOwner);
+        app(CompanyContext::class)->setCompany($foreignCompany, $foreignOwner);
+        $foreignProduct = app(ProductCatalogService::class)->createProduct($foreignCompany, ['name_ar' => 'منتج خارجي',
+            'sku' => 'FOREIGN-P2', 'product_type' => Product::TYPE_STOCK, 'track_stock' => true, 'track_expiry' => false,
+            'base_unit_id' => DB::table('units')->where('company_id', $foreignCompany->id)->where('code', 'piece')->value('id')], $foreignOwner->id);
+        $foreignCatalog = app(CatalogService::class)->save(null, $this->fields(), [['product_id' => $foreignProduct->id, 'unit_id' => $foreignProduct->base_unit_id]]);
+
+        $this->activate($this->owner);
+        Livewire::test(CatalogComposer::class, ['publicId' => $foreignCatalog->public_id])->assertNotFound();
+    }
+
+    public function test_locked_link_access_state_cannot_be_tampered_by_client(): void
+    {
+        $catalog = $this->catalog();
+        $component = Livewire::test(CatalogComposer::class, ['publicId' => $catalog->public_id]);
+        $this->expectException(CannotUpdateLockedPropertyException::class);
+        $component->set('expectedState', 'tampered-state-hash');
     }
 
     /** @return array<string,string> */

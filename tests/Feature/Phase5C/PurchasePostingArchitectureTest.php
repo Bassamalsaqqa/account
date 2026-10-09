@@ -55,6 +55,11 @@ class PurchasePostingArchitectureTest extends TestCase
             glob(app_path('Domain/Purchasing/*.php')),
             [app_path('Models/Purchase.php'), app_path('Models/PurchaseLine.php'), app_path('Models/PurchaseLineLot.php')],
         );
+        // These reviewed readers use aggregate/provenance queries, never SQL writes.
+        $sqlReaders = [
+            app_path('Services/Purchasing/PurchasePayableAsOf.php'),
+            app_path('Services/Purchasing/PurchasingDocumentBuilder.php'),
+        ];
         $violations = [];
         foreach ($files as $file) {
             $source = file_get_contents($file);
@@ -70,7 +75,12 @@ class PurchasePostingArchitectureTest extends TestCase
                 }
             }
             if (preg_match('/DB::table\s*\(/', $source)) {
-                $violations[] = $file.' bypasses economic models';
+                if (! in_array($file, $sqlReaders, true)) {
+                    $violations[] = $file.' bypasses economic models';
+                } elseif (preg_match('/->(?:insert|insertGetId|insertOrIgnore|upsert|update|updateOrInsert|delete|truncate|increment|decrement|incrementEach|decrementEach)\s*\(/', $source)
+                    || preg_match('/DB::(?:statement|unprepared|affectingStatement|insert|update|delete)\s*\(/', $source)) {
+                    $violations[] = $file.' mutates SQL from a read-only boundary';
+                }
             }
         }
         $this->assertSame([], $violations);

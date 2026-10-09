@@ -228,13 +228,13 @@ class PositionFinancialReportTest extends PositionTestCase
         $role = $u->roles()->first();
         $role->revokePermissionTo('payroll.salary.view');
         try {
-            app(PayrollSummaryReportQuery::class)->execute($this->company,$this->filters(),$u);
+            app(PayrollSummaryReportQuery::class)->execute($this->company, $this->filters(), $u);
             $this->fail('Revoked permission accepted.');
         } catch (AuthorizationException) {
             $this->assertTrue(true);
         }
         $this->activate($this->owner);
         $this->expectException(InvalidReportFilterException::class);
-        app(ExpenseReportQuery::class)->execute($this->company,$this->filters(['category_id' => '3abc']),$this->owner);
+        app(ExpenseReportQuery::class)->execute($this->company, $this->filters(['category_id' => '3abc']), $this->owner);
     }
 }

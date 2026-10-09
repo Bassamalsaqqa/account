@@ -337,10 +337,20 @@ final class RemainingSalesIntegrityTest extends SalesInvoicePostingAndFefoTest
         ]);
         app(PostSalesInvoiceAction::class)->execute($invoice, $this->user);
         $service = app(PublicShareService::class);
-        $share = $service->createShare($this->company, $this->user, PublicShare::SUBJECT_CUSTOMER_STATEMENT, $this->customer->id);
+        $share = $service->createShare($this->company, $this->user, PublicShare::SUBJECT_CUSTOMER_STATEMENT, $this->customer->id,
+            expiresAt: now()->addDays(7), password: 'statement-confirmation');
         app(CompanyContext::class)->clear();
         auth()->logout();
-        $result = $service->resolvePublicShare($share['raw_token']);
+        $this->get($share['url'])->assertOk()->assertDontSee('0.001');
+        $this->app->instance('env', 'phase9-csrf-test');
+        try {
+            $this->withSession(['_token' => 'phase4-statement-confirmation'])->post($share['url'], [
+                '_token' => 'phase4-statement-confirmation', 'password' => 'statement-confirmation',
+            ])->assertRedirect($share['url']);
+        } finally {
+            $this->app->instance('env', 'testing');
+        }
+        $result = $service->resolvePublicShare($share['raw_token'], 'statement-confirmation');
         $this->assertSame('success', $result['status']);
         $json = json_encode($result['data'], JSON_THROW_ON_ERROR);
         $this->assertStringNotContainsString('cogs', $json);

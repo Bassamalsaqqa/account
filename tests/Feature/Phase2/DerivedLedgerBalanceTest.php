@@ -79,11 +79,12 @@ class DerivedLedgerBalanceTest extends TestCase
             ]
         ));
 
-        // Expense on Day 2: Dr Salary Expense 200, Cr Cash 200
+        // Generic ledger fixture on Day 2, not a Phase 7 Expense business event.
+        // Dr Salary Expense 200, Cr Cash 200.
         $this->postingService->post(new PostingCommand(
             company: $this->company,
             postingDate: Carbon::parse('2026-09-02'),
-            sourceType: 'expense',
+            sourceType: 'manual_journal',
             sourceId: 2,
             transactionCurrencyCode: 'ILS',
             baseCurrencyCode: 'ILS',
