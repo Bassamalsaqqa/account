@@ -67,17 +67,21 @@ final class PurchasesByVendorReportQuery
 
         $vendorAggQuery = DB::query()->fromSub($activityQuery, 'e')
             ->joinSub(DB::query()->fromSub(clone $activityQuery, 'snap')->selectRaw('snap.*, ROW_NUMBER() OVER (PARTITION BY vendor_id ORDER BY business_date DESC, document_id DESC, event_type DESC) as snapshot_rank'), 'identity', fn ($join) => $join->on('identity.vendor_id', '=', 'e.vendor_id')->where('identity.snapshot_rank', '=', 1))
+            ->leftJoin('vendors as v', function ($join) use ($company): void {
+                $join->on('v.id', '=', 'e.vendor_id')
+                    ->where('v.company_id', '=', $company->id);
+            })
             ->selectRaw('
                 e.vendor_id,
                 identity.vendor_name_ar,
                 identity.vendor_name_en,
-                NULL as vendor_code,
+                v.code as vendor_code,
                 COALESCE(SUM(e.commercial_purchases_base), 0) as commercial_purchases_base,
                 COALESCE(SUM(e.returns_base), 0) as returns_base,
                 COALESCE(SUM(e.commercial_purchases_base - e.returns_base), 0) as net_purchases_base,
                 COALESCE(SUM(e.is_issued_purchase), 0) as purchase_count
             ')
-            ->groupBy('e.vendor_id', 'identity.vendor_name_ar', 'identity.vendor_name_en');
+            ->groupBy('e.vendor_id', 'identity.vendor_name_ar', 'identity.vendor_name_en', 'v.code');
 
         $sort = $validatedFilters->sort ?? 'purchases_desc';
         match ($sort) {
@@ -122,7 +126,7 @@ final class PurchasesByVendorReportQuery
                 'vendor_id' => (int) $row->vendor_id,
                 'vendor_name_ar' => (string) $row->vendor_name_ar,
                 'vendor_name_en' => (string) ($row->vendor_name_en ?? ''),
-                'vendor_code' => (string) ($row->vendor_code ?? ''),
+                'vendor_code' => $row->vendor_code !== null ? (string) $row->vendor_code : null,
                 'purchase_count' => (int) $row->purchase_count,
                 'commercial_purchases_base' => (string) BigDecimal::of((string) $row->commercial_purchases_base)->toScale(6),
                 'returns_base' => (string) BigDecimal::of((string) $row->returns_base)->toScale(6),

@@ -67,18 +67,22 @@ final class SalesByCustomerReportQuery
 
         $customerAggQuery = DB::query()->fromSub($activityQuery, 'e')
             ->joinSub(DB::query()->fromSub(clone $activityQuery, 'snap')->selectRaw('snap.*, ROW_NUMBER() OVER (PARTITION BY customer_id ORDER BY business_date DESC, document_id DESC, event_type DESC) as snapshot_rank'), 'identity', fn ($join) => $join->on('identity.customer_id', '=', 'e.customer_id')->where('identity.snapshot_rank', '=', 1))
+            ->leftJoin('customers as c', function ($join) use ($company): void {
+                $join->on('c.id', '=', 'e.customer_id')
+                    ->where('c.company_id', '=', $company->id);
+            })
             ->selectRaw('
                 e.customer_id,
                 identity.customer_name_ar,
                 identity.customer_name_en,
-                NULL as customer_code,
+                c.code as customer_code,
                 COALESCE(SUM(e.gross_sales_base), 0) as gross_sales_base,
                 COALESCE(SUM(e.revenue_base), 0) as revenue_base,
                 COALESCE(SUM(e.returns_base), 0) as returns_base,
                 COALESCE(SUM(e.revenue_base), 0) as net_sales_base,
                 COALESCE(SUM(e.is_issued_invoice), 0) as original_invoice_count
             ')
-            ->groupBy('e.customer_id', 'identity.customer_name_ar', 'identity.customer_name_en');
+            ->groupBy('e.customer_id', 'identity.customer_name_ar', 'identity.customer_name_en', 'c.code');
 
         // Apply sort
         $sort = $validatedFilters->sort ?? 'net_sales_desc';
@@ -129,7 +133,7 @@ final class SalesByCustomerReportQuery
                 'customer_id' => (int) $row->customer_id,
                 'customer_name_ar' => (string) $row->customer_name_ar,
                 'customer_name_en' => (string) ($row->customer_name_en ?? ''),
-                'customer_code' => (string) ($row->customer_code ?? ''),
+                'customer_code' => $row->customer_code !== null ? (string) $row->customer_code : null,
                 'original_invoice_count' => (int) $row->original_invoice_count,
                 'gross_sales_base' => (string) BigDecimal::of((string) $row->gross_sales_base)->toScale(6),
                 'returns_base' => (string) BigDecimal::of((string) $row->returns_base)->toScale(6),

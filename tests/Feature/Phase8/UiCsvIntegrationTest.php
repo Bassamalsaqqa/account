@@ -8,8 +8,6 @@ use App\Application\Reporting\DTO\ReportResult;
 use App\Application\Reporting\Queries\SalesSummaryReportQuery;
 use App\Application\Reporting\Security\ReportingGuard;
 use App\Models\Company;
-use Illuminate\Auth\Access\AuthorizationException;
-use Illuminate\Routing\Exceptions\StreamedResponseException;
 use Spatie\Permission\Models\Role;
 
 final class UiCsvIntegrationTest extends Phase8TestCase
@@ -63,18 +61,9 @@ final class UiCsvIntegrationTest extends Phase8TestCase
             }
         };
         app()->instance(SalesSummaryReportQuery::class, $query);
-        $response = $this->get(route('reports.export', ['reportKey' => 'sales.summary']))->assertOk();
-        $bufferLevel = ob_get_level();
-        try {
-            $response->streamedContent();
-            $this->fail('Revoked export must stop.');
-        } catch (StreamedResponseException $exception) {
-            $this->assertInstanceOf(AuthorizationException::class, $exception->getPrevious() ?? $exception->getInnerException());
-        } finally {
-            while (ob_get_level() > $bufferLevel) {
-                ob_end_clean();
-            }
-        }
+        $response = $this->get(route('reports.export', ['reportKey' => 'sales.summary']));
+        // Under Correction 02 bounded snapshot contract, revocation during preparation immediately fails closed with 403 before headers or byte delivery
+        $response->assertForbidden();
     }
 
     public function test_malformed_filters_return_422_before_stream_headers(): void

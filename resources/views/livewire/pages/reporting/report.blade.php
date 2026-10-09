@@ -10,7 +10,31 @@
             @endif
         @endunless
         @foreach($options as $field=>$values)
-            <div><label for="report-{{ $field }}" class="block text-xs font-bold mb-1.5">{{ __('reports.'.$field) }}@if(in_array($field,$definition['required'],true)) <span aria-hidden="true">*</span>@endif</label><select id="report-{{ $field }}" wire:model="filters.{{ $field }}" class="w-full rounded-control border-border text-sm"><option value="">{{ __('reports.all') }}</option>@foreach($values as $option)<option value="{{ $option['id'] }}">{{ $option['label'] }}</option>@endforeach</select></div>
+            <div>
+                <label for="report-{{ $field }}" class="block text-xs font-bold mb-1.5">{{ __('reports.'.$field) }}@if(in_array($field,$definition['required'],true)) <span aria-hidden="true">*</span>@endif</label>
+                @if($field !== 'currency_code')
+                    <div class="space-y-1.5">
+                        <input type="text"
+                               wire:model.live.debounce.300ms="selectorSearch.{{ $field }}"
+                               placeholder="{{ __('reports.search') }}"
+                               class="w-full rounded-control border-border text-xs px-2.5 py-1.5 bg-surface-soft"
+                               aria-label="{{ __('reports.search') }} {{ __('reports.'.$field) }}" />
+                        <select id="report-{{ $field }}" wire:model="filters.{{ $field }}" class="w-full rounded-control border-border text-sm">
+                            <option value="">{{ __('reports.all') }}</option>
+                            @foreach($values as $option)
+                                <option value="{{ $option['id'] }}">{{ $option['label'] }}</option>
+                            @endforeach
+                        </select>
+                    </div>
+                @else
+                    <select id="report-{{ $field }}" wire:model="filters.{{ $field }}" class="w-full rounded-control border-border text-sm">
+                        <option value="">{{ __('reports.all') }}</option>
+                        @foreach($values as $option)
+                            <option value="{{ $option['id'] }}">{{ $option['label'] }}</option>
+                        @endforeach
+                    </select>
+                @endif
+            </div>
         @endforeach
         @foreach($definition['options'] as $field=>$values)<div><label for="report-{{ $field }}" class="block text-xs font-bold mb-1.5">{{ __('reports.'.$field) }}</label><select id="report-{{ $field }}" wire:model="filters.{{ $field }}" class="w-full rounded-control border-border text-sm"><option value="">{{ __('reports.all') }}</option>@foreach($values as $value)<option value="{{ $value }}">{{ __('reports.options.'.$value) }}</option>@endforeach</select></div>@endforeach
         <div><label for="report-page-size" class="block text-xs font-bold mb-1.5">{{ __('reports.page_size') }}</label><select id="report-page-size" wire:model="filters.per_page" class="w-full rounded-control border-border text-sm">@foreach([25,50,100] as $size)<option value="{{ $size }}">{{ $size }}</option>@endforeach</select></div>

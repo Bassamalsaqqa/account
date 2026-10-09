@@ -30,6 +30,9 @@ final class ReportView extends Component
     #[Url]
     public array $filters = [];
 
+    /** @var array<string,string> */
+    public array $selectorSearch = [];
+
     public function mount(string $reportKey): void
     {
         $this->reportKey = $reportKey;
@@ -58,6 +61,7 @@ final class ReportView extends Component
     public function resetFilters(): void
     {
         $this->resetErrorBag();
+        $this->selectorSearch = [];
         $definition = app(ReportRegistry::class)->definition($this->reportKey);
         $this->filters = array_replace($definition['current'] ? [] : ['preset' => 'this_month'], $definition['defaults']);
         $this->normalizePeriodState();
@@ -157,7 +161,13 @@ final class ReportView extends Component
                 $this->addError('filters', __('reports.error'));
             }
         }
-        $options = app(ReportFilterOptions::class)->forReport($company, $definition, $this->filters);
+
+        try {
+            $options = app(ReportFilterOptions::class)->forReport($company, $definition, $this->filters, $this->selectorSearch);
+        } catch (InvalidArgumentException) {
+            $this->addError('selectorSearch', __('reports.error'));
+            $options = [];
+        }
         $title = $registry->title($this->reportKey);
         $exportUrl = route('reports.export', ['reportKey' => $this->reportKey, 'filters' => $this->filters]);
 

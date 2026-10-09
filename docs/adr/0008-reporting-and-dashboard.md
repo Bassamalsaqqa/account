@@ -156,3 +156,44 @@ The reporting catalog registers exactly 69 distinct reports across 9 operational
 4. **No Retroactive Cost Mutations**: FIFO/moving-average inventory costing reflects point-in-time stock movements. Valuation reflects actual recorded posting batches.
 5. **Historical Entity Links**: When underlying masters (customers, vendors, products) are deleted, drill-down links in reports are safely suppressed while historical text snapshots remain visible.
 6. **Reconciliation Evidence**: Exactly 6 domain reconciliation services are verified and healthy in `IntegratedReportTruthTest` (`AccountingReconciliationService`, `Phase7ReconciliationService`, `InventoryReconciliationService`, `SalesReconciliationService`, `PayablesReconciliationService`, `MoneyReconciliationService`), confirming zero economic writes across all database tables.
+
+---
+
+## 5. Architectural Correction 02 Policies and Boundaries
+
+### 5.1 Capability Alignment and Filter Authority
+- **Authority Consistency**: All 69 report variants declare exact minimal capability requirements in `ReportRegistry` aligned with `ReportingGuard` and domain query guards. Hub discovery, report view authorization, and CSV export agree identically.
+- **Account-Type Gating**: Money account queries enforce account-type authority (`money.cash.view` for cash, `money.bank.view` for banks). Users with only cash authority cannot enumerate or query bank accounts.
+- **Filter Cleanup**: Unsupported filter declarations (`currency_code` on `money.movements`, `status` on `inventory.stock`, `inventory.by-warehouse`, and `inventory.valuation`) are removed from registry to preserve truthful contracts.
+
+### 5.2 Master Selector Privacy and Bounded Search
+- **Bounded Selection**: Master selectors (`customer_id`, `vendor_id`, `product_id`, `warehouse_id`, `employee_id`, `money_account_id`, `category_id`) return at most 25 records per query, preventing unbounded DOM hydration on large tables (>100 records).
+- **In-Memory and Debounced Search**: Livewire components maintain local, non-URL-bound `$selectorSearch` state enabling debounced name and code/SKU search without polluting filter URLs or mutating financial filters.
+- **Bookmark Retention**: When an entity is already selected or bookmarked in report filters, it is deterministically retained/prepended in the option list even if beyond the current 25-item search page.
+- **Master Privacy**: When an actor lacks permission to view master lists (`customers.view`, `vendors.view`, `employees.view`, `inventory.stock.view`/`inventory.product.manage`), the corresponding master selector is completely omitted from response options and Livewire templates.
+
+### 5.3 Expense Classification Segregation
+- **Operating Default**: Default expense reports operate strictly on ordinary operating expenses (`status = operating`), computing P&L operating totals and excluding landed cost clearing activity.
+- **Landed Cost Gating**: Selecting `status = landed_cost` explicitly requires `purchasing.cost.view`, authorizes through `Phase7FinancialRead`, and aggregates landed cost clearing base amounts into segregated totals (`landed_cost_clearing_base`).
+- **P&L Integrity**: Net Profit in `ProfitReportQuery` excludes landed cost clearing lines, reflecting inventory capitalization rules.
+
+### 5.4 Stable Product Aggregation and Representative Snapshot
+- **Grouping Key**: `ProductAggregationHelper` groups catalog products by `product_id`. Null-product lines are grouped by a stable commercial identity tuple (`description`, `sku`, `name_ar`, `name_en`, `unit_ar`, `unit_en`) to prevent distinct free-text lines from collapsing under NULL.
+- **Deterministic Snapshot**: Representative metadata (name, description, SKU, unit) is derived via `ROW_NUMBER() OVER (...)` prioritizing latest original lines (`invoice_line`, `purchase_line`), tie-broken by `business_date DESC`, `document_id DESC`, `line_id DESC`.
+- **Original-Only Date**: `last_purchased_date` is conditional MAX over original document lines only; return lines never advance or fabricate purchase dates. If a period contains only return activity, `last_purchased_date` remains null.
+
+### 5.5 Aging KPI and Master Codes
+- **Distinct Aging Counts**: `TradeOpenPositions` calculates `customer_count` and `vendor_count` across the entire filtered dataset using an ordered distinct accumulator, reporting truthful party counts independently of pagination.
+- **Current Codes vs Immutable Names**: Reports join same-company current master codes (`customer_code`, `vendor_code`) while keeping historical document party names frozen from posted transaction snapshots.
+
+### 5.6 Bounded CSV Snapshot Spool
+- **Spool Before Delivery**: Complete export payload is written to a private temporary spool (`tmpfile()`) under MariaDB repeatable read consistent snapshot before HTTP response headers are sent.
+- **Snapshot Isolation**: Database transaction is closed immediately after spool completion. Streaming to client occurs with no open database transaction or locks held.
+- **Authority Fingerprint**: Pre-export authority fingerprint is re-validated outside the snapshot prior to response generation, and live checkpoints verify membership every 1MB during delivery.
+- **Operational Bounds**: Capped at `MAX_ROWS = 50_000`, `MAX_BYTES = 50MB`, `MAX_SECONDS = 30`. Breaching limits deletes spool and aborts with explicit error before header transmission.
+
+### 5.7 Final Integrity Verification
+- Every advertised enum option is executed against its registered query in a permanent all-variant audit. Inventory increase/decrease options use canonical adjustment movement types; category-profit and invoice-margin ordering use exact aggregate SQL expressions supported by MariaDB. Sorting is omitted only from totals subqueries.
+- Export transactions explicitly request transaction-local REPEATABLE READ and READ ONLY through the tracked Laravel connection, independent of session defaults. Period boundaries are frozen for every page.
+- One preparation deadline covers setup, report reads and spool writes. Each SQL statement receives the remaining budget. The prior session timeout, including its fractional value, is restored exactly; failed rollback or restoration discards the connection.
+- Permission cache refresh occurs outside the read-only snapshot. A database-backed permission cache is supported without writing inside the snapshot. Live membership and full permission fingerprints are checked again after rollback and before delivery; changed authority discards the prepared export. Delivery checkpoints stop further output after revocation but cannot recall bytes already delivered.

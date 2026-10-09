@@ -8,6 +8,7 @@ use App\Application\Reporting\DTO\ReportFilters;
 use App\Application\Reporting\DTO\ReportResult;
 use App\Application\Reporting\Security\ReportingGuard;
 use App\Application\Reporting\Security\ReportPermissionCatalog;
+use App\Application\Reporting\Support\ProductAggregationHelper;
 use App\Application\Reporting\Support\TradeEventActivity;
 use App\Application\Reporting\Support\TradeFilterValidator;
 use App\Application\Reporting\Support\TradeProvenance;
@@ -65,38 +66,68 @@ final class PurchasesByProductReportQuery
 
         $linesQuery = TradeEventActivity::purchaseLineActivityQuery($company, $validatedFilters);
 
-        $productAggQuery = DB::query()->fromSub($linesQuery, 'l')
+        $groupKey = ProductAggregationHelper::groupKeySql('l');
+        $rankSql = ProductAggregationHelper::representativeRankSql('l');
+
+        $linesWithRank = DB::query()->fromSub($linesQuery, 'l')
+            ->selectRaw("l.*, {$groupKey} as product_group_key, {$rankSql} as rep_rank");
+
+        $repQuery = DB::query()->fromSub(clone $linesWithRank, 'rep_lines')
+            ->where('rep_rank', 1)
+            ->select([
+                'product_group_key',
+                'product_id',
+                'product_sku',
+                'product_name_ar',
+                'product_name_en',
+                'item_description',
+                'unit_name_ar',
+                'unit_name_en',
+            ]);
+
+        $aggQuery = DB::query()->fromSub(clone $linesWithRank, 'agg_lines')
             ->selectRaw('
-                l.product_id,
-                l.product_sku,
-                l.product_name_ar,
-                l.product_name_en,
-                l.item_description,
-                l.unit_name_ar,
-                l.unit_name_en,
-                COALESCE(SUM(l.quantity_base), 0) as quantity_base,
-                COALESCE(SUM(l.commercial_line_total_base), 0) as commercial_total_base,
-                COALESCE(SUM(l.landed_cost_allocated_base), 0) as landed_cost_base,
-                COALESCE(SUM(l.inventory_acquisition_base), 0) as inventory_acquisition_base
+                product_group_key,
+                COALESCE(SUM(quantity_base), 0) as quantity_base,
+                COALESCE(SUM(commercial_line_total_base), 0) as commercial_total_base,
+                COALESCE(SUM(landed_cost_allocated_base), 0) as landed_cost_base,
+                COALESCE(SUM(inventory_acquisition_base), 0) as inventory_acquisition_base
             ')
-            ->groupBy(
-                'l.product_id',
-                'l.product_sku',
-                'l.product_name_ar',
-                'l.product_name_en',
-                'l.item_description',
-                'l.unit_name_ar',
-                'l.unit_name_en'
-            );
+            ->groupBy('product_group_key');
+
+        $productAggQuery = DB::query()->fromSub($repQuery, 'rep')
+            ->joinSub($aggQuery, 'agg', 'agg.product_group_key', '=', 'rep.product_group_key')
+            ->select([
+                'rep.product_group_key',
+                'rep.product_id',
+                'rep.product_sku',
+                'rep.product_name_ar',
+                'rep.product_name_en',
+                'rep.item_description',
+                'rep.unit_name_ar',
+                'rep.unit_name_en',
+                'agg.quantity_base',
+                'agg.commercial_total_base',
+                'agg.landed_cost_base',
+                'agg.inventory_acquisition_base',
+            ]);
 
         $sort = $validatedFilters->sort ?? 'amount_desc';
         match ($sort) {
-            'quantity_desc' => $productAggQuery->orderBy('quantity_base', 'desc'),
-            'name_asc' => $productAggQuery->orderBy(DB::raw('COALESCE(l.product_name_ar, l.item_description)'), 'asc'),
-            default => $productAggQuery->orderBy('commercial_total_base', 'desc'),
+            'quantity_desc' => $productAggQuery->orderBy('agg.quantity_base', 'desc'),
+            'name_asc' => $productAggQuery->orderBy(DB::raw('COALESCE(rep.product_name_ar, rep.item_description)'), 'asc'),
+            default => $productAggQuery->orderBy('agg.commercial_total_base', 'desc'),
         };
 
-        $productAggQuery->orderBy('l.product_id')->orderBy('l.product_sku')->orderBy('l.product_name_ar')->orderBy('l.product_name_en')->orderBy('l.item_description')->orderBy('l.unit_name_ar')->orderBy('l.unit_name_en');
+        $productAggQuery
+            ->orderBy('rep.product_id')
+            ->orderBy('rep.product_sku')
+            ->orderBy('rep.product_name_ar')
+            ->orderBy('rep.product_name_en')
+            ->orderBy('rep.item_description')
+            ->orderBy('rep.unit_name_ar')
+            ->orderBy('rep.unit_name_en')
+            ->orderBy('rep.product_group_key', 'asc');
 
         $totalsRow = DB::query()->fromSub($productAggQuery, 'pa')
             ->selectRaw('

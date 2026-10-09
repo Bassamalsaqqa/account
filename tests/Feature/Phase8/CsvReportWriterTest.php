@@ -78,6 +78,26 @@ class CsvReportWriterTest extends TestCase
         }
     }
 
+    public function test_expired_deadline_rejects_before_fetch_or_header(): void
+    {
+        $stream = tmpfile();
+        $fetched = false;
+        try {
+            (new CsvReportWriter)->write($stream, function () use (&$fetched): ReportResult {
+                $fetched = true;
+
+                return $this->reportResult([], 1, 1);
+            }, $this->columns(), microtime(true) - 1);
+            $this->fail('Expired export deadline was accepted.');
+        } catch (\RuntimeException $exception) {
+            $this->assertSame('Export execution time limit exceeded.', $exception->getMessage());
+            $this->assertFalse($fetched);
+            $this->assertSame(0, ftell($stream));
+        } finally {
+            fclose($stream);
+        }
+    }
+
     /** @param list<array<string, mixed>> $rows */
     private function reportResult(array $rows, int $page, int $last): ReportResult
     {

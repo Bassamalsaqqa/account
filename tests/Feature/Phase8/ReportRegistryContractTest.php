@@ -473,9 +473,13 @@ final class ReportRegistryContractTest extends TradeTestCase
         // Nullable fields are explicit semantic contracts, not permission-independent exemptions.
         $nullableColumnsByReport = [
             'sales.gross-profit' => ['gross_margin'],
-            'sales.by-product' => ['gross_margin'],
+            'sales.by-product' => ['gross_margin', 'unit_name', 'unit_name_ar', 'unit_name_en', 'product_sku', 'product_name_ar', 'product_name_en'],
             'sales.by-category' => ['gross_margin'],
-            'sales.by-customer' => ['gross_margin'],
+            'sales.by-customer' => ['gross_margin', 'customer_code'],
+            'customers.product-history' => ['last_purchased_date', 'unit_name', 'unit_name_ar', 'unit_name_en', 'product_sku', 'product_name_ar', 'product_name_en'],
+            'purchases.by-vendor' => ['vendor_code'],
+            'purchases.by-product' => ['unit_name', 'unit_name_ar', 'unit_name_en', 'product_sku', 'product_name_ar', 'product_name_en'],
+            'vendors.product-history' => ['last_purchased_date', 'unit_name', 'unit_name_ar', 'unit_name_en', 'product_sku', 'product_name_ar', 'product_name_en'],
             'purchases.returns' => ['reason'],
             'sales.returns' => ['reason'],
             'inventory.movements' => ['reason'],

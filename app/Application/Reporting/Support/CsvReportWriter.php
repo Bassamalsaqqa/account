@@ -10,6 +10,12 @@ use RuntimeException;
 
 final class CsvReportWriter
 {
+    public const int MAX_ROWS = 50_000;
+
+    public const int MAX_BYTES = 52_428_800; // 50 MB
+
+    public const int MAX_SECONDS = 30;
+
     /**
      * The fetch callback must invoke the guarded report query with identical
      * filters and a bounded page size on every call, including the first page.
@@ -18,12 +24,19 @@ final class CsvReportWriter
      * @param  callable(int): ReportResult  $fetch
      * @param  list<array{key: string, label: string, type: 'text'|'decimal'}>  $columns
      */
-    public function write($stream, callable $fetch, array $columns): void
+    public function write($stream, callable $fetch, array $columns, ?float $deadline = null): void
     {
         if (! is_resource($stream) || $columns === []) {
             throw new InvalidArgumentException('A writable stream and explicit export columns are required.');
         }
+        $startTime = microtime(true);
+        $effectiveDeadline = $deadline ?? ($startTime + self::MAX_SECONDS);
+        $totalRows = 0;
+
         // Authorize and fetch before sending even a header.
+        if (microtime(true) > $effectiveDeadline) {
+            throw new RuntimeException('Export execution time limit exceeded.');
+        }
         $result = $fetch(1);
         if (fwrite($stream, "\xEF\xBB\xBF") === false) {
             throw new RuntimeException('Unable to write CSV encoding marker.');
@@ -33,6 +46,13 @@ final class CsvReportWriter
         $page = 1;
         while (true) {
             foreach ($result->rows as $row) {
+                if (microtime(true) > $effectiveDeadline) {
+                    throw new RuntimeException('Export execution time limit exceeded.');
+                }
+                $totalRows++;
+                if ($totalRows > self::MAX_ROWS) {
+                    throw new RuntimeException('Export exceeded maximum row limit.');
+                }
                 $values = [];
                 foreach ($columns as $column) {
                     $value = $row[$column['key']] ?? null;
@@ -43,6 +63,18 @@ final class CsvReportWriter
                     $values[] = $this->cell($column['type'], $value);
                 }
                 $this->row($stream, $values);
+                $position = ftell($stream);
+                if ($position !== false && $position > self::MAX_BYTES) {
+                    throw new RuntimeException('Export byte limit exceeded.');
+                }
+            }
+
+            if (microtime(true) > $effectiveDeadline) {
+                throw new RuntimeException('Export execution time limit exceeded.');
+            }
+            $bytes = ftell($stream);
+            if ($bytes !== false && $bytes > self::MAX_BYTES) {
+                throw new RuntimeException('Export byte limit exceeded.');
             }
 
             if ($result->pagination === null) {

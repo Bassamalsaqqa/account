@@ -8,6 +8,7 @@ use App\Application\Reporting\DTO\ReportFilters;
 use App\Application\Reporting\DTO\ReportResult;
 use App\Application\Reporting\Security\ReportingGuard;
 use App\Application\Reporting\Security\ReportPermissionCatalog;
+use App\Application\Reporting\Support\ProductAggregationHelper;
 use App\Application\Reporting\Support\TradeEventActivity;
 use App\Application\Reporting\Support\TradeFilterValidator;
 use App\Application\Reporting\Support\TradeProvenance;
@@ -56,33 +57,60 @@ final class CustomerProductHistoryReportQuery
 
         $linesQuery = TradeEventActivity::salesLineActivityQuery($company, $validatedFilters);
 
-        $productAggQuery = DB::query()->fromSub($linesQuery, 'l')
+        $groupKey = ProductAggregationHelper::groupKeySql('l');
+        $rankSql = ProductAggregationHelper::representativeRankSql('l');
+
+        $linesWithRank = DB::query()->fromSub($linesQuery, 'l')
+            ->selectRaw("l.*, {$groupKey} as product_group_key, {$rankSql} as rep_rank");
+
+        $repQuery = DB::query()->fromSub(clone $linesWithRank, 'rep_lines')
+            ->where('rep_rank', 1)
+            ->select([
+                'product_group_key',
+                'product_id',
+                'product_sku',
+                'product_name_ar',
+                'product_name_en',
+                'item_description',
+                'unit_name_ar',
+                'unit_name_en',
+            ]);
+
+        $aggQuery = DB::query()->fromSub(clone $linesWithRank, 'agg_lines')
             ->selectRaw('
-                l.product_id,
-                l.product_sku,
-                l.product_name_ar,
-                l.product_name_en,
-                l.item_description,
-                l.unit_name_ar,
-                l.unit_name_en,
-                COALESCE(SUM(l.quantity_base), 0) as total_quantity_base,
-                COALESCE(SUM(l.line_total_base), 0) as total_spent_base,
-                MAX(l.business_date) as last_purchased_date
+                product_group_key,
+                COALESCE(SUM(quantity_base), 0) as total_quantity_base,
+                COALESCE(SUM(line_total_base), 0) as total_spent_base,
+                MAX(CASE WHEN event_type = \'invoice_line\' THEN business_date ELSE NULL END) as last_purchased_date
             ')
-            ->groupBy(
-                'l.product_id',
-                'l.product_sku',
-                'l.product_name_ar',
-                'l.product_name_en',
-                'l.item_description',
-                'l.unit_name_ar',
-                'l.unit_name_en'
-            )
-            ->orderBy('total_spent_base', 'desc');
+            ->groupBy('product_group_key');
+
+        $productAggQuery = DB::query()->fromSub($repQuery, 'rep')
+            ->joinSub($aggQuery, 'agg', 'agg.product_group_key', '=', 'rep.product_group_key')
+            ->select([
+                'rep.product_group_key',
+                'rep.product_id',
+                'rep.product_sku',
+                'rep.product_name_ar',
+                'rep.product_name_en',
+                'rep.item_description',
+                'rep.unit_name_ar',
+                'rep.unit_name_en',
+                'agg.total_quantity_base',
+                'agg.total_spent_base',
+                'agg.last_purchased_date',
+            ])
+            ->orderBy('agg.total_spent_base', 'desc')
+            ->orderBy('rep.product_id')
+            ->orderBy('rep.product_sku')
+            ->orderBy('rep.product_name_ar')
+            ->orderBy('rep.product_name_en')
+            ->orderBy('rep.item_description')
+            ->orderBy('rep.unit_name_ar')
+            ->orderBy('rep.unit_name_en')
+            ->orderBy('rep.product_group_key', 'asc');
 
         $totalProducts = DB::query()->fromSub($productAggQuery, 'pa')->count();
-
-        $productAggQuery->orderBy('l.product_id')->orderBy('l.product_sku')->orderBy('l.product_name_ar')->orderBy('l.product_name_en')->orderBy('l.item_description')->orderBy('l.unit_name_ar')->orderBy('l.unit_name_en');
 
         $totalsRow = DB::query()->fromSub($productAggQuery, 'pa')
             ->selectRaw('
@@ -111,7 +139,7 @@ final class CustomerProductHistoryReportQuery
                 'unit_name_ar' => $row->unit_name_ar !== null ? (string) $row->unit_name_ar : null,
                 'total_quantity_base' => (string) BigDecimal::of((string) $row->total_quantity_base)->toScale(6),
                 'total_spent_base' => (string) BigDecimal::of((string) $row->total_spent_base)->toScale(6),
-                'last_purchased_date' => (string) $row->last_purchased_date,
+                'last_purchased_date' => $row->last_purchased_date !== null ? (string) $row->last_purchased_date : null,
             ];
         }
 

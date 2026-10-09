@@ -9,6 +9,7 @@ use App\Application\Reporting\DTO\ReportResult;
 use App\Application\Reporting\Exceptions\InvalidReportFilterException;
 use App\Application\Reporting\Security\ReportingGuard;
 use App\Application\Reporting\Security\ReportPermissionCatalog;
+use App\Application\Reporting\Support\ProductAggregationHelper;
 use App\Application\Reporting\Support\TradeEventActivity;
 use App\Application\Reporting\Support\TradeFilterValidator;
 use App\Application\Reporting\Support\TradeProvenance;
@@ -75,39 +76,60 @@ final class SalesByProductReportQuery
 
         $linesQuery = TradeEventActivity::salesLineActivityQuery($company, $validatedFilters, $hasCostAuthority);
 
+        $groupKey = ProductAggregationHelper::groupKeySql('l');
+        $rankSql = ProductAggregationHelper::representativeRankSql('l');
+
+        $linesWithRank = DB::query()->fromSub($linesQuery, 'l')
+            ->selectRaw("l.*, {$groupKey} as product_group_key, {$rankSql} as rep_rank");
+
+        $repQuery = DB::query()->fromSub(clone $linesWithRank, 'rep_lines')
+            ->where('rep_rank', 1)
+            ->select([
+                'product_group_key',
+                'product_id',
+                'product_sku',
+                'product_name_ar',
+                'product_name_en',
+                'item_description',
+                'unit_name_ar',
+                'unit_name_en',
+            ]);
+
         $costSelect = $hasCostAuthority
-            ? ', COALESCE(SUM(l.cogs_total_base), 0) as cogs_base'
+            ? ', COALESCE(SUM(cogs_total_base), 0) as cogs_base'
             : '';
 
-        $productAggQuery = DB::query()->fromSub($linesQuery, 'l')
+        $aggQuery = DB::query()->fromSub(clone $linesWithRank, 'agg_lines')
             ->selectRaw("
-                l.product_id,
-                l.item_description,
-                l.product_sku,
-                l.product_name_ar,
-                l.product_name_en,
-                l.unit_name_ar,
-                l.unit_name_en,
-                COALESCE(SUM(l.quantity_base), 0) as quantity_base,
-                COALESCE(SUM(l.line_revenue_base), 0) as sales_revenue_base
+                product_group_key,
+                COALESCE(SUM(quantity_base), 0) as quantity_base,
+                COALESCE(SUM(line_revenue_base), 0) as sales_revenue_base
                 {$costSelect}
             ")
-            ->groupBy(
-                'l.product_id',
-                'l.item_description',
-                'l.product_sku',
-                'l.product_name_ar',
-                'l.product_name_en',
-                'l.unit_name_ar',
-                'l.unit_name_en'
-            );
+            ->groupBy('product_group_key');
+
+        $productAggQuery = DB::query()->fromSub($repQuery, 'rep')
+            ->joinSub($aggQuery, 'agg', 'agg.product_group_key', '=', 'rep.product_group_key')
+            ->selectRaw('
+                rep.product_group_key,
+                rep.product_id,
+                rep.item_description,
+                rep.product_sku,
+                rep.product_name_ar,
+                rep.product_name_en,
+                rep.unit_name_ar,
+                rep.unit_name_en,
+                agg.quantity_base,
+                agg.sales_revenue_base
+                '.($hasCostAuthority ? ', agg.cogs_base' : '').'
+            ');
 
         $sort = $validatedFilters->sort ?? 'revenue_desc';
         match ($sort) {
-            'quantity_desc' => $productAggQuery->orderBy('quantity_base', 'desc'),
-            'profit_desc' => $productAggQuery->orderBy(DB::raw('(sales_revenue_base - cogs_base)'), 'desc'),
-            'name_asc' => $productAggQuery->orderBy(DB::raw('COALESCE(l.product_name_ar, l.item_description)'), 'asc'),
-            default => $productAggQuery->orderBy('sales_revenue_base', 'desc'),
+            'quantity_desc' => $productAggQuery->orderBy('agg.quantity_base', 'desc'),
+            'profit_desc' => $productAggQuery->orderBy(DB::raw('(agg.sales_revenue_base - agg.cogs_base)'), 'desc'),
+            'name_asc' => $productAggQuery->orderBy(DB::raw('COALESCE(rep.product_name_ar, rep.item_description)'), 'asc'),
+            default => $productAggQuery->orderBy('agg.sales_revenue_base', 'desc'),
         };
 
         // Totals
@@ -117,7 +139,15 @@ final class SalesByProductReportQuery
             COALESCE(SUM(sales_revenue_base), 0) as sales_revenue_base
         '.($hasCostAuthority ? ', COALESCE(SUM(cogs_base), 0) as cogs_base' : '');
 
-        $productAggQuery->orderBy('l.product_id')->orderBy('l.product_sku')->orderBy('l.product_name_ar')->orderBy('l.product_name_en')->orderBy('l.item_description')->orderBy('l.unit_name_ar')->orderBy('l.unit_name_en');
+        $productAggQuery
+            ->orderBy('rep.product_id')
+            ->orderBy('rep.product_sku')
+            ->orderBy('rep.product_name_ar')
+            ->orderBy('rep.product_name_en')
+            ->orderBy('rep.item_description')
+            ->orderBy('rep.unit_name_ar')
+            ->orderBy('rep.unit_name_en')
+            ->orderBy('rep.product_group_key', 'asc');
 
         $totalsRow = DB::query()->fromSub($productAggQuery, 'pa')
             ->selectRaw($totalsSelect)

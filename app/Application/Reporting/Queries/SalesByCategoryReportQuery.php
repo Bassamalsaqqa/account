@@ -93,7 +93,7 @@ final class SalesByCategoryReportQuery
         $sort = $validatedFilters->sort ?? 'revenue_desc';
         match ($sort) {
             'quantity_desc' => $categoryAggQuery->orderBy('quantity_base', 'desc'),
-            'profit_desc' => $categoryAggQuery->orderBy(DB::raw('(sales_revenue_base - cogs_base)'), 'desc'),
+            'profit_desc' => $categoryAggQuery->orderBy(DB::raw('(COALESCE(SUM(l.line_revenue_base), 0) - COALESCE(SUM(l.cogs_total_base), 0))'), 'desc'),
             'name_asc' => $categoryAggQuery->orderBy('category_name_ar', 'asc'),
             default => $categoryAggQuery->orderBy('sales_revenue_base', 'desc'),
         };
@@ -107,7 +107,7 @@ final class SalesByCategoryReportQuery
 
         $categoryAggQuery->orderBy('l.category_id');
 
-        $totalsRow = DB::query()->fromSub($categoryAggQuery, 'ca')
+        $totalsRow = DB::query()->fromSub((clone $categoryAggQuery)->reorder(), 'ca')
             ->selectRaw($totalsSelect)
             ->first();
 

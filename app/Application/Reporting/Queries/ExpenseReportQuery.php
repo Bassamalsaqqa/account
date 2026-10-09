@@ -46,33 +46,57 @@ final class ExpenseReportQuery
             ->selectRaw('CASE WHEN is_reversal=1 THEN -base_amount ELSE base_amount END AS base_amount');
         $q = DB::query()->fromSub($events, 'signed_expenses');
         $operating = (clone $q)->where('classification', 'operating');
-        if (in_array($f->grouping, ['fuel', 'delivery', 'transport'], true)) {
-            $operating->whereRaw("LOWER(JSON_UNQUOTE(JSON_EXTRACT(category_snapshot,'$.code')))=?", [$f->grouping]);
-        }
         $landed = (clone $q)->where('classification', 'landed_cost');
-        $operatingTotal = Read::decimal((string) (clone $operating)->sum('base_amount'));
+
+        $isLanded = ($f->status === 'landed_cost');
+        if ($isLanded) {
+            $this->guard->authorize($company, $actor, 'purchasing.cost.view');
+        }
+
+        $target = $isLanded ? $landed : $operating;
+        if (in_array($f->grouping, ['fuel', 'delivery', 'transport'], true)) {
+            $target->whereRaw("LOWER(JSON_UNQUOTE(JSON_EXTRACT(category_snapshot,'$.code')))=?", [$f->grouping]);
+        }
         $canCost = $this->guard->allows($company, 'purchasing.cost.view', $actor);
 
         $categoryCode = "JSON_UNQUOTE(JSON_EXTRACT(category_snapshot,'$.code'))";
-        $totals = ['ordinary_operating_expense_base' => $operatingTotal,
-            'operating_currency_totals' => Read::currencyTotals($operating), 'legs_count' => (clone $operating)->count()];
-        foreach (['fuel', 'delivery', 'transport'] as $kind) {
-            $totals[$kind.'_total_base'] = Read::decimal((string) (clone $operating)->whereRaw("LOWER($categoryCode)=?", [$kind])->sum('base_amount'));
+
+        if ($isLanded) {
+            $landedTotal = Read::decimal((string) (clone $landed)->sum('base_amount'));
+            $totals = [
+                'landed_cost_clearing_base' => $landedTotal,
+                'landed_cost_currency_totals' => Read::currencyTotals($landed),
+                'legs_count' => (clone $landed)->count(),
+            ];
+            foreach (['fuel', 'delivery', 'transport'] as $kind) {
+                $totals[$kind.'_total_base'] = Read::decimal((string) (clone $landed)->whereRaw("LOWER($categoryCode)=?", [$kind])->sum('base_amount'));
+            }
+        } else {
+            $operatingTotal = Read::decimal((string) (clone $operating)->sum('base_amount'));
+            $totals = [
+                'ordinary_operating_expense_base' => $operatingTotal,
+                'operating_currency_totals' => Read::currencyTotals($operating),
+                'legs_count' => (clone $operating)->count(),
+            ];
+            foreach (['fuel', 'delivery', 'transport'] as $kind) {
+                $totals[$kind.'_total_base'] = Read::decimal((string) (clone $operating)->whereRaw("LOWER($categoryCode)=?", [$kind])->sum('base_amount'));
+            }
+            if ($canCost) {
+                $totals['landed_cost_clearing_base'] = Read::decimal((string) (clone $landed)->sum('base_amount'));
+            }
         }
-        if ($canCost) {
-            $totals['landed_cost_clearing_base'] = Read::decimal((string) (clone $landed)->sum('base_amount'));
-        }
+
         $group = $f->grouping ?? 'category';
         if ($group === 'currency') {
-            $rows = (clone $operating)->selectRaw('currency_code,SUM(amount) AS total_amount')->groupBy('currency_code')->orderBy('currency_code');
+            $rows = (clone $target)->selectRaw('currency_code,SUM(amount) AS total_amount')->groupBy('currency_code')->orderBy('currency_code');
             $map = static fn (object $r): array => ['currency_code' => (string) $r->currency_code, 'total_amount' => Read::decimal((string) $r->total_amount)];
         } elseif (in_array($group, ['trend', 'period'], true)) {
-            $rows = (clone $operating)->selectRaw("DATE_FORMAT(date,'%Y-%m') AS period,SUM(base_amount) AS total_base,COUNT(*) AS transaction_count")
+            $rows = (clone $target)->selectRaw("DATE_FORMAT(date,'%Y-%m') AS period,SUM(base_amount) AS total_base,COUNT(*) AS transaction_count")
                 ->groupByRaw("DATE_FORMAT(date,'%Y-%m')")->orderBy('period');
             $map = static fn (object $r): array => ['period' => (string) $r->period, 'total_base' => Read::decimal((string) $r->total_base), 'transaction_count' => (int) $r->transaction_count];
         } else {
             // Snapshot grouping retains historical category identity even after a rename.
-            $rows = (clone $operating)->selectRaw("category_id,category_snapshot,$categoryCode AS category_code,SUM(base_amount) AS total_base,COUNT(*) AS transaction_count")
+            $rows = (clone $target)->selectRaw("category_id,category_snapshot,$categoryCode AS category_code,SUM(base_amount) AS total_base,COUNT(*) AS transaction_count")
                 ->groupBy('category_id', 'category_snapshot')->orderBy('category_id')->orderBy('category_snapshot');
             if ($group === 'type') {
                 $rows->whereRaw("LOWER($categoryCode) IN ('fuel','delivery','transport')");
@@ -82,7 +106,7 @@ final class ExpenseReportQuery
                 'category_code' => (string) $r->category_code, 'total_base' => Read::decimal((string) $r->total_base), 'transaction_count' => (int) $r->transaction_count];
         }
 
-        return Read::result('expenses.summary', $company, $f, DB::query()->fromSub($rows,'grouped_expenses'), $totals, $map,
+        return Read::result('expenses.summary', $company, $f, DB::query()->fromSub($rows, 'grouped_expenses'), $totals, $map,
             ['landed_cost_segregated' => true, 'cost_redacted' => ! $canCost]);
 
     }

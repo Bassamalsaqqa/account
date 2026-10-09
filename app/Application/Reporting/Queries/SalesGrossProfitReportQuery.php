@@ -9,6 +9,7 @@ use App\Application\Reporting\DTO\ReportResult;
 use App\Application\Reporting\Exceptions\InvalidReportFilterException;
 use App\Application\Reporting\Security\ReportingGuard;
 use App\Application\Reporting\Security\ReportPermissionCatalog;
+use App\Application\Reporting\Support\ProductAggregationHelper;
 use App\Application\Reporting\Support\TradeEventActivity;
 use App\Application\Reporting\Support\TradeFilterValidator;
 use App\Application\Reporting\Support\TradeProvenance;
@@ -108,13 +109,13 @@ final class SalesGrossProfitReportQuery
             match ($sort) {
                 'profit_asc' => $aggQuery->orderBy('gross_profit_base', 'asc'),
                 'revenue_desc' => $aggQuery->orderBy('revenue_base', 'desc'),
-                'margin_desc' => $aggQuery->orderByRaw('gross_profit_base / NULLIF(revenue_base, 0) DESC'),
+                'margin_desc' => $aggQuery->orderByRaw('COALESCE(SUM(l.line_revenue_base - l.cogs_total_base), 0) / NULLIF(COALESCE(SUM(l.line_revenue_base), 0), 0) DESC'),
                 'date_desc' => $aggQuery->orderBy('business_date', 'desc'),
                 default => $aggQuery->orderBy('gross_profit_base', 'desc'),
             };
 
             $aggQuery->orderBy('l.event_type')->orderBy('l.document_id');
-            $totalsRow = DB::query()->fromSub($aggQuery, 'iq')
+            $totalsRow = DB::query()->fromSub((clone $aggQuery)->reorder(), 'iq')
                 ->selectRaw('
                     COUNT(*) as record_count,
                     COALESCE(SUM(revenue_base), 0) as total_revenue,
@@ -169,36 +170,65 @@ final class SalesGrossProfitReportQuery
                 throw new InvalidReportFilterException('Date sort is unavailable for a product aggregate.');
             }
             // by_product
-            $aggQuery = DB::query()->fromSub($linesQuery, 'l')
+            $groupKey = ProductAggregationHelper::groupKeySql('l');
+            $rankSql = ProductAggregationHelper::representativeRankSql('l');
+
+            $linesWithRank = DB::query()->fromSub($linesQuery, 'l')
+                ->selectRaw("l.*, {$groupKey} as product_group_key, {$rankSql} as rep_rank");
+
+            $repQuery = DB::query()->fromSub(clone $linesWithRank, 'rep_lines')
+                ->where('rep_rank', 1)
+                ->select([
+                    'product_group_key',
+                    'product_id',
+                    'product_sku',
+                    'product_name_ar',
+                    'product_name_en',
+                    'item_description',
+                    'unit_name_ar',
+                    'unit_name_en',
+                ]);
+
+            $aggSubQuery = DB::query()->fromSub(clone $linesWithRank, 'agg_lines')
                 ->selectRaw('
-                    l.product_id,
-                    l.product_sku,
-                    l.product_name_ar,
-                    l.product_name_en,
-                    l.item_description,
-                    COALESCE(SUM(l.quantity_base), 0) as quantity_base,
-                    COALESCE(SUM(l.line_revenue_base), 0) as revenue_base,
-                    COALESCE(SUM(l.cogs_total_base), 0) as cogs_base,
-                    COALESCE(SUM(l.line_revenue_base - l.cogs_total_base), 0) as gross_profit_base
+                    product_group_key,
+                    COALESCE(SUM(quantity_base), 0) as quantity_base,
+                    COALESCE(SUM(line_revenue_base), 0) as revenue_base,
+                    COALESCE(SUM(cogs_total_base), 0) as cogs_base,
+                    COALESCE(SUM(line_revenue_base - cogs_total_base), 0) as gross_profit_base
                 ')
-                ->groupBy(
-                    'l.product_id',
-                    'l.product_sku',
-                    'l.product_name_ar',
-                    'l.product_name_en',
-                    'l.item_description'
-                );
+                ->groupBy('product_group_key');
+
+            $aggQuery = DB::query()->fromSub($repQuery, 'rep')
+                ->joinSub($aggSubQuery, 'agg', 'agg.product_group_key', '=', 'rep.product_group_key')
+                ->select([
+                    'rep.product_group_key',
+                    'rep.product_id',
+                    'rep.product_sku',
+                    'rep.product_name_ar',
+                    'rep.product_name_en',
+                    'rep.item_description',
+                    'agg.quantity_base',
+                    'agg.revenue_base',
+                    'agg.cogs_base',
+                    'agg.gross_profit_base',
+                ]);
 
             $sort = $validatedFilters->sort ?? 'profit_desc';
             match ($sort) {
-                'profit_asc' => $aggQuery->orderBy('gross_profit_base', 'asc'),
-                'revenue_desc' => $aggQuery->orderBy('revenue_base', 'desc'),
-                'margin_desc' => $aggQuery->orderByRaw('gross_profit_base / NULLIF(revenue_base, 0) DESC'),
-                default => $aggQuery->orderBy('gross_profit_base', 'desc'),
+                'profit_asc' => $aggQuery->orderBy('agg.gross_profit_base', 'asc'),
+                'revenue_desc' => $aggQuery->orderBy('agg.revenue_base', 'desc'),
+                'margin_desc' => $aggQuery->orderByRaw('agg.gross_profit_base / NULLIF(agg.revenue_base, 0) DESC'),
+                default => $aggQuery->orderBy('agg.gross_profit_base', 'desc'),
             };
 
-            $aggQuery->orderBy('l.product_id')->orderBy('l.product_sku')->orderBy('l.product_name_ar')->orderBy('l.item_description');
-            $totalsRow = DB::query()->fromSub($aggQuery, 'pq')
+            $aggQuery
+                ->orderBy('rep.product_id')
+                ->orderBy('rep.product_sku')
+                ->orderBy('rep.product_name_ar')
+                ->orderBy('rep.item_description')
+                ->orderBy('rep.product_group_key', 'asc');
+            $totalsRow = DB::query()->fromSub((clone $aggQuery)->reorder(), 'pq')
                 ->selectRaw('
                     COUNT(*) as record_count,
                     COALESCE(SUM(quantity_base), 0) as total_quantity,

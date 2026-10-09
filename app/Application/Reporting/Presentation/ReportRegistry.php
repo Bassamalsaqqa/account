@@ -7,6 +7,7 @@ namespace App\Application\Reporting\Presentation;
 use App\Application\Reporting\DTO\ReportResult;
 use App\Application\Reporting\Security\ReportingGuard;
 use App\Models\Company;
+use App\Services\Phase7\Phase7FinancialRead;
 use App\Services\Purchasing\VendorFinancialRead;
 use Illuminate\Auth\Access\AuthorizationException;
 use InvalidArgumentException;
@@ -167,6 +168,7 @@ final class ReportRegistry
             'permissions' => [
                 0 => 'reports.sales.view',
                 1 => 'sales.invoice.view',
+                2 => 'customers.view',
             ],
             'filters' => [
                 0 => 'period',
@@ -482,7 +484,7 @@ final class ReportRegistry
             ],
             'permissions' => [
                 0 => 'reports.sales.view',
-                1 => 'sales.invoice.view',
+                1 => 'sales.return.view',
             ],
             'filters' => [
                 0 => 'period',
@@ -846,7 +848,8 @@ final class ReportRegistry
             ],
             'permissions' => [
                 0 => 'reports.sales.view',
-                1 => 'customers.statement.view',
+                1 => 'customers.view',
+                2 => 'sales.invoice.view',
             ],
             'filters' => [
                 0 => 'period',
@@ -904,7 +907,7 @@ final class ReportRegistry
             ],
             'permissions' => [
                 0 => 'reports.sales.view',
-                1 => 'sales.invoice.view',
+                1 => 'customers.view',
             ],
             'filters' => [
                 0 => 'period',
@@ -959,6 +962,7 @@ final class ReportRegistry
             'permissions' => [
                 0 => 'reports.sales.view',
                 1 => 'sales.invoice.view',
+                2 => 'customers.view',
             ],
             'filters' => [
                 0 => 'customer_id',
@@ -1012,6 +1016,7 @@ final class ReportRegistry
             'permissions' => [
                 0 => 'reports.sales.view',
                 1 => 'sales.invoice.view',
+                2 => 'customers.view',
             ],
             'filters' => [
                 0 => 'customer_id',
@@ -1189,6 +1194,7 @@ final class ReportRegistry
                 0 => 'reports.purchases.view',
                 1 => 'purchasing.purchase.view',
                 2 => 'purchasing.cost.view',
+                3 => 'vendors.view',
             ],
             'filters' => [
                 0 => 'period',
@@ -1718,6 +1724,7 @@ final class ReportRegistry
                 0 => 'reports.purchases.view',
                 1 => 'purchasing.purchase.view',
                 2 => 'purchasing.cost.view',
+                3 => 'vendors.view',
             ],
             'filters' => [
                 0 => 'vendor_id',
@@ -1772,6 +1779,7 @@ final class ReportRegistry
                 0 => 'reports.purchases.view',
                 1 => 'purchasing.purchase.view',
                 2 => 'purchasing.cost.view',
+                3 => 'vendors.view',
             ],
             'filters' => [
                 0 => 'vendor_id',
@@ -1838,6 +1846,7 @@ final class ReportRegistry
                 0 => 'reports.purchases.view',
                 1 => 'purchasing.purchase.view',
                 2 => 'purchasing.cost.view',
+                3 => 'vendors.view',
             ],
             'filters' => [
                 0 => 'vendor_id',
@@ -1907,9 +1916,8 @@ final class ReportRegistry
                 1 => 'product_id',
                 2 => 'category_id',
                 3 => 'warehouse_id',
-                4 => 'status',
-                5 => 'page',
-                6 => 'per_page',
+                4 => 'page',
+                5 => 'per_page',
             ],
             'required' => [
             ],
@@ -1956,10 +1964,9 @@ final class ReportRegistry
                 1 => 'product_id',
                 2 => 'category_id',
                 3 => 'warehouse_id',
-                4 => 'status',
-                5 => 'page',
-                6 => 'per_page',
-                7 => 'grouping',
+                4 => 'page',
+                5 => 'per_page',
+                6 => 'grouping',
             ],
             'required' => [
             ],
@@ -2039,8 +2046,8 @@ final class ReportRegistry
             'options' => [
                 'status' => [
                     0 => 'adjustment',
-                    1 => 'increase',
-                    2 => 'decrease',
+                    1 => 'adjustment_increase',
+                    2 => 'adjustment_decrease',
                     3 => 'damage',
                     4 => 'loss',
                     5 => 'damage_or_loss',
@@ -2094,9 +2101,8 @@ final class ReportRegistry
                 1 => 'product_id',
                 2 => 'category_id',
                 3 => 'warehouse_id',
-                4 => 'status',
-                5 => 'page',
-                6 => 'per_page',
+                4 => 'page',
+                5 => 'per_page',
             ],
             'required' => [
             ],
@@ -2221,8 +2227,8 @@ final class ReportRegistry
             'options' => [
                 'status' => [
                     0 => 'adjustment',
-                    1 => 'increase',
-                    2 => 'decrease',
+                    1 => 'adjustment_increase',
+                    2 => 'adjustment_decrease',
                     3 => 'damage',
                     4 => 'loss',
                     5 => 'damage_or_loss',
@@ -2331,6 +2337,7 @@ final class ReportRegistry
             'permissions' => [
                 0 => 'reports.inventory.view',
                 1 => 'inventory.stock.view',
+                2 => 'purchasing.purchase.view',
             ],
             'filters' => [
                 0 => 'period',
@@ -2568,9 +2575,8 @@ final class ReportRegistry
             'filters' => [
                 0 => 'period',
                 1 => 'money_account_id',
-                2 => 'currency_code',
-                3 => 'page',
-                4 => 'per_page',
+                2 => 'page',
+                3 => 'per_page',
             ],
             'required' => [
                 0 => 'money_account_id',
@@ -3171,7 +3177,6 @@ final class ReportRegistry
             'permissions' => [
                 0 => 'reports.payroll.view',
                 1 => 'employees.view',
-                2 => 'payroll.salary.view',
             ],
             'filters' => [
                 0 => 'period',
@@ -3321,6 +3326,7 @@ final class ReportRegistry
             ],
             'permissions' => [
                 0 => 'reports.money.view',
+                1 => 'money.cash.view',
             ],
             'filters' => [
                 0 => 'period',
@@ -3377,6 +3383,7 @@ final class ReportRegistry
             ],
             'permissions' => [
                 0 => 'reports.money.view',
+                1 => 'money.bank.view',
             ],
             'filters' => [
                 0 => 'period',
@@ -4255,7 +4262,6 @@ final class ReportRegistry
             'permissions' => [
                 0 => 'reports.payroll.view',
                 1 => 'employees.view',
-                2 => 'payroll.salary.view',
             ],
             'filters' => [
                 0 => 'period',
@@ -4379,7 +4385,10 @@ final class ReportRegistry
         if ($definition['query'] === 'App\\Application\\Reporting\\Queries\\MoneyVendorPaymentReportQuery' && ! app(VendorFinancialRead::class)->allows((int) $company->id)) {
             return false;
         }
-        if (in_array($definition['query'], ['App\\Application\\Reporting\\Queries\\MoneyBalanceReportQuery', 'App\\Application\\Reporting\\Queries\\MoneyMovementReportQuery'], true)) {
+        if (in_array($definition['key'], ['payroll.advances', 'payroll.outstanding-advances'], true) && ! app(Phase7FinancialRead::class)->advance((int) $company->id)) {
+            return false;
+        }
+        if (in_array($definition['key'], ['money.balances', 'money.movements'], true)) {
             return $guard->allows($company, 'money.cash.view') || $guard->allows($company, 'money.bank.view');
         }
 

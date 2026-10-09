@@ -70,14 +70,21 @@ final class TradeOpenPositions
                 $pager->add($row);
             }
         };
+        $distinctPartyCount = 0;
+        $lastPartyIdWithOpenBalance = null;
         // Group order permits an aging accumulator for just one party/currency at a time.
         $query->orderBy($party.'_id')->orderBy('currency_code')->orderBy('id')->chunk(200,
-            function (Collection $documents) use ($vendor, $aging, $party, $dateField, $cutoff, $asOf, $company, $pager, &$totals, &$group, &$groupKey, $emit): void {
+            function (Collection $documents) use ($vendor, $aging, $party, $dateField, $cutoff, $asOf, $company, $pager, &$totals, &$group, &$groupKey, $emit, &$distinctPartyCount, &$lastPartyIdWithOpenBalance): void {
                 $positions = $vendor ? app(PurchasePayableAsOf::class)->forHistory($documents, $asOf) : app(ReceivablePositionAsOf::class)->forInvoices($documents, $cutoff);
                 foreach ($documents as $document) {
                     $value = $positions[(int) $document->id] ?? BigDecimal::zero();
                     if (! $value->isPositive()) {
                         continue;
+                    }
+                    $partyIdVal = (int) $document->getAttribute($party.'_id');
+                    if ($partyIdVal !== $lastPartyIdWithOpenBalance) {
+                        $distinctPartyCount++;
+                        $lastPartyIdWithOpenBalance = $partyIdVal;
                     }
                     $currency = (string) $document->currency_code;
                     $due = $document->due_date ? Carbon::parse($document->due_date, (string) $company->timezone)->toDateString() : null;
@@ -137,7 +144,7 @@ final class TradeOpenPositions
         } unset($row);
 
         return ['rows' => $rows, 'count' => $pager->count(), 'totals' => $aging
-            ? ['currencies' => $formatted, ($vendor ? 'vendor_count' : 'customer_count') => $pager->count()]
+            ? ['currencies' => $formatted, ($vendor ? 'vendor_count' : 'customer_count') => $distinctPartyCount]
             : [($vendor ? 'unpaid_purchase_count' : ($overdue ? 'overdue_invoice_count' : 'unpaid_invoice_count')) => $pager->count(), 'outstanding_by_currency' => $formatted]];
     }
 }
