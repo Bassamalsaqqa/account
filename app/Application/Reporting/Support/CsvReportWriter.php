@@ -38,6 +38,9 @@ final class CsvReportWriter
             throw new RuntimeException('Export execution time limit exceeded.');
         }
         $result = $fetch(1);
+        if (($result->pagination['total'] ?? 0) > self::MAX_ROWS) {
+            throw new RuntimeException('Export exceeded maximum row limit.');
+        }
         if (fwrite($stream, "\xEF\xBB\xBF") === false) {
             throw new RuntimeException('Unable to write CSV encoding marker.');
         }

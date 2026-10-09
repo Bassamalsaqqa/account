@@ -12,6 +12,7 @@ use App\Application\Reporting\Exceptions\ReportingException;
 use App\Application\Reporting\Presentation\ReportPresenter;
 use App\Application\Reporting\Presentation\ReportRegistry;
 use App\Application\Reporting\Security\ReportingGuard;
+use App\Application\Reporting\Support\CsvReportDelivery;
 use App\Application\Reporting\Support\CsvReportWriter;
 use App\Models\Company;
 use App\Models\CompanyUser;
@@ -21,6 +22,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use InvalidArgumentException;
+use Spatie\Permission\PermissionRegistrar;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 final class ReportCsvController
@@ -90,6 +92,11 @@ final class ReportCsvController
 
         $exportDeadline = microtime(true) + 30.0;
         $preFingerprint = $captureFingerprint();
+
+        // Existing source guards may populate Spatie's database-backed catalogue.
+        // Warm it once before entering the read-only export snapshot, without
+        // evicting shared permissions or relying on it for live actor authority.
+        app(PermissionRegistrar::class)->getPermissions();
 
         $spool = tmpfile();
         if ($spool === false) {
@@ -243,36 +250,7 @@ final class ReportCsvController
         $filename = 'report-'.str_replace('.', '-', $reportKey).'.csv';
 
         return response()->streamDownload(function () use ($spool, $captureFingerprint, $preFingerprint): void {
-            try {
-                $live = $captureFingerprint();
-                if ($live !== $preFingerprint) {
-                    abort(403, 'Authority changed or revoked before export delivery.');
-                }
-
-                $bytesSent = 0;
-                $checkpointInterval = 1048576; // 1 MB
-                $lastCheckpoint = 0;
-
-                while (! feof($spool)) {
-                    $chunk = fread($spool, 65536);
-                    if ($chunk === false || $chunk === '') {
-                        break;
-                    }
-                    echo $chunk;
-                    flush();
-
-                    $bytesSent += strlen($chunk);
-                    if ($bytesSent - $lastCheckpoint >= $checkpointInterval) {
-                        $lastCheckpoint = $bytesSent;
-                        $check = $captureFingerprint();
-                        if ($check !== $preFingerprint) {
-                            break;
-                        }
-                    }
-                }
-            } finally {
-                fclose($spool);
-            }
+            app(CsvReportDelivery::class)->send($spool, static fn (): bool => $captureFingerprint() === $preFingerprint);
         }, $filename, [
             'Content-Type' => 'text/csv; charset=UTF-8',
             'Cache-Control' => 'private, no-store',

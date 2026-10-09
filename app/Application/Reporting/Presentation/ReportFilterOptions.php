@@ -25,6 +25,7 @@ final class ReportFilterOptions
         if (! $registry->allows($company, $definition['key'])) {
             throw new AuthorizationException("Unauthorized for report [{$definition['key']}].");
         }
+        $definition = app(ReportPresentationPolicy::class)->definition($company, $definition);
         $result = [];
 
         $tables = [

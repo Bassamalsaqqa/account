@@ -55,9 +55,11 @@ final class SalesByCategoryReportQuery
         ]);
         $company = $this->guard->company($company, $actor);
 
-        $hasCostAuthority = $this->guard->canViewCost($user)
-            && $user->hasPermissionTo(ReportPermissionCatalog::REPORTS_PROFIT_VIEW)
-            && $user->hasPermissionTo(ReportPermissionCatalog::INVENTORY_COST_VIEW);
+        $hasCostAuthority = $this->guard->allows($company, [
+            ReportPermissionCatalog::REPORTS_COST_VIEW,
+            ReportPermissionCatalog::REPORTS_PROFIT_VIEW,
+            ReportPermissionCatalog::INVENTORY_COST_VIEW,
+        ], $user);
 
         TradeProvenance::sales($company);
 

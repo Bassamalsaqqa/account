@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Application\Reporting\Presentation;
 
 use App\Application\Reporting\DTO\ReportResult;
+use App\Support\Tenancy\CompanyContext;
 
 final class ReportPresenter
 {
@@ -37,6 +38,8 @@ final class ReportPresenter
      *  @return list<array{key:string,label:string,type:'text'|'decimal'}> */
     public function columns(array $columns, ReportResult $result): array
     {
+        $company = app(CompanyContext::class)->company();
+        $columns = app(ReportPresentationPolicy::class)->columns($company, $columns, $result->reportType);
         $out = [];
         foreach ($columns as $column) {
             $key = $column['key'];

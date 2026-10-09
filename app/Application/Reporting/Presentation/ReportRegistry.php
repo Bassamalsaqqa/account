@@ -228,6 +228,7 @@ final class ReportRegistry
                     'key' => 'gross_margin',
                     'type' => 'decimal',
                 ],
+                ['key' => 'unit_name', 'type' => 'text'],
             ],
             'permissions' => [
                 0 => 'reports.sales.view',

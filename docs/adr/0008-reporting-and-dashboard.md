@@ -179,7 +179,7 @@ The reporting catalog registers exactly 69 distinct reports across 9 operational
 
 ### 5.4 Stable Product Aggregation and Representative Snapshot
 - **Grouping Key**: `ProductAggregationHelper` groups catalog products by `product_id`. Null-product lines are grouped by a stable commercial identity tuple (`description`, `sku`, `name_ar`, `name_en`, `unit_ar`, `unit_en`) to prevent distinct free-text lines from collapsing under NULL.
-- **Deterministic Snapshot**: Representative metadata (name, description, SKU, unit) is derived via `ROW_NUMBER() OVER (...)` prioritizing latest original lines (`invoice_line`, `purchase_line`), tie-broken by `business_date DESC`, `document_id DESC`, `line_id DESC`.
+- **Deterministic Snapshot**: Representative metadata (name, description, SKU) is derived via `ROW_NUMBER() OVER (...)` prioritizing latest original lines (`invoice_line`, `purchase_line`), tie-broken by `business_date DESC`, `document_id DESC`, `line_id DESC`.
 - **Original-Only Date**: `last_purchased_date` is conditional MAX over original document lines only; return lines never advance or fabricate purchase dates. If a period contains only return activity, `last_purchased_date` remains null.
 
 ### 5.5 Aging KPI and Master Codes
@@ -189,11 +189,46 @@ The reporting catalog registers exactly 69 distinct reports across 9 operational
 ### 5.6 Bounded CSV Snapshot Spool
 - **Spool Before Delivery**: Complete export payload is written to a private temporary spool (`tmpfile()`) under MariaDB repeatable read consistent snapshot before HTTP response headers are sent.
 - **Snapshot Isolation**: Database transaction is closed immediately after spool completion. Streaming to client occurs with no open database transaction or locks held.
-- **Authority Fingerprint**: Pre-export authority fingerprint is re-validated outside the snapshot prior to response generation, and live checkpoints verify membership every 1MB during delivery.
+- **Authority Fingerprint**: Pre-export authority fingerprint is re-validated outside the snapshot prior to response generation, and live checks verify authority immediately before every 64 KiB delivery chunk (see Correction 03 below).
 - **Operational Bounds**: Capped at `MAX_ROWS = 50_000`, `MAX_BYTES = 50MB`, `MAX_SECONDS = 30`. Breaching limits deletes spool and aborts with explicit error before header transmission.
 
 ### 5.7 Final Integrity Verification
 - Every advertised enum option is executed against its registered query in a permanent all-variant audit. Inventory increase/decrease options use canonical adjustment movement types; category-profit and invoice-margin ordering use exact aggregate SQL expressions supported by MariaDB. Sorting is omitted only from totals subqueries.
 - Export transactions explicitly request transaction-local REPEATABLE READ and READ ONLY through the tracked Laravel connection, independent of session defaults. Period boundaries are frozen for every page.
 - One preparation deadline covers setup, report reads and spool writes. Each SQL statement receives the remaining budget. The prior session timeout, including its fractional value, is restored exactly; failed rollback or restoration discards the connection.
-- Permission cache refresh occurs outside the read-only snapshot. A database-backed permission cache is supported without writing inside the snapshot. Live membership and full permission fingerprints are checked again after rollback and before delivery; changed authority discards the prepared export. Delivery checkpoints stop further output after revocation but cannot recall bytes already delivered.
+- Reporting authorization reloads actor role/direct-permission relationships without evicting the global permission catalogue. A database-backed permission cache is supported without writing inside the snapshot. Live membership and full permission fingerprints are checked again after rollback and before delivery; changed authority discards the prepared export. Delivery checkpoints stop further output after revocation but cannot recall bytes already delivered.
+
+
+## 6. Final Correction 03 release contracts
+
+### 6.1 Disposable MariaDB verification
+
+Use `tests/Support/run-phase8-disposable.php -- <PHPUnit targets>` with explicit `APP_ENV=testing`, `PHASE8_ALLOW_DISPOSABLE_DB=1`, and `PHASE8_TEST_DB_HOST`, `PORT`, `USERNAME`, `PASSWORD` variables. On platforms that remove empty environment variables, `PHASE8_TEST_DB_EMPTY_PASSWORD=1` explicitly opts into a blank test password. No credentials are inferred from application configuration. Only a loopback database server is accepted.
+
+The runner creates a cryptographically named `accounting_p8_tmp_<12 hex>` schema, refuses adoption of pre-existing schemas, runs canonical forward migrations/catalogue provisioning, forces isolated PHPUnit configuration and removes only the schema it created. Auxiliary snapshot fixtures use separately owned schemas, preserve actual foreign keys, and restore the original PDO, transaction, actor and Company context. They do not truncate or clone persistent databases. Snapshot tests require an exact private runner ownership proof (schema/server identity and random nonce), and refuse unknown primary databases before RefreshDatabase runs.
+
+### 6.2 Resource limits
+
+Report requests must satisfy `page * per_page <= 50,000`, validated using division before multiplication. Unsafe or overflowing pages fail with controlled filter errors. The subledger page accumulator retains a bounded top-K heap, preserving stable sorting, currency-specific comparisons, full-dataset counts and financial totals. Safe pages beyond the dataset return empty rows; they do not invent balances. CSV retains its 50,000-row capacity and rejects oversized exports before delivery, alongside the existing 50 MiB and 30-second preparation bounds. Full-history statement hydration remains the limitation documented above.
+
+### 6.3 Units and product aggregation
+
+Base-quantity report rows use the same-company Product's canonical base Unit, including soft-deleted Products. A carton of 12 pieces plus five pieces therefore reports 17 pieces. Missing/free-text identities return an unavailable unit instead of borrowing a transaction-unit label. Historical representative names/SKUs and immutable financial source values are unchanged.
+
+The five product aggregates now separate unranked SUM/group queries from ranked representative-identity selection. Totals/count queries use only the unranked branch. Representative selection remains deterministic; returns, reversals, grouping, sorting and decimal arithmetic are unchanged.
+
+Independent local MariaDB measurement used 10,000 synthetic rows and 500 Products in a private activity table, without inserting fake financial documents. Five warm repetitions measured old/new main pipelines at 165.99/85.78 ms and old/new totals at 145.78/12.64 ms, with byte-identical sorted rows and exact totals (quantity 6,000; revenue 600,000; COGS 300,000). EXPLAIN and all samples are retained in `codex-d2-benchmark.json`. This isolates aggregation/ranking overhead; it is not an end-to-end production latency guarantee. Canonical posted-fixture regressions separately verify economic equivalence. No performance deferral is required for this bounded change.
+
+### 6.4 Authorization and presentation
+
+ReportingGuard checks current Company status, membership and freshly queried actor role/direct-permission assignments under the exact Company team. It does not clear or rebuild Spatie's global catalogue per authorization. Spatie mutation APIs retain normal invalidation. Database-backed caching, multiple actors/teams and independent-connection revocation are covered by regressions.
+
+ReportPresentationPolicy centrally controls serialized options and sensitive column schemas. Sales COGS/profit columns and profit sorting require `reports.cost.view`, `reports.profit.view` and `inventory.cost.view`; inventory cost columns require `inventory.cost.view` plus `reports.cost.view`. Purchasing acquisition cost uses `purchasing.cost.view`; Inventory products-by-Vendor spend follows its source-specific `purchasing.cost.view` plus `reports.cost.view` conjunction. Expense Landed Cost selection requires the existing Expense-read and acquisition-cost authority. Forged, bookmarked or revoked privileged options remain rejected by query guards. UI and CSV column authorization is independent of nonempty rows, so restricted empty/out-of-range reports cannot reveal financial column names and authorized empty reports retain their valid schema.
+
+### 6.5 CSV delivery revocation
+
+Pre-preparation and post-snapshot/pre-response authorization remain mandatory. Delivery revalidates the live full authority fingerprint immediately before each 64 KiB chunk. Revocation stops subsequent chunks; private spool resources close in `finally`, including read failures, authority failures and client disconnects. Unexpected errors are not silently suppressed.
+
+This is best-effort live revocation: HTTP cannot retract bytes already sent or replace an already-started 200 response with a 403. There is an unavoidable race between the final authority read and chunk emission. Revocation before response preparation still produces 403 with no CSV; revocation before/within the stream stops further bytes without claiming a retroactive status change. Permanent tests cover both membership and financial-permission changes on independent PDO connections before delivery and between chunks.
+
+CSV preparation warms the normal Spatie permission catalogue once before its read-only transaction, so a cold database-backed cache cannot attempt a write inside that snapshot. This does not evict the catalogue; live actor/team/membership authorization and delivery fingerprints remain independently refreshed.

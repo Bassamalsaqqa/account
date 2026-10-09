@@ -8,6 +8,7 @@ use App\Application\Reporting\DTO\ReportFilters;
 use App\Application\Reporting\DTO\ReportPeriod;
 use App\Application\Reporting\Exceptions\ReportingException;
 use App\Application\Reporting\Presentation\ReportFilterOptions;
+use App\Application\Reporting\Presentation\ReportPresentationPolicy;
 use App\Application\Reporting\Presentation\ReportPresenter;
 use App\Application\Reporting\Presentation\ReportRegistry;
 use App\Application\Reporting\Presentation\ReportSourceNavigation;
@@ -126,7 +127,9 @@ final class ReportView extends Component
 
     public function goToPage(int $page): void
     {
-        if ($page < 1) {
+        try {
+            ReportFilters::assertSafePage($page, ReportFilters::positiveInteger($this->filters['per_page'] ?? 50, 'per_page'));
+        } catch (ReportingException|InvalidArgumentException) {
             $this->addError('filters', __('reports.error'));
 
             return;
@@ -140,7 +143,7 @@ final class ReportView extends Component
         $registry = app(ReportRegistry::class);
         $company = app(ReportingGuard::class)->company(app(CompanyContext::class)->company());
         abort_unless($registry->allows($company, $this->reportKey), 403);
-        $definition = $registry->definition($this->reportKey);
+        $definition = app(ReportPresentationPolicy::class)->definition($company, $registry->definition($this->reportKey));
         $result = null;
         $columns = [];
         $totals = [];

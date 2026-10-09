@@ -17,6 +17,8 @@ use Illuminate\Database\Eloquent\Model;
 
 final readonly class ReportFilters
 {
+    public const int MAX_PAGE_WINDOW = 50_000;
+
     public const array ALLOWED_KEYS = [
         'company_id', 'period', 'preset', 'from', 'to', 'start_date', 'end_date',
         'customer_id', 'vendor_id', 'product_id', 'category_id', 'warehouse_id',
@@ -44,6 +46,7 @@ final readonly class ReportFilters
         if ($page < 1 || $perPage < 1 || $perPage > 100) {
             throw new InvalidReportFilterException('Pagination requires a positive page and per_page between 1 and 100.');
         }
+        self::assertSafePage($page, $perPage);
         foreach ([$customerId, $vendorId, $productId, $categoryId, $warehouseId, $employeeId, $moneyAccountId] as $id) {
             if ($id !== null && $id < 1) {
                 throw new InvalidReportFilterException('Entity identities must be positive integers.');
@@ -240,6 +243,14 @@ final readonly class ReportFilters
             perPage: self::positiveInteger($input['per_page'] ?? 50, 'per_page'),
             isExplicitPeriod: $isExplicitPeriod,
         );
+    }
+
+    public static function assertSafePage(int $page, int $perPage): void
+    {
+        // Divide before multiplying: even PHP_INT_MAX cannot overflow this boundary.
+        if ($page < 1 || $perPage < 1 || $perPage > 100 || $page > intdiv(self::MAX_PAGE_WINDOW, $perPage)) {
+            throw new InvalidReportFilterException('Report page exceeds the safe 50,000-row paging window. Narrow the filters.');
+        }
     }
 
     public static function positiveInteger(mixed $value, string $field): int

@@ -10,8 +10,6 @@ use App\Models\CompanyUser;
 use App\Models\User;
 use App\Support\Tenancy\CompanyContext;
 use Illuminate\Auth\Access\AuthorizationException;
-use Illuminate\Support\Facades\DB;
-use Spatie\Permission\PermissionRegistrar;
 
 final class ReportingGuard
 {
@@ -33,15 +31,10 @@ final class ReportingGuard
         }
 
         setPermissionsTeamId($company->id);
-        // Export preflight warms the complete permission catalogue before its
-        // read-only snapshot. Eviction inside that snapshot can write to the
-        // database cache store. The post-snapshot guard refreshes live authority.
-        if (DB::transactionLevel() === 0) {
-            app(PermissionRegistrar::class)->forgetCachedPermissions();
-        }
         $authenticated->unsetRelation('roles')->unsetRelation('permissions');
+        $permissions = $authenticated->getAllPermissions()->where('guard_name', 'web')->pluck('name');
         foreach (is_array($requiredPermissions) ? $requiredPermissions : [$requiredPermissions] as $permission) {
-            if (! $authenticated->hasPermissionTo($permission)) {
+            if (! $permissions->contains($permission)) {
                 throw new AuthorizationException('The required report/source permission is missing.');
             }
         }

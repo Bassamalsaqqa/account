@@ -7,44 +7,74 @@ namespace App\Application\Reporting\Support;
 use App\Application\Reporting\DTO\ReportFilters;
 use Closure;
 
-/** Retains only the requested sorted prefix; domain records are processed in bounded batches. */
+/** Bounded top-K max heap: worst retained row at root, stable on equal sort keys. */
 final class TradePageAccumulator
 {
-    /** @var list<array<string,mixed>> */
-    private array $rows = [];
+    /** @var list<array{row:array<string,mixed>,sequence:int}> */
+    private array $heap = [];
 
     private int $count = 0;
 
+    private int $limit;
+
     /** @param Closure(array<string,mixed>,array<string,mixed>):int $compare */
-    public function __construct(private ReportFilters $filters, private Closure $compare) {}
+    public function __construct(private ReportFilters $filters, private Closure $compare)
+    {
+        ReportFilters::assertSafePage($filters->page, $filters->perPage);
+        $this->limit = $filters->page * $filters->perPage;
+    }
 
     /** @param array<string,mixed> $row */
     public function add(array $row): void
     {
-        $this->count++;
-        $limit = $this->filters->page * $this->filters->perPage;
-        $low = 0;
-        $high = count($this->rows);
-        while ($low < $high) {
-            $mid = intdiv($low + $high, 2);
-            if (($this->compare)($row, $this->rows[$mid]) < 0) {
-                $high = $mid;
-            } else {
-                $low = $mid + 1;
+        $entry = ['row' => $row, 'sequence' => $this->count++];
+        if (count($this->heap) < $this->limit) {
+            $index = count($this->heap);
+            $this->heap[] = $entry;
+            while ($index > 0) {
+                $parent = intdiv($index - 1, 2);
+                if ($this->compareEntries($this->heap[$index], $this->heap[$parent]) <= 0) {
+                    break;
+                }
+                [$this->heap[$index], $this->heap[$parent]] = [$this->heap[$parent], $this->heap[$index]];
+                $index = $parent;
+            }
+        } elseif ($this->compareEntries($entry, $this->heap[0]) < 0) {
+            $this->heap[0] = $entry;
+            $index = 0;
+            $size = count($this->heap);
+            while (($child = $index * 2 + 1) < $size) {
+                if ($child + 1 < $size && $this->compareEntries($this->heap[$child + 1], $this->heap[$child]) > 0) {
+                    $child++;
+                }
+                if ($this->compareEntries($this->heap[$child], $this->heap[$index]) <= 0) {
+                    break;
+                }
+                [$this->heap[$index], $this->heap[$child]] = [$this->heap[$child], $this->heap[$index]];
+                $index = $child;
             }
         }
-        if ($low < $limit) {
-            array_splice($this->rows, $low, 0, [$row]);
-            if (count($this->rows) > $limit) {
-                array_pop($this->rows);
-            }
-        }
+    }
+
+    /** @param array{row:array<string,mixed>,sequence:int} $a
+     * @param array{row:array<string,mixed>,sequence:int} $b */
+    private function compareEntries(array $a, array $b): int
+    {
+        return (($this->compare)($a['row'], $b['row'])) ?: ($a['sequence'] <=> $b['sequence']);
     }
 
     /** @return list<array<string,mixed>> */
     public function rows(): array
     {
-        return array_slice($this->rows, ($this->filters->page - 1) * $this->filters->perPage, $this->filters->perPage);
+        $sorted = $this->heap;
+        usort($sorted, $this->compareEntries(...));
+
+        return array_column(array_slice($sorted, ($this->filters->page - 1) * $this->filters->perPage, $this->filters->perPage), 'row');
+    }
+
+    public function retainedCount(): int
+    {
+        return count($this->heap);
     }
 
     public function count(): int

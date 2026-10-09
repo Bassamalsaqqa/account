@@ -227,6 +227,9 @@ final class MariaDbPerformanceExplainEvidenceTest extends Phase8TestCase
 
         // Write evidence artifact
         $outputPath = base_path('.ai/delegations/phase8-manual-correction01/mariadb-explain-performance.md');
+        if (! is_dir(dirname($outputPath))) {
+            mkdir(dirname($outputPath), 0700, true);
+        }
         file_put_contents($outputPath, implode("\n", $evidenceLines));
 
         $this->assertFileExists($outputPath);

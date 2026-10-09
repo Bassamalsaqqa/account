@@ -60,10 +60,29 @@ final class CustomerProductHistoryReportQuery
         $groupKey = ProductAggregationHelper::groupKeySql('l');
         $rankSql = ProductAggregationHelper::representativeRankSql('l');
 
-        $linesWithRank = DB::query()->fromSub($linesQuery, 'l')
-            ->selectRaw("l.*, {$groupKey} as product_group_key, {$rankSql} as rep_rank");
+        // D2: Unranked aggregation branch over lines query
+        $aggQuery = DB::query()->fromSub($linesQuery, 'l')
+            ->selectRaw('
+                '.$groupKey.' as product_group_key,
+                COALESCE(SUM(quantity_base), 0) as total_quantity_base,
+                COALESCE(SUM(line_total_base), 0) as total_spent_base,
+                MAX(CASE WHEN event_type = \'invoice_line\' THEN business_date ELSE NULL END) as last_purchased_date
+            ')
+            ->groupBy(DB::raw($groupKey));
 
-        $repQuery = DB::query()->fromSub(clone $linesWithRank, 'rep_lines')
+        // D2: Ranked representative identity branch
+        $linesWithRank = DB::query()->fromSub($linesQuery, 'l')
+            ->selectRaw("
+                l.product_id,
+                l.product_sku,
+                l.product_name_ar,
+                l.product_name_en,
+                l.item_description,
+                {$groupKey} as product_group_key,
+                {$rankSql} as rep_rank
+            ");
+
+        $repQuery = DB::query()->fromSub($linesWithRank, 'rep_lines')
             ->where('rep_rank', 1)
             ->select([
                 'product_group_key',
@@ -72,21 +91,19 @@ final class CustomerProductHistoryReportQuery
                 'product_name_ar',
                 'product_name_en',
                 'item_description',
-                'unit_name_ar',
-                'unit_name_en',
             ]);
 
-        $aggQuery = DB::query()->fromSub(clone $linesWithRank, 'agg_lines')
-            ->selectRaw('
-                product_group_key,
-                COALESCE(SUM(quantity_base), 0) as total_quantity_base,
-                COALESCE(SUM(line_total_base), 0) as total_spent_base,
-                MAX(CASE WHEN event_type = \'invoice_line\' THEN business_date ELSE NULL END) as last_purchased_date
-            ')
-            ->groupBy('product_group_key');
-
+        // G3: Canonical base-unit join to Product and base Unit
         $productAggQuery = DB::query()->fromSub($repQuery, 'rep')
             ->joinSub($aggQuery, 'agg', 'agg.product_group_key', '=', 'rep.product_group_key')
+            ->leftJoin('products as p', function ($join) use ($company): void {
+                $join->on('p.id', '=', 'rep.product_id')
+                    ->where('p.company_id', '=', $company->id);
+            })
+            ->leftJoin('units as bu', function ($join) use ($company): void {
+                $join->on('bu.id', '=', 'p.base_unit_id')
+                    ->where('bu.company_id', '=', $company->id);
+            })
             ->select([
                 'rep.product_group_key',
                 'rep.product_id',
@@ -94,8 +111,8 @@ final class CustomerProductHistoryReportQuery
                 'rep.product_name_ar',
                 'rep.product_name_en',
                 'rep.item_description',
-                'rep.unit_name_ar',
-                'rep.unit_name_en',
+                'bu.name_ar as unit_name_ar',
+                'bu.name_en as unit_name_en',
                 'agg.total_quantity_base',
                 'agg.total_spent_base',
                 'agg.last_purchased_date',
@@ -106,13 +123,13 @@ final class CustomerProductHistoryReportQuery
             ->orderBy('rep.product_name_ar')
             ->orderBy('rep.product_name_en')
             ->orderBy('rep.item_description')
-            ->orderBy('rep.unit_name_ar')
-            ->orderBy('rep.unit_name_en')
+            ->orderBy('bu.name_ar')
+            ->orderBy('bu.name_en')
             ->orderBy('rep.product_group_key', 'asc');
 
-        $totalProducts = DB::query()->fromSub($productAggQuery, 'pa')->count();
+        $totalProducts = DB::query()->fromSub($aggQuery, 'pa')->count();
 
-        $totalsRow = DB::query()->fromSub($productAggQuery, 'pa')
+        $totalsRow = DB::query()->fromSub($aggQuery, 'pa')
             ->selectRaw('
                 COALESCE(SUM(total_quantity_base), 0) as total_quantity,
                 COALESCE(SUM(total_spent_base), 0) as total_spent
@@ -137,6 +154,7 @@ final class CustomerProductHistoryReportQuery
                 'product_name_en' => $row->product_name_en !== null ? (string) $row->product_name_en : null,
                 'item_description' => (string) ($row->item_description ?? ''),
                 'unit_name_ar' => $row->unit_name_ar !== null ? (string) $row->unit_name_ar : null,
+                'unit_name_en' => $row->unit_name_en !== null ? (string) $row->unit_name_en : null,
                 'total_quantity_base' => (string) BigDecimal::of((string) $row->total_quantity_base)->toScale(6),
                 'total_spent_base' => (string) BigDecimal::of((string) $row->total_spent_base)->toScale(6),
                 'last_purchased_date' => $row->last_purchased_date !== null ? (string) $row->last_purchased_date : null,

@@ -27,10 +27,14 @@ use Illuminate\Support\Str;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
 use Symfony\Component\HttpKernel\Exception\HttpException;
+use Tests\Support\DisposableMariaDbSchema;
 
 class Correction02CsvSnapshotTest extends Phase8TestCase
 {
-    private const string SNAPSHOT_DB = 'accounting_p8_arch_c02_snapshot_20261008';
+    protected function beforeRefreshingDatabase(): void
+    {
+        DisposableMariaDbSchema::assertPrimarySchema((string) config('database.connections.mysql.database'));
+    }
 
     /**
      * @param  list<string>  $permissions
@@ -117,32 +121,10 @@ class Correction02CsvSnapshotTest extends Phase8TestCase
     public function test_real_exporter_multipage_snapshot_with_concurrent_backdated_event(): void
     {
         $originalDb = config('database.connections.mysql.database');
-        config(['database.connections.mysql.database' => self::SNAPSHOT_DB]);
-        DB::purge('mysql');
-
-        $childScript = base_path('bootstrap/temp_concurrent_post.php');
+        $disposable = DisposableMariaDbSchema::createFromSource($originalDb);
+        $disposable->switchLaravelConnection();
 
         try {
-            $db = DB::connection();
-            $currentDb = $db->getDatabaseName();
-            if ($currentDb !== self::SNAPSHOT_DB) {
-                throw new \RuntimeException('Refusing to reset database: expected ['.self::SNAPSHOT_DB."], got [{$currentDb}].");
-            }
-
-            // Clear snapshot schema
-            $tables = $db->select('SHOW TABLES');
-            $db->statement('SET FOREIGN_KEY_CHECKS=0');
-            foreach ($tables as $tableObj) {
-                $tableName = array_values((array) $tableObj)[0];
-                if ($tableName !== 'currencies') {
-                    $db->statement("TRUNCATE TABLE `{$tableName}`");
-                }
-            }
-            $db->statement('SET FOREIGN_KEY_CHECKS=1');
-
-            // Copy permissions from active test db
-            $db->statement("INSERT INTO permissions SELECT * FROM `{$originalDb}`.permissions");
-
             $owner = User::create([
                 'public_id' => (string) Str::ulid(),
                 'name' => 'Snapshot Owner',
@@ -200,40 +182,24 @@ class Correction02CsvSnapshotTest extends Phase8TestCase
             }
 
             $concurrentInserted = false;
-            $phpBinary = PHP_BINARY;
             $compKey = (int) $company->id;
             $ownerKey = (int) $owner->id;
             $custKey = (int) $customer->id;
 
-            DB::listen(function ($query) use (&$concurrentInserted, $phpBinary, $childScript, $compKey, $ownerKey, $custKey): void {
+            DB::listen(function ($query) use (&$concurrentInserted, $disposable, $compKey, $ownerKey, $custKey): void {
                 if (! $concurrentInserted && str_contains($query->sql, 'sales_invoices') && (str_contains($query->sql, 'limit 100') || str_contains($query->sql, 'LIMIT 100'))) {
                     $concurrentInserted = true;
                     // Concurrent independent application process creates and posts earlier-sorted backdated canonical invoice!
-                    $scriptCode = <<<PHP
-<?php
-require __DIR__ . '/../vendor/autoload.php';
-\$app = require __DIR__ . '/app.php';
-\$app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
-config(['database.connections.mysql.database' => 'accounting_p8_arch_c02_snapshot_20261008']);
-Illuminate\Support\Facades\DB::purge('mysql');
-\$company = App\Models\Company::findOrFail({$compKey});
-\$owner = App\Models\User::findOrFail({$ownerKey});
-auth()->login(\$owner);
-app(App\Support\Tenancy\CompanyContext::class)->setCompany(\$company, \$owner);
-\$draft = app(App\Actions\Sales\CreateSalesInvoiceDraftAction::class)->execute(\$company, \$owner, [
-    'customer_id' => {$custKey},
-    'currency_code' => 'ILS',
-    'exchange_rate' => '1.0000000000',
-    'issue_date' => '2026-10-01',
-    'lines' => [['product_id' => null, 'item_description' => 'Concurrent Backdated Item', 'quantity' => '1.000000', 'unit_price' => '100.000000']],
-]);
-app(App\Actions\Sales\PostSalesInvoiceAction::class)->execute(\$draft, \$owner);
-PHP;
-                    file_put_contents($childScript, $scriptCode);
-                    exec("{$phpBinary} ".escapeshellarg($childScript));
-                    if (file_exists($childScript)) {
-                        unlink($childScript);
-                    }
+                    $disposable->runConcurrentCanonicalPost([
+                        'company_id' => $compKey,
+                        'owner_id' => $ownerKey,
+                        'customer_id' => $custKey,
+                        'product_id' => null,
+                        'item_description' => 'Concurrent Backdated Item',
+                        'issue_date' => '2026-10-01',
+                        'quantity' => '1.000000',
+                        'unit_price' => '100.000000',
+                    ]);
                 }
             });
 
@@ -267,11 +233,7 @@ PHP;
             // Release of snapshot before delivery confirmed by fresh post-snapshot read
             $this->assertTrue(DB::table('sales_invoice_lines')->where('item_description', 'Concurrent Backdated Item')->exists());
         } finally {
-            if (file_exists($childScript)) {
-                unlink($childScript);
-            }
-            config(['database.connections.mysql.database' => $originalDb]);
-            DB::purge('mysql');
+            $disposable->drop();
         }
     }
 
@@ -280,7 +242,7 @@ PHP;
         $previousStore = config('permission.cache.store');
         $configured = false;
         DB::listen(function ($query) use (&$configured): void {
-            if (! $configured && $query->sql === 'SHOW TABLES' && $query->connection->getDatabaseName() === self::SNAPSHOT_DB) {
+            if (! $configured && str_starts_with((string) $query->connection->getDatabaseName(), 'accounting_p8_tmp_')) {
                 $configured = true;
                 config(['permission.cache.store' => 'database']);
                 app(PermissionRegistrar::class)->initializeCache();
@@ -296,38 +258,13 @@ PHP;
         }
     }
 
-    private function prepareSnapshotDatabase(string $originalDb): void
-    {
-        $db = DB::connection();
-        $currentDb = $db->getDatabaseName();
-        if ($currentDb !== self::SNAPSHOT_DB) {
-            throw new \RuntimeException('Refusing to reset database: expected ['.self::SNAPSHOT_DB."], got [{$currentDb}].");
-        }
-
-        // Clear snapshot schema
-        $tables = $db->select('SHOW TABLES');
-        $db->statement('SET FOREIGN_KEY_CHECKS=0');
-        foreach ($tables as $tableObj) {
-            $tableName = array_values((array) $tableObj)[0];
-            if ($tableName !== 'currencies') {
-                $db->statement("TRUNCATE TABLE `{$tableName}`");
-            }
-        }
-        $db->statement('SET FOREIGN_KEY_CHECKS=1');
-
-        // Copy permissions from active test db
-        $db->statement("INSERT INTO permissions SELECT * FROM `{$originalDb}`.permissions");
-    }
-
     public function test_mid_preparation_authority_revocation_denies_export(): void
     {
         $originalDb = config('database.connections.mysql.database');
-        config(['database.connections.mysql.database' => self::SNAPSHOT_DB]);
-        DB::purge('mysql');
+        $disposable = DisposableMariaDbSchema::createFromSource($originalDb);
+        $disposable->switchLaravelConnection();
 
         try {
-            $this->prepareSnapshotDatabase($originalDb);
-
             $owner = User::create([
                 'public_id' => (string) Str::ulid(),
                 'name' => 'Owner Revoke',
@@ -372,9 +309,7 @@ PHP;
             auth()->login($member);
 
             // Independent connection 2
-            $config = config('database.connections.mysql');
-            $dsn = "mysql:host={$config['host']};port={$config['port']};dbname=".self::SNAPSHOT_DB.';charset=utf8mb4';
-            $pdo2 = new \PDO($dsn, $config['username'], $config['password'], [\PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION]);
+            $pdo2 = $disposable->createSeparatePdo();
 
             $revoked = false;
             $memberKey = (int) $member->id;
@@ -402,15 +337,17 @@ PHP;
             $this->expectExceptionMessage('Authority changed or revoked during export preparation.');
             $controller($request, 'sales.summary');
         } finally {
-            config(['database.connections.mysql.database' => $originalDb]);
-            DB::purge('mysql');
+            $disposable->drop();
         }
     }
 
     public function test_two_connection_mariadb_repeatable_read_snapshot_isolation(): void
     {
         $config = config('database.connections.mysql');
-        $dsn = "mysql:host={$config['host']};port={$config['port']};dbname={$config['database']};charset=utf8mb4";
+        $host = '127.0.0.1';
+        $port = 3306;
+        $dbName = $config['database'];
+        $dsn = "mysql:host={$host};port={$port};dbname={$dbName};charset=utf8mb4";
         $pdo1 = new \PDO($dsn, $config['username'], $config['password'], [\PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION]);
         $pdo2 = new \PDO($dsn, $config['username'], $config['password'], [\PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION]);
 
@@ -541,12 +478,10 @@ PHP;
     public function test_mid_preparation_optional_cost_permission_revocation_denies_export(): void
     {
         $originalDb = config('database.connections.mysql.database');
-        config(['database.connections.mysql.database' => self::SNAPSHOT_DB]);
-        DB::purge('mysql');
+        $disposable = DisposableMariaDbSchema::createFromSource($originalDb);
+        $disposable->switchLaravelConnection();
 
         try {
-            $this->prepareSnapshotDatabase($originalDb);
-
             $owner = User::create([
                 'public_id' => (string) Str::ulid(),
                 'name' => 'Owner Revoke',
@@ -618,9 +553,7 @@ PHP;
             auth()->login($member);
 
             // Independent connection 2
-            $config = config('database.connections.mysql');
-            $dsn = "mysql:host={$config['host']};port={$config['port']};dbname=".self::SNAPSHOT_DB.';charset=utf8mb4';
-            $pdo2 = new \PDO($dsn, $config['username'], $config['password'], [\PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION]);
+            $pdo2 = $disposable->createSeparatePdo();
 
             $revoked = false;
             $roleKey = (int) $role->id;
@@ -647,20 +580,17 @@ PHP;
             $this->expectExceptionMessage('Authority changed or revoked during export preparation.');
             $controller($request, 'sales.summary');
         } finally {
-            config(['database.connections.mysql.database' => $originalDb]);
-            DB::purge('mysql');
+            $disposable->drop();
         }
     }
 
     public function test_spool_and_settings_cleanup_on_limit_failure(): void
     {
         $originalDb = config('database.connections.mysql.database');
-        config(['database.connections.mysql.database' => self::SNAPSHOT_DB]);
-        DB::purge('mysql');
+        $disposable = DisposableMariaDbSchema::createFromSource($originalDb);
+        $disposable->switchLaravelConnection();
 
         try {
-            $this->prepareSnapshotDatabase($originalDb);
-
             $owner = User::create([
                 'public_id' => (string) Str::ulid(),
                 'name' => 'Owner Limit Test',
@@ -740,8 +670,7 @@ PHP;
             $currentTimeout = (string) DB::scalar('SELECT @@session.max_statement_time');
             $this->assertSame($initialTimeout, $currentTimeout, 'Session statement timeout must be restored exactly.');
         } finally {
-            config(['database.connections.mysql.database' => $originalDb]);
-            DB::purge('mysql');
+            $disposable->drop();
         }
     }
 }

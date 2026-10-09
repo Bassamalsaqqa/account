@@ -57,9 +57,11 @@ final class SalesByProductReportQuery
         ]);
         $company = $this->guard->company($company, $actor);
 
-        $hasCostAuthority = $this->guard->canViewCost($user)
-            && $user->hasPermissionTo(ReportPermissionCatalog::REPORTS_PROFIT_VIEW)
-            && $user->hasPermissionTo(ReportPermissionCatalog::INVENTORY_COST_VIEW);
+        $hasCostAuthority = $this->guard->allows($company, [
+            ReportPermissionCatalog::REPORTS_COST_VIEW,
+            ReportPermissionCatalog::REPORTS_PROFIT_VIEW,
+            ReportPermissionCatalog::INVENTORY_COST_VIEW,
+        ], $user);
 
         TradeProvenance::sales($company);
 
@@ -79,10 +81,33 @@ final class SalesByProductReportQuery
         $groupKey = ProductAggregationHelper::groupKeySql('l');
         $rankSql = ProductAggregationHelper::representativeRankSql('l');
 
-        $linesWithRank = DB::query()->fromSub($linesQuery, 'l')
-            ->selectRaw("l.*, {$groupKey} as product_group_key, {$rankSql} as rep_rank");
+        // D2: Unranked aggregation branch over lines query
+        $costSelect = $hasCostAuthority
+            ? ', COALESCE(SUM(cogs_total_base), 0) as cogs_base'
+            : '';
 
-        $repQuery = DB::query()->fromSub(clone $linesWithRank, 'rep_lines')
+        $aggQuery = DB::query()->fromSub($linesQuery, 'l')
+            ->selectRaw("
+                {$groupKey} as product_group_key,
+                COALESCE(SUM(quantity_base), 0) as quantity_base,
+                COALESCE(SUM(line_revenue_base), 0) as sales_revenue_base
+                {$costSelect}
+            ")
+            ->groupBy(DB::raw($groupKey));
+
+        // D2: Ranked representative identity branch
+        $linesWithRank = DB::query()->fromSub($linesQuery, 'l')
+            ->selectRaw("
+                l.product_id,
+                l.product_sku,
+                l.product_name_ar,
+                l.product_name_en,
+                l.item_description,
+                {$groupKey} as product_group_key,
+                {$rankSql} as rep_rank
+            ");
+
+        $repQuery = DB::query()->fromSub($linesWithRank, 'rep_lines')
             ->where('rep_rank', 1)
             ->select([
                 'product_group_key',
@@ -91,25 +116,19 @@ final class SalesByProductReportQuery
                 'product_name_ar',
                 'product_name_en',
                 'item_description',
-                'unit_name_ar',
-                'unit_name_en',
             ]);
 
-        $costSelect = $hasCostAuthority
-            ? ', COALESCE(SUM(cogs_total_base), 0) as cogs_base'
-            : '';
-
-        $aggQuery = DB::query()->fromSub(clone $linesWithRank, 'agg_lines')
-            ->selectRaw("
-                product_group_key,
-                COALESCE(SUM(quantity_base), 0) as quantity_base,
-                COALESCE(SUM(line_revenue_base), 0) as sales_revenue_base
-                {$costSelect}
-            ")
-            ->groupBy('product_group_key');
-
+        // G3: Canonical base-unit join to Product and base Unit
         $productAggQuery = DB::query()->fromSub($repQuery, 'rep')
             ->joinSub($aggQuery, 'agg', 'agg.product_group_key', '=', 'rep.product_group_key')
+            ->leftJoin('products as p', function ($join) use ($company): void {
+                $join->on('p.id', '=', 'rep.product_id')
+                    ->where('p.company_id', '=', $company->id);
+            })
+            ->leftJoin('units as bu', function ($join) use ($company): void {
+                $join->on('bu.id', '=', 'p.base_unit_id')
+                    ->where('bu.company_id', '=', $company->id);
+            })
             ->selectRaw('
                 rep.product_group_key,
                 rep.product_id,
@@ -117,8 +136,8 @@ final class SalesByProductReportQuery
                 rep.product_sku,
                 rep.product_name_ar,
                 rep.product_name_en,
-                rep.unit_name_ar,
-                rep.unit_name_en,
+                bu.name_ar as unit_name_ar,
+                bu.name_en as unit_name_en,
                 agg.quantity_base,
                 agg.sales_revenue_base
                 '.($hasCostAuthority ? ', agg.cogs_base' : '').'
@@ -145,11 +164,11 @@ final class SalesByProductReportQuery
             ->orderBy('rep.product_name_ar')
             ->orderBy('rep.product_name_en')
             ->orderBy('rep.item_description')
-            ->orderBy('rep.unit_name_ar')
-            ->orderBy('rep.unit_name_en')
+            ->orderBy('bu.name_ar')
+            ->orderBy('bu.name_en')
             ->orderBy('rep.product_group_key', 'asc');
 
-        $totalsRow = DB::query()->fromSub($productAggQuery, 'pa')
+        $totalsRow = DB::query()->fromSub($aggQuery, 'pa')
             ->selectRaw($totalsSelect)
             ->first();
 
