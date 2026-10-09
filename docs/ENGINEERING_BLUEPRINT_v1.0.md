@@ -4950,9 +4950,11 @@ COMPLETE / ACCEPTED / MERGED / AWAITING DEPLOYMENT. Accepted source `e8a5dee856b
 
 ## Phase 8 — Reporting
 
-Phase 8 Implemented / Awaiting Independent Review.
+COMPLETE / ACCEPTED / MERGED / AWAITING DEPLOYMENT. Accepted source `e8e3e28fb040875d3b55ad403bea54a037e71437` merged through PR #16 at `96c310f30a07e97ab8e04d5afbf0b2bb805f4317` on 2026-10-09, with exact accepted-tree preservation. Independent acceptance review: `5471206252`. Corrections 01–03 are accepted; see ADR 0008 and `docs/PHASE_8_SOURCE_ACCEPTANCE_HANDOFF.md` for provenance, verification and operational limits. Phase 8 is not deployed. Phase 7 production deployment and healthy-baseline verification remain a separate outstanding gate.
 
 ## Phase 9 — Documents, QR, catalogs and sharing hardening
+
+UNSTARTED.
 
 ## Phase 10 — Production hardening
 
@@ -5591,6 +5593,6 @@ That sequence is intentional.
 
 Phase 7 Expenses / Payroll-Lite / Draft Landed Cost is complete, independently accepted and merged through PR #15. See ADR 0007 for exact accepted-source/merge identities, Corrections 01–03, canonical event authority, source-aware Check/Money security, exact payroll residuals and draft-only capitalization. Deployment awaits separate Product Owner authorization.
 
-### Phase 8 implementation checkpoint
+### Phase 8 accepted source checkpoint
 
-Phase 8 Reporting & Dashboard is complete, tested with 143 passing tests (1072 assertions) and zero economic writes, and is awaiting independent review. See ADR 0008 for architectural decisions, exact BigDecimal arithmetic, dual-layer authorization, query families, CSV export streaming, and performance choices. Phase 9 remains planned and unstarted.
+Phase 8 Reporting & Dashboard is complete, independently accepted and merged through PR #16 at `96c310f30a07e97ab8e04d5afbf0b2bb805f4317` from exact source `e8e3e28fb040875d3b55ad403bea54a037e71437`. The accepted candidate passed the final Phase 8 gate (253 tests / 12,390 assertions), disposable-schema support (10 / 29), and 16/16 AR/EN desktop/mobile browser checks before merge; those suites were not repeated for an identical merge tree. See ADR 0008 and `docs/PHASE_8_SOURCE_ACCEPTANCE_HANDOFF.md` for Corrections 01–03, accepted-source evidence and tree preservation. Customer/Vendor statement full-history hydration, bounded CSV capacity (50,000 rows / 50 MiB / 30 seconds), and best-effort streaming revocation remain explicit limits. Phase 8 awaits deployment; Phase 7 production verification remains a separate outstanding gate. Phase 9 is unstarted.

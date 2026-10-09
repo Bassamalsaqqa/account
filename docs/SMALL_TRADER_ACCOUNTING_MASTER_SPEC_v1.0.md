@@ -2348,9 +2348,11 @@ COMPLETE / ACCEPTED / MERGED / AWAITING DEPLOYMENT. Accepted source `e8a5dee856b
 
 ## Phase 8 — Reports
 
-PLANNED / UNSTARTED.
+COMPLETE / ACCEPTED / MERGED / AWAITING DEPLOYMENT. Accepted source `e8e3e28fb040875d3b55ad403bea54a037e71437` merged through PR #16 at `96c310f30a07e97ab8e04d5afbf0b2bb805f4317` on 2026-10-09, with exact accepted-tree preservation. Independent acceptance review: `5471206252`. Corrections 01–03 are accepted; see ADR 0008 and `docs/PHASE_8_SOURCE_ACCEPTANCE_HANDOFF.md` for provenance, verification and operational limits. Phase 8 is not deployed. Phase 7 production deployment and healthy-baseline verification remain a separate outstanding gate.
 
 ## Phase 9 — Documents/catalog/QR/sharing
+
+UNSTARTED.
 
 ## Phase 10 — Production hardening
 

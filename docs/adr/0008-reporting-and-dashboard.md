@@ -1,11 +1,11 @@
 # ADR 0008 — Reporting, Operational Analytics & Dashboard
 
-Status: IMPLEMENTED / AWAITING INDEPENDENT REVIEW.
+Status: COMPLETE / ACCEPTED / MERGED / AWAITING DEPLOYMENT.
 Baseline: `d201a385a16e64eadb849b0b7d252e1365ae6a31` (Phase 7 accepted baseline).
 Branch: `phase/8-reporting-dashboard`.
 Target Phase: Phase 8 (Reporting & Dashboard).
-Deployment: NOT YET DEPLOYED. Subject to independent review and owner authorization.
-Phase Status: Phase 7 awaits deployment; Phase 8 is candidate under independent review; Phase 9 is unstarted.
+Deployment: NOT YET DEPLOYED. Production requires separate Owner authorization and a verified healthy Phase 7 baseline.
+Phase Status: Phase 7 production deployment/verification remains outstanding; Phase 8 is complete, independently accepted and merged, awaiting deployment; Phase 9 is unstarted.
 
 ---
 
@@ -232,3 +232,25 @@ Pre-preparation and post-snapshot/pre-response authorization remain mandatory. D
 This is best-effort live revocation: HTTP cannot retract bytes already sent or replace an already-started 200 response with a 403. There is an unavoidable race between the final authority read and chunk emission. Revocation before response preparation still produces 403 with no CSV; revocation before/within the stream stops further bytes without claiming a retroactive status change. Permanent tests cover both membership and financial-permission changes on independent PDO connections before delivery and between chunks.
 
 CSV preparation warms the normal Spatie permission catalogue once before its read-only transaction, so a cold database-backed cache cannot attempt a write inside that snapshot. This does not evict the catalogue; live actor/team/membership authorization and delivery fingerprints remain independently refreshed.
+
+## 7. Independent acceptance and exact-source merge
+
+Phase 8 received independent architect source acceptance in [review 5471206252](https://github.com/Bassamalsaqqa/account/pull/16#pullrequestreview-5471206252). This records source acceptance, not production validation or deployment.
+
+- Pre-merge main: `d201a385a16e64eadb849b0b7d252e1365ae6a31`.
+- Exact accepted source: `e8e3e28fb040875d3b55ad403bea54a037e71437`.
+- PR: [#16](https://github.com/Bassamalsaqqa/account/pull/16), branch `phase/8-reporting-dashboard`.
+- Merge commit: `96c310f30a07e97ab8e04d5afbf0b2bb805f4317`, created on 2026-10-09 using merge-commit workflow with expected-head protection.
+- Accepted and merged tree: `a71f567ba54b16b30d4d1d4643a14a960e0ff98f`. Exact full-tree equality and both parents were verified before documentation changes.
+
+### Accepted correction checkpoints
+
+1. **Correction 01** (`0cef826a90510c7fe0ea1a7aa7d8fdafa3681c5e`): category-scoped Sales reversal metrics; Company-local current Money cutoff; Check/lot text identifiers; Expense and stock-transfer column contracts; warehouse grouping; data-backed all-69 registry/query/UI/CSV contracts.
+2. **Correction 02** (`25f8ce2fc9af4f9ff4d28cbbcab2ac2e520bff3c`): consistent source/report permissions; bounded searchable selectors and master-data privacy; supported filter contracts; separate operating/Landed Cost grouping; original-only purchase/sale dates; distinct aging parties; stable product identity; current party codes with frozen names; repeatable-read private CSV spool with frozen periods, capacity limits and live authority checks.
+3. **Correction 03** (`e8e3e28fb040875d3b55ad403bea54a037e71437`): guarded disposable schemas; bounded deep-page retention; canonical base units; permission-cache freshness without recurring eviction; capability-aware options; permission-based financial columns including empty results; authorization before each 64 KiB stream chunk; separated unranked aggregation and ranked identity, backed by the measured local benchmark in section 6.
+
+All review threads were resolved before merge. Accepted-source execution evidence: Phase 8 **253 tests / 12,390 assertions**, disposable support **10 / 29**, all-69 registry coverage **16 / 8,617** (a subset of Phase 8), and final AR/EN desktop/mobile browser smoke **16/16**. Pint, Larastan level 6 and Blade compilation passed; the integration asset build passed. Integrated report-truth testing verified six healthy local reconciliations and zero economic writes. These are pre-merge source-test results, not production checks or fresh post-merge suite runs.
+
+Post-merge verification consists of source/tree identity, exact ancestry, documentation-only diffs, Git parity and tracked-worktree/index cleanliness. No runtime changes, migrations, deployment, Hostinger access or Phase 9 work are part of finalization.
+
+The statement-hydration, synchronous CSV capacity, and streaming-revocation limits in sections 4–6 remain accepted V1 boundaries. Phase 7 production deployment and healthy-baseline verification remain a separate outstanding gate, followed by separately authorized Phase 8 deployment. See [Phase 8 source acceptance handoff](../PHASE_8_SOURCE_ACCEPTANCE_HANDOFF.md).
