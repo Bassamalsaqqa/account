@@ -1,6 +1,13 @@
 ﻿# Phase 9 engineering proposal — continuity and reconciliation
 
-Status: **IMPLEMENTED / INDEPENDENT SOURCE ACCEPTANCE PENDING**. Planning PR #17 was merged at `3f82b947d319d519cea6d25cecd7724bfc909672`. C1–C5 and the catalog-media addendum remain frozen. The [source handoff](PHASE_9_SOURCE_ACCEPTANCE_HANDOFF.md) and [ADR 0009](adr/0009-documents-secure-sharing-and-catalogs.md) record implementation and actual QA; merge/deployment require separate Owner authorization.
+Status: **COMPLETE / SOURCE ACCEPTED / MERGED / DEPLOYED / PRODUCTION VERIFIED**.
+The Owner-authorized release `8d8428261cd2a10690ab77a5c7271e46b5ff5217` is recorded
+in the [2026-10-10 production acceptance](PHASE_9_PRODUCTION_ACCEPTANCE.md).
+Planning PR #17 was merged at `3f82b947d319d519cea6d25cecd7724bfc909672`.
+C1–C5 and the catalog-media addendum remain frozen. The
+[source handoff](PHASE_9_SOURCE_ACCEPTANCE_HANDOFF.md) and
+[ADR 0009](adr/0009-documents-secure-sharing-and-catalogs.md) retain implementation
+and actual QA. Phase 10–13 implementation remains outside this release authorization.
 
 The single current execution contract is [Phase 9 P9-0 discovery and execution lock](PHASE_9_P0_DISCOVERY_AND_EXECUTION_LOCK.md). It reconciles this earlier proposal with the complete [Product Owner roadmap](ACCOUNTING_PHASE_9_FULL_ENGINEERING_ROADMAP_AND_FUTURE_AI_MOBILE_V1.md), accepted source, Master Specification, Blueprint and ADRs 0004–0008. The owner roadmap copy retains its original bytes; the execution lock explicitly supersedes its stale production-verification checkpoint.
 

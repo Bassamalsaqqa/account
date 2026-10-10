@@ -1,6 +1,11 @@
 # Phase 9 Correction 01 — final source acceptance gate
 
-Status: **focused source verification complete; independent architect acceptance pending**. This focused correction addresses G1/G2 from
+Current status: **Independently Accepted / Merged / Deployed / Production Verified**.
+See the [2026-10-10 production acceptance](PHASE_9_PRODUCTION_ACCEPTANCE.md) for
+accepted review `5477970506`, release identity and independent live evidence.
+The focused verification and authority limits below are the historical correction handoff.
+
+Historical status: **focused source verification complete; independent architect acceptance pending**. This focused correction addresses G1/G2 from
 [independent architect review 5475471444](https://github.com/Bassamalsaqqa/account/pull/18#pullrequestreview-5475471444).
 It does not authorize merge, deployment or production access.
 
