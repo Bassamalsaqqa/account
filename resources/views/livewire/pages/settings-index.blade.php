@@ -5,6 +5,11 @@
         return text.toLowerCase().includes(this.searchQuery.toLowerCase().trim());
     }
 }">
+    @can('settings.documents.manage')
+        @can('settings.company.view')
+            <a href="{{ route('settings.documents') }}" wire:navigate class="inline-flex min-h-11 items-center rounded-card border border-border bg-white px-4 py-2 font-bold text-primary focus-visible:outline-2">{{ __('documents.title') }}</a>
+        @endcan
+    @endcan
     <!-- Alerts & Feedback -->
     @if ($successMessage)
         <div class="p-3.5 rounded-card bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-bold flex items-center justify-between shadow-xs">

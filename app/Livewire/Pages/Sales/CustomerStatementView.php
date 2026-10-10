@@ -55,10 +55,10 @@ class CustomerStatementView extends Component
 
     public function createShareLink(PublicShareService $service): void
     {
-        $this->validate(['shareExpiryDays' => ['integer', 'min:0', 'max:3650'], 'sharePassword' => ['nullable', 'string', 'max:255']]);
+        $this->validate(['shareExpiryDays' => ['integer', 'min:1', 'max:30'], 'sharePassword' => ['required', 'string', 'min:8', 'max:128']]);
         $company = app(CompanyContext::class)->company();
         $result = $service->createShare($company, auth()->user(), PublicShare::SUBJECT_CUSTOMER_STATEMENT, $this->customer->id,
-            $this->shareExpiryDays === 0 ? null : Carbon::now()->addDays($this->shareExpiryDays), $this->sharePassword);
+            Carbon::now()->addDays($this->shareExpiryDays), $this->sharePassword, scope: ['from' => $this->fromDate, 'to' => $this->toDate]);
         $this->shareUrl = $result['url'];
     }
 

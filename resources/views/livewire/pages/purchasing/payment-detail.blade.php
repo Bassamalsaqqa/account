@@ -1,4 +1,7 @@
 <div class="space-y-6">
+    @if(app(\App\Services\Purchasing\VendorFinancialRead::class)->allows((int) $payment->company_id))
+        <div class="flex justify-end"><x-document-actions route-name="pdf.vendor-payment" :parameters="['publicId' => $payment->public_id]" :permissions="['purchasing.document.pdf']" /></div>
+    @endif
     <!-- Flash Messages -->
     @if (session()->has('success'))
         <div class="p-4 rounded-control bg-success-bg border border-success text-success text-xs font-bold">

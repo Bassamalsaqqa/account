@@ -204,6 +204,12 @@
                             <span>{{ __('app.nav_products') }}</span>
                         </div>
                     </a>
+                    @can('catalogs.view')
+                    <a href="{{ route('catalogs.index') }}" class="flex min-h-11 items-center gap-3 px-3 text-sm rounded-control hover:bg-primary-50 text-text-secondary">{{ __('catalogs.catalogs') }}</a>
+                    @endcan
+                    @if(auth()->user()->can('inventory.barcode_labels.print') && auth()->user()->hasAnyPermission(['inventory.stock.view','inventory.product.manage']))
+                    <a href="{{ route('labels.index') }}" class="flex min-h-11 items-center gap-3 px-3 text-sm rounded-control hover:bg-primary-50 text-text-secondary">{{ __('labels.title') }}</a>
+                    @endif
                     @if(auth()->user()->can('money.cash.view') || auth()->user()->can('money.bank.view') || auth()->user()->can('money.transfer.view') || auth()->user()->can('money.check.view'))
                     <a href="{{ route('money.overview') }}" class="flex items-center gap-3 px-3 py-2 text-sm rounded-control hover:bg-primary-50 text-text-secondary">{{ __('money.title') }}</a>
                     @endif

@@ -7,6 +7,7 @@ namespace App\Services\Purchasing;
 use App\Models\PurchaseReturn;
 use App\Models\PurchaseReturnAllocation;
 use App\Models\PurchaseReturnLine;
+use App\Services\Sales\DocumentDescription;
 use App\Services\Sales\SalesActorGuard;
 use Illuminate\Support\Facades\DB;
 
@@ -89,6 +90,7 @@ final class PurchaseReturnReadModel
             ->get()
             ->map(function (PurchaseReturnLine $line) use ($withCost): array {
                 $lineData = $line->only(['public_id', 'item_description', 'quantity', 'quantity_base', 'product_sku']);
+                $lineData['item_description'] = DocumentDescription::choose($line->item_description, $line->product_name_ar, $line->product_name_en, app()->getLocale());
                 $lineData['unit_name'] = app()->getLocale() === 'en'
                     ? ($line->unit_name_en ?? $line->unit_name_ar)
                     : $line->unit_name_ar;

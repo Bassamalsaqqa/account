@@ -6,6 +6,7 @@ use App\Models\Company;
 use App\Models\CompanyUser;
 use App\Models\User;
 use App\Services\Audit\AuditService;
+use App\Services\Tenancy\ProtectedDocumentDelegation;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
@@ -73,6 +74,8 @@ class UpdateCompanyMemberRoleAction
 
             /** @var Role $role */
             $role = Role::where('company_id', $companyId)->where('name', $newRoleName)->firstOrFail();
+            $delegation = app(ProtectedDocumentDelegation::class);
+            $delegation->authorize((int) $companyId, $actor, 'settings.users.manage', $delegation->roleIsProtected($role));
 
             $targetUser = $lockedMembership->user;
             $targetUser->syncRoles([$role]);

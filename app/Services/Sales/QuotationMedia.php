@@ -19,7 +19,14 @@ final class QuotationMedia
             return null;
         }
         $disk = Storage::disk('public');
-        if (! $disk->exists($image->path)) {
+        $root = realpath($disk->path(''));
+        $file = realpath($disk->path($image->path));
+        if ($root === false || $file === false || ! str_starts_with($file, $root.DIRECTORY_SEPARATOR)
+            || ! is_file($file) || ! is_readable($file) || filesize($file) > 2 * 1024 * 1024) {
+            return null;
+        }
+        $info = @getimagesize($file);
+        if ($info === false || $info['mime'] !== 'image/webp' || $info[0] > 2048 || $info[1] > 2048) {
             return null;
         }
 

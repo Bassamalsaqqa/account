@@ -6,6 +6,7 @@ namespace App\Services\Purchasing;
 
 use App\Models\Purchase;
 use App\Models\PurchaseLine;
+use App\Services\Sales\DocumentDescription;
 use App\Services\Sales\SalesActorGuard;
 use Illuminate\Support\Facades\DB;
 
@@ -49,6 +50,7 @@ final class PurchaseReadModel
             ->with(['lots' => fn ($q) => $q->where('company_id', $purchase->company_id)->select(['id', 'public_id', 'purchase_line_id', 'lot_number', 'expiry_date', 'quantity'])])
             ->get()->map(function (PurchaseLine $line) use ($withCost): array {
                 $data = $line->only(['id', 'public_id', 'item_description', 'quantity', 'quantity_base', 'product_sku']);
+                $data['item_description'] = DocumentDescription::choose($line->item_description, $line->product_name_ar, $line->product_name_en, app()->getLocale());
                 $data['unit_name'] = app()->getLocale() === 'en' ? ($line->unit_name_en ?? $line->unit_name_ar) : $line->unit_name_ar;
                 $data['lots'] = $line->lots->map(fn ($lot) => ['public_id' => $lot->public_id,
                     'lot_number' => $lot->lot_number, 'expiry_date' => $lot->expiry_date?->format('Y-m-d'), 'quantity' => $lot->quantity])->all();

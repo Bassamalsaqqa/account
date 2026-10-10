@@ -1,4 +1,7 @@
 <div class="space-y-6">
+    @if($canStatement)
+        <div class="flex justify-end"><x-document-actions route-name="pdf.vendor-statement" :parameters="['publicId' => $vendor->public_id, 'from' => $statementFrom, 'to' => $statementTo]" :permissions="['purchasing.document.pdf']" /></div>
+    @endif
     <!-- Top Action / Info Banner -->
     <div class="bg-white rounded-card border border-border shadow-xs p-6 space-y-4">
         <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">

@@ -1,0 +1,121 @@
+<?php
+
+declare(strict_types=1);
+
+return [
+    // Document Types
+    'purchase' => 'Purchase Bill',
+    'purchase_return' => 'Purchase Return',
+    'vendor_payment' => 'Vendor Payment',
+    'vendor_statement' => 'Vendor Statement',
+
+    // Statuses
+    'status_draft' => 'Draft',
+    'status_posted' => 'Posted',
+    'status_void' => 'Void',
+    'status_reversed' => 'Reversed',
+    'draft' => 'Draft',
+    'posted' => 'Posted',
+    'void' => 'Void',
+    'reversed' => 'Reversed',
+
+    // Quantity-Only Labels
+    'quantity_only' => 'Quantity Only',
+    'quantity_only_badge' => 'Goods Receipt - Quantity Only',
+
+    // Metadata & Headers
+    'number' => 'Number',
+    'date' => 'Date',
+    'issue_date' => 'Issue Date',
+    'purchase_date' => 'Purchase Date',
+    'return_date' => 'Return Date',
+    'due_date' => 'Due Date',
+    'posted_at' => 'Posted At',
+    'vendor_invoice_number' => 'Vendor Invoice Number',
+    'original_reference' => 'Original Reference',
+    'reference' => 'Reference',
+    'vendor' => 'Vendor',
+    'company' => 'Company',
+    'warehouse' => 'Warehouse',
+    'phone' => 'Phone',
+    'email' => 'Email',
+    'address' => 'Address',
+    'tax_number' => 'Tax Number',
+    'registration_number' => 'Commercial Reg.',
+    'currency' => 'Currency',
+    'base_currency' => 'Base Currency',
+    'exchange_rate' => 'Exchange Rate',
+    'amount_in_base_currency' => 'Amount in Base Currency',
+
+    // Payment Methods & Accounts
+    'payment_method' => 'Payment Method',
+    'method_cash' => 'Cash',
+    'method_bank_transfer' => 'Bank Transfer',
+    'method_check' => 'Check',
+    'money_account' => 'Money Account',
+    'check_number' => 'Check Number',
+
+    // Table Columns
+    'line_number' => '#',
+    'product' => 'Product / Description',
+    'sku' => 'SKU',
+    'quantity' => 'Quantity',
+    'unit' => 'Unit',
+    'unit_cost' => 'Unit Cost',
+    'discount' => 'Discount',
+    'tax' => 'Tax',
+    'total' => 'Total',
+    'subtotal' => 'Subtotal',
+    'grand_total' => 'Grand Total',
+    'landed_cost_allocated_base' => 'Allocated Landed Cost (Base)',
+    'total_landed_cost_base' => 'Total Landed Cost (Base)',
+    'inventory_unit_cost_base' => 'Inventory Unit Cost (Base)',
+    'historical_receipt_value_base' => 'Historical Receipt Value (Base)',
+    'inventory_value_removed_base' => 'Inventory Value Removed (Base)',
+    'valuation_adjustment_base' => 'Valuation Adjustment (Base)',
+    'lot_number' => 'Lot Number',
+    'expiry_date' => 'Expiry Date',
+
+    // Payment & Allocations Specific
+    'invoice' => 'Purchase Bill',
+    'purchase_principal' => 'Bill Principal',
+    'payment_amount' => 'Payment Amount',
+    'payment_applied' => 'Payment Applied',
+    'settlement_base_value' => 'Settlement Value (Base)',
+    'later_applications_appendix' => 'Later Applications Appendix (Private Record)',
+    'application_date' => 'Application Date',
+    'unallocated_amount' => 'Unallocated Amount',
+    'reversal_reason' => 'Reversal Reason',
+    'reversed_at' => 'Reversed At',
+
+    // Statement Specific
+    'statement' => 'Vendor Statement',
+    'from_date' => 'From',
+    'to_date' => 'Through',
+    'opening_balance' => 'Opening Balance',
+    'closing_balance' => 'Closing Balance',
+    'running_balance' => 'Running Balance',
+    'debit' => 'Debit',
+    'credit' => 'Credit',
+    'total_debits' => 'Total Debits',
+    'total_credits' => 'Total Credits',
+    'aging' => 'Accounts Payable Aging',
+    'unspecified' => 'Unspecified',
+    'current' => 'Current',
+    'days_1_30' => '1–30 days',
+    'days_31_60' => '31–60 days',
+    'days_61_90' => '61–90 days',
+    'days_90_plus' => 'Over 90 days',
+    'gross_open_purchases' => 'Gross Open Purchases',
+    'signed_vendor_balance' => 'Signed Vendor Balance',
+    'unapplied_credit_position' => 'Unapplied Credit Position',
+    'net_payable' => 'Net Payable',
+    'net_vendor_credit' => 'Net Vendor Credit',
+
+    // Notes, Terms & Actions
+    'notes' => 'Notes',
+    'terms' => 'Terms & Conditions',
+    'reason' => 'Reason',
+    'print' => 'Print',
+    'footer' => 'Footer',
+];

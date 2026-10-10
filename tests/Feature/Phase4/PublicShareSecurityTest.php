@@ -107,7 +107,7 @@ class PublicShareSecurityTest extends TestCase
         ]);
 
         $this->expectException(InvalidArgumentException::class);
-        $this->expectExceptionMessage('Only posted sales invoices can be publicly shared');
+        $this->expectExceptionMessage('Retired or ineligible share source.');
 
         $this->shareService->createShare(
             $this->company,
@@ -177,27 +177,47 @@ class PublicShareSecurityTest extends TestCase
 
         $rawToken = $result['raw_token'];
 
+        $this->get($result['url'])->assertOk()->assertDontSee($invoice->invoice_number);
+        $this->unlockShare($result['url'], 'secret-password-123');
         $resolved = $this->shareService->resolveShare($rawToken, 'secret-password-123');
         $this->assertSame($result['share']->id, $resolved->id);
-        $this->assertSame(1, $resolved->view_count);
+        $this->assertSame(1, $resolved->fresh()->view_count);
     }
 
     public function test_expired_share_fails_resolution(): void
     {
         $invoice = $this->createAndPostInvoice();
 
-        // Expired yesterday
+        // Legitimately issue a future grant, then advance beyond its finite expiry.
         $result = $this->shareService->createShare(
             $this->company,
             $this->user,
             PublicShare::SUBJECT_SALES_INVOICE,
             $invoice->id,
-            expiresAt: Carbon::yesterday()
+            expiresAt: Carbon::now()->addDay()
         );
 
-        $this->expectException(InvalidArgumentException::class);
-        $this->expectExceptionMessage('The requested document link has expired');
-        $this->shareService->resolveShare($result['raw_token']);
+        $this->travel(2)->days();
+        try {
+            $this->expectException(InvalidArgumentException::class);
+            $this->expectExceptionMessage('The requested document link has expired');
+            $this->shareService->resolveShare($result['raw_token']);
+        } finally {
+            $this->travelBack();
+        }
+    }
+
+    public function test_already_expired_new_share_is_rejected_before_granting_a_token(): void
+    {
+        $invoice = $this->createAndPostInvoice();
+        try {
+            $this->shareService->createShare($this->company, $this->user, PublicShare::SUBJECT_SALES_INVOICE,
+                $invoice->id, expiresAt: Carbon::yesterday());
+            $this->fail('Already expired issuance must be rejected.');
+        } catch (InvalidArgumentException $exception) {
+            $this->assertSame('Expiry exceeds the permitted subject lifetime.', $exception->getMessage());
+            $this->assertSame(0, PublicShare::where('company_id', $this->company->id)->count());
+        }
     }
 
     public function test_revocation_is_immediate(): void
@@ -238,6 +258,7 @@ class PublicShareSecurityTest extends TestCase
             $invoice->id
         );
 
+        $this->unlockShare($result['url']);
         $data = $this->shareService->buildWhitelistedData($result['share']);
 
         // Check document header
@@ -260,5 +281,18 @@ class PublicShareSecurityTest extends TestCase
         $this->assertStringNotContainsString('margin', strtolower($json));
         $this->assertStringNotContainsString('profit', strtolower($json));
         $this->assertStringNotContainsString('posting_batch', strtolower($json));
+    }
+
+    private function unlockShare(string $url, ?string $password = null): void
+    {
+        app(CompanyContext::class)->clear();
+        auth()->logout();
+        $this->app->instance('env', 'phase9-csrf-test');
+        try {
+            $this->withSession(['_token' => 'phase4-share-confirmation'])
+                ->post($url, ['_token' => 'phase4-share-confirmation', 'password' => $password])->assertRedirect($url);
+        } finally {
+            $this->app->instance('env', 'testing');
+        }
     }
 }

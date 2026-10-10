@@ -1,0 +1,1264 @@
+{
+  "baseline": "3f82b947d319d519cea6d25cecd7724bfc909672",
+  "runtime_integration_commit": "6656b4908bc286b86023fbb6b3aa4ccb9577485b",
+  "scope": "Phase 9 development evidence only; no production access",
+  "qa_coverage": {
+    "listed_cases": 2000,
+    "expected_unique_tests": 2000,
+    "passed_unique_tests": 2000,
+    "missing": [],
+    "superseded_failures": {
+      "broad-long-events.log": [
+        "Tests\\Feature\\Phase2\\DerivedLedgerBalanceTest::test_derived_balances_accurately_reflect_transactions",
+        "Tests\\Feature\\Phase4\\Phase4AcceptanceProbeTest::test_probe_guest_share_contains_its_document_lines",
+        "Tests\\Feature\\Phase4\\Phase4AcceptanceProbeTest::test_probe_public_document_preserves_posted_identity",
+        "Tests\\Feature\\Phase4\\PublicShareSecurityTest::test_draft_invoice_or_draft_quotation_cannot_be_shared",
+        "Tests\\Feature\\Phase4\\PublicShareSecurityTest::test_expired_share_fails_resolution",
+        "Tests\\Feature\\Phase4\\PublicShareSecurityTest::test_password_protected_share_succeeds_with_valid_password",
+        "Tests\\Feature\\Phase4\\PublicShareSecurityTest::test_whitelisted_data_strictly_excludes_cost_and_profit_fields",
+        "Tests\\Feature\\Phase4\\RemainingSalesIntegrityTest::test_guest_statement_is_explicit_jod_data_and_contains_no_model_or_cost",
+        "Tests\\Feature\\Phase5A\\PurchasingFoundationTest::test_existing_company_configuration_is_provisioned_without_consuming_numbers",
+        "Tests\\Feature\\Phase5C\\PurchasePostingArchitectureTest::test_purchasing_uses_exact_values_and_canonical_stock_and_accounting_writers"
+      ],
+      "final-inherited-events.log": [],
+      "final-remaining-events.log": [],
+      "final-tail-events.log": []
+    },
+    "segments": {
+      "broad-long-events.log": {
+        "passed": 1649,
+        "failed_or_errored": 10
+      },
+      "final-inherited-events.log": {
+        "passed": 119,
+        "failed_or_errored": 0
+      },
+      "final-remaining-events.log": {
+        "passed": 362,
+        "failed_or_errored": 0
+      },
+      "final-tail-events.log": {
+        "passed": 22,
+        "failed_or_errored": 0
+      }
+    },
+    "complete": true,
+    "note": "Coverage combines interrupted broad pass with final corrected-class and remaining-domain runs. Not a single uninterrupted or uniform-SHA broad summary."
+  },
+  "final_corrected_inherited": {
+    "tests": 119,
+    "assertions": 713
+  },
+  "final_remaining_phase8_phase9_unit": {
+    "tests": 362,
+    "assertions": 13931
+  },
+  "final_tail": {
+    "tests": 22,
+    "assertions": 86
+  },
+  "phase9": {
+    "tests": 103,
+    "assertions": 1512
+  },
+  "browser_document_matrix": {
+    "checks": 511,
+    "passed": true,
+    "javascript_errors": 0,
+    "http_5xx": 0
+  },
+  "browser_settings_catalog_labels_and_sharing": {
+    "checks": 198,
+    "passed": true,
+    "javascript_errors": 0,
+    "http_5xx": 0
+  },
+  "static_gates": {
+    "pint": "passed",
+    "larastan_level": 6,
+    "larastan": "passed",
+    "blade": "passed",
+    "production_vite_build": "passed"
+  },
+  "artifacts": [
+    {
+      "path": ".ai/delegations/phase9-implementation/pdf/cell-failed.png",
+      "bytes": 18398,
+      "sha256": "038c2681ea3ce1561a24f56d61a1ee9230e5a12e5b56e40037ac2b6eeab37a8a"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/pdf/customer_payment-ar-contact.png",
+      "bytes": 17643,
+      "sha256": "4dfd2c3c130bb7ac90d46a06b01cbae4d24ccd8a5e6f41b4a9fdf4f08b965f7f"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/pdf/customer_payment-ar-p1.png",
+      "bytes": 36191,
+      "sha256": "cba3909ee7a2210b83dcc5061036aa400c7a9318f5af3cb065e8a6d4f65bb410"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/pdf/customer_payment-ar.pdf",
+      "bytes": 44191,
+      "sha256": "2ec7d56e4b91da290fedd65249478c3be5cbbd2d4f40096f76e3de2f2dce7d84"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/pdf/customer_payment-en-contact.png",
+      "bytes": 25068,
+      "sha256": "6deeaf0a19e89ecb0d1f6b7877796da7f4b97c1a32271fb3216293a45c49c62e"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/pdf/customer_payment-en-p1.png",
+      "bytes": 46111,
+      "sha256": "ae8e2db390639d42786de7b343142ef758d1790b9d67f96bec106490267f5d05"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/pdf/customer_payment-en.pdf",
+      "bytes": 45034,
+      "sha256": "70435265ffcdb59412d14a98b6b4eaa7e0c1976d1c4e9e598d461106c274efdf"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/pdf/customer_statement-ar-contact.png",
+      "bytes": 37885,
+      "sha256": "1e212655abd91b73d200114c7796f842a4b9ca318079686ca2c672d4e39b8305"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/pdf/customer_statement-ar-p1.png",
+      "bytes": 72102,
+      "sha256": "b1db1831bf33dc24ff9e76b6d0d3370919e5dcd0c80c0b608ad35fa5ac77bcbc"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/pdf/customer_statement-ar-p2.png",
+      "bytes": 13872,
+      "sha256": "f2a7141056d549b141c0bcdc2e0e75150ed1cf7fba64e71ec6c6393d26731e0f"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/pdf/customer_statement-ar.pdf",
+      "bytes": 47713,
+      "sha256": "8b9674a92b069054c6b5a4323792e604019b2038c07fc2ca72b0a949f3fd218b"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/pdf/customer_statement-en-contact.png",
+      "bytes": 48759,
+      "sha256": "553a310daf7d65a67d568a610853b03ed2693dd8eb4b8a94d6fdf047db2cac5a"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/pdf/customer_statement-en-p1.png",
+      "bytes": 83075,
+      "sha256": "18ddba98c0ccf5a5a94c403504111ba1adfb92c17d3712fe912c640589272087"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/pdf/customer_statement-en-p2.png",
+      "bytes": 15174,
+      "sha256": "6f6616d28a47eedc676e7d787724997488a8b5c8f75dd234fafa8ce14fc56945"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/pdf/customer_statement-en.pdf",
+      "bytes": 46105,
+      "sha256": "7a2a5a22f696d3c2e72037914357fc528a27794239d0e8da484622db569b9a78"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/pdf/invoice-ar-contact.png",
+      "bytes": 155000,
+      "sha256": "97e2f8c7bfb3376d76493c639fd66097710445ca5942af1972409c2db06aaffb"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/pdf/invoice-ar-p1.png",
+      "bytes": 149310,
+      "sha256": "080bd54ed88b8203780587598ded56b3a2c7731b5dd3c5fe3b8f04e72ef16f83"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/pdf/invoice-ar-p2.png",
+      "bytes": 159425,
+      "sha256": "e383c1397fbc9019501c65e01bacce858f6e0999853a863becdceac7cc0220fa"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/pdf/invoice-ar-p3.png",
+      "bytes": 40249,
+      "sha256": "1b543128bf6a23a73b66cbbfe8e8a17f86768c31536d7388a6c93be459d57f16"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/pdf/invoice-ar.pdf",
+      "bytes": 50881,
+      "sha256": "1e3309e95099062b928eeaff5c880f61f03bbb6e6a2a19e02b07aae5557e0a24"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/pdf/invoice-en-contact.png",
+      "bytes": 147989,
+      "sha256": "90de1b4afa7c43d7a35ff33f4aa856d1a5bf7508d8ba78c2284218c3646a2784"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/pdf/invoice-en-p1.png",
+      "bytes": 119781,
+      "sha256": "734da1e9487f0d8fc510f6bfc91658afa8f23108e04f31c99db48e969b3bb117"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/pdf/invoice-en-p2.png",
+      "bytes": 116699,
+      "sha256": "22f93990154a7c706efe9bb0d0d5260ac05f4ab8ebcc7c63c701bde46210c64d"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/pdf/invoice-en-p3.png",
+      "bytes": 116717,
+      "sha256": "0532150713419b8ab1d14919e6e2befe8dd2c78f0780366895a24ef0a294e2c2"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/pdf/invoice-en-p4.png",
+      "bytes": 42973,
+      "sha256": "a477547a6e1bc5f48e81adc96d7e2a71fc571e2d640670c96e977a6d8fc2047c"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/pdf/invoice-en.pdf",
+      "bytes": 71412,
+      "sha256": "8b4f1c785fc64ef92d859679b101b7b11c9b28e4808f8c716e50516343072ffc"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/pdf/labels-ar.pdf",
+      "bytes": 72286,
+      "sha256": "0b7bd66d5cd14f42cf90a00804519f3267450e40168ac39f0e8bfa2cfca4f626"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/pdf/labels-en.pdf",
+      "bytes": 77481,
+      "sha256": "33b9c3686e7533f8ee884ca41c005971ce8984af13bd6ce1c8ddf76dbb42b0b4"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/pdf/labels-final.png",
+      "bytes": 60378,
+      "sha256": "273ee4ff6559d586a5ff36982021f062427aacf84d3437cb99b5cba8c45454db"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/pdf/labels-new.png",
+      "bytes": 3262,
+      "sha256": "e625ca0335b7787051f4ccaa80aa3e7a3d022a07d89c3e4e55900be404aeb9be"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/pdf/labels-old.png",
+      "bytes": 3262,
+      "sha256": "e625ca0335b7787051f4ccaa80aa3e7a3d022a07d89c3e4e55900be404aeb9be"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/pdf/labels-upce.pdf",
+      "bytes": 82310,
+      "sha256": "1eabd4168d4228435550234b5727ef19f618859147c96c84d190957d6b7d3fbd"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/pdf/purchase-ar-contact.png",
+      "bytes": 21924,
+      "sha256": "0155b73002cbda87bba3d26d93fc8b303dca86be9be270512bfd4bfec8713a9a"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/pdf/purchase-ar-p1.png",
+      "bytes": 43719,
+      "sha256": "920fc6c2f73c5d010e1d20d57f93015c789283de8ded7c89418215c4f165128f"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/pdf/purchase-ar.pdf",
+      "bytes": 44709,
+      "sha256": "7f7af8c089658888a9c8bdcfc691fe54e2a931043b0f575a00451b45a3e08a46"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/pdf/purchase-en-contact.png",
+      "bytes": 27302,
+      "sha256": "f755380b17c80fb3263dcce1fd7cfbd598b88dc9c678b4ded2d7a56c3006e9ca"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/pdf/purchase-en-p1.png",
+      "bytes": 46501,
+      "sha256": "dd09c4138d2a47aeb37766549fd896242e054b0b4fa4cbc20f33ef69df770750"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/pdf/purchase-en.pdf",
+      "bytes": 44569,
+      "sha256": "09c2b9e04a6b76bc09781c4c62555af8a78760e7aa26b839ee5a7a633d59e473"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/pdf/purchase-jod-ar.pdf",
+      "bytes": 45193,
+      "sha256": "0950e754a41ac5d2ea3d0be16abf2cbfe93540a518bd46fd4050c5d539f0f05d"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/pdf/purchase-return-ar-contact.png",
+      "bytes": 24188,
+      "sha256": "80e22dd6ffa03d44c6de21b382afcc7f4864cf82bf4dbdb003952b0948ef5c62"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/pdf/purchase-return-ar-p1.png",
+      "bytes": 47917,
+      "sha256": "cd9c551db14c01623871a19ef32001daa9c69d4c0ddd183b6aa60b9a964c7451"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/pdf/purchase-return-ar.pdf",
+      "bytes": 46041,
+      "sha256": "8fb141cb84b6024cb1d57a43ef5c47e2a1a80cc2dc70ab754341fc938ff7f350"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/pdf/purchase-return-en-contact.png",
+      "bytes": 29533,
+      "sha256": "6122a7d00b6364868022f468535ee47720e93073881fbdecf8d22ac78d695c95"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/pdf/purchase-return-en-p1.png",
+      "bytes": 52490,
+      "sha256": "08fc43ca210b0eaf3b267e68c8ba7b1c4855a1263295c7147cf431b78cd5ee9d"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/pdf/purchase-return-en.pdf",
+      "bytes": 45700,
+      "sha256": "5d8cb42e2abe03b4c1b4f60e51223c4f55cad7f05f57b8bb3744dafcfdaff71c"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/pdf/qr-catalog.png",
+      "bytes": 618,
+      "sha256": "571436d6d247be52aa77103c4dea82c6923e4957b96b4fb8f15fe89eda4db171"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/pdf/qr-share.png",
+      "bytes": 642,
+      "sha256": "aca004ea2867636b5cc2437d76b2f6fc2553f3f1c7426b46cc953c52240c81db"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/pdf/quotation-ar-contact.png",
+      "bytes": 64145,
+      "sha256": "afab365a254136f84d431cf8553df15710c0b6371e17780b076eb3e9e603951f"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/pdf/quotation-ar-p1.png",
+      "bytes": 128228,
+      "sha256": "801069570e6b759913223fa0ac4fee683664034519f6ac73d74a7eb72cb4eac9"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/pdf/quotation-ar.pdf",
+      "bytes": 45353,
+      "sha256": "19709a4f4e79b272e6c74a3fce7bfbf08d52a425b9037c0f46346d603aa6677f"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/pdf/quotation-en-contact.png",
+      "bytes": 73571,
+      "sha256": "8cc36e771ca688b6711933a73cd3438308fb63e8efd6c44ebcc81b91940ae014"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/pdf/quotation-en-p1.png",
+      "bytes": 136624,
+      "sha256": "23a559389e8dc0d6a47cf556ba6fc5e06e3d5dcc153a6285b56b4bb2f9bd2ea9"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/pdf/quotation-en.pdf",
+      "bytes": 77620,
+      "sha256": "20ae794a290c91dd94de64cf09122faf10b5d10f85d7cef5805529ff795511aa"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/pdf/sales_invoice-ar-contact.png",
+      "bytes": 20912,
+      "sha256": "028decfb00915b810f17ca036a5570c9b51db52be750d7478aa6c4367e9d9cd7"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/pdf/sales_invoice-ar-p1.png",
+      "bytes": 43618,
+      "sha256": "8f1b78479d7f4095f6659bc033b050e65f61f1a87b3b28ee9fa14b9da7d120fe"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/pdf/sales_invoice-ar.pdf",
+      "bytes": 44958,
+      "sha256": "6d43589aaf60df11f0f2e688c652fd29b029e6382b07f05f5bea7c747b24fe9d"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/pdf/sales_invoice-en-contact.png",
+      "bytes": 27487,
+      "sha256": "32560eda649a513fb9d3ee90252d066a375fbcb953d580d95bc16e9d16cc4cf5"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/pdf/sales_invoice-en-p1.png",
+      "bytes": 49776,
+      "sha256": "481d3dd595c6bc7d04224e404ba574fb1a5535d7dc1dc6c4fd3e300ffa546200"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/pdf/sales_invoice-en.pdf",
+      "bytes": 64334,
+      "sha256": "bdc5c54f2a156791db9524bc3ac3f4e9050daedeead57137b8f0828446f993ab"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/pdf/sales_return-ar-contact.png",
+      "bytes": 21241,
+      "sha256": "f1458104397bfbd6326af76d915c5bf9f1f6aa318a2199dd55224b499a7d6470"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/pdf/sales_return-ar-p1.png",
+      "bytes": 44012,
+      "sha256": "32fdf9275df93d621a021c09e0e8c9b748712a0d37ff275fc4226482a5d3ed75"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/pdf/sales_return-ar.pdf",
+      "bytes": 44844,
+      "sha256": "4ea3499edd00914f6b8fd29b85801a97586c63af4edb5473a68ff23e59efcaaf"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/pdf/sales_return-en-contact.png",
+      "bytes": 27636,
+      "sha256": "f440113241be2c2429f5158d3f53a63b5119fbd75d0f5b0eb96d9fa8667e1483"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/pdf/sales_return-en-p1.png",
+      "bytes": 50234,
+      "sha256": "630c7dd1911e5eda92df54123f20768fe88304a0fb856093a003a4e22bb11ed2"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/pdf/sales_return-en.pdf",
+      "bytes": 64341,
+      "sha256": "cf86c0317578a7629e705793c83dad7437ad010969ba5b056b45e9ebb74d61f8"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/pdf/vendor-payment-ar-contact.png",
+      "bytes": 18316,
+      "sha256": "11f4dfa06940e52eb01d4eea2d564ec2eb3e66badbb39c8bd60c48ac1a8c00f8"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/pdf/vendor-payment-ar-p1.png",
+      "bytes": 34710,
+      "sha256": "e9a19949aef92dee38c1264e07c96cd1bb46c594754e43b096747470ecba12e0"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/pdf/vendor-payment-ar.pdf",
+      "bytes": 42350,
+      "sha256": "74636ddffdcb1c60ca4d9d3b0260bb7a587af0c328951fca8c6d3d72e14f0e3c"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/pdf/vendor-payment-en-contact.png",
+      "bytes": 24929,
+      "sha256": "8f59cbfdb08bb3ecafe263f2940af2091d9fbd3aefe722a9098d99abc9fcf6bf"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/pdf/vendor-payment-en-p1.png",
+      "bytes": 42426,
+      "sha256": "dc608d293eee16bf681730fd14bfe53b0a97755c1c7a77d1722351689981e9fc"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/pdf/vendor-payment-en.pdf",
+      "bytes": 44597,
+      "sha256": "b07e925d06bacd35e81d92547ef0ae068f45d08bad5a42c3afb091999c342e9c"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/pdf/vendor-statement-ar-contact.png",
+      "bytes": 36654,
+      "sha256": "3bee551b01b2b7c7e605fe37ab6ce20627313c965c59021b5863df0516398e0e"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/pdf/vendor-statement-ar-p1.png",
+      "bytes": 79448,
+      "sha256": "d53a12d34bdb789e5d8fb251bd18420f1915d4e19dca66ad9d8ea393e385ec7c"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/pdf/vendor-statement-ar.pdf",
+      "bytes": 47325,
+      "sha256": "bc8a925da1144c4ba102ee366266c638ed567e186b07c5342fadb4f266a7a2fb"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/pdf/vendor-statement-en-contact.png",
+      "bytes": 45997,
+      "sha256": "aede3b1c0a28ae15c3daabe50aa0912cfb4c8d936ba64c6a0923446fcf4d44fa"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/pdf/vendor-statement-en-p1.png",
+      "bytes": 90629,
+      "sha256": "aa15abfeddbd90ffa67948e5f14b63b22017d0d59cbecc075764dedc2fe0f89b"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/pdf/vendor-statement-en.pdf",
+      "bytes": 45720,
+      "sha256": "bbeb0ec63d1d8478f9ecf6b1a092e9d453a9b69302733e868902029ddd78b762"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence/catalog-access-ar-1440.png",
+      "bytes": 159226,
+      "sha256": "b8a760e39bbeca94180452fd5ec5225590bfb06935d674f60dbfe8739803f408"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence/catalog-access-ar-390.png",
+      "bytes": 43025,
+      "sha256": "60e087665bbc5efc9906af149d6aac5921aa84b366ea6a0391821fafd12ffc1c"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence/catalog-access-en-1440.png",
+      "bytes": 168412,
+      "sha256": "59167c4c31690d522ea200a23f5432898bc63208541ad90b5393d1fa171cddf9"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence/catalog-access-en-390.png",
+      "bytes": 41576,
+      "sha256": "e0eb4a245eb9afdd160512e1bdfbeb2a9af223c1da3a85dee43681d44366d446"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence/catalog-create-ar-1440.png",
+      "bytes": 94813,
+      "sha256": "bf891816d7e80362b1e7c1add07ef00d98c23a8031503c14afd7f7a41317ea76"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence/catalog-create-ar-390.png",
+      "bytes": 33019,
+      "sha256": "b342be5f10a892b5aff946db757a85215c2df4b08c9c1226a50b6deb47a6dd01"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence/catalog-create-ar-768.png",
+      "bytes": 54233,
+      "sha256": "123bce25ce5d22f302b6846224206e31428b1cd191d3e0f9a6e6944c13cf7ee2"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence/catalog-create-en-1440.png",
+      "bytes": 102297,
+      "sha256": "0b011137c9991bb485dd7444e91b56cae8b1983322f2ea2d93d0cb5ca88beabc"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence/catalog-create-en-390.png",
+      "bytes": 34514,
+      "sha256": "3adc2faf0d6a0e7bde0f336d0d01bd69da4d42d8fc344ea8c73043888d8c1fa3"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence/catalog-create-en-768.png",
+      "bytes": 58467,
+      "sha256": "4c87b7641674364776d35ad03c208296de9557640d98f62d15eaacaf38c31c95"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence/catalog-list-ar-1440.png",
+      "bytes": 94813,
+      "sha256": "bf891816d7e80362b1e7c1add07ef00d98c23a8031503c14afd7f7a41317ea76"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence/catalog-list-ar-390.png",
+      "bytes": 33019,
+      "sha256": "b342be5f10a892b5aff946db757a85215c2df4b08c9c1226a50b6deb47a6dd01"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence/catalog-list-ar-768.png",
+      "bytes": 54237,
+      "sha256": "1976f745a0e7b5b31d48e157ad709e492a9f51c803e4df688f2bde45a00089ba"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence/catalog-list-en-1440.png",
+      "bytes": 102305,
+      "sha256": "d60281ed03ffd120038139e0ca8dddda2a4de8194ffea46361373e751645fbc1"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence/catalog-list-en-390.png",
+      "bytes": 34514,
+      "sha256": "3adc2faf0d6a0e7bde0f336d0d01bd69da4d42d8fc344ea8c73043888d8c1fa3"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence/catalog-list-en-768.png",
+      "bytes": 58452,
+      "sha256": "921fc825d2f3e39bad91ac5587cc4d5920047b7206565c620d35a1450e657b42"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence/composer-approved-preview-en-1440.png",
+      "bytes": 152091,
+      "sha256": "64d803df6154ef9cef3fcd51a2396ea1ab74b183921a6390a5538e43c7dbf4fe"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence/composer-published-share-en-1440.png",
+      "bytes": 163018,
+      "sha256": "b50cf1eacc651e9c41231e10086c133341c2371eaad6eb5e4b42644b65e9b35f"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence/financial-neutral-390.png",
+      "bytes": 16327,
+      "sha256": "f5bcf370297f6ff56fc41c0026d8d6014082747c10463112145c7c4551d4cf75"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence/financial-share-manager-en-390.png",
+      "bytes": 36204,
+      "sha256": "ebc4dbb36562a14aaba0881a370784a8e90fbc5589ec6da89b0e83ceaa7c2938"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence/financial-unlocked-390.png",
+      "bytes": 22202,
+      "sha256": "440f9c50acc3a3bdb29f50ef6a31a5a6918c7df944dd3907e5ddc281d8bd1dfe"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence/labels-ar-1440.png",
+      "bytes": 89764,
+      "sha256": "02514affd79e7748421d63e31e83dec35278af57697f7fe45e7c0052acffb3b3"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence/labels-ar-390.png",
+      "bytes": 34090,
+      "sha256": "df0ba8cbd1b2598372941beb5c69afe9b1df3473374a9c7a7a5625b18974ae1b"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence/labels-ar-768.png",
+      "bytes": 55623,
+      "sha256": "e7f5f59694f808bb44fe6c5df035fe57627e6a93bec0559eb5a4fb0c750f68c1"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence/labels-en-1440.png",
+      "bytes": 95377,
+      "sha256": "3c5ce18bbd56a4d71f001401485d9d2befbc136ce6bee29676f42bca7fa3f1f3"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence/labels-en-390.png",
+      "bytes": 35572,
+      "sha256": "66133587f337bf43a10575a9455d824ec5bdc9c5583a4eba163c835e6bacce63"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence/labels-en-768.png",
+      "bytes": 57481,
+      "sha256": "268ab2604a7c7d4e1831414c636ad2f7fbea4b6b0185cc7c60af98ff8aca4c97"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence/labels-preview-en-1440.png",
+      "bytes": 19145,
+      "sha256": "9fdbca7986b57bf01bc85f7d8102a7e4addf548f7a7f5ec2bad577c43b4514be"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence/labels-preview-en-390.png",
+      "bytes": 19194,
+      "sha256": "584b6b8f18537c64e294ea70bf83054c3173b1ad1f0d27fb6e68cf157c22cff0"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence/public-catalog-ar-1440.png",
+      "bytes": 27793,
+      "sha256": "9cc571f8780550f21956d87f63459e2afdc1bd8fc5a5f4d12240dd5e08b5745b"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence/public-catalog-ar-390.png",
+      "bytes": 17008,
+      "sha256": "fbea7610387c8f5dc21e251855835dc51a2a73c753319b53a59f904f130e2527"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence/public-catalog-ar-768.png",
+      "bytes": 25842,
+      "sha256": "911cb2333eaea4603c4f9c8c63337c88a9ce0b907f5998f1a1851e96a00f6bc7"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence/public-catalog-en-1440.png",
+      "bytes": 29262,
+      "sha256": "5dba4c9a2e4a213050738887bb495e9487ff86a1bcf9b2d9d5ef23aa1ba51b8a"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence/public-catalog-en-390.png",
+      "bytes": 18287,
+      "sha256": "46f4ca5cbd43828d44a29e7c2570a69cd85d8e917833d74256fa45ff323bb344"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence/public-catalog-en-768.png",
+      "bytes": 27207,
+      "sha256": "0bb163d9f42d0c499670c6f2e8314f12a3053e6788dbf44bbf0f29ac548c8cc9"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence/settings-ar-1440.png",
+      "bytes": 98483,
+      "sha256": "e74c6e3d498d0ecc4f6751ff66b4fbfc0062ed49db2e738bcedb3baeccabe850"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence/settings-ar-390.png",
+      "bytes": 37629,
+      "sha256": "ead36ff0c0bdf94d10a7579e8e36caf8c2f8cfb70284c0178dca78ca141bf626"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence/settings-ar-768.png",
+      "bytes": 63128,
+      "sha256": "47677dd784f5cffae6512c35d105b78176fa8d06d0fe769692eaa471bc202072"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence/settings-en-1440.png",
+      "bytes": 101261,
+      "sha256": "db718540b3f95c77e628f70686274dfcbf8ddd0190f231b371d694f4ca54a1c8"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence/settings-en-390.png",
+      "bytes": 37163,
+      "sha256": "099b8474603457de833e8866bec71b5c27ef43b5f39757110a8ab1d547235fdb"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence/settings-en-768.png",
+      "bytes": 61021,
+      "sha256": "4b6ee32a1b22ca2630fa3aaadaa3fdb463da20d6cb109e53f6804fd8095e614d"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence-expanded/customer-receipt-ar-1440.png",
+      "bytes": 91451,
+      "sha256": "23bfaa051719f67824e5c691d723ac83b73ff2479a637041a63688f8ce59ba0d"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence-expanded/customer-receipt-ar-390.png",
+      "bytes": 32995,
+      "sha256": "8b3ce464963de6aed12243eb13bd6fe3a66601eb5c0b736a8ec522ec87e5a3e7"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence-expanded/customer-receipt-ar-768.png",
+      "bytes": 55815,
+      "sha256": "40288fa0f5a3d1e8696d9e589b4000e922e5e65a243b57490aa9fa0faf7ad064"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence-expanded/customer-receipt-ar-actions-1440.png",
+      "bytes": 95653,
+      "sha256": "4157d70d0195d7b8a69a27237729fee74fed0ab420ecc3e7ebd4b6b17d496761"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence-expanded/customer-receipt-ar-actions-390.png",
+      "bytes": 34111,
+      "sha256": "5684ab4216d38b34b0c0ee2f571dd86a456af97209f937d9dfbe72539fe53428"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence-expanded/customer-receipt-ar-actions-768.png",
+      "bytes": 59336,
+      "sha256": "145fae8297939ccad5e32194d109aa8d8ae99b9e67edc0261349c9d9cbe91adc"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence-expanded/customer-receipt-en-1440.png",
+      "bytes": 97483,
+      "sha256": "757a4ef165b423d874e729db6b3efc68c0110b1cfedd1de5070f25b0fbeffa06"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence-expanded/customer-receipt-en-390.png",
+      "bytes": 34535,
+      "sha256": "d3d314628fbf67345a39868354cc5d973ff3617eb7ead71f7148da2dcd7ca592"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence-expanded/customer-receipt-en-768.png",
+      "bytes": 58339,
+      "sha256": "a773b067e7cf9b674231e09aae397c16da33bb0dd041cd1a61c5ae0e21a7a868"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence-expanded/customer-receipt-en-actions-1440.png",
+      "bytes": 101906,
+      "sha256": "226db49a06ae86db142fc99b0c8e12d9e1e70812d175bc60e58e3967f0812c88"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence-expanded/customer-receipt-en-actions-390.png",
+      "bytes": 35881,
+      "sha256": "c64e86e74f552019526b4f4d444613b17a490d141d70b88c2b1477e737354af6"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence-expanded/customer-receipt-en-actions-768.png",
+      "bytes": 61878,
+      "sha256": "4f3c55d5f3b4874dd27563345af98828a3b7a3cd52d5224a02ac35ca5c5b9be2"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence-expanded/customer-statement-ar-1440.png",
+      "bytes": 89122,
+      "sha256": "d89a7c300185e1c4bbd7115871ff3aa14cb85e998f32457ab915ff7b1f3c6ed9"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence-expanded/customer-statement-ar-390.png",
+      "bytes": 31175,
+      "sha256": "bdb9a773df69d34c8dba76844c316755ba39ca96a61aa2e4a4faa008e449af10"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence-expanded/customer-statement-ar-768.png",
+      "bytes": 53875,
+      "sha256": "83e0c9db91b820a9c47831df914f09546c896a94fa554ef3d2c4008ae68b68cc"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence-expanded/customer-statement-ar-actions-1440.png",
+      "bytes": 94099,
+      "sha256": "838771fc4067ac6088fbb0d7d174f32618bcfb5f1256a60777b806bc8fce15e0"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence-expanded/customer-statement-ar-actions-390.png",
+      "bytes": 32086,
+      "sha256": "1443e710933d710e7a51514e171a563945d7e28bc4d0e56fd0e8a86d538763a0"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence-expanded/customer-statement-ar-actions-768.png",
+      "bytes": 57960,
+      "sha256": "08336395edfe2c2712eaeb9fbd71ae6fbdf19e7cabb17d4248b483f0b3ca1c2c"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence-expanded/customer-statement-en-1440.png",
+      "bytes": 97790,
+      "sha256": "e61f58a790f3f505a619b3433c57a145928fd808c06c41ca8ebf7bfdb00157f5"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence-expanded/customer-statement-en-390.png",
+      "bytes": 32145,
+      "sha256": "493378aa7ba442170771dc9f90ceed604c8ade76fd51410a8bc5881856f42011"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence-expanded/customer-statement-en-768.png",
+      "bytes": 56071,
+      "sha256": "f9d0b0cddc464fe466a1ebbcd70a2f87ef4a502c12a01bc32af1dc0b4554b170"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence-expanded/customer-statement-en-actions-1440.png",
+      "bytes": 103250,
+      "sha256": "5853924ce2131ed5bf7a45846eabd8b057b06c9db4729713cd09bc238d1fdce3"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence-expanded/customer-statement-en-actions-390.png",
+      "bytes": 33544,
+      "sha256": "d23e8d09c4c63fd148bcbc344bbf45df96d79e2d860b5828d157f58a8b607a9a"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence-expanded/customer-statement-en-actions-768.png",
+      "bytes": 61303,
+      "sha256": "70817040581294784391d5d413e18dd95e1425fe8d11cf13545edcae41169844"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence-expanded/purchase-ar-1440.png",
+      "bytes": 82123,
+      "sha256": "013fe142cefd35bfbf551d527e89f3fc5a5cf4c729e4c55dc4198fd1db56c7c9"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence-expanded/purchase-ar-390.png",
+      "bytes": 28959,
+      "sha256": "ae1a78ffcc35d642daf322f2b8c92618fe41d524466f1cc6519334695c3bdfbc"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence-expanded/purchase-ar-768.png",
+      "bytes": 47613,
+      "sha256": "5e8a163525e0415a49bac313c4ca211fdbec3f2c68f6f393f131028463f6e1e6"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence-expanded/purchase-ar-actions-1440.png",
+      "bytes": 83711,
+      "sha256": "801a775a917aede99edea474d6123837b0194f1ea3e1f9526a0790764dfc9cee"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence-expanded/purchase-ar-actions-390.png",
+      "bytes": 31675,
+      "sha256": "0e38568dfa611839ff782c03fddd4e939089e8f3b433262276c71524e87ee2c3"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence-expanded/purchase-ar-actions-768.png",
+      "bytes": 49459,
+      "sha256": "1cc617eec6ce792d2bbe50dc52bcdd46d882372f2ebd0abd992673cc6113e955"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence-expanded/purchase-en-1440.png",
+      "bytes": 88027,
+      "sha256": "40569a889f21649c93871ccdedccf30abd71caf678135bfcebf6b77797d7c8e3"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence-expanded/purchase-en-390.png",
+      "bytes": 30186,
+      "sha256": "48d1aceae207982634a683b336020e8033ca95e563f04bb96a9c4c6f30de3724"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence-expanded/purchase-en-768.png",
+      "bytes": 49198,
+      "sha256": "9daf5759a5c6c8b30b7d8cca42689e0948af0a7ba99470046e611e3f1a61938a"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence-expanded/purchase-en-actions-1440.png",
+      "bytes": 91010,
+      "sha256": "4a59a1a5b050b56c5c392d8bc7dc2e120f4a7ba4a0dbceeeeb30256c396c6948"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence-expanded/purchase-en-actions-390.png",
+      "bytes": 32786,
+      "sha256": "e0e7243112b6068c8cc9fa685eb3922ce6044949816968c0638ae74ee8b0e719"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence-expanded/purchase-en-actions-768.png",
+      "bytes": 52333,
+      "sha256": "d45f43969e6b1fd604a9fcd112786ac50609b14531169622043d6bda568fdd73"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence-expanded/purchase-return-ar-1440.png",
+      "bytes": 77223,
+      "sha256": "ea6659ff59b49a9d4a187928bff08c8efd8a75ec8add5fb1cfa135d5631d6292"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence-expanded/purchase-return-ar-390.png",
+      "bytes": 27761,
+      "sha256": "67c73a866bb7f9012a2ec71648e70d97a22e19a2b8ab283f27916db592bd908f"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence-expanded/purchase-return-ar-768.png",
+      "bytes": 42619,
+      "sha256": "6743d6a454668f98611b22ec6cc346d8d4ff57d714064e3d94d5977f1b6155a3"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence-expanded/purchase-return-ar-actions-1440.png",
+      "bytes": 81940,
+      "sha256": "0b45a0e5ae2c65eff13c5535e65513a8da50be2795696f171793bc03e67a43e7"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence-expanded/purchase-return-ar-actions-390.png",
+      "bytes": 30477,
+      "sha256": "5a45a9ce6570fc34a0bd2d88cd30996d9a9564a0a189dae8ad8ef5744be2e839"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence-expanded/purchase-return-ar-actions-768.png",
+      "bytes": 47155,
+      "sha256": "9b6ac9c29f1d73f84411207ac79cbcc433cc733005f1d16040987295d11edc41"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence-expanded/purchase-return-en-1440.png",
+      "bytes": 81364,
+      "sha256": "eae1c98cf2ddf41e995519bc514156a70f9237dbac9d99ea296d82284f04e99a"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence-expanded/purchase-return-en-390.png",
+      "bytes": 28576,
+      "sha256": "032916ad73f66b70b9bc2870f3f6be77e1d782fa6465536448c079d0727312c5"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence-expanded/purchase-return-en-768.png",
+      "bytes": 42817,
+      "sha256": "4d4de64174fc4a441a2e82405fc134e946d2c8073ea453d0152ff2b0545f192a"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence-expanded/purchase-return-en-actions-1440.png",
+      "bytes": 86300,
+      "sha256": "105a35da4aa238083ec7ebd820e0664b21526e93ff0a038ad1d63209dcaff09d"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence-expanded/purchase-return-en-actions-390.png",
+      "bytes": 31494,
+      "sha256": "4f4350ab59d1df754eaa02f4b5ebfc48951b70cfc42a8d72965423889e638b53"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence-expanded/purchase-return-en-actions-768.png",
+      "bytes": 47757,
+      "sha256": "b5c9d61363fc6f654e3aa651ba20ad19c7b427109d8b33173e091277362bc8ac"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence-expanded/quotation-ar-1440.png",
+      "bytes": 93658,
+      "sha256": "cb7b2e35878bd489b9e533bc55cd562aa7af3650c7ee5084a47ce74abe272200"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence-expanded/quotation-ar-390.png",
+      "bytes": 33736,
+      "sha256": "c1b24ca211546bcc217d8d8c5cfe7afacb9889271e149f782fb2975fca9fb452"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence-expanded/quotation-ar-768.png",
+      "bytes": 58675,
+      "sha256": "7bb53e748b6feceb107c84dea4126ce10ff60732286de18d1f6f85ab4ce79695"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence-expanded/quotation-ar-actions-1440.png",
+      "bytes": 98424,
+      "sha256": "69d81faae926694854df8715e818cc34dde08370837b7087da5f33d782b8001f"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence-expanded/quotation-ar-actions-390.png",
+      "bytes": 36026,
+      "sha256": "e367b9945759298d68a741d890e188d39cbe56341a6b0275ef6b998ea5d9c328"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence-expanded/quotation-ar-actions-768.png",
+      "bytes": 63205,
+      "sha256": "fa7344692a4c055357f6a0ab2277ce5360f97abf90fd2c9257d006048b226a80"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence-expanded/quotation-en-1440.png",
+      "bytes": 100347,
+      "sha256": "bf7067fce76072f5d71f0c0b62deb3243b86a96f440e2bd774566fde093e12e7"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence-expanded/quotation-en-390.png",
+      "bytes": 35769,
+      "sha256": "9a6b7cfa9e5b7fa6418f00decaee8009dc16987dde9e1c1f4ee6e566b44f68e7"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence-expanded/quotation-en-768.png",
+      "bytes": 61620,
+      "sha256": "6380ff65756f59d141ada48cc0ed23759876b1b33821f2e48e12784846c299a8"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence-expanded/quotation-en-actions-1440.png",
+      "bytes": 105683,
+      "sha256": "02658355b0d38080403b628d83b02f8c4fd5755bc7495ba0755a834b417fd6c2"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence-expanded/quotation-en-actions-390.png",
+      "bytes": 38141,
+      "sha256": "7be44b8508e2c9acc0a980b338f9b821a0960e9e6d72b322a5148e60a7dd61c4"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence-expanded/quotation-en-actions-768.png",
+      "bytes": 66969,
+      "sha256": "90c6d8ebdf95ac40be59689d2a37363734df58595744558b4ed388ac6675582d"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence-expanded/sales-invoice-ar-1440.png",
+      "bytes": 95529,
+      "sha256": "27165283d4234dfecfcc9d270eac794499fca7ab177f0b592708f92d3fea6c13"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence-expanded/sales-invoice-ar-390.png",
+      "bytes": 32902,
+      "sha256": "a9bd19c0731d36bfb5f1427eb66aafe7b48723668c41229a23288e0e3dcfc83f"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence-expanded/sales-invoice-ar-768.png",
+      "bytes": 58221,
+      "sha256": "ddf2c659bfa231087dde591e6fff49f23a7d504bc3428b6e7b21d495f80e2b14"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence-expanded/sales-invoice-ar-actions-1440.png",
+      "bytes": 100111,
+      "sha256": "8975adbbed2b0faf7d5075ad7e63977c49f54a13b89dba974e5c12bea8ed7e3b"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence-expanded/sales-invoice-ar-actions-390.png",
+      "bytes": 32464,
+      "sha256": "1617a9fed46aee687798acba4d6ae0caabd1da8ed1ae71d991517eeb56350f87"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence-expanded/sales-invoice-ar-actions-768.png",
+      "bytes": 61889,
+      "sha256": "21a5b3ec3bfc2f450a8f43b96491da8ceaad9857eac2488d0998065a54229e8b"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence-expanded/sales-invoice-en-1440.png",
+      "bytes": 102463,
+      "sha256": "ee5a99a51c3304520d9554c81977db41ad84d6226acd17d17e9d18c6209e1b37"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence-expanded/sales-invoice-en-390.png",
+      "bytes": 33077,
+      "sha256": "1792116897f392050e320366f3148fd20e2e46acbb9a16aacc9eef79bc08687a"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence-expanded/sales-invoice-en-768.png",
+      "bytes": 60341,
+      "sha256": "8f59ebcfa668fc415758df0b22177798907ccda44bef91f92fb7288ae442da23"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence-expanded/sales-invoice-en-actions-1440.png",
+      "bytes": 107334,
+      "sha256": "22d973e56d44a53171bc17f5e2c1f8eba654c5c59c9488d93808ea3c339225a3"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence-expanded/sales-invoice-en-actions-390.png",
+      "bytes": 32518,
+      "sha256": "6919eb901a1a995d4984578ca17edbed6225d2a81307def638e8a6577e951554"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence-expanded/sales-invoice-en-actions-768.png",
+      "bytes": 64318,
+      "sha256": "9dfa5253146c008ac058d2fff3df91d450fef3100baece8811f4eb0df314243f"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence-expanded/sales-return-ar-1440.png",
+      "bytes": 92302,
+      "sha256": "7d280e0cda350eefc5c5d7f0febbd12f583c46539653ae19fbd4250fc9c43296"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence-expanded/sales-return-ar-390.png",
+      "bytes": 35301,
+      "sha256": "451092fa42d9be745bd89875a450432a5c4ae5b64b6ce5c6cc24d1b0e8374dcc"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence-expanded/sales-return-ar-768.png",
+      "bytes": 56928,
+      "sha256": "17d1badc864a58d1d5699d6b16e672d4c33525e4833a32d9b3133d7a9dbb10d0"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence-expanded/sales-return-ar-actions-1440.png",
+      "bytes": 96214,
+      "sha256": "a43dfe11be9c10b1c9cbb901abc48fd0e69556b1841941ad0cae0426fb3ed61d"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence-expanded/sales-return-ar-actions-390.png",
+      "bytes": 35844,
+      "sha256": "cb1905294b78108610785d520c738fb401941df1891119d9e27bc0ddb6f884d1"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence-expanded/sales-return-ar-actions-768.png",
+      "bytes": 60679,
+      "sha256": "c9a32dd5c5c63cc18cfa09fae14935b2c3523d77537ae22f8f14dc868a4373ff"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence-expanded/sales-return-en-1440.png",
+      "bytes": 97546,
+      "sha256": "c678d2e32d3f845fd78e4b9e2e141022f3a40fd1631b9971d334100a0a6ddcc3"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence-expanded/sales-return-en-390.png",
+      "bytes": 35822,
+      "sha256": "446eef1ee0c77936658ccf3b94cf767d6eb1981c45a512d990c8d3f90963de38"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence-expanded/sales-return-en-768.png",
+      "bytes": 58467,
+      "sha256": "33b8f4c2f2ca5023653b412e3399e24fea44e279141bae262bfea87874de3b7e"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence-expanded/sales-return-en-actions-1440.png",
+      "bytes": 102206,
+      "sha256": "1ac092404ec729783c8943dd2fad71e35139094af6d6ef453c4d7b5c05678864"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence-expanded/sales-return-en-actions-390.png",
+      "bytes": 36898,
+      "sha256": "4e9de18edf2399096f1fc0203568bf3e9d1dee17a850aa50398ea3f60e9f9305"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence-expanded/sales-return-en-actions-768.png",
+      "bytes": 62459,
+      "sha256": "9fb83da5ef2ce5f8249ba9c09a1dc8d123683924d9241045ba34901c99a8f45e"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence-expanded/vendor-payment-ar-1440.png",
+      "bytes": 76058,
+      "sha256": "61b33ba9c9b8a6f24cb2ed1207fa8c925b2dc8775d72ea235008c78233d3e247"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence-expanded/vendor-payment-ar-390.png",
+      "bytes": 35059,
+      "sha256": "f70cd8e1d7c9bcfca02487f2cb20dacdca85b06ac1f24e2a06e09135cc4e3764"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence-expanded/vendor-payment-ar-768.png",
+      "bytes": 41398,
+      "sha256": "2222b09338f887736323a7804acd0f45c2d6021ce179cf4e25c2072a07d20808"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence-expanded/vendor-payment-ar-actions-1440.png",
+      "bytes": 77445,
+      "sha256": "3853ea8e9fc0f5aed5537fb7f85508f7bba03fd6c54250a670a61abf01400495"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence-expanded/vendor-payment-ar-actions-390.png",
+      "bytes": 36357,
+      "sha256": "89acac6181b30d03181a3846baa9369059cb57b73c46cf84324c1d3f7e2884b7"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence-expanded/vendor-payment-ar-actions-768.png",
+      "bytes": 42319,
+      "sha256": "9d18ab55ddfa15d93ab2008d729b9ad7fa01e9cc2a45a1d8becc2758e9847497"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence-expanded/vendor-payment-en-1440.png",
+      "bytes": 80903,
+      "sha256": "97d80ff908664f140b139e9b38378324c8431333e00081bf57b4e4f671ea6183"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence-expanded/vendor-payment-en-390.png",
+      "bytes": 35487,
+      "sha256": "8ef8821234471671ecc060574a300e4869519a2d7063e3e26266b065df4a063b"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence-expanded/vendor-payment-en-768.png",
+      "bytes": 42153,
+      "sha256": "de8efd15ebd53e3d9a77ba4408eb857fe8e673fe81e05cffef7b9c3cd1e7b992"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence-expanded/vendor-payment-en-actions-1440.png",
+      "bytes": 82527,
+      "sha256": "ed45a256541785d6d98b5da880dea41435f1cb5dc6c9cd608fa8d301a08f90b8"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence-expanded/vendor-payment-en-actions-390.png",
+      "bytes": 37068,
+      "sha256": "9d62733f93dbf5a970ac418e9be13da128ed02671af176bd08d6937a67da3121"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence-expanded/vendor-payment-en-actions-768.png",
+      "bytes": 43263,
+      "sha256": "2d82ae7ac81768be09c495a77e184948de804d023d3024916d22f1090e6ace15"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence-expanded/vendor-statement-ar-1440.png",
+      "bytes": 83543,
+      "sha256": "e6c286692cfd58176ea2b53e0d9df6de52488f984ae40349563b17b8260b8aae"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence-expanded/vendor-statement-ar-390.png",
+      "bytes": 31567,
+      "sha256": "9983ddda43527d67c50dd3a957e366b0b2c10c627fe3e619aede8d3556935487"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence-expanded/vendor-statement-ar-768.png",
+      "bytes": 47666,
+      "sha256": "37fb85ca76545f53cf5b551feb5abdbc7328ee65d0288d2c8e610771591f4d92"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence-expanded/vendor-statement-ar-actions-1440.png",
+      "bytes": 84464,
+      "sha256": "33e6b26b4edca331f32250a5fb07f3856368bd18b8cf1c515bda22cbf70fab4b"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence-expanded/vendor-statement-ar-actions-390.png",
+      "bytes": 32569,
+      "sha256": "e33f005c2706d3ba7d91340a4be5addb0e6766a414f6fb2f5f032d1f34ecc5a6"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence-expanded/vendor-statement-ar-actions-768.png",
+      "bytes": 49025,
+      "sha256": "7cf17df64d4cd02668686974f8641cb510e7d37bb784cd92b8d95e41a4d25da5"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence-expanded/vendor-statement-en-1440.png",
+      "bytes": 90031,
+      "sha256": "4e98db4428de79a35341b85963a08c12f1e98c5e075481e8d2d386851c790fa7"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence-expanded/vendor-statement-en-390.png",
+      "bytes": 33551,
+      "sha256": "971472ed3a8e31091614a093288fa00ad702b86467981965a4ffbc05a8b1601b"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence-expanded/vendor-statement-en-768.png",
+      "bytes": 51476,
+      "sha256": "20a8289a17109376f46d1926fb63a36ff5a612a50f904149caa799a2880bc512"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence-expanded/vendor-statement-en-actions-1440.png",
+      "bytes": 91616,
+      "sha256": "2c265049ab26664251fde98c0550f1ddeb8f839a99fed8726b0e8036dafd1fe1"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence-expanded/vendor-statement-en-actions-390.png",
+      "bytes": 33783,
+      "sha256": "20164fdeafba2a69e32d1e4d942cc10d1c95a8b6416c2076b19bf646d2313dd9"
+    },
+    {
+      "path": ".ai/delegations/phase9-implementation/browser/evidence-expanded/vendor-statement-en-actions-768.png",
+      "bytes": 56251,
+      "sha256": "0c37a110635a3b238afc2c9403c392156ef41419624e9ec5a0f450fb1a466dc9"
+    }
+  ],
+  "protected_owner_files": [
+    {
+      "path": ".playwright-mcp/page-2026-10-07T18-09-21-141Z.yml",
+      "sha256": "EFD5C272C81B6F895D1FDDDE5857F472BCC4A5D1EA8F66820E41609E671DB655"
+    },
+    {
+      "path": ".playwright-mcp/phase7-employee-ar-mobile.png",
+      "sha256": "4DFAB493C47A2C57434676682B3BC85F8108C6811D777E34C23ECD77A9488BEA"
+    },
+    {
+      "path": ".playwright-mcp/phase7-employee-en-mobile.png",
+      "sha256": "884F4E7D124BF92B7DE0B7CEF52F6A268692441DA01A9B6D4154EC6216E45438"
+    },
+    {
+      "path": "ACCOUNTING_AUTONOMOUS_AI_AGENT_MASTER_HANDOFF_AND_ROADMAP.md",
+      "sha256": "7A668AC0248D2C9FE3FE22C144D529C09BE0F37A55A17A1382B7D4E954D458CC"
+    },
+    {
+      "path": "CODEX_PHASE_7_AUTONOMOUS_EXECUTION_PROMPT.md",
+      "sha256": "387C2E562156E89A4955A9689D81DCD57D36EBEE4F3E49C537CA0C57C53603E3"
+    },
+    {
+      "path": "CODEX_PHASE_7_PRODUCTION_DEPLOYMENT_HANDOFF.md",
+      "sha256": "B19B39162DDB9C4C6B689E0F2BF008B48B58F944D39B287400ABA8E833C70ADC"
+    },
+    {
+      "path": "CODEX_PHASE_8_AUTONOMOUS_EXECUTION_PROMPT.md",
+      "sha256": "06FCA146536A46DB1663DF587DF362848ADD1319385450D29C37A97D62917320"
+    },
+    {
+      "path": "PHASE_7_EXPENSES_PAYROLL_LANDED_COST_FULL_SPEC.md",
+      "sha256": "38ABDDAEE23C8F37CAC80DFDAA6D0D55F0266CD8C8C9DE3F0AEB841EFD0749F4"
+    },
+    {
+      "path": "PHASE_8_REPORTING_DASHBOARD_FULL_SPEC.md",
+      "sha256": "6F6BC7B888A2080E17510460565B0AAD636BDE64357A7A5844A0939EB1228935"
+    },
+    {
+      "path": "ACCOUNTING_PHASE_9_FULL_ENGINEERING_ROADMAP_AND_FUTURE_AI_MOBILE_V1.md",
+      "sha256": "63C97EEEF744A54E9CBBFE991C91F2E057397A755D8D5F1A79317C8F19843F35"
+    }
+  ],
+  "roadmap_sha256": "63c97eeef744a54e9cbbfe991c91f2e057397a755d8d5f1a79317c8f19843f35",
+  "limitations": [
+    "Broad coverage is segmented, not a single uninterrupted or uniform-SHA execution.",
+    "Artifacts remain local and contain development fixtures; no private DTOs, passwords, or tokens are published in this manifest.",
+    "PDF time ceilings are post-render delivery checks, not CPU-preemption or Hostinger guarantees.",
+    "Physical printer and production backup restoration were not exercised."
+  ]
+}

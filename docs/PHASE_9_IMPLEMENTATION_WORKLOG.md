@@ -1,0 +1,183 @@
+# Phase 9 implementation checkpoints
+
+Implementation authorized by the Product Owner after planning PR #17 merged.
+Baseline: `3f82b947d319d519cea6d25cecd7724bfc909672`;
+tree: `145f8e270a01c1fe16752da1c40ca0433213b732`.
+Branch: `phase/9-documents-catalog-sharing`.
+The accepted [P9-0 execution lock](PHASE_9_P0_DISCOVERY_AND_EXECUTION_LOCK.md)
+remains the scope and policy authority. This file records implementation evidence,
+not a competing roadmap. No implementation merge or production access is authorized.
+
+## A1 interface checkpoint
+
+Retain `DocumentData`, the five existing Sales output routes and mPDF pipeline.
+Existing constructor arguments and document/line keys remain compatible.
+An optional final `presentation` array contains only safe current decorative options:
+`logo` (verified local raster data URI or null), `footer` (bounded text or null),
+and `show_qr` (boolean). It must never substitute stored party identity or terms.
+QR content remains an explicitly supplied, validated share URL; rendering cannot
+create a share. Locale selection affects presentation, not persisted source facts.
+
+Additional string document keys may describe stored `base_currency_code`,
+`exchange_rate`, `amount_base`, `payment_method`, `original_reference`, and
+truthfully labelled current payment status. Receipt lines preserve original legs
+with explicit `currency_code`, `payment_currency_code`, `payment_currency_amount`,
+`base_currency_code`, and `settlement_base_value`. Any private later application
+section is distinct and excluded from default/public receipt construction.
+Templates format these exact strings; they never recalculate balances or FX.
+
+Codex exclusively owns DTO/builders/render services, routes, permissions/schema,
+share policy and final integration. AGY may modify only its pinned task allowlist.
+Rendering/public share payloads must remain allowlisted and free of private IDs/costs.
+Purchasing receives a private adapter/presentation boundary; no public cost DTO.
+
+## Package acceptance state
+
+| Package | State | Independently executed evidence |
+|---|---|---|
+| P9-A | Core/source checkpoint accepted; integrated browser evidence retained for F | Disposable MariaDB: 18 tests / 132 assertions; focused Larastan Level 6 passes; actual AR/EN five Sales PDFs and multi-page invoice rasters inspected |
+| P9-B | Pending A1/A2 acceptance | None |
+| P9-C | Pending A1/A2 acceptance | None |
+| P9-D | Pending C integration | None |
+| P9-E | Pending A/C integration | None |
+| P9-F | Pending A–E acceptance | None |
+
+Evidence and delegation receipts are intentionally ignored under
+`.ai/delegations/phase9-implementation/`. Protected Owner artifacts and the
+708-line original/copy roadmap remain outside implementation edits.
+
+## P9-A checkpoint evidence
+
+Five Sales routes remain compatible; bilingual View/PDF/Print/Download actions use
+fresh source/output permission intersections and delivery reauthorization. Existing
+canonical writers are unchanged. Receipt principal, payment consumption and base
+settlement have separate currency labels; later applications are a private appendix.
+Tests compare economic table fingerprints, posting identity, stored FX/tax/discount
+and carton conversion snapshots after master changes. New logo uploads are bounded,
+same-company trusted raster files. Current decorative branding never fills missing
+historical identity. Quotation terms are defaults for future draft UI only.
+
+AGY presentation/settings task started at `66259683f911ecbedb05432eabbeb0ec1525ef3d`,
+conversation `6577f6d5-415f-45fe-986c-039eb8fa96b6`, relay exit 0. The installed
+controller stalled before creating a workspace; Codex used the authorized isolated
+worktree/manual collection fallback and the installed relay without bypass flags.
+Codex reviewed all files, moved worker translations into existing `resources/lang`,
+corrected audit/scoped test assertions, bound the private appendix to its explicit
+DTO field, and independently executed the tests. Worker lint is not counted as lead QA.
+
+Rendering caps include 500 lines, 1,000 statement source entries, 256 KiB total text,
+4 MiB embedded assets, 50 pages and 15 MiB output. The 15-second post-render delivery
+refusal is not hard CPU cancellation or a Hostinger performance guarantee. Actual
+multi-page AR/EN samples fit the limits; final pathological resource measurements
+remain part of F. Temporary files use request-owned private UUID directories with
+cleanup in `finally`, files/directories retain the deployment permission policy.
+
+Permission provisioning adds new capabilities to Owner; new Administrator defaults
+exclude them. Existing-role upgrade preserves non-Owner grants. Protected grant and
+role assignment actions require a current same-company Owner; default role titles
+alone do not grant delegation authority. `documents:bootstrap` is an explicit local
+or future approved release command; it has not been run against production.
+
+## P9-B — private Purchasing outputs accepted internally
+
+Lead review accepted the bounded AGY adapters after replacing duplicate line reads
+with `PurchaseReadModel` / `PurchaseReturnReadModel`, removing missing-provenance
+currency fallbacks and omitting unavailable historical warehouse/account identity.
+Four private routes and matching detail-screen View / Print / PDF actions enforce
+source/output intersections, cost redaction and fresh delivery authorization.
+Vendor Statements use the existing canonical query; Vendor Payments retain the
+exact `VendorFinancialRead` intersection and separate original/later allocations.
+No financial, inventory, numbering or lifecycle writer changed.
+
+AGY baseline `91a32942bba0fc96a7578e9843e2887e80748cef`, conversation
+`525d1447-85ef-43a6-82de-bde7821331c0`. Six allowlisted new files collected;
+worker-reported lint/PDF checks are not counted as lead acceptance. Independently
+executed disposable MariaDB: **8 tests / 117 assertions passed**, including actual
+AR/EN four-output PDF export, native ILS/USD/JOD, cross-currency settlement legs,
+restricted quantity-only output and economic zero-write fingerprints. PDF raster
+inspection verified readable shaping, layout and currency columns; browser actions
+remain in the final integrated gate. Larastan Level 6 for the new B classes passed.
+
+## P9-C — accepted internally
+
+New issued financial shares use a neutral first GET/HEAD, deliberate CSRF POST,
+15-minute exact-token/revision/password-bound unlock and fresh validity checks on
+every HTML/JSON/print/PDF delivery. Ordinary shares default 30 days/max 365;
+Statements default seven/max 30 and require a password. The nullable additive
+MEDIUMTEXT issuance migration preserves genuine legacy rows and retained schema
+on code rollback. No issued-content failure falls back to a live financial query.
+
+Fixed canonical encrypted receipts/Statements, company-owned grant lifetime,
+legacy labels, restricted management, canonical APP_URL links and smaller guest
+PDF budgets are integrated. Lead independently verified the changed-domain gate
+(**29 tests / 479 assertions**) and the integrated Phase 9 gate (**91 / 1,387**).
+The latter includes actual two-process MariaDB issuance/publication races and
+economic zero-write checks. Guest quotation scope, alternate-format bypasses,
+revision retirement and original receipt disclosure are covered.
+
+Two additional strict-mode storage/recovery tests passed (**2 / 44**). Local
+`max_allowed_packet` is 1,048,576 bytes; a single 873,104-byte ciphertext roundtrip
+preserved exact SHA/scope. A synthetic near-2MiB plaintext envelope produced
+3,728,244 bytes and was rejected before any new grant/audit. Issuance now measures
+that transport budget with a 64KiB reserve rather than claiming the application
+ceilings are hosting guarantees. Scoped encrypted-backup/key recovery restored
+the original real Statement and denied missing keys without live recomputation.
+No local/global database setting was raised. The operational procedure is in
+[key recovery](PHASE_9_ISSUANCE_KEY_RECOVERY.md).
+
+Actual browser issuance, recovery and deliberate guest first view passed. Native
+Web Share visibility was corrected after the browser caught an Alpine binding
+error. No external message was sent. Final-source QA and PR publication remain
+the P9-F release gate.
+
+## P9-D / P9-E — accepted internally; final access renewal integration
+
+Catalog schema/security is lead-owned. Approved revisions and immutable publication
+request receipts prevent a delayed retry from creating another revision. Frozen
+same-company image references validate actual bytes and path containment; images
+remain public marketing assets under accepted Option A. Catalog domain tests passed
+**7 / 56**, public-route negatives **8 / 509**, composer **12 / 55**, with genuine
+selection beyond the first 100 Products. Actual AR/EN public PDFs were rendered.
+
+AGY catalog presentation handback completed from `91a32942...`, conversation
+`812fb882-2536-41c9-b9c0-a4b9271b4445`; Codex independently corrected fresh guards,
+price acknowledgement, revision handling, image provenance and modal accessibility.
+The barcode relay ended during an interruption without a completion receipt.
+Its seven allowlisted files were preserved and collected as a partial snapshot;
+Codex finished implementation and acceptance rather than claiming worker success.
+
+Barcode rendering was corrected after actual PDF inspection exposed blank-page
+pagination. A separate simple mPDF sheet template keeps A4 labels readable; the
+browser template supports intentional printing. Decoding at 300 dpi passed all
+**24 Arabic / 14 English / 49 UPC-E** symbols. Piece/carton identity, exact stored
+codes, checksum validation, quiet zones, sheet boundaries and overwide rejection
+are tested. No barcode registration or alternate Product master is invented.
+
+The responsive browser gate passed **125 matrix checks + 33 interaction checks**,
+30 AR/EN desktop/tablet/mobile states and 37 screenshots. Both native-share controls
+were fixed and retested after a real browser exception. No final JS errors or HTTP
+500s. Three final formatting/error-state/PDF tests passed **3 / 38**. A separate
+deliberate catalog expiry/password access-edit flow completes management of expired
+stable links; it cannot bypass publication or priced authorization.
+
+The accepted roadmap and Owner files are unchanged. No merge or production access.
+
+## P9-F — accepted internally
+
+Final source integration `6656b4908bc286b86023fbb6b3aa4ccb9577485b` completes the deliberate catalog access-edit UI,
+localized accessibility/loading/error states and inherited fixture reconciliation.
+AGY access (`7a38ca48…`) and final UI (`ccefbb2c…`) handbacks were collected and
+independently corrected/reviewed. AGY browser QA (`94d27b08…`) passed 457 document
+and 198 access checks. Lead screenshot review caught clipped mobile document menus;
+the final independent matrix then passed 511 checks including actual viewport bounds.
+
+Final Phase 9: **103 tests / 1,512 assertions**. Remaining Phase 8/9/unit: **362 /
+13,931**. Corrected inherited: **119 / 713**. Tail profile/schema safety: **22 / 86**.
+Deduplicated segmented broad coverage: **2,000 / 2,000**; no unresolved failures.
+This is not a single uninterrupted or uniform-SHA broad run. Pint, Larastan Level 6,
+Blade compilation and production Vite build passed; actual PDFs, 87 decoded barcode
+labels and two decoded QR symbols are retained. See the
+[source acceptance handoff](PHASE_9_SOURCE_ACCEPTANCE_HANDOFF.md) for exact limits,
+worker acceptance, migration preservation and final Git/release boundaries.
+
+No merge, deployment, production access or Phase 10–13 implementation occurred.

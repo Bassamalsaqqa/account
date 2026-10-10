@@ -2352,7 +2352,7 @@ COMPLETE / ACCEPTED / MERGED / DEPLOYED / PRODUCTION VERIFIED. Accepted source `
 
 ## Phase 9 — Documents/catalog/QR/sharing
 
-Runtime implementation UNSTARTED. P9-0 discovery/planning is complete; the single reconciled execution contract is `docs/PHASE_9_P0_DISCOVERY_AND_EXECUTION_LOCK.md`, awaiting independent architect review and explicit Owner implementation authorization. `docs/PHASE_9_ENGINEERING_PROPOSAL.md` retains continuity with the preserved prior proposal. The complete Owner roadmap is copied unchanged to `docs/ACCOUNTING_PHASE_9_FULL_ENGINEERING_ROADMAP_AND_FUTURE_AI_MOBILE_V1.md`.
+P9-0 was accepted and merged through PR #17; the Owner authorized P9-A–F implementation from `3f82b947d319d519cea6d25cecd7724bfc909672`. The single frozen policy contract remains `docs/PHASE_9_P0_DISCOVERY_AND_EXECUTION_LOCK.md`. Implementation and final source acceptance are recorded in `docs/PHASE_9_SOURCE_ACCEPTANCE_HANDOFF.md` and ADR 0009; merge/deployment still require separate Owner authorization. `docs/PHASE_9_ENGINEERING_PROPOSAL.md` retains continuity with the preserved prior proposal. The complete Owner roadmap is copied unchanged to `docs/ACCOUNTING_PHASE_9_FULL_ENGINEERING_ROADMAP_AND_FUTURE_AI_MOBILE_V1.md`.
 
 ## Phase 10 — Production hardening
 

@@ -54,6 +54,6 @@ final class InventoryReportRead
         return ['product_id' => (int) $r->product_id, 'sku' => (string) $r->sku,
             'product_name' => OperationalReportRead::name($r->name_ar, $r->name_en),
             'unit_code' => (string) $r->unit_code, 'warehouse_id' => $r->warehouse_id === null ? null : (int) $r->warehouse_id,
-            'warehouse_name' => $r->warehouse_id === null ? null : OperationalReportRead::name($r->warehouse_name_ar,$r->warehouse_name_en)];
+            'warehouse_name' => $r->warehouse_id === null ? null : OperationalReportRead::name($r->warehouse_name_ar, $r->warehouse_name_en)];
     }
 }

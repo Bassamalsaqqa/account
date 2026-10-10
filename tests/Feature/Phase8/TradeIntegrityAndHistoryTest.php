@@ -198,8 +198,8 @@ final class TradeIntegrityAndHistoryTest extends TradeTestCase
         $report = app(SalesByProductReportQuery::class)->execute($this->company, [], $actor);
         $sql = implode(' ', array_column(DB::getQueryLog(), 'query'));
         DB::disableQueryLog();
-        $this->assertDoesNotMatchRegularExpression('/(?:sil|srl|si|sr)\\.cogs_total_base/',$sql);
-        $this->assertArrayNotHasKey('cogs_base',$report->rows[0]);
-        $this->assertArrayNotHasKey('gross_profit_base',$report->totals);
+        $this->assertDoesNotMatchRegularExpression('/(?:sil|srl|si|sr)\\.cogs_total_base/', $sql);
+        $this->assertArrayNotHasKey('cogs_base', $report->rows[0]);
+        $this->assertArrayNotHasKey('gross_profit_base', $report->totals);
     }
 }

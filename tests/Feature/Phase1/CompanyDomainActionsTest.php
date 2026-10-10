@@ -49,6 +49,7 @@ class CompanyDomainActionsTest extends TestCase
         ]);
 
         $this->context->setCompany($this->company, $this->owner);
+        $this->actingAs($this->owner);
     }
 
     public function test_update_currencies_action_enforces_single_enabled_base(): void
@@ -220,6 +221,8 @@ class CompanyDomainActionsTest extends TestCase
         );
 
         // 1. Administrator attempts to promote Viewer to Owner -> Unauthorized
+        $this->actingAs($adminMembership->user);
+        $this->context->setCompany($this->company, $adminMembership->user);
         try {
             $roleAction->execute($this->company, $viewerMembership, 'Owner', $adminMembership->user);
             $this->fail('Administrator should not be able to assign Owner role.');
@@ -228,6 +231,8 @@ class CompanyDomainActionsTest extends TestCase
         }
 
         // 2. Owner promotes Admin to Owner -> Success
+        $this->actingAs($this->owner);
+        $this->context->setCompany($this->company, $this->owner);
         $roleAction->execute($this->company, $adminMembership, 'Owner', $this->owner);
         $this->assertTrue($adminMembership->fresh()->is_owner);
 
@@ -402,6 +407,8 @@ class CompanyDomainActionsTest extends TestCase
         $initialAuditCount = AuditEvent::where('company_id', $this->company->id)->count();
 
         // 3. Administrator attempts to demote Second Owner -> Blocked
+        $this->actingAs($adminMembership->user);
+        $this->context->setCompany($this->company, $adminMembership->user);
         try {
             $roleAction->execute($this->company, $secondOwner, 'Administrator', $adminMembership->user);
             $this->fail('Administrator should not be able to demote an Owner.');
@@ -451,15 +458,22 @@ class CompanyDomainActionsTest extends TestCase
         $this->assertNotContains('unexpected.external.permission', $ownerPermNames);
         $this->assertNotContains('unexpected.external.permission', $adminPermNames);
 
-        // Assert catalog permissions ARE assigned to Owner and Administrator
+        // Owner receives every capability; new-company Administrators require explicit Phase 9 delegation.
         foreach (CompanyRoleService::PERMISSIONS as $expectedPerm) {
             $this->assertContains($expectedPerm, $ownerPermNames);
+        }
+        $adminDefaults = array_values(array_diff(CompanyRoleService::PERMISSIONS, CompanyRoleService::PHASE9_PERMISSIONS));
+        foreach ($adminDefaults as $expectedPerm) {
             $this->assertContains($expectedPerm, $adminPermNames);
         }
+        foreach (CompanyRoleService::PHASE9_PERMISSIONS as $newCapability) {
+            $this->assertContains($newCapability, $ownerPermNames);
+            $this->assertNotContains($newCapability, $adminPermNames);
+        }
 
-        // Assert exact count matches the blueprint catalog count
+        // Exact counts prevent unnoticed grants beyond each accepted default set.
         $this->assertCount(count(CompanyRoleService::PERMISSIONS), $ownerPermNames);
-        $this->assertCount(count(CompanyRoleService::PERMISSIONS), $adminPermNames);
+        $this->assertCount(count($adminDefaults), $adminPermNames);
 
         // 4. Assert none of the other standard roles receive the external permission
         $otherRoles = Role::where('company_id', $this->company->id)->whereNotIn('name', ['Owner', 'Administrator'])->get();

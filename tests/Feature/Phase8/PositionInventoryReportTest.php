@@ -115,12 +115,12 @@ class PositionInventoryReportTest extends PositionTestCase
         $this->assertSame('3.000000', $result->totals['net_quantity_delta']);
         $this->assertSame('3.370368', $result->totals['total_value_delta']);
         $cost = app(InventoryCostHistoryReportQuery::class)->execute($this->company, $this->filters(['per_page' => 1]), $this->owner);
-        $this->assertSame('1.123456',$cost->rows[0]['unit_cost_base']);
+        $this->assertSame('1.123456', $cost->rows[0]['unit_cost_base']);
     }
 
     public function test_unsupported_and_malformed_filters_are_rejected_even_for_typed_inputs(): void
     {
         $this->expectException(InvalidReportFilterException::class);
-        app(InventoryStockOnHandReportQuery::class)->execute($this->company,new ReportFilters(ReportPeriod::custom('2026-10-01','2026-10-10',$this->company),currencyCode: 'USD'),$this->owner);
+        app(InventoryStockOnHandReportQuery::class)->execute($this->company, new ReportFilters(ReportPeriod::custom('2026-10-01', '2026-10-10', $this->company), currencyCode: 'USD'), $this->owner);
     }
 }

@@ -73,7 +73,7 @@ final class TradeFamilyContractTest extends TradeTestCase
         $this->assertSame('116.000000', $price->rows[0]['commercial_unit_price']);
         $this->assertSame('100.000000', $price->rows[0]['net_commercial_price_per_base_unit']);
         $this->assertSame('100.000000', $price->rows[0]['total_acquisition_cost_base']);
-        $this->assertSame('116.000000',$byProduct->totals['commercial_total_base']);
-        $this->assertSame('100.000000',$byProduct->totals['total_acquisition_cost_base']);
+        $this->assertSame('116.000000', $byProduct->totals['commercial_total_base']);
+        $this->assertSame('100.000000', $byProduct->totals['total_acquisition_cost_base']);
     }
 }

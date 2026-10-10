@@ -1,0 +1,121 @@
+<?php
+
+declare(strict_types=1);
+
+return [
+    // Document Types
+    'purchase' => 'فاتورة شراء',
+    'purchase_return' => 'مردود مشتريات',
+    'vendor_payment' => 'سند صرف',
+    'vendor_statement' => 'كشف حساب مورد',
+
+    // Statuses
+    'status_draft' => 'مسودة',
+    'status_posted' => 'مرحل',
+    'status_void' => 'ملغي',
+    'status_reversed' => 'معكوس',
+    'draft' => 'مسودة',
+    'posted' => 'مرحل',
+    'void' => 'ملغي',
+    'reversed' => 'معكوس',
+
+    // Quantity-Only Labels
+    'quantity_only' => 'كميات فقط',
+    'quantity_only_badge' => 'سند استلام بضاعة - كميات فقط',
+
+    // Metadata & Headers
+    'number' => 'الرقم',
+    'date' => 'التاريخ',
+    'issue_date' => 'تاريخ الإصدار',
+    'purchase_date' => 'تاريخ الشراء',
+    'return_date' => 'تاريخ الإرجاع',
+    'due_date' => 'تاريخ الاستحقاق',
+    'posted_at' => 'تاريخ الترحيل',
+    'vendor_invoice_number' => 'رقم فاتورة المورد',
+    'original_reference' => 'المرجع الأصلي',
+    'reference' => 'المرجع',
+    'vendor' => 'المورد',
+    'company' => 'الشركة',
+    'warehouse' => 'المستودع',
+    'phone' => 'الهاتف',
+    'email' => 'البريد الإلكتروني',
+    'address' => 'العنوان',
+    'tax_number' => 'الرقم الضريبي',
+    'registration_number' => 'السجل التجاري',
+    'currency' => 'العملة',
+    'base_currency' => 'العملة الأساسية',
+    'exchange_rate' => 'سعر الصرف',
+    'amount_in_base_currency' => 'المبلغ بالعملة الأساسية',
+
+    // Payment Methods & Accounts
+    'payment_method' => 'طريقة الدفع',
+    'method_cash' => 'نقداً',
+    'method_bank_transfer' => 'تحويل بنكي',
+    'method_check' => 'شيك',
+    'money_account' => 'الحساب المالي',
+    'check_number' => 'رقم الشيك',
+
+    // Table Columns
+    'line_number' => '#',
+    'product' => 'الصنف / الوصف',
+    'sku' => 'الرمز (SKU)',
+    'quantity' => 'الكمية',
+    'unit' => 'الوحدة',
+    'unit_cost' => 'تكلفة الوحدة',
+    'discount' => 'الخصم',
+    'tax' => 'الضريبة',
+    'total' => 'الإجمالي',
+    'subtotal' => 'المجموع الفرعي',
+    'grand_total' => 'المجموع الكلي',
+    'landed_cost_allocated_base' => 'تكاليف إضافية موزعة (الأساس)',
+    'total_landed_cost_base' => 'إجمالي التكاليف الإضافية (الأساس)',
+    'inventory_unit_cost_base' => 'تكلفة الوحدة المخزنية (الأساس)',
+    'historical_receipt_value_base' => 'قيمة الاستلام التاريخية (الأساس)',
+    'inventory_value_removed_base' => 'قيمة المخزون المستبعدة (الأساس)',
+    'valuation_adjustment_base' => 'تسوية التقييم (الأساس)',
+    'lot_number' => 'رقم التشغيلة',
+    'expiry_date' => 'تاريخ الانتهاء',
+
+    // Payment & Allocations Specific
+    'invoice' => 'فاتورة الشراء',
+    'purchase_principal' => 'أصل الفاتورة',
+    'payment_amount' => 'مبلغ السند',
+    'payment_applied' => 'المبلغ المسدد',
+    'settlement_base_value' => 'قيمة التسوية (الأساس)',
+    'later_applications_appendix' => 'ملحق التسويات اللاحقة (سجل داخلي)',
+    'application_date' => 'تاريخ التسوية',
+    'unallocated_amount' => 'المبلغ غير المخصص',
+    'reversal_reason' => 'سبب العكس',
+    'reversed_at' => 'تاريخ العكس',
+
+    // Statement Specific
+    'statement' => 'كشف حساب',
+    'from_date' => 'من',
+    'to_date' => 'حتى',
+    'opening_balance' => 'الرصيد الافتتاحي',
+    'closing_balance' => 'الرصيد الختامي',
+    'running_balance' => 'الرصيد التراكمي',
+    'debit' => 'مدين',
+    'credit' => 'دائن',
+    'total_debits' => 'إجمالي المدين',
+    'total_credits' => 'إجمالي الدائن',
+    'aging' => 'أعمار الذمم المستحقة للمورد',
+    'unspecified' => 'غير محدد',
+    'current' => 'حالي',
+    'days_1_30' => '١–٣٠ يوماً',
+    'days_31_60' => '٣١–٦٠ يوماً',
+    'days_61_90' => '٦١–٩٠ يوماً',
+    'days_90_plus' => 'أكثر من ٩٠ يوماً',
+    'gross_open_purchases' => 'إجمالي الفواتير المفتوحة',
+    'signed_vendor_balance' => 'رصيد المورد',
+    'unapplied_credit_position' => 'الأرصدة غير المطبقة',
+    'net_payable' => 'صافي المستحق للمورد',
+    'net_vendor_credit' => 'صافي رصيد المورد الدائن',
+
+    // Notes, Terms & Actions
+    'notes' => 'ملاحظات',
+    'terms' => 'الشروط والأحكام',
+    'reason' => 'السبب',
+    'print' => 'طباعة',
+    'footer' => 'تذييل',
+];

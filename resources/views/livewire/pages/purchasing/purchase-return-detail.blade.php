@@ -1,4 +1,7 @@
 <div class="space-y-5">
+    @if(auth()->user()?->can('purchasing.purchase.view'))
+        <div class="flex justify-end"><x-document-actions route-name="pdf.purchase-return" :parameters="['publicId' => $document['public_id']]" :permissions="['purchasing.document.pdf']" /></div>
+    @endif
     <header class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div class="min-w-0">
             <a href="{{ route('purchase-returns.index') }}" class="text-xs text-primary">{{ __('purchasing.purchase_returns') }}</a>

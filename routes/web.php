@@ -2,11 +2,15 @@
 
 use App\Http\Controllers\ExpenseAttachmentController;
 use App\Http\Controllers\PdfDocumentController;
+use App\Http\Controllers\PublicCatalogController;
 use App\Http\Controllers\PublicShareController;
+use App\Http\Controllers\PurchasingDocumentController;
 use App\Http\Controllers\ReportCsvController;
+use App\Http\Middleware\PrivateDocumentResponse;
 use App\Livewire\Pages\Catalog\CategoryIndex;
 use App\Livewire\Pages\Catalog\UnitIndex;
 use App\Livewire\Pages\Catalog\WarehouseIndex;
+use App\Livewire\Pages\Catalogs\CatalogComposer;
 use App\Livewire\Pages\Customers\CustomerDetail;
 use App\Livewire\Pages\Customers\CustomerForm;
 use App\Livewire\Pages\Customers\CustomerIndex;
@@ -34,6 +38,7 @@ use App\Livewire\Pages\Payroll\EmployeeForm;
 use App\Livewire\Pages\Payroll\EmployeeIndex;
 use App\Livewire\Pages\Payroll\SalaryEntryForm;
 use App\Livewire\Pages\Payroll\SalaryPaymentForm;
+use App\Livewire\Pages\Products\BarcodeLabels;
 use App\Livewire\Pages\Products\ProductDetail;
 use App\Livewire\Pages\Products\ProductForm;
 use App\Livewire\Pages\Products\ProductIndex;
@@ -67,6 +72,7 @@ use App\Livewire\Pages\Sales\ReturnDetail;
 use App\Livewire\Pages\Sales\ReturnForm;
 use App\Livewire\Pages\Sales\ReturnIndex;
 use App\Livewire\Pages\Sales\Settings\DocumentSequenceSettings;
+use App\Livewire\Pages\Sales\Settings\DocumentSettingsForm;
 use App\Livewire\Pages\Sales\Settings\MoneyAccountSettings;
 use App\Livewire\Pages\Sales\Settings\TaxRateSettings;
 use App\Livewire\Pages\SettingsIndex;
@@ -194,8 +200,13 @@ Route::middleware(['auth'])->group(function () {
 
         // Phase 5A Purchasing Settings
         Route::get('settings/purchases', PurchaseSettingsForm::class)->name('settings.purchases');
+        Route::get('settings/documents', DocumentSettingsForm::class)->name('settings.documents');
 
         // Phase 5A Vendors
+        Route::get('barcode-labels', BarcodeLabels::class)->name('labels.index');
+        Route::get('catalogs', CatalogComposer::class)->name('catalogs.index');
+        Route::get('catalogs/create', CatalogComposer::class)->name('catalogs.create');
+        Route::get('catalogs/{publicId}', CatalogComposer::class)->name('catalogs.edit');
         Route::get('purchases', PurchaseIndex::class)->name('purchases.index');
         Route::get('purchases/create', PurchaseForm::class)->name('purchases.create');
         Route::get('purchases/{publicId}/edit', PurchaseForm::class)->name('purchases.edit');
@@ -246,11 +257,15 @@ Route::middleware(['auth'])->group(function () {
         Route::get('payroll/salary-payments/create', SalaryPaymentForm::class)->name('payroll.salary-payments.create');
 
         // Phase 4 PDFs
-        Route::get('pdf/quotation/{publicId}', [PdfDocumentController::class, 'quotation'])->name('pdf.quotation');
-        Route::get('pdf/invoice/{publicId}', [PdfDocumentController::class, 'invoice'])->name('pdf.invoice');
-        Route::get('pdf/return/{publicId}', [PdfDocumentController::class, 'return'])->name('pdf.return');
-        Route::get('pdf/payment/{publicId}', [PdfDocumentController::class, 'payment'])->name('pdf.payment');
-        Route::get('pdf/statement/{publicId}', [PdfDocumentController::class, 'statement'])->name('pdf.statement');
+        Route::get('pdf/purchase/{publicId}', [PurchasingDocumentController::class, 'purchase'])->name('pdf.purchase');
+        Route::get('pdf/purchase-return/{publicId}', [PurchasingDocumentController::class, 'return'])->name('pdf.purchase-return');
+        Route::get('pdf/vendor-payment/{publicId}', [PurchasingDocumentController::class, 'payment'])->name('pdf.vendor-payment');
+        Route::get('pdf/vendor-statement/{publicId}', [PurchasingDocumentController::class, 'statement'])->name('pdf.vendor-statement');
+        Route::get('pdf/quotation/{publicId}', [PdfDocumentController::class, 'quotation'])->middleware(PrivateDocumentResponse::class.':sales.quote.view')->name('pdf.quotation');
+        Route::get('pdf/invoice/{publicId}', [PdfDocumentController::class, 'invoice'])->middleware(PrivateDocumentResponse::class.':sales.invoice.view')->name('pdf.invoice');
+        Route::get('pdf/return/{publicId}', [PdfDocumentController::class, 'return'])->middleware(PrivateDocumentResponse::class.':sales.return.view')->name('pdf.return');
+        Route::get('pdf/payment/{publicId}', [PdfDocumentController::class, 'payment'])->middleware(PrivateDocumentResponse::class.':money.receipt.view')->name('pdf.payment');
+        Route::get('pdf/statement/{publicId}', [PdfDocumentController::class, 'statement'])->middleware(PrivateDocumentResponse::class.':sales.statement.view')->name('pdf.statement');
     });
 });
 
@@ -265,3 +280,5 @@ if (app()->environment('local', 'testing')) {
 }
 
 require __DIR__.'/auth.php';
+
+Route::match(['GET', 'POST'], 'catalog/{token}', [PublicCatalogController::class, 'show'])->name('public.catalog');

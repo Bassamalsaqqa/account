@@ -8,9 +8,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{{ __('sales.public_share') }}</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <meta name="robots" content="noindex,nofollow"><meta name="referrer" content="no-referrer">
     @vite(['resources/css/app.css'])
 </head>
 <body class="bg-slate-100 min-h-screen text-slate-800 font-sans p-4 sm:p-6 lg:p-10 flex flex-col justify-between">

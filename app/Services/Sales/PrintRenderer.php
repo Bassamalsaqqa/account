@@ -10,6 +10,6 @@ final class PrintRenderer
 {
     public function render(DocumentData $data): string
     {
-        return app(DocumentRenderer::class)->html($data);
+        return app(DocumentRenderer::class)->html($data, printControls: true);
     }
 }

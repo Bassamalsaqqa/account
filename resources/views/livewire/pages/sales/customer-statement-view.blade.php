@@ -12,11 +12,7 @@
             </div>
 
             <div class="flex items-center gap-2">
-                <a href="{{ route('pdf.statement', ['publicId' => $customer->public_id, 'from' => $fromDate, 'to' => $toDate]) }}"
-                   target="_blank"
-                   class="px-3.5 py-1.5 rounded-control bg-primary text-white text-xs font-bold hover:bg-primary-hover transition-colors shadow-xs flex items-center gap-1.5">
-                    📄 {{ __('sales.download_pdf') }}
-                </a>
+                <x-document-actions route-name="pdf.statement" :parameters="['publicId' => $customer->public_id, 'from' => $fromDate, 'to' => $toDate]" :permissions="['sales.document.pdf', 'sales.statement.view', 'customers.statement.view']" />
                 <a href="{{ route('customers.show', $customer->public_id) }}"
                    class="px-3 py-1.5 rounded-control bg-surface-soft text-text-secondary hover:text-text-primary text-xs font-bold transition-colors">
                     {{ __('sales.back') }}
@@ -145,4 +141,8 @@
             {{ __('sales.no_statement_data') }}
         </div>
     @endforelse
+
+    @if(true && collect(['sales.document.share', 'sales.statement.view', 'customers.statement.view'])->every(fn ($permission) => auth()->user()->can($permission)))
+        <livewire:financial-share-manager subject-type="customer_statement" :subject-id="$customer->id" :key="'financial-share-'.$customer->public_id" />
+    @endif
 </div>

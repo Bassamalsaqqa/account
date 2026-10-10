@@ -69,19 +69,9 @@
                     </button>
                 @endif
 
-                <a href="{{ route('pdf.invoice', $invoice->public_id) }}"
-                   target="_blank"
-                   class="px-3 py-1.5 rounded-control border border-border text-xs font-bold text-text-secondary hover:bg-surface-soft transition-colors flex items-center gap-1">
-                    📄 {{ __('sales.print') }}
-                </a>
+                <x-document-actions route-name="pdf.invoice" :parameters="['publicId' => $invoice->public_id]" :permissions="['sales.document.pdf', 'sales.invoice.view']" />
 
-                @if ($canShare)
-                    <button type="button"
-                            wire:click="$set('showShareModal', true)"
-                            class="px-3 py-1.5 rounded-control border border-border text-xs font-bold text-text-secondary hover:bg-surface-soft transition-colors flex items-center gap-1">
-                        🔗 {{ __('sales.share') }}
-                    </button>
-                @endif
+
 
                 <a href="{{ route('invoices.index') }}"
                    class="px-3 py-1.5 rounded-control bg-surface-soft text-text-secondary hover:text-text-primary text-xs font-bold transition-colors">
@@ -90,20 +80,7 @@
             </div>
         </div>
 
-        @if ($shareUrl)
-        <button type="button" wire:click="revokeShareLink" class="text-xs text-danger font-bold">{{ __('sales.revoke_share') }}</button>
-            <div class="p-3 bg-primary-50 rounded-control border border-primary/20 flex items-center justify-between gap-2 text-xs">
-                <div class="flex items-center gap-2 truncate">
-                    <span class="font-bold text-primary">{{ __('sales.share_link') }}:</span>
-                    <span class="font-mono text-text-secondary truncate" dir="ltr">{{ $shareUrl }}</span>
-                </div>
-                <button type="button"
-                        onclick="navigator.clipboard.writeText('{{ $shareUrl }}'); alert('{{ __('sales.copy_link') }}');"
-                        class="px-2.5 py-1 rounded-control bg-primary text-white font-bold text-[11px] shrink-0">
-                    {{ __('sales.copy_link') }}
-                </button>
-            </div>
-        @endif
+
 
         <!-- Metadata Summary -->
         <div class="grid grid-cols-2 md:grid-cols-5 gap-4 pt-4 border-t border-border text-xs">
@@ -358,31 +335,9 @@
     @endif
 
     <!-- Share Modal -->
-    @if ($showShareModal)
-        <div class="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4">
-            <div class="bg-white rounded-card border border-border shadow-xl max-w-md w-full p-6 space-y-4">
-                <h3 class="font-bold text-base text-text-primary">
-                    {{ __('sales.public_share') }}
-                </h3>
-                <div class="space-y-3 text-xs">
-                    <div>
-                        <label class="block font-bold text-text-primary mb-1">{{ __('sales.share_expires_in') }}</label>
-                        <input type="number" wire:model="shareExpiryDays" class="w-full h-8 px-2 rounded-control border border-border" />
-                    </div>
-                    <div>
-                        <label class="block font-bold text-text-primary mb-1">{{ __('sales.optional_password') }}</label>
-                        <input type="password" wire:model="sharePassword" class="w-full h-8 px-2 rounded-control border border-border" />
-                    </div>
-                </div>
-                <div class="flex justify-end gap-2 pt-2 border-t border-border">
-                    <button type="button" wire:click="$set('showShareModal', false)" class="px-3 py-1.5 rounded-control border border-border text-xs font-bold">
-                        {{ __('sales.cancel') }}
-                    </button>
-                    <button type="button" wire:click="createShareLink" class="px-4 py-1.5 rounded-control bg-primary text-white text-xs font-bold">
-                        {{ __('sales.create_share') }}
-                    </button>
-                </div>
-            </div>
-        </div>
+
+
+    @if($invoice->isPosted() && collect(['sales.document.share', 'sales.invoice.view'])->every(fn ($permission) => auth()->user()->can($permission)))
+        <livewire:financial-share-manager subject-type="sales_invoice" :subject-id="$invoice->id" :key="'financial-share-'.$invoice->public_id" />
     @endif
 </div>
