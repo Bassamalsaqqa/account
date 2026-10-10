@@ -375,7 +375,7 @@ final class CapacityMeasurementTest extends Phase8TestCase
             'byte_size' => strlen($bcPdfBytes),
         ];
 
-        // 11. Measure CSV Streaming Bounding
+        // 11. Match the shipped ReportCsvController's bounded export page size.
         $stream = fopen('php://temp', 'w+');
         $this->assertIsResource($stream);
         $csvStart = hrtime(true);
@@ -384,7 +384,7 @@ final class CapacityMeasurementTest extends Phase8TestCase
             return app(SalesSummaryReportQuery::class)->execute($this->company, [
                 'period' => $period->toArray(),
                 'page' => $page,
-                'per_page' => 25,
+                'per_page' => 100,
             ], $this->owner);
         }, [
             ['key' => 'document_number', 'label' => 'رقم المستند', 'type' => 'text'],
@@ -413,6 +413,7 @@ final class CapacityMeasurementTest extends Phase8TestCase
             'wall_time_ms' => $csvDurationMs,
             'bytes_written' => strlen($csvContent),
             'actual_rows' => $csvRows,
+            'page_size' => 100,
             'net_sales_base' => (string) $csvNet,
             'max_row_limit' => CsvReportWriter::MAX_ROWS,
             'max_byte_limit' => CsvReportWriter::MAX_BYTES,

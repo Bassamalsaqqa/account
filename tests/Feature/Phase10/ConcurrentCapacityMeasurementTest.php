@@ -65,33 +65,43 @@ final class ConcurrentCapacityMeasurementTest extends TestCase
 
     public function test_independent_local_kernel_workers_measure_widths_one_two_and_four_without_economic_mutation(): void
     {
+        $profile = strtoupper(trim(getenv('PHASE10_CONCURRENT_CAPACITY_WORKLOAD') ?: 'S'));
+        $dimensions = match ($profile) {
+            'S' => ['products' => 10, 'purchases' => 20, 'invoices' => 20, 'receipts' => 10],
+            'M' => ['products' => 500, 'purchases' => 2000, 'invoices' => 2000, 'receipts' => 1000],
+            'L' => ['products' => 2500, 'purchases' => 10000, 'invoices' => 10000, 'receipts' => 5000],
+            default => throw new \RuntimeException('PHASE10_CONCURRENT_CAPACITY_WORKLOAD must be S, M or L.'),
+        };
         app(CompanyContext::class)->clear();
         $owner = User::factory()->create(['locale' => 'en']);
         $creator = app(CreateCompanyAction::class);
         $control = $creator->execute($owner, ['name_ar' => 'Capacity control', 'base_currency_code' => 'ILS']);
         app(CompanyContext::class)->clear();
-        $company = $creator->execute($owner, ['name_ar' => 'Capacity synthetic S', 'name_en' => 'Capacity synthetic S',
+        $company = $creator->execute($owner, ['name_ar' => 'Capacity synthetic '.$profile, 'name_en' => 'Capacity synthetic '.$profile,
             'base_currency_code' => 'ILS', 'default_locale' => 'en']);
         $this->actingAs($owner);
         app(CompanyContext::class)->setCompany($company, $owner);
         setPermissionsTeamId($company->id);
         $fixtureStart = hrtime(true);
-        $invoice = $this->buildProfileS($company, $owner);
+        $invoice = $this->buildProfile($company, $owner, $profile, $dimensions);
         $fixtureMs = round((hrtime(true) - $fixtureStart) / 1_000_000, 3);
         $counts = ['products' => DB::table('products')->where('company_id', $company->id)->count(),
             'purchases' => DB::table('purchases')->where('company_id', $company->id)->where('status', 'posted')->count(),
             'invoices' => DB::table('sales_invoices')->where('company_id', $company->id)->where('status', 'posted')->count(),
             'receipts' => DB::table('customer_payments')->where('company_id', $company->id)->whereNotNull('posting_batch_id')->count()];
-        $this->assertSame(['products' => 10, 'purchases' => 20, 'invoices' => 20, 'receipts' => 10], $counts);
-        $this->assertSame(50, $counts['purchases'] + $counts['invoices'] + $counts['receipts']);
-        $this->assertSame(50, DB::table('posting_batches')->where('company_id', $company->id)->count());
-        $this->assertSame(10, DB::table('customer_payment_allocations')->where('company_id', $company->id)->count());
-        $this->assertTrue(BigDecimal::of((string) DB::table('inventory_cost_states')->where('company_id', $company->id)->sum('quantity_base'))->isEqualTo('360'));
-        $this->assertTrue(BigDecimal::of((string) DB::table('inventory_cost_states')->where('company_id', $company->id)->sum('inventory_value_base'))->isEqualTo('3600'));
+        $this->assertSame($dimensions, $counts);
+        $eventCount = $dimensions['purchases'] + $dimensions['invoices'] + $dimensions['receipts'];
+        $this->assertSame($eventCount, $counts['purchases'] + $counts['invoices'] + $counts['receipts']);
+        $this->assertSame($eventCount, DB::table('posting_batches')->where('company_id', $company->id)->count());
+        $this->assertSame($dimensions['receipts'], DB::table('customer_payment_allocations')->where('company_id', $company->id)->count());
+        $expectedQuantity = BigDecimal::of($dimensions['purchases'])->multipliedBy('20')
+            ->minus(BigDecimal::of($dimensions['invoices'])->multipliedBy('2'));
+        $this->assertTrue(BigDecimal::of((string) DB::table('inventory_cost_states')->where('company_id', $company->id)->sum('quantity_base'))->isEqualTo($expectedQuantity));
+        $this->assertTrue(BigDecimal::of((string) DB::table('inventory_cost_states')->where('company_id', $company->id)->sum('inventory_value_base'))->isEqualTo($expectedQuantity->multipliedBy('10')));
         $this->assertSame(0, DB::transactionLevel());
         $before = $this->fingerprint($company);
         $controlBefore = $this->fingerprint($control);
-        $metrics = ['profile' => 'S', 'timestamp_utc' => gmdate('Y-m-d\TH:i:s\Z'), 'fixture_counts' => $counts,
+        $metrics = ['profile' => $profile, 'timestamp_utc' => gmdate('Y-m-d\TH:i:s\Z'), 'fixture_counts' => $counts,
             'fixture_generation_ms' => $fixtureMs, 'execution' => 'Independent local CLI Laravel HTTP kernels; no listening HTTP server',
             'environment' => ['php_version' => PHP_VERSION, 'sapi' => PHP_SAPI, 'os_family' => PHP_OS_FAMILY,
                 'memory_limit' => ini_get('memory_limit'), 'max_execution_time' => ini_get('max_execution_time'),
@@ -99,7 +109,6 @@ final class ConcurrentCapacityMeasurementTest extends TestCase
                 'database_port' => (string) config('database.connections.mysql.port')],
             'limits' => ['hostinger_lsapi_quotas' => 'NOT VERIFIED', 'provider_capacity_or_sla' => 'NOT VERIFIED',
                 'web_server_overhead' => 'NOT VERIFIED (direct kernel, no web ingress)',
-                'profile_m_l_concurrency' => 'NOT RUN (this finite harness measures S only)',
                 'cpu' => PHP_OS_FAMILY === 'Windows' ? 'NOT VERIFIED (unsupported getrusage)' : 'MEASURED WHERE SUPPORTED'],
             'widths' => []];
         foreach ([1, 2, 4] as $width) {
@@ -119,13 +128,16 @@ final class ConcurrentCapacityMeasurementTest extends TestCase
         if (! is_dir($directory)) {
             mkdir($directory, 0700, true);
         }
-        $path = $directory.'/concurrent-metrics.json';
-        file_put_contents($path, json_encode($metrics, JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR));
-        chmod($path, 0600);
-        $this->assertFileExists($path);
+        foreach (['concurrent-metrics.json', 'concurrent-'.strtolower($profile).'-metrics.json'] as $filename) {
+            $path = $directory.'/'.$filename;
+            file_put_contents($path, json_encode($metrics, JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR));
+            chmod($path, 0600);
+            $this->assertFileExists($path);
+        }
     }
 
-    private function buildProfileS(Company $company, User $owner): SalesInvoice
+    /** @param array{products:int,purchases:int,invoices:int,receipts:int} $dimensions */
+    private function buildProfile(Company $company, User $owner, string $profile, array $dimensions): SalesInvoice
     {
         $unit = Unit::where('company_id', $company->id)->where('code', 'piece')->firstOrFail();
         $warehouse = Warehouse::where('company_id', $company->id)->where('is_default', true)->firstOrFail();
@@ -136,42 +148,47 @@ final class ConcurrentCapacityMeasurementTest extends TestCase
             ->where('currency_code', 'ILS')->where('is_active', true)->firstOrFail();
         $products = [];
         $units = [];
-        for ($index = 0; $index < 10; $index++) {
+        for ($index = 0; $index < $dimensions['products']; $index++) {
             $product = app(ProductCatalogService::class)->createProduct($company, ['name_ar' => 'Capacity product '.$index,
-                'name_en' => 'Capacity product '.$index, 'sku' => 'CAP-S-'.$index, 'product_type' => Product::TYPE_STOCK,
+                'name_en' => 'Capacity product '.$index, 'sku' => 'CAP-'.$profile.'-'.$index, 'product_type' => Product::TYPE_STOCK,
                 'track_stock' => true, 'track_expiry' => false, 'base_unit_id' => $unit->id], $owner->id);
-            $products[] = $product;
-            $units[] = ProductUnit::where('company_id', $company->id)->where('product_id', $product->id)->where('is_base', true)->sole();
+            $products[] = $product->id;
+            $units[] = ProductUnit::where('company_id', $company->id)->where('product_id', $product->id)->where('is_base', true)->sole()->id;
         }
-        for ($index = 0; $index < 20; $index++) {
-            $selected = $index % 10;
+        for ($index = 0; $index < $dimensions['purchases']; $index++) {
+            $selected = $index % $dimensions['products'];
             $purchase = app(CreatePurchaseDraftAction::class)->execute($company, $owner, [
                 'vendor_id' => $vendor->id, 'warehouse_id' => $warehouse->id, 'purchase_date' => '2026-10-01',
-                'currency_code' => 'ILS', 'exchange_rate' => '1', 'lines' => [['product_id' => $products[$selected]->id,
-                    'product_unit_id' => $units[$selected]->id, 'quantity' => '20', 'unit_cost' => '10']],
+                'currency_code' => 'ILS', 'exchange_rate' => '1', 'lines' => [['product_id' => $products[$selected],
+                    'product_unit_id' => $units[$selected], 'quantity' => '20', 'unit_cost' => '10']],
             ]);
             app(PostPurchaseAction::class)->execute($purchase, $owner);
         }
-        $invoices = [];
-        for ($index = 0; $index < 20; $index++) {
-            $selected = $index % 10;
+        $receiptInvoiceIds = [];
+        $firstInvoice = null;
+        for ($index = 0; $index < $dimensions['invoices']; $index++) {
+            $selected = $index % $dimensions['products'];
             $draft = app(CreateSalesInvoiceDraftAction::class)->execute($company, $owner, [
                 'customer_id' => $customer->id, 'warehouse_id' => $warehouse->id, 'issue_date' => '2026-10-02',
                 'currency_code' => 'ILS', 'exchange_rate' => '1', 'document_locale' => 'en',
-                'lines' => [['product_id' => $products[$selected]->id, 'product_unit_id' => $units[$selected]->id,
+                'lines' => [['product_id' => $products[$selected], 'product_unit_id' => $units[$selected],
                     'item_description' => 'Capacity product '.$selected, 'quantity' => '2', 'unit_price' => '15']],
             ]);
-            $invoices[] = app(PostSalesInvoiceAction::class)->execute($draft, $owner);
+            $posted = app(PostSalesInvoiceAction::class)->execute($draft, $owner);
+            $firstInvoice ??= $posted;
+            if ($index < $dimensions['receipts']) {
+                $receiptInvoiceIds[] = $posted->id;
+            }
         }
-        for ($index = 0; $index < 10; $index++) {
+        for ($index = 0; $index < $dimensions['receipts']; $index++) {
             app(PostCustomerPaymentAction::class)->execute($company, $owner, ['customer_id' => $customer->id,
                 'money_account_id' => $cash->id, 'payment_date' => '2026-10-03', 'payment_method' => 'cash', 'amount' => '10',
                 'exchange_rate' => '1', 'idempotency_key' => 'capacity-receipt-'.$index,
-                'allocations' => [['sales_invoice_id' => $invoices[$index]->id, 'allocated_amount' => '10']],
+                'allocations' => [['sales_invoice_id' => $receiptInvoiceIds[$index], 'allocated_amount' => '10']],
             ]);
         }
 
-        return $invoices[0];
+        return $firstInvoice ?? throw new \RuntimeException('The capacity profile must post at least one invoice.');
     }
 
     /** @return array<string,mixed> */
