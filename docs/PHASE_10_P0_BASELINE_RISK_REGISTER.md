@@ -2,13 +2,16 @@
 ## Phase 10 P10-0 Baseline Risk Register & Operational Reconciliation
 
 **Document Identity:** `docs/PHASE_10_P0_BASELINE_RISK_REGISTER.md`\
-**Phase State:** **P10-0 DISCOVERY / BASELINE ACCEPTED — RUNTIME IMPLEMENTATION & DEPLOYMENT NOT AUTHORIZED**\
+**Phase State:** **CODEX DISCOVERY COMPLETE — ARCHITECT ACCEPTANCE PENDING — IMPLEMENTATION NOT AUTHORIZED**\
 **Date:** 2026-10-10\
+
+Codex discovery/internal review: **COMPLETE**. Independent architect acceptance: **PENDING final correction review**. Runtime packages: **PREPARED, NOT DISPATCHED**. Phase 10 tests: **NOT RUN**. Production hardening: **INCOMPLETE**. Customer readiness: **NOT YET ESTABLISHED**.
+
 **Discovery Baseline Branch:** `docs/phase9-production-acceptance`\
 **Discovery Source HEAD:** `47bd392ff4e2adb268805bfd7339805243c677c1`\
 **Discovery Source Tree:** `6e4f98739ace0c0890847f33f6bad0de1a4e84e6`\
-**Remote `main` Target:** `8d8428261cd2a10690ab77a5c7271e46b5ff5217` (tree `6a81c5795790a978eec82fce12b65cae42ddf20f`)\
-**Main vs Baseline Drift:** Exactly 4 documentation-only files (`docs/PHASE_9_CORRECTION_01_HANDOFF.md`, `docs/PHASE_9_ENGINEERING_PROPOSAL.md`, `docs/PHASE_9_PRODUCTION_ACCEPTANCE.md`, `docs/PHASE_9_SOURCE_ACCEPTANCE_HANDOFF.md`); **zero runtime code or schema drift**.
+**Current `origin/main`:** `3e9ebf812a463db9d3f18aaf07b10431c63e84f5` (tree `6e4f98739ace0c0890847f33f6bad0de1a4e84e6`); accepted production runtime remains `8d8428261cd2a10690ab77a5c7271e46b5ff5217`\
+**Effective PR #20 Difference:** Exactly the four Phase 10 planning documents; PR #19 is merged. Current main and the preserved discovery parent have equal trees; **zero runtime code or schema drift**.
 
 ---
 
@@ -38,7 +41,7 @@ The proposed Phase 10 engineering specification (`docs/PHASE_10_PRODUCTION_HARDE
 
 AGY prepared the local discovery drafts without production access. Codex independently refreshed the exact release, schema, reconciliations, hashes, existing-session AR/EN kernel renders and public HTTPS checks at 2026-10-10 08:24:31 UTC. The fresh verification appendix below identifies actual executed checks and their limits. Phase 9 desktop/mobile/browser and PDF records remain carried evidence.
 
-The production/source baseline is known and material risks are triaged. P10-0 is accepted for discovery and package preparation. Runtime implementation, merge and deployment remain separate authorization gates; customer readiness is not claimed.
+The production/source baseline is known and material risks are triaged. Codex completed and internally accepted discovery/package preparation; independent architect contract acceptance is pending this correction. Runtime implementation, merge and deployment remain separate authorization gates; customer readiness is not claimed.
 
 ### 1.4 Nuance on Log Helper Diagnostics
 Earlier diagnostic reports contained false-zero error counts from an obsolete audit helper that only inspected `storage/logs/laravel.log`. The active daily log on production is `storage/logs/laravel-2026-10-10.log`. Independent inspection revealed four initial errors:
@@ -50,7 +53,7 @@ After helper repairs, the retained daily-log inspection found no new errors duri
 
 ## 2. Evidence Classification Standard
 
-Every finding and assertion in this register is categorized using the five-grade evidence model defined in `docs/PHASE_10_PRODUCTION_HARDENING_FULL_ENGINEERING_SPEC_V1.md`:
+Every finding uses the five-grade evidence model from the protected local Owner specification. That original is untracked and unavailable at its GitHub path; [acceptance matrix §5](PHASE_10_ACCEPTANCE_MATRIX.md#5-protected-owner-specification-traceability) records its exact local path/version/hash and sanitized self-contained requirements/journeys/package mapping:
 
 | Evidence Grade | Definition | Application in Phase 10 |
 |---|---|---|
@@ -116,7 +119,7 @@ Likelihood is a qualitative assessment of the stated consequence under the state
 
 | Risk ID | Category | Severity | Likelihood / basis | Path / Component | Evidence Grade | Description & Classification | Disposition & Mitigation | Assigned Package | Owner |
 |---|---|---|---|---|---|---|---|---|---|
-| **RSK-01** | Operations / Recovery | **P1** | Unknown — import/startup not exercised | `storage/app/private/deployment-backups/` | `[CARRIED PRODUCTION EVIDENCE]` | **No actual isolated restore rehearsal.** Decryption and gzip verified, but database import into an isolated target has not been exercised. Readiness gate, not data loss. | Rehearse isolated database & asset restore on disposable target; record actual RPO/RTO. | **P10-D1** | Lead (Codex) / Worker (AGY) |
+| **RSK-01** | Operations / Recovery | **P1** | Unknown — import/startup not exercised | `storage/app/private/deployment-backups/` | `[CARRIED PRODUCTION EVIDENCE]` | **No actual isolated restore rehearsal.** Historical 80/61 → 83/63 upgrade compatibility and independent current coherent-backup recovery are separate unexecuted proofs. Archive contains production `.env`; quarantine it and stale config caches before any bootstrap. Readiness gate, not data loss. | Require both D1-A historical upgrade and D1-B current recovery, D1-C fail-closed isolation, application/key/content checks, six reconciliations, observed RPO/RTO and cleanup. | **P10-D1** | Lead (Codex) / Worker (AGY) |
 | **RSK-02** | Security / Auth | **P1** | Unknown — actual transport/delivery not demonstrated | Fortify / Mail Configuration | `[NOT VERIFIED LIVE]` | **SMTP & password reset deliverability unverified.** Real SMTP host and live reset email delivery not proven in production; unconfigured mail blocks self-recovery. | Verify Hostinger SMTP settings in isolated test; document recovery runbook or provider config. | **P10-A1 / P10-D1** | Lead (Codex) |
 | **RSK-03** | Operations / Deploy | **P2** | Medium — raw script omits step; Phase 9 wrapper supplied it | `bin/deploy.sh` | `[SOURCE VERIFIED]` | **`documents:bootstrap --all` omitted from deploy script.** `bin/deploy.sh` only provisions purchasing bootstrap. Supplied via manual release wrapper in Phase 9. | Update `bin/deploy.sh` or create explicit release wrapper ensuring idempotent bootstrap. | **P10-D1** | Lead (Codex) |
 | **RSK-04** | Operations / Scheduler | **P2** | Low currently — no registered jobs; future capability unknown | Hostinger Cron / `routes/console.php` | `[NOT VERIFIED LIVE]` | **Hostinger cron execution unverified.** Application defines no scheduled jobs currently. Provider recurring job capability unverified. | Audit future required jobs (e.g. backup rotation) and inspect Hostinger cron settings. | **P10-D1** | Lead (Codex) |
@@ -125,9 +128,9 @@ Likelihood is a qualitative assessment of the stated consequence under the state
 | **RSK-07** | UI / Diagnostics | **P2** | Unknown — extension/application origin unresolved | Browser DevTools / Edge | `[CARRIED PRODUCTION EVIDENCE]` | **Browser message-channel anomalies.** Three message-channel observations in prior Edge runs require clean-profile verification. | Correlate browser console in clean profile with real server logs to rule out extension noise. | **P10-C1** | Lead (Codex) / Worker (AGY) |
 | **RSK-08** | Economic / Concurrency | **P2** | Low — payload checks/locks exist; business-event races untested in P10 | `app/Services/Posting/AccountingPostingService.php` | `[AUDIT HYPOTHESIS]` | **Concurrent posting double-submit hypothesis.** Parallel tabs or double-clicks submitting identical or altered payloads. | Verify payload-aware idempotency and pessimistic row locking in disposable MariaDB. | **P10-B1** | Lead (Codex) / Worker (AGY) |
 | **RSK-09** | Security / Public Shares | **P2** | Low — existing limiters; interference/regressions to verify | `app/Http/Controllers/PublicShareController.php` | `[SOURCE VERIFIED]` | **Public endpoint rate limiting.** Existing `RateLimiter` controls in both public controllers need password/download/tenant-interference regressions; no missing limiter is claimed. | Verify rate limiting using database cache without impacting other tenants. | **P10-A3** | Lead (Codex) / Worker (AGY) |
-| **RSK-10** | UI / Navigation | **P3** | High — placeholder is repeatable on current screen | `resources/views/livewire/pages/settings-index.blade.php` | `[CARRIED PRODUCTION EVIDENCE]` | **"Coming soon" print-template card.** Settings hub displays an older placeholder card alongside the working Document Settings link. | Clean up placeholder navigation copy to reflect working document settings. | **P10-C1** | Lead (Codex) / Worker (AGY) |
+| **RSK-10** | UI / Navigation | **P3** | High — placeholder is repeatable on current screen | `resources/views/livewire/pages/settings-index.blade.php` | `[CARRIED PRODUCTION EVIDENCE]` | **Print/PDF and Sharing/Links future-phase cards.** Both coexist with shipped Phase 9 capabilities; source confirms the cards, while clarity/navigation is future C1 verification. | Audit both cards against working document/share/catalog routes; correct misleading copy while retaining genuinely future configuration affordances. | **P10-C1** | Lead (Codex) / Worker (AGY) |
 | **RSK-11** | Security / Media | **P3** | High after publication — cached copies cannot be recalled | `app/Services/Catalogs/ApprovedCatalogMedia.php` | `[SOURCE VERIFIED]` | **Public marketing assets retention.** Published images remain in public storage; revoking catalog cannot recall external caches. Existing administration disclosure is implemented; its clarity remains a scoped usability check. | Verify existing disclosure and company path containment; do not classify an already implemented notice as a missing feature. | **P10-A3** | Lead (Codex) / Worker (AGY) |
-| **RSK-12** | Operations / Recovery | **P1** | Unknown — host-loss recovery/key custody unproven | Backup and key custody | `[NOT VERIFIED LIVE]` | **Independent off-host recovery and key custody not demonstrated.** Same-host escrow cannot prove recovery after host loss. Readiness gate, not proof backups are lost. | Verify controlled off-host retention/custody without publishing keys; obtain explicit risk acceptance if infeasible. | **P10-D1** | Lead (Codex) |
+| **RSK-12** | Operations / Recovery | **P1** | Unknown — host-loss recovery/key custody unproven | Backup and key custody | `[NOT VERIFIED LIVE]` | **Independent off-host recovery and key custody not demonstrated.** Same-host escrow cannot prove recovery after host loss. Readiness gate, not proof backups are lost. | Require encrypted current-backup off-host copies, separately controlled backup secrets and independently recoverable application keys; classify state archives as secret-bearing ciphertext. Missing proof stays P1; any infeasibility requires Owner/architect disposition. | **P10-D1** | Lead (Codex) |
 | **RSK-13** | Performance / Hosting | **P2** | Unknown — capacity workload/quotas unmeasured | Shared-host resource quotas | `[NOT VERIFIED LIVE]` | **Actual CPU/process/IO budgets unmeasured.** PHP/LSAPI settings are configuration evidence, not capacity guarantees. | Measure bounded local profiles and obtain provider quota evidence through authorized inspection; no production stress. | **P10-E1** | Lead (Codex) / Worker (AGY) |
 
 ---
@@ -136,8 +139,8 @@ Likelihood is a qualitative assessment of the stated consequence under the state
 
 ### 5.1 Confirmed Gaps (Action Required in Phase 10)
 1. **`bin/deploy.sh` missing `documents:bootstrap --all`:** Confirmed by source inspection. Requires script update or verified canonical wrapper (Package P10-D1).
-2. **Missing isolated restore rehearsal:** Confirmed by carried handoff notes. Readiness gate for customer launch (Package P10-D1).
-3. **Settings Hub "Coming Soon" card copy:** Confirmed by visual inspection of `settings-index.blade.php` (Package P10-C1).
+2. **Missing isolated restore rehearsal:** Historical upgrade and current disaster recovery remain unverified; decryption checks do not satisfy either. Confirmed by carried handoff notes. Readiness gate for customer launch (Package P10-D1).
+3. **Settings hub cards:** Source confirms both Print/PDF and Sharing/Links future-phase cards in `settings-index.blade.php`. C1 must verify truthful copy/navigation against shipped capabilities; retain real future work, rather than unconditionally delete either card.
 
 ### 5.2 Audit Hypotheses (Must Be Tested via Disposable MariaDB Before Any Code Modification)
 1. **Concurrent posting race hypothesis (RSK-08):** Existing code uses database transactions and request keys; whether an altered payload with the same key fails cleanly under high concurrency must be validated by test before modifying `AccountingPostingService.php`.
@@ -148,7 +151,7 @@ Likelihood is a qualitative assessment of the stated consequence under the state
 
 Observed source/UI gaps are RSK-03 and RSK-10; neither proves deployed financial failure. RSK-01/02/12 are unfulfilled P1 readiness evidence, not confirmed data loss or authentication exploits. RSK-04/05/07/08/09/13 require targeted measurement or negative testing. RSK-06 is a fixture limitation, and RSK-11 is an inherent public-media property with an already implemented disclosure to verify. All outcomes must be reclassified from evidence before remediation.
 
-Run D1 restore/off-host/key feasibility and A1 account recovery first, alongside read-only A2/A5 review. Preserve current protections; prove hypotheses before changing code. C1/C2 usability/accessibility and E1 capacity measurements follow bounded route/workload lanes. Feature requests such as a different frontend, an alternative ledger/backend, public APIs, AI or native/offline mobile do not count as observed Phase 10 defects and are excluded or deferred to Phase 11–13. Cosmetic work does not outrank the P1 readiness gates.
+Keep three P1 readiness issues prominent: **verified isolated restoration**, **working approved password/account recovery**, and **independent off-host backup/key recovery**. No operational proof is claimed. After implementation and operational authorization, run D1 restore/off-host/key feasibility and A1 account recovery first, alongside read-only A2/A5 review. Preserve current protections; prove hypotheses before changing code. C1/C2 usability/accessibility and E1 capacity measurements follow bounded route/workload lanes. Feature requests such as a different frontend, an alternative ledger/backend, public APIs, AI or native/offline mobile do not count as observed Phase 10 defects and are excluded or deferred to Phase 11–13. Cosmetic work does not outrank the P1 readiness gates.
 
 ---
 
@@ -156,7 +159,7 @@ Run D1 restore/off-host/key feasibility and A1 account recovery first, alongside
 
 Phase 10 implementation and release activities must **immediately stop and fail closed** if any of the following occur:
 
-1. **Git / Tree Drift:** Unexpected branch/HEAD drift from the exact per-run baseline or an unreconciled advance of observed `origin/main` commit (`8d8428261cd2a10690ab77a5c7271e46b5ff5217`) or dirty untracked production checkout cannot be preserved.
+1. **Git / Tree Drift:** Unexpected branch/HEAD drift from the exact per-run baseline or an unreconciled advance of current `origin/main` commit (`3e9ebf812a463db9d3f18aaf07b10431c63e84f5`) or dirty untracked production checkout cannot be preserved.
 2. **Prerequisite Invalidation:** Phase 9 deployment or pre-release backup is altered, invalidated, or missing.
 3. **Unapproved Production Mutation:** Any attempt to run write operations, create test users, or post synthetic transactions on live production without explicit Owner authorization.
 4. **Destructive Migration:** Any destructive migration, edit of an already-applied migration, or unapproved data rewrite. Reviewed additive forward migrations are permitted during authorized implementation. Persistent resets and production reverse migrations remain prohibited.
@@ -170,19 +173,19 @@ Phase 10 implementation and release activities must **immediately stop and fail 
 
 ```text
 ================================================================================
-PHASE 10 P10-0 GATE STATUS: DISCOVERY / BASELINE ACCEPTED
+PHASE 10 P10-0: CODEX DISCOVERY COMPLETE; ARCHITECT ACCEPTANCE PENDING
 ================================================================================
 Source Baseline:      47bd392ff4e2adb268805bfd7339805243c677c1 (docs/phase9-production-acceptance)
-Remote Target:        8d8428261cd2a10690ab77a5c7271e46b5ff5217 (origin/main)
+Current Main:         3e9ebf812a463db9d3f18aaf07b10431c63e84f5 (PR #19 merged)
 Phase 9 Prerequisite: CLOSED (Independently Production Accepted 2026-10-10 07:31:38 UTC)
-Live Freshness:       BOUNDED CODEX REFRESH PASSED 2026-10-10 08:24:31 UTC
+Historical Live Proof: BOUNDED CODEX REFRESH PASSED 2026-10-10 08:24:31 UTC
 Package Status:       PREPARED, NOT DISPATCHED FOR IMPLEMENTATION
 Implementation Gate:  NOT AUTHORIZED (Awaits Explicit Product Owner Instruction)
 Customer Readiness:   NOT CLAIMED (Pending Phase 10 Hardening & Verification)
 ================================================================================
 ```
 
-## Fresh P10-0 independent production verification — 2026-10-10 08:24:31 UTC
+## Historical Codex P10-0 production verification — 2026-10-10 08:24:31 UTC
 
 Codex performed a bounded read-only refresh after the AGY local drafts. This section supersedes draft statements that live freshness was pending. No deployment, migrations, bootstrap, financial transaction, catalog/share issuance, role change or mail send occurred.
 
@@ -201,9 +204,9 @@ Codex performed a bounded read-only refresh after the AGY local drafts. This sec
 
 Private source evidence: `.ai/delegations/phase10-p0/fresh-live/summary.json`, `shell.txt`, `before-db.json`, `after-db.json`, `resources.json`, `ar-en-render.json`, `http.json` and `hash-verification.json`. No raw financial rows, credentials, keys or session payloads belong in published documentation.
 
-Fresh web-browser screenshots/keyboard/mobile interactions and actual populated PDFs were NOT RUN in P10-0. Phase 9 browser/PDF acceptance is carried evidence; new bilingual checks above are deployed HTTP-kernel renders, not browser automation. Isolated restore, off-host/key recovery, delivery, provider scheduling and actual CPU/process/IO measurements remain triaged A/D/E work. These do not become PASS merely because the baseline is accepted.
+Fresh web-browser screenshots/keyboard/mobile interactions and actual populated PDFs were NOT RUN in P10-0. Phase 9 browser/PDF acceptance is carried evidence; new bilingual checks above are deployed HTTP-kernel renders, not browser automation. Isolated restore, off-host/key recovery, delivery, provider scheduling and actual CPU/process/IO measurements remain triaged A/D/E work. These do not become PASS because Codex completed discovery; independent architect acceptance remains pending.
 
-**P10-0 discovery/baseline gate: ACCEPTED for planning and package preparation. Phase 10 runtime implementation: NOT AUTHORIZED.**
+**Codex discovery/internal baseline review complete; independent architect P10-0 acceptance PENDING. Runtime implementation NOT AUTHORIZED; production hardening incomplete and customer readiness NOT YET ESTABLISHED.**
 
 ## P10-0 discovery handoff (historical, before publication)
 
@@ -217,8 +220,12 @@ Fresh web-browser screenshots/keyboard/mobile interactions and actual populated 
 - AGY produced and corrected planning drafts; Codex independently reviewed source/evidence, rejected incorrect claims, applied bounded final documentation corrections and executed fresh read-only checks. Worker report is not acceptance.
 - Production access: **YES**, bounded read-only P10-0 verification through the established alias and HTTPS. Merge/deployment/production data changes: **NO**, apart from ordinary cache/session metadata from public reads. No mail, test users, financial records, share issuance or catalog publication.
 - Open release-readiness requirements: isolated restore, off-host/key recovery, approved password recovery delivery; actual quotas and broader security/UX/economic acceptance remain planned. No confirmed P0 vulnerability or economic discrepancy is asserted by this discovery.
-- Next gate: **explicit Phase 10 runtime implementation authorization**. Then fetch/reconcile main, instantiate exact linked-worktree/file ownership per package, dispatch bounded AGY work and independently review. Merge and production release require separate Owner authority.
+- Discovery-time next gate was runtime authorization; final correction requires **independent architect P10-0 contract acceptance first**, then separate explicit Owner runtime implementation authorization. Only then fetch/reconcile main, instantiate exact linked-worktree/file ownership per package, dispatch bounded AGY work and independently review. Merge and production release require separate Owner authority.
 
 ## Documentation publication scope
 
-This publication is documentation only, based on discovery source commit `47bd392ff4e2adb268805bfd7339805243c677c1` and production/main commit `8d8428261cd2a10690ab77a5c7271e46b5ff5217`. The publication branch preserves the Phase 9 documentation commit and ancestry. Only the four P10-0 planning documents are added by the new commit; its PR against main also carries the four unchanged Phase 9 documentation changes from the still-open acceptance PR. The original proposed specification and all Owner artifacts remain untouched. No runtime, migration, test or lockfile changes, production probes, broad QA, merge or deployment are part of publication. Implementation packages remain **PREPARED, NOT DISPATCHED** pending explicit authorization.
+PR #19 is merged at current main `3e9ebf812a463db9d3f18aaf07b10431c63e84f5` (tree `6e4f98739ace0c0890847f33f6bad0de1a4e84e6`). Its tree equals preserved Phase 9 documentation commit `47bd392ff4e2adb268805bfd7339805243c677c1`. Phase 9 production runtime remains the accepted historical release `8d8428261cd2a10690ab77a5c7271e46b5ff5217`; this correction performs no production refresh. PR #20 branch `docs/phase10-p0-contract` preserves `47bd392… → e20c1ea… → documentation correction` by a normal new commit, with no branch reconstruction or history rewrite. A main-to-branch merge is unnecessary because both the effective and merge-base differences already contain exactly the four intended P10-0 documents and the Phase 9 documentation trees are equal.
+
+Only these four P10-0 planning documents are publication files. The protected Owner original, roadmaps, supplied PDFs, existing browser artifacts and ignored evidence remain unchanged/excluded. The accepted Phase 9 production record is untouched. No runtime, test, migration, dependency, lockfile or deployment-script edits; no CI, application tests, browser runs, SMTP probes, backup/key retrieval/extraction, schema operations, production access, merge or deployment.
+
+Codex discovery/internal review: **COMPLETE**. Independent architect acceptance: **PENDING final correction review**. Runtime packages: **PREPARED, NOT DISPATCHED**. Phase 10 tests: **NOT RUN**. Production hardening: **INCOMPLETE**. Customer readiness: **NOT YET ESTABLISHED**.

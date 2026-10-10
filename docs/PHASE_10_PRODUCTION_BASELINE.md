@@ -2,12 +2,14 @@
 ## Sanitized Carried Production Baseline Metadata
 
 **Document Identity:** `docs/PHASE_10_PRODUCTION_BASELINE.md`\
-**Phase State:** **CARRIED RELEASE RECORD WITH FRESH P10-0 VERIFICATION APPENDIX**\
+**Phase State:** **HISTORICAL PHASE 9 / CODEX DISCOVERY EVIDENCE — ARCHITECT ACCEPTANCE PENDING**\
 **Carried Acceptance Date:** 2026-10-10 07:31:38 UTC (10:31:38 Asia/Hebron)\
 **Accepted Production SHA:** `8d8428261cd2a10690ab77a5c7271e46b5ff5217`\
 **Accepted Production Tree:** `6a81c5795790a978eec82fce12b65cae42ddf20f`\
 **Target Host / Domain:** `hostinger-dalel` / `account.palsync.net`\
 **Sanitization Notice:** This document contains **only public metadata, checksums, schema structures, and sanitized configuration values**. All production passwords, database credentials, `APP_KEY` strings, PBKDF2 escrow key bytes, session cookies, bearer tokens, customer/vendor names, and personal identification data are strictly excluded.
+
+Codex discovery/internal review: **COMPLETE**. Independent architect acceptance: **PENDING final correction review**. Runtime packages: **PREPARED, NOT DISPATCHED**. Phase 10 tests: **NOT RUN**. Production hardening: **INCOMPLETE**. Customer readiness: **NOT YET ESTABLISHED**.
 
 ---
 
@@ -95,7 +97,7 @@ Built strictly from exact source `8d8428261cd2a10690ab77a5c7271e46b5ff5217` via 
 
 ## 4. Retained Backups & Recovery Custody References
 
-All production backups captured immediately prior to Phase 9 migration execution remain securely stored on the server under `storage/app/private/deployment-backups/phase9-20261010-070956-8d84282/`:
+At the recorded Phase 9/P10-0 checks, encrypted pre-release backups were retained under `storage/app/private/deployment-backups/phase9-20261010-070956-8d84282/`:
 
 ### 4.1 Phase 9 Pre-Release Backups
 - **Backup Snapshot Timestamp:** Captured at `2026-10-10 07:09:56 UTC` (RPO baseline relates to this snapshot instant).
@@ -161,7 +163,7 @@ Generated from real live Vendor data (zero transactions) without fake data inser
 3. **Restoration Gap:** Backup archives are verified for PBKDF2/AES-256 decryption and archive consistency, but have **not** been imported into a standalone test database (OPS-01 readiness gate remains open).
 4. **Minimal Live Data:** The live production database contains 2 Vendors, 1 Product, and 0 commercial transactions. Populated workflow testing must remain strictly confined to disposable MariaDB test harnesses.
 
-## Fresh P10-0 independent production verification — 2026-10-10 08:24:31 UTC
+## Historical Codex P10-0 production verification — 2026-10-10 08:24:31 UTC
 
 Codex performed a bounded read-only refresh after the AGY local drafts. This section supersedes draft statements that live freshness was pending. No deployment, migrations, bootstrap, financial transaction, catalog/share issuance, role change or mail send occurred.
 
@@ -180,16 +182,36 @@ Codex performed a bounded read-only refresh after the AGY local drafts. This sec
 
 Private source evidence: `.ai/delegations/phase10-p0/fresh-live/summary.json`, `shell.txt`, `before-db.json`, `after-db.json`, `resources.json`, `ar-en-render.json`, `http.json` and `hash-verification.json`. No raw financial rows, credentials, keys or session payloads belong in published documentation.
 
-Fresh web-browser screenshots/keyboard/mobile interactions and actual populated PDFs were NOT RUN in P10-0. Phase 9 browser/PDF acceptance is carried evidence; new bilingual checks above are deployed HTTP-kernel renders, not browser automation. Isolated restore, off-host/key recovery, delivery, provider scheduling and actual CPU/process/IO measurements remain triaged A/D/E work. These do not become PASS merely because the baseline is accepted.
+Fresh web-browser screenshots/keyboard/mobile interactions and actual populated PDFs were NOT RUN in P10-0. Phase 9 browser/PDF acceptance is carried evidence; new bilingual checks above are deployed HTTP-kernel renders, not browser automation. Isolated restore, off-host/key recovery, delivery, provider scheduling and actual CPU/process/IO measurements remain triaged A/D/E work. These do not become PASS because Codex completed discovery; independent architect acceptance remains pending.
 
-**P10-0 discovery/baseline gate: ACCEPTED for planning and package preparation. Phase 10 runtime implementation: NOT AUTHORIZED.**
+**Codex discovery/internal baseline review complete; independent architect P10-0 acceptance PENDING. Runtime implementation NOT AUTHORIZED; production hardening incomplete and customer readiness NOT YET ESTABLISHED.**
 
 ## Recovery boundaries for Phase 10
 
-Server-local escrow establishes possession at the recorded check, not independent disaster recovery. D1 must demonstrate access-controlled off-host ciphertext retention and separately controlled recovery custody for the backup decryption secret and Laravel `APP_KEY`/applicable previous-key history. Do not store keys beside the backup copies, publish values or change production encryption keys during this planning publication. Losing application keys may prevent recovery of encrypted issued documents even when SQL imports successfully.
+### A. Historical upgrade compatibility
 
-Restore must recover compatible code/build, database, private/public files, configuration and required key history together in a nonpublic isolated environment. Verify trusted ciphertext digests before decryption, baseline 80 tables/61 migrations before forward upgrade and target 83/63 afterward, selected content/grant integrity and all six reconciliations. Disable outbound mail and production connections; clean up plaintext, temporary credentials and restored sensitive data according to the approved retention plan. Off-host availability, restore success and real recovery-email delivery remain **NOT VERIFIED**, and cannot be inferred from on-host hashes.
+The pre-Phase 9 recovery point contains **80 tables / 61 migrations** at `96c310f30a07e97ab8e04d5afbf0b2bb805f4317`. A future separately authorized isolated rehearsal must restore matching code/build/files/SQL, verify this prior state, then forward-upgrade to the accepted Phase 9 **83 tables / 63 migrations**, checking content and all six reconciliations at each stage. This proves historical upgrade compatibility only, not current disaster recovery or a daily recovery point.
+
+### B. Current coherent-backup disaster recovery
+
+Independently restore a current coherent backup with compatible exact code/build, SQL, private attachments, public assets, encrypted issuance/grants/revisions, relevant configuration and applicable application-key history. Require encrypted off-host retention that survives loss of the hosting account, independent recovery of backup decryption secrets and Laravel `APP_KEY`/`APP_PREVIOUS_KEYS`, separately controlled custody/access logs and trusted digests. Same-host escrow/on-host hashes do not establish this capability.
+
+D1-B proposes daily completed coherent backups and pre-release/schema/key-change checkpoints, 7 daily/4 weekly/3 monthly retained points, completion/failure/transfer monitoring and >24h age alerts for the latest **off-host recoverable** point. These are proposed policies awaiting authorized adoption/capacity validation, not current hosting facts. Record the adopted cadence, retention, alert ownership and any Owner/architect-approved material change; missing proof remains P1. Measure actual recovery-point gap/age and restore elapsed steps (observed RPO/RTO); ≤24h/≤4h are provisional goals, never claimed from the old checkpoint.
+
+Verify isolated application startup/login, tenant authorization, file/row/content hashes, schema/key/cipher/version compatibility, existing grant expiry/revocation and **Accounting, Inventory, Sales, Payables, Money, Phase 7** reconciliations. At the recorded baseline no issued financial content exists on production; document this limitation, and separately backup/restore owned synthetic encrypted fixtures for application/previous-key decryption. Never fabricate production grants/Customers/transactions, reconstruct missing immutable issuance from live data, or equate fixture proof with actual production-record recovery.
+
+### C. Secret-bearing archive and pre-bootstrap isolation
+
+The accepted Phase 9 release record explicitly says the encrypted state archive contains private production `.env` and application state. It can therefore co-contain DB/provider credentials and application-key values. Separate **backup decryption** key escrow does not prove application keys are absent from the archive. Treat every ciphertext copy and extracted scratch artifact as secret-bearing; retain restricted custody and independently recover application key history. Do not retrieve archives/keys, rotate keys or extract anything during this correction.
+
+Apply [package D1-C](PHASE_10_AUTONOMOUS_IMPLEMENTATION_PACKAGES.md#d1-c-fail-closed-pre-bootstrap-isolation-both-proof-lanes) to both restore lanes: (1) verify trusted encrypted checksum; (2) decrypt/extract only in restricted nonpublic network-isolated scratch using separately authorized offline backup-secret custody; (3) quarantine archived production `.env` and any stale Laravel config caches; (4) generate isolated settings with a newly verified owned disposable host/schema/user; (5) block production DB/network access, SMTP/integrations/jobs/queues/public ingress; (6) prove effective isolated connection identity and blocked alias/egress/ingress **before any Artisan, migration or application startup**; (7) inject only separately authorized temporary application keys/previous-key history through protected custody after the pre-bootstrap gate; (8) verify recovery and securely clean up plaintext, secrets, keys, schemas, credentials, caches and transient processes, or retain only approved quarantined evidence. **Never activate archived production credentials.**
+
+Negative proofs cover production `.env`, stale cached DSN, production host aliases, wrong destination/ownership, SMTP/external/job execution, public ingress, unavailable/wrong keys, corruption/incoherent backup, path escape and missing assets/content. Fail before unsafe work. Decryption/gzip/tar consistency checks are neither historical nor current actual restoration acceptance. Both restore proofs, independent off-host/key recovery and real approved account recovery remain **NOT RUN / NOT VERIFIED**; customer readiness is not established.
 
 ## Documentation publication scope
 
-This publication is documentation only, based on discovery source commit `47bd392ff4e2adb268805bfd7339805243c677c1` and production/main commit `8d8428261cd2a10690ab77a5c7271e46b5ff5217`. The publication branch preserves the Phase 9 documentation commit and ancestry. Only the four P10-0 planning documents are added by the new commit; its PR against main also carries the four unchanged Phase 9 documentation changes from the still-open acceptance PR. The original proposed specification and all Owner artifacts remain untouched. No runtime, migration, test or lockfile changes, production probes, broad QA, merge or deployment are part of publication. Implementation packages remain **PREPARED, NOT DISPATCHED** pending explicit authorization.
+PR #19 is merged at current main `3e9ebf812a463db9d3f18aaf07b10431c63e84f5` (tree `6e4f98739ace0c0890847f33f6bad0de1a4e84e6`). Its tree equals preserved Phase 9 documentation commit `47bd392ff4e2adb268805bfd7339805243c677c1`. Phase 9 production runtime remains the accepted historical release `8d8428261cd2a10690ab77a5c7271e46b5ff5217`; this correction performs no production refresh. PR #20 branch `docs/phase10-p0-contract` preserves `47bd392… → e20c1ea… → documentation correction` by a normal new commit, with no branch reconstruction or history rewrite. A main-to-branch merge is unnecessary because both the effective and merge-base differences already contain exactly the four intended P10-0 documents and the Phase 9 documentation trees are equal.
+
+Only these four P10-0 planning documents are publication files. The protected Owner original, roadmaps, supplied PDFs, existing browser artifacts and ignored evidence remain unchanged/excluded. The accepted Phase 9 production record is untouched. No runtime, test, migration, dependency, lockfile or deployment-script edits; no CI, application tests, browser runs, SMTP probes, backup/key retrieval/extraction, schema operations, production access, merge or deployment.
+
+Codex discovery/internal review: **COMPLETE**. Independent architect acceptance: **PENDING final correction review**. Runtime packages: **PREPARED, NOT DISPATCHED**. Phase 10 tests: **NOT RUN**. Production hardening: **INCOMPLETE**. Customer readiness: **NOT YET ESTABLISHED**.
