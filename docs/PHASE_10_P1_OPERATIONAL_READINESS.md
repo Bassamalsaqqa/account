@@ -1,0 +1,115 @@
+# Phase 10 P1 operational readiness — Stage 0
+
+Status: **STAGE 0 COMPLETE; THREE P1 PROOFS BLOCKED EXTERNAL AUTHORIZATION. Customer readiness NOT YET ESTABLISHED.** This is a new operational record, not a revision of accepted historical evidence. Independent architect acceptance of PR #21 is pending.
+
+## Exact identities and scope
+
+| Identity | Verified value |
+|---|---|
+| Current origin/main | c74c9a4e0b4135055dbb8ed7d3e3715d2ddba24f; tree 24ba8457fccd1eb7af236571d197ec67abf895c5 |
+| Source candidate / parent of this record | 1f1fa5874eaffe749d901ee14a21850e327c9687; tree cd3bef3d321acfb7093ff4a5d3b8831d28e91fcd; [draft PR #21](https://github.com/Bassamalsaqqa/account/pull/21), unmerged |
+| Production, fresh read-only SSH at 2026-10-10T20:24:56Z | 8d8428261cd2a10690ab77a5c7271e46b5ff5217; tree 6a81c5795790a978eec82fce12b65cae42ddf20f |
+| Stage 0 branch | ops/phase10-p1-readiness; isolated linked worktree based on exact candidate |
+| Git identities | Local Bassam Alsaqqa; authenticated GitHub Bassamalsaqqa; origin Bassamalsaqqa/account |
+
+Controlling records: [AGENTS](../AGENTS.md), [source acceptance](PHASE_10_SOURCE_ACCEPTANCE_MATRIX.md), [architect handoff](PHASE_10_ARCHITECT_HANDOFF.md), [historical baseline](PHASE_10_PRODUCTION_BASELINE.md), [risk register](PHASE_10_P0_BASELINE_RISK_REGISTER.md), [restore runbook](PHASE_10_BACKUP_RESTORE_RUNBOOK.md), [monitoring](PHASE_10_OPERATIONAL_MONITORING_RUNBOOK.md), [issuance keys](PHASE_9_ISSUANCE_KEY_RECOVERY.md). Read alongside the two bounded preparation packets: [backup/isolation](PHASE_10_P1_BACKUP_ISOLATION_PREPARATION.md) and [account recovery](PHASE_10_P1_ACCOUNT_RECOVERY_PREPARATION.md). This record controls fresh Stage 0 observations; worker source assessments do not refresh production evidence.
+
+The Owner directive permits read-only inventory using existing access. Codex used the existing SSH alias and already authenticated Hostinger browser session. No application bootstrap, Artisan, production DB connection/query/export, archive-content read, ciphertext copy/download/decryption, .env/key/credential retrieval, mail send, configuration change, DNS change, CI, merge or deployment occurred. Browser backup selectors were read; Restore, Download, Create backup and mail setup controls were not invoked. Ordinary authentication/provider read-access audit records are possible; no application mutations were requested.
+
+## Fresh operational inventory
+
+Hostinger panel observations were made 2026-10-10 approximately 20:25–20:31 UTC. Panel backup times below have **unknown displayed timezone** and must not be treated as UTC source snapshot timestamps. These are provider metadata, not restoration or transaction-coherence proof.
+
+| Area | Fresh observation | Evidence limit / disposition |
+|---|---|---|
+| Hosting plan | Business Web Hosting; palsync.net hosting container serving account.palsync.net | Shared account resources; not dedicated Accounting quotas |
+| Declared plan limits | 200 GB disk, 3072 MB RAM, 2 CPU cores, 600000 inodes, 100 websites, 120 max processes, 60 PHP workers; bandwidth displayed Unlimited | Panel-declared limits, not measured application concurrency, CPU/IO/process guarantees or load-test results |
+| Dashboard usage | 5.38 GB / 200 GB, 174.89K / 600K inodes, 11 / 100 websites; dashboard last-24h indicators CPU9%, memory37MB | Approximate shared-plan UI readings; no capacity certification |
+| Backup schedule | Automated Daily; next date 2026-10-11; latest displayed 2026-10-10 09:39. Manual creation available once per24h | No manual generation or recurring-job change performed |
+| Available file recovery points | 21 selectable points: daily dates Oct10–Sep25 inclusive, then Sep20, Sep13, Sep06, Aug30, Aug23 | Observed point listing only; contractual future retention and complete successful history NOT VERIFIED |
+| SQL inventory | Accounting DB appears in database-backup selector at latest displayed point; separate Restore database / Download database controls | No SQL inspected/imported; selector presence does not prove content, consistency or restore success |
+| Application DB metadata | Panel maps Accounting DB to account.palsync.net and displays15MB | No database operation; 83 tables/63 migrations and six healthy reconciliations are CARRIED from acceptance, not rerun |
+| Provider file exclusions | Panel warns that some backup archives/cache/database exports are excluded | Exact coverage of custom private app root and encrypted deployment archives NOT VERIFIED. [Provider guidance](https://www.hostinger.com/support/which-files-are-excluded-from-hostinger-backups/) describes WordPress-plugin exclusions; it does not certify this Laravel layout. The panel warning and generic guide do not prove these Accounting files are absent or present |
+| Physical provider backup location | Plan page displays USA (Boston), server USA AZ | Storage remains controlled through the same Hostinger account; geography does not establish independent off-host custody |
+| Cron inventory | Panel shows2 command rows; redacted classification found one schedule:run/work reference and no Accounting/backup keyword matches | No commands/parameters retrieved into evidence and no edits. This limited classifier does not prove the jobs are unrelated or that no other backup scheduler exists |
+| Email subscription panel | Emails page offers Claim your free email / Start free and paid plans; no configured mailbox list shown | No service claimed, mailbox created or purchase. Another external provider remains possible; Hostinger Email is NOT established as authoritative |
+| Public DNS for palsync.net | OS resolver returned SOA-only replies for MX and TXT; _dmarc.palsync.net returned name-not-found | No MX/TXT answers observed through this resolver. Actual chosen sender domain/provider/selector unknown; no DKIM selector guessed, no sender-policy certification or DNS changes |
+
+Standalone metadata-only PHP over SSH completed with exit0 at **2026-10-10T20:27:08Z**, without Laravel/bootstrap, DB or network calls from the script. Counts are filesystem metadata only, exclude symlink traversal, and do not inspect file contents or expose tenant filenames.
+
+| Root relative to private application | Files / bytes | Directory mode / observation |
+|---|---|---|
+| storage/app/private | 17 / 1133449 |0755; includes backups and escrow, not17 business attachments |
+| storage/app/public |1 /14 |0755 |
+| public/build |16 /1037289 |0755 |
+| storage/app/private/deployment-backups |15 /1133370 |0700 |
+| storage/app/private/deployment-key-escrow |1 /65 |0700; secret contents not read; size does not prove required key coverage |
+
+Historical ciphertext metadata matches retained sizes: SQL28880 bytes and state351040 bytes, each0600, filesystem modification time2026-10-10T07:10:08Z. **Hashes were not recomputed**, ciphertext was not read/copied and keys were not retrieved. The carried source capture is07:09:56Z, not the filesystem mtime. Configuration cache exists; composer.lock and public build manifest exist; public storage link exists; public-root .env absent at filesystem check. This is not an HTTP exposure test or archive coverage certification.
+
+Application roots remain the carried layout: private /home/u556956644/domains/palsync.net/accounting; public /home/u556956644/domains/palsync.net/public_html/account. Matching SQL, private files, public media, code/build, configuration dependencies and key history must all appear in the current recovery manifest. SQL and file backups with the same UI label do not alone prove cross-component coherence.
+
+## Source and recovery assessment
+
+The current coherent recovery point has **not** been created or identified as complete. Existing historical checkpoint is the pre-Phase9 80-table/61-migration snapshot at96c310f30a07e97ab8e04d5afbf0b2bb805f4317, requiring independent historical upgrade to accepted83/63. It cannot substitute for a current coherent backup of deployed8d842826. Both lanes remain NOT RUN. Production acceptance records no issued shares/catalogs or commercial transactions: restore actual retained content faithfully and report absent coverage; use separately owned synthetic encrypted fixtures for key-history negative proofs without inventing production data.
+
+Application encryption depends on APP_KEY and every required APP_PREVIOUS_KEYS version, including issued content/tokens, catalog tokens and Fortify2FA secrets/recovery codes. [Key retention policy](PHASE_9_ISSUANCE_KEY_RECOVERY.md) requires historical key custody. The encrypted state archive contains production .env and is secret-bearing. Same-host backup-secret escrow does not prove independent application-key retention. No actual key-history inventory was retrieved.
+
+Mail source uses Fortify with the actual Volt forgot/reset handlers, the users password broker,60-minute expiry and60-second broker throttle. Login and2FA rate limiters are separate. Source defaults MAIL_MAILER=log and SMTP loopback are not effective production settings. The historical08:24:31Z baseline recorded SMTP selected and explicit SMTP host absent; this was **not refreshed by reading live configuration**. Provider, effective cache/DSN settings, sender, TLS, domain alignment and real delivery remain NOT VERIFIED. Conditional log-transport risk is not a confirmed production incident. Password token storage is framework hasher->make/check; APP_KEY-based HMAC generates token randomness, not the stored verification hash. No accounting, tenancy, permissions or financial-writer changes are needed for Stage0.
+
+Daily coherent plus critical checkpoints and7daily/4weekly/3monthly off-host retention remain **proposed for Owner adoption**. Monitoring failure/incomplete transfer and age>24h warning/>48h critical must measure latest complete independently recoverable source snapshot, not upload time. Current provider daily scheduling is observed; independent transfer, complete manifests, adopted retention, alert routing and key recovery are NOT VERIFIED. Actual RPO/RTO cannot be calculated from present metadata: targets24h/4h remain provisional.
+
+## Isolation assessment and safeguards
+
+Only existing capabilities were inspected. WSL lists docker-desktop; this is not a provisioned safe recovery environment and no Docker/WSL runtime was started. Get-VM and BitLocker inventory returned access denied under the current OS account. Therefore encrypted scratch storage, VM ownership, effective network isolation and grants are **NOT VERIFIED**; no elevation, VM installation, firewall modification or large stack was performed.
+
+Proposed least-complex recovery target is an Owner-approved independent nonpublic Linux VM or existing suitably isolated host with an encrypted ephemeral volume, private operator access, MariaDB on numeric loopback and no internet/public ingress during either restore. Two separate newly owned target schemas/users and scratch roots are required for historical/current lanes; the existing Windows scratch DB is not adopted. Provisioning destination and storage are awaiting selection/approval.
+
+Before any Artisan/application startup: trusted ciphertext checksum; restricted encrypted scratch; archive member traversal/link/special-file rejection; quarantine archived .env and stale Laravel caches; freshly selected isolated configuration and verified process overrides; independently verify loopback DB instance/schema/user/grants/ownership without Laravel; block production destinations, SMTP, integrations, workers/jobs/scheduler and public ingress at network layer; prove both denial and permitted loopback controls; inject separately approved keys through protected custody only after the independent safety gate. Inspector exit2/bootstrap_authorized=false is **never permission to bootstrap**. If target identity or custody is ambiguous, halt/quarantine; do not try corrective deletion against an unknown connection.
+
+Four earlier interrupted schemas remain preserved in the stopped task-owned scratch server: c6326e5222dd,8c75d2d607ba,ad5d7e9c7204,c22e67cad14a (accounting_p8_tmp_ prefix). No server restart, schema adoption or drop occurred. Cleanup authority applies only to new independently verified owned targets. Retain authorized ciphertext and sanitized evidence; revoke new temporary credentials, terminate transient processes and crypto-erase verified ephemeral storage. Filesystem overwrite/unlink on SSD is not certified physical erasure.
+
+## Actual checks and worker review
+
+| Check | Actual result |
+|---|---|
+| AGY availability first | Authenticated models listing and headless AGY_HEADLESS_READY response; conversation351352d1-c844-4c08-a826-b0552d575820,3.604s. Usable quota demonstrated; remaining percentage not exposed |
+| Automatic delegation | Two isolated source/document tasks completed20:28:35Z/20:28:18Z, no permission bypass. Codex Collect ready_for_review, zero anomalies; expected root checkout differs from explicit candidate baseline, not unexpected drift |
+| Independent review | Codex inspected source/framework/routes/safeguards, returned finite corrections to both exact AGY conversations (completed20:34:21Z/20:34:04Z), corrected remaining source/custody claims and validated final blobs. Controller Collect again zero anomalies; Accept recorded for both final document lanes after review. Worker/internal acceptance does not grant operational or architect acceptance |
+| Fresh offline safety harness | php tests/Deployment/recovery-preflight.php:21 executed cases/50 assertions,0 failures,1 symlink case NOT RUN on Windows; exit0 suite, valid inspector invocations exit2/refuse bootstrap; synthetic scratch cleanup completed |
+| Historical local identity proof |11 tests/88 assertions PASS is CARRIED P10-A1 evidence; not rerun now. No broad suite, browser regression, DB QA or SMTP test repeated |
+| Private artifacts |14 protected Owner/private SHA-256 values independently checked unchanged; original Phase10v1.0 SHA285f41301b41d7895e1624268289676aab63d75120e67bf7dba74a2640d6e347 remains untracked/unpublished |
+
+The first metadata script returned its JSON then encountered a trailing PowerShell CR transport error (exit1). Raw evidence is preserved; the corrected LF-only transport rerun completed exit0 and is the fresh observation above. Neither run bootstrapped the application or touched database contents. OS permission failures and the symlink NOT RUN are retained as limitations, not PASS.
+
+Private ignored Stage0 artifacts are in this worktree's .ai/ (availability result, bounded inventory scripts/metadata, original worker drafts, validation and review records). AGY attempts/worktrees remain under the existing ignored .ai/phase10-worker-state and .ai/worktrees/phase10-workers roots. They contain no retrieved production archives, SQL, keys, SMTP secrets or reset tokens. Prior private evidence/worktrees are preserved. Only the three sanitized Markdown documents in this packet may be committed. Final64 local links/source anchors resolved, secret/nonportable-pattern and whitespace checks passed; exact three-file scope/ancestry and unchanged PR21 baseline checked. This docs-only record is stacked against phase/10-production-hardening so its review diff excludes the earlier implementation. No acceptance record is rewritten.
+
+## One consolidated operational authorization gate
+
+**Not yet approved or executed.** The Owner directive expressly requires exact approval before live backup/key handling, restoration or real mail. An explicit scoped reply is sufficient; no signature ceremony is required. The following single packet combines all inputs; secret values, recipient/account private identifiers and access grants belong in protected custody, never a GitHub comment or shared evidence.
+
+| Scope field | Concrete proposed boundary and missing input |
+|---|---|
+| Operator | Codex supervised operational execution and independent QA. AGY limited to synthetic/source/redacted tooling; no live archives, plaintext, keys, credentials or mailbox access |
+| Source A | Read/copy only the retained pre-Phase9 SQL/state ciphertext under the exact historical checkpoint; carried trusted hashes in restore runbook must be independently confirmed. Recover matching96c310 code/build before forward8d842826 path; do not operate on live DB |
+| Source B | Current complete coherent deployed8d842826 recovery point: SQL, matching code/build, private/public files, issued encrypted records, relevant configuration and every required key version. **Missing:** approved existing complete point or exact approved capture method/window and source snapshot identity. New production DB export is outside Stage0 and needs explicit scope; no maintenance, locks, overwrite or destructive operation permitted. If non-disruptive coherent capture cannot be proven, stop and return the material limitation |
+| Off-host destination | **Missing:** exact independent provider/account and restricted encrypted bucket/folder path, access owner and retention authority. Propose existing independent encrypted storage with verified integrity, versioned retention and deletion protection where available; no purchase/provision/transfer until named and approved |
+| Secrets custodian | Product Owner or named independent custodian. **Missing:** exact approved vault/device/recovery method, separate access owner and temporary injection authorization for backup decryption secret plus all relevant Laravel key versions. Prove recovery with Hostinger access unavailable; no key values in logs, arguments or reports |
+| Recovery destinations | **Missing:** exact approved host/VM, encrypted-volume identifiers, private operator access and two isolated scratch roots. Create only new randomly named accounting_p10_restore_<12hex> schemas and p10_restore_<12hex> schema-restricted users after actual destination/ownership/grants verification. No public ingress or production DB route |
+| Mail provider/sender/recipient | **Missing:** approved actual provider/transport/TLS endpoint, authorized sender/domain already configured, exact operator-controlled real recipient and isolated account identity, private credential custody. No existing Owner/customer account or production user creation/change |
+| Mail execution | One real delivered reset plus actual Livewire single-use completion/replay on a separately approved isolated synthetic runtime; deterministic expiry/throttle/account-binding negatives use fake/array transport. Enable only approved provider egress after both restore proofs, with restored production keys/plaintext destroyed or separately quarantined and excluded from mail runtime. Use reachable private reset origin; never publish URL/token. Isolated delivery alone does not prove Hostinger transport: separately approve a narrow Hostinger TLS/provider transport check with no production DB/app bootstrap and precisely bounded sender/recipient/temporary configuration, or leave hosting delivery NOT VERIFIED. No production .env change or release |
+| Side effects | Approved ciphertext read/copy/transfer; optionally explicitly approved non-disruptive current capture; independent target provisioning/import/forward migrations; new target-only users/sessions/reset rows; one approved external message/provider audit entries; temporary narrowly allowlisted mail egress. No production transactions/password changes, deployment, cron, DNS, maintenance or secret rotation |
+| Cleanup/rollback | Stop on ambiguity/leak/corruption. Close mail egress and return isolated transport to array; revoke only new exact verified target users; drop only new proof-owned schemas; terminate transient processes; destroy plaintext/temporary keys through verified encrypted-volume disposal; retain approved ciphertext and sanitized logs with owner-defined expiry. Preserve original backups and all four old schemas. **Missing:** approved retention/disposal window and custodian signoff procedure |
+| Adoption and alerting | Approve or amend daily+critical checkpoint cadence,7/4/3 retention, age/failure/incomplete-transfer routing and named alert owner. Recurring production jobs are NOT activated by this packet; any activation requires separately exact approved job/change scope |
+
+Approval must identify the missing destination/custodian/target/provider/sender/recipient details and affirm permitted source handling/capture and cleanup. Generic proceed does not supply these exact scopes. Do not send secrets in a reply; supply them only through the approved protected channel. DNS changes, production backup/job/mail configuration changes, merges and deployments remain excluded and require their own explicit change authorization.
+
+## Gate disposition and handback
+
+| Gate | State | Minimum next proof |
+|---|---|---|
+| RSK-12 off-host/key recovery | BLOCKED EXTERNAL AUTHORIZATION / NOT VERIFIED | Named independent ciphertext destination and separate key custody; independently retrieve complete point and keys without primary hosting account access |
+| RSK-01 isolated DR | BLOCKED EXTERNAL AUTHORIZATION / NOT RUN | Both historical80/61→83/63 and current coherent restoration; startup/login, preserved content, nine AR/EN financial outputs/PDF/reports/files/encrypted records/tenant controls, six healthy reconciliations, negatives, observed RPO/RTO and cleanup |
+| RSK-02 account recovery | BLOCKED EXTERNAL AUTHORIZATION / NOT VERIFIED | Approved real provider/sender/recipient; delivered message, actual single-use account recovery and bounded negatives; distinguish isolated proof from hosting proof |
+
+Stage0 preparation is complete. Continue Stages1–3 only after this consolidated exact scope is approved and destination isolation is independently verified. No P1 operational PASS, customer-launch readiness, PR merge, application release or deployment is claimed.
