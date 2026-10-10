@@ -98,7 +98,7 @@
                 </a>
             </div>
 
-            @if($sidebarCompany && app(\App\Application\Reporting\Presentation\ReportRegistry::class)->visible($sidebarCompany) !== [])
+            @if($sidebarCompany && app(\App\Application\Reporting\Presentation\ReportRegistry::class)->hasVisible($sidebarCompany))
             <a href="{{ route('reports.index') }}" class="flex items-center gap-2.5 h-[39px] px-3 rounded-control text-sm font-semibold text-text-secondary hover:bg-surface-soft {{ request()->routeIs('reports.*') ? 'bg-primary-50 text-primary' : '' }}"><x-icon name="chart" class="w-4.5 h-4.5" /><span>{{ __('reports.title') }}</span></a>
             @endif
 
@@ -204,9 +204,9 @@
                             <span>{{ __('app.nav_products') }}</span>
                         </div>
                     </a>
-                    @can('catalogs.view')
+                    @if(auth()->user()->can('catalogs.view') && auth()->user()->hasAnyPermission(['inventory.stock.view','inventory.product.manage']))
                     <a href="{{ route('catalogs.index') }}" class="flex min-h-11 items-center gap-3 px-3 text-sm rounded-control hover:bg-primary-50 text-text-secondary">{{ __('catalogs.catalogs') }}</a>
-                    @endcan
+                    @endif
                     @if(auth()->user()->can('inventory.barcode_labels.print') && auth()->user()->hasAnyPermission(['inventory.stock.view','inventory.product.manage']))
                     <a href="{{ route('labels.index') }}" class="flex min-h-11 items-center gap-3 px-3 text-sm rounded-control hover:bg-primary-50 text-text-secondary">{{ __('labels.title') }}</a>
                     @endif
@@ -330,11 +330,11 @@
                     <x-icon name="search" class="w-4.5 h-4.5 text-text-muted shrink-0" />
                     <input type="text"
                            id="globalSearchInput"
-                           placeholder="{{ __('app.search_placeholder') }}"
+                           disabled aria-disabled="true"
+                           aria-label="{{ __('app.search_future') }}"
+                           title="{{ __('app.search_future') }}"
+                           placeholder="{{ __('app.search_future') }}"
                            class="w-full bg-transparent border-0 text-xs px-2.5 text-text-primary placeholder:text-text-muted focus:ring-0 focus:outline-none" />
-                    <kbd class="hidden sm:inline-block text-[10px] text-text-muted bg-white border border-border rounded px-1.5 py-0.5 font-mono shadow-2xs shrink-0">
-                        {{ __('app.search_kbd') }}
-                    </kbd>
                 </div>
             </div>
         </div>

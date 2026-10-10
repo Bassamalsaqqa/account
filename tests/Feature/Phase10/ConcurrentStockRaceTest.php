@@ -42,6 +42,11 @@ use Tests\TestCase;
 /** Independent connections require committed fixtures, so intentionally no RefreshDatabase. */
 class ConcurrentStockRaceTest extends TestCase
 {
+    private ?DisposableMariaDbSchema $fixtureSchema = null;
+
+    /** @var array<string,int> */
+    private array $primaryCounts = [];
+
     private Company $company;
 
     private Company $controlCompany;
@@ -63,7 +68,13 @@ class ConcurrentStockRaceTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        DisposableMariaDbSchema::assertPrimarySchema(DB::connection()->getDatabaseName());
+        $primary = DB::connection()->getDatabaseName();
+        DisposableMariaDbSchema::assertPrimarySchema($primary);
+        foreach (['companies', 'users', 'posting_batches', 'stock_movements'] as $table) {
+            $this->primaryCounts[$table] = DB::table($table)->count();
+        }
+        $this->fixtureSchema = DisposableMariaDbSchema::createFromSource($primary);
+        $this->fixtureSchema->switchLaravelConnection();
         app(CompanyContext::class)->clear();
         $this->owner = User::factory()->create();
         $creator = app(CreateCompanyAction::class);
@@ -97,6 +108,19 @@ class ConcurrentStockRaceTest extends TestCase
             ['quantity' => '3', 'lot_number' => 'LATE', 'expiry_date' => '2027-02-01'],
         ]), $this->owner);
         $this->assertSame(0, DB::transactionLevel());
+    }
+
+    protected function tearDown(): void
+    {
+        try {
+            $this->fixtureSchema?->restoreLaravelConnection();
+            $this->fixtureSchema?->drop();
+            foreach ($this->primaryCounts as $table => $count) {
+                $this->assertSame($count, DB::table($table)->count(), 'Committed race fixtures must not leak into the primary test schema.');
+            }
+        } finally {
+            parent::tearDown();
+        }
     }
 
     public function test_competing_sales_cannot_oversell_and_loser_rolls_back_sequence_and_all_business_legs(): void
@@ -401,6 +425,7 @@ class ConcurrentStockRaceTest extends TestCase
         }
         // Credentials stay in process environment, never payload files or reported results.
         $environment['PHASE8_TEST_DB_PASSWORD'] = getenv('PHASE8_TEST_DB_PASSWORD');
+        $environment = array_replace($environment, $this->fixtureSchema->environment());
         $locked = false;
         try {
             DB::beginTransaction();

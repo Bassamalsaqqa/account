@@ -24,11 +24,11 @@
 
     <!-- Quick Barcode Scanner Bar -->
     <div class="bg-white p-4 rounded-card border border-border shadow-xs">
-        <label class="block text-xs font-bold text-text-primary mb-1">
+        <label for="invoice-barcodeSearch" class="block text-xs font-bold text-text-primary mb-1">
             ⚡ {{ __('sales.scan_or_search_product') }}
         </label>
         <div class="relative max-w-md">
-            <input type="text"
+            <input id="invoice-barcodeSearch" type="text"
                    wire:model="barcodeSearch"
                    wire:keydown.enter.prevent="scanBarcode"
                    placeholder="{{ __('sales.barcode') }} / SKU + Enter..."
@@ -45,10 +45,10 @@
         <div class="grid grid-cols-1 md:grid-cols-4 gap-4 pb-4 border-b border-border">
             <!-- Customer -->
             <div class="md:col-span-2">
-                <label class="block text-xs font-bold text-text-primary mb-1">
+                <label for="invoice-customer-id" class="block text-xs font-bold text-text-primary mb-1">
                     {{ __('sales.customer') }} <span class="text-danger">*</span>
                 </label>
-                <select wire:model.live="customer_id"
+                <select id="invoice-customer-id" @error('customer_id') aria-invalid="true" aria-describedby="invoice-customer-id-error" @enderror wire:model.live="customer_id"
                         required
                         class="w-full h-9 px-3 rounded-control border border-border bg-canvas text-xs text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden">
                     <option value="">{{ __('sales.select_customer') }}</option>
@@ -56,53 +56,53 @@
                         <option value="{{ $c->id }}">{{ $c->displayName() }} ({{ $c->default_currency_code }})</option>
                     @endforeach
                 </select>
-                @error('customer_id') <span class="text-danger text-[11px] mt-1 block">{{ $message }}</span> @enderror
+                @error('customer_id') <span id="invoice-customer-id-error" role="alert" class="text-danger text-[11px] mt-1 block">{{ $message }}</span> @enderror
             </div>
 
             <!-- Warehouse -->
             <div class="md:col-span-2">
-                <label class="block text-xs font-bold text-text-primary mb-1">
+                <label for="invoice-warehouse-id" class="block text-xs font-bold text-text-primary mb-1">
                     {{ __('sales.warehouse') }}
                 </label>
-                <select wire:model.live="warehouse_id"
+                <select id="invoice-warehouse-id" @error('warehouse_id') aria-invalid="true" aria-describedby="invoice-warehouse-id-error" @enderror wire:model.live="warehouse_id"
                         class="w-full h-9 px-3 rounded-control border border-border bg-canvas text-xs text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden">
                     <option value="">{{ __('sales.select_warehouse') }}</option>
                     @foreach ($warehouses as $w)
                         <option value="{{ $w->id }}">{{ $w->displayName() }}</option>
                     @endforeach
                 </select>
-                @error('warehouse_id') <span class="text-danger text-[11px] mt-1 block">{{ $message }}</span> @enderror
+                @error('warehouse_id') <span id="invoice-warehouse-id-error" role="alert" class="text-danger text-[11px] mt-1 block">{{ $message }}</span> @enderror
             </div>
 
             <!-- Issue Date -->
             <div>
-                <label class="block text-xs font-bold text-text-primary mb-1">
+                <label for="invoice-issue-date" class="block text-xs font-bold text-text-primary mb-1">
                     {{ __('sales.date') }} <span class="text-danger">*</span>
                 </label>
-                <input type="date"
+                <input id="invoice-issue-date" @error('issue_date') aria-invalid="true" aria-describedby="invoice-issue-date-error" @enderror type="date"
                        wire:model="issue_date"
                        required
                        class="w-full h-9 px-3 rounded-control border border-border bg-canvas text-xs text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden" />
-                @error('issue_date') <span class="text-danger text-[11px] mt-1 block">{{ $message }}</span> @enderror
+                @error('issue_date') <span id="invoice-issue-date-error" role="alert" class="text-danger text-[11px] mt-1 block">{{ $message }}</span> @enderror
             </div>
 
             <!-- Due Date -->
             <div>
-                <label class="block text-xs font-bold text-text-primary mb-1">
+                <label for="invoice-due-date" class="block text-xs font-bold text-text-primary mb-1">
                     {{ __('sales.due_date') }}
                 </label>
-                <input type="date"
+                <input id="invoice-due-date" @error('due_date') aria-invalid="true" aria-describedby="invoice-due-date-error" @enderror type="date"
                        wire:model="due_date"
                        class="w-full h-9 px-3 rounded-control border border-border bg-canvas text-xs text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden" />
-                @error('due_date') <span class="text-danger text-[11px] mt-1 block">{{ $message }}</span> @enderror
+                @error('due_date') <span id="invoice-due-date-error" role="alert" class="text-danger text-[11px] mt-1 block">{{ $message }}</span> @enderror
             </div>
 
             <!-- Currency -->
             <div>
-                <label class="block text-xs font-bold text-text-primary mb-1">
+                <label for="invoice-currency-code" class="block text-xs font-bold text-text-primary mb-1">
                     {{ __('sales.currency') }} <span class="text-danger">*</span>
                 </label>
-                <select wire:model.live="currency_code"
+                <select id="invoice-currency-code" wire:model.live="currency_code"
                         class="w-full h-9 px-3 rounded-control border border-border bg-canvas text-xs text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden">
                     @foreach ($currencies as $curr)
                         <option value="{{ $curr->currency_code }}">{{ $curr->currency_code }}</option>
@@ -112,17 +112,17 @@
 
             <!-- Exchange Rate -->
             <div>
-                <label class="block text-xs font-bold text-text-primary mb-1">
+                <label for="invoice-exchange-rate" class="block text-xs font-bold text-text-primary mb-1">
                     {{ __('sales.exchange_rate') }} <span class="text-danger">*</span>
                 </label>
-                <input type="number"
+                <input id="invoice-exchange-rate" @error('exchange_rate') aria-invalid="true" aria-describedby="invoice-exchange-rate-error" @enderror type="number"
                        step="0.0000000001"
                        wire:model.blur="exchange_rate"
                        wire:change="recalculate"
                        dir="ltr"
                        required
                        class="w-full h-9 px-3 rounded-control border border-border bg-canvas text-xs text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden font-mono" />
-                @error('exchange_rate') <span class="text-danger text-[11px] mt-1 block">{{ $message }}</span> @enderror
+                @error('exchange_rate') <span id="invoice-exchange-rate-error" role="alert" class="text-danger text-[11px] mt-1 block">{{ $message }}</span> @enderror
             </div>
         </div>
 
@@ -163,7 +163,7 @@
                             @endphp
                             <tr wire:key="inv-line-{{ $index }}">
                                 <td class="py-2 px-2 align-top space-y-1">
-                                    <select wire:change="selectProduct({{ $index }}, $event.target.value)"
+                                    <select id="invoice-desktop-line-{{ $index }}-product-id" aria-label="{{ __('sales.product') }} {{ $index + 1 }}" @error('lines.'.$index.'.product_id') aria-invalid="true" aria-describedby="invoice-desktop-line-{{ $index }}-product-id-error" @enderror wire:change="selectProduct({{ $index }}, $event.target.value)"
                                             class="w-full h-8 px-2 rounded-control border border-border bg-canvas text-xs">
                                         <option value="">-- {{ __('sales.product') }} --</option>
                                         @foreach ($products as $p)
@@ -171,38 +171,38 @@
                                                 {{ $p->displayName() }} ({{ $p->sku }})
                                             </option>
                                         @endforeach
-                                    </select>
-                                    <input type="text"
+                                    </select> @error('lines.'.$index.'.product_id') <span id="invoice-desktop-line-{{ $index }}-product-id-error" role="alert" class="text-danger text-[11px] block">{{ $message }}</span> @enderror
+                                    <input id="invoice-desktop-line-{{ $index }}-item-description" aria-label="{{ __('sales.description') }} {{ $index + 1 }}" @error('lines.'.$index.'.item_description') aria-invalid="true" aria-describedby="invoice-desktop-line-{{ $index }}-item-description-error" @enderror type="text"
                                            wire:model="lines.{{ $index }}.item_description"
                                            placeholder="{{ __('sales.description') }}..."
                                            required
-                                           class="w-full h-8 px-2 rounded-control border border-border bg-canvas text-xs text-text-primary" />
+                                           class="w-full h-8 px-2 rounded-control border border-border bg-canvas text-xs text-text-primary" /> @error('lines.'.$index.'.item_description') <span id="invoice-desktop-line-{{ $index }}-item-description-error" role="alert" class="text-danger text-[11px] block">{{ $message }}</span> @enderror
                                 </td>
 
                                 <td class="py-2 px-2 align-top">
                                     @if ($selectedProduct && $selectedProduct->productUnits->isNotEmpty())
-                                        <select wire:change="changeUnit({{ $index }}, $event.target.value)"
+                                        <select id="invoice-desktop-line-{{ $index }}-product-unit-id" aria-label="{{ __('sales.unit') }} {{ $index + 1 }}" @error('lines.'.$index.'.product_unit_id') aria-invalid="true" aria-describedby="invoice-desktop-line-{{ $index }}-product-unit-id-error" @enderror wire:change="changeUnit({{ $index }}, $event.target.value)"
                                                 class="w-full h-8 px-1.5 rounded-control border border-border bg-canvas text-xs">
                                             @foreach ($selectedProduct->productUnits as $pu)
                                                 <option value="{{ $pu->id }}" @selected(($line['product_unit_id'] ?? null) == $pu->id)>
                                                     {{ $pu->unit?->name() ?? $pu->unit?->code ?? 'Unit' }}
                                                 </option>
                                             @endforeach
-                                        </select>
+                                        </select> @error('lines.'.$index.'.product_unit_id') <span id="invoice-desktop-line-{{ $index }}-product-unit-id-error" role="alert" class="text-danger text-[11px] block">{{ $message }}</span> @enderror
                                     @else
                                         <span class="text-text-muted text-[11px] block pt-1.5">-</span>
                                     @endif
                                 </td>
 
                                 <td class="py-2 px-2 align-top space-y-1">
-                                    <input type="number"
+                                    <input id="invoice-desktop-line-{{ $index }}-quantity" aria-label="{{ __('sales.quantity') }} {{ $index + 1 }}" @error('lines.'.$index.'.quantity') aria-invalid="true" aria-describedby="invoice-desktop-line-{{ $index }}-quantity-error" @enderror type="number"
                                            step="any"
                                            wire:model.blur="lines.{{ $index }}.quantity"
                                            wire:change="recalculate"
                                            required
                                            min="0.000001"
                                            dir="ltr"
-                                           class="w-full h-8 px-2 rounded-control border border-border bg-canvas text-xs font-mono" />
+                                           class="w-full h-8 px-2 rounded-control border border-border bg-canvas text-xs font-mono" /> @error('lines.'.$index.'.quantity') <span id="invoice-desktop-line-{{ $index }}-quantity-error" role="alert" class="text-danger text-[11px] block">{{ $message }}</span> @enderror
                                     @if (!empty($line['available_quantity']))
                                         <div class="text-[10px] text-text-secondary whitespace-nowrap" dir="ltr">
                                             {{ __('sales.available') }}: <span class="font-bold">{{ $line['available_quantity'] }}</span>
@@ -211,7 +211,7 @@
                                 </td>
 
                                 <td class="py-2 px-2 align-top">
-                                    <input type="number"
+                                    <input id="invoice-desktop-line-{{ $index }}-unit-price" aria-label="{{ __('sales.unit_price') }} {{ $index + 1 }}" @error('lines.'.$index.'.unit_price') aria-invalid="true" aria-describedby="invoice-desktop-line-{{ $index }}-unit-price-error" @enderror type="number"
                                            step="any"
                                            wire:model.blur="lines.{{ $index }}.unit_price"
                                            wire:change="recalculate"
@@ -219,34 +219,34 @@
                                            min="0"
                                            dir="ltr"
                                            @if (! $canChangePrice) readonly title="{{ __('sales.price_permission_required') }}" @endif
-                                           class="w-full h-8 px-2 rounded-control border border-border bg-canvas text-xs font-mono {{ ! $canChangePrice ? 'opacity-70 bg-slate-100 cursor-not-allowed' : '' }}" />
+                                           class="w-full h-8 px-2 rounded-control border border-border bg-canvas text-xs font-mono {{ ! $canChangePrice ? 'opacity-70 bg-slate-100 cursor-not-allowed' : '' }}" /> @error('lines.'.$index.'.unit_price') <span id="invoice-desktop-line-{{ $index }}-unit-price-error" role="alert" class="text-danger text-[11px] block">{{ $message }}</span> @enderror
                                 </td>
 
                                 <td class="py-2 px-2 align-top space-y-1">
                                     <div class="flex gap-1">
-                                        <select wire:model.change="lines.{{ $index }}.discount_type"
+                                        <select id="invoice-desktop-line-{{ $index }}-discount-type" aria-label="{{ __('sales.discount_type') }} {{ $index + 1 }}" @error('lines.'.$index.'.discount_type') aria-invalid="true" aria-describedby="invoice-desktop-line-{{ $index }}-discount-type-error" @enderror wire:model.change="lines.{{ $index }}.discount_type"
                                                 wire:change="recalculate"
                                                 @if (! $canChangeDiscount) disabled title="{{ __('sales.discount_permission_required') }}" @endif
                                                 class="w-20 h-8 px-1 rounded-control border border-border bg-canvas text-[11px] {{ ! $canChangeDiscount ? 'opacity-70 cursor-not-allowed' : '' }}">
                                             <option value="none">{{ __('sales.none') }}</option>
                                             <option value="fixed">{{ __('sales.fixed') }}</option>
                                             <option value="percentage">%</option>
-                                        </select>
+                                        </select> @error('lines.'.$index.'.discount_type') <span id="invoice-desktop-line-{{ $index }}-discount-type-error" role="alert" class="text-danger text-[11px] block">{{ $message }}</span> @enderror
                                         @if (($line['discount_type'] ?? 'none') !== 'none')
-                                            <input type="number"
+                                            <input id="invoice-desktop-line-{{ $index }}-discount-value" aria-label="{{ __('sales.discount_val') }} {{ $index + 1 }}" @error('lines.'.$index.'.discount_value') aria-invalid="true" aria-describedby="invoice-desktop-line-{{ $index }}-discount-value-error" @enderror type="number"
                                                    step="any"
                                                    wire:model.blur="lines.{{ $index }}.discount_value"
                                                    wire:change="recalculate"
                                                    dir="ltr"
                                                    @if (! $canChangeDiscount) readonly @endif
-                                                   class="w-full h-8 px-1.5 rounded-control border border-border bg-canvas text-xs font-mono {{ ! $canChangeDiscount ? 'opacity-70 cursor-not-allowed' : '' }}" />
+                                                   class="w-full h-8 px-1.5 rounded-control border border-border bg-canvas text-xs font-mono {{ ! $canChangeDiscount ? 'opacity-70 cursor-not-allowed' : '' }}" /> @error('lines.'.$index.'.discount_value') <span id="invoice-desktop-line-{{ $index }}-discount-value-error" role="alert" class="text-danger text-[11px] block">{{ $message }}</span> @enderror
                                         @endif
                                     </div>
                                 </td>
 
                                 @if ($taxes->isNotEmpty())
                                     <td class="py-2 px-2 align-top">
-                                        <select wire:model.change="lines.{{ $index }}.tax_rate_id"
+                                        <select id="invoice-desktop-line-{{ $index }}-tax-rate-id" aria-label="{{ __('sales.tax') }} {{ $index + 1 }}" @error('lines.'.$index.'.tax_rate_id') aria-invalid="true" aria-describedby="invoice-desktop-line-{{ $index }}-tax-rate-id-error" @enderror wire:model.change="lines.{{ $index }}.tax_rate_id"
                                                 wire:change="recalculate"
                                                 class="w-full h-8 px-1.5 rounded-control border border-border bg-canvas text-xs">
                                             <option value="">{{ __('sales.none') }} (0%)</option>
@@ -255,7 +255,7 @@
                                                     {{ $t->displayName() }} ({{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatQuantity($t->rate) }}%)
                                                 </option>
                                             @endforeach
-                                        </select>
+                                        </select> @error('lines.'.$index.'.tax_rate_id') <span id="invoice-desktop-line-{{ $index }}-tax-rate-id-error" role="alert" class="text-danger text-[11px] block">{{ $message }}</span> @enderror
                                     </td>
                                 @endif
 
@@ -298,8 +298,8 @@
 
                         <!-- Product & Description -->
                         <div class="space-y-1">
-                            <label class="block text-[11px] font-bold text-text-secondary">{{ __('sales.product') }}</label>
-                            <select wire:change="selectProduct({{ $index }}, $event.target.value)"
+                            <label for="invoice-mobile-line-{{ $index }}-product-id" class="block text-[11px] font-bold text-text-secondary">{{ __('sales.product') }}</label>
+                            <select id="invoice-mobile-line-{{ $index }}-product-id" aria-label="{{ __('sales.product') }} {{ $index + 1 }}" @error('lines.'.$index.'.product_id') aria-invalid="true" aria-describedby="invoice-mobile-line-{{ $index }}-product-id-error" @enderror wire:change="selectProduct({{ $index }}, $event.target.value)"
                                     class="w-full h-8 px-2 rounded-control border border-border bg-white text-xs">
                                 <option value="">-- {{ __('sales.product') }} --</option>
                                 @foreach ($products as $p)
@@ -307,41 +307,41 @@
                                         {{ $p->displayName() }} ({{ $p->sku }})
                                     </option>
                                 @endforeach
-                            </select>
-                            <input type="text"
+                            </select> @error('lines.'.$index.'.product_id') <span id="invoice-mobile-line-{{ $index }}-product-id-error" role="alert" class="text-danger text-[11px] block">{{ $message }}</span> @enderror
+                            <input id="invoice-mobile-line-{{ $index }}-item-description" aria-label="{{ __('sales.description') }} {{ $index + 1 }}" @error('lines.'.$index.'.item_description') aria-invalid="true" aria-describedby="invoice-mobile-line-{{ $index }}-item-description-error" @enderror type="text"
                                    wire:model="lines.{{ $index }}.item_description"
                                    placeholder="{{ __('sales.description') }}..."
                                    required
-                                   class="w-full h-8 px-2 rounded-control border border-border bg-white text-xs text-text-primary" />
+                                   class="w-full h-8 px-2 rounded-control border border-border bg-white text-xs text-text-primary" /> @error('lines.'.$index.'.item_description') <span id="invoice-mobile-line-{{ $index }}-item-description-error" role="alert" class="text-danger text-[11px] block">{{ $message }}</span> @enderror
                         </div>
 
                         <!-- Unit & Quantity -->
                         <div class="grid grid-cols-2 gap-2">
                             <div>
-                                <label class="block text-[11px] font-bold text-text-secondary">{{ __('sales.unit') }}</label>
+                                <label for="invoice-mobile-line-{{ $index }}-product-unit-id" class="block text-[11px] font-bold text-text-secondary">{{ __('sales.unit') }}</label>
                                 @if ($selectedProduct && $selectedProduct->productUnits->isNotEmpty())
-                                    <select wire:change="changeUnit({{ $index }}, $event.target.value)"
+                                    <select id="invoice-mobile-line-{{ $index }}-product-unit-id" aria-label="{{ __('sales.unit') }} {{ $index + 1 }}" @error('lines.'.$index.'.product_unit_id') aria-invalid="true" aria-describedby="invoice-mobile-line-{{ $index }}-product-unit-id-error" @enderror wire:change="changeUnit({{ $index }}, $event.target.value)"
                                             class="w-full h-8 px-1.5 rounded-control border border-border bg-white text-xs">
                                         @foreach ($selectedProduct->productUnits as $pu)
                                             <option value="{{ $pu->id }}" @selected(($line['product_unit_id'] ?? null) == $pu->id)>
                                                 {{ $pu->unit?->name() ?? $pu->unit?->code ?? 'Unit' }}
                                             </option>
                                         @endforeach
-                                    </select>
+                                    </select> @error('lines.'.$index.'.product_unit_id') <span id="invoice-mobile-line-{{ $index }}-product-unit-id-error" role="alert" class="text-danger text-[11px] block">{{ $message }}</span> @enderror
                                 @else
                                     <span class="text-text-muted text-xs block pt-1.5">-</span>
                                 @endif
                             </div>
                             <div>
-                                <label class="block text-[11px] font-bold text-text-secondary">{{ __('sales.quantity') }}</label>
-                                <input type="number"
+                                <label for="invoice-mobile-line-{{ $index }}-quantity" class="block text-[11px] font-bold text-text-secondary">{{ __('sales.quantity') }}</label>
+                                <input id="invoice-mobile-line-{{ $index }}-quantity" aria-label="{{ __('sales.quantity') }} {{ $index + 1 }}" @error('lines.'.$index.'.quantity') aria-invalid="true" aria-describedby="invoice-mobile-line-{{ $index }}-quantity-error" @enderror type="number"
                                        step="any"
                                        wire:model.blur="lines.{{ $index }}.quantity"
                                        wire:change="recalculate"
                                        required
                                        min="0.000001"
                                        dir="ltr"
-                                       class="w-full h-8 px-2 rounded-control border border-border bg-white text-xs font-mono" />
+                                       class="w-full h-8 px-2 rounded-control border border-border bg-white text-xs font-mono" /> @error('lines.'.$index.'.quantity') <span id="invoice-mobile-line-{{ $index }}-quantity-error" role="alert" class="text-danger text-[11px] block">{{ $message }}</span> @enderror
                                 @if (!empty($line['available_quantity']))
                                     <div class="text-[10px] text-text-secondary mt-0.5" dir="ltr">
                                         {{ __('sales.available') }}: <span class="font-bold">{{ $line['available_quantity'] }}</span>
@@ -353,8 +353,8 @@
                         <!-- Unit Price & Discount -->
                         <div class="grid grid-cols-2 gap-2">
                             <div>
-                                <label class="block text-[11px] font-bold text-text-secondary">{{ __('sales.unit_price') }}</label>
-                                <input type="number"
+                                <label for="invoice-mobile-line-{{ $index }}-unit-price" class="block text-[11px] font-bold text-text-secondary">{{ __('sales.unit_price') }}</label>
+                                <input id="invoice-mobile-line-{{ $index }}-unit-price" aria-label="{{ __('sales.unit_price') }} {{ $index + 1 }}" @error('lines.'.$index.'.unit_price') aria-invalid="true" aria-describedby="invoice-mobile-line-{{ $index }}-unit-price-error" @enderror type="number"
                                        step="any"
                                        wire:model.blur="lines.{{ $index }}.unit_price"
                                        wire:change="recalculate"
@@ -362,27 +362,27 @@
                                        min="0"
                                        dir="ltr"
                                        @if (! $canChangePrice) readonly @endif
-                                       class="w-full h-8 px-2 rounded-control border border-border bg-white text-xs font-mono {{ ! $canChangePrice ? 'opacity-70 bg-slate-100 cursor-not-allowed' : '' }}" />
+                                       class="w-full h-8 px-2 rounded-control border border-border bg-white text-xs font-mono {{ ! $canChangePrice ? 'opacity-70 bg-slate-100 cursor-not-allowed' : '' }}" /> @error('lines.'.$index.'.unit_price') <span id="invoice-mobile-line-{{ $index }}-unit-price-error" role="alert" class="text-danger text-[11px] block">{{ $message }}</span> @enderror
                             </div>
                             <div>
-                                <label class="block text-[11px] font-bold text-text-secondary">{{ __('sales.discount') }}</label>
+                                <label for="invoice-mobile-line-{{ $index }}-discount-type" class="block text-[11px] font-bold text-text-secondary">{{ __('sales.discount') }}</label>
                                 <div class="flex gap-1">
-                                    <select wire:model.change="lines.{{ $index }}.discount_type"
+                                    <select id="invoice-mobile-line-{{ $index }}-discount-type" aria-label="{{ __('sales.discount_type') }} {{ $index + 1 }}" @error('lines.'.$index.'.discount_type') aria-invalid="true" aria-describedby="invoice-mobile-line-{{ $index }}-discount-type-error" @enderror wire:model.change="lines.{{ $index }}.discount_type"
                                             wire:change="recalculate"
                                             @if (! $canChangeDiscount) disabled @endif
                                             class="w-16 h-8 px-1 rounded-control border border-border bg-white text-[11px] {{ ! $canChangeDiscount ? 'opacity-70 cursor-not-allowed' : '' }}">
                                         <option value="none">{{ __('sales.none') }}</option>
                                         <option value="fixed">{{ __('sales.fixed') }}</option>
                                         <option value="percentage">%</option>
-                                    </select>
+                                    </select> @error('lines.'.$index.'.discount_type') <span id="invoice-mobile-line-{{ $index }}-discount-type-error" role="alert" class="text-danger text-[11px] block">{{ $message }}</span> @enderror
                                     @if (($line['discount_type'] ?? 'none') !== 'none')
-                                        <input type="number"
+                                        <input id="invoice-mobile-line-{{ $index }}-discount-value" aria-label="{{ __('sales.discount_val') }} {{ $index + 1 }}" @error('lines.'.$index.'.discount_value') aria-invalid="true" aria-describedby="invoice-mobile-line-{{ $index }}-discount-value-error" @enderror type="number"
                                                step="any"
                                                wire:model.blur="lines.{{ $index }}.discount_value"
                                                wire:change="recalculate"
                                                dir="ltr"
                                                @if (! $canChangeDiscount) readonly @endif
-                                               class="w-full h-8 px-1.5 rounded-control border border-border bg-white text-xs font-mono {{ ! $canChangeDiscount ? 'opacity-70 cursor-not-allowed' : '' }}" />
+                                               class="w-full h-8 px-1.5 rounded-control border border-border bg-white text-xs font-mono {{ ! $canChangeDiscount ? 'opacity-70 cursor-not-allowed' : '' }}" /> @error('lines.'.$index.'.discount_value') <span id="invoice-mobile-line-{{ $index }}-discount-value-error" role="alert" class="text-danger text-[11px] block">{{ $message }}</span> @enderror
                                     @endif
                                 </div>
                             </div>
@@ -390,8 +390,8 @@
 
                         @if ($taxes->isNotEmpty())
                             <div>
-                                <label class="block text-[11px] font-bold text-text-secondary">{{ __('sales.tax') }}</label>
-                                <select wire:model.change="lines.{{ $index }}.tax_rate_id"
+                                <label for="invoice-mobile-line-{{ $index }}-tax-rate-id" class="block text-[11px] font-bold text-text-secondary">{{ __('sales.tax') }}</label>
+                                <select id="invoice-mobile-line-{{ $index }}-tax-rate-id" aria-label="{{ __('sales.tax') }} {{ $index + 1 }}" @error('lines.'.$index.'.tax_rate_id') aria-invalid="true" aria-describedby="invoice-mobile-line-{{ $index }}-tax-rate-id-error" @enderror wire:model.change="lines.{{ $index }}.tax_rate_id"
                                         wire:change="recalculate"
                                         class="w-full h-8 px-1.5 rounded-control border border-border bg-white text-xs">
                                     <option value="">{{ __('sales.none') }} (0%)</option>
@@ -400,7 +400,7 @@
                                             {{ $t->displayName() }} ({{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatQuantity($t->rate) }}%)
                                         </option>
                                     @endforeach
-                                </select>
+                                </select> @error('lines.'.$index.'.tax_rate_id') <span id="invoice-mobile-line-{{ $index }}-tax-rate-id-error" role="alert" class="text-danger text-[11px] block">{{ $message }}</span> @enderror
                             </div>
                         @endif
 
@@ -419,18 +419,18 @@
         <div class="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4 border-t border-border">
             <div class="space-y-4">
                 <div>
-                    <label class="block text-xs font-bold text-text-primary mb-1">
+                    <label for="invoice-terms" class="block text-xs font-bold text-text-primary mb-1">
                         {{ __('sales.terms') }}
                     </label>
-                    <textarea wire:model="terms"
+                    <textarea id="invoice-terms" wire:model="terms"
                               rows="3"
                               class="w-full p-2.5 rounded-control border border-border bg-canvas text-xs text-text-primary outline-hidden"></textarea>
                 </div>
                 <div>
-                    <label class="block text-xs font-bold text-text-primary mb-1">
+                    <label for="invoice-notes" class="block text-xs font-bold text-text-primary mb-1">
                         {{ __('sales.notes') }}
                     </label>
-                    <textarea wire:model="notes"
+                    <textarea id="invoice-notes" wire:model="notes"
                               rows="2"
                               class="w-full p-2.5 rounded-control border border-border bg-canvas text-xs text-text-primary outline-hidden"></textarea>
                 </div>

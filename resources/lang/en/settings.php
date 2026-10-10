@@ -76,9 +76,11 @@ return [
     'card_numbering_title' => 'Document Numbering',
     'card_numbering_desc' => 'Prefixes, sequences, padding, and annual reset policies.',
     'card_print_title' => 'Print & PDF Templates',
-    'card_print_desc' => 'Logo, letterhead, QR codes, paper size, and document footers.',
+    'card_print_desc' => 'Company logo, document footers, quotation terms, and default QR presentation.',
+    'card_print_future_note' => 'Advanced template design is future work',
     'card_share_title' => 'Sharing & Public Links',
-    'card_share_desc' => 'Link expiry, password protection, and default QR presentation.',
+    'card_share_desc' => 'Product catalogs and their protected links. Financial links are managed from document pages.',
+    'card_share_future_note' => 'A unified link audit console is future work',
     'card_backup_title' => 'Data Export & Backups',
     'card_backup_desc' => 'Export company records, attachments, and backup status.',
 

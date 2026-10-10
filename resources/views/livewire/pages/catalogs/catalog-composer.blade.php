@@ -220,18 +220,18 @@
 
                 <div class="space-y-2">
                     @forelse($sidebarCatalogs as $cat)
-                        <div
+                        <button type="button"
                             wire:click="loadCatalog('{{ $cat->public_id }}')"
-                            class="p-3 rounded-lg border text-sm cursor-pointer transition-colors {{ $publicId === $cat->public_id ? 'border-blue-500 bg-blue-50/50' : 'border-slate-200 hover:bg-slate-50' }}"
+                            class="w-full text-start p-3 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary rounded-lg border text-sm cursor-pointer transition-colors {{ $publicId === $cat->public_id ? 'border-blue-500 bg-blue-50/50' : 'border-slate-200 hover:bg-slate-50' }}"
                         >
-                            <div class="font-medium text-slate-900 truncate">
+                            <span class="block font-medium text-slate-900 truncate">
                                 {{ $cat->name_ar ?: ($cat->name_en ?: __('catalogs.title')) }}
-                            </div>
-                            <div class="flex items-center justify-between text-xs text-slate-500 mt-1">
+                            </span>
+                            <span class="flex items-center justify-between text-xs text-slate-500 mt-1">
                                 <span class="capitalize">{{ __('catalogs.status_' . $cat->status) }}</span>
                                 <span>r{{ $cat->published_revision }}</span>
-                            </div>
-                        </div>
+                            </span>
+                        </button>
                     @empty
                         <div class="text-xs text-slate-400 py-4 text-center">
                             {{ __('catalogs.no_catalogs') }}
@@ -261,7 +261,7 @@
                         <label for="catalog-name-ar" class="block text-xs font-semibold text-slate-700 mb-1">
                             {{ __('catalogs.name_ar') }} <span class="text-rose-500">*</span>
                         </label>
-                        <input
+                        <input aria-invalid="{{ $errors->has('headers.name_ar') ? 'true' : 'false' }}" @if ($errors->has('headers.name_ar')) aria-describedby="catalog-name-ar-error" @endif
                             id="catalog-name-ar"
                             type="text"
                             wire:model.live.debounce.400ms="headers.name_ar"
@@ -269,7 +269,7 @@
                             maxlength="160"
                             class="w-full min-h-[44px] px-3 py-2 text-sm rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-slate-100"
                         >
-                        @error('headers.name_ar') <span class="text-xs text-rose-600 mt-1 block">{{ $message }}</span> @enderror
+                        @error('headers.name_ar') <span role="alert" id="catalog-name-ar-error" class="text-xs text-rose-600 mt-1 block">{{ $message }}</span> @enderror
                     </div>
 
                     <!-- English Name -->
@@ -277,7 +277,7 @@
                         <label for="catalog-name-en" class="block text-xs font-semibold text-slate-700 mb-1">
                             {{ __('catalogs.name_en') }}
                         </label>
-                        <input
+                        <input aria-invalid="{{ $errors->has('headers.name_en') ? 'true' : 'false' }}" @if ($errors->has('headers.name_en')) aria-describedby="catalog-name-en-error" @endif
                             id="catalog-name-en"
                             type="text"
                             wire:model.live.debounce.400ms="headers.name_en"
@@ -285,7 +285,7 @@
                             maxlength="160"
                             class="w-full min-h-[44px] px-3 py-2 text-sm rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-slate-100"
                         >
-                        @error('headers.name_en') <span class="text-xs text-rose-600 mt-1 block">{{ $message }}</span> @enderror
+                        @error('headers.name_en') <span role="alert" id="catalog-name-en-error" class="text-xs text-rose-600 mt-1 block">{{ $message }}</span> @enderror
                     </div>
 
                     <!-- Arabic Description -->
@@ -510,8 +510,8 @@
                                 <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 mt-3 pt-3 border-t border-slate-200 text-xs">
                                     <!-- Unit Choice -->
                                     <div>
-                                        <label class="block font-medium text-slate-600 mb-1">{{ __('catalogs.unit') }}</label>
-                                        <select
+                                        <label for="catalog-item-{{ $idx }}-unit" class="block font-medium text-slate-600 mb-1">{{ __('catalogs.unit') }}</label>
+                                        <select id="catalog-item-{{ $idx }}-unit"
                                             wire:model.live="items.{{ $idx }}.unit_id"
                                             @disabled(! $canManage)
                                             class="w-full min-h-[44px] px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -526,8 +526,8 @@
 
                                     <!-- Image Choice -->
                                     <div>
-                                        <label class="block font-medium text-slate-600 mb-1">{{ __('catalogs.image') }}</label>
-                                        <select
+                                        <label for="catalog-item-{{ $idx }}-image" class="block font-medium text-slate-600 mb-1">{{ __('catalogs.image') }}</label>
+                                        <select id="catalog-item-{{ $idx }}-image"
                                             wire:model.live="items.{{ $idx }}.image_id"
                                             @disabled(! $canManage)
                                             class="w-full min-h-[44px] px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -549,10 +549,10 @@
                                     <!-- Custom Price (Only if show_prices is active) -->
                                     @if($headers['show_prices'] && $canShowPrices)
                                         <div>
-                                            <label class="block font-medium text-slate-600 mb-1">
+                                            <label for="catalog-item-{{ $idx }}-price" class="block font-medium text-slate-600 mb-1">
                                                 {{ __('catalogs.custom_price') }} ({{ $headers['currency_code'] ?? '' }})
                                             </label>
-                                            <input
+                                            <input id="catalog-item-{{ $idx }}-price"
                                                 type="text"
                                                 wire:model.live.debounce.400ms="items.{{ $idx }}.custom_price"
                                                 @disabled(! $canManage)
@@ -564,8 +564,8 @@
 
                                     <!-- Custom Display Name (Arabic) -->
                                     <div>
-                                        <label class="block font-medium text-slate-600 mb-1">{{ __('catalogs.custom_name_ar') }}</label>
-                                        <input
+                                        <label for="catalog-item-{{ $idx }}-name-ar" class="block font-medium text-slate-600 mb-1">{{ __('catalogs.custom_name_ar') }}</label>
+                                        <input id="catalog-item-{{ $idx }}-name-ar"
                                             type="text"
                                             wire:model.live.debounce.400ms="items.{{ $idx }}.name_ar"
                                             @disabled(! $canManage)
@@ -587,7 +587,7 @@
 
                     <!-- Search Input -->
                     <div class="w-full sm:w-72">
-                        <input
+                        <input id="catalog-product-search" aria-label="{{ __('catalogs.search_products') }}"
                             type="text"
                             wire:model.live.debounce.300ms="productSearch"
                             placeholder="{{ __('catalogs.search_products') }}"
@@ -668,9 +668,8 @@
                 @error('general')<p role="alert" class="mb-3 text-sm text-rose-700">{{ $message }}</p>@enderror
                 @error('share')<p role="alert" class="mb-3 text-sm text-rose-700">{{ $message }}</p>@enderror
                 @error('linkAccess')<p role="alert" class="mb-3 text-sm text-rose-700">{{ $message }}</p>@enderror
-                @if($errors->has('sharePassword') || $errors->has('shareExpires'))
-                    <p role="alert" class="mb-3 text-sm text-rose-700">{{ $errors->first('sharePassword') ?: $errors->first('shareExpires') }}</p>
-                @endif
+                @error('sharePassword')<p id="catalog-share-password-error" role="alert" class="mb-3 text-sm text-rose-700">{{ $message }}</p>@enderror
+                @error('shareExpires')<p id="catalog-share-expires-error" role="alert" class="mb-3 text-sm text-rose-700">{{ $message }}</p>@enderror
 
                 @if($editingLinkAccess)
                     <!-- Edit Link Access Form -->
@@ -723,7 +722,7 @@
                             <label for="link-access-password" class="block text-xs font-semibold text-slate-700 mb-1">
                                 {{ __('catalogs.new_password_label') }}
                             </label>
-                            <input
+                            <input aria-invalid="{{ $errors->has('linkAccessPassword') ? 'true' : 'false' }}" @if ($errors->has('linkAccessPassword')) aria-describedby="link-access-password-error" @endif
                                 id="link-access-password"
                                 type="password"
                                 wire:model="linkAccessPassword"
@@ -732,7 +731,7 @@
                                 placeholder="{{ __('catalogs.password_placeholder_keep') }}"
                                 class="w-full min-h-[44px] px-3 py-2 text-sm rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                             >
-                            @error('linkAccessPassword') <p role="alert" class="text-xs text-rose-600 mt-1">{{ $message }}</p> @enderror
+                            @error('linkAccessPassword') <p id="link-access-password-error" role="alert" class="text-xs text-rose-600 mt-1">{{ $message }}</p> @enderror
                         </div>
 
                         <!-- Expiry input -->
@@ -740,7 +739,7 @@
                             <label for="link-access-expires" class="block text-xs font-semibold text-slate-700 mb-1">
                                 {{ __('catalogs.expiry_date') }}
                             </label>
-                            <input
+                            <input aria-invalid="{{ $errors->has('linkAccessExpires') ? 'true' : 'false' }}" @if ($errors->has('linkAccessExpires')) aria-describedby="link-access-expires-error" @endif
                                 id="link-access-expires"
                                 type="date"
                                 wire:model="linkAccessExpires"
@@ -749,7 +748,7 @@
                             <p class="text-[11px] text-slate-500 mt-1">
                                 {{ __('catalogs.expiry_company_tz_hint', ['timezone' => $companyTimezone]) }}
                             </p>
-                            @error('linkAccessExpires') <p role="alert" class="text-xs text-rose-600 mt-1">{{ $message }}</p> @enderror
+                            @error('linkAccessExpires') <p id="link-access-expires-error" role="alert" class="text-xs text-rose-600 mt-1">{{ $message }}</p> @enderror
                         </div>
 
                         <!-- Action Buttons -->
@@ -891,10 +890,10 @@
                         </div>
 
                         <div>
-                            <label class="block text-xs font-semibold text-slate-700 mb-1">
+                            <label for="catalog-share-password" class="block text-xs font-semibold text-slate-700 mb-1">
                                 {{ __('catalogs.password_optional') }}
                             </label>
-                            <input
+                            <input aria-invalid="{{ $errors->has('sharePassword') ? 'true' : 'false' }}" @if ($errors->has('sharePassword')) aria-describedby="catalog-share-password-error" @endif id="catalog-share-password"
                                 type="password"
                                 wire:model="sharePassword"
                                 minlength="8"
@@ -904,10 +903,10 @@
                         </div>
 
                         <div>
-                            <label class="block text-xs font-semibold text-slate-700 mb-1">
+                            <label for="catalog-share-expires" class="block text-xs font-semibold text-slate-700 mb-1">
                                 {{ __('catalogs.expiry_date') }}
                             </label>
-                            <input
+                            <input aria-invalid="{{ $errors->has('shareExpires') ? 'true' : 'false' }}" @if ($errors->has('shareExpires')) aria-describedby="catalog-share-expires-error" @endif id="catalog-share-expires"
                                 type="date"
                                 wire:model="shareExpires"
                                 class="w-full min-h-[44px] px-3 py-2 text-sm rounded-lg border border-slate-300"
@@ -964,7 +963,7 @@
                         <label for="new-link-password" class="block text-xs font-semibold text-slate-700 mb-1">
                             {{ __('catalogs.password_optional') }}
                         </label>
-                        <input
+                        <input aria-invalid="{{ $errors->has('newLinkPassword') ? 'true' : 'false' }}" @if ($errors->has('newLinkPassword')) aria-describedby="new-link-password-error" @endif
                             id="new-link-password"
                             type="password"
                             wire:model="newLinkPassword"
@@ -973,7 +972,7 @@
                             placeholder="{{ __('catalogs.new_password_placeholder') }}"
                             class="w-full min-h-[44px] px-3 py-2 text-sm rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                         >
-                        @error('newLinkPassword') <p role="alert" class="text-xs text-rose-600 mt-1">{{ $message }}</p> @enderror
+                        @error('newLinkPassword') <p id="new-link-password-error" role="alert" class="text-xs text-rose-600 mt-1">{{ $message }}</p> @enderror
                     </div>
 
                     <!-- Expiry input -->
@@ -981,7 +980,7 @@
                         <label for="new-link-expires" class="block text-xs font-semibold text-slate-700 mb-1">
                             {{ __('catalogs.expiry_date') }}
                         </label>
-                        <input
+                        <input aria-invalid="{{ $errors->has('newLinkExpires') ? 'true' : 'false' }}" @if ($errors->has('newLinkExpires')) aria-describedby="new-link-expires-error" @endif
                             id="new-link-expires"
                             type="date"
                             wire:model="newLinkExpires"
@@ -990,7 +989,7 @@
                         <p class="text-[11px] text-slate-500 mt-1">
                             {{ __('catalogs.expiry_company_tz_hint', ['timezone' => $companyTimezone]) }}
                         </p>
-                        @error('newLinkExpires') <p role="alert" class="text-xs text-rose-600 mt-1">{{ $message }}</p> @enderror
+                        @error('newLinkExpires') <p id="new-link-expires-error" role="alert" class="text-xs text-rose-600 mt-1">{{ $message }}</p> @enderror
                     </div>
 
                     <!-- Action Buttons -->
