@@ -1,6 +1,11 @@
 # Phase 9 source acceptance handoff
 
-Status: **IMPLEMENTED — READY FOR INDEPENDENT ARCHITECT REVIEW**.
+Current status: **Source Accepted / Merged / Deployed / Production Verified**.
+See the [2026-10-10 production acceptance](PHASE_9_PRODUCTION_ACCEPTANCE.md) for
+release `8d8428261cd2a10690ab77a5c7271e46b5ff5217` and independent live evidence.
+The identities, authority limits and QA below are the historical implementation handoff.
+
+Historical status: **IMPLEMENTED — READY FOR INDEPENDENT ARCHITECT REVIEW**.
 All package and integration gates below were verified. This document does not
 authorize merge or deployment.
 
