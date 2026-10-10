@@ -33,7 +33,7 @@ Controlling evidence: [Source acceptance matrix](PHASE_10_SOURCE_ACCEPTANCE_MATR
 - **A1 — Identity & Sessions:** 11 tests / 88 assertions PASS (39.627s / 80 MiB). Fortify login/logout, session rotation/invalidation, CSRF on switches (`company/switch`, `locale`), throttling, and token expiry/replay verified with local fake notifications. Real mail delivery is BLOCKED EXTERNAL AUTHORIZATION.
 - **A2 — Tenant Isolation & Authorization:** 8 tests / 209 assertions PASS. Nine financial documents enforce same-company scope, foreign 404/403 denials, and pre/post-render checks. Default Viewer receives 403/404 with zero bytes on Vendor Payment/Statement (no grant widening). Cost-redacted Purchase/Return projections verified for permitted roles at DTO boundary.
 - **A3 & A4 — Public Perimeter, Catalogs & CSV:** 47 tests / 3,514 assertions PASS. Validated neutral first-view on `share/{token}` (neutral prompt on GET/HEAD, 15-minute token session on CSRF POST), public catalogs default prices OFF across HTML/JSON/print/PDF, terminal Revoke, reversible Pause, safe expense uploads, and CSV formula injection prefixing (`=+\-@`).
-- **A5 — Dependencies & Configuration:** 4 tests / 17 assertions PASS. Composer locked audit and npm audit returned 0 vulnerabilities. Safe localized AR/EN error views without credential or stack leaks.
+- **A5 — Dependencies & Configuration:** 4 tests / 17 assertions PASS. Composer locked audit and npm audit returned 0 vulnerabilities. Safe error responses in AR/EN request contexts without credential or stack leaks; a later standalone localized403 correction independently passed within17 tests/268 assertions including document authorization.
 - **D1 — Offline Safety Tooling:** `bin/recovery-preflight.php` passed 21 synthetic tests / 50 assertions. This tool is an **OFFLINE INSPECTOR ONLY**: it validates manifests, checksums, and ownership evidence, always refusing bootstrap (exit code 2, `bootstrap_authorized=false`). It does NOT quarantine files, decrypt ciphertext, extract archives, connect to SQL/Artisan/production, or verify real network isolation. `bin/deploy.sh` updated for `documents:bootstrap` (8 synthetic scenarios PASS).
 - **Three P1 Operational Gates (BLOCKED EXTERNAL AUTHORIZATION):**
   1. *Isolated Restoration Rehearsal (RSK-01):* Historical 80/61 → 83/63 upgrade and current coherent backup restore with network isolation and six healthy reconciliations.
@@ -87,7 +87,7 @@ Controlling evidence: [Source acceptance matrix](PHASE_10_SOURCE_ACCEPTANCE_MATR
 | **P10-A1** | SEC-03, OPS-03; Auth & session lifecycle | Local PASS (11/88; 39.6s/80 MiB). Fortify session, CSRF, throttles. | Real mail BLOCKED EXTERNAL AUTHORIZATION. |
 | **P10-A2** | SEC-01, SEC-02; J16; Tenant isolation & RBAC | Local PASS (8/209). 9 foreign denials, Viewer 403/404, cost redaction. | Mapped role-action families freshly executed in the completed broad run. |
 | **P10-A3/A4** | SEC-04–06; J15, J18; Public shares, catalogs, CSV | Local PASS (47/3,514). Neutral first view, prices OFF, CSV prefixing. | Real customer traffic NOT VERIFIED. |
-| **P10-A5** | SEC-07; Dependency audit, config secrecy | Local PASS (4/17). 0 audit vulnerabilities; safe localized errors. | Hosting logs NOT VERIFIED. |
+| **P10-A5** | SEC-07; Dependency audit, config secrecy | Local PASS (4/17). 0 audit vulnerabilities; safe error responses in AR/EN request contexts. | Hosting logs NOT VERIFIED. |
 | **P10-B1** | ECO-01–04; J01–J20; Canonical trading & races | Local PASS (ILS 1/138; combined 12/312; races 4/189). Reconciliations healthy. | Broad J01–J20 mapping verified in matrix. |
 | **P10-C1** | UX-01, UX-02; Responsive UI & Settings cards | Local PASS (1,039 geometry checks, 78 post-fix states, 24/24 keyboard). | Browser zoom & WCAG NOT VERIFIED. |
 | **P10-C2** | UX-03; J14; Nine documents & barcodes | Local PASS (documents 44/327; statements 10/305; barcodes 9/300, 53 decodes). | Physical hardware NOT VERIFIED. |
@@ -100,7 +100,7 @@ Controlling evidence: [Source acceptance matrix](PHASE_10_SOURCE_ACCEPTANCE_MATR
 
 ## 6. Runtime Change Summary
 
-Between baseline `c74c9a4e` and checkpoint `6b694034`, all runtime changes were strictly confined to operational safety tooling, navigation query reduction, accessibility, and localized copy. **No runtime changes were made after commit `6b694034`**.
+Between baseline `c74c9a4e` and checkpoint `6b694034`, all runtime changes were strictly confined to operational safety tooling, navigation query reduction, accessibility, and localized copy. A later correction adds a standalone AR/EN403 view and translations; it preserves response status, JSON behavior and all authorization.
 
 ### Proven Runtime Changes
 
@@ -130,4 +130,8 @@ All external operations remain **BLOCKED EXTERNAL AUTHORIZATION**. The following
 > [!CAUTION]
 > Operators must **never** execute or request credentials for these blocked external operations without explicit Product Owner authorization. All 3 P1 operational gates remain unproven.
 
-Codex checkpoint update: the reviewed snapshot-only correction and broad-suite attribution were normally committed/pushed as4338e95a4599a3b083f604896a7a3e823fab6ed4 (tree b27cde2a2397721d9cb5da0bb2afd4c81f46b696). No runtime change after6b; PR current head is authoritative for later documentation updates. A finite AGY browser-harness assignment now covers three identified missing local states: default Viewer restrictions, actual Catalog loading/completion and invoice invalid-line retention. Its implementation/Lead execution are IN PROGRESS; no results are inferred.
+Codex checkpoint update: the reviewed snapshot-only correction and broad-suite attribution were normally committed/pushed as4338e95a4599a3b083f604896a7a3e823fab6ed4 (tree b27cde2a2397721d9cb5da0bb2afd4c81f46b696). At that checkpoint no runtime change followed6b; PR current head is authoritative for later documentation updates. A finite AGY browser-harness assignment now covers three identified missing local states: default Viewer restrictions, actual Catalog loading/completion and invoice invalid-line retention. Its implementation/Lead execution are IN PROGRESS; no results are inferred.
+
+Latest bounded correction checkpoint: L serial reached the existing30-second CSV refusal (4/31,1 ERROR,01:00:17.177/378MiB); concurrent harness fatally exceeded512MiB while accumulating its full fingerprint. Both primary schemas cleaned; concurrent auxiliary cleanup NOT VERIFIED. These results do not establish L acceptance. The additional reviewed UI-state run produced186/192 checks with six harness endpoint-pause failures; canonical row counts unchanged and owned schema cleaned. A confirmed English-only Arabic403 presentation defect and the finite harness fixes are in progress. Three new automatic AGY dispatches were actually rejected429 with zero file changes; bounded fallback workers continue under Codex review.
+
+Localized403 source correction is now independently verified: combined error-presentation, configuration/CSRF and financial-document authorization17 tests/268 assertions PASS,01:00.138/102MiB, owned schema2d53ccb850ca cleaned. Three-file Pint and production frontend build PASS. Corrected browser screenshots and the renewed automatic AGY harness completion remain pending; no blanket accessibility or L export acceptance is inferred.

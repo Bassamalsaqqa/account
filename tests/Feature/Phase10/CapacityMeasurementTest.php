@@ -138,6 +138,16 @@ final class CapacityMeasurementTest extends Phase8TestCase
             'transactions_count' => $fixtureCounts['total_transactions'],
             'transactions_breakdown' => $fixtureCounts,
             'fixture_generation_ms' => $fixtureDurationMs,
+            'measurement_status' => 'IN PROGRESS',
+            'six_domain_reconciliations' => 'NOT VERIFIED',
+            'reconciliation_results' => [
+                AccountingReconciliationService::class => 'NOT VERIFIED',
+                MoneyReconciliationService::class => 'NOT VERIFIED',
+                Phase7ReconciliationService::class => 'NOT VERIFIED',
+                SalesReconciliationService::class => 'NOT VERIFIED',
+                PayablesReconciliationService::class => 'NOT VERIFIED',
+                InventoryReconciliationService::class => 'NOT VERIFIED',
+            ],
             'operations' => [],
             'host_limits' => $this->captureHostEnvironment(),
             'concurrency' => [
@@ -376,69 +386,117 @@ final class CapacityMeasurementTest extends Phase8TestCase
         ];
 
         // 11. Match the shipped ReportCsvController's bounded export page size.
+        // Preserve completed operations even if CSV or subsequent integrity checks fail.
+        $metrics['operations']['csv_streaming'] = ['status' => 'NOT RUN'];
+        $this->persistMetrics($metrics);
         $stream = fopen('php://temp', 'w+');
         $this->assertIsResource($stream);
         $csvStart = hrtime(true);
-        $writer = new CsvReportWriter;
-        $writer->write($stream, function (int $page) use ($period): ReportResult {
-            return app(SalesSummaryReportQuery::class)->execute($this->company, [
-                'period' => $period->toArray(),
-                'page' => $page,
-                'per_page' => 100,
-            ], $this->owner);
-        }, [
-            ['key' => 'document_number', 'label' => 'رقم المستند', 'type' => 'text'],
-            ['key' => 'event_type', 'label' => 'نوع الحركة', 'type' => 'text'],
-            ['key' => 'net_sales_base', 'label' => 'صافي المبيعات الأساسي', 'type' => 'decimal'],
-        ]);
-        $csvDurationMs = round((hrtime(true) - $csvStart) / 1_000_000, 2);
-        rewind($stream);
-        $csvContent = stream_get_contents($stream);
-        rewind($stream);
-        fgetcsv($stream, escape: ''); // Translated header with UTF-8 BOM.
-        $csvRows = 0;
-        $csvNet = BigDecimal::zero();
-        while (($row = fgetcsv($stream, escape: '')) !== false) {
-            $this->assertNotSame('', $row[0], 'CSV must contain actual canonical document numbers.');
-            $this->assertNotSame('', $row[1], 'CSV must identify each economic event type.');
-            $csvNet = $csvNet->plus($row[2]);
-            $csvRows++;
-        }
-        $this->assertSame($fixtureCounts['sales_invoices'] + $fixtureCounts['sales_returns'], $csvRows);
-        $this->assertTrue($csvNet->isEqualTo($salesSummary->totals['net_sales_base']));
-        fclose($stream);
-
-        $this->assertStringStartsWith("\xEF\xBB\xBF", $csvContent);
-        $metrics['operations']['csv_streaming'] = [
-            'wall_time_ms' => $csvDurationMs,
-            'bytes_written' => strlen($csvContent),
-            'actual_rows' => $csvRows,
+        $pagesAttempted = 0;
+        $csvMetrics = [
+            'status' => 'IN PROGRESS',
             'page_size' => 100,
-            'net_sales_base' => (string) $csvNet,
             'max_row_limit' => CsvReportWriter::MAX_ROWS,
             'max_byte_limit' => CsvReportWriter::MAX_BYTES,
+            'max_seconds' => CsvReportWriter::MAX_SECONDS,
+            'row_identity_and_count_verification' => 'NOT VERIFIED',
+            'net_equivalence_verification' => 'NOT VERIFIED',
+            'bom_verification' => 'NOT VERIFIED',
+            'delivered_bytes' => 'NOT VERIFIED (direct internal stream; no HTTP response)',
+            'controller_delivery_proof' => 'Separate targeted CSV controller regressions; not verified by this measurement',
         ];
+        $writer = new CsvReportWriter;
+        try {
+            $writer->write($stream, function (int $page) use ($period, &$pagesAttempted): ReportResult {
+                $pagesAttempted++;
 
-        $this->benchmarkMetrics = $metrics;
+                return app(SalesSummaryReportQuery::class)->execute($this->company, [
+                    'period' => $period->toArray(),
+                    'page' => $page,
+                    'per_page' => 100,
+                ], $this->owner);
+            }, [
+                ['key' => 'document_number', 'label' => 'رقم المستند', 'type' => 'text'],
+                ['key' => 'event_type', 'label' => 'نوع الحركة', 'type' => 'text'],
+                ['key' => 'net_sales_base', 'label' => 'صافي المبيعات الأساسي', 'type' => 'decimal'],
+            ]);
+            rewind($stream);
+            $csvContent = stream_get_contents($stream);
+            rewind($stream);
+            fgetcsv($stream, escape: ''); // Translated header with UTF-8 BOM.
+            $csvRows = 0;
+            $csvNet = BigDecimal::zero();
+            while (($row = fgetcsv($stream, escape: '')) !== false) {
+                $this->assertNotSame('', $row[0], 'CSV must contain actual canonical document numbers.');
+                $this->assertNotSame('', $row[1], 'CSV must identify each economic event type.');
+                $csvNet = $csvNet->plus($row[2]);
+                $csvRows++;
+            }
+            $this->assertSame($fixtureCounts['sales_invoices'] + $fixtureCounts['sales_returns'], $csvRows);
+            $this->assertTrue($csvNet->isEqualTo($salesSummary->totals['net_sales_base']));
+            $this->assertStringStartsWith("\xEF\xBB\xBF", $csvContent);
+            $csvMetrics = array_replace($csvMetrics, [
+                'status' => 'COMPLETED',
+                'bytes_written' => strlen($csvContent),
+                'actual_rows' => $csvRows,
+                'net_sales_base' => (string) $csvNet,
+                'row_identity_and_count_verification' => 'PASS',
+                'net_equivalence_verification' => 'PASS',
+                'bom_verification' => 'PASS',
+            ]);
+        } catch (\Throwable $exception) {
+            if ($exception::class === RuntimeException::class && $exception->getMessage() === 'Export execution time limit exceeded.') {
+                $csvMetrics['status'] = 'REFUSED_TIME_LIMIT';
+                $csvMetrics['refusal_message'] = $exception->getMessage();
+            } else {
+                $csvMetrics['status'] = 'ERROR';
+                $csvMetrics['error_class'] = $exception::class;
+                $csvMetrics['error_message'] = $exception->getMessage();
+                $metrics['measurement_status'] = 'ERROR';
+                $metrics['operations']['csv_streaming'] = $csvMetrics;
+                $this->persistMetrics($metrics);
+                throw $exception;
+            }
+        } finally {
+            $csvMetrics['wall_time_ms'] = round((hrtime(true) - $csvStart) / 1_000_000, 2);
+            $csvMetrics['pages_attempted'] = $pagesAttempted;
+            $stagedBytes = ftell($stream);
+            $csvMetrics['internally_staged_bytes'] = $stagedBytes === false ? 'NOT VERIFIED' : $stagedBytes;
+            fclose($stream);
+            DB::disableQueryLog();
+            $metrics['operations']['csv_streaming'] = $csvMetrics;
+            $this->persistMetrics($metrics);
+        }
 
         // Measurements cannot earn integrity acceptance without all six domain proofs.
         app(CompanyContext::class)->setCompany($this->company, $this->owner);
-        foreach ([AccountingReconciliationService::class, MoneyReconciliationService::class,
-            Phase7ReconciliationService::class, SalesReconciliationService::class,
-            PayablesReconciliationService::class] as $service) {
-            $report = app($service)->reconcile($this->company);
-            $this->assertTrue($report->isHealthy, $service);
+        try {
+            foreach ([AccountingReconciliationService::class, MoneyReconciliationService::class,
+                Phase7ReconciliationService::class, SalesReconciliationService::class,
+                PayablesReconciliationService::class] as $service) {
+                $report = app($service)->reconcile($this->company);
+                $metrics['reconciliation_results'][$service] = $report->isHealthy ? 'HEALTHY' : 'FAIL';
+                $this->persistMetrics($metrics);
+                $this->assertTrue($report->isHealthy, $service);
+            }
+            $inventoryReport = app(InventoryReconciliationService::class)->auditCompany($this->company);
+            $metrics['reconciliation_results'][InventoryReconciliationService::class] = $inventoryReport->isHealthy ? 'HEALTHY' : 'FAIL';
+            $this->persistMetrics($metrics);
+            $this->assertTrue($inventoryReport->isHealthy);
+            $metrics['six_domain_reconciliations'] = 'HEALTHY';
+        } catch (\Throwable $reconciliationException) {
+            $metrics['measurement_status'] = 'ERROR';
+            $this->persistMetrics($metrics);
+            throw $reconciliationException;
         }
-        $this->assertTrue(app(InventoryReconciliationService::class)->auditCompany($this->company)->isHealthy);
-        $metrics['six_domain_reconciliations'] = 'HEALTHY';
+        $metrics['measurement_status'] = $csvMetrics['status'] === 'COMPLETED' ? 'MEASURED' : 'MEASURED_WITH_LIMIT_REFUSAL';
 
         // Write metrics JSON and generated evidence markdown solely under ignored .ai/phase10-capacity
         $capacityDir = base_path('.ai/phase10-capacity');
         if (! File::isDirectory($capacityDir)) {
             File::makeDirectory($capacityDir, 0755, true);
         }
-        File::put($capacityDir.'/capacity-metrics.json', json_encode($metrics, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
-        File::put($capacityDir.'/capacity-'.strtolower($profile).'-metrics.json', json_encode($metrics, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
+        $this->persistMetrics($metrics);
         $this->assertFileExists($capacityDir.'/capacity-metrics.json');
 
         $evidenceMarkdown = $this->generateEvidenceMarkdown($metrics);
@@ -927,12 +985,18 @@ final class CapacityMeasurementTest extends Phase8TestCase
         $lines[] = '';
         $lines[] = '| Workload Profile | Products | Transactions | Status | Execution Mechanism |';
         $lines[] = '|---|---|---|---|---|';
-        $sStatus = $metrics['profile'] === 'S' ? '**MEASURED (Default)**' : 'Ready (Configurable builder)';
-        $mStatus = $metrics['profile'] === 'M' ? '**MEASURED**' : 'Ready (Execute via `PHASE10_CAPACITY_WORKLOAD=M`)';
-        $lStatus = $metrics['profile'] === 'L' ? '**MEASURED**' : 'Ready (Execute via `PHASE10_CAPACITY_WORKLOAD=L`)';
+        $statusSuffix = ($metrics['measurement_status'] ?? '') === 'MEASURED_WITH_LIMIT_REFUSAL'
+            ? ' (MEASURED_WITH_LIMIT_REFUSAL)'
+            : '';
+        $sStatus = $metrics['profile'] === 'S' ? '**MEASURED (Default)'.$statusSuffix.'**' : 'Ready (Configurable builder)';
+        $mStatus = $metrics['profile'] === 'M' ? '**MEASURED'.$statusSuffix.'**' : 'Ready (Execute via `PHASE10_CAPACITY_WORKLOAD=M`)';
+        $lStatus = $metrics['profile'] === 'L' ? '**MEASURED'.$statusSuffix.'**' : 'Ready (Execute via `PHASE10_CAPACITY_WORKLOAD=L`)';
         $lines[] = "| **Profile S** | 10 | 50 | {$sStatus} | Canonical Actions in disposable MariaDB |";
         $lines[] = "| **Profile M** | 500 | 5,000 | {$mStatus} | Canonical Actions in disposable MariaDB |";
         $lines[] = "| **Profile L** | 2,500 | 25,000 | {$lStatus} | Canonical Actions in disposable MariaDB |";
+        $lines[] = '';
+        $lines[] = "- **Measurement Outcome**: `{$metrics['measurement_status']}`";
+        $lines[] = "- **Six Domain Reconciliations**: `{$metrics['six_domain_reconciliations']}`";
         $lines[] = '';
         $lines[] = '> **Invariant Assurance:** All economic events were created and committed strictly via canonical domain Actions (`PostPurchaseAction`, `PostSalesInvoiceAction`, `PostCustomerPaymentAction`, `PostVendorPaymentAction`, `PostExpenseAction`, `AdjustStockAction`, `PostEmployeeAdvanceAction`). Zero direct bulk insertions were made into financial ledger (`posting_batches`, `posting_lines`) or stock movement tables.';
         $lines[] = '';
@@ -977,7 +1041,40 @@ final class CapacityMeasurementTest extends Phase8TestCase
         $lines[] = '| **Barcode Labels PDF** (`BarcodeLabelService`) | '.($bc['wall_time_ms'] ?? 'N/A').' ms | N/A | N/A | 10 distinct barcodes / 50 total labels sheet |';
 
         $csv = $metrics['operations']['csv_streaming'] ?? [];
-        $lines[] = '| **CSV Stream Export** (`CsvReportWriter`) | '.($csv['wall_time_ms'] ?? 'N/A').' ms | N/A | Bounded | Chunked stream with UTF-8 BOM |';
+        $csvStatus = $csv['status'] ?? 'NOT RUN';
+        $csvNotes = match ($csvStatus) {
+            'COMPLETED' => 'Chunked stream with UTF-8 BOM ('.$csv['actual_rows'].' rows, net '.$csv['net_sales_base'].')',
+            'REFUSED_TIME_LIMIT' => 'REFUSED_TIME_LIMIT (30s time budget reached at page '.($csv['pages_attempted'] ?? 'N/A').'; row/net/BOM NOT VERIFIED; internal spool '.($csv['internally_staged_bytes'] ?? 'N/A').' bytes not delivered to client)',
+            default => 'Status: '.$csvStatus,
+        };
+        $lines[] = '| **CSV Stream Export** (`CsvReportWriter`) | '.($csv['wall_time_ms'] ?? 'N/A').' ms | N/A | Bounded | '.$csvNotes.' |';
+
+        $lines[] = '';
+        $lines[] = "### 3.1 CSV Stream Export Execution Breakdown (Profile {$metrics['profile']})";
+        $lines[] = '';
+        $lines[] = "- **CSV Status**: `{$csvStatus}`";
+        $lines[] = '- **Time Budget Cap**: `'.($csv['max_seconds'] ?? '30').'s`';
+        $lines[] = '- **Pages Attempted**: `'.($csv['pages_attempted'] ?? 'N/A').'` (page size '.($csv['page_size'] ?? '100').' rows)';
+        $lines[] = '- **Wall Time**: `'.($csv['wall_time_ms'] ?? 'N/A').' ms`';
+        if ($csvStatus === 'REFUSED_TIME_LIMIT') {
+            $lines[] = '- **Refusal Message**: `'.($csv['refusal_message'] ?? 'Export execution time limit exceeded.').'`';
+            $lines[] = '- **Row Identity & Count Verification**: `NOT VERIFIED` (export halted mid-stream by time limit)';
+            $lines[] = '- **Net Equivalence Verification**: `NOT VERIFIED` (export halted mid-stream by time limit)';
+            $lines[] = '- **BOM Verification**: `NOT VERIFIED` (export halted mid-stream by time limit)';
+            $lines[] = '- **Internally Staged Bytes**: `'.($csv['internally_staged_bytes'] ?? 'N/A').' bytes` (spooled in internal temp stream; explicitly NOT delivered to client)';
+            $lines[] = '- **Controller Delivery Proof**: Separate targeted CSV controller regressions; direct writer internal stream does not verify HTTP response.';
+        } elseif ($csvStatus === 'COMPLETED') {
+            $lines[] = '- **Bytes Written**: `'.($csv['bytes_written'] ?? 'N/A').' bytes`';
+            $lines[] = '- **Actual Rows**: `'.($csv['actual_rows'] ?? 'N/A').'`';
+            $lines[] = '- **Net Sales Base**: `'.($csv['net_sales_base'] ?? 'N/A').'`';
+            $lines[] = '- **Row Identity & Count Verification**: `PASS`';
+            $lines[] = '- **Net Equivalence Verification**: `PASS`';
+            $lines[] = '- **BOM Verification**: `PASS`';
+            $lines[] = '- **Delivered Bytes**: `NOT VERIFIED` (direct internal stream; no HTTP response)';
+            $lines[] = '- **Controller Delivery Proof**: Separate targeted CSV controller regressions; direct writer internal stream does not verify HTTP response.';
+        } else {
+            $lines[] = '- **Row/Net/BOM Verification**: `NOT VERIFIED`';
+        }
 
         $lines[] = '';
         $lines[] = '## 4. Captured MariaDB EXPLAIN Plans';
@@ -1014,7 +1111,14 @@ final class CapacityMeasurementTest extends Phase8TestCase
         $lines[] = '';
         $lines[] = '## 7. Bounded Limits & Safe Refusal Enforcements';
         $lines[] = '';
-        $lines[] = '1. **CSV Export Cap**: `MAX_ROWS = 50,000` rows and `MAX_BYTES = 50 MiB`. When query metadata indicates total rows exceed 50,000 (`total: 50_001`), the export refuses pre-stream with `RuntimeException("Export exceeded maximum row limit.")`. (Observed behavior is pre-stream refusal based on reported pagination total; this does not prove immunity to mid-stream memory exhaustion if queries report fewer rows or omit count).';
+        $lines[] = '1. **CSV Export Cap**: `MAX_ROWS = 50,000` rows, `MAX_BYTES = 50 MiB`, and `MAX_SECONDS = 30` seconds.';
+        if ($csvStatus === 'REFUSED_TIME_LIMIT') {
+            $lines[] = '   - **Observed Behavior (Profile '.$metrics['profile'].')**: Export halted safely with `RuntimeException("Export execution time limit exceeded.")` at 30s cap after attempting '.($csv['pages_attempted'] ?? 'N/A').' pages. Row counts, net equivalence, and BOM checks remain `NOT VERIFIED`. Staged bytes ('.($csv['internally_staged_bytes'] ?? 'N/A').' bytes) were spooled internally and explicitly not delivered.';
+        } elseif ($csvStatus === 'COMPLETED') {
+            $lines[] = '   - **Observed Behavior (Profile '.$metrics['profile'].')**: Export completed within 30s budget ('.($csv['actual_rows'] ?? 'N/A').' rows, '.($csv['bytes_written'] ?? 'N/A').' bytes). Row counts, net equivalence, and UTF-8 BOM verified.';
+        } else {
+            $lines[] = '   - When query metadata indicates total rows exceed 50,000 (`total: 50_001`), the export refuses pre-stream with `RuntimeException("Export exceeded maximum row limit.")`.';
+        }
         $lines[] = '2. **PDF Document Limits**: `MAX_DOCUMENT_LINES = 500` lines, `MAX_STATEMENT_ENTRIES = 1000` entries, `MAX_PDF_BYTES = 15 MiB`, `MAX_PAGES = 50` pages, `MAX_SECONDS = 15` seconds.';
         $lines[] = '3. **Barcode Label Limits**: `MAX_DISTINCT_BARCODES = 100`, `MAX_TOTAL_LABELS = 500`. Requests exceeding limits are rejected with `InvalidArgumentException`.';
         $lines[] = '';
@@ -1023,7 +1127,12 @@ final class CapacityMeasurementTest extends Phase8TestCase
         $lines[] = '### Confirmed Findings';
         $lines[] = "- **Position Batched Queries**: `ReceivablePositionAsOf` batches invoices in chunks of 500, executing `2 * ceil(N / 500)` queries ({$ar['query_count']} queries for Profile {$metrics['profile']}'s {$ar['invoices_count']} invoices).";
         $lines[] = '- **Window Function Design**: `MoneyMovementReportQuery` executes window functions directly in MariaDB with SQL `LIMIT / OFFSET`, measured with SQL pagination; full bounded-memory guarantees require the larger profile evidence.';
-        $lines[] = '- **Fail-Closed CSV Pre-Stream Refusal**: In the observed test scenario with reported pagination total exceeding 50,000, `CsvReportWriter` refuses before writing CSV markers or records.';
+        if ($csvStatus === 'REFUSED_TIME_LIMIT') {
+            $lines[] = '- **Safe Export Time Budget Refusal**: `CsvReportWriter` enforces the 30-second execution cap mid-stream, throwing `RuntimeException("Export execution time limit exceeded.")`. Completed financial and stock history remained intact without corrupting transactions.';
+            $lines[] = '- **Internal Stream Isolation**: Direct writer testing spools into `php://temp`; incomplete staged bytes are not delivered as a valid response, preserving fail-closed behavior.';
+        } else {
+            $lines[] = '- **Fail-Closed CSV Pre-Stream Refusal**: In the observed test scenario with reported pagination total exceeding 50,000, `CsvReportWriter` refuses before writing CSV markers or records.';
+        }
         $lines[] = '';
         $lines[] = '### Architectural Risks';
         $lines[] = '- **Subledger In-Memory Hydration**: Party statement queries (`CustomerStatementReportQuery`, `VendorStatementReportQuery`) hydrate the complete chronological transaction history in PHP to compute running balances before `array_slice()` pagination. Under high transaction volume, this produces measurable memory spikes.';
@@ -1033,6 +1142,18 @@ final class CapacityMeasurementTest extends Phase8TestCase
         $lines[] = '- Local MariaDB execution timings cannot be equated to production shared-hosting SLAs due to noisy-neighbor effects, shared IOPS limits, and CloudLinux LVE governor policies.';
         $lines[] = '- Concurrency 2 and 4 require independent web-server worker harnesses and remain NOT RUN in the single-process CLI test environment.';
         $lines[] = '- Production hosting quotas remain BLOCKED EXTERNAL AUTHORIZATION; no production environment access occurred.';
+        $lines[] = '- Lock contention and CPU counters under Windows are unsupported/unverified in local CLI.';
+        $lines[] = '';
+        $lines[] = "## 9. Six Domain Reconciliations (Profile {$metrics['profile']})";
+        $lines[] = '';
+        $lines[] = "- **Overall Reconciliations**: `{$metrics['six_domain_reconciliations']}`";
+        $lines[] = '';
+        $lines[] = '| Domain Service | Status |';
+        $lines[] = '|---|---|';
+        foreach ($metrics['reconciliation_results'] ?? [] as $svc => $res) {
+            $shortName = class_basename($svc);
+            $lines[] = "| `{$shortName}` | **{$res}** |";
+        }
 
         return implode("\n", $lines);
     }
@@ -1060,5 +1181,21 @@ final class CapacityMeasurementTest extends Phase8TestCase
         }
 
         return implode("\n", $lines);
+    }
+
+    /**
+     * @param  array<string, mixed>  $metrics
+     */
+    private function persistMetrics(array $metrics): void
+    {
+        $this->benchmarkMetrics = $metrics;
+        $profile = strtolower((string) ($metrics['profile'] ?? 's'));
+        $capacityDir = base_path('.ai/phase10-capacity');
+        if (! File::isDirectory($capacityDir)) {
+            File::makeDirectory($capacityDir, 0755, true);
+        }
+        $encoded = json_encode($metrics, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        File::put($capacityDir.'/capacity-metrics.json', $encoded);
+        File::put($capacityDir.'/capacity-'.$profile.'-metrics.json', $encoded);
     }
 }

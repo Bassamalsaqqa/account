@@ -102,6 +102,7 @@ final class ConcurrentCapacityMeasurementTest extends TestCase
         $before = $this->fingerprint($company);
         $controlBefore = $this->fingerprint($control);
         $metrics = ['profile' => $profile, 'timestamp_utc' => gmdate('Y-m-d\TH:i:s\Z'), 'fixture_counts' => $counts,
+            'fingerprint_format' => 'sha256-full-row-framed-v2; 24 company-filtered tables; ascending id; 500-row chunks',
             'fixture_generation_ms' => $fixtureMs, 'execution' => 'Independent local CLI Laravel HTTP kernels; no listening HTTP server',
             'environment' => ['php_version' => PHP_VERSION, 'sapi' => PHP_SAPI, 'os_family' => PHP_OS_FAMILY,
                 'memory_limit' => ini_get('memory_limit'), 'max_execution_time' => ini_get('max_execution_time'),
@@ -313,15 +314,37 @@ final class ConcurrentCapacityMeasurementTest extends TestCase
 
     private function fingerprint(Company $company): string
     {
-        $rows = [];
-        foreach (['posting_batches', 'posting_lines', 'stock_movements', 'inventory_operations', 'inventory_lots',
-            'inventory_balances', 'inventory_lot_balances', 'inventory_cost_states', 'purchases', 'purchase_lines',
-            'purchase_line_lots', 'purchase_returns', 'purchase_return_lines', 'vendor_payments', 'vendor_payment_allocations',
-            'sales_invoices', 'sales_invoice_lines', 'sales_invoice_lot_allocations', 'sales_returns', 'sales_return_lines',
-            'customer_payments', 'customer_payment_allocations', 'document_sequences', 'audit_events'] as $table) {
-            $rows[$table] = DB::table($table)->where('company_id', $company->id)->orderBy('id')->get()->all();
+        $hash = hash_init('sha256');
+        hash_update($hash, "sha256-full-row-framed-v2\n");
+        $connection = DB::connection();
+        $wasLogging = $connection->logging();
+        $connection->disableQueryLog();
+        try {
+            foreach (['posting_batches', 'posting_lines', 'stock_movements', 'inventory_operations', 'inventory_lots',
+                'inventory_balances', 'inventory_lot_balances', 'inventory_cost_states', 'purchases', 'purchase_lines',
+                'purchase_line_lots', 'purchase_returns', 'purchase_return_lines', 'vendor_payments', 'vendor_payment_allocations',
+                'sales_invoices', 'sales_invoice_lines', 'sales_invoice_lot_allocations', 'sales_returns', 'sales_return_lines',
+                'customer_payments', 'customer_payment_allocations', 'document_sequences', 'audit_events'] as $table) {
+                hash_update($hash, 'T'.strlen($table).':'.$table."\n");
+                $rowCount = 0;
+                $connection->table($table)->where('company_id', $company->id)->orderBy('id')
+                    ->chunkById(500, static function ($rows) use ($hash, &$rowCount): void {
+                        foreach ($rows as $row) {
+                            $columns = get_object_vars($row);
+                            ksort($columns);
+                            $encoded = json_encode($columns, JSON_THROW_ON_ERROR);
+                            hash_update($hash, 'R'.strlen($encoded).':'.$encoded."\n");
+                            $rowCount++;
+                        }
+                    });
+                hash_update($hash, 'E'.$rowCount."\n");
+            }
+        } finally {
+            if ($wasLogging) {
+                $connection->enableQueryLog();
+            }
         }
 
-        return hash('sha256', json_encode($rows, JSON_THROW_ON_ERROR));
+        return hash_final($hash);
     }
 }
