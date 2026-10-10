@@ -155,6 +155,9 @@ fi
 echo "===> [4/7] Provisioning purchasing foundation and static permissions..."
 "$PHP_BIN" artisan purchasing:bootstrap --all
 
+echo "===> [4/7] Provisioning documents foundation and static permissions..."
+"$PHP_BIN" artisan documents:bootstrap --all
+
 echo "===> [5/7] Warming production caches..."
 "$PHP_BIN" artisan config:cache
 "$PHP_BIN" artisan route:cache
