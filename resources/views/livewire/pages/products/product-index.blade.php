@@ -27,7 +27,7 @@
         <div class="grid grid-cols-1 md:grid-cols-4 lg:grid-cols-12 gap-3">
             <!-- Search Input -->
             <div class="md:col-span-2 lg:col-span-4 relative">
-                <input type="text"
+                <input id="products-search" aria-label="{{ __('inventory.search_products_placeholder') }}" type="text"
                        wire:model.live.debounce.300ms="search"
                        placeholder="{{ __('inventory.search_products_placeholder') }}"
                        class="w-full h-9 pl-9 pr-3 rounded-control border border-border bg-white text-xs text-text-primary placeholder:text-text-muted focus:outline-none focus:border-primary focus:ring-2 focus:ring-focus-ring" />
@@ -38,7 +38,7 @@
 
             <!-- Category Filter -->
             <div class="md:col-span-1 lg:col-span-3">
-                <select wire:model.live="categoryFilter"
+                <select id="products-category-filter" wire:model.live="categoryFilter"
                         aria-label="{{ __('inventory.category') }}"
                         class="w-full h-9 px-3 rounded-control border border-border bg-white text-xs text-text-primary focus:outline-none focus:border-primary focus:ring-2 focus:ring-focus-ring">
                     <option value="">{{ __('inventory.filter_category') }}</option>
@@ -50,7 +50,7 @@
 
             <!-- Status Filter -->
             <div class="md:col-span-1 lg:col-span-2">
-                <select wire:model.live="statusFilter"
+                <select id="products-status-filter" wire:model.live="statusFilter"
                         aria-label="{{ __('inventory.filter_status') }}"
                         class="w-full h-9 px-3 rounded-control border border-border bg-white text-xs text-text-primary focus:outline-none focus:border-primary focus:ring-2 focus:ring-focus-ring">
                     <option value="all">{{ __('inventory.filter_all_status') }}</option>
@@ -61,12 +61,12 @@
 
             <!-- Toggles -->
             <div class="md:col-span-4 lg:col-span-3 flex items-center gap-3">
-                <label class="flex items-center gap-1.5 cursor-pointer text-xs text-text-secondary select-none">
-                    <input type="checkbox" wire:model.live="lowStockOnly" class="rounded border-border text-primary focus:ring-primary w-4 h-4" />
+                <label for="products-low-stock-only" class="flex items-center gap-1.5 cursor-pointer text-xs text-text-secondary select-none">
+                    <input id="products-low-stock-only" type="checkbox" wire:model.live="lowStockOnly" class="rounded border-border text-primary focus:ring-primary w-4 h-4" />
                     <span>{{ __('inventory.filter_low_stock') }}</span>
                 </label>
-                <label class="flex items-center gap-1.5 cursor-pointer text-xs text-text-secondary select-none">
-                    <input type="checkbox" wire:model.live="expiryOnly" class="rounded border-border text-primary focus:ring-primary w-4 h-4" />
+                <label for="products-expiry-only" class="flex items-center gap-1.5 cursor-pointer text-xs text-text-secondary select-none">
+                    <input id="products-expiry-only" type="checkbox" wire:model.live="expiryOnly" class="rounded border-border text-primary focus:ring-primary w-4 h-4" />
                     <span>{{ __('inventory.filter_expiry') }}</span>
                 </label>
             </div>

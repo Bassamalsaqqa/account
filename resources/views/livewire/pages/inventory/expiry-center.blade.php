@@ -12,15 +12,15 @@
 
     <!-- Messages -->
     @if ($successMessage)
-        <div class="p-3.5 rounded-control bg-success-bg border border-success/30 text-success text-xs font-semibold flex items-center justify-between">
+        <div role="status" class="p-3.5 rounded-control bg-success-bg border border-success/30 text-success text-xs font-semibold flex items-center justify-between">
             <span>{{ $successMessage }}</span>
-            <button type="button" wire:click="$set('successMessage', null)" class="text-success hover:opacity-75">&times;</button>
+            <button type="button" aria-label="{{ __('inventory.close') }}" wire:click="$set('successMessage', null)" class="text-success hover:opacity-75">&times;</button>
         </div>
     @endif
     @if ($errorMessage)
-        <div class="p-3.5 rounded-control bg-danger-bg border border-danger/30 text-danger text-xs font-semibold flex items-center justify-between">
+        <div role="alert" class="p-3.5 rounded-control bg-danger-bg border border-danger/30 text-danger text-xs font-semibold flex items-center justify-between">
             <span>{{ $errorMessage }}</span>
-            <button type="button" wire:click="$set('errorMessage', null)" class="text-danger hover:opacity-75">&times;</button>
+            <button type="button" aria-label="{{ __('inventory.close') }}" wire:click="$set('errorMessage', null)" class="text-danger hover:opacity-75">&times;</button>
         </div>
     @endif
 
@@ -29,8 +29,8 @@
         <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
             <!-- Timeframe Filter -->
             <div>
-                <label class="block text-[11px] font-bold text-text-secondary mb-1">{{ __('inventory.filter_timeframe') }}</label>
-                <select wire:model.live="timeframeFilter" class="w-full h-8 px-2 rounded-control border border-border text-xs bg-white">
+                <label for="expiry-timeframe" class="block text-[11px] font-bold text-text-secondary mb-1">{{ __('inventory.filter_timeframe') }}</label>
+                <select id="expiry-timeframe" wire:model.live="timeframeFilter" class="w-full h-8 px-2 rounded-control border border-border text-xs bg-white">
                     <option value="all">{{ __('inventory.filter_all_lots') }}</option>
                     <option value="expired">{{ __('inventory.filter_expired_only') }}</option>
                     <option value="7">{{ __('inventory.within_7_days') }}</option>
@@ -43,19 +43,19 @@
 
             @if ($timeframeFilter === 'custom')
                 <div>
-                    <label class="block text-[11px] font-bold text-text-secondary mb-1">{{ __('inventory.from_date') }}</label>
-                    <input type="date" wire:model.live="customFromDate" class="w-full h-8 px-2 rounded-control border border-border text-xs bg-white" />
+                    <label for="expiry-from-date" class="block text-[11px] font-bold text-text-secondary mb-1">{{ __('inventory.from_date') }}</label>
+                    <input id="expiry-from-date" type="date" wire:model.live="customFromDate" class="w-full h-8 px-2 rounded-control border border-border text-xs bg-white" />
                 </div>
                 <div>
-                    <label class="block text-[11px] font-bold text-text-secondary mb-1">{{ __('inventory.to_date') }}</label>
-                    <input type="date" wire:model.live="customToDate" class="w-full h-8 px-2 rounded-control border border-border text-xs bg-white" />
+                    <label for="expiry-to-date" class="block text-[11px] font-bold text-text-secondary mb-1">{{ __('inventory.to_date') }}</label>
+                    <input id="expiry-to-date" type="date" wire:model.live="customToDate" class="w-full h-8 px-2 rounded-control border border-border text-xs bg-white" />
                 </div>
             @endif
 
             <!-- Product Filter -->
             <div>
-                <label class="block text-[11px] font-bold text-text-secondary mb-1">{{ __('inventory.product') }}</label>
-                <select wire:model.live="productFilter" class="w-full h-8 px-2 rounded-control border border-border text-xs bg-white">
+                <label for="expiry-product" class="block text-[11px] font-bold text-text-secondary mb-1">{{ __('inventory.product') }}</label>
+                <select id="expiry-product" wire:model.live="productFilter" class="w-full h-8 px-2 rounded-control border border-border text-xs bg-white">
                     <option value="">{{ __('inventory.all_products') }}</option>
                     @foreach ($products as $p)
                         <option value="{{ $p->id }}">{{ app()->getLocale() === 'en' && $p->name_en ? $p->name_en : $p->name_ar }}</option>
@@ -65,8 +65,8 @@
 
             <!-- Warehouse Filter -->
             <div>
-                <label class="block text-[11px] font-bold text-text-secondary mb-1">{{ __('inventory.warehouse') }}</label>
-                <select wire:model.live="warehouseFilter" class="w-full h-8 px-2 rounded-control border border-border text-xs bg-white">
+                <label for="expiry-warehouse" class="block text-[11px] font-bold text-text-secondary mb-1">{{ __('inventory.warehouse') }}</label>
+                <select id="expiry-warehouse" wire:model.live="warehouseFilter" class="w-full h-8 px-2 rounded-control border border-border text-xs bg-white">
                     <option value="">{{ __('inventory.all_warehouses') }}</option>
                     @foreach ($warehouses as $w)
                         <option value="{{ $w->id }}">{{ app()->getLocale() === 'en' && $w->name_en ? $w->name_en : $w->name_ar }}</option>
@@ -169,14 +169,14 @@
 
     <!-- Quick Disposal Modal -->
     @if ($showDisposalModal && $disposingLotBalance)
-        <div class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4">
+        <div x-data x-trap.inert.noscroll="true" @keydown.escape.window="$wire.set('showDisposalModal', false)" role="dialog" aria-modal="true" aria-labelledby="expiry-disposal-title" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4">
             <div class="bg-white rounded-card border border-border shadow-xl w-full max-w-md p-6 space-y-4">
                 <div class="flex items-center justify-between border-b border-border pb-3">
-                    <h3 class="font-extrabold text-sm text-text-primary flex items-center gap-2">
+                    <h3 id="expiry-disposal-title" class="font-extrabold text-sm text-text-primary flex items-center gap-2">
                         <x-icon name="alert" class="w-4 h-4 text-danger" />
                         <span>{{ __('inventory.confirm_disposal') }}</span>
                     </h3>
-                    <button type="button" wire:click="$set('showDisposalModal', false)" class="text-text-muted hover:text-text-primary text-base font-bold">&times;</button>
+                    <button type="button" aria-label="{{ __('inventory.close') }}" wire:click="$set('showDisposalModal', false)" class="text-text-muted hover:text-text-primary text-base font-bold">&times;</button>
                 </div>
 
                 <div class="space-y-3 text-xs">
@@ -188,21 +188,21 @@
                     </div>
 
                     <div>
-                        <label class="block font-bold text-text-secondary mb-1">{{ __('inventory.disposal_quantity') }} *</label>
-                        <input type="text" wire:model="disposalQuantity" dir="ltr" class="w-full h-8 px-2.5 rounded-control border border-border text-xs font-mono" />
-                        @error('disposalQuantity') <span class="text-danger text-[10px]">{{ $message }}</span> @enderror
+                        <label for="expiry-disposal-quantity" class="block font-bold text-text-secondary mb-1">{{ __('inventory.disposal_quantity') }} *</label>
+                        <input aria-invalid="{{ $errors->has('disposalQuantity') ? 'true' : 'false' }}" @if ($errors->has('disposalQuantity')) aria-describedby="expiry-disposal-quantity-error" @endif id="expiry-disposal-quantity" type="text" wire:model="disposalQuantity" dir="ltr" class="w-full h-8 px-2.5 rounded-control border border-border text-xs font-mono" />
+                        @error('disposalQuantity') <span role="alert" id="expiry-disposal-quantity-error" class="text-danger text-[10px]">{{ $message }}</span> @enderror
                     </div>
 
                     <div>
-                        <label class="block font-bold text-text-secondary mb-1">{{ __('inventory.disposal_date') }} *</label>
-                        <input type="date" wire:model="disposalDate" dir="ltr" class="w-full h-8 px-2.5 rounded-control border border-border text-xs font-mono" />
-                        @error('disposalDate') <span class="text-danger text-[10px]">{{ $message }}</span> @enderror
+                        <label for="expiry-disposal-date" class="block font-bold text-text-secondary mb-1">{{ __('inventory.disposal_date') }} *</label>
+                        <input aria-invalid="{{ $errors->has('disposalDate') ? 'true' : 'false' }}" @if ($errors->has('disposalDate')) aria-describedby="expiry-disposal-date-error" @endif id="expiry-disposal-date" type="date" wire:model="disposalDate" dir="ltr" class="w-full h-8 px-2.5 rounded-control border border-border text-xs font-mono" />
+                        @error('disposalDate') <span role="alert" id="expiry-disposal-date-error" class="text-danger text-[10px]">{{ $message }}</span> @enderror
                     </div>
 
                     <div>
-                        <label class="block font-bold text-text-secondary mb-1">{{ __('inventory.disposal_reason') }} *</label>
-                        <textarea wire:model="disposalReason" rows="2" dir="rtl" class="w-full p-2.5 rounded-control border border-border text-xs focus:outline-none focus:border-primary @error('disposalReason') border-danger @enderror"></textarea>
-                        @error('disposalReason') <span class="text-danger text-[10px]">{{ $message }}</span> @enderror
+                        <label for="expiry-disposal-reason" class="block font-bold text-text-secondary mb-1">{{ __('inventory.disposal_reason') }} *</label>
+                        <textarea aria-invalid="{{ $errors->has('disposalReason') ? 'true' : 'false' }}" @if ($errors->has('disposalReason')) aria-describedby="expiry-disposal-reason-error" @endif id="expiry-disposal-reason" wire:model="disposalReason" rows="2" dir="rtl" class="w-full p-2.5 rounded-control border border-border text-xs focus:outline-none focus:border-primary @error('disposalReason') border-danger @enderror"></textarea>
+                        @error('disposalReason') <span role="alert" id="expiry-disposal-reason-error" class="text-danger text-[10px]">{{ $message }}</span> @enderror
                     </div>
                 </div>
 

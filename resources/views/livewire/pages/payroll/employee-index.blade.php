@@ -17,12 +17,12 @@
     <div class="rounded-card border border-border bg-white p-4 space-y-3">
         <div class="grid gap-3 sm:grid-cols-2 md:grid-cols-3">
             <div class="sm:col-span-2">
-                <label class="block text-xs font-medium text-text-secondary mb-1">{{ __('payroll.search_employees') }}</label>
-                <input type="search" wire:model.live.debounce.300ms="search" placeholder="{{ __('payroll.search_employees') }}" class="w-full min-w-0 rounded-control border border-border bg-white px-3 py-2 text-sm focus:border-primary focus:ring-primary">
+                <label for="employee-search" class="block text-xs font-medium text-text-secondary mb-1">{{ __('payroll.search_employees') }}</label>
+                <input id="employee-search" type="search" wire:model.live.debounce.300ms="search" placeholder="{{ __('payroll.search_employees') }}" class="w-full min-w-0 rounded-control border border-border bg-white px-3 py-2 text-sm focus:border-primary focus:ring-primary">
             </div>
             <div>
-                <label class="block text-xs font-medium text-text-secondary mb-1">{{ __('payroll.status') }}</label>
-                <select wire:model.live="status" class="w-full min-w-0 rounded-control border border-border bg-white px-3 py-2 text-sm focus:border-primary focus:ring-primary">
+                <label for="employee-status" class="block text-xs font-medium text-text-secondary mb-1">{{ __('payroll.status') }}</label>
+                <select id="employee-status" wire:model.live="status" class="w-full min-w-0 rounded-control border border-border bg-white px-3 py-2 text-sm focus:border-primary focus:ring-primary">
                     <option value="">{{ __('expenses.all_statuses') }}</option>
                     <option value="active">{{ __('payroll.active') }}</option>
                     <option value="inactive">{{ __('payroll.inactive') }}</option>

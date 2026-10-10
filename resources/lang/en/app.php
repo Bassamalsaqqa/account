@@ -50,6 +50,8 @@ return [
 
     // Topbar
     'search_placeholder' => 'Search settings, taxes, users...',
+    'search_future' => 'Workspace search is future work',
+    'clear_search' => 'Clear search',
     'search_kbd' => 'Ctrl K',
     'quick_add' => 'Quick Add',
     'notifications' => 'Notifications',

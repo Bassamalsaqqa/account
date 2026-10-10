@@ -343,29 +343,32 @@ class Correction02CsvSnapshotTest extends Phase8TestCase
 
     public function test_two_connection_mariadb_repeatable_read_snapshot_isolation(): void
     {
-        $config = config('database.connections.mysql');
-        $host = '127.0.0.1';
-        $port = 3306;
-        $dbName = $config['database'];
-        $dsn = "mysql:host={$host};port={$port};dbname={$dbName};charset=utf8mb4";
-        $pdo1 = new \PDO($dsn, $config['username'], $config['password'], [\PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION]);
-        $pdo2 = new \PDO($dsn, $config['username'], $config['password'], [\PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION]);
-
-        $now = now()->toDateTimeString();
-
-        // 1. Create committed user on pdo1 (for foreign key created_by)
-        $userPublicId = (string) Str::ulid();
-        $stmtUser = $pdo1->prepare('INSERT INTO users (public_id, name, email, password, locale, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)');
-        $stmtUser->execute([$userPublicId, 'مستخدم تجريبي للعزل', 'snap-'.Str::random(8).'@example.com', 'secret', 'ar', $now, $now]);
-        $testUserId = (int) $pdo1->lastInsertId();
-
-        // 2. Create committed company on pdo1 (so foreign key constraints are satisfied and committed)
-        $compPublicId = (string) Str::ulid();
-        $stmtComp = $pdo1->prepare('INSERT INTO companies (public_id, name_ar, base_currency_code, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)');
-        $stmtComp->execute([$compPublicId, 'شركة اختبار العزل', 'ILS', 'active', $now, $now]);
-        $testCompanyId = (int) $pdo1->lastInsertId();
-
+        $primary = DB::connection()->getDatabaseName();
+        DisposableMariaDbSchema::assertPrimarySchema($primary);
+        $primaryCounts = [];
+        foreach (['users', 'companies', 'customers'] as $table) {
+            $primaryCounts[$table] = DB::table($table)->count();
+        }
+        $disposable = DisposableMariaDbSchema::createFromSource($primary);
+        $pdo1 = $pdo2 = null;
         try {
+            // Committed fixture rows belong only to this freshly owned auxiliary schema.
+            $pdo1 = $disposable->createSeparatePdo();
+            $pdo2 = $disposable->createSeparatePdo();
+            $now = now()->toDateTimeString();
+
+            // 1. Create committed user on pdo1 (for foreign key created_by)
+            $userPublicId = (string) Str::ulid();
+            $stmtUser = $pdo1->prepare('INSERT INTO users (public_id, name, email, password, locale, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)');
+            $stmtUser->execute([$userPublicId, 'مستخدم تجريبي للعزل', 'snap-'.Str::random(8).'@example.com', 'secret', 'ar', $now, $now]);
+            $testUserId = (int) $pdo1->lastInsertId();
+
+            // 2. Create committed company on pdo1 (the migrated schema contains standard currencies).
+            $compPublicId = (string) Str::ulid();
+            $stmtComp = $pdo1->prepare('INSERT INTO companies (public_id, name_ar, base_currency_code, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)');
+            $stmtComp->execute([$compPublicId, 'شركة اختبار العزل', 'ILS', 'active', $now, $now]);
+            $testCompanyId = (int) $pdo1->lastInsertId();
+
             // 3. Seed 105 rows on pdo1
             for ($i = 1; $i <= 105; $i++) {
                 $pad = str_pad((string) $i, 3, '0', STR_PAD_LEFT);
@@ -433,11 +436,17 @@ class Correction02CsvSnapshotTest extends Phase8TestCase
             $stmtPostCommit->execute([$testCompanyId]);
             $this->assertSame(1, (int) $stmtPostCommit->fetchColumn());
         } finally {
-            // Clean up test data
-            $pdo1->exec("DELETE FROM customers WHERE company_id = {$testCompanyId}");
-            $pdo1->exec("DELETE FROM companies WHERE id = {$testCompanyId}");
-            $pdo1->exec("DELETE FROM users WHERE id = {$testUserId}");
-            unset($pdo1, $pdo2);
+            try {
+                if ($pdo1?->inTransaction()) {
+                    $pdo1->rollBack();
+                }
+            } finally {
+                $pdo1 = $pdo2 = null;
+                $disposable->drop();
+                foreach ($primaryCounts as $table => $count) {
+                    $this->assertSame($count, DB::table($table)->count(), 'Snapshot fixtures must not alter the primary test schema.');
+                }
+            }
         }
     }
 

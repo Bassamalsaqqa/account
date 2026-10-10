@@ -24,7 +24,7 @@
     <!-- Filters & Search Bar -->
     <div class="bg-white p-4 rounded-card border border-border shadow-xs flex flex-col md:flex-row gap-4 items-stretch md:items-center justify-between">
         <div class="flex-1 max-w-md relative">
-            <input type="text"
+            <input id="invoices-search" aria-label="{{ __('sales.search') }}" type="text"
                    wire:model.live.debounce.300ms="search"
                    placeholder="{{ __('sales.search') }}"
                    class="w-full h-9 pl-9 pr-3 rounded-control border border-border bg-canvas text-xs text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden" />
@@ -34,14 +34,14 @@
         </div>
 
         <div class="flex flex-wrap items-center gap-3">
-            <select wire:model.live="statusFilter" class="h-9 px-3 rounded-control border border-border bg-canvas text-xs text-text-primary">
+            <select id="invoices-statusFilter" aria-label="{{ __('sales.status') }}" wire:model.live="statusFilter" class="h-9 px-3 rounded-control border border-border bg-canvas text-xs text-text-primary">
                 <option value="all">{{ __('sales.all') }}</option>
                 <option value="draft">{{ __('sales.draft') }}</option>
                 <option value="posted">{{ __('sales.posted') }}</option>
                 <option value="void">{{ __('sales.voided') }}</option>
             </select>
 
-            <select wire:model.live="customerFilter" class="h-9 px-3 rounded-control border border-border bg-canvas text-xs text-text-primary">
+            <select id="invoices-customerFilter" aria-label="{{ __('sales.customer') }}" wire:model.live="customerFilter" class="h-9 px-3 rounded-control border border-border bg-canvas text-xs text-text-primary">
                 <option value="">{{ __('sales.select_customer') }}</option>
                 @foreach ($customers as $c)
                     <option value="{{ $c->id }}">{{ $c->displayName() }}</option>

@@ -5,11 +5,7 @@
         return text.toLowerCase().includes(this.searchQuery.toLowerCase().trim());
     }
 }">
-    @can('settings.documents.manage')
-        @can('settings.company.view')
-            <a href="{{ route('settings.documents') }}" wire:navigate class="inline-flex min-h-11 items-center rounded-card border border-border bg-white px-4 py-2 font-bold text-primary focus-visible:outline-2">{{ __('documents.title') }}</a>
-        @endcan
-    @endcan
+
     <!-- Alerts & Feedback -->
     @if ($successMessage)
         <div class="p-3.5 rounded-card bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-bold flex items-center justify-between shadow-xs">
@@ -156,11 +152,13 @@
                 <x-icon name="search" class="w-4 h-4 text-text-muted shrink-0" />
                 <input type="text"
                        x-model="searchQuery"
+                       aria-label="{{ __('app.search_placeholder') }}"
                        placeholder="{{ __('app.search_placeholder') }}"
                        class="w-full bg-transparent border-0 text-xs px-2.5 text-text-primary placeholder:text-text-muted focus:ring-0 focus:outline-none" />
                 <button x-show="searchQuery"
                         @click="searchQuery = ''"
                         type="button"
+                        aria-label="{{ __('app.clear_search') }}"
                         class="text-xs text-text-muted hover:text-text-primary font-bold">
                     &times;
                 </button>
@@ -599,38 +597,86 @@
                         @endif
 
                         <!-- Print & PDF -->
-                        <div x-show="matches('{{ __('settings.card_print_title') }} {{ __('settings.card_print_desc') }}')"
-                             class="bg-white/60 border border-border/70 rounded-card p-3.5 flex items-start justify-between gap-3 opacity-75">
-                            <div class="flex items-start gap-3 min-w-0">
-                                <div class="w-9 h-9 rounded-control bg-slate-100 text-slate-400 grid place-items-center shrink-0">
-                                    <x-icon name="print" class="w-5 h-5" />
-                                </div>
-                                <div class="min-w-0">
-                                    <div class="flex items-center gap-1.5">
-                                        <h4 class="text-xs font-extrabold text-text-muted">{{ __('settings.card_print_title') }}</h4>
-                                        <span class="text-[9px] px-1.5 py-0.5 rounded bg-slate-100 text-text-muted font-bold">{{ __('settings.future_phase_badge') }}</span>
+                        @if (auth()->user()->can('settings.documents.manage') && auth()->user()->can('settings.company.view'))
+                            <a href="{{ route('settings.documents') }}"
+                               wire:navigate
+                               x-show="matches('{{ __('settings.card_print_title') }} {{ __('settings.card_print_desc') }}')"
+                               class="bg-white border border-border hover:border-primary/60 rounded-card p-3.5 shadow-panel hover:shadow-panel-hover hover:-translate-y-0.5 transition-all flex items-start justify-between gap-3 group cursor-pointer">
+                                <div class="flex items-start gap-3 min-w-0">
+                                    <div class="w-9 h-9 rounded-control bg-primary-50 text-primary grid place-items-center shrink-0 group-hover:bg-primary group-hover:text-white transition-colors">
+                                        <x-icon name="print" class="w-5 h-5" />
                                     </div>
-                                    <p class="text-[11px] text-text-muted mt-0.5 leading-snug">{{ __('settings.card_print_desc') }}</p>
+                                    <div class="min-w-0">
+                                        <h4 class="text-xs font-extrabold text-text-primary group-hover:text-primary transition-colors">
+                                            {{ __('settings.card_print_title') }}
+                                        </h4>
+                                        <p class="text-[11px] text-text-muted mt-0.5 leading-snug">{{ __('settings.card_print_desc') }}</p>
+                                        <span class="inline-block mt-2 px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 text-[9px] font-bold">
+                                            {{ __('settings.card_print_future_note') }}
+                                        </span>
+                                    </div>
                                 </div>
+                                <x-icon name="chevron" class="w-4 h-4 text-text-muted shrink-0 mt-1 rtl:rotate-180 group-hover:text-primary transition-colors" />
+                            </a>
+                        @else
+                            <div x-show="matches('{{ __('settings.card_print_title') }} {{ __('settings.card_print_desc') }}')"
+                                 class="bg-slate-50/70 border border-border/80 rounded-card p-3.5 flex items-start justify-between gap-3 opacity-60 cursor-not-allowed">
+                                <div class="flex items-start gap-3 min-w-0">
+                                    <div class="w-9 h-9 rounded-control bg-slate-200 text-slate-400 grid place-items-center shrink-0">
+                                        <x-icon name="print" class="w-5 h-5" />
+                                    </div>
+                                    <div class="min-w-0">
+                                        <div class="flex items-center gap-1.5">
+                                            <h4 class="text-xs font-extrabold text-text-muted">{{ __('settings.card_print_title') }}</h4>
+                                            <span class="text-[9px] px-1.5 py-0.5 rounded bg-slate-200 text-text-muted font-bold">{{ __('settings.restricted_card_notice') }}</span>
+                                        </div>
+                                        <p class="text-[11px] text-text-muted mt-0.5 leading-snug">{{ __('settings.card_print_desc') }}</p>
+                                    </div>
+                                </div>
+                                <x-icon name="lock" class="w-4 h-4 text-text-muted shrink-0 mt-1" />
                             </div>
-                        </div>
+                        @endif
 
                         <!-- Sharing & Links -->
-                        <div x-show="matches('{{ __('settings.card_share_title') }} {{ __('settings.card_share_desc') }}')"
-                             class="bg-white/60 border border-border/70 rounded-card p-3.5 flex items-start justify-between gap-3 opacity-75">
-                            <div class="flex items-start gap-3 min-w-0">
-                                <div class="w-9 h-9 rounded-control bg-slate-100 text-slate-400 grid place-items-center shrink-0">
-                                    <x-icon name="share" class="w-5 h-5" />
-                                </div>
-                                <div class="min-w-0">
-                                    <div class="flex items-center gap-1.5">
-                                        <h4 class="text-xs font-extrabold text-text-muted">{{ __('settings.card_share_title') }}</h4>
-                                        <span class="text-[9px] px-1.5 py-0.5 rounded bg-slate-100 text-text-muted font-bold">{{ __('settings.future_phase_badge') }}</span>
+                        @if (auth()->user()->can('catalogs.view') && auth()->user()->hasAnyPermission(['inventory.stock.view', 'inventory.product.manage']))
+                            <a href="{{ route('catalogs.index') }}"
+                               wire:navigate
+                               x-show="matches('{{ __('settings.card_share_title') }} {{ __('settings.card_share_desc') }}')"
+                               class="bg-white border border-border hover:border-primary/60 rounded-card p-3.5 shadow-panel hover:shadow-panel-hover hover:-translate-y-0.5 transition-all flex items-start justify-between gap-3 group cursor-pointer">
+                                <div class="flex items-start gap-3 min-w-0">
+                                    <div class="w-9 h-9 rounded-control bg-primary-50 text-primary grid place-items-center shrink-0 group-hover:bg-primary group-hover:text-white transition-colors">
+                                        <x-icon name="share" class="w-5 h-5" />
                                     </div>
-                                    <p class="text-[11px] text-text-muted mt-0.5 leading-snug">{{ __('settings.card_share_desc') }}</p>
+                                    <div class="min-w-0">
+                                        <h4 class="text-xs font-extrabold text-text-primary group-hover:text-primary transition-colors">
+                                            {{ __('settings.card_share_title') }}
+                                        </h4>
+                                        <p class="text-[11px] text-text-muted mt-0.5 leading-snug">{{ __('settings.card_share_desc') }}</p>
+                                        <span class="inline-block mt-2 px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 text-[9px] font-bold">
+                                            {{ __('settings.card_share_future_note') }}
+                                        </span>
+                                    </div>
                                 </div>
+                                <x-icon name="chevron" class="w-4 h-4 text-text-muted shrink-0 mt-1 rtl:rotate-180 group-hover:text-primary transition-colors" />
+                            </a>
+                        @else
+                            <div x-show="matches('{{ __('settings.card_share_title') }} {{ __('settings.card_share_desc') }}')"
+                                 class="bg-slate-50/70 border border-border/80 rounded-card p-3.5 flex items-start justify-between gap-3 opacity-60 cursor-not-allowed">
+                                <div class="flex items-start gap-3 min-w-0">
+                                    <div class="w-9 h-9 rounded-control bg-slate-200 text-slate-400 grid place-items-center shrink-0">
+                                        <x-icon name="share" class="w-5 h-5" />
+                                    </div>
+                                    <div class="min-w-0">
+                                        <div class="flex items-center gap-1.5">
+                                            <h4 class="text-xs font-extrabold text-text-muted">{{ __('settings.card_share_title') }}</h4>
+                                            <span class="text-[9px] px-1.5 py-0.5 rounded bg-slate-200 text-text-muted font-bold">{{ __('settings.restricted_card_notice') }}</span>
+                                        </div>
+                                        <p class="text-[11px] text-text-muted mt-0.5 leading-snug">{{ __('settings.card_share_desc') }}</p>
+                                    </div>
+                                </div>
+                                <x-icon name="lock" class="w-4 h-4 text-text-muted shrink-0 mt-1" />
                             </div>
-                        </div>
+                        @endif
 
                         <!-- Data Export & Backups -->
                         <div x-show="matches('{{ __('settings.card_backup_title') }} {{ __('settings.card_backup_desc') }}')"
