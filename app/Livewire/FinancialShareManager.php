@@ -77,8 +77,8 @@ final class FinancialShareManager extends Component
             'from' => ['nullable', 'date_format:Y-m-d'], 'to' => array_filter(['nullable', 'date_format:Y-m-d', $this->from ? 'after_or_equal:from' : null])]);
         try {
             $result = app(PublicShareService::class)->createShare(app(CompanyContext::class)->company(), auth()->user(), $this->subjectType, $this->subjectId,
-                now()->startOfDay()->addDays($this->expiryDays), $this->password === '' ? null : $this->password, $this->requestKey,
-                ['locale' => $this->locale, 'from' => $this->from, 'to' => $this->to]);
+                null, $this->password === '' ? null : $this->password, $this->requestKey,
+                ['locale' => $this->locale, 'from' => $this->from, 'to' => $this->to], $this->expiryDays);
         } catch (\InvalidArgumentException) {
             $this->addError('share', __('sharing.issuance_unavailable'));
 

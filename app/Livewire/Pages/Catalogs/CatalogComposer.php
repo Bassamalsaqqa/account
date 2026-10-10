@@ -14,6 +14,7 @@ use App\Models\PublicShare;
 use App\Services\Catalogs\ApprovedCatalogMedia;
 use App\Services\Catalogs\CatalogRenderer;
 use App\Services\Catalogs\CatalogService;
+use App\Services\Sales\ShareExpiry;
 use App\Support\Tenancy\CompanyContext;
 use Illuminate\Contracts\View\View;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
@@ -122,6 +123,24 @@ class CatalogComposer extends Component
 
     public bool $editingLinkAccess = false;
 
+    #[Locked]
+    public ?string $newLinkRequestKey = null;
+
+    #[Locked]
+    public ?string $currentExpiresAt = null;
+
+    #[Locked]
+    public string $companyTimezone = 'UTC';
+
+    #[Locked]
+    public bool $legacyExpiry = false;
+
+    public bool $showNewLinkModal = false;
+
+    public ?string $newLinkPassword = null;
+
+    public ?string $newLinkExpires = null;
+
     public bool $showPreviewModal = false;
 
     /** @var array<string, mixed>|null */
@@ -205,14 +224,21 @@ class CatalogComposer extends Component
         $this->previewRevision = null;
         $this->previewPayload = null;
         $this->requestKey = null;
+        $this->newLinkRequestKey = null;
         $this->priceAcknowledged = false;
         $this->url = null;
         $this->qr = null;
         $this->hasExistingShare = false;
         $this->editingLinkAccess = false;
+        $this->showNewLinkModal = false;
+        $this->newLinkPassword = null;
+        $this->newLinkExpires = null;
         $this->expectedState = null;
         $this->hasPassword = false;
         $this->currentExpires = null;
+        $this->currentExpiresAt = null;
+        $this->companyTimezone = $this->resolveCompanyTimezone();
+        $this->legacyExpiry = false;
         $this->linkAccessExpires = null;
         $this->linkAccessPassword = null;
 
@@ -221,11 +247,13 @@ class CatalogComposer extends Component
                 ->where('subject_type', 'product_catalog')
                 ->where('subject_id', $catalog->id)
                 ->where('is_active', true)
+                ->whereNull('revoked_at')
+                ->orderByDesc('id')
                 ->first();
 
             $this->hasExistingShare = ($share !== null);
 
-            if ($share !== null && $share->isValid()) {
+            if ($share !== null && $share->isValid() && $this->status === 'active') {
                 try {
                     $result = app(CatalogService::class)->share($catalog->id);
                     $this->url = $result['url'];
@@ -247,13 +275,20 @@ class CatalogComposer extends Component
         $this->previewHash = null;
         $this->previewPayload = null;
         $this->requestKey = null;
+        $this->newLinkRequestKey = null;
         $this->url = null;
         $this->qr = null;
         $this->hasExistingShare = false;
         $this->editingLinkAccess = false;
+        $this->showNewLinkModal = false;
+        $this->newLinkPassword = null;
+        $this->newLinkExpires = null;
         $this->expectedState = null;
         $this->hasPassword = false;
         $this->currentExpires = null;
+        $this->currentExpiresAt = null;
+        $this->companyTimezone = $this->resolveCompanyTimezone();
+        $this->legacyExpiry = false;
         $this->linkAccessExpires = null;
         $this->linkAccessPassword = null;
         $this->status = 'draft';
@@ -462,6 +497,7 @@ class CatalogComposer extends Component
             $this->previewRevision = null;
             $this->previewPayload = null;
             $this->requestKey = null;
+            $this->newLinkRequestKey = null;
             $this->priceAcknowledged = false;
 
             session()->flash('success', __('catalogs.draft_saved'));
@@ -576,6 +612,32 @@ class CatalogComposer extends Component
         try {
             app(CatalogService::class)->state($this->catalogId, $state);
             $this->status = $state;
+
+            if ($state !== 'active') {
+                $this->url = null;
+                $this->qr = null;
+                $this->showQrModal = false;
+                $this->showShareModal = false;
+            }
+
+            if ($state === 'revoked') {
+                $this->url = null;
+                $this->qr = null;
+                $this->hasExistingShare = false;
+                $this->editingLinkAccess = false;
+                $this->expectedState = null;
+                $this->hasPassword = false;
+                $this->currentExpires = null;
+                $this->currentExpiresAt = null;
+                $this->linkAccessExpires = null;
+                $this->linkAccessPassword = null;
+                $this->newLinkRequestKey = null;
+                $this->showNewLinkModal = false;
+                $this->showShareModal = false;
+                $this->newLinkPassword = null;
+                $this->newLinkExpires = null;
+            }
+
             session()->flash('success', __('catalogs.state_updated'));
         } catch (InvalidArgumentException $e) {
             $this->addError('general', $e->getMessage());
@@ -588,7 +650,18 @@ class CatalogComposer extends Component
     {
         $this->resetErrorBag('share');
         $this->authorizeFresh('catalogs.share');
-        $this->validate(['sharePassword' => ['nullable', 'string', 'min:8', 'max:128'], 'shareExpires' => ['nullable', 'date_format:Y-m-d', 'after:today']]);
+        $this->validate([
+            'sharePassword' => ['nullable', 'string', 'min:8', 'max:128'],
+            'shareExpires' => ['nullable', 'date_format:Y-m-d'],
+        ], [
+            'sharePassword.min' => __('catalogs.access_password_invalid'),
+            'sharePassword.max' => __('catalogs.access_password_invalid'),
+            'shareExpires.date_format' => __('catalogs.access_expiry_invalid'),
+        ]);
+
+        if (! $this->validateCompanyExpiry($this->shareExpires, 'shareExpires')) {
+            return;
+        }
 
         if ($this->catalogId === null) {
             return;
@@ -609,7 +682,8 @@ class CatalogComposer extends Component
             session()->flash('success', __('catalogs.link_created'));
         } catch (InvalidArgumentException $e) {
             $this->showShareModal = true;
-            $this->addError('share', $e->getMessage());
+            $this->addError('share', $e->getMessage() === 'Catalog link is retired; explicitly issue a New Link.'
+                ? __('catalogs.link_retired_notice') : $e->getMessage());
         } catch (\Throwable) {
             $this->showShareModal = true;
             $this->addError('share', __('catalogs.unexpected_error'));
@@ -628,6 +702,9 @@ class CatalogComposer extends Component
             $this->expectedState = $settings['state'];
             $this->hasPassword = (bool) $settings['has_password'];
             $this->currentExpires = $settings['expires'];
+            $this->currentExpiresAt = $settings['expires_at'] ?? null;
+            $this->companyTimezone = $settings['timezone'];
+            $this->legacyExpiry = $settings['legacy_expiry'];
 
             $this->linkAccessExpires = $settings['expires'];
             $this->linkAccessPassword = null;
@@ -669,14 +746,17 @@ class CatalogComposer extends Component
         }
 
         $this->validate([
-            'linkAccessExpires' => ['nullable', 'date_format:Y-m-d', 'after:today'],
+            'linkAccessExpires' => ['nullable', 'date_format:Y-m-d'],
             'linkAccessPassword' => ['nullable', 'string', 'min:8', 'max:128'],
         ], [
             'linkAccessExpires.date_format' => __('catalogs.access_expiry_invalid'),
-            'linkAccessExpires.after' => __('catalogs.access_expiry_invalid'),
             'linkAccessPassword.min' => __('catalogs.access_password_invalid'),
             'linkAccessPassword.max' => __('catalogs.access_password_invalid'),
         ]);
+
+        if ($this->linkAccessExpires !== $this->currentExpires && ! $this->validateCompanyExpiry($this->linkAccessExpires, 'linkAccessExpires')) {
+            return;
+        }
 
         try {
             $url = app(CatalogService::class)->updateLinkAccess(
@@ -690,6 +770,9 @@ class CatalogComposer extends Component
             $this->expectedState = $refreshed['state'];
             $this->hasPassword = (bool) $refreshed['has_password'];
             $this->currentExpires = $refreshed['expires'];
+            $this->currentExpiresAt = $refreshed['expires_at'] ?? null;
+            $this->companyTimezone = $refreshed['timezone'];
+            $this->legacyExpiry = $refreshed['legacy_expiry'];
             $this->linkAccessExpires = $refreshed['expires'];
 
             $this->url = $url;
@@ -717,8 +800,128 @@ class CatalogComposer extends Component
         }
     }
 
+    public function openNewLink(): void
+    {
+        $this->resetErrorBag('newLink');
+        $this->authorizeFresh('catalogs.share');
+        $this->authorizeFresh('catalogs.publish');
+        $this->authorizeSelectionFresh();
+        $this->assertPriceAuthority();
+
+        if ($this->catalogId === null || $this->publishedRevision === 0) {
+            $this->addError('general', __('catalogs.access_requires_active'));
+
+            return;
+        }
+
+        if ($this->status === 'paused') {
+            $this->addError('general', __('catalogs.new_link_paused_error'));
+
+            return;
+        }
+
+        $this->newLinkRequestKey = (string) Str::uuid();
+        $this->newLinkPassword = null;
+        $this->newLinkExpires = null;
+        $this->companyTimezone = $this->resolveCompanyTimezone();
+        $this->showNewLinkModal = true;
+    }
+
+    public function closeNewLink(): void
+    {
+        $this->showNewLinkModal = false;
+        $this->newLinkPassword = null;
+        $this->newLinkExpires = null;
+        $this->resetErrorBag('newLink');
+    }
+
+    public function issueNewLink(): void
+    {
+        $this->resetErrorBag('newLink');
+        $this->authorizeFresh('catalogs.share');
+        $this->authorizeFresh('catalogs.publish');
+        $this->authorizeSelectionFresh();
+        $this->assertPriceAuthority();
+
+        if ($this->catalogId === null || $this->publishedRevision === 0) {
+            $this->addError('newLink', __('catalogs.access_requires_active'));
+
+            return;
+        }
+
+        if ($this->status === 'paused') {
+            $this->addError('newLink', __('catalogs.new_link_paused_error'));
+
+            return;
+        }
+
+        $this->newLinkRequestKey ??= (string) Str::uuid();
+
+        $this->validate([
+            'newLinkPassword' => ['nullable', 'string', 'min:8', 'max:128'],
+            'newLinkExpires' => ['nullable', 'date_format:Y-m-d'],
+        ], [
+            'newLinkPassword.min' => __('catalogs.access_password_invalid'),
+            'newLinkPassword.max' => __('catalogs.access_password_invalid'),
+            'newLinkExpires.date_format' => __('catalogs.access_expiry_invalid'),
+        ]);
+
+        if (! $this->validateCompanyExpiry($this->newLinkExpires, 'newLinkExpires')) {
+            return;
+        }
+
+        try {
+            $password = ($this->newLinkPassword === '' || $this->newLinkPassword === null) ? null : $this->newLinkPassword;
+            $expires = ($this->newLinkExpires === '' || $this->newLinkExpires === null) ? null : $this->newLinkExpires;
+
+            $result = app(CatalogService::class)->newLink(
+                $this->catalogId,
+                $this->newLinkRequestKey,
+                $password,
+                $expires
+            );
+
+            $this->url = $result['url'];
+            $this->qr = null;
+            $this->status = 'active';
+            $this->hasExistingShare = true;
+            $this->editingLinkAccess = false;
+            $this->showNewLinkModal = false;
+            $this->showShareModal = true;
+            $this->newLinkPassword = null;
+            $this->newLinkExpires = null;
+            $this->newLinkRequestKey = null;
+
+            session()->flash('success', __('catalogs.new_link_created'));
+        } catch (InvalidArgumentException $e) {
+            $this->addError('newLink', $e->getMessage());
+        } catch (\Throwable) {
+            $this->addError('newLink', __('catalogs.unexpected_error'));
+        }
+    }
+
+    private function resolveCompanyTimezone(): string
+    {
+        return Company::whereKey($this->companyId)->firstOrFail()->timezone;
+    }
+
+    private function validateCompanyExpiry(?string $date, string $field): bool
+    {
+        try {
+            app(ShareExpiry::class)->catalogDate($date === '' ? null : $date, $this->resolveCompanyTimezone());
+
+            return true;
+        } catch (InvalidArgumentException) {
+            $this->addError($field, __('catalogs.access_expiry_invalid'));
+
+            return false;
+        }
+    }
+
     public function showQr(): void
     {
+        $this->qr = null;
+        $this->showQrModal = false;
         $this->authorizeFresh('catalogs.share');
 
         if ($this->url === null) {
@@ -726,6 +929,11 @@ class CatalogComposer extends Component
         }
 
         try {
+            abort_if($this->catalogId === null, 403);
+            $current = app(CatalogService::class)->share($this->catalogId);
+            if (! hash_equals($current['url'], $this->url)) {
+                throw new InvalidArgumentException(__('catalogs.access_stale'));
+            }
             $this->qr = app(CatalogRenderer::class)->generateQrDataUri($this->url);
             $this->showQrModal = true;
         } catch (InvalidArgumentException $e) {
@@ -766,12 +974,19 @@ class CatalogComposer extends Component
         $this->previewRevision = null;
         $this->previewPayload = null;
         $this->requestKey = null;
+        $this->newLinkRequestKey = null;
         $this->priceAcknowledged = false;
     }
 
     private function assertClientBounds(): void
     {
         abort_unless(array_is_list($this->items) && count($this->items) <= CatalogService::MAX_ITEMS && strlen($this->productSearch) <= 120, 422);
+        abort_unless($this->newLinkPassword === null || strlen($this->newLinkPassword) <= 128, 422);
+        abort_unless($this->newLinkExpires === null || strlen($this->newLinkExpires) <= 10, 422);
+        abort_unless($this->sharePassword === null || strlen($this->sharePassword) <= 128, 422);
+        abort_unless($this->shareExpires === null || strlen($this->shareExpires) <= 10, 422);
+        abort_unless($this->linkAccessPassword === null || strlen($this->linkAccessPassword) <= 128, 422);
+        abort_unless($this->linkAccessExpires === null || strlen($this->linkAccessExpires) <= 10, 422);
         $allowed = ['product_id', 'unit_id', 'image_id', 'name_ar', 'name_en', 'description_ar', 'description_en', 'custom_price'];
         foreach ($this->items as $item) {
             abort_unless(is_array($item) && array_diff(array_keys($item), $allowed) === [] && array_diff($allowed, array_keys($item)) === [], 422);

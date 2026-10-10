@@ -13,6 +13,7 @@ use App\Models\User;
 use App\Services\Catalogs\CatalogService;
 use App\Services\Inventory\ProductCatalogService;
 use App\Support\Tenancy\CompanyContext;
+use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Livewire\Features\SupportLockedProperties\CannotUpdateLockedPropertyException;
@@ -206,7 +207,7 @@ class CatalogComposerTest extends Phase5ETestCase
 
         $link = app(CatalogService::class)->share($catalog->id, 'initial-secret-123', now()->addDay()->format('Y-m-d'));
         $share = PublicShare::where('company_id', $this->company->id)->where('subject_type', 'product_catalog')->where('subject_id', $catalog->id)->firstOrFail();
-        $share->update(['expires_at' => now()->subDay()]);
+        $share->update(['access_profile' => 'catalog_v1', 'expires_at' => now()->subDay()]);
         $this->assertFalse($share->fresh()->isValid());
 
         $component = Livewire::test(CatalogComposer::class, ['publicId' => $catalog->public_id]);
@@ -214,7 +215,7 @@ class CatalogComposerTest extends Phase5ETestCase
 
         $component->call('openLinkAccess')->assertHasNoErrors();
         $this->assertTrue($component->get('hasPassword'));
-        $this->assertSame(now()->subDay()->format('Y-m-d'), $component->get('currentExpires'));
+        $this->assertSame(now()->subDay()->setTimezone($this->company->timezone)->format('Y-m-d'), $component->get('currentExpires'));
         $this->assertNotNull($component->get('expectedState'));
 
         $newExpiry = now()->addDays(7)->format('Y-m-d');
@@ -223,7 +224,8 @@ class CatalogComposerTest extends Phase5ETestCase
             ->call('updateLinkAccess')->assertHasNoErrors();
 
         $this->assertSame($link['url'], $component->get('url'));
-        $this->assertSame($newExpiry, $share->fresh()->expires_at?->format('Y-m-d'));
+        $this->assertSame($newExpiry, app(CatalogService::class)->linkSettings($catalog->id)['expires']);
+        $this->assertSame(Carbon::parse($newExpiry, $this->company->timezone)->addDay()->startOfDay()->utc()->timestamp, $share->fresh()->expires_at?->timestamp);
         $this->assertTrue(Hash::check('initial-secret-123', $share->fresh()->password_hash));
         $this->assertTrue($share->fresh()->isValid());
         $this->assertSame(1, $catalog->fresh()->published_revision);
@@ -254,7 +256,7 @@ class CatalogComposerTest extends Phase5ETestCase
             ->call('updateLinkAccess')->assertHasNoErrors();
 
         $this->assertTrue(Hash::check('replaced-password-456', $share->fresh()->password_hash));
-        $this->assertSame(now()->addDays(10)->format('Y-m-d'), $share->fresh()->expires_at?->format('Y-m-d'));
+        $this->assertSame(now()->addDays(10)->format('Y-m-d'), app(CatalogService::class)->linkSettings($catalog->id)['expires']);
 
         // Deliberately clearing expiry must not recover an old value from another form field.
         $component->call('openLinkAccess')->set('linkAccessExpires', '')
@@ -315,6 +317,43 @@ class CatalogComposerTest extends Phase5ETestCase
         $component = Livewire::test(CatalogComposer::class, ['publicId' => $catalog->public_id]);
         $this->expectException(CannotUpdateLockedPropertyException::class);
         $component->set('expectedState', 'tampered-state-hash');
+    }
+
+    public function test_terminal_revoke_clears_delivery_controls_and_only_explicit_new_link_replaces_grant(): void
+    {
+        config(['app.url' => 'https://accounting.test']);
+        $catalog = $this->catalog();
+        $component = Livewire::test(CatalogComposer::class, ['publicId' => $catalog->public_id])
+            ->call('previewPublication')->call('publish')->call('createOrRecoverLink')->assertHasNoErrors();
+        $oldUrl = $component->get('url');
+        $oldGrant = PublicShare::where('subject_type', 'product_catalog')->where('subject_id', $catalog->id)->firstOrFail();
+        $component->call('showQr')->assertHasNoErrors()->assertSet('showQrModal', true)
+            ->call('manageState', 'paused')->assertHasNoErrors()->assertSet('url', null)
+            ->assertSet('qr', null)->assertSet('showQrModal', false)
+            ->call('manageState', 'active')->call('createOrRecoverLink')->assertHasNoErrors()->assertSet('url', $oldUrl)
+            ->call('manageState', 'revoked')->assertHasNoErrors()->assertSet('url', null)
+            ->assertSet('hasExistingShare', false)->call('manageState', 'active')->assertHasNoErrors()
+            ->call('createOrRecoverLink')->assertHasErrors('share')->assertSet('url', null)
+            ->assertSee(__('catalogs.link_retired_notice'));
+        $this->assertFalse($oldGrant->fresh()->isValid());
+        $component->call('openNewLink')->assertSet('showNewLinkModal', true)
+            ->set('newLinkExpires', now($this->company->timezone)->format('Y-m-d'))
+            ->set('newLinkPassword', 'replacement-secret')->call('issueNewLink')->assertHasNoErrors()
+            ->assertSet('showNewLinkModal', false)->assertSet('status', 'active');
+        $this->assertNotSame($oldUrl, $component->get('url'));
+        $this->assertFalse($oldGrant->fresh()->isValid());
+        $this->assertSame(2, PublicShare::where('subject_type', 'product_catalog')->where('subject_id', $catalog->id)->count());
+    }
+
+    public function test_mounted_new_link_action_rechecks_publication_authority(): void
+    {
+        $catalog = $this->catalog();
+        $component = Livewire::test(CatalogComposer::class, ['publicId' => $catalog->public_id])
+            ->call('previewPublication')->call('publish')->call('openNewLink')->assertHasNoErrors();
+        $actor = $this->customActor(['catalogs.view', 'catalogs.share', 'inventory.stock.view']);
+        $this->activate($actor);
+        $component->call('issueNewLink')->assertForbidden();
+        $this->assertSame(0, PublicShare::where('subject_type', 'product_catalog')->where('subject_id', $catalog->id)->count());
     }
 
     /** @return array<string,string> */

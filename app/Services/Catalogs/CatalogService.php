@@ -17,10 +17,10 @@ use App\Services\Audit\AuditService;
 use App\Services\Sales\IssuedDocumentContent;
 use App\Services\Sales\ManagedPublicUrl;
 use App\Services\Sales\SalesActorGuard;
+use App\Services\Sales\ShareExpiry;
 use App\Support\Tenancy\CompanyContext;
 use App\Support\Tenancy\CompanyScope;
 use Brick\Math\BigDecimal;
-use Carbon\Carbon;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
@@ -259,7 +259,7 @@ final class CatalogService
         if ($password !== null && (strlen($password) < 8 || strlen($password) > 128)) {
             throw new InvalidArgumentException('Invalid catalog password length.');
         }
-        Validator::make(['expires' => $expires], ['expires' => 'nullable|date_format:Y-m-d|after:today'])->validate();
+        Validator::make(['expires' => $expires], ['expires' => 'nullable|date_format:Y-m-d'])->validate();
 
         return DB::transaction(function () use ($id, $password, $expires): array {
             $company = $this->authorize('catalogs.share');
@@ -270,16 +270,15 @@ final class CatalogService
             if (array_key_exists('currency_code', $catalog->published_payload)) {
                 $this->authorize('catalogs.show_prices');
             }
-            $share = PublicShare::where('company_id', $company->id)->where('subject_type', self::SUBJECT)->where('subject_id', $id)->first();
+            $share = $this->activeGrant((int) $company->id, $id);
             if ($share === null) {
-                $raw = Str::random(40);
-                $share = PublicShare::create(['company_id' => $company->id, 'subject_type' => self::SUBJECT, 'subject_id' => $id,
-                    'token_lookup_hash' => hash('sha256', $raw), 'encrypted_token' => Crypt::encryptString($raw), 'is_active' => true,
-                    'password_hash' => $password === null ? null : Hash::make($password), 'expires_at' => $expires, 'created_by' => auth()->id(),
-                    'access_profile' => 'catalog_v1', 'request_key' => 'catalog:'.$catalog->public_id]);
-                $this->audit($catalog, 'catalog.link.created');
+                if (PublicShare::where('company_id', $company->id)->where('subject_type', self::SUBJECT)->where('subject_id', $id)->exists()) {
+                    throw new InvalidArgumentException('Catalog link is retired; explicitly issue a New Link.');
+                }
+
+                return $this->issueLink($company, $catalog, (string) Str::uuid(), $password, $expires);
             } elseif (($password !== null && ($share->password_hash === null || ! Hash::check($password, $share->password_hash)))
-                || ($expires !== null && $share->expires_at?->format('Y-m-d') !== $expires)) {
+                || ($expires !== null && app(ShareExpiry::class)->catalogLabel($share, $company->timezone) !== $expires)) {
                 throw new InvalidArgumentException('Recovery cannot change existing catalog access settings.');
             }
             if (! $share->isValid()) {
@@ -291,7 +290,79 @@ final class CatalogService
         });
     }
 
-    /** @return array{expires:?string,has_password:bool,state:string} */
+    /** Explicit issuance is separate from recovery; Company-first locks serialize revoke/rotation/retry.
+     * @return array{share:PublicShare,url:string}
+     */
+    public function newLink(int $id, string $requestKey, ?string $password = null, ?string $expires = null): array
+    {
+        if (! preg_match('/^[A-Za-z0-9_.:-]{1,64}$/D', $requestKey)) {
+            throw new InvalidArgumentException('Invalid catalog link request.');
+        }
+        Validator::make(['expires' => $expires, 'password' => $password], ['expires' => 'nullable|date_format:Y-m-d', 'password' => 'nullable|string|min:8|max:128'])->validate();
+
+        return DB::transaction(function () use ($id, $requestKey, $password, $expires): array {
+            $company = $this->authorize('catalogs.share');
+            $this->authorize('catalogs.publish');
+            $catalog = Catalog::where('company_id', $company->id)->lockForUpdate()->findOrFail($id);
+            if (! in_array($catalog->status, ['active', 'revoked'], true) || $catalog->published_payload === null) {
+                throw new InvalidArgumentException('Publish or resume before issuing a New Link.');
+            }
+            if (array_key_exists('currency_code', $catalog->published_payload)) {
+                $this->authorize('catalogs.show_prices');
+            }
+
+            return $this->issueLink($company, $catalog, $requestKey, $password, $expires);
+        });
+    }
+
+    /** @return array{share:PublicShare,url:string} */
+    private function issueLink(Company $company, Catalog $catalog, string $requestKey, ?string $password, ?string $expires): array
+    {
+        $key = 'catalog-link:'.$requestKey;
+        $intent = hash('sha256', app(IssuedDocumentContent::class)->canonical(['catalog_id' => $catalog->id,
+            'publication_hash' => $catalog->published_hash, 'expires' => $expires, 'timezone' => $company->timezone,
+            'has_password' => $password !== null]));
+        $existing = PublicShare::where('company_id', $company->id)->where('request_key', $key)->lockForUpdate()->first();
+        if ($existing !== null) {
+            if ($existing->subject_type !== self::SUBJECT || (int) $existing->subject_id !== (int) $catalog->id
+                || ! hash_equals((string) $existing->request_hash, $intent) || ! $existing->isValid()
+                || ($existing->password_hash !== null && ($password === null || ! Hash::check($password, $existing->password_hash)))) {
+                throw new InvalidArgumentException('Catalog link request conflicts or was retired.');
+            }
+
+            return ['share' => $existing, 'url' => app(ManagedPublicUrl::class)->make('catalog', Crypt::decryptString($existing->encrypted_token))];
+        }
+        $expiry = app(ShareExpiry::class)->catalogDate($expires, $company->timezone);
+        $this->retireGrants($catalog);
+        $raw = Str::random(40);
+        $grant = PublicShare::create(['company_id' => $company->id, 'subject_type' => self::SUBJECT, 'subject_id' => $catalog->id,
+            'token_lookup_hash' => hash('sha256', $raw), 'encrypted_token' => Crypt::encryptString($raw), 'is_active' => true,
+            'password_hash' => $password === null ? null : Hash::make($password), 'expires_at' => $expiry, 'created_by' => auth()->id(),
+            'access_profile' => 'catalog_v2', 'request_key' => $key, 'request_hash' => $intent]);
+        $catalog->status = 'active';
+        $catalog->updated_by = auth()->id();
+        $catalog->save();
+        $this->audit($catalog, 'catalog.link.created', ['grant_id' => $grant->public_id]);
+
+        return ['share' => $grant, 'url' => app(ManagedPublicUrl::class)->make('catalog', $raw)];
+    }
+
+    private function activeGrant(int $companyId, int $id): ?PublicShare
+    {
+        return PublicShare::where('company_id', $companyId)->where('subject_type', self::SUBJECT)->where('subject_id', $id)
+            ->where('is_active', true)->whereNull('revoked_at')->orderByDesc('id')->lockForUpdate()->first();
+    }
+
+    private function retireGrants(Catalog $catalog): void
+    {
+        foreach (PublicShare::where('company_id', $catalog->company_id)->where('subject_type', self::SUBJECT)->where('subject_id', $catalog->id)
+            ->where('is_active', true)->whereNull('revoked_at')->lockForUpdate()->get() as $grant) {
+            $grant->revoke(auth()->user());
+            $this->audit($catalog, 'catalog.link.revoked', ['grant_id' => $grant->public_id]);
+        }
+    }
+
+    /** @return array{expires:?string,has_password:bool,state:string,expires_at:?string,timezone:string,legacy_expiry:bool} */
     public function linkSettings(int $id): array
     {
         return DB::transaction(function () use ($id): array {
@@ -300,21 +371,28 @@ final class CatalogService
             if (array_key_exists('currency_code', $catalog->published_payload ?? [])) {
                 $this->authorize('catalogs.show_prices');
             }
-            $grant = PublicShare::where('company_id', $company->id)->where('subject_type', self::SUBJECT)->where('subject_id', $id)->firstOrFail();
+            $grant = $this->activeGrant((int) $company->id, $id);
+            if ($grant === null) {
+                throw new InvalidArgumentException('Catalog grant is retired.');
+            }
 
-            return ['expires' => $grant->expires_at?->format('Y-m-d'), 'has_password' => $grant->password_hash !== null, 'state' => $this->linkState($grant)];
+            $expiryPolicy = app(ShareExpiry::class);
+
+            return ['expires' => $expiryPolicy->catalogLabel($grant, $company->timezone), 'has_password' => $grant->password_hash !== null,
+                'state' => $this->linkState($grant), 'expires_at' => $expiryPolicy->displayInstant($grant->expires_at, $company->timezone),
+                'timezone' => $company->timezone, 'legacy_expiry' => ! $expiryPolicy->catalogDateBoundary($grant, $company->timezone)];
         });
     }
 
     private function linkState(PublicShare $grant): string
     {
-        return hash('sha256', implode('|', [$grant->token_lookup_hash, $grant->password_hash, $grant->expires_at?->timestamp, $grant->is_active ? '1' : '0']));
+        return $grant->public_id.':'.hash('sha256', implode('|', [$grant->token_lookup_hash, $grant->password_hash, $grant->expires_at?->timestamp, $grant->is_active ? '1' : '0']));
     }
 
     /** Deliberate access edit; blank password preserves protection and the managed URL stays stable. */
     public function updateLinkAccess(int $id, string $expectedState, ?string $expires, ?string $password = null): string
     {
-        Validator::make(['expires' => $expires, 'password' => $password], ['expires' => 'nullable|date_format:Y-m-d|after:today', 'password' => 'nullable|string|min:8|max:128'])->validate();
+        Validator::make(['expires' => $expires, 'password' => $password], ['expires' => 'nullable|date_format:Y-m-d', 'password' => 'nullable|string|min:8|max:128'])->validate();
 
         return DB::transaction(function () use ($id, $expectedState, $expires, $password): string {
             $company = $this->authorize('catalogs.share');
@@ -325,17 +403,28 @@ final class CatalogService
             if (array_key_exists('currency_code', $catalog->published_payload)) {
                 $this->authorize('catalogs.show_prices');
             }
-            $grant = PublicShare::where('company_id', $company->id)->where('subject_type', self::SUBJECT)->where('subject_id', $id)->lockForUpdate()->firstOrFail();
-            if (! $grant->is_active || $grant->access_profile !== 'catalog_v1') {
+            $grant = $this->activeGrant((int) $company->id, $id);
+            if ($grant === null || ! in_array($grant->access_profile, ['catalog_v1', 'catalog_v2'], true)) {
                 throw new InvalidArgumentException('Catalog grant is retired.');
             }
             $samePassword = $password === null || ($grant->password_hash !== null && Hash::check($password, $grant->password_hash));
-            $sameExpiry = $expires === $grant->expires_at?->format('Y-m-d');
-            if (! hash_equals($this->linkState($grant), $expectedState) && (! $samePassword || ! $sameExpiry)) {
+            $sameExpiry = $expires === app(ShareExpiry::class)->catalogLabel($grant, $company->timezone);
+            $currentState = $this->linkState($grant);
+            // Identical retries converge only within the same grant, never after rotation.
+            // Pre-correction hashes require an exact match to the current state.
+            if (hash_equals(substr($currentState, strlen($grant->public_id) + 1), $expectedState)) {
+                $expectedState = $currentState;
+            } elseif (! str_starts_with($expectedState, $grant->public_id.':')) {
+                throw new InvalidArgumentException('Catalog access settings changed. Reload before saving.');
+            }
+            if (! hash_equals($currentState, $expectedState) && (! $samePassword || ! $sameExpiry)) {
                 throw new InvalidArgumentException('Catalog access settings changed. Reload before saving.');
             }
             if (! $samePassword || ! $sameExpiry) {
-                $grant->expires_at = $expires === null ? null : Carbon::parse($expires);
+                if (! $sameExpiry) {
+                    $grant->expires_at = app(ShareExpiry::class)->catalogDate($expires, $company->timezone);
+                    $grant->access_profile = 'catalog_v2';
+                }
                 if ($password !== null && ! $samePassword) {
                     $grant->password_hash = Hash::make($password);
                 }
@@ -364,6 +453,11 @@ final class CatalogService
             if ($state === 'active' && array_key_exists('currency_code', $catalog->published_payload ?? [])) {
                 $this->authorize('catalogs.show_prices');
             }
+            // Older rows may have a revoked Catalog but a still-active grant.
+            // A deliberate transition away from that state must retire the old token first.
+            if ($state === 'revoked' || $catalog->status === 'revoked') {
+                $this->retireGrants($catalog);
+            }
             $catalog->status = $state;
             $catalog->updated_by = auth()->id();
             $catalog->save();
@@ -371,10 +465,11 @@ final class CatalogService
         });
     }
 
-    private function audit(Catalog $catalog, string $event): void
+    /** @param array<string,string> $meta */
+    private function audit(Catalog $catalog, string $event, array $meta = []): void
     {
         app(AuditService::class)->log(companyId: (int) $catalog->company_id, eventKey: $event, summary: 'Catalog management action', actorUserId: auth()->id(), subject: $catalog,
-            meta: ['draft_revision' => $catalog->draft_revision, 'published_revision' => $catalog->published_revision]);
+            meta: ['draft_revision' => $catalog->draft_revision, 'published_revision' => $catalog->published_revision] + $meta);
     }
 
     /** Guest access always begins from the exact hashed grant and explicit tenant. */
@@ -383,7 +478,7 @@ final class CatalogService
         if (! preg_match('/^[A-Za-z0-9]{40}$/D', $token)) {
             throw new InvalidArgumentException('Unavailable catalog.');
         }
-        $share = PublicShare::withoutGlobalScopes()->where('subject_type', self::SUBJECT)->where('access_profile', 'catalog_v1')->where('token_lookup_hash', hash('sha256', $token))->firstOrFail();
+        $share = PublicShare::withoutGlobalScopes()->where('subject_type', self::SUBJECT)->whereIn('access_profile', ['catalog_v1', 'catalog_v2'])->where('token_lookup_hash', hash('sha256', $token))->firstOrFail();
         if (! $share->isValid() || ! Company::whereKey($share->company_id)->where('status', 'active')->exists()) {
             throw new InvalidArgumentException('Unavailable catalog.');
         }
@@ -402,7 +497,7 @@ final class CatalogService
         }
 
         return CompanyScope::executeWithoutScope(function () use ($grant, $locale, $page, $embedded): array {
-            $fresh = PublicShare::where('company_id', $grant->company_id)->where('subject_type', self::SUBJECT)->where('access_profile', 'catalog_v1')->findOrFail($grant->id);
+            $fresh = PublicShare::where('company_id', $grant->company_id)->where('subject_type', self::SUBJECT)->whereIn('access_profile', ['catalog_v1', 'catalog_v2'])->findOrFail($grant->id);
             if (! app(CatalogAccess::class)->allows($fresh, request())) {
                 throw new InvalidArgumentException('Catalog password confirmation is required.');
             }

@@ -131,7 +131,7 @@ class PublicShare extends Model
 
     public function isValid(): bool
     {
-        return $this->is_active && ! $this->isExpired();
+        return $this->is_active && $this->revoked_at === null && ! $this->isExpired();
     }
 
     public function revoke(?User $user = null): void

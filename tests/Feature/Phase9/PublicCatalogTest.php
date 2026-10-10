@@ -129,19 +129,39 @@ class PublicCatalogTest extends Phase5ETestCase
         $originalBytes = Storage::disk('public')->get($image->thumbnail_path);
         $originalUrl = $service->publicData($link['share'], 'en')['items'][0]['image'];
         $this->assertSame(rtrim((string) config('app.url'), '/').'/storage/'.$image->thumbnail_path, $originalUrl);
-        foreach (['paused', 'revoked'] as $state) {
-            $service->state($link['catalog']->id, $state);
-            $this->assertAllManagedEndpointsDenied($link['url']);
-            $this->assertSame($originalBytes, Storage::disk('public')->get($image->thumbnail_path));
-            $this->assertFileIsReadable(Storage::disk('public')->path($image->thumbnail_path));
-            $service->state($link['catalog']->id, 'active');
-        }
+
+        // 1. Pause: managed routes denied, storage intact; authorized resume restores same URL
+        $service->state($link['catalog']->id, 'paused');
+        $this->assertAllManagedEndpointsDenied($link['url']);
+        $this->assertSame($originalBytes, Storage::disk('public')->get($image->thumbnail_path));
+        $this->assertFileIsReadable(Storage::disk('public')->path($image->thumbnail_path));
+        $service->state($link['catalog']->id, 'active');
         $this->get($link['url'].'?locale=en&format=json')->assertOk()->assertJsonPath('items.0.image', $originalUrl);
-        $link['share']->update(['expires_at' => now()]);
+
+        // 2. Expiry: expired grant denies managed routes; renewed expiry restores access
+        $link['share']->update(['expires_at' => now()->subMinute()]);
         $this->assertAllManagedEndpointsDenied($link['url']);
         $link['share']->update(['expires_at' => now()->addDays(2)]);
+        $this->get($link['url'].'?locale=en&format=json')->assertOk()->assertJsonPath('items.0.image', $originalUrl);
+
+        // 3. Company disable: inactive company denies managed routes; active restores access
         $this->company->update(['status' => 'disabled']);
         $this->assertAllManagedEndpointsDenied($link['url']);
+        $this->company->update(['status' => 'active']);
+        $this->get($link['url'].'?locale=en&format=json')->assertOk()->assertJsonPath('items.0.image', $originalUrl);
+
+        // 4. Revocation is terminal: atomically sets active grant inactive + revoked metadata
+        $service->state($link['catalog']->id, 'revoked');
+        $this->assertAllManagedEndpointsDenied($link['url']);
+        $grant = $link['share']->fresh();
+        $this->assertFalse($grant->is_active);
+        $this->assertNotNull($grant->revoked_at);
+        $this->assertSame($this->owner->id, $grant->revoked_by);
+
+        // Permanently invalid: changing catalog status to active DOES NOT resurrect the revoked grant
+        $service->state($link['catalog']->id, 'active');
+        $this->assertAllManagedEndpointsDenied($link['url']);
+
         // Static public-storage delivery is outside managed catalog access: revocation does not delete or privatize approved photographs.
         $this->assertSame($originalBytes, Storage::disk('public')->get($image->thumbnail_path));
         $this->assertFileIsReadable(Storage::disk('public')->path($image->thumbnail_path));
@@ -198,13 +218,117 @@ class PublicCatalogTest extends Phase5ETestCase
         $this->get($link['url'].'?locale=en&format=pdf')->assertNotFound()->assertDontSee('%PDF-', false);
     }
 
+    public function test_passworded_unpassworded_priced_unpriced_terminal_revocation_denies_all_destinations_without_economic_writes(): void
+    {
+        $matrix = [
+            ['password' => null, 'priced' => false],
+            ['password' => null, 'priced' => true],
+            ['password' => 'pass-matrix-999', 'priced' => false],
+            ['password' => 'pass-matrix-999', 'priced' => true],
+        ];
+
+        foreach ($matrix as $case) {
+            $service = app(CatalogService::class);
+            $priced = $case['priced'];
+            $password = $case['password'];
+
+            $catalog = $service->save(null, [
+                'name_ar' => 'كتالوج مصفوفة', 'name_en' => 'Matrix catalog',
+                'description_ar' => 'وصف', 'description_en' => 'Desc',
+                'locale' => 'ar', 'show_prices' => $priced, 'show_sku' => true, 'show_description' => true, 'show_images' => false,
+                'currency_code' => $priced ? 'ILS' : null, 'tax_basis' => $priced ? 'Tax included' : null,
+            ], [['product_id' => $this->product->id, 'unit_id' => $this->unit->unit_id, 'custom_price' => $priced ? '45.00' : null]]);
+
+            $preview = $service->preview($catalog->id);
+            $service->publish($catalog->id, $preview['revision'], $preview['hash'], 'matrix-pub-'.$catalog->public_id);
+            $link = $service->share($catalog->id, $password);
+
+            $before = $this->economicFingerprint();
+            $receiptCount = DB::table('catalog_publications')->where('catalog_id', $catalog->id)->count();
+            $this->assertSame(1, $receiptCount);
+
+            auth()->logout();
+
+            // Active access check
+            if ($password !== null) {
+                $this->post($link['url'], ['password' => $password])->assertRedirect();
+            }
+            $this->get($link['url'].'?locale=en&format=json')->assertOk()->assertJsonPath('items.0.name', 'Food Item');
+
+            // 1. Paused denies all destinations
+            $this->activate($this->owner);
+            $service->state($catalog->id, 'paused');
+            auth()->logout();
+            $this->assertAllManagedEndpointsDenied($link['url']);
+
+            // 2. Resume active restores same URL
+            $this->activate($this->owner);
+            $service->state($catalog->id, 'active');
+            auth()->logout();
+            if ($password !== null) {
+                $this->post($link['url'], ['password' => $password])->assertRedirect();
+            }
+            $this->get($link['url'].'?locale=en&format=json')->assertOk()->assertJsonPath('items.0.name', 'Food Item');
+
+            // 3. Revoke permanently denies old token
+            $this->activate($this->owner);
+            $service->state($catalog->id, 'revoked');
+            auth()->logout();
+            $this->assertAllManagedEndpointsDenied($link['url']);
+
+            // 4. Resume to active NEVER resurrects revoked grant
+            $this->activate($this->owner);
+            $service->state($catalog->id, 'active');
+            auth()->logout();
+            $this->assertAllManagedEndpointsDenied($link['url']);
+
+            // Receipts and economic invariants preserved
+            $this->assertSame($receiptCount, DB::table('catalog_publications')->where('catalog_id', $catalog->id)->count());
+            $this->assertSame($before, $this->economicFingerprint());
+
+            $this->activate($this->owner);
+        }
+    }
+
+    public function test_corrupt_grant_with_is_active_true_and_revoked_at_set_is_strictly_denied(): void
+    {
+        $link = $this->publish();
+        DB::table('public_shares')->where('id', $link['share']->id)->update([
+            'is_active' => 1,
+            'revoked_at' => now(),
+            'revoked_by' => $this->owner->id,
+        ]);
+
+        $grant = $link['share']->fresh();
+        $this->assertFalse($grant->isValid());
+
+        auth()->logout();
+        $this->assertAllManagedEndpointsDenied($link['url']);
+    }
+
     private function assertAllManagedEndpointsDenied(string $url): void
     {
-        foreach (['', '?format=json', '?format=pdf', '?format=print'] as $suffix) {
+        // Isolate lifecycle assertions from the separately tested public IP rate budget.
+        RateLimiter::clear('catalog-ip:'.hash('sha256', '127.0.0.1'));
+        foreach ([
+            '',
+            '?locale=ar',
+            '?locale=en',
+            '?format=json',
+            '?locale=en&format=json',
+            '?locale=ar&format=json',
+            '?format=pdf',
+            '?locale=en&format=pdf',
+            '?locale=ar&format=pdf',
+            '?format=print',
+            '?locale=en&format=print',
+            '?locale=ar&format=print',
+        ] as $suffix) {
             $response = $this->get($url.$suffix)->assertNotFound()->assertDontSee('Food Item')->assertDontSee('Approved product catalog');
             $this->assertPrivateHeaders($response);
             $this->head($url.$suffix)->assertNotFound()->assertContent('');
         }
+        $this->post($url, ['password' => 'any-password'])->assertNotFound();
     }
 
     /** @param array<string,mixed> $data */

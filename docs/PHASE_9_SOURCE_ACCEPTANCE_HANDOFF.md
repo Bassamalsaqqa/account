@@ -4,6 +4,11 @@ Status: **IMPLEMENTED — READY FOR INDEPENDENT ARCHITECT REVIEW**.
 All package and integration gates below were verified. This document does not
 authorize merge or deployment.
 
+The focused [Correction 01 handoff](PHASE_9_CORRECTION_01_HANDOFF.md) supersedes
+the original catalog revoke and expiry behavior reviewed at
+`0b1ddaf479622dc33bdd9b99f2a93728eccabdde`. The historical broad QA counts below
+remain prior integration evidence; Correction 01 has its own focused gates.
+
 ## Exact baseline and authority
 
 - Repository: `Bassamalsaqqa/account`.

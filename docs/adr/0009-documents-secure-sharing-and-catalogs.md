@@ -46,6 +46,26 @@ public-storage image URLs and cached/downloaded copies can remain accessible.
 The administration UI explains this limitation. There is no new media proxy,
 private image duplication or external messaging service.
 
+Catalog pause is reversible; revoke atomically and permanently retires the bearer
+grant. Resume, approved republication and access edits cannot revive it. Explicit
+New Link requires fresh Company/membership, catalog view/share/publication and
+applicable price authority, then issues a new independent random 40-character
+token/hash/grant and request identity. Previous grants, revocation audits and
+publication receipts remain. Recovery selects the latest active unrevoked grant;
+stale access edits are bound to that exact grant. Company-first locks serialize
+issuance, revoke and payload-aware retries. Existing indexes already support
+multiple historical grants; Correction 01 adds no migration.
+
+Selected catalog dates are valid through the entire Company-local calendar date.
+The exclusive expiry is the next local day's start converted to UTC, including
+DST transitions. Financial N-day lifetimes are exactly N × 86,400 elapsed seconds
+from actual issuance, with Statement default/max 7/30 and other subjects 30/365.
+Legacy expiry instants are never recomputed on reads, recovery or password-only
+edits. Access editing preserves the original instant when its displayed date is
+unchanged; explicitly selecting a different date applies the new policy. Display
+includes the Company-local instant and offset. See the
+[Correction 01 handoff](../PHASE_9_CORRECTION_01_HANDOFF.md).
+
 Owner gets new capabilities. Existing non-Owner grants remain unchanged during
 the explicit upgrade. New Administrators do not automatically receive Phase 9
 capabilities. Protected publication, price and document-settings delegation

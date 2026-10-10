@@ -15,6 +15,7 @@ use App\Services\Sales\DocumentDataBuilder;
 use App\Services\Sales\DocumentRenderLimits;
 use App\Services\Sales\IssuedDocumentContent;
 use App\Services\Sales\PublicShareService;
+use Carbon\Carbon;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Contracts\Encryption\DecryptException;
 use Illuminate\Encryption\Encrypter;
@@ -85,6 +86,23 @@ class FinancialSharesTest extends Phase5ETestCase
         Livewire::test(FinancialShareManager::class, ['subjectType' => PublicShare::SUBJECT_SALES_INVOICE, 'subjectId' => $invoice->id])
             ->call('recover', $share['share']->public_id)->assertHasErrors('share')->assertSet('url', null);
         $this->assertSame(1, PublicShare::count());
+    }
+
+    public function test_share_manager_issues_elapsed_day_from_near_midnight_and_displays_company_instant(): void
+    {
+        $invoice = $this->invoice();
+        $this->company->update(['timezone' => 'Asia/Hebron']);
+        $this->travelTo(Carbon::parse('2026-10-10 23:59:50', 'Asia/Hebron')->utc());
+        try {
+            $component = Livewire::test(FinancialShareManager::class, ['subjectType' => PublicShare::SUBJECT_SALES_INVOICE, 'subjectId' => $invoice->id])
+                ->assertSet('expiryDays', 30)->set('expiryDays', 1)->call('create')->assertHasNoErrors();
+            $share = PublicShare::where('subject_type', PublicShare::SUBJECT_SALES_INVOICE)->where('subject_id', $invoice->id)->firstOrFail();
+            $this->assertSame(86400, $share->expires_at->timestamp - $share->issued_at->timestamp);
+            $this->assertSame(now('UTC')->timestamp, $share->issued_at->timestamp);
+            $component->assertSee($share->expires_at->copy()->setTimezone('Asia/Hebron')->toIso8601String());
+        } finally {
+            $this->travelBack();
+        }
     }
 
     public function test_first_get_head_and_direct_formats_disclose_no_financial_identity(): void

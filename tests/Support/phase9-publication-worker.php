@@ -9,7 +9,10 @@ use App\Services\Catalogs\CatalogService;
 use App\Services\Sales\PublicShareService;
 use App\Support\Tenancy\CompanyContext;
 use Illuminate\Contracts\Console\Kernel;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\View;
 use Tests\Support\DisposableMariaDbSchema;
 
 require __DIR__.'/../../vendor/autoload.php';
@@ -45,6 +48,32 @@ try {
         $catalog = app(CatalogService::class)->publish($payload['subject_id'], $payload['revision'], $payload['preview_hash'], $payload['key']);
         echo json_encode(['status' => 'ok', 'id' => $catalog->id, 'revision' => $catalog->published_revision,
             'content_hash' => $catalog->published_hash], JSON_THROW_ON_ERROR);
+    } elseif ($payload['operation'] === 'catalog-revoke') {
+        app(CatalogService::class)->state($payload['subject_id'], 'revoked');
+        echo json_encode(['status' => 'ok'], JSON_THROW_ON_ERROR);
+    } elseif ($payload['operation'] === 'catalog-new-link') {
+        $result = app(CatalogService::class)->newLink($payload['subject_id'], $payload['key'], $payload['password'] ?? null, $payload['expires'] ?? null);
+        echo json_encode(['status' => 'ok', 'id' => $result['share']->id, 'token_hash' => $result['share']->token_lookup_hash], JSON_THROW_ON_ERROR);
+    } elseif ($payload['operation'] === 'catalog-read') {
+        $share = PublicShare::where('company_id', $company->id)->findOrFail($payload['grant_id']);
+        $token = Crypt::decryptString($share->encrypted_token);
+        auth()->logout();
+        app(CompanyContext::class)->clear();
+        View::composer('catalogs.public', function () use ($payload): void {
+            file_put_contents($payload['rendering'], 'rendering');
+            $deadline = microtime(true) + 20;
+            while (! is_file($payload['finish_render'])) {
+                if (microtime(true) > $deadline) {
+                    throw new RuntimeException('Catalog render test barrier timed out.');
+                }
+                usleep(10000);
+            }
+        });
+        $request = Request::create('/catalog/'.$token.'?locale=en', 'GET');
+        $kernel = $app->make(Illuminate\Contracts\Http\Kernel::class);
+        $response = $kernel->handle($request);
+        echo json_encode(['status' => 'ok', 'http_status' => $response->getStatusCode(), 'disclosed' => str_contains((string) $response->getContent(), 'Race catalog product')], JSON_THROW_ON_ERROR);
+        $kernel->terminate($request, $response);
     } else {
         throw new RuntimeException('Unknown test operation.');
     }

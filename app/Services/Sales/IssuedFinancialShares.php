@@ -29,7 +29,7 @@ final class IssuedFinancialShares
     /** @param array<string,mixed> $scope
      * @return array{share:PublicShare,raw_token:string,url:string}
      */
-    public function create(Company $company, User $actor, string $type, int $id, ?Carbon $expires, ?string $password, ?string $requestKey, array $scope): array
+    public function create(Company $company, User $actor, string $type, int $id, ?Carbon $expires, ?string $password, ?string $requestKey, array $scope, ?int $lifetimeDays = null): array
     {
         $options = Validator::make($scope, ['locale' => ['nullable', 'in:ar,en'], 'from' => ['nullable', 'date_format:Y-m-d'],
             'to' => array_filter(['nullable', 'date_format:Y-m-d', isset($scope['from']) ? 'after_or_equal:from' : null])])->validate();
@@ -44,14 +44,23 @@ final class IssuedFinancialShares
             throw new InvalidArgumentException('Statements require a password.');
         }
         $statement = $type === PublicShare::SUBJECT_CUSTOMER_STATEMENT;
-        $maxDays = $statement ? 30 : 365;
-        if ($expires !== null && ($expires->lessThanOrEqualTo(now()) || $expires->greaterThan(now()->addDays($maxDays)))) {
-            throw new InvalidArgumentException('Expiry exceeds the permitted subject lifetime.');
+        $expiryPolicy = app(ShareExpiry::class);
+        if ($expires !== null) {
+            $expiryPolicy->assertFinancialInstant($expires, $statement, now('UTC'));
+        }
+        if ($lifetimeDays !== null) {
+            if ($expires !== null) {
+                throw new InvalidArgumentException('Specify a lifetime or an expiry instant, not both.');
+            }
+            $expiryPolicy->financialLifetime($lifetimeDays, $statement);
         }
         $intent = ['subject' => $type, 'id' => $id, 'scope' => $options, 'expiry' => $expires?->toIso8601String(), 'has_password' => $password !== null];
+        if ($lifetimeDays !== null) {
+            $intent['duration_days'] = $lifetimeDays; // Stable retry intent; never hash a freshly calculated clock instant.
+        }
         $intentHash = hash('sha256', app(IssuedDocumentContent::class)->canonical($intent));
 
-        return DB::transaction(function () use ($company, $actor, $type, $id, $expires, $password, $requestKey, $options, $intentHash, $statement): array {
+        return DB::transaction(function () use ($company, $actor, $type, $id, $expires, $password, $requestKey, $options, $intentHash, $statement, $lifetimeDays, $expiryPolicy): array {
             $policy = app(FinancialSharePolicy::class);
             $policy->authorize((int) $company->id, $actor, $type); // Company-first lock serializes retries/issuance/lifecycle.
             $company = Company::findOrFail($company->id);
@@ -66,6 +75,9 @@ final class IssuedFinancialShares
 
                 return $this->result($existing);
             }
+            $issuedAt = now('UTC');
+            $expiry = $expires?->copy()->utc() ?? $expiryPolicy->financialLifetime($lifetimeDays ?? ($statement ? 7 : 30), $statement, $issuedAt);
+            $expiryPolicy->assertFinancialInstant($expiry, $statement, $issuedAt);
             if ($source instanceof Customer) {
                 app(DocumentRenderLimits::class)->assertStatementSource((int) $company->id, (int) $source->id);
                 $to = $options['to'] ?? now($company->timezone)->format('Y-m-d');
@@ -74,7 +86,7 @@ final class IssuedFinancialShares
                 $data = app(DocumentDataBuilder::class)->build($source, forPdf: true, locale: $options['locale'] ?? null);
             }
             $data = new DocumentData($data->type, $data->locale, $data->company, $data->customer,
-                $data->document + ['issued_at' => now()->toIso8601String(), 'timezone' => $company->timezone],
+                $data->document + ['issued_at' => $issuedAt->toIso8601String(), 'timezone' => $company->timezone],
                 $data->lines, $data->statement, $data->presentation);
             $sealed = app(IssuedDocumentContent::class)->seal($data);
             $packet = DB::selectOne('SELECT @@max_allowed_packet AS packet_limit');
@@ -86,10 +98,10 @@ final class IssuedFinancialShares
             $raw = Str::random(40);
             $share = PublicShare::create($sealed + [
                 'company_id' => $company->id, 'subject_type' => $type, 'subject_id' => $id, 'token_lookup_hash' => hash('sha256', $raw),
-                'encrypted_token' => Crypt::encryptString($raw), 'is_active' => true, 'expires_at' => $expires ?? now()->addDays($statement ? 7 : 30),
+                'encrypted_token' => Crypt::encryptString($raw), 'is_active' => true, 'expires_at' => $expiry,
                 'password_hash' => $password === null ? null : Hash::make($password), 'created_by' => $actor->id,
                 'access_profile' => self::PROFILE, 'subject_revision' => $source instanceof Quotation ? $policy->quotationRevision($source) : $sealed['content_hash'],
-                'request_key' => $requestKey, 'request_hash' => $intentHash, 'issued_at' => now(),
+                'request_key' => $requestKey, 'request_hash' => $intentHash, 'issued_at' => $issuedAt,
             ]);
             $this->content($share);
             $policy->authorize((int) $company->id, $actor, $type);

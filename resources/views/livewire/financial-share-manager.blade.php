@@ -27,7 +27,10 @@
         </div>
         <div>
             <label for="share-expiry-days" class="block text-sm font-medium text-text-primary">{{ __('sharing.expiry_days') }}</label>
-            <input id="share-expiry-days" type="number" min="1" max="{{ $subjectType === \App\Models\PublicShare::SUBJECT_CUSTOMER_STATEMENT ? 30 : 365 }}" inputmode="numeric" dir="ltr" wire:model="expiryDays" class="mt-1 min-h-11 w-full rounded-control border border-border px-3 py-2 bg-white text-sm focus:border-primary focus:ring-1 focus:ring-primary">
+            <input id="share-expiry-days" type="number" min="1" max="{{ $subjectType === \App\Models\PublicShare::SUBJECT_CUSTOMER_STATEMENT ? 30 : 365 }}" inputmode="numeric" dir="ltr" wire:model.live="expiryDays" class="mt-1 min-h-11 w-full rounded-control border border-border px-3 py-2 bg-white text-sm focus:border-primary focus:ring-1 focus:ring-primary">
+            <p class="text-xs text-text-secondary mt-1">
+                {{ __('sharing.expiry_duration_exact', ['days' => (int) $expiryDays, 'hours' => (int) $expiryDays * 24]) }}
+            </p>
             @error('expiryDays')<p role="alert" aria-live="assertive" class="text-xs text-red-600 mt-1 font-medium">{{ $message }}</p>@enderror
         </div>
         <div class="sm:col-span-2">
@@ -91,6 +94,9 @@
         </div>
     @endif
     <ul class="divide-y divide-border">
+        @php
+            $companyTz = app(\App\Support\Tenancy\CompanyContext::class)->company()->timezone;
+        @endphp
         @foreach($shares as $share)
             <li class="flex flex-wrap items-center justify-between gap-3 py-3 text-sm" wire:key="share-{{ $share->public_id }}">
                 <div class="flex flex-wrap items-center gap-2">
@@ -98,7 +104,13 @@
                     <span class="text-xs px-2 py-0.5 rounded-full {{ $share->is_active && ! $share->isExpired() ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-slate-100 text-slate-600 border border-slate-200' }}">
                         {{ ! $share->is_active ? __('sharing.revoked') : ($share->isExpired() ? __('sharing.expired') : (($available[$share->public_id] ?? false) ? __('sharing.active') : __('sharing.unavailable'))) }}
                     </span>
-                    <span dir="ltr" class="text-xs text-text-muted font-mono">{{ $share->expires_at?->format('Y-m-d') ?? __('sharing.no_expiry') }}</span>
+                    <span dir="ltr" class="text-xs text-text-muted font-mono">
+                        @if($share->expires_at)
+                            {{ app(\App\Services\Sales\ShareExpiry::class)->displayInstant($share->expires_at, $companyTz) }}
+                        @else
+                            {{ __('sharing.no_expiry') }}
+                        @endif
+                    </span>
                 </div>
                 <div class="flex items-center gap-2">
                     @if($available[$share->public_id] ?? false)

@@ -7,6 +7,7 @@ namespace Tests\Feature\Phase9;
 use App\Actions\Company\CreateCompanyAction;
 use App\Actions\Sales\CreateSalesInvoiceDraftAction;
 use App\Actions\Sales\PostSalesInvoiceAction;
+use App\Models\Catalog;
 use App\Models\Company;
 use App\Models\Customer;
 use App\Models\Product;
@@ -117,6 +118,106 @@ class PublicationConcurrencyTest extends TestCase
         $this->assertSame(1, DB::table('catalog_publications')->where('company_id', $this->company->id)->where('request_key', $intent['key'])->count());
         $this->assertSame(1, DB::table('audit_events')->where('company_id', $this->company->id)->where('event_key', 'catalog.published')->count());
         $this->assertSame($before, $this->economicFingerprint());
+    }
+
+    private function publishedCatalog(): Catalog
+    {
+        $product = app(ProductCatalogService::class)->createProduct($this->company, ['name_ar' => 'منتج السباق', 'name_en' => 'Race catalog product', 'sku' => 'LINK-RACE',
+            'product_type' => Product::TYPE_STOCK, 'track_stock' => true, 'track_expiry' => false,
+            'base_unit_id' => Unit::where('company_id', $this->company->id)->where('code', 'piece')->firstOrFail()->id], $this->owner->id);
+        $service = app(CatalogService::class);
+        $catalog = $service->save(null, ['name_ar' => 'كتالوج السباق', 'locale' => 'ar', 'show_prices' => false,
+            'show_sku' => true, 'show_description' => false, 'show_images' => false], [['product_id' => $product->id, 'unit_id' => $product->base_unit_id]]);
+        $preview = $service->preview($catalog->id);
+
+        return $service->publish($catalog->id, $preview['revision'], $preview['hash'], 'link-race-publication');
+    }
+
+    public function test_concurrent_new_link_retries_converge_and_conflicting_intent_cannot_rotate_again(): void
+    {
+        $catalog = $this->publishedCatalog();
+        $service = app(CatalogService::class);
+        $old = $service->share($catalog->id);
+        $service->state($catalog->id, 'revoked');
+        $before = $this->economicFingerprint();
+        $intent = ['operation' => 'catalog-new-link', 'subject_id' => $catalog->id, 'key' => 'new-link-retry'];
+        [$first, $second] = $this->race($intent, $intent);
+        $this->assertSame('ok', $first['status']);
+        $this->assertSame($first, $second);
+        $this->assertNotSame($old['share']->token_lookup_hash, $first['token_hash']);
+        $this->assertFalse($old['share']->fresh()->isValid());
+        $this->assertSame(2, PublicShare::where('company_id', $this->company->id)->where('subject_id', $catalog->id)->where('subject_type', CatalogService::SUBJECT)->count());
+        $results = $this->race($intent, $intent + ['password' => 'Different-password']);
+        $statuses = array_column($results, 'status');
+        sort($statuses);
+        $this->assertSame(['conflict', 'ok'], $statuses);
+        $this->assertSame(1, PublicShare::where('company_id', $this->company->id)->where('subject_type', CatalogService::SUBJECT)->where('is_active', true)->count());
+        $this->assertSame(1, DB::table('catalog_publications')->where('catalog_id', $catalog->id)->count());
+        $this->assertSame($before, $this->economicFingerprint());
+    }
+
+    public function test_concurrent_revoke_and_new_link_never_resurrect_the_original_token(): void
+    {
+        $catalog = $this->publishedCatalog();
+        $old = app(CatalogService::class)->share($catalog->id);
+        $before = $this->economicFingerprint();
+        [$revocation, $issuance] = $this->race(['operation' => 'catalog-revoke', 'subject_id' => $catalog->id],
+            ['operation' => 'catalog-new-link', 'subject_id' => $catalog->id, 'key' => 'race-new-link']);
+        $this->assertSame('ok', $revocation['status']);
+        $this->assertSame('ok', $issuance['status']);
+        $this->assertFalse($old['share']->fresh()->is_active);
+        $this->assertNotNull($old['share']->fresh()->revoked_at);
+        $this->assertNotSame($old['share']->token_lookup_hash, $issuance['token_hash']);
+        $current = PublicShare::where('company_id', $this->company->id)->findOrFail($issuance['id']);
+        $this->assertSame($catalog->fresh()->status === 'active', $current->isValid());
+        $this->assertSame(1, DB::table('catalog_publications')->where('catalog_id', $catalog->id)->count());
+        $this->assertSame($before, $this->economicFingerprint());
+    }
+
+    public function test_revoke_committed_during_public_render_denies_the_in_flight_response(): void
+    {
+        $catalog = $this->publishedCatalog();
+        $grant = app(CatalogService::class)->share($catalog->id)['share'];
+        $directory = sys_get_temp_dir().DIRECTORY_SEPARATOR.'phase9-render-'.bin2hex(random_bytes(8));
+        mkdir($directory, 0700);
+        $paths = array_map(fn ($name) => $directory.DIRECTORY_SEPARATOR.$name, ['payload.json', 'ready', 'release', 'attempting', 'rendering', 'finish']);
+        [$payloadPath, $ready, $release, $attempting, $rendering, $finish] = $paths;
+        $environment = ['APP_KEY' => (string) config('app.key'), 'APP_URL' => (string) config('app.url'), 'DB_URL' => '',
+            'APP_ENV' => 'testing', 'CACHE_STORE' => 'array', 'SESSION_DRIVER' => 'array'];
+        foreach (['host', 'port', 'database', 'username', 'password'] as $key) {
+            $environment['DB_'.strtoupper($key)] = (string) config('database.connections.mysql.'.$key);
+        }
+        file_put_contents($payloadPath, json_encode(['company_id' => $this->company->id, 'actor_id' => $this->owner->id,
+            'operation' => 'catalog-read', 'grant_id' => $grant->id, 'ready' => $ready, 'release' => $release,
+            'attempting' => $attempting, 'rendering' => $rendering, 'finish_render' => $finish], JSON_THROW_ON_ERROR));
+        chmod($payloadPath, 0600);
+        $process = new Process([PHP_BINARY, base_path('tests/Support/phase9-publication-worker.php'), $payloadPath], base_path(), $environment);
+        $before = $this->economicFingerprint();
+        try {
+            $process->setTimeout(45)->start();
+            $this->waitForFiles([$ready], [$process]);
+            file_put_contents($release, 'release');
+            $this->waitForFiles([$rendering], [$process]);
+            app(CatalogService::class)->state($catalog->id, 'revoked');
+            file_put_contents($finish, 'finish');
+            $process->wait();
+            $this->assertSame(0, $process->getExitCode(), $process->getErrorOutput());
+            $result = json_decode($process->getOutput(), true, flags: JSON_THROW_ON_ERROR);
+            $this->assertSame(404, $result['http_status']);
+            $this->assertFalse($result['disclosed']);
+            $this->assertFalse($grant->fresh()->isValid());
+            $this->assertSame($before, $this->economicFingerprint());
+        } finally {
+            if ($process->isRunning()) {
+                $process->stop();
+            }
+            foreach ($paths as $path) {
+                if (is_file($path)) {
+                    unlink($path);
+                }
+            }
+            rmdir($directory);
+        }
     }
 
     /** @param array<string,mixed> $first

@@ -37,8 +37,9 @@ class PublicShareService
         ?string $password = null,
         ?string $requestKey = null,
         array $scope = [],
+        ?int $lifetimeDays = null,
     ): array {
-        return app(IssuedFinancialShares::class)->create($company, $user, $subjectType, $subjectId, $expiresAt, $password, $requestKey, $scope);
+        return app(IssuedFinancialShares::class)->create($company, $user, $subjectType, $subjectId, $expiresAt, $password, $requestKey, $scope, $lifetimeDays);
     }
 
     /**

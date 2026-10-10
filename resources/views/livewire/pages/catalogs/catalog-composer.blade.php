@@ -165,12 +165,25 @@
                         <button
                             type="button"
                             wire:click="manageState('revoked')"
+                            wire:confirm="{{ __('catalogs.revoke_confirm_warning') }}"
                             @disabled(! $canRevoke)
                             class="min-h-[44px] px-3 py-2 bg-rose-50 text-rose-700 border border-rose-200 rounded-lg text-sm hover:bg-rose-100 disabled:opacity-50"
                         >
                             {{ __('catalogs.revoke') }}
                         </button>
                     @endif
+                @endif
+
+                <!-- Revoked State: Explicit New Link Action -->
+                @if($catalogId !== null && $publishedRevision > 0 && in_array($status, ['active', 'revoked'], true))
+                    <button
+                        type="button"
+                        wire:click="openNewLink"
+                        @disabled(! $canShare || ! $canPublish)
+                        class="min-h-[44px] px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-medium shadow-sm transition-colors disabled:opacity-50"
+                    >
+                        {{ __('catalogs.new_link') }}
+                    </button>
                 @endif
 
                 <!-- Share Link Button -->
@@ -676,8 +689,21 @@
                             <div class="font-semibold text-slate-800">{{ __('catalogs.current_link_status') }}</div>
                             <div class="flex justify-between items-center">
                                 <span class="text-slate-500">{{ __('catalogs.current_expiry') }}:</span>
-                                <span class="font-medium text-slate-800">{{ $currentExpires ?: __('catalogs.no_expiry') }}</span>
+                                <span class="font-medium text-slate-800">
+                                    @if($currentExpiresAt)
+                                        {{ $currentExpiresAt }} ({{ $companyTimezone }})
+                                    @elseif($currentExpires)
+                                        {{ $currentExpires }} ({{ $companyTimezone }})
+                                    @else
+                                        {{ __('catalogs.no_expiry') }}
+                                    @endif
+                                </span>
                             </div>
+                            @if($legacyExpiry)
+                                <div class="p-2 rounded bg-amber-50 text-amber-800 border border-amber-200 text-[11px] leading-relaxed">
+                                    {{ __('catalogs.legacy_expiry_notice', ['instant' => $currentExpiresAt ?: $currentExpires, 'timezone' => $companyTimezone]) }}
+                                </div>
+                            @endif
                             <div class="flex justify-between items-center">
                                 <span class="text-slate-500">{{ __('catalogs.password_protection') }}:</span>
                                 <span class="font-medium {{ $hasPassword ? 'text-emerald-700' : 'text-slate-600' }}">
@@ -720,6 +746,9 @@
                                 wire:model="linkAccessExpires"
                                 class="w-full min-h-[44px] px-3 py-2 text-sm rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                             >
+                            <p class="text-[11px] text-slate-500 mt-1">
+                                {{ __('catalogs.expiry_company_tz_hint', ['timezone' => $companyTimezone]) }}
+                            </p>
                             @error('linkAccessExpires') <p role="alert" class="text-xs text-rose-600 mt-1">{{ $message }}</p> @enderror
                         </div>
 
@@ -818,6 +847,15 @@
                             {{ __('catalogs.edit_link_access') }}
                         </button>
 
+                        <!-- Issue New Link Action -->
+                        <button
+                            type="button"
+                            wire:click="openNewLink"
+                            class="w-full min-h-[44px] px-3 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-lg text-xs font-medium flex items-center justify-center gap-1.5 mt-2 transition-colors"
+                        >
+                            {{ __('catalogs.issue_new_link') }}
+                        </button>
+
                         <p class="text-xs text-slate-500 mt-2">
                             {{ __('catalogs.recovering_existing') }}
                         </p>
@@ -835,6 +873,14 @@
                             class="w-full min-h-[44px] bg-indigo-600 hover:bg-indigo-700 text-white font-medium text-sm rounded-lg flex items-center justify-center transition-colors"
                         >
                             {{ __('catalogs.renew_link_access') }}
+                        </button>
+
+                        <button
+                            type="button"
+                            wire:click="openNewLink"
+                            class="w-full min-h-[44px] bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 font-medium text-sm rounded-lg flex items-center justify-center transition-colors mt-2"
+                        >
+                            {{ __('catalogs.issue_new_link') }}
                         </button>
                     </div>
                 @else
@@ -866,6 +912,9 @@
                                 wire:model="shareExpires"
                                 class="w-full min-h-[44px] px-3 py-2 text-sm rounded-lg border border-slate-300"
                             >
+                            <p class="text-[11px] text-slate-500 mt-1">
+                                {{ __('catalogs.expiry_company_tz_hint', ['timezone' => $companyTimezone]) }}
+                            </p>
                         </div>
 
                         <button
@@ -877,6 +926,94 @@
                         </button>
                     </div>
                 @endif
+            </div>
+        </div>
+    @endif
+
+    <!-- Modal: Issue New Public Link (Terminal Retirement Action) -->
+    @if($showNewLinkModal)
+        <div x-data x-trap.inert.noscroll="true" @keydown.escape.window="$wire.closeNewLink()" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="catalog-new-link-title">
+            <div class="bg-white rounded-xl shadow-xl border border-slate-200 max-w-lg w-full p-6 text-slate-900">
+                <div class="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
+                    <h3 id="catalog-new-link-title" class="text-base font-bold text-slate-900">{{ __('catalogs.new_link_title') }}</h3>
+                    <button type="button" aria-label="{{ __('catalogs.close') }}" wire:click="closeNewLink" class="min-h-[44px] min-w-[44px] text-slate-400 hover:text-slate-600 p-1">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
+                    </button>
+                </div>
+
+                @error('newLink')<p role="alert" class="mb-3 text-sm text-rose-700 font-medium">{{ $message }}</p>@enderror
+
+                <!-- Explicit Terminal Retirement Warning -->
+                <div class="mb-4 p-4 rounded-lg bg-rose-50 border border-rose-200 text-rose-900 text-sm">
+                    <div class="flex items-start gap-3">
+                        <div class="p-1 rounded bg-rose-100 text-rose-700 shrink-0 mt-0.5">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                            </svg>
+                        </div>
+                        <div>
+                            <h4 class="font-bold text-rose-950">{{ __('catalogs.terminal_warning_title') }}</h4>
+                            <p class="mt-1 text-xs text-rose-800 leading-relaxed">{{ __('catalogs.new_link_terminal_warning') }}</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="space-y-4">
+                    <!-- Password input -->
+                    <div>
+                        <label for="new-link-password" class="block text-xs font-semibold text-slate-700 mb-1">
+                            {{ __('catalogs.password_optional') }}
+                        </label>
+                        <input
+                            id="new-link-password"
+                            type="password"
+                            wire:model="newLinkPassword"
+                            minlength="8"
+                            maxlength="128"
+                            placeholder="{{ __('catalogs.new_password_placeholder') }}"
+                            class="w-full min-h-[44px] px-3 py-2 text-sm rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                        >
+                        @error('newLinkPassword') <p role="alert" class="text-xs text-rose-600 mt-1">{{ $message }}</p> @enderror
+                    </div>
+
+                    <!-- Expiry input -->
+                    <div>
+                        <label for="new-link-expires" class="block text-xs font-semibold text-slate-700 mb-1">
+                            {{ __('catalogs.expiry_date') }}
+                        </label>
+                        <input
+                            id="new-link-expires"
+                            type="date"
+                            wire:model="newLinkExpires"
+                            class="w-full min-h-[44px] px-3 py-2 text-sm rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                        >
+                        <p class="text-[11px] text-slate-500 mt-1">
+                            {{ __('catalogs.expiry_company_tz_hint', ['timezone' => $companyTimezone]) }}
+                        </p>
+                        @error('newLinkExpires') <p role="alert" class="text-xs text-rose-600 mt-1">{{ $message }}</p> @enderror
+                    </div>
+
+                    <!-- Action Buttons -->
+                    <div class="flex items-center gap-3 pt-3 border-t border-slate-100">
+                        <button
+                            type="button"
+                            wire:click="issueNewLink"
+                            wire:loading.attr="disabled"
+                            class="flex-1 min-h-[44px] bg-rose-600 hover:bg-rose-700 text-white font-medium text-sm rounded-lg flex items-center justify-center transition-colors disabled:opacity-50 shadow-sm"
+                        >
+                            <span wire:loading.remove wire:target="issueNewLink">{{ __('catalogs.new_link_confirm') }}</span>
+                            <span wire:loading wire:target="issueNewLink">{{ __('catalogs.saving') }}</span>
+                        </button>
+
+                        <button
+                            type="button"
+                            wire:click="closeNewLink"
+                            class="min-h-[44px] px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-sm font-medium transition-colors"
+                        >
+                            {{ __('catalogs.cancel') }}
+                        </button>
+                    </div>
+                </div>
             </div>
         </div>
     @endif
