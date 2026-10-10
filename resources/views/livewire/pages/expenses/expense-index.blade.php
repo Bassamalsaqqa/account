@@ -20,12 +20,12 @@
     <div class="rounded-card border border-border bg-white p-4 space-y-3">
         <div class="grid gap-3 sm:grid-cols-2 md:grid-cols-4">
             <div>
-                <label class="block text-xs font-medium text-text-secondary mb-1">{{ __('expenses.search') }}</label>
-                <input type="search" wire:model.live.debounce.300ms="search" placeholder="{{ __('expenses.search') }}" class="w-full min-w-0 rounded-control border border-border bg-white px-3 py-2 text-sm focus:border-primary focus:ring-primary">
+                <label for="expense-search" class="block text-xs font-medium text-text-secondary mb-1">{{ __('expenses.search') }}</label>
+                <input id="expense-search" type="search" wire:model.live.debounce.300ms="search" placeholder="{{ __('expenses.search') }}" class="w-full min-w-0 rounded-control border border-border bg-white px-3 py-2 text-sm focus:border-primary focus:ring-primary">
             </div>
             <div>
-                <label class="block text-xs font-medium text-text-secondary mb-1">{{ __('expenses.category') }}</label>
-                <select wire:model.live="categoryId" class="w-full min-w-0 rounded-control border border-border bg-white px-3 py-2 text-sm focus:border-primary focus:ring-primary">
+                <label for="expense-category-filter" class="block text-xs font-medium text-text-secondary mb-1">{{ __('expenses.category') }}</label>
+                <select id="expense-category-filter" wire:model.live="categoryId" class="w-full min-w-0 rounded-control border border-border bg-white px-3 py-2 text-sm focus:border-primary focus:ring-primary">
                     <option value="">{{ __('expenses.all_categories') }}</option>
                     @foreach($categories as $cat)
                         <option value="{{ $cat->id }}">{{ app()->getLocale() === 'en' ? ($cat->name_en ?: $cat->name_ar) : $cat->name_ar }}</option>
@@ -33,16 +33,16 @@
                 </select>
             </div>
             <div>
-                <label class="block text-xs font-medium text-text-secondary mb-1">{{ __('expenses.classification') }}</label>
-                <select wire:model.live="classification" class="w-full min-w-0 rounded-control border border-border bg-white px-3 py-2 text-sm focus:border-primary focus:ring-primary">
+                <label for="expense-classification-filter" class="block text-xs font-medium text-text-secondary mb-1">{{ __('expenses.classification') }}</label>
+                <select id="expense-classification-filter" wire:model.live="classification" class="w-full min-w-0 rounded-control border border-border bg-white px-3 py-2 text-sm focus:border-primary focus:ring-primary">
                     <option value="">{{ __('expenses.all_classifications') }}</option>
                     <option value="operating">{{ __('expenses.operating') }}</option>
                     <option value="landed_cost">{{ __('expenses.landed_cost') }}</option>
                 </select>
             </div>
             <div>
-                <label class="block text-xs font-medium text-text-secondary mb-1">{{ __('expenses.payment_method') }}</label>
-                <select wire:model.live="paymentMethod" class="w-full min-w-0 rounded-control border border-border bg-white px-3 py-2 text-sm focus:border-primary focus:ring-primary">
+                <label for="expense-payment-method-filter" class="block text-xs font-medium text-text-secondary mb-1">{{ __('expenses.payment_method') }}</label>
+                <select id="expense-payment-method-filter" wire:model.live="paymentMethod" class="w-full min-w-0 rounded-control border border-border bg-white px-3 py-2 text-sm focus:border-primary focus:ring-primary">
                     <option value="">{{ __('expenses.all_methods') }}</option>
                     <option value="cash">{{ __('expenses.cash') }}</option>
                     <option value="bank">{{ __('expenses.bank') }}</option>
@@ -52,20 +52,20 @@
         </div>
         <div class="grid gap-3 sm:grid-cols-3">
             <div>
-                <label class="block text-xs font-medium text-text-secondary mb-1">{{ __('expenses.status') }}</label>
-                <select wire:model.live="status" class="w-full min-w-0 rounded-control border border-border bg-white px-3 py-2 text-sm focus:border-primary focus:ring-primary">
+                <label for="expense-status-filter" class="block text-xs font-medium text-text-secondary mb-1">{{ __('expenses.status') }}</label>
+                <select id="expense-status-filter" wire:model.live="status" class="w-full min-w-0 rounded-control border border-border bg-white px-3 py-2 text-sm focus:border-primary focus:ring-primary">
                     <option value="">{{ __('expenses.all_statuses') }}</option>
                     <option value="posted">{{ __('expenses.posted') }}</option>
                     <option value="reversed">{{ __('expenses.reversed') }}</option>
                 </select>
             </div>
             <div>
-                <label class="block text-xs font-medium text-text-secondary mb-1">{{ __('expenses.from_date') }}</label>
-                <input type="date" wire:model.live="fromDate" class="w-full min-w-0 rounded-control border border-border bg-white px-3 py-2 text-sm focus:border-primary focus:ring-primary">
+                <label for="expense-from-date" class="block text-xs font-medium text-text-secondary mb-1">{{ __('expenses.from_date') }}</label>
+                <input id="expense-from-date" type="date" wire:model.live="fromDate" class="w-full min-w-0 rounded-control border border-border bg-white px-3 py-2 text-sm focus:border-primary focus:ring-primary">
             </div>
             <div>
-                <label class="block text-xs font-medium text-text-secondary mb-1">{{ __('expenses.to_date') }}</label>
-                <input type="date" wire:model.live="toDate" class="w-full min-w-0 rounded-control border border-border bg-white px-3 py-2 text-sm focus:border-primary focus:ring-primary">
+                <label for="expense-to-date" class="block text-xs font-medium text-text-secondary mb-1">{{ __('expenses.to_date') }}</label>
+                <input id="expense-to-date" type="date" wire:model.live="toDate" class="w-full min-w-0 rounded-control border border-border bg-white px-3 py-2 text-sm focus:border-primary focus:ring-primary">
             </div>
         </div>
     </div>

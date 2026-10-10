@@ -4376,6 +4376,18 @@ final class ReportRegistry
         return array_filter(self::DEFINITIONS, fn (array $definition): bool => $this->allows($company, $definition['key']));
     }
 
+    /** Navigation needs existence only; each attempted definition still authorizes freshly. */
+    public function hasVisible(Company $company): bool
+    {
+        foreach (array_keys(self::DEFINITIONS) as $key) {
+            if ($this->allows($company, $key)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     public function allows(Company $company, string $key): bool
     {
         $definition = $this->definition($key);

@@ -42,9 +42,6 @@ final class ReportSourceNavigation
         }
         $links = [];
         foreach ($definitions as $definition) {
-            if (! $guard->allows($company, $definition['permission'])) {
-                continue;
-            }
             $indices = [];
             $ids = [];
             foreach ($result->rows as $index => $row) {
@@ -62,6 +59,10 @@ final class ReportSourceNavigation
                 $ids[] = $id;
             }
             if ($ids === []) {
+                continue;
+            }
+            // Pure in-memory ID collection needs no repeated guard. Authorize before every lookup.
+            if (! $guard->allows($company, $definition['permission'])) {
                 continue;
             }
             $query = DB::table($definition['table'])->where('company_id', $company->id)->whereIn('id', array_unique($ids));

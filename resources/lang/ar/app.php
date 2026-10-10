@@ -50,6 +50,8 @@ return [
 
     // Topbar
     'search_placeholder' => 'بحث في الإعدادات، الضرائب، المستخدمين...',
+    'search_future' => 'البحث في مساحة العمل ضمن العمل المستقبلي',
+    'clear_search' => 'مسح البحث',
     'search_kbd' => 'Ctrl K',
     'quick_add' => 'إضافة سريعة',
     'notifications' => 'التنبيهات',

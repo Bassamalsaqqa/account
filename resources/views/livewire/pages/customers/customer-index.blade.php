@@ -24,7 +24,7 @@
     <!-- Filters & Search Bar -->
     <div class="bg-white p-4 rounded-card border border-border shadow-xs flex flex-col md:flex-row gap-4 items-stretch md:items-center justify-between">
         <div class="flex-1 max-w-md relative">
-            <input type="text"
+            <input id="customers-search" aria-label="{{ __('sales.search') }}" type="text"
                    wire:model.live.debounce.300ms="search"
                    placeholder="{{ __('sales.search') }}"
                    class="w-full h-9 pl-9 pr-3 rounded-control border border-border bg-canvas text-xs text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden" />
