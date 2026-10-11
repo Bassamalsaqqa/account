@@ -38,7 +38,6 @@ class PurchaseFormCorrectionsTest extends TestCase
         parent::setUp();
         $this->finalAiFixtures();
         Http::preventStrayRequests();
-        config(['ai_assistant.provider_ipv4' => ['deepseek' => ['global' => '8.8.8.8'], 'openai' => ['global' => '8.8.8.8']]]);
     }
 
     public function test_exact_unit_cost_and_quantity_correction_preserves_human_fields_and_undoes_without_database_writes(): void

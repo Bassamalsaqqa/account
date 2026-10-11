@@ -27,13 +27,6 @@ return [
     'monthly_company_cost_ceiling_micros' => (int) env('AI_MONTHLY_COMPANY_COST_CEILING_MICROS', 0),
     'daily_user_cost_ceiling_micros' => (int) env('AI_DAILY_USER_COST_CEILING_MICROS', 0),
     'monthly_user_cost_ceiling_micros' => (int) env('AI_MONTHLY_USER_COST_CEILING_MICROS', 0),
-    // Deployment-reviewed public IPv4 destinations; empty is fail closed. Never set by BYOK clients.
-    'provider_ipv4' => [
-        'deepseek' => ['global' => env('AI_DEEPSEEK_GLOBAL_IPV4', '')],
-        'openai' => ['global' => env('AI_OPENAI_GLOBAL_IPV4', '')],
-        'groq' => ['global' => env('AI_GROQ_GLOBAL_IPV4', '')],
-        'qwen' => ['beijing' => env('AI_QWEN_BEIJING_IPV4', ''), 'singapore' => env('AI_QWEN_SINGAPORE_IPV4', '')],
-    ],
     'gateway' => [
         // A reviewed vendor-neutral gateway implementing docs/PHASE_12_PROVIDER_CONTRACT.md.
         // No browser-supplied endpoint, key, model, routing or tools.

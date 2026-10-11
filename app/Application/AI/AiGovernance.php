@@ -13,6 +13,7 @@ use App\Models\User;
 use App\Services\Audit\AuditService;
 use App\Services\Sales\SalesActorGuard;
 use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
@@ -293,15 +294,39 @@ final class AiGovernance
         return $query->firstOrFail();
     }
 
-    /** @return array{connection: AiProviderConnection, policy: AiCompanyPolicy, credential: ProviderCredential} */
-    public function dispatchConnection(Company $company, User $actor, string $id, string $intent, string $capability, ?int $expectedRevision = null): array
+    /** @return list<array<string, mixed>> */
+    public function permittedConnections(Company $company, User $actor, string $intent): array
     {
-        return DB::transaction(function () use ($company, $actor, $id, $intent, $capability, $expectedRevision): array {
-            $policy = $this->authorizeUse($company, $actor, $intent, $capability === 'audio_transcription');
-            if (config('ai_assistant.provider_approved') !== true || config('ai_assistant.provider') !== 'direct') {
-                throw new AssistantUnavailable('disabled');
+        $policy = $this->authorizeUse($company, $actor, $intent);
+        $visible = $this->visibleConnections($company, $actor);
+        $permitted = [];
+        foreach ($visible as $metadata) {
+            if ($metadata['revoked_at'] !== null) {
+                continue;
             }
-            $connection = $this->ownedConnection($company, $actor, $id, true);
+            $connection = $this->ownedConnection($company, $actor, $metadata['public_id']);
+            if (! $this->connectionAllowed($policy, $connection)) {
+                continue;
+            }
+            if ($connection->credential_source === 'personal_byok' && ! $policy->personal_credentials_enabled) {
+                continue;
+            }
+            $permitted[] = $metadata;
+        }
+
+        return $permitted;
+    }
+
+    /** @return array{connection: AiProviderConnection, policy: AiCompanyPolicy} */
+    public function routeConnection(Company $company, User $actor, string $id, string $intent, string $capability, ?int $expectedRevision = null, bool $lock = false): array
+    {
+        return DB::transaction(function () use ($company, $actor, $id, $intent, $capability, $expectedRevision, $lock): array {
+            $policy = $this->authorizeUse($company, $actor, $intent, $capability === 'audio_transcription');
+            try {
+                $connection = $this->ownedConnection($company, $actor, $id, $lock);
+            } catch (ModelNotFoundException) {
+                throw new AssistantUnavailable('credential_revoked');
+            }
             if ($connection->revoked_at !== null || ($expectedRevision !== null && (int) $connection->revision !== $expectedRevision)
                 || $connection->capability !== $capability
                 || ! $this->connectionAllowed($policy, $connection)) {
@@ -311,6 +336,22 @@ final class AiGovernance
                 throw new AssistantUnavailable('personal_credentials_disabled');
             }
             app(ProviderCapabilityRegistry::class)->resolve($connection->provider, $connection->model, $connection->region, $capability);
+
+            return ['connection' => $connection, 'policy' => $policy];
+        });
+    }
+
+    /** @return array{connection: AiProviderConnection, policy: AiCompanyPolicy, credential: ProviderCredential} */
+    public function dispatchConnection(Company $company, User $actor, string $id, string $intent, string $capability, ?int $expectedRevision = null): array
+    {
+        return DB::transaction(function () use ($company, $actor, $id, $intent, $capability, $expectedRevision): array {
+            $routed = $this->routeConnection($company, $actor, $id, $intent, $capability, $expectedRevision, true);
+            $connection = $routed['connection'];
+            $policy = $routed['policy'];
+            if (config('ai_assistant.provider_approved') !== true || config('ai_assistant.provider') !== 'direct') {
+                throw new AssistantUnavailable('disabled');
+            }
+
             $this->requireConsent($policy, $connection, $actor);
 
             return ['connection' => $connection, 'policy' => $policy, 'credential' => $this->credential($connection)];
@@ -344,23 +385,37 @@ final class AiGovernance
             'policy_revision' => $policy->revision, 'connection' => $connection->public_id,
             'connection_revision' => $connection->revision, 'provider' => $connection->provider,
             'model' => $connection->model, 'region' => $connection->region, 'source' => $connection->credential_source,
+            'capability' => $connection->capability,
             'privacy' => $policy->settings['privacy'] ?? [], 'fallback' => $policy->settings['fallback'] ?? [],
         ], JSON_THROW_ON_ERROR));
     }
 
+    /** @param array<string, string> $consents [connectionId => fingerprint] */
+    public function recordConsents(Company $company, User $actor, array $consents): void
+    {
+        DB::transaction(function () use ($company, $actor, $consents): void {
+            $policy = $this->authorizeUse($company, $actor, 'auto');
+            $preference = AiUserPreference::firstOrCreate(['company_id' => $company->id, 'user_id' => $actor->id]);
+            $stored = $preference->consents ?? [];
+            $now = now('UTC')->toIso8601String();
+            foreach ($consents as $connectionId => $fingerprint) {
+                $connection = $this->ownedConnection($company, $actor, (string) $connectionId, true);
+                if ($connection->revoked_at !== null || ! $this->connectionAllowed($policy, $connection)
+                    || ($connection->credential_source === 'personal_byok' && ! $policy->personal_credentials_enabled)) {
+                    throw new AssistantUnavailable('credential_revoked');
+                }
+                if (! hash_equals($this->consentFingerprint($policy, $connection), (string) $fingerprint)) {
+                    throw new AssistantUnavailable('consent_stale');
+                }
+                $stored[(string) $connectionId] = ['fingerprint' => $fingerprint, 'recorded_at' => $now];
+            }
+            $preference->update(['consents' => $stored]);
+        });
+    }
+
     public function recordConsent(Company $company, User $actor, string $connectionId, string $fingerprint): void
     {
-        DB::transaction(function () use ($company, $actor, $connectionId, $fingerprint): void {
-            $policy = $this->authorizeUse($company, $actor, 'auto');
-            $connection = $this->ownedConnection($company, $actor, $connectionId, true);
-            if (! hash_equals($this->consentFingerprint($policy, $connection), $fingerprint)) {
-                throw new AssistantUnavailable('consent_stale');
-            }
-            $preference = AiUserPreference::firstOrCreate(['company_id' => $company->id, 'user_id' => $actor->id]);
-            $consents = $preference->consents ?? [];
-            $consents[$connectionId] = ['fingerprint' => $fingerprint, 'recorded_at' => now('UTC')->toIso8601String()];
-            $preference->update(['consents' => $consents]);
-        });
+        $this->recordConsents($company, $actor, [$connectionId => $fingerprint]);
     }
 
     public function requireConsent(AiCompanyPolicy $policy, AiProviderConnection $connection, User $actor): void

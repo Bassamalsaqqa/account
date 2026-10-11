@@ -29,9 +29,10 @@
                             @endif
                             <ul class="space-y-2">
                                 @foreach ($consentRoutes as $route)
-                                    <li class="break-words text-text-secondary"><b>{{ $route['provider'] }} / {{ $route['model'] }}</b> · {{ $route['region'] }} · {{ __('assistant_v2.'.$route['credential_source']) }} · {{ __('assistant_v2.configured_unverified') }}</li>
+                                    <li class="break-words text-text-secondary"><b>{{ $route['provider'] }} / {{ $route['model'] }}</b> · {{ $route['region'] }} · {{ __('assistant_v2.'.$route['capability']) }} · {{ __('assistant_v2.route_'.$route['role']) }} · {{ __('assistant_v2.'.$route['credential_source']) }} · {{ __('assistant_v2.configured_unverified') }}</li>
                                 @endforeach
                             </ul>
+                            <p class="text-text-secondary">{{ __('assistant_v2.selection_consent_help') }}</p>
                             <label class="flex items-start gap-2">
                                 <input type="checkbox" wire:model="consent" class="mt-1 rounded border-border" />
                                 <span>{{ __('assistant_v2.consent') }}</span>
@@ -41,7 +42,7 @@
                                 <label class="block">{{ __('assistant_v2.'.$capability) }}
                                     <select wire:model="{{ $field }}" class="mt-1 min-h-11 w-full rounded-control border border-border px-2">
                                         <option value="">{{ __('assistant_v2.company_selection') }}</option>
-                                        @foreach ($consentRoutes as $route)
+                                        @foreach ($availableConnections as $route)
                                             @if ($route['capability'] === $capability)
                                                 <option value="{{ $route['public_id'] }}">{{ $route['provider'] }} · {{ $route['model'] }} · {{ __('assistant_v2.'.$route['credential_source']) }}</option>
                                             @endif

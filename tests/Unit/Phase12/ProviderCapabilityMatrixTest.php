@@ -39,12 +39,6 @@ class ProviderCapabilityMatrixTest extends TestCase
             'ai_assistant.max_text_characters' => 4096,
             'ai_assistant.timeout_seconds' => 10,
             'ai_assistant.max_output_tokens' => 512,
-            'ai_assistant.provider_ipv4' => [
-                'deepseek' => ['global' => '8.8.8.8'],
-                'openai' => ['global' => '8.8.8.8'],
-                'qwen' => ['singapore' => '8.8.8.8', 'beijing' => '8.8.8.8'],
-                'groq' => ['global' => '8.8.8.8'],
-            ],
         ]);
     }
 

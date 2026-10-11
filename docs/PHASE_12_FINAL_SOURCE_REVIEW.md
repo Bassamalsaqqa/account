@@ -6,20 +6,20 @@ Status: source implementation and the bounded verification below are complete fo
 
 - Accepted main/deployed Phase 11 source: `c2e39a32271b14de99e6ffda55ec5b0ea400cb7e`.
 - Implementation branch: `phase/12-ai-sales-assistant`; PR: https://github.com/Bassamalsaqqa/account/pull/25.
-- Starting checkpoint for this final verification: `f254cf7497a0f81c831921bfbd900db289f7d652`. The exact new commit and direct parent are published in the handback/PR description; this document cannot embed its own commit hash.
-- Protected authority: `ACCOUNTING_PHASE12_FINAL_SPEC_ARCHITECT_REVIEWED_2026-10-11.md`, dated 2026-10-11; SHA-256 `B080FC50222DC3F8E0AE6E8A3701BD4151E0CC020AD9FEEF14DE205521A5FB3F`. The original remains unchanged, local and unpublished. The protected inventory of 14 artifact identities was checked against all 15 existing local copies with no hash drift or missing file.
-- [Implementation ledger](PHASE_12_FINAL_IMPLEMENTATION_LEDGER.md), [provider contract](PHASE_12_PROVIDER_CONTRACT.md), [verified direct protocols](PHASE_12_DIRECT_PROVIDER_PROTOCOLS.md), [ADR 0012](adr/0012-ai-sales-proposals-and-confirmation.md).
+- Starting checkpoint for final verification: `f254cf7497a0f81c831921bfbd900db289f7d652`; P0 correction parent is exact HEAD `760a1531716c0165a1e0dc5b801178aaceed0811` (baseline 760a).
+- Protected authority: `ACCOUNTING_PHASE12_FINAL_SPEC_ARCHITECT_REVIEWED_2026-10-11.md`, dated 2026-10-11, SHA-256 `B080FC50222DC3F8E0AE6E8A3701BD4151E0CC020AD9FEEF14DE205521A5FB3F`, as amended by the Owner-authorized P0 clauses of protected `SMALL_TRADER_UNIFIED_AI_ASSISTANT_DESIGN_HANDOFF_2026-10-11.md`, version 1.0 dated 2026-10-11, SHA-256 `DB6D598B24E36205D6118A94C4488CF8DCC9ED3969FFC2585380A014024EB115` (both remain local, private, and unpublished; see [P0 DNS and consent amendment](PHASE_12_P0_DNS_CONSENT_AMENDMENT.md)). The protected inventory of 14 artifact identities was checked against all 15 existing local copies with no hash drift or missing file.
+- [Implementation ledger](PHASE_12_FINAL_IMPLEMENTATION_LEDGER.md), [provider contract](PHASE_12_PROVIDER_CONTRACT.md), [verified direct protocols](PHASE_12_DIRECT_PROVIDER_PROTOCOLS.md), [ADR 0012](adr/0012-ai-sales-proposals-and-confirmation.md), [P0 DNS and consent amendment](PHASE_12_P0_DNS_CONSENT_AMENDMENT.md).
 
 ## Package boundaries
 
 | Package | Implemented source | Source proof / remaining boundary |
 | --- | --- | --- |
-| P12-M1 | Curated direct text and speech adapters; strict local validation; HTTPS pins; bounded foreground hops | Provider contract mocks and deadline tests. No real key/provider verification. |
-| P12-M2 | Protected Owner delegation; company/private BYOK; company policy, consent, budgets and usage | Governance, Settings, company controls, reservation and two-company tests. No platform billing or implicit platform access. |
+| P12-M1 | Curated direct text and speech adapters; strict local validation; normal-DNS cURL transport; bounded foreground hops | Provider contract mocks and deadline tests. Native DNS supersedes prior IP pinning per Owner P0 amendment. No real key/provider verification. |
+| P12-M2 | Protected Owner delegation; company/private BYOK; company policy, per-capability consent, budgets and usage | Governance, Settings, company controls, reservation, scoped consent and two-company tests. No report data consent; no platform billing. |
 | P12-M3 | Deterministic zero-text-call path; Sales/Purchase classification; bounded candidates; constrained fallback; patch preparation/acknowledgement | Resolver, orchestration, speech-candidate, transcript, correction and process-concurrency tests. |
 | P12-M4 | Existing unsaved canonical forms; explicit human Save; idempotent Purchase draft facade; final-field provenance; highlight/Undo | Both forms, Purchase corrections, independent-process draft races and integrated canonical journey. No new financial/stock writer. |
 | P12-M5 | PCM16 WAV capture; intentional Stop; cancellation; genuine installed local recognition only | Recorder/WAV tests and synthetic loopback audio-to-form proof. Physical phones and actual recognition remain activation gates. |
-| P12-M6 | Guarded local integration, affected canonical regressions, migration preservation, bilingual responsive evidence, exact-head packet | Verification results below; independent architect acceptance is still required. |
+| P12-M6 | Guarded local integration, affected canonical regressions, migration preservation, bilingual responsive evidence, exact-head packet | Verification results below; independent exact-head architect acceptance is still required. |
 
 ## Owner decision traceability
 
@@ -65,7 +65,7 @@ No new accounting-policy deviation is approved by this mapping. Section 15 expre
 | 15.4 | Password-confirmed write-only encrypted provisioning; Configured — not yet verified labels; local configuration validation makes no provider call | Actual connection testing stays separately gated |
 | 15.5 | Unsupported intent refusal; correct existing unsaved form; no manufactured vendor invoice/lots/FX; latest-revision corrections/Undo; AI-free manual Purchase Save | Bilingual synthetic responsive/audio evidence is source proof only |
 
-## Executed verification
+## Historical expanded verification at 760a153 (carried evidence)
 
 - Current Purchase correction class: **9 tests / 119 assertions**, PASS, no errors/skips. Exact quantity/cost/unit, tax/discount/FX, invoice/lot refusal, fresh cost permission, prepared acknowledgement, manual edit/Undo, explicit Save provenance and AI-disabled manual Save are covered. AGY produced one uncommitted file before a quota failure; Codex inspected and corrected fixture field names and the invalid base-currency FX scenario. Earlier failed reports remain failed evidence.
 - Current final-contract economic journey: **1 test / 54 assertions**, PASS. Both existing forms remain unsaved until human Save. Human-entered supplier invoice/lots, 3 cartons of 12 pieces, 72 ILS acquisition, 2-carton sale with 10% discount and 16% tax (167.040000 ILS), FEFO, 12 remaining pieces, explicit canonical posting/replay and immutable historical snapshots are verified. Accounting, Inventory, Sales, Money, Phase 7 and Payables reconciliations all pass. No provider HTTP was sent.
@@ -88,6 +88,21 @@ git diff --check
 
 The full application PHPUnit suite and composite composer qa were not repeated; the style/static constituent gates and the guarded relevant suites above were used. Reports and synthetic screenshots are retained in ignored private evidence, with no SQL, audio, reset token or real key published.
 
+## Owner P0 amendment verification section (baseline 760a1531716c0165a1e0dc5b801178aaceed0811)
+
+Following the Owner's authorization of normal-DNS direct transport and per-capability scoped consent on 2026-10-11 ([P0 DNS and consent amendment](PHASE_12_P0_DNS_CONSENT_AMENDMENT.md)), the following QA status applies to the amendment:
+
+| Verification target | Status | Invariants and scope |
+| --- | --- | --- |
+| P0 normal-DNS direct transport | PASS ? LOCAL SOURCE QA | Direct transport dispatches to curated HTTPS registry hosts (`ProviderCapabilityRegistry`) with server-owned paths (`/chat/completions`, `/audio/transcriptions`) using native cURL / Guzzle DNS resolution via `CurlHandler`. Outbound IPv4 pinning (`config('ai_assistant.provider_ipv4...')`) and `CURLOPT_RESOLVE` are removed from active transport. TLS peer and hostname verification strictly enabled (`verify => true`). 5s connect timeout and native low-speed safeguard, shared <= 25s deadline (`AiProviderDeadline`), 128 KiB streamed cap, no retries. |
+| P0b per-capability scoped consent | PASS ? LOCAL SOURCE QA | Consent is scoped strictly to selected primary provider/model and approved fallback route per capability (`text_structured`, `audio_transcription`), not all visible choices. Speech method choices: cloud or `local_if_supported` when enabled. Explicit acceptance of updated disclosure required; policy/connection revisions invalidate fingerprints; route selection changes require refreshed disclosure. No report data consent is implicitly approved; reporting/conversation assistant deferred to future Unified P1 separate PR after Phase 12 source acceptance and Owner release decision. |
+| Legacy gateway isolation | PASS ? SOURCE INSPECTION | `GatewayTransport` and `AI_GATEWAY_PINNED_IPV4` remain unchanged, optional, disabled by default, and are NOT active final operational mode. |
+| Exact HEAD PR #25 architect re-review | PENDING INDEPENDENT ACCEPTANCE | Full exact-head review by independent architect across transport, consent, and regression suites. |
+
+Historical test counts (202 Phase 12 tests / 1,832 assertions, 144 mature tests / 478 assertions, 27 frontend tests) are preserved as authentic historical evidence under prior configuration and do not claim execution of the newly amended normal-DNS or per-capability consent code until verified and integrated by Codex.
+
+P0 executed results: **128 tests / 895 assertions**, then a focused final metadata/dispatch check of **35 tests / 189 assertions**, both with zero failures/errors/skips. Distinct latest cases total **129 / 901**, without counting repeated cases twice. Whole-repository Pint, PHPStan and the frontend production build passed. The existing six-domain economic journey was included. The [dated amendment, §5](PHASE_12_P0_DNS_CONSENT_AMENDMENT.md#5-executed-p0-evidence-and-review-handback) records exact targets, resolved failed iterations, source/network-proof limits and protected-file preservation. No new browser/physical-device, paid-provider or Hostinger proof is claimed.
+
 ## Browser evidence and practical accessibility
 
 The private loopback fixture substitutes a synthetic AudioContext stream for the physical microphone and mocks every AI HTTP request. The actual application AudioWorklet, PCM/WAV encoding, CSRF-authenticated upload, reservations, transcription handoff, canonical form rendering and follow-up acknowledgement run. Neither real speech accuracy nor real keys/billing are tested.
@@ -102,6 +117,6 @@ Practical checks include readable RTL/LTR layouts, semantic labels, dialog focus
 
 All default switches remain disabled: AI_ASSISTANT_ENABLED=false, AI_PROVIDER_APPROVED=false, AI_ASSISTANT_PROVIDER=none, AI_SPEECH_ENABLED=false; COMMAND_API_ENABLED=false remains required. The synthetic fixture overrides only its isolated process/configuration. No production configuration is changed.
 
-Separate Owner approval remains mandatory for provider/operator/region, pricing and spending limits, privacy/retention, real credentials, reviewed destination pins/TLS/address refresh, production-body logging and a consented 30–50-case Arabic/English/mixed evaluation with actual latency/field accuracy/spend. Physical phones and Hostinger resource guarantees remain unverified. Deferred Phase 10 independent off-host backup, isolated recovery/key custody and real password-reset mail proofs remain open.
+Separate Owner approval remains mandatory for provider/operator/region, pricing and spending limits, privacy/retention, real credentials, production DNS resolution and TLS egress verification on target hosting, production-body logging and a consented 30–50-case Arabic/English/mixed evaluation with actual latency/field accuracy/spend. Live ASR paid calls, physical phones, dialect accuracy, and Hostinger resource guarantees remain NOT VERIFIED. Deferred Phase 10 independent off-host backup, isolated recovery/key custody and real password-reset mail proofs remain open.
 
 No merge, deployment, production access/mutation, real mail, paid provider dispatch, real secret handling, protected Owner publication or GitHub CI occurred. Independent exact-head architect acceptance and later explicit Owner release/activation decisions remain required.

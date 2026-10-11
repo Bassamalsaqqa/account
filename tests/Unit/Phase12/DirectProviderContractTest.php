@@ -24,11 +24,7 @@ class DirectProviderContractTest extends TestCase
         parent::setUp();
         Http::preventStrayRequests();
         config(['ai_assistant.enabled' => true, 'ai_assistant.provider' => 'direct', 'ai_assistant.provider_approved' => true,
-            'ai_assistant.speech_enabled' => true,
-            'ai_assistant.provider_ipv4' => [
-                'deepseek' => ['global' => '8.8.8.8'], 'openai' => ['global' => '8.8.8.8'],
-                'qwen' => ['singapore' => '8.8.8.8'], 'groq' => ['global' => '8.8.8.8'],
-            ]]);
+            'ai_assistant.speech_enabled' => true]);
     }
 
     public function test_catalog_rejects_wrong_capability_region_model_and_unreviewed_provider(): void
@@ -116,10 +112,10 @@ class DirectProviderContractTest extends TestCase
         });
     }
 
-    public function test_disabled_transport_and_private_destination_send_nothing(): void
+    public function test_disabled_transport_and_unapproved_provider_send_nothing(): void
     {
         $route = app(ProviderCapabilityRegistry::class)->resolve('deepseek', 'deepseek-flash', 'global', 'text_structured');
-        foreach ([['ai_assistant.enabled', false, 'disabled'], ['ai_assistant.provider_ipv4.deepseek.global', '127.0.0.1', 'provider_configuration']] as [$key, $value, $reason]) {
+        foreach ([['ai_assistant.enabled', false, 'disabled'], ['ai_assistant.provider_approved', false, 'disabled']] as [$key, $value, $reason]) {
             $original = config($key);
             config([$key => $value]);
             try {

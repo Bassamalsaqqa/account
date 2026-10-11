@@ -4,6 +4,8 @@ Governing protected Owner specification: ACCOUNTING_PHASE12_FINAL_SPEC_ARCHITECT
 SHA-256: B080FC50222DC3F8E0AE6E8A3701BD4151E0CC020AD9FEEF14DE205521A5FB3F.
 The original remains private and unchanged.
 
+Owner-authorized P0 networking/consent amendment, dated 2026-10-11: [normal DNS and scoped consent](PHASE_12_P0_DNS_CONSENT_AMENDMENT.md). It supersedes the direct-provider pinning requirement; the protected originals and all earlier chronological evidence remain unchanged. Unified Assistant reporting/conversation is deferred to a separate post-acceptance/release-decision branch.
+
 Starting PR #25 head: fb37565cd6a85d9baa2d7fdebc59d359c750f032.
 Foundation checkpoint: 9903e5196539a4c916c16d863aed47367c53c2e7.
 Accepted main/deployed baseline: c2e39a32271b14de99e6ffda55ec5b0ea400cb7e.
@@ -27,11 +29,15 @@ Explicit Sales Save delegates to the accepted Phase 11 command facade. Explicit 
 
 Provider dispatch uses curated routes, approved credentials and current consent, independent text/speech selection, combined primary/fallback worst-case reservations and one optional named outage-only fallback. Usage estimates/reservations and unknown costs are distinct from independently reported charges. A request-scoped deadline is shared across attempts; Hostinger timing/resource behavior remains unverified.
 
+Current P0 source uses native cURL DNS for exact curated HTTPS hosts, without direct-provider static IPv4 settings. TLS, no proxies/redirects, bounded transfer writes and per-hop deadlines remain enforced. Consent covers selected text and cloud-enabled speech primary/fallback routes only; selectable alternatives are separate from consent. The optional legacy gateway pin is unchanged and disabled by default. See the dated amendment for current QA; older pin-related checkpoint statements below describe historical behavior.
+
 Company policy and key custody have separate protected permissions. Keys and password fields use normal CSRF-protected HTTP submission and encrypted, hidden model attributes; they are not public Livewire properties. Configuring a key does not verify it. Default runtime activation flags remain disabled.
 
 Reload/language navigation preserves the latest server-synchronized unsaved fields and invalidates obsolete tab revisions. Save and explicit discard clear temporary memory. The correction checkpoint adds navigation cleanup; network delivery and real-browser lifecycle certification retain the limits recorded below.
 
 ## Executed checkpoint evidence
+
+Latest P0 correction: 128 affected tests / 895 assertions and a focused final metadata/dispatch check of 35 / 189 passed; distinct latest cases total 129 / 901. Pint, PHPStan and frontend build passed. Independent architect acceptance remains pending. Full targets and failed-iteration disposition are in the [dated amendment](PHASE_12_P0_DNS_CONSENT_AMENDMENT.md#5-executed-p0-evidence-and-review-handback). The following older chronological counts remain historical evidence.
 
 Distinct focused PHP coverage: 98 tests / 601 assertions, zero failures/errors/skips in the final successful runs:
 

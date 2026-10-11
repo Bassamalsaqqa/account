@@ -28,7 +28,6 @@ class TransactionAssistantTest extends TestCase
         parent::setUp();
         $this->finalAiFixtures();
         Http::preventStrayRequests();
-        config(['ai_assistant.provider_ipv4' => ['deepseek' => ['global' => '8.8.8.8'], 'openai' => ['global' => '8.8.8.8']]]);
     }
 
     public function test_global_deterministic_sale_replays_one_unsaved_handoff_with_zero_text_calls(): void

@@ -1,8 +1,8 @@
 # Phase 12 provider contract — version 2 (multi-provider direct and unified transaction assistant)
 
-Authority metadata: Governed by protected local specification `ACCOUNTING_PHASE12_FINAL_SPEC_ARCHITECT_REVIEWED_2026-10-11.md`, SHA-256 `B080FC50222DC3F8E0AE6E8A3701BD4151E0CC020AD9FEEF14DE205521A5FB3F`.
+Authority metadata: Governed by protected local specification `ACCOUNTING_PHASE12_FINAL_SPEC_ARCHITECT_REVIEWED_2026-10-11.md`, SHA-256 `B080FC50222DC3F8E0AE6E8A3701BD4151E0CC020AD9FEEF14DE205521A5FB3F`, as amended by the Owner-authorized P0 clauses of protected `SMALL_TRADER_UNIFIED_AI_ASSISTANT_DESIGN_HANDOFF_2026-10-11.md`, version 1.0 dated 2026-10-11, SHA-256 `DB6D598B24E36205D6118A94C4488CF8DCC9ED3969FFC2585380A014024EB115` (both remain local, private, and unpublished; see [P0 DNS and consent amendment](PHASE_12_P0_DNS_CONSENT_AMENDMENT.md)).
 
-Status: Proposed expanded contract for independent review; source P12-M1–M6 submitted for independent review, draft PR #25; exact HEAD acceptance still pending. No vendor selected, billed requests sent, production credentials retrieved, or production features enabled. [ADR 0012](adr/0012-ai-sales-proposals-and-confirmation.md), [direct provider protocols](PHASE_12_DIRECT_PROVIDER_PROTOCOLS.md), [source acceptance](PHASE_12_SOURCE_ACCEPTANCE.md), and [implementation ledger](PHASE_12_FINAL_IMPLEMENTATION_LEDGER.md) describe the boundaries.
+Status: Proposed expanded contract for independent review; source P12-M1–M6 submitted for independent review, draft PR #25; exact HEAD acceptance still pending. No vendor selected, billed requests sent, production credentials retrieved, or production features enabled. [ADR 0012](adr/0012-ai-sales-proposals-and-confirmation.md), [direct provider protocols](PHASE_12_DIRECT_PROVIDER_PROTOCOLS.md), [P0 DNS and consent amendment](PHASE_12_P0_DNS_CONSENT_AMENDMENT.md), [source acceptance](PHASE_12_SOURCE_ACCEPTANCE.md), and [implementation ledger](PHASE_12_FINAL_IMPLEMENTATION_LEDGER.md) describe the boundaries.
 
 Superseded historical note: The initial single-gateway Sales-only design (version 1) is superseded. The gateway client remains in the codebase as a legacy compatibility option (`GatewayIntentProvider`, `GatewaySpeechProvider`, `GatewayTransport`), but is NOT the active final operational mode and does not provide universal audio-to-structured or multi-provider capabilities. Historical gateway test evidence does not claim direct provider coverage.
 
@@ -23,24 +23,36 @@ Superseded historical note: The initial single-gateway Sales-only design (versio
 
 Direct transport (`DirectProviderTransport`) executes authenticated HTTPS requests to curated upstream providers without intermediate proxies:
 
-1. **Curated endpoints**: Base URLs and paths are strictly reconstructed from server-owned catalog registrations (`ProviderCapabilityRegistry`), never client-supplied URLs.
-2. **Destination IPv4 pinning and DNS**:
-   - Each curated provider and region requires an operator-reviewed, globally routable public IPv4 address pin in server configuration (`config('ai_assistant.provider_ipv4.<provider>.<region>')`).
-   - Addresses must validate against `FILTER_VALIDATE_IP` with `FILTER_FLAG_IPV4 | FILTER_FLAG_GLOBAL_RANGE`. Empty, loopback, private, multicast, or reserved addresses fail closed before any network attempt (`AssistantUnavailable('provider_configuration')`).
-   - cURL pins the destination IPv4 address via `CURLOPT_RESOLVE` (`$host:443:$address`) while TLS certificate validation remains strictly enabled (`verify => true`).
-   - The application performs NO synchronous runtime DNS lookup, preventing unbounded PHP socket blocking.
-   - Address rotation requires a reviewed configuration update; dynamic or unverified address changes cause a fail-closed outage.
-3. **Transport hardening**:
-   - `withoutRedirecting()`: HTTP redirects are strictly refused.
+1. **Curated registry endpoints and server-owned paths**:
+   - Outbound requests target only hostnames registered in `ProviderCapabilityRegistry` (Catalog Version `2026-10-11.1`): `api.deepseek.com`, `dashscope.aliyuncs.com`, `dashscope-intl.aliyuncs.com`, `api.openai.com`, and `api.groq.com`.
+   - Paths are strictly server-owned constants (`/chat/completions` or `/audio/transcriptions`).
+   - The application strictly refuses arbitrary URLs, client-supplied IP addresses, ports, or non-HTTPS schemes. Scheme is unconditionally HTTPS (port 443).
+2. **Native DNS resolution and supersession of pinning**:
+   - Direct transport uses native cURL / Guzzle DNS resolution via an explicitly selected cURL-backed handler (`CurlHandler`).
+   - The prior requirement for manual operator public IPv4 destination address pinning (`config('ai_assistant.provider_ipv4.<provider>.<region>')`) and cURL `CURLOPT_RESOLVE` is removed from current direct transport specifications by explicit Owner authorization ([P0 DNS and consent amendment](PHASE_12_P0_DNS_CONSENT_AMENDMENT.md)).
+   - The application does NOT implement a custom runtime DNS resolver or manual background DNS cache refresh.
+   - Historical checkpoint note: Earlier chronological test statements (e.g. at commits `04bdb40`, `f254cf7`, and `760a153`) testing static destination pinning remain authentic historical checkpoint evidence, now formally superseded in active scope by the P0 amendment.
+3. **Strict TLS peer and hostname verification**:
+   - TLS peer verification (`verify => true`) and hostname verification remain strictly enforced on every outbound request.
+   - Self-signed, expired, invalid, or hostname-mismatched certificates immediately fail closed (`AssistantUnavailable('provider_outage')`).
+4. **Transport hardening**:
+   - `withoutRedirecting()`: HTTP redirects (301, 302, 307, 308) are strictly refused.
    - `proxy => ''` and `CURLOPT_PROXY => ''`: Proxies are disabled.
    - Automatic retries are disabled.
-   - Connect timeout: 5 seconds. Read timeout: 5 seconds.
+   - Connect timeout: 5 seconds. Read timeout option: 5 seconds; the selected native cURL handler additionally applies a five-second low-speed timeout, with the shared total deadline authoritative.
    - Streaming response bodies are capped at 128 KiB (131,072 bytes). JSON decode depth is capped at 24.
-4. **Monotonic foreground deadline**:
+5. **Monotonic foreground deadline**:
    - Each foreground PHP hop has an `AiProviderDeadline`; transcription and structured extraction are separate authenticated short-lived hops behind one processing experience.
    - Timeout is bounded to at most 25 seconds (from `AI_ASSISTANT_TIMEOUT_SECONDS`, default 20s), respecting PHP execution headroom (`max_execution_time - 5s`).
-   - The monotonic deadline allowance is shared across primary and optional fallback attempts. Exceeding the deadline throws `AssistantUnavailable('provider_outage')`. The deadline is per hop; it does not prove a 30-second total multi-hop/browser lifecycle. Host/proxy quotas, actual latency and 60-second upload support remain independently unverified.
-5. **Sanitized failures**:
+   - The monotonic deadline allowance is shared across primary and optional fallback attempts. Exceeding the deadline throws `AssistantUnavailable('provider_outage')`. The deadline is per hop; it does not prove a 30-second total multi-hop/browser lifecycle. Host/proxy quotas, actual latency, and 60-second upload support remain independently unverified.
+6. **Realistic SSRF threat analysis**:
+   - Restricting outbound traffic to curated server-owned hostnames and enforcing strict TLS peer verification narrows user-controlled fetch vulnerabilities, but does NOT guarantee that the resolved IP address is a public address.
+   - Under hostile DNS conditions, DNS poisoning, rebinding, or private IP resolution, cURL could initiate a TCP handshake and send a TLS ClientHello to an internal address before the TLS certificate check fails (or if an internal endpoint presented a matching certificate).
+   - Hostinger shared-hosting egress, DNS resolver latency, cURL behavior, and TLS smoke tests remain **NOT VERIFIED** until authorized operational testing occurs.
+7. **Legacy gateway isolation**:
+   - `GatewayTransport` and `AI_GATEWAY_PINNED_IPV4` remain unchanged, optional, and disabled by default.
+   - The legacy gateway is NOT the active final operational mode and requires a separate architect and Owner review gate before any activation.
+8. **Sanitized failures**:
    - HTTP status codes 408, 429, 500, 502, 503, 504 and `ConnectionException` map to `AssistantUnavailable('provider_outage')`.
    - Other unsuccessful HTTP statuses map to `AssistantUnavailable('provider_rejected')`.
    - Malformed payloads, invalid JSON, or oversized responses map to `AssistantUnavailable('provider_invalid')`.
@@ -179,9 +191,13 @@ When text inference runs via `DirectTextProvider`, output is validated by `Trans
    - Key submission and management occur exclusively via password-reauthenticated, CSRF-protected HTTPS POST requests. Stored/decrypted keys are never returned or hydrated into Livewire properties, JavaScript or HTML. Newly typed secrets exist only in protected password inputs for explicit HTTP submission; they are never persisted as Livewire state.
    - Credential validation (`validateConnection`) verifies catalog route compatibility and decryptability; it NEVER executes a billed external test call.
    - Revocation clears ciphertext (`''`), records `revoked_at`, sets status to `revoked`, and increments connection revision.
-4. **Versioned consent fingerprints**:
-   - SHA-256 fingerprint computed across: Catalog version, Company ID, Policy revision, Connection ID & revision, Provider, Model, Region, Credential source, Privacy operator/retention/policy URL, and Fallback settings.
-   - Recorded per-company and per-user in `AiConsent`; `AiUserPreference` holds permitted connection/method selections. Re-verified before every provider dispatch and handoff publication. Any policy or connection change invalidates consent until renewed.
+4. **Versioned consent fingerprints and capability scoping**:
+   - Consent is scoped strictly to the selected primary provider/model and approved fallback route per capability (`text_structured`, `audio_transcription`), NOT a blanket grant for all visible catalog choices.
+   - Speech method choices: cloud speech disclosure is included only when runtime speech is enabled and the effective company-permitted method is `cloud` or `local_if_supported`; `local_only` and `disabled` request no cloud speech consent.
+   - Explicit acceptance of updated disclosure is required before provider dispatch.
+   - SHA-256 fingerprint computed across: Catalog version, Company ID, Policy revision, Capability route, Connection ID & revision, Provider, Model, Region, Credential source, Privacy operator/retention/policy URL, and Fallback settings.
+   - Direct-route consent is stored per-company/per-user in `AiUserPreference.consents`; its preferences hold permitted connection/method selections. The historical gateway uses `AiConsent`. Policy, model, fallback or key revision changes invalidate direct fingerprints; selection changes refresh the displayed subset and reset the checkbox without granting new consent. Dispatch and handoff recheck current consent.
+   - **No report data consent**: No consent is granted or implied for report data, accounting queries, or business analytics. Reports and conversational assistant capabilities belong to future Unified P1 as a separate pull request AFTER Phase 12 source acceptance and Owner release decisions; they are NOT implemented in PR #25.
 5. **Settings controls**:
    - `global_button_enabled`: When disabled, hides the global assistant launcher while preserving contextual form launchers.
    - `allowed_intents`: Strict allowlist (Sales, Purchase, both, or an explicit empty list that denies all AI intents). Prevents unsupported flows (expenses, receipts, vendor payments) from being routed to purchasing or sales.
@@ -214,8 +230,8 @@ For historical audit, the version 1 single-gateway contract is retained as a sup
 
 Before any production enablement of AI features, the following independent operational proofs must be completed:
 
-1. **Operator IPv4 pin review**: Verification and configuration of current authoritative public IPv4 addresses for curated provider hostnames.
-2. **TLS and rotation procedures**: Verification of TLS hostname certificates and operational runbook for upstream IP rotation.
-3. **Vendor commercial contracts**: Selection of upstream vendors (DeepSeek, Alibaba Cloud, Groq, OpenAI), execution of data processing agreements, review of data retention policies, and verification of upstream hard billing caps.
-4. **Acoustic and dialect validation**: Physical device microphone testing with Arabic (Levantine, Palestinian), English, and mixed-language audio in realistic acoustic environments.
-5. **Architect milestone acceptance**: Formal independent architect sign-off on Phase 12 milestone completion (P12-M6).
+1. **Hostinger DNS and egress verification**: Verification of DNS resolution, egress connectivity, and TLS handshake latency to curated provider hostnames from Hostinger shared hosting; smoke tests remain NOT VERIFIED until authorized.
+2. **Vendor commercial contracts**: Selection of upstream vendors (DeepSeek, Alibaba Cloud, Groq, OpenAI), execution of data processing agreements, review of data retention policies, and verification of upstream hard billing caps.
+3. **Live ASR and acoustic validation**: Physical device microphone testing with Arabic (Levantine, Palestinian), English, and mixed-language audio in realistic acoustic environments; live ASR paid calls and physical phone tests remain NOT VERIFIED.
+4. **Architect milestone acceptance**: Formal independent architect sign-off on Phase 12 milestone completion (P12-M6) and PR #25.
+5. **Open Phase 10 operational blockers**: Deferred Phase 10 independent off-host backup, isolated recovery/key custody, and real password-reset mail proofs remain open.

@@ -13,6 +13,7 @@ use App\Models\AiUserPreference;
 use App\Support\Tenancy\CompanyContext;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Contracts\View\View;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Livewire\Attributes\Locked;
 use Livewire\Component;
@@ -44,6 +45,13 @@ final class AssistantLauncher extends Component
     /** @var list<array<string, mixed>> */
     #[Locked]
     public array $consentRoutes = [];
+
+    /** @var list<array<string, mixed>> */
+    #[Locked]
+    public array $availableConnections = [];
+
+    #[Locked]
+    public string $consentSelection = '';
 
     public string $text = '';
 
@@ -81,21 +89,16 @@ final class AssistantLauncher extends Component
         $this->mode = $policy->workflow_mode;
         $this->speechMethod = app(AiSpeechMethods::class)->effective($policy, auth()->user());
         $this->allowedSpeechMethods = app(AiSpeechMethods::class)->allowed($policy);
-        $this->consentRoutes = [];
         $preferences = AiUserPreference::where('company_id', $company->id)->where('user_id', auth()->id())->first();
+        $this->textConnection = $preferences?->preferences['text_connection'] ?? null;
+        $this->speechConnection = $preferences?->preferences['speech_connection'] ?? null;
         $this->transcriptionChoice = $preferences?->preferences['speech_method'] ?? '';
         if (! in_array($this->transcriptionChoice, $this->allowedSpeechMethods, true)) {
             $this->transcriptionChoice = '';
         }
-        foreach ($governance->visibleConnections($company, auth()->user()) as $metadata) {
-            if ($metadata['revoked_at'] !== null) {
-                continue;
-            }
-            $connection = $governance->ownedConnection($company, auth()->user(), $metadata['public_id']);
-            $fingerprint = $governance->consentFingerprint($policy, $connection);
-            $this->consentRoutes[] = [...$metadata, 'fingerprint' => $fingerprint,
-                'consented' => hash_equals($fingerprint, (string) ($preferences?->consents[$connection->public_id]['fingerprint'] ?? ''))];
-        }
+        $this->availableConnections = $governance->permittedConnections($company, auth()->user(), $this->context);
+        $this->consentRoutes = $this->selectedConsentRoutes();
+        $this->consentSelection = $this->selectionFingerprint();
         $this->consent = $this->consentRoutes !== [] && collect($this->consentRoutes)->every(fn ($row) => $row['consented']);
         $this->open = true;
         $this->error = null;
@@ -107,9 +110,21 @@ final class AssistantLauncher extends Component
             throw new AssistantUnavailable('consent');
         }
         $company = app(CompanyContext::class)->company();
-        app(AiGovernance::class)->authorizeLauncher($company, auth()->user(), $this->context);
-        foreach ($this->consentRoutes as $route) {
-            app(AiGovernance::class)->recordConsent($company, auth()->user(), $route['public_id'], $route['fingerprint']);
+        try {
+            DB::transaction(function () use ($company): void {
+                app(AiGovernance::class)->authorizeLauncher($company, auth()->user(), $this->context);
+                $routes = $this->selectedConsentRoutes();
+                if ($routes === [] || ! hash_equals($this->consentSelection, $this->selectionFingerprint())
+                    || $this->routeFingerprints($routes) !== $this->routeFingerprints($this->consentRoutes)) {
+                    throw new AssistantUnavailable('consent_stale');
+                }
+                app(AiGovernance::class)->recordConsents($company, auth()->user(), $this->routeFingerprints($routes));
+            });
+        } catch (AssistantUnavailable) {
+            $this->consent = false;
+            $this->error = __('assistant_v2.error_consent');
+
+            return;
         }
         $this->showAssistant();
     }
@@ -117,15 +132,70 @@ final class AssistantLauncher extends Component
     public function selectConnections(): void
     {
         $company = app(CompanyContext::class)->company();
-        app(AiGovernance::class)->authorizeLauncher($company, auth()->user(), $this->context);
-        app(AiSpeechMethods::class)->choose($company, auth()->user(), $this->transcriptionChoice);
-        $policy = app(AiGovernance::class)->authorizeLauncher($company, auth()->user(), $this->context);
-        $this->speechMethod = app(AiSpeechMethods::class)->effective($policy, auth()->user());
-        foreach (['text_structured' => $this->textConnection, 'audio_transcription' => $this->speechConnection] as $capability => $id) {
-            if ($id !== null && $id !== '' && ($capability !== 'audio_transcription' || in_array($this->speechMethod, ['cloud', 'local_if_supported'], true))) {
-                app(AiProviderRoutes::class)->preference($company, auth()->user(), $capability, $id);
+        DB::transaction(function () use ($company): void {
+            app(AiGovernance::class)->authorizeLauncher($company, auth()->user(), $this->context);
+            app(AiSpeechMethods::class)->choose($company, auth()->user(), $this->transcriptionChoice);
+            $policy = app(AiGovernance::class)->authorizeLauncher($company, auth()->user(), $this->context);
+            $this->speechMethod = app(AiSpeechMethods::class)->effective($policy, auth()->user());
+            foreach (['text_structured' => $this->textConnection, 'audio_transcription' => $this->speechConnection] as $capability => $id) {
+                if ($capability !== 'audio_transcription' || config('ai_assistant.speech_enabled') === true
+                    && in_array($this->speechMethod, ['cloud', 'local_if_supported'], true)) {
+                    app(AiProviderRoutes::class)->preference($company, auth()->user(), $capability, $id);
+                }
+            }
+        });
+        $this->showAssistant();
+        $this->consent = false;
+    }
+
+    /** Resolve disclosure without reading keys or granting dispatch authority.
+     * @return list<array<string, mixed>>
+     */
+    private function selectedConsentRoutes(): array
+    {
+        $company = app(CompanyContext::class)->company();
+        $actor = auth()->user();
+        $governance = app(AiGovernance::class);
+        $policy = $governance->authorizeLauncher($company, $actor, $this->context);
+        $preferences = AiUserPreference::where('company_id', $company->id)->where('user_id', $actor->id)->first();
+        $routes = [];
+        foreach (['text_structured' => $this->textConnection, 'audio_transcription' => $this->speechConnection] as $capability => $selected) {
+            if ($capability === 'audio_transcription' && (config('ai_assistant.speech_enabled') !== true
+                || ! in_array(app(AiSpeechMethods::class)->effective($policy, $actor), ['cloud', 'local_if_supported'], true))) {
+                continue;
+            }
+            $key = $capability === 'audio_transcription' ? 'speech_connection' : 'text_connection';
+            // Missing provider configuration must not prevent deterministic typed/manual workflows.
+            if (($selected === null || $selected === '') && ! is_string($preferences?->preferences[$key] ?? $policy->settings[$key] ?? null)) {
+                continue;
+            }
+            foreach (app(AiProviderRoutes::class)->resolve($company, $actor, $this->context, $capability, $selected) as $index => $connection) {
+                $fingerprint = $governance->consentFingerprint($policy, $connection);
+                $routes[] = [...$connection->only(['public_id', 'provider', 'model', 'region', 'capability', 'credential_source']),
+                    'role' => $index === 0 ? 'primary' : 'fallback', 'fingerprint' => $fingerprint,
+                    'consented' => hash_equals($fingerprint, (string) ($preferences?->consents[$connection->public_id]['fingerprint'] ?? ''))];
             }
         }
+
+        return $routes;
+    }
+
+    private function selectionFingerprint(): string
+    {
+        return hash('sha256', json_encode([$this->textConnection, $this->speechConnection, $this->transcriptionChoice], JSON_THROW_ON_ERROR));
+    }
+
+    /** @param list<array<string, mixed>> $routes
+     * @return array<string, string>
+     */
+    private function routeFingerprints(array $routes): array
+    {
+        $fingerprints = [];
+        foreach ($routes as $route) {
+            $fingerprints[$route['public_id']] = $route['fingerprint'];
+        }
+
+        return $fingerprints;
     }
 
     public function prepare(?string $transcript = null, ?string $audioToken = null): mixed

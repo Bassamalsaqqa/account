@@ -51,7 +51,6 @@ class AssistantAudioBoundaryTest extends TestCase
             $governance->recordConsent($this->company, $this->owner, $connection->public_id,
                 $governance->consentFingerprint($this->aiPolicy, $connection));
         }
-        config(['ai_assistant.provider_ipv4.groq.global' => '8.8.8.8']);
         Http::preventStrayRequests();
     }
 

@@ -30,7 +30,6 @@ class AiFormCorrectionsTest extends TestCase
         parent::setUp();
         $this->finalAiFixtures();
         Http::preventStrayRequests();
-        config(['ai_assistant.provider_ipv4' => ['deepseek' => ['global' => '8.8.8.8'], 'openai' => ['global' => '8.8.8.8']]]);
     }
 
     public function test_arabic_follow_up_uses_current_human_fields_and_undo_preserves_them_without_saving(): void

@@ -8,8 +8,14 @@ use App\Application\AI\AiProviderDeadline;
 use App\Application\AI\AssistantUnavailable;
 use App\Application\AI\ProviderCapabilityRegistry;
 use App\Application\AI\ProviderCredential;
+use GuzzleHttp\Handler\CurlHandler;
+use GuzzleHttp\Psr7\FnStream;
+use GuzzleHttp\Psr7\NoSeekStream;
+use GuzzleHttp\Psr7\Utils;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Http;
+use Psr\Http\Message\RequestInterface;
+use Psr\Http\Message\StreamInterface;
 use Throwable;
 
 final class DirectProviderTransport
@@ -36,18 +42,10 @@ final class DirectProviderTransport
         $deadline = app(AiProviderDeadline::class);
         $deadline->remaining();
         $base = (string) $route['base_url'];
-        $host = (string) parse_url($base, PHP_URL_HOST);
-        $pinned = config('ai_assistant.provider_ipv4.'.$route['provider'].'.'.$route['region']);
-        $addresses = is_string($pinned) && $pinned !== '' ? [$pinned] : [];
-        // Require an operator-reviewed public destination; synchronous DNS has no bounded PHP timeout.
-        // TLS still verifies the curated provider hostname; no user-supplied host or IP is accepted.
-        if ($addresses === []) {
+        // Native cURL DNS for curated HTTPS hosts; never accept client URL/host overrides.
+        // Hostname allowlisting does not enforce a public resolved IP. Hosting egress is an activation gate.
+        if (! extension_loaded('curl') || ! function_exists('curl_exec')) {
             throw new AssistantUnavailable('provider_configuration');
-        }
-        foreach ($addresses as $address) {
-            if (! filter_var($address, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4 | FILTER_FLAG_GLOBAL_RANGE)) {
-                throw new AssistantUnavailable('provider_configuration');
-            }
         }
         $multipart = $route['capability'] === 'audio_transcription' && $route['provider'] !== 'qwen';
         $path = $multipart ? '/audio/transcriptions' : '/chat/completions';
@@ -55,44 +53,58 @@ final class DirectProviderTransport
             throw new AssistantUnavailable('audio_invalid');
         }
         try {
-            return $credential->use(function (string $key) use ($base, $host, $addresses, $multipart, $path, $body, $audio, $deadline): array {
-                $request = Http::withToken($key)->acceptJson()->timeout($deadline->remaining())
-                    ->connectTimeout(5)->withoutRedirecting()->withOptions([
-                        'verify' => true, 'stream' => true, 'read_timeout' => 5, 'proxy' => '',
-                        'curl' => [CURLOPT_RESOLVE => [$host.':443:'.$addresses[0]], CURLOPT_PROXY => ''],
-                    ]);
-                if ($multipart) {
-                    if ($audio === null) {
-                        throw new AssistantUnavailable('audio_invalid');
-                    }
-                    $request = $request->attach('file', $audio, 'recording.wav', ['Content-Type' => 'audio/wav']);
-                }
-                $response = $request->post($base.$path, $body);
-                $stream = $response->toPsrResponse()->getBody();
+            return $credential->use(function (string $key) use ($base, $multipart, $path, $body, $audio, $deadline): array {
+                $sink = $this->responseSink($deadline);
+                $curl = new CurlHandler;
                 try {
-                    $bytes = '';
-                    while (! $stream->eof() && strlen($bytes) <= 131072) {
-                        $deadline->remaining();
-                        $bytes .= $stream->read(8192);
-                    }
-                } finally {
-                    $stream->close();
-                }
-                if (in_array($response->status(), [408, 429, 500, 502, 503, 504], true)) {
-                    throw new AssistantUnavailable('provider_outage');
-                }
-                if (! $response->successful()) {
-                    throw new AssistantUnavailable('provider_rejected');
-                }
-                if (strlen($bytes) > 131072) {
-                    throw new AssistantUnavailable('provider_invalid');
-                }
-                $decoded = json_decode($bytes, true, 24, JSON_THROW_ON_ERROR);
-                if (! is_array($decoded) || array_is_list($decoded)) {
-                    throw new AssistantUnavailable('provider_invalid');
-                }
+                    // Keep Laravel's fake/record/authorization middleware intact. The bounded sink is
+                    // attached at the native handler, where cURL actually receives response bytes.
+                    $request = Http::withToken($key)->setHandler(function (RequestInterface $request, array $options) use ($curl, $sink) {
+                        $options['sink'] = $sink;
+                        // Refuse native rewind/replay attempts rather than duplicate a billable POST.
+                        $request = $request->withBody(new NoSeekStream($request->getBody()));
 
-                return $decoded;
+                        return $curl($request, $options);
+                    })->acceptJson()->timeout($deadline->remaining())
+                        ->connectTimeout(5)->withoutRedirecting()->withOptions([
+                            'verify' => true, 'stream' => true, 'read_timeout' => 5, 'proxy' => '', 'expect' => false,
+                            'curl' => [CURLOPT_PROXY => '', CURLOPT_LOW_SPEED_LIMIT => 1, CURLOPT_LOW_SPEED_TIME => 5],
+                        ]);
+                    if ($multipart) {
+                        if ($audio === null) {
+                            throw new AssistantUnavailable('audio_invalid');
+                        }
+                        $request = $request->attach('file', $audio, 'recording.wav', ['Content-Type' => 'audio/wav']);
+                    }
+                    $response = $request->post($base.$path, $body);
+                    $stream = $response->toPsrResponse()->getBody();
+                    try {
+                        $bytes = '';
+                        while (! $stream->eof() && strlen($bytes) <= 131072) {
+                            $deadline->remaining();
+                            $bytes .= $stream->read(8192);
+                        }
+                    } finally {
+                        $stream->close();
+                    }
+                    if (in_array($response->status(), [408, 429, 500, 502, 503, 504], true)) {
+                        throw new AssistantUnavailable('provider_outage');
+                    }
+                    if (! $response->successful()) {
+                        throw new AssistantUnavailable('provider_rejected');
+                    }
+                    if (strlen($bytes) > 131072) {
+                        throw new AssistantUnavailable('provider_invalid');
+                    }
+                    $decoded = json_decode($bytes, true, 24, JSON_THROW_ON_ERROR);
+                    if (! is_array($decoded) || array_is_list($decoded)) {
+                        throw new AssistantUnavailable('provider_invalid');
+                    }
+
+                    return $decoded;
+                } finally {
+                    $sink->close();
+                }
             });
         } catch (AssistantUnavailable $e) {
             throw $e;
@@ -102,5 +114,22 @@ final class DirectProviderTransport
             // Never propagate credentials, bodies, transcripts or provider exception messages.
             throw new AssistantUnavailable('provider_invalid');
         }
+    }
+
+    private function responseSink(AiProviderDeadline $deadline): StreamInterface
+    {
+        $buffer = Utils::streamFor('');
+        $received = 0;
+
+        // Bound decoded writes during transfer, including responses with no Content-Length.
+        return FnStream::decorate($buffer, ['write' => function (string $bytes) use ($buffer, &$received, $deadline): int {
+            $deadline->remaining();
+            if (strlen($bytes) > 131072 - $received) {
+                throw new AssistantUnavailable('provider_invalid');
+            }
+            $received += strlen($bytes);
+
+            return $buffer->write($bytes);
+        }]);
     }
 }
