@@ -4,6 +4,10 @@ declare(strict_types=1);
 
 namespace App\Livewire\Pages\Sales;
 
+use App\Application\AI\AssistantAccess;
+use App\Application\AI\AssistantBudget;
+use App\Application\AI\AssistantUnavailable;
+use App\Application\AI\SalesAssistant;
 use App\Application\Commands\SalesInvoiceCommands;
 use App\Domain\Sales\Calculators\SalesDocumentTotalsCalculator;
 use App\Domain\Sales\Calculators\SalesLineCalculationInput;
@@ -23,6 +27,7 @@ use Brick\Math\BigDecimal;
 use Carbon\Carbon;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Contracts\View\View;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Locked;
@@ -56,6 +61,22 @@ class InvoiceForm extends Component
     public string $document_locale = 'ar';
 
     public string $barcodeSearch = '';
+
+    public string $aiText = '';
+
+    public bool $aiConsent = false;
+
+    public ?string $aiError = null;
+
+    #[Locked]
+    public ?string $aiRequestKey = null;
+
+    /** @var array<string, mixed>|null */
+    #[Locked]
+    public ?array $aiReview = null;
+
+    #[Locked]
+    public ?int $aiSourceRequestId = null;
 
     /**
      * @var list<array{
@@ -206,9 +227,88 @@ class InvoiceForm extends Component
 
     public function updated(?string $property = null): void
     {
+        if (in_array($property, ['aiText', 'aiConsent'], true)) {
+            $this->aiReview = null;
+            $this->aiError = null;
+            $this->aiRequestKey = null;
+        }
         if ($this->showPreview && ! in_array($property, ['showPreview', 'confirmationToken', 'executeKey', 'previewDigest', 'previewData', 'previewError'], true)) {
             $this->cancelPreview();
         }
+    }
+
+    public function interpretSale(SalesAssistant $assistant, CompanyContext $context): void
+    {
+        if ($this->isEditing || $this->invoice !== null) {
+            abort(403);
+        }
+        $this->aiError = null;
+        $this->aiRequestKey ??= (string) Str::uuid();
+        try {
+            $this->aiReview = $assistant->interpret($context->company(), auth()->user(), $this->aiText, $this->aiRequestKey, $this->aiConsent);
+        } catch (AuthorizationException $e) {
+            throw $e;
+        } catch (AssistantUnavailable $e) {
+            $this->aiReview = null;
+            $this->aiError = $this->assistantMessage($e);
+        }
+    }
+
+    public function applySaleSuggestion(SalesAssistant $assistant, CompanyContext $context): void
+    {
+        if ($this->isEditing || $this->invoice !== null || ! is_string($this->aiReview['token'] ?? null)) {
+            abort(403);
+        }
+        try {
+            $result = $assistant->apply($context->company(), auth()->user(), $this->aiReview['token']);
+            $payload = $result['payload'];
+            $this->cancelPreview();
+            $this->customer_id = $payload['customer_id'];
+            $this->warehouse_id = $payload['warehouse_id'];
+            $this->currency_code = $payload['currency_code'];
+            $this->exchange_rate = $payload['exchange_rate'];
+            $this->issue_date = $payload['issue_date'];
+            $this->due_date = $payload['due_date'] ?? '';
+            $this->document_locale = $payload['document_locale'];
+            $this->lines = array_map(fn ($line) => $line + ['subtotal' => '0', 'discount_amount' => '0', 'tax_amount' => '0', 'line_total' => '0'], $payload['lines']);
+            foreach ($this->lines as &$line) {
+                $line['discount_type'] ??= 'none';
+            }
+            unset($line);
+            $this->aiSourceRequestId = $result['request_id'];
+            $this->createRequestKey = (string) Str::uuid();
+            $this->lastSavedPayloadDigest = null;
+            $this->recalculate();
+            $this->resetErrorBag();
+            $this->aiError = null;
+            $this->dispatch('ai-sale-applied');
+        } catch (AuthorizationException $e) {
+            throw $e;
+        } catch (AssistantUnavailable $e) {
+            $this->aiReview = null;
+            $this->aiError = $this->assistantMessage($e);
+        }
+    }
+
+    public function discardSaleSuggestion(SalesAssistant $assistant, CompanyContext $context): void
+    {
+        if (app(AssistantAccess::class)->available((int) $context->companyId()) && isset($this->aiReview['request_id'])) {
+            $assistant->cancel($context->company(), auth()->user(), (int) $this->aiReview['request_id']);
+        }
+        $this->aiReview = null;
+        $this->aiSourceRequestId = null;
+        $this->aiText = '';
+        $this->aiConsent = false;
+        $this->aiError = null;
+        $this->aiRequestKey = null;
+        $this->dispatch('ai-sale-discarded');
+    }
+
+    private function assistantMessage(AssistantUnavailable $error): string
+    {
+        $known = ['consent', 'budget', 'low_confidence', 'text_invalid', 'proposal_expired', 'proposal_changed', 'request_processed', 'request_conflict'];
+
+        return __('assistant.'.(in_array($error->reason, $known, true) ? $error->reason : 'unavailable'));
     }
 
     public function updatedCustomerId(): void
@@ -587,7 +687,14 @@ class InvoiceForm extends Component
                 $this->createRequestKey = $key;
                 $this->lastSavedPayloadDigest = $currentDigest;
 
-                $this->invoice = $commands->create($company, $user, $payload, $key);
+                $this->invoice = DB::transaction(function () use ($commands, $company, $user, $payload, $key): SalesInvoice {
+                    $created = $commands->create($company, $user, $payload, $key);
+                    if ($this->aiSourceRequestId !== null) {
+                        app(SalesAssistant::class)->recordDraft($company, $user, $this->aiSourceRequestId, $created, $payload, $key);
+                    }
+
+                    return $created;
+                });
                 $this->isEditing = true;
             }
         } catch (\Throwable $e) {
@@ -760,6 +867,10 @@ class InvoiceForm extends Component
         $canChangePrice = $user->hasPermissionTo('sales.invoice.change_price');
         $canChangeDiscount = $user->hasPermissionTo('sales.invoice.change_discount');
         $canPost = $user->hasPermissionTo('sales.invoice.post');
+        $aiAvailable = ! $this->isEditing && app(AssistantAccess::class)->available((int) $company->id);
+        $aiUsage = $aiAvailable ? app(AssistantBudget::class)->summary($company, $user) : null;
+        $aiCompanyUsage = $aiAvailable && $user->hasPermissionTo('settings.company.manage')
+            ? app(AssistantBudget::class)->summary($company, $user, true) : null;
 
         $customers = Customer::where('company_id', $company->id)->where('status', 'active')->orderBy('name_ar')->get();
         $currencies = $company->currencies()->where('enabled', true)->get();
@@ -783,6 +894,9 @@ class InvoiceForm extends Component
             'canChangeDiscount' => $canChangeDiscount,
             'canPost' => $canPost,
             'creditLimitWarning' => $creditLimitWarning,
+            'aiAvailable' => $aiAvailable,
+            'aiUsage' => $aiUsage,
+            'aiCompanyUsage' => $aiCompanyUsage,
         ]);
     }
 }

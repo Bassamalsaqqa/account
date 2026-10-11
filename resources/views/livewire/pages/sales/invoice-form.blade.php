@@ -30,6 +30,10 @@
     @endif
 
     <!-- Quick Barcode Scanner Bar -->
+    @if ($aiAvailable)
+        @include('livewire.pages.sales.partials.ai-assistant')
+    @endif
+
     <div class="bg-white p-4 rounded-card border border-border shadow-xs">
         <label for="invoice-barcodeSearch" class="block text-xs font-bold text-text-primary mb-1">
             ⚡ {{ __('sales.scan_or_search_product') }}

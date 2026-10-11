@@ -1,0 +1,59 @@
+{
+  "scope": "Loopback-only owned MariaDB, fake provider, fake mail, no posting or physical microphone. Synthetic suggestions do not verify real model extraction.",
+  "viewports": [
+    {
+      "lang": "en",
+      "dir": "ltr",
+      "width": 1440,
+      "scrollWidth": 1425,
+      "assistantFits": true
+    },
+    {
+      "lang": "en",
+      "dir": "ltr",
+      "width": 768,
+      "scrollWidth": 753,
+      "assistantFits": true
+    },
+    {
+      "lang": "en",
+      "dir": "ltr",
+      "width": 390,
+      "scrollWidth": 375,
+      "assistantFits": true
+    },
+    {
+      "lang": "ar",
+      "dir": "rtl",
+      "width": 390,
+      "scrollWidth": 375,
+      "assistantFits": true
+    },
+    {
+      "lang": "ar",
+      "dir": "rtl",
+      "width": 768,
+      "scrollWidth": 753,
+      "assistantFits": true
+    },
+    {
+      "lang": "ar",
+      "dir": "rtl",
+      "width": 1440,
+      "scrollWidth": 1425,
+      "assistantFits": true
+    }
+  ],
+  "screenshots": [
+    {
+      "file": "ar-390.png",
+      "sha256": "3864d30a25445dd550a2f1b859a720764805215c51c2f375bcab82295871d234",
+      "synthetic": true
+    },
+    {
+      "file": "en-1440.png",
+      "sha256": "677f44a2f986accdac9a98731681d91ecb9d3fa22858a53f7702ad08cbb117d8",
+      "synthetic": true
+    }
+  ]
+}
