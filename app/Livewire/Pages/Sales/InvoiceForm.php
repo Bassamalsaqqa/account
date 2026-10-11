@@ -4,13 +4,12 @@ declare(strict_types=1);
 
 namespace App\Livewire\Pages\Sales;
 
-use App\Actions\Sales\CreateSalesInvoiceDraftAction;
-use App\Actions\Sales\PostSalesInvoiceAction;
-use App\Actions\Sales\UpdateSalesInvoiceDraftAction;
+use App\Application\Commands\SalesInvoiceCommands;
 use App\Domain\Sales\Calculators\SalesDocumentTotalsCalculator;
 use App\Domain\Sales\Calculators\SalesLineCalculationInput;
 use App\Domain\Sales\Calculators\SalesLineCalculator;
 use App\Domain\Sales\Queries\CustomerCreditLimitQuery;
+use App\Exceptions\NoActiveCompanyException;
 use App\Models\Customer;
 use App\Models\Product;
 use App\Models\ProductBarcode;
@@ -22,9 +21,14 @@ use App\Services\Sales\SalesProductSelection;
 use App\Support\Tenancy\CompanyContext;
 use Brick\Math\BigDecimal;
 use Carbon\Carbon;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Contracts\View\View;
+use Illuminate\Support\Str;
 use Livewire\Attributes\Layout;
+use Livewire\Attributes\Locked;
 use Livewire\Component;
+use Symfony\Component\HttpKernel\Exception\ConflictHttpException;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 
 #[Layout('layouts.app')]
 class InvoiceForm extends Component
@@ -68,6 +72,7 @@ class InvoiceForm extends Component
      *     discount_amount?: string,
      *     tax_amount?: string,
      *     line_total?: string,
+     *     available_quantity?: string,
      * }>
      */
     public array $lines = [];
@@ -81,10 +86,42 @@ class InvoiceForm extends Component
 
     public string $previewGrandTotal = '0.00';
 
+    // Phase 11 Command Parity & State Guarding
+    #[Locked]
+    public ?string $createRequestKey = null;
+
+    #[Locked]
+    public ?string $updateRequestKey = null;
+
+    #[Locked]
+    public ?string $lastSavedPayloadDigest = null;
+
+    #[Locked]
+    public ?string $confirmationToken = null;
+
+    #[Locked]
+    public ?string $executeKey = null;
+
+    #[Locked]
+    public ?string $previewDigest = null;
+
+    public bool $showPreview = false;
+
+    /**
+     * @var array<string, mixed>|null
+     */
+    #[Locked]
+    public ?array $previewData = null;
+
+    public ?string $previewError = null;
+
     public function mount(CompanyContext $context, ?string $publicId = null, ?int $customer_id = null): void
     {
         $company = $context->company();
         $user = auth()->user();
+
+        $this->createRequestKey = (string) Str::uuid();
+        $this->updateRequestKey = (string) Str::uuid();
 
         if ($publicId !== null) {
             if (! $user->hasPermissionTo('sales.invoice.edit_draft')) {
@@ -113,6 +150,10 @@ class InvoiceForm extends Component
 
             $this->lines = [];
             foreach ($this->invoice->lines as $line) {
+                $discountType = $line->discount_type ?? 'none';
+                if ($discountType === 'percentage') {
+                    $discountType = 'percent';
+                }
                 $this->lines[] = [
                     'id' => $line->id,
                     'product_id' => $line->product_id,
@@ -120,7 +161,7 @@ class InvoiceForm extends Component
                     'item_description' => $line->item_description,
                     'quantity' => (string) $line->quantity,
                     'unit_price' => (string) $line->unit_price,
-                    'discount_type' => $line->discount_type ?? 'none',
+                    'discount_type' => $discountType,
                     'discount_value' => (string) ($line->discount_value ?? '0'),
                     'tax_rate_id' => $line->tax_rate_id,
                     'subtotal' => (string) $line->line_subtotal,
@@ -163,6 +204,13 @@ class InvoiceForm extends Component
         $this->recalculate();
     }
 
+    public function updated(?string $property = null): void
+    {
+        if ($this->showPreview && ! in_array($property, ['showPreview', 'confirmationToken', 'executeKey', 'previewDigest', 'previewData', 'previewError'], true)) {
+            $this->cancelPreview();
+        }
+    }
+
     public function updatedCustomerId(): void
     {
         if ($this->customer_id !== null) {
@@ -189,6 +237,10 @@ class InvoiceForm extends Component
         $term = trim($this->barcodeSearch);
         if ($term === '') {
             return;
+        }
+
+        if ($this->showPreview) {
+            $this->cancelPreview();
         }
 
         $company = app(CompanyContext::class)->company();
@@ -271,6 +323,10 @@ class InvoiceForm extends Component
 
     public function addLine(): void
     {
+        if ($this->showPreview) {
+            $this->cancelPreview();
+        }
+
         $this->lines[] = [
             'product_id' => null,
             'product_unit_id' => null,
@@ -289,6 +345,10 @@ class InvoiceForm extends Component
 
     public function removeLine(int $index): void
     {
+        if ($this->showPreview) {
+            $this->cancelPreview();
+        }
+
         unset($this->lines[$index]);
         $this->lines = array_values($this->lines);
         $this->recalculate();
@@ -296,6 +356,10 @@ class InvoiceForm extends Component
 
     public function selectProduct(int $index, int $productId): void
     {
+        if ($this->showPreview) {
+            $this->cancelPreview();
+        }
+
         $selected = app(SalesProductSelection::class)->select($productId, null, $this->currency_code, $this->exchange_rate, $this->warehouse_id);
         $this->lines[$index] = array_merge($this->lines[$index], $selected);
         $this->recalculate();
@@ -303,6 +367,10 @@ class InvoiceForm extends Component
 
     public function changeUnit(int $index, int $productUnitId): void
     {
+        if ($this->showPreview) {
+            $this->cancelPreview();
+        }
+
         $productId = $this->lines[$index]['product_id'] ?? null;
         if ($productId === null) {
             return;
@@ -314,6 +382,10 @@ class InvoiceForm extends Component
 
     public function updatedWarehouseId(): void
     {
+        if ($this->showPreview) {
+            $this->cancelPreview();
+        }
+
         foreach ($this->lines as $idx => $line) {
             if (! empty($line['product_id'])) {
                 $selected = app(SalesProductSelection::class)->select(
@@ -326,7 +398,20 @@ class InvoiceForm extends Component
 
     public function recalculate(): void
     {
+        if ($this->showPreview) {
+            $this->cancelPreview();
+        }
+
         $company = app(CompanyContext::class)->company();
+        foreach ($this->lines as $index => $line) {
+            foreach (['quantity', 'unit_price', 'discount_value'] as $field) {
+                if (! is_string($line[$field])) {
+                    $this->addError("lines.{$index}.{$field}", __('commands.exact_string_required'));
+
+                    return;
+                }
+            }
+        }
         $lineCalculator = app(SalesLineCalculator::class);
         $totalsCalculator = app(SalesDocumentTotalsCalculator::class);
 
@@ -347,11 +432,16 @@ class InvoiceForm extends Component
                 }
             }
 
+            $discountType = $line['discount_type'];
+            if ($discountType === 'percentage') {
+                $discountType = 'percent';
+            }
+
             $input = new SalesLineCalculationInput(
-                quantity: $line['quantity'] ?: '0',
-                unitPrice: $line['unit_price'] ?: '0',
-                discountType: $line['discount_type'] !== 'none' ? $line['discount_type'] : null,
-                discountValue: $line['discount_value'] ?: '0',
+                quantity: $line['quantity'] !== '' ? $line['quantity'] : '0',
+                unitPrice: $line['unit_price'] !== '' ? $line['unit_price'] : '0',
+                discountType: $discountType !== 'none' ? $discountType : null,
+                discountValue: $line['discount_value'] !== '' ? $line['discount_value'] : '0',
                 taxRate: $taxRate,
                 taxInclusive: $taxInclusive,
                 currencyMinorUnits: $minorUnits,
@@ -375,12 +465,8 @@ class InvoiceForm extends Component
         $this->previewGrandTotal = (string) $totals->grandTotalCurrency;
     }
 
-    public function save(
-        bool $andPost,
-        CreateSalesInvoiceDraftAction $createAction,
-        UpdateSalesInvoiceDraftAction $updateAction,
-        PostSalesInvoiceAction $postAction
-    ): mixed {
+    public function save(bool $andPost, SalesInvoiceCommands $commands): mixed
+    {
         $company = app(CompanyContext::class)->company();
         $user = auth()->user();
 
@@ -398,29 +484,72 @@ class InvoiceForm extends Component
             abort(403, 'Unauthorized to post invoices.');
         }
 
+        // Strict exact-string validation for economic values to reject raw floats/scientific notation
+        foreach ($this->lines as $idx => $line) {
+            if (! is_string($line['quantity'])) {
+                $this->addError("lines.{$idx}.quantity", __('commands.exact_string_required'));
+
+                return null;
+            }
+            if (! is_string($line['unit_price'])) {
+                $this->addError("lines.{$idx}.unit_price", __('commands.exact_string_required'));
+
+                return null;
+            }
+            if (! is_string($line['discount_value'])) {
+                $this->addError("lines.{$idx}.discount_value", __('commands.exact_string_required'));
+
+                return null;
+            }
+        }
+
         $this->validate([
             'customer_id' => ['required', 'integer', 'exists:customers,id'],
             'warehouse_id' => ['nullable', 'integer', 'exists:warehouses,id'],
             'currency_code' => ['required', 'string', 'size:3'],
-            'exchange_rate' => ['required', 'numeric', 'gt:0'],
+            'exchange_rate' => ['required', 'string', 'regex:/^\d+(\.\d{1,10})?$/'],
             'issue_date' => ['required', 'date'],
             'due_date' => ['nullable', 'date', 'after_or_equal:issue_date'],
             'lines' => ['required', 'array', 'min:1'],
             'lines.*.item_description' => ['required', 'string', 'max:255'],
-            'lines.*.quantity' => ['required', 'numeric', 'gt:0'],
-            'lines.*.unit_price' => ['required', 'numeric', 'gte:0'],
+            'lines.*.quantity' => ['bail', 'required', 'string', 'regex:/^\d+(\.\d{1,6})?$/', function (string $attribute, mixed $value, \Closure $fail): void {
+                if (is_string($value) && ! BigDecimal::of($value)->isPositive()) {
+                    $fail(__('commands.code_validation_failed'));
+                }
+            }],
+            'lines.*.unit_price' => ['required', 'string', 'regex:/^\d+(\.\d{1,6})?$/'],
+            'lines.*.discount_type' => ['nullable', 'string', 'in:none,fixed,percent'],
+            'lines.*.discount_value' => ['nullable', 'string', 'regex:/^\d+(\.\d{1,6})?$/'],
         ]);
+
+        if (BigDecimal::of($this->exchange_rate)->isZero()) {
+            $this->addError('exchange_rate', __('commands.code_validation_failed'));
+
+            return null;
+        }
+
+        foreach ($this->lines as $idx => $line) {
+            if (BigDecimal::of($line['quantity'])->isZero()) {
+                $this->addError("lines.{$idx}.quantity", __('commands.code_validation_failed'));
+
+                return null;
+            }
+        }
 
         $dtoLines = [];
         foreach ($this->lines as $line) {
+            $discountType = $line['discount_type'];
+            if ($discountType === 'percentage') {
+                $discountType = 'percent';
+            }
             $dtoLines[] = [
                 'product_id' => ! empty($line['product_id']) ? (int) $line['product_id'] : null,
                 'product_unit_id' => ! empty($line['product_unit_id']) ? (int) $line['product_unit_id'] : null,
                 'item_description' => $line['item_description'],
-                'quantity' => (string) $line['quantity'],
-                'unit_price' => (string) $line['unit_price'],
-                'discount_type' => $line['discount_type'] !== 'none' ? $line['discount_type'] : null,
-                'discount_value' => (string) $line['discount_value'],
+                'quantity' => $line['quantity'],
+                'unit_price' => $line['unit_price'],
+                'discount_type' => $discountType !== 'none' ? $discountType : null,
+                'discount_value' => $line['discount_value'],
                 'tax_rate_id' => ! empty($line['tax_rate_id']) ? (int) $line['tax_rate_id'] : null,
             ];
         }
@@ -431,27 +560,196 @@ class InvoiceForm extends Component
             'currency_code' => $this->currency_code,
             'exchange_rate' => $this->exchange_rate,
             'issue_date' => $this->issue_date,
-            'due_date' => $this->due_date,
+            'due_date' => $this->due_date ?: null,
             'notes' => $this->notes,
             'terms' => $this->terms,
             'document_locale' => $this->document_locale,
             'lines' => $dtoLines,
         ];
 
-        if ($this->isEditing && $this->invoice !== null) {
-            $invoice = $updateAction->execute($this->invoice, $user, $payload);
-        } else {
-            $invoice = $createAction->execute($company, $user, $payload);
+        $currentDigest = $this->computePayloadDigest();
+
+        try {
+            if ($this->isEditing && $this->invoice !== null) {
+                if ($this->lastSavedPayloadDigest !== null && $this->lastSavedPayloadDigest !== $currentDigest) {
+                    $this->updateRequestKey = (string) Str::uuid();
+                }
+                $key = $this->updateRequestKey ?? (string) Str::uuid();
+                $this->updateRequestKey = $key;
+                $this->lastSavedPayloadDigest = $currentDigest;
+
+                $this->invoice = $commands->update($this->invoice, $user, $payload, $key);
+            } else {
+                if ($this->lastSavedPayloadDigest !== null && $this->lastSavedPayloadDigest !== $currentDigest) {
+                    $this->createRequestKey = (string) Str::uuid();
+                }
+                $key = $this->createRequestKey ?? (string) Str::uuid();
+                $this->createRequestKey = $key;
+                $this->lastSavedPayloadDigest = $currentDigest;
+
+                $this->invoice = $commands->create($company, $user, $payload, $key);
+                $this->isEditing = true;
+            }
+        } catch (\Throwable $e) {
+            if ($e instanceof AuthorizationException || $e instanceof NoActiveCompanyException || ($e instanceof HttpException && $e->getStatusCode() === 403)) {
+                throw $e;
+            }
+            $this->showPreview = false;
+            $this->previewError = $this->resolveUserErrorMessage($e);
+
+            return null;
         }
 
-        if ($andPost) {
-            $invoice = $postAction->execute($invoice, $user);
-            session()->flash('success', __('sales.posted_successfully'));
-        } else {
+        if (! $andPost) {
             session()->flash('success', __('sales.created_successfully'));
+
+            return redirect()->route('invoices.show', $this->invoice->public_id);
         }
 
-        return redirect()->route('invoices.show', $invoice->public_id);
+        // save(true) creates authenticated server preview, displays reviewed panel, posts NO history.
+        $this->previewError = null;
+
+        try {
+            $preview = $commands->preview($this->invoice, $user);
+            $this->previewData = $preview;
+            $this->confirmationToken = $preview['confirmation_token'] ?? null;
+            $this->executeKey = (string) Str::uuid();
+            $this->previewDigest = $this->computePayloadDigest();
+            $this->showPreview = true;
+        } catch (\Throwable $e) {
+            if ($e instanceof AuthorizationException || $e instanceof NoActiveCompanyException || ($e instanceof HttpException && $e->getStatusCode() === 403)) {
+                throw $e;
+            }
+            $this->showPreview = false;
+            $this->previewError = $this->resolveUserErrorMessage($e);
+        }
+
+        return null;
+    }
+
+    public function confirmPost(SalesInvoiceCommands $commands): mixed
+    {
+        $user = auth()->user();
+        if (! $user || ! $user->hasPermissionTo('sales.invoice.post')) {
+            abort(403, 'Unauthorized to post invoices.');
+        }
+
+        if (! $this->showPreview || ! $this->confirmationToken || ! $this->invoice) {
+            $this->previewError = __('commands.preview_expired');
+
+            return null;
+        }
+
+        // Reject stale/edited form
+        if ($this->previewDigest === null || $this->previewDigest !== $this->computePayloadDigest()) {
+            $this->cancelPreview();
+            $this->previewError = __('commands.form_changed_repreview_required');
+
+            return null;
+        }
+
+        // Block execution if blockers exist or can_execute is false
+        if (! empty($this->previewData['blockers']) || ($this->previewData['can_execute'] ?? true) === false) {
+            $this->previewError = __('commands.cannot_confirm_blockers');
+
+            return null;
+        }
+
+        try {
+            $invoice = $commands->execute($this->invoice, $user, $this->confirmationToken, $this->executeKey);
+            $this->cancelPreview();
+            session()->flash('success', __('sales.posted_successfully'));
+
+            return redirect()->route('invoices.show', $invoice->public_id);
+        } catch (\Throwable $e) {
+            if ($e instanceof AuthorizationException || $e instanceof NoActiveCompanyException || ($e instanceof HttpException && $e->getStatusCode() === 403)) {
+                throw $e;
+            }
+            $this->cancelPreview();
+            $this->previewError = $this->resolveUserErrorMessage($e);
+
+            return null;
+        }
+    }
+
+    public function cancelPreview(): void
+    {
+        $this->showPreview = false;
+        $this->previewData = null;
+        $this->confirmationToken = null;
+        $this->executeKey = null;
+        $this->previewDigest = null;
+    }
+
+    public function computePayloadDigest(): string
+    {
+        $normalizedLines = [];
+        foreach ($this->lines as $line) {
+            $discountType = $line['discount_type'];
+            if ($discountType === 'percentage') {
+                $discountType = 'percent';
+            }
+            $normalizedLines[] = [
+                'product_id' => ! empty($line['product_id']) ? (int) $line['product_id'] : null,
+                'product_unit_id' => ! empty($line['product_unit_id']) ? (int) $line['product_unit_id'] : null,
+                'item_description' => trim($line['item_description']),
+                'quantity' => trim($line['quantity']),
+                'unit_price' => trim($line['unit_price']),
+                'discount_type' => $discountType !== 'none' ? $discountType : null,
+                'discount_value' => trim($line['discount_value']),
+                'tax_rate_id' => ! empty($line['tax_rate_id']) ? (int) $line['tax_rate_id'] : null,
+            ];
+        }
+
+        $normalized = [
+            'customer_id' => (int) $this->customer_id,
+            'warehouse_id' => $this->warehouse_id ? (int) $this->warehouse_id : null,
+            'currency_code' => strtoupper(trim($this->currency_code)),
+            'exchange_rate' => trim($this->exchange_rate),
+            'issue_date' => trim($this->issue_date),
+            'due_date' => $this->due_date ? trim($this->due_date) : null,
+            'notes' => $this->notes !== null ? trim($this->notes) : null,
+            'terms' => $this->terms !== null ? trim($this->terms) : null,
+            'document_locale' => $this->document_locale,
+            'lines' => $normalizedLines,
+        ];
+
+        return hash('sha256', json_encode($normalized, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+    }
+
+    protected function resolveUserErrorMessage(\Throwable $e): string
+    {
+        if ($e instanceof AuthorizationException
+            || $e instanceof NoActiveCompanyException
+            || ($e instanceof HttpException && $e->getStatusCode() === 403)) {
+            throw $e;
+        }
+
+        if ($e instanceof \InvalidArgumentException) {
+            $msg = strtolower($e->getMessage());
+            if (str_contains($msg, 'token') || str_contains($msg, 'expired') || str_contains($msg, 'stale')) {
+                return __('commands.preview_expired');
+            }
+            if (str_contains($msg, 'warehouse')) {
+                return __('commands.code_warehouse_inactive');
+            }
+            if (str_contains($msg, 'customer')) {
+                return __('commands.code_customer_inactive');
+            }
+            if (str_contains($msg, 'stock') || str_contains($msg, 'insufficient')) {
+                return __('commands.code_insufficient_stock');
+            }
+
+            return __('commands.code_validation_failed');
+        }
+
+        if ($e instanceof ConflictHttpException
+            || $e->getCode() === 409
+            || ($e instanceof HttpException && $e->getStatusCode() === 409)) {
+            return __('commands.conflict_error');
+        }
+
+        return __('commands.generic_error');
     }
 
     public function render(CompanyContext $context): View

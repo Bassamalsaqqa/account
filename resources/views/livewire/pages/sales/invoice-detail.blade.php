@@ -31,12 +31,13 @@
 
             <!-- Action Buttons -->
             <div class="flex flex-wrap items-center gap-2">
-                @if ($canPost)
-                    <button type="button"
+                @if ($canPost && ! $showPreview)
+                    <button id="invoice-detail-post-button"
+                            type="button"
                             wire:click="postInvoice"
-                            wire:confirm="{{ __('sales.confirm_post_invoice') }}"
+                            wire:loading.attr="disabled"
                             class="px-3.5 py-1.5 rounded-control bg-primary text-white text-xs font-bold hover:bg-primary-hover transition-colors shadow-xs cursor-pointer">
-                        ⚡ {{ __('sales.post') }}
+                        ⚡ {{ __('commands.review_post') }}
                     </button>
                 @endif
 
@@ -108,6 +109,18 @@
             </div>
         </div>
     </div>
+
+    <!-- Phase 11 Command Preview & Errors -->
+    @if ($previewError)
+        <div role="alert" class="rounded-card border border-danger/30 bg-danger/10 p-3 text-xs text-danger font-medium flex items-center justify-between">
+            <span>{{ $previewError }}</span>
+            <button type="button" wire:click="$set('previewError', null)" class="text-danger hover:opacity-75 font-bold cursor-pointer">✕</button>
+        </div>
+    @endif
+
+    @if ($showPreview && $previewData)
+        <x-sales-command-preview :preview="$previewData" :invoice="$invoice" :currency="$invoice->currency_code" confirm-action="confirmPost" cancel-action="cancelPreview" cancel-return-id="invoice-detail-post-button" />
+    @endif
 
     <!-- Lines Table -->
     <div class="bg-white rounded-card border border-border shadow-xs overflow-hidden">
