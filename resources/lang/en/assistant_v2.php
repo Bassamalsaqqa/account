@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 return [
+    'error_provider_selection' => 'The selected provider or fallback is unavailable. Choose an allowed provider and save your selection; if the company route is invalid, ask an administrator to update it. No provider was substituted.',
     'open' => 'Create with voice or text',
     'title' => 'Sales & Purchase assistant',
     'unsaved_help' => 'Describe one transaction. Review and edit the form before saving or posting.',

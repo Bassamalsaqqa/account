@@ -20,7 +20,7 @@
                         <button type="button" @click="clear(); $wire.cancel()" class="min-h-11 shrink-0 px-2 text-sm text-text-secondary hover:text-text-primary">{{ __('assistant_v2.cancel') }}</button>
                     </div>
 
-                    <details class="mt-4 text-sm">
+                    <details class="mt-4 text-sm" @if ($error === __('assistant_v2.error_provider_selection')) open @endif>
                         <summary class="cursor-pointer py-2 font-semibold">{{ __('assistant_v2.privacy_connections') }}</summary>
                         <div class="space-y-3 py-3">
                             <p class="break-words text-text-secondary">{{ $privacy['operator'] ?? '' }} — {{ $privacy['retention'] ?? '' }}</p>
@@ -41,6 +41,9 @@
                             @foreach (['textConnection' => 'text_structured', 'speechConnection' => 'audio_transcription'] as $field => $capability)
                                 <label class="block">{{ __('assistant_v2.'.$capability) }}
                                     <select wire:model="{{ $field }}" class="mt-1 min-h-11 w-full rounded-control border border-border px-2">
+                                        @if ($this->$field && !in_array($this->$field, array_column($availableConnections, 'public_id'), true))
+                                            <option value="{{ $this->$field }}" disabled>{{ __('assistant_v2.error_unavailable') }}</option>
+                                        @endif
                                         <option value="">{{ __('assistant_v2.company_selection') }}</option>
                                         @foreach ($availableConnections as $route)
                                             @if ($route['capability'] === $capability)

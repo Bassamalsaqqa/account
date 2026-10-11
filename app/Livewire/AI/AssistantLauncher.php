@@ -97,11 +97,16 @@ final class AssistantLauncher extends Component
             $this->transcriptionChoice = '';
         }
         $this->availableConnections = $governance->permittedConnections($company, auth()->user(), $this->context);
-        $this->consentRoutes = $this->selectedConsentRoutes();
+        $this->error = null;
+        $this->consentRoutes = [];
+        try {
+            $this->consentRoutes = $this->selectedConsentRoutes();
+        } catch (AssistantUnavailable) {
+            $this->error = __('assistant_v2.error_provider_selection');
+        }
         $this->consentSelection = $this->selectionFingerprint();
         $this->consent = $this->consentRoutes !== [] && collect($this->consentRoutes)->every(fn ($row) => $row['consented']);
         $this->open = true;
-        $this->error = null;
     }
 
     public function acceptConsent(): void
@@ -132,18 +137,26 @@ final class AssistantLauncher extends Component
     public function selectConnections(): void
     {
         $company = app(CompanyContext::class)->company();
-        DB::transaction(function () use ($company): void {
-            app(AiGovernance::class)->authorizeLauncher($company, auth()->user(), $this->context);
-            app(AiSpeechMethods::class)->choose($company, auth()->user(), $this->transcriptionChoice);
-            $policy = app(AiGovernance::class)->authorizeLauncher($company, auth()->user(), $this->context);
-            $this->speechMethod = app(AiSpeechMethods::class)->effective($policy, auth()->user());
-            foreach (['text_structured' => $this->textConnection, 'audio_transcription' => $this->speechConnection] as $capability => $id) {
-                if ($capability !== 'audio_transcription' || config('ai_assistant.speech_enabled') === true
-                    && in_array($this->speechMethod, ['cloud', 'local_if_supported'], true)) {
-                    app(AiProviderRoutes::class)->preference($company, auth()->user(), $capability, $id);
+        try {
+            DB::transaction(function () use ($company): void {
+                app(AiGovernance::class)->authorizeLauncher($company, auth()->user(), $this->context);
+                app(AiSpeechMethods::class)->choose($company, auth()->user(), $this->transcriptionChoice);
+                $policy = app(AiGovernance::class)->authorizeLauncher($company, auth()->user(), $this->context);
+                $this->speechMethod = app(AiSpeechMethods::class)->effective($policy, auth()->user());
+                foreach (['text_structured' => $this->textConnection, 'audio_transcription' => $this->speechConnection] as $capability => $id) {
+                    if ($capability !== 'audio_transcription' || config('ai_assistant.speech_enabled') === true
+                        && in_array($this->speechMethod, ['cloud', 'local_if_supported'], true)) {
+                        app(AiProviderRoutes::class)->preference($company, auth()->user(), $capability, $id);
+                    }
                 }
-            }
-        });
+            });
+        } catch (AssistantUnavailable) {
+            $this->showAssistant();
+            $this->consent = false;
+            $this->error = __('assistant_v2.error_provider_selection');
+
+            return;
+        }
         $this->showAssistant();
         $this->consent = false;
     }

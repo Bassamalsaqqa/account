@@ -230,6 +230,84 @@ class AssistantConsentScopeTest extends TestCase
         Http::assertNothingSent();
     }
 
+    public function test_saved_revoked_or_removed_primary_can_be_explicitly_replaced_with_fresh_consent(): void
+    {
+        $replacement = $this->connection();
+        app(AiProviderRoutes::class)->preference($this->company, $this->owner, 'text_structured', $this->textConnection->public_id);
+        foreach (['revoked', 'removed'] as $case) {
+            if ($case === 'revoked') {
+                $this->textConnection->update(['revoked_at' => now()]);
+            } else {
+                $this->textConnection->update(['revoked_at' => null]);
+                $settings = $this->aiPolicy->fresh()->settings;
+                $settings['allowed_connections'] = [$replacement->public_id, $this->fallbackConnection->public_id];
+                $this->aiPolicy->update(['settings' => $settings]);
+            }
+            foreach (['ar', 'en'] as $locale) {
+                app()->setLocale($locale);
+                $component = Livewire::test(AssistantLauncher::class)->call('showAssistant')
+                    ->assertSet('open', true)->assertSet('textConnection', $this->textConnection->public_id)
+                    ->assertSet('consentRoutes', [])->assertSet('consent', false)
+                    ->assertSet('error', __('assistant_v2.error_provider_selection'))
+                    ->assertDontSee('synthetic-primary-key-never-real');
+                $this->assertNotContains($this->textConnection->public_id, array_column($component->get('availableConnections'), 'public_id'));
+                $component->set('textConnection', $replacement->public_id)->call('selectConnections')
+                    ->assertSet('error', null)->assertSet('consent', false);
+                $this->assertSame([], $this->consents());
+                try {
+                    app(AiProviderRoutes::class)->select($this->company, $this->owner, 'sales', 'text_structured');
+                    $this->fail('Replacement requires explicit consent.');
+                } catch (AssistantUnavailable $e) {
+                    $this->assertSame('consent', $e->reason);
+                }
+                $component->set('consent', true)->call('acceptConsent')->assertSet('consent', true);
+                AiUserPreference::query()->update(['consents' => [], 'preferences' => ['text_connection' => $this->textConnection->public_id]]);
+            }
+        }
+        Http::assertNothingSent();
+    }
+
+    public function test_revoked_or_invalid_fallback_keeps_picker_open_and_failed_changes_atomic(): void
+    {
+        $replacement = $this->connection();
+        app(AiProviderRoutes::class)->preference($this->company, $this->owner, 'text_structured', $this->textConnection->public_id);
+        $before = AiUserPreference::firstOrFail()->preferences;
+        $this->fallbackConnection->update(['revoked_at' => now()]);
+        $component = Livewire::test(AssistantLauncher::class)->call('showAssistant')
+            ->assertSet('open', true)->assertSet('consentRoutes', [])->assertSet('consent', false)
+            ->assertSet('error', __('assistant_v2.error_provider_selection'));
+        $this->assertNotContains($this->fallbackConnection->public_id, array_column($component->get('availableConnections'), 'public_id'));
+        foreach ([$replacement->public_id, ''] as $choice) {
+            $component->set('textConnection', $choice)->call('selectConnections')
+                ->assertSet('error', __('assistant_v2.error_provider_selection'))->assertSet('consent', false);
+            $this->assertSame($before, AiUserPreference::firstOrFail()->preferences);
+            $this->assertSame([], $this->consents());
+        }
+        // A changed fallback equal to the primary must also remain fail-closed.
+        $settings = $this->aiPolicy->fresh()->settings;
+        $settings['fallback']['text_connection'] = $this->textConnection->public_id;
+        $this->aiPolicy->update(['settings' => $settings]);
+        $component->call('showAssistant')->assertSet('error', __('assistant_v2.error_provider_selection'));
+        // Only an explicit administrator policy repair enables selection again.
+        $settings['fallback']['enabled'] = false;
+        $this->aiPolicy->update(['settings' => $settings, 'revision' => $this->aiPolicy->revision + 1]);
+        $component->set('textConnection', $replacement->public_id)->call('selectConnections')
+            ->assertSet('error', null)->assertSet('consent', false);
+        $this->assertSame([], $this->consents());
+        $component->set('consent', true)->call('acceptConsent')->assertSet('consent', true);
+        Http::assertNothingSent();
+    }
+
+    public function test_stale_selection_recovery_does_not_swallow_role_or_membership_denial(): void
+    {
+        $component = Livewire::test(AssistantLauncher::class)->call('showAssistant');
+        $this->textConnection->update(['revoked_at' => now()]);
+        CompanyUser::where('company_id', $this->company->id)->where('user_id', $this->owner->id)->update(['status' => 'inactive']);
+        $component->call('showAssistant')->assertForbidden();
+        $this->assertSame([], $this->consents());
+        Http::assertNothingSent();
+    }
+
     private function connection(bool $speech = false): AiProviderConnection
     {
         $connection = app(AiGovernance::class)->provision($this->company, $this->owner, [
