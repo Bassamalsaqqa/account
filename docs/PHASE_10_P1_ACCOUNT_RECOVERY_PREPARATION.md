@@ -1,6 +1,6 @@
 # Phase 10 P1 Stage 0: Account Recovery and Mail Source Assessment
 
-Current status: **STAGE 0 SOURCE ASSESSMENT COMPLETE; LOCAL INVARIANTS CARRIED (11 TESTS / 88 ASSERTIONS PASS); OPERATIONAL EMAIL DELIVERY & RECOVERY PROOF BLOCKED EXTERNAL AUTHORIZATION; ARCHITECT REVIEW PENDING; CUSTOMER READINESS NOT YET ESTABLISHED**.\
+Current status: **STAGE 0 SOURCE ASSESSMENT COMPLETE; LOCAL INVARIANTS CARRIED (11 TESTS / 88 ASSERTIONS PASS); EXACT PR #21 SOURCE ACCEPTED BY INDEPENDENT ARCHITECT; STAGE 0 PR #22 ACCEPTED SUBJECT TO FINITE P3 STATUS CORRECTION; THREE P1 OPERATIONAL PROOFS BLOCKED EXTERNAL AUTHORIZATION; P10-G / CUSTOMER READINESS NOT ACCEPTED**.\
 Date: 2026-10-10.\
 Baseline commit: `1f1fa5874eaffe749d901ee14a21850e327c9687`.\
 Accepted main baseline: `c74c9a4e0b4135055dbb8ed7d3e3715d2ddba24f`.\
@@ -16,7 +16,7 @@ This document records the bounded Stage 0 identity and mail source assessment fo
 
 ### Authority and Isolation Bounds
 - **Worker Scope (AGY):** This assessment is strictly bounded to read-only source and documentation analysis within the isolated workspace. The worker has no host, server, or production access. (Codex separately conducted read-only SSH/panel/DNS discovery recorded in central records; [central Stage 0 record](PHASE_10_P1_OPERATIONAL_READINESS.md) controls fresh baseline facts.)
-- **Review Status:** Independent architect review of the Phase 10 source candidate remains pending.
+- **Review Status:** Exact PR #21 source candidate was accepted by the independent architect ([PR #21 review](https://github.com/Bassamalsaqqa/account/pull/21#pullrequestreview-5480577247), [release comment](https://github.com/Bassamalsaqqa/account/pull/21#issuecomment-6101589437); source comment is not GitHub APPROVE) and merged to main as `d97a63fb0e3536abcccf229eb42909e848a63f57` (tree `cd3bef3d321acfb7093ff4a5d3b8831d28e91fcd`). Stage 0 PR #22 was accepted subject to this finite P3 status correction ([PR #22 review](https://github.com/Bassamalsaqqa/account/pull/22#pullrequestreview-5480746067), [Owner review](https://github.com/Bassamalsaqqa/account/pull/22#pullrequestreview-5480754648)). Current Owner explicitly authorized accepted merges/deploy as source deployment direction only; all three P1 actual operational proofs remain BLOCKED EXTERNAL AUTHORIZATION, and P10-G/full customer readiness is NOT ACCEPTED.
 - **No Credentials or Secrets Read:** No production `.env`, private API keys, SMTP passwords, application encryption keys, or live user account credentials have been read, logged, or exported. No tokens, private email addresses, or example passwords appear in this document.
 - **Operational Gate Status:** Real email delivery via an approved provider proving actual account self-recovery remains **BLOCKED EXTERNAL AUTHORIZATION** / **NOT VERIFIED LIVE**.
 - **Provider Capability:** Current mail provider and host deliverability are **NOT VERIFIED**. Hostinger shared email must not be assumed authoritative or functional from hosting presence alone.
@@ -88,7 +88,7 @@ All invariants are asserted in [`tests/Feature/Auth/Phase10IdentityRecoveryTest.
 ### 3.3 Evidence Disposition (Carried Historical Evidence)
 - **Status:** **PASS** (11 tests / 88 assertions).
 - **Execution Record:** Executed in package P10-A1 (elapsed 39.627s, memory 80 MiB, schema `accounting_p8_tmp_ca2f0170eb87` cleaned).
-- **Citation Policy:** Cited as **carried historical evidence** from recorded P10-A1 internal verification, with independent architect acceptance pending. **Not freshly re-run** in this Stage 0 assessment.
+- **Citation Policy:** Cited as **carried historical evidence** from recorded P10-A1 internal verification of the exact PR #21 source candidate accepted by the independent architect. **Not freshly re-run** in this Stage 0 assessment.
 
 ---
 
