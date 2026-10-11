@@ -39,11 +39,13 @@ final class AssistantReportCatalog
         // Verify identity and membership before disclosing supported report metadata.
         app(ReportingGuard::class)->authorize($company, $actor, 'ai.assistant.use');
         $policy = AiCompanyPolicy::where('company_id', $company->id)->first();
-        if ($policy === null || ! $policy->enabled || ($policy->settings['questions']['enabled'] ?? false) !== true) {
+        $questions = $policy?->settings['questions'] ?? [];
+        if ($policy === null || ! $policy->enabled || ! is_array($questions) || ($questions['enabled'] ?? false) !== true) {
             throw new AssistantUnavailable('disabled');
         }
         $definition = $this->definition($key);
-        if (! in_array($key, $policy->settings['questions']['allowed_reports'] ?? [], true)) {
+        $allowed = $questions['allowed_reports'] ?? [];
+        if (! is_array($allowed) || ! in_array($key, $allowed, true)) {
             throw new AuthorizationException('This question capability is not permitted.');
         }
         app(ReportingGuard::class)->authorize($company, $actor, $definition['permissions']);
