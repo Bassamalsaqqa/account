@@ -320,22 +320,24 @@ class CommandConcurrencyTest extends TestCase
         $this->assertNotEmpty($tokenB);
         $this->assertNotSame($tokenA, $tokenB, 'Two previews for the same draft must produce distinct cryptographic ciphertexts.');
 
-        // Assert independently decoded revision and actor match
-        try {
-            $decodedA = Crypt::decrypt($tokenA);
-            $decodedB = Crypt::decrypt($tokenB);
-            if (is_array($decodedA) && is_array($decodedB)) {
-                if (isset($decodedA['actor_id'], $decodedB['actor_id'])) {
-                    $this->assertSame((int) $this->owner->id, (int) $decodedA['actor_id']);
-                    $this->assertSame((int) $this->owner->id, (int) $decodedB['actor_id']);
-                }
-                if (isset($decodedA['revision'], $decodedB['revision'])) {
-                    $this->assertSame($decodedA['revision'], $decodedB['revision']);
-                }
-            }
-        } catch (\Throwable) {
-            // Handled when preview uses custom ciphertext structure
+        // Decode exactly as production does; invalid representations must fail this test.
+        $decodedA = json_decode(Crypt::decryptString($tokenA), true, 512, JSON_THROW_ON_ERROR);
+        $decodedB = json_decode(Crypt::decryptString($tokenB), true, 512, JSON_THROW_ON_ERROR);
+        $this->assertIsArray($decodedA);
+        $this->assertIsArray($decodedB);
+
+        foreach ([[$decodedA, $previewA], [$decodedB, $previewB]] as [$decoded, $preview]) {
+            $this->assertSame((int) $this->company->id, $decoded['company_id']);
+            $this->assertSame((int) $this->owner->id, $decoded['actor_id']);
+            $this->assertSame((int) $draft->id, $decoded['invoice_id']);
+            $this->assertSame((string) $draft->public_id, $decoded['invoice_public_id']);
+            $this->assertSame($preview['draft_revision'], $decoded['draft_revision']);
+            $this->assertSame($preview['preview_revision'], $decoded['preview_revision']);
+            $this->assertMatchesRegularExpression('/^[a-f0-9]{64}$/D', $decoded['draft_revision']);
+            $this->assertMatchesRegularExpression('/^[a-f0-9]{64}$/D', $decoded['preview_revision']);
         }
+        $this->assertSame($decodedA['draft_revision'], $decodedB['draft_revision']);
+        $this->assertSame($decodedA['preview_revision'], $decodedB['preview_revision']);
 
         $key = 'p11-execute-differing-valid-token-key';
         $next = $this->sequenceNext(DocumentSequence::TYPE_SALES_INVOICE);

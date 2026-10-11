@@ -56,7 +56,7 @@ Environment: PHP 8.4.25, PHPUnit 12.5.36, local loopback MariaDB **10.4.32**, ex
 
 | Check | Actual result |
 | --- | --- |
-| Final tests/Feature/Phase11 | **PASS: 75 tests, 733 assertions, 0 errors/failures/skips**, 03:18.177, 88 MiB |
+| Pre-correction Phase 11 suite at 5a78776 (carried) | **PASS: 75 tests, 733 assertions, 0 errors/failures/skips**, 03:18.177, 88 MiB |
 | ApiCommandParityTest | 8 tests / 121 assertions |
 | ApiSecurityTest | 17 / 110 |
 | CommandConcurrencyTest | 7 / 283 |
@@ -148,3 +148,14 @@ tests/Feature/Phase11/WebCommandParityTest.php
 tests/Support/Phase11/command-race-worker.php
 tests/Support/Phase11CsrfTestMiddleware.php
 ```
+
+## P3 architect correction follow-up
+
+Correction baseline: 5a78776335a36c642c238c499cd13af513ba7859. The two finite PR #24 P3 findings are addressed without changing canonical posting, inventory, tenancy, permission or token-production behavior.
+
+- P3-1: CommandConcurrencyTest::test_concurrent_execute_same_key_with_differing_token_conflicts now decodes both production-format tokens with json_decode(Crypt::decryptString(...), true, 512, JSON_THROW_ON_ERROR). No exception swallowing or conditional assertion branch remains. Both tokens unconditionally assert company_id, actor_id, invoice_id, invoice_public_id, draft_revision and preview_revision against the actor/draft and actual preview; revision hashes must be valid and consistent. Existing independent-process one-post/one-receipt/conflict and reconciliation assertions remain.
+- P3-2: Arabic commands.stock_allocation now reads تخصيص المخزون (الأقرب انتهاءً للصلاحية أولًا — FEFO). The existing localized Livewire FEFO allocation markup test asserts the corrected text and absence of the old FIFO label. This is a presentation correction, not a change to stock allocation policy.
+
+Focused correction result: **PASS: 6 tests / 127 assertions, 0 errors/failures/skips**, 01:28.559, 80 MiB, using the unchanged owned-schema runner on local MariaDB 10.4.32 / PHP 8.4.25. The primary schema and auxiliary fixture schemas were cleaned; final read-only inspection found none remaining on port 33311, and the owned server stopped gracefully. Pint --dirty --test and whitespace checks PASS. The prior 75/733 suite, 1,454/23,419 continuation, static/build and scoped browser evidence above belong to the pre-correction source and are carried, not newly rerun. No broad suite, browser loop, GitHub CI, migration change, merge, production access or deployment was performed for these P3 corrections. The focused localized markup assertion verifies the updated label; older private browser screenshots are historical pre-correction evidence.
+
+Independent exact-head source acceptance is still PENDING. The Owner has authorized the subsequent merge and Hostinger release after that acceptance, with COMMAND_API_ENABLED=false and preserved data/configuration; Phase 12 begins only after Phase 11 source acceptance. AGY remains unavailable, so Codex owns the follow-on implementation. Real AI activation still requires provider, cost, privacy and activation approval. The three Phase 10 P1 operational proofs remain unverified.

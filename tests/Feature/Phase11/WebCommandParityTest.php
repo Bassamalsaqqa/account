@@ -457,6 +457,8 @@ class WebCommandParityTest extends TestCase
         $componentAr->assertSeeHtml('5.1234567890');
         $componentAr->assertSeeHtml(__('commands.preview_title'));
         $componentAr->assertSeeHtml(__('commands.stock_disclaimer'));
+        $componentAr->assertSeeHtml('تخصيص المخزون (الأقرب انتهاءً للصلاحية أولًا — FEFO)');
+        $componentAr->assertDontSeeHtml('تخصيص المخزون (الوارد أولاً صادر أولاً)');
         $componentAr->assertSeeHtml(__('commands.lot'));
         $componentAr->assertSeeHtml(__('commands.expiry'));
         $componentAr->assertSeeHtml(__('commands.qty'));
