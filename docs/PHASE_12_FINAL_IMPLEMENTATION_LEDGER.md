@@ -13,7 +13,7 @@ This is an incremental implementation checkpoint, not final Phase 12 acceptance.
 | Package | Source work | Checkpoint state | Remaining acceptance |
 | --- | --- | --- | --- |
 | P12-M1 | Curated direct DeepSeek/Qwen/OpenAI text; Qwen/Groq/OpenAI STT; bounded transport and shared foreground deadline | IMPLEMENTED; protocol mocks PASS | Actual provider/key/region/billing proof NOT VERIFIED |
-| P12-M2 | Protected company/personal write-only BYOK, policy CAS, consent, private metadata, exact budget reservations and usage summaries | IMPLEMENTED; governance/settings/budget tests PASS | Additional company intent/global-button controls and final review pending |
+| P12-M2 | Protected company/personal write-only BYOK, policy CAS, consent, private metadata, exact budget reservations and usage summaries | IMPLEMENTED; governance/settings/budget tests PASS | Company intent/global-button controls tested; final review pending |
 | P12-M3 | Deterministic zero-text-call path, strict proposals, bounded reference clarification, named outage-only fallback, versioned current-form patches | IMPLEMENTED; focused resolver/orchestration/correction tests PASS | Additional Purchase/patch/ambiguity negative cases pending |
 | P12-M4 | Existing unsaved Sales/Purchase forms, final human-field provenance, canonical Purchase draft facade, revision guards and Undo | IMPLEMENTED; focused form/draft tests PASS | Independent-process Purchase concurrency and additional affected regressions pending |
 | P12-M5 | PCM/WAV foreground capture, cancellation/generation guards, genuine installed local recognition, Seamless/Guided flow | IMPLEMENTED; nine frontend tests PASS | Correction-specific browser races, full responsive flow audit, physical phones and dialect evidence pending |
@@ -93,7 +93,7 @@ Initial fixture errors in session/control-company setup were corrected. The mid-
 
 ### Still unfinished
 
-Independent-process Purchase concurrency is prepared as a manual AGY task at the committed 04bdb40 baseline; it owns two new test files and no runtime code. Additional company intent/global-button controls, resolver speech-name matching, Purchase/patch negative scenarios, foreground text-correction/manual-edit browser races, new-budget process concurrency, full responsive/accessibility flows, affected canonical integration regressions and final Owner Decision Ledger traceability remain in progress / NOT RUN. This is not final M6 acceptance.
+Independent-process Purchase concurrency is prepared as a manual AGY task at the committed 04bdb40 baseline; it owns two new test files and no runtime code. Resolver speech-name matching, Purchase/patch negative scenarios, foreground text-correction/manual-edit browser races, new-budget process concurrency, full responsive/accessibility flows, affected canonical integration regressions and final Owner Decision Ledger traceability remain in progress / NOT RUN. This is not final M6 acceptance.
 
 The protected Owner original and existing production/runtime configuration remain unchanged. No merge, deployment, production access/mutation, real provider/SMTP call, paid dispatch or GitHub CI occurred.
 
@@ -104,3 +104,11 @@ Direct dispatch now requires `AI_ASSISTANT_PROVIDER=direct` in addition to enabl
 Focused unit verification: 50 tests / 286 assertions, PASS, including AGY matrix 29 / 130. The affected five-class feature batch ran 35 tests / 222 assertions with one fixture failure: governance still selected the legacy gateway. The direct-provider fixture was corrected and its six-test class rerun separately; the failed aggregate remains recorded privately rather than relabeled PASS. The corrected governance class passed: 6 tests / 29 assertions. The other four affected classes passed: 29 tests / 196 assertions.
 
 Latest successful per-class reports now cover **144 distinct focused PHP tests / 910 assertions**, with zero failures/errors/skips in the selected results (deduplicated evidence, not one full-suite execution). Pint, PHPStan and whitespace checks passed. Both owned disposable schemas from this safeguard checkpoint were cleaned. No migration, frontend asset or canonical financial writer changed in the provider-mode safeguard. Final M6 acceptance and the remaining source tasks above are still incomplete.
+
+## Company control checkpoint
+
+Company AI Settings now expose bilingual global-button and Sales/Purchase intent controls. Allowed intents intersect fresh canonical RBAC for automatic classification and contextual usage; even the Owner cannot use a disabled intent. Hiding the global launcher preserves permitted contextual workflows. Open launchers and handoff capabilities recheck the revised policy. Unsupported, duplicate and non-list intent values are refused. Missing fields retain the previous two-intent/global-button behavior until explicitly configured. No migration is needed for these versioned JSON settings.
+
+Focused affected group: 23 tests / 140 assertions, PASS. The completed company-controls class was then rerun with an additional same-user Administrator-A/Viewer-B role-cache isolation case: **7 tests / 47 assertions**, PASS. These seven tests increase the latest deduplicated focused inventory to **151 tests / 957 assertions**, not a single broad-suite run. Owned primary schemas were cleaned. Pint, PHPStan, the frontend build and whitespace checks passed; the one mechanical settings UI scan reported no findings. Rendered AR/EN labels are tested; this is not full browser/accessibility certification.
+
+AGY Purchase concurrency is reported running in its own 04bdb40 worktree. Its two files are being inspected read-only; source presence and a running test report do not establish completion or acceptance. No worker files or metadata were changed by Codex. No merge/deployment/production access, real credentials, paid calls or CI occurred. Final expanded Phase 12 acceptance remains incomplete.

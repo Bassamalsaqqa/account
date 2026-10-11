@@ -37,6 +37,14 @@
                     <label class="flex items-center gap-2"><input type="checkbox" wire:model="personalEnabled" @disabled(!$isOwner) class="rounded border-border" />{{ __('assistant_v2.allow_personal') }}</label>
                     <label class="flex items-center gap-2"><input type="checkbox" wire:model="followUpEnabled" class="rounded border-border" />{{ __('assistant_v2.allow_followup') }}</label>
                     <p class="text-text-secondary">{{ __('assistant_v2.owner_control') }}</p>
+                    <label class="flex items-center gap-2"><input type="checkbox" wire:model="globalButtonEnabled" class="rounded border-border" />{{ __('assistant_v2.global_button') }}</label>
+                    <p class="max-w-prose text-text-secondary">{{ __('assistant_v2.global_button_help') }}</p>
+                    <fieldset class="space-y-2">
+                        <legend class="font-semibold">{{ __('assistant_v2.allowed_intents') }}</legend>
+                        @foreach (['sales', 'purchase'] as $intent)
+                            <label class="flex items-center gap-2"><input type="checkbox" wire:model="allowedIntents" value="{{ $intent }}" class="rounded border-border" />{{ __('assistant_v2.intent_'.$intent) }}</label>
+                        @endforeach
+                    </fieldset>
                 </div>
                 <div class="mt-5 grid gap-4 sm:grid-cols-2">
                     <label class="text-sm font-semibold">{{ __('assistant_v2.workflow_mode') }}

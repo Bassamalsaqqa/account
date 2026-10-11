@@ -41,6 +41,14 @@ final class AiGovernance
             if (! in_array($intent, ['sales', 'purchase', 'auto'], true)) {
                 throw new AssistantUnavailable('intent_unsupported');
             }
+            $policy = AiCompanyPolicy::where('company_id', $company->id)->lockForUpdate()->first();
+            if ($policy === null || ! $policy->enabled) {
+                throw new AssistantUnavailable('disabled');
+            }
+            $enabledIntents = $policy->settings['allowed_intents'] ?? ['sales', 'purchase'];
+            if ($intent !== 'auto' && ! in_array($intent, $enabledIntents, true)) {
+                throw new AuthorizationException('This AI workflow is disabled by company policy.');
+            }
             if ($intent === 'auto' && $this->allowedIntents($company, $actor) === []) {
                 throw new AuthorizationException('At least one permitted canonical AI workflow is required.');
             }
@@ -52,11 +60,6 @@ final class AiGovernance
                     $this->authorizeCapability($company, $actor, $permission);
                 }
             }
-            $policy = AiCompanyPolicy::where('company_id', $company->id)->lockForUpdate()->first();
-            if ($policy === null || ! $policy->enabled) {
-                throw new AssistantUnavailable('disabled');
-            }
-
             if ($speech && ! in_array(app(AiSpeechMethods::class)->effective($policy, $actor), ['cloud', 'local_if_supported'], true)) {
                 throw new AssistantUnavailable('disabled');
             }
@@ -65,14 +68,32 @@ final class AiGovernance
         });
     }
 
+    public function authorizeLauncher(Company $company, User $actor, string $context): AiCompanyPolicy
+    {
+        $policy = $this->authorizeUse($company, $actor, $context);
+        if ($context === 'auto' && ! ($policy->settings['global_button_enabled'] ?? true)) {
+            throw new AssistantUnavailable('disabled');
+        }
+
+        return $policy;
+    }
+
     /** @return list<string> */
     public function allowedIntents(Company $company, User $actor): array
     {
+        $policy = AiCompanyPolicy::where('company_id', $company->id)->first();
+        if ($policy === null || ! $policy->enabled) {
+            return [];
+        }
+        $enabledIntents = $policy->settings['allowed_intents'] ?? ['sales', 'purchase'];
         $allowed = [];
         foreach ([
             'sales' => ['ai.assistant.use', 'ai.sales.use', 'sales.invoice.create', 'sales.invoice.view'],
             'purchase' => ['ai.assistant.use', 'ai.purchases.use', 'purchasing.purchase.create', 'purchasing.purchase.view', 'purchasing.cost.view'],
         ] as $intent => $permissions) {
+            if (! in_array($intent, $enabledIntents, true)) {
+                continue;
+            }
             try {
                 DB::transaction(function () use ($company, $actor, $permissions): void {
                     foreach ($permissions as $permission) {
@@ -381,11 +402,14 @@ final class AiGovernance
     private function validateSettings(array $settings): array
     {
         $allowed = ['allowed_connections', 'text_connection', 'speech_connection', 'fallback', 'privacy',
-            'pricing', 'limits', 'retention_days', 'allowed_personal_routes'];
+            'pricing', 'limits', 'retention_days', 'allowed_personal_routes', 'global_button_enabled', 'allowed_intents'];
         if (array_diff(array_keys($settings), $allowed) !== []) {
             throw new AssistantUnavailable('policy_invalid');
         }
         $data = Validator::make($settings, [
+            'global_button_enabled' => ['sometimes', 'boolean'],
+            'allowed_intents' => ['sometimes', 'array', 'list', 'max:2'],
+            'allowed_intents.*' => ['string', 'in:sales,purchase', 'distinct'],
             'allowed_connections' => ['present', 'array', 'max:20'], 'allowed_connections.*' => ['uuid'],
             'allowed_personal_routes' => ['sometimes', 'array', 'max:20'],
             'allowed_personal_routes.*' => ['string', 'max:255'],
@@ -402,6 +426,8 @@ final class AiGovernance
             'limits.*' => ['required', 'integer', 'min:1', 'max:1000000000'],
             'retention_days' => ['required', 'integer', 'min:1', 'max:365'],
         ])->validate();
+        $data['global_button_enabled'] = (bool) ($data['global_button_enabled'] ?? true);
+        $data['allowed_intents'] = $data['allowed_intents'] ?? ['sales', 'purchase'];
         foreach (['request_micros', 'daily_company_micros', 'monthly_company_micros', 'daily_user_micros', 'monthly_user_micros', 'daily_company_requests', 'daily_user_requests'] as $key) {
             if (! isset($data['limits'][$key])) {
                 throw new AssistantUnavailable('policy_invalid');

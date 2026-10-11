@@ -24,6 +24,11 @@ final class AiSettings extends Component
 {
     public bool $enabled = false;
 
+    public bool $globalButtonEnabled = true;
+
+    /** @var list<string> */
+    public array $allowedIntents = ['sales', 'purchase'];
+
     public bool $personalEnabled = false;
 
     public bool $followUpEnabled = false;
@@ -85,6 +90,8 @@ final class AiSettings extends Component
         $this->mode = $policy->workflow_mode;
         $this->speechMethod = $policy->speech_method;
         $settings = $policy->settings;
+        $this->globalButtonEnabled = $settings['global_button_enabled'] ?? true;
+        $this->allowedIntents = $settings['allowed_intents'] ?? ['sales', 'purchase'];
         $this->allowedConnections = $settings['allowed_connections'] ?? [];
         $this->personalRoutes = $settings['allowed_personal_routes'] ?? [];
         $this->textConnection = $settings['text_connection'] ?? null;
@@ -132,6 +139,7 @@ final class AiSettings extends Component
                 'enabled' => $this->enabled, 'personal_credentials_enabled' => $this->personalEnabled,
                 'follow_up_enabled' => $this->followUpEnabled, 'workflow_mode' => $this->mode, 'speech_method' => $this->speechMethod,
                 'settings' => [
+                    'global_button_enabled' => $this->globalButtonEnabled, 'allowed_intents' => $this->allowedIntents,
                     'allowed_connections' => $this->allowedConnections, 'allowed_personal_routes' => $this->personalRoutes,
                     'text_connection' => $this->textConnection ?: null, 'speech_connection' => $this->speechConnection ?: null,
                     'fallback' => ['enabled' => $this->fallbackEnabled, 'text_connection' => $this->fallbackText ?: null, 'speech_connection' => $this->fallbackSpeech ?: null],

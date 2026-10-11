@@ -150,4 +150,9 @@ return [
     'cost_reported' => 'Reported cost',
     'unknown' => 'Not available',
     'unknown_requests' => 'Requests with unknown cost',
+    'global_button' => 'Show the global assistant button',
+    'global_button_help' => 'Hide the global button while keeping permitted contextual buttons in Sales and Purchase forms.',
+    'allowed_intents' => 'Permitted AI workflows',
+    'intent_sales' => 'Sales',
+    'intent_purchase' => 'Purchases',
 ];

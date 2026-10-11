@@ -77,7 +77,7 @@ final class AssistantLauncher extends Component
     {
         $company = app(CompanyContext::class)->company();
         $governance = app(AiGovernance::class);
-        $policy = $governance->authorizeUse($company, auth()->user(), $this->context);
+        $policy = $governance->authorizeLauncher($company, auth()->user(), $this->context);
         $this->mode = $policy->workflow_mode;
         $this->speechMethod = app(AiSpeechMethods::class)->effective($policy, auth()->user());
         $this->allowedSpeechMethods = app(AiSpeechMethods::class)->allowed($policy);
@@ -107,6 +107,7 @@ final class AssistantLauncher extends Component
             throw new AssistantUnavailable('consent');
         }
         $company = app(CompanyContext::class)->company();
+        app(AiGovernance::class)->authorizeLauncher($company, auth()->user(), $this->context);
         foreach ($this->consentRoutes as $route) {
             app(AiGovernance::class)->recordConsent($company, auth()->user(), $route['public_id'], $route['fingerprint']);
         }
@@ -116,8 +117,9 @@ final class AssistantLauncher extends Component
     public function selectConnections(): void
     {
         $company = app(CompanyContext::class)->company();
+        app(AiGovernance::class)->authorizeLauncher($company, auth()->user(), $this->context);
         app(AiSpeechMethods::class)->choose($company, auth()->user(), $this->transcriptionChoice);
-        $policy = app(AiGovernance::class)->authorizeUse($company, auth()->user(), $this->context);
+        $policy = app(AiGovernance::class)->authorizeLauncher($company, auth()->user(), $this->context);
         $this->speechMethod = app(AiSpeechMethods::class)->effective($policy, auth()->user());
         foreach (['text_structured' => $this->textConnection, 'audio_transcription' => $this->speechConnection] as $capability => $id) {
             if ($id !== null && $id !== '' && ($capability !== 'audio_transcription' || in_array($this->speechMethod, ['cloud', 'local_if_supported'], true))) {
@@ -134,6 +136,7 @@ final class AssistantLauncher extends Component
         }
         $this->error = null;
         try {
+            app(AiGovernance::class)->authorizeLauncher(app(CompanyContext::class)->company(), auth()->user(), $this->context);
             $result = app(TransactionAssistant::class)->prepare(app(CompanyContext::class)->company(), auth()->user(),
                 $this->text, $this->context, $this->formKey, (string) Str::uuid(), session()->getId(),
                 $this->textConnection ?: null, $this->audioToken);
@@ -148,7 +151,7 @@ final class AssistantLauncher extends Component
 
     public function receiveTranscript(string $transcript, ?string $token): mixed
     {
-        $policy = app(AiGovernance::class)->authorizeUse(app(CompanyContext::class)->company(), auth()->user(), $this->context);
+        $policy = app(AiGovernance::class)->authorizeLauncher(app(CompanyContext::class)->company(), auth()->user(), $this->context);
         $this->text = $transcript;
         $this->audioToken = $token;
         if ($policy->workflow_mode === 'seamless') {
@@ -176,6 +179,8 @@ final class AssistantLauncher extends Component
             $answers[$question['path']] = $value;
         }
         try {
+            app(AiGovernance::class)->authorizeLauncher(app(CompanyContext::class)->company(), auth()->user(), $this->context);
+
             return $this->present(app(TransactionAssistant::class)->clarify(app(CompanyContext::class)->company(),
                 auth()->user(), $this->token, session()->getId(), $this->formKey, $answers));
         } catch (AssistantUnavailable $e) {
@@ -234,7 +239,7 @@ final class AssistantLauncher extends Component
         $privacy = [];
         if ($context->hasCompany()) {
             try {
-                $policy = app(AiGovernance::class)->authorizeUse($context->company(), auth()->user(), $this->context);
+                $policy = app(AiGovernance::class)->authorizeLauncher($context->company(), auth()->user(), $this->context);
                 $available = true;
                 $privacy = $policy->settings['privacy'] ?? [];
             } catch (AssistantUnavailable|AuthorizationException) {
