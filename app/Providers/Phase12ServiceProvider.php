@@ -8,7 +8,9 @@ use App\Application\AI\SpeechTranscriptionProvider;
 use App\Application\AI\StructuredIntentProvider;
 use App\Infrastructure\AI\GatewayIntentProvider;
 use App\Infrastructure\AI\GatewaySpeechProvider;
+use App\Livewire\AI\AssistantLauncher;
 use Illuminate\Support\ServiceProvider;
+use Livewire\Livewire;
 
 final class Phase12ServiceProvider extends ServiceProvider
 {
@@ -16,5 +18,11 @@ final class Phase12ServiceProvider extends ServiceProvider
     {
         $this->app->bind(StructuredIntentProvider::class, GatewayIntentProvider::class);
         $this->app->bind(SpeechTranscriptionProvider::class, GatewaySpeechProvider::class);
+    }
+
+    public function boot(): void
+    {
+        // Automatic "ai" -> "Ai" discovery does not match the AI directory on Linux.
+        Livewire::component('ai.assistant-launcher', AssistantLauncher::class);
     }
 }
