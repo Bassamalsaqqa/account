@@ -2,7 +2,7 @@
 
 Authority metadata: Governed by protected local specification `ACCOUNTING_PHASE12_FINAL_SPEC_ARCHITECT_REVIEWED_2026-10-11.md`, SHA-256 `B080FC50222DC3F8E0AE6E8A3701BD4151E0CC020AD9FEEF14DE205521A5FB3F`.
 
-Status: Proposed expanded contract for independent review; source checkpoint incomplete P12-M6, draft PR #25; exact HEAD acceptance still pending. No vendor selected, billed requests sent, production credentials retrieved, or production features enabled. [ADR 0012](adr/0012-ai-sales-proposals-and-confirmation.md), [direct provider protocols](PHASE_12_DIRECT_PROVIDER_PROTOCOLS.md), [source acceptance](PHASE_12_SOURCE_ACCEPTANCE.md), and [implementation ledger](PHASE_12_FINAL_IMPLEMENTATION_LEDGER.md) describe the boundaries.
+Status: Proposed expanded contract for independent review; source P12-M1–M6 submitted for independent review, draft PR #25; exact HEAD acceptance still pending. No vendor selected, billed requests sent, production credentials retrieved, or production features enabled. [ADR 0012](adr/0012-ai-sales-proposals-and-confirmation.md), [direct provider protocols](PHASE_12_DIRECT_PROVIDER_PROTOCOLS.md), [source acceptance](PHASE_12_SOURCE_ACCEPTANCE.md), and [implementation ledger](PHASE_12_FINAL_IMPLEMENTATION_LEDGER.md) describe the boundaries.
 
 Superseded historical note: The initial single-gateway Sales-only design (version 1) is superseded. The gateway client remains in the codebase as a legacy compatibility option (`GatewayIntentProvider`, `GatewaySpeechProvider`, `GatewayTransport`), but is NOT the active final operational mode and does not provide universal audio-to-structured or multi-provider capabilities. Historical gateway test evidence does not claim direct provider coverage.
 

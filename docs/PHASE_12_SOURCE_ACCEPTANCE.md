@@ -1,3 +1,5 @@
+> Current expanded-scope review packet: [Phase 12 final source review](PHASE_12_FINAL_SOURCE_REVIEW.md). The historical evidence below does not grant exact-head acceptance of the expanded implementation.
+
 # Phase 12 source candidate — architect handoff
 
 Date: 2026-10-11. Historical Sales-only candidate record: superseded by the expanded Owner specification. Its counts and mapping below describe that earlier checkpoint, not acceptance of the complete multi-provider Sales/Purchase implementation. Current expanded source status is **P12-M6 IN PROGRESS; INDEPENDENT ARCHITECT ACCEPTANCE PENDING**; consult the [final implementation ledger](PHASE_12_FINAL_IMPLEMENTATION_LEDGER.md). Real-provider/voice operational acceptance is incomplete. Customer readiness is not established by this milestone.

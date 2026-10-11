@@ -103,6 +103,32 @@ test('correction delivery carries the revision captured at microphone start', as
  f.recorder.destroy(); assert.equal(f.rootListeners.size,0);
 });
 
+test('follow-up recording never serializes an absent Livewire property as a provider connection', async()=>{
+ let sent;
+ const f=await fixture(async()=>stream(),async(url,request)=>{
+  sent=request;return {ok:true,json:async()=>({text:'change quantity to 7',audio_token:'synthetic-token'})};
+ },null,'cloud',true);
+ // Livewire resolves absent properties as action callables; a plain-object fixture hid this bug.
+ f.wire.speechConnection=()=>{};
+ await f.recorder.start();f.nodes[0].port.onmessage({data:{samples:new Float32Array(48000)}});
+ await f.recorder.stop(true);
+ assert.equal(sent.body.has('connection_id'),false);
+ assert.deepEqual(f.changes,[['change quantity to 7','synthetic-token',3]]);
+ f.recorder.destroy();
+});
+
+test('initial recording retains the explicitly selected allowed speech connection', async()=>{
+ let sent;
+ const f=await fixture(async()=>stream(),async(url,request)=>{
+  sent=request;return {ok:true,json:async()=>({text:'Editable transcript',audio_token:'synthetic-token'})};
+ });
+ f.wire.speechConnection='a9ab7575-2b9d-4c8f-9a5e-ff5e40af0810';
+ await f.recorder.start();f.nodes[0].port.onmessage({data:{samples:new Float32Array(48000)}});
+ await f.recorder.stop(true);
+ assert.equal(sent.body.get('connection_id'),f.wire.speechConnection);
+ f.recorder.destroy();
+});
+
 test('manual financial input cancels pending speech and preserves the human edit', async()=>{
  const response=deferred(); let sent;
  const f=await fixture(async()=>stream(),async(url,request)=>{sent=request;return response.promise;},null,'cloud',true);

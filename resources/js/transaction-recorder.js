@@ -133,7 +133,11 @@ const register = () => window.Alpine.data('transactionRecorder', (wire, options)
                 data.append('audio', wav, 'recording.wav');
                 data.append('form_key', options.formKey || wire.formKey); data.append('context', options.context || wire.context);
                 data.append('locale', options.locale);
-                if (wire.speechConnection) data.append('connection_id', wire.speechConnection);
+                // Form components have no launcher selection property: Livewire would return an action callable.
+                // Omit it so the server selects and freshly authorizes the company-approved speech route.
+                if (typeof wire.speechConnection === 'string' && wire.speechConnection !== '') {
+                    data.append('connection_id', wire.speechConnection);
+                }
                 data.append('request_key', crypto.randomUUID());
                 const response = await fetch(options.url, {
                     method: 'POST', credentials: 'same-origin', signal: requestAbort.signal,
