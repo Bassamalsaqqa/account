@@ -2,6 +2,7 @@
 
 use App\Http\Middleware\EnsureCompanyContext;
 use App\Http\Middleware\Phase11ApiBoundary;
+use App\Http\Middleware\Phase12Boundary;
 use App\Http\Middleware\PublicDocumentHeaders;
 use App\Http\Middleware\SetCompanyContext;
 use App\Http\Middleware\SetLocale;
@@ -16,6 +17,7 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
+        $middleware->prepend(Phase12Boundary::class);
         $middleware->prepend(Phase11ApiBoundary::class);
         $middleware->web(prepend: [PublicDocumentHeaders::class]);
         $middleware->web(append: [
@@ -28,5 +30,5 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
-        //
+        $exceptions->dontFlash(['current_password', 'provider_secret', 'password', 'password_confirmation']);
     })->create();

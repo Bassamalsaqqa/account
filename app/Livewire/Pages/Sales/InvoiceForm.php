@@ -4,12 +4,14 @@ declare(strict_types=1);
 
 namespace App\Livewire\Pages\Sales;
 
+use App\Application\AI\AiDraftProvenance;
 use App\Application\Commands\SalesInvoiceCommands;
 use App\Domain\Sales\Calculators\SalesDocumentTotalsCalculator;
 use App\Domain\Sales\Calculators\SalesLineCalculationInput;
 use App\Domain\Sales\Calculators\SalesLineCalculator;
 use App\Domain\Sales\Queries\CustomerCreditLimitQuery;
 use App\Exceptions\NoActiveCompanyException;
+use App\Livewire\Concerns\AiUnsavedForm;
 use App\Models\Customer;
 use App\Models\Product;
 use App\Models\ProductBarcode;
@@ -23,6 +25,7 @@ use Brick\Math\BigDecimal;
 use Carbon\Carbon;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Contracts\View\View;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Locked;
@@ -33,6 +36,8 @@ use Symfony\Component\HttpKernel\Exception\HttpException;
 #[Layout('layouts.app')]
 class InvoiceForm extends Component
 {
+    use AiUnsavedForm;
+
     public ?SalesInvoice $invoice = null;
 
     public bool $isEditing = false;
@@ -200,6 +205,9 @@ class InvoiceForm extends Component
             ];
         }
 
+        if (! $this->isEditing) {
+            $this->mountAiInput('sales');
+        }
         $this->updatedWarehouseId();
         $this->recalculate();
     }
@@ -587,7 +595,18 @@ class InvoiceForm extends Component
                 $this->createRequestKey = $key;
                 $this->lastSavedPayloadDigest = $currentDigest;
 
-                $this->invoice = $commands->create($company, $user, $payload, $key);
+                $this->invoice = DB::transaction(function () use ($commands, $company, $user, $payload, $key): SalesInvoice {
+                    if ($this->aiFormToken !== null && $this->aiFormKey !== null) {
+                        app(AiDraftProvenance::class)->source($company, $user, $this->aiFormToken, session()->getId(), $this->aiFormKey, 'sales', $this->aiFormRevision);
+                    }
+                    $created = $commands->create($company, $user, $payload, $key);
+                    if ($this->aiDraftSourceId !== null) {
+                        app(AiDraftProvenance::class)->recordSales($company, $user, $this->aiDraftSourceId, $created, $payload, $key);
+                    }
+
+                    return $created;
+                });
+                $this->discardAiInput();
                 $this->isEditing = true;
             }
         } catch (\Throwable $e) {
@@ -760,7 +779,6 @@ class InvoiceForm extends Component
         $canChangePrice = $user->hasPermissionTo('sales.invoice.change_price');
         $canChangeDiscount = $user->hasPermissionTo('sales.invoice.change_discount');
         $canPost = $user->hasPermissionTo('sales.invoice.post');
-
         $customers = Customer::where('company_id', $company->id)->where('status', 'active')->orderBy('name_ar')->get();
         $currencies = $company->currencies()->where('enabled', true)->get();
         $warehouses = Warehouse::where('company_id', $company->id)->where('active', true)->get();

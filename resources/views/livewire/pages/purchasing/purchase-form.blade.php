@@ -4,6 +4,10 @@
         <span class="text-xs font-bold bg-surface-blue text-primary px-3 py-2 rounded-control">{{ __('purchasing.draft') }}</span>
     </header>
     <p class="p-3 bg-info-bg text-info text-sm rounded-control">{{ __('purchasing.draft_notice') }}</p>
+    @if ($publicId === null && $aiFormToken === null)
+        <livewire:ai.assistant-launcher context="purchase" />
+    @endif
+    @include('livewire.ai.unsaved-notice')
     @if($errors->any())<div role="alert" class="p-3 bg-danger-bg text-danger text-sm rounded-control"><ul class="list-disc ps-4">@foreach($errors->all() as $error)<li>{{ $error }}</li>@endforeach</ul></div>@endif
     @if($duplicateWarning)<p role="status" class="p-3 bg-warning-bg text-warning text-sm rounded-control">{{ __('purchasing.duplicate_vendor_invoice') }}</p>@endif
     <section class="bg-surface border border-border rounded-card p-4 grid sm:grid-cols-2 lg:grid-cols-4 gap-4">

@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use App\Application\AI\AiProviderDeadline;
 use App\Http\Middleware\SetCompanyContext;
 use App\Models\Company;
 use App\Models\CompanyUser;
@@ -30,6 +31,7 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
+        $this->app->scoped(AiProviderDeadline::class, fn () => new AiProviderDeadline);
         $this->app->singleton(CompanyContext::class, fn () => new CompanyContext);
         $this->app->singleton(AuditService::class, fn () => new AuditService);
         $this->app->scoped(PurchasePostingScope::class, fn () => new PurchasePostingScope);

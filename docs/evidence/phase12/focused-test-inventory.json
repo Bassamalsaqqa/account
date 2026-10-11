@@ -1,0 +1,464 @@
+{
+  "baseline": "c2e39a32271b14de99e6ffda55ec5b0ea400cb7e",
+  "date": "2026-10-11",
+  "method": "Latest passing testcase by class/name from bounded integration, security and economic runs; reruns deduplicated.",
+  "totals": {
+    "tests": 75,
+    "assertions": 460,
+    "failures": 0,
+    "phase12": 32,
+    "phase11": 43
+  },
+  "cases": [
+    {
+      "class": "Tests.Feature.Phase12.AssistantConcurrencyTest",
+      "test": "test_same_key_converges_to_one_reservation_on_independent_connections",
+      "assertions": 18,
+      "status": "PASS"
+    },
+    {
+      "class": "Tests.Feature.Phase12.AssistantConcurrencyTest",
+      "test": "test_distinct_keys_cannot_concurrently_exceed_the_same_company_or_actor_budget",
+      "assertions": 16,
+      "status": "PASS"
+    },
+    {
+      "class": "Tests.Feature.Phase12.AssistantConcurrencyTest",
+      "test": "test_same_key_with_conflicting_description_hash_cannot_replay",
+      "assertions": 16,
+      "status": "PASS"
+    },
+    {
+      "class": "Tests.Feature.Phase12.AssistantEconomicTest",
+      "test": "test_exact_jod_tax_discount_and_fx_are_calculated_only_by_canonical_draft_command",
+      "assertions": 7,
+      "status": "PASS"
+    },
+    {
+      "class": "Tests.Feature.Phase12.AssistantEconomicTest",
+      "test": "test_stock_carton_draft_preview_and_confirm_use_canonical_fefo_and_reconcile",
+      "assertions": 12,
+      "status": "PASS"
+    },
+    {
+      "class": "Tests.Feature.Phase12.AssistantEconomicTest",
+      "test": "test_changed_stock_blocks_old_confirmation_and_rolls_back_all_economic_effects",
+      "assertions": 3,
+      "status": "PASS"
+    },
+    {
+      "class": "Tests.Feature.Phase12.AssistantMigrationPreservationTest",
+      "test": "test_additive_audit_migration_round_trip_preserves_business_data_and_all_six_reconciliations",
+      "assertions": 22,
+      "status": "PASS"
+    },
+    {
+      "class": "Tests.Feature.Phase12.AssistantSecurityTest",
+      "test": "test_disabled_audio_is_404_with_zero_database_queries_and_no_provider_call",
+      "assertions": 5,
+      "status": "PASS"
+    },
+    {
+      "class": "Tests.Feature.Phase12.AssistantSecurityTest",
+      "test": "test_no_consent_or_provider_approval_cannot_reserve_or_send",
+      "assertions": 6,
+      "status": "PASS"
+    },
+    {
+      "class": "Tests.Feature.Phase12.AssistantSecurityTest",
+      "test": "test_foreign_customer_is_never_resolved_or_disclosed",
+      "assertions": 4,
+      "status": "PASS"
+    },
+    {
+      "class": "Tests.Feature.Phase12.AssistantSecurityTest",
+      "test": "test_cost_limited_reader_cannot_override_price_or_discount_or_default_to_another_unit",
+      "assertions": 4,
+      "status": "PASS"
+    },
+    {
+      "class": "Tests.Feature.Phase12.AssistantSecurityTest",
+      "test": "test_authorization_is_rechecked_after_a_provider_call",
+      "assertions": 3,
+      "status": "PASS"
+    },
+    {
+      "class": "Tests.Feature.Phase12.AssistantSecurityTest",
+      "test": "test_schema_rejects_injection_and_non_string_economic_values",
+      "assertions": 11,
+      "status": "PASS"
+    },
+    {
+      "class": "Tests.Feature.Phase12.AssistantSecurityTest",
+      "test": "test_arabic_digits_and_code_switching_use_exact_server_resolution",
+      "assertions": 5,
+      "status": "PASS"
+    },
+    {
+      "class": "Tests.Feature.Phase12.AssistantSecurityTest",
+      "test": "test_barcode_binds_its_authoritative_transaction_unit_and_conflicts_ask",
+      "assertions": 3,
+      "status": "PASS"
+    },
+    {
+      "class": "Tests.Feature.Phase12.AssistantSecurityTest",
+      "test": "test_pcm_samples_bound_actual_duration_and_refuse_malformed_compressed_or_long_audio",
+      "assertions": 6,
+      "status": "PASS"
+    },
+    {
+      "class": "Tests.Feature.Phase12.AssistantSecurityTest",
+      "test": "test_transcription_returns_editable_text_without_cache_or_recording_retention",
+      "assertions": 8,
+      "status": "PASS"
+    },
+    {
+      "class": "Tests.Feature.Phase12.AssistantSecurityTest",
+      "test": "test_gateway_sends_only_entered_text_and_refuses_private_destinations_redirects_and_oversized_responses",
+      "assertions": 9,
+      "status": "PASS"
+    },
+    {
+      "class": "Tests.Feature.Phase12.AssistantSecurityTest",
+      "test": "test_upload_route_uses_same_origin_auth_and_does_not_persist_raw_audio",
+      "assertions": 6,
+      "status": "PASS"
+    },
+    {
+      "class": "Tests.Feature.Phase12.AssistantSecurityTest",
+      "test": "test_speech_gateway_builds_a_valid_minimized_multipart_request",
+      "assertions": 1,
+      "status": "PASS"
+    },
+    {
+      "class": "Tests.Feature.Phase12.AssistantSecurityTest",
+      "test": "test_company_usage_requires_fresh_company_administration_permission",
+      "assertions": 3,
+      "status": "PASS"
+    },
+    {
+      "class": "Tests.Feature.Phase12.AssistantWorkflowTest",
+      "test": "test_ten_interpretation_retries_are_one_provider_request_and_zero_business_effects",
+      "assertions": 21,
+      "status": "PASS"
+    },
+    {
+      "class": "Tests.Feature.Phase12.AssistantWorkflowTest",
+      "test": "test_suggestion_only_populates_form_then_canonical_review_and_explicit_post",
+      "assertions": 17,
+      "status": "PASS"
+    },
+    {
+      "class": "Tests.Feature.Phase12.AssistantWorkflowTest",
+      "test": "test_cancel_forgets_proposal_and_never_creates_a_draft",
+      "assertions": 5,
+      "status": "PASS"
+    },
+    {
+      "class": "Tests.Feature.Phase12.AssistantWorkflowTest",
+      "test": "test_missing_and_duplicate_customer_names_require_clarification",
+      "assertions": 5,
+      "status": "PASS"
+    },
+    {
+      "class": "Tests.Feature.Phase12.AssistantWorkflowTest",
+      "test": "test_changed_request_payload_cannot_reuse_an_idempotency_key",
+      "assertions": 1,
+      "status": "PASS"
+    },
+    {
+      "class": "Tests.Feature.Phase12.AssistantWorkflowTest",
+      "test": "test_revoked_membership_refuses_an_already_resolved_token",
+      "assertions": 1,
+      "status": "PASS"
+    },
+    {
+      "class": "Tests.Feature.Phase12.AssistantWorkflowTest",
+      "test": "test_proposal_expires_and_changed_default_price_requires_reinterpretation",
+      "assertions": 3,
+      "status": "PASS"
+    },
+    {
+      "class": "Tests.Feature.Phase12.AssistantWorkflowTest",
+      "test": "test_budget_reservation_survives_failure_and_blocks_more_provider_calls",
+      "assertions": 6,
+      "status": "PASS"
+    },
+    {
+      "class": "Tests.Feature.Phase12.AssistantWorkflowTest",
+      "test": "test_disabling_ai_preserves_applied_manual_draft_save_and_audit",
+      "assertions": 4,
+      "status": "PASS"
+    },
+    {
+      "class": "Tests.Feature.Phase12.AssistantWorkflowTest",
+      "test": "test_expired_proposal_cache_is_pruned_without_removing_usage_audit",
+      "assertions": 5,
+      "status": "PASS"
+    },
+    {
+      "class": "Tests.Feature.Phase11.WebCommandParityTest",
+      "test": "test_save_draft_only_persists_draft_and_redirects_without_posting",
+      "assertions": 4,
+      "status": "PASS"
+    },
+    {
+      "class": "Tests.Feature.Phase11.WebCommandParityTest",
+      "test": "test_form_review_not_post_saves_draft_and_displays_actual_preview_shape",
+      "assertions": 13,
+      "status": "PASS"
+    },
+    {
+      "class": "Tests.Feature.Phase11.WebCommandParityTest",
+      "test": "test_explicit_confirm_then_one_post_with_double_click_idempotency",
+      "assertions": 6,
+      "status": "PASS"
+    },
+    {
+      "class": "Tests.Feature.Phase11.WebCommandParityTest",
+      "test": "test_detail_review_not_post_then_confirm_posts_invoice",
+      "assertions": 10,
+      "status": "PASS"
+    },
+    {
+      "class": "Tests.Feature.Phase11.WebCommandParityTest",
+      "test": "test_form_change_after_preview_rejects_confirmation_and_invalidates_preview",
+      "assertions": 5,
+      "status": "PASS"
+    },
+    {
+      "class": "Tests.Feature.Phase11.WebCommandParityTest",
+      "test": "test_expired_confirmation_keeps_real_invoice_draft",
+      "assertions": 5,
+      "status": "PASS"
+    },
+    {
+      "class": "Tests.Feature.Phase11.WebCommandParityTest",
+      "test": "test_exact_amount_parity_jod_and_percent_discount",
+      "assertions": 8,
+      "status": "PASS"
+    },
+    {
+      "class": "Tests.Feature.Phase11.WebCommandParityTest",
+      "test": "test_blocked_stock_prevents_confirm",
+      "assertions": 3,
+      "status": "PASS"
+    },
+    {
+      "class": "Tests.Feature.Phase11.WebCommandParityTest",
+      "test": "test_ar_en_blocker_code_translations_without_raw_leak",
+      "assertions": 3,
+      "status": "PASS"
+    },
+    {
+      "class": "Tests.Feature.Phase11.WebCommandParityTest",
+      "test": "test_no_exception_message_leak_on_unexpected_failure",
+      "assertions": 5,
+      "status": "PASS"
+    },
+    {
+      "class": "Tests.Feature.Phase11.WebCommandParityTest",
+      "test": "test_raw_float_or_integer_economic_inputs_are_refused",
+      "assertions": 9,
+      "status": "PASS"
+    },
+    {
+      "class": "Tests.Feature.Phase11.WebCommandParityTest",
+      "test": "test_translated_preview_error_and_actual_amount_fx_in_ar_and_en",
+      "assertions": 16,
+      "status": "PASS"
+    },
+    {
+      "class": "Tests.Feature.Phase11.WebCommandParityTest",
+      "test": "test_real_member_post_permission_revoked_after_preview",
+      "assertions": 5,
+      "status": "PASS"
+    },
+    {
+      "class": "Tests.Feature.Phase11.SalesCommandWorkflowTest",
+      "test": "test_create_draft_invoice_with_exact_decimals_and_receipt",
+      "assertions": 8,
+      "status": "PASS"
+    },
+    {
+      "class": "Tests.Feature.Phase11.SalesCommandWorkflowTest",
+      "test": "test_create_draft_invoice_idempotent_retry_returns_same_instance",
+      "assertions": 3,
+      "status": "PASS"
+    },
+    {
+      "class": "Tests.Feature.Phase11.SalesCommandWorkflowTest",
+      "test": "test_create_draft_invoice_conflict_on_changed_payload_with_same_key",
+      "assertions": 2,
+      "status": "PASS"
+    },
+    {
+      "class": "Tests.Feature.Phase11.SalesCommandWorkflowTest",
+      "test": "test_create_draft_invoice_scoped_by_actor_and_tenant",
+      "assertions": 3,
+      "status": "PASS"
+    },
+    {
+      "class": "Tests.Feature.Phase11.SalesCommandWorkflowTest",
+      "test": "test_create_draft_invoice_rejects_integer_and_float_economic_values",
+      "assertions": 4,
+      "status": "PASS"
+    },
+    {
+      "class": "Tests.Feature.Phase11.SalesCommandWorkflowTest",
+      "test": "test_create_draft_invoice_rejects_malformed_and_scientific_values",
+      "assertions": 4,
+      "status": "PASS"
+    },
+    {
+      "class": "Tests.Feature.Phase11.SalesCommandWorkflowTest",
+      "test": "test_create_draft_invoice_rejects_unknown_keys_and_malformed_idempotency_keys",
+      "assertions": 3,
+      "status": "PASS"
+    },
+    {
+      "class": "Tests.Feature.Phase11.SalesCommandWorkflowTest",
+      "test": "test_update_draft_invoice_updates_fields_and_persists_receipt",
+      "assertions": 7,
+      "status": "PASS"
+    },
+    {
+      "class": "Tests.Feature.Phase11.SalesCommandWorkflowTest",
+      "test": "test_preview_is_read_only_and_does_not_post_reserve_or_number",
+      "assertions": 13,
+      "status": "PASS"
+    },
+    {
+      "class": "Tests.Feature.Phase11.SalesCommandWorkflowTest",
+      "test": "test_preview_strictly_excludes_sensitive_cogs_and_unit_costs",
+      "assertions": 3,
+      "status": "PASS"
+    },
+    {
+      "class": "Tests.Feature.Phase11.SalesCommandWorkflowTest",
+      "test": "test_preview_and_execute_with_combined_repeated_stock_lines",
+      "assertions": 10,
+      "status": "PASS"
+    },
+    {
+      "class": "Tests.Feature.Phase11.SalesCommandWorkflowTest",
+      "test": "test_execute_posts_invoice_atomically_with_confirmation_token_and_receipt",
+      "assertions": 6,
+      "status": "PASS"
+    },
+    {
+      "class": "Tests.Feature.Phase11.SalesCommandWorkflowTest",
+      "test": "test_execute_idempotent_retry_does_not_repost",
+      "assertions": 3,
+      "status": "PASS"
+    },
+    {
+      "class": "Tests.Feature.Phase11.SalesCommandWorkflowTest",
+      "test": "test_execute_conflict_on_reused_key_with_different_token_or_target",
+      "assertions": 2,
+      "status": "PASS"
+    },
+    {
+      "class": "Tests.Feature.Phase11.SalesCommandWorkflowTest",
+      "test": "test_execute_rejects_tampered_and_invalid_tokens",
+      "assertions": 2,
+      "status": "PASS"
+    },
+    {
+      "class": "Tests.Feature.Phase11.SalesCommandWorkflowTest",
+      "test": "test_execute_rejects_expired_confirmation_token",
+      "assertions": 2,
+      "status": "PASS"
+    },
+    {
+      "class": "Tests.Feature.Phase11.SalesCommandWorkflowTest",
+      "test": "test_execute_detects_stale_line_revision_when_draft_was_modified",
+      "assertions": 2,
+      "status": "PASS"
+    },
+    {
+      "class": "Tests.Feature.Phase11.SalesCommandWorkflowTest",
+      "test": "test_execute_detects_stale_preview_revision_when_inventory_changes",
+      "assertions": 2,
+      "status": "PASS"
+    },
+    {
+      "class": "Tests.Feature.Phase11.SalesCommandWorkflowTest",
+      "test": "test_fresh_rbac_and_membership_check_on_replay_and_downgrade",
+      "assertions": 1,
+      "status": "PASS"
+    },
+    {
+      "class": "Tests.Feature.Phase11.SalesCommandWorkflowTest",
+      "test": "test_preview_requires_both_view_and_post_permissions_and_does_not_catch_auth_as_stock_blocker",
+      "assertions": 1,
+      "status": "PASS"
+    },
+    {
+      "class": "Tests.Feature.Phase11.SalesCommandWorkflowTest",
+      "test": "test_exact_currencies_ils_usd_jod_formatting_and_minor_units",
+      "assertions": 5,
+      "status": "PASS"
+    },
+    {
+      "class": "Tests.Feature.Phase11.SalesCommandWorkflowTest",
+      "test": "test_equivalent_decimal_retry_converges_to_same_receipt",
+      "assertions": 1,
+      "status": "PASS"
+    },
+    {
+      "class": "Tests.Feature.Phase11.SalesCommandWorkflowTest",
+      "test": "test_canonical_percent_discount_with_tax_exact_totals",
+      "assertions": 8,
+      "status": "PASS"
+    },
+    {
+      "class": "Tests.Feature.Phase11.SalesCommandWorkflowTest",
+      "test": "test_erased_draft_tombstone_returns_409_gone_on_retry",
+      "assertions": 3,
+      "status": "PASS"
+    },
+    {
+      "class": "Tests.Feature.Phase11.SalesCommandWorkflowTest",
+      "test": "test_stale_company_or_customer_identity_triggers_stale_preview_conflict",
+      "assertions": 2,
+      "status": "PASS"
+    },
+    {
+      "class": "Tests.Feature.Phase11.SalesCommandWorkflowTest",
+      "test": "test_preview_fresh_membership_role_and_status_checks",
+      "assertions": 2,
+      "status": "PASS"
+    },
+    {
+      "class": "Tests.Feature.Phase11.SalesCommandWorkflowTest",
+      "test": "test_replay_requires_fresh_view_permission",
+      "assertions": 1,
+      "status": "PASS"
+    },
+    {
+      "class": "Tests.Feature.Phase11.SalesCommandWorkflowTest",
+      "test": "test_missing_company_context_refuses_commands",
+      "assertions": 1,
+      "status": "PASS"
+    },
+    {
+      "class": "Tests.Feature.Phase11.SalesCommandWorkflowTest",
+      "test": "test_product_unit_tax_invalid_eligibility_blocks_preview",
+      "assertions": 5,
+      "status": "PASS"
+    },
+    {
+      "class": "Tests.Feature.Phase11.CommandMigrationPreservationTest",
+      "test": "test_forward_and_rollback_preserve_existing_financial_history_and_configuration",
+      "assertions": 20,
+      "status": "PASS"
+    },
+    {
+      "class": "Tests.Feature.Phase12.AssistantEconomicTest",
+      "test": "test_colloquial_dates_use_company_timezone_at_the_utc_day_boundary",
+      "assertions": 3,
+      "status": "PASS"
+    }
+  ]
+}

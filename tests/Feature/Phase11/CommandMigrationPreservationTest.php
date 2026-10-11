@@ -46,12 +46,13 @@ class CommandMigrationPreservationTest extends TestCase
         $this->assertTrue($posted->isPosted());
         $before = $this->businessFingerprint();
         $migration = '2026_10_11_100000_create_command_receipts_table';
-        $this->assertSame($migration, DB::table('migrations')->orderByDesc('migration')->value('migration'));
+        $this->assertTrue(DB::table('migrations')->where('migration', $migration)->exists());
         $migrationCount = DB::table('migrations')->count();
         $tableCount = count(Schema::getTables(DB::connection()->getDatabaseName()));
 
         $this->assertSame(0, Artisan::call('migrate:rollback', [
-            '--database' => DB::getDefaultConnection(), '--step' => 1, '--force' => true,
+            '--database' => DB::getDefaultConnection(), '--step' => $migrationCount, '--force' => true,
+            '--path' => 'database/migrations/'.$migration.'.php',
         ]), Artisan::output());
         $this->assertFalse(Schema::hasTable('command_receipts'));
         $this->assertSame($migrationCount - 1, DB::table('migrations')->count());
@@ -60,6 +61,7 @@ class CommandMigrationPreservationTest extends TestCase
 
         $this->assertSame(0, Artisan::call('migrate', [
             '--database' => DB::getDefaultConnection(), '--force' => true,
+            '--path' => 'database/migrations/'.$migration.'.php',
         ]), Artisan::output());
         $this->assertTrue(Schema::hasTable('command_receipts'));
         $this->assertSame($migrationCount, DB::table('migrations')->count());
