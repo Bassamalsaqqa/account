@@ -23,7 +23,7 @@ class DirectProviderContractTest extends TestCase
     {
         parent::setUp();
         Http::preventStrayRequests();
-        config(['ai_assistant.enabled' => true, 'ai_assistant.provider_approved' => true,
+        config(['ai_assistant.enabled' => true, 'ai_assistant.provider' => 'direct', 'ai_assistant.provider_approved' => true,
             'ai_assistant.speech_enabled' => true,
             'ai_assistant.provider_ipv4' => [
                 'deepseek' => ['global' => '8.8.8.8'], 'openai' => ['global' => '8.8.8.8'],

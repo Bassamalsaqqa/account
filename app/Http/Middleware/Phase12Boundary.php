@@ -17,7 +17,7 @@ final class Phase12Boundary
             return response()->json(['message' => 'Not found.'], 404)->header('Cache-Control', 'no-store');
         }
         if ($request->is('assistant/audio')) {
-            if (config('ai_assistant.enabled') !== true || config('ai_assistant.provider_approved') !== true || config('ai_assistant.speech_enabled') !== true) {
+            if (config('ai_assistant.enabled') !== true || config('ai_assistant.provider_approved') !== true || config('ai_assistant.provider') !== 'direct' || config('ai_assistant.speech_enabled') !== true) {
                 return response()->json(['message' => 'Not found.'], 404)->header('Cache-Control', 'no-store');
             }
             if ((int) $request->server('CONTENT_LENGTH', 0) > app(AiAudioLimits::class)->current()['max_bytes'] + 65536) {

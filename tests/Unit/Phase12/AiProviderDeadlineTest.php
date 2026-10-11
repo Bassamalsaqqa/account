@@ -17,7 +17,7 @@ class AiProviderDeadlineTest extends TestCase
 {
     public function test_foreground_allowance_is_bounded_and_not_reset_between_provider_attempts(): void
     {
-        config(['ai_assistant.enabled' => true, 'ai_assistant.provider_approved' => true,
+        config(['ai_assistant.enabled' => true, 'ai_assistant.provider' => 'direct', 'ai_assistant.provider_approved' => true,
             'ai_assistant.timeout_seconds' => 20,
             'ai_assistant.provider_ipv4' => ['deepseek' => ['global' => '8.8.8.8'], 'openai' => ['global' => '8.8.8.8']]]);
         Http::preventStrayRequests();
@@ -56,7 +56,7 @@ class AiProviderDeadlineTest extends TestCase
 
     public function test_missing_reviewed_destination_cannot_trigger_runtime_dns_or_http(): void
     {
-        config(['ai_assistant.enabled' => true, 'ai_assistant.provider_approved' => true, 'ai_assistant.provider_ipv4' => []]);
+        config(['ai_assistant.enabled' => true, 'ai_assistant.provider' => 'direct', 'ai_assistant.provider_approved' => true, 'ai_assistant.provider_ipv4' => []]);
         Http::preventStrayRequests();
         try {
             app(DirectProviderTransport::class)->send(app(ProviderCapabilityRegistry::class)->resolve(
@@ -64,6 +64,23 @@ class AiProviderDeadlineTest extends TestCase
             $this->fail('An unreviewed destination must not dispatch.');
         } catch (AssistantUnavailable $e) {
             $this->assertSame('provider_configuration', $e->reason);
+        }
+        Http::assertNothingSent();
+    }
+
+    public function test_none_and_legacy_gateway_modes_cannot_dispatch_a_direct_provider(): void
+    {
+        config(['ai_assistant.enabled' => true, 'ai_assistant.provider_approved' => true]);
+        Http::preventStrayRequests();
+        foreach (['none', 'gateway'] as $mode) {
+            config(['ai_assistant.provider' => $mode]);
+            try {
+                app(DirectProviderTransport::class)->send(app(ProviderCapabilityRegistry::class)->resolve(
+                    'deepseek', 'deepseek-flash', 'global', 'text_structured'), new ProviderCredential('synthetic-disabled-mode-credential'), []);
+                $this->fail('Direct transport must honor the global provider mode.');
+            } catch (AssistantUnavailable $e) {
+                $this->assertSame('disabled', $e->reason);
+            }
         }
         Http::assertNothingSent();
     }

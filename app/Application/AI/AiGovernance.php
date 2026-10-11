@@ -277,7 +277,7 @@ final class AiGovernance
     {
         return DB::transaction(function () use ($company, $actor, $id, $intent, $capability, $expectedRevision): array {
             $policy = $this->authorizeUse($company, $actor, $intent, $capability === 'audio_transcription');
-            if (config('ai_assistant.provider_approved') !== true) {
+            if (config('ai_assistant.provider_approved') !== true || config('ai_assistant.provider') !== 'direct') {
                 throw new AssistantUnavailable('disabled');
             }
             $connection = $this->ownedConnection($company, $actor, $id, true);

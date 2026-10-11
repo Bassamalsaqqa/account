@@ -31,7 +31,7 @@ class ProviderCapabilityMatrixTest extends TestCase
         parent::setUp();
         Http::preventStrayRequests();
         config([
-            'ai_assistant.enabled' => true,
+            'ai_assistant.enabled' => true, 'ai_assistant.provider' => 'direct',
             'ai_assistant.provider_approved' => true,
             'ai_assistant.speech_enabled' => true,
             'ai_assistant.max_audio_bytes' => 10485760,

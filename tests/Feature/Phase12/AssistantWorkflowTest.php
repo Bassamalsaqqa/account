@@ -35,6 +35,8 @@ class AssistantWorkflowTest extends TestCase
     {
         parent::setUp();
         $this->finalAiFixtures();
+        // Retained service-only regressions below intentionally exercise the superseded gateway.
+        config(['ai_assistant.provider' => 'gateway']);
     }
 
     public function test_ten_interpretation_retries_are_one_provider_request_and_zero_business_effects(): void

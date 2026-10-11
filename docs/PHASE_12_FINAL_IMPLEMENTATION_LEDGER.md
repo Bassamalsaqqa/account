@@ -96,3 +96,11 @@ Initial fixture errors in session/control-company setup were corrected. The mid-
 Independent-process Purchase concurrency is prepared as a manual AGY task at the committed 04bdb40 baseline; it owns two new test files and no runtime code. Additional company intent/global-button controls, resolver speech-name matching, Purchase/patch negative scenarios, foreground text-correction/manual-edit browser races, new-budget process concurrency, full responsive/accessibility flows, affected canonical integration regressions and final Owner Decision Ledger traceability remain in progress / NOT RUN. This is not final M6 acceptance.
 
 The protected Owner original and existing production/runtime configuration remain unchanged. No merge, deployment, production access/mutation, real provider/SMTP call, paid dispatch or GitHub CI occurred.
+
+## Provider-mode safeguard checkpoint
+
+Direct dispatch now requires `AI_ASSISTANT_PROVIDER=direct` in addition to enabled/approved switches. `none` and the superseded gateway mode cannot reach a direct provider; the audio boundary refuses before database access. Governance checks the mode before credential decryption and reservation. All defaults remain disabled.
+
+Focused unit verification: 50 tests / 286 assertions, PASS, including AGY matrix 29 / 130. The affected five-class feature batch ran 35 tests / 222 assertions with one fixture failure: governance still selected the legacy gateway. The direct-provider fixture was corrected and its six-test class rerun separately; the failed aggregate remains recorded privately rather than relabeled PASS. The corrected governance class passed: 6 tests / 29 assertions. The other four affected classes passed: 29 tests / 196 assertions.
+
+Latest successful per-class reports now cover **144 distinct focused PHP tests / 910 assertions**, with zero failures/errors/skips in the selected results (deduplicated evidence, not one full-suite execution). Pint, PHPStan and whitespace checks passed. Both owned disposable schemas from this safeguard checkpoint were cleaned. No migration, frontend asset or canonical financial writer changed in the provider-mode safeguard. Final M6 acceptance and the remaining source tasks above are still incomplete.

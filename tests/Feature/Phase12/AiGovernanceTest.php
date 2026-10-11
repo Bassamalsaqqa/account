@@ -28,6 +28,7 @@ class AiGovernanceTest extends TestCase
     {
         parent::setUp();
         $this->assistantFixtures();
+        config(['ai_assistant.provider' => 'direct']);
         $this->owner->update(['password' => Hash::make('synthetic-confirm-only')]);
         Http::preventStrayRequests();
     }

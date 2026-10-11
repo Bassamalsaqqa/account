@@ -22,6 +22,7 @@ trait FinalAiFixtures
     protected function finalAiFixtures(): void
     {
         $this->assistantFixtures();
+        config(['ai_assistant.provider' => 'direct']);
         $this->owner->update(['password' => Hash::make('synthetic-configuration-only')]);
         $governance = app(AiGovernance::class);
         $this->textConnection = $governance->provision($this->company, $this->owner, [

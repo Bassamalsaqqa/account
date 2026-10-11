@@ -23,7 +23,7 @@ final class DirectProviderTransport
      */
     public function send(array $route, ProviderCredential $credential, array $body, ?string $audio = null): array
     {
-        if (config('ai_assistant.enabled') !== true || config('ai_assistant.provider_approved') !== true) {
+        if (config('ai_assistant.enabled') !== true || config('ai_assistant.provider_approved') !== true || config('ai_assistant.provider') !== 'direct') {
             throw new AssistantUnavailable('disabled');
         }
         $route = app(ProviderCapabilityRegistry::class)->resolve(

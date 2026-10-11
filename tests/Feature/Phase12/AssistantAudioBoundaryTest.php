@@ -122,6 +122,20 @@ class AssistantAudioBoundaryTest extends TestCase
         Http::assertNothingSent();
     }
 
+    public function test_disabled_provider_modes_refuse_before_database_or_provider_access(): void
+    {
+        foreach (['none', 'gateway'] as $mode) {
+            config(['ai_assistant.provider' => $mode]);
+            DB::enableQueryLog();
+            DB::flushQueryLog();
+            $this->postJson(route('assistant.audio'), [])->assertNotFound()->assertJsonMissingPath('text');
+            $queries = DB::getQueryLog();
+            DB::disableQueryLog();
+            $this->assertSame([], $queries);
+        }
+        Http::assertNothingSent();
+    }
+
     private function input(UploadedFile $file): array
     {
         return ['audio' => $file, 'form_key' => (string) Str::uuid(), 'request_key' => (string) Str::uuid(),
