@@ -22,6 +22,13 @@
         </div>
     @endif
 
+    @if ($previewError)
+        <div role="alert" class="rounded-card border border-danger/30 bg-danger/10 p-3 text-xs text-danger font-medium flex items-center justify-between">
+            <span>{{ $previewError }}</span>
+            <button type="button" wire:click="$set('previewError', null)" class="text-danger hover:opacity-75 font-bold cursor-pointer">✕</button>
+        </div>
+    @endif
+
     <!-- Quick Barcode Scanner Bar -->
     <div class="bg-white p-4 rounded-card border border-border shadow-xs">
         <label for="invoice-barcodeSearch" class="block text-xs font-bold text-text-primary mb-1">
@@ -230,7 +237,7 @@
                                                 class="w-20 h-8 px-1 rounded-control border border-border bg-canvas text-[11px] {{ ! $canChangeDiscount ? 'opacity-70 cursor-not-allowed' : '' }}">
                                             <option value="none">{{ __('sales.none') }}</option>
                                             <option value="fixed">{{ __('sales.fixed') }}</option>
-                                            <option value="percentage">%</option>
+                                            <option value="percent">%</option>
                                         </select> @error('lines.'.$index.'.discount_type') <span id="invoice-desktop-line-{{ $index }}-discount-type-error" role="alert" class="text-danger text-[11px] block">{{ $message }}</span> @enderror
                                         @if (($line['discount_type'] ?? 'none') !== 'none')
                                             <input id="invoice-desktop-line-{{ $index }}-discount-value" aria-label="{{ __('sales.discount_val') }} {{ $index + 1 }}" @error('lines.'.$index.'.discount_value') aria-invalid="true" aria-describedby="invoice-desktop-line-{{ $index }}-discount-value-error" @enderror type="number"
@@ -373,7 +380,7 @@
                                             class="w-16 h-8 px-1 rounded-control border border-border bg-white text-[11px] {{ ! $canChangeDiscount ? 'opacity-70 cursor-not-allowed' : '' }}">
                                         <option value="none">{{ __('sales.none') }}</option>
                                         <option value="fixed">{{ __('sales.fixed') }}</option>
-                                        <option value="percentage">%</option>
+                                        <option value="percent">%</option>
                                     </select> @error('lines.'.$index.'.discount_type') <span id="invoice-mobile-line-{{ $index }}-discount-type-error" role="alert" class="text-danger text-[11px] block">{{ $message }}</span> @enderror
                                     @if (($line['discount_type'] ?? 'none') !== 'none')
                                         <input id="invoice-mobile-line-{{ $index }}-discount-value" aria-label="{{ __('sales.discount_val') }} {{ $index + 1 }}" @error('lines.'.$index.'.discount_value') aria-invalid="true" aria-describedby="invoice-mobile-line-{{ $index }}-discount-value-error" @enderror type="number"
@@ -457,24 +464,36 @@
             </div>
         </div>
 
+        <!-- Phase 11 Command Preview Panel -->
+        @if ($showPreview && $previewData)
+            <div class="pt-4 border-t border-border">
+                <x-sales-command-preview :preview="$previewData" :invoice="$invoice" :currency="$currency_code" confirm-action="confirmPost" cancel-action="cancelPreview" cancel-return-id="invoice-post-button" />
+            </div>
+        @endif
+
         <!-- Buttons -->
-        <div class="flex items-center justify-end gap-3 pt-4 border-t border-border">
-            <a href="{{ $isEditing ? route('invoices.show', $invoice->public_id) : route('invoices.index') }}"
-               class="px-4 py-2 rounded-control border border-border text-xs font-bold text-text-secondary hover:bg-surface-soft transition-colors">
-                {{ __('sales.cancel') }}
-            </a>
-            <button type="button"
-                    wire:click="save(false)"
-                    class="px-4 py-2 rounded-control border border-primary text-primary hover:bg-primary-50 text-xs font-bold transition-colors cursor-pointer">
-                {{ __('sales.save_draft') }}
-            </button>
-            @if ($canPost)
+        @if (! $showPreview)
+            <div class="flex items-center justify-end gap-3 pt-4 border-t border-border">
+                <a href="{{ $isEditing ? route('invoices.show', $invoice->public_id) : route('invoices.index') }}"
+                   class="px-4 py-2 rounded-control border border-border text-xs font-bold text-text-secondary hover:bg-surface-soft transition-colors">
+                    {{ __('sales.cancel') }}
+                </a>
                 <button type="button"
-                        wire:click="save(true)"
-                        class="px-5 py-2 rounded-control bg-primary text-white text-xs font-bold hover:bg-primary-hover transition-colors shadow-sm cursor-pointer">
-                    ⚡ {{ __('sales.post') }}
+                        wire:click="save(false)"
+                        wire:loading.attr="disabled"
+                        class="px-4 py-2 rounded-control border border-primary text-primary hover:bg-primary-50 text-xs font-bold transition-colors cursor-pointer">
+                    {{ __('sales.save_draft') }}
                 </button>
-            @endif
-        </div>
+                @if ($canPost)
+                    <button id="invoice-post-button"
+                            type="button"
+                            wire:click="save(true)"
+                            wire:loading.attr="disabled"
+                            class="px-5 py-2 rounded-control bg-primary text-white text-xs font-bold hover:bg-primary-hover transition-colors shadow-sm cursor-pointer">
+                        ⚡ {{ __('commands.review_post') }}
+                    </button>
+                @endif
+            </div>
+        @endif
     </div>
 </div>

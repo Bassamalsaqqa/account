@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Middleware\EnsureCompanyContext;
+use App\Http\Middleware\Phase11ApiBoundary;
 use App\Http\Middleware\PublicDocumentHeaders;
 use App\Http\Middleware\SetCompanyContext;
 use App\Http\Middleware\SetLocale;
@@ -15,6 +16,7 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
+        $middleware->prepend(Phase11ApiBoundary::class);
         $middleware->web(prepend: [PublicDocumentHeaders::class]);
         $middleware->web(append: [
             SetCompanyContext::class,

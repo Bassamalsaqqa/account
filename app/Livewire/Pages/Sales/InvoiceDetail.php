@@ -4,16 +4,22 @@ declare(strict_types=1);
 
 namespace App\Livewire\Pages\Sales;
 
-use App\Actions\Sales\PostSalesInvoiceAction;
 use App\Actions\Sales\VoidSalesInvoiceAction;
+use App\Application\Commands\SalesInvoiceCommands;
+use App\Exceptions\NoActiveCompanyException;
 use App\Models\PublicShare;
 use App\Models\SalesInvoice;
 use App\Services\Sales\PublicShareService;
 use App\Support\Tenancy\CompanyContext;
 use Carbon\Carbon;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Contracts\View\View;
+use Illuminate\Support\Str;
 use Livewire\Attributes\Layout;
+use Livewire\Attributes\Locked;
 use Livewire\Component;
+use Symfony\Component\HttpKernel\Exception\ConflictHttpException;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 
 #[Layout('layouts.app')]
 class InvoiceDetail extends Component
@@ -32,6 +38,30 @@ class InvoiceDetail extends Component
 
     public string $voidReason = '';
 
+    // Phase 11 Command Parity & State Guarding
+    #[Locked]
+    public ?string $confirmationToken = null;
+
+    #[Locked]
+    public ?string $executeKey = null;
+
+    public bool $showPreview = false;
+
+    /**
+     * @var array<string, mixed>|null
+     */
+    #[Locked]
+    public ?array $previewData = null;
+
+    public ?string $previewError = null;
+
+    public function updated(?string $property = null): void
+    {
+        if ($this->showPreview && ! in_array($property, ['showPreview', 'confirmationToken', 'executeKey', 'previewData', 'previewError'], true)) {
+            $this->cancelPreview();
+        }
+    }
+
     public function mount(string $publicId, CompanyContext $context): void
     {
         $company = $context->company();
@@ -45,18 +75,74 @@ class InvoiceDetail extends Component
             ->where('company_id', $company->id)
             ->where('public_id', $publicId)
             ->firstOrFail();
-
     }
 
-    public function postInvoice(PostSalesInvoiceAction $postAction): void
+    public function postInvoice(SalesInvoiceCommands $commands): void
     {
         $user = auth()->user();
-        if (! $user->hasPermissionTo('sales.invoice.post')) {
+        if (! $user || ! $user->hasPermissionTo('sales.invoice.post')) {
             abort(403, 'Unauthorized.');
         }
 
-        $this->invoice = $postAction->execute($this->invoice, $user);
-        session()->flash('success', __('sales.posted_successfully'));
+        if (! $this->invoice->isDraft()) {
+            abort(400, 'Invoice is not in draft status.');
+        }
+
+        $this->previewError = null;
+
+        try {
+            $preview = $commands->preview($this->invoice, $user);
+            $this->previewData = $preview;
+            $this->confirmationToken = $preview['confirmation_token'] ?? null;
+            $this->executeKey = (string) Str::uuid();
+            $this->showPreview = true;
+        } catch (\Throwable $e) {
+            if ($e instanceof AuthorizationException || $e instanceof NoActiveCompanyException || ($e instanceof HttpException && $e->getStatusCode() === 403)) {
+                throw $e;
+            }
+            $this->showPreview = false;
+            $this->previewError = $this->resolveUserErrorMessage($e);
+        }
+    }
+
+    public function confirmPost(SalesInvoiceCommands $commands): void
+    {
+        $user = auth()->user();
+        if (! $user || ! $user->hasPermissionTo('sales.invoice.post')) {
+            abort(403, 'Unauthorized.');
+        }
+
+        if (! $this->showPreview || ! $this->confirmationToken) {
+            $this->previewError = __('commands.preview_expired');
+
+            return;
+        }
+
+        if (! empty($this->previewData['blockers']) || ($this->previewData['can_execute'] ?? true) === false) {
+            $this->previewError = __('commands.cannot_confirm_blockers');
+
+            return;
+        }
+
+        try {
+            $this->invoice = $commands->execute($this->invoice, $user, $this->confirmationToken, $this->executeKey);
+            $this->cancelPreview();
+            session()->flash('success', __('sales.posted_successfully'));
+        } catch (\Throwable $e) {
+            if ($e instanceof AuthorizationException || $e instanceof NoActiveCompanyException || ($e instanceof HttpException && $e->getStatusCode() === 403)) {
+                throw $e;
+            }
+            $this->cancelPreview();
+            $this->previewError = $this->resolveUserErrorMessage($e);
+        }
+    }
+
+    public function cancelPreview(): void
+    {
+        $this->showPreview = false;
+        $this->previewData = null;
+        $this->confirmationToken = null;
+        $this->executeKey = null;
     }
 
     public function voidInvoice(VoidSalesInvoiceAction $voidAction): void
@@ -108,6 +194,41 @@ class InvoiceDetail extends Component
         }
         $this->shareUrl = null;
         session()->flash('success', __('sales.share_revoked'));
+    }
+
+    protected function resolveUserErrorMessage(\Throwable $e): string
+    {
+        if ($e instanceof AuthorizationException
+            || $e instanceof NoActiveCompanyException
+            || ($e instanceof HttpException && $e->getStatusCode() === 403)) {
+            throw $e;
+        }
+
+        if ($e instanceof \InvalidArgumentException) {
+            $msg = strtolower($e->getMessage());
+            if (str_contains($msg, 'token') || str_contains($msg, 'expired') || str_contains($msg, 'stale')) {
+                return __('commands.preview_expired');
+            }
+            if (str_contains($msg, 'warehouse')) {
+                return __('commands.code_warehouse_inactive');
+            }
+            if (str_contains($msg, 'customer')) {
+                return __('commands.code_customer_inactive');
+            }
+            if (str_contains($msg, 'stock') || str_contains($msg, 'insufficient')) {
+                return __('commands.code_insufficient_stock');
+            }
+
+            return __('commands.code_validation_failed');
+        }
+
+        if ($e instanceof ConflictHttpException
+            || $e->getCode() === 409
+            || ($e instanceof HttpException && $e->getStatusCode() === 409)) {
+            return __('commands.conflict_error');
+        }
+
+        return __('commands.generic_error');
     }
 
     public function render(): View
