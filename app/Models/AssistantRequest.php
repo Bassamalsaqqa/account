@@ -12,7 +12,7 @@ class AssistantRequest extends Model
     use BelongsToCompany;
 
     /** @var list<string> */
-    protected $fillable = ['company_id', 'user_id', 'request_key', 'purpose', 'input_hash', 'provider', 'status', 'reserved_cost_micros', 'reported_cost_micros', 'input_units', 'output_units', 'audio_seconds', 'resolved_hash', 'approved_hash', 'approved_command', 'command_key', 'sales_invoice_id', 'failure_code'];
+    protected $fillable = ['company_id', 'user_id', 'request_key', 'purpose', 'input_hash', 'provider', 'status', 'reserved_cost_micros', 'reported_cost_micros', 'input_units', 'output_units', 'audio_seconds', 'resolved_hash', 'approved_hash', 'approved_command', 'command_key', 'sales_invoice_id', 'failure_code', 'intent_kind', 'model', 'region', 'credential_source', 'connection_id', 'connection_revision', 'policy_revision', 'attempt_count', 'estimated_cost_micros', 'cost_status', 'pricing_reference', 'purchase_id', 'form_key'];
 
     /** @var list<string> */
     protected $hidden = ['approved_command'];

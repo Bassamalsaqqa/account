@@ -43,21 +43,25 @@ class AssistantMigrationPreservationTest extends TestCase
         $this->salesFixtures();
         $posted = $this->invoice('100.125', '3.5000000000');
         $this->assertTrue($posted->isPosted());
-        $migration = '2026_10_11_120000_create_assistant_requests_table';
+        $migration = '2026_10_11_130000_add_ai_tenant_governance_and_purchase_draft_receipts';
         $this->assertSame($migration, DB::table('migrations')->orderByDesc('migration')->value('migration'));
         $before = $this->fingerprint();
         $tables = count(Schema::getTables(DB::connection()->getDatabaseName()));
         $migrations = DB::table('migrations')->count();
-        $this->assertSame(85, $tables);
-        $this->assertSame(65, $migrations);
+        $this->assertSame(89, $tables);
+        $this->assertSame(66, $migrations);
         $this->assertSame(0, Artisan::call('migrate:rollback', ['--step' => 1, '--force' => true]), Artisan::output());
-        $this->assertFalse(Schema::hasTable('assistant_requests'));
+        $this->assertTrue(Schema::hasTable('assistant_requests'));
+        $this->assertFalse(Schema::hasTable('ai_provider_connections'));
+        $this->assertFalse(Schema::hasColumn('assistant_requests', 'purchase_id'));
         $this->assertTrue(Schema::hasTable('command_receipts'));
-        $this->assertSame($tables - 1, count(Schema::getTables(DB::connection()->getDatabaseName())));
+        $this->assertSame($tables - 4, count(Schema::getTables(DB::connection()->getDatabaseName())));
         $this->assertSame($migrations - 1, DB::table('migrations')->count());
         $this->assertSame($before, $this->fingerprint());
         $this->assertSame(0, Artisan::call('migrate', ['--path' => 'database/migrations/'.$migration.'.php', '--force' => true]), Artisan::output());
         $this->assertTrue(Schema::hasTable('assistant_requests'));
+        $this->assertTrue(Schema::hasTable('ai_provider_connections'));
+        $this->assertTrue(Schema::hasColumn('assistant_requests', 'purchase_id'));
         $this->assertSame($tables, count(Schema::getTables(DB::connection()->getDatabaseName())));
         $this->assertSame($migrations, DB::table('migrations')->count());
         $this->assertSame($before, $this->fingerprint());
@@ -74,7 +78,7 @@ class AssistantMigrationPreservationTest extends TestCase
     {
         $rows = [];
         foreach (Schema::getTableListing(DB::connection()->getDatabaseName(), false) as $table) {
-            if (in_array($table, ['assistant_requests', 'migrations', 'sessions', 'cache', 'cache_locks'], true)) {
+            if (in_array($table, ['assistant_requests', 'ai_company_policies', 'ai_provider_connections', 'ai_user_preferences', 'ai_purchase_draft_receipts', 'migrations', 'sessions', 'cache', 'cache_locks'], true)) {
                 continue;
             }
             $records = DB::table($table)->get()->map(static fn ($row): string => json_encode($row, JSON_THROW_ON_ERROR))->all();

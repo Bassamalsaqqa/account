@@ -9,6 +9,11 @@ use Spatie\Permission\PermissionRegistrar;
 
 class CompanyRoleService
 {
+    public const AI_PERMISSIONS = [
+        'ai.assistant.use', 'ai.sales.use', 'ai.purchases.use',
+        'ai.settings.manage', 'ai.credentials.manage', 'ai.personal_credentials.manage',
+    ];
+
     public const PHASE9_PERMISSIONS = [
         'settings.documents.manage', 'purchasing.document.pdf', 'money.receipt.share',
         'catalogs.view', 'catalogs.manage', 'catalogs.publish', 'catalogs.share',
@@ -18,6 +23,7 @@ class CompanyRoleService
     public const PROTECTED_PERMISSIONS = [
         'settings.documents.manage', 'money.receipt.share', 'catalogs.publish',
         'catalogs.share', 'catalogs.show_prices',
+        'ai.settings.manage', 'ai.credentials.manage', 'ai.personal_credentials.manage',
     ];
 
     /**
@@ -26,6 +32,7 @@ class CompanyRoleService
      * @var list<string>
      */
     public const PERMISSIONS = [
+        ...self::AI_PERMISSIONS,
         'settings.documents.manage',
         'purchasing.document.pdf',
         'money.receipt.share',
@@ -221,7 +228,7 @@ class CompanyRoleService
             'name' => 'Administrator',
             'guard_name' => 'web',
         ]);
-        $adminRole->syncPermissions($catalogPermissions->reject(fn ($permission) => in_array($permission->name, self::PHASE9_PERMISSIONS, true)));
+        $adminRole->syncPermissions($catalogPermissions->reject(fn ($permission) => in_array($permission->name, [...self::PHASE9_PERMISSIONS, ...self::AI_PERMISSIONS], true)));
 
         // 3. Manager: Operational + view settings + reports, no role management
         $managerPerms = [
