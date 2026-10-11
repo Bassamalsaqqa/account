@@ -6,12 +6,15 @@ namespace App\Livewire\Pages\Purchasing;
 
 use App\Actions\Purchasing\CreatePurchaseDraftAction;
 use App\Actions\Purchasing\UpdatePurchaseDraftAction;
+use App\Application\AI\AiDraftProvenance;
+use App\Application\AI\PurchaseDraftCommands;
 use App\Domain\Inventory\Exceptions\InvalidQuantityException;
 use App\Domain\Inventory\Exceptions\InvalidUnitConversionException;
 use App\Domain\Money\Exceptions\InvalidMoneyException;
 use App\Domain\Purchasing\PurchaseCalculator;
 use App\Domain\Purchasing\Queries\VendorProductPriceHistoryQuery;
 use App\Domain\Sales\Calculators\SalesDocumentTotalsCalculator;
+use App\Livewire\Concerns\AiUnsavedForm;
 use App\Livewire\Pages\Purchasing\Concerns\AuthorizesPurchasingPages;
 use App\Models\Company;
 use App\Models\Product;
@@ -28,6 +31,7 @@ use App\Support\Tenancy\CompanyContext;
 use Brick\Math\Exception\MathException;
 use Illuminate\Contracts\View\View;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
+use Illuminate\Support\Facades\DB;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Locked;
 use Livewire\Component;
@@ -35,6 +39,7 @@ use Livewire\Component;
 #[Layout('layouts.app')]
 class PurchaseForm extends Component
 {
+    use AiUnsavedForm;
     use AuthorizesPurchasingPages;
 
     #[Locked]
@@ -105,6 +110,9 @@ class PurchaseForm extends Component
                 $this->warehouse_id = null;
             }
             $this->addLine();
+        }
+        if ($publicId === null) {
+            $this->mountAiInput('purchase');
         }
         $this->previousCurrencyCode = $this->currency_code;
         $this->recalculate();
@@ -283,13 +291,20 @@ class PurchaseForm extends Component
         }
         try {
             $purchase = $this->publicId === null
-                ? app(CreatePurchaseDraftAction::class)->execute($company, auth()->user(), $data)
+                ? ($this->aiFormToken !== null && $this->aiFormKey !== null
+                    ? DB::transaction(function () use ($company): Purchase {
+                        app(AiDraftProvenance::class)->source($company, auth()->user(), $this->aiFormToken, session()->getId(), $this->aiFormKey, 'purchase', $this->aiFormRevision);
+
+                        return app(PurchaseDraftCommands::class)->create($company, auth()->user(), $this->aiEditablePayload(), $this->aiFormKey, $this->aiDraftSourceId);
+                    })
+                    : app(CreatePurchaseDraftAction::class)->execute($company, auth()->user(), $data))
                 : app(UpdatePurchaseDraftAction::class)->execute(Purchase::where('company_id', $company->id)->where('public_id', $this->publicId)->firstOrFail(), auth()->user(), $data);
         } catch (\InvalidArgumentException|MathException|InvalidMoneyException|InvalidQuantityException|InvalidUnitConversionException $exception) {
             $this->addError('draft', __('purchasing.invalid_draft'));
 
             return null;
         }
+        $this->discardAiInput();
         session()->flash('success', __('purchasing.draft_saved'));
 
         return redirect()->route('purchases.show', $purchase->public_id);

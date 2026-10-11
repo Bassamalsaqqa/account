@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\AI;
 
+use App\Application\AI\AiProviderDeadline;
 use App\Application\AI\AssistantUnavailable;
 use App\Application\AI\ProviderCapabilityRegistry;
 use App\Application\AI\ProviderCredential;
@@ -32,6 +33,8 @@ final class DirectProviderTransport
         if ($route['capability'] === 'audio_transcription' && config('ai_assistant.speech_enabled') !== true) {
             throw new AssistantUnavailable('disabled');
         }
+        $deadline = app(AiProviderDeadline::class);
+        $deadline->remaining();
         $base = (string) $route['base_url'];
         $host = (string) parse_url($base, PHP_URL_HOST);
         $pinned = config('ai_assistant.provider_ipv4.'.$route['provider'].'.'.$route['region']);
@@ -51,8 +54,8 @@ final class DirectProviderTransport
             throw new AssistantUnavailable('audio_invalid');
         }
         try {
-            return $credential->use(function (string $key) use ($base, $host, $addresses, $multipart, $path, $body, $audio): array {
-                $request = Http::withToken($key)->acceptJson()->timeout(min(25, max(1, (int) config('ai_assistant.timeout_seconds'))))
+            return $credential->use(function (string $key) use ($base, $host, $addresses, $multipart, $path, $body, $audio, $deadline): array {
+                $request = Http::withToken($key)->acceptJson()->timeout($deadline->remaining())
                     ->connectTimeout(5)->withoutRedirecting()->withOptions([
                         'verify' => true, 'stream' => true, 'read_timeout' => 5, 'proxy' => '',
                         'curl' => [CURLOPT_RESOLVE => [$host.':443:'.$addresses[0]], CURLOPT_PROXY => ''],
@@ -68,6 +71,7 @@ final class DirectProviderTransport
                 try {
                     $bytes = '';
                     while (! $stream->eof() && strlen($bytes) <= 131072) {
+                        $deadline->remaining();
                         $bytes .= $stream->read(8192);
                     }
                 } finally {

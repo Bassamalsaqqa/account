@@ -27,10 +27,17 @@ final class DirectTextProvider
         $format = $route['strict_json']
             ? ['type' => 'json_schema', 'json_schema' => ['name' => 'transaction_proposal', 'strict' => true, 'schema' => $schema]]
             : ['type' => 'json_object'];
+        $schemaJson = json_encode($schema, JSON_THROW_ON_ERROR);
+        $system = 'Return JSON only. No tools or database IDs. Decimal strings. Null for missing or uncertain fields. Allowed intent: '.$intent.'. '
+            .($route['strict_json'] ? 'Follow the response schema.' : 'Schema: '.$schemaJson);
+        // Byte-bound input conservatively rather than guessing a token count from characters.
+        if (strlen($system) + strlen($text) + ($route['strict_json'] ? strlen($schemaJson) : 0) + 256 > (int) config('ai_assistant.max_input_tokens')) {
+            throw new AssistantUnavailable('input_invalid');
+        }
         $body = [
             'model' => $model, 'stream' => false,
             'messages' => [
-                ['role' => 'system', 'content' => 'Return only JSON matching this schema. Never execute tools. References are spoken names, not database IDs. Decimal values must be strings. Use null for missing or uncertain values. Allowed intent: '.$intent.'. Schema: '.json_encode($schema, JSON_THROW_ON_ERROR)],
+                ['role' => 'system', 'content' => $system],
                 ['role' => 'user', 'content' => $text],
             ],
             'response_format' => $format,
@@ -38,6 +45,9 @@ final class DirectTextProvider
         ];
         if ($provider === 'deepseek') {
             $body['thinking'] = ['type' => 'disabled'];
+        }
+        if ($provider === 'qwen') {
+            $body['enable_thinking'] = false;
         }
         $result = app(DirectProviderTransport::class)->send($route, $credential, $body);
         $content = $result['choices'][0]['message']['content'] ?? null;
@@ -57,7 +67,7 @@ final class DirectTextProvider
         foreach (['prompt_tokens' => 'input_units', 'completion_tokens' => 'output_units'] as $from => $to) {
             $count = $result['usage'][$from] ?? null;
             if ($count !== null) {
-                if (! is_int($count) || $count < 0 || $count > 1000000000) {
+                if (! is_int($count) || $count < 0 || $count > (int) config('ai_assistant.'.($to === 'input_units' ? 'max_input_tokens' : 'max_output_tokens'))) {
                     throw new AssistantUnavailable('provider_invalid');
                 }
                 $usage[$to] = $count;

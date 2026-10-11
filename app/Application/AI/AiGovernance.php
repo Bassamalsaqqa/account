@@ -10,6 +10,7 @@ use App\Models\AiUserPreference;
 use App\Models\Company;
 use App\Models\CompanyUser;
 use App\Models\User;
+use App\Services\Audit\AuditService;
 use App\Services\Sales\SalesActorGuard;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\Crypt;
@@ -40,6 +41,9 @@ final class AiGovernance
             if (! in_array($intent, ['sales', 'purchase', 'auto'], true)) {
                 throw new AssistantUnavailable('intent_unsupported');
             }
+            if ($intent === 'auto' && $this->allowedIntents($company, $actor) === []) {
+                throw new AuthorizationException('At least one permitted canonical AI workflow is required.');
+            }
             if ($intent !== 'auto') {
                 $permissions = $intent === 'sales'
                     ? ['ai.sales.use', 'sales.invoice.create', 'sales.invoice.view']
@@ -57,8 +61,31 @@ final class AiGovernance
         });
     }
 
+    /** @return list<string> */
+    public function allowedIntents(Company $company, User $actor): array
+    {
+        $allowed = [];
+        foreach ([
+            'sales' => ['ai.assistant.use', 'ai.sales.use', 'sales.invoice.create', 'sales.invoice.view'],
+            'purchase' => ['ai.assistant.use', 'ai.purchases.use', 'purchasing.purchase.create', 'purchasing.purchase.view', 'purchasing.cost.view'],
+        ] as $intent => $permissions) {
+            try {
+                DB::transaction(function () use ($company, $actor, $permissions): void {
+                    foreach ($permissions as $permission) {
+                        $this->authorizeCapability($company, $actor, $permission);
+                    }
+                });
+                $allowed[] = $intent;
+            } catch (AuthorizationException) {
+                // No candidate, cost or credential data accompanies a denied capability.
+            }
+        }
+
+        return $allowed;
+    }
+
     /** @param array<string, mixed> $input */
-    public function updatePolicy(Company $company, User $actor, array $input): AiCompanyPolicy
+    public function updatePolicy(Company $company, User $actor, array $input, ?int $expectedRevision = null): AiCompanyPolicy
     {
         if (array_diff(array_keys($input), ['enabled', 'personal_credentials_enabled', 'follow_up_enabled', 'workflow_mode', 'speech_method', 'settings']) !== []) {
             throw new AssistantUnavailable('policy_invalid');
@@ -71,17 +98,41 @@ final class AiGovernance
         ])->validate();
         $values['settings'] = $this->validateSettings($values['settings']);
 
-        return DB::transaction(function () use ($company, $actor, $values): AiCompanyPolicy {
+        return DB::transaction(function () use ($company, $actor, $values, $expectedRevision): AiCompanyPolicy {
             $this->authorizeCapability($company, $actor, 'ai.settings.manage');
             $policy = AiCompanyPolicy::where('company_id', $company->id)->lockForUpdate()->first()
                 ?? new AiCompanyPolicy(['company_id' => $company->id, 'revision' => 0]);
+            if ($expectedRevision !== null && (int) $policy->revision !== $expectedRevision) {
+                throw new AssistantUnavailable('proposal_stale');
+            }
             if ((bool) $values['enabled'] !== (bool) $policy->enabled
                 || (bool) $values['personal_credentials_enabled'] !== (bool) $policy->personal_credentials_enabled) {
                 $this->requireOwner($company, $actor);
             }
+            $settings = $values['settings'];
+            foreach ($settings['allowed_connections'] as $id) {
+                if (! AiProviderConnection::where('company_id', $company->id)->whereNull('owner_user_id')->where('public_id', $id)->exists()) {
+                    throw new AssistantUnavailable('policy_invalid');
+                }
+            }
+            foreach (['text_connection' => 'text_structured', 'speech_connection' => 'audio_transcription'] as $field => $capability) {
+                foreach ([$settings[$field] ?? null, $settings['fallback'][$field] ?? null] as $id) {
+                    if ($id !== null && (! in_array($id, $settings['allowed_connections'], true)
+                        || ! AiProviderConnection::where('company_id', $company->id)->whereNull('owner_user_id')
+                            ->where('public_id', $id)->where('capability', $capability)->exists())) {
+                        throw new AssistantUnavailable('policy_invalid');
+                    }
+                }
+            }
+            foreach (array_keys($settings['pricing']) as $id) {
+                if (! in_array($id, [...$settings['allowed_connections'], ...($settings['allowed_personal_routes'] ?? [])], true)) {
+                    throw new AssistantUnavailable('policy_invalid');
+                }
+            }
             $policy->fill($values);
             $policy->revision = (int) $policy->revision + 1;
             $policy->save();
+            app(AuditService::class)->log((int) $company->id, 'ai.policy.updated', 'AI company policy updated.', (int) $actor->id, $policy, meta: ['revision' => $policy->revision, 'enabled' => $policy->enabled]);
 
             return $policy;
         });
@@ -110,7 +161,7 @@ final class AiGovernance
                 'company_id' => $company->id, 'public_id' => (string) Str::uuid(), 'revision' => 0,
                 'owner_user_id' => $source === 'personal_byok' ? $actor->id : null,
                 'credential_source' => $source,
-            ]) : $this->ownedConnection($company, $actor, $replaceId, true);
+            ]) : $this->findOwnedConnection($company, $actor, $replaceId, true);
             if ($connection->credential_source !== $source) {
                 throw new AuthorizationException('Credential ownership cannot change.');
             }
@@ -121,6 +172,7 @@ final class AiGovernance
             ]);
             $connection->revision = (int) $connection->revision + 1;
             $connection->save();
+            app(AuditService::class)->log((int) $company->id, 'ai.credential.configured', 'AI provider connection configured.', (int) $actor->id, $connection, meta: ['public_id' => $connection->public_id, 'provider' => $connection->provider, 'model' => $connection->model, 'region' => $connection->region, 'source' => $connection->credential_source, 'revision' => $connection->revision]);
 
             return $connection;
         });
@@ -129,12 +181,13 @@ final class AiGovernance
     public function revoke(Company $company, User $actor, string $id, #[SensitiveParameter] string $password): void
     {
         DB::transaction(function () use ($company, $actor, $id, $password): void {
-            $connection = $this->ownedConnection($company, $actor, $id, true);
-            $this->authorizeCredential($company, $actor, $connection->credential_source);
+            $connection = $this->findOwnedConnection($company, $actor, $id, true);
+            $this->authorizeCredential($company, $actor, $connection->credential_source, false);
             $this->reauthenticate($actor, $password);
             // Preserve ownership/version metadata; erase ciphertext after explicit revocation.
             $connection->update(['secret_ciphertext' => '', 'revoked_at' => now(), 'revision' => (int) $connection->revision + 1,
                 'verification_status' => 'revoked']);
+            app(AuditService::class)->log((int) $company->id, 'ai.credential.revoked', 'AI provider connection revoked.', (int) $actor->id, $connection, meta: ['public_id' => $connection->public_id, 'revision' => $connection->revision]);
         });
     }
 
@@ -142,7 +195,7 @@ final class AiGovernance
     public function validateConnection(Company $company, User $actor, string $id, #[SensitiveParameter] string $password): string
     {
         return DB::transaction(function () use ($company, $actor, $id, $password): string {
-            $connection = $this->ownedConnection($company, $actor, $id, true);
+            $connection = $this->findOwnedConnection($company, $actor, $id, true);
             $this->authorizeCredential($company, $actor, $connection->credential_source);
             $this->reauthenticate($actor, $password);
             app(ProviderCapabilityRegistry::class)->resolve($connection->provider, $connection->model, $connection->region, $connection->capability);
@@ -167,6 +220,32 @@ final class AiGovernance
             ]))->all();
     }
 
+    /** Settings operators may manage credentials without obtaining transaction permissions.
+     * @return list<array<string, mixed>>
+     */
+    public function managedConnections(Company $company, User $actor): array
+    {
+        $allowed = false;
+        foreach (['ai.settings.manage', 'ai.credentials.manage', 'ai.personal_credentials.manage'] as $permission) {
+            try {
+                $this->authorizeCapability($company, $actor, $permission);
+                $allowed = true;
+                break;
+            } catch (AuthorizationException) {
+                // Try only the explicitly delegated governance capabilities.
+            }
+        }
+        if (! $allowed) {
+            throw new AuthorizationException('AI governance permission is required.');
+        }
+
+        return AiProviderConnection::where('company_id', $company->id)
+            ->where(fn ($query) => $query->whereNull('owner_user_id')->orWhere('owner_user_id', $actor->id))
+            ->orderBy('id')->get()->map(fn (AiProviderConnection $row) => $row->only([
+                'public_id', 'provider', 'model', 'region', 'capability', 'credential_source', 'revision', 'revoked_at', 'verification_status',
+            ]))->all();
+    }
+
     public function ownedConnection(Company $company, User $actor, string $id, bool $lock = false): AiProviderConnection
     {
         // Company-first actor lock, even for a caller that has not started a transaction.
@@ -174,6 +253,12 @@ final class AiGovernance
             return DB::transaction(fn () => $this->ownedConnection($company, $actor, $id, $lock));
         }
         $this->authorizeCapability($company, $actor, 'ai.assistant.use');
+
+        return $this->findOwnedConnection($company, $actor, $id, $lock);
+    }
+
+    private function findOwnedConnection(Company $company, User $actor, string $id, bool $lock): AiProviderConnection
+    {
         $query = AiProviderConnection::where('company_id', $company->id)->where('public_id', $id)
             ->where(fn ($query) => $query->whereNull('owner_user_id')->orWhere('owner_user_id', $actor->id));
         if ($lock) {
@@ -194,7 +279,7 @@ final class AiGovernance
             $connection = $this->ownedConnection($company, $actor, $id, true);
             if ($connection->revoked_at !== null || ($expectedRevision !== null && (int) $connection->revision !== $expectedRevision)
                 || $connection->capability !== $capability
-                || ! in_array($id, $policy->settings['allowed_connections'] ?? [], true)) {
+                || ! $this->connectionAllowed($policy, $connection)) {
                 throw new AssistantUnavailable('credential_revoked');
             }
             if ($connection->credential_source === 'personal_byok' && ! $policy->personal_credentials_enabled) {
@@ -205,6 +290,17 @@ final class AiGovernance
 
             return ['connection' => $connection, 'policy' => $policy, 'credential' => $this->credential($connection)];
         });
+    }
+
+    private function connectionAllowed(AiCompanyPolicy $policy, AiProviderConnection $connection): bool
+    {
+        if (in_array($connection->public_id, $policy->settings['allowed_connections'] ?? [], true)) {
+            return true;
+        }
+        $route = implode('|', [$connection->provider, $connection->model, $connection->region, $connection->capability]);
+
+        return $connection->credential_source === 'personal_byok' && $policy->personal_credentials_enabled
+            && in_array($route, $policy->settings['allowed_personal_routes'] ?? [], true);
     }
 
     private function credential(AiProviderConnection $connection): ProviderCredential
@@ -251,10 +347,10 @@ final class AiGovernance
         }
     }
 
-    private function authorizeCredential(Company $company, User $actor, string $source): void
+    private function authorizeCredential(Company $company, User $actor, string $source, bool $requireOptIn = true): void
     {
         $this->authorizeCapability($company, $actor, $source === 'company_byok' ? 'ai.credentials.manage' : 'ai.personal_credentials.manage');
-        if ($source === 'personal_byok' && ! AiCompanyPolicy::where('company_id', $company->id)->where('personal_credentials_enabled', true)->exists()) {
+        if ($requireOptIn && $source === 'personal_byok' && ! AiCompanyPolicy::where('company_id', $company->id)->where('personal_credentials_enabled', true)->exists()) {
             throw new AssistantUnavailable('personal_credentials_disabled');
         }
     }
@@ -281,12 +377,14 @@ final class AiGovernance
     private function validateSettings(array $settings): array
     {
         $allowed = ['allowed_connections', 'text_connection', 'speech_connection', 'fallback', 'privacy',
-            'pricing', 'limits', 'retention_days'];
+            'pricing', 'limits', 'retention_days', 'allowed_personal_routes'];
         if (array_diff(array_keys($settings), $allowed) !== []) {
             throw new AssistantUnavailable('policy_invalid');
         }
         $data = Validator::make($settings, [
             'allowed_connections' => ['present', 'array', 'max:20'], 'allowed_connections.*' => ['uuid'],
+            'allowed_personal_routes' => ['sometimes', 'array', 'max:20'],
+            'allowed_personal_routes.*' => ['string', 'max:255'],
             'text_connection' => ['nullable', 'uuid'], 'speech_connection' => ['nullable', 'uuid'],
             'fallback' => ['required', 'array:enabled,text_connection,speech_connection'],
             'fallback.enabled' => ['required', 'boolean'],
@@ -305,8 +403,22 @@ final class AiGovernance
                 throw new AssistantUnavailable('policy_invalid');
             }
         }
+        foreach ($data['allowed_personal_routes'] ?? [] as $route) {
+            $parts = explode('|', $route);
+            if (count($parts) !== 4) {
+                throw new AssistantUnavailable('provider_configuration');
+            }
+            app(ProviderCapabilityRegistry::class)->resolve(...$parts);
+        }
         foreach ($data['pricing'] as $id => $price) {
-            if (! Str::isUuid((string) $id) || ! is_array($price)
+            if (! Str::isUuid((string) $id)) {
+                $parts = explode('|', (string) $id);
+                if (count($parts) !== 4) {
+                    throw new AssistantUnavailable('policy_invalid');
+                }
+                app(ProviderCapabilityRegistry::class)->resolve(...$parts);
+            }
+            if (! is_array($price)
                 || array_diff(array_keys($price), ['reference', 'checked_at', 'input_micros_per_million', 'output_micros_per_million', 'audio_micros_per_minute']) !== []) {
                 throw new AssistantUnavailable('policy_invalid');
             }

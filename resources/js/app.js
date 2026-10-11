@@ -1,2 +1,2 @@
 import './bootstrap';
-import './ai-sale-recorder';
+import './transaction-recorder';

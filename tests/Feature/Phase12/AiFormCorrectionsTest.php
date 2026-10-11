@@ -1,0 +1,192 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Tests\Feature\Phase12;
+
+use App\Application\AI\AiFormCorrections;
+use App\Application\AI\AiFormEditing;
+use App\Application\AI\AiFormState;
+use App\Application\AI\AssistantUnavailable;
+use App\Application\AI\TransactionAssistant;
+use App\Livewire\Pages\Sales\InvoiceForm;
+use App\Models\AssistantRequest;
+use App\Models\SalesInvoice;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Str;
+use Livewire\Livewire;
+use Tests\Support\Phase12\FinalAiFixtures;
+use Tests\TestCase;
+
+class AiFormCorrectionsTest extends TestCase
+{
+    use FinalAiFixtures;
+    use RefreshDatabase;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        $this->finalAiFixtures();
+        Http::preventStrayRequests();
+        config(['ai_assistant.provider_ipv4' => ['deepseek' => ['global' => '8.8.8.8'], 'openai' => ['global' => '8.8.8.8']]]);
+    }
+
+    public function test_arabic_follow_up_uses_current_human_fields_and_undo_preserves_them_without_saving(): void
+    {
+        [$token, $state] = $this->editing();
+        $payload = $state['data']['payload'];
+        $payload['notes'] = 'Human note';
+        $payload['lines'][0]['unit_price'] = '81';
+        $result = $this->apply($token, $state, $payload, 'غير الكمية من خمس لسبع');
+        $this->assertSame('7', $result['payload']['lines'][0]['quantity']);
+        $this->assertSame('81', $result['payload']['lines'][0]['unit_price']);
+        $this->assertSame('Human note', $result['payload']['notes']);
+        $this->assertSame(['lines.0.quantity'], $result['changed_fields']);
+        $this->assertTrue($result['can_undo']);
+        $undo = app(AiFormCorrections::class)->undo($this->company, $this->owner, $token, 'session',
+            $state['form_key'], $result['revision'], $result['payload']);
+        $this->assertSame($payload, $undo['payload']);
+        $this->assertFalse($undo['can_undo']);
+        $this->assertSame(0, SalesInvoice::count());
+        $this->assertSame(0, DB::table('posting_batches')->count());
+        Http::assertNothingSent();
+    }
+
+    public function test_manual_edit_invalidates_undo_instead_of_being_overwritten(): void
+    {
+        [$token, $state] = $this->editing();
+        $result = $this->apply($token, $state, $state['data']['payload'], 'change quantity to 7');
+        $manual = $result['payload'];
+        $manual['lines'][0]['quantity'] = '9';
+        $revision = app(AiFormEditing::class)->synchronize($this->company, $this->owner, $token, 'session',
+            $state['form_key'], $result['revision'], $manual);
+        try {
+            app(AiFormCorrections::class)->undo($this->company, $this->owner, $token, 'session',
+                $state['form_key'], $revision, $manual);
+            $this->fail('Undo must refuse after manual editing.');
+        } catch (AssistantUnavailable $e) {
+            $this->assertSame('form_changed', $e->reason);
+        }
+        $fresh = app(AiFormState::class)->read($this->company, $this->owner, $token, 'session');
+        $this->assertSame('9', $fresh['data']['payload']['lines'][0]['quantity']);
+        $this->assertArrayNotHasKey('undo', $fresh['data']);
+        $this->assertSame(0, SalesInvoice::count());
+    }
+
+    public function test_manual_edit_during_provider_inference_refuses_the_late_patch(): void
+    {
+        [$token, $state] = $this->editing();
+        $text = 'Please change quantity to 7';
+        Http::fake(function () use ($token, $state, $text) {
+            $manual = $state['data']['payload'];
+            $manual['lines'][0]['quantity'] = '9';
+            app(AiFormEditing::class)->synchronize($this->company, $this->owner, $token, 'session',
+                $state['form_key'], $state['revision'], $manual);
+
+            return Http::response($this->response($text, 'quantity', '7'));
+        });
+        try {
+            $this->apply($token, $state, $state['data']['payload'], $text);
+            $this->fail('Late patch must refuse.');
+        } catch (AssistantUnavailable $e) {
+            $this->assertSame('form_changed', $e->reason);
+        }
+        $fresh = app(AiFormState::class)->read($this->company, $this->owner, $token, 'session');
+        $this->assertSame('9', $fresh['data']['payload']['lines'][0]['quantity']);
+        Http::assertSentCount(1);
+        $request = AssistantRequest::where('purpose', 'patch')->firstOrFail();
+        $this->assertSame('failed', $request->status);
+        $this->assertSame(28, $request->reserved_cost_micros);
+        $this->assertNull($request->reported_cost_micros);
+        $this->assertSame(0, SalesInvoice::count());
+    }
+
+    public function test_wrong_session_or_tab_and_disabled_corrections_dispatch_nothing(): void
+    {
+        [$token, $state] = $this->editing();
+        foreach (['wrong-session', 'session'] as $session) {
+            if ($session === 'session') {
+                $this->aiPolicy->update(['follow_up_enabled' => false]);
+            }
+            try {
+                app(AiFormCorrections::class)->apply($this->company, $this->owner, $token, $session,
+                    $state['form_key'], $state['revision'], $state['data']['payload'],
+                    'Please change quantity to 7', (string) Str::uuid());
+                $this->fail('Unavailable correction must refuse.');
+            } catch (AssistantUnavailable) {
+                $this->assertSame(0, AssistantRequest::where('purpose', 'patch')->count());
+            }
+        }
+        Http::assertNothingSent();
+    }
+
+    public function test_fabricated_value_and_model_database_ids_fail_without_fallback(): void
+    {
+        [$token, $state] = $this->editing();
+        $text = 'Please change quantity to 7';
+        $reply = $this->response($text, 'quantity', '7000');
+        Http::fake(['*' => Http::response($reply)]);
+        try {
+            $this->apply($token, $state, $state['data']['payload'], $text);
+            $this->fail('Unsupported value must refuse.');
+        } catch (AssistantUnavailable $e) {
+            $this->assertSame('provider_invalid', $e->reason);
+        }
+        Http::assertSentCount(1);
+        $this->assertSame('5', app(AiFormState::class)->read($this->company, $this->owner, $token, 'session')['data']['payload']['lines'][0]['quantity']);
+        $this->assertSame(0, SalesInvoice::count());
+    }
+
+    public function test_livewire_correction_highlights_and_undoes_on_the_existing_form(): void
+    {
+        $result = app(TransactionAssistant::class)->prepare($this->company, $this->owner,
+            'sell to "Ahmed": 5 "carton" "SOAP-3L" at 80 ILS', 'sales', (string) Str::uuid(), (string) Str::uuid(), session()->getId());
+        Livewire::withQueryParams(['assistant' => $result['token']])->test(InvoiceForm::class)
+            ->set('notes', 'Keep my manual note')
+            ->set('aiCorrectionText', 'change quantity to 7')
+            ->call('correctAiInput')
+            ->assertSet('lines.0.quantity', '7')
+            ->assertSet('notes', 'Keep my manual note')
+            ->assertSet('aiChangedFields', ['lines.0.quantity'])
+            ->assertSet('aiCanUndo', true)
+            ->assertSee('Undo last correction')
+            ->call('undoAiInput')
+            ->assertSet('lines.0.quantity', '5')
+            ->assertSet('notes', 'Keep my manual note')
+            ->assertSet('aiCanUndo', false);
+        $this->assertSame(0, SalesInvoice::count());
+        Http::assertNothingSent();
+    }
+
+    /** @return array{string, array<string, mixed>} */
+    private function editing(): array
+    {
+        $result = app(TransactionAssistant::class)->prepare($this->company, $this->owner,
+            'sell to "Ahmed": 5 "carton" "SOAP-3L" at 80 ILS', 'sales', (string) Str::uuid(), (string) Str::uuid(), 'session');
+        app(AiFormEditing::class)->adopt($this->company, $this->owner, $result['token'], 'session', 'sales');
+
+        return [$result['token'], app(AiFormState::class)->read($this->company, $this->owner, $result['token'], 'session')];
+    }
+
+    /** @param array<string, mixed> $state
+     * @param  array<string, mixed>  $payload
+     * @return array<string, mixed>
+     */
+    private function apply(string $token, array $state, array $payload, string $text): array
+    {
+        return app(AiFormCorrections::class)->apply($this->company, $this->owner, $token, 'session',
+            $state['form_key'], $state['revision'], $payload, $text, (string) Str::uuid());
+    }
+
+    /** @return array<string, mixed> */
+    private function response(string $quote, string $field, string $value): array
+    {
+        $proposal = ['version' => 1, 'operations' => [['op' => 'set', 'line' => null, 'field' => $field,
+            'value' => $value, 'product' => null, 'unit' => null, 'amount' => null, 'quote' => $quote]]];
+
+        return ['choices' => [['message' => ['content' => json_encode($proposal, JSON_THROW_ON_ERROR)], 'finish_reason' => 'stop']],
+            'usage' => ['prompt_tokens' => 100, 'completion_tokens' => 80]];
+    }
+}
