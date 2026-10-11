@@ -155,4 +155,8 @@ return [
     'allowed_intents' => 'Permitted AI workflows',
     'intent_sales' => 'Sales',
     'intent_purchase' => 'Purchases',
+    'edit_transcript' => 'Edit what I said',
+    'transcript_usage' => 'Reprocessing makes a new interpretation request and may consume additional approved usage. Nothing is saved automatically.',
+    'transcript_replace_warning' => 'Replace this unsaved form from the edited description. This will replace my current manual edits; Save is still required.',
+    'reprocess_transcript' => 'Reprocess and replace unsaved form',
 ];

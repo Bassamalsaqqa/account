@@ -18,9 +18,19 @@ async function fixture(url, prior=null) {
 test('reload and language submission retain only random token and pathname',async()=>{
     const f=await fixture('http://127.0.0.1/invoices/create?assistant='+token,{token,path:'/invoices/create'});
     f.events.get('submit')({target:{action:'http://127.0.0.1/locale'}});
+    const formData=new FormData(); formData.append('locale','ar');
+    f.navigation.get('navigate')({destination:{url:'http://127.0.0.1/locale'},formData});
     f.navigation.get('navigate')({destination:{url:f.window.location.href}});
     assert.equal(f.sent.length,0);
     assert.deepEqual(JSON.parse(f.stored.get('accounting-assistant-form')),{token,path:'/invoices/create'});
+});
+test('locale-looking ordinary or foreign navigation still discards assistant memory',async()=>{
+    for (const url of ['http://127.0.0.1/locale','https://example.test/locale']) {
+        const f=await fixture('http://127.0.0.1/purchases/create?assistant='+token);
+        const formData=new FormData(); formData.append('locale','en');
+        f.navigation.get('navigate')({destination:{url},formData:url.startsWith('https')?formData:null});
+        assert.equal(f.sent.length,1); assert.equal(f.stored.size,0);
+    }
 });
 test('leaving through ordinary navigation sends only the owned token and CSRF to the local cleanup endpoint',async()=>{
     const f=await fixture('http://127.0.0.1/invoices/create?assistant='+token);

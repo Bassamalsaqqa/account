@@ -192,3 +192,33 @@ test('a changed select invalidates pending correction just like typed financial 
  assert.deepEqual(discarded,['prepared-patch']);assert.equal(f.recorder.error,'form changed');
  f.recorder.destroy();assert.equal(f.rootListeners.size,0);
 });
+
+test('explicit original-transcript submission uses its protected replacement acknowledgement without applying a patch',async()=>{
+ const f=await fixture(async()=>stream(),undefined,null,'disabled',true),calls=[];
+ f.wire.prepareAiTranscript=async()=>{calls.push('prepare transcript');return 'replacement';};
+ f.wire.applyPreparedAiTranscript=async token=>calls.push(['acknowledge replacement',token]);
+ f.wire.correctAiInput=async()=>assert.fail('original description is not a patch instruction');
+ assert.deepEqual(calls,[]);await f.recorder.applyTyped(true);
+ assert.deepEqual(calls,['prepare transcript',['acknowledge replacement','replacement']]);f.recorder.destroy();
+});
+
+test('human edit while reprocessing the original transcript cancels navigation and discards only the replacement',async()=>{
+ const pending=deferred(),calls=[];
+ const f=await fixture(async()=>stream(),undefined,null,'disabled',true);
+ f.wire.prepareAiTranscript=()=>pending.promise;
+ f.wire.discardPreparedAiTranscript=async token=>calls.push(['discard replacement',token]);
+ f.wire.applyPreparedAiTranscript=async()=>assert.fail('late replacement must not navigate');
+ const processing=f.recorder.applyTyped(true);
+ f.rootListeners.get('input')({target:{getAttributeNames:()=>['wire:model'],getAttribute:()=> 'notes'}});
+ pending.resolve('replacement');await processing;
+ assert.deepEqual(calls,[['discard replacement','replacement']]);assert.equal(f.recorder.error,'form changed');f.recorder.destroy();
+});
+
+test('transcript candidate clarification still waits for a fresh browser acknowledgement',async()=>{
+ const f=await fixture(async()=>stream(),undefined,null,'disabled',true),calls=[];
+ f.wire.prepareAiTranscriptClarification=async()=>{calls.push('clarify locally');return 'replacement';};
+ f.wire.applyPreparedAiTranscript=async token=>calls.push(['acknowledge replacement',token]);
+ f.wire.prepareAiTranscript=async()=>assert.fail('clarification must not run a second inference');
+ await f.recorder.applyTyped(true,true);
+ assert.deepEqual(calls,['clarify locally',['acknowledge replacement','replacement']]);f.recorder.destroy();
+});

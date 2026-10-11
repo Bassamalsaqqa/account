@@ -49,6 +49,10 @@ document.addEventListener('livewire:navigating', (event) => {
     if (active && event.detail?.url && !sameForm(event.detail.url)) forget();
 });
 window.navigation?.addEventListener('navigate', (event) => {
+    const target = new URL(event.destination.url, window.location.href);
+    // The same-origin locale POST redirects back to this form; it is not a new workspace.
+    if (target.origin === window.location.origin && target.pathname === '/locale'
+        && ['ar', 'en'].includes(event.formData?.get('locale'))) return;
     if (active && !sameForm(event.destination.url)) forget();
 });
 document.addEventListener('livewire:navigated', start);

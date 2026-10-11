@@ -120,26 +120,7 @@ final class TransactionProposalResolver
                 if ($product !== null) {
                     $units = ProductUnit::with('unit')->where('company_id', $company->id)->where('product_id', $product->id)->where('active', true)
                         ->whereHas('unit', fn ($query) => $query->where('company_id', $company->id)->where('active', true))->get();
-                    $matches = $units->filter(function (ProductUnit $row) use ($line, $barcode): bool {
-                        if ($line['unit'] === null) {
-                            return $barcode?->unit_id !== null && (int) $row->unit_id === (int) $barcode->unit_id;
-                        }
-
-                        return in_array(mb_strtolower($line['unit']), array_map(fn ($name) => mb_strtolower((string) $name),
-                            [$row->unit->code, $row->unit->name_ar, $row->unit->name_en, $row->unit->symbol_ar, $row->unit->symbol_en]), true);
-                    });
-                    if ($line['unit'] === null && $barcode === null && $units->count() === 1) {
-                        $matches = $units;
-                    }
-                    $unit = $matches->count() === 1 ? $matches->first() : null;
-                    $candidates = $units->take(5)->map(fn (ProductUnit $row) => ['value' => (int) $row->id, 'label' => $row->unit->name()])->all();
-                    if (isset($choices[$path.'.unit']) && in_array($choices[$path.'.unit'], array_column($candidates, 'value'), true)) {
-                        $unit = $units->firstWhere('id', $choices[$path.'.unit']);
-                    }
-                    if ($unit === null || ($barcode?->unit_id !== null && (int) $unit->unit_id !== (int) $barcode->unit_id)) {
-                        $unit = null;
-                        $questions[] = ['path' => $path.'.unit', 'candidates' => $candidates];
-                    }
+                    $unit = TenantSpeechCandidates::resolveUnit($units, $line['unit'], $barcode, $path, $choices, $questions);
                 }
                 if ($line['quantity'] === null) {
                     $questions[] = ['path' => $path.'.quantity', 'candidates' => []];
@@ -221,47 +202,20 @@ final class TransactionProposalResolver
      */
     private function entity(Builder $query, ?string $reference, array $columns, string $path, array $choices, array &$questions, ?int $barcodeCompanyId = null): ?Model
     {
-        $matches = $reference === null ? collect() : (clone $query)->where(function ($query) use ($columns, $reference, $barcodeCompanyId): void {
-            foreach ($columns as $column) {
-                $query->orWhere($column, $reference);
-            }
-            if ($barcodeCompanyId !== null) {
-                $query->orWhereHas('barcodes', fn ($barcodes) => $barcodes->where('company_id', $barcodeCompanyId)
-                    ->where('barcode', app(SalesProposalSchema::class)->normalizeDigits($reference)));
-            }
-        })->limit(2)->get();
-        if ($matches->count() === 1) {
-            return $matches->first();
-        }
-        $candidateQuery = clone $query;
-        if ($reference !== null) {
-            $candidateQuery->where(function ($query) use ($columns, $reference, $barcodeCompanyId): void {
-                foreach ($columns as $column) {
-                    $query->orWhere($column, 'like', '%'.addcslashes($reference, '\\%_').'%');
-                }
-                if ($barcodeCompanyId !== null) {
-                    $query->orWhereHas('barcodes', fn ($barcodes) => $barcodes->where('company_id', $barcodeCompanyId)
-                        ->where('barcode', app(SalesProposalSchema::class)->normalizeDigits($reference)));
-                }
-            });
-        }
-        $candidates = $candidateQuery->orderBy('id')->limit(5)->get();
-        if (isset($choices[$path]) && $candidates->contains('id', $choices[$path])) {
-            return $candidates->firstWhere('id', $choices[$path]);
-        }
-        $questions[] = ['path' => $path, 'candidates' => $candidates->map(fn ($row) => [
-            'value' => (int) $row->getKey(), 'label' => (string) ($row->getAttribute('name_ar') ?? $row->getAttribute('name_en') ?? $row->getAttribute('code')),
-        ])->all()];
-
-        return null;
+        return TenantSpeechCandidates::resolveEntity($query, $reference, $columns, $path, $choices, $questions, $barcodeCompanyId);
     }
 
     private function currency(?string $value): ?string
     {
-        return match (mb_strtolower($value ?? '')) {
-            'ils', 'شيكل', 'شواكل', 'shekel', 'shekels' => 'ILS',
-            'usd', 'دولار', 'dollar', 'dollars' => 'USD',
-            'jod', 'دينار', 'dinar', 'dinars' => 'JOD',
+        if ($value === null) {
+            return null;
+        }
+        $norm = TenantSpeechCandidates::normalize($value);
+
+        return match ($norm) {
+            'ils', 'nis', 'شيكل', 'شواكل', 'شيقل', 'شواقل', 'shekel', 'shekels' => 'ILS',
+            'usd', 'دولار', 'دولارات', 'dollar', 'dollars' => 'USD',
+            'jod', 'دينار', 'دنانير', 'dinar', 'dinars' => 'JOD',
             default => null,
         };
     }

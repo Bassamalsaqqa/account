@@ -5,17 +5,21 @@ const register = () => window.Alpine.data('transactionRecorder', (wire, options)
     let stream, context, source, node, timer, chunks = [], wav, samples = 0, flush, abort;
     let generation = 0, recognition, localText = '', intentionalStop = false, recordedRevision;
     const method = () => options.correction ? options.method : (wire.speechMethod || options.method);
-    const acknowledge = async (prepared, turn) => {
+    const acknowledge = async (prepared, turn, transcript = false) => {
         if (typeof prepared !== 'string') return;
         if (turn !== generation) {
-            await wire.discardPreparedAiInput(prepared);
+            if (transcript) await wire.discardPreparedAiTranscript(prepared);
+            else await wire.discardPreparedAiInput(prepared);
             return;
         }
         // Inference leaves all form fields editable. Only the short local commit is protected from new input.
         const controls = [...(wire.$el?.querySelectorAll?.('input, select, textarea, button') || [])];
         const enabled = controls.filter(control => !control.disabled);
         enabled.forEach(control => { control.disabled = true; });
-        try { await wire.applyPreparedAiInput(prepared); }
+        try {
+            if (transcript) await wire.applyPreparedAiTranscript(prepared);
+            else await wire.applyPreparedAiInput(prepared);
+        }
         finally { enabled.forEach(control => { control.disabled = false; }); }
     };
     const deliver = async (text, token) => {
@@ -40,13 +44,15 @@ const register = () => window.Alpine.data('transactionRecorder', (wire, options)
             window.addEventListener('pagehide', this.leave);
             document.addEventListener('livewire:navigating', this.leave);
         },
-        async applyTyped() {
+        async applyTyped(transcript = false, clarification = false) {
             if (this.recording || this.busy) return;
             const turn = generation;
             this.busy = true; this.error = '';
             try {
-                const prepared = await wire.correctAiInput();
-                await acknowledge(prepared, turn);
+                const prepared = transcript
+                    ? (clarification ? await wire.prepareAiTranscriptClarification() : await wire.prepareAiTranscript())
+                    : await wire.correctAiInput();
+                await acknowledge(prepared, turn, transcript);
             } catch { if (turn === generation) this.error = options.deliveryError; }
             finally { if (turn === generation) this.busy = false; }
         },

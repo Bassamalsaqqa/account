@@ -1,33 +1,90 @@
-# ADR 0012 — AI Sales proposals through canonical commands
+# ADR 0012 — AI Sales and Purchase proposals through canonical commands
 
-Status: proposed for independent Phase 12 source acceptance. Date: 2026-10-11.
+Status: proposed expanded for independent review, not accepted. Date: 2026-10-11.
+
+Authority metadata: Governed by protected local specification `ACCOUNTING_PHASE12_FINAL_SPEC_ARCHITECT_REVIEWED_2026-10-11.md`, SHA-256 `B080FC50222DC3F8E0AE6E8A3701BD4151E0CC020AD9FEEF14DE205521A5FB3F`.
 
 ## Context and authority
 
-[Approved future roadmap, §9.4](../ACCOUNTING_PHASE_9_FULL_ENGINEERING_ROADMAP_AND_FUTURE_AI_MOBILE_V1.md) and [ADR 0011](0011-versioned-command-api-foundation.md) control this implementation. Owner authorization permits source development and isolated QA; provider activation and Phase 12 release remain separate decisions. AccountingPostingService and canonical inventory services retain exclusive economic authority.
+[Approved future roadmap, §9.4](../ACCOUNTING_PHASE_9_FULL_ENGINEERING_ROADMAP_AND_FUTURE_AI_MOBILE_V1.md), `docs/ENGINEERING_BLUEPRINT_v1.0.md`, and [ADR 0011](0011-versioned-command-api-foundation.md) control this implementation. Owner authorization permits source development and isolated QA; provider activation and Phase 12 release remain separate decisions. `AccountingPostingService` and canonical inventory services retain exclusive economic authority.
+
+Initial Phase 12 design specified a vendor-neutral single-gateway client for Sales invoice drafting. The governing Owner final specification expanded the architecture into a multi-provider direct transport and unified transaction proposal system for both Sales and Purchasing. The historical initial gateway design is superseded; it is retained in the codebase solely as a legacy compatibility option and does not provide direct provider coverage.
 
 ## Decision
 
-Introduce StructuredIntentProvider and SpeechTranscriptionProvider contracts. The initial optional transport is a vendor-neutral HTTPS gateway client with a strict [provider contract](../PHASE_12_PROVIDER_CONTRACT.md). A compatible gateway is an external dependency, not an existing verified service. No gateway infrastructure or vendor account is installed or activated. This transport choice is submitted for architect review; a direct vendor adapter may replace it after provider selection without changing orchestration or financial services.
+### 1. Multi-provider direct architecture and curated registry
 
-Start with draft_sales_invoice only. Model output contains untrusted references and exact decimal strings, never authoritative entity IDs, totals, tools or SQL. Resolve active same-company Customer/Product/ProductUnit/Warehouse/Tax through private services. Duplicate or missing references require clarification. Barcode identity binds its Product/Unit; carton conversions use ProductUnit. Relative dates use the company timezone. Canonical price permissions and financial rules apply again at resolution, apply, draft creation, preview and execution.
+Introduce `ProviderCapabilityRegistry` (Catalog Version `2026-10-11.1`) managing curated text and speech provider registrations:
+- **Direct text extraction**: DeepSeek (`deepseek-flash`, global, protocol `chat_json`, thinking disabled), Qwen (`qwen-plus`, Beijing/Singapore, protocol `qwen`, thinking disabled), and OpenAI (`gpt-4o-mini`, global, protocol `openai`, strict JSON schema).
+- **Direct speech transcription**: Groq (`whisper-large-v3-turbo`, `whisper-large-v3`, global, protocol `multipart_stt`, 10s billing floor), OpenAI (`gpt-4o-mini-transcribe`, `whisper-1`, global, protocol `openai`), and Qwen (`qwen3-asr-flash`, Beijing/Singapore, protocol `qwen` with base64 data URI in `input_audio`).
+- **Direct transport hardening**: `DirectProviderTransport` uses reviewed public IPv4 destination pins (`config('ai_assistant.provider_ipv4.<provider>.<region>')`) via cURL `CURLOPT_RESOLVE`, with strict TLS certificate verification. Synchronous runtime DNS is eliminated to prevent unbounded PHP socket hangs. HTTP redirects, proxies, and automatic retries are disabled. Connect and read timeouts are 5 seconds; response bodies are capped at 128 KiB. Each foreground PHP hop shares an `AiProviderDeadline` (<= 25s) across its own primary/fallback; a total multi-hop/browser latency bound is not established.
+- **Legacy gateway**: Retained as a superseded option (`AI_ASSISTANT_PROVIDER=gateway`), not the active final operational mode.
 
-Applying a suggestion only populates an editable manual form. Explicit Save as Draft calls Phase 11 SalesInvoiceCommands. Posting requires the existing authenticated Preview → Confirm → Execute token, refreshed permissions, stock-context verification and idempotency. LLM output and audio never confirm a posting. No accounting/stock writer is changed or duplicated.
+### 2. Dual intent scope: Sales and Purchasing
 
-## Concurrency, identity and budget
+The transaction assistant operates across both Sales and Purchasing workflows:
+- **Intents**: Handled via Schema v2 intent union (`sales`, `purchase`, `unsupported`, `uncertain`).
+- **Entry points**: Global assistant launcher and contextual form launchers supporting Arabic-first, English, and mixed-language input.
+- **Canonical command reuse**:
+  * Sales: Reuses Phase 11 `SalesInvoiceCommands`.
+  * Purchasing: Reuses canonical `CreatePurchaseDraftAction` via `PurchaseDraftCommands`.
+- **Zero economic side effects**: The AI layer does NOT write financial history, post transactions, or invoke autonomous tool calls.
 
-Company-first database locks serialize request reservations. Same UUID/purpose/HMAC input converges; conflicting payloads fail. Network calls hold no database locks and are not automatically retried. Fresh actor/membership checks run after provider return. Encrypted apply tokens bind actor, tenant, proposal, resolved canonical hash and expiry. Apply re-resolves mutable sources; changed prices/context require another suggestion. Phase 11 commands enforce final economic atomicity, concurrency and confirmation.
+### 3. Deterministic complete templates (zero text calls)
 
-Conservative integer USD micro-unit reservations enforce per-request, daily and monthly company/user caps. Failed or unknown usage is never refunded. Provider billing is independently unverified, and provider-side ceilings are an activation prerequisite. Own usage is available to authorized Sales creators; aggregate company usage additionally requires fresh settings.company.manage. Administrative global/speech/company disable switches remain server configuration, never model or browser parameters.
+Single-turn instructions matching narrow, complete patterns (`DeterministicTransactionParser`) bypass external LLMs entirely:
+- Emits Schema v2 proposals directly with zero text-provider calls (`cost_status: 'no_text_call'`).
+- Prevents uploading customer directories, vendor lists, catalogs, or financial ledgers to external providers.
+- Intercepts disallowed business operations (`payment`, `receipt`, `expense`, `refund`, `transfer`, `دفعة`, `دفع`, `سند قبض`, `سند صرف`, `مصروف`, `تحويل`) and classifies them as `unsupported`.
 
-## Privacy and lifecycle
+### 4. Untrusted model output and server-side canonical resolution
 
-Audio capture is opt-in and capped by actual mono PCM16 sample count. Explicit submission uses authenticated same-origin CSRF protection. Temporary upload files are not moved into storage. Discard/navigation stop tracks, abort uploads and invalidate asynchronous capture generations. Returned transcripts stay editable; no raw audio/text/transcript is persisted or cached by the application. Upstream retention is a separate provider decision.
+- **Schema v2 invariants**: Model outputs are untrusted strings, exact decimal strings (quantities/prices max 6 decimals, exchange rates max 10 decimals, Arabic/Persian digits normalized), and verbatim evidence quotes (`TransactionProposalSchema`). The final schema does not accept model confidence; the earlier gateway confidence cutoff is superseded.
+- **Authoritative resolution**: `TransactionProposalResolver` checks fresh authority with company-first locks and scopes each entity query to active company-owned records. References to `Customer`, `Vendor`, `Warehouse`, `Product`, `ProductUnit`, `TaxRate`, and `Currency` are matched against active same-company records.
+- **No guessing**: The system never hallucinates or guesses entity IDs, exchange rates, lot numbers, or vendor invoice numbers. Ambiguities generate structured candidate questions for user clarification (`TransactionAssistant::clarify`).
+- **Canonical pricing**: Missing prices use permission-checked canonical suggestions from `SalesProductSelection` / `PurchaseProductSelection`.
 
-Only minimized encrypted structured proposals are cached for 600 seconds; expiry pruning removes caches while retaining content-free usage metadata. Accepted audit stores the encrypted exact canonical command approved by the human, command receipt identity, actor/company and resulting invoice. It participates in the same transaction as canonical draft creation. Encryption uses Laravel key custody; deferred Phase 10 key-recovery safeguards still apply. Approved financial-command audit retention follows business history; it is distinct from short-lived proposal/audio retention.
+### 5. Truly unsaved canonical forms, CAS corrections, and Undo
 
-## Consequences and limits
+- **Unsaved form mounting**: Proposals populate Livewire components (`InvoiceForm`, `PurchaseForm`) via `AiUnsavedForm` without creating database records.
+- **Explicit human Save**: Saving requires user action. Financial posting strictly requires the authenticated Preview → Confirm → Post token workflow.
+- **Current-form corrections**: Bounded patches (`FormPatchSchema`, `AiFormCorrections`) use compare-and-swap (CAS) guarded by revision numbers and payload SHA-256 hashes (`AiFormEditing::hash`). Intervening manual edits reject stale patches.
+- **Undo**: Reverts to the previous payload snapshot, origin metadata, and unresolved fields. Intervening edits invalidate Undo.
+- **Implementation status**: Published draft checkpoint 417aef25b9d1dc58a1e8712bba7a1c7ac6148b0e separates inference preparation from current-browser acknowledgement and a no-provider local commit. It is not merged or architecturally accepted.
 
-Defaults are disabled, provider unapproved/none, speech off, cost ceilings zero. Shared hosting needs no permanent worker, Redis, Node server or new accounting backend; existing Laravel scheduling can prune expired proposals after an approved deployment. Additive assistant_requests migration preserves all financial tables. Production rollback must keep audit data and table; never roll back this migration on live data merely to revert code.
+### 6. Foreground speech capture and true local recognition
 
-Real provider language/transcription accuracy, upstream caps/privacy, physical phone microphones and activation are NOT VERIFIED. Fake providers verify orchestration only. Phase 13, global AI chat, other financial intents and autonomous posting are out of scope. Phase 11 API exposure stays disabled in production.
+- **Audio validation**: `PcmWave` validates uncompressed mono RIFF/WAVE PCM16 (8–48 kHz, max 60s / 5,760,044 bytes).
+- **Installed true local speech recognition**: Uses browser `SpeechRecognition` only when `'processLocally' in Speech.prototype` and `Speech.available({ langs: [locale], processLocally: true }) === 'available'`. Never disguises remote cloud recognition as "local"; never downloads background models. If local recognition fails, it falls back to manual text input.
+- **Capture boundaries**: Microphone stop autotransmits only with prior consent. Audio uploads are processed in foreground memory and unlinked immediately in the controller `finally` block. Raw audio is not retained in application storage or background queues; the restricted PHP upload temporary file exists during foreground processing and is removed on exit.
+
+### 7. Governance, BYOK, security, and versioned consent
+
+- **Owner-only activation**: Only active `CompanyUser` with `is_owner: true` can enable AI (`enabled`) or personal BYOK credentials (`personal_credentials_enabled`).
+- **Delegated permissions**: Explicit capabilities `ai.settings.manage`, `ai.credentials.manage`, and `ai.personal_credentials.manage` govern AI operations, distinct from generic admin roles (`roles.manage`, allAdmin).
+- **Write-only BYOK credentials**: Secrets are encrypted via Laravel `Crypt::encryptString` in `AiProviderConnection`. Submission requires fresh password re-authentication (`Hash::check`) over HTTPS + CSRF. Validation never performs billed test calls. Revocation clears ciphertext, records timestamps, and increments revisions.
+- **Versioned consent**: SHA-256 fingerprint binding catalog version, company, policy revision, connection ID/revision, provider, model, region, source, privacy terms, and fallback settings. Recorded per-company and per-user; verified before dispatch and handoff.
+- **Settings controls**: `global_button_enabled` toggle hides the global button while retaining contextual launchers. `allowed_intents` allowlist restricts workflows.
+
+## Concurrency, identity, and budget
+
+- **Company-first database locks**: Requests are serialized behind company row locks. Identical request UUID, purpose, and input HMAC converge to a single provider request; conflicting inputs fail.
+- **Budget reservations**: Integer USD micro-unit reservations enforce per-request, daily, and monthly company and user ceilings.
+- **Combined worst-case reservation**: Primary and optional named fallback costs are summed and reserved upfront before dispatch.
+- **Retained reservations**: Failed, timed-out, or unknown provider outcomes retain their reservations without retroactive refunds. Estimated, reserved, and reported costs remain strictly distinct (`cost_status: 'no_text_call'` or `'unknown'`).
+- **Deterministic request limits**: `daily_company_requests` and `daily_user_requests` enforce deterministic volume limits.
+- **Outage-only fallback**: Exactly one named fallback route may be configured, triggered strictly on provider outages (HTTP 408, 429, 500, 502, 503, 504 or connection failure). Never triggered for invalid output, refusal, or ambiguity. Must share the same credential source and tenant ownership.
+
+## Privacy, retention, and audit
+
+- **Ephemeral proposal caching**: Minimized encrypted proposal data is cached in `AiFormState` for 600 seconds, keyed by session and form UUID.
+- **Atomic audit trail**: On draft creation, the encrypted canonical command approved by the human, receipt identity, actor/company, and resulting invoice/purchase ID commit atomically in the same database transaction as the canonical draft.
+- **Retention pruning**: The repository hourly maintenance schedule (`AiRetention::prune`; production activation unperformed) prunes expired proposals and clears old approved commands according to company-configured retention days (1–365 days, default 30), retaining content-free usage and provenance records.
+
+## Consequences, limits, and operational prerequisites
+
+- **Fail-closed defaults**: System defaults are disabled (`AI_ASSISTANT_PROVIDER=none`, `AI_ASSISTANT_ENABLED=false`, `AI_PROVIDER_APPROVED=false`, `AI_SPEECH_ENABLED=false`, cost ceilings zero). `COMMAND_API_ENABLED=false` stays false in production.
+- **Shared hosting compatibility**: No Redis, permanent Node.js server, WebSockets, Docker, or persistent daemons required.
+- **Schema preservation**: Additive `assistant_requests` migration preserves all financial tables and accounting data.
+- **Out of scope**: Platform billing, credits and platform admin UI are outside Phase 12. Physical phone testing and real provider activation remain separately authorized activation gates. Account operators obtain no implicit tenant rights.
+- **Operational verification pending**: Real provider models, physical phone microphones, dialect accuracy, provider billing, and production activation remain NOT VERIFIED. Source candidate is incomplete P12-M6, draft PR #25; exact HEAD acceptance still pending.

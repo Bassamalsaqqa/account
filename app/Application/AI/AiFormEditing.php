@@ -14,7 +14,7 @@ final class AiFormEditing
     {
         $store = app(AiFormState::class);
         $state = $store->read($company, $actor, $token, $sessionId);
-        if ($state['intent'] !== $intent || ! in_array(($state['data']['lifecycle'] ?? null), ['handoff', 'editing'], true)
+        if (isset($state['data']['replacement']) || $state['intent'] !== $intent || ! in_array(($state['data']['lifecycle'] ?? null), ['handoff', 'editing'], true)
             || ($state['data']['resolved']['questions'] ?? null) !== []) {
             throw new AssistantUnavailable('proposal_stale');
         }

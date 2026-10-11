@@ -8,6 +8,7 @@ use App\Application\AI\AiFormCorrections;
 use App\Application\AI\AiFormEditing;
 use App\Application\AI\AiFormState;
 use App\Application\AI\AiGovernance;
+use App\Application\AI\AiTranscriptRevisions;
 use App\Application\AI\AssistantUnavailable;
 use App\Models\AssistantRequest;
 use App\Support\Tenancy\CompanyContext;
@@ -49,6 +50,140 @@ trait AiUnsavedForm
     /** @var list<string> */
     #[Locked]
     public array $aiChangedFields = [];
+
+    public bool $aiTranscriptOpen = false;
+
+    public string $aiTranscriptText = '';
+
+    public bool $aiTranscriptReplaceConfirmed = false;
+
+    #[Locked]
+    public ?string $aiTranscriptReplacementToken = null;
+
+    /** @var list<array<string, mixed>> */
+    #[Locked]
+    public array $aiTranscriptQuestions = [];
+
+    /** @var array<array-key, mixed> */
+    public array $aiTranscriptAnswers = [];
+
+    public function editAiTranscript(): void
+    {
+        if ($this->aiFormToken === null || $this->aiFormKey === null) {
+            abort(409);
+        }
+        $state = app(AiFormState::class)->read(app(CompanyContext::class)->company(), auth()->user(),
+            $this->aiFormToken, session()->getId(), $this->aiFormKey);
+        $this->aiTranscriptText = $state['data']['transcript'];
+        $this->aiTranscriptOpen = true;
+        $this->aiTranscriptReplaceConfirmed = false;
+    }
+
+    public function prepareAiTranscript(): ?string
+    {
+        if ($this->aiFormToken === null || $this->aiFormKey === null || ! $this->aiTranscriptReplaceConfirmed) {
+            abort(409);
+        }
+        try {
+            $this->aiFormRevision = app(AiFormEditing::class)->synchronize(app(CompanyContext::class)->company(), auth()->user(),
+                $this->aiFormToken, session()->getId(), $this->aiFormKey, $this->aiFormRevision, $this->aiEditablePayload());
+
+            return app(AiTranscriptRevisions::class)->prepare(app(CompanyContext::class)->company(), auth()->user(),
+                $this->aiFormToken, session()->getId(), $this->aiFormKey, $this->aiFormRevision,
+                $this->aiEditablePayload(), $this->aiTranscriptText);
+        } catch (AssistantUnavailable) {
+            $this->aiCorrectionError = __('assistant_v2.correction_refused');
+
+            return null;
+        }
+    }
+
+    public function applyPreparedAiTranscript(string $prepared): mixed
+    {
+        if ($this->aiFormToken === null || $this->aiFormKey === null || ! $this->aiTranscriptReplaceConfirmed) {
+            abort(409);
+        }
+        try {
+            return $this->presentAiTranscript(app(AiTranscriptRevisions::class)->acknowledge(
+                app(CompanyContext::class)->company(), auth()->user(), $this->aiFormToken,
+                session()->getId(), $this->aiFormKey, $prepared, $this->aiEditablePayload()));
+        } catch (AssistantUnavailable) {
+            $this->aiCorrectionError = __('assistant_v2.error_form_changed');
+
+            return null;
+        }
+    }
+
+    public function prepareAiTranscriptClarification(): ?string
+    {
+        if ($this->aiFormToken === null || $this->aiFormKey === null || $this->aiTranscriptReplacementToken === null
+            || ! $this->aiTranscriptReplaceConfirmed) {
+            abort(409);
+        }
+        $answers = [];
+        foreach ($this->aiTranscriptQuestions as $index => $question) {
+            $value = $this->aiTranscriptAnswers[$index] ?? '';
+            if ($value === '') {
+                continue;
+            }
+            if ($question['candidates'] !== [] && is_string($value) && preg_match('/\A[1-9]\d{0,9}\z/', $value)) {
+                $value = (int) $value;
+            }
+            $answers[$question['path']] = $value;
+        }
+        try {
+            return app(AiTranscriptRevisions::class)->clarify(
+                app(CompanyContext::class)->company(), auth()->user(), $this->aiFormToken,
+                session()->getId(), $this->aiFormKey, $this->aiTranscriptReplacementToken,
+                $this->aiEditablePayload(), $answers);
+        } catch (AssistantUnavailable) {
+            $this->aiCorrectionError = __('assistant_v2.error_form_changed');
+
+            return null;
+        }
+    }
+
+    public function discardPreparedAiTranscript(string $prepared): void
+    {
+        if ($this->aiFormKey === null) {
+            return;
+        }
+        try {
+            app(AiTranscriptRevisions::class)->discard(app(CompanyContext::class)->company(), auth()->user(),
+                $prepared, session()->getId(), $this->aiFormKey);
+        } catch (AssistantUnavailable) {
+            // Expired/revoked memory remains inaccessible and expires at its fixed deadline.
+        }
+        if ($this->aiTranscriptReplacementToken === $prepared) {
+            $this->aiTranscriptReplacementToken = null;
+            $this->aiTranscriptQuestions = $this->aiTranscriptAnswers = [];
+        }
+    }
+
+    public function closeAiTranscript(): void
+    {
+        if ($this->aiTranscriptReplacementToken !== null) {
+            $this->discardPreparedAiTranscript($this->aiTranscriptReplacementToken);
+        }
+        $this->aiTranscriptOpen = $this->aiTranscriptReplaceConfirmed = false;
+        $this->aiTranscriptText = '';
+    }
+
+    /** @param array<string, mixed> $result */
+    protected function presentAiTranscript(array $result): mixed
+    {
+        if ($result['state'] === 'clarifying') {
+            $this->aiTranscriptReplacementToken = $result['token'];
+            $this->aiTranscriptQuestions = $result['questions'];
+            $this->aiTranscriptAnswers = [];
+
+            return null;
+        }
+        $this->clearAiInput();
+
+        return $this->redirectRoute($result['intent'] === 'sales' ? 'invoices.create' : 'purchases.create',
+            ['assistant' => $result['token']]);
+    }
 
     public function correctAiInput(?string $audioToken = null): ?string
     {
@@ -234,6 +369,7 @@ trait AiUnsavedForm
     /** Discard only assistant memory; editable manual fields remain available. */
     public function discardAiInput(): void
     {
+        $this->closeAiTranscript();
         if ($this->aiFormToken !== null) {
             try {
                 app(AiFormState::class)->forget(app(CompanyContext::class)->company(), auth()->user(), $this->aiFormToken, session()->getId());
@@ -255,6 +391,10 @@ trait AiUnsavedForm
         $this->aiCorrectionText = '';
         $this->aiCorrectionAudioToken = null;
         $this->aiCorrectionError = null;
+        $this->aiTranscriptOpen = $this->aiTranscriptReplaceConfirmed = false;
+        $this->aiTranscriptText = '';
+        $this->aiTranscriptReplacementToken = null;
+        $this->aiTranscriptQuestions = $this->aiTranscriptAnswers = [];
     }
 
     /** @return list<string> */
