@@ -12,10 +12,10 @@ This is an incremental implementation checkpoint, not final Phase 12 acceptance.
 
 | Package | Source work | Checkpoint state | Remaining acceptance |
 | --- | --- | --- | --- |
-| P12-M1 | Curated direct DeepSeek/Qwen/OpenAI text; Qwen/Groq/OpenAI STT; bounded transport and shared foreground deadline | IMPLEMENTED; protocol mocks PASS | Actual provider/key/region/billing proof NOT VERIFIED; deadline-specific negatives pending |
-| P12-M2 | Protected company/personal write-only BYOK, policy CAS, consent, private metadata, exact budget reservations and usage summaries | IMPLEMENTED; governance/settings/budget tests PASS | Extended audio/usage boundary tests and retention review pending |
+| P12-M1 | Curated direct DeepSeek/Qwen/OpenAI text; Qwen/Groq/OpenAI STT; bounded transport and shared foreground deadline | IMPLEMENTED; protocol mocks PASS | Actual provider/key/region/billing proof NOT VERIFIED |
+| P12-M2 | Protected company/personal write-only BYOK, policy CAS, consent, private metadata, exact budget reservations and usage summaries | IMPLEMENTED; governance/settings/budget tests PASS | Additional company intent/global-button controls and final review pending |
 | P12-M3 | Deterministic zero-text-call path, strict proposals, bounded reference clarification, named outage-only fallback, versioned current-form patches | IMPLEMENTED; focused resolver/orchestration/correction tests PASS | Additional Purchase/patch/ambiguity negative cases pending |
-| P12-M4 | Existing unsaved Sales/Purchase forms, final human-field provenance, canonical Purchase draft facade, revision guards and Undo | IMPLEMENTED; focused form/draft tests PASS | Independent-process Purchase concurrency, navigation-memory cleanup and additional affected regressions pending |
+| P12-M4 | Existing unsaved Sales/Purchase forms, final human-field provenance, canonical Purchase draft facade, revision guards and Undo | IMPLEMENTED; focused form/draft tests PASS | Independent-process Purchase concurrency and additional affected regressions pending |
 | P12-M5 | PCM/WAV foreground capture, cancellation/generation guards, genuine installed local recognition, Seamless/Guided flow | IMPLEMENTED; nine frontend tests PASS | Correction-specific browser races, full responsive flow audit, physical phones and dialect evidence pending |
 | P12-M6 | Focused MariaDB/security/migration evidence; synthetic Sales browser inspection | IN PROGRESS | Consolidated final source acceptance, economic regressions, full UI evidence and architect handoff NOT RUN |
 
@@ -29,7 +29,7 @@ Provider dispatch uses curated routes, approved credentials and current consent,
 
 Company policy and key custody have separate protected permissions. Keys and password fields use normal CSRF-protected HTTP submission and encrypted, hidden model attributes; they are not public Livewire properties. Configuring a key does not verify it. Default runtime activation flags remain disabled.
 
-Reload/language navigation preserves the latest server-synchronized unsaved fields and invalidates obsolete tab revisions. Save and explicit discard clear temporary memory. Navigation cleanup beyond these paths is unfinished; TTL remains enforced and is not claimed as complete navigation acceptance.
+Reload/language navigation preserves the latest server-synchronized unsaved fields and invalidates obsolete tab revisions. Save and explicit discard clear temporary memory. The correction checkpoint adds navigation cleanup; network delivery and real-browser lifecycle certification retain the limits recorded below.
 
 ## Executed checkpoint evidence
 
@@ -58,3 +58,41 @@ Pending source work includes navigation-memory lifecycle, remaining resolver col
 Actual providers, real keys, paid calls, real-phone/dialect accuracy, provider privacy/cost approval and Hostinger resource proof remain NOT VERIFIED / BLOCKED EXTERNAL AUTHORIZATION. Deferred Phase 10 backup/recovery/key custody/email requirements are untouched.
 
 No merge, deployment, production access or mutation, real email, paid provider calls, protected Owner-file publication or GitHub CI occurred for this checkpoint. PR #25 remains draft.
+
+## Correction checkpoint after 04bdb403f4b23590428e3e64a30eadbec05b7b07
+
+Implemented and independently verified:
+
+- SKU/name/barcode matches now share one bounded candidate decision. A reproduced SKU-versus-barcode collision no longer silently chooses one product.
+- Authenticated CSRF-protected cleanup deletes only the caller's session-owned temporary capability. Cleanup remains available after AI/membership revocation; foreign actor/session tokens are indistinguishable and untouched. Revision mutation now takes company locks before cache locks.
+- Tab navigation, company switch and logout request memory deletion; reload/language changes preserve the same form. Offline/crashed/closed tabs cannot guarantee network delivery: encrypted state has a fixed server TTL and never becomes a reusable saved transaction.
+- Speech corrections carry the recording-start revision. Manual financial input aborts pending speech; stale cloud options cannot override a newly selected local-only/text-only method.
+- Company text-only policy and permitted per-user genuinely local-only selection are supported. The selected method cannot override company workflow mode or broaden allowed methods; cloud dispatch is refused for local-only/text-only.
+- The maintenance prune command honors each company's retention for encrypted final human-field content while preserving content-free usage and provenance identifiers. It does not modify canonical financial documents. No recurring production job was activated.
+- Exact UTC company/self usage aggregates distinguish estimates, reservations, reported amounts and unknown costs; company-wide figures require separate fresh permission.
+- The new audio route cleans temporary uploads on validation, authorization and processing exits. Mocked upload-to-unsaved-form, missing consent, invalid audio/identity and mid-call key revocation are covered. Revocation is rechecked before publishing temporary text/speech handoff state; failure retains unknown reservations.
+- Three superseded UI regressions now use the current workflow, retaining explicit canonical Preview/Confirm/Post and cancellation guarantees. Disabling AI refuses AI provenance Save while the separate manual form still works. The legacy audio endpoint is an explicit 404 tombstone.
+- Direct providers require a reviewed server-configuration public destination pin; runtime synchronous DNS was removed because its PHP wait is not bounded. No real destination was configured. Hostname TLS verification and fixed curated routes remain mandatory. Activation requires operator resolution/TLS/address-refresh verification; address rotation may cause a fail-closed outage.
+
+### Actual correction evidence
+
+The latest successful per-class reports cover 142 distinct focused PHP tests / 900 assertions across this checkpoint and the preceding checkpoint, with no skipped cases. Counts deduplicate repeated classes; they are not the output of a single full-suite run.
+
+- All Phase 12 unit classes: 49 tests / 283 assertions, PASS, including AGY matrix 29 / 130 and foreground deadline/destination checks 4 / 12.
+- Resolver with collision: 7 / 48, PASS.
+- Memory/revision/correction/unsaved-form group: 19 / 121, PASS.
+- Speech-choice/governance/Settings group: 15 / 84, PASS.
+- Retention/usage group: 4 / 58, PASS.
+- Audio/handoff/state group: 15 / 91, PASS.
+- Migrated workflow class: 10 / 71, PASS; retained legacy security class: 14 / 73, PASS. These classes passed inside mixed batches whose newly added neighboring tests initially failed; those failed neighbors were corrected and rerun separately. Earlier legacy-service coverage remains identified as such and does not prove the new API/orchestrator.
+- Budget, Purchase draft and migration classes retain their previously reported successful source checks. No schema or canonical writer changed in this correction batch.
+
+Frontend lifecycle/WAV/capture checks: 16 tests, zero failures/skips. Pint and PHPStan passed; production frontend build passed. A stale multi-address condition left after removing DNS was detected by PHPStan and removed without suppression.
+
+Initial fixture errors in session/control-company setup were corrected. The mid-speech-revocation status failure was corrected before the successful 15-test rerun. Failed aggregate runs remain retained privately and are not relabeled PASS.
+
+### Still unfinished
+
+Independent-process Purchase concurrency is prepared as a manual AGY task at the committed 04bdb40 baseline; it owns two new test files and no runtime code. Additional company intent/global-button controls, resolver speech-name matching, Purchase/patch negative scenarios, foreground text-correction/manual-edit browser races, new-budget process concurrency, full responsive/accessibility flows, affected canonical integration regressions and final Owner Decision Ledger traceability remain in progress / NOT RUN. This is not final M6 acceptance.
+
+The protected Owner original and existing production/runtime configuration remain unchanged. No merge, deployment, production access/mutation, real provider/SMTP call, paid dispatch or GitHub CI occurred.

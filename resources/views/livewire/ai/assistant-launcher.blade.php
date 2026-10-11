@@ -49,7 +49,13 @@
                                     </select>
                                 </label>
                             @endforeach
-                            <button type="button" wire:click="selectConnections" class="min-h-11 px-3 text-primary">{{ __('assistant_v2.save_selection') }}</button>
+                            <label class="block">{{ __('assistant_v2.speech_method') }}
+                                <select wire:model="transcriptionChoice" class="mt-1 min-h-11 w-full rounded-control border border-border px-2">
+                                    <option value="">{{ __('assistant_v2.company_selection') }}</option>
+                                    @foreach ($allowedSpeechMethods as $method)<option value="{{ $method }}">{{ __('assistant_v2.'.$method) }}</option>@endforeach
+                                </select>
+                            </label>
+                            <button type="button" wire:click="selectConnections" @click="clear()" class="min-h-11 px-3 text-primary">{{ __('assistant_v2.save_selection') }}</button>
                         </div>
                     </details>
 
@@ -60,7 +66,7 @@
                             placeholder="{{ __('assistant_v2.example') }}" :disabled="recording || busy"></textarea>
                         <div class="mt-3 flex flex-wrap gap-2">
                             <button type="button" wire:click="prepare" wire:loading.attr="disabled" :disabled="recording || busy" class="min-h-11 rounded-control bg-primary px-4 text-sm font-bold text-white hover:bg-primary-hover disabled:opacity-50">{{ __('assistant_v2.open_form') }}</button>
-                            @if (config('ai_assistant.speech_enabled') === true)
+                            @if (config('ai_assistant.speech_enabled') === true && $speechMethod !== 'disabled')
                                 <button type="button" x-show="!recording" @click="start()" :disabled="busy" class="min-h-11 rounded-control border border-border px-4 text-sm font-semibold disabled:opacity-50">{{ __('assistant_v2.record') }}</button>
                                 <button type="button" x-show="recording" x-cloak @click="stop(true)" class="min-h-11 rounded-control bg-danger px-4 text-sm font-bold text-white">{{ __('assistant_v2.stop_continue') }}</button>
                             @endif

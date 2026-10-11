@@ -46,7 +46,7 @@
                     </label>
                     <label class="text-sm font-semibold">{{ __('assistant_v2.speech_method') }}
                         <select wire:model="speechMethod" class="mt-1 min-h-11 w-full rounded-control border border-border px-2">
-                            @foreach(['cloud', 'local_only', 'local_if_supported'] as $value)<option value="{{ $value }}">{{ __('assistant_v2.'.$value) }}</option>@endforeach
+                            @foreach(['disabled', 'cloud', 'local_only', 'local_if_supported'] as $value)<option value="{{ $value }}">{{ __('assistant_v2.'.$value) }}</option>@endforeach
                         </select>
                     </label>
                 </div>

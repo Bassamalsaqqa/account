@@ -36,7 +36,7 @@ final class AiGovernance
             throw new AssistantUnavailable('disabled');
         }
 
-        return DB::transaction(function () use ($company, $actor, $intent): AiCompanyPolicy {
+        return DB::transaction(function () use ($company, $actor, $intent, $speech): AiCompanyPolicy {
             $this->authorizeCapability($company, $actor, 'ai.assistant.use');
             if (! in_array($intent, ['sales', 'purchase', 'auto'], true)) {
                 throw new AssistantUnavailable('intent_unsupported');
@@ -54,6 +54,10 @@ final class AiGovernance
             }
             $policy = AiCompanyPolicy::where('company_id', $company->id)->lockForUpdate()->first();
             if ($policy === null || ! $policy->enabled) {
+                throw new AssistantUnavailable('disabled');
+            }
+
+            if ($speech && ! in_array(app(AiSpeechMethods::class)->effective($policy, $actor), ['cloud', 'local_if_supported'], true)) {
                 throw new AssistantUnavailable('disabled');
             }
 
@@ -93,7 +97,7 @@ final class AiGovernance
         $values = Validator::make($input, [
             'enabled' => ['required', 'boolean'], 'personal_credentials_enabled' => ['required', 'boolean'],
             'follow_up_enabled' => ['required', 'boolean'], 'workflow_mode' => ['required', 'in:seamless,guided'],
-            'speech_method' => ['required', 'in:cloud,local_only,local_if_supported'],
+            'speech_method' => ['required', 'in:disabled,cloud,local_only,local_if_supported'],
             'settings' => ['required', 'array'],
         ])->validate();
         $values['settings'] = $this->validateSettings($values['settings']);

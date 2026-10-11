@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\AiCredentialController;
 use App\Http\Controllers\AssistantAudioController;
+use App\Http\Controllers\AssistantMemoryController;
 use App\Http\Controllers\ExpenseAttachmentController;
 use App\Http\Controllers\PdfDocumentController;
 use App\Http\Controllers\PublicCatalogController;
@@ -116,6 +117,8 @@ Route::post('locale', function (Request $request, CompanyContext $context) {
 })->name('locale.switch');
 
 Route::middleware(['auth'])->group(function () {
+    Route::post('assistant/memory/discard', AssistantMemoryController::class)
+        ->middleware('throttle:30,1')->name('assistant.memory.discard');
     // Tenancy setup and selection routes (accessible without company context)
     Route::view('companies/setup', 'tenancy.setup')
         ->name('companies.setup');

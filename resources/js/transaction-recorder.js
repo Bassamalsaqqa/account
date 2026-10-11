@@ -4,6 +4,7 @@ const register = () => window.Alpine.data('transactionRecorder', (wire, options)
     // Keep audio and media handles outside Alpine/Livewire serialization.
     let stream, context, source, node, timer, chunks = [], wav, samples = 0, flush, abort;
     let generation = 0, recognition, localText = '', intentionalStop = false, recordedRevision;
+    const method = () => options.correction ? options.method : (wire.speechMethod || options.method);
     const deliver = (text, token) => options.correction
         ? wire.receiveAiCorrection(text, token, recordedRevision)
         : wire.receiveTranscript(text, token);
@@ -12,14 +13,22 @@ const register = () => window.Alpine.data('transactionRecorder', (wire, options)
         supported: Boolean(window.isSecureContext && navigator.mediaDevices?.getUserMedia && window.AudioContext && window.AudioWorkletNode),
         init() {
             this.leave = () => this.clear();
+            this.manualEdit = (event) => {
+                if (!options.correction || !(this.recording || this.busy || this.ready)) return;
+                const binding = event.target?.getAttributeNames?.().find(name => name.startsWith('wire:model'));
+                if (!binding || event.target.getAttribute(binding).startsWith('aiCorrection')) return;
+                this.clear(); this.error = options.changedError || options.deliveryError;
+            };
+            wire.$el?.addEventListener('input', this.manualEdit, true);
             window.addEventListener('pagehide', this.leave);
             document.addEventListener('livewire:navigating', this.leave);
         },
         async start() {
             if (this.recording || this.busy) return;
             recordedRevision = wire.aiFormRevision;
-            if (options.method !== 'cloud' && await this.startLocal()) return;
-            if (options.method === 'local_only') { this.error = options.permissionError; return; }
+            if (method() === 'disabled') { this.error = options.permissionError; return; }
+            if (method() !== 'cloud' && await this.startLocal()) return;
+            if (method() === 'local_only') { this.error = options.permissionError; return; }
             if (!(options.consent ?? wire.consent) || !this.supported || options.maxSeconds < 1) { this.error = options.permissionError; return; }
             this.clear(); this.error = '';
             const turn = generation;
@@ -81,6 +90,7 @@ const register = () => window.Alpine.data('transactionRecorder', (wire, options)
             if (turn === generation && intentional && wav) await this.transcribe();
         },
         async transcribe() {
+            if (!['cloud', 'local_if_supported'].includes(method())) { this.clear(); this.error = options.permissionError; return; }
             if (!wav || !(options.consent ?? wire.consent) || this.busy) return;
             const turn = generation, requestAbort = new AbortController();
             this.busy = true; this.error = ''; abort = requestAbort;
@@ -151,7 +161,8 @@ const register = () => window.Alpine.data('transactionRecorder', (wire, options)
             chunks = []; samples = 0; this.recording = this.busy = this.ready = false; this.seconds = 0;
         },
         destroy() {
-            this.clear(); window.removeEventListener('pagehide', this.leave);
+            this.clear(); wire.$el?.removeEventListener('input', this.manualEdit, true);
+            window.removeEventListener('pagehide', this.leave);
             document.removeEventListener('livewire:navigating', this.leave);
         },
     };

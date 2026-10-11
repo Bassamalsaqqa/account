@@ -8,6 +8,8 @@ use App\Application\AI\AssistantBudget;
 use App\Application\AI\AssistantUnavailable;
 use App\Application\AI\SalesAssistant;
 use App\Application\AI\SalesProposalResolver;
+use App\Application\AI\TransactionAssistant;
+use App\Livewire\AI\AssistantLauncher;
 use App\Livewire\Pages\Sales\InvoiceForm;
 use App\Models\AssistantRequest;
 use App\Models\CompanyUser;
@@ -21,18 +23,18 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Livewire\Livewire;
-use Tests\Support\Phase12\AssistantFixtures;
+use Tests\Support\Phase12\FinalAiFixtures;
 use Tests\TestCase;
 
 class AssistantWorkflowTest extends TestCase
 {
-    use AssistantFixtures;
+    use FinalAiFixtures;
     use RefreshDatabase;
 
     protected function setUp(): void
     {
         parent::setUp();
-        $this->assistantFixtures();
+        $this->finalAiFixtures();
     }
 
     public function test_ten_interpretation_retries_are_one_provider_request_and_zero_business_effects(): void
@@ -63,11 +65,11 @@ class AssistantWorkflowTest extends TestCase
 
     public function test_suggestion_only_populates_form_then_canonical_review_and_explicit_post(): void
     {
-        $component = Livewire::test(InvoiceForm::class)
-            ->set('aiText', 'Five cartons of Dishwashing Liquid for Ahmed at 80 ILS')
-            ->set('aiConsent', true)->call('interpretSale')->assertSet('aiError', null)
-            ->call('applySaleSuggestion')->assertSet('aiError', null);
-        $this->assertSame('5.000000', $component->get('lines')[0]['quantity']);
+        $result = app(TransactionAssistant::class)->prepare($this->company, $this->owner,
+            'sell to "Ahmed": 5 "carton" "SOAP-3L" at 80 ILS', 'sales',
+            (string) Str::uuid(), (string) Str::uuid(), session()->getId());
+        $component = Livewire::withQueryParams(['assistant' => $result['token']])->test(InvoiceForm::class);
+        $this->assertSame('5', $component->get('lines')[0]['quantity']);
         $this->assertSame('400.000000', $component->get('previewGrandTotal'));
         $this->assertSame(0, SalesInvoice::count());
         $this->assertSame(0, PostingBatch::count());
@@ -87,12 +89,14 @@ class AssistantWorkflowTest extends TestCase
 
     public function test_cancel_forgets_proposal_and_never_creates_a_draft(): void
     {
-        $component = Livewire::test(InvoiceForm::class)->set('aiConsent', true)->set('aiText', 'Five cartons')
-            ->call('interpretSale')->call('discardSaleSuggestion')->assertSet('aiText', '')->assertSet('aiReview', null);
+        $component = Livewire::test(AssistantLauncher::class)->call('showAssistant')
+            ->set('text', 'sell to "Ahmed": 5 "carton" "SOAP-3L" at 80 ILS')
+            ->call('prepare')->assertRedirect();
         $request = AssistantRequest::firstOrFail();
-        $this->assertSame('canceled', $request->status);
-        $this->assertNull(Cache::get(app(SalesAssistant::class)->cacheKey($request)));
+        $component->call('cancel')->assertSet('text', '')->assertSet('token', null);
+        $this->assertSame('canceled', $request->fresh()->status);
         $this->assertSame(0, SalesInvoice::count());
+        $this->assertSame(0, PostingBatch::count());
     }
 
     public function test_missing_and_duplicate_customer_names_require_clarification(): void
@@ -172,14 +176,29 @@ class AssistantWorkflowTest extends TestCase
         $this->assertSame(1000, $summary['monthly_reserved_micros']);
     }
 
-    public function test_disabling_ai_preserves_applied_manual_draft_save_and_audit(): void
+    public function test_disabling_ai_refuses_ai_save_and_preserves_the_separate_manual_workflow(): void
     {
-        $component = Livewire::test(InvoiceForm::class)->set('aiConsent', true)->set('aiText', 'Five cartons')
-            ->call('interpretSale')->call('applySaleSuggestion');
+        $result = app(TransactionAssistant::class)->prepare($this->company, $this->owner,
+            'sell to "Ahmed": 5 "carton" "SOAP-3L" at 80 ILS', 'sales',
+            (string) Str::uuid(), (string) Str::uuid(), session()->getId());
+        $component = Livewire::withQueryParams(['assistant' => $result['token']])->test(InvoiceForm::class);
         config(['ai_assistant.enabled' => false]);
-        $component->call('save', false)->assertRedirect();
+        try {
+            $component->call('save', false);
+            $this->fail('Disabling AI must refuse stale AI provenance on Save.');
+        } catch (AssistantUnavailable $e) {
+            $this->assertSame('disabled', $e->reason);
+        }
+        $this->assertSame(0, SalesInvoice::count());
+        Livewire::withQueryParams([])->test(InvoiceForm::class)->set('customer_id', $this->customer->id)
+            ->set('exchange_rate', '1')->set('currency_code', 'ILS')
+            ->set('lines', [['product_id' => $this->aiProduct->id, 'product_unit_id' => $this->aiCarton->id,
+                'item_description' => 'Human manual input', 'quantity' => '5', 'unit_price' => '80',
+                'discount_type' => 'none', 'discount_value' => '0', 'tax_rate_id' => null]])
+            ->call('save', false)->assertHasNoErrors()->assertRedirect();
         $this->assertTrue(SalesInvoice::firstOrFail()->isDraft());
-        $this->assertSame('accepted', AssistantRequest::firstOrFail()->status);
+        $this->assertSame('form_ready', AssistantRequest::firstOrFail()->status);
+        $this->assertNull(AssistantRequest::firstOrFail()->sales_invoice_id);
         $this->assertSame(0, PostingBatch::count());
     }
 

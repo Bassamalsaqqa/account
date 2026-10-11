@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\Application\AI\AiRetention;
 use App\Application\AI\SalesAssistant;
 use App\Models\AssistantRequest;
 use App\Support\Tenancy\CompanyScope;
@@ -30,7 +31,9 @@ final class PruneAssistantProposals extends Command
                     }
                 });
         });
-        $this->info('Expired structured proposal caches removed: '.$count);
+        $retained = app(AiRetention::class)->prune();
+        $this->info('Expired structured proposal caches removed: '.($count + $retained['expired']));
+        $this->info('Expired encrypted provenance content cleared: '.$retained['cleared']);
 
         return self::SUCCESS;
     }

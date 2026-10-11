@@ -9,6 +9,7 @@ use App\Models\Company;
 use App\Models\User;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Crypt;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Throwable;
 
@@ -90,16 +91,22 @@ final class AiFormState
      */
     public function replace(Company $company, User $actor, string $token, string $sessionId, string $formKey, int $expectedRevision, array $data): int
     {
-        return Cache::lock($this->key($token).':lock', 10)->block(3, function () use ($company, $actor, $token, $sessionId, $formKey, $expectedRevision, $data): int {
-            $state = $this->read($company, $actor, $token, $sessionId, $formKey);
-            if ($state['revision'] !== $expectedRevision) {
-                throw new AssistantUnavailable('form_changed');
-            }
-            $state['revision'] = $expectedRevision + 1;
-            $state['data'] = $data;
-            $this->write($token, $state);
+        return DB::transaction(function () use ($company, $actor, $token, $sessionId, $formKey, $expectedRevision, $data): int {
+            // Match command/cancel order: company lock before the cache revision lock.
+            $owned = $this->ownedState($company, $actor, $token, $sessionId, $formKey);
+            app(AiGovernance::class)->authorizeUse($company, $actor, $owned['intent']);
 
-            return $state['revision'];
+            return Cache::lock($this->key($token).':lock', 10)->block(3, function () use ($company, $actor, $token, $sessionId, $formKey, $expectedRevision, $data): int {
+                $state = $this->read($company, $actor, $token, $sessionId, $formKey);
+                if ($state['revision'] !== $expectedRevision) {
+                    throw new AssistantUnavailable('form_changed');
+                }
+                $state['revision'] = $expectedRevision + 1;
+                $state['data'] = $data;
+                $this->write($token, $state);
+
+                return $state['revision'];
+            });
         });
     }
 
@@ -107,7 +114,31 @@ final class AiFormState
     {
         // Cleanup remains possible after revocation; ownership and session binding still apply.
         $this->ownedState($company, $actor, $token, $sessionId);
-        Cache::forget($this->key($token));
+        $this->forgetForSession($actor, $token, $sessionId);
+    }
+
+    /** Cleanup only: no company data is returned, and ownership remains required after membership revocation. */
+    public function forgetForSession(User $actor, string $token, string $sessionId): void
+    {
+        if (! Str::isUuid($token) || $sessionId === '') {
+            throw new AssistantUnavailable('proposal_stale');
+        }
+        Cache::lock($this->key($token).':lock', 10)->block(3, function () use ($actor, $token, $sessionId): void {
+            try {
+                $ciphertext = Cache::get($this->key($token));
+                if (! is_string($ciphertext)) {
+                    return;
+                }
+                $state = json_decode(Crypt::decryptString($ciphertext), true, 24, JSON_THROW_ON_ERROR);
+                if (! is_array($state) || ($state['user_id'] ?? null) !== (int) $actor->id
+                    || ! hash_equals((string) ($state['session_hash'] ?? ''), hash('sha256', $sessionId))) {
+                    throw new AssistantUnavailable('proposal_stale');
+                }
+                Cache::forget($this->key($token));
+            } catch (Throwable) {
+                throw new AssistantUnavailable('proposal_stale');
+            }
+        });
     }
 
     /** @param array<string, mixed> $state */

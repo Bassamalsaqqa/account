@@ -172,6 +172,11 @@ final class TransactionAssistant
             if ($fresh->status !== 'pending' || (int) $policy->revision !== (int) $fresh->policy_revision) {
                 throw new AssistantUnavailable('proposal_stale');
             }
+            // Recheck carried text/speech keys and consent before publishing any encrypted handoff.
+            foreach ($data['connections'] ?? [] as $connection) {
+                app(AiGovernance::class)->dispatchConnection($company, $actor, $connection['public_id'],
+                    $intent ?? $fresh->intent_kind, $connection['capability'], $connection['revision']);
+            }
             $token = $data === null ? '' : app(AiFormState::class)->create($company, $actor, $formKey, $sessionId, $intent ?? $fresh->intent_kind, $data);
             $fresh->update($updates);
             if ($token !== '') {

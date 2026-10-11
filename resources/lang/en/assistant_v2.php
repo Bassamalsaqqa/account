@@ -85,6 +85,7 @@ return [
     'seamless' => 'Seamless',
     'guided' => 'Guided',
     'speech_method' => 'Speech method',
+    'disabled' => 'Text only (microphone disabled)',
     'cloud' => 'Approved cloud transcription',
     'local_only' => 'Installed local recognition only',
     'local_if_supported' => 'Installed local when supported; approved cloud otherwise',

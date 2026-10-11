@@ -126,6 +126,30 @@ class TransactionProposalResolverTest extends TestCase
         $this->resolve('buy from "Vendor": 2 "piece" "SOAP-3L" at 80 ILS', $viewer);
     }
 
+    public function test_sku_barcode_collision_requires_a_choice_instead_of_selecting_a_product(): void
+    {
+        $other = app(ProductCatalogService::class)->createProduct($this->company, [
+            'name_ar' => 'Synthetic alternate product', 'name_en' => 'Other stock', 'sku' => 'OTHER-STOCK',
+            'product_type' => Product::TYPE_STOCK, 'track_stock' => true, 'track_expiry' => false,
+            'base_unit_id' => $this->aiProduct->base_unit_id, 'default_purchase_cost_base' => '2',
+        ], $this->owner->id);
+        app(ProductCatalogService::class)->addBarcode($other, 'SOAP-3L', $other->base_unit_id, true);
+        $text = 'sell to "Ahmed": 5 "piece" "SOAP-3L" at 80 ILS';
+        $result = $this->resolve($text);
+        $this->assertNull($result['payload']['lines'][0]['product_id']);
+        $question = collect($result['questions'])->firstWhere('path', 'lines.0.product');
+        $this->assertIsArray($question);
+        $this->assertEqualsCanonicalizing([$this->aiProduct->id, $other->id], array_column($question['candidates'], 'value'));
+        foreach ([$this->aiProduct, $other] as $choice) {
+            $chosen = app(TransactionProposalResolver::class)->resolve($this->company, $this->owner,
+                $this->proposal($text), ['lines.0.product' => (int) $choice->id]);
+            $this->assertSame($choice->id, $chosen['payload']['lines'][0]['product_id']);
+            $this->assertSame([], $chosen['questions']);
+        }
+        $this->assertSame(0, SalesInvoice::count());
+        Http::assertNothingSent();
+    }
+
     private function proposal(string $text): array
     {
         return app(TransactionProposalSchema::class)->validate(app(DeterministicTransactionParser::class)->parse($text), $text, 'auto');

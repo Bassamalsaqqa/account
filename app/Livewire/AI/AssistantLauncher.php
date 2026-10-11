@@ -6,6 +6,7 @@ namespace App\Livewire\AI;
 
 use App\Application\AI\AiGovernance;
 use App\Application\AI\AiProviderRoutes;
+use App\Application\AI\AiSpeechMethods;
 use App\Application\AI\AssistantUnavailable;
 use App\Application\AI\TransactionAssistant;
 use App\Models\AiUserPreference;
@@ -55,6 +56,12 @@ final class AssistantLauncher extends Component
     /** @var array<int, mixed> */
     public array $answers = [];
 
+    public string $transcriptionChoice = '';
+
+    /** @var list<string> */
+    #[Locked]
+    public array $allowedSpeechMethods = [];
+
     public ?string $textConnection = null;
 
     public ?string $speechConnection = null;
@@ -72,9 +79,14 @@ final class AssistantLauncher extends Component
         $governance = app(AiGovernance::class);
         $policy = $governance->authorizeUse($company, auth()->user(), $this->context);
         $this->mode = $policy->workflow_mode;
-        $this->speechMethod = $policy->speech_method;
+        $this->speechMethod = app(AiSpeechMethods::class)->effective($policy, auth()->user());
+        $this->allowedSpeechMethods = app(AiSpeechMethods::class)->allowed($policy);
         $this->consentRoutes = [];
         $preferences = AiUserPreference::where('company_id', $company->id)->where('user_id', auth()->id())->first();
+        $this->transcriptionChoice = $preferences?->preferences['speech_method'] ?? '';
+        if (! in_array($this->transcriptionChoice, $this->allowedSpeechMethods, true)) {
+            $this->transcriptionChoice = '';
+        }
         foreach ($governance->visibleConnections($company, auth()->user()) as $metadata) {
             if ($metadata['revoked_at'] !== null) {
                 continue;
@@ -104,8 +116,11 @@ final class AssistantLauncher extends Component
     public function selectConnections(): void
     {
         $company = app(CompanyContext::class)->company();
+        app(AiSpeechMethods::class)->choose($company, auth()->user(), $this->transcriptionChoice);
+        $policy = app(AiGovernance::class)->authorizeUse($company, auth()->user(), $this->context);
+        $this->speechMethod = app(AiSpeechMethods::class)->effective($policy, auth()->user());
         foreach (['text_structured' => $this->textConnection, 'audio_transcription' => $this->speechConnection] as $capability => $id) {
-            if ($id !== null && $id !== '') {
+            if ($id !== null && $id !== '' && ($capability !== 'audio_transcription' || in_array($this->speechMethod, ['cloud', 'local_if_supported'], true))) {
                 app(AiProviderRoutes::class)->preference($company, auth()->user(), $capability, $id);
             }
         }

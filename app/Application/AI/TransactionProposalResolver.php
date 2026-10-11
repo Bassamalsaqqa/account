@@ -105,24 +105,13 @@ final class TransactionProposalResolver
             }
             foreach ($proposal['lines'] as $index => $line) {
                 $path = 'lines.'.$index;
-                $productAmbiguous = false;
                 $product = $this->entity(Product::where('company_id', $company->id)->where('active', true)
                     ->when($purchase, fn ($query) => $query->where('product_type', Product::TYPE_STOCK)->where('track_stock', true)),
-                    $line['product'], ['name_ar', 'name_en', 'sku'], $path.'.product', $choices, $questions, false, $productAmbiguous);
-                $barcode = null;
-                if ($product === null && ! $productAmbiguous && $line['product'] !== null) {
-                    $barcode = ProductBarcode::where('company_id', $company->id)->where('barcode', $line['product'])->first();
-                    if ($barcode !== null) {
-                        $product = Product::where('company_id', $company->id)->where('active', true)
-                            ->when($purchase, fn ($query) => $query->where('product_type', Product::TYPE_STOCK)->where('track_stock', true))
-                            ->whereKey($barcode->product_id)->first();
-                    }
-                }
-                if ($product === null) {
-                    $this->entity(Product::where('company_id', $company->id)->where('active', true)
-                        ->when($purchase, fn ($query) => $query->where('product_type', Product::TYPE_STOCK)->where('track_stock', true)),
-                        $line['product'], ['name_ar', 'name_en', 'sku'], $path.'.product', $choices, $questions);
-                }
+                    $line['product'], ['name_ar', 'name_en', 'sku'], $path.'.product', $choices, $questions, (int) $company->id);
+                // A barcode is evidence for its selected product only, never a reason to prefer it over another exact match.
+                $barcode = $product === null || $line['product'] === null ? null
+                    : ProductBarcode::where('company_id', $company->id)->where('product_id', $product->id)
+                        ->where('barcode', app(SalesProposalSchema::class)->normalizeDigits($line['product']))->first();
                 if ($product?->track_stock && $warehouse === null) {
                     $this->entity(Warehouse::where('company_id', $company->id)->where('active', true), null,
                         ['name_ar', 'name_en', 'code'], 'warehouse', [], $questions);
@@ -230,22 +219,29 @@ final class TransactionProposalResolver
      * @param  list<array<string, mixed>>  $questions
      * @return T|null
      */
-    private function entity(Builder $query, ?string $reference, array $columns, string $path, array $choices, array &$questions, bool $ask = true, bool &$ambiguous = false): ?Model
+    private function entity(Builder $query, ?string $reference, array $columns, string $path, array $choices, array &$questions, ?int $barcodeCompanyId = null): ?Model
     {
-        $matches = $reference === null ? collect() : (clone $query)->where(function ($query) use ($columns, $reference): void {
+        $matches = $reference === null ? collect() : (clone $query)->where(function ($query) use ($columns, $reference, $barcodeCompanyId): void {
             foreach ($columns as $column) {
                 $query->orWhere($column, $reference);
             }
+            if ($barcodeCompanyId !== null) {
+                $query->orWhereHas('barcodes', fn ($barcodes) => $barcodes->where('company_id', $barcodeCompanyId)
+                    ->where('barcode', app(SalesProposalSchema::class)->normalizeDigits($reference)));
+            }
         })->limit(2)->get();
-        $ambiguous = $matches->count() > 1;
         if ($matches->count() === 1) {
             return $matches->first();
         }
         $candidateQuery = clone $query;
         if ($reference !== null) {
-            $candidateQuery->where(function ($query) use ($columns, $reference): void {
+            $candidateQuery->where(function ($query) use ($columns, $reference, $barcodeCompanyId): void {
                 foreach ($columns as $column) {
                     $query->orWhere($column, 'like', '%'.addcslashes($reference, '\\%_').'%');
+                }
+                if ($barcodeCompanyId !== null) {
+                    $query->orWhereHas('barcodes', fn ($barcodes) => $barcodes->where('company_id', $barcodeCompanyId)
+                        ->where('barcode', app(SalesProposalSchema::class)->normalizeDigits($reference)));
                 }
             });
         }
@@ -253,11 +249,9 @@ final class TransactionProposalResolver
         if (isset($choices[$path]) && $candidates->contains('id', $choices[$path])) {
             return $candidates->firstWhere('id', $choices[$path]);
         }
-        if ($ask) {
-            $questions[] = ['path' => $path, 'candidates' => $candidates->map(fn ($row) => [
-                'value' => (int) $row->getKey(), 'label' => (string) ($row->getAttribute('name_ar') ?? $row->getAttribute('name_en') ?? $row->getAttribute('code')),
-            ])->all()];
-        }
+        $questions[] = ['path' => $path, 'candidates' => $candidates->map(fn ($row) => [
+            'value' => (int) $row->getKey(), 'label' => (string) ($row->getAttribute('name_ar') ?? $row->getAttribute('name_en') ?? $row->getAttribute('code')),
+        ])->all()];
 
         return null;
     }

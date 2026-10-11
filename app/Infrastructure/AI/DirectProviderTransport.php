@@ -38,9 +38,10 @@ final class DirectProviderTransport
         $base = (string) $route['base_url'];
         $host = (string) parse_url($base, PHP_URL_HOST);
         $pinned = config('ai_assistant.provider_ipv4.'.$route['provider'].'.'.$route['region']);
-        $addresses = is_string($pinned) && $pinned !== '' ? [$pinned] : (gethostbynamel($host) ?: []);
-        // Reject mixed public/private DNS answers; pin a checked address to prevent rebinding.
-        if ($addresses === [] || count($addresses) > 16) {
+        $addresses = is_string($pinned) && $pinned !== '' ? [$pinned] : [];
+        // Require an operator-reviewed public destination; synchronous DNS has no bounded PHP timeout.
+        // TLS still verifies the curated provider hostname; no user-supplied host or IP is accepted.
+        if ($addresses === []) {
             throw new AssistantUnavailable('provider_configuration');
         }
         foreach ($addresses as $address) {

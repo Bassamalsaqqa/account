@@ -23,7 +23,6 @@ use App\Models\User;
 use App\Support\Tenancy\CompanyContext;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
@@ -269,15 +268,14 @@ class AssistantSecurityTest extends TestCase
         $this->assertSame(0, SalesInvoice::count());
     }
 
-    public function test_upload_route_uses_same_origin_auth_and_does_not_persist_raw_audio(): void
+    public function test_superseded_upload_route_is_unavailable_even_with_legacy_provider_flags_enabled(): void
     {
         $provider = $this->fakeSpeech();
-        $file = UploadedFile::fake()->createWithContent('description.wav', $this->wav());
-        $this->withSession(['active_company_id' => $this->company->id])->postJson('/sales-assistant/audio', ['audio' => $file, 'request_key' => (string) Str::uuid(), 'consent' => true])
-            ->assertOk()->assertJsonStructure(['text', 'request_id']);
-        $this->assertSame(1, $provider->calls);
-        $this->assertFileDoesNotExist($file->getPathname());
+        $this->postJson('/sales-assistant/audio', [])->assertNotFound();
+        $this->assertSame(0, $provider->calls);
+        $this->assertSame(0, AssistantRequest::count());
         $this->assertSame(0, SalesInvoice::count());
+        Http::assertNothingSent();
     }
 
     public function test_speech_gateway_builds_a_valid_minimized_multipart_request(): void

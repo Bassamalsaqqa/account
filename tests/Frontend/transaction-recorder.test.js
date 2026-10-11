@@ -6,8 +6,8 @@ import { encodePcmWave } from '../../resources/js/ai-wave.js';
 
 const deferred = () => { let resolve, reject; const promise = new Promise((a,b) => { resolve=a; reject=b; }); return {promise,resolve,reject}; };
 const stream = () => { const track={stopped:false,stop(){this.stopped=true;}}; return {track,getTracks:()=>[track]}; };
-async function fixture(getUserMedia, fetcher = async()=>({ok:true,json:async()=>({text:'Editable transcript',audio_token:'synthetic-token'})}), localSpeech = null, method = 'cloud') {
- let create; const contexts=[], nodes=[], changes=[];
+async function fixture(getUserMedia, fetcher = async()=>({ok:true,json:async()=>({text:'Editable transcript',audio_token:'synthetic-token'})}), localSpeech = null, method = 'cloud', correction = false) {
+ let create; const contexts=[], nodes=[], changes=[], rootListeners=new Map();
  class Context {
   constructor(){this.sampleRate=48000;this.destination={};this.closed=false;this.audioWorklet={addModule:async()=>{}};contexts.push(this);}
   resume(){return Promise.resolve();} close(){this.closed=true;return Promise.resolve();}
@@ -21,9 +21,9 @@ async function fixture(getUserMedia, fetcher = async()=>({ok:true,json:async()=>
  const document={addEventListener(){},removeEventListener(){},querySelector:()=>({content:'synthetic-csrf'})};
  const code=(await fs.readFile(new URL('../../resources/js/transaction-recorder.js',import.meta.url),'utf8')).replace(/^import .*?;s*/, '').replaceAll('import.meta.url',JSON.stringify(import.meta.url));
  vm.runInNewContext(code,{window,document,navigator:{mediaDevices:{getUserMedia}},AudioContext:Context,AudioWorkletNode:Worklet,encodePcmWave,URL,Blob,FormData,AbortController,crypto:globalThis.crypto,fetch:fetcher,setTimeout,clearTimeout});
- const wire={consent:true,formKey:'synthetic-form',context:'sales',receiveTranscript:async(text,token)=>changes.push([text,token])};
- const recorder=create(wire,{url:'http://127.0.0.1/sales-assistant/audio',maxSeconds:60,method,locale:'ar',limitError:'limit',permissionError:'permission denied',deliveryError:'provider unavailable'});recorder.init();
- return {recorder,wire,contexts,nodes,changes};
+ const wire={aiFormRevision:3,$el:{addEventListener:(name,callback)=>rootListeners.set(name,callback),removeEventListener:(name)=>rootListeners.delete(name)},receiveAiCorrection:async(text,token,revision)=>changes.push([text,token,revision]),consent:true,formKey:'synthetic-form',context:'sales',receiveTranscript:async(text,token)=>changes.push([text,token])};
+ const recorder=create(wire,{url:'http://127.0.0.1/sales-assistant/audio',maxSeconds:60,method,correction,changedError:'form changed',locale:'ar',limitError:'limit',permissionError:'permission denied',deliveryError:'provider unavailable'});recorder.init();
+ return {recorder,wire,contexts,nodes,changes,rootListeners};
 }
 
 test('denied microphone permission closes capture and leaves manual input untouched',async()=>{
@@ -92,4 +92,37 @@ test('an unexpected local recognition end never submits a transcript',async()=>{
  const f=await fixture(async()=>stream(),async()=>{throw new Error('must not upload');},LocalSpeech,'local_only');
  await f.recorder.start();instance.onresult({resultIndex:0,results:[Object.assign([{transcript:'Partial'}],{isFinal:true})]});await instance.onend();
  assert.deepEqual(f.changes,[]);assert.equal(f.recorder.recording,false);f.recorder.destroy();
+});
+
+test('correction delivery carries the revision captured at microphone start', async()=>{
+ const f=await fixture(async()=>stream(),async()=>({ok:true,json:async()=>({text:'change quantity to 7',audio_token:'synthetic-token'})}),null,'cloud',true);
+ await f.recorder.start(); f.wire.aiFormRevision=4;
+ f.nodes[0].port.onmessage({data:{samples:new Float32Array(48)}});
+ await f.recorder.stop(true);
+ assert.deepEqual(f.changes,[['change quantity to 7','synthetic-token',3]]);
+ f.recorder.destroy(); assert.equal(f.rootListeners.size,0);
+});
+
+test('manual financial input cancels pending speech and preserves the human edit', async()=>{
+ const response=deferred(); let sent;
+ const f=await fixture(async()=>stream(),async(url,request)=>{sent=request;return response.promise;},null,'cloud',true);
+ await f.recorder.start(); f.nodes[0].port.onmessage({data:{samples:new Float32Array(48)}});
+ const pending=f.recorder.stop(true); await new Promise(resolve=>setImmediate(resolve));
+ const human={value:'83.125',getAttributeNames:()=>['wire:model.blur'],getAttribute:()=> 'lines.0.unit_price'};
+ f.rootListeners.get('input')({target:human});
+ assert.equal(sent.signal.aborted,true); assert.equal(f.recorder.error,'form changed');
+ response.resolve({ok:true,json:async()=>({text:'change quantity to 7',audio_token:'synthetic-token'})});
+ await pending;
+ assert.deepEqual(f.changes,[]); assert.equal(human.value,'83.125'); f.recorder.destroy();
+});
+
+test('a newly selected local-only or text-only method cannot upload through stale cloud options', async()=>{
+ for(const selected of ['local_only','disabled']){
+  let captures=0,uploads=0;
+  const f=await fixture(async()=>{captures++;return stream();},async()=>{uploads++;throw new Error('must not upload');});
+  f.wire.speechMethod=selected;
+  await f.recorder.start();
+  assert.equal(captures,0);assert.equal(uploads,0);assert.equal(f.recorder.error,'permission denied');
+  f.recorder.destroy();
+ }
 });
