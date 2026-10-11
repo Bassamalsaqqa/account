@@ -122,3 +122,20 @@ Final current-source evidence: four independent-process cases **4 tests / 151 as
 The two real PHP processes are held behind the same company row lock, both report an attempting barrier and remain running without a result before release. Identical creates converge to one complete draft/receipt; differing costs yield one exact winning draft and one 409. Mid-wait Viewer downgrade and membership revocation deny both results with no writes. Control-tenant histories, stock/valuation caches, lots, numbering and primary schema counts remain unchanged. Targeted Accounting, Inventory, Money and Payables reconciliations pass on these synthetic fixtures; this does not claim a newly executed six-domain integration pass.
 
 Codex-owned primary and auxiliary schemas and child/barrier artifacts were cleaned by the harness. Earlier quarantined schemas remain untouched. Worker originals are retained untracked; no worker commit or runtime modification was accepted. Pint, PHPStan and whitespace checks passed. Latest deduplicated focused evidence is **156 PHP tests / 1,136 assertions**; final M6 integration and the remaining source/UI requirements are still incomplete. No merge, deployment, production access, provider call or CI occurred.
+
+## Foreground correction acknowledgement checkpoint
+
+Codex corrected the unsynchronized browser-edit race without changing canonical financial writers. Provider inference now prepares a protected, session/user/company/tab-bound single-use patch without changing the editable form. The current browser generation must acknowledge it in a separate no-provider local commit; the server rechecks permissions, policy/keys, source form revision and exact latest payload. Human input or selection changes discard late patches. Only the short local commit disables previously enabled form controls; inference leaves ordinary fields editable. Text-only correction requests also expose cancellation.
+
+A second reproduced defect involved deferred wire:model fields delivered with the preparation call: synchronization advanced server memory while Livewire retained its old revision. The trait now retains the synchronized revision before preparation/dehydration. The one-case failing reproduction is retained privately; the corrected aggregate passed.
+
+Actual current checks:
+- Correction, form-state and unsaved canonical-form group: **20 PHP tests / 127 assertions**, zero failures/errors/skips. Correction class: 11 / 68; form state: 3 / 11; unsaved forms: 6 / 48.
+- Prepared patches remain unapplied until acknowledgement; wrong session/tab, replay, unsynchronized latest payload, changed company policy and original-form expiry refuse. Patch lifetime is capped by the original fixed expiry. No invoice or posting is created by correction.
+- Frontend checks: **25 tests**, zero failures/skips, including five new recorder preparation/commit/manual-edit cases. Four retained legacy recorder checks are not direct-provider operational evidence.
+- Pint, PHPStan, production frontend build (61 modules) and whitespace checks PASS. The final JavaScript interruption update was followed by a fresh relevant frontend/build run.
+- Protected governing Owner specification SHA-256 remains B080FC50222DC3F8E0AE6E8A3701BD4151E0CC020AD9FEEF14DE205521A5FB3F. Owned test schemas were cleaned.
+
+The earlier 156 / 1,136 deduplicated focused evidence figure is historical checkpoint evidence, not a new aggregate for this source. Current exact per-class results above supersede earlier correction/form-state/unsaved-form reports.
+
+AGY headless hello completed successfully. Bounded budget process-concurrency, tenant-local speech candidates and provider/ADR documentation assignments are running in separate linked worktrees at 782dee5111f6cf693afdf9def198e7a2fb8b6d61. Their outputs remain NOT ACCEPTED pending independent inspection and targeted verification. Final Phase 12 M6 acceptance, full responsive/device certification and remaining source requirements are incomplete. No merge, deployment, production access/mutation, real credential/provider call or GitHub CI occurred.

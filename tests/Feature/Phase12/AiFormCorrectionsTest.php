@@ -143,10 +143,13 @@ class AiFormCorrectionsTest extends TestCase
     {
         $result = app(TransactionAssistant::class)->prepare($this->company, $this->owner,
             'sell to "Ahmed": 5 "carton" "SOAP-3L" at 80 ILS', 'sales', (string) Str::uuid(), (string) Str::uuid(), session()->getId());
-        Livewire::withQueryParams(['assistant' => $result['token']])->test(InvoiceForm::class)
+        $form = Livewire::withQueryParams(['assistant' => $result['token']])->test(InvoiceForm::class)
             ->set('notes', 'Keep my manual note')
             ->set('aiCorrectionText', 'change quantity to 7')
             ->call('correctAiInput')
+            ->assertSet('lines.0.quantity', '5');
+        $prepared = $form->effects['returns'][0];
+        $form->call('applyPreparedAiInput', $prepared)
             ->assertSet('lines.0.quantity', '7')
             ->assertSet('notes', 'Keep my manual note')
             ->assertSet('aiChangedFields', ['lines.0.quantity'])
@@ -156,6 +159,109 @@ class AiFormCorrectionsTest extends TestCase
             ->assertSet('lines.0.quantity', '5')
             ->assertSet('notes', 'Keep my manual note')
             ->assertSet('aiCanUndo', false);
+        $this->assertSame(0, SalesInvoice::count());
+        Http::assertNothingSent();
+    }
+
+    public function test_prepared_correction_is_unsaved_bound_single_use_and_rechecked_before_commit(): void
+    {
+        [$token, $state] = $this->editing();
+        $service = app(AiFormCorrections::class);
+        $prepared = $service->prepare($this->company, $this->owner, $token, 'session',
+            $state['form_key'], $state['revision'], $state['data']['payload'], 'change quantity to 7', (string) Str::uuid());
+        $this->assertSame('5', app(AiFormState::class)->read($this->company, $this->owner, $token, 'session')['data']['payload']['lines'][0]['quantity']);
+        $this->assertSame('pending', AssistantRequest::where('purpose', 'patch')->sole()->status);
+        foreach ([['other-session', $state['form_key']], ['session', (string) Str::uuid()]] as [$session, $formKey]) {
+            try {
+                $service->commit($this->company, $this->owner, $token, $session, $formKey, $prepared, $state['data']['payload']);
+                $this->fail('Prepared patch must remain session and tab bound.');
+            } catch (AssistantUnavailable $e) {
+                $this->assertSame('proposal_stale', $e->reason);
+            }
+        }
+        $result = $service->commit($this->company, $this->owner, $token, 'session', $state['form_key'], $prepared, $state['data']['payload']);
+        $this->assertSame('7', $result['payload']['lines'][0]['quantity']);
+        $this->assertSame('form_edited', AssistantRequest::where('purpose', 'patch')->sole()->status);
+        try {
+            $service->commit($this->company, $this->owner, $token, 'session', $state['form_key'], $prepared, $state['data']['payload']);
+            $this->fail('A consumed patch must never replay.');
+        } catch (AssistantUnavailable $e) {
+            $this->assertSame('proposal_stale', $e->reason);
+        }
+        $this->assertSame(0, SalesInvoice::count());
+        $this->assertSame(0, DB::table('posting_batches')->count());
+        Http::assertNothingSent();
+    }
+
+    public function test_unsynchronized_browser_edit_after_prepare_refuses_commit_without_overwriting_the_form(): void
+    {
+        [$token, $state] = $this->editing();
+        $service = app(AiFormCorrections::class);
+        $prepared = $service->prepare($this->company, $this->owner, $token, 'session',
+            $state['form_key'], $state['revision'], $state['data']['payload'], 'change quantity to 7', (string) Str::uuid());
+        $human = $state['data']['payload'];
+        $human['lines'][0]['quantity'] = '9';
+        try {
+            $service->commit($this->company, $this->owner, $token, 'session', $state['form_key'], $prepared, $human);
+            $this->fail('Latest browser payload must match the prepared revision.');
+        } catch (AssistantUnavailable $e) {
+            $this->assertSame('form_changed', $e->reason);
+        }
+        $this->assertSame('9', $human['lines'][0]['quantity']);
+        $this->assertSame('5', app(AiFormState::class)->read($this->company, $this->owner, $token, 'session')['data']['payload']['lines'][0]['quantity']);
+        $service->discardPrepared($this->company, $this->owner, $prepared, 'session', $state['form_key']);
+        $this->assertSame('canceled', AssistantRequest::where('purpose', 'patch')->sole()->status);
+        $this->assertSame(0, SalesInvoice::count());
+        Http::assertNothingSent();
+    }
+
+    public function test_policy_revocation_after_prepare_refuses_the_edit(): void
+    {
+        [$token, $state] = $this->editing();
+        $service = app(AiFormCorrections::class);
+        $prepared = $service->prepare($this->company, $this->owner, $token, 'session',
+            $state['form_key'], $state['revision'], $state['data']['payload'], 'change quantity to 7', (string) Str::uuid());
+        $this->aiPolicy->update(['follow_up_enabled' => false, 'revision' => $this->aiPolicy->revision + 1]);
+        try {
+            $service->commit($this->company, $this->owner, $token, 'session', $state['form_key'], $prepared, $state['data']['payload']);
+            $this->fail('Revoked follow-up authority must be checked at acknowledgement.');
+        } catch (AssistantUnavailable $e) {
+            $this->assertSame('proposal_stale', $e->reason);
+        }
+        $this->assertSame(0, SalesInvoice::count());
+        $this->assertSame('pending', AssistantRequest::where('purpose', 'patch')->sole()->status);
+        Http::assertNothingSent();
+    }
+
+    public function test_prepared_patch_expiry_does_not_extend_original_form_memory(): void
+    {
+        [$token, $state] = $this->editing();
+        $this->travel((int) config('ai_assistant.proposal_ttl_seconds') - 10)->seconds();
+        $service = app(AiFormCorrections::class);
+        $prepared = $service->prepare($this->company, $this->owner, $token, 'session',
+            $state['form_key'], $state['revision'], $state['data']['payload'], 'change quantity to 7', (string) Str::uuid());
+        $this->travel(11)->seconds();
+        try {
+            $service->commit($this->company, $this->owner, $token, 'session', $state['form_key'], $prepared, $state['data']['payload']);
+            $this->fail('A later prepared patch cannot revive an expired form.');
+        } catch (AssistantUnavailable $e) {
+            $this->assertSame('proposal_stale', $e->reason);
+        }
+        $this->assertSame(0, SalesInvoice::count());
+        Http::assertNothingSent();
+    }
+
+    public function test_unsynchronized_manual_fields_in_the_same_request_are_preserved_during_preparation(): void
+    {
+        $result = app(TransactionAssistant::class)->prepare($this->company, $this->owner,
+            'sell to "Ahmed": 5 "carton" "SOAP-3L" at 80 ILS', 'sales', (string) Str::uuid(), (string) Str::uuid(), session()->getId());
+        $form = Livewire::withQueryParams(['assistant' => $result['token']])->test(InvoiceForm::class)
+            ->update([['method' => 'correctAiInput', 'params' => []]], [
+                'notes' => 'Human note typed before submit', 'aiCorrectionText' => 'change quantity to 7',
+            ])->assertSet('lines.0.quantity', '5')->assertSet('notes', 'Human note typed before submit');
+        $prepared = $form->effects['returns'][0];
+        $form->call('applyPreparedAiInput', $prepared)->assertSet('lines.0.quantity', '7')
+            ->assertSet('notes', 'Human note typed before submit');
         $this->assertSame(0, SalesInvoice::count());
         Http::assertNothingSent();
     }

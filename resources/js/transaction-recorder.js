@@ -5,9 +5,25 @@ const register = () => window.Alpine.data('transactionRecorder', (wire, options)
     let stream, context, source, node, timer, chunks = [], wav, samples = 0, flush, abort;
     let generation = 0, recognition, localText = '', intentionalStop = false, recordedRevision;
     const method = () => options.correction ? options.method : (wire.speechMethod || options.method);
-    const deliver = (text, token) => options.correction
-        ? wire.receiveAiCorrection(text, token, recordedRevision)
-        : wire.receiveTranscript(text, token);
+    const acknowledge = async (prepared, turn) => {
+        if (typeof prepared !== 'string') return;
+        if (turn !== generation) {
+            await wire.discardPreparedAiInput(prepared);
+            return;
+        }
+        // Inference leaves all form fields editable. Only the short local commit is protected from new input.
+        const controls = [...(wire.$el?.querySelectorAll?.('input, select, textarea, button') || [])];
+        const enabled = controls.filter(control => !control.disabled);
+        enabled.forEach(control => { control.disabled = true; });
+        try { await wire.applyPreparedAiInput(prepared); }
+        finally { enabled.forEach(control => { control.disabled = false; }); }
+    };
+    const deliver = async (text, token) => {
+        if (!options.correction) return wire.receiveTranscript(text, token);
+        const turn = generation;
+        const prepared = await wire.receiveAiCorrection(text, token, recordedRevision);
+        await acknowledge(prepared, turn);
+    };
     return {
         recording: false, busy: false, ready: false, seconds: 0, error: '',
         supported: Boolean(window.isSecureContext && navigator.mediaDevices?.getUserMedia && window.AudioContext && window.AudioWorkletNode),
@@ -20,8 +36,19 @@ const register = () => window.Alpine.data('transactionRecorder', (wire, options)
                 this.clear(); this.error = options.changedError || options.deliveryError;
             };
             wire.$el?.addEventListener('input', this.manualEdit, true);
+            wire.$el?.addEventListener('change', this.manualEdit, true);
             window.addEventListener('pagehide', this.leave);
             document.addEventListener('livewire:navigating', this.leave);
+        },
+        async applyTyped() {
+            if (this.recording || this.busy) return;
+            const turn = generation;
+            this.busy = true; this.error = '';
+            try {
+                const prepared = await wire.correctAiInput();
+                await acknowledge(prepared, turn);
+            } catch { if (turn === generation) this.error = options.deliveryError; }
+            finally { if (turn === generation) this.busy = false; }
         },
         async start() {
             if (this.recording || this.busy) return;
@@ -162,6 +189,7 @@ const register = () => window.Alpine.data('transactionRecorder', (wire, options)
         },
         destroy() {
             this.clear(); wire.$el?.removeEventListener('input', this.manualEdit, true);
+            wire.$el?.removeEventListener('change', this.manualEdit, true);
             window.removeEventListener('pagehide', this.leave);
             document.removeEventListener('livewire:navigating', this.leave);
         },

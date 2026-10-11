@@ -126,3 +126,69 @@ test('a newly selected local-only or text-only method cannot upload through stal
   f.recorder.destroy();
  }
 });
+
+test('manual edit during typed inference discards the prepared patch and never applies late fields', async()=>{
+ const inference=deferred(), discarded=[], applied=[];
+ const f=await fixture(async()=>stream(),undefined,null,'cloud',true);
+ f.wire.correctAiInput=()=>inference.promise;
+ f.wire.discardPreparedAiInput=async token=>discarded.push(token);
+ f.wire.applyPreparedAiInput=async token=>applied.push(token);
+ const pending=f.recorder.applyTyped();
+ const human={value:'9',getAttributeNames:()=>['wire:model.blur'],getAttribute:()=> 'lines.0.quantity'};
+ f.rootListeners.get('input')({target:human});
+ inference.resolve('prepared-patch'); await pending;
+ assert.deepEqual(discarded,['prepared-patch']);assert.deepEqual(applied,[]);
+ assert.equal(human.value,'9');assert.equal(f.recorder.error,'form changed');f.recorder.destroy();
+});
+
+test('a current prepared patch disables only enabled controls during the local commit and restores them', async()=>{
+ const inference=deferred(),commit=deferred(),applied=[];
+ const f=await fixture(async()=>stream(),undefined,null,'cloud',true);
+ const edit={disabled:false},restricted={disabled:true},save={disabled:false};
+ f.wire.$el.querySelectorAll=()=>[edit,restricted,save];
+ f.wire.correctAiInput=()=>inference.promise;
+ f.wire.applyPreparedAiInput=async token=>{applied.push(token);await commit.promise;};
+ const pending=f.recorder.applyTyped();
+ assert.equal(edit.disabled,false);assert.equal(save.disabled,false);
+ inference.resolve('prepared-patch');await new Promise(resolve=>setImmediate(resolve));
+ assert.deepEqual(applied,['prepared-patch']);assert.equal(edit.disabled,true);assert.equal(save.disabled,true);
+ commit.resolve();await pending;
+ assert.equal(edit.disabled,false);assert.equal(save.disabled,false);assert.equal(restricted.disabled,true);
+ assert.equal(f.recorder.busy,false);f.recorder.destroy();
+});
+
+test('local commit failure restores editable controls and leaves the manual workflow usable', async()=>{
+ const f=await fixture(async()=>stream(),undefined,null,'cloud',true),control={disabled:false};
+ f.wire.$el.querySelectorAll=()=>[control];
+ f.wire.correctAiInput=async()=> 'prepared-patch';
+ f.wire.applyPreparedAiInput=async()=>{throw new Error('stale');};
+ await f.recorder.applyTyped();
+ assert.equal(control.disabled,false);assert.equal(f.recorder.busy,false);
+ assert.equal(f.recorder.error,'provider unavailable');f.recorder.destroy();
+});
+
+test('manual edit after speech transcription but during interpretation refuses the late correction', async()=>{
+ const inference=deferred(),discarded=[],applied=[];
+ const f=await fixture(async()=>stream(),undefined,null,'cloud',true);
+ f.wire.receiveAiCorrection=()=>inference.promise;
+ f.wire.discardPreparedAiInput=async token=>discarded.push(token);
+ f.wire.applyPreparedAiInput=async token=>applied.push(token);
+ await f.recorder.start();f.nodes[0].port.onmessage({data:{samples:new Float32Array(48)}});
+ const pending=f.recorder.stop(true);await new Promise(resolve=>setImmediate(resolve));
+ const human={value:'83.125',getAttributeNames:()=>['wire:model.blur'],getAttribute:()=> 'lines.0.unit_price'};
+ f.rootListeners.get('input')({target:human});inference.resolve('prepared-speech-patch');await pending;
+ assert.deepEqual(discarded,['prepared-speech-patch']);assert.deepEqual(applied,[]);
+ assert.equal(human.value,'83.125');assert.equal(f.recorder.error,'form changed');f.recorder.destroy();
+});
+
+test('a changed select invalidates pending correction just like typed financial input', async()=>{
+ const inference=deferred(),discarded=[];
+ const f=await fixture(async()=>stream(),undefined,null,'cloud',true);
+ f.wire.correctAiInput=()=>inference.promise;f.wire.discardPreparedAiInput=async token=>discarded.push(token);
+ f.wire.applyPreparedAiInput=async()=>assert.fail('changed unit must refuse late patch');
+ const pending=f.recorder.applyTyped();
+ f.rootListeners.get('change')({target:{getAttributeNames:()=>['wire:model'],getAttribute:()=> 'lines.0.product_unit_id'}});
+ inference.resolve('prepared-patch');await pending;
+ assert.deepEqual(discarded,['prepared-patch']);assert.equal(f.recorder.error,'form changed');
+ f.recorder.destroy();assert.equal(f.rootListeners.size,0);
+});

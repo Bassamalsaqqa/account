@@ -27,12 +27,12 @@
                 <input id="ai-correction-{{ $this->getId() }}" wire:model="aiCorrectionText" maxlength="4000"
                     placeholder="{{ __('assistant_v2.correction_example') }}" class="min-h-11 w-full rounded-control border border-border bg-surface px-3 text-base" :disabled="recording || busy" />
                 <div class="flex flex-wrap gap-2">
-                    <button type="button" wire:click="correctAiInput" wire:loading.attr="disabled" :disabled="recording || busy" class="min-h-11 rounded-control border border-border bg-surface px-3 font-semibold disabled:opacity-50">{{ __('assistant_v2.apply_correction') }}</button>
+                    <button type="button" @click="applyTyped()" :disabled="recording || busy" class="min-h-11 rounded-control border border-border bg-surface px-3 font-semibold disabled:opacity-50">{{ __('assistant_v2.apply_correction') }}</button>
                     @if (config('ai_assistant.speech_enabled') === true && $aiPolicy->speech_method !== 'disabled')
                         <button type="button" x-show="!recording" @click="start()" :disabled="busy" class="min-h-11 rounded-control border border-border px-3 font-semibold">{{ __('assistant_v2.record_correction') }}</button>
                         <button type="button" x-show="recording" x-cloak @click="stop(true)" class="min-h-11 rounded-control bg-danger px-3 font-semibold text-white">{{ __('assistant_v2.stop_continue') }}</button>
-                        <button type="button" x-show="recording || busy" x-cloak @click="clear(); $wire.cancelAiCorrection()" class="min-h-11 px-3 underline">{{ __('assistant_v2.cancel') }}</button>
                     @endif
+                        <button type="button" x-show="recording || busy" x-cloak @click="clear(); $wire.cancelAiCorrection()" class="min-h-11 px-3 underline">{{ __('assistant_v2.cancel') }}</button>
                     @if ($aiCanUndo)
                         <button type="button" wire:click="undoAiInput" wire:loading.attr="disabled" class="min-h-11 rounded-control border border-border bg-surface px-3 font-semibold">{{ __('assistant_v2.undo') }}</button>
                     @endif

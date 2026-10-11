@@ -25,10 +25,10 @@ final class AiFormCorrections
 {
     /** No draft or financial writer is called here.
      * @param  array<string, mixed>  $payload
-     * @return array<string, mixed>
+     * @return string Protected single-use patch locator.
      */
-    public function apply(Company $company, User $actor, string $token, string $session, string $formKey, int $revision,
-        array $payload, string $text, string $requestKey, ?string $connectionId = null, ?string $audioToken = null): array
+    public function prepare(Company $company, User $actor, string $token, string $session, string $formKey, int $revision,
+        array $payload, string $text, string $requestKey, ?string $connectionId = null, ?string $audioToken = null): string
     {
         $editing = app(AiFormEditing::class);
         $revision = $editing->synchronize($company, $actor, $token, $session, $formKey, $revision, $payload);
@@ -78,7 +78,7 @@ final class AiFormCorrections
                 throw new AssistantUnavailable('provider_outage');
             }
             $operations = $schema->validate($proposal, $text, count($payload['lines']));
-            $result = DB::transaction(function () use ($company, $actor, $token, $session, $formKey, $revision, $payload, $operations, $routes, $connections, $request, $intent): array {
+            $result = DB::transaction(function () use ($company, $actor, $token, $session, $formKey, $revision, $payload, $operations, $routes, $connections, $request, $intent): string {
                 $policy = app(AiGovernance::class)->authorizeUse($company, $actor, $intent);
                 $fresh = AssistantRequest::where('company_id', $company->id)->where('user_id', $actor->id)->whereKey($request->id)->lockForUpdate()->firstOrFail();
                 if (! $policy->follow_up_enabled || (int) $policy->revision !== (int) $fresh->policy_revision || $fresh->status !== 'pending') {
@@ -88,28 +88,20 @@ final class AiFormCorrections
                 if ($state['revision'] !== $revision || ! hash_equals($state['data']['payload_hash'], app(AiFormEditing::class)->hash($payload))) {
                     throw new AssistantUnavailable('form_changed');
                 }
-                $data = $state['data'];
                 foreach ($routes as $connection) {
                     $connections[] = ['public_id' => $connection->public_id, 'revision' => (int) $connection->revision, 'capability' => 'text_structured'];
                 }
                 foreach ($connections as $connection) {
                     app(AiGovernance::class)->dispatchConnection($company, $actor, $connection['public_id'], $intent, $connection['capability'], $connection['revision']);
                 }
-                [$next, $changed] = $this->edit($company, $actor, $intent, $payload, $operations);
-                $data['undo'] = ['payload' => $payload, 'origins' => $data['resolved']['origins'],
-                    'unresolved' => $data['resolved']['unresolved']];
-                $data['payload'] = $next;
-                $data['payload_hash'] = app(AiFormEditing::class)->hash($next);
-                $data['connections'] = $connections;
-                $data['changed_fields'] = $changed;
-                $data['last_change'] = 'assistant';
-                foreach ($changed as $field) {
-                    $data['resolved']['origins'][$field] = 'spoken';
-                }
-                $newRevision = app(AiFormState::class)->replace($company, $actor, $token, $session, $formKey, $revision, $data);
-                $fresh->update(['status' => 'form_edited', 'approved_command' => ['version' => 1, 'operations' => $operations]]);
+                // Validate the entire proposed edit, but keep the user's form unchanged until a current browser acknowledges it.
+                $this->edit($company, $actor, $intent, $payload, $operations);
 
-                return ['payload' => $next, 'revision' => $newRevision, 'changed_fields' => $changed, 'can_undo' => true];
+                return app(AiFormState::class)->create($company, $actor, $formKey, $session, $intent, [
+                    'lifecycle' => 'prepared_patch', 'patch_request_id' => (int) $fresh->id,
+                    'form_token' => $token, 'payload_hash' => app(AiFormEditing::class)->hash($payload),
+                    'operations' => $operations, 'connections' => $connections,
+                ], $revision, $state['expires_at']);
             });
             if ($audioToken !== null) {
                 app(AiFormState::class)->forget($company, $actor, $audioToken, $session);
@@ -121,6 +113,81 @@ final class AiFormCorrections
                 ->where('status', 'pending')->update(['status' => 'failed', 'failure_code' => $e instanceof AssistantUnavailable ? $e->reason : 'unavailable']);
             throw $e;
         }
+    }
+
+    /** Trusted synchronous callers may prepare and immediately acknowledge the same payload.
+     * @param  array<string, mixed>  $payload
+     * @return array<string, mixed>
+     */
+    public function apply(Company $company, User $actor, string $token, string $session, string $formKey, int $revision,
+        array $payload, string $text, string $requestKey, ?string $connectionId = null, ?string $audioToken = null): array
+    {
+        $prepared = $this->prepare($company, $actor, $token, $session, $formKey, $revision, $payload, $text, $requestKey, $connectionId, $audioToken);
+
+        return $this->commit($company, $actor, $token, $session, $formKey, $prepared, $payload);
+    }
+
+    /** The foreground inference hop cannot mutate financial form fields.
+     * @param  array<string, mixed>  $payload
+     * @return array<string, mixed>
+     */
+    public function commit(Company $company, User $actor, string $token, string $session, string $formKey, string $prepared, array $payload): array
+    {
+        $result = DB::transaction(function () use ($company, $actor, $token, $session, $formKey, $prepared, $payload): array {
+            $patch = app(AiFormState::class)->read($company, $actor, $prepared, $session, $formKey);
+            $intent = $patch['intent'];
+            $policy = app(AiGovernance::class)->authorizeUse($company, $actor, $intent);
+            if (($patch['data']['lifecycle'] ?? null) !== 'prepared_patch' || ($patch['data']['form_token'] ?? null) !== $token) {
+                throw new AssistantUnavailable('proposal_stale');
+            }
+            $fresh = AssistantRequest::where('company_id', $company->id)->where('user_id', $actor->id)
+                ->whereKey($patch['data']['patch_request_id'])->lockForUpdate()->firstOrFail();
+            if (! $policy->follow_up_enabled || $fresh->status !== 'pending' || $fresh->purpose !== 'patch'
+                || $fresh->form_key !== $formKey || (int) $fresh->policy_revision !== (int) $policy->revision) {
+                throw new AssistantUnavailable('proposal_stale');
+            }
+            $state = app(AiFormState::class)->read($company, $actor, $token, $session, $formKey);
+            $revision = $patch['revision'];
+            $hash = app(AiFormEditing::class)->hash($payload);
+            if ($state['revision'] !== $revision || ! hash_equals($state['data']['payload_hash'], $hash)
+                || ! hash_equals($patch['data']['payload_hash'], $hash)) {
+                throw new AssistantUnavailable('form_changed');
+            }
+            $connections = $patch['data']['connections'];
+            $operations = $patch['data']['operations'];
+            $data = $state['data'];
+            [$next, $changed] = $this->edit($company, $actor, $intent, $payload, $operations);
+            $data['undo'] = ['payload' => $payload, 'origins' => $data['resolved']['origins'],
+                'unresolved' => $data['resolved']['unresolved']];
+            $data['payload'] = $next;
+            $data['payload_hash'] = app(AiFormEditing::class)->hash($next);
+            $data['connections'] = $connections;
+            $data['changed_fields'] = $changed;
+            $data['last_change'] = 'assistant';
+            foreach ($changed as $field) {
+                $data['resolved']['origins'][$field] = 'spoken';
+            }
+            $newRevision = app(AiFormState::class)->replace($company, $actor, $token, $session, $formKey, $revision, $data);
+            $fresh->update(['status' => 'form_edited', 'approved_command' => ['version' => 1, 'operations' => $operations]]);
+
+            return ['payload' => $next, 'revision' => $newRevision, 'changed_fields' => $changed, 'can_undo' => true];
+        });
+        // Completed patch status prevents replay even if cleanup delivery fails.
+        app(AiFormState::class)->forget($company, $actor, $prepared, $session);
+
+        return $result;
+    }
+
+    public function discardPrepared(Company $company, User $actor, string $prepared, string $session, string $formKey): void
+    {
+        $patch = app(AiFormState::class)->read($company, $actor, $prepared, $session, $formKey);
+        if (($patch['data']['lifecycle'] ?? null) !== 'prepared_patch') {
+            throw new AssistantUnavailable('proposal_stale');
+        }
+        AssistantRequest::where('company_id', $company->id)->where('user_id', $actor->id)
+            ->whereKey($patch['data']['patch_request_id'])->where('purpose', 'patch')->where('status', 'pending')
+            ->update(['status' => 'canceled']);
+        app(AiFormState::class)->forget($company, $actor, $prepared, $session);
     }
 
     /** Undo cannot overwrite an intervening human edit.

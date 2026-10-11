@@ -50,25 +50,31 @@ trait AiUnsavedForm
     #[Locked]
     public array $aiChangedFields = [];
 
-    public function correctAiInput(?string $audioToken = null): void
+    public function correctAiInput(?string $audioToken = null): ?string
     {
         if ($this->aiFormToken === null || $this->aiFormKey === null) {
             abort(409);
         }
         try {
-            $result = app(AiFormCorrections::class)->apply(app(CompanyContext::class)->company(), auth()->user(),
+            // Deferred wire:model values arrive with this call; retain their synchronized revision for dehydration.
+            $this->aiFormRevision = app(AiFormEditing::class)->synchronize(app(CompanyContext::class)->company(), auth()->user(),
+                $this->aiFormToken, session()->getId(), $this->aiFormKey, $this->aiFormRevision, $this->aiEditablePayload());
+            $prepared = app(AiFormCorrections::class)->prepare(app(CompanyContext::class)->company(), auth()->user(),
                 $this->aiFormToken, session()->getId(), $this->aiFormKey, $this->aiFormRevision,
                 $this->aiEditablePayload(), $this->aiCorrectionText, (string) Str::uuid(), audioToken: $audioToken ?? $this->aiCorrectionAudioToken);
-            $this->applyAiEditResult($result);
             $this->aiCorrectionText = '';
             $this->aiCorrectionAudioToken = null;
             $this->aiCorrectionError = null;
+
+            return $prepared;
         } catch (AssistantUnavailable) {
             $this->aiCorrectionError = __('assistant_v2.correction_refused');
+
+            return null;
         }
     }
 
-    public function receiveAiCorrection(string $text, ?string $audioToken, int $recordedRevision): void
+    public function receiveAiCorrection(string $text, ?string $audioToken, int $recordedRevision): ?string
     {
         if ($this->aiFormToken === null || $this->aiFormKey === null) {
             abort(409);
@@ -79,13 +85,43 @@ trait AiUnsavedForm
             || ! hash_equals($state['data']['payload_hash'], app(AiFormEditing::class)->hash($this->aiEditablePayload()))) {
             $this->aiCorrectionError = __('assistant_v2.error_form_changed');
 
-            return;
+            return null;
         }
         $this->aiCorrectionText = $text;
         $this->aiCorrectionAudioToken = $audioToken;
         $policy = app(AiGovernance::class)->authorizeUse(app(CompanyContext::class)->company(), auth()->user(), $state['intent']);
         if ($policy->workflow_mode === 'seamless') {
-            $this->correctAiInput($audioToken);
+            return $this->correctAiInput($audioToken);
+        }
+
+        return null;
+    }
+
+    public function applyPreparedAiInput(string $prepared): void
+    {
+        if ($this->aiFormToken === null || $this->aiFormKey === null) {
+            abort(409);
+        }
+        try {
+            $result = app(AiFormCorrections::class)->commit(app(CompanyContext::class)->company(), auth()->user(),
+                $this->aiFormToken, session()->getId(), $this->aiFormKey, $prepared, $this->aiEditablePayload());
+            $this->applyAiEditResult($result);
+            $this->aiCorrectionError = null;
+        } catch (AssistantUnavailable) {
+            $this->aiCorrectionError = __('assistant_v2.error_form_changed');
+        }
+    }
+
+    public function discardPreparedAiInput(string $prepared): void
+    {
+        if ($this->aiFormKey === null) {
+            return;
+        }
+        try {
+            app(AiFormCorrections::class)->discardPrepared(app(CompanyContext::class)->company(), auth()->user(),
+                $prepared, session()->getId(), $this->aiFormKey);
+        } catch (AssistantUnavailable) {
+            // A revoked/expired capability remains inaccessible and reaches its fixed TTL.
         }
     }
 

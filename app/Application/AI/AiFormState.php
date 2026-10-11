@@ -16,7 +16,7 @@ use Throwable;
 final class AiFormState
 {
     /** @param array<string, mixed> $data */
-    public function create(Company $company, User $actor, string $formKey, string $sessionId, string $intent, array $data, int $revision = 0): string
+    public function create(Company $company, User $actor, string $formKey, string $sessionId, string $intent, array $data, int $revision = 0, ?int $expiresAt = null): string
     {
         if (! Str::isUuid($formKey) || $sessionId === '' || $revision < 0 || $revision > 1000000) {
             throw new AssistantUnavailable('invalid_request');
@@ -26,7 +26,7 @@ final class AiFormState
         $state = ['company_id' => (int) $company->id, 'user_id' => (int) $actor->id,
             'form_key' => $formKey, 'session_hash' => hash('sha256', $sessionId), 'intent' => $intent,
             'policy_revision' => (int) $policy->revision, 'revision' => $revision,
-            'expires_at' => now()->addSeconds((int) config('ai_assistant.proposal_ttl_seconds'))->timestamp,
+            'expires_at' => min(now()->addSeconds((int) config('ai_assistant.proposal_ttl_seconds'))->timestamp, $expiresAt ?? PHP_INT_MAX),
             'data' => $data];
         $this->write($token, $state);
 
