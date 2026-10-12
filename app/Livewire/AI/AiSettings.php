@@ -6,6 +6,7 @@ namespace App\Livewire\AI;
 
 use App\Application\AI\AiGovernance;
 use App\Application\AI\AiUsageSummary;
+use App\Application\AI\AssistantReportCatalog;
 use App\Application\AI\AssistantUnavailable;
 use App\Application\AI\ProviderCapabilityRegistry;
 use App\Models\AiCompanyPolicy;
@@ -28,6 +29,11 @@ final class AiSettings extends Component
 
     /** @var list<string> */
     public array $allowedIntents = ['sales', 'purchase'];
+
+    public bool $questionsEnabled = false;
+
+    /** @var list<string> */
+    public array $allowedReports = [];
 
     public bool $personalEnabled = false;
 
@@ -92,6 +98,8 @@ final class AiSettings extends Component
         $settings = $policy->settings;
         $this->globalButtonEnabled = $settings['global_button_enabled'] ?? true;
         $this->allowedIntents = $settings['allowed_intents'] ?? ['sales', 'purchase'];
+        $this->questionsEnabled = (bool) ($settings['questions']['enabled'] ?? false);
+        $this->allowedReports = $settings['questions']['allowed_reports'] ?? AssistantReportCatalog::KEYS;
         $this->allowedConnections = $settings['allowed_connections'] ?? [];
         $this->personalRoutes = $settings['allowed_personal_routes'] ?? [];
         $this->textConnection = $settings['text_connection'] ?? null;
@@ -140,6 +148,10 @@ final class AiSettings extends Component
                 'follow_up_enabled' => $this->followUpEnabled, 'workflow_mode' => $this->mode, 'speech_method' => $this->speechMethod,
                 'settings' => [
                     'global_button_enabled' => $this->globalButtonEnabled, 'allowed_intents' => $this->allowedIntents,
+                    'questions' => [
+                        'enabled' => $this->questionsEnabled,
+                        'allowed_reports' => $this->allowedReports,
+                    ],
                     'allowed_connections' => $this->allowedConnections, 'allowed_personal_routes' => $this->personalRoutes,
                     'text_connection' => $this->textConnection ?: null, 'speech_connection' => $this->speechConnection ?: null,
                     'fallback' => ['enabled' => $this->fallbackEnabled, 'text_connection' => $this->fallbackText ?: null, 'speech_connection' => $this->fallbackSpeech ?: null],
@@ -149,8 +161,9 @@ final class AiSettings extends Component
             ], $this->policyRevision);
             $this->policyRevision = (int) $policy->revision;
             $this->message = __('assistant_v2.policy_saved');
-        } catch (AssistantUnavailable) {
-            $this->addError('policy', __('assistant_v2.error_proposal_stale'));
+        } catch (AssistantUnavailable $e) {
+            $key = $e->reason === 'policy_invalid' ? 'policy_invalid' : 'proposal_stale';
+            $this->addError('policy', __('assistant_v2.error_'.$key));
         }
     }
 
@@ -192,7 +205,8 @@ final class AiSettings extends Component
             ->where('status', 'active')->where('is_owner', true)->exists();
 
         $usage = $permissions['ai.settings.manage'] ? app(AiUsageSummary::class)->read($company, $actor, true) : [];
+        $availableReports = AssistantReportCatalog::KEYS;
 
-        return view('livewire.ai.settings', compact('connections', 'permissions', 'routes', 'isOwner', 'usage'));
+        return view('livewire.ai.settings', compact('connections', 'permissions', 'routes', 'isOwner', 'usage', 'availableReports'));
     }
 }

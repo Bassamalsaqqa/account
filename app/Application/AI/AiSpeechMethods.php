@@ -33,10 +33,10 @@ final class AiSpeechMethods
             ? $selected : $policy->speech_method;
     }
 
-    public function choose(Company $company, User $actor, string $method): void
+    public function choose(Company $company, User $actor, string $method, string $intent = 'auto'): void
     {
-        DB::transaction(function () use ($company, $actor, $method): void {
-            $policy = app(AiGovernance::class)->authorizeUse($company, $actor, 'auto');
+        DB::transaction(function () use ($company, $actor, $method, $intent): void {
+            $policy = app(AiGovernance::class)->authorizeUse($company, $actor, $intent);
             if ($method !== '' && ! in_array($method, $this->allowed($policy), true)) {
                 throw new AssistantUnavailable('provider_configuration');
             }

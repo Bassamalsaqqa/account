@@ -45,6 +45,25 @@
                             <label class="flex items-center gap-2"><input type="checkbox" wire:model="allowedIntents" value="{{ $intent }}" class="rounded border-border" />{{ __('assistant_v2.intent_'.$intent) }}</label>
                         @endforeach
                     </fieldset>
+                    <fieldset class="space-y-2 border-t border-border pt-3">
+                        <legend class="font-semibold">{{ __('assistant_v2.questions_policy') }}</legend>
+                        <label class="flex items-center gap-2">
+                            <input type="checkbox" wire:model="questionsEnabled" class="rounded border-border" />
+                            {{ __('assistant_v2.questions_enabled') }}
+                        </label>
+                        <p class="max-w-prose text-text-secondary">{{ __('assistant_v2.questions_help') }}</p>
+                        @if ($questionsEnabled)
+                            <div class="mt-2 space-y-2 ps-4">
+                                <span class="block font-semibold">{{ __('assistant_v2.allowed_reports') }}</span>
+                                @foreach ($availableReports as $reportKey)
+                                    <label class="flex items-center gap-2">
+                                        <input type="checkbox" wire:model="allowedReports" value="{{ $reportKey }}" class="rounded border-border" />
+                                        {{ __('assistant_v2.report_'.$reportKey) }}
+                                    </label>
+                                @endforeach
+                            </div>
+                        @endif
+                    </fieldset>
                 </div>
                 <div class="mt-5 grid gap-4 sm:grid-cols-2">
                     <label class="text-sm font-semibold">{{ __('assistant_v2.workflow_mode') }}

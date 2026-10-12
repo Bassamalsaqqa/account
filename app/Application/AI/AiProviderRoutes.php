@@ -59,13 +59,13 @@ final class AiProviderRoutes
         });
     }
 
-    public function preference(Company $company, User $actor, string $capability, ?string $connectionId = null): void
+    public function preference(Company $company, User $actor, string $capability, ?string $connectionId = null, string $intent = 'auto'): void
     {
-        DB::transaction(function () use ($company, $actor, $capability, $connectionId): void {
+        DB::transaction(function () use ($company, $actor, $capability, $connectionId, $intent): void {
             if (! in_array($capability, ['text_structured', 'audio_transcription'], true)) {
                 throw new AssistantUnavailable('provider_configuration');
             }
-            app(AiGovernance::class)->authorizeUse($company, $actor, 'auto', $capability === 'audio_transcription');
+            app(AiGovernance::class)->authorizeUse($company, $actor, $intent, $capability === 'audio_transcription');
             $preference = AiUserPreference::firstOrCreate(['company_id' => $company->id, 'user_id' => $actor->id]);
             $values = $preference->preferences ?? [];
             $key = $capability === 'audio_transcription' ? 'speech_connection' : 'text_connection';
@@ -75,9 +75,9 @@ final class AiProviderRoutes
                 $values[$key] = $connectionId;
             }
             $preference->update(['preferences' => $values]);
-            $policy = app(AiGovernance::class)->authorizeUse($company, $actor, 'auto');
+            $policy = app(AiGovernance::class)->authorizeUse($company, $actor, $intent);
             if ($connectionId !== null && $connectionId !== '' || is_string($policy->settings[$key] ?? null)) {
-                $this->resolve($company, $actor, 'auto', $capability);
+                $this->resolve($company, $actor, $intent, $capability);
             }
         });
     }

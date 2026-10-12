@@ -21,7 +21,7 @@ final class AiRequestBudget
     public function reserve(Company $company, User $actor, string $key, string $formKey, string $purpose, string $intent, string $inputHash, array $connections = [], int $audioMilliseconds = 60000): array
     {
         if (! Str::isUuid($key) || ! Str::isUuid($formKey) || ! preg_match('/\A[a-f0-9]{64}\z/', $inputHash)
-            || ! in_array($purpose, ['intent', 'transcription', 'patch'], true) || count($connections) > 2) {
+            || ! in_array($purpose, ['intent', 'transcription', 'patch', 'question'], true) || count($connections) > 2) {
             throw new AssistantUnavailable('invalid_request');
         }
 
