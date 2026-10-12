@@ -436,9 +436,7 @@
     <!-- Main Content Wrapper -->
     <div class="min-h-screen pt-[64px] {{ $isRtl ? 'lg:mr-[264px]' : 'lg:ml-[264px]' }}">
         <main class="max-w-[1440px] mx-auto p-4 sm:p-6 lg:p-8">
-            @if (! request()->routeIs('invoices.create', 'purchases.create'))
-                <div class="mb-4"><livewire:ai.assistant-launcher /></div>
-            @endif
+            <livewire:ai.assistant-launcher :context="request()->routeIs('invoices.create') ? 'sales' : (request()->routeIs('purchases.create') ? 'purchase' : 'auto')" />
             {{ $slot }}
         </main>
     </div>

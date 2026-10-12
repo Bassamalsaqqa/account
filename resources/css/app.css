@@ -1,4 +1,5 @@
 @import 'tailwindcss';
+@import './assistant-product.css';
 
 @source '../views';
 @source '../../app';

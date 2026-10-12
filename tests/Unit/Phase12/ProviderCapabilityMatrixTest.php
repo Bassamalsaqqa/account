@@ -372,10 +372,10 @@ class ProviderCapabilityMatrixTest extends TestCase
     }
 
     // -------------------------------------------------------------------------
-    // 10. 429 and 502 map to provider_outage
+    // 10. 429 and 502 retain distinct safe diagnostics
     // -------------------------------------------------------------------------
 
-    public function test_429_and_502_map_to_provider_outage(): void
+    public function test_429_and_502_retain_distinct_safe_diagnostics(): void
     {
         foreach ([429, 502] as $status) {
             Http::swap(new Factory);
@@ -388,7 +388,7 @@ class ProviderCapabilityMatrixTest extends TestCase
                 );
                 $this->fail("HTTP $status must throw AssistantUnavailable.");
             } catch (AssistantUnavailable $e) {
-                $this->assertSame('provider_outage', $e->reason, "HTTP $status must map to provider_outage");
+                $this->assertSame($status === 429 ? 'provider_rate_limit' : 'provider_outage', $e->reason, "HTTP $status must retain its safe diagnostic");
             }
             Http::assertSentCount(1);
         }

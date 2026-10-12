@@ -132,7 +132,7 @@ class DirectProviderContractTest extends TestCase
     public function test_outage_and_invalid_output_are_distinct_and_never_retry(): void
     {
         $schema = ['type' => 'object'];
-        foreach ([[503, [], 'provider_outage'], [401, [], 'provider_rejected'],
+        foreach ([[503, [], 'provider_outage'], [401, [], 'provider_authentication'],
             [200, ['choices' => [['message' => ['content' => '{invalid'], 'finish_reason' => 'stop']]], 'provider_invalid'],
             [200, ['choices' => [['message' => ['content' => '{}'], 'finish_reason' => 'length']]], 'provider_invalid']] as [$status, $body, $reason]) {
             Http::swap(new Factory);

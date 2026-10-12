@@ -90,9 +90,9 @@ class DirectProviderNativeTransportTest extends TestCase
         $result = app(DirectProviderTransport::class)->send($route, $credential, [
             'model' => 'deepseek-flash',
             'stream' => false,
-            'messages' => [['role' => 'user', 'content' => 'hello world']],
-            'response_format' => ['type' => 'json_object'],
+            'messages' => [['role' => 'system', 'content' => 'Return JSON.'], ['role' => 'user', 'content' => 'hello world']],
             'max_tokens' => 100,
+            'response_format' => ['type' => 'json_object'],
         ]);
 
         $this->assertIsArray($result);
@@ -140,7 +140,8 @@ class DirectProviderNativeTransportTest extends TestCase
         $result = app(DirectProviderTransport::class)->send($route, $credential, [
             'model' => 'deepseek-flash',
             'stream' => false,
-            'messages' => [['role' => 'user', 'content' => 'test whitespace']],
+            'messages' => [['role' => 'system', 'content' => 'Return JSON.'], ['role' => 'user', 'content' => 'test whitespace']],
+            'max_tokens' => 100,
         ]);
 
         $this->assertIsArray($result);
@@ -164,7 +165,8 @@ class DirectProviderNativeTransportTest extends TestCase
             $result = app(DirectProviderTransport::class)->send($route, $credential, [
                 'model' => 'deepseek-flash',
                 'stream' => false,
-                'messages' => [['role' => 'user', 'content' => 'proxy immunity check']],
+                'messages' => [['role' => 'system', 'content' => 'Return JSON.'], ['role' => 'user', 'content' => 'proxy immunity check']],
+                'max_tokens' => 100,
             ]);
 
             $this->assertIsArray($result);
@@ -186,11 +188,12 @@ class DirectProviderNativeTransportTest extends TestCase
             app(DirectProviderTransport::class)->send($route, $credential, [
                 'model' => 'deepseek-flash',
                 'stream' => false,
-                'messages' => [['role' => 'user', 'content' => 'check redirect']],
+                'messages' => [['role' => 'system', 'content' => 'Return JSON.'], ['role' => 'user', 'content' => 'check redirect']],
+                'max_tokens' => 100,
             ]);
             $this->fail('Native 302 redirect must not succeed.');
         } catch (AssistantUnavailable $e) {
-            $this->assertSame('provider_rejected', $e->reason);
+            $this->assertSame('provider_invalid', $e->reason);
         }
 
         $this->assertSame(1, self::$server->requestCount(), 'Must not follow up redirect to closed port.');
@@ -206,7 +209,8 @@ class DirectProviderNativeTransportTest extends TestCase
             app(DirectProviderTransport::class)->send($route, $credential, [
                 'model' => 'deepseek-flash',
                 'stream' => false,
-                'messages' => [['role' => 'user', 'content' => 'request huge']],
+                'messages' => [['role' => 'system', 'content' => 'Return JSON.'], ['role' => 'user', 'content' => 'request huge']],
+                'max_tokens' => 100,
             ]);
             $this->fail('Oversized response must not succeed.');
         } catch (AssistantUnavailable $e) {
@@ -229,11 +233,12 @@ class DirectProviderNativeTransportTest extends TestCase
                 app(DirectProviderTransport::class)->send($route, $credential, [
                     'model' => 'deepseek-flash',
                     'stream' => false,
-                    'messages' => [['role' => 'user', 'content' => 'check outage']],
+                    'messages' => [['role' => 'system', 'content' => 'Return JSON.'], ['role' => 'user', 'content' => 'check outage']],
+                    'max_tokens' => 100,
                 ]);
                 $this->fail("Expected provider_outage for {$scenario}");
             } catch (AssistantUnavailable $e) {
-                $this->assertSame('provider_outage', $e->reason, "Scenario {$scenario} must map to provider_outage");
+                $this->assertSame($scenario === 'outage_429' ? 'provider_rate_limit' : 'provider_outage', $e->reason, "Scenario {$scenario} must retain its safe diagnostic");
             }
             $this->assertSame(1, self::$server->requestCount(), "Scenario {$scenario} must not retry");
         }
@@ -251,11 +256,13 @@ class DirectProviderNativeTransportTest extends TestCase
                 app(DirectProviderTransport::class)->send($route, $credential, [
                     'model' => 'deepseek-flash',
                     'stream' => false,
-                    'messages' => [['role' => 'user', 'content' => 'check rejected']],
+                    'messages' => [['role' => 'system', 'content' => 'Return JSON.'], ['role' => 'user', 'content' => 'check rejected']],
+                    'max_tokens' => 100,
                 ]);
                 $this->fail("Expected provider_rejected for {$scenario}");
             } catch (AssistantUnavailable $e) {
-                $this->assertSame('provider_rejected', $e->reason, "Scenario {$scenario} must map to provider_rejected");
+                $expected = ['rejected_401' => 'provider_authentication', 'rejected_400' => 'provider_format', 'balance_402' => 'provider_credit', 'invalid_parameters_422' => 'provider_parameters'];
+                $this->assertSame($expected[$scenario], $e->reason, "Scenario {$scenario} must retain its safe diagnostic");
             }
             $this->assertSame(1, self::$server->requestCount(), "Scenario {$scenario} must not retry");
         }
@@ -273,7 +280,8 @@ class DirectProviderNativeTransportTest extends TestCase
                 app(DirectProviderTransport::class)->send($route, $credential, [
                     'model' => 'deepseek-flash',
                     'stream' => false,
-                    'messages' => [['role' => 'user', 'content' => 'check invalid body']],
+                    'messages' => [['role' => 'system', 'content' => 'Return JSON.'], ['role' => 'user', 'content' => 'check invalid body']],
+                    'max_tokens' => 100,
                 ]);
                 $this->fail("Expected provider_invalid for {$scenario}");
             } catch (AssistantUnavailable $e) {

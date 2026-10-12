@@ -49,7 +49,7 @@ class AssistantLauncherMountTest extends TestCase
     {
         config(['ai_assistant.enabled' => true]);
         AiCompanyPolicy::create(['company_id' => $this->company->id, 'enabled' => true]);
-        Livewire::test('ai.assistant-launcher')->assertSee(__('assistant_v2.open'))
+        Livewire::test('ai.assistant-launcher')->assertSee(__('ai_product.launcher'))
             ->call('showAssistant')->assertSet('open', true)->assertSet('consentRoutes', [])
             ->assertSet('consent', false);
         Http::assertNothingSent();
