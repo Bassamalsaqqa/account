@@ -68,7 +68,7 @@ final class DirectProviderTransport
                     })->acceptJson()->timeout($deadline->remaining())
                         ->connectTimeout(5)->withoutRedirecting()->withOptions([
                             'verify' => true, 'stream' => true, 'read_timeout' => 5, 'proxy' => '', 'expect' => false,
-                            'curl' => [CURLOPT_PROXY => '', CURLOPT_LOW_SPEED_LIMIT => 1, CURLOPT_LOW_SPEED_TIME => 5],
+                            'curl' => [CURLOPT_LOW_SPEED_LIMIT => 1, CURLOPT_LOW_SPEED_TIME => 5],
                         ]);
                     if ($multipart) {
                         if ($audio === null) {
