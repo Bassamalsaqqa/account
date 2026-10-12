@@ -14,6 +14,7 @@ use App\Application\AI\AssistantReportCatalog;
 use App\Application\AI\AssistantReportExecutor;
 use App\Application\AI\AssistantReportPlan;
 use App\Application\AI\AssistantUnavailable;
+use App\Application\AI\DeepSeekQuickConnect;
 use App\Application\AI\TransactionAssistant;
 use App\Models\AiUserPreference;
 use App\Support\Tenancy\CompanyContext;
@@ -22,6 +23,7 @@ use Illuminate\Contracts\View\View;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Livewire\Attributes\Locked;
+use Livewire\Attributes\On;
 use Livewire\Component;
 
 final class AssistantLauncher extends Component
@@ -121,6 +123,7 @@ final class AssistantLauncher extends Component
         $this->formKey = (string) Str::uuid();
     }
 
+    #[On('ai:open-assistant')]
     public function showAssistant(): void
     {
         $company = app(CompanyContext::class)->company();
@@ -718,9 +721,11 @@ final class AssistantLauncher extends Component
             $this->ambiguousChoice = null;
         }
         $available = false;
+        $setupAvailable = false;
         $privacy = [];
         $questionsAvailable = $transactionsAvailable = false;
         if ($context->hasCompany()) {
+            $setupAvailable = app(DeepSeekQuickConnect::class)->isOwner($context->company(), auth()->user());
             try {
                 $policy = app(AiGovernance::class)->authorizeLauncher($context->company(), auth()->user(), $this->context);
                 $available = true;
@@ -740,6 +745,6 @@ final class AssistantLauncher extends Component
             }
         }
 
-        return view('livewire.ai.assistant-launcher', compact('available', 'privacy', 'questionsAvailable', 'transactionsAvailable'));
+        return view('livewire.ai.assistant-launcher', compact('available', 'setupAvailable', 'privacy', 'questionsAvailable', 'transactionsAvailable'));
     }
 }

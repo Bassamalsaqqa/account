@@ -1,14 +1,21 @@
-<div class="mx-auto max-w-5xl space-y-6">
+<div class="mx-auto max-w-5xl ai-product space-y-6">
     <header>
         <a href="{{ route('settings.index') }}" class="text-sm text-primary">{{ __('app.nav_settings') }}</a>
-        <h1 class="mt-2 text-2xl font-bold">{{ __('assistant_v2.settings_title') }}</h1>
-        <p class="mt-2 max-w-prose text-sm leading-relaxed text-text-secondary">{{ __('assistant_v2.settings_help') }}</p>
+        <h1 class="mt-2 text-2xl font-bold">{{ __('ai_product.title') }}</h1>
+        <p class="mt-2 max-w-prose text-sm leading-relaxed text-text-secondary">{{ __('ai_product.setup_help') }}</p>
     </header>
     @if (session('ai_settings_success'))<p role="status" class="rounded-control bg-success-bg p-3 text-sm text-success">{{ session('ai_settings_success') }}</p>@endif
     @if (session('ai_settings_error'))<p role="alert" class="rounded-control bg-danger-bg p-3 text-sm text-danger">{{ session('ai_settings_error') }}</p>@endif
     @if ($message)<p role="status" class="rounded-control bg-success-bg p-3 text-sm text-success">{{ $message }}</p>@endif
     @if ($errors->any())<div role="alert" class="rounded-control bg-danger-bg p-3 text-sm text-danger"><ul class="list-disc ps-5">@foreach($errors->all() as $error)<li>{{ $error }}</li>@endforeach</ul></div>@endif
 
+    @if ($isOwner && $permissions['ai.credentials.manage'] && $permissions['ai.settings.manage'])
+        <livewire:ai.deep-seek-setup />
+    @endif
+    <details class="rounded-card border border-border bg-surface p-4 sm:p-6">
+        <summary class="min-h-11 cursor-pointer text-sm font-semibold text-text-secondary">{{ __('ai_product.advanced') }}</summary>
+        <p class="mt-2 mb-5 text-sm text-text-secondary">{{ __('ai_product.advanced_help') }}</p>
+        <div class="space-y-6">
     @if ($usage !== [])
         <section class="rounded-card border border-border bg-surface p-4 sm:p-6">
             <h2 class="text-lg font-bold">{{ __('assistant_v2.actual_usage') }}</h2>
@@ -204,4 +211,6 @@
         </form>
         @endif
     </section>
+        </div>
+    </details>
 </div>

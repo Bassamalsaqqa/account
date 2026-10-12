@@ -1,0 +1,20 @@
+{
+    "sales_invoices": 0,
+    "purchases": 0,
+    "posting_batches": 0,
+    "posting_lines": 0,
+    "stock_movements": 0,
+    "customer_payments": 0,
+    "vendor_payments": 0,
+    "requests": [
+        {
+            "status": "completed",
+            "attempt_count": 1,
+            "input_units": 20,
+            "output_units": 5,
+            "reserved_cost_micros": 6600,
+            "cost_status": "unknown",
+            "failure_code": null
+        }
+    ]
+}

@@ -38,7 +38,7 @@ class AiSettingsSecurityTest extends TestCase
     public function test_settings_never_hydrate_provider_keys_and_render_normal_password_confirmed_forms(): void
     {
         Livewire::test(AiSettings::class)
-            ->assertSee('AI assistant settings')
+            ->assertSee('Accounting assistant')
             ->assertSee('Configured — not yet verified')
             ->assertDontSee('synthetic-primary-key-never-real')
             ->assertDontSee('synthetic-fallback-key-never-real')

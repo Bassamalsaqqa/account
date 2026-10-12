@@ -36,6 +36,9 @@ final class DirectProviderTransport
             (string) ($route['provider'] ?? ''), (string) ($route['model'] ?? ''),
             (string) ($route['region'] ?? ''), (string) ($route['capability'] ?? ''),
         );
+        if ($route['provider'] === 'deepseek' && $route['capability'] === 'text_structured') {
+            return app(DeepSeekSdkAdapter::class)->send($route, $credential, $body);
+        }
         if ($route['capability'] === 'audio_transcription' && config('ai_assistant.speech_enabled') !== true) {
             throw new AssistantUnavailable('disabled');
         }
