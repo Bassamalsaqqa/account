@@ -43,6 +43,11 @@ final class AssistantDeterministicClassifier
         }
 
         if ($matchedReport === null) {
+            if (preg_match('/\b(?:sales|purchases|balances?|stock|inventory|turnover|receivables|payables)\b|(?:مبيعات|مشتريات|رصيد|ارصده|مخزون|بضاعه|حصيله)/u', $arNorm)
+                && $this->hasUnsupportedQualifiers($clean)) {
+                throw new AssistantUnavailable('question_invalid');
+            }
+
             return null;
         }
 
@@ -55,6 +60,9 @@ final class AssistantDeterministicClassifier
         $preset = $this->extractPreset($arNorm, $enNorm);
         $currency = $this->extractCurrency($arNorm, $enNorm);
 
+        if ($currency !== null && ! in_array('currency_code', $definition['filters'], true)) {
+            throw new AssistantUnavailable('question_invalid');
+        }
         $filters = [];
         if ($currency !== null && in_array('currency_code', $definition['filters'], true)) {
             $filters['currency_code'] = $currency;
@@ -114,15 +122,15 @@ final class AssistantDeterministicClassifier
             return null;
         }
 
-        if ($this->hasUnsupportedQualifiers($clean)) {
-            throw new AssistantUnavailable('question_invalid');
-        }
-
         $arNorm = $this->normalizeArabic($clean);
         $enNorm = strtolower($clean);
 
-        if ($this->matchesTransaction($arNorm, $enNorm) || count($this->matchReportKeys($arNorm, $enNorm)) > 0) {
+        if ($this->matchesTransaction($arNorm, $enNorm) || count($this->matchReportKeys($arNorm, $enNorm)) > 0
+            || preg_match('/\bturnover\b|(?:^|\s)حصيله(?:\s|$)/u', $arNorm)) {
             return null;
+        }
+        if ($this->hasUnsupportedQualifiers($clean)) {
+            throw new AssistantUnavailable('question_invalid');
         }
 
         $preset = $this->extractPreset($arNorm, $enNorm);
@@ -133,6 +141,10 @@ final class AssistantDeterministicClassifier
         }
 
         $definition = app(AssistantReportCatalog::class)->definition($cachedReportKey);
+
+        if ($currency !== null && ! in_array('currency_code', $definition['filters'], true)) {
+            throw new AssistantUnavailable('question_invalid');
+        }
 
         if ($preset !== null && $definition['current']) {
             throw new AssistantUnavailable('question_invalid');
@@ -219,7 +231,97 @@ final class AssistantDeterministicClassifier
             return true;
         }
 
-        return false;
+        return ! $this->isBoundedQuestionPhrase($clean);
+    }
+
+    /** Validate input both before paid planning and against the returned economic filters. */
+    public function assertQuestionInput(string $text, ?AssistantReportPlan $plan = null): void
+    {
+        if ($this->matchesTransaction($this->normalizeArabic($text), strtolower($text))
+            || $this->hasUnsupportedQualifiers($text)) {
+            throw new AssistantUnavailable('question_invalid');
+        }
+        $keys = $this->matchReportKeys($this->normalizeArabic($text), strtolower($text));
+        if ($keys === [] && preg_match('/\bturnover\b|(?:^|\s)حصيله(?:\s|$)/u', $this->normalizeArabic($text))) {
+            $keys = ['sales.summary'];
+        }
+        if ($keys === []) {
+            throw new AssistantUnavailable('question_invalid');
+        }
+        $preset = $this->extractPresetFromText($text);
+        $currency = $this->extractCurrencyFromText($text);
+        if (count($keys) === 1 && $currency !== null
+            && ! in_array('currency_code', app(AssistantReportCatalog::class)->definition($keys[0])['filters'], true)) {
+            throw new AssistantUnavailable('question_invalid');
+        }
+        if ($plan !== null && (($keys !== [$plan->reportKey])
+            || ($plan->filters['preset'] ?? null) !== $preset
+            || ($plan->filters['currency_code'] ?? null) !== $currency)) {
+            // A provider may identify a tool, never invent or discard an explicit constraint.
+            throw new AssistantUnavailable('question_invalid');
+        }
+    }
+
+    /**
+     * V1 accepts a bounded report language, not arbitrary NLP constraints. Consume the
+     * complete phrase; any leftover name, product, location, date or currency refuses.
+     * Shared by deterministic, follow-up and provider paths (including paraphrases).
+     */
+    private function isBoundedQuestionPhrase(string $text): bool
+    {
+        $remaining = $this->normalizeArabic($text);
+        if (preg_match('/[\p{N}\p{C}"\'’=:_\/\\\\-]/u', $remaining)) {
+            return false;
+        }
+        $periods = [
+            'this month', 'last month', 'this week', 'last week', 'this quarter', 'this year', 'last year', 'today', 'yesterday',
+            'هذا الشهر', 'الشهر الحالي', 'شهر حالي', 'الشهر الماضي', 'شهر ماضي', 'الشهر السابق', 'شهر سابق',
+            'هذا الاسبوع', 'الاسبوع الحالي', 'اسبوع حالي', 'الاسبوع الماضي', 'اسبوع ماضي', 'الاسبوع السابق', 'اسبوع سابق',
+            'هذه السنه', 'السنه الحاليه', 'سنه حاليه', 'هذا العام', 'العام الحالي', 'عام حالي',
+            'السنه الماضيه', 'سنه ماضيه', 'السنه السابقه', 'سنه سابقه', 'العام الماضي', 'عام ماضي', 'العام السابق', 'عام سابق',
+            'هذا الربع', 'الربع الحالي', 'ربع حالي', 'اليوم', 'يوم', 'امس', 'الامس', 'البارحه', 'بارحه',
+        ];
+        $currencies = ['ils', 'nis', 'shekel', 'shekels', 'usd', 'dollar', 'dollars', 'jod', 'dinar', 'dinars',
+            'شيكل', 'الشيكل', 'شواكل', 'الشواكل', 'دولار', 'الدولار', 'دولارات', 'الدولارات', 'دينار', 'الدينار', 'دنانير', 'الدنانير'];
+        $reports = [
+            'how much did we sell', 'how much did we buy',
+            'sales summary', 'total sales', 'sales', 'purchases summary', 'purchase summary', 'purchases',
+            'customer balances', 'customer balance', 'client balances', 'client balance', 'receivables', 'who owes us',
+            'vendor balances', 'vendor balance', 'supplier balances', 'supplier balance', 'payables', 'what do we owe vendors', 'what do we owe suppliers',
+            'money balances', 'money balance', 'cash balance', 'bank balance', 'cash and bank balances', 'cash and bank', 'how much cash',
+            'low stock', 'out of stock', 'stock shortage', 'items running low', 'item running low',
+            'expiry report', 'inventory expiry', 'expired stock', 'expiring items', 'expiring item', 'lots expiring', 'lot expiring', 'expiration', 'expiry',
+            'المبيعات', 'مبيعاتنا', 'مبيعات', 'المشتريات', 'مشترياتنا', 'مشتريات', 'بعنا', 'اشترينا',
+            'ارصده customers', 'ارصده clients', 'ارصده suppliers', 'ارصده vendors',
+            'ارصده العملاء', 'ارصده الزبائن', 'رصيد العملاء', 'رصيد الزبائن', 'ديون العملاء', 'ديون الزبائن', 'مستحقات العملاء', 'مستحقات الزبائن',
+            'ارصده الموردين', 'رصيد الموردين', 'ديون الموردين', 'مستحقات الموردين', 'كم للموردين', 'كم علينا للموردين',
+            'ارصده النقد', 'النقد والبنوك', 'النقد وبنوك', 'رصيد صندوق', 'رصيد الصندوق', 'رصيد بنك', 'رصيد البنك', 'رصيد bank',
+            'رصيد الخزينه', 'رصيد خزينه', 'فلوس الصندوق', 'فلوس صندوق', 'كم في الصندوق', 'كم في صندوق', 'كم في البنك', 'كم في بنك',
+            'المخزون المنخفض', 'المخزون منخفض', 'مخزون منخفض', 'مخزون المنخفض',
+            'المخزون النافد', 'مخزون النافد', 'مخزون نافد', 'المخزون نافد',
+            'المواد الناقصه', 'مواد الناقصه', 'مواد ناقصه', 'المواد ناقصه', 'البضاعه الناقصه', 'بضاعه ناقصه', 'بضاعه الناقصه',
+            'نقص المخزون', 'نقص مخزون', 'نواقص المخزون', 'نواقص مخزون',
+            'صلاحيه المواد', 'صلاحيه مواد', 'المخزون المنتهي', 'مخزون منتهي', 'البضاعه المنتهيه', 'بضاعه منتهيه',
+            'تاريخ الصلاحيه', 'تاريخ صلاحيه', 'انتهاء الصلاحيه', 'انتهاء صلاحيه', 'الصلاحيه', 'صلاحيه',
+            // Bounded provider-only synonyms. They still have to resolve to an allowed tool.
+            'turnover', 'حصيله',
+        ];
+        foreach (["\x01" => $periods, "\x02" => $currencies, "\x03" => $reports] as $marker => $phrases) {
+            usort($phrases, fn (string $a, string $b): int => strlen($b) <=> strlen($a));
+            $pattern = implode('|', array_map(fn (string $phrase): string => preg_quote($phrase, '/'), $phrases));
+            $remaining = preg_replace('/(?<!\p{L})(?:[بلو]?(?=ال))?(?:'.$pattern.')(?!\p{L})/u', ' '.$marker.' ', $remaining) ?? $remaining;
+        }
+        // Only supported period/currency may follow these prepositions; never an entity/tool.
+        if (substr_count($remaining, "\x03") > 1
+            || preg_match('/\b(?:by|from|to|at|of)\b|\bfor\s+(?!\s*\x01)|\bin\s+(?!\s*[\x01\x02])|(?:^|\s)(?:من|ل|لل)\s|(?:^|\s)في\s+(?!\s*[\x01\x02])/u', $remaining)) {
+            return false;
+        }
+        $fillers = 'show|me|please|what|about|how|much|did|we|our|the|total|summary|report|give|for|in|and|are|is|current|now|doing|business'
+            .'|كم|ملخص|تقرير|اعطني|اظهر|عرض|ما|ماذا|عن|و|في|هذا|هذه|حاليا|الان';
+        $remaining = preg_replace('/(?<!\p{L})(?:'.$fillers.')(?!\p{L})/u', ' ', $remaining) ?? $remaining;
+
+        // Markers are ASCII; do not discard arbitrary punctuation or unknown residual words.
+        return preg_match('/\A[\s\x01\x02\x03؟?,.!]*\z/u', $remaining) === 1;
     }
 
     public function isUnsupported(string $text): bool
@@ -258,6 +360,11 @@ final class AssistantDeterministicClassifier
 
     private function matchesTransaction(string $ar, string $en): bool
     {
+        if (preg_match('/\b(?:create|make|draft|prepare|add|issue)\b.*\binvoice\b/i', $en)
+            || (! preg_match('/\bhow much did we\b/i', $en) && preg_match('/\b(?:buy|sell)\s+(?!report\b|summary\b)/i', $en))
+            || preg_match('/(?:^|\s)(?:انشئ|انشاء|اعمل|سوي|جهز|اكتب|اضف)\s+(?:لي\s+)?فاتوره|(?:^|\s)فاتوره\s+جديده/u', $ar)) {
+            return true;
+        }
         $arPatterns = [
             '/(?:^|\s|[^\p{L}])(بعت|بيع|فاتور[ةه]\s+بيع|فاتور[ةه]\s+مبيعات)(?:[^\p{L}]|\s|$)/u',
             '/(?:^|\s|[^\p{L}])(اشتريت|شراء|فاتور[ةه]\s+شراء|فاتور[ةه]\s+مشتريات)(?:[^\p{L}]|\s|$)/u',

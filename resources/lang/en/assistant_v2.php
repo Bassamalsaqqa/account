@@ -175,7 +175,7 @@ return [
     'report_inventory.expiry' => 'Inventory Expiry',
     'report_money.balances' => 'Cash and Bank Balances',
     'error_question_unsupported' => 'This report question is unsupported or disabled.',
-    'error_question_invalid' => 'The question could not be matched to an authorized report query.',
+    'error_question_invalid' => 'These report details cannot be safely applied. Named customers, vendors, products, locations and custom periods are not supported here. Use the report filters or ask about one supported period and currency.',
     'clarify_period' => 'Please choose the required time period:',
     'preset_today' => 'Today',
     'preset_yesterday' => 'Yesterday',

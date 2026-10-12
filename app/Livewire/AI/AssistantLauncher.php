@@ -94,7 +94,7 @@ final class AssistantLauncher extends Component
     #[Locked]
     public array $clarifyPeriodFilters = [];
 
-    /** @var array{report_key: string, text: string}|null */
+    /** @var array{report_key: ?string, text: string}|null */
     #[Locked]
     public ?array $ambiguousChoice = null;
 
@@ -326,6 +326,7 @@ final class AssistantLauncher extends Component
             $this->questionActorId = (int) $actor->id;
             $this->questionSessionHash = hash('sha256', session()->getId());
             $allowedIntents = $governance->allowedIntents($company, $actor);
+            $questionOnly = $questionOnly || $this->audioContext === 'question';
             $canDoTransactions = ! $questionOnly && ($this->context === 'auto' ? $allowedIntents !== [] : in_array($this->context, $allowedIntents, true));
             $canDoQuestions = in_array($this->context, ['auto', 'question'], true)
                 && (bool) ($policy->settings['questions']['enabled'] ?? false)
@@ -333,14 +334,17 @@ final class AssistantLauncher extends Component
                 && app(AssistantReportCatalog::class)->permittedKeys($company, $actor) !== [];
 
             // Context explicit sales or purchase is always routed to transaction assistant
-            if ($this->context !== 'auto') {
+            if ($this->context !== 'auto' || ($canDoTransactions && ! $canDoQuestions)) {
                 return $this->prepareTransaction();
             }
 
-            // Check for follow-up question if there is active question context
-            if ($canDoQuestions) {
+            // Resolve transaction intent before applying report-only constraints to follow-ups.
+            $classification = app(AssistantDeterministicClassifier::class)->classify($this->text);
+            if ($classification === null && $canDoQuestions) {
                 $cachedCtx = app(AssistantQuestionContext::class)->read($company, $actor, session()->getId());
-                if ($cachedCtx !== null) {
+                $classifier = app(AssistantDeterministicClassifier::class);
+                if ($cachedCtx !== null && ($classifier->extractPresetFromText($this->text) !== null
+                    || $classifier->extractCurrencyFromText($this->text) !== null)) {
                     $followupPlan = app(AssistantDeterministicClassifier::class)->classifyFollowup(
                         $this->text,
                         $cachedCtx['report_key'],
@@ -351,9 +355,6 @@ final class AssistantLauncher extends Component
                     }
                 }
             }
-
-            // Run deterministic classifier
-            $classification = app(AssistantDeterministicClassifier::class)->classify($this->text);
 
             if ($classification !== null) {
                 if ($classification['kind'] === 'transaction') {
@@ -397,27 +398,14 @@ final class AssistantLauncher extends Component
                 return $this->executeReportPlan($classification['plan']);
             }
 
-            // Unclassified: attempt question planner if questions are enabled
-            if (app(AssistantDeterministicClassifier::class)->hasUnsupportedQualifiers($this->text)) {
-                throw new AssistantUnavailable('question_invalid');
+            // An unknown instruction has no inferred disclosure scope. Ask before any dispatch.
+            if ($canDoTransactions) {
+                $this->ambiguousChoice = ['report_key' => null, 'text' => $this->text];
+
+                return null;
             }
             if ($canDoQuestions) {
-                $planned = app(AssistantQuestionPlanner::class)->plan(
-                    $company,
-                    $actor,
-                    $this->text,
-                    $this->formKey,
-                    session()->getId(),
-                    $this->textConnection ?: null
-                );
-                if ($planned !== null) {
-                    return $this->executeReportPlan($planned);
-                }
-            }
-
-            // Existing transaction workflow remains available when questions are disabled.
-            if ($canDoTransactions && ! $canDoQuestions) {
-                return $this->prepareTransaction();
+                return $this->prepareQuestionProvider();
             }
 
             // Report-only user with unclassifiable query
@@ -429,6 +417,20 @@ final class AssistantLauncher extends Component
 
             return null;
         }
+    }
+
+    private function prepareQuestionProvider(): mixed
+    {
+        $planned = app(AssistantQuestionPlanner::class)->plan(
+            app(CompanyContext::class)->company(), auth()->user(), $this->text,
+            $this->formKey, session()->getId(), $this->textConnection ?: null
+        );
+        if ($planned !== null) {
+            return $this->executeReportPlan($planned);
+        }
+        $this->error = __('assistant_v2.error_question_unsupported');
+
+        return null;
     }
 
     private function prepareTransaction(): mixed
@@ -455,8 +457,12 @@ final class AssistantLauncher extends Component
         if ($classifier->hasUnsupportedQualifiers($this->text)) {
             throw new AssistantUnavailable('question_invalid');
         }
+        $classifier->assertQuestionInput($this->text);
         $preset = $classifier->extractPresetFromText($this->text);
         $currency = $classifier->extractCurrencyFromText($this->text);
+        if ($currency !== null && ! in_array('currency_code', $definition['filters'], true)) {
+            throw new AssistantUnavailable('question_invalid');
+        }
         $filters = [];
         if ($currency !== null && in_array('currency_code', $definition['filters'], true)) {
             $filters['currency_code'] = $currency;
@@ -551,15 +557,27 @@ final class AssistantLauncher extends Component
         if ($this->ambiguousChoice === null) {
             return null;
         }
+        $company = app(CompanyContext::class)->company();
+        abort_unless($this->questionCompanyId === (int) $company->id
+            && $this->questionActorId === (int) auth()->id()
+            && hash_equals($this->questionSessionHash ?? '', hash('sha256', session()->getId())), 403);
+        app(AiGovernance::class)->authorizeLauncher($company, auth()->user(), $this->context);
         $reportKey = $this->ambiguousChoice['report_key'];
+        $this->text = $this->ambiguousChoice['text'];
         $this->ambiguousChoice = null;
+        try {
+            if ($choice === 'report') {
+                app(AiGovernance::class)->authorizeUse($company, auth()->user(), 'question');
 
-        if ($choice === 'report') {
-            return $this->prepareReportFromKey($reportKey);
-        }
+                return $reportKey === null ? $this->prepareQuestionProvider() : $this->prepareReportFromKey($reportKey);
+            }
+            if ($choice === 'transaction') {
+                app(AssistantQuestionContext::class)->clear($company, auth()->user(), session()->getId());
 
-        if ($choice === 'transaction') {
-            return $this->prepareTransaction();
+                return $this->prepareTransaction();
+            }
+        } catch (AssistantUnavailable $e) {
+            $this->error = __('assistant_v2.error_'.$this->safeReason($e->reason));
         }
 
         return null;

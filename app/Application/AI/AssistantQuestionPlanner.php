@@ -27,6 +27,7 @@ final class AssistantQuestionPlanner
             || app(AssistantDeterministicClassifier::class)->hasUnsupportedQualifiers($text)) {
             throw new AssistantUnavailable('question_invalid');
         }
+        app(AssistantDeterministicClassifier::class)->assertQuestionInput($text);
         if (config('ai_assistant.provider_approved') !== true || config('ai_assistant.provider') !== 'direct') {
             return null;
         }
@@ -123,6 +124,7 @@ final class AssistantQuestionPlanner
                 'filters' => $filters,
                 'display' => 'summary',
             ]);
+            app(AssistantDeterministicClassifier::class)->assertQuestionInput($text, $plan);
 
             DB::transaction(function () use ($company, $actor, $request, $governance, $routes, $catalog, $reportKey): void {
                 $policy = $governance->authorizeUse($company, $actor, 'question');

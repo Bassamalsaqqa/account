@@ -277,7 +277,8 @@ class QuestionGovernanceUiTest extends TestCase
             ->assertSee(__('assistant_v2.op_draft'))
             ->assertSee(__('assistant_v2.op_report'))
             ->call('chooseOperation', 'report')
-            ->assertSee(__('assistant_v2.report_result'));
+            ->assertSet('reportResult', null)
+            ->assertSee(__('assistant_v2.error_question_invalid'));
     }
 
     public function test_membership_revocation_blocks_launcher(): void

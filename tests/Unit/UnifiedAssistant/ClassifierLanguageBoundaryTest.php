@@ -235,16 +235,18 @@ class ClassifierLanguageBoundaryTest extends TestCase
             $this->assertSame($currency, $result['plan']->filters['currency_code'] ?? null);
         }
 
-        // Reports that do not support currency filter must not inject currency
+        // Reports that do not support a currency filter must refuse the constraint.
         $inventoryCases = [
             'low stock this month in USD',
             'expiry report this month in ILS',
         ];
         foreach ($inventoryCases as $query) {
-            $result = $this->classifier->classify($query);
-            $this->assertIsArray($result);
-            $this->assertSame('plan', $result['kind']);
-            $this->assertArrayNotHasKey('currency_code', $result['plan']->filters);
+            try {
+                $this->classifier->classify($query);
+                $this->fail('Unsupported inventory currency must not be dropped.');
+            } catch (AssistantUnavailable $e) {
+                $this->assertSame('question_invalid', $e->reason);
+            }
         }
     }
 
@@ -564,11 +566,8 @@ class ClassifierLanguageBoundaryTest extends TestCase
         $this->assertSame(['preset' => ReportPeriod::PRESET_LAST_MONTH], $planPeriod->filters);
 
         // Currency followup on expiry report: currency_code is not supported by definition filters
-        $planCurr = $this->classifier->classifyFollowup('in USD', 'inventory.expiry', ['preset' => 'this_month']);
-        $this->assertInstanceOf(AssistantReportPlan::class, $planCurr);
-        $this->assertSame('inventory.expiry', $planCurr->reportKey);
-        $this->assertSame(['preset' => 'this_month'], $planCurr->filters);
-        $this->assertArrayNotHasKey('currency_code', $planCurr->filters);
+        $this->expectException(AssistantUnavailable::class);
+        $this->classifier->classifyFollowup('in USD', 'inventory.expiry', ['preset' => 'this_month']);
     }
 
     /**
