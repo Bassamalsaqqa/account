@@ -5,6 +5,9 @@ declare(strict_types=1);
 namespace Tests\Feature\Phase12;
 
 use App\Application\AI\AiGovernance;
+use App\Application\AI\AiProviderRoutes;
+use App\Application\AI\AiRequestBudget;
+use App\Application\AI\AssistantUnavailable;
 use App\Livewire\AI\AiSettings;
 use App\Models\AiProviderConnection;
 use App\Models\AuditEvent;
@@ -14,6 +17,7 @@ use App\Support\Tenancy\CompanyContext;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Str;
 use Livewire\Livewire;
 use Spatie\Permission\Models\Role;
 use Tests\Support\Phase12\FinalAiFixtures;
@@ -109,6 +113,54 @@ class AiSettingsSecurityTest extends TestCase
         $first->set('mode', 'guided')->call('save')->assertHasNoErrors();
         $second->set('mode', 'seamless')->call('save')->assertHasErrors('policy');
         $this->assertSame('guided', $this->aiPolicy->fresh()->workflow_mode);
+        Http::assertNothingSent();
+    }
+
+    public function test_edited_request_count_limits_remain_usable_and_stop_at_the_saved_limit(): void
+    {
+        Livewire::test(AiSettings::class)
+            ->set('limits.daily_company_requests', '2')
+            ->set('limits.daily_user_requests', '2')
+            ->call('save')->assertHasNoErrors();
+
+        $policy = $this->aiPolicy->fresh();
+        $this->assertSame(2, $policy->settings['limits']['daily_company_requests']);
+        $this->assertSame(2, $policy->settings['limits']['daily_user_requests']);
+        $governance = app(AiGovernance::class);
+        foreach ([$this->textConnection, $this->fallbackConnection] as $connection) {
+            $governance->recordConsent($this->company, $this->owner, $connection->public_id,
+                $governance->consentFingerprint($policy, $connection));
+        }
+        $routes = app(AiProviderRoutes::class)->select($this->company, $this->owner, 'sales', 'text_structured');
+        $budget = app(AiRequestBudget::class);
+        foreach (range(1, 2) as $number) {
+            $reserved = $budget->reserve($this->company, $this->owner, (string) Str::uuid(),
+                (string) Str::uuid(), 'intent', 'sales', hash('sha256', 'edited-count-'.$number), $routes);
+            $this->assertTrue($reserved['created']);
+        }
+        try {
+            $budget->reserve($this->company, $this->owner, (string) Str::uuid(),
+                (string) Str::uuid(), 'intent', 'sales', hash('sha256', 'third-request'), $routes);
+            $this->fail('The edited request count must still prevent a third reservation.');
+        } catch (AssistantUnavailable $exception) {
+            $this->assertSame('budget', $exception->reason);
+        }
+        $this->assertDatabaseCount('assistant_requests', 2);
+        $this->assertDatabaseCount('sales_invoices', 0);
+        $this->assertDatabaseCount('purchases', 0);
+        Http::assertNothingSent();
+    }
+
+    public function test_invalid_edited_request_counts_do_not_change_policy_or_dispatch(): void
+    {
+        $revision = $this->aiPolicy->fresh()->revision;
+        foreach (['0', '2.5', '1000000001', 'not-a-number'] as $value) {
+            Livewire::test(AiSettings::class)
+                ->set('limits.daily_company_requests', $value)
+                ->call('save')->assertHasErrors('limits.daily_company_requests');
+            $this->assertSame($revision, $this->aiPolicy->fresh()->revision);
+        }
+        $this->assertDatabaseCount('assistant_requests', 0);
         Http::assertNothingSent();
     }
 
