@@ -29,6 +29,17 @@ final class AiGovernance
         DB::transaction(fn () => app(SalesActorGuard::class)->lockAndAuthorize((int) $company->id, $actor, $permission));
     }
 
+    public function can(Company $company, User $actor, string $permission): bool
+    {
+        try {
+            $this->authorizeCapability($company, $actor, $permission);
+
+            return true;
+        } catch (AuthorizationException) {
+            return false;
+        }
+    }
+
     public function authorizeUse(Company $company, User $actor, string $intent, bool $speech = false): AiCompanyPolicy
     {
         if (config('ai_assistant.enabled') !== true
@@ -39,26 +50,36 @@ final class AiGovernance
 
         return DB::transaction(function () use ($company, $actor, $intent, $speech): AiCompanyPolicy {
             $this->authorizeCapability($company, $actor, 'ai.assistant.use');
-            if (! in_array($intent, ['sales', 'purchase', 'auto'], true)) {
+            if (! in_array($intent, ['sales', 'purchase', 'auto', 'question'], true)) {
                 throw new AssistantUnavailable('intent_unsupported');
             }
             $policy = AiCompanyPolicy::where('company_id', $company->id)->lockForUpdate()->first();
             if ($policy === null || ! $policy->enabled) {
                 throw new AssistantUnavailable('disabled');
             }
-            $enabledIntents = $policy->settings['allowed_intents'] ?? ['sales', 'purchase'];
-            if ($intent !== 'auto' && ! in_array($intent, $enabledIntents, true)) {
-                throw new AuthorizationException('This AI workflow is disabled by company policy.');
-            }
-            if ($intent === 'auto' && $this->allowedIntents($company, $actor) === []) {
-                throw new AuthorizationException('At least one permitted canonical AI workflow is required.');
-            }
-            if ($intent !== 'auto') {
-                $permissions = $intent === 'sales'
-                    ? ['ai.sales.use', 'sales.invoice.create', 'sales.invoice.view']
-                    : ['ai.purchases.use', 'purchasing.purchase.create', 'purchasing.purchase.view', 'purchasing.cost.view'];
-                foreach ($permissions as $permission) {
-                    $this->authorizeCapability($company, $actor, $permission);
+            if ($intent === 'question') {
+                $questions = $policy->settings['questions'] ?? [];
+                if (! is_array($questions) || ($questions['enabled'] ?? false) !== true) {
+                    throw new AssistantUnavailable('disabled');
+                }
+                if (app(AssistantReportCatalog::class)->permittedKeys($company, $actor) === []) {
+                    throw new AuthorizationException('At least one permitted report capability is required.');
+                }
+            } else {
+                $enabledIntents = $policy->settings['allowed_intents'] ?? ['sales', 'purchase'];
+                if ($intent !== 'auto' && ! in_array($intent, $enabledIntents, true)) {
+                    throw new AuthorizationException('This AI workflow is disabled by company policy.');
+                }
+                if ($intent === 'auto' && $this->allowedIntents($company, $actor) === []) {
+                    throw new AuthorizationException('At least one permitted canonical AI workflow is required.');
+                }
+                if ($intent !== 'auto') {
+                    $permissions = $intent === 'sales'
+                        ? ['ai.sales.use', 'sales.invoice.create', 'sales.invoice.view']
+                        : ['ai.purchases.use', 'purchasing.purchase.create', 'purchasing.purchase.view', 'purchasing.cost.view'];
+                    foreach ($permissions as $permission) {
+                        $this->authorizeCapability($company, $actor, $permission);
+                    }
                 }
             }
             if ($speech && ! in_array(app(AiSpeechMethods::class)->effective($policy, $actor), ['cloud', 'local_if_supported'], true)) {
@@ -71,10 +92,20 @@ final class AiGovernance
 
     public function authorizeLauncher(Company $company, User $actor, string $context): AiCompanyPolicy
     {
-        $policy = $this->authorizeUse($company, $actor, $context);
-        if ($context === 'auto' && ! ($policy->settings['global_button_enabled'] ?? true)) {
-            throw new AssistantUnavailable('disabled');
+        if ($context === 'auto') {
+            try {
+                $policy = $this->authorizeUse($company, $actor, 'auto');
+            } catch (AuthorizationException) {
+                $policy = $this->authorizeUse($company, $actor, 'question');
+            }
+            if (! ($policy->settings['global_button_enabled'] ?? true)) {
+                throw new AssistantUnavailable('disabled');
+            }
+
+            return $policy;
         }
+
+        $policy = $this->authorizeUse($company, $actor, $context);
 
         return $policy;
     }
@@ -352,7 +383,7 @@ final class AiGovernance
                 throw new AssistantUnavailable('disabled');
             }
 
-            $this->requireConsent($policy, $connection, $actor);
+            $this->requireConsent($policy, $connection, $actor, $intent === 'question' ? 'question' : 'transaction');
 
             return ['connection' => $connection, 'policy' => $policy, 'credential' => $this->credential($connection)];
         });
@@ -378,51 +409,66 @@ final class AiGovernance
         }
     }
 
-    public function consentFingerprint(AiCompanyPolicy $policy, AiProviderConnection $connection): string
+    public function consentFingerprint(AiCompanyPolicy $policy, AiProviderConnection $connection, string $scope = 'transaction'): string
     {
-        return hash('sha256', json_encode([
+        $payload = [
             'catalog' => ProviderCapabilityRegistry::VERSION, 'company' => $policy->company_id,
             'policy_revision' => $policy->revision, 'connection' => $connection->public_id,
             'connection_revision' => $connection->revision, 'provider' => $connection->provider,
             'model' => $connection->model, 'region' => $connection->region, 'source' => $connection->credential_source,
             'capability' => $connection->capability,
             'privacy' => $policy->settings['privacy'] ?? [], 'fallback' => $policy->settings['fallback'] ?? [],
-        ], JSON_THROW_ON_ERROR));
+        ];
+        if ($scope !== 'transaction') {
+            $payload['scope'] = $scope;
+        }
+
+        return hash('sha256', json_encode($payload, JSON_THROW_ON_ERROR));
     }
 
     /** @param array<string, string> $consents [connectionId => fingerprint] */
-    public function recordConsents(Company $company, User $actor, array $consents): void
+    public function recordConsents(Company $company, User $actor, array $consents, string $scope = 'transaction'): void
     {
-        DB::transaction(function () use ($company, $actor, $consents): void {
-            $policy = $this->authorizeUse($company, $actor, 'auto');
+        if (! in_array($scope, ['transaction', 'question'], true)) {
+            throw new AssistantUnavailable('consent_stale');
+        }
+        DB::transaction(function () use ($company, $actor, $consents, $scope): void {
+            $policy = ($scope === 'question')
+                ? $this->authorizeUse($company, $actor, 'question')
+                : $this->authorizeUse($company, $actor, 'auto');
             $preference = AiUserPreference::firstOrCreate(['company_id' => $company->id, 'user_id' => $actor->id]);
             $stored = $preference->consents ?? [];
             $now = now('UTC')->toIso8601String();
             foreach ($consents as $connectionId => $fingerprint) {
-                $connection = $this->ownedConnection($company, $actor, (string) $connectionId, true);
+                $isQuestion = $scope === 'question';
+                $actualId = (string) $connectionId;
+                $connection = $this->ownedConnection($company, $actor, $actualId, true);
                 if ($connection->revoked_at !== null || ! $this->connectionAllowed($policy, $connection)
                     || ($connection->credential_source === 'personal_byok' && ! $policy->personal_credentials_enabled)) {
                     throw new AssistantUnavailable('credential_revoked');
                 }
-                if (! hash_equals($this->consentFingerprint($policy, $connection), (string) $fingerprint)) {
+                $effectiveScope = $isQuestion ? 'question' : 'transaction';
+                if (! hash_equals($this->consentFingerprint($policy, $connection, $effectiveScope), (string) $fingerprint)) {
                     throw new AssistantUnavailable('consent_stale');
                 }
-                $stored[(string) $connectionId] = ['fingerprint' => $fingerprint, 'recorded_at' => $now];
+                $storeKey = $isQuestion ? 'question:'.$actualId : $actualId;
+                $stored[$storeKey] = ['fingerprint' => $fingerprint, 'recorded_at' => $now];
             }
             $preference->update(['consents' => $stored]);
         });
     }
 
-    public function recordConsent(Company $company, User $actor, string $connectionId, string $fingerprint): void
+    public function recordConsent(Company $company, User $actor, string $connectionId, string $fingerprint, string $scope = 'transaction'): void
     {
-        $this->recordConsents($company, $actor, [$connectionId => $fingerprint]);
+        $this->recordConsents($company, $actor, [$connectionId => $fingerprint], $scope);
     }
 
-    public function requireConsent(AiCompanyPolicy $policy, AiProviderConnection $connection, User $actor): void
+    public function requireConsent(AiCompanyPolicy $policy, AiProviderConnection $connection, User $actor, string $scope = 'transaction'): void
     {
         $preferences = AiUserPreference::where('company_id', $policy->company_id)->where('user_id', $actor->id)->first();
-        $actual = $preferences?->consents[$connection->public_id]['fingerprint'] ?? '';
-        if (! is_string($actual) || ! hash_equals($this->consentFingerprint($policy, $connection), $actual)) {
+        $key = $scope === 'question' ? 'question:'.$connection->public_id : $connection->public_id;
+        $actual = $preferences?->consents[$key]['fingerprint'] ?? '';
+        if (! is_string($actual) || ! hash_equals($this->consentFingerprint($policy, $connection, $scope), $actual)) {
             throw new AssistantUnavailable('consent');
         }
     }
@@ -457,7 +503,7 @@ final class AiGovernance
     private function validateSettings(array $settings): array
     {
         $allowed = ['allowed_connections', 'text_connection', 'speech_connection', 'fallback', 'privacy',
-            'pricing', 'limits', 'retention_days', 'allowed_personal_routes', 'global_button_enabled', 'allowed_intents'];
+            'pricing', 'limits', 'retention_days', 'allowed_personal_routes', 'global_button_enabled', 'allowed_intents', 'questions'];
         if (array_diff(array_keys($settings), $allowed) !== []) {
             throw new AssistantUnavailable('policy_invalid');
         }
@@ -480,7 +526,36 @@ final class AiGovernance
             'limits' => ['required', 'array:request_micros,daily_company_micros,monthly_company_micros,daily_user_micros,monthly_user_micros,daily_company_requests,daily_user_requests'],
             'limits.*' => ['required', 'integer', 'min:1', 'max:1000000000'],
             'retention_days' => ['required', 'integer', 'min:1', 'max:365'],
+            'questions' => ['sometimes', 'array'],
         ])->validate();
+        if (isset($settings['questions'])) {
+            if (! is_array($settings['questions'])
+                || array_diff(array_keys($settings['questions']), ['enabled', 'allowed_reports']) !== []) {
+                throw new AssistantUnavailable('policy_invalid');
+            }
+            if (! is_bool($settings['questions']['enabled'] ?? null)
+                || ! is_array($settings['questions']['allowed_reports'] ?? null)
+                || ! array_is_list($settings['questions']['allowed_reports'])) {
+                throw new AssistantUnavailable('policy_invalid');
+            }
+            foreach ($settings['questions']['allowed_reports'] as $reportKey) {
+                if (! is_string($reportKey) || ! in_array($reportKey, AssistantReportCatalog::KEYS, true)) {
+                    throw new AssistantUnavailable('policy_invalid');
+                }
+            }
+            if (count($settings['questions']['allowed_reports']) !== count(array_unique($settings['questions']['allowed_reports']))) {
+                throw new AssistantUnavailable('policy_invalid');
+            }
+            $data['questions'] = [
+                'enabled' => (bool) $settings['questions']['enabled'],
+                'allowed_reports' => array_values(array_unique($settings['questions']['allowed_reports'])),
+            ];
+        } else {
+            $data['questions'] = [
+                'enabled' => false,
+                'allowed_reports' => [],
+            ];
+        }
         $data['global_button_enabled'] = (bool) ($data['global_button_enabled'] ?? true);
         $data['allowed_intents'] = $data['allowed_intents'] ?? ['sales', 'purchase'];
         foreach (['request_micros', 'daily_company_micros', 'monthly_company_micros', 'daily_user_micros', 'monthly_user_micros', 'daily_company_requests', 'daily_user_requests'] as $key) {

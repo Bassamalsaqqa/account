@@ -8,6 +8,7 @@ return [
     'provider_approved' => env('AI_PROVIDER_APPROVED', false),
     'provider' => env('AI_ASSISTANT_PROVIDER', 'none'),
     'speech_enabled' => env('AI_SPEECH_ENABLED', false),
+    'questions' => ['enabled' => env('AI_QUESTIONS_ENABLED', false)],
     'disabled_company_ids' => array_filter(explode(',', (string) env('AI_DISABLED_COMPANY_IDS', ''))),
     'max_text_characters' => 4000,
     'max_lines' => 20,

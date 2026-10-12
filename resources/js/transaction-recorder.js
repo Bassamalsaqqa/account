@@ -5,6 +5,8 @@ const register = () => window.Alpine.data('transactionRecorder', (wire, options)
     let stream, context, source, node, timer, chunks = [], wav, samples = 0, flush, abort;
     let generation = 0, recognition, localText = '', intentionalStop = false, recordedRevision;
     const method = () => options.correction ? options.method : (wire.speechMethod || options.method);
+    const questionSpeech = () => !options.correction && wire.audioContext === 'question';
+    const consented = () => options.consent ?? (questionSpeech() ? wire.questionConsent : wire.consent);
     const acknowledge = async (prepared, turn, transcript = false) => {
         if (typeof prepared !== 'string') return;
         if (turn !== generation) {
@@ -62,7 +64,7 @@ const register = () => window.Alpine.data('transactionRecorder', (wire, options)
             if (method() === 'disabled') { this.error = options.permissionError; return; }
             if (method() !== 'cloud' && await this.startLocal()) return;
             if (method() === 'local_only') { this.error = options.permissionError; return; }
-            if (!(options.consent ?? wire.consent) || !this.supported || options.maxSeconds < 1) { this.error = options.permissionError; return; }
+            if (!consented() || !this.supported || options.maxSeconds < 1) { this.error = options.permissionError; return; }
             this.clear(); this.error = '';
             const turn = generation;
             try {
@@ -124,14 +126,15 @@ const register = () => window.Alpine.data('transactionRecorder', (wire, options)
         },
         async transcribe() {
             if (!['cloud', 'local_if_supported'].includes(method())) { this.clear(); this.error = options.permissionError; return; }
-            if (!wav || !(options.consent ?? wire.consent) || this.busy) return;
+            if (!wav || !consented() || this.busy) return;
             const turn = generation, requestAbort = new AbortController();
             this.busy = true; this.error = ''; abort = requestAbort;
             const deadline = setTimeout(() => requestAbort.abort(), 30000);
             try {
                 const data = new FormData();
                 data.append('audio', wav, 'recording.wav');
-                data.append('form_key', options.formKey || wire.formKey); data.append('context', options.context || wire.context);
+                data.append('form_key', options.formKey || wire.formKey);
+                data.append('context', options.context || (typeof wire.audioContext === 'string' ? wire.audioContext : wire.context));
                 data.append('locale', options.locale);
                 // Form components have no launcher selection property: Livewire would return an action callable.
                 // Omit it so the server selects and freshly authorizes the company-approved speech route.
