@@ -528,6 +528,11 @@ final class AiGovernance
             'retention_days' => ['required', 'integer', 'min:1', 'max:365'],
             'questions' => ['sometimes', 'array'],
         ])->validate();
+        // Form inputs may be integer strings; persist the validated limits in the
+        // same integer representation required by the fail-closed budget guard.
+        foreach ($data['limits'] as $key => $value) {
+            $data['limits'][$key] = (int) $value;
+        }
         if (isset($settings['questions'])) {
             if (! is_array($settings['questions'])
                 || array_diff(array_keys($settings['questions']), ['enabled', 'allowed_reports']) !== []) {

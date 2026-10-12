@@ -48,7 +48,7 @@
                     <fieldset class="space-y-2 border-t border-border pt-3">
                         <legend class="font-semibold">{{ __('assistant_v2.questions_policy') }}</legend>
                         <label class="flex items-center gap-2">
-                            <input type="checkbox" wire:model="questionsEnabled" class="rounded border-border" />
+                            <input type="checkbox" wire:model.live="questionsEnabled" class="rounded border-border" />
                             {{ __('assistant_v2.questions_enabled') }}
                         </label>
                         <p class="max-w-prose text-text-secondary">{{ __('assistant_v2.questions_help') }}</p>
@@ -82,7 +82,7 @@
                 <div class="mt-3 space-y-2 text-sm">
                     @foreach($connections as $connection)
                         @if($connection['credential_source'] === 'company_byok' && $connection['revoked_at'] === null)
-                            <label class="flex items-start gap-2"><input type="checkbox" wire:model="allowedConnections" value="{{ $connection['public_id'] }}" class="mt-1 rounded border-border" /><span class="break-words">{{ $connection['provider'] }} · {{ $connection['model'] }} · {{ $connection['region'] }}</span></label>
+                            <label class="flex items-start gap-2"><input type="checkbox" wire:model.live="allowedConnections" value="{{ $connection['public_id'] }}" class="mt-1 rounded border-border" /><span class="break-words">{{ $connection['provider'] }} · {{ $connection['model'] }} · {{ $connection['region'] }}</span></label>
                         @endif
                     @endforeach
                 </div>
