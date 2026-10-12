@@ -38,7 +38,7 @@ class DirectProviderDnsPolicyTest extends TestCase
             $this->assertTrue($options['verify']);
             $this->assertFalse($options['allow_redirects']);
             $this->assertSame('', $options['proxy']);
-            $this->assertSame('', $options['curl'][CURLOPT_PROXY]);
+            $this->assertArrayNotHasKey(CURLOPT_PROXY, $options['curl']);
             $this->assertArrayNotHasKey(CURLOPT_RESOLVE, $options['curl']);
             $this->assertArrayNotHasKey(CURLOPT_CONNECT_TO, $options['curl']);
             $this->assertSame(5, $options['connect_timeout']);
@@ -135,7 +135,7 @@ class DirectProviderDnsPolicyTest extends TestCase
             Http::fake(function (Request $request, array $options) use (&$seen) {
                 $seen++;
                 $this->assertSame('', $options['proxy']);
-                $this->assertSame('', $options['curl'][CURLOPT_PROXY]);
+                $this->assertArrayNotHasKey(CURLOPT_PROXY, $options['curl']);
                 $this->assertSame(5, $options['curl'][CURLOPT_LOW_SPEED_TIME]);
 
                 return Http::response(['safe' => true]);
