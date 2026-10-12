@@ -52,7 +52,7 @@ final class BoundedDeepSeekGateway extends DeepSeekGateway
                 $stream = $response->toPsrResponse()->getBody();
                 try {
                     if (! $response->successful()) {
-                        throw new AssistantUnavailable(AssistantUnavailable::mapHttpStatusToReason($response->status()), $response->status());
+                        throw new AssistantUnavailable(AssistantUnavailable::mapHttpStatusToReason($response->status()), $response->status(), 'provider_http');
                     }
                     $bytes = '';
                     while (! $stream->eof() && strlen($bytes) <= 131072) {

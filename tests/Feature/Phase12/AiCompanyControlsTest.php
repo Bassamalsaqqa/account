@@ -39,21 +39,20 @@ class AiCompanyControlsTest extends TestCase
         Http::preventStrayRequests();
     }
 
-    public function test_settings_store_both_controls_and_render_translated_labels(): void
+    public function test_owner_controls_preserve_allowed_scopes_while_settings_show_only_simple_setup(): void
     {
-        Livewire::test(AiSettings::class)
-            ->set('globalButtonEnabled', false)->set('allowedIntents', ['sales'])
-            ->call('save')->assertHasNoErrors();
+        $this->controls(false, ['sales']);
         $settings = $this->aiPolicy->fresh()->settings;
         $this->assertFalse($settings['global_button_enabled']);
         $this->assertSame(['sales'], $settings['allowed_intents']);
         foreach (['ar', 'en'] as $locale) {
             app()->setLocale($locale);
             Livewire::test(AiSettings::class)
-                ->assertSee(__('assistant_v2.global_button'))
-                ->assertSee(__('assistant_v2.allowed_intents'))
-                ->assertSee(__('assistant_v2.intent_sales'))
-                ->assertSee(__('assistant_v2.intent_purchase'));
+                ->assertSee(__('ai_product.title'))
+                ->assertSee(__('ai_product.test'))
+                ->assertDontSee('wire:model="globalButtonEnabled"', false)
+                ->assertDontSee('wire:model="allowedIntents"', false)
+                ->assertDontSee('wire:click="save"', false);
         }
         Http::assertNothingSent();
     }
@@ -61,12 +60,12 @@ class AiCompanyControlsTest extends TestCase
     public function test_global_button_control_preserves_permitted_contextual_workflow(): void
     {
         $this->controls(false, ['sales']);
-        Livewire::test(AssistantLauncher::class)->assertDontSee(__('assistant_v2.open'))
+        Livewire::test(AssistantLauncher::class)->assertDontSee(__('ai_product.launcher'))
             ->set('text', $this->note())->call('prepare')
-            ->assertSet('error', __('assistant_v2.error_unavailable'));
+            ->assertSet('error', __('assistant_v2.error_disabled'));
         $this->assertSame(0, AssistantRequest::count());
         Livewire::test(AssistantLauncher::class, ['context' => 'sales'])
-            ->assertSee(__('assistant_v2.open'))->call('showAssistant')->assertSet('open', true);
+            ->assertSee(__('ai_product.launcher'))->call('showAssistant')->assertSet('open', true);
         $result = app(TransactionAssistant::class)->prepare($this->company, $this->owner, $this->note(),
             'sales', (string) Str::uuid(), (string) Str::uuid(), session()->getId());
         $this->assertSame('handoff', $result['state']);
@@ -78,7 +77,7 @@ class AiCompanyControlsTest extends TestCase
     {
         $this->controls(true, ['sales']);
         $this->assertSame(['sales'], app(AiGovernance::class)->allowedIntents($this->company, $this->owner));
-        Livewire::test(AssistantLauncher::class, ['context' => 'purchase'])->assertDontSee(__('assistant_v2.open'));
+        Livewire::test(AssistantLauncher::class, ['context' => 'purchase'])->assertDontSee(__('ai_product.launcher'));
         foreach (['purchase', 'auto'] as $context) {
             try {
                 app(TransactionAssistant::class)->prepare($this->company, $this->owner,
@@ -98,7 +97,7 @@ class AiCompanyControlsTest extends TestCase
         $this->controls(true, []);
         $this->assertSame([], app(AiGovernance::class)->allowedIntents($this->company, $this->owner));
         foreach (['auto', 'sales', 'purchase'] as $context) {
-            Livewire::test(AssistantLauncher::class, ['context' => $context])->assertDontSee(__('assistant_v2.open'));
+            Livewire::test(AssistantLauncher::class, ['context' => $context])->assertDontSee(__('ai_product.launcher'));
             try {
                 app(AiGovernance::class)->authorizeUse($this->company, $this->owner, $context);
                 $this->fail('An empty company intent allowlist must deny all AI workflows.');
@@ -117,7 +116,7 @@ class AiCompanyControlsTest extends TestCase
             'sales', $form, (string) Str::uuid(), session()->getId());
         $this->controls(false, ['purchase']);
         $launcher->set('text', $this->note())->call('prepare')
-            ->assertSet('error', __('assistant_v2.error_unavailable'));
+            ->assertSet('error', __('assistant_v2.error_disabled'));
         try {
             app(AiFormState::class)->read($this->company, $this->owner, $result['token'], session()->getId(), $form);
             $this->fail('A changed policy cannot leave an old capability usable.');
@@ -169,7 +168,7 @@ class AiCompanyControlsTest extends TestCase
         $this->actingAs($actor);
         $context->setCompany($this->company, $actor);
         $this->assertSame(['sales'], app(AiGovernance::class)->allowedIntents($this->company, $actor));
-        $this->assertCount(2, app(AiGovernance::class)->visibleConnections($this->company, $actor));
+        $this->assertCount(1, app(AiGovernance::class)->visibleConnections($this->company, $actor));
         $context->setCompany($other, $actor);
         $this->assertSame([], app(AiGovernance::class)->allowedIntents($other, $actor));
         try {

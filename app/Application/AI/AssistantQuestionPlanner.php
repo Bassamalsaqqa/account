@@ -63,28 +63,17 @@ final class AssistantQuestionPlanner
 
         try {
             $response = null;
-            foreach ($routes as $index => $connection) {
+            foreach ($routes as $connection) {
                 $budget->beginAttempt($company, $actor, $request, $connection);
                 $grant = $governance->dispatchConnection($company, $actor, $connection->public_id, 'question', 'text_structured', (int) $connection->revision);
-                try {
-                    $response = app(DirectTextProvider::class)->planQuestion(
-                        $grant['connection']->provider,
-                        $grant['connection']->model,
-                        $grant['connection']->region,
-                        $grant['credential'],
-                        $text,
-                        $schema
-                    );
-                    break;
-                } catch (AssistantUnavailable $e) {
-                    if ($e->reason !== 'provider_outage' || $index !== 0 || count($routes) !== 2) {
-                        throw $e;
-                    }
-                }
-            }
-
-            if ($response === null) {
-                throw new AssistantUnavailable('provider_outage');
+                $response = app(DirectTextProvider::class)->planQuestion(
+                    $grant['connection']->provider,
+                    $grant['connection']->model,
+                    $grant['connection']->region,
+                    $grant['credential'],
+                    $text,
+                    $schema
+                );
             }
 
             if (! empty($response['usage'])) {

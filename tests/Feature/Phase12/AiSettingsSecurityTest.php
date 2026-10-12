@@ -9,11 +9,11 @@ use App\Application\AI\AiProviderRoutes;
 use App\Application\AI\AiRequestBudget;
 use App\Application\AI\AssistantUnavailable;
 use App\Livewire\AI\AiSettings;
-use App\Models\AiProviderConnection;
 use App\Models\AuditEvent;
 use App\Models\CompanyUser;
 use App\Models\User;
 use App\Support\Tenancy\CompanyContext;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Http;
@@ -35,132 +35,86 @@ class AiSettingsSecurityTest extends TestCase
         Http::preventStrayRequests();
     }
 
-    public function test_settings_never_hydrate_provider_keys_and_render_normal_password_confirmed_forms(): void
+    public function test_settings_are_write_only_without_legacy_route_or_price_controls(): void
     {
-        Livewire::test(AiSettings::class)
-            ->assertSee('Accounting assistant')
-            ->assertSee('Configured — not yet verified')
-            ->assertDontSee('synthetic-primary-key-never-real')
-            ->assertDontSee('synthetic-fallback-key-never-real')
-            ->assertDontSee('secret_ciphertext')
-            ->assertSee('name="provider_secret"', false)
-            ->assertSee('name="password"', false);
+        Livewire::test(AiSettings::class)->assertSee('DeepSeek AI')->assertSee('Connection verified')
+            ->assertDontSee('synthetic-primary-key-never-real')->assertDontSee('secret_ciphertext')
+            ->assertDontSee('wire:model="pricing"', false)->assertDontSee('Provider connections');
         $this->assertStringNotContainsString('synthetic-primary-key', AuditEvent::all()->toJson());
         Http::assertNothingSent();
     }
 
-    public function test_password_confirmed_configuration_is_write_only_and_makes_no_provider_call(): void
-    {
-        $secret = 'synthetic-http-provision-only';
-        $this->post(route('settings.ai.credentials'), [
-            'operation' => 'create', 'credential_source' => 'company_byok', 'route' => 'groq|whisper-large-v3-turbo|global|audio_transcription',
-            'provider_secret' => $secret, 'password' => 'synthetic-configuration-only',
-        ])->assertRedirect(route('settings.ai'));
-        $connection = AiProviderConnection::where('provider', 'groq')->firstOrFail();
-        $this->assertSame('configured_unverified', $connection->verification_status);
-        $this->assertStringNotContainsString($secret, $connection->toJson());
-        $this->assertStringNotContainsString($secret, json_encode(session()->all(), JSON_THROW_ON_ERROR));
-        $this->assertStringNotContainsString($secret, AuditEvent::all()->toJson());
-        Http::assertNothingSent();
-    }
-
-    public function test_invalid_credential_input_does_not_flash_key_or_password(): void
+    public function test_retired_credential_endpoint_does_not_flash_or_persist_secrets(): void
     {
         $secret = 'synthetic-never-flash-only';
-        $this->from(route('settings.ai'))->post(route('settings.ai.credentials'), [
-            'operation' => 'create', 'credential_source' => 'company_byok', 'route' => 'invalid-route',
-            'provider_secret' => $secret, 'password' => 'synthetic-configuration-only',
-        ])->assertRedirect(route('settings.ai'));
+        $this->post('/settings/ai/credentials', ['provider_secret' => $secret, 'password' => 'synthetic-configuration-only'])->assertNotFound();
         $this->assertStringNotContainsString($secret, json_encode(session()->all(), JSON_THROW_ON_ERROR));
-        $this->assertSame(2, AiProviderConnection::count());
-        $this->post(route('settings.ai.credentials'), [
-            'operation' => 'create', 'credential_source' => 'invalid', 'provider_secret' => $secret,
-            'password' => 'synthetic-configuration-only',
-        ])->assertSessionHasErrors('credential_source');
-        $session = json_encode(session()->all(), JSON_THROW_ON_ERROR);
-        $this->assertStringNotContainsString($secret, $session);
-        $this->assertStringNotContainsString('synthetic-configuration-only', $session);
+        $this->assertStringNotContainsString('synthetic-configuration-only', json_encode(session()->all(), JSON_THROW_ON_ERROR));
+        $this->assertDatabaseCount('ai_provider_connections', 1);
         Http::assertNothingSent();
     }
 
-    public function test_explicit_key_custodian_can_replace_and_revoke_without_transaction_or_assistant_use_permissions(): void
+    public function test_delegated_settings_reader_cannot_replace_installation_owner_key(): void
     {
-        $custodian = $this->member(['ai.credentials.manage']);
-        $this->assertFalse($custodian->hasPermissionTo('ai.assistant.use'));
-        $this->assertFalse($custodian->hasPermissionTo('sales.invoice.create'));
-        Livewire::actingAs($custodian)->test(AiSettings::class)->assertSee('Provider connections');
-        $governance = app(AiGovernance::class);
-        $selection = ['provider' => 'deepseek', 'model' => 'deepseek-flash', 'region' => 'global',
-            'capability' => 'text_structured', 'credential_source' => 'company_byok'];
-        $governance->provision($this->company, $custodian, $selection, 'synthetic-replacement-only', 'synthetic-custodian-only', $this->textConnection->public_id);
-        $this->assertSame(2, $this->textConnection->fresh()->revision);
-        $governance->revoke($this->company, $custodian, $this->textConnection->public_id, 'synthetic-custodian-only');
-        $this->assertSame('', $this->textConnection->fresh()->secret_ciphertext);
+        $custodian = $this->member(['ai.settings.manage', 'ai.credentials.manage']);
+        Livewire::actingAs($custodian)->test(AiSettings::class)->assertSee(__('ai_product.owner_managed'))->assertDontSee('DeepSeek API key');
+        try {
+            app(AiGovernance::class)->provision($this->company, $custodian,
+                ['provider' => 'deepseek', 'model' => 'deepseek-flash', 'region' => 'global', 'capability' => 'text_structured', 'credential_source' => 'company_byok'],
+                'synthetic-replacement-only', 'synthetic-custodian-only', $this->textConnection->public_id);
+            $this->fail('Only Owner can replace the company connection.');
+        } catch (AuthorizationException) {
+            $this->assertSame(1, $this->textConnection->fresh()->revision);
+        }
         Http::assertNothingSent();
     }
 
     public function test_admin_without_explicit_ai_delegation_cannot_open_settings(): void
     {
-        $admin = $this->member([]);
-        Livewire::actingAs($admin)->test(AiSettings::class)->assertForbidden();
+        Livewire::actingAs($this->member([]))->test(AiSettings::class)->assertForbidden();
         Http::assertNothingSent();
     }
 
-    public function test_stale_settings_revision_cannot_overwrite_a_new_company_policy(): void
+    public function test_string_request_counts_are_normalized_and_enforced_without_resetting_usage(): void
     {
-        $first = Livewire::test(AiSettings::class);
-        $second = Livewire::test(AiSettings::class);
-        $first->set('mode', 'guided')->call('save')->assertHasNoErrors();
-        $second->set('mode', 'seamless')->call('save')->assertHasErrors('policy');
-        $this->assertSame('guided', $this->aiPolicy->fresh()->workflow_mode);
-        Http::assertNothingSent();
-    }
-
-    public function test_edited_request_count_limits_remain_usable_and_stop_at_the_saved_limit(): void
-    {
-        Livewire::test(AiSettings::class)
-            ->set('limits.daily_company_requests', '2')
-            ->set('limits.daily_user_requests', '2')
-            ->call('save')->assertHasNoErrors();
-
-        $policy = $this->aiPolicy->fresh();
+        $settings = $this->aiPolicy->settings;
+        $settings['limits']['daily_company_requests'] = '2';
+        $settings['limits']['daily_user_requests'] = '2';
+        $policy = app(AiGovernance::class)->updatePolicy($this->company, $this->owner, [
+            'enabled' => true, 'personal_credentials_enabled' => false, 'follow_up_enabled' => true,
+            'workflow_mode' => 'seamless', 'speech_method' => 'disabled', 'settings' => $settings,
+        ], $this->aiPolicy->revision);
         $this->assertSame(2, $policy->settings['limits']['daily_company_requests']);
-        $this->assertSame(2, $policy->settings['limits']['daily_user_requests']);
-        $governance = app(AiGovernance::class);
-        foreach ([$this->textConnection, $this->fallbackConnection] as $connection) {
-            $governance->recordConsent($this->company, $this->owner, $connection->public_id,
-                $governance->consentFingerprint($policy, $connection));
-        }
         $routes = app(AiProviderRoutes::class)->select($this->company, $this->owner, 'sales', 'text_structured');
         $budget = app(AiRequestBudget::class);
         foreach (range(1, 2) as $number) {
-            $reserved = $budget->reserve($this->company, $this->owner, (string) Str::uuid(),
-                (string) Str::uuid(), 'intent', 'sales', hash('sha256', 'edited-count-'.$number), $routes);
-            $this->assertTrue($reserved['created']);
+            $this->assertTrue($budget->reserve($this->company, $this->owner, (string) Str::uuid(), (string) Str::uuid(), 'intent', 'sales', hash('sha256', 'count-'.$number), $routes)['created']);
         }
         try {
-            $budget->reserve($this->company, $this->owner, (string) Str::uuid(),
-                (string) Str::uuid(), 'intent', 'sales', hash('sha256', 'third-request'), $routes);
-            $this->fail('The edited request count must still prevent a third reservation.');
-        } catch (AssistantUnavailable $exception) {
-            $this->assertSame('budget', $exception->reason);
+            $budget->reserve($this->company, $this->owner, (string) Str::uuid(), (string) Str::uuid(), 'intent', 'sales', hash('sha256', 'third'), $routes);
+            $this->fail('Saved counts must refuse a third reservation.');
+        } catch (AssistantUnavailable $e) {
+            $this->assertSame('budget', $e->reason);
         }
         $this->assertDatabaseCount('assistant_requests', 2);
-        $this->assertDatabaseCount('sales_invoices', 0);
-        $this->assertDatabaseCount('purchases', 0);
         Http::assertNothingSent();
     }
 
-    public function test_invalid_edited_request_counts_do_not_change_policy_or_dispatch(): void
+    public function test_stale_revision_cannot_overwrite_company_policy(): void
     {
-        $revision = $this->aiPolicy->fresh()->revision;
-        foreach (['0', '2.5', '1000000001', 'not-a-number'] as $value) {
-            Livewire::test(AiSettings::class)
-                ->set('limits.daily_company_requests', $value)
-                ->call('save')->assertHasErrors('limits.daily_company_requests');
-            $this->assertSame($revision, $this->aiPolicy->fresh()->revision);
+        $settings = $this->aiPolicy->settings;
+        $revision = $this->aiPolicy->revision;
+        $this->aiPolicy->increment('revision');
+        try {
+            app(AiGovernance::class)->updatePolicy($this->company, $this->owner, [
+                'enabled' => true, 'personal_credentials_enabled' => false, 'follow_up_enabled' => true,
+                'workflow_mode' => 'guided', 'speech_method' => 'disabled', 'settings' => $settings,
+            ], $revision);
+            $this->fail('A stale Owner cannot overwrite policy.');
+        } catch (AssistantUnavailable $e) {
+            $this->assertSame('proposal_stale', $e->reason);
+            $this->assertSame('seamless', $this->aiPolicy->fresh()->workflow_mode);
         }
-        $this->assertDatabaseCount('assistant_requests', 0);
         Http::assertNothingSent();
     }
 

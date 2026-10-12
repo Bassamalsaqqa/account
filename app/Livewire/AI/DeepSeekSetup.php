@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Livewire\AI;
 
+use App\Application\AI\AssistantUnavailable;
 use App\Application\AI\DeepSeekQuickConnect;
 use App\Models\AiCompanyPolicy;
 use App\Support\Tenancy\CompanyContext;
@@ -68,6 +69,7 @@ final class DeepSeekSetup extends Component
         $this->authorizeSetup();
         $result = app(DeepSeekQuickConnect::class)->testConnection(app(CompanyContext::class)->company(), auth()->user(),
             $key, $password, $consent, $this->requestKey, $this->policyRevision, $this->connectionRevision);
+        $this->dispatch('ai:usage-changed');
         $this->status = $result['status'];
         $reason = $result['reason'] ?? 'verified';
         $this->message = __('ai_product.result_'.$reason);
@@ -85,6 +87,35 @@ final class DeepSeekSetup extends Component
         $this->status = 'idle';
         $this->message = null;
         $this->refreshRevisions();
+    }
+
+    public function useDeepSeekOnly(#[SensitiveParameter] string $password = ''): void
+    {
+        $this->authorizeSetup();
+        try {
+            app(DeepSeekQuickConnect::class)->transition(app(CompanyContext::class)->company(), auth()->user(),
+                $password, $this->policyRevision, $this->connectionRevision);
+            $this->message = __('ai_product.transition_done');
+            $this->refreshRevisions();
+        } catch (AssistantUnavailable $e) {
+            $this->message = __('ai_product.result_'.$e->diagnosticReason());
+        }
+    }
+
+    public function enableCompany(#[SensitiveParameter] string $password = '', bool $consent = false): void
+    {
+        $this->authorizeSetup();
+        try {
+            if (! $consent) {
+                throw new AssistantUnavailable('consent');
+            }
+            app(DeepSeekQuickConnect::class)->enableCompany(app(CompanyContext::class)->company(), auth()->user(),
+                $password, $this->policyRevision);
+            $this->refreshRevisions();
+            $this->message = __('ai_product.enabled_review_consent');
+        } catch (AssistantUnavailable $e) {
+            $this->message = __('ai_product.result_'.$e->diagnosticReason());
+        }
     }
 
     public function startUsing(): void
@@ -106,7 +137,8 @@ final class DeepSeekSetup extends Component
 
         return view('livewire.ai.deep-seek-setup', [
             'ownerAuthorized' => true, 'connectionStatus' => $service->getConnectionStatus($company),
-            'disclosure' => $service->disclosure($company), 'hasAdvancedPolicy' => $service->isAdvancedPolicy($company),
+            'disclosure' => $service->disclosure($company), 'needsTransition' => $service->needsTransition($company),
+            'companyDisabled' => AiCompanyPolicy::where('company_id', $company->id)->where('enabled', false)->exists(),
         ]);
     }
 }

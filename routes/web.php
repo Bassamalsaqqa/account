@@ -1,7 +1,5 @@
 <?php
 
-use App\Http\Controllers\AiCredentialController;
-use App\Http\Controllers\AssistantAudioController;
 use App\Http\Controllers\AssistantMemoryController;
 use App\Http\Controllers\ExpenseAttachmentController;
 use App\Http\Controllers\PdfDocumentController;
@@ -9,7 +7,6 @@ use App\Http\Controllers\PublicCatalogController;
 use App\Http\Controllers\PublicShareController;
 use App\Http\Controllers\PurchasingDocumentController;
 use App\Http\Controllers\ReportCsvController;
-use App\Http\Controllers\SalesAssistantAudioController;
 use App\Http\Middleware\PrivateDocumentResponse;
 use App\Livewire\AI\AiSettings;
 use App\Livewire\Pages\Catalog\CategoryIndex;
@@ -146,12 +143,6 @@ Route::middleware(['auth'])->group(function () {
     // Company-protected routes
     Route::middleware(['company.ensure'])->group(function () {
         Route::get('settings/ai', AiSettings::class)->name('settings.ai');
-        Route::post('settings/ai/credentials', AiCredentialController::class)
-            ->middleware('throttle:6,1')->name('settings.ai.credentials');
-        Route::post('assistant/audio', AssistantAudioController::class)
-            ->middleware('throttle:6,1')->name('assistant.audio');
-        Route::post('sales-assistant/audio', SalesAssistantAudioController::class)
-            ->middleware('throttle:6,1')->name('sales-assistant.audio');
         Route::get('dashboard', Dashboard::class)->name('dashboard');
         Route::get('reports', ReportHub::class)->name('reports.index');
         Route::get('reports/{reportKey}/csv', ReportCsvController::class)->where('reportKey', '[a-z][a-z0-9.\-]*')->name('reports.export');

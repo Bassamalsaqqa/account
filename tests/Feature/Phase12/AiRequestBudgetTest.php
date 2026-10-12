@@ -25,42 +25,36 @@ class AiRequestBudgetTest extends TestCase
         Http::preventStrayRequests();
     }
 
-    public function test_primary_and_single_fallback_are_reserved_together_and_replay_is_not_another_dispatch(): void
+    public function test_single_primary_is_reserved_and_replay_is_not_another_dispatch(): void
     {
         $key = (string) Str::uuid();
         $form = (string) Str::uuid();
         $budget = app(AiRequestBudget::class);
-        $first = $budget->reserve($this->company, $this->owner, $key, $form, 'intent', 'sales', hash('sha256', 'note'), [$this->textConnection, $this->fallbackConnection]);
-        $second = $budget->reserve($this->company, $this->owner, $key, $form, 'intent', 'sales', hash('sha256', 'note'), [$this->textConnection, $this->fallbackConnection]);
+        $first = $budget->reserve($this->company, $this->owner, $key, $form, 'intent', 'sales', hash('sha256', 'note'), [$this->textConnection]);
+        $second = $budget->reserve($this->company, $this->owner, $key, $form, 'intent', 'sales', hash('sha256', 'note'), [$this->textConnection]);
         $this->assertTrue($first['created']);
         $this->assertFalse($second['created']);
         $this->assertSame($first['request']->id, $second['request']->id);
-        $this->assertSame(28, $first['request']->reserved_cost_micros);
+        $this->assertSame(14, $first['request']->reserved_cost_micros);
         $this->assertSame('unknown', $first['request']->cost_status);
         $this->assertArrayNotHasKey('attempt_plan', $first['request']->toArray());
         $this->assertSame(1, AssistantRequest::count());
         Http::assertNothingSent();
     }
 
-    public function test_attempts_follow_reserved_order_and_never_allow_a_third_attempt(): void
+    public function test_only_one_reserved_attempt_is_allowed(): void
     {
         $budget = app(AiRequestBudget::class);
-        $request = $budget->reserve($this->company, $this->owner, (string) Str::uuid(), (string) Str::uuid(), 'intent', 'sales', hash('sha256', 'note'), [$this->textConnection, $this->fallbackConnection])['request'];
-        try {
-            $budget->beginAttempt($this->company, $this->owner, $request, $this->fallbackConnection);
-            $this->fail('Unreserved attempt order must refuse.');
-        } catch (AssistantUnavailable $e) {
-            $this->assertSame('fallback_invalid', $e->reason);
-        }
+        $request = $budget->reserve($this->company, $this->owner, (string) Str::uuid(), (string) Str::uuid(), 'intent', 'sales', hash('sha256', 'note'), [$this->textConnection])['request'];
         $budget->beginAttempt($this->company, $this->owner, $request, $this->textConnection);
-        $budget->beginAttempt($this->company, $this->owner, $request, $this->fallbackConnection);
-        $this->assertSame(2, $request->fresh()->attempt_count);
+        $this->assertSame(1, $request->fresh()->attempt_count);
         try {
-            $budget->beginAttempt($this->company, $this->owner, $request, $this->fallbackConnection);
-            $this->fail('Third attempt must refuse.');
+            $budget->beginAttempt($this->company, $this->owner, $request, $this->textConnection);
+            $this->fail('A second dispatch must refuse.');
         } catch (AssistantUnavailable $e) {
             $this->assertSame('fallback_invalid', $e->reason);
         }
+        $this->assertSame(1, $request->fresh()->attempt_count);
         Http::assertNothingSent();
     }
 

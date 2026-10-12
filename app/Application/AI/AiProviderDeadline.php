@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Application\AI;
 
-/** Wall-clock allowance shared by the primary and optional fallback in one foreground request. */
+/** Wall-clock allowance for the one foreground DeepSeek request. */
 final class AiProviderDeadline
 {
     private ?int $started = null;
@@ -18,7 +18,7 @@ final class AiProviderDeadline
         $elapsedSeconds = intdiv(hrtime(true) - $this->started, 1000000000);
         $remaining = $budget - $elapsedSeconds;
         if ($remaining < 1) {
-            throw new AssistantUnavailable('provider_outage');
+            throw new AssistantUnavailable('provider_timeout');
         }
 
         return $remaining;

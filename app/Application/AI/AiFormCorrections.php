@@ -30,6 +30,9 @@ final class AiFormCorrections
     public function prepare(Company $company, User $actor, string $token, string $session, string $formKey, int $revision,
         array $payload, string $text, string $requestKey, ?string $connectionId = null, ?string $audioToken = null): string
     {
+        if ($audioToken !== null) {
+            throw new AssistantUnavailable('input_invalid');
+        }
         $editing = app(AiFormEditing::class);
         $revision = $editing->synchronize($company, $actor, $token, $session, $formKey, $revision, $payload);
         $state = app(AiFormState::class)->read($company, $actor, $token, $session, $formKey);
@@ -39,10 +42,6 @@ final class AiFormCorrections
             throw new AssistantUnavailable('input_invalid');
         }
         $connections = $state['data']['connections'];
-        if ($audioToken !== null) {
-            $audio = app(AiFormState::class)->read($company, $actor, $audioToken, $session, $formKey);
-            $connections = [...$connections, ...($audio['data']['connections'] ?? [])];
-        }
         $schema = app(FormPatchSchema::class);
         $proposal = $schema->deterministic($text, count($payload['lines']));
         $routes = $proposal === null ? app(AiProviderRoutes::class)->select($company, $actor, $intent, 'text_structured', $connectionId) : [];
@@ -58,20 +57,13 @@ final class AiFormCorrections
                 // Minimal current-form references: no party directory, financial totals or unrelated costs.
                 $input = 'Current intent: '.$intent.'. Current line count: '.count($payload['lines']).'. Line ordinals are one-based. '
                     .'Apply only the following instruction, never regenerate the form: '.$text;
-                foreach ($routes as $index => $connection) {
+                foreach ($routes as $connection) {
                     app(AiRequestBudget::class)->beginAttempt($company, $actor, $request, $connection);
                     $grant = app(AiGovernance::class)->dispatchConnection($company, $actor, $connection->public_id, $intent, 'text_structured', (int) $connection->revision);
-                    try {
-                        $response = app(DirectTextProvider::class)->extract($connection->provider, $connection->model, $connection->region,
-                            $grant['credential'], $input, 'patch', $schema->providerSchema());
-                        $proposal = $response['proposal'];
-                        app(AiRequestBudget::class)->recordUsage($company, $actor, $request, $response['usage']);
-                        break;
-                    } catch (AssistantUnavailable $e) {
-                        if ($e->reason !== 'provider_outage' || $index !== 0 || count($routes) !== 2) {
-                            throw $e;
-                        }
-                    }
+                    $response = app(DirectTextProvider::class)->extract($connection->provider, $connection->model, $connection->region,
+                        $grant['credential'], $input, 'patch', $schema->providerSchema());
+                    $proposal = $response['proposal'];
+                    app(AiRequestBudget::class)->recordUsage($company, $actor, $request, $response['usage']);
                 }
             }
             if ($proposal === null) {
@@ -103,9 +95,6 @@ final class AiFormCorrections
                     'operations' => $operations, 'connections' => $connections,
                 ], $revision, $state['expires_at']);
             });
-            if ($audioToken !== null) {
-                app(AiFormState::class)->forget($company, $actor, $audioToken, $session);
-            }
 
             return $result;
         } catch (Throwable $e) {

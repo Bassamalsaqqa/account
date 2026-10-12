@@ -7,14 +7,12 @@ namespace Tests\Feature\UnifiedAssistant;
 use App\Application\AI\AiGovernance;
 use App\Application\AI\AssistantQuestionPlanner;
 use App\Application\AI\AssistantUnavailable;
-use App\Models\AiProviderConnection;
 use App\Models\AssistantRequest;
 use App\Models\CompanyUser;
 use App\Models\User;
 use App\Support\Tenancy\CompanyContext;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
@@ -39,7 +37,7 @@ final class QuestionProviderBoundaryTest extends TestCase
     public function test_transaction_consent_cannot_authorize_question_dispatch(): void
     {
         $governance = app(AiGovernance::class);
-        foreach ([$this->textConnection, $this->fallbackConnection] as $connection) {
+        foreach ([$this->textConnection] as $connection) {
             $governance->recordConsent($this->company, $this->owner, $connection->public_id,
                 $governance->consentFingerprint($this->aiPolicy, $connection));
         }
@@ -81,28 +79,21 @@ final class QuestionProviderBoundaryTest extends TestCase
         $this->assertNoEconomicWrites();
     }
 
-    public function test_outage_only_approved_fallback_and_strict_nullable_schema(): void
+    public function test_outage_stops_after_one_deepseek_request_without_fallback(): void
     {
         $this->consentQuestions();
-        Http::fake([
-            'https://api.deepseek.com/*' => Http::response([], 503),
-            'https://api.openai.com/*' => Http::response($this->response()),
-        ]);
-        $this->assertSame('sales.summary', $this->plan()->reportKey);
-        Http::assertSentCount(2);
-        Http::assertSent(function ($http): bool {
-            if (! str_starts_with($http->url(), 'https://api.openai.com/')) {
-                return false;
-            }
-            $schema = $http->data()['response_format']['json_schema']['schema'];
-            $this->assertFalse($schema['additionalProperties']);
-            $this->assertSame(['preset', 'currency_code'], $schema['properties']['filters']['required']);
-            $this->assertSame(['string', 'null'], $schema['properties']['filters']['properties']['preset']['type']);
-            $this->assertSame(['sales.summary'], $schema['properties']['report_key']['enum']);
-
-            return true;
-        });
-        $this->assertSame(2, AssistantRequest::sole()->attempt_count);
+        Http::fake(['*' => Http::response([], 503)]);
+        try {
+            $this->plan();
+            $this->fail('An outage cannot dispatch a second route.');
+        } catch (AssistantUnavailable $e) {
+            $this->assertSame('provider_outage', $e->reason);
+        }
+        Http::assertSentCount(1);
+        $this->assertSame(1, AssistantRequest::sole()->attempt_count);
+        $this->assertSame('failed', AssistantRequest::sole()->status);
+        $this->assertGreaterThan(0, AssistantRequest::sole()->reserved_cost_micros);
+        $this->assertNoEconomicWrites();
     }
 
     public function test_untrusted_extra_fields_fail_without_fallback_or_partial_result(): void
@@ -161,58 +152,20 @@ final class QuestionProviderBoundaryTest extends TestCase
         $this->assertNoEconomicWrites();
     }
 
-    public function test_report_only_speech_reuses_budget_and_never_creates_a_transaction_handoff(): void
-    {
-        $speech = $this->speechConnection();
-        $reader = $this->reader();
-        app(AiGovernance::class)->recordConsent($this->company, $reader, $speech->public_id,
-            app(AiGovernance::class)->consentFingerprint($this->aiPolicy, $speech, 'question'), 'question');
-        Http::fake(['*' => Http::response(['text' => 'sales summary this month'])]);
-        $file = UploadedFile::fake()->createWithContent('question.wav', $this->wav());
-        $this->postJson(route('assistant.audio'), ['audio' => $file, 'context' => 'question',
-            'form_key' => (string) Str::uuid(), 'request_key' => (string) Str::uuid(), 'locale' => 'en'])
-            ->assertOk()->assertJsonPath('text', 'sales summary this month')->assertJsonPath('audio_token', null);
-        $this->assertFileDoesNotExist($file->getPathname());
-        $this->assertSame('question', AssistantRequest::sole()->intent_kind);
-        $this->assertSame('completed', AssistantRequest::sole()->status);
-        Http::assertSentCount(1);
-        $this->assertNoEconomicWrites();
-    }
-
-    public function test_speech_key_revocation_after_dispatch_refuses_transcript_and_cleans_upload(): void
-    {
-        $speech = $this->speechConnection();
-        app(AiGovernance::class)->recordConsent($this->company, $this->owner, $speech->public_id,
-            app(AiGovernance::class)->consentFingerprint($this->aiPolicy, $speech, 'question'), 'question');
-        Http::fake(function () use ($speech) {
-            app(AiGovernance::class)->revoke($this->company, $this->owner, $speech->public_id, 'synthetic-configuration-only');
-
-            return Http::response(['text' => 'Never delivered']);
-        });
-        $file = UploadedFile::fake()->createWithContent('question.wav', $this->wav());
-        $this->postJson(route('assistant.audio'), ['audio' => $file, 'context' => 'question',
-            'form_key' => (string) Str::uuid(), 'request_key' => (string) Str::uuid(), 'locale' => 'en'])
-            ->assertUnprocessable()->assertJsonMissingPath('text');
-        $this->assertFileDoesNotExist($file->getPathname());
-        $this->assertSame('failed', AssistantRequest::sole()->status);
-        $this->assertGreaterThan(0, AssistantRequest::sole()->reserved_cost_micros);
-        Http::assertSentCount(1);
-    }
-
     private function questionPolicy(?array $settings = null): void
     {
         $settings ??= $this->aiPolicy->fresh()->settings;
         $settings['questions'] = ['enabled' => true, 'allowed_reports' => ['sales.summary']];
         $this->aiPolicy = app(AiGovernance::class)->updatePolicy($this->company, $this->owner, [
             'enabled' => true, 'personal_credentials_enabled' => false, 'follow_up_enabled' => true,
-            'workflow_mode' => 'seamless', 'speech_method' => 'cloud', 'settings' => $settings,
+            'workflow_mode' => 'seamless', 'speech_method' => 'disabled', 'settings' => $settings,
         ], (int) $this->aiPolicy->fresh()->revision);
     }
 
     private function consentQuestions(?User $actor = null): void
     {
         $actor ??= $this->owner;
-        foreach ([$this->textConnection, $this->fallbackConnection] as $connection) {
+        foreach ([$this->textConnection] as $connection) {
             app(AiGovernance::class)->recordConsent($this->company, $actor, $connection->public_id,
                 app(AiGovernance::class)->consentFingerprint($this->aiPolicy, $connection, 'question'), 'question');
         }
@@ -245,23 +198,6 @@ final class QuestionProviderBoundaryTest extends TestCase
         $this->assertFalse($reader->can('sales.invoice.create'));
 
         return $reader;
-    }
-
-    private function speechConnection(): AiProviderConnection
-    {
-        $speech = app(AiGovernance::class)->provision($this->company, $this->owner, [
-            'provider' => 'groq', 'model' => 'whisper-large-v3-turbo', 'region' => 'global',
-            'capability' => 'audio_transcription', 'credential_source' => 'company_byok',
-        ], 'synthetic-question-speech-key', 'synthetic-configuration-only');
-        $settings = $this->aiPolicy->fresh()->settings;
-        $settings['allowed_connections'][] = $speech->public_id;
-        $settings['speech_connection'] = $speech->public_id;
-        $settings['pricing'][$speech->public_id] = ['reference' => 'https://example.test/pricing',
-            'checked_at' => '2026-10-11', 'input_micros_per_million' => 0, 'output_micros_per_million' => 0, 'audio_micros_per_minute' => 6000];
-        $this->questionPolicy($settings);
-        $this->withCookie(config('session.cookie'), session()->getId());
-
-        return $speech;
     }
 
     private function assertNoEconomicWrites(): void

@@ -362,7 +362,7 @@ class TenantSpeechCandidatesTest extends TestCase
             'company_id' => $otherCompany->id,
             'enabled' => true,
             'workflow_mode' => 'seamless',
-            'speech_method' => 'cloud',
+            'speech_method' => 'disabled',
             'settings' => ['allowed_intents' => ['sales', 'purchase']],
         ]);
 

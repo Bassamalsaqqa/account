@@ -19,7 +19,7 @@
             </dl>
         </details>
 
-        <div class="space-y-2" x-data="transactionRecorder($wire, @js(['correction' => true, 'method' => 'disabled', 'changedError' => __('assistant_v2.error_form_changed'), 'deliveryError' => __('assistant.unavailable')]))">
+        <div class="space-y-2" x-data="transactionCorrections($wire, @js(['changedError' => __('assistant_v2.error_form_changed'), 'deliveryError' => __('assistant.unavailable')]))">
             @if (! $aiTranscriptOpen)
                 <button type="button" wire:click="editAiTranscript" class="min-h-11 px-2 font-semibold underline underline-offset-4">{{ __('assistant_v2.edit_transcript') }}</button>
             @else
@@ -68,17 +68,13 @@
         @php($aiPolicy = app(\App\Application\AI\AiGovernance::class)->authorizeUse(app(\App\Support\Tenancy\CompanyContext::class)->company(), auth()->user(), property_exists($this, 'purchase_date') ? 'purchase' : 'sales'))
         @if ($aiPolicy->follow_up_enabled)
             <div class="space-y-2 border-t border-info/20 pt-3"
-                x-data="transactionRecorder($wire, @js(['url' => route('assistant.audio'), 'maxSeconds' => app(\App\Application\AI\AiAudioLimits::class)->current()['max_seconds'], 'method' => app(\App\Application\AI\AiSpeechMethods::class)->effective($aiPolicy, auth()->user()), 'locale' => app()->getLocale(), 'correction' => true, 'changedError' => __('assistant_v2.error_form_changed'), 'consent' => true, 'formKey' => $aiFormKey, 'context' => property_exists($this, 'purchase_date') ? 'purchase' : 'sales', 'permissionError' => __('assistant.microphone_error'), 'deliveryError' => __('assistant.unavailable'), 'limitError' => __('assistant_v2.recording_limit')]))">
+                x-data="transactionCorrections($wire, @js(['changedError' => __('assistant_v2.error_form_changed'), 'deliveryError' => __('assistant.unavailable')]))">
                 <label for="ai-correction-{{ $this->getId() }}" class="block font-semibold">{{ __('assistant_v2.correct_current_form') }}</label>
                 <input id="ai-correction-{{ $this->getId() }}" wire:model="aiCorrectionText" maxlength="4000"
-                    placeholder="{{ __('assistant_v2.correction_example') }}" class="min-h-11 w-full rounded-control border border-border bg-surface px-3 text-base" :disabled="recording || busy" />
+                    placeholder="{{ __('assistant_v2.correction_example') }}" class="min-h-11 w-full rounded-control border border-border bg-surface px-3 text-base" :disabled="busy" />
                 <div class="flex flex-wrap gap-2">
-                    <button type="button" @click="applyTyped()" :disabled="recording || busy" class="min-h-11 rounded-control border border-border bg-surface px-3 font-semibold disabled:opacity-50">{{ __('assistant_v2.apply_correction') }}</button>
-                    @if (config('ai_assistant.speech_enabled') === true && $aiPolicy->speech_method !== 'disabled')
-                        <button type="button" x-show="!recording" @click="start()" :disabled="busy" class="min-h-11 rounded-control border border-border px-3 font-semibold">{{ __('assistant_v2.record_correction') }}</button>
-                        <button type="button" x-show="recording" x-cloak @click="stop(true)" class="min-h-11 rounded-control bg-danger px-3 font-semibold text-white">{{ __('assistant_v2.stop_continue') }}</button>
-                    @endif
-                        <button type="button" x-show="recording || busy" x-cloak @click="clear(); $wire.cancelAiCorrection()" class="min-h-11 px-3 underline">{{ __('assistant_v2.cancel') }}</button>
+                    <button type="button" @click="applyTyped()" :disabled="busy" class="min-h-11 rounded-control border border-border bg-surface px-3 font-semibold disabled:opacity-50">{{ __('assistant_v2.apply_correction') }}</button>
+                    <button type="button" x-show="busy" x-cloak @click="clear(); $wire.cancelAiCorrection()" class="min-h-11 px-3 underline">{{ __('assistant_v2.cancel') }}</button>
                     @if ($aiCanUndo)
                         <button type="button" wire:click="undoAiInput" wire:loading.attr="disabled" class="min-h-11 rounded-control border border-border bg-surface px-3 font-semibold">{{ __('assistant_v2.undo') }}</button>
                     @endif

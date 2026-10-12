@@ -10,6 +10,7 @@ use App\Application\AI\AssistantQuestionPlanner;
 use App\Application\AI\AssistantReportCatalog;
 use App\Application\AI\AssistantUnavailable;
 use App\Application\AI\DeterministicTransactionParser;
+use App\Models\AiUserPreference;
 use App\Models\AssistantRequest;
 use App\Models\CompanyUser;
 use App\Models\User;
@@ -38,7 +39,7 @@ final class QuestionSemanticRoutingTest extends TestCase
         $settings['questions'] = ['enabled' => true, 'allowed_reports' => AssistantReportCatalog::KEYS];
         $this->aiPolicy = app(AiGovernance::class)->updatePolicy($this->company, $this->owner, [
             'enabled' => true, 'personal_credentials_enabled' => false, 'follow_up_enabled' => true,
-            'workflow_mode' => 'seamless', 'speech_method' => 'cloud', 'settings' => $settings,
+            'workflow_mode' => 'seamless', 'speech_method' => 'disabled', 'settings' => $settings,
         ], (int) $this->aiPolicy->revision);
         Http::preventStrayRequests();
     }
@@ -61,7 +62,7 @@ final class QuestionSemanticRoutingTest extends TestCase
                 ->set('text', $query)->call('prepare')
                 ->assertSet('reportResult', null)->assertSet('error', __('assistant_v2.error_question_invalid'));
             Livewire::test('ai.assistant-launcher')->call('showAssistant')
-                ->call('receiveTranscript', $query, null)
+                ->call('receiveTranscript', $query, null)->assertSet('text', $query)->assertNoRedirect()->call('prepare')
                 ->assertSet('reportResult', null)->assertSet('error', __('assistant_v2.error_question_invalid'));
         }
         Http::assertNothingSent();
@@ -96,7 +97,7 @@ final class QuestionSemanticRoutingTest extends TestCase
                 ->set('text', $text)->call('prepare')->assertSet('reportResult', null);
             $this->assertNotNull($typed->get('ambiguousChoice'));
             $spoken = Livewire::test('ai.assistant-launcher')->call('showAssistant')
-                ->call('receiveTranscript', $text, null)->assertSet('reportResult', null);
+                ->call('receiveTranscript', $text, null)->assertSet('text', $text)->assertNoRedirect()->call('prepare')->assertSet('reportResult', null);
             $this->assertNotNull($spoken->get('ambiguousChoice'));
         }
         Http::assertNothingSent();
@@ -119,7 +120,7 @@ final class QuestionSemanticRoutingTest extends TestCase
             Livewire::test('ai.assistant-launcher')->call('showAssistant')->set('text', $query)
                 ->call('prepare')->assertSet('error', null)->assertRedirect();
             Livewire::test('ai.assistant-launcher')->call('showAssistant')
-                ->call('receiveTranscript', $query, null)->assertRedirect();
+                ->call('receiveTranscript', $query, null)->assertSet('text', $query)->assertNoRedirect()->call('prepare')->assertRedirect();
         }
         $this->assertSame(['intent'], AssistantRequest::query()->distinct()->pluck('purpose')->all());
         $this->assertSame(['form_ready'], AssistantRequest::query()->distinct()->pluck('status')->all());
@@ -175,6 +176,7 @@ final class QuestionSemanticRoutingTest extends TestCase
 
     public function test_unknown_transaction_choice_uses_original_text_and_transaction_scope(): void
     {
+        AiUserPreference::query()->update(['consents' => []]);
         $query = 'put that on the usual bill please';
         // Unsupported is a valid transaction-provider response; no guessed customer/product.
         Http::fake(['*' => Http::response($this->response(['version' => 2, 'intent' => 'uncertain']))]);
@@ -246,7 +248,7 @@ final class QuestionSemanticRoutingTest extends TestCase
             Livewire::test('ai.assistant-launcher')->call('showAssistant')->set('text', $query)
                 ->call('prepare')->assertSet('error', null)->assertRedirect();
             Livewire::test('ai.assistant-launcher')->call('showAssistant')
-                ->call('receiveTranscript', $query, null)->assertSet('error', null)->assertRedirect();
+                ->call('receiveTranscript', $query, null)->assertSet('text', $query)->assertNoRedirect()->call('prepare')->assertSet('error', null)->assertRedirect();
         }
         Http::assertSentCount(4);
         $this->assertSame(['intent'], AssistantRequest::query()->distinct()->pluck('purpose')->all());
@@ -288,7 +290,7 @@ final class QuestionSemanticRoutingTest extends TestCase
 
     private function consent(string $scope): void
     {
-        foreach ([$this->textConnection, $this->fallbackConnection] as $connection) {
+        foreach ([$this->textConnection] as $connection) {
             app(AiGovernance::class)->recordConsent($this->company, $this->owner, $connection->public_id,
                 app(AiGovernance::class)->consentFingerprint($this->aiPolicy, $connection, $scope), $scope);
         }
