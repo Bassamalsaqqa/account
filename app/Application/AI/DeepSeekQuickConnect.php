@@ -55,10 +55,23 @@ final class DeepSeekQuickConnect
             return false;
         }
 
-        return $policy->personal_credentials_enabled || ($policy->settings['fallback']['enabled'] ?? false)
-            || ($policy->settings['speech_connection'] ?? null) !== null
-            || count($policy->settings['allowed_connections'] ?? []) > 1
-            || $this->findExistingConnection($company) === null;
+        $settings = $policy->settings ?? [];
+        $ids = array_values(array_unique(array_filter([
+            ...($settings['allowed_connections'] ?? []), $settings['text_connection'] ?? null,
+        ])));
+        if ($policy->personal_credentials_enabled || ($settings['allowed_personal_routes'] ?? []) !== []
+            || ($settings['fallback']['enabled'] ?? false)
+            || ($settings['fallback']['text_connection'] ?? null) !== null
+            || ($settings['fallback']['speech_connection'] ?? null) !== null
+            || ($settings['speech_connection'] ?? null) !== null || count($ids) > 1) {
+            return true;
+        }
+
+        // Empty, unselected and revoked DeepSeek routes are repairable, not advanced.
+        return $ids !== [] && AiProviderConnection::where('company_id', $company->id)->where('public_id', $ids[0])
+            ->where(fn ($query) => $query->whereNotNull('owner_user_id')->orWhere('provider', '!=', 'deepseek')
+                ->orWhere('model', '!=', 'deepseek-flash')->orWhere('region', '!=', 'global')
+                ->orWhere('capability', '!=', 'text_structured'))->exists();
     }
 
     public function getConnectionStatus(Company $company): string
@@ -73,12 +86,12 @@ final class DeepSeekQuickConnect
     {
         $disclosure = DeepSeekDefaults::disclosure();
         $policy = AiCompanyPolicy::where('company_id', $company->id)->first();
-        $connection = $this->findExistingConnection($company);
-        if ($policy !== null && $connection !== null) {
-            $disclosure['operator'] = $policy->settings['privacy']['operator'];
-            $disclosure['retention'] = $policy->settings['privacy']['retention'];
-            $disclosure['privacy_url'] = $policy->settings['privacy']['policy_url'];
-            $pricing = $policy->settings['pricing'][$connection->public_id] ?? [];
+        if ($policy !== null) {
+            $disclosure['operator'] = $policy->settings['privacy']['operator'] ?? $disclosure['operator'];
+            $disclosure['retention'] = $policy->settings['privacy']['retention'] ?? $disclosure['retention'];
+            $disclosure['privacy_url'] = $policy->settings['privacy']['policy_url'] ?? $disclosure['privacy_url'];
+            $id = $policy->settings['text_connection'] ?? ($policy->settings['allowed_connections'][0] ?? null);
+            $pricing = $id === null ? [] : ($policy->settings['pricing'][$id] ?? []);
             if ($pricing !== []) {
                 $disclosure['pricing'] = $pricing + [
                     'input_display' => (string) BigDecimal::of($pricing['input_micros_per_million'])->dividedBy('1000000', 6)->strippedOfTrailingZeros(),
@@ -121,30 +134,43 @@ final class DeepSeekQuickConnect
                 if ($this->isAdvancedPolicy($company)) {
                     throw new AssistantUnavailable('advanced_policy');
                 }
+                $priorRouteId = $policy?->settings['text_connection'] ?? ($policy?->settings['allowed_connections'][0] ?? null);
+                $repair = $policy !== null && (! $policy->enabled || $connection === null || $connection->revoked_at !== null
+                    || ! in_array($connection->public_id, $policy->settings['allowed_connections'] ?? [], true));
                 $governance = app(AiGovernance::class);
                 if ($key !== '') {
                     $connection = $governance->provision($company, $actor, [
                         'provider' => 'deepseek', 'model' => 'deepseek-flash', 'region' => 'global',
                         'capability' => 'text_structured', 'credential_source' => 'company_byok',
-                    ], $key, $password, $connection?->public_id);
+                    ], $key, $password, $connection?->revoked_at === null ? $connection?->public_id : null);
                 }
                 if ($connection === null || $connection->revoked_at !== null) {
                     throw new AssistantUnavailable('credential_invalid');
                 }
-                if ($policy === null) {
+                if ($policy === null || $repair) {
+                    if ($key === '') {
+                        $governance->validateConnection($company, $actor, $connection->public_id, $password);
+                    }
+                    $settings = [
+                        'allowed_connections' => [], 'text_connection' => null,
+                        'speech_connection' => null, 'fallback' => ['enabled' => false, 'text_connection' => null, 'speech_connection' => null],
+                        'privacy' => DeepSeekDefaults::privacy(), 'pricing' => [],
+                        'limits' => DeepSeekDefaults::safeLimits(), 'retention_days' => 30,
+                        'global_button_enabled' => true, 'allowed_intents' => ['sales', 'purchase'],
+                        'questions' => ['enabled' => $policy === null, 'allowed_reports' => $policy === null ? AssistantReportCatalog::KEYS : []],
+                    ];
+                    $settings = array_replace($settings, $policy === null ? [] : ($policy->settings ?? []));
+                    $price = $priorRouteId === null ? null : ($settings['pricing'][$priorRouteId] ?? null);
+                    $settings['allowed_connections'] = [$connection->public_id];
+                    $settings['text_connection'] = $connection->public_id;
+                    $settings['pricing'] = [$connection->public_id => $price ?? DeepSeekDefaults::pricing()];
                     $policy = $governance->updatePolicy($company, $actor, [
-                        'enabled' => true, 'personal_credentials_enabled' => false, 'follow_up_enabled' => true,
-                        'workflow_mode' => 'seamless', 'speech_method' => 'disabled', 'settings' => [
-                            'allowed_connections' => [$connection->public_id], 'text_connection' => $connection->public_id,
-                            'speech_connection' => null, 'fallback' => ['enabled' => false, 'text_connection' => null, 'speech_connection' => null],
-                            'privacy' => DeepSeekDefaults::privacy(), 'pricing' => [$connection->public_id => DeepSeekDefaults::pricing()],
-                            'limits' => DeepSeekDefaults::safeLimits(), 'retention_days' => 30,
-                            'global_button_enabled' => true, 'allowed_intents' => ['sales', 'purchase'],
-                            'questions' => ['enabled' => true, 'allowed_reports' => AssistantReportCatalog::KEYS],
-                        ],
-                    ], 0);
+                        'enabled' => true, 'personal_credentials_enabled' => false, 'follow_up_enabled' => $policy === null ? true : $policy->follow_up_enabled,
+                        'workflow_mode' => $policy === null ? 'seamless' : $policy->workflow_mode, 'speech_method' => $policy === null ? 'disabled' : $policy->speech_method,
+                        'settings' => $settings,
+                    ], $expectedPolicyRevision);
                 }
-                // Never rewrite existing limits, prices, allowed capabilities or governance.
+                // Only the explicitly requested simple route/enablement changes; custom governance survives.
                 $governance->recordConsent($company, $actor, $connection->public_id, $governance->consentFingerprint($policy, $connection));
                 if (($policy->settings['questions']['enabled'] ?? false) === true
                     && app(AssistantReportCatalog::class)->permittedKeys($company, $actor) !== []) {

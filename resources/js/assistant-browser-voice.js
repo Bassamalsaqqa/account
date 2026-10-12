@@ -13,7 +13,7 @@ export function browserVoice(wire, options, runtime = globalThis) {
     };
     return {
         recording: false, busy: false, seconds: 0, error: '', interim: '',
-        voiceDisclosure: false, remoteVoiceConsent: false, localVoice: false, transcriptReady: false,
+        transcriptReady: false,
         sentText: '', sending: false,
         init() {
             this.leave = () => this.clear();
@@ -31,21 +31,9 @@ export function browserVoice(wire, options, runtime = globalThis) {
             if (!runtime.isSecureContext || !Recognition) { this.error = message('unsupported'); return; }
             const turn = ++generation;
             this.busy = true;
-            let local = false;
             let requested = false;
             try {
                 const candidate = new Recognition();
-                if ('processLocally' in candidate && typeof Recognition.available === 'function') {
-                    // Only an installed, positively verified language pack establishes local processing.
-                    local = await Recognition.available({ langs: [lang], processLocally: true }) === 'available';
-                }
-                if (turn !== generation) return;
-                if (!local && !this.remoteVoiceConsent) {
-                    this.voiceDisclosure = true;
-                    return;
-                }
-                this.voiceDisclosure = false;
-                this.localVoice = local;
                 this.transcriptReady = false;
                 this.interim = '';
                 original = String(wire.text || '');
@@ -55,7 +43,6 @@ export function browserVoice(wire, options, runtime = globalThis) {
                 recognition.continuous = true;
                 recognition.interimResults = true;
                 recognition.maxAlternatives = 1;
-                if (local) recognition.processLocally = true;
                 recognition.onstart = () => {
                     if (turn !== generation) return;
                     this.busy = false;
@@ -100,9 +87,9 @@ export function browserVoice(wire, options, runtime = globalThis) {
                 recognition.start();
                 requested = true;
             } catch {
-                if (turn === generation) { this.error = message('unavailable'); this.recording = false; stopTimer(); }
+                if (turn === generation) { ++generation; this.error = message('unavailable'); this.recording = false; disconnect(); stopTimer(); }
             } finally {
-                if (turn === generation && !requested) this.busy = false;
+                if (!requested) this.busy = false;
             }
         },
         stop() {
@@ -120,11 +107,9 @@ export function browserVoice(wire, options, runtime = globalThis) {
             if (this.recording || accepted || this.transcriptReady) wire.$set('text', original, false);
             this.recording = this.busy = this.transcriptReady = false;
             this.interim = ''; accepted = '';
-            this.voiceDisclosure = false;
         },
         clear() {
             this.cancelVoice();
-            this.remoteVoiceConsent = false;
             this.error = '';
             this.sentText = '';
             runtime.speechSynthesis?.cancel();

@@ -44,6 +44,7 @@
                     <details class="mt-4 text-sm" @if (! $consent || (! $questionConsent && $questionsAvailable) || $error === __('assistant_v2.error_provider_selection')) open @endif>
                         <summary class="cursor-pointer py-2 font-semibold">{{ __('ai_product.privacy') }}</summary>
                         <div class="space-y-3 py-3">
+                            <p class="text-text-secondary">{{ __('ai_product.browser_privacy_policy') }}</p>
                             <p class="break-words text-text-secondary">{{ $privacy['operator'] ?? '' }} — {{ $privacy['retention'] ?? '' }}</p>
                             @if (!empty($privacy['policy_url']))
                                 <a href="{{ $privacy['policy_url'] }}" target="_blank" rel="noopener noreferrer" class="inline-block text-primary underline underline-offset-4">{{ __('assistant_v2.privacy_policy') }}</a>

@@ -2,12 +2,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { browserVoice } from '../../resources/js/assistant-browser-voice.js';
 
-function fixture({ local = false, available = 'unavailable', secure = true, supported = true } = {}) {
+function fixture({ secure = true, supported = true } = {}) {
     const instances = [], calls = [], intervals = new Map();
     let nextTimer = 0;
     class Speech {
-        static async available() { return available; }
-        constructor() { if (local) this.processLocally = false; instances.push(this); }
+        constructor() { instances.push(this); }
         start() { calls.push('recognition.start'); }
         stop() { calls.push('recognition.stop'); this.onend?.(); }
         abort() { calls.push('recognition.abort'); }
@@ -20,7 +19,7 @@ function fixture({ local = false, available = 'unavailable', secure = true, supp
 
 test('opening does not record, obtain consent or dispatch', () => {
     const { ui, calls } = fixture(); ui.init();
-    assert.equal(ui.remoteVoiceConsent, false); assert.deepEqual(calls, []);
+    assert.equal('remoteVoiceConsent' in ui, false); assert.deepEqual(calls, []);
 });
 test('unsupported and insecure environments preserve text entry', async () => {
     for (const options of [{ secure: false }, { supported: false }]) {
@@ -28,22 +27,30 @@ test('unsupported and insecure environments preserve text entry', async () => {
         assert.equal(ui.error, 'unsupported'); assert.equal(wire.text, 'رسالة'); assert.deepEqual(calls, []);
     }
 });
-test('remote recognition cannot start before explicit consent', async () => {
-    const { ui, calls } = fixture(); await ui.start();
-    assert.equal(ui.voiceDisclosure, true); assert.deepEqual(calls, []);
-    ui.remoteVoiceConsent = true; await ui.start(); assert.deepEqual(calls, ['recognition.start']);
+test('microphone starts through browser permission with no application gate', async () => {
+    const { ui, calls, instances } = fixture(); await ui.start();
+    assert.deepEqual(calls, ['recognition.start']);
+    assert.equal(instances[0].lang, 'ar-PS');
+    assert.equal('voiceDisclosure' in ui, false);
+    assert.equal('remoteVoiceConsent' in ui, false);
 });
-test('installed local language pack uses forced local processing without remote consent', async () => {
-    const { ui, instances, calls } = fixture({ local: true, available: 'available' }); await ui.start();
-    assert.equal(instances[0].processLocally, true); assert.equal(instances[0].lang, 'ar-PS');
-    assert.equal(ui.localVoice, true); assert.deepEqual(calls, ['recognition.start']);
+
+test('two sequential recordings preserve editable transcript and never auto-send', async () => {
+    const { ui, wire, calls, instances } = fixture(); wire.text = 'original';
+    for (let i = 0; i < 2; i++) {
+        await ui.start(); const speech = instances[i]; speech.onstart();
+        speech.onresult({ results: [{ isFinal: true, 0: { transcript: `words${i}` } }] });
+        ui.stop(); assert.equal(ui.transcriptReady, true);
+        assert.equal(speech.onresult, null);
+    }
+    assert.equal(wire.text, 'original words0 words1');
+    wire.text = 'manually edited'; await ui.send();
+    assert.equal(calls.filter(x => x === 'recognition.start').length, 2);
+    assert.equal(calls.filter(x => x === 'prepare').length, 1);
 });
-test('local-capable browser without installed pack still requires remote consent', async () => {
-    const { ui, calls } = fixture({ local: true }); await ui.start();
-    assert.equal(ui.voiceDisclosure, true); assert.deepEqual(calls, []);
-});
+
 test('pending permission blocks duplicate start; results never dispatch automatically', async () => {
-    const { ui, wire, calls, instances } = fixture(); ui.remoteVoiceConsent = true;
+    const { ui, wire, calls, instances } = fixture();
     await ui.start(); await ui.start(); assert.equal(instances.length, 1);
     instances[0].onstart();
     instances[0].onresult({ results: [Object.assign([{ transcript: 'بيع قطعتين' }], { isFinal: true })] });
@@ -52,14 +59,14 @@ test('pending permission blocks duplicate start; results never dispatch automati
     wire.text = 'بيع ثلاث قطع'; await ui.send(); assert.equal(calls.filter(call => call === 'prepare').length, 1);
 });
 test('cancel discards recognized text and blocks delayed result callbacks', async () => {
-    const { ui, wire, instances, calls } = fixture(); wire.text = 'original'; ui.remoteVoiceConsent = true; await ui.start();
+    const { ui, wire, instances, calls } = fixture(); wire.text = 'original'; await ui.start();
     instances[0].onstart(); const delayed = instances[0].onresult;
     instances[0].onresult({ results: [Object.assign([{ transcript: 'secret' }], { isFinal: true })] });
     ui.cancelVoice(); delayed({ results: [Object.assign([{ transcript: 'stale' }], { isFinal: true })] });
     assert.equal(wire.text, 'original'); assert.equal(calls.includes('prepare'), false); assert.equal(ui.recording, false);
 });
 test('permission refusal is sanitized and never retries', async () => {
-    const { ui, instances, calls } = fixture(); ui.remoteVoiceConsent = true; await ui.start();
+    const { ui, instances, calls } = fixture(); await ui.start();
     const delayed = instances[0].onresult;
     instances[0].onerror({ error: 'not-allowed', message: 'private details' });
     delayed({ results: [{ isFinal: true, 0: { transcript: 'stale after failure' } }] });
@@ -69,7 +76,7 @@ test('permission refusal is sanitized and never retries', async () => {
     assert.equal(calls.filter(call => call === 'recognition.start').length, 1);
 });
 test('listening duration and transcript size remain bounded', async () => {
-    const { ui, wire, instances, intervals } = fixture(); ui.remoteVoiceConsent = true; await ui.start(); instances[0].onstart();
+    const { ui, wire, instances, intervals } = fixture(); await ui.start(); instances[0].onstart();
     instances[0].onresult({ results: [Object.assign([{ transcript: 'a'.repeat(4500) }], { isFinal: true })] });
     assert.equal(wire.text.length, 4000);
     const tick = [...intervals.values()][0]; for (let i = 0; i < 60; i++) tick();
@@ -84,7 +91,7 @@ test('concurrent Send clicks dispatch only once and explicit retry remains possi
 
 test('Stop waits for final transcript and end before allowing Send or another recording', async () => {
     const { ui, wire, calls, instances } = fixture();
-    ui.remoteVoiceConsent = true;
+
     await ui.start();
     const speech = instances[0];
     speech.onstart();
@@ -106,4 +113,25 @@ test('Stop waits for final transcript and end before allowing Send or another re
     ui.cancelVoice();
     stale({ results: [{ isFinal: true, 0: { transcript: 'late words' } }] });
     assert.equal(wire.text, 'final words');
+});
+
+test('denial, cancellation and recognition errors permit only explicit fresh starts', async () => {
+    const { ui, wire, calls, instances, intervals } = fixture(); wire.text = 'keep';
+    await ui.start(); instances[0].onerror({ error: 'not-allowed' });
+    assert.equal(ui.error, 'permission'); assert.equal(wire.text, 'keep');
+    await ui.start(); instances[1].onstart(); ui.cancelVoice();
+    assert.equal(ui.recording, false); assert.equal(wire.text, 'keep');
+    await ui.start(); instances[2].onstart(); instances[2].onerror({ error: 'network' });
+    assert.equal(ui.error, 'unavailable'); assert.equal(intervals.size, 0);
+    await ui.start(); instances[3].onstart(); instances[3].onend();
+    assert.equal(calls.filter(x => x === 'recognition.start').length, 4);
+    assert.equal(calls.includes('prepare'), false);
+});
+
+test('navigation aborts pending recognition and ignores delayed results', async () => {
+    const { ui, wire, instances, calls } = fixture(); wire.text = 'keep';
+    ui.init(); await ui.start(); const delayed = instances[0].onresult;
+    ui.leave(); delayed({ results: [{ isFinal: true, 0: { transcript: 'stale' } }] });
+    assert.equal(wire.text, 'keep'); assert.equal(ui.busy, false);
+    assert.equal(calls.includes('prepare'), false);
 });

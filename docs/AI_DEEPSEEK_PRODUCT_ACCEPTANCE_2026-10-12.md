@@ -22,7 +22,7 @@ AGY's interrupted worker snapshots were inspected and retained. Codex took over 
 
 New simple configurations use only `deepseek` / `deepseek-flash` / `global` / `text_structured`, company-managed credentials, no fallback, no personal BYOK and no cloud speech connection. Fresh safe limits are constrained by positive platform ceilings; a disabled/zero platform ceiling still prevents dispatch. The proposed maxima are USD 0.01/request, USD 0.05/company/day, USD 0.50/company/month, USD 0.02/user/day and USD 0.20/user/month, with 10 company and 5 user requests/day. Existing stricter settings remain authoritative.
 
-Existing advanced policies are preserved, not silently normalized or overwritten by the simple flow. Their original governance forms remain in collapsed **Advanced settings**. Existing legacy transports remain available for preserved configurations; this change adds no new non-DeepSeek integration.
+Existing advanced policies are preserved, not silently normalized or overwritten by the simple flow. Their original governance forms remain in collapsed **Advanced settings**. Existing legacy transports remain available for preserved configurations; this change adds no new non-DeepSeek integration. Empty policies, unselected single DeepSeek routes and revoked single DeepSeek routes can complete Quick Connect. Repair requires explicit Owner authorization, current policy/connection revisions and credential password confirmation; custom limits, privacy, feature scopes and usage history survive. A revoked credential stays revoked: an explicitly entered replacement creates a new connection, with existing reviewed pricing associated with that replacement. Unselected credentials are not silently adopted. Personal routes, multiple routes, fallback, speech connections and nonstandard provider/model/region configurations remain advanced.
 
 ## SDK decision and outbound safety
 
@@ -44,11 +44,31 @@ Report questions still execute only through `AssistantReportCatalog`, `ReportReg
 
 Sales and Purchase instructions still hand off to the existing editable **UNSAVED** forms. Human Save/Post authority, canonical draft commands, fresh permissions, company/session binding and revision checks remain intact. Opening the launcher grants no consent, records no audio and sends no paid request.
 
-Browser speech recognition is optional, not a DeepSeek transcription service. An installed language pack must be positively detected before `processLocally=true` is used. Otherwise the user must explicitly accept browser-managed speech processing before recognition starts. Recognition is capped at 60 seconds/4000 characters; Stop waits for final results, Cancel discards dictation, navigation clears recognition, and permission errors cannot deliver stale callbacks. Dictation never submits automatically. Unsupported browsers retain text entry. No additional commercial speech provider was added.
+Browser speech recognition is optional, not a DeepSeek transcription service. Under the Owner's final microphone decision, clicking the microphone starts native browser recognition and the browser manages permission. There is no application microphone checkbox, consent popup, local/remote label or repeated confirmation. Permission denial and revocation are respected. Recognition is capped at 60 seconds/4000 characters; Stop waits for final results, Cancel discards dictation, navigation clears recognition, and permission errors cannot deliver stale callbacks. Dictation never submits automatically. Unsupported browsers retain text entry. The existing collapsed general privacy details accurately describe browser-provider processing; opening them is not required to record. No additional commercial speech provider was added.
 
-**Real microphone recognition, device accuracy and Palestinian Arabic quality remain NOT VERIFIED.** The browser walkthrough verified the truthful disclosure and initially unchecked remote consent; automated tests verified lifecycle behavior with synthetic events. They do not establish real audio or on-device language-pack support. Optional speech-synthesis playback was not added.
+**Real microphone recognition, device accuracy and Palestinian Arabic quality remain NOT VERIFIED.** The correction walkthrough used simulated native recognition events to verify repeated use, Arabic/English editable transcripts, denial, cancellation, explicit restart and no automatic dispatch. It does not establish real audio accuracy, browser permission-prompt behavior or on-device processing. Optional speech-synthesis playback was not added.
 
-## Executed focused verification
+## Final correction verification against reviewed head `8b1cb0f`
+
+The reviewed implementation remains the parent of this bounded correction; published history is preserved. PR #33 stays draft and independent architectural acceptance is pending.
+
+| Correction check | Actual result |
+| --- | --- |
+| Combined guarded MariaDB subset: DeepSeek setup, unsaved Sales/Purchase forms, consent scopes, report authorization | PASS — **49 tests, 335 assertions**, no failures/skips; owned schema cleaned |
+| Browser speech lifecycle and duplicate Send | PASS — **12 Node tests**, no failures/skips |
+| PHPStan | PASS — no errors |
+| Pint, changed PHP files; whitespace checks | PASS |
+| Frontend production build | PASS — 62 modules |
+| Authenticated synthetic browser checks | PASS — existing empty policy → Test → Use; AR/EN desktop/mobile, Arabic tablet, repeated dictation, denial/restart/cancel, editable transcript, explicit Send, local reports and Escape dismissal; no console errors or horizontal overflow |
+| Synthetic browser preservation audit | PASS — all seven financial-write table counts remain zero; exactly one SDK-faked connection test, 20 input / 5 output tokens; reports and microphone activity added no provider request |
+| Owner original preservation | PASS — original SHA-256 unchanged; original and private QA helpers unstaged |
+| AGY availability | Headless Hello succeeded; remaining quota not independently measured |
+
+The empty-policy defect was reproduced before correction. During fixture expansion, reusing one fake response stream across two SDK calls caused invalid synthetic second responses; fresh responses per fake request corrected the fixture without relaxing production validation. A mistaken test filename caused one runner invocation to stop before tests; its owned schema was cleaned. The clean combined run above is the final correction result. No broad suite, CI, paid call or production access was performed.
+
+Latest sanitized correction evidence: [existing-policy English setup](evidence/ai-deepseek-product/correction-setup-en-desktop.png), [Arabic mobile setup](evidence/ai-deepseek-product/correction-setup-ar-mobile.png), [English editable transcript](evidence/ai-deepseek-product/correction-transcript-en-desktop.png), [Arabic mobile recording state](evidence/ai-deepseek-product/correction-recording-ar-mobile.png), [Arabic canonical report](evidence/ai-deepseek-product/correction-report-ar-mobile.png), and [correction preservation audit](evidence/ai-deepseek-product/correction-synthetic-audit.json). Recognition and SDK responses in these captures are synthetic; “verified” reflects the faked local response, not live DeepSeek verification.
+
+## Earlier implementation verification (historical, overlapping)
 
 | Check | Actual result |
 | --- | --- |
@@ -72,7 +92,7 @@ Database tests used the guarded disposable MariaDB runner. The local browser use
 
 ## Actual browser evidence
 
-Authenticated local checks covered 1440px desktop, 768px tablet and 390px mobile; desktop/mobile AR and EN, actual Livewire aliases, launcher discovery, settings, report source navigation, modal focus/close, browser speech disclosure, and both unsaved form handoffs. No real credentials or production records appear in the screenshots.
+The earlier implementation checks covered 1440px desktop, 768px tablet and 390px mobile; desktop/mobile AR and EN, actual Livewire aliases, launcher discovery, settings, report source navigation, modal focus/close, and both unsaved form handoffs. The latest correction evidence above supersedes the earlier microphone flow. No real credentials or production records appear in the screenshots below.
 
 - [English setup](evidence/ai-deepseek-product/setup-en-desktop.png) and [Arabic mobile setup](evidence/ai-deepseek-product/setup-ar-mobile.png).
 - [English desktop assistant](evidence/ai-deepseek-product/assistant-en-desktop.png) and [English mobile](evidence/ai-deepseek-product/assistant-en-mobile.png).
