@@ -6,7 +6,6 @@ namespace App\Livewire\AI;
 
 use App\Application\AI\AiGovernance;
 use App\Application\AI\AiProviderRoutes;
-use App\Application\AI\AiSpeechMethods;
 use App\Application\AI\AssistantDeterministicClassifier;
 use App\Application\AI\AssistantQuestionContext;
 use App\Application\AI\AssistantQuestionPlanner;
@@ -32,22 +31,13 @@ final class AssistantLauncher extends Component
     public string $context = 'auto';
 
     #[Locked]
-    public string $audioContext = 'auto';
-
-    #[Locked]
     public string $formKey;
 
     #[Locked]
     public ?string $token = null;
 
     #[Locked]
-    public ?string $audioToken = null;
-
-    #[Locked]
     public string $mode = 'seamless';
-
-    #[Locked]
-    public string $speechMethod = 'cloud';
 
     /** @var list<array<string, mixed>> */
     #[Locked]
@@ -56,10 +46,6 @@ final class AssistantLauncher extends Component
     /** @var list<array<string, mixed>> */
     #[Locked]
     public array $consentRoutes = [];
-
-    /** @var list<array<string, mixed>> */
-    #[Locked]
-    public array $availableConnections = [];
 
     #[Locked]
     public string $consentSelection = '';
@@ -74,16 +60,6 @@ final class AssistantLauncher extends Component
 
     /** @var array<int, mixed> */
     public array $answers = [];
-
-    public string $transcriptionChoice = '';
-
-    /** @var list<string> */
-    #[Locked]
-    public array $allowedSpeechMethods = [];
-
-    public ?string $textConnection = null;
-
-    public ?string $speechConnection = null;
 
     /** @var array<string, mixed>|null */
     #[Locked]
@@ -119,7 +95,6 @@ final class AssistantLauncher extends Component
     {
         abort_unless(in_array($context, ['auto', 'sales', 'purchase'], true), 422);
         $this->context = $context;
-        $this->audioContext = $context;
         $this->formKey = (string) Str::uuid();
     }
 
@@ -130,29 +105,15 @@ final class AssistantLauncher extends Component
         $governance = app(AiGovernance::class);
         $policy = $governance->authorizeLauncher($company, auth()->user(), $this->context);
         $this->mode = $policy->workflow_mode;
-        $this->speechMethod = app(AiSpeechMethods::class)->effective($policy, auth()->user());
-        $this->allowedSpeechMethods = app(AiSpeechMethods::class)->allowed($policy);
-        $preferences = AiUserPreference::where('company_id', $company->id)->where('user_id', auth()->id())->first();
-        $this->textConnection = $preferences?->preferences['text_connection'] ?? null;
-        $this->speechConnection = $preferences?->preferences['speech_connection'] ?? null;
-        $this->transcriptionChoice = $preferences?->preferences['speech_method'] ?? '';
-        if (! in_array($this->transcriptionChoice, $this->allowedSpeechMethods, true)) {
-            $this->transcriptionChoice = '';
-        }
         $isReportOnly = $governance->allowedIntents($company, auth()->user()) === [];
-        if ($this->context === 'auto' && $isReportOnly) {
-            $this->audioContext = 'question';
-        }
-        $effectiveScope = ($this->context === 'auto' && $isReportOnly) ? 'question' : $this->context;
-        $this->availableConnections = $governance->permittedConnections($company, auth()->user(), $effectiveScope);
         $this->error = null;
         $this->consentRoutes = [];
         try {
             $this->consentRoutes = $this->selectedConsentRoutes();
-        } catch (AssistantUnavailable) {
-            $this->error = __('assistant_v2.error_provider_selection');
+        } catch (AssistantUnavailable $e) {
+            $this->error = __('assistant_v2.error_'.$this->safeReason($e->diagnosticReason()));
         }
-        $this->consentSelection = $this->selectionFingerprint();
+        $this->consentSelection = $this->selectionFingerprint($this->consentRoutes);
         $this->consent = $this->consentRoutes !== [] && collect($this->consentRoutes)->every(fn ($row) => $row['consented']);
 
         $this->questionConsentRoutes = [];
@@ -223,36 +184,6 @@ final class AssistantLauncher extends Component
         $this->showAssistant();
     }
 
-    public function selectConnections(): void
-    {
-        $company = app(CompanyContext::class)->company();
-        try {
-            DB::transaction(function () use ($company): void {
-                $actor = auth()->user();
-                $governance = app(AiGovernance::class);
-                $isReportOnly = $governance->allowedIntents($company, $actor) === [];
-                $scope = ($this->context === 'auto' && $isReportOnly) ? 'question' : $this->context;
-                $policy = $governance->authorizeLauncher($company, $actor, $this->context);
-                app(AiSpeechMethods::class)->choose($company, $actor, $this->transcriptionChoice, $scope);
-                $this->speechMethod = app(AiSpeechMethods::class)->effective($policy, $actor);
-                foreach (['text_structured' => $this->textConnection, 'audio_transcription' => $this->speechConnection] as $capability => $id) {
-                    if ($capability !== 'audio_transcription' || config('ai_assistant.speech_enabled') === true
-                        && in_array($this->speechMethod, ['cloud', 'local_if_supported'], true)) {
-                        app(AiProviderRoutes::class)->preference($company, $actor, $capability, $id, $scope);
-                    }
-                }
-            });
-        } catch (AssistantUnavailable) {
-            $this->showAssistant();
-            $this->consent = false;
-            $this->error = __('assistant_v2.error_provider_selection');
-
-            return;
-        }
-        $this->showAssistant();
-        $this->consent = false;
-    }
-
     /** Resolve disclosure without reading keys or granting dispatch authority.
      * @return list<array<string, mixed>>
      */
@@ -267,31 +198,25 @@ final class AssistantLauncher extends Component
         $isReportOnly = $governance->allowedIntents($company, $actor) === [];
         $scope = $overrideScope ?? ($isReportOnly ? 'question' : 'transaction');
         $resolveIntent = $overrideScope === 'question' ? 'question' : (($this->context === 'auto' && $isReportOnly) ? 'question' : $this->context);
-        foreach (['text_structured' => $this->textConnection, 'audio_transcription' => $this->speechConnection] as $capability => $selected) {
-            if ($capability === 'audio_transcription' && (config('ai_assistant.speech_enabled') !== true
-                || ! in_array(app(AiSpeechMethods::class)->effective($policy, $actor), ['cloud', 'local_if_supported'], true))) {
-                continue;
-            }
-            $key = $capability === 'audio_transcription' ? 'speech_connection' : 'text_connection';
-            // Missing provider configuration must not prevent deterministic typed/manual workflows.
-            if (($selected === null || $selected === '') && ! is_string($preferences?->preferences[$key] ?? $policy->settings[$key] ?? null)) {
-                continue;
-            }
-            foreach (app(AiProviderRoutes::class)->resolve($company, $actor, $resolveIntent, $capability, $selected) as $index => $connection) {
-                $fingerprint = $governance->consentFingerprint($policy, $connection, $scope);
-                $consentKey = $scope === 'question' ? 'question:'.$connection->public_id : $connection->public_id;
-                $routes[] = [...$connection->only(['public_id', 'provider', 'model', 'region', 'capability', 'credential_source']),
-                    'role' => $index === 0 ? 'primary' : 'fallback', 'fingerprint' => $fingerprint,
-                    'consented' => hash_equals($fingerprint, (string) ($preferences?->consents[$consentKey]['fingerprint'] ?? ''))];
-            }
+        // The company route is authoritative. Historical per-user routing stays inactive.
+        // Missing setup must not block local deterministic reports or manual workflows.
+        if (! is_string($policy->settings['text_connection'] ?? null) || $policy->settings['text_connection'] === '') {
+            return [];
+        }
+        foreach (app(AiProviderRoutes::class)->resolve($company, $actor, $resolveIntent, 'text_structured') as $connection) {
+            $fingerprint = $governance->consentFingerprint($policy, $connection, $scope);
+            $consentKey = $scope === 'question' ? 'question:'.$connection->public_id : $connection->public_id;
+            $routes[] = ['public_id' => $connection->public_id, 'fingerprint' => $fingerprint,
+                'consented' => hash_equals($fingerprint, (string) ($preferences?->consents[$consentKey]['fingerprint'] ?? ''))];
         }
 
         return $routes;
     }
 
-    private function selectionFingerprint(): string
+    /** @param list<array<string, mixed>>|null $routes */
+    private function selectionFingerprint(?array $routes = null): string
     {
-        return hash('sha256', json_encode([$this->textConnection, $this->speechConnection, $this->transcriptionChoice], JSON_THROW_ON_ERROR));
+        return hash('sha256', json_encode($this->routeFingerprints($routes ?? $this->selectedConsentRoutes()), JSON_THROW_ON_ERROR));
     }
 
     /** @param list<array<string, mixed>> $routes
@@ -307,12 +232,8 @@ final class AssistantLauncher extends Component
         return $fingerprints;
     }
 
-    public function prepare(?string $transcript = null, ?string $audioToken = null, bool $questionOnly = false): mixed
+    public function prepare(bool $questionOnly = false): mixed
     {
-        if ($transcript !== null) {
-            $this->text = $transcript;
-            $this->audioToken = $audioToken;
-        }
         $this->error = null;
         $this->reportResult = null;
         $this->clarifyPeriodReport = null;
@@ -329,7 +250,6 @@ final class AssistantLauncher extends Component
             $this->questionActorId = (int) $actor->id;
             $this->questionSessionHash = hash('sha256', session()->getId());
             $allowedIntents = $governance->allowedIntents($company, $actor);
-            $questionOnly = $questionOnly || $this->audioContext === 'question';
             $canDoTransactions = ! $questionOnly && ($this->context === 'auto' ? $allowedIntents !== [] : in_array($this->context, $allowedIntents, true));
             $canDoQuestions = in_array($this->context, ['auto', 'question'], true)
                 && (bool) ($policy->settings['questions']['enabled'] ?? false)
@@ -416,7 +336,7 @@ final class AssistantLauncher extends Component
 
             return null;
         } catch (AssistantUnavailable $e) {
-            $this->error = __('assistant_v2.error_'.$this->safeReason($e->reason));
+            $this->error = __('assistant_v2.error_'.$this->safeReason($e->diagnosticReason()));
 
             return null;
         }
@@ -426,7 +346,7 @@ final class AssistantLauncher extends Component
     {
         $planned = app(AssistantQuestionPlanner::class)->plan(
             app(CompanyContext::class)->company(), auth()->user(), $this->text,
-            $this->formKey, session()->getId(), $this->textConnection ?: null
+            $this->formKey, session()->getId()
         );
         if ($planned !== null) {
             return $this->executeReportPlan($planned);
@@ -446,8 +366,8 @@ final class AssistantLauncher extends Component
             $this->formKey,
             (string) Str::uuid(),
             session()->getId(),
-            $this->textConnection ?: null,
-            $this->audioToken
+            null,
+            null
         );
 
         return $this->present($result);
@@ -525,7 +445,7 @@ final class AssistantLauncher extends Component
 
             return null;
         } catch (AssistantUnavailable $e) {
-            $this->error = __('assistant_v2.error_'.$this->safeReason($e->reason));
+            $this->error = __('assistant_v2.error_'.$this->safeReason($e->diagnosticReason()));
 
             return null;
         }
@@ -580,7 +500,7 @@ final class AssistantLauncher extends Component
                 return $this->prepareTransaction();
             }
         } catch (AssistantUnavailable $e) {
-            $this->error = __('assistant_v2.error_'.$this->safeReason($e->reason));
+            $this->error = __('assistant_v2.error_'.$this->safeReason($e->diagnosticReason()));
         }
 
         return null;
@@ -599,27 +519,18 @@ final class AssistantLauncher extends Component
         $this->error = null;
     }
 
-    public function selectAudioContext(string $context): void
+    public function receiveTranscript(string $transcript, ?string $token = null): void
     {
-        $company = app(CompanyContext::class)->company();
-        $actor = auth()->user();
-        abort_unless($this->context === 'auto' && in_array($context, ['auto', 'question'], true), 422);
-        app(AiGovernance::class)->authorizeUse($company, $actor, $context);
-        $this->audioContext = $context;
-        $this->showAssistant();
-    }
+        app(AiGovernance::class)->authorizeLauncher(app(CompanyContext::class)->company(), auth()->user(), $this->context);
+        if (mb_strlen($transcript) > 4000 || ! mb_check_encoding($transcript, 'UTF-8')) {
+            $this->error = __('assistant_v2.error_input_invalid');
 
-    public function receiveTranscript(string $transcript, ?string $token): mixed
-    {
-        $policy = app(AiGovernance::class)->authorizeLauncher(app(CompanyContext::class)->company(), auth()->user(), $this->context);
-        $this->text = $transcript;
-        $this->audioToken = $token;
-        if ($policy->workflow_mode === 'seamless') {
-            return $this->prepare(questionOnly: $this->audioContext === 'question');
+            return;
         }
-        $this->mode = 'guided';
-
-        return null;
+        // Recognition is an editing action only. An explicit Send starts interpretation.
+        // Legacy commercial transcription tokens never grant dispatch authority here.
+        $this->text = $transcript;
+        $this->error = null;
     }
 
     public function clarify(): mixed
@@ -644,7 +555,7 @@ final class AssistantLauncher extends Component
             return $this->present(app(TransactionAssistant::class)->clarify(app(CompanyContext::class)->company(),
                 auth()->user(), $this->token, session()->getId(), $this->formKey, $answers));
         } catch (AssistantUnavailable $e) {
-            $this->error = __('assistant_v2.error_'.$this->safeReason($e->reason));
+            $this->error = __('assistant_v2.error_'.$this->safeReason($e->diagnosticReason()));
 
             return null;
         }
@@ -656,7 +567,7 @@ final class AssistantLauncher extends Component
         if ($company !== null && auth()->check()) {
             app(TransactionAssistant::class)->cancel($company, auth()->user(), $this->formKey, session()->getId());
         }
-        $this->token = $this->audioToken = null;
+        $this->token = null;
         $this->questions = $this->answers = [];
         $this->reportResult = null;
         $this->clarifyPeriodReport = null;
@@ -675,7 +586,7 @@ final class AssistantLauncher extends Component
         }
         $this->open = false;
         $this->text = '';
-        $this->token = $this->audioToken = null;
+        $this->token = null;
         $this->answers = $this->questions = [];
         $this->reportResult = null;
         $this->clarifyPeriodReport = null;
@@ -705,7 +616,23 @@ final class AssistantLauncher extends Component
 
     private function safeReason(string $reason): string
     {
-        return in_array($reason, ['budget', 'consent', 'form_changed', 'proposal_stale', 'provider_outage', 'question_unsupported', 'question_invalid'], true) ? $reason : 'unavailable';
+        return match ($reason) {
+            'budget', 'consent', 'consent_stale', 'form_changed', 'proposal_stale',
+            'provider_authentication', 'provider_credit', 'provider_format', 'provider_parameters',
+            'provider_rate_limit', 'provider_timeout', 'provider_outage', 'provider_invalid',
+            'credential_invalid', 'credential_revoked', 'provider_configuration', 'connection_missing', 'connection_unverified',
+            'disabled', 'input_invalid', 'proposal_invalid', 'question_unsupported', 'question_invalid' => $reason,
+            'invalid_request', 'choice_invalid' => 'input_invalid',
+            'policy_invalid', 'budget_configuration', 'transition_required', 'fallback_invalid', 'personal_credentials_disabled' => 'provider_configuration',
+            'connection_required' => 'connection_missing',
+            'evidence_invalid' => 'proposal_invalid',
+            'output_limit_exceeded' => 'question_invalid',
+            'intent_unsupported' => 'unsupported',
+            'intent_uncertain', 'intent_mismatch' => 'uncertain',
+            'request_conflict', 'request_processed', 'request_canceled' => 'proposal_stale',
+            'provider_rejected' => 'provider_invalid',
+            default => 'unavailable',
+        };
     }
 
     public function render(): View

@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Application\AI;
 
-use App\Infrastructure\AI\DirectSpeechProvider;
 use App\Infrastructure\AI\DirectTextProvider;
 use App\Models\AiProviderConnection;
 use App\Models\AssistantRequest;
@@ -21,17 +20,12 @@ final class TransactionAssistant
     /** @return array<string, mixed> */
     public function prepare(Company $company, User $actor, string $text, string $context, string $formKey, string $requestKey, string $sessionId, ?string $connectionId = null, ?string $audioToken = null): array
     {
-        if (trim($text) === '' || mb_strlen($text) > (int) config('ai_assistant.max_text_characters') || $sessionId === '') {
+        if (trim($text) === '' || mb_strlen($text) > (int) config('ai_assistant.max_text_characters') || $sessionId === '' || $audioToken !== null) {
             throw new AssistantUnavailable('input_invalid');
         }
         $governance = app(AiGovernance::class);
         $policy = $governance->authorizeUse($company, $actor, $context);
         $this->requireNotCanceled($company, $actor, $formKey, $sessionId);
-        $carriedConnections = [];
-        if ($audioToken !== null) {
-            $audioState = app(AiFormState::class)->read($company, $actor, $audioToken, $sessionId, $formKey);
-            $carriedConnections = $audioState['data']['connections'] ?? [];
-        }
         $proposal = app(DeterministicTransactionParser::class)->parse($text, $context);
         if ($proposal !== null && in_array($proposal['intent'], ['sales', 'purchase'], true)) {
             $governance->authorizeUse($company, $actor, $proposal['intent']);
@@ -65,7 +59,7 @@ final class TransactionAssistant
             }
             $governance->authorizeUse($company, $actor, $proposal['intent']);
             $resolved = app(TransactionProposalResolver::class)->resolve($company, $actor, $proposal);
-            $connections = [...$carriedConnections, ...$this->snapshots($routes)];
+            $connections = $this->snapshots($routes);
             foreach ($connections as $snapshot) {
                 $governance->dispatchConnection($company, $actor, $snapshot['public_id'], $proposal['intent'], $snapshot['capability'], $snapshot['revision']);
             }
@@ -73,65 +67,8 @@ final class TransactionAssistant
                 'resolved' => $resolved, 'connections' => $connections, 'lifecycle' => $resolved['questions'] === [] ? 'handoff' : 'clarifying'];
             $token = $this->finishRequest($company, $actor, $request, $sessionId, $formKey,
                 ['intent_kind' => $proposal['intent'], 'status' => $resolved['questions'] === [] ? 'form_ready' : 'clarifying'], $data, $proposal['intent']);
-            if ($audioToken !== null) {
-                app(AiFormState::class)->forget($company, $actor, $audioToken, $sessionId);
-            }
 
             return $this->presentation($token, $resolved, (int) $request->id);
-        } catch (Throwable $e) {
-            $this->fail($request, $e);
-            throw $e;
-        }
-    }
-
-    /** Short foreground STT hop; raw WAV never bridges a cache/session/queue.
-     * @return array<string, mixed>
-     */
-    public function transcribe(Company $company, User $actor, string $wav, string $context, string $formKey, string $requestKey, string $sessionId, string $locale, ?string $connectionId = null): array
-    {
-        if ($sessionId === '') {
-            throw new AssistantUnavailable('invalid_request');
-        }
-        $this->requireNotCanceled($company, $actor, $formKey, $sessionId);
-        $seconds = app(PcmWave::class)->seconds($wav);
-        $routes = app(AiProviderRoutes::class)->select($company, $actor, $context, 'audio_transcription', $connectionId);
-        $reservation = app(AiRequestBudget::class)->reserve($company, $actor, $requestKey, $formKey, 'transcription', $context,
-            $this->inputHash(['audio' => hash('sha256', $wav), 'context' => $context, 'form' => $formKey,
-                'session' => hash('sha256', $sessionId), 'locale' => $locale, 'connection' => $routes[0]->public_id]),
-            $routes, $seconds * 1000);
-        $request = $reservation['request'];
-        if (! $reservation['created']) {
-            throw new AssistantUnavailable('request_processed');
-        }
-        try {
-            $result = null;
-            foreach ($routes as $index => $connection) {
-                app(AiRequestBudget::class)->beginAttempt($company, $actor, $request, $connection);
-                $grant = app(AiGovernance::class)->dispatchConnection($company, $actor, $connection->public_id, $context, 'audio_transcription', (int) $connection->revision);
-                try {
-                    $result = app(DirectSpeechProvider::class)->transcribe($connection->provider, $connection->model,
-                        $connection->region, $grant['credential'], $wav, $locale);
-                    break;
-                } catch (AssistantUnavailable $e) {
-                    if ($e->reason !== 'provider_outage' || $index !== 0 || count($routes) !== 2) {
-                        throw $e;
-                    }
-                }
-            }
-            if ($result === null) {
-                throw new AssistantUnavailable('provider_outage');
-            }
-            $this->requireNotCanceled($company, $actor, $formKey, $sessionId);
-            $policy = app(AiGovernance::class)->authorizeUse($company, $actor, $context, true);
-            if ((int) $policy->revision !== (int) $request->policy_revision) {
-                throw new AssistantUnavailable('proposal_stale');
-            }
-            $token = $this->finishRequest($company, $actor, $request, $sessionId, $formKey,
-                ['status' => 'transcribed', 'audio_seconds' => $seconds],
-                ['request_id' => (int) $request->id, 'connections' => $this->snapshots($routes), 'transcript' => $result['text'], 'lifecycle' => 'transcribed'], $context);
-            app(AiFormState::class)->read($company, $actor, $token, $sessionId, $formKey);
-
-            return ['state' => 'transcribed', 'text' => $result['text'], 'audio_token' => $token, 'mode' => $policy->workflow_mode];
         } catch (Throwable $e) {
             $this->fail($request, $e);
             throw $e;
@@ -172,7 +109,7 @@ final class TransactionAssistant
             if ($fresh->status !== 'pending' || (int) $policy->revision !== (int) $fresh->policy_revision) {
                 throw new AssistantUnavailable('proposal_stale');
             }
-            // Recheck carried text/speech keys and consent before publishing any encrypted handoff.
+            // Recheck carried text keys and consent before publishing any encrypted handoff.
             foreach ($data['connections'] ?? [] as $connection) {
                 app(AiGovernance::class)->dispatchConnection($company, $actor, $connection['public_id'],
                     $intent ?? $fresh->intent_kind, $connection['capability'], $connection['revision']);
@@ -276,24 +213,19 @@ final class TransactionAssistant
      */
     private function textInference(Company $company, User $actor, AssistantRequest $request, array $routes, string $text, string $context): array
     {
-        foreach ($routes as $index => $connection) {
-            app(AiRequestBudget::class)->beginAttempt($company, $actor, $request, $connection);
-            $grant = app(AiGovernance::class)->dispatchConnection($company, $actor, $connection->public_id, $request->intent_kind,
-                'text_structured', (int) $connection->revision);
-            try {
-                $result = app(DirectTextProvider::class)->extract($connection->provider, $connection->model,
-                    $connection->region, $grant['credential'], $text, $context, app(TransactionProposalSchema::class)->providerSchema());
-                app(AiRequestBudget::class)->recordUsage($company, $actor, $request, $result['usage']);
-
-                return $result;
-            } catch (AssistantUnavailable $e) {
-                if ($e->reason !== 'provider_outage' || $index !== 0 || count($routes) !== 2) {
-                    throw $e;
-                }
-            }
+        // One reviewed company route and one attempt. Legacy fallback settings cannot trigger retries.
+        if (count($routes) !== 1) {
+            throw new AssistantUnavailable('connection_required');
         }
+        $connection = $routes[0];
+        app(AiRequestBudget::class)->beginAttempt($company, $actor, $request, $connection);
+        $grant = app(AiGovernance::class)->dispatchConnection($company, $actor, $connection->public_id, $request->intent_kind,
+            'text_structured', (int) $connection->revision);
+        $result = app(DirectTextProvider::class)->extract($connection->provider, $connection->model,
+            $connection->region, $grant['credential'], $text, $context, app(TransactionProposalSchema::class)->providerSchema());
+        app(AiRequestBudget::class)->recordUsage($company, $actor, $request, $result['usage']);
 
-        throw new AssistantUnavailable('provider_outage');
+        return $result;
     }
 
     /** @return array<string, mixed> */

@@ -10,7 +10,7 @@
             <x-icon :name="$connectionStatus === 'verified' ? 'check-circle' : 'shield'" class="h-4 w-4" />
             <span>{{ __('ai_product.'.match ($connectionStatus) { 'verified' => 'status_verified', 'configured_unverified' => 'status_configured', default => 'status_unconfigured' }) }}</span>
         </div>
-        @if ($hasAdvancedPolicy)
+        @if ($needsTransition)
             <p class="mt-4 rounded-control bg-info-bg p-3 text-sm leading-relaxed text-info">{{ __('ai_product.existing_settings') }}</p>
         @endif
         <form x-data="{ key: '', password: '', consent: false, busy: false }"
@@ -39,7 +39,12 @@
             </div>
             <label class="flex items-start gap-3 text-sm leading-relaxed"><input type="checkbox" x-model="consent" class="mt-1 h-4 w-4 rounded border-border" /><span>{{ __('ai_product.setup_consent') }} {{ __('ai_product.setup_question_consent') }} {{ __('ai_product.test_help') }}</span></label>
             <div class="flex flex-wrap items-center gap-3">
-                <button type="submit" :disabled="busy" @disabled($status !== 'idle' || $hasAdvancedPolicy) wire:loading.attr="disabled" wire:target="testConnection" class="ai-send"><x-icon name="shield" class="h-4 w-4" /><span>{{ __('ai_product.test') }}</span></button>
+                @if ($needsTransition)
+                    <button type="button" @click="if (!busy) { busy = true; const pending = $wire.useDeepSeekOnly(password); password = ''; pending.finally(() => busy = false); }" :disabled="busy" class="ai-send">{{ __('ai_product.transition_action') }}</button>
+                @elseif ($companyDisabled)
+                    <button type="button" @click="if (!busy) { busy = true; const pending = $wire.enableCompany(password, consent); password = ''; pending.finally(() => busy = false); }" :disabled="busy" class="ai-send">{{ __('ai_product.enable_company') }}</button>
+                @endif
+                <button type="submit" :disabled="busy" @disabled($status !== 'idle' || $needsTransition) wire:loading.attr="disabled" wire:target="testConnection" class="ai-send"><x-icon name="shield" class="h-4 w-4" /><span>{{ __('ai_product.test') }}</span></button>
                 <span wire:loading wire:target="testConnection" role="status" class="text-sm text-text-secondary">{{ __('ai_product.thinking') }}</span>
             </div>
         </form>
@@ -50,7 +55,7 @@
             <p role="{{ $status === 'verified' ? 'status' : 'alert' }}" class="mt-4 rounded-control p-3 text-sm leading-relaxed {{ $status === 'verified' ? 'bg-success-bg text-success' : 'bg-danger-bg text-danger' }}">{{ $message }}</p>
         @endif
         @if ($errors->any())<div role="alert" class="mt-4 text-sm text-danger"><ul>@foreach ($errors->all() as $error)<li>{{ $error }}</li>@endforeach</ul></div>@endif
-        @if ($connectionStatus === 'verified')
+        @if ($connectionStatus === 'verified' && ! $companyDisabled && ! $needsTransition)
             <button type="button" wire:click="startUsing" wire:loading.attr="disabled" wire:target="startUsing" class="ai-send mt-5"><x-icon name="sparkles" class="h-4 w-4" />{{ __('ai_product.start_using') }}</button>
         @endif
     @endif

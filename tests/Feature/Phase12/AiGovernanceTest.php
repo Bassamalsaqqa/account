@@ -78,21 +78,22 @@ class AiGovernanceTest extends TestCase
         Http::assertNothingSent();
     }
 
-    public function test_personal_credentials_require_owner_opt_in_and_remain_actor_scoped(): void
+    public function test_retired_personal_and_alternative_provider_credentials_are_fail_closed(): void
     {
         $governance = app(AiGovernance::class);
-        $selection = [...$this->selection(), 'credential_source' => 'personal_byok'];
-        try {
-            $governance->provision($this->company, $this->owner, $selection, 'synthetic-private-secret-only', 'synthetic-confirm-only');
-            $this->fail('Personal credentials require company opt-in.');
-        } catch (AssistantUnavailable $e) {
-            $this->assertSame('personal_credentials_disabled', $e->reason);
+        foreach ([
+            [...$this->selection(), 'credential_source' => 'personal_byok'],
+            [...$this->selection(), 'provider' => 'openai', 'model' => 'gpt-4o-mini'],
+            [...$this->selection(), 'capability' => 'audio_transcription'],
+        ] as $selection) {
+            try {
+                $governance->provision($this->company, $this->owner, $selection, 'synthetic-private-secret-only', 'synthetic-confirm-only');
+                $this->fail('Retired credential routes must not become active.');
+            } catch (AssistantUnavailable $e) {
+                $this->assertSame('provider_configuration', $e->reason);
+                $this->assertDatabaseCount('ai_provider_connections', 0);
+            }
         }
-        $policy = $governance->updatePolicy($this->company, $this->owner, $this->policy(true));
-        $connection = $governance->provision($this->company, $this->owner, $selection, 'synthetic-private-secret-only', 'synthetic-confirm-only');
-        $this->assertTrue($policy->personal_credentials_enabled);
-        $this->assertSame($this->owner->id, $connection->owner_user_id);
-        $this->assertSame('personal_byok', $connection->credential_source);
         Http::assertNothingSent();
     }
 
@@ -120,6 +121,7 @@ class AiGovernanceTest extends TestCase
         $connection = $governance->provision($this->company, $this->owner, $this->selection(), 'synthetic-provider-secret-only', 'synthetic-confirm-only');
         $values = $this->policy(false);
         $values['settings']['allowed_connections'] = [$connection->public_id];
+        $values['settings']['text_connection'] = $connection->public_id;
         $policy = $governance->updatePolicy($this->company, $this->owner, $values);
         try {
             $governance->dispatchConnection($this->company, $this->owner, $connection->public_id, 'sales', 'text_structured');
@@ -149,7 +151,7 @@ class AiGovernanceTest extends TestCase
     private function policy(bool $personal): array
     {
         return ['enabled' => true, 'personal_credentials_enabled' => $personal, 'follow_up_enabled' => true,
-            'workflow_mode' => 'seamless', 'speech_method' => 'cloud', 'settings' => [
+            'workflow_mode' => 'seamless', 'speech_method' => 'disabled', 'settings' => [
                 'allowed_connections' => [], 'fallback' => ['enabled' => false],
                 'privacy' => ['operator' => 'Synthetic operator', 'retention' => 'Synthetic policy; no real dispatch',
                     'policy_url' => 'https://example.test/privacy'],

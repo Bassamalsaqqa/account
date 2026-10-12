@@ -57,22 +57,21 @@ class TransactionAssistantTest extends TestCase
         Http::assertNothingSent();
     }
 
-    public function test_approved_outage_uses_only_one_named_fallback_with_combined_reservation(): void
+    public function test_outage_has_one_attempt_no_fallback_and_retains_reservation(): void
     {
-        $proposal = $this->providerProposal();
-        Http::fake([
-            'api.deepseek.com/*' => Http::response([], 503),
-            'api.openai.com/*' => Http::response($this->response($proposal)),
-        ]);
-        $result = app(TransactionAssistant::class)->prepare($this->company, $this->owner, $this->text(), 'auto',
-            (string) Str::uuid(), (string) Str::uuid(), 'session');
-        $this->assertSame('handoff', $result['state']);
-        Http::assertSentCount(2);
-        $request = AssistantRequest::firstOrFail();
-        $this->assertSame(2, $request->attempt_count);
-        $this->assertSame(28, $request->reserved_cost_micros);
-        $this->assertNull($request->reported_cost_micros);
-        $this->assertSame(0, SalesInvoice::count());
+        Http::fake(['*' => Http::response([], 503)]);
+        try {
+            app(TransactionAssistant::class)->prepare($this->company, $this->owner, $this->text(), 'auto',
+                (string) Str::uuid(), (string) Str::uuid(), 'session');
+            $this->fail('An outage must stop without a second provider request.');
+        } catch (AssistantUnavailable $e) {
+            $this->assertSame('provider_outage', $e->reason);
+        }
+        Http::assertSentCount(1);
+        $this->assertSame(1, AssistantRequest::sole()->attempt_count);
+        $this->assertSame('failed', AssistantRequest::sole()->status);
+        $this->assertSame(14, AssistantRequest::sole()->reserved_cost_micros);
+        $this->assertNull(AssistantRequest::sole()->reported_cost_micros);
     }
 
     public function test_invalid_output_never_retries_and_unknown_cost_reservation_is_retained(): void
@@ -87,7 +86,7 @@ class TransactionAssistantTest extends TestCase
         }
         Http::assertSentCount(1);
         $this->assertSame('failed', AssistantRequest::firstOrFail()->status);
-        $this->assertSame(28, AssistantRequest::firstOrFail()->reserved_cost_micros);
+        $this->assertSame(14, AssistantRequest::firstOrFail()->reserved_cost_micros);
         $this->assertSame(0, SalesInvoice::count());
     }
 
@@ -126,7 +125,7 @@ class TransactionAssistantTest extends TestCase
         $request = AssistantRequest::firstOrFail();
         $this->assertSame('canceled', $request->status);
         $this->assertSame('unknown', $request->cost_status);
-        $this->assertSame(28, $request->reserved_cost_micros);
+        $this->assertSame(14, $request->reserved_cost_micros);
         $this->assertSame(0, SalesInvoice::count());
     }
 

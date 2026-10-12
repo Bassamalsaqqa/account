@@ -9,19 +9,15 @@ use App\Application\AI\AiGovernance;
 use App\Application\AI\AssistantReportCatalog;
 use App\Application\AI\AssistantUnavailable;
 use App\Livewire\AI\AiSettings;
-use App\Models\AiProviderConnection;
 use App\Models\AiUserPreference;
-use App\Models\AssistantRequest;
 use App\Models\CompanyUser;
 use App\Models\User;
 use App\Models\Vendor;
 use App\Support\Tenancy\CompanyContext;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
-use Illuminate\Support\Str;
 use Livewire\Livewire;
 use Spatie\Permission\Models\Role;
 use Tests\Support\Phase12\FinalAiFixtures;
@@ -51,66 +47,15 @@ final class QuestionAdditionalBoundaryTest extends TestCase
     // 1. Existing AiSettings save AR/EN & Question Policy Validation
     // =========================================================================
 
-    public function test_ai_settings_save_in_arabic_and_english_persists_questions_policy(): void
+    public function test_simple_settings_preserves_report_scopes_in_arabic_and_english(): void
     {
-        $this->actingAs($this->owner);
-        app(CompanyContext::class)->setCompany($this->company, $this->owner);
-
-        // Arabic locale test
-        app()->setLocale('ar');
-        Livewire::test(AiSettings::class)
-            ->set('questionsEnabled', true)
-            ->set('allowedReports', AssistantReportCatalog::KEYS)
-            ->call('save')
-            ->assertHasNoErrors()
-            ->assertSet('message', __('assistant_v2.policy_saved'));
-
-        $policyAr = $this->aiPolicy->fresh();
-        $this->assertTrue((bool) ($policyAr->settings['questions']['enabled'] ?? false));
-        $this->assertSame(AssistantReportCatalog::KEYS, $policyAr->settings['questions']['allowed_reports']);
-
-        // English locale test
-        app()->setLocale('en');
-        Livewire::test(AiSettings::class)
-            ->set('questionsEnabled', true)
-            ->set('allowedReports', AssistantReportCatalog::KEYS)
-            ->call('save')
-            ->assertHasNoErrors()
-            ->assertSet('message', __('assistant_v2.policy_saved'));
-
-        $policyEn = $this->aiPolicy->fresh();
-        $this->assertTrue((bool) ($policyEn->settings['questions']['enabled'] ?? false));
-        $this->assertSame(AssistantReportCatalog::KEYS, $policyEn->settings['questions']['allowed_reports']);
-    }
-
-    public function test_ai_settings_save_rejects_unknown_duplicate_and_associative_reports(): void
-    {
-        $this->actingAs($this->owner);
-        app(CompanyContext::class)->setCompany($this->company, $this->owner);
-
-        // Unknown report key
-        Livewire::test(AiSettings::class)
-            ->set('questionsEnabled', true)
-            ->set('allowedReports', ['unknown.unregistered.report'])
-            ->call('save')
-            ->assertHasErrors(['policy'])
-            ->assertSet('message', null);
-
-        // Duplicate report keys
-        Livewire::test(AiSettings::class)
-            ->set('questionsEnabled', true)
-            ->set('allowedReports', ['sales.summary', 'sales.summary'])
-            ->call('save')
-            ->assertHasErrors(['policy'])
-            ->assertSet('message', null);
-
-        // Associative array rejection through AiSettings save
-        Livewire::test(AiSettings::class)
-            ->set('questionsEnabled', true)
-            ->set('allowedReports', ['first' => 'sales.summary', 'second' => 'purchases.summary'])
-            ->call('save')
-            ->assertHasErrors(['policy'])
-            ->assertSet('message', null);
+        $before = $this->aiPolicy->fresh()->settings['questions'];
+        foreach (['ar', 'en'] as $locale) {
+            app()->setLocale($locale);
+            Livewire::test(AiSettings::class)->assertSee('DeepSeek AI')->assertDontSee('wire:model="allowedReports"', false);
+            $this->assertSame($before, $this->aiPolicy->fresh()->settings['questions']);
+        }
+        Http::assertNothingSent();
     }
 
     public function test_ai_settings_management_authority_does_not_grant_report_reading(): void
@@ -161,7 +106,7 @@ final class QuestionAdditionalBoundaryTest extends TestCase
                     'personal_credentials_enabled' => false,
                     'follow_up_enabled' => true,
                     'workflow_mode' => 'seamless',
-                    'speech_method' => 'cloud',
+                    'speech_method' => 'disabled',
                     'settings' => $settings,
                 ],
                 (int) $current->revision
@@ -290,7 +235,7 @@ final class QuestionAdditionalBoundaryTest extends TestCase
             'personal_credentials_enabled' => false,
             'follow_up_enabled' => true,
             'workflow_mode' => 'seamless',
-            'speech_method' => 'cloud',
+            'speech_method' => 'disabled',
             'settings' => $settings,
         ], (int) $this->aiPolicy->fresh()->revision);
 
@@ -342,11 +287,8 @@ final class QuestionAdditionalBoundaryTest extends TestCase
 
         // Assert selected question routes include both primary and approved fallback
         $routes = $component->get('questionConsentRoutes');
-        $this->assertCount(2, $routes);
+        $this->assertCount(1, $routes);
         $this->assertSame($this->textConnection->public_id, $routes[0]['public_id']);
-        $this->assertSame('primary', $routes[0]['role']);
-        $this->assertSame($this->fallbackConnection->public_id, $routes[1]['public_id']);
-        $this->assertSame('fallback', $routes[1]['role']);
 
         $component->set('questionConsent', true)
             ->call('acceptQuestionConsent');
@@ -357,7 +299,6 @@ final class QuestionAdditionalBoundaryTest extends TestCase
 
         $consents = $preferences->consents ?? [];
         $this->assertArrayHasKey('question:'.$this->textConnection->public_id, $consents);
-        $this->assertArrayHasKey('question:'.$this->fallbackConnection->public_id, $consents);
 
         // Revoking selected route cannot implicitly grant dispatch
         app(AiGovernance::class)->revoke($this->company, $this->owner, $this->textConnection->public_id, 'synthetic-configuration-only');
@@ -374,81 +315,6 @@ final class QuestionAdditionalBoundaryTest extends TestCase
 
     // =========================================================================
     // 4. Report-Only Speech HTTP Fake & Role Demotion / Revocation
-    // =========================================================================
-
-    public function test_report_only_speech_refuses_transcript_and_cleans_upload_on_role_demotion_during_fake(): void
-    {
-        $speech = $this->speechConnection();
-        $readerData = $this->reader();
-        $reader = $readerData['user'];
-        $role = $readerData['role'];
-
-        app(AiGovernance::class)->recordConsent($this->company, $reader, $speech->public_id,
-            app(AiGovernance::class)->consentFingerprint($this->aiPolicy, $speech, 'question'), 'question');
-
-        $pref = AiUserPreference::firstOrNew(['company_id' => $this->company->id, 'user_id' => $reader->id]);
-        $pref->preferences = array_merge($pref->preferences ?? [], ['speech_connection' => $speech->public_id]);
-        $pref->save();
-
-        Http::fake(function () use ($role) {
-            $role->syncPermissions([]); // Demote role during provider request
-
-            return Http::response(['text' => 'sales summary this month']);
-        });
-
-        $file = UploadedFile::fake()->createWithContent('question.wav', $this->wav());
-        $this->postJson(route('assistant.audio'), [
-            'audio' => $file,
-            'context' => 'question',
-            'form_key' => (string) Str::uuid(),
-            'request_key' => (string) Str::uuid(),
-            'locale' => 'en',
-            'connection_id' => $speech->public_id,
-        ])->assertForbidden()->assertJsonMissingPath('text');
-
-        $this->assertFileDoesNotExist($file->getPathname());
-        $this->assertSame('failed', AssistantRequest::sole()->status);
-        Http::assertSentCount(1);
-        $this->assertNoEconomicWrites();
-    }
-
-    public function test_report_only_speech_refuses_transcript_and_cleans_upload_on_membership_revocation_during_fake(): void
-    {
-        $speech = $this->speechConnection();
-        $readerData = $this->reader();
-        $reader = $readerData['user'];
-
-        app(AiGovernance::class)->recordConsent($this->company, $reader, $speech->public_id,
-            app(AiGovernance::class)->consentFingerprint($this->aiPolicy, $speech, 'question'), 'question');
-
-        $pref = AiUserPreference::firstOrNew(['company_id' => $this->company->id, 'user_id' => $reader->id]);
-        $pref->preferences = array_merge($pref->preferences ?? [], ['speech_connection' => $speech->public_id]);
-        $pref->save();
-
-        Http::fake(function () use ($reader) {
-            CompanyUser::where('company_id', $this->company->id)->where('user_id', $reader->id)->update(['status' => 'inactive']);
-
-            return Http::response(['text' => 'sales summary this month']);
-        });
-
-        $file = UploadedFile::fake()->createWithContent('question.wav', $this->wav());
-        $this->postJson(route('assistant.audio'), [
-            'audio' => $file,
-            'context' => 'question',
-            'form_key' => (string) Str::uuid(),
-            'request_key' => (string) Str::uuid(),
-            'locale' => 'en',
-            'connection_id' => $speech->public_id,
-        ])->assertForbidden()->assertJsonMissingPath('text');
-
-        $this->assertFileDoesNotExist($file->getPathname());
-        $this->assertSame('failed', AssistantRequest::sole()->status);
-        Http::assertSentCount(1);
-        $this->assertNoEconomicWrites();
-    }
-
-    // =========================================================================
-    // 5. Transaction Sales/Purchase Explicit Launcher Contexts with Questions Enabled
     // =========================================================================
 
     public function test_explicit_sales_launcher_context_preserves_existing_flow_when_questions_are_enabled(): void
@@ -517,8 +383,7 @@ final class QuestionAdditionalBoundaryTest extends TestCase
             ->assertSet('reportResult.report_key', 'sales.summary');
         $spoken = Livewire::test('ai.assistant-launcher')
             ->call('showAssistant')
-            ->assertSet('audioContext', 'question')
-            ->call('receiveTranscript', 'sales this month USD', null)
+            ->call('receiveTranscript', 'sales this month USD', null)->call('prepare')
             ->assertSet('reportResult.report_key', 'sales.summary');
         foreach (['report_key', 'totals', 'rows', 'period', 'currency', 'source_url'] as $field) {
             $this->assertSame($typed->get('reportResult.'.$field), $spoken->get('reportResult.'.$field));
@@ -527,22 +392,16 @@ final class QuestionAdditionalBoundaryTest extends TestCase
         $this->assertNoEconomicWrites();
     }
 
-    public function test_question_audio_selection_does_not_silently_dispatch_a_transaction_transcript(): void
+    public function test_transcript_is_editable_and_does_not_dispatch_until_explicit_send(): void
     {
-        $component = Livewire::test('ai.assistant-launcher')
-            ->call('showAssistant')
-            ->call('selectAudioContext', 'question')
-            ->call('receiveTranscript', 'sell to "Ahmed": 5 "carton" "SOAP-3L" at 80 ILS', null)
-            ->assertSet('error', __('assistant_v2.tx_permission_required'))
-            ->assertSet('reportResult', null);
-        $this->assertArrayNotHasKey('redirect', $component->effects);
+        $text = 'sell to "Ahmed": 5 "carton" "SOAP-3L" at 80 ILS';
+        $component = Livewire::test('ai.assistant-launcher')->call('showAssistant')
+            ->call('receiveTranscript', $text, null)->assertSet('text', $text)->assertNoRedirect();
+        $this->assertDatabaseCount('assistant_requests', 0);
+        $component->call('prepare')->assertRedirect();
         Http::assertNothingSent();
         $this->assertNoEconomicWrites();
     }
-
-    // =========================================================================
-    // Helpers
-    // =========================================================================
 
     private function questionPolicy(?array $settings = null): void
     {
@@ -553,7 +412,7 @@ final class QuestionAdditionalBoundaryTest extends TestCase
             'personal_credentials_enabled' => false,
             'follow_up_enabled' => true,
             'workflow_mode' => 'seamless',
-            'speech_method' => 'cloud',
+            'speech_method' => 'disabled',
             'settings' => $settings,
         ], (int) $this->aiPolicy->fresh()->revision);
     }
@@ -582,32 +441,6 @@ final class QuestionAdditionalBoundaryTest extends TestCase
         $this->assertFalse($reader->can('sales.invoice.create'));
 
         return ['user' => $reader, 'role' => $role];
-    }
-
-    private function speechConnection(): AiProviderConnection
-    {
-        $speech = app(AiGovernance::class)->provision($this->company, $this->owner, [
-            'provider' => 'groq',
-            'model' => 'whisper-large-v3-turbo',
-            'region' => 'global',
-            'capability' => 'audio_transcription',
-            'credential_source' => 'company_byok',
-        ], 'synthetic-question-speech-key', 'synthetic-configuration-only');
-
-        $settings = $this->aiPolicy->fresh()->settings;
-        $settings['allowed_connections'][] = $speech->public_id;
-        $settings['speech_connection'] = $speech->public_id;
-        $settings['pricing'][$speech->public_id] = [
-            'reference' => 'https://example.test/pricing',
-            'checked_at' => '2026-10-11',
-            'input_micros_per_million' => 0,
-            'output_micros_per_million' => 0,
-            'audio_micros_per_minute' => 6000,
-        ];
-        $this->questionPolicy($settings);
-        $this->withCookie(config('session.cookie'), session()->getId());
-
-        return $speech;
     }
 
     private function assertNoEconomicWrites(): void

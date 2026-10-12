@@ -21,7 +21,7 @@ class DeepSeekSdkAdapterTest extends TestCase
         Http::preventStrayRequests();
     }
 
-    private function test_connection(): array
+    private function verifyConnection(): array
     {
         return app(DeepSeekSdkAdapter::class)->testConnection(new ProviderCredential('synthetic-never-real-key'));
     }
@@ -32,7 +32,7 @@ class DeepSeekSdkAdapterTest extends TestCase
             'model' => 'deepseek-flash', 'choices' => [['message' => ['content' => '{"status":"ok"}'], 'finish_reason' => 'stop']],
             'usage' => ['prompt_tokens' => 14, 'completion_tokens' => 5],
         ])]);
-        $this->assertSame(['input_units' => 14, 'output_units' => 5], $this->testConnection());
+        $this->assertSame(['input_units' => 14, 'output_units' => 5], $this->verifyConnection());
         Http::assertSentCount(1);
         Http::assertSent(function (Request $request): bool {
             $this->assertSame('https://api.deepseek.com/chat/completions', $request->url());
@@ -59,7 +59,7 @@ class DeepSeekSdkAdapterTest extends TestCase
     {
         Http::fake(['*' => Http::response(['error' => ['message' => 'PRIVATE_PROVIDER_CONTENT']], $status)]);
         try {
-            $this->testConnection();
+            $this->verifyConnection();
             $this->fail('Provider errors must fail.');
         } catch (AssistantUnavailable $e) {
             $this->assertSame($reason, $e->reason);
@@ -84,14 +84,14 @@ class DeepSeekSdkAdapterTest extends TestCase
     {
         Http::fake(['*' => Http::response(['choices' => [['message' => ['content' => $reply], 'finish_reason' => 'stop']], 'usage' => $usage])]);
         $this->expectException(AssistantUnavailable::class);
-        $this->testConnection();
+        $this->verifyConnection();
     }
 
     public function test_disabled_test_cannot_bypass_dispatch_switches(): void
     {
         config(['ai_assistant.enabled' => false]);
         try {
-            $this->testConnection();
+            $this->verifyConnection();
             $this->fail('Disabled dispatch must fail.');
         } catch (AssistantUnavailable $e) {
             $this->assertSame('disabled', $e->reason);
@@ -103,6 +103,6 @@ class DeepSeekSdkAdapterTest extends TestCase
     {
         Http::fake(['*' => Http::response(str_repeat('x', 131073))]);
         $this->expectException(AssistantUnavailable::class);
-        $this->testConnection();
+        $this->verifyConnection();
     }
 }

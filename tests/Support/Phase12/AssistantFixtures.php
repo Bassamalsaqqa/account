@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace Tests\Support\Phase12;
 
-use App\Application\AI\SpeechTranscriptionProvider;
-use App\Application\AI\StructuredIntentProvider;
 use App\Models\Product;
 use App\Models\ProductUnit;
 use App\Models\Unit;
@@ -31,7 +29,7 @@ trait AssistantFixtures
         $this->customer->update(['name_ar' => 'أحمد', 'name_en' => 'Ahmed', 'code' => 'C-AHMED']);
         config([
             'ai_assistant.enabled' => true, 'ai_assistant.provider_approved' => true,
-            'ai_assistant.provider' => 'gateway', 'ai_assistant.speech_enabled' => true,
+            'ai_assistant.provider' => 'direct', 'ai_assistant.speech_enabled' => true,
             'ai_assistant.request_cost_ceiling_micros' => 1000,
             'ai_assistant.daily_company_cost_ceiling_micros' => 100000,
             'ai_assistant.monthly_company_cost_ceiling_micros' => 1000000,
@@ -53,48 +51,6 @@ trait AssistantFixtures
             'conversion_to_base' => '12.000000', 'default_sale_price_base' => '80.000000', 'active' => true]);
         $this->proposal = ['version' => 1, 'intent' => 'draft_sales_invoice', 'customer' => 'Ahmed', 'currency' => 'ILS', 'warehouse' => 'Warehouse',
             'lines' => [['product' => 'Dishwashing Liquid', 'unit' => 'carton', 'quantity' => '5', 'unit_price' => '80']]];
-        $this->fakeIntent($this->proposal);
-    }
-
-    protected function fakeIntent(array $proposal, int $confidence = 95): object
-    {
-        $provider = new class($proposal, $confidence) implements StructuredIntentProvider
-        {
-            public int $calls = 0;
-
-            public function __construct(public array $proposal, public int $confidence) {}
-
-            public function extract(string $text, string $locale): array
-            {
-                $this->calls++;
-
-                return ['proposal' => $this->proposal, 'confidence' => $this->confidence,
-                    'usage' => ['cost_micros' => 600, 'input_units' => 80, 'output_units' => 100]];
-            }
-        };
-        $this->app->instance(StructuredIntentProvider::class, $provider);
-
-        return $provider;
-    }
-
-    protected function fakeSpeech(string $text = 'Five cartons of Dishwashing Liquid for Ahmed at 80 ILS'): object
-    {
-        $provider = new class($text) implements SpeechTranscriptionProvider
-        {
-            public int $calls = 0;
-
-            public function __construct(private string $text) {}
-
-            public function transcribe(string $wav, string $locale): array
-            {
-                $this->calls++;
-
-                return ['text' => $this->text, 'confidence' => 95, 'usage' => ['cost_micros' => 600, 'input_units' => 1, 'output_units' => 20]];
-            }
-        };
-        $this->app->instance(SpeechTranscriptionProvider::class, $provider);
-
-        return $provider;
     }
 
     protected function wav(int $seconds = 1): string

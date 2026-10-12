@@ -21,12 +21,12 @@ final class AiRequestBudget
     public function reserve(Company $company, User $actor, string $key, string $formKey, string $purpose, string $intent, string $inputHash, array $connections = [], int $audioMilliseconds = 60000): array
     {
         if (! Str::isUuid($key) || ! Str::isUuid($formKey) || ! preg_match('/\A[a-f0-9]{64}\z/', $inputHash)
-            || ! in_array($purpose, ['intent', 'transcription', 'patch', 'question'], true) || count($connections) > 2) {
+            || ! in_array($purpose, ['intent', 'patch', 'question'], true) || count($connections) > 1) {
             throw new AssistantUnavailable('invalid_request');
         }
 
         return DB::transaction(function () use ($company, $actor, $key, $formKey, $purpose, $intent, $inputHash, $connections, $audioMilliseconds): array {
-            $policy = app(AiGovernance::class)->authorizeUse($company, $actor, $intent, $purpose === 'transcription');
+            $policy = app(AiGovernance::class)->authorizeUse($company, $actor, $intent);
             $existing = AssistantRequest::where('company_id', $company->id)->where('user_id', $actor->id)
                 ->where('request_key', $key)->lockForUpdate()->first();
             if ($existing !== null) {
@@ -41,18 +41,12 @@ final class AiRequestBudget
             $first = null;
             $source = null;
             $plan = [];
-            foreach ($connections as $index => $connection) {
-                if ($index === 1 && (($policy->settings['fallback']['enabled'] ?? false) !== true
-                    || ($policy->settings['fallback'][$purpose === 'transcription' ? 'speech_connection' : 'text_connection'] ?? null) !== $connection->public_id)) {
-                    throw new AssistantUnavailable('fallback_invalid');
-                }
-                if ((int) $connection->company_id !== (int) $company->id
-                    || ($source !== null && $source !== $connection->credential_source)
-                    || ($first !== null && (int) $first->id === (int) $connection->id)) {
-                    throw new AssistantUnavailable('fallback_invalid');
+            foreach ($connections as $connection) {
+                if ((int) $connection->company_id !== (int) $company->id) {
+                    throw new AssistantUnavailable('provider_configuration');
                 }
                 $grant = app(AiGovernance::class)->dispatchConnection($company, $actor, $connection->public_id, $intent,
-                    $purpose === 'transcription' ? 'audio_transcription' : 'text_structured', (int) $connection->revision);
+                    'text_structured', (int) $connection->revision);
                 $connection = $grant['connection'];
                 $plan[] = ['id' => (int) $connection->id, 'revision' => (int) $connection->revision,
                     'public_id' => $connection->public_id];
@@ -119,7 +113,7 @@ final class AiRequestBudget
                 throw new AssistantUnavailable('fallback_invalid');
             }
             if ($fresh->status !== 'pending' || $fresh->created_at->addSeconds((int) config('ai_assistant.proposal_ttl_seconds'))->isPast()
-                || (int) $fresh->attempt_count >= 2
+                || (int) $fresh->attempt_count >= 1
                 || (int) $fresh->policy_revision !== (int) $policy->revision
                 || $fresh->credential_source !== $connection->credential_source) {
                 throw new AssistantUnavailable('request_processed');

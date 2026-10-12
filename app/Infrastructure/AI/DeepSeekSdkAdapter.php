@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\AI;
 
+use App\Application\AI\AiDiagnostics;
 use App\Application\AI\AssistantUnavailable;
 use App\Application\AI\ProviderCapabilityRegistry;
 use App\Application\AI\ProviderCredential;
@@ -59,12 +60,17 @@ final class DeepSeekSdkAdapter
                 return $data;
             });
         } catch (AssistantUnavailable $e) {
+            AiDiagnostics::record($e, $e->failureStage ?? 'provider_response');
             throw $e;
         } catch (ConnectionException) {
-            throw new AssistantUnavailable('provider_timeout');
+            $failure = new AssistantUnavailable('provider_timeout', failureStage: 'provider_transport');
+            AiDiagnostics::record($failure, 'provider_transport');
+            throw $failure;
         } catch (Throwable) {
             // SDK/provider exceptions can include raw payloads. Never chain or propagate them.
-            throw new AssistantUnavailable('provider_invalid');
+            $failure = new AssistantUnavailable('provider_invalid', failureStage: 'provider_response');
+            AiDiagnostics::record($failure, 'provider_response');
+            throw $failure;
         }
     }
 

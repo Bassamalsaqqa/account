@@ -11,6 +11,7 @@ final class AssistantUnavailable extends RuntimeException
     public function __construct(
         public readonly string $reason = 'unavailable',
         public readonly ?int $httpStatus = null,
+        public readonly ?string $failureStage = null,
     ) {
         parent::__construct('Sales assistant is unavailable; continue with manual entry.');
     }

@@ -95,7 +95,7 @@ class AiRequestBudgetConcurrencyTest extends TestCase
 
         $controlPolicy = $governance->updatePolicy($this->controlCompany, $this->owner, [
             'enabled' => true, 'personal_credentials_enabled' => false, 'follow_up_enabled' => true,
-            'workflow_mode' => 'seamless', 'speech_method' => 'cloud', 'settings' => [
+            'workflow_mode' => 'seamless', 'speech_method' => 'disabled', 'settings' => [
                 'allowed_connections' => [$controlConn->public_id],
                 'text_connection' => $controlConn->public_id,
                 'speech_connection' => null,
@@ -158,14 +158,14 @@ class AiRequestBudgetConcurrencyTest extends TestCase
         $requestKey = (string) Str::uuid();
         $formKey = (string) Str::uuid();
         $inputHash = hash('sha256', 'order-soap-quantity-10');
-        $connections = [$this->textConnection->id, $this->fallbackConnection->id];
+        $connections = [$this->textConnection->id];
 
         // Calculate expected per-request cost from active fixture and source formula.
         $estimateService = app(ProviderCostEstimate::class);
         $costPerConnection = $estimateService->tokens(6000, 4000, 1000, 2000);
         $this->assertSame(14, $costPerConnection);
-        $expectedCombinedReservation = $costPerConnection * 2;
-        $this->assertSame(28, $expectedCombinedReservation);
+        $expectedCombinedReservation = $costPerConnection;
+        $this->assertSame(14, $expectedCombinedReservation);
 
         $intent = [
             'operation' => 'reserve',
@@ -197,8 +197,8 @@ class AiRequestBudgetConcurrencyTest extends TestCase
         $this->assertSame('intent', $fresh->purpose);
         $this->assertSame('sales', $fresh->intent_kind);
         $this->assertSame($inputHash, $fresh->input_hash);
-        $this->assertSame(28, $fresh->reserved_cost_micros);
-        $this->assertSame(28, $fresh->estimated_cost_micros);
+        $this->assertSame(14, $fresh->reserved_cost_micros);
+        $this->assertSame(14, $fresh->estimated_cost_micros);
         $this->assertSame(0, $fresh->attempt_count);
         $this->assertSame('unknown', $fresh->cost_status);
         $this->assertSame('pending', $fresh->status);
@@ -220,7 +220,7 @@ class AiRequestBudgetConcurrencyTest extends TestCase
         $formKey = (string) Str::uuid();
         $inputHashA = hash('sha256', 'proposal-version-alpha');
         $inputHashB = hash('sha256', 'proposal-version-beta');
-        $connections = [$this->textConnection->id, $this->fallbackConnection->id];
+        $connections = [$this->textConnection->id];
 
         $intentA = [
             'operation' => 'reserve',
@@ -266,7 +266,7 @@ class AiRequestBudgetConcurrencyTest extends TestCase
         $this->assertSame($requestKey, $fresh->request_key);
         $this->assertSame($formKey, $fresh->form_key);
         $this->assertSame('intent', $fresh->purpose);
-        $this->assertSame(28, $fresh->reserved_cost_micros);
+        $this->assertSame(14, $fresh->reserved_cost_micros);
 
         // Binding variation: replay same request UUID with conflicting form_key and purpose is explicitly refused.
         $budget = app(AiRequestBudget::class);
@@ -279,7 +279,7 @@ class AiRequestBudgetConcurrencyTest extends TestCase
                 'intent',
                 'sales',
                 $winningHash,
-                [$this->textConnection, $this->fallbackConnection],
+                [$this->textConnection],
             );
             $this->fail('Replay with conflicting form_key must throw request_conflict.');
         } catch (AssistantUnavailable $e) {
@@ -295,7 +295,7 @@ class AiRequestBudgetConcurrencyTest extends TestCase
                 'patch', // conflicting purpose
                 'sales',
                 $winningHash,
-                [$this->textConnection, $this->fallbackConnection],
+                [$this->textConnection],
             );
             $this->fail('Replay with conflicting purpose must throw request_conflict.');
         } catch (AssistantUnavailable $e) {
@@ -308,32 +308,32 @@ class AiRequestBudgetConcurrencyTest extends TestCase
 
     public function test_concurrent_monetary_caps_permit_exactly_one_reservation(): void
     {
-        // Each combined request costs exactly 28 micro-units (14 primary + 14 fallback).
+        // Each combined request costs exactly 14 micro-units (14 primary + 14 fallback).
         $cases = [
             'daily_company_policy_limit' => [
-                'limits' => ['daily_company_micros' => 28],
+                'limits' => ['daily_company_micros' => 14],
                 'config' => [],
-                'active_cap' => 28,
+                'active_cap' => 14,
             ],
             'monthly_company_policy_limit' => [
-                'limits' => ['monthly_company_micros' => 28],
+                'limits' => ['monthly_company_micros' => 14],
                 'config' => [],
-                'active_cap' => 28,
+                'active_cap' => 14,
             ],
             'daily_user_policy_limit' => [
-                'limits' => ['daily_user_micros' => 28],
+                'limits' => ['daily_user_micros' => 14],
                 'config' => [],
-                'active_cap' => 28,
+                'active_cap' => 14,
             ],
             'monthly_user_policy_limit' => [
-                'limits' => ['monthly_user_micros' => 28],
+                'limits' => ['monthly_user_micros' => 14],
                 'config' => [],
-                'active_cap' => 28,
+                'active_cap' => 14,
             ],
             'platform_ceiling_lower_than_company_cap' => [
                 'limits' => ['daily_company_micros' => 100000],
-                'config' => ['ai_assistant.daily_company_cost_ceiling_micros' => 28],
-                'active_cap' => 28,
+                'config' => ['ai_assistant.daily_company_cost_ceiling_micros' => 14],
+                'active_cap' => 14,
             ],
         ];
 
@@ -342,7 +342,6 @@ class AiRequestBudgetConcurrencyTest extends TestCase
             $co = $isolated['company'];
             $actor = $isolated['user'];
             $textConn = $isolated['textConnection'];
-            $fallbackConn = $isolated['fallbackConnection'];
 
             $intentA = [
                 'operation' => 'reserve',
@@ -353,7 +352,7 @@ class AiRequestBudgetConcurrencyTest extends TestCase
                 'purpose' => 'intent',
                 'intent' => 'sales',
                 'input_hash' => hash('sha256', 'request-A-'.$caseName),
-                'connection_ids' => [$textConn->id, $fallbackConn->id],
+                'connection_ids' => [$textConn->id],
             ];
             $intentB = [
                 'operation' => 'reserve',
@@ -364,7 +363,7 @@ class AiRequestBudgetConcurrencyTest extends TestCase
                 'purpose' => 'intent',
                 'intent' => 'sales',
                 'input_hash' => hash('sha256', 'request-B-'.$caseName),
-                'connection_ids' => [$textConn->id, $fallbackConn->id],
+                'connection_ids' => [$textConn->id],
             ];
 
             $results = $this->race($intentA, $intentB, null, $spec['config']);
@@ -379,7 +378,7 @@ class AiRequestBudgetConcurrencyTest extends TestCase
             $this->activate($co, $actor);
             $this->assertSame(1, AssistantRequest::where('company_id', $co->id)->count(), "Case [{$caseName}] must produce exactly one request row.");
             $totalReserved = (int) AssistantRequest::where('company_id', $co->id)->sum('reserved_cost_micros');
-            $this->assertSame(28, $totalReserved, "Case [{$caseName}] total reserved must be exactly 28 micro-units.");
+            $this->assertSame(14, $totalReserved, "Case [{$caseName}] total reserved must be exactly 14 micro-units.");
             $this->assertLessThanOrEqual($spec['active_cap'], $totalReserved, "Case [{$caseName}] must not exceed active cap {$spec['active_cap']}.");
         }
 
@@ -595,7 +594,7 @@ class AiRequestBudgetConcurrencyTest extends TestCase
         $this->assertHealthyAndControlUnchanged();
     }
 
-    public function test_concurrent_begin_attempt_for_same_connection_allows_exactly_one_increment_and_fallback_advances(): void
+    public function test_concurrent_begin_attempt_for_same_connection_allows_exactly_one_increment(): void
     {
         $budget = app(AiRequestBudget::class);
         $requestKey = (string) Str::uuid();
@@ -610,11 +609,11 @@ class AiRequestBudgetConcurrencyTest extends TestCase
             'intent',
             'sales',
             $inputHash,
-            [$this->textConnection, $this->fallbackConnection],
+            [$this->textConnection],
         );
         $request = $reservation['request']->refresh();
         $this->assertSame(0, (int) $request->attempt_count);
-        $this->assertSame(28, $request->reserved_cost_micros);
+        $this->assertSame(14, $request->reserved_cost_micros);
         $this->assertSame('unknown', $request->cost_status);
 
         $intent = [
@@ -640,35 +639,19 @@ class AiRequestBudgetConcurrencyTest extends TestCase
 
         $request->refresh();
         $this->assertSame(1, $request->attempt_count);
-        $this->assertSame(28, $request->reserved_cost_micros, 'Reservation cost must remain intact.');
+        $this->assertSame(14, $request->reserved_cost_micros, 'Reservation cost must remain intact.');
         $this->assertSame('unknown', $request->cost_status, 'Cost status must remain unknown.');
 
-        // The named fallback connection can now advance once to attempt_count=2.
-        $budget->beginAttempt($this->company, $this->owner, $request, $this->fallbackConnection);
-        $request->refresh();
-        $this->assertSame(2, $request->attempt_count);
-        $this->assertSame(28, $request->reserved_cost_micros);
-        $this->assertSame('unknown', $request->cost_status);
-
-        // Third attempt must refuse with fallback_invalid (no 3rd attempt in plan).
-        try {
-            $budget->beginAttempt($this->company, $this->owner, $request, $this->fallbackConnection);
-            $this->fail('Third attempt must refuse.');
-        } catch (AssistantUnavailable $e) {
-            $this->assertSame('fallback_invalid', $e->reason);
-        }
-
+        // A replay cannot authorize a second request or release the unknown reservation.
         try {
             $budget->beginAttempt($this->company, $this->owner, $request, $this->textConnection);
-            $this->fail('Third attempt with primary must refuse.');
+            $this->fail('Second dispatch must refuse.');
         } catch (AssistantUnavailable $e) {
             $this->assertSame('fallback_invalid', $e->reason);
         }
-
-        $request->refresh();
-        $this->assertSame(2, $request->attempt_count);
-        $this->assertSame(28, $request->reserved_cost_micros);
-        $this->assertSame('unknown', $request->cost_status);
+        $this->assertSame(1, $request->fresh()->attempt_count);
+        $this->assertSame(14, $request->fresh()->reserved_cost_micros);
+        $this->assertSame('unknown', $request->fresh()->cost_status);
 
         Http::assertNothingSent();
         $this->assertHealthyAndControlUnchanged();
@@ -703,7 +686,7 @@ class AiRequestBudgetConcurrencyTest extends TestCase
 
         $foreignPolicy = $governance->updatePolicy($foreignCompany, $this->owner, [
             'enabled' => true, 'personal_credentials_enabled' => false, 'follow_up_enabled' => true,
-            'workflow_mode' => 'seamless', 'speech_method' => 'cloud', 'settings' => [
+            'workflow_mode' => 'seamless', 'speech_method' => 'disabled', 'settings' => [
                 'allowed_connections' => [$foreignConnection->public_id],
                 'text_connection' => $foreignConnection->public_id,
                 'speech_connection' => null,
@@ -760,7 +743,7 @@ class AiRequestBudgetConcurrencyTest extends TestCase
             );
             $this->fail('Foreign connection reservation must refuse.');
         } catch (AssistantUnavailable $e) {
-            $this->assertSame('fallback_invalid', $e->reason);
+            $this->assertSame('provider_configuration', $e->reason);
         }
 
         // 2. Foreign connection cannot be passed to beginAttempt on main company request.
@@ -806,7 +789,7 @@ class AiRequestBudgetConcurrencyTest extends TestCase
 
     /**
      * @param  array<string, int>  $limits
-     * @return array{company: Company, user: User, textConnection: AiProviderConnection, fallbackConnection: AiProviderConnection, policy: AiCompanyPolicy}
+     * @return array{company: Company, user: User, textConnection: AiProviderConnection, policy: AiCompanyPolicy}
      */
     private function createIsolatedCompanyWithPolicy(array $limits = []): array
     {
@@ -827,13 +810,8 @@ class AiRequestBudgetConcurrencyTest extends TestCase
             'provider' => 'deepseek', 'model' => 'deepseek-flash', 'region' => 'global',
             'capability' => 'text_structured', 'credential_source' => 'company_byok',
         ], 'synthetic-primary-key', 'synthetic-configuration-only');
-        $fallbackConn = $governance->provision($company, $user, [
-            'provider' => 'openai', 'model' => 'gpt-4o-mini', 'region' => 'global',
-            'capability' => 'text_structured', 'credential_source' => 'company_byok',
-        ], 'synthetic-fallback-key', 'synthetic-configuration-only');
-
         $pricing = [];
-        foreach ([$textConn, $fallbackConn] as $c) {
+        foreach ([$textConn] as $c) {
             $pricing[$c->public_id] = [
                 'reference' => 'https://example.test/synthetic-pricing',
                 'checked_at' => '2026-10-11',
@@ -858,14 +836,14 @@ class AiRequestBudgetConcurrencyTest extends TestCase
             'personal_credentials_enabled' => false,
             'follow_up_enabled' => true,
             'workflow_mode' => 'seamless',
-            'speech_method' => 'cloud',
+            'speech_method' => 'disabled',
             'settings' => [
-                'allowed_connections' => [$textConn->public_id, $fallbackConn->public_id],
+                'allowed_connections' => [$textConn->public_id],
                 'text_connection' => $textConn->public_id,
                 'speech_connection' => null,
                 'fallback' => [
-                    'enabled' => true,
-                    'text_connection' => $fallbackConn->public_id,
+                    'enabled' => false,
+                    'text_connection' => null,
                     'speech_connection' => null,
                 ],
                 'privacy' => [
@@ -879,7 +857,7 @@ class AiRequestBudgetConcurrencyTest extends TestCase
             ],
         ]);
 
-        foreach ([$textConn, $fallbackConn] as $c) {
+        foreach ([$textConn] as $c) {
             $governance->recordConsent($company, $user, $c->public_id, $governance->consentFingerprint($policy, $c));
         }
 
@@ -889,7 +867,6 @@ class AiRequestBudgetConcurrencyTest extends TestCase
             'company' => $company,
             'user' => $user,
             'textConnection' => $textConn,
-            'fallbackConnection' => $fallbackConn,
             'policy' => $policy,
         ];
     }

@@ -202,7 +202,7 @@ class QuestionGovernanceUiTest extends TestCase
             ->call('showAssistant')
             ->assertSet('open', true)
             ->assertSee(__('assistant_v2.question_consent'))
-            ->assertDontSee(__('assistant_v2.consent'));
+            ->assertSet('context', 'auto');
 
         $this->assertFalse($reader->hasPermissionTo('sales.invoice.create'));
         $this->assertFalse($reader->hasPermissionTo('purchasing.purchase.create'));
@@ -221,7 +221,7 @@ class QuestionGovernanceUiTest extends TestCase
             ->set('text', 'sales today')
             ->call('prepare')
             ->assertSet('error', null)
-            ->assertSee(__('assistant_v2.report_result'))
+            ->assertSet('reportResult.report_key', 'sales.summary')
             ->assertSee(__('assistant_v2.view_full_report'));
     }
 
@@ -251,15 +251,15 @@ class QuestionGovernanceUiTest extends TestCase
 
         app()->setLocale('ar');
         Livewire::test('ai.assistant-launcher')
-            ->assertSee(__('assistant_v2.unified_title'))
+            ->assertSee(__('ai_product.launcher'))
             ->call('showAssistant')
-            ->assertSee(__('assistant_v2.unified_title'));
+            ->assertSee(__('ai_product.title'));
 
         app()->setLocale('en');
         Livewire::test('ai.assistant-launcher')
-            ->assertSee(__('assistant_v2.unified_title'))
+            ->assertSee(__('ai_product.launcher'))
             ->call('showAssistant')
-            ->assertSee(__('assistant_v2.unified_title'));
+            ->assertSee(__('ai_product.title'));
     }
 
     public function test_ambiguous_operation_presents_explicit_user_choice_for_full_user(): void
@@ -380,7 +380,7 @@ class QuestionGovernanceUiTest extends TestCase
     private function validPolicyInput(): array
     {
         $pricing = [];
-        foreach ([$this->textConnection, $this->fallbackConnection] as $connection) {
+        foreach ([$this->textConnection] as $connection) {
             $pricing[$connection->public_id] = [
                 'reference' => 'https://example.test/synthetic-pricing',
                 'checked_at' => '2026-10-11',
@@ -395,14 +395,14 @@ class QuestionGovernanceUiTest extends TestCase
             'personal_credentials_enabled' => false,
             'follow_up_enabled' => true,
             'workflow_mode' => 'seamless',
-            'speech_method' => 'cloud',
+            'speech_method' => 'disabled',
             'settings' => [
-                'allowed_connections' => [$this->textConnection->public_id, $this->fallbackConnection->public_id],
+                'allowed_connections' => [$this->textConnection->public_id],
                 'text_connection' => $this->textConnection->public_id,
                 'speech_connection' => null,
                 'fallback' => [
-                    'enabled' => true,
-                    'text_connection' => $this->fallbackConnection->public_id,
+                    'enabled' => false,
+                    'text_connection' => null,
                     'speech_connection' => null,
                 ],
                 'privacy' => [

@@ -31,7 +31,7 @@
     @endif
 
     @if ($activeSection === 'overview')
-        @if (auth()->user()->hasPermissionTo('ai.settings.manage') || auth()->user()->hasPermissionTo('ai.credentials.manage') || auth()->user()->hasPermissionTo('ai.personal_credentials.manage'))
+        @if (auth()->user()->hasPermissionTo('ai.settings.manage'))
             <a href="{{ route('settings.ai') }}" class="mb-4 inline-flex min-h-11 items-center gap-2 rounded-control border border-border bg-surface px-4 text-sm font-semibold text-primary hover:bg-primary-50">{{ __('assistant_v2.settings_title') }}</a>
         @endif
         <!-- Page Header -->

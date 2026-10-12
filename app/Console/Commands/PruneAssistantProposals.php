@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use App\Application\AI\AiRetention;
-use App\Application\AI\SalesAssistant;
 use App\Models\AssistantRequest;
 use App\Support\Tenancy\CompanyScope;
 use Illuminate\Console\Command;
@@ -25,7 +24,8 @@ final class PruneAssistantProposals extends Command
                 ->where('created_at', '<=', now()->subSeconds((int) config('ai_assistant.proposal_ttl_seconds')))
                 ->chunkById(100, function ($requests) use (&$count): void {
                     foreach ($requests as $request) {
-                        Cache::forget(app(SalesAssistant::class)->cacheKey($request));
+                        // Keep the historical namespace while retiring its former runtime engine.
+                        Cache::forget('ai-sales-proposal:'.$request->company_id.':'.$request->user_id.':'.$request->request_key);
                         // Compare status to avoid overwriting an accepted/canceled command.
                         $count += AssistantRequest::whereKey($request->id)->where('status', 'resolved')->update(['status' => 'expired']);
                     }

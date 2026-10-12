@@ -41,64 +41,32 @@
                                 </div>
                             </div>
                         @endif
-                    <details class="mt-4 text-sm" @if (! $consent || (! $questionConsent && $questionsAvailable) || $error === __('assistant_v2.error_provider_selection')) open @endif>
+                    @if (($consentRoutes !== [] && ! $consent) || ($questionConsentRoutes !== [] && ! $questionConsent))
+                        <div class="mt-4 space-y-3 rounded-control border border-border bg-canvas p-3 text-sm">
+                            <p class="leading-relaxed text-text-secondary">{{ __('assistant_v2.text_consent_help') }}</p>
+                            @if ($consentRoutes !== [] && ! $consent)
+                                <label class="flex items-start gap-2">
+                                    <input type="checkbox" wire:model="consent" class="mt-1 rounded border-border" />
+                                    <span>{{ ! $transactionsAvailable && $questionsAvailable ? __('assistant_v2.question_consent') : __('assistant_v2.consent') }}</span>
+                                </label>
+                                <button type="button" wire:click="acceptConsent" wire:loading.attr="disabled" class="min-h-11 rounded-control border border-border px-3 text-primary disabled:opacity-50">{{ __('assistant_v2.save_consent') }}</button>
+                            @endif
+                            @if ($questionConsentRoutes !== [] && ! $questionConsent)
+                                <label class="flex items-start gap-2">
+                                    <input type="checkbox" wire:model="questionConsent" class="mt-1 rounded border-border" />
+                                    <span>{{ __('assistant_v2.question_consent') }}</span>
+                                </label>
+                                <button type="button" wire:click="acceptQuestionConsent" wire:loading.attr="disabled" class="min-h-11 rounded-control border border-border px-3 text-primary disabled:opacity-50">{{ __('assistant_v2.save_question_consent') }}</button>
+                            @endif
+                        </div>
+                    @endif
+                    <details class="mt-3 text-sm">
                         <summary class="cursor-pointer py-2 font-semibold">{{ __('ai_product.privacy') }}</summary>
-                        <div class="space-y-3 py-3">
-                            <p class="text-text-secondary">{{ __('ai_product.browser_privacy_policy') }}</p>
-                            <p class="break-words text-text-secondary">{{ $privacy['operator'] ?? '' }} — {{ $privacy['retention'] ?? '' }}</p>
+                        <div class="space-y-2 py-2 text-text-secondary">
+                            <p>{{ __('ai_product.browser_privacy_policy') }}</p>
+                            <p class="break-words">{{ $privacy['operator'] ?? '' }} ? {{ $privacy['retention'] ?? '' }}</p>
                             @if (!empty($privacy['policy_url']))
                                 <a href="{{ $privacy['policy_url'] }}" target="_blank" rel="noopener noreferrer" class="inline-block text-primary underline underline-offset-4">{{ __('assistant_v2.privacy_policy') }}</a>
-                            @endif
-                            <ul class="space-y-2">
-                                @foreach ($consentRoutes as $route)
-                                    <li class="break-words text-text-secondary"><b>{{ $route['provider'] }} / {{ $route['model'] }}</b> · {{ $route['region'] }} · {{ __('assistant_v2.'.$route['capability']) }} · {{ __('assistant_v2.route_'.$route['role']) }} · {{ __('assistant_v2.'.$route['credential_source']) }} · {{ __('assistant_v2.configured_unverified') }}</li>
-                                @endforeach
-                            </ul>
-                            <p class="text-text-secondary">{{ __('assistant_v2.selection_consent_help') }}</p>
-                            <label class="flex items-start gap-2">
-                                <input type="checkbox" wire:model="consent" class="mt-1 rounded border-border" />
-                                <span>{{ ! $transactionsAvailable && $questionsAvailable ? __('assistant_v2.question_consent') : __('assistant_v2.consent') }}</span>
-                            </label>
-                            <button type="button" wire:click="acceptConsent" wire:loading.attr="disabled" class="min-h-11 rounded-control border border-border px-3 text-primary disabled:opacity-50">{{ __('assistant_v2.save_consent') }}</button>
-                            @if (!empty($questionConsentRoutes))
-                                <div class="mt-4 border-t border-border pt-3">
-                                    <h4 class="font-semibold text-text-primary">{{ __('assistant_v2.questions_policy') }}</h4>
-                                    <p class="mt-1 text-xs text-text-secondary">{{ __('assistant_v2.selection_consent_help') }}</p>
-                                    <ul class="mt-2 space-y-1">
-                                        @foreach ($questionConsentRoutes as $qRoute)
-                                            <li class="break-words text-xs text-text-secondary"><b>{{ $qRoute['provider'] }} / {{ $qRoute['model'] }}</b> · {{ $qRoute['region'] }} · {{ __('assistant_v2.'.$qRoute['capability']) }}</li>
-                                        @endforeach
-                                    </ul>
-                                    <label class="mt-2 flex items-start gap-2">
-                                        <input type="checkbox" wire:model="questionConsent" class="mt-1 rounded border-border" />
-                                        <span class="text-xs">{{ __('assistant_v2.question_consent') }}</span>
-                                    </label>
-                                    <button type="button" wire:click="acceptQuestionConsent" wire:loading.attr="disabled" class="mt-2 min-h-9 rounded-control border border-border px-3 text-xs font-semibold text-primary disabled:opacity-50">{{ __('assistant_v2.save_question_consent') }}</button>
-                                </div>
-                            @endif
-                            @if ($error === __('assistant_v2.error_provider_selection'))
-                            @foreach (['textConnection' => 'text_structured', 'speechConnection' => 'audio_transcription'] as $field => $capability)
-                                <label class="block">{{ __('assistant_v2.'.$capability) }}
-                                    <select wire:model="{{ $field }}" class="mt-1 min-h-11 w-full rounded-control border border-border px-2">
-                                        @if ($this->$field && !in_array($this->$field, array_column($availableConnections, 'public_id'), true))
-                                            <option value="{{ $this->$field }}" disabled>{{ __('assistant_v2.error_unavailable') }}</option>
-                                        @endif
-                                        <option value="">{{ __('assistant_v2.company_selection') }}</option>
-                                        @foreach ($availableConnections as $route)
-                                            @if ($route['capability'] === $capability)
-                                                <option value="{{ $route['public_id'] }}">{{ $route['provider'] }} · {{ $route['model'] }} · {{ __('assistant_v2.'.$route['credential_source']) }}</option>
-                                            @endif
-                                        @endforeach
-                                    </select>
-                                </label>
-                            @endforeach
-                            <label class="block">{{ __('assistant_v2.speech_method') }}
-                                <select wire:model="transcriptionChoice" class="mt-1 min-h-11 w-full rounded-control border border-border px-2">
-                                    <option value="">{{ __('assistant_v2.company_selection') }}</option>
-                                    @foreach ($allowedSpeechMethods as $method)<option value="{{ $method }}">{{ __('assistant_v2.'.$method) }}</option>@endforeach
-                                </select>
-                            </label>
-                            <button type="button" wire:click="selectConnections" @click="clear()" class="min-h-11 px-3 text-primary">{{ __('assistant_v2.save_selection') }}</button>
                             @endif
                         </div>
                     </details>

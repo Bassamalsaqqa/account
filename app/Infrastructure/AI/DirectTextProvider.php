@@ -24,14 +24,11 @@ final class DirectTextProvider
             throw new AssistantUnavailable('input_invalid');
         }
         $route = app(ProviderCapabilityRegistry::class)->resolve($provider, $model, $region, 'text_structured');
-        $format = $route['strict_json']
-            ? ['type' => 'json_schema', 'json_schema' => ['name' => 'transaction_proposal', 'strict' => true, 'schema' => $schema]]
-            : ['type' => 'json_object'];
         $schemaJson = json_encode($schema, JSON_THROW_ON_ERROR);
         $system = 'Return JSON only. No tools or database IDs. Decimal strings. Null for missing or uncertain fields. Allowed intent: '.$intent.'. '
-            .($route['strict_json'] ? 'Follow the response schema.' : 'Schema: '.$schemaJson);
+            .'Schema: '.$schemaJson;
         // Byte-bound input conservatively rather than guessing a token count from characters.
-        if (strlen($system) + strlen($text) + ($route['strict_json'] ? strlen($schemaJson) : 0) + 256 > (int) config('ai_assistant.max_input_tokens')) {
+        if (strlen($system) + strlen($text) + 256 > (int) config('ai_assistant.max_input_tokens')) {
             throw new AssistantUnavailable('input_invalid');
         }
         $body = [
@@ -40,16 +37,11 @@ final class DirectTextProvider
                 ['role' => 'system', 'content' => $system],
                 ['role' => 'user', 'content' => $text],
             ],
-            'response_format' => $format,
+            'response_format' => ['type' => 'json_object'],
+            'thinking' => ['type' => 'disabled'],
             'max_tokens' => (int) config('ai_assistant.max_output_tokens'),
         ];
-        if ($provider === 'deepseek') {
-            $body['thinking'] = ['type' => 'disabled'];
-        }
-        if ($provider === 'qwen') {
-            $body['enable_thinking'] = false;
-        }
-        $result = app(DirectProviderTransport::class)->send($route, $credential, $body);
+        $result = app(DeepSeekSdkAdapter::class)->send($route, $credential, $body);
         $content = $result['choices'][0]['message']['content'] ?? null;
         if (! is_string($content) || strlen($content) > 65536
             || ($result['choices'][0]['finish_reason'] ?? '') !== 'stop') {
@@ -87,13 +79,10 @@ final class DirectTextProvider
             throw new AssistantUnavailable('input_invalid');
         }
         $route = app(ProviderCapabilityRegistry::class)->resolve($provider, $model, $region, 'text_structured');
-        $format = $route['strict_json']
-            ? ['type' => 'json_schema', 'json_schema' => ['name' => 'assistant_report_plan', 'strict' => true, 'schema' => $schema]]
-            : ['type' => 'json_object'];
         $schemaJson = json_encode($schema, JSON_THROW_ON_ERROR);
         $system = 'Return JSON only for question planning. Allowed report queries only. No tools or database IDs. '
-            .($route['strict_json'] ? 'Follow the response schema.' : 'Schema: '.$schemaJson);
-        if (strlen($system) + strlen($text) + ($route['strict_json'] ? strlen($schemaJson) : 0) + 256 > (int) config('ai_assistant.max_input_tokens')) {
+            .'Schema: '.$schemaJson;
+        if (strlen($system) + strlen($text) + 256 > (int) config('ai_assistant.max_input_tokens')) {
             throw new AssistantUnavailable('input_invalid');
         }
         $body = [
@@ -102,16 +91,11 @@ final class DirectTextProvider
                 ['role' => 'system', 'content' => $system],
                 ['role' => 'user', 'content' => $text],
             ],
-            'response_format' => $format,
+            'response_format' => ['type' => 'json_object'],
+            'thinking' => ['type' => 'disabled'],
             'max_tokens' => (int) config('ai_assistant.max_output_tokens'),
         ];
-        if ($provider === 'deepseek') {
-            $body['thinking'] = ['type' => 'disabled'];
-        }
-        if ($provider === 'qwen') {
-            $body['enable_thinking'] = false;
-        }
-        $result = app(DirectProviderTransport::class)->send($route, $credential, $body);
+        $result = app(DeepSeekSdkAdapter::class)->send($route, $credential, $body);
         $content = $result['choices'][0]['message']['content'] ?? null;
         if (! is_string($content) || strlen($content) > 65536
             || ($result['choices'][0]['finish_reason'] ?? '') !== 'stop') {

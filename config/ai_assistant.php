@@ -18,7 +18,6 @@ return [
     'timeout_seconds' => 20,
     'minimum_confidence' => 85,
     'max_audio_seconds' => 60,
-    'max_audio_bytes' => 5760044, // 60 seconds, mono PCM16 at 48kHz; no compressed uploads.
     'daily_company_requests' => 100,
     'daily_user_requests' => 25,
     // Integer USD micro-units, operational limits only; no money/ledger calculations.
@@ -28,12 +27,4 @@ return [
     'monthly_company_cost_ceiling_micros' => (int) env('AI_MONTHLY_COMPANY_COST_CEILING_MICROS', 0),
     'daily_user_cost_ceiling_micros' => (int) env('AI_DAILY_USER_COST_CEILING_MICROS', 0),
     'monthly_user_cost_ceiling_micros' => (int) env('AI_MONTHLY_USER_COST_CEILING_MICROS', 0),
-    'gateway' => [
-        // A reviewed vendor-neutral gateway implementing docs/PHASE_12_PROVIDER_CONTRACT.md.
-        // No browser-supplied endpoint, key, model, routing or tools.
-        'url' => env('AI_GATEWAY_URL', ''),
-        'approved_host' => env('AI_GATEWAY_APPROVED_HOST', ''),
-        'public_ipv4' => env('AI_GATEWAY_PINNED_IPV4', ''),
-        'key' => env('AI_GATEWAY_KEY', ''),
-    ],
 ];
