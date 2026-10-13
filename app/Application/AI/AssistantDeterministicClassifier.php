@@ -360,14 +360,26 @@ final class AssistantDeterministicClassifier
 
     private function matchesTransaction(string $ar, string $en): bool
     {
-        if (preg_match('/\b(?:create|make|draft|prepare|add|issue)\b.*\binvoice\b/i', $en)
-            || (! preg_match('/\bhow much did we\b/i', $en) && preg_match('/\b(?:buy|sell)\s+(?!report\b|summary\b)/i', $en))
-            || preg_match('/(?:^|\s)(?:انشئ|انشاء|اعمل|سوي|جهز|اكتب|اضف)\s+(?:لي\s+)?فاتوره|(?:^|\s)فاتوره\s+جديده/u', $ar)) {
+        // Past-tense business questions are read requests, not draft instructions.
+        // An explicit create/record command can still make a mixed request ambiguous.
+        if ((preg_match('/^\s*(?:what|which|how|who|when)\b/i', $en)
+                || preg_match('/^\s*(?:شو|ايش|كم|قديش|ماذا|مين|هل)(?:\s|$)/u', $ar))
+            && ! preg_match('/\b(?:create|make|draft|prepare|add|issue|record|enter)\b.*\b(?:invoice|sale|purchase)\b/i', $en)
+            && ! preg_match('/(?:^|\s)(?:انشئ|انشاء|اعمل|سوي|جهز|اكتب|اضف|سجل|طلع|حضر|اصدر)\s+(?:لي\s+)?(?:فاتور[ةه]|بيع[ةه]?|مبيعات|شراء|مشتريات)/u', $ar)) {
+            return false;
+        }
+
+        if (preg_match('/\b(?:create|make|draft|prepare|add|issue|record|enter)\b.*\binvoice\b/i', $en)
+            || (! preg_match('/\bhow much did we\b/i', $en) && preg_match('/\b(?:buy|bought|sell|sold)\s+(?!report\b|summary\b)/i', $en))
+            || preg_match('/\b(?:we\s+sold|we\s+bought|record\s+a\s+sale|record\s+purchase)\b/i', $en)
+            || preg_match('/(?:^|\s)(?:انشئ|انشاء|اعمل|سوي|جهز|اكتب|اضف|سجل|طلع|حضر|اصدر)\s+(?:لي\s+)?(?:فاتور[ةه]|بيع[ةه]?|مبيعات|شراء|مشتريات|طلبي[ةه])|(?:^|\s)فاتور[ةه]\s+جديد[ةه]/u', $ar)) {
             return true;
         }
         $arPatterns = [
-            '/(?:^|\s|[^\p{L}])(بعت|بيع|فاتور[ةه]\s+بيع|فاتور[ةه]\s+مبيعات)(?:[^\p{L}]|\s|$)/u',
-            '/(?:^|\s|[^\p{L}])(اشتريت|شراء|فاتور[ةه]\s+شراء|فاتور[ةه]\s+مشتريات)(?:[^\p{L}]|\s|$)/u',
+            '/(?:^|\s|[^\p{L}])(بعت|بيع[ةه]?|فاتور[ةه]\s+(?:بيع|مبيعات|ل|لل|الى)|سجل\s+(?:لي\s+)?(?:بيع[ةه]?|مبيعات))(?:[^\p{L}]|\s|$)/u',
+            '/(?:^|\s|[^\p{L}])(اشتريت|شراء|فاتور[ةه]\s+(?:شراء|مشتريات)|سجل\s+(?:لي\s+)?(?:شراء|مشتريات))(?:[^\p{L}]|\s|$)/u',
+            '/(?:^|\s|[^\p{L}])(?<!كم\s)(?:بعنا|اشترينا)(?:[^\p{L}]|\s|$)/u',
+            '/(?:^|\s|[^\p{L}])(بدي\s+|بدنا\s+)(?:نبيع|ابيع|نشتري|اشتري)(?:[^\p{L}]|\s|$)/u',
         ];
 
         // Explicit reporting keywords presence
@@ -386,6 +398,8 @@ final class AssistantDeterministicClassifier
             $enPatterns = [
                 '/\b(sell to|sold to|invoice for|sales invoice)\b/i',
                 '/\b(buy from|bought from|purchase from|purchase order)\b/i',
+                '/\b(sell|sold)\b.*\bto\b/i',
+                '/\b(buy|bought|purchase|purchased)\b.*\bfrom\b/i',
             ];
             foreach ($enPatterns as $pattern) {
                 if (preg_match($pattern, $en)) {
@@ -416,8 +430,9 @@ final class AssistantDeterministicClassifier
 
         // If the query is an invoice command like "فاتورة مبيعات نقدية" without reporting keywords,
         // do not match sales.summary / purchases.summary.
-        $isPureTxCommand = preg_match('/(?:^|\s|[^\p{L}])(فاتور[ةه]\s+(?:بيع|مبيعات|شراء|مشتريات)|بعت|اشتريت)(?:[^\p{L}]|\s|$)/u', $ar)
-            || preg_match('/\b(sales invoice|purchase order|invoice for|sell to|sold to|buy from|bought from)\b/i', $en);
+        $isPureTxCommand = preg_match('/(?:^|\s|[^\p{L}])(فاتور[ةه]\s+(?:بيع|مبيعات|شراء|مشتريات|ل|لل|الى)|بعت|بعنا|اشتريت|اشترينا|سجل\s+(?:لي\s+)?(?:بيع[ةه]?|مبيعات|شراء|مشتريات|فاتور[ةه]))(?:[^\p{L}]|\s|$)/u', $ar)
+            || preg_match('/(?:^|\s)(?:انشئ|انشاء|اعمل|سوي|جهز|اكتب|اضف|سجل|طلع|حضر|اصدر)\s+(?:لي\s+)?(?:فاتور[ةه]|بيع[ةه]?|مبيعات|شراء|مشتريات)(?:[^\p{L}]|\s|$)/u', $ar)
+            || preg_match('/\b(sales invoice|purchase invoice|purchase order|invoice for|sell to|sold to|buy from|bought from|we sold|we bought|record a sale|record purchase)\b/i', $en);
 
         $hasReportKeyword = preg_match('/(?:^|\s|[^\p{L}])(تقرير|ملخص|كم\s+مبيعات|كم\s+مشتريات|كم\s+بعنا|كم\s+اشترينا)(?:[^\p{L}]|\s|$)/u', $ar)
             || preg_match('/\b(summary|balances?|report|how much did we)\b/i', $en);

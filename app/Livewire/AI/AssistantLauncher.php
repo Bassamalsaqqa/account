@@ -7,6 +7,7 @@ namespace App\Livewire\AI;
 use App\Application\AI\AiGovernance;
 use App\Application\AI\AiProviderRoutes;
 use App\Application\AI\AssistantDeterministicClassifier;
+use App\Application\AI\AssistantDraftTurn;
 use App\Application\AI\AssistantQuestionContext;
 use App\Application\AI\AssistantQuestionPlanner;
 use App\Application\AI\AssistantReportCatalog;
@@ -17,7 +18,6 @@ use App\Application\AI\AssistantTurnContext;
 use App\Application\AI\AssistantTurnService;
 use App\Application\AI\AssistantUnavailable;
 use App\Application\AI\DeepSeekQuickConnect;
-use App\Application\AI\TransactionAssistant;
 use App\Models\AiUserPreference;
 use App\Support\Tenancy\CompanyContext;
 use Illuminate\Auth\Access\AuthorizationException;
@@ -34,7 +34,22 @@ final class AssistantLauncher extends Component
     public string $context = 'auto';
 
     #[Locked]
-    public string $formKey;
+    public string $formKey = '';
+
+    #[Locked]
+    public string $requestKey = '';
+
+    #[Locked]
+    public ?int $conversationCompanyId = null;
+
+    #[Locked]
+    public ?int $conversationActorId = null;
+
+    #[Locked]
+    public ?string $conversationSessionHash = null;
+
+    #[Locked]
+    public ?string $draftInputHash = null;
 
     #[Locked]
     public ?string $token = null;
@@ -112,11 +127,27 @@ final class AssistantLauncher extends Component
         abort_unless(in_array($context, ['auto', 'sales', 'purchase'], true), 422);
         $this->context = $context;
         $this->formKey = (string) Str::uuid();
+        $this->requestKey = (string) Str::uuid();
+        if (auth()->check() && app(CompanyContext::class)->hasCompany()) {
+            $this->conversationCompanyId = (int) app(CompanyContext::class)->companyId();
+            $this->conversationActorId = (int) auth()->id();
+            $this->conversationSessionHash = hash('sha256', session()->getId());
+        }
+    }
+
+    private function assertConversationContext(): void
+    {
+        $context = app(CompanyContext::class);
+        abort_unless(auth()->check() && $context->hasCompany()
+            && $this->conversationCompanyId === (int) $context->companyId()
+            && $this->conversationActorId === (int) auth()->id()
+            && hash_equals($this->conversationSessionHash ?? '', hash('sha256', session()->getId())), 403);
     }
 
     #[On('ai:open-assistant')]
     public function showAssistant(): void
     {
+        $this->assertConversationContext();
         $company = app(CompanyContext::class)->company();
         $governance = app(AiGovernance::class);
         $policy = $governance->authorizeLauncher($company, auth()->user(), $this->context);
@@ -147,6 +178,7 @@ final class AssistantLauncher extends Component
 
     public function acceptConsent(): void
     {
+        $this->assertConversationContext();
         if (! $this->consent) {
             throw new AssistantUnavailable('consent');
         }
@@ -176,6 +208,7 @@ final class AssistantLauncher extends Component
 
     public function acceptQuestionConsent(): void
     {
+        $this->assertConversationContext();
         if (! $this->questionConsent) {
             throw new AssistantUnavailable('consent');
         }
@@ -249,11 +282,14 @@ final class AssistantLauncher extends Component
 
     public function prepare(bool $questionOnly = false): mixed
     {
+        $this->assertConversationContext();
         $this->error = null;
         $this->reportResult = null;
         $this->clarifyPeriodReport = null;
         $this->clarifyPeriodFilters = [];
         $this->ambiguousChoice = null;
+        $this->turnReports = [];
+        $this->turnClarification = null;
 
         $company = app(CompanyContext::class)->company();
         $actor = auth()->user();
@@ -277,12 +313,29 @@ final class AssistantLauncher extends Component
                 } catch (AssistantUnavailable) {
                     $classified = null;
                 }
-                if (($classified['kind'] ?? null) === 'transaction' && $canDoTransactions
-                    && ! app(AssistantTurnConstraints::class)->isReadInvoiceQuestion($this->text)) {
-                    return $this->prepareTransaction();
+                if (($classified['kind'] ?? null) === 'transaction') {
+                    if (! app(AssistantTurnConstraints::class)->isReadInvoiceQuestion($this->text)) {
+                        if (! $canDoTransactions) {
+                            $this->error = __('assistant_v2.tx_permission_required');
+
+                            return null;
+                        }
+
+                        return $this->prepareTransaction();
+                    }
+                } elseif (($classified['kind'] ?? null) === 'ambiguous_operation') {
+                    if ($canDoTransactions) {
+                        $this->ambiguousChoice = [
+                            'report_key' => $classified['report_key'],
+                            'text' => $this->text,
+                        ];
+
+                        return null;
+                    }
                 }
+
                 $result = app(AssistantTurnService::class)->run($company, $actor, $this->text,
-                    $this->formKey, session()->getId(), $this->turnContextToken);
+                    $this->requestKey, session()->getId(), $this->turnContextToken);
                 $this->turnReports = $result['reports'];
                 $this->turnContextToken = $result['conversation_token'];
                 $this->turnScope = $result['_authorization_scope'] ?? null;
@@ -291,6 +344,7 @@ final class AssistantLauncher extends Component
                     $this->ambiguousChoice = ['report_key' => null, 'text' => $this->text];
                 }
                 $this->formKey = (string) Str::uuid();
+                $this->requestKey = (string) Str::uuid();
 
                 return null;
             }
@@ -397,16 +451,40 @@ final class AssistantLauncher extends Component
 
     private function prepareTransaction(): mixed
     {
-        $result = app(TransactionAssistant::class)->prepare(
-            app(CompanyContext::class)->company(),
-            auth()->user(),
+        $company = app(CompanyContext::class)->company();
+        $actor = auth()->user();
+
+        $this->reportResult = null;
+        $this->turnReports = [];
+        $this->turnContextToken = $this->turnScope = $this->turnClarification = null;
+        $this->clarifyPeriodReport = null;
+        $this->clarifyPeriodFilters = [];
+        $this->ambiguousChoice = null;
+        if (app(CompanyContext::class)->hasCompany() && auth()->check()) {
+            app(AssistantQuestionContext::class)->clear($company, $actor, session()->getId());
+        }
+
+        $inputHash = hash('sha256', json_encode([$this->text, $this->context, $company->id, $actor->id,
+            hash('sha256', session()->getId())], JSON_THROW_ON_ERROR));
+        if ($this->draftInputHash !== null && ! hash_equals($this->draftInputHash, $inputHash)) {
+            // A changed description submitted by the human is a new turn. A retry
+            // of the same description retains its key and cannot bill twice.
+            app(AssistantDraftTurn::class)->cancel($company, $actor, $this->formKey, session()->getId());
+            $this->token = null;
+            $this->questions = $this->answers = [];
+            $this->formKey = (string) Str::uuid();
+            $this->requestKey = (string) Str::uuid();
+        }
+        $this->draftInputHash = $inputHash;
+
+        $result = app(AssistantDraftTurn::class)->prepare(
+            $company,
+            $actor,
             $this->text,
             $this->context,
+            $this->requestKey,
             $this->formKey,
-            (string) Str::uuid(),
             session()->getId(),
-            null,
-            null
         );
 
         return $this->present($result);
@@ -492,6 +570,7 @@ final class AssistantLauncher extends Component
 
     public function selectPeriod(string $preset): mixed
     {
+        $this->assertConversationContext();
         if ($this->clarifyPeriodReport === null) {
             return null;
         }
@@ -516,6 +595,7 @@ final class AssistantLauncher extends Component
 
     public function chooseOperation(string $choice): mixed
     {
+        $this->assertConversationContext();
         if ($this->ambiguousChoice === null) {
             return null;
         }
@@ -531,9 +611,31 @@ final class AssistantLauncher extends Component
             if ($choice === 'report') {
                 app(AiGovernance::class)->authorizeUse($company, auth()->user(), 'question');
 
+                $this->token = null;
+                $this->questions = $this->answers = [];
+
+                if (config('ai_assistant.turn_enabled') === true && $this->context === 'auto') {
+                    $result = app(AssistantTurnService::class)->run($company, auth()->user(), $this->text,
+                        $this->requestKey, session()->getId(), $this->turnContextToken);
+                    $this->turnReports = $result['reports'];
+                    $this->turnContextToken = $result['conversation_token'];
+                    $this->turnScope = $result['_authorization_scope'] ?? null;
+                    $this->turnClarification = in_array($result['status'], ['clarification', 'operation_choice'], true)
+                        ? ($result['reason'] ?? 'intent') : null;
+                    $this->formKey = (string) Str::uuid();
+                    $this->requestKey = (string) Str::uuid();
+
+                    return null;
+                }
+
                 return $reportKey === null ? $this->prepareQuestionProvider() : $this->prepareReportFromKey($reportKey);
             }
             if ($choice === 'transaction') {
+                $this->reportResult = null;
+                $this->turnReports = [];
+                $this->turnContextToken = $this->turnScope = $this->turnClarification = null;
+                $this->clarifyPeriodReport = null;
+                $this->clarifyPeriodFilters = [];
                 app(AssistantQuestionContext::class)->clear($company, auth()->user(), session()->getId());
 
                 return $this->prepareTransaction();
@@ -547,14 +649,23 @@ final class AssistantLauncher extends Component
 
     public function resetQuestion(): void
     {
-        if (app(CompanyContext::class)->hasCompany() && auth()->check()) {
-            app(AssistantQuestionContext::class)->clear(app(CompanyContext::class)->company(), auth()->user(), session()->getId());
+        $this->assertConversationContext();
+        $company = app(CompanyContext::class)->hasCompany() ? app(CompanyContext::class)->company() : null;
+        if ($company !== null && auth()->check()) {
+            if ($this->token !== null) {
+                app(AssistantDraftTurn::class)->cancel($company, auth()->user(), $this->formKey, session()->getId());
+            }
+            app(AssistantQuestionContext::class)->clear($company, auth()->user(), session()->getId());
         }
         $this->reportResult = null;
         $this->turnReports = [];
         $this->turnClarification = null;
-        // Keep the bounded opaque context for a natural next-period follow-up.
+        // Preserve the bounded A2 report context for an explicitly requested follow-up.
+        $this->token = null;
+        $this->questions = $this->answers = [];
+        $this->draftInputHash = null;
         $this->formKey = (string) Str::uuid();
+        $this->requestKey = (string) Str::uuid();
         $this->clarifyPeriodReport = null;
         $this->clarifyPeriodFilters = [];
         $this->ambiguousChoice = null;
@@ -564,6 +675,7 @@ final class AssistantLauncher extends Component
 
     public function receiveTranscript(string $transcript, ?string $token = null): void
     {
+        $this->assertConversationContext();
         app(AiGovernance::class)->authorizeLauncher(app(CompanyContext::class)->company(), auth()->user(), $this->context);
         if (mb_strlen($transcript) > 4000 || ! mb_check_encoding($transcript, 'UTF-8')) {
             $this->error = __('assistant_v2.error_input_invalid');
@@ -578,6 +690,7 @@ final class AssistantLauncher extends Component
 
     public function clarify(): mixed
     {
+        $this->assertConversationContext();
         if ($this->token === null) {
             abort(409);
         }
@@ -593,10 +706,18 @@ final class AssistantLauncher extends Component
             $answers[$question['path']] = $value;
         }
         try {
-            app(AiGovernance::class)->authorizeLauncher(app(CompanyContext::class)->company(), auth()->user(), $this->context);
+            $company = app(CompanyContext::class)->company();
+            $actor = auth()->user();
+            app(AiGovernance::class)->authorizeLauncher($company, $actor, $this->context);
 
-            return $this->present(app(TransactionAssistant::class)->clarify(app(CompanyContext::class)->company(),
-                auth()->user(), $this->token, session()->getId(), $this->formKey, $answers));
+            return $this->present(app(AssistantDraftTurn::class)->clarify(
+                $company,
+                $actor,
+                $this->token,
+                session()->getId(),
+                $this->formKey,
+                $answers
+            ));
         } catch (AssistantUnavailable $e) {
             $this->error = __('assistant_v2.error_'.$this->safeReason($e->diagnosticReason()));
 
@@ -606,25 +727,32 @@ final class AssistantLauncher extends Component
 
     public function reviseDescription(): void
     {
+        $this->assertConversationContext();
+        $this->draftInputHash = null;
         $company = app(CompanyContext::class)->hasCompany() ? app(CompanyContext::class)->company() : null;
         if ($company !== null && auth()->check()) {
-            app(TransactionAssistant::class)->cancel($company, auth()->user(), $this->formKey, session()->getId());
+            app(AssistantDraftTurn::class)->cancel($company, auth()->user(), $this->formKey, session()->getId());
         }
         $this->token = null;
         $this->questions = $this->answers = [];
         $this->reportResult = null;
+        $this->turnReports = [];
+        $this->turnContextToken = $this->turnScope = $this->turnClarification = null;
         $this->clarifyPeriodReport = null;
         $this->clarifyPeriodFilters = [];
         $this->ambiguousChoice = null;
         $this->formKey = (string) Str::uuid();
+        $this->requestKey = (string) Str::uuid();
         $this->error = null;
     }
 
     public function cancel(): void
     {
+        $this->assertConversationContext();
+        $this->draftInputHash = null;
         $company = app(CompanyContext::class)->hasCompany() ? app(CompanyContext::class)->company() : null;
         if ($company !== null && auth()->check()) {
-            app(TransactionAssistant::class)->cancel($company, auth()->user(), $this->formKey, session()->getId());
+            app(AssistantDraftTurn::class)->cancel($company, auth()->user(), $this->formKey, session()->getId());
             app(AssistantQuestionContext::class)->clear($company, auth()->user(), session()->getId());
         }
         $this->open = false;
@@ -639,13 +767,20 @@ final class AssistantLauncher extends Component
         $this->ambiguousChoice = null;
         $this->error = null;
         $this->formKey = (string) Str::uuid();
+        $this->requestKey = (string) Str::uuid();
     }
 
     /** @param array<string, mixed> $result */
     private function present(array $result): mixed
     {
         if ($result['state'] === 'handoff') {
-            return $this->redirectRoute($result['intent'] === 'sales' ? 'invoices.create' : 'purchases.create', ['assistant' => $result['token']]);
+            $intent = $result['intent'];
+            $token = $result['token'];
+            $this->token = null;
+            $this->questions = $this->answers = [];
+            $this->text = '';
+
+            return $this->redirectRoute($intent === 'sales' ? 'invoices.create' : 'purchases.create', ['assistant' => $token]);
         }
         if ($result['state'] === 'clarifying') {
             $this->token = $result['token'];
