@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Http\Controllers\Api\V1\AssistantTurnController;
 use App\Http\Controllers\Api\V1\LookupController;
 use App\Http\Controllers\Api\V1\SalesInvoiceApiController;
 use App\Http\Controllers\Api\V1\SessionApiController;
@@ -33,6 +34,8 @@ Route::prefix('api/v1')
 
         // Scoped company routes
         Route::prefix('companies/{companyId}')->group(function (): void {
+            Route::post('/assistant/turn', AssistantTurnController::class)->name('api.v1.assistant.turn');
+
             // Sales invoice command endpoints
             Route::prefix('sales/invoices')->group(function (): void {
                 Route::post('/draft', [SalesInvoiceApiController::class, 'storeDraft'])->name('api.v1.sales.invoices.draft');

@@ -25,7 +25,7 @@
                     </header>
                     <div class="ai-thread" aria-live="polite" aria-relevant="additions text">
                         <div x-show="sentText" x-cloak class="ai-user-turn" x-text="sentText"></div>
-                        @if ($reportResult === null && $clarifyPeriodReport === null && $ambiguousChoice === null && $questions === [])
+                        @if ($reportResult === null && $turnReports === [] && $turnClarification === null && $clarifyPeriodReport === null && $ambiguousChoice === null && $questions === [])
                             <div x-show="!sentText" class="ai-welcome">
                                 <h3>{{ __('ai_product.welcome') }}</h3>
                                 <p class="mt-2 text-sm leading-relaxed text-text-secondary">{{ __('ai_product.welcome_help') }}</p>
@@ -71,6 +71,9 @@
                         </div>
                     </details>
 
+                    @if ($turnReports !== [] || $turnClarification !== null)
+                        @include('livewire.ai.partials.turn-answers')
+                    @endif
                     @if ($reportResult !== null)
                         <div class="mt-4 space-y-3">
                             <div class="rounded-card border border-border bg-canvas p-4">

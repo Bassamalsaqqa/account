@@ -68,6 +68,10 @@ final class Phase11ApiBoundary
         'idempotency_key',
         'search',
         'limit',
+        'text',
+        'request_key',
+        'conversation_token',
+        'source',
     ];
 
     /**
@@ -84,7 +88,11 @@ final class Phase11ApiBoundary
         $request->attributes->set('trace_id', $traceId);
 
         // 2. Feature Off Gate: MUST return 404 BEFORE session, CSRF, auth, or DB queries
-        if (! (bool) config('commands.api_enabled', false)) {
+        $assistantTurnPath = preg_match('#^api/v1/companies/[^/]+/assistant/turn$#D', $request->path()) === 1;
+        $enabled = $assistantTurnPath
+            ? $request->isMethod('POST') && config('ai_assistant.enabled') === true && config('ai_assistant.turn_enabled') === true
+            : (bool) config('commands.api_enabled', false);
+        if (! $enabled) {
             return self::buildProblem(
                 title: 'Not Found',
                 status: 404,
@@ -288,6 +296,17 @@ final class Phase11ApiBoundary
         }
 
         $rawContent = (string) $response->getContent();
+
+        // Only the bounded turn endpoint may preserve an allowlisted availability category.
+        if ($status === 503 && $request->isMethod('POST')
+            && preg_match('#^api/v1/companies/[^/]+/assistant/turn$#D', $request->path()) === 1) {
+            $decoded = json_decode($rawContent, true);
+            $category = is_array($decoded) ? ($decoded['category'] ?? null) : null;
+            if (in_array($category, ['provider_unavailable', 'consent_required', 'budget_exceeded', 'context_expired', 'unavailable'], true)) {
+                return self::buildProblem('Service Unavailable', 503, 'The assistant is currently unavailable.', $traceId,
+                    extra: ['category' => $category], preserveResponse: $response);
+            }
+        }
 
         // Handle 422 Validation: whitelist actual supported field names, generic fixed messages
         if ($status === 422) {

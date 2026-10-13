@@ -17,6 +17,7 @@ final readonly class AssistantReportDto
      * @param  array{base_currency_code: string, filter_currency_code: ?string}  $currency
      * @param  array{preset: string, start_date: string, end_date: string, timezone: string}|null  $period
      * @param  array<string, mixed>|null  $scope
+     * @param  array<string, mixed>|null  $comparison  Bounded adjacent comparison data
      */
     public function __construct(
         public string $reportKey,
@@ -33,6 +34,7 @@ final readonly class AssistantReportDto
         public ?array $period = null,
         public ?string $asOf = null,
         public ?array $scope = null,
+        public ?array $comparison = null,
     ) {}
 
     /** @return array<string, mixed> */
@@ -53,6 +55,7 @@ final readonly class AssistantReportDto
             'period' => $this->period,
             'as_of' => $this->asOf,
             'scope' => $this->scope,
+            'comparison' => $this->comparison,
         ];
     }
 }

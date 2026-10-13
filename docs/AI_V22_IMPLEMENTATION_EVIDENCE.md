@@ -16,18 +16,18 @@ Model planning will remain one outbound response followed by local authorized ex
 
 | Package | Current state | Review boundary |
 |---|---|---|
-| Gate 0 SDK tool-intent contract | SOURCE CHECKPOINT COMPLETE; INDEPENDENT ACCEPTANCE PENDING | Fake provider envelopes, bounds, no execution/retransmission |
-| A1 free connection health | SOURCE CHECKPOINT COMPLETE; INDEPENDENT ACCEPTANCE PENDING | Owner/key/revision checks; zero paid reservation; truthful setup status |
-| A2 company-scoped turn orchestration | NOT RUN | Session/company binding, idempotency, one planning call, canonical local answers |
+| Gate 0 SDK tool-intent contract | ACCEPTED at PR #38 head 53282ff; MERGED as 45f7a1a; NOT DEPLOYED by this work | Fake provider envelopes, bounds, no execution/retransmission |
+| A1 free connection health | ACCEPTED with Gate 0; preservation-first source package prepared | Owner/key/revision checks; zero paid reservation; truthful setup status |
+| A2 company-scoped turn orchestration | SOURCE IMPLEMENTED; focused QA passed; independent acceptance pending | Session/company binding, idempotency, one planning call, canonical local answers |
 | A3 existing-party unsaved handoffs | Existing regressions carried; V2.2 integration NOT RUN | No walk-in/master-data creation, no Save/Post |
 | A4 thin drawer and cancellable voice submission | NOT RUN | Final transcript only, quiet/grace cancellation, one turn request |
 | A5 zero-model briefing | NOT RUN | Canonical permissions, periods/currencies, zero provider traffic |
 | A6 shell-only PWA | NOT RUN | No offline financial data or native credentials |
 | A7 external narrative | FUTURE / NOT AUTHORIZED | Separate privacy and worst-case cost acceptance required |
 
-The natural-language/report expansion work remains in a separate isolated development worktree for reconciliation into A2. Its earlier explicit-Send-only voice behavior is superseded by A4; it is not claimed as complete V2.2 implementation.
+The reviewed canonical report adapters have now been integrated into A2. The earlier natural-language worktree and protected originals remain preserved. A4 automatic voice submission is not claimed by this A2 milestone. See [A2 source handoff](AI_V22_A2_SOURCE_HANDOFF.md) for current evidence and limitations.
 
-## Verification and release
+## Historical Gate 0 / A1 verification and release
 
 AGY headless availability was verified with a literal `Hello` response. Its bounded health implementation reached the worker time checkpoint without a final completion report. Codex inspected the partial work, corrected it, and independently completed verification. Worker output is not acceptance.
 
@@ -67,3 +67,7 @@ Scope limitation: this checkpoint controls setup verification and Start Using; i
 AGY's isolated correction attempt timed out without producing changes. Codex completed the corrections and verification. A separate read-only source review found the empty-object edge case, which was fixed and included in the final passing run. No protected Owner original or unrelated worktree was changed; ignored local QA/worker artifacts are deliberately retained.
 
 No live paid calls, production financial mutations, counter resets, cap increases, merges or deployment are part of this source checkpoint. Production Owner-verified connection success remains historical evidence; development fake responses do not certify real dictation accuracy, billing or live tool behavior.
+
+## Current A2 checkpoint
+
+A2 starts from merged accepted main `45f7a1a61e2af8312bda97734def291cffaa8427` on `feature/ai-v22-accounting-turn`. The protected Owner specification hash is unchanged. The [A2 handoff](AI_V22_A2_SOURCE_HANDOFF.md) supersedes historical statements that A2 had not begun. A2 is submitted for independent review; source acceptance, production release, actual model-language quality and microphone accuracy are not inferred from synthetic evidence. No A2 merge or deployment is authorized by this milestone.
