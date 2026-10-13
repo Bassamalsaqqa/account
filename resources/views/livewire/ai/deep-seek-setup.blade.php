@@ -10,9 +10,24 @@
             <x-icon :name="$connectionStatus === 'verified' ? 'check-circle' : 'shield'" class="h-4 w-4" />
             <span>{{ __('ai_product.'.match ($connectionStatus) { 'verified' => 'status_verified', 'configured_unverified' => 'status_configured', default => 'status_unconfigured' }) }}</span>
         </div>
+        <p class="mt-2 text-xs text-text-secondary">{{ __('ai_product.conversation_not_tested') }}</p>
+        @if ($latestHealth)
+            <p class="mt-2 text-sm {{ $latestHealth['status'] === 'key_valid_funds_available' ? 'text-text-secondary' : 'text-danger' }}"
+                role="{{ $latestHealth['status'] === 'key_valid_funds_available' ? 'status' : 'alert' }}">
+                {{ __('ai_product.latest_health') }}: {{ __('ai_product.result_'.$latestHealth['status']) }}
+                <time class="block mt-1 text-xs" datetime="{{ $latestHealth['checked_at'] }}">{{ $latestHealth['checked_at'] }}</time>
+            </p>
+        @endif
+        @if ($connectionStatus !== 'not_configured' && ! $needsTransition)
+            <button type="button" wire:click="refreshHealth" wire:loading.attr="disabled" wire:target="refreshHealth,testConnection"
+                class="ai-send mt-4"><x-icon name="shield" class="h-4 w-4" />{{ __('ai_product.refresh_health') }}</button>
+            <span wire:loading wire:target="refreshHealth" role="status" class="text-sm text-text-secondary">{{ __('ai_product.checking_health') }}</span>
+        @endif
         @if ($needsTransition)
             <p class="mt-4 rounded-control bg-info-bg p-3 text-sm leading-relaxed text-info">{{ __('ai_product.existing_settings') }}</p>
         @endif
+        <details class="mt-5" @if ($connectionStatus === 'not_configured' || $needsTransition || $companyDisabled) open @endif>
+        <summary class="cursor-pointer text-sm font-semibold">{{ __('ai_product.'.($connectionStatus === 'not_configured' ? 'connect_key' : 'manage_key')) }}</summary>
         <form x-data="{ key: '', password: '', consent: false, busy: false }"
             @submit.prevent="if (!busy) { busy = true; const pending = $wire.testConnection(key, password, consent); key = ''; password = ''; pending.finally(() => busy = false); }"
             class="mt-5 space-y-4" autocomplete="off">
@@ -51,11 +66,12 @@
         @if ($status !== 'idle')
             <button type="button" wire:click="allowAnotherTest" class="mt-3 text-sm text-primary underline">{{ __('ai_product.another_test') }}</button>
         @endif
-        @if ($message)
+        </details>
+        @if ($message && ($latestHealth === null || $message !== __('ai_product.result_'.$latestHealth['status'])))
             <p role="{{ $status === 'verified' ? 'status' : 'alert' }}" class="mt-4 rounded-control p-3 text-sm leading-relaxed {{ $status === 'verified' ? 'bg-success-bg text-success' : 'bg-danger-bg text-danger' }}">{{ $message }}</p>
         @endif
         @if ($errors->any())<div role="alert" class="mt-4 text-sm text-danger"><ul>@foreach ($errors->all() as $error)<li>{{ $error }}</li>@endforeach</ul></div>@endif
-        @if ($connectionStatus === 'verified' && ! $companyDisabled && ! $needsTransition)
+        @if ($canStartUsing && ! $companyDisabled && ! $needsTransition)
             <button type="button" wire:click="startUsing" wire:loading.attr="disabled" wire:target="startUsing" class="ai-send mt-5"><x-icon name="sparkles" class="h-4 w-4" />{{ __('ai_product.start_using') }}</button>
         @endif
     @endif

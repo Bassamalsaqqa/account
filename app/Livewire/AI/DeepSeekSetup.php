@@ -26,6 +26,9 @@ final class DeepSeekSetup extends Component
     public string $requestKey;
 
     #[Locked]
+    public string $refreshRequestKey;
+
+    #[Locked]
     public int $policyRevision;
 
     #[Locked]
@@ -44,6 +47,7 @@ final class DeepSeekSetup extends Component
         $this->companyId = (int) $context->company()->id;
         $this->sessionHash = hash('sha256', session()->getId());
         $this->requestKey = (string) Str::uuid();
+        $this->refreshRequestKey = (string) Str::uuid();
         $this->authorizeSetup();
         $this->refreshRevisions();
     }
@@ -71,7 +75,7 @@ final class DeepSeekSetup extends Component
             $key, $password, $consent, $this->requestKey, $this->policyRevision, $this->connectionRevision);
         $this->dispatch('ai:usage-changed');
         $this->status = $result['status'];
-        $reason = $result['reason'] ?? 'verified';
+        $reason = $result['reason'] ?? ($result['status'] === 'verified' ? 'key_valid_funds_available' : 'unavailable');
         $this->message = __('ai_product.result_'.$reason);
         if ($this->message === 'ai_product.result_'.$reason) {
             $this->message = __('ai_product.result_unavailable');
@@ -79,7 +83,23 @@ final class DeepSeekSetup extends Component
         $this->refreshRevisions();
     }
 
-    /** A new paid attempt always requires a separate explicit user action. */
+    /** Read-only refresh uses existing scoped consent; it cannot configure or replace a key. */
+    public function refreshHealth(): void
+    {
+        $this->authorizeSetup();
+        $result = app(DeepSeekQuickConnect::class)->refreshHealth(app(CompanyContext::class)->company(), auth()->user(),
+            $this->refreshRequestKey, $this->policyRevision, $this->connectionRevision);
+        $this->status = $result['status'];
+        $reason = $result['reason'] ?? 'unavailable';
+        $this->message = __('ai_product.result_'.$reason);
+        if ($this->message === 'ai_product.result_'.$reason) {
+            $this->message = __('ai_product.result_unavailable');
+        }
+        $this->refreshRequestKey = (string) Str::uuid();
+        $this->refreshRevisions();
+    }
+
+    /** A new provisioning attempt always requires a separate explicit user action. */
     public function allowAnotherTest(): void
     {
         $this->authorizeSetup();
@@ -138,6 +158,8 @@ final class DeepSeekSetup extends Component
         return view('livewire.ai.deep-seek-setup', [
             'ownerAuthorized' => true, 'connectionStatus' => $service->getConnectionStatus($company),
             'disclosure' => $service->disclosure($company), 'needsTransition' => $service->needsTransition($company),
+            'latestHealth' => $service->latestHealth($company),
+            'canStartUsing' => $service->canStartUsing($company, auth()->user()),
             'companyDisabled' => AiCompanyPolicy::where('company_id', $company->id)->where('enabled', false)->exists(),
         ]);
     }
