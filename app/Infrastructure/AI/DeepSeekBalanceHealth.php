@@ -8,24 +8,19 @@ use App\Application\AI\AiDiagnostics;
 use App\Application\AI\AiProviderDeadline;
 use App\Application\AI\AssistantUnavailable;
 use App\Application\AI\ProviderCredential;
-use GuzzleHttp\Handler\CurlHandler;
-use GuzzleHttp\Psr7\FnStream;
-use GuzzleHttp\Psr7\Utils;
 use Illuminate\Http\Client\ConnectionException;
-use Illuminate\Http\Client\Response;
-use Illuminate\Support\Facades\Http;
-use Psr\Http\Message\RequestInterface;
+use Psr\Http\Message\StreamInterface;
 use Throwable;
 
 final class DeepSeekBalanceHealth
 {
     public const string ENDPOINT = 'https://api.deepseek.com/user/balance';
 
-    public const int MAX_RESPONSE_BYTES = 65536;
+    public const int MAX_RESPONSE_BYTES = DeepSeekHttpBoundary::BALANCE_MAX_BYTES;
 
-    public const int CONNECT_TIMEOUT_SECONDS = 5;
+    public const int CONNECT_TIMEOUT_SECONDS = DeepSeekHttpBoundary::CONNECT_TIMEOUT_SECONDS;
 
-    public const int REQUEST_TIMEOUT_SECONDS = 10;
+    public const int REQUEST_TIMEOUT_SECONDS = DeepSeekHttpBoundary::BALANCE_REQUEST_TIMEOUT_SECONDS;
 
     /**
      * Executes a zero-model HTTPS GET /user/balance health check.
@@ -37,52 +32,18 @@ final class DeepSeekBalanceHealth
     public function check(ProviderCredential $credential): string
     {
         return $credential->use(function (string $secret): string {
+            $deadline = app(AiProviderDeadline::class);
+            /** @var StreamInterface|null $sink */
+            $sink = null;
+            $client = DeepSeekHttpBoundary::createBalanceRequest(
+                $secret,
+                self::REQUEST_TIMEOUT_SECONDS,
+                $deadline,
+                $sink,
+            );
             try {
-                $deadline = app(AiProviderDeadline::class);
-                $remaining = $deadline->remaining();
-                $timeout = min(self::REQUEST_TIMEOUT_SECONDS, max(1, $remaining));
-                $connectTimeout = min(self::CONNECT_TIMEOUT_SECONDS, $timeout);
-
-                $buffer = Utils::streamFor('');
-                $received = 0;
-                $sink = FnStream::decorate($buffer, ['write' => function (string $bytes) use ($buffer, &$received, $deadline): int {
-                    $deadline->remaining();
-                    if (strlen($bytes) > self::MAX_RESPONSE_BYTES - $received) {
-                        throw new AssistantUnavailable('provider_invalid', failureStage: 'provider_response');
-                    }
-                    $received += strlen($bytes);
-
-                    return $buffer->write($bytes);
-                }]);
-                $curl = new CurlHandler;
-                $response = Http::withToken($secret)
-                    ->setHandler(function (RequestInterface $request, array $options) use ($curl, $sink) {
-                        $options['sink'] = $sink;
-
-                        return $curl($request, $options);
-                    })
-                    ->acceptJson()
-                    ->connectTimeout($connectTimeout)
-                    ->timeout($timeout)
-                    ->withoutRedirecting()
-                    ->withOptions([
-                        'verify' => true,
-                        'stream' => true,
-                        'proxy' => '',
-                        'expect' => false,
-                        'read_timeout' => 5,
-                        'curl' => [CURLOPT_LOW_SPEED_LIMIT => 1, CURLOPT_LOW_SPEED_TIME => 5],
-                    ])
-                    ->get(self::ENDPOINT);
-
-                if (! $response->successful()) {
-                    $status = $response->status();
-                    $reason = AssistantUnavailable::mapHttpStatusToReason($status);
-                    $failure = new AssistantUnavailable($reason, $status, 'provider_http');
-                    throw $failure;
-                }
-
-                $bytes = $this->readBoundedBody($response);
+                $response = $client->get(self::ENDPOINT);
+                $bytes = DeepSeekHttpBoundary::readBoundedBody($response, self::MAX_RESPONSE_BYTES, $deadline);
                 $data = $this->decodeAndValidate($bytes);
 
                 return $data['is_available'] ? 'key_valid_funds_available' : 'no_available_credit';
@@ -101,48 +62,9 @@ final class DeepSeekBalanceHealth
                 if (isset($response)) {
                     $response->toPsrResponse()->getBody()->close();
                 }
-                if (isset($sink)) {
-                    $sink->close();
-                }
+                $sink->close();
             }
         });
-    }
-
-    /**
-     * Reads response stream in bounded chunks up to MAX_RESPONSE_BYTES.
-     * Rejects oversized responses BEFORE unbounded JSON decode.
-     */
-    private function readBoundedBody(Response $response): string
-    {
-        $stream = $response->toPsrResponse()->getBody();
-        if ($stream->isSeekable()) {
-            $stream->rewind();
-        }
-
-        $bytes = '';
-        while (strlen($bytes) <= self::MAX_RESPONSE_BYTES) {
-            if ($stream->eof()) {
-                break;
-            }
-            app(AiProviderDeadline::class)->remaining();
-            $chunk = $stream->read(min(8192, self::MAX_RESPONSE_BYTES + 1 - strlen($bytes)));
-            if ($chunk === '') {
-                throw new AssistantUnavailable('provider_timeout', failureStage: 'provider_transport');
-            }
-            $bytes .= $chunk;
-        }
-
-        if (strlen($bytes) > self::MAX_RESPONSE_BYTES) {
-            throw new AssistantUnavailable('provider_invalid', failureStage: 'provider_response');
-        }
-
-        app(AiProviderDeadline::class)->remaining();
-        $extra = $stream->read(1);
-        if ($extra !== '') {
-            throw new AssistantUnavailable('provider_invalid', failureStage: 'provider_response');
-        }
-
-        return $bytes;
     }
 
     /**
