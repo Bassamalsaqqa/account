@@ -130,7 +130,7 @@ class AssistantConsentScopeTest extends TestCase
         Http::assertNothingSent();
     }
 
-    public function test_transaction_and_report_scope_changes_invalidate_only_the_affected_purpose(): void
+    public function test_transaction_scope_changes_affect_its_consent_but_report_permissions_are_independent(): void
     {
         $this->consent();
         $this->consent('question');
@@ -141,7 +141,7 @@ class AssistantConsentScopeTest extends TestCase
         $this->consent();
         $settings['questions']['allowed_reports'] = ['sales.summary'];
         $this->aiPolicy->update(['settings' => $settings]);
-        Livewire::test(AssistantLauncher::class)->call('showAssistant')->assertSet('consent', true)->assertSet('questionConsent', false);
+        Livewire::test(AssistantLauncher::class)->call('showAssistant')->assertSet('consent', true)->assertSet('questionConsent', true);
         Http::assertNothingSent();
     }
 
