@@ -1,6 +1,11 @@
 <?php
 
 return [
+    'refresh_health' => 'Refresh connection health',
+    'checking_health' => 'Checking connection health…',
+    'latest_health' => 'Latest health check',
+    'connect_key' => 'Connect your key',
+    'manage_key' => 'Replace key or review consent',
     'another_test' => 'Prepare another test (free balance check)',
     'result_verified' => 'DeepSeek responded successfully. You can start using the assistant.',
     'result_key_valid_funds_available' => 'Your key is valid and credit is available. You can start using the assistant.',
@@ -56,7 +61,7 @@ return [
     'test_help' => 'Free balance check. No model tokens are billed. No automatic retries.',
     'start_using' => 'Start using AI',
     'status_configured' => 'Key saved — connection not tested',
-    'status_verified' => 'Key verified — credit available',
+    'status_verified' => 'Key previously verified',
     'status_unconfigured' => 'Not connected yet',
     'password_help' => 'Confirm your password to protect this connection.',
     'setup_consent' => 'I approve sending my chosen text to DeepSeek under the displayed privacy terms and limits.',

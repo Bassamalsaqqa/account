@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\AI;
 
+use App\Application\AI\AssistantIntentProposal;
+use App\Application\Reporting\DTO\ReportPeriod;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Laravel\Ai\Contracts\Tool;
 use Laravel\Ai\Tools\Request;
@@ -36,7 +38,7 @@ final class DeepSeekPlanningTool implements Tool
     public function description(): string
     {
         return $this->toolName === 'run_report'
-            ? 'Propose an approved read-only report. Preserve requested names, period and currency. Never invent identifiers or figures.'
+            ? 'Propose an approved read-only report, not an executable query. Preserve raw names, period and currency; never invent IDs or figures. Custom dates must be paired, ordered and at most 366 days; never combine them with a non-custom preset. Comparisons require an explicit period. A2 must authorize and resolve every constraint locally.'
             : 'Request human clarification when intent, entity, period or currency is ambiguous or unsupported.';
     }
 
@@ -47,10 +49,15 @@ final class DeepSeekPlanningTool implements Tool
             return ['version' => $version, 'reason' => $schema->string()->enum(self::CLARIFICATION_REASONS)->required()];
         }
         $filters = [];
-        foreach (['preset', 'start_date', 'end_date', 'currency_code', 'grouping', 'customer_name',
-            'vendor_name', 'product_name', 'warehouse_name', 'category_name', 'compare'] as $key) {
-            $filters[$key] = $schema->string()->min(1)->max(255);
+        foreach (AssistantIntentProposal::NAME_FILTERS as $key) {
+            $filters[$key] = $schema->string()->min(1)->max(AssistantIntentProposal::MAX_NAME_LENGTH);
         }
+        $filters['preset'] = $schema->string()->enum(ReportPeriod::ALLOWED_PRESETS);
+        $filters['start_date'] = $schema->string()->format('date');
+        $filters['end_date'] = $schema->string()->format('date');
+        $filters['currency_code'] = $schema->string()->pattern('^[A-Z]{3}$');
+        $filters['grouping'] = $schema->string()->enum(AssistantIntentProposal::GROUPINGS);
+        $filters['compare'] = $schema->string()->enum(AssistantIntentProposal::COMPARISONS);
 
         return ['version' => $version, 'type' => $schema->string()->enum(['report_query'])->required(),
             'report_key' => $schema->string()->enum($this->reportKeys)->required(),

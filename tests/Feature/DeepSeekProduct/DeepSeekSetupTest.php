@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Tests\Feature\DeepSeekProduct;
 
+use App\Application\AI\AiGovernance;
+use App\Application\AI\AiProviderDeadline;
 use App\Application\AI\AiProviderRoutes;
 use App\Application\AI\AssistantUnavailable;
 use App\Application\AI\DeepSeekDefaults;
@@ -17,12 +19,15 @@ use App\Models\AssistantRequest;
 use App\Models\CompanyUser;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Http\Client\Factory;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 use Livewire\Livewire;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\Support\Phase12\AssistantFixtures;
 use Tests\TestCase;
 
@@ -92,6 +97,16 @@ class DeepSeekSetupTest extends TestCase
         $connection = $service->findExistingConnection($this->company);
         $service->transition($this->company, $this->owner, 'synthetic-owner-password', (int) $policy->fresh()->revision,
             ($connection === null ? 0 : (int) $connection->revision));
+    }
+
+    private function establishVerifiedKey(): void
+    {
+        Http::fake(fn () => Http::response($this->reply()));
+        $this->assertSame('verified', $this->connect()['status']);
+        // Each synthetic subsequent request has a fresh HTTP factory and request deadline.
+        Http::swap(new Factory);
+        Http::preventStrayRequests();
+        app()->forgetInstance(AiProviderDeadline::class);
     }
 
     public function test_fresh_owner_key_test_use_is_truthful_encrypted_and_unsaved(): void
@@ -368,6 +383,157 @@ class DeepSeekSetupTest extends TestCase
             Http::assertNothingSent();
             $this->assertDatabaseCount('assistant_requests', 0);
         }
+    }
+
+    /** @return list<array{string, string}> */
+    public static function transientHealthFailures(): array
+    {
+        return [['timeout', 'provider_timeout'], ['429', 'provider_rate_limit'], ['500', 'provider_outage'], ['malformed', 'provider_invalid']];
+    }
+
+    #[DataProvider('transientHealthFailures')]
+    public function test_transient_saved_key_refresh_preserves_verified_state_and_reports_latest_failure(string $case, string $reason): void
+    {
+        $this->establishVerifiedKey();
+        $connection = AiProviderConnection::sole();
+        $before = $connection->getRawOriginal();
+        $policy = AiCompanyPolicy::sole()->getRawOriginal();
+        $consents = AiUserPreference::sole()->getRawOriginal();
+        $attempted = 0;
+        Http::fake(function () use ($case, &$attempted) {
+            $attempted++;
+            if ($case === 'timeout') {
+                throw new ConnectionException('synthetic private timeout');
+            }
+
+            return $case === 'malformed' ? Http::response('{bad') : Http::response([], (int) $case);
+        });
+        $component = Livewire::test(DeepSeekSetup::class)->call('refreshHealth')
+            ->assertSet('status', 'failed')->assertSee(__('ai_product.result_'.$reason))
+            ->assertSee('Key previously verified')->assertSee('Start using AI');
+        $this->assertSame($before, $connection->fresh()->getRawOriginal());
+        $this->assertSame($policy, AiCompanyPolicy::sole()->getRawOriginal());
+        $this->assertSame($consents, AiUserPreference::sole()->getRawOriginal());
+        $this->assertSame($reason, app(DeepSeekQuickConnect::class)->latestHealth($this->company)['status']);
+        $component->call('startUsing')->assertDispatched('ai:open-assistant');
+        $this->assertDatabaseCount('assistant_requests', 0);
+        $this->assertSame(1, $attempted);
+        Http::assertSentCount($case === 'timeout' ? 0 : 1);
+    }
+
+    public function test_saved_key_refresh_is_one_click_reusable_and_does_not_mint_consent(): void
+    {
+        $this->establishVerifiedKey();
+        $before = AiUserPreference::sole()->getRawOriginal();
+        Http::fake(fn () => Http::response($this->reply()));
+        $component = Livewire::test(DeepSeekSetup::class)->assertSee('Refresh connection health');
+        $requestKey = $component->get('refreshRequestKey');
+        $component->call('refreshHealth')->assertSet('status', 'verified');
+        $this->assertNotSame($requestKey, $component->get('refreshRequestKey'));
+        $component->call('refreshHealth')->assertSet('status', 'verified');
+        $this->assertSame($before, AiUserPreference::sole()->getRawOriginal());
+        Http::assertSentCount(2);
+        $this->assertDatabaseCount('assistant_requests', 0);
+    }
+
+    public function test_saved_key_refresh_requires_current_consent_without_creating_it(): void
+    {
+        $connection = $this->legacyConnection();
+        $policy = $this->legacyPolicy(settings: ['text_connection' => $connection->public_id]);
+        $this->transition($policy);
+        Livewire::test(DeepSeekSetup::class)->call('refreshHealth')->assertSet('status', 'failed')
+            ->assertSee(__('ai_product.result_consent'));
+        $this->assertDatabaseCount('ai_user_preferences', 0);
+        Http::assertNothingSent();
+    }
+
+    public function test_material_privacy_change_blocks_refresh_without_implicit_reconsent(): void
+    {
+        $this->establishVerifiedKey();
+        $policy = AiCompanyPolicy::sole();
+        $settings = $policy->settings;
+        $settings['privacy']['retention'] = 'Changed synthetic disclosure';
+        $policy->update(['settings' => $settings, 'revision' => $policy->revision + 1]);
+        $before = AiUserPreference::sole()->getRawOriginal();
+        Http::fake();
+        Livewire::test(DeepSeekSetup::class)->call('refreshHealth')->assertSet('status', 'failed');
+        $this->assertSame($before, AiUserPreference::sole()->getRawOriginal());
+        Http::assertNothingSent();
+    }
+
+    public function test_authoritative_401_marks_saved_key_unverified_without_revealing_provider_body(): void
+    {
+        $this->establishVerifiedKey();
+        Http::fake(fn () => Http::response(['error' => 'private provider body'], 401));
+        Livewire::test(DeepSeekSetup::class)->call('refreshHealth')->assertSet('status', 'failed')
+            ->assertDontSee('Start using AI')->assertDontSee('private provider body');
+        $this->assertSame('configured_unverified', AiProviderConnection::sole()->verification_status);
+        $this->assertSame('provider_authentication', app(DeepSeekQuickConnect::class)->latestHealth($this->company)['status']);
+        $this->assertFalse(app(DeepSeekQuickConnect::class)->canStartUsing($this->company, $this->owner));
+        Http::assertSentCount(1);
+    }
+
+    public function test_empty_no_credit_refresh_preserves_old_key_verification_but_prevents_start(): void
+    {
+        $this->establishVerifiedKey();
+        Http::fake(fn () => Http::response(['is_available' => false, 'balance_infos' => []]));
+        $component = Livewire::test(DeepSeekSetup::class)->call('refreshHealth')->assertSet('status', 'failed');
+        $this->assertSame('verified', AiProviderConnection::sole()->verification_status);
+        $this->assertSame('no_available_credit', app(DeepSeekQuickConnect::class)->latestHealth($this->company)['status']);
+        $component->call('startUsing')->assertNotDispatched('ai:open-assistant');
+        Http::assertSentCount(1);
+    }
+
+    public function test_replaced_key_timeout_stays_unverified_and_does_not_inherit_old_health(): void
+    {
+        $this->establishVerifiedKey();
+        $oldRevision = AiProviderConnection::sole()->revision;
+        $attempted = 0;
+        Http::fake(function () use (&$attempted) {
+            $attempted++;
+            throw new ConnectionException('synthetic timeout');
+        });
+        $this->assertSame('provider_timeout', $this->connect('synthetic-replacement-key-never-real')['reason']);
+        $connection = AiProviderConnection::sole();
+        $this->assertSame($oldRevision + 1, $connection->revision);
+        $this->assertSame('configured_unverified', $connection->verification_status);
+        $this->assertSame('provider_timeout', app(DeepSeekQuickConnect::class)->latestHealth($this->company)['status']);
+        $this->assertFalse(app(DeepSeekQuickConnect::class)->canStartUsing($this->company, $this->owner));
+        $this->assertSame(1, $attempted);
+    }
+
+    public function test_refresh_rechecks_membership_even_after_transient_error(): void
+    {
+        $this->establishVerifiedKey();
+        $attempted = 0;
+        Http::fake(function () use (&$attempted) {
+            $attempted++;
+            CompanyUser::where('company_id', $this->company->id)->where('user_id', $this->owner->id)->update(['status' => 'inactive']);
+            throw new ConnectionException('synthetic timeout');
+        });
+        Livewire::test(DeepSeekSetup::class)->call('refreshHealth')->assertForbidden();
+        $this->assertSame('verified', AiProviderConnection::sole()->verification_status);
+        $this->assertSame('key_valid_funds_available', app(DeepSeekQuickConnect::class)->latestHealth($this->company)['status']);
+        $this->assertSame(1, $attempted);
+    }
+
+    public function test_refresh_rechecks_revisions_and_cannot_verify_concurrent_key_replacement(): void
+    {
+        $this->establishVerifiedKey();
+        Http::fake(function () {
+            $connection = AiProviderConnection::sole();
+            app(AiGovernance::class)->provision($this->company, $this->owner, [
+                'provider' => 'deepseek', 'model' => 'deepseek-flash', 'region' => 'global',
+                'capability' => 'text_structured', 'credential_source' => 'company_byok',
+            ], 'synthetic-concurrent-key-never-real', 'synthetic-owner-password', $connection->public_id);
+
+            return Http::response($this->reply());
+        });
+        Livewire::test(DeepSeekSetup::class)->call('refreshHealth')->assertSet('status', 'failed')
+            ->assertSee(__('ai_product.result_proposal_stale'));
+        $this->assertSame('configured_unverified', AiProviderConnection::sole()->verification_status);
+        $this->assertNull(app(DeepSeekQuickConnect::class)->latestHealth($this->company));
+        Http::assertSentCount(1);
     }
 
     public function test_free_health_has_separate_throttle_and_preserves_zero_model_caps_and_unknown_history(): void

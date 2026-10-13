@@ -8,11 +8,13 @@ use App\Infrastructure\AI\DeepSeekBalanceHealth;
 use App\Models\AiCompanyPolicy;
 use App\Models\AiProviderConnection;
 use App\Models\AssistantRequest;
+use App\Models\AuditEvent;
 use App\Models\Company;
 use App\Models\CompanyUser;
 use App\Models\User;
 use App\Services\Audit\AuditService;
 use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\RateLimiter;
@@ -198,15 +200,36 @@ final class DeepSeekQuickConnect
         #[SensitiveParameter] string $password, bool $consent, string $requestKey,
         int $expectedPolicyRevision, int $expectedConnectionRevision): array
     {
+        return $this->checkConnection($company, $actor, $key, $password, $consent, $requestKey,
+            $expectedPolicyRevision, $expectedConnectionRevision, false);
+    }
+
+    /** Read-only saved-key refresh. Never provisions keys, changes policy or grants consent.
+     * @return array{status: string, reason: ?string}
+     */
+    public function refreshHealth(Company $company, User $actor, string $requestKey,
+        int $expectedPolicyRevision, int $expectedConnectionRevision): array
+    {
+        return $this->checkConnection($company, $actor, '', '', false, $requestKey,
+            $expectedPolicyRevision, $expectedConnectionRevision, true);
+    }
+
+    /** @return array{status: string, reason: ?string} */
+    private function checkConnection(Company $company, User $actor, #[SensitiveParameter] string $key,
+        #[SensitiveParameter] string $password, bool $consent, string $requestKey,
+        int $expectedPolicyRevision, int $expectedConnectionRevision, bool $refresh): array
+    {
         try {
             if (! Str::isUuid($requestKey)) {
                 throw new AssistantUnavailable('input_invalid');
             }
-            [$connection, $credential, $establishedPolicyRevision, $establishedConnectionRevision] = DB::transaction(function () use ($company, $actor, $key, $password, $consent, $requestKey, $expectedPolicyRevision, $expectedConnectionRevision): array {
+            [$connection, $credential, $establishedPolicyRevision, $establishedConnectionRevision] = DB::transaction(function () use ($company, $actor, $key, $password, $consent, $requestKey, $expectedPolicyRevision, $expectedConnectionRevision, $refresh): array {
                 $this->authorize($company, $actor);
-                app(AiGovernance::class)->confirmOwner($company, $actor, $password);
-                if (! $consent) {
-                    throw new AssistantUnavailable('consent');
+                if (! $refresh) {
+                    app(AiGovernance::class)->confirmOwner($company, $actor, $password);
+                    if (! $consent) {
+                        throw new AssistantUnavailable('consent');
+                    }
                 }
                 $policy = AiCompanyPolicy::where('company_id', $company->id)->lockForUpdate()->first();
                 $connection = $this->findExistingConnection($company);
@@ -227,7 +250,7 @@ final class DeepSeekQuickConnect
                 }
                 RateLimiter::hit($throttleKey, 60);
                 $governance = app(AiGovernance::class);
-                if ($key !== '') {
+                if (! $refresh && $key !== '') {
                     $connection = $governance->provision($company, $actor, [
                         'provider' => DeepSeekDefaults::PROVIDER, 'model' => DeepSeekDefaults::MODEL,
                         'region' => DeepSeekDefaults::REGION, 'capability' => DeepSeekDefaults::CAPABILITY,
@@ -239,22 +262,26 @@ final class DeepSeekQuickConnect
                 }
                 if ($policy === null || ($policy->settings['text_connection'] ?? null) !== $connection->public_id
                     || ! in_array($connection->public_id, $policy->settings['allowed_connections'] ?? [], true)) {
+                    if ($refresh) {
+                        throw new AssistantUnavailable('proposal_stale');
+                    }
                     if ($key === '') {
                         $governance->validateConnection($company, $actor, $connection->public_id, $password);
                     }
                     $policy = $this->normalize($company, $actor, $policy, $connection);
                 }
-                $governance->recordConsent($company, $actor, $connection->public_id,
-                    $governance->consentFingerprint($policy, $connection, 'connection_test'), 'connection_test');
-                // Only the explicitly requested simple route/enablement changes; custom governance survives.
-                if ($policy->enabled && $governance->allowedIntents($company, $actor) !== []) {
-                    $governance->recordConsent($company, $actor, $connection->public_id, $governance->consentFingerprint($policy, $connection));
+                if (! $refresh) {
+                    $governance->recordConsent($company, $actor, $connection->public_id,
+                        $governance->consentFingerprint($policy, $connection, 'connection_test'), 'connection_test');
+                    // Only the explicitly requested simple route/enablement changes; custom governance survives.
+                    if ($policy->enabled && $governance->allowedIntents($company, $actor) !== []) {
+                        $governance->recordConsent($company, $actor, $connection->public_id, $governance->consentFingerprint($policy, $connection));
+                    }
+                    if ($policy->enabled && ($policy->settings['questions']['enabled'] ?? false) === true
+                        && app(AssistantReportCatalog::class)->permittedKeys($company, $actor) !== []) {
+                        $governance->recordConsent($company, $actor, $connection->public_id, $governance->consentFingerprint($policy, $connection, 'question'), 'question');
+                    }
                 }
-                if ($policy->enabled && ($policy->settings['questions']['enabled'] ?? false) === true
-                    && app(AssistantReportCatalog::class)->permittedKeys($company, $actor) !== []) {
-                    $governance->recordConsent($company, $actor, $connection->public_id, $governance->consentFingerprint($policy, $connection, 'question'), 'question');
-                }
-                $connection->update(['verification_status' => 'configured_unverified']);
 
                 $grant = $governance->dispatchConnection($company, $actor, $connection->public_id, 'connection_test', 'text_structured', $connection->revision);
 
@@ -262,7 +289,11 @@ final class DeepSeekQuickConnect
             });
 
             // Zero-model HTTP GET https://api.deepseek.com/user/balance health check
-            $health = app(DeepSeekBalanceHealth::class)->check($credential);
+            try {
+                $health = app(DeepSeekBalanceHealth::class)->check($credential);
+            } catch (AssistantUnavailable $e) {
+                $health = $e->diagnosticReason();
+            }
             // Fresh verification & authorization post-IO
             DB::transaction(function () use ($company, $actor, $connection, $health, $establishedPolicyRevision, $establishedConnectionRevision): void {
                 $this->authorize($company, $actor);
@@ -276,10 +307,18 @@ final class DeepSeekQuickConnect
                     throw new AssistantUnavailable('proposal_stale');
                 }
                 app(AiGovernance::class)->dispatchConnection($company, $actor, $connection->public_id, 'connection_test', 'text_structured', $establishedConnectionRevision);
-                $freshConnection->update(['verification_status' => $health === 'key_valid_funds_available' ? 'verified' : 'configured_unverified']);
+                if ($health === 'key_valid_funds_available') {
+                    $freshConnection->update(['verification_status' => 'verified']);
+                } elseif ($health === 'provider_authentication') {
+                    // Authoritative key rejection differs from a transient refresh failure.
+                    $freshConnection->update(['verification_status' => 'configured_unverified']);
+                }
+                // No credit does not invalidate a previously verified unchanged key.
+                // Newly provisioned/replaced keys stay unverified until health succeeds.
                 app(AuditService::class)->log((int) $company->id, 'ai.connection.health.checked',
                     'DeepSeek credential and balance health checked; no model request.', (int) $actor->id, $freshConnection,
-                    after: ['health_status' => $health, 'model_tokens' => 0]);
+                    after: ['health_status' => $health, 'model_tokens' => 0],
+                    meta: ['connection_revision' => $establishedConnectionRevision]);
             });
 
             return ['status' => $health === 'key_valid_funds_available' ? 'verified' : 'failed', 'reason' => $health];
@@ -296,7 +335,8 @@ final class DeepSeekQuickConnect
     {
         $this->authorize($company, $actor);
         $connection = $this->findExistingConnection($company);
-        if ($connection === null || $connection->verification_status !== 'verified') {
+        if ($connection === null || $connection->revoked_at !== null || $connection->verification_status !== 'verified'
+            || in_array($this->latestHealth($company)['status'] ?? null, ['no_available_credit', 'provider_credit', 'provider_authentication'], true)) {
             return false;
         }
         try {
@@ -307,5 +347,30 @@ final class DeepSeekQuickConnect
         } catch (AssistantUnavailable|AuthorizationException) {
             return false;
         }
+    }
+
+    /** Sanitized, revision-scoped health metadata; never exposes balances or credentials.
+     * @return array{status: string, checked_at: string}|null
+     */
+    public function latestHealth(Company $company): ?array
+    {
+        $connection = $this->findExistingConnection($company);
+        if ($connection === null || $connection->revoked_at !== null) {
+            return null;
+        }
+        $event = AuditEvent::where('company_id', $company->id)->where('event_key', 'ai.connection.health.checked')
+            ->where('subject_type', AiProviderConnection::class)->where('subject_id', $connection->id)
+            ->where('meta_json->connection_revision', $connection->revision)->latest('id')->first();
+        $payload = $event?->getAttribute('after_json');
+        $status = is_array($payload) ? ($payload['health_status'] ?? null) : null;
+        $checkedAt = $event?->getAttribute('created_at');
+        if (! is_string($status) || ! in_array($status, ['key_valid_funds_available', 'no_available_credit',
+            'provider_authentication', 'provider_credit', 'provider_format', 'provider_parameters',
+            'provider_rate_limit', 'provider_outage', 'provider_timeout', 'provider_invalid'], true)
+            || ! $checkedAt instanceof Carbon) {
+            return null;
+        }
+
+        return ['status' => $status, 'checked_at' => $checkedAt->toIso8601String()];
     }
 }

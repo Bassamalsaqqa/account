@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Unit\AiV22;
 
+use App\Application\AI\AssistantIntentProposal;
 use App\Application\AI\AssistantUnavailable;
 use App\Application\AI\ProviderCredential;
 use App\Infrastructure\AI\DeepSeekPlanningTool;
@@ -98,6 +99,56 @@ class SdkToolIntentContractTest extends TestCase
         Http::fake(['*' => Http::response($reply)]);
         $this->assertCount(2, $this->plan()['proposals']);
         Http::assertSentCount(1);
+    }
+
+    public function test_expanded_named_date_and_comparison_proposals_match_advertised_schema_without_execution(): void
+    {
+        $args = self::arguments();
+        $args['filters'] = ['customer_name' => 'أحمد', 'product_name' => 'QA Soap', 'preset' => 'custom',
+            'start_date' => '2026-01-01', 'end_date' => '2026-01-31', 'currency_code' => 'ILS',
+            'grouping' => 'monthly', 'compare' => 'previous_period'];
+        $reply = self::reply();
+        $reply['choices'][0]['message']['tool_calls'] = [self::toolCall(arguments: $args), self::toolCall('call_2')];
+        Http::fake(['*' => Http::response($reply)]);
+        $result = $this->plan();
+        $this->assertSame($args, $result['proposals'][0]['arguments']);
+        $this->assertCount(2, $result['proposals']);
+        Http::assertSent(function (Request $request): bool {
+            $filters = $request['tools'][1]['function']['parameters']['properties']['filters']['properties'];
+            $this->assertSame(AssistantIntentProposal::MAX_NAME_LENGTH, $filters['customer_name']['maxLength']);
+            $this->assertSame(AssistantIntentProposal::COMPARISONS, $filters['compare']['enum']);
+            $this->assertSame(AssistantIntentProposal::GROUPINGS, $filters['grouping']['enum']);
+            $this->assertSame('date', $filters['start_date']['format']);
+            $this->assertSame('date', $filters['end_date']['format']);
+            $this->assertArrayNotHasKey('customer_id', $filters);
+
+            return true;
+        });
+        Http::assertSentCount(1);
+    }
+
+    /** @param array<string, mixed> $filters */
+    #[DataProvider('invalidExpandedFilters')]
+    public function test_invalid_expanded_tool_proposals_are_refused_without_another_model_round(array $filters): void
+    {
+        $args = self::arguments();
+        $args['filters'] = $filters;
+        $reply = self::reply();
+        $reply['choices'][0]['message']['tool_calls'] = [self::toolCall(arguments: $args)];
+        Http::fake(['*' => Http::response($reply)]);
+        try {
+            $this->plan();
+            $this->fail('Invalid expanded filters accepted.');
+        } catch (AssistantUnavailable $e) {
+            $this->assertSame('provider_invalid', $e->reason);
+        }
+        Http::assertSentCount(1);
+    }
+
+    /** @return array<string, array{array<string, mixed>}> */
+    public static function invalidExpandedFilters(): array
+    {
+        return AssistantIntentProposalTest::invalidFilters();
     }
 
     public function test_tool_call_only_response_with_absent_content_is_valid(): void

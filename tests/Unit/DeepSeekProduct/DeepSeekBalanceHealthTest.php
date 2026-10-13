@@ -92,6 +92,20 @@ class DeepSeekBalanceHealthTest extends TestCase
         Http::assertSentCount(1);
     }
 
+    #[DataProvider('emptyBalanceAvailability')]
+    public function test_valid_empty_balance_list_honors_availability(bool $available, string $expected): void
+    {
+        Http::fake(fn () => Http::response(['is_available' => $available, 'balance_infos' => []]));
+        $this->assertSame($expected, $this->health()->check($this->credential()));
+        Http::assertSentCount(1);
+    }
+
+    /** @return list<array{bool, string}> */
+    public static function emptyBalanceAvailability(): array
+    {
+        return [[false, 'no_available_credit'], [true, 'key_valid_funds_available']];
+    }
+
     /** @return list<array{int, string}> */
     public static function httpErrorStatuses(): array
     {
@@ -209,8 +223,8 @@ class DeepSeekBalanceHealthTest extends TestCase
             'integer is_available' => [json_encode(['is_available' => 1, 'balance_infos' => [['currency' => 'USD', 'total_balance' => '0.00', 'granted_balance' => '0.00', 'topped_up_balance' => '0.00']]])],
             'missing balance_infos' => [json_encode(['is_available' => true])],
             'non-array balance_infos' => [json_encode(['is_available' => true, 'balance_infos' => 'not-array'])],
+            'empty object balance_infos' => ['{"is_available":true,"balance_infos":{}}'],
             'assoc balance_infos' => [json_encode(['is_available' => true, 'balance_infos' => ['key' => 'val']])],
-            'empty balance_infos' => [json_encode(['is_available' => true, 'balance_infos' => []])],
             'too many balance_infos (>10)' => [json_encode(['is_available' => true, 'balance_infos' => array_fill(0, 11, ['currency' => 'USD', 'total_balance' => '0.00', 'granted_balance' => '0.00', 'topped_up_balance' => '0.00'])])],
             'missing currency' => [json_encode(['is_available' => true, 'balance_infos' => [['total_balance' => '0.00', 'granted_balance' => '0.00', 'topped_up_balance' => '0.00']]])],
             'lowercase currency' => [json_encode(['is_available' => true, 'balance_infos' => [['currency' => 'usd', 'total_balance' => '0.00', 'granted_balance' => '0.00', 'topped_up_balance' => '0.00']]])],

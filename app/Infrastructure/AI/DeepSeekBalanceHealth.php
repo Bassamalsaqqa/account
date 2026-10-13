@@ -154,6 +154,10 @@ final class DeepSeekBalanceHealth
     private function decodeAndValidate(string $bytes): array
     {
         try {
+            $shape = json_decode($bytes, false, 16, JSON_THROW_ON_ERROR);
+            if (! $shape instanceof \stdClass || ! is_array($shape->balance_infos ?? null)) {
+                throw new AssistantUnavailable('provider_invalid', failureStage: 'provider_response');
+            }
             $data = json_decode($bytes, true, 16, JSON_THROW_ON_ERROR);
         } catch (Throwable) {
             throw new AssistantUnavailable('provider_invalid', failureStage: 'provider_response');
@@ -172,7 +176,7 @@ final class DeepSeekBalanceHealth
         }
 
         $infos = $data['balance_infos'];
-        if (count($infos) < 1 || count($infos) > 10) {
+        if (count($infos) > 10) {
             throw new AssistantUnavailable('provider_invalid', failureStage: 'provider_response');
         }
 

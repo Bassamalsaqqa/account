@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace App\Infrastructure\AI;
 
 use App\Application\AI\AiDiagnostics;
+use App\Application\AI\AssistantIntentProposal;
 use App\Application\AI\AssistantReportCatalog;
-use App\Application\AI\AssistantReportPlan;
 use App\Application\AI\AssistantUnavailable;
 use App\Application\AI\ProviderCapabilityRegistry;
 use App\Application\AI\ProviderCredential;
@@ -143,16 +143,18 @@ final class DeepSeekSdkAdapter
                 throw new AssistantUnavailable('provider_invalid');
             }
             $seen[$id] = true;
-            if (! json_decode($json, false, 8, JSON_THROW_ON_ERROR) instanceof \stdClass) {
+            $decoded = json_decode($json, false, 8, JSON_THROW_ON_ERROR);
+            if (! $decoded instanceof \stdClass) {
                 throw new AssistantUnavailable('provider_invalid');
             }
             $arguments = json_decode($json, true, 8, JSON_THROW_ON_ERROR);
             if ($name === 'run_report') {
-                if (! in_array($arguments['report_key'] ?? null, $approvedReportKeys, true)) {
+                if (! ($decoded->filters ?? null) instanceof \stdClass
+                    || ! in_array($arguments['report_key'] ?? null, $approvedReportKeys, true)) {
                     throw new AssistantUnavailable('provider_invalid');
                 }
                 try {
-                    AssistantReportPlan::fromArray($arguments);
+                    AssistantIntentProposal::fromArray($arguments);
                 } catch (AssistantUnavailable) {
                     throw new AssistantUnavailable('provider_invalid');
                 }
