@@ -43,6 +43,8 @@ return [
     'dictate' => 'Dictate a message',
     'stop_listening' => 'Stop listening',
     'cancel_voice' => 'Discard dictation',
+    'voice_grace' => 'Sending in a moment… Edit or cancel to stop.',
+    'voice_edit' => 'Edit',
     'transcript_ready' => 'Your transcript is ready. Edit it, then press Send.',
     'voice_unsupported' => 'This browser does not support voice input here. You can type your message.',
     'voice_permission' => 'Microphone access was denied. Allow it in browser settings, or type your message.',

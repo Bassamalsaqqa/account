@@ -8,7 +8,7 @@
         </button>
         @if ($open)
             <section id="ai-dialog-{{ $this->getId() }}" role="dialog" aria-modal="true" aria-labelledby="assistant-title-{{ $this->getId() }}" class="ai-shell"
-                x-data="accountingAssistant($wire, @js(['locale' => app()->getLocale(), 'maxSeconds' => 60, 'messages' => ['unsupported' => __('ai_product.voice_unsupported'), 'permission' => __('ai_product.voice_permission'), 'unavailable' => __('ai_product.voice_unavailable'), 'noSpeech' => __('ai_product.voice_no_speech')]]))"
+                x-data="accountingAssistant($wire, @js(['locale' => app()->getLocale(), 'maxSeconds' => 60, 'autoSubmit' => (bool) config('ai_assistant.voice_auto_submit_enabled', false), 'quietMs' => (int) config('ai_assistant.voice_auto_submit_quiet_ms', 1000), 'graceMs' => (int) config('ai_assistant.voice_auto_submit_grace_ms', 1250), 'messages' => ['unsupported' => __('ai_product.voice_unsupported'), 'permission' => __('ai_product.voice_permission'), 'unavailable' => __('ai_product.voice_unavailable'), 'noSpeech' => __('ai_product.voice_no_speech')]]))"
                 x-init="$nextTick(() => $refs.description?.focus())" x-trap.inert.noscroll="true"
                 @keydown.escape.window.stop.prevent="clear(); $wire.cancel()">
                 <div class="ai-backdrop" aria-hidden="true" @click="clear(); $wire.cancel()"></div>
