@@ -50,6 +50,7 @@ return [
     'voice_permission' => 'Microphone access was denied. Allow it in browser settings, or type your message.',
     'voice_unavailable' => 'Voice input could not start. Try again yourself, or use text.',
     'voice_no_speech' => 'No speech was recognized. Try again yourself, or type your message.',
+    'voice_offline' => 'You are offline. Dictation stopped without sending. Reconnect, review your message and press Send.',
     'unsaved_note' => 'Invoices open as editable, unsaved forms. Only you can save or post them.',
     'thinking' => 'Working on your request…',
     'browser_privacy_policy' => 'Browser dictation may process audio through your browser provider. Only the editable text you explicitly send is sent to DeepSeek.',

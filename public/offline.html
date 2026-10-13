@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>التاجر الصغير — لا يوجد اتصال بالإنترنت</title>
+    <style>
+        :root {
+            --color-canvas: #f7f9fc;
+            --color-surface: #ffffff;
+            --color-border: #e4e9f1;
+            --color-text-primary: #172033;
+            --color-text-secondary: #475467;
+            --color-text-muted: #667085;
+            --color-primary: #255fd6;
+            --color-primary-hover: #1f52bd;
+            --font-family: 'IBM Plex Sans Arabic', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        }
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        body {
+            font-family: var(--font-family);
+            background-color: var(--color-canvas);
+            color: var(--color-text-primary);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 1.5rem;
+            line-height: 1.6;
+            -webkit-font-smoothing: antialiased;
+        }
+        .container {
+            width: 100%;
+            max-width: 480px;
+            background: var(--color-surface);
+            border: 1px solid var(--color-border);
+            border-radius: 14px;
+            padding: 2rem;
+            box-shadow: 0 1px 3px rgba(16, 24, 40, .05), 0 4px 16px rgba(16, 24, 40, .04);
+            text-align: center;
+        }
+        .brand-icon {
+            width: 56px;
+            height: 56px;
+            border-radius: 12px;
+            background: var(--color-primary);
+            color: #ffffff;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 1.25rem;
+            box-shadow: 0 4px 12px rgba(37, 95, 214, .2);
+        }
+        .brand-icon svg {
+            width: 30px;
+            height: 30px;
+        }
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.25rem 0.75rem;
+            background: #fff0ee;
+            color: #b42318;
+            border-radius: 9999px;
+            font-size: 0.8125rem;
+            font-weight: 600;
+            margin-bottom: 1rem;
+        }
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #b42318;
+        }
+        h1 {
+            font-size: 1.25rem;
+            font-weight: 800;
+            color: var(--color-text-primary);
+            margin-bottom: 0.75rem;
+        }
+        p {
+            font-size: 0.9375rem;
+            color: var(--color-text-secondary);
+            margin-bottom: 1.5rem;
+        }
+        .notice-box {
+            background: #f5f7fb;
+            border: 1px solid var(--color-border);
+            border-radius: 8px;
+            padding: 0.875rem;
+            font-size: 0.8125rem;
+            color: var(--color-text-muted);
+            margin-bottom: 1.5rem;
+            text-align: start;
+        }
+        .actions {
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+        }
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 44px;
+            min-width: 44px;
+            padding: 0.625rem 1.25rem;
+            font-size: 0.9375rem;
+            font-weight: 700;
+            border-radius: 9px;
+            border: 1px solid transparent;
+            cursor: pointer;
+            transition: background-color 0.15s ease, border-color 0.15s ease;
+            text-decoration: none;
+            font-family: inherit;
+        }
+        .btn:focus-visible {
+            outline: 3px solid rgba(37, 95, 214, 0.25);
+            outline-offset: 2px;
+        }
+        .btn-primary {
+            background: var(--color-primary);
+            color: #ffffff;
+        }
+        .btn-primary:hover {
+            background: var(--color-primary-hover);
+        }
+        .btn-secondary {
+            background: #ffffff;
+            border-color: var(--color-border);
+            color: var(--color-text-secondary);
+        }
+        .btn-secondary:hover {
+            background: #f5f7fb;
+        }
+        .lang-switch {
+            margin-top: 1.25rem;
+            font-size: 0.8125rem;
+            color: var(--color-text-muted);
+        }
+        .lang-btn {
+            background: none;
+            border: none;
+            color: var(--color-primary);
+            cursor: pointer;
+            text-decoration: underline;
+            font-family: inherit;
+            font-size: inherit;
+            padding: 4px;
+            min-height: 44px;
+            min-width: 44px;
+        }
+        .lang-btn:focus-visible {
+            outline: 2px solid var(--color-primary);
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body>
+    <main class="container" role="main">
+        <div class="brand-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M4 9h16M5 9v11h14V9M3 9l2-5h14l2 5M9 13v7M15 13v7"/>
+            </svg>
+        </div>
+
+        <div class="status-badge" role="status" aria-live="polite">
+            <span class="status-dot" aria-hidden="true"></span>
+            <span id="status-text">غير متصل بالإنترنت</span>
+        </div>
+
+        <h1 id="title-text">لا يوجد اتصال بالإنترنت</h1>
+
+        <p id="desc-text">
+            يتطلب نظام المحاسبة اتصالاً نشطاً وآمناً لحماية ومطابقة القيود والمعاملات المالية.
+        </p>
+
+        <div class="notice-box" id="security-notice">
+            <strong>حماية البيانات المالية:</strong> لا يتم تخزين فواتير، تقارير، مرفقات، أو بيانات سرية دون اتصال لحماية الخصوصية وموثوقية السجلات.
+        </div>
+
+        <div class="actions">
+            <button type="button" class="btn btn-primary" id="retry-btn" onclick="window.location.reload()">
+                إعادة المحاولة
+            </button>
+        </div>
+
+        <div class="lang-switch">
+            <button type="button" class="lang-btn" id="lang-toggle-btn" onclick="toggleLanguage()">
+                English
+            </button>
+        </div>
+    </main>
+
+    <script>
+        const translations = {
+            ar: {
+                dir: 'rtl',
+                lang: 'ar',
+                title: 'التاجر الصغير — لا يوجد اتصال بالإنترنت',
+                status: 'غير متصل بالإنترنت',
+                heading: 'لا يوجد اتصال بالإنترنت',
+                desc: 'يتطلب نظام المحاسبة اتصالاً نشطاً وآمناً لحماية ومطابقة القيود والمعاملات المالية.',
+                notice: '<strong>حماية البيانات المالية:</strong> لا يتم تخزين فواتير، تقارير، مرفقات، أو بيانات سرية دون اتصال لحماية الخصوصية وموثوقية السجلات.',
+                retry: 'إعادة المحاولة',
+                langToggle: 'English'
+            },
+            en: {
+                dir: 'ltr',
+                lang: 'en',
+                title: 'Small Trader — No Internet Connection',
+                status: 'Offline',
+                heading: 'No Internet Connection',
+                desc: 'The accounting system requires an active, secure connection to protect and verify financial records.',
+                notice: '<strong>Financial Data Security:</strong> Invoices, reports, attachments, and confidential records are never cached offline to preserve privacy and ledger integrity.',
+                retry: 'Retry Connection',
+                langToggle: 'العربية'
+            }
+        };
+
+        let currentLang = 'ar';
+
+        function toggleLanguage() {
+            currentLang = currentLang === 'ar' ? 'en' : 'ar';
+            applyLanguage(currentLang);
+        }
+
+        function applyLanguage(lang) {
+            const t = translations[lang];
+            document.documentElement.dir = t.dir;
+            document.documentElement.lang = t.lang;
+            document.title = t.title;
+            document.getElementById('status-text').textContent = t.status;
+            document.getElementById('title-text').textContent = t.heading;
+            document.getElementById('desc-text').textContent = t.desc;
+            document.getElementById('security-notice').innerHTML = t.notice;
+            document.getElementById('retry-btn').textContent = t.retry;
+            document.getElementById('lang-toggle-btn').textContent = t.langToggle;
+        }
+
+        window.addEventListener('online', function() {
+            window.location.reload();
+        });
+    </script>
+</body>
+</html>
