@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Application\AI;
 
-use App\Infrastructure\AI\DeepSeekSdkAdapter;
+use App\Infrastructure\AI\DeepSeekBalanceHealth;
 use App\Models\AiCompanyPolicy;
 use App\Models\AiProviderConnection;
 use App\Models\AssistantRequest;
@@ -13,7 +13,9 @@ use App\Models\CompanyUser;
 use App\Models\User;
 use App\Services\Audit\AuditService;
 use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Str;
 use SensitiveParameter;
 use Throwable;
@@ -186,8 +188,9 @@ final class DeepSeekQuickConnect
     }
 
     /**
-     * One mounted request key claims one attempt under the existing company lock.
+     * One mounted request key claims one zero-model health attempt under the company lock.
      * Concurrent/replayed requests never dispatch again, including after a timeout.
+     * Free health gets NO AiRequestBudget reserve/attempt/counter/no AssistantRequest row.
      *
      * @return array{status: string, reason: ?string}
      */
@@ -195,15 +198,13 @@ final class DeepSeekQuickConnect
         #[SensitiveParameter] string $password, bool $consent, string $requestKey,
         int $expectedPolicyRevision, int $expectedConnectionRevision): array
     {
-        $request = null;
         try {
-            [$request, $connection, $created] = DB::transaction(function () use ($company, $actor, $key, $password, $consent, $requestKey, $expectedPolicyRevision, $expectedConnectionRevision): array {
+            if (! Str::isUuid($requestKey)) {
+                throw new AssistantUnavailable('input_invalid');
+            }
+            [$connection, $credential, $establishedPolicyRevision, $establishedConnectionRevision] = DB::transaction(function () use ($company, $actor, $key, $password, $consent, $requestKey, $expectedPolicyRevision, $expectedConnectionRevision): array {
                 $this->authorize($company, $actor);
-                $existing = AssistantRequest::where('company_id', $company->id)->where('user_id', $actor->id)
-                    ->where('request_key', $requestKey)->lockForUpdate()->first();
-                if ($existing !== null) {
-                    throw new AssistantUnavailable('request_processed');
-                }
+                app(AiGovernance::class)->confirmOwner($company, $actor, $password);
                 if (! $consent) {
                     throw new AssistantUnavailable('consent');
                 }
@@ -216,6 +217,15 @@ final class DeepSeekQuickConnect
                 if ($this->needsTransition($company)) {
                     throw new AssistantUnavailable('transition_required');
                 }
+                $claimKey = 'ai:deepseek:health:claim:'.hash('sha256', $company->id.':'.$actor->id.':'.$requestKey);
+                if (! Cache::add($claimKey, true, 600)) {
+                    throw new AssistantUnavailable('request_processed');
+                }
+                $throttleKey = 'ai:deepseek:health:rate:'.hash('sha256', $company->id.':'.$actor->id);
+                if (RateLimiter::tooManyAttempts($throttleKey, 6)) {
+                    throw new AssistantUnavailable('health_rate_limit');
+                }
+                RateLimiter::hit($throttleKey, 60);
                 $governance = app(AiGovernance::class);
                 if ($key !== '') {
                     $connection = $governance->provision($company, $actor, [
@@ -244,44 +254,39 @@ final class DeepSeekQuickConnect
                     && app(AssistantReportCatalog::class)->permittedKeys($company, $actor) !== []) {
                     $governance->recordConsent($company, $actor, $connection->public_id, $governance->consentFingerprint($policy, $connection, 'question'), 'question');
                 }
-                $reservation = app(AiRequestBudget::class)->reserve($company, $actor, $requestKey, $requestKey,
-                    'intent', 'connection_test', hash('sha256', 'deepseek-connection-test-v1'), [$connection]);
-                app(AiRequestBudget::class)->beginAttempt($company, $actor, $reservation['request'], $connection);
                 $connection->update(['verification_status' => 'configured_unverified']);
 
-                return [$reservation['request'], $connection, $reservation['created']];
-            });
-            if (! $created) {
-                throw new AssistantUnavailable('request_processed');
-            }
-            $grant = app(AiGovernance::class)->dispatchConnection($company, $actor, $connection->public_id, 'connection_test', 'text_structured', $connection->revision);
-            $usage = app(DeepSeekSdkAdapter::class)->testConnection($grant['credential']);
-            DB::transaction(function () use ($company, $actor, $request, $connection, $usage): void {
-                $this->authorize($company, $actor);
-                $grant = app(AiGovernance::class)->dispatchConnection($company, $actor, $connection->public_id, 'connection_test', 'text_structured', $connection->revision);
-                $fresh = AssistantRequest::whereKey($request->id)->where('company_id', $company->id)->where('user_id', $actor->id)->lockForUpdate()->firstOrFail();
-                if ($fresh->status !== 'pending' || (int) $fresh->attempt_count !== 1
-                    || (int) $grant['policy']->revision !== (int) $fresh->policy_revision) {
-                    throw new AssistantUnavailable('proposal_stale');
-                }
-                app(AiRequestBudget::class)->recordUsage($company, $actor, $fresh, $usage);
-                $fresh->update(['status' => 'completed', 'cost_status' => 'unknown']);
-                $grant['connection']->update(['verification_status' => 'verified']);
+                $grant = $governance->dispatchConnection($company, $actor, $connection->public_id, 'connection_test', 'text_structured', $connection->revision);
+
+                return [$connection, $grant['credential'], (int) $policy->revision, (int) $connection->revision];
             });
 
-            return ['status' => 'verified', 'reason' => null];
+            // Zero-model HTTP GET https://api.deepseek.com/user/balance health check
+            $health = app(DeepSeekBalanceHealth::class)->check($credential);
+            // Fresh verification & authorization post-IO
+            DB::transaction(function () use ($company, $actor, $connection, $health, $establishedPolicyRevision, $establishedConnectionRevision): void {
+                $this->authorize($company, $actor);
+                $freshPolicy = AiCompanyPolicy::where('company_id', $company->id)->lockForUpdate()->first();
+                $freshConnection = AiProviderConnection::whereKey($connection->id)->where('company_id', $company->id)->lockForUpdate()->first();
+                if ($freshConnection === null || $freshConnection->revoked_at !== null) {
+                    throw new AssistantUnavailable('credential_invalid');
+                }
+                if (($freshPolicy === null ? 0 : (int) $freshPolicy->revision) !== $establishedPolicyRevision
+                    || (int) $freshConnection->revision !== $establishedConnectionRevision) {
+                    throw new AssistantUnavailable('proposal_stale');
+                }
+                app(AiGovernance::class)->dispatchConnection($company, $actor, $connection->public_id, 'connection_test', 'text_structured', $establishedConnectionRevision);
+                $freshConnection->update(['verification_status' => $health === 'key_valid_funds_available' ? 'verified' : 'configured_unverified']);
+                app(AuditService::class)->log((int) $company->id, 'ai.connection.health.checked',
+                    'DeepSeek credential and balance health checked; no model request.', (int) $actor->id, $freshConnection,
+                    after: ['health_status' => $health, 'model_tokens' => 0]);
+            });
+
+            return ['status' => $health === 'key_valid_funds_available' ? 'verified' : 'failed', 'reason' => $health];
         } catch (AuthorizationException $e) {
-            if ($request !== null) {
-                AssistantRequest::whereKey($request->id)->where('company_id', $company->id)->where('user_id', $actor->id)
-                    ->where('status', 'pending')->update(['status' => 'failed', 'failure_code' => 'unauthorized']);
-            }
             throw $e;
         } catch (Throwable $e) {
             $reason = $e instanceof AssistantUnavailable ? $e->diagnosticReason() : 'unavailable';
-            if ($request !== null) {
-                AssistantRequest::whereKey($request->id)->where('company_id', $company->id)->where('user_id', $actor->id)
-                    ->where('status', 'pending')->update(['status' => 'failed', 'failure_code' => $reason]);
-            }
 
             return ['status' => 'failed', 'reason' => $reason];
         }

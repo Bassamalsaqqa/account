@@ -10,6 +10,7 @@
             <x-icon :name="$connectionStatus === 'verified' ? 'check-circle' : 'shield'" class="h-4 w-4" />
             <span>{{ __('ai_product.'.match ($connectionStatus) { 'verified' => 'status_verified', 'configured_unverified' => 'status_configured', default => 'status_unconfigured' }) }}</span>
         </div>
+        <p class="mt-2 text-xs text-text-secondary">{{ __('ai_product.conversation_not_tested') }}</p>
         @if ($needsTransition)
             <p class="mt-4 rounded-control bg-info-bg p-3 text-sm leading-relaxed text-info">{{ __('ai_product.existing_settings') }}</p>
         @endif

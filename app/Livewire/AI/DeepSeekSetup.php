@@ -71,7 +71,7 @@ final class DeepSeekSetup extends Component
             $key, $password, $consent, $this->requestKey, $this->policyRevision, $this->connectionRevision);
         $this->dispatch('ai:usage-changed');
         $this->status = $result['status'];
-        $reason = $result['reason'] ?? 'verified';
+        $reason = $result['reason'] ?? ($result['status'] === 'verified' ? 'key_valid_funds_available' : 'unavailable');
         $this->message = __('ai_product.result_'.$reason);
         if ($this->message === 'ai_product.result_'.$reason) {
             $this->message = __('ai_product.result_unavailable');
@@ -79,7 +79,7 @@ final class DeepSeekSetup extends Component
         $this->refreshRevisions();
     }
 
-    /** A new paid attempt always requires a separate explicit user action. */
+    /** A new health attempt always requires a separate explicit user action. */
     public function allowAnotherTest(): void
     {
         $this->authorizeSetup();
