@@ -31,6 +31,15 @@ final class TransactionAssistant
             $governance->authorizeUse($company, $actor, $proposal['intent']);
         }
         $routes = $proposal === null ? app(AiProviderRoutes::class)->select($company, $actor, $context, 'text_structured', $connectionId) : [];
+        if ($routes !== []) {
+            if ($routes[0]->verification_status !== 'verified') {
+                throw new AssistantUnavailable('connection_unverified');
+            }
+            $health = app(DeepSeekQuickConnect::class)->latestHealth($company)['status'] ?? null;
+            if (in_array($health, ['no_available_credit', 'provider_credit'], true)) {
+                throw new AssistantUnavailable('provider_credit');
+            }
+        }
         $hash = $this->inputHash(['text' => $text, 'context' => $context, 'form' => $formKey,
             'session' => hash('sha256', $sessionId), 'connection' => $routes[0]->public_id ?? null,
             'policy' => $policy->revision, 'audio_token' => $audioToken]);

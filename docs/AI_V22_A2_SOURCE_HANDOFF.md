@@ -94,7 +94,7 @@ The complete corrected local Livewire request measured **525 queries / 934 ms** 
 
 ### Explicit company report access
 
-[AssistantReportPolicySettings](../app/Application/AI/AssistantReportPolicySettings.php) and the collapsed AR/EN Owner settings section allow explicit finite catalog selection. Expansion requires protected active Owner authority, current revision and password confirmation. Existing policies are not automatically expanded; AI activation, question enablement, role permissions, encrypted keys, custom limits, historical reservations and unrelated settings remain unchanged. Meaningful report-scope consent is invalidated by the existing fingerprint rules. Invalid legacy configurations fail safely rather than silently normalizing other fields.
+[AssistantReportPolicySettings](../app/Application/AI/AssistantReportPolicySettings.php) and the collapsed AR/EN Owner settings section allow explicit finite catalog selection. Expansion requires protected active Owner authority, current revision and password confirmation. Existing policies are not automatically expanded; AI activation, question enablement, role permissions, encrypted keys, custom limits, historical reservations and unrelated settings remain unchanged. Report selection is an authorization policy, independent from the privacy-consent contract described below. Invalid legacy configurations fail safely rather than silently normalizing other fields.
 
 ### Newly executed verification
 
@@ -105,3 +105,15 @@ The complete corrected local Livewire request measured **525 queries / 934 ms** 
 - Browser screenshots and full-request observations remain in ignored local evidence. Native voice accuracy, paid DeepSeek quality, Hostinger capacity and production activation are NOT VERIFIED by these tests.
 
 A3 began separately in `feature/ai-v22-unsaved-drafting`; its development checkpoint does not form part of PR #39 or establish A3 completion. No merge, deployment, production access, paid call, budget reset, financial-writer, migration, dependency or protected-specification change occurred.
+
+## Final P2 correction — disclosure consent is independent from report access
+
+Correction baseline: `0437ec03e12d21b635d542df0f2fe5bfb8dfb198`. Question-consent contract 3 binds the company, provider/model/region/capability, connection identity and revision, credential source, question-sharing purpose and privacy disclosure. It excludes report allowlists and activation flags; those remain freshly enforced by the existing authorization and policy services. Transaction and connection-test fingerprints retain their existing contract. Owner password confirmation for adding reports is unchanged.
+
+The launcher and dispatch now share `AiGovernance::hasConsent()` so the UI does not ask again when dispatch already has valid consent. Initial acknowledgement is still required. A different user/company/purpose, changed privacy/connection/revision, revoked credential or removed acknowledgement is refused. No microphone permission screen or setup step was added.
+
+Backward compatibility is deliberately narrow. A contract-2 question acknowledgement that matches the current old policy is accepted without rewriting it. Before an authorized policy update changes the report list, the company/policy lock protects recognition of only a valid old proof. Compatibility metadata binds the new equivalent-disclosure hash to the unchanged original hash; original acknowledgement timestamps and audit records remain intact. The distinct `ai.consent.compatibility_recognized` audit event is not a new user acknowledgement. Missing, already stale or revoked proof is never guessed or revived. If privacy changes in the same update, compatibility records the old privacy only and cannot authorize the new disclosure. No database migration or historical usage adjustment is required.
+
+New focused verification: **47 tests / 212 assertions**, zero failures/errors/skips, covering legacy/new consent, Owner allowlist edits, material changes, revocation, user/company/purpose binding and independent report permissions. S/M performance check: **2 tests / 20 assertions**, retaining exactly **301 comparison queries / 163 follow-up queries** with unchanged canonical amounts and economic fingerprints. Scoped Pint/PHPStan pass. Actual local Owner settings were checked using a retained synthetic contract-2 acknowledgement, without paid or production requests.
+
+Independent exact-head acceptance is pending. Before production activation, representative capacity measurements and safe Hostinger resource limits remain a separate release gate; local bounded fixtures do not establish shared-hosting capacity.
