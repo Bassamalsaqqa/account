@@ -15,6 +15,17 @@
     <!-- Styles & Scripts -->
     @vite(['resources/css/app.css', 'resources/js/app.js'])
     @livewireStyles
+
+    @if (config('pwa.enabled', false))
+        <meta name="pwa-enabled" content="true">
+        <link rel="manifest" href="{{ asset('manifest.webmanifest') }}">
+        <meta name="theme-color" content="{{ config('pwa.theme_color', '#255fd6') }}">
+        <meta name="mobile-web-app-capable" content="yes">
+        <meta name="apple-mobile-web-app-capable" content="yes">
+        <meta name="apple-mobile-web-app-status-bar-style" content="default">
+        <meta name="apple-mobile-web-app-title" content="{{ config('pwa.short_name', 'التاجر الصغير') }}">
+        <link rel="apple-touch-icon" href="{{ asset('icons/icon-192.png') }}">
+    @endif
 </head>
 <body class="bg-canvas text-text-primary antialiased font-arabic selection:bg-primary-100 selection:text-primary min-h-screen"
       x-data="{ mobileMenuOpen: false }" @keydown.escape.window="mobileMenuOpen = false">

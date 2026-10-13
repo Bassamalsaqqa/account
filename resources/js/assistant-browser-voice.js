@@ -42,15 +42,21 @@ export function browserVoice(wire, options, runtime = globalThis) {
             this.visibilityHandler = () => {
                 if (runtime.document?.visibilityState === 'hidden') this.clear();
             };
+            this.offlineHandler = () => {
+                this.edit();
+                this.error = message('offline');
+            };
             runtime.document?.addEventListener?.('livewire:navigating', this.leave);
             runtime.addEventListener?.('pagehide', this.leave);
             runtime.document?.addEventListener?.('visibilitychange', this.visibilityHandler);
+            runtime.addEventListener?.('offline', this.offlineHandler);
         },
         destroy() {
             this.clear();
             runtime.document?.removeEventListener?.('livewire:navigating', this.leave);
             runtime.removeEventListener?.('pagehide', this.leave);
             runtime.document?.removeEventListener?.('visibilitychange', this.visibilityHandler);
+            runtime.removeEventListener?.('offline', this.offlineHandler);
         },
         async start() {
             if (this.recording || this.busy || this.sending) return;
@@ -58,6 +64,7 @@ export function browserVoice(wire, options, runtime = globalThis) {
             clearAutoSubmit();
             this.grace = false;
             autoSubmitCancelled = false;
+            if (runtime.navigator?.onLine === false) { this.error = message('offline'); return; }
             if (!runtime.isSecureContext || !Recognition) { this.error = message('unsupported'); return; }
             const turn = ++generation;
             this.busy = true;
@@ -221,6 +228,11 @@ export function browserVoice(wire, options, runtime = globalThis) {
             clearAutoSubmit();
             this.grace = false;
             autoSubmitCancelled = true;
+            if (runtime.navigator?.onLine === false) {
+                this.edit();
+                this.error = message('offline');
+                return;
+            }
             if (this.sending || this.busy || !String(wire.text || '').trim()) return;
             if (this.recording) {
                 if (!wasInGrace) return;

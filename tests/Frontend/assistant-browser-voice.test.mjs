@@ -496,3 +496,72 @@ test('changed text without an input event and truthy nonboolean flags cannot aut
     disabled.instances[0].onresult({results:[{isFinal:true,0:{transcript:'first'}}]});
     await disabled.advanceTimers(5000); assert.equal(disabled.calls.includes('prepare'),false);
 });
+
+test('offline event cancels active recording, preserves editable text and prevents submission', async () => {
+    const {ui, instances, calls, advanceTimers, runtime, wire} = fixture({autoSubmit: true});
+    ui.init();
+    await ui.start();
+    instances[0].onstart();
+    instances[0].onresult({results: [{isFinal: true, 0: {transcript: 'recording text'}}]});
+    await advanceTimers(500); // within quiet heuristic
+    assert.equal(ui.recording, true);
+
+    // Trigger network disconnection event
+    runtime.trigger('offline');
+
+    assert.equal(ui.recording, false);
+    assert.equal(ui.grace, false);
+    assert.equal(ui.error, 'offline');
+    assert.equal(wire.text, 'recording text');
+    assert.equal(calls.includes('recognition.abort'), true);
+
+    // Ensure delayed timer expiration does NOT dispatch prepare
+    await advanceTimers(5000);
+    assert.equal(calls.includes('prepare'), false);
+    ui.destroy();
+});
+
+test('offline event during grace period aborts auto-submission', async () => {
+    const {ui, instances, calls, advanceTimers, runtime} = fixture({autoSubmit: true});
+    ui.init();
+    await ui.start();
+    instances[0].onstart();
+    instances[0].onresult({results: [{isFinal: true, 0: {transcript: 'graceful text'}}]});
+    await advanceTimers(1000); // enter grace period
+    assert.equal(ui.grace, true);
+
+    // Disconnect while user was in grace countdown
+    runtime.trigger('offline');
+
+    assert.equal(ui.grace, false);
+    assert.equal(ui.error, 'offline');
+
+    // Wait past grace period
+    await advanceTimers(3000);
+    assert.equal(calls.includes('prepare'), false);
+    ui.destroy();
+});
+
+test('starting voice while offline rejects immediately with offline message', async () => {
+    const {ui, calls, runtime} = fixture();
+    runtime.navigator = { onLine: false };
+    ui.init();
+    await ui.start();
+
+    assert.equal(ui.error, 'offline');
+    assert.equal(calls.includes('recognition.start'), false);
+    assert.equal(ui.recording, false);
+    ui.destroy();
+});
+
+test('offline without an event still blocks dispatch and keeps the final transcript', async () => {
+    const {ui, instances, calls, advanceTimers, runtime, wire} = fixture({autoSubmit:true});
+    await ui.start(); instances[0].onstart();
+    instances[0].onresult({results:[{isFinal:true,0:{transcript:'sales this month'}}]});
+    await advanceTimers(1000);
+    runtime.navigator = {onLine:false};
+    await advanceTimers(1250);
+    assert.equal(calls.includes('prepare'),false);
+    assert.equal(wire.text,'sales this month');
+    assert.equal(ui.error,'offline');
+});
