@@ -221,9 +221,8 @@ final class AssistantLauncher extends Component
         }
         foreach (app(AiProviderRoutes::class)->resolve($company, $actor, $resolveIntent, 'text_structured') as $connection) {
             $fingerprint = $governance->consentFingerprint($policy, $connection, $scope);
-            $consentKey = $scope === 'question' ? 'question:'.$connection->public_id : $connection->public_id;
             $routes[] = ['public_id' => $connection->public_id, 'fingerprint' => $fingerprint,
-                'consented' => hash_equals($fingerprint, (string) ($preferences?->consents[$consentKey]['fingerprint'] ?? ''))];
+                'consented' => $governance->hasConsent($policy, $connection, $actor, $scope, $preferences)];
         }
 
         return $routes;

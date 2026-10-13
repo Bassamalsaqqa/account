@@ -114,7 +114,7 @@ class AssistantReportPolicySettingsTest extends TestCase
         Http::assertNothingSent();
     }
 
-    public function test_report_selection_changes_invalidate_question_consent_but_do_not_fabricate_replacement(): void
+    public function test_report_selection_changes_preserve_question_consent_without_a_new_acknowledgement(): void
     {
         $governance = app(AiGovernance::class);
         $governance->recordConsent($this->company, $this->owner, $this->connection->public_id,
@@ -123,7 +123,6 @@ class AssistantReportPolicySettingsTest extends TestCase
         $updated = $this->service()->update($this->company, $this->owner,
             [...self::ORIGINAL_REPORTS, 'sales.last-invoice'], $this->policy->revision, self::PASSWORD);
         $this->assertEquals($preferencesBefore, DB::table('ai_user_preferences')->get()->toArray());
-        $this->expectException(AssistantUnavailable::class);
         $governance->requireConsent($updated, $this->connection, $this->owner, 'question');
     }
 

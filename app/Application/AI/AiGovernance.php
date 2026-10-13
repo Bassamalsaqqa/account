@@ -192,6 +192,10 @@ final class AiGovernance
                     throw new AssistantUnavailable('policy_invalid');
                 }
             }
+            if (($policy->settings['questions']['allowed_reports'] ?? []) !== ($settings['questions']['allowed_reports'] ?? [])) {
+                // Authenticate older consent against the old policy before its list changes.
+                $this->preserveQuestionConsentCompatibility($policy, $actor);
+            }
             $policy->fill($values);
             $policy->revision = (int) $policy->revision + 1;
             $policy->save();
@@ -418,6 +422,11 @@ final class AiGovernance
 
     public function consentFingerprint(AiCompanyPolicy $policy, AiProviderConnection $connection, string $scope = 'transaction'): string
     {
+        return $this->fingerprint($policy, $connection, $scope);
+    }
+
+    private function fingerprint(AiCompanyPolicy $policy, AiProviderConnection $connection, string $scope, bool $legacyQuestion = false): string
+    {
         $scopeValues = match ($scope) {
             'transaction' => $policy->settings['allowed_intents'] ?? ['sales', 'purchase'],
             'question' => $policy->settings['questions']['allowed_reports'] ?? [],
@@ -433,8 +442,54 @@ final class AiGovernance
             'scope_enabled' => $scope !== 'question' || ($policy->settings['questions']['enabled'] ?? false),
             'privacy' => $policy->settings['privacy'] ?? [],
         ];
+        if ($scope === 'question' && ! $legacyQuestion) {
+            // Permissions/activation are independent fresh authority, not disclosure terms.
+            $payload['consent_contract'] = 3;
+            unset($payload['authorized_scope'], $payload['scope_enabled']);
+        }
 
         return hash('sha256', json_encode($payload, JSON_THROW_ON_ERROR));
+    }
+
+    /** Recognize existing proof, never a new acknowledgement; company/policy lock is held. */
+    private function preserveQuestionConsentCompatibility(AiCompanyPolicy $policy, User $actor): void
+    {
+        $id = $policy->settings['text_connection'] ?? null;
+        if (! $policy->exists || ! is_string($id)) {
+            return;
+        }
+        $connection = AiProviderConnection::where('company_id', $policy->company_id)->where('public_id', $id)
+            ->whereNull('revoked_at')->first();
+        if ($connection === null || ! $this->connectionAllowed($policy, $connection)) {
+            return;
+        }
+        $legacy = $this->fingerprint($policy, $connection, 'question', true);
+        $compatible = $this->consentFingerprint($policy, $connection, 'question');
+        $key = 'question:'.$id;
+        $recognized = 0;
+        AiUserPreference::where('company_id', $policy->company_id)->whereNotNull('consents')->lockForUpdate()
+            ->chunkById(100, function ($preferences) use ($legacy, $compatible, $key, &$recognized): void {
+                foreach ($preferences as $preference) {
+                    $stored = $preference->consents ?? [];
+                    $entry = $stored[$key] ?? null;
+                    if (! is_array($entry) || ! is_string($entry['fingerprint'] ?? null)
+                        || ! is_string($entry['recorded_at'] ?? null) || $entry['recorded_at'] === ''
+                        || ! hash_equals($legacy, $entry['fingerprint'])
+                        || (($entry['compatible_fingerprint'] ?? null) === $compatible
+                            && ($entry['compatible_legacy_fingerprint'] ?? null) === $legacy)) {
+                        continue;
+                    }
+                    // Keep original hash and acknowledgement timestamp; old privacy only.
+                    $stored[$key] = [...$entry, 'compatible_fingerprint' => $compatible, 'compatible_legacy_fingerprint' => $legacy];
+                    $preference->update(['consents' => $stored]);
+                    $recognized++;
+                }
+            });
+        if ($recognized > 0) {
+            app(AuditService::class)->log((int) $policy->company_id, 'ai.consent.compatibility_recognized',
+                'Existing question consent recognized under an equivalent disclosure contract.', (int) $actor->id, $policy,
+                meta: ['scope' => 'question', 'from_contract' => 2, 'to_contract' => 3, 'recognized_count' => $recognized]);
+        }
     }
 
     /** @param array<string, string> $consents [connectionId => fingerprint] */
@@ -480,12 +535,40 @@ final class AiGovernance
 
     public function requireConsent(AiCompanyPolicy $policy, AiProviderConnection $connection, User $actor, string $scope = 'transaction'): void
     {
-        $preferences = AiUserPreference::where('company_id', $policy->company_id)->where('user_id', $actor->id)->first();
-        $key = $scope === 'transaction' ? $connection->public_id : $scope.':'.$connection->public_id;
-        $actual = $preferences?->consents[$key]['fingerprint'] ?? '';
-        if (! is_string($actual) || ! hash_equals($this->consentFingerprint($policy, $connection, $scope), $actual)) {
+        if (! $this->hasConsent($policy, $connection, $actor, $scope)) {
             throw new AssistantUnavailable('consent');
         }
+    }
+
+    /** Disclosure check only; never grants company/report/dispatch authority. */
+    public function hasConsent(AiCompanyPolicy $policy, AiProviderConnection $connection, User $actor,
+        string $scope = 'transaction', ?AiUserPreference $preferences = null): bool
+    {
+        if (! in_array($scope, ['transaction', 'question', 'connection_test'], true)
+            || (int) $connection->company_id !== (int) $policy->company_id || $connection->revoked_at !== null) {
+            return false;
+        }
+        $preferences ??= AiUserPreference::where('company_id', $policy->company_id)->where('user_id', $actor->id)->first();
+        if ($preferences === null || (int) $preferences->company_id !== (int) $policy->company_id
+            || (int) $preferences->user_id !== (int) $actor->id) {
+            return false;
+        }
+        $key = $scope === 'transaction' ? $connection->public_id : $scope.':'.$connection->public_id;
+        $entry = $preferences->consents[$key] ?? null;
+        if (! is_array($entry) || ! is_string($entry['fingerprint'] ?? null)
+            || ! is_string($entry['recorded_at'] ?? null) || $entry['recorded_at'] === '') {
+            return false;
+        }
+        $expected = $this->consentFingerprint($policy, $connection, $scope);
+        if (hash_equals($expected, $entry['fingerprint'])) {
+            return true;
+        }
+
+        return $scope === 'question'
+            && ((is_string($entry['compatible_fingerprint'] ?? null) && hash_equals($expected, $entry['compatible_fingerprint'])
+                    && is_string($entry['compatible_legacy_fingerprint'] ?? null)
+                    && hash_equals($entry['fingerprint'], $entry['compatible_legacy_fingerprint']))
+                || hash_equals($this->fingerprint($policy, $connection, 'question', true), $entry['fingerprint']));
     }
 
     private function authorizeCredential(Company $company, User $actor, string $source, bool $requireOptIn = true): void
