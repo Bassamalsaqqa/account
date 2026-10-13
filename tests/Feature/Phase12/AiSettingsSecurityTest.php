@@ -37,7 +37,7 @@ class AiSettingsSecurityTest extends TestCase
 
     public function test_settings_are_write_only_without_legacy_route_or_price_controls(): void
     {
-        Livewire::test(AiSettings::class)->assertSee('DeepSeek AI')->assertSee('Connection verified')
+        Livewire::test(AiSettings::class)->assertSee('DeepSeek AI')->assertSee(__('ai_product.status_verified'))
             ->assertDontSee('synthetic-primary-key-never-real')->assertDontSee('secret_ciphertext')
             ->assertDontSee('wire:model="pricing"', false)->assertDontSee('Provider connections');
         $this->assertStringNotContainsString('synthetic-primary-key', AuditEvent::all()->toJson());
@@ -118,6 +118,7 @@ class AiSettingsSecurityTest extends TestCase
         Http::assertNothingSent();
     }
 
+    /** @param list<string> $permissions */
     private function member(array $permissions): User
     {
         $member = User::factory()->create(['password' => Hash::make('synthetic-custodian-only')]);

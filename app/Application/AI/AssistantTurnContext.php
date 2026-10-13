@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Application\AI;
 
+use App\Application\Reporting\Security\ReportingGuard;
 use App\Models\Company;
 use App\Models\User;
 use Illuminate\Support\Facades\Cache;
@@ -72,7 +73,7 @@ final class AssistantTurnContext
         $governance = app(AiGovernance::class);
         $policy = $governance->authorizeUse($company, $actor, 'question');
         $keys = app(AssistantReportCatalog::class)->permittedKeys($company, $actor);
-        $freshPermissions = $actor->getAllPermissions()->where('guard_name', 'web')->pluck('name')->all();
+        $freshPermissions = app(ReportingGuard::class)->permissionNames($actor);
         $permissions = [];
         foreach (['inventory.cost.view', 'purchasing.cost.view', 'reports.cost.view', 'reports.profit.view', 'money.cash.view', 'money.bank.view'] as $permission) {
             $permissions[$permission] = in_array($permission, $freshPermissions, true);

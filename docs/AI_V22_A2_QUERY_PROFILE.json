@@ -1,0 +1,563 @@
+﻿{
+    "scope":  "Synthetic service-only measurements; SQL bindings excluded; no production data or paid calls.",
+    "concurrency":  [
+                        {
+                            "readers":  4,
+                            "results":  [
+                                            {
+                                                "status":  "ok",
+                                                "gross_sales_base":  "800.000000",
+                                                "previous_gross_sales_base":  "450.000000",
+                                                "query_count":  76,
+                                                "milliseconds":  134.8035
+                                            },
+                                            {
+                                                "status":  "ok",
+                                                "gross_sales_base":  "800.000000",
+                                                "previous_gross_sales_base":  "450.000000",
+                                                "query_count":  76,
+                                                "milliseconds":  136.1028
+                                            },
+                                            {
+                                                "status":  "ok",
+                                                "gross_sales_base":  "800.000000",
+                                                "previous_gross_sales_base":  "450.000000",
+                                                "query_count":  76,
+                                                "milliseconds":  136.1789
+                                            },
+                                            {
+                                                "status":  "ok",
+                                                "gross_sales_base":  "800.000000",
+                                                "previous_gross_sales_base":  "450.000000",
+                                                "query_count":  76,
+                                                "milliseconds":  134.6372
+                                            }
+                                        ]
+                        },
+                        {
+                            "readers":  2,
+                            "results":  [
+                                            {
+                                                "status":  "unauthorized"
+                                            },
+                                            {
+                                                "status":  "unauthorized"
+                                            }
+                                        ]
+                        },
+                        {
+                            "readers":  2,
+                            "results":  [
+                                            {
+                                                "status":  "unauthorized"
+                                            },
+                                            {
+                                                "status":  "unauthorized"
+                                            }
+                                        ]
+                        }
+                    ],
+    "fixtures":  {
+                     "S":  "Four posted invoices and one receipt; October 800 ILS, September 450 ILS, August 200 ILS.",
+                     "M":  "16 posted invoices, 25 extra customers and one receipt; October 860 ILS, September 510 ILS, August 200 ILS."
+                 },
+    "baseline":  "688941d0dc3a2dcbb637c04a8c2fb30ad81ab6de",
+    "measurements":  [
+                         {
+                             "sql_ms":  264.17999999999995,
+                             "current_total":  "800.000000",
+                             "query_count":  515,
+                             "size":  "S",
+                             "comparison_total":  "450.000000",
+                             "top_parameterized_statements":  [
+                                                                  {
+                                                                      "sql":  "select `roles`.*, `model_has_roles`.`model_id` as `pivot_model_id`, `model_has_roles`.`role_id` as `pivot_role_id`, `model_has_roles`.`model_type` as `pivot_model_type`, `model_has_roles`.`company_id` as `pivot_company_id` from `roles` inner join `model_has_roles` on `roles`.`id` = `model_has_roles`.`role_id` where `model_has_roles`.`company_id` = ? and (`roles`.`company_id` is null or `roles`.`company_id` = ?) and `model_has_roles`.`model_id` in (?) and `model_has_roles`.`model_type` = ?",
+                                                                      "milliseconds":  38.410,
+                                                                      "count":  87
+                                                                  },
+                                                                  {
+                                                                      "sql":  "select exists(select * from `companies` where `companies`.`id` = ? and `status` = ?) as `exists`",
+                                                                      "milliseconds":  23.300,
+                                                                      "count":  55
+                                                                  },
+                                                                  {
+                                                                      "sql":  "select exists(select * from `company_user` where `company_id` = ? and `user_id` = ? and `status` = ?) as `exists`",
+                                                                      "milliseconds":  17.870,
+                                                                      "count":  55
+                                                                  },
+                                                                  {
+                                                                      "sql":  "select `permissions`.*, `model_has_permissions`.`model_id` as `pivot_model_id`, `model_has_permissions`.`permission_id` as `pivot_permission_id`, `model_has_permissions`.`model_type` as `pivot_model_type`, `model_has_permissions`.`company_id` as `pivot_company_id` from `permissions` inner join `model_has_permissions` on `permissions`.`id` = `model_has_permissions`.`permission_id` where `model_has_permissions`.`model_id` = ? and `model_has_permissions`.`model_type` = ? and `model_has_permissions`.`company_id` = ?",
+                                                                      "milliseconds":  22.16,
+                                                                      "count":  55
+                                                                  },
+                                                                  {
+                                                                      "sql":  "select `permissions`.*, `role_has_permissions`.`role_id` as `pivot_role_id`, `role_has_permissions`.`permission_id` as `pivot_permission_id` from `permissions` inner join `role_has_permissions` on `permissions`.`id` = `role_has_permissions`.`permission_id` where `role_has_permissions`.`role_id` in (?)",
+                                                                      "milliseconds":  40.960,
+                                                                      "count":  55
+                                                                  },
+                                                                  {
+                                                                      "sql":  "select * from `ai_company_policies` where `company_id` = ? and `ai_company_policies`.`company_id` = ? limit ?",
+                                                                      "milliseconds":  15.940,
+                                                                      "count":  34
+                                                                  },
+                                                                  {
+                                                                      "sql":  "select * from `companies` where `companies`.`id` = ? limit ? for update",
+                                                                      "milliseconds":  12.580,
+                                                                      "count":  32
+                                                                  },
+                                                                  {
+                                                                      "sql":  "select * from `company_user` where `company_id` = ? and `user_id` = ? limit ? for update",
+                                                                      "milliseconds":  10.37,
+                                                                      "count":  32
+                                                                  },
+                                                                  {
+                                                                      "sql":  "select `permissions`.*, `model_has_permissions`.`model_id` as `pivot_model_id`, `model_has_permissions`.`permission_id` as `pivot_permission_id`, `model_has_permissions`.`model_type` as `pivot_model_type`, `model_has_permissions`.`company_id` as `pivot_company_id` from `permissions` inner join `model_has_permissions` on `permissions`.`id` = `model_has_permissions`.`permission_id` where `model_has_permissions`.`company_id` = ? and `model_has_permissions`.`model_id` in (?) and `model_has_permissions`.`model_type` = ?",
+                                                                      "milliseconds":  11.870,
+                                                                      "count":  32
+                                                                  },
+                                                                  {
+                                                                      "sql":  "select * from `ai_company_policies` where `company_id` = ? and `ai_company_policies`.`company_id` = ? limit ? for update",
+                                                                      "milliseconds":  5.490,
+                                                                      "count":  17
+                                                                  }
+                                                              ],
+                             "elapsed_ms":  1117.9792,
+                             "stage":  "reviewed_688941d_before",
+                             "operation":  "comparison"
+                         },
+                         {
+                             "sql_ms":  170.99000000000026,
+                             "current_total":  "200.000000",
+                             "query_count":  313,
+                             "size":  "S",
+                             "comparison_total":  null,
+                             "top_parameterized_statements":  [
+                                                                  {
+                                                                      "sql":  "select `roles`.*, `model_has_roles`.`model_id` as `pivot_model_id`, `model_has_roles`.`role_id` as `pivot_role_id`, `model_has_roles`.`model_type` as `pivot_model_type`, `model_has_roles`.`company_id` as `pivot_company_id` from `roles` inner join `model_has_roles` on `roles`.`id` = `model_has_roles`.`role_id` where `model_has_roles`.`company_id` = ? and (`roles`.`company_id` is null or `roles`.`company_id` = ?) and `model_has_roles`.`model_id` in (?) and `model_has_roles`.`model_type` = ?",
+                                                                      "milliseconds":  23.760,
+                                                                      "count":  54
+                                                                  },
+                                                                  {
+                                                                      "sql":  "select exists(select * from `companies` where `companies`.`id` = ? and `status` = ?) as `exists`",
+                                                                      "milliseconds":  17.530,
+                                                                      "count":  38
+                                                                  },
+                                                                  {
+                                                                      "sql":  "select exists(select * from `company_user` where `company_id` = ? and `user_id` = ? and `status` = ?) as `exists`",
+                                                                      "milliseconds":  11.820,
+                                                                      "count":  38
+                                                                  },
+                                                                  {
+                                                                      "sql":  "select `permissions`.*, `model_has_permissions`.`model_id` as `pivot_model_id`, `model_has_permissions`.`permission_id` as `pivot_permission_id`, `model_has_permissions`.`model_type` as `pivot_model_type`, `model_has_permissions`.`company_id` as `pivot_company_id` from `permissions` inner join `model_has_permissions` on `permissions`.`id` = `model_has_permissions`.`permission_id` where `model_has_permissions`.`model_id` = ? and `model_has_permissions`.`model_type` = ? and `model_has_permissions`.`company_id` = ?",
+                                                                      "milliseconds":  15.200,
+                                                                      "count":  38
+                                                                  },
+                                                                  {
+                                                                      "sql":  "select `permissions`.*, `role_has_permissions`.`role_id` as `pivot_role_id`, `role_has_permissions`.`permission_id` as `pivot_permission_id` from `permissions` inner join `role_has_permissions` on `permissions`.`id` = `role_has_permissions`.`permission_id` where `role_has_permissions`.`role_id` in (?)",
+                                                                      "milliseconds":  28.07,
+                                                                      "count":  38
+                                                                  },
+                                                                  {
+                                                                      "sql":  "select * from `ai_company_policies` where `company_id` = ? and `ai_company_policies`.`company_id` = ? limit ?",
+                                                                      "milliseconds":  9.57,
+                                                                      "count":  23
+                                                                  },
+                                                                  {
+                                                                      "sql":  "select * from `companies` where `companies`.`id` = ? limit ? for update",
+                                                                      "milliseconds":  6.43,
+                                                                      "count":  16
+                                                                  },
+                                                                  {
+                                                                      "sql":  "select * from `company_user` where `company_id` = ? and `user_id` = ? limit ? for update",
+                                                                      "milliseconds":  5.24,
+                                                                      "count":  16
+                                                                  },
+                                                                  {
+                                                                      "sql":  "select `permissions`.*, `model_has_permissions`.`model_id` as `pivot_model_id`, `model_has_permissions`.`permission_id` as `pivot_permission_id`, `model_has_permissions`.`model_type` as `pivot_model_type`, `model_has_permissions`.`company_id` as `pivot_company_id` from `permissions` inner join `model_has_permissions` on `permissions`.`id` = `model_has_permissions`.`permission_id` where `model_has_permissions`.`company_id` = ? and `model_has_permissions`.`model_id` in (?) and `model_has_permissions`.`model_type` = ?",
+                                                                      "milliseconds":  6.180,
+                                                                      "count":  16
+                                                                  },
+                                                                  {
+                                                                      "sql":  "select * from `ai_company_policies` where `company_id` = ? and `ai_company_policies`.`company_id` = ? limit ? for update",
+                                                                      "milliseconds":  3.240,
+                                                                      "count":  9
+                                                                  }
+                                                              ],
+                             "elapsed_ms":  706.0073,
+                             "stage":  "reviewed_688941d_before",
+                             "operation":  "followup"
+                         },
+                         {
+                             "sql_ms":  224.49999999999997,
+                             "current_total":  "860.000000",
+                             "query_count":  515,
+                             "size":  "M",
+                             "comparison_total":  "510.000000",
+                             "top_parameterized_statements":  [
+                                                                  {
+                                                                      "sql":  "select `roles`.*, `model_has_roles`.`model_id` as `pivot_model_id`, `model_has_roles`.`role_id` as `pivot_role_id`, `model_has_roles`.`model_type` as `pivot_model_type`, `model_has_roles`.`company_id` as `pivot_company_id` from `roles` inner join `model_has_roles` on `roles`.`id` = `model_has_roles`.`role_id` where `model_has_roles`.`company_id` = ? and (`roles`.`company_id` is null or `roles`.`company_id` = ?) and `model_has_roles`.`model_id` in (?) and `model_has_roles`.`model_type` = ?",
+                                                                      "milliseconds":  32.920,
+                                                                      "count":  87
+                                                                  },
+                                                                  {
+                                                                      "sql":  "select exists(select * from `companies` where `companies`.`id` = ? and `status` = ?) as `exists`",
+                                                                      "milliseconds":  17.110,
+                                                                      "count":  55
+                                                                  },
+                                                                  {
+                                                                      "sql":  "select exists(select * from `company_user` where `company_id` = ? and `user_id` = ? and `status` = ?) as `exists`",
+                                                                      "milliseconds":  13.280,
+                                                                      "count":  55
+                                                                  },
+                                                                  {
+                                                                      "sql":  "select `permissions`.*, `model_has_permissions`.`model_id` as `pivot_model_id`, `model_has_permissions`.`permission_id` as `pivot_permission_id`, `model_has_permissions`.`model_type` as `pivot_model_type`, `model_has_permissions`.`company_id` as `pivot_company_id` from `permissions` inner join `model_has_permissions` on `permissions`.`id` = `model_has_permissions`.`permission_id` where `model_has_permissions`.`model_id` = ? and `model_has_permissions`.`model_type` = ? and `model_has_permissions`.`company_id` = ?",
+                                                                      "milliseconds":  16.690,
+                                                                      "count":  55
+                                                                  },
+                                                                  {
+                                                                      "sql":  "select `permissions`.*, `role_has_permissions`.`role_id` as `pivot_role_id`, `role_has_permissions`.`permission_id` as `pivot_permission_id` from `permissions` inner join `role_has_permissions` on `permissions`.`id` = `role_has_permissions`.`permission_id` where `role_has_permissions`.`role_id` in (?)",
+                                                                      "milliseconds":  32.5,
+                                                                      "count":  55
+                                                                  },
+                                                                  {
+                                                                      "sql":  "select * from `ai_company_policies` where `company_id` = ? and `ai_company_policies`.`company_id` = ? limit ?",
+                                                                      "milliseconds":  13.760,
+                                                                      "count":  34
+                                                                  },
+                                                                  {
+                                                                      "sql":  "select * from `companies` where `companies`.`id` = ? limit ? for update",
+                                                                      "milliseconds":  9.880,
+                                                                      "count":  32
+                                                                  },
+                                                                  {
+                                                                      "sql":  "select * from `company_user` where `company_id` = ? and `user_id` = ? limit ? for update",
+                                                                      "milliseconds":  8.96,
+                                                                      "count":  32
+                                                                  },
+                                                                  {
+                                                                      "sql":  "select `permissions`.*, `model_has_permissions`.`model_id` as `pivot_model_id`, `model_has_permissions`.`permission_id` as `pivot_permission_id`, `model_has_permissions`.`model_type` as `pivot_model_type`, `model_has_permissions`.`company_id` as `pivot_company_id` from `permissions` inner join `model_has_permissions` on `permissions`.`id` = `model_has_permissions`.`permission_id` where `model_has_permissions`.`company_id` = ? and `model_has_permissions`.`model_id` in (?) and `model_has_permissions`.`model_type` = ?",
+                                                                      "milliseconds":  11.200,
+                                                                      "count":  32
+                                                                  },
+                                                                  {
+                                                                      "sql":  "select * from `ai_company_policies` where `company_id` = ? and `ai_company_policies`.`company_id` = ? limit ? for update",
+                                                                      "milliseconds":  5.100,
+                                                                      "count":  17
+                                                                  }
+                                                              ],
+                             "elapsed_ms":  838.5979,
+                             "stage":  "reviewed_688941d_before",
+                             "operation":  "comparison"
+                         },
+                         {
+                             "sql_ms":  126.10000000000004,
+                             "current_total":  "200.000000",
+                             "query_count":  313,
+                             "size":  "M",
+                             "comparison_total":  null,
+                             "top_parameterized_statements":  [
+                                                                  {
+                                                                      "sql":  "select `roles`.*, `model_has_roles`.`model_id` as `pivot_model_id`, `model_has_roles`.`role_id` as `pivot_role_id`, `model_has_roles`.`model_type` as `pivot_model_type`, `model_has_roles`.`company_id` as `pivot_company_id` from `roles` inner join `model_has_roles` on `roles`.`id` = `model_has_roles`.`role_id` where `model_has_roles`.`company_id` = ? and (`roles`.`company_id` is null or `roles`.`company_id` = ?) and `model_has_roles`.`model_id` in (?) and `model_has_roles`.`model_type` = ?",
+                                                                      "milliseconds":  19.24,
+                                                                      "count":  54
+                                                                  },
+                                                                  {
+                                                                      "sql":  "select exists(select * from `companies` where `companies`.`id` = ? and `status` = ?) as `exists`",
+                                                                      "milliseconds":  10.800,
+                                                                      "count":  38
+                                                                  },
+                                                                  {
+                                                                      "sql":  "select exists(select * from `company_user` where `company_id` = ? and `user_id` = ? and `status` = ?) as `exists`",
+                                                                      "milliseconds":  8.890,
+                                                                      "count":  38
+                                                                  },
+                                                                  {
+                                                                      "sql":  "select `permissions`.*, `model_has_permissions`.`model_id` as `pivot_model_id`, `model_has_permissions`.`permission_id` as `pivot_permission_id`, `model_has_permissions`.`model_type` as `pivot_model_type`, `model_has_permissions`.`company_id` as `pivot_company_id` from `permissions` inner join `model_has_permissions` on `permissions`.`id` = `model_has_permissions`.`permission_id` where `model_has_permissions`.`model_id` = ? and `model_has_permissions`.`model_type` = ? and `model_has_permissions`.`company_id` = ?",
+                                                                      "milliseconds":  11.35,
+                                                                      "count":  38
+                                                                  },
+                                                                  {
+                                                                      "sql":  "select `permissions`.*, `role_has_permissions`.`role_id` as `pivot_role_id`, `role_has_permissions`.`permission_id` as `pivot_permission_id` from `permissions` inner join `role_has_permissions` on `permissions`.`id` = `role_has_permissions`.`permission_id` where `role_has_permissions`.`role_id` in (?)",
+                                                                      "milliseconds":  21.330,
+                                                                      "count":  38
+                                                                  },
+                                                                  {
+                                                                      "sql":  "select * from `ai_company_policies` where `company_id` = ? and `ai_company_policies`.`company_id` = ? limit ?",
+                                                                      "milliseconds":  8.900,
+                                                                      "count":  23
+                                                                  },
+                                                                  {
+                                                                      "sql":  "select * from `companies` where `companies`.`id` = ? limit ? for update",
+                                                                      "milliseconds":  4.900,
+                                                                      "count":  16
+                                                                  },
+                                                                  {
+                                                                      "sql":  "select * from `company_user` where `company_id` = ? and `user_id` = ? limit ? for update",
+                                                                      "milliseconds":  4.100,
+                                                                      "count":  16
+                                                                  },
+                                                                  {
+                                                                      "sql":  "select `permissions`.*, `model_has_permissions`.`model_id` as `pivot_model_id`, `model_has_permissions`.`permission_id` as `pivot_permission_id`, `model_has_permissions`.`model_type` as `pivot_model_type`, `model_has_permissions`.`company_id` as `pivot_company_id` from `permissions` inner join `model_has_permissions` on `permissions`.`id` = `model_has_permissions`.`permission_id` where `model_has_permissions`.`company_id` = ? and `model_has_permissions`.`model_id` in (?) and `model_has_permissions`.`model_type` = ?",
+                                                                      "milliseconds":  5.270,
+                                                                      "count":  16
+                                                                  },
+                                                                  {
+                                                                      "sql":  "select * from `ai_company_policies` where `company_id` = ? and `ai_company_policies`.`company_id` = ? limit ? for update",
+                                                                      "milliseconds":  2.89,
+                                                                      "count":  9
+                                                                  }
+                                                              ],
+                             "elapsed_ms":  511.8035,
+                             "stage":  "reviewed_688941d_before",
+                             "operation":  "followup"
+                         },
+                         {
+                             "sql_ms":  216.44,
+                             "current_total":  "800.000000",
+                             "query_count":  301,
+                             "size":  "S",
+                             "comparison_total":  "450.000000",
+                             "top_parameterized_statements":  [
+                                                                  {
+                                                                      "sql":  "(select `permissions`.`name` from `permissions` inner join `model_has_permissions` on `permissions`.`id` = `model_has_permissions`.`permission_id` where `model_has_permissions`.`model_id` = ? and `model_has_permissions`.`model_type` = ? and `model_has_permissions`.`company_id` = ? and `guard_name` = ?) union (select `permissions`.`name` from `permissions` where `guard_name` = ? and `id` in (select `permission_id` from `role_has_permissions` where `role_id` in (select `roles`.`id` from `roles` inner join `model_has_roles` on `roles`.`id` = `model_has_roles`.`role_id` where `model_has_roles`.`model_id` = ? and `model_has_roles`.`model_type` = ? and `model_has_roles`.`company_id` = ? and (`roles`.`company_id` is null or `roles`.`company_id` = ?))))",
+                                                                      "milliseconds":  54.350,
+                                                                      "count":  51
+                                                                  },
+                                                                  {
+                                                                      "sql":  "select exists(select * from `company_user` where `company_id` = ? and `user_id` = ? and `status` = ? and exists (select * from `companies` where `company_user`.`company_id` = `companies`.`id` and `status` = ?)) as `exists`",
+                                                                      "milliseconds":  19.990,
+                                                                      "count":  46
+                                                                  },
+                                                                  {
+                                                                      "sql":  "select * from `ai_company_policies` where `company_id` = ? and `ai_company_policies`.`company_id` = ? limit ?",
+                                                                      "milliseconds":  13.400,
+                                                                      "count":  34
+                                                                  },
+                                                                  {
+                                                                      "sql":  "select * from `companies` where `companies`.`id` = ? limit ? for update",
+                                                                      "milliseconds":  9.640,
+                                                                      "count":  23
+                                                                  },
+                                                                  {
+                                                                      "sql":  "select * from `company_user` where `company_id` = ? and `user_id` = ? limit ? for update",
+                                                                      "milliseconds":  8.49,
+                                                                      "count":  23
+                                                                  },
+                                                                  {
+                                                                      "sql":  "select `permissions`.*, `model_has_permissions`.`model_id` as `pivot_model_id`, `model_has_permissions`.`permission_id` as `pivot_permission_id`, `model_has_permissions`.`model_type` as `pivot_model_type`, `model_has_permissions`.`company_id` as `pivot_company_id` from `permissions` inner join `model_has_permissions` on `permissions`.`id` = `model_has_permissions`.`permission_id` where `model_has_permissions`.`company_id` = ? and `model_has_permissions`.`model_id` in (?) and `model_has_permissions`.`model_type` = ?",
+                                                                      "milliseconds":  10.28,
+                                                                      "count":  23
+                                                                  },
+                                                                  {
+                                                                      "sql":  "select `roles`.*, `model_has_roles`.`model_id` as `pivot_model_id`, `model_has_roles`.`role_id` as `pivot_role_id`, `model_has_roles`.`model_type` as `pivot_model_type`, `model_has_roles`.`company_id` as `pivot_company_id` from `roles` inner join `model_has_roles` on `roles`.`id` = `model_has_roles`.`role_id` where `model_has_roles`.`company_id` = ? and (`roles`.`company_id` is null or `roles`.`company_id` = ?) and `model_has_roles`.`model_id` in (?) and `model_has_roles`.`model_type` = ?",
+                                                                      "milliseconds":  11.73,
+                                                                      "count":  23
+                                                                  },
+                                                                  {
+                                                                      "sql":  "select * from `ai_company_policies` where `company_id` = ? and `ai_company_policies`.`company_id` = ? limit ? for update",
+                                                                      "milliseconds":  7.13,
+                                                                      "count":  17
+                                                                  },
+                                                                  {
+                                                                      "sql":  "select * from `companies` where `companies`.`id` = ? and `status` = ? limit ?",
+                                                                      "milliseconds":  2.82,
+                                                                      "count":  7
+                                                                  },
+                                                                  {
+                                                                      "sql":  "select * from `ai_provider_connections` where `company_id` = ? and `public_id` = ? and (`owner_user_id` is null or `owner_user_id` = ?) and `ai_provider_connections`.`company_id` = ? limit ? for update",
+                                                                      "milliseconds":  2.46,
+                                                                      "count":  5
+                                                                  }
+                                                              ],
+                             "elapsed_ms":  503.6439,
+                             "stage":  "corrected_source_after",
+                             "operation":  "comparison"
+                         },
+                         {
+                             "sql_ms":  113.79000000000003,
+                             "current_total":  "200.000000",
+                             "query_count":  163,
+                             "size":  "S",
+                             "comparison_total":  null,
+                             "top_parameterized_statements":  [
+                                                                  {
+                                                                      "sql":  "(select `permissions`.`name` from `permissions` inner join `model_has_permissions` on `permissions`.`id` = `model_has_permissions`.`permission_id` where `model_has_permissions`.`model_id` = ? and `model_has_permissions`.`model_type` = ? and `model_has_permissions`.`company_id` = ? and `guard_name` = ?) union (select `permissions`.`name` from `permissions` where `guard_name` = ? and `id` in (select `permission_id` from `role_has_permissions` where `role_id` in (select `roles`.`id` from `roles` inner join `model_has_roles` on `roles`.`id` = `model_has_roles`.`role_id` where `model_has_roles`.`model_id` = ? and `model_has_roles`.`model_type` = ? and `model_has_roles`.`company_id` = ? and (`roles`.`company_id` is null or `roles`.`company_id` = ?))))",
+                                                                      "milliseconds":  35.900,
+                                                                      "count":  37
+                                                                  },
+                                                                  {
+                                                                      "sql":  "select exists(select * from `company_user` where `company_id` = ? and `user_id` = ? and `status` = ? and exists (select * from `companies` where `company_user`.`company_id` = `companies`.`id` and `status` = ?)) as `exists`",
+                                                                      "milliseconds":  17.09,
+                                                                      "count":  31
+                                                                  },
+                                                                  {
+                                                                      "sql":  "select * from `ai_company_policies` where `company_id` = ? and `ai_company_policies`.`company_id` = ? limit ?",
+                                                                      "milliseconds":  8.57,
+                                                                      "count":  23
+                                                                  },
+                                                                  {
+                                                                      "sql":  "select * from `companies` where `companies`.`id` = ? limit ? for update",
+                                                                      "milliseconds":  3.87,
+                                                                      "count":  9
+                                                                  },
+                                                                  {
+                                                                      "sql":  "select * from `company_user` where `company_id` = ? and `user_id` = ? limit ? for update",
+                                                                      "milliseconds":  4.21,
+                                                                      "count":  9
+                                                                  },
+                                                                  {
+                                                                      "sql":  "select `permissions`.*, `model_has_permissions`.`model_id` as `pivot_model_id`, `model_has_permissions`.`permission_id` as `pivot_permission_id`, `model_has_permissions`.`model_type` as `pivot_model_type`, `model_has_permissions`.`company_id` as `pivot_company_id` from `permissions` inner join `model_has_permissions` on `permissions`.`id` = `model_has_permissions`.`permission_id` where `model_has_permissions`.`company_id` = ? and `model_has_permissions`.`model_id` in (?) and `model_has_permissions`.`model_type` = ?",
+                                                                      "milliseconds":  4.29,
+                                                                      "count":  9
+                                                                  },
+                                                                  {
+                                                                      "sql":  "select `roles`.*, `model_has_roles`.`model_id` as `pivot_model_id`, `model_has_roles`.`role_id` as `pivot_role_id`, `model_has_roles`.`model_type` as `pivot_model_type`, `model_has_roles`.`company_id` as `pivot_company_id` from `roles` inner join `model_has_roles` on `roles`.`id` = `model_has_roles`.`role_id` where `model_has_roles`.`company_id` = ? and (`roles`.`company_id` is null or `roles`.`company_id` = ?) and `model_has_roles`.`model_id` in (?) and `model_has_roles`.`model_type` = ?",
+                                                                      "milliseconds":  6.17,
+                                                                      "count":  9
+                                                                  },
+                                                                  {
+                                                                      "sql":  "select * from `ai_company_policies` where `company_id` = ? and `ai_company_policies`.`company_id` = ? limit ? for update",
+                                                                      "milliseconds":  5.770,
+                                                                      "count":  9
+                                                                  },
+                                                                  {
+                                                                      "sql":  "select * from `companies` where `companies`.`id` = ? and `status` = ? limit ?",
+                                                                      "milliseconds":  2.09,
+                                                                      "count":  5
+                                                                  },
+                                                                  {
+                                                                      "sql":  "select * from `assistant_requests` where `company_id` = ? and `user_id` = ? and `request_key` = ? and `assistant_requests`.`company_id` = ? limit ? for update",
+                                                                      "milliseconds":  0.37,
+                                                                      "count":  1
+                                                                  }
+                                                              ],
+                             "elapsed_ms":  201.8598,
+                             "stage":  "corrected_source_after",
+                             "operation":  "followup"
+                         },
+                         {
+                             "sql_ms":  151.52999999999997,
+                             "current_total":  "860.000000",
+                             "query_count":  301,
+                             "size":  "M",
+                             "comparison_total":  "510.000000",
+                             "top_parameterized_statements":  [
+                                                                  {
+                                                                      "sql":  "(select `permissions`.`name` from `permissions` inner join `model_has_permissions` on `permissions`.`id` = `model_has_permissions`.`permission_id` where `model_has_permissions`.`model_id` = ? and `model_has_permissions`.`model_type` = ? and `model_has_permissions`.`company_id` = ? and `guard_name` = ?) union (select `permissions`.`name` from `permissions` where `guard_name` = ? and `id` in (select `permission_id` from `role_has_permissions` where `role_id` in (select `roles`.`id` from `roles` inner join `model_has_roles` on `roles`.`id` = `model_has_roles`.`role_id` where `model_has_roles`.`model_id` = ? and `model_has_roles`.`model_type` = ? and `model_has_roles`.`company_id` = ? and (`roles`.`company_id` is null or `roles`.`company_id` = ?))))",
+                                                                      "milliseconds":  40.660,
+                                                                      "count":  51
+                                                                  },
+                                                                  {
+                                                                      "sql":  "select exists(select * from `company_user` where `company_id` = ? and `user_id` = ? and `status` = ? and exists (select * from `companies` where `company_user`.`company_id` = `companies`.`id` and `status` = ?)) as `exists`",
+                                                                      "milliseconds":  15.04,
+                                                                      "count":  46
+                                                                  },
+                                                                  {
+                                                                      "sql":  "select * from `ai_company_policies` where `company_id` = ? and `ai_company_policies`.`company_id` = ? limit ?",
+                                                                      "milliseconds":  9.670,
+                                                                      "count":  34
+                                                                  },
+                                                                  {
+                                                                      "sql":  "select * from `companies` where `companies`.`id` = ? limit ? for update",
+                                                                      "milliseconds":  6.450,
+                                                                      "count":  23
+                                                                  },
+                                                                  {
+                                                                      "sql":  "select * from `company_user` where `company_id` = ? and `user_id` = ? limit ? for update",
+                                                                      "milliseconds":  6.82,
+                                                                      "count":  23
+                                                                  },
+                                                                  {
+                                                                      "sql":  "select `permissions`.*, `model_has_permissions`.`model_id` as `pivot_model_id`, `model_has_permissions`.`permission_id` as `pivot_permission_id`, `model_has_permissions`.`model_type` as `pivot_model_type`, `model_has_permissions`.`company_id` as `pivot_company_id` from `permissions` inner join `model_has_permissions` on `permissions`.`id` = `model_has_permissions`.`permission_id` where `model_has_permissions`.`company_id` = ? and `model_has_permissions`.`model_id` in (?) and `model_has_permissions`.`model_type` = ?",
+                                                                      "milliseconds":  8.23,
+                                                                      "count":  23
+                                                                  },
+                                                                  {
+                                                                      "sql":  "select `roles`.*, `model_has_roles`.`model_id` as `pivot_model_id`, `model_has_roles`.`role_id` as `pivot_role_id`, `model_has_roles`.`model_type` as `pivot_model_type`, `model_has_roles`.`company_id` as `pivot_company_id` from `roles` inner join `model_has_roles` on `roles`.`id` = `model_has_roles`.`role_id` where `model_has_roles`.`company_id` = ? and (`roles`.`company_id` is null or `roles`.`company_id` = ?) and `model_has_roles`.`model_id` in (?) and `model_has_roles`.`model_type` = ?",
+                                                                      "milliseconds":  8.830,
+                                                                      "count":  23
+                                                                  },
+                                                                  {
+                                                                      "sql":  "select * from `ai_company_policies` where `company_id` = ? and `ai_company_policies`.`company_id` = ? limit ? for update",
+                                                                      "milliseconds":  4.990,
+                                                                      "count":  17
+                                                                  },
+                                                                  {
+                                                                      "sql":  "select * from `companies` where `companies`.`id` = ? and `status` = ? limit ?",
+                                                                      "milliseconds":  2.27,
+                                                                      "count":  7
+                                                                  },
+                                                                  {
+                                                                      "sql":  "select * from `ai_provider_connections` where `company_id` = ? and `public_id` = ? and (`owner_user_id` is null or `owner_user_id` = ?) and `ai_provider_connections`.`company_id` = ? limit ? for update",
+                                                                      "milliseconds":  1.88,
+                                                                      "count":  5
+                                                                  }
+                                                              ],
+                             "elapsed_ms":  289.1713,
+                             "stage":  "corrected_source_after",
+                             "operation":  "comparison"
+                         },
+                         {
+                             "sql_ms":  86.73000000000002,
+                             "current_total":  "200.000000",
+                             "query_count":  163,
+                             "size":  "M",
+                             "comparison_total":  null,
+                             "top_parameterized_statements":  [
+                                                                  {
+                                                                      "sql":  "(select `permissions`.`name` from `permissions` inner join `model_has_permissions` on `permissions`.`id` = `model_has_permissions`.`permission_id` where `model_has_permissions`.`model_id` = ? and `model_has_permissions`.`model_type` = ? and `model_has_permissions`.`company_id` = ? and `guard_name` = ?) union (select `permissions`.`name` from `permissions` where `guard_name` = ? and `id` in (select `permission_id` from `role_has_permissions` where `role_id` in (select `roles`.`id` from `roles` inner join `model_has_roles` on `roles`.`id` = `model_has_roles`.`role_id` where `model_has_roles`.`model_id` = ? and `model_has_roles`.`model_type` = ? and `model_has_roles`.`company_id` = ? and (`roles`.`company_id` is null or `roles`.`company_id` = ?))))",
+                                                                      "milliseconds":  29.370,
+                                                                      "count":  37
+                                                                  },
+                                                                  {
+                                                                      "sql":  "select exists(select * from `company_user` where `company_id` = ? and `user_id` = ? and `status` = ? and exists (select * from `companies` where `company_user`.`company_id` = `companies`.`id` and `status` = ?)) as `exists`",
+                                                                      "milliseconds":  9.250,
+                                                                      "count":  31
+                                                                  },
+                                                                  {
+                                                                      "sql":  "select * from `ai_company_policies` where `company_id` = ? and `ai_company_policies`.`company_id` = ? limit ?",
+                                                                      "milliseconds":  6.54,
+                                                                      "count":  23
+                                                                  },
+                                                                  {
+                                                                      "sql":  "select * from `companies` where `companies`.`id` = ? limit ? for update",
+                                                                      "milliseconds":  2.430,
+                                                                      "count":  9
+                                                                  },
+                                                                  {
+                                                                      "sql":  "select * from `company_user` where `company_id` = ? and `user_id` = ? limit ? for update",
+                                                                      "milliseconds":  2.23,
+                                                                      "count":  9
+                                                                  },
+                                                                  {
+                                                                      "sql":  "select `permissions`.*, `model_has_permissions`.`model_id` as `pivot_model_id`, `model_has_permissions`.`permission_id` as `pivot_permission_id`, `model_has_permissions`.`model_type` as `pivot_model_type`, `model_has_permissions`.`company_id` as `pivot_company_id` from `permissions` inner join `model_has_permissions` on `permissions`.`id` = `model_has_permissions`.`permission_id` where `model_has_permissions`.`company_id` = ? and `model_has_permissions`.`model_id` in (?) and `model_has_permissions`.`model_type` = ?",
+                                                                      "milliseconds":  2.800,
+                                                                      "count":  9
+                                                                  },
+                                                                  {
+                                                                      "sql":  "select `roles`.*, `model_has_roles`.`model_id` as `pivot_model_id`, `model_has_roles`.`role_id` as `pivot_role_id`, `model_has_roles`.`model_type` as `pivot_model_type`, `model_has_roles`.`company_id` as `pivot_company_id` from `roles` inner join `model_has_roles` on `roles`.`id` = `model_has_roles`.`role_id` where `model_has_roles`.`company_id` = ? and (`roles`.`company_id` is null or `roles`.`company_id` = ?) and `model_has_roles`.`model_id` in (?) and `model_has_roles`.`model_type` = ?",
+                                                                      "milliseconds":  3.46,
+                                                                      "count":  9
+                                                                  },
+                                                                  {
+                                                                      "sql":  "select * from `ai_company_policies` where `company_id` = ? and `ai_company_policies`.`company_id` = ? limit ? for update",
+                                                                      "milliseconds":  2.730,
+                                                                      "count":  9
+                                                                  },
+                                                                  {
+                                                                      "sql":  "select * from `companies` where `companies`.`id` = ? and `status` = ? limit ?",
+                                                                      "milliseconds":  1.36,
+                                                                      "count":  5
+                                                                  },
+                                                                  {
+                                                                      "sql":  "select * from `assistant_requests` where `company_id` = ? and `user_id` = ? and `request_key` = ? and `assistant_requests`.`company_id` = ? limit ? for update",
+                                                                      "milliseconds":  0.3,
+                                                                      "count":  1
+                                                                  }
+                                                              ],
+                             "elapsed_ms":  156.8761,
+                             "stage":  "corrected_source_after",
+                             "operation":  "followup"
+                         }
+                     ]
+}

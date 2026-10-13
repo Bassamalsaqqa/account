@@ -45,7 +45,7 @@ Date fixed to 2026-10-15, Asia/Hebron; disposable company and canonical posted s
 
 Normal local Owner login and the actual registered Livewire drawer were used in Edge. English desktop, Arabic RTL at 390x844 and 768x1024, canonical source links, loading states, Escape cancellation and reopening were checked. Both mobile/tablet document widths matched their viewports. Screenshots and sanitized counts are retained in ignored local evidence, not published with credentials or private material. Financial row counts stayed at the seeded four invoices, five posting batches, ten posting lines, one receipt and zero stock movements; no invoice/payment/stock creation occurred during assistant use. Separate canonical regressions verify full economic fingerprints remain unchanged.
 
-A measured synthetic monthly comparison after capability-enumeration optimization took 3052 ms and 754 SQL queries for the complete local Livewire request; a zero-model follow-up took 846 ms and 504 queries. These are development observations, not Hostinger guarantees. Repeated catalog checks now use a fresh per-enumeration permission snapshot; actual execution and delivery authorize independently. A4 thin-client integration and further proportional rendering/query improvements remain future work.
+A measured synthetic monthly comparison at the original A2 checkpoint took 3052 ms and 754 SQL queries for the complete local Livewire request; a zero-model follow-up took 846 ms and 504 queries. These historical observations are retained; the correction measurements below supersede them for the corrected source. They are development observations, not Hostinger guarantees.
 
 ## Verification actually executed
 
@@ -62,3 +62,46 @@ No schema/dependency/lockfile/canonical financial-writer changes. No GitHub CI, 
 Independent source acceptance and separate release authorization are required. Real DeepSeek natural-language quality, live billing and actual microphone/dialect accuracy have not been measured in this task. Browser HTTP is local synthetic QA; authenticated API transport/session refusal cases are covered by guarded HTTP feature tests.
 
 A3 natural transaction-intent integration, A4 cancellable automatic voice/thin drawer, A5 zero-token briefing and A6 shell-only PWA remain unaccepted and are not claimed complete. Current monthly local follow-ups require a single compatible monthly prior plan; complex/mixed scopes use planning or clarification. Normalized entity fallback is finite and fails closed beyond its scan cap. No walk-in/master-data creation, automatic financial posting, result egress or unrestricted tools are introduced.
+
+## Focused A2 architect corrections
+
+Correction baseline: `688941d0dc3a2dcbb637c04a8c2fb30ad81ab6de`. PR #39 remains draft, awaiting independent exact-head re-review. The checks in this section are newly executed correction evidence; earlier counts above are historical and overlap.
+
+### Independent intent constraints
+
+[AssistantIntentScope](../app/Application/AI/AssistantIntentScope.php) associates each proposal with a complete server-recognized question clause before existing constraint and same-company entity validation. Optional SDK `request_fragment` is untrusted metadata: it must match the whole clause exactly and is stripped before execution/context persistence. Every independent clause must be covered. Truncated fragments, borrowed names/currencies/dates/comparisons, omitted clauses and ambiguous same-domain associations clarify with no report results. The bounded supported debt/last-invoice pronoun pair retains its shared customer scope. Unrecognized clause boundaries remain a clarification limitation, not permission to ignore qualifiers.
+
+English: "What's Ahmed's outstanding balance, and what were our sales this month?" Arabic: "قديش على أحمد دين؟ وشو مبيعات هالشهر؟" Both now return current Ahmed debt **ILS 1000.000000** independently of October sales **ILS 800.000000**, with correct current/period labels and separate canonical source links. Actual local Livewire rendering was verified in English desktop and Arabic RTL mobile using one mocked SDK planning response each; calculations use posted synthetic canonical fixtures. No live model-language accuracy is claimed.
+
+### Query profile and authorization
+
+[Sanitized parameterized traces](AI_V22_A2_QUERY_PROFILE.json) include the ten most frequent statements per workload, excluding all SQL bindings, prompts, credentials and production identifiers. The new profile harness measures only `AssistantTurnService::run`, including governance, reservations, local reports and context; it excludes fixture creation, HTTP middleware and Blade rendering.
+
+| Workload | Queries before / after | Elapsed ms before / after | Exact result |
+|---|---:|---:|---|
+| S comparison | 515 / 301 | 1118.0 / 503.6 | October 800 / September 450 ILS |
+| S zero-model follow-up | 313 / 163 | 706.0 / 201.9 | August 200 ILS |
+| M comparison | 515 / 301 | 838.6 / 289.2 | October 860 / September 510 ILS |
+| M zero-model follow-up | 313 / 163 | 511.8 / 156.9 | August 200 ILS |
+
+S contains four invoices and one receipt. M contains sixteen invoices, twenty-five additional customers and one receipt. These are single development observations on PHP 8.4.25/disposable MariaDB, not capacity targets or production guarantees. Exact totals and economic-table fingerprints are asserted independently; before/after diagnostic report hashes used different projection hashing and are not presented as byte-equivalence evidence.
+
+The dominant redundant reads were role/direct/role-permission hydration and repeated separate company/membership checks. [ReportingGuard](../app/Application/Reporting/Security/ReportingGuard.php) now reads direct and role permission names with one fresh SQL union using the installed Spatie relationships themselves, preserving team, morph, global-role and web-guard semantics. Active persisted company/membership are checked together. A catalog evaluation reuses only that immediate permission result; canonical execution and delivery independently recheck current authority. No cross-turn permission cache or economic-query shortcut is introduced. Residual repeated checks intentionally remain at independent boundaries; large-data hosting performance remains unmeasured.
+
+Four independent concurrent readers returned the same **800/450 ILS** comparison with **76 queries each** (134.6–136.2 ms). After warming permissions, role downgrade and membership revocation before barrier release each denied both readers. Economic fingerprints remained unchanged. This bounded concurrency proof is not a production load test.
+
+The complete corrected local Livewire request measured **525 queries / 934 ms** for the Arabic comparison and **369 queries / 482 ms** for its zero-model follow-up, versus the earlier **754 / 3052 ms** and **504 / 846 ms** observations above. The owned browser cache is now database-backed, while the earlier harness used file cache; these are observational full-request figures, not a controlled cache-equivalent benchmark. The service-only S/M table is the controlled before/after comparison. The follow-up request has zero provider attempts; four seeded invoices, five posting batches, ten posting lines, one receipt and zero stock movements remain unchanged.
+
+### Explicit company report access
+
+[AssistantReportPolicySettings](../app/Application/AI/AssistantReportPolicySettings.php) and the collapsed AR/EN Owner settings section allow explicit finite catalog selection. Expansion requires protected active Owner authority, current revision and password confirmation. Existing policies are not automatically expanded; AI activation, question enablement, role permissions, encrypted keys, custom limits, historical reservations and unrelated settings remain unchanged. Meaningful report-scope consent is invalidated by the existing fingerprint rules. Invalid legacy configurations fail safely rather than silently normalizing other fields.
+
+### Newly executed verification
+
+- One clean combined relevant subset: **288 tests / 9704 assertions**, zero failures/errors/skips. Includes report truth, canonical guard/registry, SDK/intent contracts, HTTP/session/context isolation, explicit allowlists and concurrent revocation.
+- Compound integration cases: **5 tests / 34 assertions**, including actual exact-value Arabic/English answers and omission/currency refusal.
+- S/M profiling: **2 tests / 20 assertions**, one mocked SDK call for comparison and zero for follow-up; unchanged economic fingerprints.
+- Scoped Pint/PHPStan and production Vite build pass. Test helper annotations and the stale accepted-A1 verification wording expectation were corrected without changing runtime behavior.
+- Browser screenshots and full-request observations remain in ignored local evidence. Native voice accuracy, paid DeepSeek quality, Hostinger capacity and production activation are NOT VERIFIED by these tests.
+
+A3 began separately in `feature/ai-v22-unsaved-drafting`; its development checkpoint does not form part of PR #39 or establish A3 completion. No merge, deployment, production access, paid call, budget reset, financial-writer, migration, dependency or protected-specification change occurred.
