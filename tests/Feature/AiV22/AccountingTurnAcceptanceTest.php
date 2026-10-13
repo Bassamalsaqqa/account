@@ -275,6 +275,9 @@ class AccountingTurnAcceptanceTest extends TestCase
     {
         $formattedCalls = [];
         foreach ($toolCalls as $call) {
+            if (($call['arguments']['filters'] ?? null) === []) {
+                $call['arguments']['filters'] = (object) [];
+            }
             $formattedCalls[] = [
                 'id' => $call['id'],
                 'type' => 'function',
@@ -714,6 +717,9 @@ class AccountingTurnAcceptanceTest extends TestCase
         ]);
     }
 
+    /** @param array<string, string> $filters
+     * @return array<string, mixed>
+     */
     private function reportResponse(string $key, array $filters): array
     {
         return $this->mockDeepSeekResponse([['id' => 'call_1', 'name' => 'run_report',

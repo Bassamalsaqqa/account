@@ -23,11 +23,18 @@ final readonly class AssistantIntentProposal
     public const int MAX_DATE_SPAN_DAYS = 366;
 
     /** @param array<string, string> $filters */
-    private function __construct(public string $reportKey, public array $filters) {}
+    private function __construct(public string $reportKey, public array $filters, public ?string $requestFragment = null) {}
 
     /** @param array<string, mixed> $input */
     public static function fromArray(array $input): self
     {
+        $fragment = $input['request_fragment'] ?? null;
+        if (array_key_exists('request_fragment', $input)
+            && (! is_string($fragment) || trim($fragment) !== $fragment || $fragment === ''
+                || mb_strlen($fragment) > 4000 || preg_match('/[\p{Cc}\p{Cf}]/u', $fragment) !== 0)) {
+            throw new AssistantUnavailable('provider_invalid');
+        }
+        unset($input['request_fragment']);
         $keys = array_keys($input);
         sort($keys);
         if ($keys !== ['display', 'filters', 'report_key', 'type', 'version']
@@ -75,6 +82,6 @@ final readonly class AssistantIntentProposal
             throw new AssistantUnavailable('provider_invalid');
         }
 
-        return new self($input['report_key'], $filters);
+        return new self($input['report_key'], $filters, $fragment);
     }
 }

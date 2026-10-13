@@ -54,25 +54,28 @@ final class AssistantReportCatalog
             || in_array((string) $company->id, config('ai_assistant.disabled_company_ids', []), true)) {
             throw new AssistantUnavailable('disabled');
         }
-        // Verify identity and membership before disclosing supported report metadata.
-        app(AiGovernance::class)->authorizeCapability($company, $actor, 'ai.assistant.use');
+        $permissions = app(ReportingGuard::class)->readPermissions($company, $actor, 'ai.assistant.use');
+        $definition = $this->definition($key);
+        $required = $definition['permissions'];
+        if (str_starts_with($key, 'purchases.') || str_starts_with($key, 'vendors.')) {
+            $required[] = 'purchasing.cost.view';
+        }
+        if (array_diff($required, $permissions) !== []) {
+            throw new AuthorizationException('The required report/source permission is missing.');
+        }
         $policy = AiCompanyPolicy::where('company_id', $company->id)->first();
         $questions = $policy?->settings['questions'] ?? [];
         if ($policy === null || ! $policy->enabled || ! is_array($questions) || ($questions['enabled'] ?? false) !== true) {
             throw new AssistantUnavailable('question_disabled');
         }
-        $definition = $this->definition($key);
         $allowed = $questions['allowed_reports'] ?? [];
         if (! $this->validAllowlist($allowed) || ! in_array($key, $allowed, true)) {
             throw new AssistantUnavailable('question_disabled');
         }
-        app(ReportingGuard::class)->authorize($company, $actor, $definition['permissions']);
-        if ((str_starts_with($key, 'purchases.') || str_starts_with($key, 'vendors.'))
-            && ! app(ReportingGuard::class)->canViewPurchasingCost($actor)) {
-            throw new AuthorizationException('Purchasing cost read permission is required.');
-        }
-        if (! $this->sourceAllows($company, $actor, $key)) {
-            throw new AuthorizationException('Report source access is required.');
+        if ($key === 'money.balances'
+            && ! in_array('money.cash.view', $permissions, true)
+            && ! in_array('money.bank.view', $permissions, true)) {
+            throw new AuthorizationException('Cash or Bank source access is required.');
         }
     }
 
@@ -87,8 +90,7 @@ final class AssistantReportCatalog
         try {
             // One fresh company/membership/permission snapshot for this enumeration only.
             // Execution and delivery still authorize independently after any provider latency.
-            $freshActor = $guard->authorize($company, $actor, 'ai.assistant.use');
-            $permissions = $freshActor->getAllPermissions()->where('guard_name', 'web')->pluck('name')->all();
+            $permissions = $guard->readPermissions($company, $actor, 'ai.assistant.use');
         } catch (AuthorizationException|NoActiveCompanyException) {
             return [];
         }
@@ -132,26 +134,5 @@ final class AssistantReportCatalog
             && count($allowed) <= count(self::KEYS)
             && count(array_filter($allowed, fn ($key) => is_string($key) && in_array($key, self::KEYS, true))) === count($allowed)
             && count(array_unique($allowed)) === count($allowed);
-    }
-
-    private function sourceAllows(Company $company, User $actor, string $key): bool
-    {
-        if ($key === 'sales.last-invoice') {
-            // Independently fail closed on both persisted company activation and
-            // source authority; registering code never activates this capability.
-            $policy = AiCompanyPolicy::where('company_id', $company->id)->first();
-            $questions = $policy?->settings['questions'] ?? [];
-            $allowed = is_array($questions) ? ($questions['allowed_reports'] ?? []) : [];
-
-            return config('ai_assistant.enabled') === true
-                && config('ai_assistant.questions.enabled') === true
-                && ! in_array((string) $company->id, config('ai_assistant.disabled_company_ids', []), true)
-                && $policy !== null && $policy->enabled
-                && is_array($questions) && ($questions['enabled'] ?? false) === true
-                && $this->validAllowlist($allowed) && in_array($key, $allowed, true)
-                && app(ReportingGuard::class)->allows($company, ['ai.assistant.use', 'sales.invoice.view', 'customers.view'], $actor);
-        }
-
-        return app(ReportRegistry::class)->allows($company, $key);
     }
 }

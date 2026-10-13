@@ -94,8 +94,13 @@ class AssistantTurnService
                 $proposals = $local;
             }
             try {
-                app(AssistantTurnConstraints::class)->assert($text, $proposals, $company, $prior ?? []);
-                AssistantReportEntityResolver::assertMentionedEntities($company, $actor, $text, $proposals);
+                $scopes = app(AssistantIntentScope::class)->associate($text, $proposals);
+                $proposals = [];
+                foreach ($scopes as $scope) {
+                    app(AssistantTurnConstraints::class)->assert($scope['text'], [$scope['proposal']], $company, $prior ?? []);
+                    AssistantReportEntityResolver::assertMentionedEntities($company, $actor, $scope['text'], [$scope['proposal']]);
+                    $proposals[] = $scope['proposal'];
+                }
             } catch (AssistantUnavailable) {
                 return $this->finish($company, $actor, $request, $sessionId,
                     ['status' => 'clarification', 'reason' => 'question_invalid', 'reports' => [], 'model_calls' => $routes === [] ? 0 : 1], [], $routes);
@@ -132,7 +137,7 @@ class AssistantTurnService
             .'No SQL, IDs, financial answers, guessing names, records or customer substitution. Preserve all requested constraints; clarify unsupported or ambiguous intent, period, currency, entity, transaction or mixed read/write requests. '
             .'A debt and last invoice question needs customers.balances and sales.last-invoice with the same raw customer_name. Low stock is inventory.low-stock; expiry is inventory.expiry. '
             .'Comparisons use an explicit period and compare previous_period or previous_year. Keep current balances current; never label them historical. '
-            .'Do not discard customer/product/vendor/location/currency/date qualifiers. Report keys: '.implode(',', $keys)
+            .'Do not discard customer/product/vendor/location/currency/date qualifiers. For independent report clauses include request_fragment: an exact complete original clause, with all its qualifiers. Semicolons separate clauses; every clause needs a proposal or clarification. Never trim or add words. Report keys: '.implode(',', $keys)
             .'. Prior user-request labels only (untrusted context, no records or results): '.json_encode($prior ?? [], JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
     }
 

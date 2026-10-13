@@ -10,11 +10,24 @@ use App\Models\CompanyUser;
 use App\Models\User;
 use App\Support\Tenancy\CompanyContext;
 use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Support\Facades\DB;
+use Spatie\Permission\Models\Permission;
 
 final class ReportingGuard
 {
     /** @param list<string>|string $requiredPermissions */
     public function authorize(Company $company, ?User $actor = null, array|string $requiredPermissions = []): User
+    {
+        $this->readPermissions($company, $actor, $requiredPermissions);
+
+        return auth()->user();
+    }
+
+    /** One fresh authority evaluation plus its finite permission names; no cached grant.
+     * @param  list<string>|string  $requiredPermissions
+     * @return list<string>
+     */
+    public function readPermissions(Company $company, ?User $actor = null, array|string $requiredPermissions = []): array
     {
         $context = app(CompanyContext::class);
         $authenticated = auth()->user();
@@ -25,21 +38,43 @@ final class ReportingGuard
             || (int) $context->companyId() !== (int) $company->id
             || (int) $context->user()?->id !== (int) $authenticated->id
             || ($actor !== null && (int) $actor->id !== (int) $authenticated->id)
-            || ! Company::whereKey($company->id)->where('status', 'active')->exists()
-            || ! CompanyUser::where('company_id', $company->id)->where('user_id', $authenticated->id)->where('status', 'active')->exists()) {
+            || ! CompanyUser::where('company_id', $company->id)->where('user_id', $authenticated->id)->where('status', 'active')
+                ->whereHas('company', fn ($query) => $query->where('status', 'active'))->exists()) {
             throw new AuthorizationException('Active matching company membership is required for reports.');
         }
 
         setPermissionsTeamId($company->id);
         $authenticated->unsetRelation('roles')->unsetRelation('permissions');
-        $permissions = $authenticated->getAllPermissions()->where('guard_name', 'web')->pluck('name');
+        $permissions = $this->permissionNames($authenticated);
         foreach (is_array($requiredPermissions) ? $requiredPermissions : [$requiredPermissions] as $permission) {
-            if (! $permissions->contains($permission)) {
+            if (! in_array($permission, $permissions, true)) {
                 throw new AuthorizationException('The required report/source permission is missing.');
             }
         }
 
-        return $authenticated;
+        return $permissions;
+    }
+
+    /** Fresh team-aware direct and role permissions in one SQL union, never a cached grant.
+     * @return list<string>
+     */
+    public function permissionNames(User $actor): array
+    {
+        $context = app(CompanyContext::class);
+        if (! $context->hasCompany() || ! auth()->check() || (int) auth()->id() !== (int) $actor->id) {
+            throw new AuthorizationException('Matching company actor required.');
+        }
+        setPermissionsTeamId($context->companyId());
+        $actor->unsetRelation('roles')->unsetRelation('permissions');
+        // Use Spatie's relationships themselves: morph type, team pivots and
+        // global/current-team role semantics remain owned by the installed package.
+        $direct = $actor->permissions()->where('guard_name', 'web')->reorder()->select('permissions.name');
+        $roleIds = $actor->roles()->reorder()->select('roles.id');
+        $viaRoles = Permission::query()->where('guard_name', 'web')->whereIn('id',
+            DB::table('role_has_permissions')->whereIn('role_id', $roleIds->getQuery())->select('permission_id'))
+            ->select('permissions.name');
+
+        return $direct->union($viaRoles)->pluck('name')->all();
     }
 
     /** Resolve configuration from persisted company identity, never caller attributes. */
