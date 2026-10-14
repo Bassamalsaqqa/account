@@ -2,9 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { browserVoice } from '../../resources/js/assistant-browser-voice.js';
 
-function fixture({ secure = true, supported = true } = {}) {
-    const instances = [], calls = [], intervals = new Map();
-    let nextTimer = 0;
+function fixture({ secure = true, supported = true, autoSubmit = false, quietMs = 1000, graceMs = 1250 } = {}) {
+    const instances = [], calls = [], intervals = new Map(), timeouts = new Map();
+    let nextTimer = 0, currentTime = 0;
     class Speech {
         constructor() { instances.push(this); }
         start() { calls.push('recognition.start'); }
@@ -12,9 +12,66 @@ function fixture({ secure = true, supported = true } = {}) {
         abort() { calls.push('recognition.abort'); }
     }
     const wire = { text: '', $set(field, text, live) { this[field] = text; calls.push(['set', field, live]); }, async prepare() { calls.push('prepare'); } };
-    const runtime = { isSecureContext: secure, ...(supported ? { SpeechRecognition: Speech } : {}), setInterval(fn) { intervals.set(++nextTimer, fn); return nextTimer; }, clearInterval(id) { intervals.delete(id); } };
-    const ui = browserVoice(wire, { locale: 'ar', maxSeconds: 60 }, runtime);
-    return { ui, wire, calls, instances, intervals };
+    const documentListeners = new Map();
+    const windowListeners = new Map();
+    const doc = {
+        visibilityState: 'visible',
+        addEventListener(type, fn) {
+            if (!documentListeners.has(type)) documentListeners.set(type, new Set());
+            documentListeners.get(type).add(fn);
+        },
+        removeEventListener(type, fn) {
+            documentListeners.get(type)?.delete(fn);
+        },
+        trigger(type) {
+            documentListeners.get(type)?.forEach(fn => fn());
+        }
+    };
+    const runtime = {
+        isSecureContext: secure,
+        document: doc,
+        ...(supported ? { SpeechRecognition: Speech } : {}),
+        setInterval(fn, ms) { const id = ++nextTimer; intervals.set(id, fn); return id; },
+        clearInterval(id) { intervals.delete(id); },
+        setTimeout(fn, ms) {
+            const id = ++nextTimer;
+            timeouts.set(id, { fn, triggerAt: currentTime + ms });
+            return id;
+        },
+        clearTimeout(id) { timeouts.delete(id); },
+        addEventListener(type, fn) {
+            if (!windowListeners.has(type)) windowListeners.set(type, new Set());
+            windowListeners.get(type).add(fn);
+        },
+        removeEventListener(type, fn) {
+            windowListeners.get(type)?.delete(fn);
+        },
+        trigger(type) {
+            windowListeners.get(type)?.forEach(fn => fn());
+        }
+    };
+    const advanceTimers = async (ms) => {
+        const targetTime = currentTime + ms;
+        while (true) {
+            let earliestId = null, earliestTime = Infinity;
+            for (const [id, item] of timeouts.entries()) {
+                if (item.triggerAt <= targetTime && item.triggerAt < earliestTime) {
+                    earliestTime = item.triggerAt;
+                    earliestId = id;
+                }
+            }
+            if (earliestId === null) break;
+            const item = timeouts.get(earliestId);
+            timeouts.delete(earliestId);
+            currentTime = item.triggerAt;
+            item.fn();
+            await new Promise(resolve => setImmediate(resolve));
+        }
+        currentTime = targetTime;
+        await new Promise(resolve => setImmediate(resolve));
+    };
+    const ui = browserVoice(wire, { locale: 'ar', maxSeconds: 60, autoSubmit, quietMs, graceMs }, runtime);
+    return { ui, wire, calls, instances, intervals, timeouts, advanceTimers, doc, runtime };
 }
 
 test('opening does not record, obtain consent or dispatch', () => {
@@ -134,4 +191,308 @@ test('navigation aborts pending recognition and ignores delayed results', async 
     ui.leave(); delayed({ results: [{ isFinal: true, 0: { transcript: 'stale' } }] });
     assert.equal(wire.text, 'keep'); assert.equal(ui.busy, false);
     assert.equal(calls.includes('prepare'), false);
+});
+
+test('flag off manual path: stable final transcript never auto-submits without explicit Send', async () => {
+    const { ui, wire, calls, instances, advanceTimers } = fixture({ autoSubmit: false });
+    await ui.start();
+    instances[0].onstart();
+    instances[0].onresult({ results: [{ isFinal: true, 0: { transcript: 'فاتورة يدوي' } }] });
+    await advanceTimers(5000);
+    assert.equal(ui.grace, false);
+    assert.equal(calls.includes('prepare'), false);
+    ui.stop();
+    assert.equal(ui.transcriptReady, true);
+    await ui.send();
+    assert.equal(calls.filter(x => x === 'prepare').length, 1);
+});
+
+test('completion: stable final nonempty transcript auto-submits after quiet heuristic and visible grace', async () => {
+    const { ui, wire, calls, instances, advanceTimers } = fixture({ autoSubmit: true, quietMs: 1000, graceMs: 1250 });
+    await ui.start();
+    instances[0].onstart();
+    instances[0].onresult({ results: [{ isFinal: true, 0: { transcript: 'فاتورة مبيعات' } }] });
+    assert.equal(wire.text, 'فاتورة مبيعات');
+    assert.equal(ui.grace, false);
+    assert.equal(calls.includes('prepare'), false);
+
+    // After 999ms of quiet: still quiet phase, not in grace yet
+    await advanceTimers(999);
+    assert.equal(ui.grace, false);
+    assert.equal(calls.includes('prepare'), false);
+
+    // At 1000ms: quiet completes, enters visible grace
+    await advanceTimers(1);
+    assert.equal(ui.grace, true);
+    assert.equal(ui.transcriptReady, true);
+    assert.equal(calls.includes('prepare'), false);
+
+    // During grace (at 1249ms of grace): still waiting
+    await advanceTimers(1249);
+    assert.equal(ui.grace, true);
+    assert.equal(calls.includes('prepare'), false);
+
+    // Grace expires at 1250ms: autodispatch executes exactly once
+    await advanceTimers(1);
+    assert.equal(ui.grace, false);
+    assert.equal(calls.filter(x => x === 'prepare').length, 1);
+});
+
+test('final/interim: interim callbacks never start quiet heuristic or grace timer', async () => {
+    const { ui, calls, instances, timeouts, advanceTimers } = fixture({ autoSubmit: true, quietMs: 1000, graceMs: 1250 });
+    await ui.start();
+    instances[0].onstart();
+    instances[0].onresult({ results: [{ isFinal: false, 0: { transcript: 'كلام مؤقت غير نهائي' } }] });
+    assert.equal(ui.interim, 'كلام مؤقت غير نهائي');
+    assert.equal(timeouts.size, 0);
+    await advanceTimers(5000);
+    assert.equal(ui.grace, false);
+    assert.equal(calls.includes('prepare'), false);
+});
+
+test('new speech: interim and new final speech reset quiet heuristic timer', async () => {
+    const { ui, calls, instances, advanceTimers } = fixture({ autoSubmit: true, quietMs: 1000, graceMs: 1250 });
+    await ui.start();
+    instances[0].onstart();
+    instances[0].onresult({ results: [{ isFinal: true, 0: { transcript: 'الدفعة الأولى' } }] });
+    await advanceTimers(800);
+    assert.equal(ui.grace, false);
+
+    // New interim speech arrives, resetting quiet timer
+    instances[0].onresult({ results: [{ isFinal: true, 0: { transcript: 'الدفعة الأولى' } }, { isFinal: false, 0: { transcript: 'والثانية' } }] });
+    await advanceTimers(500);
+    assert.equal(ui.grace, false);
+    assert.equal(calls.includes('prepare'), false);
+
+    // Speech settles into new final
+    instances[0].onresult({ results: [{ isFinal: true, 0: { transcript: 'الدفعة الأولى والثانية' } }] });
+    await advanceTimers(999);
+    assert.equal(ui.grace, false);
+    await advanceTimers(1);
+    assert.equal(ui.grace, true);
+    await advanceTimers(1250);
+    assert.equal(calls.filter(x => x === 'prepare').length, 1);
+});
+
+test('new speech: speech during grace cancels grace and restarts cycle', async () => {
+    const { ui, calls, instances, advanceTimers } = fixture({ autoSubmit: true, quietMs: 1000, graceMs: 1250 });
+    await ui.start();
+    instances[0].onstart();
+    instances[0].onresult({ results: [{ isFinal: true, 0: { transcript: 'مبيعات نقدية' } }] });
+    await advanceTimers(1000);
+    assert.equal(ui.grace, true);
+
+    // Speaking during grace resets grace
+    instances[0].onresult({ results: [{ isFinal: true, 0: { transcript: 'مبيعات نقدية' } }, { isFinal: false, 0: { transcript: 'للعميل أحمد' } }] });
+    assert.equal(ui.grace, false);
+    await advanceTimers(2000);
+    assert.equal(calls.includes('prepare'), false);
+
+    // Settles into final
+    instances[0].onresult({ results: [{ isFinal: true, 0: { transcript: 'مبيعات نقدية للعميل أحمد' } }] });
+    await advanceTimers(1000);
+    assert.equal(ui.grace, true);
+    await advanceTimers(1250);
+    assert.equal(calls.filter(x => x === 'prepare').length, 1);
+});
+
+test('stop/cancel/edit: stop button cancels autodispatch and preserves manual review', async () => {
+    const { ui, calls, instances, advanceTimers } = fixture({ autoSubmit: true, quietMs: 1000, graceMs: 1250 });
+    await ui.start();
+    instances[0].onstart();
+    instances[0].onresult({ results: [{ isFinal: true, 0: { transcript: 'إيقاف يدوي' } }] });
+    await advanceTimers(500);
+    ui.stop();
+    await advanceTimers(5000);
+    assert.equal(ui.grace, false);
+    assert.equal(calls.includes('prepare'), false);
+    assert.equal(ui.transcriptReady, true);
+    await ui.send();
+    assert.equal(calls.filter(x => x === 'prepare').length, 1);
+});
+
+test('stop/cancel/edit: cancelVoice discards transcript, clears timers and prevents server request', async () => {
+    const { ui, wire, calls, instances, advanceTimers } = fixture({ autoSubmit: true, quietMs: 1000, graceMs: 1250 });
+    wire.text = 'أصلي';
+    await ui.start();
+    instances[0].onstart();
+    instances[0].onresult({ results: [{ isFinal: true, 0: { transcript: 'جديد' } }] });
+    await advanceTimers(1000);
+    assert.equal(ui.grace, true);
+
+    ui.cancelVoice();
+    assert.equal(ui.grace, false);
+    assert.equal(wire.text, 'أصلي');
+    await advanceTimers(5000);
+    assert.equal(calls.includes('prepare'), false);
+});
+
+test('stop/cancel/edit: manual edit cancels autodispatch and keeps transcript editable', async () => {
+    const { ui, wire, calls, instances, advanceTimers } = fixture({ autoSubmit: true, quietMs: 1000, graceMs: 1250 });
+    await ui.start();
+    instances[0].onstart();
+    instances[0].onresult({ results: [{ isFinal: true, 0: { transcript: 'نص مسجل' } }] });
+    await advanceTimers(1000);
+    assert.equal(ui.grace, true);
+
+    wire.text = 'نص معدل يدويا';
+    ui.edit();
+    assert.equal(ui.grace, false);
+    await advanceTimers(5000);
+    assert.equal(calls.includes('prepare'), false);
+    assert.equal(wire.text, 'نص معدل يدويا');
+    await ui.send();
+    assert.equal(calls.filter(x => x === 'prepare').length, 1);
+});
+
+test('stale callbacks: delayed callbacks from superseded recordings never trigger autodispatch', async () => {
+    const { ui, calls, instances, advanceTimers } = fixture({ autoSubmit: true, quietMs: 1000, graceMs: 1250 });
+    await ui.start();
+    instances[0].onstart();
+    const staleCallback = instances[0].onresult;
+    ui.cancelVoice();
+
+    staleCallback({ results: [{ isFinal: true, 0: { transcript: 'متأخر' } }] });
+    await advanceTimers(5000);
+    assert.equal(ui.grace, false);
+    assert.equal(calls.includes('prepare'), false);
+});
+
+test('navigation/hidden: page hidden and navigating clear timers and cancel autodispatch', async () => {
+    const { ui, calls, instances, advanceTimers, doc } = fixture({ autoSubmit: true, quietMs: 1000, graceMs: 1250 });
+    ui.init();
+    await ui.start();
+    instances[0].onstart();
+    instances[0].onresult({ results: [{ isFinal: true, 0: { transcript: 'إخفاء الصفحة' } }] });
+    await advanceTimers(1000);
+    assert.equal(ui.grace, true);
+
+    doc.visibilityState = 'hidden';
+    doc.trigger('visibilitychange');
+    assert.equal(ui.grace, false);
+    await advanceTimers(5000);
+    assert.equal(calls.includes('prepare'), false);
+});
+
+test('errors/denial: permission denial and recognition errors never auto-send or retry', async () => {
+    const { ui, calls, instances, advanceTimers } = fixture({ autoSubmit: true, quietMs: 1000, graceMs: 1250 });
+    await ui.start();
+    instances[0].onerror({ error: 'not-allowed' });
+    await advanceTimers(5000);
+    assert.equal(ui.error, 'permission');
+    assert.equal(ui.grace, false);
+    assert.equal(calls.includes('prepare'), false);
+});
+
+test('repeated recordings: consecutive recordings each respect autodispatch boundaries', async () => {
+    const { ui, calls, instances, advanceTimers } = fixture({ autoSubmit: true, quietMs: 1000, graceMs: 1250 });
+    // First turn
+    await ui.start();
+    instances[0].onstart();
+    instances[0].onresult({ results: [{ isFinal: true, 0: { transcript: 'تسجيل أول' } }] });
+    await advanceTimers(2250);
+    assert.equal(calls.filter(x => x === 'prepare').length, 1);
+
+    // Second turn
+    await ui.start();
+    instances[1].onstart();
+    instances[1].onresult({ results: [{ isFinal: true, 0: { transcript: 'تسجيل ثان' } }] });
+    await advanceTimers(2250);
+    assert.equal(calls.filter(x => x === 'prepare').length, 2);
+});
+
+test('Send during grace/double click: manual Send during grace dispatches immediately and exactly once', async () => {
+    const { ui, wire, calls, instances, advanceTimers } = fixture({ autoSubmit: true, quietMs: 1000, graceMs: 1250 });
+    let resolvePrepare;
+    wire.prepare = () => {
+        calls.push('prepare');
+        return new Promise(resolve => { resolvePrepare = resolve; });
+    };
+
+    await ui.start();
+    instances[0].onstart();
+    instances[0].onresult({ results: [{ isFinal: true, 0: { transcript: 'إرسال مبكر' } }] });
+    await advanceTimers(1000);
+    assert.equal(ui.grace, true);
+
+    const firstClick = ui.send();
+    const secondClick = ui.send();
+    assert.equal(ui.grace, false);
+    assert.equal(calls.filter(x => x === 'prepare').length, 1);
+
+    resolvePrepare();
+    await Promise.all([firstClick, secondClick]);
+    await advanceTimers(5000);
+    assert.equal(calls.filter(x => x === 'prepare').length, 1);
+});
+
+test('failure without retry: failed wire.prepare does not trigger automatic retry', async () => {
+    const { ui, wire, calls, instances, advanceTimers } = fixture({ autoSubmit: true, quietMs: 1000, graceMs: 1250 });
+    let attempts = 0;
+    wire.prepare = async () => {
+        attempts++;
+        calls.push('prepare');
+        throw new Error('Paid provider rate limit or network error');
+    };
+
+    await ui.start();
+    instances[0].onstart();
+    instances[0].onresult({ results: [{ isFinal: true, 0: { transcript: 'عملية فاشلة' } }] });
+    await advanceTimers(2250);
+    assert.equal(attempts, 1);
+    assert.equal(ui.sending, false);
+
+    await advanceTimers(5000);
+    assert.equal(attempts, 1);
+    assert.equal(calls.filter(x => x === 'prepare').length, 1);
+});
+
+test('aborted recognition after a final result cancels pending automatic dispatch', async () => {
+    const {ui, instances, calls, advanceTimers} = fixture({autoSubmit:true});
+    await ui.start(); instances[0].onstart();
+    instances[0].onresult({results:[{isFinal:true,0:{transcript:'final'}}]});
+    await advanceTimers(1000);
+    instances[0].onerror({error:'aborted'});
+    await advanceTimers(5000);
+    assert.equal(calls.includes('prepare'),false);
+    assert.equal(ui.grace,false);
+});
+
+test('speech-start during grace cancels dispatch before another transcript arrives', async () => {
+    const {ui,instances,calls,advanceTimers}=fixture({autoSubmit:true});
+    await ui.start(); instances[0].onstart();
+    instances[0].onresult({results:[{isFinal:true,0:{transcript:'first'}}]});
+    await advanceTimers(1000); assert.equal(ui.grace,true);
+    instances[0].onspeechstart(); await advanceTimers(5000);
+    assert.equal(calls.includes('prepare'),false);
+    instances[0].onresult({results:[{isFinal:true,0:{transcript:'first second'}}]});
+    await advanceTimers(2250);
+    assert.equal(calls.filter(x=>x==='prepare').length,1);
+});
+
+test('manual edits and Send invalidate captured callbacks from the old recognition', async () => {
+    for(const action of ['edit','send']) {
+        const {ui,wire,instances,calls,advanceTimers}=fixture({autoSubmit:true});
+        await ui.start(); instances[0].onstart();
+        instances[0].onresult({results:[{isFinal:true,0:{transcript:'first'}}]});
+        const stale=instances[0].onresult;
+        await advanceTimers(1000);
+        if(action==='edit'){wire.text='corrected';ui.edit();} else await ui.send();
+        stale({results:[{isFinal:true,0:{transcript:'late'}}]});
+        await advanceTimers(5000);
+        assert.equal(wire.text,action==='edit'?'corrected':'first');
+        assert.equal(calls.filter(x=>x==='prepare').length,action==='edit'?0:1);
+    }
+});
+
+test('changed text without an input event and truthy nonboolean flags cannot autosubmit', async () => {
+    const changed=fixture({autoSubmit:true});
+    await changed.ui.start(); changed.instances[0].onstart();
+    changed.instances[0].onresult({results:[{isFinal:true,0:{transcript:'first'}}]});
+    await changed.advanceTimers(1000); changed.wire.text='other instruction';
+    await changed.advanceTimers(1250); assert.equal(changed.calls.includes('prepare'),false);
+    const disabled=fixture({autoSubmit:'false'});
+    await disabled.ui.start(); disabled.instances[0].onstart();
+    disabled.instances[0].onresult({results:[{isFinal:true,0:{transcript:'first'}}]});
+    await disabled.advanceTimers(5000); assert.equal(disabled.calls.includes('prepare'),false);
 });
