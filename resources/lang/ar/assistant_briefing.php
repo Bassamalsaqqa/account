@@ -51,6 +51,7 @@ return [
         'account_type' => 'نوع الحساب',
         'balance_currency' => 'الرصيد',
         'balance_base' => 'الرصيد الأساسي',
+        'currency_balance_available' => 'رصيد العملة متاح',
         'lot_number' => 'رقم الدفعة',
         'expiry_date' => 'تاريخ الصلاحية',
         'expiry_status' => 'حالة الصلاحية',

@@ -242,17 +242,14 @@ final class DailyBriefingTest extends TestCase
 
         $briefingService = app(AssistantDailyBriefing::class);
         $before = $this->economicFingerprint();
-        $queries = [];
-        $measuring = true;
-        DB::listen(function ($query) use (&$queries, &$measuring): void {
-            if ($measuring) {
-                $queries[] = ['sql' => $query->sql, 'milliseconds' => $query->time];
-            }
-        });
+        DB::flushQueryLog();
+        DB::enableQueryLog();
         $started = hrtime(true);
         $briefing = $briefingService->generate($this->company, $this->owner, 'briefing-nonzero-session');
         $elapsedMs = (hrtime(true) - $started) / 1000000;
-        $measuring = false;
+        $queries = array_map(fn ($query) => ['sql' => $query['query'], 'milliseconds' => $query['time']], DB::getQueryLog());
+        DB::disableQueryLog();
+        DB::flushQueryLog();
         self::assertSame($before, $this->economicFingerprint());
         Http::assertNothingSent();
         $this->assertDatabaseCount('assistant_requests', 0);

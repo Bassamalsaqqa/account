@@ -22,4 +22,4 @@ Offline events abort recognition and cancel quiet/grace submission timers while 
 - Vite build: **62 modules**, CSS **87.21 kB / 15.55 kB gzip**, JS **62.69 kB / 23.20 kB gzip**.
 - Actual Edge neutral-shell rendering: Arabic desktop and Arabic/English at **390 x 844**, document width and scroll width both **390 px**. Ignored screenshots retained privately. Viewport reset afterward.
 
-Node tests simulate service-worker and recognition callbacks. Actual browser installation, installed-device offline behavior, real microphone/acoustic accuracy and Hostinger headers/capacity remain **NOT VERIFIED**. Shell rendering alone is not installation proof. No paid requests, production access, merge, deployment or CI.
+Node tests simulate service-worker and recognition callbacks. Actual browser installation, installed-device offline behavior, real microphone/acoustic accuracy and Hostinger headers/capacity remain **NOT VERIFIED**. Shell rendering alone is not installation proof. No paid requests, production access, PR/main merge, deployment or CI.

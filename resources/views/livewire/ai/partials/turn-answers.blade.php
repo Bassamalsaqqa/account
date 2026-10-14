@@ -38,7 +38,26 @@
                 <div class="overflow-x-auto" tabindex="0" role="region" aria-label="{{ $answer['title'] }}">
                     <table class="w-full text-sm text-start">
                         <thead><tr>@foreach (array_keys($answer['rows'][0]) as $column)<th scope="col" class="p-2 text-start">{{ \Illuminate\Support\Facades\Lang::has('assistant_briefing.columns.'.$column) ? __('assistant_briefing.columns.'.$column) : (\Illuminate\Support\Facades\Lang::has('assistant_v22.fields.'.$column) ? __('assistant_v22.fields.'.$column) : (\Illuminate\Support\Facades\Lang::has('reports.columns.'.$column) ? __('reports.columns.'.$column) : str_replace('_', ' ', $column))) }}</th>@endforeach</tr></thead>
-                        <tbody>@foreach ($answer['rows'] as $row)<tr class="border-t border-border">@foreach ($row as $column => $value)<td class="p-2"><bdi>{{ is_bool($value) ? __('assistant_v2.value_'.($value ? 'yes' : 'no')) : ($column === 'stock_status' && is_string($value) && \Illuminate\Support\Facades\Lang::has('reports.options.'.$value) ? __('reports.options.'.$value) : ($column === 'status' && $value === 'posted' ? __('sales.posted') : ($value ?? __('assistant_v2.value_unavailable')))) }}</bdi></td>@endforeach</tr>@endforeach</tbody>
+                        <tbody>
+                            @foreach ($answer['rows'] as $row)
+                                <tr class="border-t border-border">
+                                    @foreach ($row as $column => $value)
+                                        @php
+                                            $displayValue = $value ?? __('assistant_v2.value_unavailable');
+                                            if (is_bool($value)) {
+                                                $displayValue = __('assistant_v2.value_'.($value ? 'yes' : 'no'));
+                                            } elseif (in_array($column, ['stock_status', 'expiry_status', 'account_type'], true)
+                                                && is_string($value) && \Illuminate\Support\Facades\Lang::has('reports.options.'.$value)) {
+                                                $displayValue = __('reports.options.'.$value);
+                                            } elseif ($column === 'status' && $value === 'posted') {
+                                                $displayValue = __('sales.posted');
+                                            }
+                                        @endphp
+                                        <td class="p-2"><bdi>{{ $displayValue }}</bdi></td>
+                                    @endforeach
+                                </tr>
+                            @endforeach
+                        </tbody>
                     </table>
                 </div>
                 <p class="text-xs text-text-secondary">{{ __('assistant_v2.sample_rows_count', ['shown' => count($answer['rows']), 'total' => $answer['total_rows']]) }}</p>

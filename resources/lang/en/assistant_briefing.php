@@ -51,6 +51,7 @@ return [
         'account_type' => 'Account type',
         'balance_currency' => 'Balance',
         'balance_base' => 'Base balance',
+        'currency_balance_available' => 'Currency balance available',
         'lot_number' => 'Lot number',
         'expiry_date' => 'Expiry date',
         'expiry_status' => 'Expiry status',

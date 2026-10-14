@@ -12,4 +12,4 @@ Run new parity cases with `--filter test_ui_api_parity`: **6 tests, 66 assertion
 
 Focused balance/SDK/shared-boundary unit verification: **72 tests, 243 assertions, PASS**. Valid/empty balance contracts, status classification, malformed/oversized/stalled responses, sink independence and request options. Removed a worker test that constructed its own nonrewindable stream instead of exercising application behavior. Pint and targeted PHPStan: PASS. Later integrated checks are recorded in the release checkpoint.
 
-No migration, dependency, economic writer, production setting, budget/history change, paid call, merge or deployment. Host-level egress isolation remains an operational requirement; a fixed HTTPS hostname is not IP isolation.
+No migration, dependency, economic writer, production setting, budget/history change, paid call, PR/main merge or deployment. Host-level egress isolation remains an operational requirement; a fixed HTTPS hostname is not IP isolation.
