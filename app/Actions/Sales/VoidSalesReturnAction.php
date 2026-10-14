@@ -16,17 +16,20 @@ use App\Models\SalesReturnLotAllocation;
 use App\Models\StockMovement;
 use App\Models\User;
 use App\Services\Inventory\InventoryMovementService;
+use App\Services\Inventory\OwnsStockEvent;
+use App\Services\Inventory\StockEventOwner;
 use App\Services\Posting\AccountingReversalService;
 use App\Services\Sales\SalesActorGuard;
 use App\Support\Tenancy\CompanyContext;
 use Brick\Math\BigDecimal;
 use Carbon\Carbon;
 use Illuminate\Auth\Access\AuthorizationException;
-use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
 
-class VoidSalesReturnAction
+class VoidSalesReturnAction implements StockEventOwner
 {
+    use OwnsStockEvent;
+
     public function __construct(
         protected InventoryMovementService $inventoryMovementService,
         protected AccountingReversalService $accountingReversalService,
@@ -53,7 +56,7 @@ class VoidSalesReturnAction
             throw new AuthorizationException('User does not have permission to void sales returns.');
         }
 
-        return DB::transaction(function () use ($salesReturn, $user, $reason): SalesReturn {
+        return $this->stockTransaction((int) $salesReturn->company_id, (int) $salesReturn->id, $user, function () use ($salesReturn, $user, $reason): SalesReturn {
             Company::where('id', $salesReturn->company_id)->lockForUpdate()->firstOrFail();
             app(SalesActorGuard::class)->lockAndAuthorize((int) $salesReturn->company_id, $user, 'sales.return.void');
 
@@ -100,7 +103,7 @@ class VoidSalesReturnAction
                     reason: "Void of Sales Return {$lockedReturn->return_number}",
                 );
 
-                $movements = $this->inventoryMovementService->record($stockCmd);
+                $movements = $this->recordStock($this->inventoryMovementService, $stockCmd);
                 $expectedByProduct = [];
                 foreach ($restorations as $allocation) {
                     $id = (int) $allocation->stockMovement->product_id;
@@ -128,7 +131,7 @@ class VoidSalesReturnAction
             if ($lockedReturn->posting_batch_id !== null) {
                 $postingBatch = $lockedReturn->postingBatch;
                 if ($postingBatch !== null && ! $postingBatch->isReversed()) {
-                    $reversalBatch = $this->accountingReversalService->reverse(
+                    $reversalBatch = $this->reverseStock($this->accountingReversalService,
                         $postingBatch,
                         $user,
                         $reason ?? "Void of Sales Return {$lockedReturn->return_number}"

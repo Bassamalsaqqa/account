@@ -22,6 +22,7 @@ use App\Services\Inventory\InventoryMovementService;
 use App\Support\Tenancy\CompanyContext;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
+use Tests\Support\InventoryPrimitiveFixture;
 use Tests\TestCase;
 
 class NegativeStockPreventionTest extends TestCase
@@ -105,7 +106,7 @@ class NegativeStockPreventionTest extends TestCase
             'active' => true,
         ]);
 
-        $this->service = app(InventoryMovementService::class);
+        $this->service = InventoryPrimitiveFixture::createService();
     }
 
     public function test_warehouse_balance_cannot_be_drawn_into_negative(): void

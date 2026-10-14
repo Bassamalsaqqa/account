@@ -586,34 +586,20 @@ class InventoryReconciliationService
                 ->where('system_key', 'inventory')
                 ->first();
 
-            $glRelevantMovements = $movements->filter(fn ($m) => in_array($m->source_type, ['opening_stock', 'stock_adjustment', 'stock_disposal'], true));
-
+            $glBalance = BigDecimal::zero();
             if ($inventoryAccount !== null) {
-                $hasPostings = PostingLine::where('company_id', $companyId)
-                    ->where('ledger_account_id', $inventoryAccount->id)
-                    ->exists();
-
-                if ($hasPostings || $glRelevantMovements->isNotEmpty()) {
-                    $glLines = PostingLine::where('company_id', $companyId)
-                        ->where('ledger_account_id', $inventoryAccount->id)
-                        ->get();
-
-                    $glBalance = BigDecimal::zero();
-                    foreach ($glLines as $line) {
-                        $glBalance = $glBalance
-                            ->plus(BigDecimal::of((string) $line->debit_base))
-                            ->minus(BigDecimal::of((string) $line->credit_base));
-                    }
-                    $glBalanceScaled = $glBalance->toScale(6, RoundingMode::HALF_UP);
-                    $expectedValuation = $totalValuation->toScale(6, RoundingMode::HALF_UP);
-
-                    if (! $glBalanceScaled->isEqualTo($expectedValuation)) {
-                        $cacheDiscrepancies[] = "Inventory GL control account [{$inventoryAccount->code}] balance [{$glBalanceScaled}] does not match inventory valuation [{$expectedValuation}].";
-                    }
+                foreach (PostingLine::where('company_id', $companyId)
+                    ->where('ledger_account_id', $inventoryAccount->id)->get() as $line) {
+                    $glBalance = $glBalance->plus($line->debit_base)->minus($line->credit_base);
                 }
-            } elseif (! $totalValuation->isZero() && $glRelevantMovements->isNotEmpty()) {
-                $cacheDiscrepancies[] = "Inventory has positive valuation [{$totalValuation}] but no inventory control account exists.";
+                if (! $glBalance->isEqualTo($totalValuation)) {
+                    $cacheDiscrepancies[] = "Inventory GL control account [{$inventoryAccount->code}] balance [{$glBalance}] does not match inventory valuation [{$totalValuation}].";
+                }
+            } elseif (! $totalValuation->isZero()) {
+                $cacheDiscrepancies[] = "Inventory has nonzero valuation [{$totalValuation}] but no inventory control account exists.";
             }
+            $historyCorruptions = array_merge($historyCorruptions, app(StockAccountingAudit::class)
+                ->discrepancies($companyId, $movements, $inventoryAccount?->id));
 
             // Check I: Master-data configuration and lifecycle consistency (Cache / Config Discrepancies)
             $units = Unit::where('company_id', $companyId)->get()->keyBy('id');

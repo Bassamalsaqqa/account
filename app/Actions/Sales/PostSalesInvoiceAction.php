@@ -25,6 +25,8 @@ use App\Models\User;
 use App\Models\Warehouse;
 use App\Services\Inventory\FefoAllocationService;
 use App\Services\Inventory\InventoryMovementService;
+use App\Services\Inventory\OwnsStockEvent;
+use App\Services\Inventory\StockEventOwner;
 use App\Services\Posting\AccountingPostingService;
 use App\Services\Sales\DocumentSequenceService;
 use App\Services\Sales\DraftInvoiceIntegrity;
@@ -36,11 +38,12 @@ use Brick\Math\BigDecimal;
 use Brick\Math\RoundingMode;
 use Carbon\Carbon;
 use Illuminate\Auth\Access\AuthorizationException;
-use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
 
-class PostSalesInvoiceAction
+class PostSalesInvoiceAction implements StockEventOwner
 {
+    use OwnsStockEvent;
+
     public function __construct(
         protected DocumentSequenceService $sequenceService,
         protected FefoAllocationService $fefoAllocationService,
@@ -69,7 +72,7 @@ class PostSalesInvoiceAction
             throw new AuthorizationException('User does not have permission to post sales invoices.');
         }
 
-        return DB::transaction(function () use ($invoice, $user): SalesInvoice {
+        return $this->stockTransaction((int) $invoice->company_id, (int) $invoice->id, $user, function () use ($invoice, $user): SalesInvoice {
             // 1. Lock company FOR UPDATE
             /** @var Company $company */
             $company = Company::where('id', $invoice->company_id)->lockForUpdate()->firstOrFail();
@@ -213,7 +216,7 @@ class PostSalesInvoiceAction
                         reason: "Sales Invoice {$invoiceNumber}",
                     );
 
-                    $movements = $this->inventoryMovementService->record($stockCmd);
+                    $movements = $this->recordStock($this->inventoryMovementService, $stockCmd);
 
                     foreach ($movements as $idx => $m) {
                         $plan = $allocationsPlan[$idx];
@@ -411,7 +414,7 @@ class PostSalesInvoiceAction
                 lines: $postingLines,
             );
 
-            $batch = $this->accountingPostingService->post($postingCmd);
+            $batch = $this->postStock($this->accountingPostingService, $postingCmd);
 
             // 7. Update SalesInvoice
             $lockedInvoice->invoice_number = $invoiceNumber;

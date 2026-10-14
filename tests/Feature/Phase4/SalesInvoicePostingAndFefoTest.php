@@ -5,11 +5,10 @@ declare(strict_types=1);
 namespace Tests\Feature\Phase4;
 
 use App\Actions\Company\CreateCompanyAction;
+use App\Actions\Inventory\PostOpeningStockAction;
 use App\Actions\Sales\CreateSalesInvoiceDraftAction;
 use App\Actions\Sales\PostSalesInvoiceAction;
 use App\Actions\Sales\VoidSalesInvoiceAction;
-use App\Domain\Inventory\DTO\StockMovementCommand;
-use App\Domain\Inventory\DTO\StockMovementLineCommand;
 use App\Domain\Inventory\Exceptions\InsufficientStockException;
 use App\Domain\Inventory\ValueObjects\Quantity;
 use App\Models\Company;
@@ -151,48 +150,36 @@ class SalesInvoicePostingAndFefoTest extends TestCase
 
     public function test_atomic_invoice_posting_with_fefo_allocations_and_balanced_gl(): void
     {
-        // 1. Seed two dated lots:
+        // 1. Seed two dated lots via canonical opening stock action:
         // Lot 1: Exp 2027-01-01, 10 units at 20.00 ILS cost
-        $this->inventoryService->record(new StockMovementCommand(
-            companyId: $this->company->id,
-            movementType: StockMovement::TYPE_OPENING_BALANCE,
-            movementDate: '2026-10-01',
-            lines: [
-                new StockMovementLineCommand(
-                    productId: $this->product->id,
-                    warehouseId: $this->warehouse->id,
-                    quantity: Quantity::of(10),
-                    unitCostBase: '20.000000',
-                    lotNumber: 'LOT-JAN-27',
-                    expiryDate: '2027-01-01',
-                ),
-            ],
-            sourceType: 'manual_test',
-            sourceId: 1,
+        app(PostOpeningStockAction::class)->execute(
+            company: $this->company,
+            product: $this->product,
+            warehouse: $this->warehouse,
+            quantity: Quantity::of(10),
+            unitCostBase: '20.000000',
+            user: $this->user,
             idempotencyKey: (string) Str::ulid(),
-            createdBy: $this->user->id,
-        ));
+            unitId: $this->productUnit->unit_id,
+            lotNumber: 'LOT-JAN-27',
+            expiryDate: '2027-01-01',
+            movementDate: '2026-10-01',
+        );
 
         // Lot 2: Exp 2027-06-01, 20 units at 25.00 ILS cost
-        $this->inventoryService->record(new StockMovementCommand(
-            companyId: $this->company->id,
-            movementType: StockMovement::TYPE_OPENING_BALANCE,
-            movementDate: '2026-10-01',
-            lines: [
-                new StockMovementLineCommand(
-                    productId: $this->product->id,
-                    warehouseId: $this->warehouse->id,
-                    quantity: Quantity::of(20),
-                    unitCostBase: '25.000000',
-                    lotNumber: 'LOT-JUN-27',
-                    expiryDate: '2027-06-01',
-                ),
-            ],
-            sourceType: 'manual_test',
-            sourceId: 2,
+        app(PostOpeningStockAction::class)->execute(
+            company: $this->company,
+            product: $this->product,
+            warehouse: $this->warehouse,
+            quantity: Quantity::of(20),
+            unitCostBase: '25.000000',
+            user: $this->user,
             idempotencyKey: (string) Str::ulid(),
-            createdBy: $this->user->id,
-        ));
+            unitId: $this->productUnit->unit_id,
+            lotNumber: 'LOT-JUN-27',
+            expiryDate: '2027-06-01',
+            movementDate: '2026-10-01',
+        );
 
         // 2. Create and Post Invoice for 15 units at 50.00 ILS
         $draftAction = app(CreateSalesInvoiceDraftAction::class);
@@ -303,26 +290,20 @@ class SalesInvoicePostingAndFefoTest extends TestCase
 
     public function test_voiding_posted_invoice_reverses_stock_and_gl(): void
     {
-        // 1. Inbound 10 units at 20.00 cost
-        $this->inventoryService->record(new StockMovementCommand(
-            companyId: $this->company->id,
-            movementType: StockMovement::TYPE_OPENING_BALANCE,
-            movementDate: '2026-10-01',
-            lines: [
-                new StockMovementLineCommand(
-                    productId: $this->product->id,
-                    warehouseId: $this->warehouse->id,
-                    quantity: Quantity::of(10),
-                    unitCostBase: '20.000000',
-                    lotNumber: 'LOT-VOID-TEST',
-                    expiryDate: '2027-12-31',
-                ),
-            ],
-            sourceType: 'manual_test',
-            sourceId: 3,
+        // 1. Inbound 10 units at 20.00 cost via canonical opening stock action
+        app(PostOpeningStockAction::class)->execute(
+            company: $this->company,
+            product: $this->product,
+            warehouse: $this->warehouse,
+            quantity: Quantity::of(10),
+            unitCostBase: '20.000000',
+            user: $this->user,
             idempotencyKey: (string) Str::ulid(),
-            createdBy: $this->user->id,
-        ));
+            unitId: $this->productUnit->unit_id,
+            lotNumber: 'LOT-VOID-TEST',
+            expiryDate: '2027-12-31',
+            movementDate: '2026-10-01',
+        );
 
         // 2. Post invoice for 4 units
         $draftAction = app(CreateSalesInvoiceDraftAction::class);

@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace Tests\Feature\Phase3;
 
 use App\Actions\Company\CreateCompanyAction;
-use App\Domain\Inventory\DTO\StockMovementCommand;
-use App\Domain\Inventory\DTO\StockMovementLineCommand;
+use App\Actions\Inventory\AdjustStockAction;
+use App\Actions\Inventory\PostOpeningStockAction;
 use App\Domain\Inventory\DTO\StockTransferCommand;
 use App\Domain\Inventory\DTO\StockTransferLineCommand;
 use App\Domain\Inventory\ValueObjects\Quantity;
@@ -134,23 +134,16 @@ class InventoryReconciliationAndRebuildTest extends TestCase
     public function test_audit_reports_healthy_on_consistent_inventory_state(): void
     {
         // 1. Inbound standard product: 100 @ 10 ILS
-        $this->movementService->record(new StockMovementCommand(
-            companyId: $this->company->id,
-            movementType: StockMovement::TYPE_OPENING_BALANCE,
-            movementDate: '2026-10-01',
-            lines: [
-                new StockMovementLineCommand(
-                    productId: $this->productStandard->id,
-                    warehouseId: $this->warehouseA->id,
-                    quantity: Quantity::of(100),
-                    unitCostBase: '10.000000',
-                ),
-            ],
-            sourceType: 'manual_test',
-            sourceId: 1,
+        app(PostOpeningStockAction::class)->execute(
+            company: $this->company,
+            product: $this->productStandard,
+            warehouse: $this->warehouseA,
+            quantity: Quantity::of(100),
+            unitCostBase: '10.000000',
+            user: $this->user,
             idempotencyKey: (string) Str::ulid(),
-            createdBy: $this->user->id,
-        ));
+            movementDate: '2026-10-01',
+        );
 
         // 2. Transfer 30 units to Warehouse B
         $this->movementService->transfer(new StockTransferCommand(
@@ -171,25 +164,18 @@ class InventoryReconciliationAndRebuildTest extends TestCase
         ));
 
         // 3. Inbound expiry product with Lot LOT-M1: 50 @ 4 ILS
-        $this->movementService->record(new StockMovementCommand(
-            companyId: $this->company->id,
-            movementType: StockMovement::TYPE_OPENING_BALANCE,
-            movementDate: '2026-10-01',
-            lines: [
-                new StockMovementLineCommand(
-                    productId: $this->productExpiry->id,
-                    warehouseId: $this->warehouseA->id,
-                    quantity: Quantity::of(50),
-                    unitCostBase: '4.000000',
-                    lotNumber: 'LOT-M1',
-                    expiryDate: '2027-01-01',
-                ),
-            ],
-            sourceType: 'manual_test',
-            sourceId: 3,
+        app(PostOpeningStockAction::class)->execute(
+            company: $this->company,
+            product: $this->productExpiry,
+            warehouse: $this->warehouseA,
+            quantity: Quantity::of(50),
+            unitCostBase: '4.000000',
+            user: $this->user,
             idempotencyKey: (string) Str::ulid(),
-            createdBy: $this->user->id,
-        ));
+            lotNumber: 'LOT-M1',
+            expiryDate: '2027-01-01',
+            movementDate: '2026-10-01',
+        );
 
         // Audit via service
         $report = $this->reconciler->auditCompany($this->company);
@@ -207,23 +193,16 @@ class InventoryReconciliationAndRebuildTest extends TestCase
     public function test_reconciliation_detects_corrupted_balances_and_cost_states(): void
     {
         // 1. Initial movement
-        $this->movementService->record(new StockMovementCommand(
-            companyId: $this->company->id,
-            movementType: StockMovement::TYPE_OPENING_BALANCE,
-            movementDate: '2026-10-01',
-            lines: [
-                new StockMovementLineCommand(
-                    productId: $this->productStandard->id,
-                    warehouseId: $this->warehouseA->id,
-                    quantity: Quantity::of(100),
-                    unitCostBase: '10.000000',
-                ),
-            ],
-            sourceType: 'manual_test',
-            sourceId: 1,
+        app(PostOpeningStockAction::class)->execute(
+            company: $this->company,
+            product: $this->productStandard,
+            warehouse: $this->warehouseA,
+            quantity: Quantity::of(100),
+            unitCostBase: '10.000000',
+            user: $this->user,
             idempotencyKey: (string) Str::ulid(),
-            createdBy: $this->user->id,
-        ));
+            movementDate: '2026-10-01',
+        );
 
         // 2. Artificially tamper with cached inventory_balances.quantity_base directly in DB
         CompanyScope::executeWithoutScope(function () {
@@ -327,23 +306,16 @@ class InventoryReconciliationAndRebuildTest extends TestCase
     public function test_inventory_rebuild_regenerates_caches_from_immutable_movements(): void
     {
         // 1. Inbound 80 @ 15 ILS
-        $this->movementService->record(new StockMovementCommand(
-            companyId: $this->company->id,
-            movementType: StockMovement::TYPE_OPENING_BALANCE,
-            movementDate: '2026-10-01',
-            lines: [
-                new StockMovementLineCommand(
-                    productId: $this->productStandard->id,
-                    warehouseId: $this->warehouseA->id,
-                    quantity: Quantity::of(80),
-                    unitCostBase: '15.000000',
-                ),
-            ],
-            sourceType: 'manual_test',
-            sourceId: 1,
+        app(PostOpeningStockAction::class)->execute(
+            company: $this->company,
+            product: $this->productStandard,
+            warehouse: $this->warehouseA,
+            quantity: Quantity::of(80),
+            unitCostBase: '15.000000',
+            user: $this->user,
             idempotencyKey: (string) Str::ulid(),
-            createdBy: $this->user->id,
-        ));
+            movementDate: '2026-10-01',
+        );
 
         // 2. Corrupt both balance and cost state in DB
         CompanyScope::executeWithoutScope(function () {
@@ -453,29 +425,21 @@ class InventoryReconciliationAndRebuildTest extends TestCase
     public function test_rebuild_refuses_to_normalize_corrupted_movement_history(): void
     {
         // 1. Initial movement
-        $this->movementService->record(new StockMovementCommand(
-            companyId: $this->company->id,
-            movementType: StockMovement::TYPE_OPENING_BALANCE,
-            movementDate: '2026-10-01',
-            lines: [
-                new StockMovementLineCommand(
-                    productId: $this->productStandard->id,
-                    warehouseId: $this->warehouseA->id,
-                    quantity: Quantity::of(10),
-                    unitCostBase: '5.000000',
-                ),
-            ],
-            sourceType: 'manual_test',
-            sourceId: 501,
+        $opening = app(PostOpeningStockAction::class)->execute(
+            company: $this->company,
+            product: $this->productStandard,
+            warehouse: $this->warehouseA,
+            quantity: Quantity::of(10),
+            unitCostBase: '5.000000',
+            user: $this->user,
             idempotencyKey: (string) Str::ulid(),
-            createdBy: $this->user->id,
-        ));
+            movementDate: '2026-10-01',
+        );
 
         // 2. Directly corrupt movement value_delta_base in database
-        CompanyScope::executeWithoutScope(function () {
+        CompanyScope::executeWithoutScope(function () use ($opening) {
             DB::table('stock_movements')
-                ->where('company_id', $this->company->id)
-                ->where('source_id', 501)
+                ->where('id', $opening['movement']->id)
                 ->update(['value_delta_base' => '999.000000']); // Corrupted value
         });
 
@@ -494,42 +458,29 @@ class InventoryReconciliationAndRebuildTest extends TestCase
     public function test_reconciliation_detects_corrupted_outbound_unit_cost_snapshot(): void
     {
         // 1. Deposit 10 units at cost 5.00
-        $this->movementService->record(new StockMovementCommand(
-            companyId: $this->company->id,
-            movementType: StockMovement::TYPE_OPENING_BALANCE,
-            movementDate: '2026-10-01',
-            lines: [
-                new StockMovementLineCommand(
-                    productId: $this->productStandard->id,
-                    warehouseId: $this->warehouseA->id,
-                    quantity: Quantity::of(10),
-                    unitCostBase: '5.000000',
-                ),
-            ],
-            sourceType: 'opening_balance',
-            sourceId: 601,
+        app(PostOpeningStockAction::class)->execute(
+            company: $this->company,
+            product: $this->productStandard,
+            warehouse: $this->warehouseA,
+            quantity: Quantity::of(10),
+            unitCostBase: '5.000000',
+            user: $this->user,
             idempotencyKey: (string) Str::ulid(),
-            createdBy: $this->user->id,
-        ));
+            movementDate: '2026-10-01',
+        );
 
         // 2. Partial outbound (adjustment_decrease of 3 units)
-        $this->movementService->record(new StockMovementCommand(
-            companyId: $this->company->id,
-            movementType: StockMovement::TYPE_ADJUSTMENT_DECREASE,
-            movementDate: '2026-10-02',
-            lines: [
-                new StockMovementLineCommand(
-                    productId: $this->productStandard->id,
-                    warehouseId: $this->warehouseA->id,
-                    quantity: Quantity::of(3),
-                    unitCostBase: null,
-                ),
-            ],
-            sourceType: 'adjustment',
-            sourceId: 602,
+        app(AdjustStockAction::class)->execute(
+            company: $this->company,
+            product: $this->productStandard,
+            warehouse: $this->warehouseA,
+            type: StockMovement::TYPE_ADJUSTMENT_DECREASE,
+            quantity: Quantity::of(3),
+            reason: 'Partial outbound adjustment',
+            user: $this->user,
             idempotencyKey: (string) Str::ulid(),
-            createdBy: $this->user->id,
-        ));
+            movementDate: '2026-10-02',
+        );
 
         // 3. Corrupt the outbound movement's unit_cost_base
         CompanyScope::executeWithoutScope(function () {
@@ -548,42 +499,29 @@ class InventoryReconciliationAndRebuildTest extends TestCase
     public function test_rebuild_refuses_corrupted_outbound_cost_snapshot(): void
     {
         // 1. Deposit 10 units at cost 5.00
-        $this->movementService->record(new StockMovementCommand(
-            companyId: $this->company->id,
-            movementType: StockMovement::TYPE_OPENING_BALANCE,
-            movementDate: '2026-10-01',
-            lines: [
-                new StockMovementLineCommand(
-                    productId: $this->productStandard->id,
-                    warehouseId: $this->warehouseA->id,
-                    quantity: Quantity::of(10),
-                    unitCostBase: '5.000000',
-                ),
-            ],
-            sourceType: 'opening_balance',
-            sourceId: 603,
+        app(PostOpeningStockAction::class)->execute(
+            company: $this->company,
+            product: $this->productStandard,
+            warehouse: $this->warehouseA,
+            quantity: Quantity::of(10),
+            unitCostBase: '5.000000',
+            user: $this->user,
             idempotencyKey: (string) Str::ulid(),
-            createdBy: $this->user->id,
-        ));
+            movementDate: '2026-10-01',
+        );
 
         // 2. Outbound 3 units via adjustment_decrease
-        $this->movementService->record(new StockMovementCommand(
-            companyId: $this->company->id,
-            movementType: StockMovement::TYPE_ADJUSTMENT_DECREASE,
-            movementDate: '2026-10-02',
-            lines: [
-                new StockMovementLineCommand(
-                    productId: $this->productStandard->id,
-                    warehouseId: $this->warehouseA->id,
-                    quantity: Quantity::of(3),
-                    unitCostBase: null,
-                ),
-            ],
-            sourceType: 'adjustment',
-            sourceId: 604,
+        app(AdjustStockAction::class)->execute(
+            company: $this->company,
+            product: $this->productStandard,
+            warehouse: $this->warehouseA,
+            type: StockMovement::TYPE_ADJUSTMENT_DECREASE,
+            quantity: Quantity::of(3),
+            reason: 'Outbound adjustment decrease',
+            user: $this->user,
             idempotencyKey: (string) Str::ulid(),
-            createdBy: $this->user->id,
-        ));
+            movementDate: '2026-10-02',
+        );
 
         // 3. Corrupt outbound unit_cost_base
         CompanyScope::executeWithoutScope(function () {

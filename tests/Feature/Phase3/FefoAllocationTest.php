@@ -23,6 +23,7 @@ use App\Support\Tenancy\CompanyContext;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
+use Tests\Support\InventoryPrimitiveFixture;
 use Tests\TestCase;
 
 class FefoAllocationTest extends TestCase
@@ -84,7 +85,7 @@ class FefoAllocationTest extends TestCase
         ]);
 
         $this->fefoService = app(FefoAllocationService::class);
-        $this->movementService = app(InventoryMovementService::class);
+        $this->movementService = InventoryPrimitiveFixture::createService();
     }
 
     public function test_fefo_allocation_order_and_multi_lot_depletion(): void

@@ -23,9 +23,12 @@ use App\Models\MoneyAccount;
 use App\Models\PostingBatch;
 use App\Models\PostingLine;
 use App\Models\User;
+use App\Services\Inventory\StockEventScope;
 use App\Services\Money\MoneyAccountLedger;
 use App\Services\Money\MoneyEventScope;
 use App\Services\Phase7\Phase7EventScope;
+use App\Services\Purchasing\PurchasePostingScope;
+use App\Services\Purchasing\PurchaseReturnPostingScope;
 use App\Support\Tenancy\CompanyContext;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\QueryException;
@@ -41,6 +44,15 @@ class AccountingPostingService
      */
     public function post(PostingCommand $command): PostingBatch
     {
+        if ($command->sourceType === 'purchase') {
+            PurchasePostingScope::assertPosting($command);
+        }
+        if ($command->sourceType === 'purchase_return') {
+            PurchaseReturnPostingScope::assertPosting($command);
+        }
+        if (in_array($command->sourceType, ['opening_stock', 'stock_adjustment', 'expiry_disposal', 'sales_invoice', 'sales_return'], true)) {
+            app(StockEventScope::class)->assertPosting($command);
+        }
         if (in_array($command->sourceType, ['expense', 'employee_advance', 'salary_entry', 'salary_payment'], true)) {
             app(Phase7EventScope::class)->assertCommand($command);
         }
@@ -363,6 +375,14 @@ class AccountingPostingService
      */
     public function reverse(PostingBatch $original, User $actingUser, ?string $reason = null, ?string $postingDate = null): PostingBatch
     {
+        // Inspect persisted source identity; a dirty caller model cannot disguise a protected event.
+        $stockOriginal = PostingBatch::withoutGlobalScopes()->where('company_id', $original->company_id)->find($original->id);
+        if ($stockOriginal !== null && in_array($stockOriginal->source_type, ['purchase', 'purchase_return'], true)) {
+            throw new InvalidArgumentException('Use the canonical Purchase Return workflow; raw Purchasing accounting reversal cannot leave stock unchanged.');
+        }
+        if ($stockOriginal !== null && in_array($stockOriginal->source_type, ['opening_stock', 'stock_adjustment', 'expiry_disposal', 'sales_invoice', 'sales_return'], true)) {
+            app(StockEventScope::class)->assertReversal($stockOriginal, $actingUser);
+        }
         if (in_array($original->source_type, ['expense', 'employee_advance', 'salary_entry', 'salary_payment'], true)) {
             app(Phase7EventScope::class)->assertReversal($original, $actingUser, $postingDate);
         }

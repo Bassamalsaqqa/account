@@ -27,6 +27,7 @@ use App\Support\Tenancy\CompanyContext;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
 use Livewire\Livewire;
+use Tests\Support\InventoryPrimitiveFixture;
 use Tests\TestCase;
 
 class CatalogInvariantsAndDefaultWarehouseTest extends TestCase
@@ -121,7 +122,7 @@ class CatalogInvariantsAndDefaultWarehouseTest extends TestCase
         ]);
 
         // Record a stock movement using this product
-        app(InventoryMovementService::class)->record(new StockMovementCommand(
+        InventoryPrimitiveFixture::record(app(InventoryMovementService::class), new StockMovementCommand(
             companyId: $this->company->id,
             movementType: StockMovement::TYPE_OPENING_BALANCE,
             movementDate: '2026-10-01',
@@ -177,7 +178,7 @@ class CatalogInvariantsAndDefaultWarehouseTest extends TestCase
         ]);
 
         // Record a movement referencing this alternate unit
-        app(InventoryMovementService::class)->record(new StockMovementCommand(
+        InventoryPrimitiveFixture::record(app(InventoryMovementService::class), new StockMovementCommand(
             companyId: $this->company->id,
             movementType: StockMovement::TYPE_OPENING_BALANCE,
             movementDate: '2026-10-01',

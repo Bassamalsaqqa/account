@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Feature\Phase4;
 
+use App\Actions\Inventory\PostOpeningStockAction;
 use App\Actions\Sales\CreateMoneyAccountAction;
 use App\Actions\Sales\CreateQuotationAction;
 use App\Actions\Sales\CreateSalesInvoiceDraftAction;
@@ -81,12 +82,18 @@ final class RemainingSalesIntegrityTest extends SalesInvoicePostingAndFefoTest
 
     private function inbound(string $qty, string $cost, string $key, string $lot = 'A'): void
     {
-        $this->inventoryService->record(new StockMovementCommand(
-            companyId: $this->company->id, movementType: 'opening_balance', movementDate: '2026-10-01',
-            lines: [new StockMovementLineCommand(productId: $this->product->id, warehouseId: $this->warehouse->id,
-                quantity: Quantity::of($qty), unitCostBase: $cost, lotNumber: $lot, expiryDate: '2027-12-31')],
-            sourceType: 'probe', sourceId: 1, idempotencyKey: $key, createdBy: $this->user->id,
-        ));
+        app(PostOpeningStockAction::class)->execute(
+            company: $this->company,
+            product: $this->product,
+            warehouse: $this->warehouse,
+            quantity: Quantity::of($qty),
+            unitCostBase: $cost,
+            user: $this->user,
+            idempotencyKey: $key,
+            lotNumber: $lot,
+            expiryDate: '2027-12-31',
+            movementDate: '2026-10-01',
+        );
     }
 
     public function test_probe_direct_status_void_is_not_a_canonical_reversal(): void
@@ -370,7 +377,7 @@ final class RemainingSalesIntegrityTest extends SalesInvoicePostingAndFefoTest
         } catch (\InvalidArgumentException) {
             $this->assertSame('draft', $draft->fresh()->status);
             $this->assertSame(1, StockMovement::count());
-            $this->assertSame(0, PostingBatch::count());
+            $this->assertSame(1, PostingBatch::count());
         }
         $draft->lines->first()->update(['quantity_base' => '1']);
         $draft->update(['grand_total_currency' => '999']);
@@ -378,7 +385,7 @@ final class RemainingSalesIntegrityTest extends SalesInvoicePostingAndFefoTest
             app(PostSalesInvoiceAction::class)->execute($draft, $this->user);
             $this->fail('Forged header total was posted.');
         } catch (\InvalidArgumentException) {
-            $this->assertSame(0, PostingBatch::count());
+            $this->assertSame(1, PostingBatch::count());
             $this->assertNull($draft->fresh()->invoice_number);
         }
     }

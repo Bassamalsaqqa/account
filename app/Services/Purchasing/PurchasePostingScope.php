@@ -7,7 +7,9 @@ namespace App\Services\Purchasing;
 use App\Actions\Purchasing\PostPurchaseAction;
 use App\Domain\Inventory\DTO\StockMovementCommand;
 use App\Domain\Inventory\Exceptions\InvalidInventoryMovementException;
+use App\Domain\Posting\DTO\PostingCommand;
 use App\Models\LandedCostAllocation;
+use App\Models\PostingBatch;
 use App\Models\Purchase;
 use App\Models\StockMovement;
 use App\Models\User;
@@ -17,6 +19,8 @@ use Illuminate\Database\Connection;
 use Illuminate\Database\DatabaseTransactionRecord;
 use Illuminate\Database\DatabaseTransactionsManager;
 use Illuminate\Support\Facades\DB;
+use InvalidArgumentException;
+use LogicException;
 use PDO;
 
 /** Request-local authority for one executing canonical Purchase post. */
@@ -27,13 +31,13 @@ final class PurchasePostingScope
     /** @return array<string, mixed> */
     public function __serialize(): array
     {
-        throw new \LogicException('Purchase posting scopes cannot be serialized.');
+        throw new LogicException('Purchase posting scopes cannot be serialized.');
     }
 
     /** @param array<string, mixed> $data */
     public function __unserialize(array $data): void
     {
-        throw new \LogicException('Purchase posting scopes cannot be restored.');
+        throw new LogicException('Purchase posting scopes cannot be restored.');
     }
 
     private ?PurchaseReceiptCapability $active = null;
@@ -51,6 +55,12 @@ final class PurchasePostingScope
     private int $purchaseId = 0;
 
     private int $actorId = 0;
+
+    private ?PostingCommand $preparedPostingCommand = null;
+
+    private bool $postingAsserted = false;
+
+    private bool $batchVerified = false;
 
     /**
      * @template T
@@ -79,8 +89,17 @@ final class PurchasePostingScope
         $this->companyId = (int) $purchase->company_id;
         $this->purchaseId = (int) $purchase->id;
         $this->actorId = (int) $actor->id;
+        $this->preparedPostingCommand = null;
+        $this->postingAsserted = false;
+        $this->batchVerified = false;
+
         try {
-            return $callback($capability);
+            $result = $callback($capability);
+            if ($this->preparedPostingCommand !== null && ! $this->batchVerified) {
+                throw new InvalidArgumentException('Prepared purchase posting command requires verified persisted canonical batch.');
+            }
+
+            return $result;
         } finally {
             $this->active = null;
             $this->owner = null;
@@ -88,20 +107,154 @@ final class PurchasePostingScope
             $this->pdo = null;
             $this->transaction = null;
             $this->companyId = $this->purchaseId = $this->actorId = 0;
+            $this->preparedPostingCommand = null;
+            $this->postingAsserted = false;
+            $this->batchVerified = false;
         }
     }
 
-    public function isActive(PurchaseReceiptCapability $capability): bool
+    public function isActive(?PurchaseReceiptCapability $capability): bool
     {
-        if ($this->connection === null || $this->pdo === null) {
+        if ($capability === null || $this->connection === null || $this->pdo === null) {
             return false;
         }
 
         return $this->active === $capability && $this->owner?->ownsPostingScope($this) === true
             && $this->connection === DB::connection() && $this->connection->transactionLevel() > 0
+            && $this->connection->transactionLevel() === $this->transaction?->level
             && $this->pdo === $this->connection->getPdo() && $this->pdo->inTransaction()
             && $this->transactions()->getPendingTransactions()->contains(
                 fn (DatabaseTransactionRecord $record) => $record === $this->transaction);
+    }
+
+    public function preparePosting(PostPurchaseAction $owner, PostingCommand $command): void
+    {
+        if ($this->active === null || $this->owner === null || $owner !== $this->owner || ! $owner->ownsPostingScope($this)) {
+            throw new InvalidArgumentException('Only the executing canonical Purchase action may prepare posting.');
+        }
+
+        if (! $this->isActive($this->active)) {
+            throw new InvalidArgumentException('Purchase posting scope is not active.');
+        }
+
+        if ($this->preparedPostingCommand !== null) {
+            throw new InvalidArgumentException('Purchase posting command has already been prepared.');
+        }
+
+        $context = app(CompanyContext::class);
+        if ($command->sourceType !== 'purchase'
+            || (int) $command->company->id !== $this->companyId
+            || (int) $command->sourceId !== $this->purchaseId
+            || $command->postedBy === null
+            || (int) $command->postedBy->id !== $this->actorId
+            || (int) auth()->id() !== $this->actorId
+            || ! $context->hasCompany()
+            || (int) $context->companyId() !== $this->companyId) {
+            throw new InvalidArgumentException('Posting command does not match active canonical purchase posting scope.');
+        }
+
+        $this->preparedPostingCommand = $command;
+        $this->postingAsserted = false;
+        $this->batchVerified = false;
+    }
+
+    public static function assertPosting(PostingCommand $command): void
+    {
+        app(self::class)->assertPostingCommand($command);
+    }
+
+    public function assertPostingCommand(PostingCommand $command): void
+    {
+        if ($this->active === null || $this->owner === null || ! $this->owner->ownsPostingScope($this)) {
+            throw new InvalidArgumentException('Purchase posting requires an active canonical posting scope.');
+        }
+
+        if (! $this->isActive($this->active)) {
+            throw new InvalidArgumentException('Purchase posting scope is not active or transaction is not canonical.');
+        }
+
+        if ($this->preparedPostingCommand === null) {
+            throw new InvalidArgumentException('Purchase posting command has not been prepared by canonical action.');
+        }
+
+        if ($command !== $this->preparedPostingCommand) {
+            throw new InvalidArgumentException('Exact canonical purchase posting command required.');
+        }
+
+        $context = app(CompanyContext::class);
+        if ($command->sourceType !== 'purchase'
+            || (int) $command->company->id !== $this->companyId
+            || (int) $command->sourceId !== $this->purchaseId
+            || $command->postedBy === null
+            || (int) $command->postedBy->id !== $this->actorId
+            || (int) auth()->id() !== $this->actorId
+            || ! $context->hasCompany()
+            || (int) $context->companyId() !== $this->companyId) {
+            throw new InvalidArgumentException('Purchase posting parameters do not match active canonical posting scope.');
+        }
+
+        $this->postingAsserted = true;
+    }
+
+    public function assertPersistedBatch(PostPurchaseAction $owner, PostingBatch $batch, Purchase $purchase): void
+    {
+        if ($this->active === null || $this->owner === null || $owner !== $this->owner || ! $owner->ownsPostingScope($this)) {
+            throw new InvalidArgumentException('Only the executing canonical Purchase action may verify persisted batch.');
+        }
+
+        if (! $this->isActive($this->active)) {
+            throw new InvalidArgumentException('Purchase posting scope is not active.');
+        }
+
+        if ($this->preparedPostingCommand === null || ! $this->postingAsserted) {
+            throw new InvalidArgumentException('Posting command must be prepared and asserted before verifying batch.');
+        }
+
+        if (! $batch->exists || $batch->id <= 0) {
+            throw new InvalidArgumentException('Persisted posting batch is required.');
+        }
+
+        /** @var PostingBatch|null $persisted */
+        $persisted = PostingBatch::where('company_id', $this->companyId)
+            ->where('id', $batch->id)
+            ->first();
+
+        if ($persisted === null) {
+            throw new InvalidArgumentException('Posting batch does not exist in database.');
+        }
+
+        if ($persisted->source_type !== 'purchase'
+            || (int) $persisted->source_id !== $this->purchaseId
+            || (int) $persisted->company_id !== $this->companyId
+            || $persisted->idempotency_key !== $this->preparedPostingCommand->idempotencyKey
+            || $persisted->isReversed()) {
+            throw new InvalidArgumentException('Persisted posting batch source and lifecycle do not match active scope.');
+        }
+
+        if (! $this->preparedPostingCommand->matchesBatch($persisted)) {
+            throw new InvalidArgumentException('Persisted posting batch does not match exact prepared command payload.');
+        }
+
+        $purchase = Purchase::withoutGlobalScopes()->where('company_id', $this->companyId)->findOrFail($purchase->id);
+
+        if ((int) $purchase->id !== $this->purchaseId
+            || (int) $purchase->company_id !== $this->companyId
+            || $purchase->status !== Purchase::STATUS_POSTED
+            || (int) $purchase->posting_batch_id !== (int) $persisted->id
+            || $purchase->purchase_number === null || trim((string) $purchase->purchase_number) === '') {
+            throw new InvalidArgumentException('Purchase document state does not reflect canonical posted lifecycle.');
+        }
+
+        $hasStock = StockMovement::where('company_id', $this->companyId)
+            ->where('source_type', 'purchase')
+            ->where('source_id', $this->purchaseId)
+            ->exists();
+
+        if (! $hasStock) {
+            throw new InvalidArgumentException('Purchase has no persisted stock movements.');
+        }
+
+        $this->batchVerified = true;
     }
 
     public function assertReceipt(StockMovementCommand $command, ?PurchaseReceiptCapability $capability): void

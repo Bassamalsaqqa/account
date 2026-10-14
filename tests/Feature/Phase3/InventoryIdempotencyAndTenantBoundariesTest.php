@@ -31,6 +31,7 @@ use App\Support\Tenancy\CompanyScope;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
+use Tests\Support\InventoryPrimitiveFixture;
 use Tests\TestCase;
 
 class InventoryIdempotencyAndTenantBoundariesTest extends TestCase
@@ -135,7 +136,7 @@ class InventoryIdempotencyAndTenantBoundariesTest extends TestCase
             'active' => true,
         ]);
 
-        $this->service = app(InventoryMovementService::class);
+        $this->service = InventoryPrimitiveFixture::createService();
     }
 
     public function test_exact_retry_of_multiline_command_returns_identical_movements_without_duplication(): void

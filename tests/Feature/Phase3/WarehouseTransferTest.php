@@ -28,6 +28,7 @@ use App\Support\Tenancy\CompanyContext;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
+use Tests\Support\InventoryPrimitiveFixture;
 use Tests\TestCase;
 
 class WarehouseTransferTest extends TestCase
@@ -123,7 +124,7 @@ class WarehouseTransferTest extends TestCase
             'active' => true,
         ]);
 
-        $this->service = app(InventoryMovementService::class);
+        $this->service = InventoryPrimitiveFixture::createService();
     }
 
     public function test_warehouse_transfer_conserves_total_quantity_value_and_average_cost(): void

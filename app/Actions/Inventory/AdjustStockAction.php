@@ -21,15 +21,18 @@ use App\Models\StockMovement;
 use App\Models\User;
 use App\Models\Warehouse;
 use App\Services\Inventory\InventoryMovementService;
+use App\Services\Inventory\OwnsStockEvent;
+use App\Services\Inventory\StockEventOwner;
 use App\Services\Posting\AccountingPostingService;
 use App\Support\Tenancy\CompanyContext;
 use Brick\Math\BigDecimal;
 use Carbon\Carbon;
 use Illuminate\Auth\Access\AuthorizationException;
-use Illuminate\Support\Facades\DB;
 
-class AdjustStockAction
+class AdjustStockAction implements StockEventOwner
 {
+    use OwnsStockEvent;
+
     public function __construct(
         protected InventoryMovementService $inventoryService,
         protected AccountingPostingService $postingService,
@@ -94,7 +97,7 @@ class AdjustStockAction
             }
         }
 
-        return DB::transaction(function () use (
+        return $this->stockTransaction((int) $company->id, (int) $company->id, $user, function () use (
             $company,
             $product,
             $warehouse,
@@ -126,7 +129,7 @@ class AdjustStockAction
                 throw new InvalidInventoryMovementException("Actor [{$user->id}] is not an active member of company [{$lockedCompany->id}].");
             }
 
-            $date = $movementDate ?? now()->toDateString();
+            $date = $movementDate ?? now($lockedCompany->timezone)->toDateString();
 
             // 1. Record Inventory Movement — pass unitCostBase directly through unchanged (no pre-engine lookup)
             $movementCommand = new StockMovementCommand(
@@ -152,7 +155,7 @@ class AdjustStockAction
                 reason: $reason,
             );
 
-            $movements = $this->inventoryService->record($movementCommand);
+            $movements = $this->recordStock($this->inventoryService, $movementCommand);
             /** @var StockMovement $movement */
             $movement = $movements[0];
 
@@ -221,7 +224,7 @@ class AdjustStockAction
                     ],
                 );
 
-                $batch = $this->postingService->post($postingCommand);
+                $batch = $this->postStock($this->postingService, $postingCommand);
             }
 
             return [

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Feature\Phase4;
 
+use App\Actions\Inventory\PostOpeningStockAction;
 use App\Actions\Sales\CreateSalesInvoiceDraftAction;
 use App\Actions\Sales\CreateSalesReturnDraftAction;
 use App\Actions\Sales\PostCustomerPaymentAction;
@@ -11,8 +12,6 @@ use App\Actions\Sales\PostSalesInvoiceAction;
 use App\Actions\Sales\PostSalesReturnAction;
 use App\Actions\Sales\ReverseCustomerPaymentAction;
 use App\Actions\Sales\VoidSalesInvoiceAction;
-use App\Domain\Inventory\DTO\StockMovementCommand;
-use App\Domain\Inventory\DTO\StockMovementLineCommand;
 use App\Domain\Inventory\ValueObjects\Quantity;
 use App\Domain\Sales\Queries\CustomerStatementQuery;
 use App\Livewire\Pages\Customers\CustomerDetail;
@@ -195,23 +194,18 @@ final class Phase4AcceptanceProbeTest extends SalesInvoicePostingAndFefoTest
 
     private function inbound(string $qty, string $cost, string $key, string $lot = 'PROBE-LOT'): void
     {
-        $this->inventoryService->record(new StockMovementCommand(
-            companyId: $this->company->id,
-            movementType: 'opening_balance',
-            movementDate: '2026-10-01',
-            lines: [new StockMovementLineCommand(
-                productId: $this->product->id,
-                warehouseId: $this->warehouse->id,
-                quantity: Quantity::of($qty),
-                unitCostBase: $cost,
-                lotNumber: $lot,
-                expiryDate: '2027-12-31'
-            )],
-            sourceType: 'probe',
-            sourceId: 1,
+        app(PostOpeningStockAction::class)->execute(
+            company: $this->company,
+            product: $this->product,
+            warehouse: $this->warehouse,
+            quantity: Quantity::of($qty),
+            unitCostBase: $cost,
+            user: $this->user,
             idempotencyKey: $key,
-            createdBy: $this->user->id,
-        ));
+            lotNumber: $lot,
+            expiryDate: '2027-12-31',
+            movementDate: '2026-10-01',
+        );
     }
 
     private function stockInvoice(string $qty): SalesInvoice

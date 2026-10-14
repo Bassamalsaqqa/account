@@ -48,6 +48,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Livewire\Livewire;
 use Spatie\Permission\Models\Permission;
+use Tests\Support\InventoryPrimitiveFixture;
 use Tests\TestCase;
 
 class Phase3IntegrityCorrectionTest extends TestCase
@@ -371,7 +372,7 @@ class Phase3IntegrityCorrectionTest extends TestCase
             reason: 'Implicit adjustment +5',
         );
 
-        $service = app(InventoryMovementService::class);
+        $service = InventoryPrimitiveFixture::createService();
         $m1 = $service->record($cmd);
         $this->assertCount(1, $m1);
         $this->assertSame('10.000000', $m1[0]->unit_cost_base);
@@ -433,7 +434,7 @@ class Phase3IntegrityCorrectionTest extends TestCase
             idempotencyKey: 'OS-INIT-2',
         );
 
-        $service = app(InventoryMovementService::class);
+        $service = InventoryPrimitiveFixture::createService();
         $cmd1 = new StockMovementCommand(
             companyId: $this->company->id,
             movementType: StockMovement::TYPE_ADJUSTMENT_INCREASE,
@@ -559,7 +560,7 @@ class Phase3IntegrityCorrectionTest extends TestCase
         $this->expectException(InvalidInventoryMovementException::class);
         $this->expectExceptionMessage('not an active configured unit');
 
-        app(InventoryMovementService::class)->record($cmd);
+        InventoryPrimitiveFixture::record(app(InventoryMovementService::class), $cmd);
     }
 
     // ==========================================
@@ -671,7 +672,7 @@ class Phase3IntegrityCorrectionTest extends TestCase
         );
 
         $lot = InventoryLot::where('product_id', $product->id)->firstOrFail();
-        $service = app(InventoryMovementService::class);
+        $service = InventoryPrimitiveFixture::createService();
 
         // 1. On expiry day (2026-10-15):
         // Expiry disposal is FORBIDDEN (lot is not expired yet)
@@ -1248,7 +1249,7 @@ class Phase3IntegrityCorrectionTest extends TestCase
     public function test_same_factor_default_update_after_movements_succeeds_but_changed_factor_fails(): void
     {
         $catalogService = app(ProductCatalogService::class);
-        $movementService = app(InventoryMovementService::class);
+        $movementService = InventoryPrimitiveFixture::createService();
 
         $product = $catalogService->createProduct($this->company, [
             'name_ar' => 'منتج تحويل الحركات',
@@ -1509,7 +1510,7 @@ class Phase3IntegrityCorrectionTest extends TestCase
 
     public function test_null_expiry_ordering_after_dated_lots_and_null_expiry_disposal_rejection(): void
     {
-        $movementService = app(InventoryMovementService::class);
+        $movementService = InventoryPrimitiveFixture::createService();
         $fefoService = app(FefoAllocationService::class);
         $disposeAction = app(DisposeExpiredStockAction::class);
 
