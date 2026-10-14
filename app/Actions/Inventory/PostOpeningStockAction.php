@@ -104,7 +104,7 @@ class PostOpeningStockAction implements StockEventOwner
                 throw new InvalidInventoryMovementException("Actor [{$user->id}] is not an active member of company [{$lockedCompany->id}].");
             }
 
-            $date = $movementDate ?? now()->toDateString();
+            $date = $movementDate ?? now($lockedCompany->timezone)->toDateString();
 
             // 1. Record Inventory Movement
             $movementCommand = new StockMovementCommand(

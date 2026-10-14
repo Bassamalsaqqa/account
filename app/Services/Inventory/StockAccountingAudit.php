@@ -173,6 +173,13 @@ final class StockAccountingAudit
             $id = (int) $batch->id;
             $expected[$id] = ($expected[$id] ?? BigDecimal::zero())->plus($value);
         }
+        // An aggregate zero cannot legitimize unrelated offsetting Inventory GL events.
+        // Canonical void reversals are already indexed by their linked stock compensation.
+        foreach ($gl as $id => $value) {
+            if (! $value->isZero() && ! isset($expected[$id])) {
+                $issues[] = "Inventory GL posting batch [{$id}] has no matching canonical economic stock effect.";
+            }
+        }
         foreach ($expected as $id => $value) {
             if (! ($gl[$id] ?? BigDecimal::zero())->isEqualTo($value)) {
                 $issues[] = "Stock event posting batch [{$id}] inventory GL effect does not match immutable stock valuation.";

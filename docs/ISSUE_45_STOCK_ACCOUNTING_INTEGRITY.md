@@ -23,7 +23,7 @@ No economic formula, tax/FX policy, costing/FEFO algorithm, posted history, data
 
 Codex independently inspected AGY's bounded Purchasing, fixture and test handbacks and corrected observed fixture defects. AGY did not commit or publish. Its last documentation task hit quota; Codex completed the handback.
 
-Completed local verification at the published source:
+Original submission verification at `201bc65840d1d2c727760a7e2d471abdb22517c7` (carried evidence, not a rerun at the correction head):
 
 | Gate | Result |
 | --- | --- |
@@ -44,3 +44,13 @@ New coverage is in [StockAccountingIntegrity](../tests/Feature/StockAccountingIn
 - No automatic historical repair is included. Newly detected historical event corruption makes reconciliation fail and blocks rebuild; a GL/cache discrepancy remains failed evidence until its cause is reconciled. Any actual historical correction needs a separately authorized, auditable plan; never rewrite posted stock/financial history to make an audit green.
 - The code is reviewable source pending independent exact-head acceptance. Issue #45 remains open until the normal accepted merge/release process.
 - Protected Owner specifications/PDFs and unrelated worktrees remain preserved. Worker briefs/results and detailed synthetic logs are deliberately retained only under ignored `.ai/issue45`; they are not public PR evidence.
+
+## Final review correction ? unsupported Inventory GL sources
+
+Review [4274155474](https://github.com/Bassamalsaqqa/account/pull/46#discussion_r4274155474) identified a remaining inverse-audit gap: individually balanced `manual_test` batches could debit/credit Inventory by +2 and -2 without stock movements, leaving the aggregate control balance at zero. Their original source types must remain unchanged in the regression.
+
+The correction checks every nonzero per-batch Inventory GL effect against the same canonical stock-to-batch index already validated by the audit. Recognized Sales void reversals are supported through their linked compensating stock; unrelated/non-inventory manual accounting and a batch with exactly zero net Inventory effect require no economic stock counterpart. No historical-source exemption is invented. Generic financial opening posting behavior remains unchanged; the Blueprint's stock-opening contract still requires stock plus Inventory GL. Unsupported Inventory effects are reported for review, never rewritten or silently relabeled.
+
+PR #44 overlap: its accepted head `7214dfe1b8eadda7c217d97e9cc10706ac07b130` changes only the default-date line in `PostOpeningStockAction`, `AdjustStockAction` and `DisposeExpiredStockAction`. Those exact three lines are carried here alongside the PR #46 action-owned transaction/capability wrappers. Default dates use company timezone; explicit dates and posted historical dates remain unchanged. Future integration must retain both behaviors. Neither branch was merged.
+
+Focused correction verification: PASS ? 60 tests / 934 assertions, 0 failures/errors/skips/notices, on newly owned MariaDB; targeted Pint and PHPStan passed. Before the fix, the four new GL cases produced two failures and two passing controls (38 assertions); the three timezone cases reproduced two wrong-date failures and one expiry-boundary error. Tests cover the unchanged unsupported-source pair and lone batch, double-entry accounting validity, read-only snapshot preservation, legitimate manual/zero-effect controls, canonical stock/Sales/Purchasing/reversal history and company-midnight/expiry boundaries. No broad-suite repeat, GitHub CI, production access, merge or deployment.

@@ -18,6 +18,7 @@ use App\Models\LedgerAccount;
 use App\Models\PostingBatch;
 use App\Models\PostingLine;
 use App\Models\StockMovement;
+use App\Services\Accounting\AccountingReconciliationService;
 use App\Services\Inventory\InventoryMovementService;
 use App\Services\Inventory\InventoryReconciliationService;
 use App\Services\Inventory\StockAccountingAudit;
@@ -439,6 +440,204 @@ final class StockAccountingReconciliationTest extends Phase8TestCase
         $this->assertFalse($report->isHealthy);
         $this->assertSame('0.000000', $report->totalValuationBase);
         $this->assertTrue(collect($report->historyCorruptions)->contains(fn ($message) => str_contains($message, 'missing accounting recognition')));
+    }
+
+    public function test_offsetting_manual_inventory_gl_batches_without_movements_fail_inventory_audit_with_individual_batch_discrepancies(): void
+    {
+        $accounts = LedgerAccount::where('company_id', $this->company->id)->get()->keyBy('system_key');
+        $inventoryAccount = $accounts['inventory'];
+        $equityAccount = $accounts['opening_balance_equity'];
+
+        // Batch 1: +2.000000 to Inventory GL (Debit Inventory, Credit Opening Balance Equity)
+        $batch1 = app(AccountingPostingService::class)->post(new PostingCommand(
+            company: $this->company,
+            postingDate: CarbonImmutable::parse('2026-10-01'),
+            sourceType: 'manual_test',
+            sourceId: 101,
+            transactionCurrencyCode: 'ILS',
+            baseCurrencyCode: 'ILS',
+            exchangeRate: ExchangeRate::one(),
+            idempotencyKey: 'manual-inventory-offsetting-1-'.Str::ulid(),
+            postedBy: $this->owner,
+            lines: [
+                PostingLineCommand::debit(1, $inventoryAccount->id, '2'),
+                PostingLineCommand::credit(2, $equityAccount->id, '2'),
+            ],
+        ));
+
+        // Batch 2: -2.000000 to Inventory GL (Debit Opening Balance Equity, Credit Inventory)
+        $batch2 = app(AccountingPostingService::class)->post(new PostingCommand(
+            company: $this->company,
+            postingDate: CarbonImmutable::parse('2026-10-01'),
+            sourceType: 'manual_test',
+            sourceId: 102,
+            transactionCurrencyCode: 'ILS',
+            baseCurrencyCode: 'ILS',
+            exchangeRate: ExchangeRate::one(),
+            idempotencyKey: 'manual-inventory-offsetting-2-'.Str::ulid(),
+            postedBy: $this->owner,
+            lines: [
+                PostingLineCommand::debit(1, $equityAccount->id, '2'),
+                PostingLineCommand::credit(2, $inventoryAccount->id, '2'),
+            ],
+        ));
+
+        // Keep source_type unchanged; do NOT use raw DB source rewrites
+        $this->assertSame('manual_test', $batch1->fresh()->source_type);
+        $this->assertSame('manual_test', $batch2->fresh()->source_type);
+
+        // AccountingReconciliationService reports these double-entry batches individually balanced healthy
+        $accountingReport = app(AccountingReconciliationService::class)->reconcile($this->company);
+        $this->assertTrue($accountingReport->isHealthy);
+        $this->assertEmpty($accountingReport->violations);
+
+        // InventoryReconciliationService auditCompany MUST fail with individual batch discrepancies even though aggregate value is zero
+        $report = $this->assertAuditPreservesSnapshots(
+            fn () => app(InventoryReconciliationService::class)->auditCompany($this->company)
+        );
+
+        $this->assertFalse($report->isHealthy);
+        $this->assertSame('0.000000', $report->totalValuationBase);
+        $this->assertEmpty($report->cacheDiscrepancies);
+
+        $allIssues = collect(array_merge($report->historyCorruptions, $report->discrepancies));
+        $this->assertTrue(
+            $allIssues->contains(fn (string $msg): bool => str_contains($msg, 'Inventory GL posting batch ['.$batch1->id.']')),
+            "Inventory audit must report individual discrepancy for batch [{$batch1->id}]."
+        );
+        $this->assertTrue(
+            $allIssues->contains(fn (string $msg): bool => str_contains($msg, 'Inventory GL posting batch ['.$batch2->id.']')),
+            "Inventory audit must report individual discrepancy for batch [{$batch2->id}]."
+        );
+    }
+
+    public function test_lone_unsupported_source_inventory_gl_batch_fails_inventory_audit(): void
+    {
+        $accounts = LedgerAccount::where('company_id', $this->company->id)->get()->keyBy('system_key');
+        $inventoryAccount = $accounts['inventory'];
+        $equityAccount = $accounts['opening_balance_equity'];
+
+        // Lone unsupported-source batch touching Inventory GL
+        $batch = app(AccountingPostingService::class)->post(new PostingCommand(
+            company: $this->company,
+            postingDate: CarbonImmutable::parse('2026-10-01'),
+            sourceType: 'manual_test',
+            sourceId: 201,
+            transactionCurrencyCode: 'ILS',
+            baseCurrencyCode: 'ILS',
+            exchangeRate: ExchangeRate::one(),
+            idempotencyKey: 'lone-unsupported-inventory-'.Str::ulid(),
+            postedBy: $this->owner,
+            lines: [
+                PostingLineCommand::debit(1, $inventoryAccount->id, '2'),
+                PostingLineCommand::credit(2, $equityAccount->id, '2'),
+            ],
+        ));
+
+        // Keep source_type unchanged; do NOT use raw DB source rewrites
+        $this->assertSame('manual_test', $batch->fresh()->source_type);
+
+        // AccountingReconciliationService reports the batch individually balanced healthy
+        $accountingReport = app(AccountingReconciliationService::class)->reconcile($this->company);
+        $this->assertTrue($accountingReport->isHealthy);
+        $this->assertEmpty($accountingReport->violations);
+
+        // InventoryReconciliationService auditCompany MUST fail
+        $report = $this->assertAuditPreservesSnapshots(
+            fn () => app(InventoryReconciliationService::class)->auditCompany($this->company)
+        );
+
+        $this->assertFalse($report->isHealthy);
+        $allIssues = collect(array_merge($report->historyCorruptions, $report->discrepancies));
+        $this->assertTrue(
+            $allIssues->contains(fn (string $msg): bool => str_contains($msg, 'Inventory GL posting batch ['.$batch->id.']')),
+            "Inventory audit must report discrepancy for unsupported batch [{$batch->id}]."
+        );
+    }
+
+    public function test_ordinary_balanced_manual_gl_entries_to_non_inventory_accounts_produce_healthy_inventory_audit(): void
+    {
+        $accounts = LedgerAccount::where('company_id', $this->company->id)->get()->keyBy('system_key');
+        $expenseAccount = $accounts['salary_expense'];
+        $payableAccount = $accounts['salary_payable'];
+
+        // Ordinary balanced manual GL batch touching only non-inventory accounts
+        $batch = app(AccountingPostingService::class)->post(new PostingCommand(
+            company: $this->company,
+            postingDate: CarbonImmutable::parse('2026-10-01'),
+            sourceType: 'manual_test',
+            sourceId: 301,
+            transactionCurrencyCode: 'ILS',
+            baseCurrencyCode: 'ILS',
+            exchangeRate: ExchangeRate::one(),
+            idempotencyKey: 'manual-non-inventory-'.Str::ulid(),
+            postedBy: $this->owner,
+            lines: [
+                PostingLineCommand::debit(1, $expenseAccount->id, '150'),
+                PostingLineCommand::credit(2, $payableAccount->id, '150'),
+            ],
+        ));
+
+        // Keep source_type unchanged; do NOT use raw DB source rewrites
+        $this->assertSame('manual_test', $batch->fresh()->source_type);
+
+        // AccountingReconciliationService confirms double-entry is healthy
+        $accountingReport = app(AccountingReconciliationService::class)->reconcile($this->company);
+        $this->assertTrue($accountingReport->isHealthy);
+        $this->assertEmpty($accountingReport->violations);
+
+        // InventoryReconciliationService auditCompany MUST remain healthy
+        $report = $this->assertAuditPreservesSnapshots(
+            fn () => app(InventoryReconciliationService::class)->auditCompany($this->company)
+        );
+
+        $this->assertTrue($report->isHealthy);
+        $this->assertEmpty($report->discrepancies);
+        $this->assertEmpty($report->historyCorruptions);
+        $this->assertEmpty($report->cacheDiscrepancies);
+        $this->assertSame('0.000000', $report->totalValuationBase);
+    }
+
+    public function test_single_net_zero_inventory_batch_has_no_inventory_economic_effect_and_produces_healthy_audit(): void
+    {
+        $accounts = LedgerAccount::where('company_id', $this->company->id)->get()->keyBy('system_key');
+        $inventoryAccount = $accounts['inventory'];
+
+        // Single batch with Debit 2 and Credit 2 to Inventory GL (net inventory effect = 0)
+        $batch = app(AccountingPostingService::class)->post(new PostingCommand(
+            company: $this->company,
+            postingDate: CarbonImmutable::parse('2026-10-01'),
+            sourceType: 'manual_test',
+            sourceId: 401,
+            transactionCurrencyCode: 'ILS',
+            baseCurrencyCode: 'ILS',
+            exchangeRate: ExchangeRate::one(),
+            idempotencyKey: 'net-zero-inventory-'.Str::ulid(),
+            postedBy: $this->owner,
+            lines: [
+                PostingLineCommand::debit(1, $inventoryAccount->id, '2'),
+                PostingLineCommand::credit(2, $inventoryAccount->id, '2'),
+            ],
+        ));
+
+        // Keep source_type unchanged; do NOT use raw DB source rewrites
+        $this->assertSame('manual_test', $batch->fresh()->source_type);
+
+        // AccountingReconciliationService confirms double-entry is healthy
+        $accountingReport = app(AccountingReconciliationService::class)->reconcile($this->company);
+        $this->assertTrue($accountingReport->isHealthy);
+        $this->assertEmpty($accountingReport->violations);
+
+        // InventoryReconciliationService auditCompany verifies no new false positive
+        $report = $this->assertAuditPreservesSnapshots(
+            fn () => app(InventoryReconciliationService::class)->auditCompany($this->company)
+        );
+
+        $this->assertTrue($report->isHealthy);
+        $this->assertEmpty($report->discrepancies);
+        $this->assertEmpty($report->historyCorruptions);
+        $this->assertEmpty($report->cacheDiscrepancies);
+        $this->assertSame('0.000000', $report->totalValuationBase);
     }
 
     /**
