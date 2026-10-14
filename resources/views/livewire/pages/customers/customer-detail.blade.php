@@ -68,7 +68,7 @@
         @if ($isOverCreditLimit)
             <div class="p-3 rounded-control bg-warning-bg border border-warning text-warning text-xs font-bold flex items-center gap-2">
                 <x-icon name="warning" class="w-4 h-4 shrink-0" />
-                <span>{{ __('sales.credit_limit_warning') }} ({{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::format($customer->credit_limit, $customer->default_currency_code) }} {{ $customer->default_currency_code }})</span>
+                <span>{{ __('sales.credit_limit_warning') }} ({{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::format($customer->credit_limit, $baseCurrency) }} {{ $baseCurrency }})</span>
             </div>
         @endif
 
@@ -88,7 +88,7 @@
                     </div>
                 @else
                     <div class="text-xl font-extrabold mt-1 {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::isPositive($totalOutstanding) ? 'text-danger' : 'text-text-primary' }}" dir="ltr">
-                        {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::format($totalOutstanding, $customer->default_currency_code) }} {{ $customer->default_currency_code }}
+                        {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::format($totalOutstanding, $defaultCurr) }} {{ $defaultCurr }}
                     </div>
                 @endif
             </div>
@@ -107,7 +107,7 @@
                     </div>
                 @else
                     <div class="text-xl font-extrabold mt-1 text-text-primary" dir="ltr">
-                        {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::format($totalInvoiced, $customer->default_currency_code) }} {{ $customer->default_currency_code }}
+                        {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::format($totalInvoiced, $defaultCurr) }} {{ $defaultCurr }}
                     </div>
                 @endif
             </div>
@@ -117,7 +117,7 @@
                     {{ __('sales.credit_limit') }}
                 </div>
                 <div class="text-xl font-extrabold mt-1 text-text-secondary" dir="ltr">
-                    {{ $customer->credit_limit ? \App\Domain\Sales\Formatters\SalesMoneyFormatter::format($customer->credit_limit, $customer->default_currency_code) . ' ' . $customer->default_currency_code : '—' }}
+                    {{ $customer->credit_limit !== null ? \App\Domain\Sales\Formatters\SalesMoneyFormatter::format($customer->credit_limit, $baseCurrency) . ' ' . $baseCurrency : '—' }}
                 </div>
             </div>
         </div>
@@ -186,7 +186,7 @@
                         <span class="text-text-primary">{{ $customer->preferred_locale === 'ar' ? 'العربية' : 'English' }}</span>
 
                         <span class="text-text-muted">{{ __('sales.default_currency') }}:</span>
-                        <span class="text-text-primary font-bold">{{ $customer->default_currency_code }}</span>
+                        <span class="text-text-primary font-bold">{{ $defaultCurr }}</span>
                     </div>
                 </div>
 

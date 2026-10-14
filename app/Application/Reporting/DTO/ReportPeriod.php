@@ -68,6 +68,42 @@ final readonly class ReportPeriod
     }
 
     /**
+     * Presentation comparison only: through company-local today against the same
+     * dates last month. This does not change canonical full-month presets or previous().
+     *
+     * @return array{current: self, previous: self, unequal_days: bool}
+     */
+    public static function monthToDateComparison(Company|string $companyOrTimezone, ?CarbonImmutable $clock = null): array
+    {
+        $tz = self::resolveTimezone($companyOrTimezone);
+        $now = $clock !== null ? $clock->setTimezone($tz) : CarbonImmutable::now($tz);
+        $previousMonth = $now->startOfMonth()->subMonthNoOverflow();
+        $previousDay = min($now->day, $previousMonth->daysInMonth);
+
+        return [
+            'current' => self::custom($now->startOfMonth()->toDateString(), $now->toDateString(), $tz),
+            'previous' => self::custom($previousMonth->toDateString(), $previousMonth->day($previousDay)->toDateString(), $tz),
+            'unequal_days' => $previousDay !== $now->day,
+        ];
+    }
+
+    /** The adjacent complete calendar months, or an equally long preceding date range. */
+    public function previous(): self
+    {
+        $start = CarbonImmutable::parse($this->startDate, $this->timezone)->startOfDay();
+        $end = CarbonImmutable::parse($this->endDate, $this->timezone)->startOfDay();
+        if ($start->day === 1 && $end->format('Y-m-d') === $end->endOfMonth()->format('Y-m-d')) {
+            $months = ($end->year - $start->year) * 12 + $end->month - $start->month + 1;
+            $previousStart = $start->subMonthsNoOverflow($months)->startOfMonth();
+        } else {
+            $days = (new \DateTimeImmutable($this->startDate))->diff(new \DateTimeImmutable($this->endDate))->days;
+            $previousStart = $start->subDays((int) $days + 1);
+        }
+
+        return new self(self::PRESET_CUSTOM, $previousStart->format('Y-m-d'), $start->subDay()->format('Y-m-d'), $this->timezone);
+    }
+
+    /**
      * Resolve preset period in Company timezone.
      */
     public static function fromPreset(

@@ -4,12 +4,10 @@ declare(strict_types=1);
 
 namespace Tests\Feature\Phase5D;
 
-use App\Domain\Inventory\DTO\StockMovementCommand;
-use App\Domain\Inventory\DTO\StockMovementLineCommand;
+use App\Actions\Inventory\AdjustStockAction;
 use App\Domain\Inventory\Exceptions\InsufficientStockException;
 use App\Domain\Inventory\ValueObjects\Quantity;
 use App\Models\StockMovement;
-use App\Services\Inventory\InventoryMovementService;
 use App\Services\Posting\AccountingPostingService;
 use Illuminate\Support\Str;
 use Mockery;
@@ -72,24 +70,19 @@ class PurchaseReturnAtomicityTest extends Phase5DTestCase
 
         // Now maliciously or via race, deplete the warehouse stock of the product so that line 2 cannot be satisfied
         // Total warehouse stock is 15. Line 1 needs 5, line 2 needs 5.
-        // If we reduce warehouse stock to 7 by selling 8 units:
+        // If we reduce warehouse stock to 7 by adjusting down 8 units:
         // Line 1 takes 5 (leaving 2). Line 2 needs 5, but only 2 remain!
-        app(InventoryMovementService::class)->record(new StockMovementCommand(
-            companyId: $this->company->id,
-            movementType: StockMovement::TYPE_SALE,
-            movementDate: '2026-10-04',
-            lines: [
-                new StockMovementLineCommand(
-                    productId: $this->product->id,
-                    warehouseId: $this->warehouse->id,
-                    quantity: Quantity::of(8),
-                ),
-            ],
-            sourceType: 'sales_invoice',
-            sourceId: 1,
+        app(AdjustStockAction::class)->execute(
+            company: $this->company,
+            product: $this->product,
+            warehouse: $this->warehouse,
+            type: StockMovement::TYPE_ADJUSTMENT_DECREASE,
+            quantity: Quantity::of(8),
+            reason: 'Malicious or race stock reduction prior to return',
+            user: $this->owner,
             idempotencyKey: (string) Str::ulid(),
-            createdBy: $this->owner->id,
-        ));
+            movementDate: '2026-10-04',
+        );
 
         $beforeState = $this->snapshotState();
 

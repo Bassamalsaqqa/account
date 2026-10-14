@@ -52,7 +52,7 @@ class OpeningStockForm extends Component
         }
 
         $company = $context->company();
-        $this->movement_date = now()->toDateString();
+        $this->movement_date = now($company->timezone)->toDateString();
         $this->formIdempotencyKey = (string) Str::ulid();
         $this->reason = __('inventory.default_opening_stock_reason');
 

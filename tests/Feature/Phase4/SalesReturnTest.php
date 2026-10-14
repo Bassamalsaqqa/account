@@ -5,13 +5,12 @@ declare(strict_types=1);
 namespace Tests\Feature\Phase4;
 
 use App\Actions\Company\CreateCompanyAction;
+use App\Actions\Inventory\PostOpeningStockAction;
 use App\Actions\Sales\CreateSalesInvoiceDraftAction;
 use App\Actions\Sales\CreateSalesReturnDraftAction;
 use App\Actions\Sales\PostSalesInvoiceAction;
 use App\Actions\Sales\PostSalesReturnAction;
 use App\Actions\Sales\VoidSalesReturnAction;
-use App\Domain\Inventory\DTO\StockMovementCommand;
-use App\Domain\Inventory\DTO\StockMovementLineCommand;
 use App\Domain\Inventory\ValueObjects\Quantity;
 use App\Models\Company;
 use App\Models\Customer;
@@ -21,7 +20,6 @@ use App\Models\Product;
 use App\Models\ProductUnit;
 use App\Models\SalesInvoice;
 use App\Models\SalesReturn;
-use App\Models\StockMovement;
 use App\Models\Unit;
 use App\Models\User;
 use App\Models\Warehouse;
@@ -107,26 +105,19 @@ class SalesReturnTest extends TestCase
 
     private function postSampleInvoice(string $qty = '10.000000', string $unitPrice = '50.000000', string $unitCost = '20.000000'): SalesInvoice
     {
-        // Seed initial stock
-        $this->inventoryService->record(new StockMovementCommand(
-            companyId: $this->company->id,
-            movementType: StockMovement::TYPE_OPENING_BALANCE,
-            movementDate: Carbon::now()->toDateString(),
-            lines: [
-                new StockMovementLineCommand(
-                    productId: $this->product->id,
-                    warehouseId: $this->warehouse->id,
-                    quantity: Quantity::of($qty),
-                    unitId: $this->unitPiece->id,
-                    unitCostBase: $unitCost,
-                ),
-            ],
-            sourceType: 'manual_seed',
-            sourceId: 1,
+        // Seed initial stock via canonical opening stock action
+        app(PostOpeningStockAction::class)->execute(
+            company: $this->company,
+            product: $this->product,
+            warehouse: $this->warehouse,
+            quantity: Quantity::of($qty),
+            unitCostBase: $unitCost,
+            user: $this->user,
             idempotencyKey: 'seed_stock_'.uniqid(),
-            createdBy: $this->user->id,
+            unitId: $this->unitPiece->id,
+            movementDate: Carbon::now()->toDateString(),
             reason: 'Initial stock for sales return test',
-        ));
+        );
 
         $draftAction = app(CreateSalesInvoiceDraftAction::class);
         $postAction = app(PostSalesInvoiceAction::class);

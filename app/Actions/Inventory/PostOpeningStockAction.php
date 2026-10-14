@@ -21,15 +21,18 @@ use App\Models\StockMovement;
 use App\Models\User;
 use App\Models\Warehouse;
 use App\Services\Inventory\InventoryMovementService;
+use App\Services\Inventory\OwnsStockEvent;
+use App\Services\Inventory\StockEventOwner;
 use App\Services\Posting\AccountingPostingService;
 use App\Support\Tenancy\CompanyContext;
 use Brick\Math\BigDecimal;
 use Carbon\Carbon;
 use Illuminate\Auth\Access\AuthorizationException;
-use Illuminate\Support\Facades\DB;
 
-class PostOpeningStockAction
+class PostOpeningStockAction implements StockEventOwner
 {
+    use OwnsStockEvent;
+
     public function __construct(
         protected InventoryMovementService $inventoryService,
         protected AccountingPostingService $postingService,
@@ -71,7 +74,7 @@ class PostOpeningStockAction
             throw new AuthorizationException('Opening stock requires both inventory.stock.adjust and inventory.cost.view permissions.');
         }
 
-        return DB::transaction(function () use (
+        return $this->stockTransaction((int) $company->id, (int) $company->id, $user, function () use (
             $company,
             $product,
             $warehouse,
@@ -101,7 +104,7 @@ class PostOpeningStockAction
                 throw new InvalidInventoryMovementException("Actor [{$user->id}] is not an active member of company [{$lockedCompany->id}].");
             }
 
-            $date = $movementDate ?? now()->toDateString();
+            $date = $movementDate ?? now($lockedCompany->timezone)->toDateString();
 
             // 1. Record Inventory Movement
             $movementCommand = new StockMovementCommand(
@@ -126,7 +129,7 @@ class PostOpeningStockAction
                 reason: $reason ?? 'Opening Stock Balance',
             );
 
-            $movements = $this->inventoryService->record($movementCommand);
+            $movements = $this->recordStock($this->inventoryService, $movementCommand);
             /** @var StockMovement $movement */
             $movement = $movements[0];
 
@@ -181,7 +184,7 @@ class PostOpeningStockAction
                     ],
                 );
 
-                $batch = $this->postingService->post($postingCommand);
+                $batch = $this->postStock($this->postingService, $postingCommand);
             }
 
             return [

@@ -16,16 +16,18 @@ use App\Models\SalesReturn;
 use App\Models\StockMovement;
 use App\Models\User;
 use App\Services\Inventory\InventoryMovementService;
+use App\Services\Inventory\OwnsStockEvent;
+use App\Services\Inventory\StockEventOwner;
 use App\Services\Posting\AccountingReversalService;
 use App\Services\Sales\SalesActorGuard;
 use App\Support\Tenancy\CompanyContext;
-use Carbon\Carbon;
 use Illuminate\Auth\Access\AuthorizationException;
-use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
 
-class VoidSalesInvoiceAction
+class VoidSalesInvoiceAction implements StockEventOwner
 {
+    use OwnsStockEvent;
+
     public function __construct(
         protected InventoryMovementService $inventoryMovementService,
         protected AccountingReversalService $accountingReversalService,
@@ -52,9 +54,9 @@ class VoidSalesInvoiceAction
             throw new AuthorizationException('User does not have permission to void sales invoices.');
         }
 
-        return DB::transaction(function () use ($invoice, $user, $reason): SalesInvoice {
+        return $this->stockTransaction((int) $invoice->company_id, (int) $invoice->id, $user, function () use ($invoice, $user, $reason): SalesInvoice {
             // Lock company FOR UPDATE
-            Company::where('id', $invoice->company_id)->lockForUpdate()->firstOrFail();
+            $lockedCompany = Company::where('id', $invoice->company_id)->lockForUpdate()->firstOrFail();
             app(SalesActorGuard::class)->lockAndAuthorize((int) $invoice->company_id, $user, 'sales.invoice.void');
 
             /** @var SalesInvoice $lockedInvoice */
@@ -63,6 +65,8 @@ class VoidSalesInvoiceAction
             if ($lockedInvoice->isVoid()) {
                 return $lockedInvoice;
             }
+
+            $voidDate = now($lockedCompany->timezone)->toDateString();
 
             if (! $lockedInvoice->isPosted()) {
                 throw new InvalidArgumentException("Cannot void sales invoice in [{$lockedInvoice->status}] status. Only posted invoices can be voided.");
@@ -108,7 +112,7 @@ class VoidSalesInvoiceAction
                 $stockCmd = new StockMovementCommand(
                     companyId: $lockedInvoice->company_id,
                     movementType: StockMovement::TYPE_SALE_RETURN,
-                    movementDate: Carbon::today()->toDateString(),
+                    movementDate: $voidDate,
                     lines: $compensatingLines,
                     sourceType: 'sales_invoice_void',
                     sourceId: $lockedInvoice->id,
@@ -117,7 +121,7 @@ class VoidSalesInvoiceAction
                     reason: "Void of Sales Invoice {$lockedInvoice->invoice_number}",
                 );
 
-                $this->inventoryMovementService->record($stockCmd);
+                $this->recordStock($this->inventoryMovementService, $stockCmd);
             }
 
             // Accounting reversal
@@ -125,10 +129,11 @@ class VoidSalesInvoiceAction
             if ($lockedInvoice->posting_batch_id !== null) {
                 $postingBatch = $lockedInvoice->postingBatch;
                 if ($postingBatch !== null && ! $postingBatch->isReversed()) {
-                    $reversalBatch = $this->accountingReversalService->reverse(
+                    $reversalBatch = $this->reverseStock($this->accountingReversalService,
                         $postingBatch,
                         $user,
-                        $reason ?? "Void of Sales Invoice {$lockedInvoice->invoice_number}"
+                        $reason ?? "Void of Sales Invoice {$lockedInvoice->invoice_number}",
+                        $voidDate
                     );
                 }
             }

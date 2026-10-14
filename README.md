@@ -7,10 +7,18 @@ The authoritative product requirements and architectural blueprints reside in `d
 - `docs/ENGINEERING_BLUEPRINT_v1.0.md` (Architecture, Security & Technical Specifications)
 - `AGENTS.md` (Implementation Non-Negotiables & Rules of Engagement)
 
-Phase progress:
-- **Phase 0:** Application Foundation, Responsive Bilingual (Arabic RTL / English LTR) Shell, and Initial Security / Hostinger Deployment Readiness.
-- **Phase 1:** Multi-Tenancy Foundation, Company Isolation, RBAC (Owner, Admin, Accountant, Cashier, Viewer), and Company Settings Management.
-- **Phase 2 (In Progress):** Money and Accounting Primitives (Exact BigDecimal Arithmetic, Universal FX, Chart of Accounts, Canonical Double-Entry Posting, Immutability, Reversal, and Reconciliation).
+Implemented scope includes bilingual company workspaces, accounting and FX, inventory,
+Sales/Customers, Purchasing/Vendors, treasury, expenses, payroll and canonical reports.
+The DeepSeek assistant uses Laravel AI SDK for bounded interpretation, local authorized
+report execution, temporary context and editable UNSAVED Sales/Purchase form handoffs.
+Browser voice, deterministic daily briefing and network-only mobile/PWA support are
+controlled by application flags and company permissions/policies.
+
+Source acceptance and deployment are separate gates. Historical acceptance and release
+records live in `docs/`; they do not certify later source changes or unperformed operational
+proofs. Independent off-host backup/key recovery and isolated restoration remain operational
+requirements. Live provider understanding and real-device speech accuracy require distinct
+authorized evidence, rather than mocked tests.
 
 ## Requirements
 

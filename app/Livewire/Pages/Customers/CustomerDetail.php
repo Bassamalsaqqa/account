@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Livewire\Pages\Customers;
 
+use App\Application\Reporting\Security\ReportingGuard;
 use App\Domain\Sales\Queries\CustomerBalanceQuery;
 use App\Domain\Sales\Queries\CustomerCreditLimitQuery;
 use App\Domain\Sales\Queries\CustomerStatementQuery;
@@ -17,6 +18,7 @@ use Brick\Math\BigDecimal;
 use Carbon\Carbon;
 use Illuminate\Contracts\View\View;
 use Livewire\Attributes\Layout;
+use Livewire\Attributes\Locked;
 use Livewire\Attributes\Url;
 use Livewire\Component;
 
@@ -24,6 +26,12 @@ use Livewire\Component;
 class CustomerDetail extends Component
 {
     public Customer $customer;
+
+    #[Locked]
+    public int $pageCompanyId;
+
+    #[Locked]
+    public string $customerPublicId;
 
     #[Url(as: 'tab')]
     public string $activeTab = 'overview';
@@ -36,30 +44,31 @@ class CustomerDetail extends Component
     public function mount(string $publicId, CompanyContext $context): void
     {
         $company = $context->company();
-        $user = auth()->user();
-
-        if (! $user->hasPermissionTo('customers.view')) {
-            abort(403, 'Unauthorized.');
-        }
+        app(ReportingGuard::class)->authorize($company, auth()->user(), 'customers.view');
+        $this->pageCompanyId = (int) $company->id;
+        $this->customerPublicId = $publicId;
 
         $this->customer = Customer::where('company_id', $company->id)
             ->where('public_id', $publicId)
             ->firstOrFail();
 
-        $this->statementFrom = Carbon::now()->startOfYear()->toDateString();
-        $this->statementTo = Carbon::now()->toDateString();
+        $this->statementFrom = Carbon::now($company->timezone)->startOfYear()->toDateString();
+        $this->statementTo = Carbon::now($company->timezone)->toDateString();
     }
 
     public function render(CompanyContext $context, CustomerStatementQuery $statementQuery): View
     {
+        abort_unless($context->hasCompany() && (int) $context->companyId() === $this->pageCompanyId, 403);
         $company = $context->company();
-        $user = auth()->user();
+        $permissions = app(ReportingGuard::class)->readPermissions($company, auth()->user(), 'customers.view');
+        $this->customer = Customer::where('company_id', $this->pageCompanyId)
+            ->where('public_id', $this->customerPublicId)->firstOrFail();
 
-        $canManage = $user->hasPermissionTo('customers.manage');
-        $canInvoice = $user->hasPermissionTo('sales.invoice.create');
-        $canQuote = $user->hasPermissionTo('sales.quote.create');
-        $canPayment = $user->hasPermissionTo('money.receipt.create');
-        $canStatement = $user->hasPermissionTo('sales.statement.view');
+        $canManage = in_array('customers.manage', $permissions, true);
+        $canInvoice = in_array('sales.invoice.create', $permissions, true);
+        $canQuote = in_array('sales.quote.create', $permissions, true);
+        $canPayment = in_array('money.receipt.create', $permissions, true);
+        $canStatement = in_array('sales.statement.view', $permissions, true);
 
         $defaultCurr = $this->customer->default_currency_code ?? $company->base_currency_code;
         $currencyBalances = app(CustomerBalanceQuery::class)->execute([$this->customer->id])[$this->customer->id] ?? [];
@@ -120,6 +129,8 @@ class CustomerDetail extends Component
         }
 
         return view('livewire.pages.customers.customer-detail', [
+            'defaultCurr' => $defaultCurr,
+            'baseCurrency' => $company->base_currency_code,
             'canManage' => $canManage,
             'canInvoice' => $canInvoice,
             'canQuote' => $canQuote,

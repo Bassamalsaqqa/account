@@ -19,6 +19,7 @@ use App\Models\ProductUnit;
 use App\Models\SalesInvoice;
 use App\Models\TaxRate;
 use App\Models\Warehouse;
+use App\Services\Sales\SalesActorGuard;
 use App\Services\Sales\SalesProductSelection;
 use App\Support\Tenancy\CompanyContext;
 use Brick\Math\BigDecimal;
@@ -61,6 +62,11 @@ class InvoiceForm extends Component
     public string $document_locale = 'ar';
 
     public string $barcodeSearch = '';
+
+    public string $productSearch = '';
+
+    #[Locked]
+    public int $pageCompanyId;
 
     /**
      * @var list<array{
@@ -123,6 +129,7 @@ class InvoiceForm extends Component
     public function mount(CompanyContext $context, ?string $publicId = null, ?int $customer_id = null): void
     {
         $company = $context->company();
+        $this->pageCompanyId = (int) $company->id;
         $user = auth()->user();
 
         $this->createRequestKey = (string) Str::uuid();
@@ -214,7 +221,7 @@ class InvoiceForm extends Component
 
     public function updated(?string $property = null): void
     {
-        if ($this->showPreview && ! in_array($property, ['showPreview', 'confirmationToken', 'executeKey', 'previewDigest', 'previewData', 'previewError'], true)) {
+        if ($this->showPreview && ! in_array($property, ['showPreview', 'confirmationToken', 'executeKey', 'previewDigest', 'previewData', 'previewError', 'productSearch'], true)) {
             $this->cancelPreview();
         }
     }
@@ -773,8 +780,11 @@ class InvoiceForm extends Component
 
     public function render(CompanyContext $context): View
     {
-        $company = $context->company();
+        abort_unless(auth()->check() && $context->hasCompany() && $context->companyId() === $this->pageCompanyId, 403);
         $user = auth()->user();
+        $company = DB::transaction(fn () => app(SalesActorGuard::class)->lockAndAuthorize(
+            $this->pageCompanyId, $user, $this->isEditing ? 'sales.invoice.edit_draft' : 'sales.invoice.create'
+        ));
 
         $canChangePrice = $user->hasPermissionTo('sales.invoice.change_price');
         $canChangeDiscount = $user->hasPermissionTo('sales.invoice.change_discount');
@@ -782,7 +792,19 @@ class InvoiceForm extends Component
         $customers = Customer::where('company_id', $company->id)->where('status', 'active')->orderBy('name_ar')->get();
         $currencies = $company->currencies()->where('enabled', true)->get();
         $warehouses = Warehouse::where('company_id', $company->id)->where('active', true)->get();
-        $products = Product::with(['productUnits.unit', 'baseUnit'])->where('company_id', $company->id)->where('active', true)->orderBy('name_ar')->get();
+        $term = mb_substr(trim($this->productSearch), 0, 160);
+        $productsQuery = Product::where('company_id', $company->id)->where('active', true);
+        if ($term !== '') {
+            $productsQuery->where(fn ($query) => $query->where('name_ar', 'like', "%{$term}%")
+                ->orWhere('name_en', 'like', "%{$term}%")->orWhere('sku', 'like', "%{$term}%")
+                ->orWhereHas('barcodes', fn ($barcodes) => $barcodes->where('company_id', $company->id)->where('barcode', $term)));
+        }
+        $selectedProductIds = collect($this->lines)->pluck('product_id')->filter()->unique()->values()->all();
+        $selectedProducts = Product::with(['productUnits.unit', 'baseUnit'])->where('company_id', $company->id)
+            ->whereIn('id', $selectedProductIds)->get();
+        abort_unless($selectedProducts->count() === count($selectedProductIds), 404);
+        $matchingProducts = $productsQuery->orderBy('name_ar')->limit(50)->get();
+        $products = $matchingProducts->merge($selectedProducts);
         $taxes = TaxRate::where('company_id', $company->id)->where('active', true)->get();
         $selectedCustomer = $customers->firstWhere('id', $this->customer_id);
         $creditLimitWarning = false;
@@ -792,10 +814,12 @@ class InvoiceForm extends Component
         }
 
         return view('livewire.pages.sales.invoice-form', [
+            'baseCurrencyCode' => $company->base_currency_code,
             'customers' => $customers,
             'currencies' => $currencies,
             'warehouses' => $warehouses,
             'products' => $products,
+            'productMatchCount' => $matchingProducts->count(),
             'taxes' => $taxes,
             'canChangePrice' => $canChangePrice,
             'canChangeDiscount' => $canChangeDiscount,

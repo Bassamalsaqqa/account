@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Livewire\Pages\Inventory;
 
+use App\Domain\Sales\Formatters\SalesMoneyFormatter;
 use App\Models\InventoryCostState;
 use App\Models\InventoryLot;
 use App\Models\Product;
@@ -39,21 +40,21 @@ class InventoryOverview extends Component
         // Expiring soon lots (next 30 days)
         $expiringLotsCount = InventoryLot::where('company_id', $company->id)
             ->whereNotNull('expiry_date')
-            ->where('expiry_date', '<=', now()->addDays(30)->toDateString())
+            ->where('expiry_date', '<=', now($company->timezone)->addDays(30)->toDateString())
             ->whereHas('balances', function ($q) {
                 $q->where('quantity_base', '>', 0);
             })
             ->count();
 
         // Total inventory valuation (gated)
-        $totalValuation = '0.00';
+        $totalValuation = SalesMoneyFormatter::format('0', $company->base_currency_code);
         if ($canViewCost) {
             $costStates = InventoryCostState::where('company_id', $company->id)->get();
             $sum = BigDecimal::zero();
             foreach ($costStates as $cs) {
                 $sum = $sum->plus(BigDecimal::of((string) $cs->inventory_value_base));
             }
-            $totalValuation = (string) $sum->toScale(2);
+            $totalValuation = SalesMoneyFormatter::format($sum, $company->base_currency_code);
         }
 
         // Low stock products

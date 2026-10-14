@@ -85,7 +85,7 @@ use Illuminate\Support\Facades\Route;
 use Illuminate\Validation\ValidationException;
 
 Route::get('/', function () {
-    return redirect()->route('settings.index');
+    return redirect()->route('dashboard');
 });
 
 Route::post('locale', function (Request $request, CompanyContext $context) {
@@ -134,7 +134,7 @@ Route::middleware(['auth'])->group(function () {
 
         $context->switchCompany($request->user(), $company);
 
-        return redirect()->route('settings.index');
+        return redirect()->intended(route('dashboard'));
     })->name('company.switch');
 
     Route::view('profile', 'profile')

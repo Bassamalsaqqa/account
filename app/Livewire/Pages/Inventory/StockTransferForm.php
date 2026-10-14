@@ -53,7 +53,7 @@ class StockTransferForm extends Component
         }
 
         $company = $context->company();
-        $this->movement_date = now()->toDateString();
+        $this->movement_date = now($company->timezone)->toDateString();
         $this->formIdempotencyKey = (string) Str::ulid();
 
         $warehouses = Warehouse::where('company_id', $company->id)->where('active', true)->get();

@@ -24,6 +24,11 @@
                         <button type="button" @click="clear(); $wire.cancel()" class="ai-icon-button shrink-0" aria-label="{{ __('ai_product.close') }}"><x-icon name="close" /></button>
                     </header>
                     <div class="ai-thread" aria-live="polite" aria-relevant="additions text">
+                        @if ($recordLabel !== null)
+                            <p class="mb-3 rounded-control border border-primary/20 bg-primary-50 px-3 py-2 text-sm text-primary">
+                                {{ __('dashboard.record_context') }}: <strong>{{ $recordLabel }}</strong>
+                            </p>
+                        @endif
                         <div x-show="sentText" x-cloak class="ai-user-turn" x-text="sentText"></div>
                         @if ($reportResult === null && $turnReports === [] && $turnClarification === null && $clarifyPeriodReport === null && $ambiguousChoice === null && $questions === [] && ! ($isBriefing ?? false))
                             <div x-show="!sentText" class="ai-welcome">

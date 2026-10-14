@@ -18,7 +18,6 @@ use App\Livewire\Concerns\AiUnsavedForm;
 use App\Livewire\Pages\Purchasing\Concerns\AuthorizesPurchasingPages;
 use App\Models\Company;
 use App\Models\Product;
-use App\Models\ProductUnit;
 use App\Models\Purchase;
 use App\Models\TaxRate;
 use App\Models\Vendor;
@@ -313,7 +312,7 @@ class PurchaseForm extends Component
     public function render(): View
     {
         $company = $this->authorizeForm();
-        $term = trim($this->productSearch);
+        $term = mb_substr(trim($this->productSearch), 0, 160);
         $products = Product::where('company_id', $company->id)->where('active', true)->where('product_type', Product::TYPE_STOCK)->where('track_stock', true);
         if ($term !== '') {
             $products->where(fn ($q) => $q->where('name_ar', 'like', "%{$term}%")->orWhere('name_en', 'like', "%{$term}%")
@@ -321,13 +320,16 @@ class PurchaseForm extends Component
         }
         $unitOptions = [];
         $expiryLines = [];
+        $selectedProductIds = collect($this->lines)->pluck('product_id')->filter()->unique()->values()->all();
+        $selectedProducts = Product::where('company_id', $company->id)->whereIn('id', $selectedProductIds)
+            ->with(['productUnits' => fn ($units) => $units->where('company_id', $company->id)->where('active', true)
+                ->whereHas('unit', fn ($unit) => $unit->where('company_id', $company->id)->where('active', true))->with('unit')])->get()->keyBy('id');
+        abort_unless($selectedProducts->count() === count($selectedProductIds), 404);
         foreach ($this->lines as $index => $line) {
             if (! empty($line['product_id'])) {
-                $product = Product::where('company_id', $company->id)->findOrFail($line['product_id']);
+                $product = $selectedProducts->get($line['product_id']);
                 $expiryLines[$index] = $product->track_expiry;
-                $unitOptions[$index] = ProductUnit::where('company_id', $company->id)->where('product_id', $product->id)
-                    ->where('active', true)->whereHas('unit', fn ($q) => $q->where('company_id', $company->id)->where('active', true))
-                    ->with('unit')->get();
+                $unitOptions[$index] = $product->productUnits;
             }
         }
         $except = $this->publicId === null ? null : Purchase::where('company_id', $company->id)->where('public_id', $this->publicId)->value('id');

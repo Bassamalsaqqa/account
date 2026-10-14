@@ -53,7 +53,7 @@ return [
     'voice_offline' => 'You are offline. Dictation stopped without sending. Reconnect, review your message and press Send.',
     'unsaved_note' => 'Invoices open as editable, unsaved forms. Only you can save or post them.',
     'thinking' => 'Working on your request…',
-    'browser_privacy_policy' => 'Browser dictation may process audio through your browser provider. Only the editable text you explicitly send is sent to DeepSeek.',
+    'browser_privacy_policy' => 'Browser dictation uses native browser speech recognition, which may be processed by your browser provider. Opening the assistant or starting the microphone uses no paid AI. Recognized text is editable, and auto-send occurs only if enabled after a cancellable grace period.',
     'privacy' => 'Privacy and consent',
     'advanced' => 'Advanced settings',
     'advanced_help' => 'Existing governance and usage controls. Changes are never applied automatically.',

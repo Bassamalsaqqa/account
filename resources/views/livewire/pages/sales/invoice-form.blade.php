@@ -32,19 +32,28 @@
     <!-- Quick Barcode Scanner Bar -->
     @include('livewire.ai.unsaved-notice')
 
-    <div class="bg-white p-4 rounded-card border border-border shadow-xs">
-        <label for="invoice-barcodeSearch" class="block text-xs font-bold text-text-primary mb-1">
-            ⚡ {{ __('sales.scan_or_search_product') }}
-        </label>
-        <div class="relative max-w-md">
+    <div class="bg-white p-4 rounded-card border border-border shadow-xs grid gap-4 md:grid-cols-2">
+        <div>
+        <label for="invoice-barcodeSearch" class="block text-sm font-bold text-text-primary mb-1">{{ __('sales.scan_barcode_or_sku') }}</label>
+        <div class="relative">
             <input id="invoice-barcodeSearch" type="text"
                    wire:model="barcodeSearch"
                    wire:keydown.enter.prevent="scanBarcode"
-                   placeholder="{{ __('sales.barcode') }} / SKU + Enter..."
-                   class="w-full h-9 pl-9 pr-3 rounded-control border border-border bg-canvas text-xs text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden" />
-            <div class="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none text-text-muted">
+                   placeholder="{{ __('sales.scan_barcode_hint') }}"
+                   class="w-full h-11 ps-3 pe-10 rounded-control border border-border bg-canvas text-sm text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden" />
+            <div class="absolute inset-y-0 end-0 pe-3 flex items-center pointer-events-none text-text-muted">
                 <x-icon name="barcode" class="w-4 h-4" />
             </div>
+        </div>
+        </div>
+        <div>
+            <label for="invoice-product-search" class="block text-sm font-bold text-text-primary mb-1">{{ __('sales.search_products') }}</label>
+            <input id="invoice-product-search" type="search" maxlength="160" wire:model.live.debounce.300ms="productSearch" x-on:keydown.enter.prevent
+                   placeholder="{{ __('sales.search_products_hint') }}" aria-describedby="invoice-product-search-help"
+                   class="w-full h-11 px-3 rounded-control border border-border bg-canvas text-sm text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden" />
+            <p id="invoice-product-search-help" class="mt-1 text-xs text-text-secondary">{{ __('sales.product_search_help') }}</p>
+            <p wire:loading wire:target="productSearch" role="status" class="mt-1 text-xs text-text-secondary">{{ __('sales.products_searching') }}</p>
+            @if($productMatchCount === 0)<p role="status" class="mt-1 text-sm text-text-secondary">{{ __('sales.no_matching_products') }}</p>@endif
         </div>
     </div>
 
@@ -62,7 +71,7 @@
                         class="w-full h-9 px-3 rounded-control border border-border bg-canvas text-xs text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden">
                     <option value="">{{ __('sales.select_customer') }}</option>
                     @foreach ($customers as $c)
-                        <option value="{{ $c->id }}">{{ $c->displayName() }} ({{ $c->default_currency_code }})</option>
+                        <option value="{{ $c->id }}">{{ $c->displayName() }} ({{ $c->default_currency_code ?? $baseCurrencyCode }})</option>
                     @endforeach
                 </select>
                 @error('customer_id') <span id="invoice-customer-id-error" role="alert" class="text-danger text-[11px] mt-1 block">{{ $message }}</span> @enderror

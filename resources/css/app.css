@@ -1,5 +1,6 @@
 @import 'tailwindcss';
 @import './assistant-product.css';
+@import './business-dashboard.css';
 
 @source '../views';
 @source '../../app';
@@ -68,4 +69,38 @@ a:focus-visible,
 summary:focus-visible {
     outline: 2px solid var(--color-primary);
     outline-offset: 2px;
+}
+
+/* Shared operating UI; document and print layouts remain independent. */
+.app-skip-link {
+    position: fixed;
+    inset-inline-start: 16px;
+    top: -100px;
+    z-index: 100;
+    padding: 12px 18px;
+    background: var(--color-primary);
+    color: white;
+    border-radius: var(--radius-control);
+}
+.app-skip-link:focus { top: 12px; }
+.app-quick-add summary { list-style: none; }
+.app-quick-add summary::-webkit-details-marker { display: none; }
+.business-app #app-main { min-width: 0; }
+.business-app #app-main :is(input:not([type='checkbox']):not([type='radio']):not([type='hidden']), select, textarea) {
+    min-height: 42px;
+    font-size: 14px;
+    line-height: 1.5;
+}
+.business-app #app-main :is(th, td) { vertical-align: middle; }
+.business-app #app-main thead th { font-size: 12px; line-height: 1.5; }
+.business-app #app-main tbody td { font-size: 14px; line-height: 1.6; }
+.business-app #app-main .overflow-x-auto { overscroll-behavior-x: contain; }
+.business-app #app-main :is(.text-xs, .text-\[11px\]) { font-size: 13px; }
+.business-app #app-main button:not(.assistant-icon-button) { min-height: 40px; }
+@media (max-width: 767px) {
+    .business-app #app-main :is(input:not([type='checkbox']):not([type='radio']):not([type='hidden']), select, textarea) {
+        min-height: 44px;
+        font-size: 16px;
+    }
+    .business-app #app-main button:not(.assistant-icon-button) { min-height: 44px; }
 }

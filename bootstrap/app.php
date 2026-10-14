@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Middleware\ApplicationSecurityHeaders;
 use App\Http\Middleware\EnsureCompanyContext;
 use App\Http\Middleware\Phase11ApiBoundary;
 use App\Http\Middleware\Phase12Boundary;
@@ -19,6 +20,7 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->prepend(Phase12Boundary::class);
         $middleware->prepend(Phase11ApiBoundary::class);
+        $middleware->prepend(ApplicationSecurityHeaders::class);
         $middleware->web(prepend: [PublicDocumentHeaders::class]);
         $middleware->web(append: [
             SetCompanyContext::class,

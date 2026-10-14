@@ -5,14 +5,13 @@ declare(strict_types=1);
 namespace Tests\Feature\Phase4;
 
 use App\Actions\Company\CreateCompanyAction;
+use App\Actions\Inventory\PostOpeningStockAction;
 use App\Actions\Sales\CreateMoneyAccountAction;
 use App\Actions\Sales\CreateSalesInvoiceDraftAction;
 use App\Actions\Sales\CreateSalesReturnDraftAction;
 use App\Actions\Sales\PostCustomerPaymentAction;
 use App\Actions\Sales\PostSalesInvoiceAction;
 use App\Actions\Sales\PostSalesReturnAction;
-use App\Domain\Inventory\DTO\StockMovementCommand;
-use App\Domain\Inventory\DTO\StockMovementLineCommand;
 use App\Domain\Inventory\ValueObjects\Quantity;
 use App\Models\Company;
 use App\Models\Customer;
@@ -21,11 +20,9 @@ use App\Models\MoneyAccount;
 use App\Models\Product;
 use App\Models\ProductUnit;
 use App\Models\SalesInvoice;
-use App\Models\StockMovement;
 use App\Models\Unit;
 use App\Models\User;
 use App\Models\Warehouse;
-use App\Services\Inventory\InventoryMovementService;
 use App\Services\Sales\SalesReconciliationService;
 use App\Support\Tenancy\CompanyContext;
 use Carbon\Carbon;
@@ -104,26 +101,19 @@ class SalesReconciliationTest extends TestCase
             'created_by' => $this->user->id,
         ]);
 
-        // Seed stock
-        app(InventoryMovementService::class)->record(new StockMovementCommand(
-            companyId: $this->company->id,
-            movementType: StockMovement::TYPE_OPENING_BALANCE,
-            movementDate: Carbon::now()->toDateString(),
-            lines: [
-                new StockMovementLineCommand(
-                    productId: $this->product->id,
-                    warehouseId: $this->warehouse->id,
-                    quantity: Quantity::of('20.000000'),
-                    unitId: $unitPiece->id,
-                    unitCostBase: '40.000000',
-                ),
-            ],
-            sourceType: 'manual_seed',
-            sourceId: 1,
+        // Seed stock via canonical opening stock action
+        app(PostOpeningStockAction::class)->execute(
+            company: $this->company,
+            product: $this->product,
+            warehouse: $this->warehouse,
+            quantity: Quantity::of('20.000000'),
+            unitCostBase: '40.000000',
+            user: $this->user,
             idempotencyKey: 'seed_rec_stock',
-            createdBy: $this->user->id,
+            unitId: $unitPiece->id,
+            movementDate: Carbon::now()->toDateString(),
             reason: 'Seed stock for reconciliation test',
-        ));
+        );
 
         $this->moneyAccount = app(CreateMoneyAccountAction::class)->execute($this->company, $this->user, [
             'account_type' => MoneyAccount::TYPE_CASH,

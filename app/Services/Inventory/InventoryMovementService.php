@@ -65,13 +65,26 @@ class InventoryMovementService
     public function record(StockMovementCommand $command): array
     {
         if ($command->movementType === StockMovement::TYPE_PURCHASE) {
-            throw new InvalidInventoryMovementException('Purchase receipts must be recorded by canonical Purchase posting inside its outer transaction.');
+            throw new InvalidInventoryMovementException('Purchase receipts require canonical Purchase posting.');
         }
         if ($command->movementType === StockMovement::TYPE_PURCHASE_RETURN) {
-            throw new InvalidInventoryMovementException('Purchase returns must be recorded by canonical Purchase Return posting inside its outer transaction.');
+            throw new InvalidInventoryMovementException('Purchase return issues require canonical Purchase Return posting.');
         }
+        throw new InvalidInventoryMovementException('Economic stock effects require their canonical business action. Use paired transfer() for stock-only transfers.');
+    }
 
-        return $this->recordMovement($command);
+    /** @return list<StockMovement> */
+    public function recordCanonicalEvent(StockMovementCommand $command, ?StockEventCapability $capability = null): array
+    {
+        if ($capability === null) {
+            throw new InvalidInventoryMovementException('Canonical stock command capability required.');
+        }
+        $scope = app(StockEventScope::class);
+        $scope->consumeMovement($command, $capability);
+        $movements = $this->recordMovement($command);
+        $scope->completeMovement($capability, $movements);
+
+        return $movements;
     }
 
     /**
@@ -894,6 +907,8 @@ class InventoryMovementService
             if (! $companyUser || $companyUser->status !== 'active') {
                 throw new InvalidInventoryMovementException("Actor [{$command->createdBy}] is not an active member of company [{$company->id}].");
             }
+
+            app(SalesActorGuard::class)->lockAndAuthorize((int) $company->id, auth()->user(), 'inventory.stock.transfer');
 
             // 3. Validate source and destination differ
             if ($command->sourceWarehouseId === $command->destinationWarehouseId) {

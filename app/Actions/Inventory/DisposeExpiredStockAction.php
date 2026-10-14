@@ -19,14 +19,17 @@ use App\Models\StockMovement;
 use App\Models\User;
 use App\Models\Warehouse;
 use App\Services\Inventory\InventoryMovementService;
+use App\Services\Inventory\OwnsStockEvent;
+use App\Services\Inventory\StockEventOwner;
 use App\Services\Posting\AccountingPostingService;
 use App\Support\Tenancy\CompanyContext;
 use Brick\Math\BigDecimal;
 use Carbon\Carbon;
-use Illuminate\Support\Facades\DB;
 
-class DisposeExpiredStockAction
+class DisposeExpiredStockAction implements StockEventOwner
 {
+    use OwnsStockEvent;
+
     public function __construct(
         protected InventoryMovementService $inventoryService,
         protected AccountingPostingService $postingService,
@@ -63,7 +66,7 @@ class DisposeExpiredStockAction
             );
         }
 
-        return DB::transaction(function () use (
+        return $this->stockTransaction((int) $company->id, (int) $company->id, $user, function () use (
             $company,
             $product,
             $warehouse,
@@ -75,7 +78,7 @@ class DisposeExpiredStockAction
             $unitId,
             $movementDate,
         ): array {
-            $date = $movementDate ?? now()->toDateString();
+            $date = $movementDate ?? now($company->timezone)->toDateString();
 
             // 1. Record Inventory Movement — lot expiry validation happens inside InventoryMovementService
             $movementCommand = new StockMovementCommand(
@@ -98,7 +101,7 @@ class DisposeExpiredStockAction
                 reason: $reason,
             );
 
-            $movements = $this->inventoryService->record($movementCommand);
+            $movements = $this->recordStock($this->inventoryService, $movementCommand);
             /** @var StockMovement $movement */
             $movement = $movements[0];
 
@@ -153,7 +156,7 @@ class DisposeExpiredStockAction
                     ],
                 );
 
-                $batch = $this->postingService->post($postingCommand);
+                $batch = $this->postStock($this->postingService, $postingCommand);
             }
 
             return [
