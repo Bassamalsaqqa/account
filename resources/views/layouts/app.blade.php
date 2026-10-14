@@ -344,7 +344,7 @@
 
             @if(auth()->user()->can('sales.invoice.create') || auth()->user()->can('purchasing.purchase.create'))
                 <details class="relative app-quick-add">
-                    <summary class="flex min-h-11 cursor-pointer items-center gap-1.5 rounded-control bg-primary px-3 text-sm font-bold text-white hover:bg-primary-hover">
+                    <summary aria-label="{{ __('app.quick_add') }}" class="flex min-h-11 cursor-pointer items-center gap-1.5 rounded-control bg-primary px-3 text-sm font-bold text-white hover:bg-primary-hover">
                         <x-icon name="plus" class="w-4 h-4" aria-hidden="true" />
                         <span class="hidden sm:inline">{{ __('app.quick_add') }}</span>
                     </summary>
