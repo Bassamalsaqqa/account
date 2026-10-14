@@ -71,7 +71,7 @@
                         class="w-full h-9 px-3 rounded-control border border-border bg-canvas text-xs text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden">
                     <option value="">{{ __('sales.select_customer') }}</option>
                     @foreach ($customers as $c)
-                        <option value="{{ $c->id }}">{{ $c->displayName() }} ({{ $c->default_currency_code ?? $company->base_currency_code }})</option>
+                        <option value="{{ $c->id }}">{{ $c->displayName() }} ({{ $c->default_currency_code ?? $baseCurrencyCode }})</option>
                     @endforeach
                 </select>
                 @error('customer_id') <span id="invoice-customer-id-error" role="alert" class="text-danger text-[11px] mt-1 block">{{ $message }}</span> @enderror

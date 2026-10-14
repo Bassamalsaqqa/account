@@ -47,6 +47,21 @@ class ProductSelectionSearchTest extends TestCase
         $this->assertSame($before, $this->economicCounts());
     }
 
+    public function test_customer_currency_fallback_renders_in_arabic_and_english_without_writes(): void
+    {
+        $this->customer->update(['default_currency_code' => null]);
+        $before = $this->economicCounts();
+        foreach (['ar', 'en'] as $locale) {
+            $this->owner->update(['locale' => $locale]);
+            session(['locale' => $locale]);
+            app()->setLocale($locale);
+            Livewire::test(InvoiceForm::class)
+                ->assertViewHas('baseCurrencyCode', $this->company->base_currency_code)
+                ->assertSee($this->customer->displayName().' ('.$this->company->base_currency_code.')');
+        }
+        $this->assertSame($before, $this->economicCounts());
+    }
+
     public function test_selected_product_units_and_user_amounts_survive_search_changes(): void
     {
         $before = $this->economicCounts();

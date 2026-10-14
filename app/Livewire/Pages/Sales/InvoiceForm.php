@@ -814,6 +814,7 @@ class InvoiceForm extends Component
         }
 
         return view('livewire.pages.sales.invoice-form', [
+            'baseCurrencyCode' => $company->base_currency_code,
             'customers' => $customers,
             'currencies' => $currencies,
             'warehouses' => $warehouses,
