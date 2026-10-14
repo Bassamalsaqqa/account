@@ -140,6 +140,13 @@
                             </span>
                         </div>
 
+                        @if ($data['comparison']['month_to_date'])
+                            <p class="text-sm text-text-secondary">{{ __('dashboard.month_to_date_notice') }}</p>
+                        @endif
+                        @if ($data['comparison']['unequal_days'])
+                            <p class="text-sm text-text-secondary">{{ __('dashboard.unequal_month_days') }}</p>
+                        @endif
+
                         <div class="dashboard-comparison-values">
                             <div class="dashboard-comparison-value-item">
                                 <span class="dashboard-comparison-val-label">{{ __('dashboard.current_period') }}</span>

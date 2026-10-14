@@ -20,7 +20,8 @@ final class DashboardReports
         $guard = app(ReportingGuard::class);
         $company = $guard->company($company);
         $authority = $guard->permissionNames(auth()->user());
-        $period = $preset === 'custom' ? ReportPeriod::custom($from ?? '', $to ?? '', $company) : ReportPeriod::fromPreset($preset, $company);
+        $monthToDate = $preset === 'this_month' ? ReportPeriod::monthToDateComparison($company) : null;
+        $period = $monthToDate['current'] ?? ($preset === 'custom' ? ReportPeriod::custom($from ?? '', $to ?? '', $company) : ReportPeriod::fromPreset($preset, $company));
         $today = ReportPeriod::fromPreset('today', $company);
         $registry = app(ReportRegistry::class);
         $presenter = app(ReportPresenter::class);
@@ -70,7 +71,7 @@ final class DashboardReports
                     }
                 }
                 if ($key === 'sales.summary') {
-                    $previous = $period->previous();
+                    $previous = $monthToDate['previous'] ?? $period->previous();
                     try {
                         $prior = $registry->execute($company, $key, ['per_page' => 1, 'period' => $previous->toArray()]);
                         $currentAmount = BigDecimal::of((string) ($result->totals['net_sales_base'] ?? '0'));
@@ -82,7 +83,8 @@ final class DashboardReports
                             'previous_display' => SalesMoneyFormatter::format($priorAmount, $currency),
                             'difference_display' => SalesMoneyFormatter::format($difference->abs(), $currency),
                             'direction' => $difference->getSign(), 'previous_period' => $previous->toArray(),
-                            'percent' => $priorAmount->isPositive() ? (string) $difference->multipliedBy(100)->dividedBy($priorAmount, 2, RoundingMode::HALF_UP) : null,
+                            'month_to_date' => $monthToDate !== null, 'unequal_days' => $monthToDate['unequal_days'] ?? false,
+                            'percent' => ! ($monthToDate['unequal_days'] ?? false) && $priorAmount->isPositive() ? (string) $difference->multipliedBy(100)->dividedBy($priorAmount, 2, RoundingMode::HALF_UP) : null,
                             'current_width' => $maximum->isZero() ? '0' : (string) $currentAmount->abs()->multipliedBy(100)->dividedBy($maximum, 2, RoundingMode::HALF_UP),
                             'previous_width' => $maximum->isZero() ? '0' : (string) $priorAmount->abs()->multipliedBy(100)->dividedBy($maximum, 2, RoundingMode::HALF_UP),
                             'url' => $output[$group][$key]['url']];

@@ -3,6 +3,8 @@
 declare(strict_types=1);
 
 return [
+    'month_to_date_notice' => 'Month-to-date through today, compared with the same dates last month. Today is still in progress; this is not a full-month forecast.',
+    'unequal_month_days' => 'The previous month has fewer days. Compare the displayed date ranges; no percentage growth is shown.',
     'briefing_details' => 'See supporting accounting details',
     'briefing_action_sales_unpaid' => 'Review unpaid invoices before following up with customers. Amounts are separate by currency.',
     'briefing_action_purchases_unpaid' => 'Review unpaid purchases and due dates before arranging vendor payments.',

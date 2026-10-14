@@ -23,7 +23,7 @@ final class DashboardReviewTest extends Phase8TestCase
         $this->travelTo(CarbonImmutable::parse('2026-10-15 10:00:00'));
         $customer = Customer::create(['company_id' => $this->company->id, 'name_ar' => 'عميل اختباري',
             'name_en' => 'Synthetic Customer', 'active' => true, 'created_by' => $this->owner->id]);
-        foreach (['2026-10-05' => '800', '2026-09-05' => '450'] as $date => $amount) {
+        foreach (['2026-10-05' => '800', '2026-09-05' => '450', '2026-10-20' => '9000', '2026-09-20' => '7000'] as $date => $amount) {
             $draft = app(CreateSalesInvoiceDraftAction::class)->execute($this->company, $this->owner, [
                 'customer_id' => $customer->id, 'currency_code' => 'ILS', 'exchange_rate' => '1', 'issue_date' => $date,
                 'lines' => [['item_description' => 'Synthetic service', 'quantity' => '1', 'unit_price' => $amount]],
@@ -37,12 +37,40 @@ final class DashboardReviewTest extends Phase8TestCase
         $this->assertSame('350.00', $data['comparison']['difference_display']);
         $this->assertSame('77.78', $data['comparison']['percent']);
         $this->assertSame('2026-09-01', $data['comparison']['previous_period']['start_date']);
-        $this->assertSame('2026-09-30', $data['comparison']['previous_period']['end_date']);
+        $this->assertSame('2026-09-15', $data['comparison']['previous_period']['end_date']);
+        $this->assertSame('2026-10-15', $data['period']['end_date']);
+        $this->assertTrue($data['comparison']['month_to_date']);
+        $this->assertFalse($data['comparison']['unequal_days']);
         $this->assertSame($before, PostingLine::where('company_id', $this->company->id)->orderBy('id')->get()->toJson());
         foreach (['ar', 'en'] as $locale) {
             app()->setLocale($locale);
-            Livewire::test(Dashboard::class)->assertSee(__('dashboard.title'))->assertSee('800.00 ILS');
+            Livewire::test(Dashboard::class)->assertSee(__('dashboard.title'))->assertSee('800.00 ILS')
+                ->assertSee(__('dashboard.month_to_date_notice'));
         }
+        // Selecting a completed month still means the entire canonical calendar month.
+        $lastMonth = app(DashboardReports::class)->read($this->company, 'last_month');
+        $this->assertSame('2026-09-30', $lastMonth['period']['end_date']);
+        $this->assertSame('7,450.00', $lastMonth['comparison']['current_display']);
+        $this->assertFalse($lastMonth['comparison']['month_to_date']);
+    }
+
+    public function test_shorter_previous_month_has_explicit_dates_and_no_percentage_growth(): void
+    {
+        $this->travelTo(CarbonImmutable::parse('2024-03-31 10:00:00', 'Asia/Hebron'));
+        $customer = Customer::create(['company_id' => $this->company->id, 'name_ar' => 'Test',
+            'name_en' => 'Test', 'active' => true, 'created_by' => $this->owner->id]);
+        $draft = app(CreateSalesInvoiceDraftAction::class)->execute($this->company, $this->owner, [
+            'customer_id' => $customer->id, 'currency_code' => 'ILS', 'exchange_rate' => '1', 'issue_date' => '2024-02-20',
+            'lines' => [['item_description' => 'Synthetic service', 'quantity' => '1', 'unit_price' => '100']],
+        ]);
+        app(PostSalesInvoiceAction::class)->execute($draft, $this->owner);
+        $data = app(DashboardReports::class)->read($this->company, 'this_month');
+        $this->assertSame('100.00', $data['comparison']['previous_display']);
+        $this->assertSame('2024-02-29', $data['comparison']['previous_period']['end_date']);
+        $this->assertSame('2024-03-31', $data['period']['end_date']);
+        $this->assertTrue($data['comparison']['unequal_days']);
+        $this->assertNull($data['comparison']['percent']);
+        Livewire::test(Dashboard::class)->assertSee(__('dashboard.unequal_month_days'));
     }
 
     public function test_no_percent_is_invented_for_zero_previous_sales_and_denied_profit_is_omitted(): void

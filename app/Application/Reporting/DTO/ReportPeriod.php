@@ -67,6 +67,26 @@ final readonly class ReportPeriod
         self::validateTimezoneString($this->timezone);
     }
 
+    /**
+     * Presentation comparison only: through company-local today against the same
+     * dates last month. This does not change canonical full-month presets or previous().
+     *
+     * @return array{current: self, previous: self, unequal_days: bool}
+     */
+    public static function monthToDateComparison(Company|string $companyOrTimezone, ?CarbonImmutable $clock = null): array
+    {
+        $tz = self::resolveTimezone($companyOrTimezone);
+        $now = $clock !== null ? $clock->setTimezone($tz) : CarbonImmutable::now($tz);
+        $previousMonth = $now->startOfMonth()->subMonthNoOverflow();
+        $previousDay = min($now->day, $previousMonth->daysInMonth);
+
+        return [
+            'current' => self::custom($now->startOfMonth()->toDateString(), $now->toDateString(), $tz),
+            'previous' => self::custom($previousMonth->toDateString(), $previousMonth->day($previousDay)->toDateString(), $tz),
+            'unequal_days' => $previousDay !== $now->day,
+        ];
+    }
+
     /** The adjacent complete calendar months, or an equally long preceding date range. */
     public function previous(): self
     {

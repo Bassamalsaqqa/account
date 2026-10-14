@@ -1,6 +1,10 @@
 <article class="rounded-card border border-border bg-surface p-4 space-y-3">
     <h4 class="font-bold">{{ __($insight['label_key']) }}</h4>
     @if ($insight['kind'] === 'sales_comparison')
+        <p class="text-xs text-text-secondary">{{ __('dashboard.month_to_date_notice') }}</p>
+        @if ($insight['unequal_days'])
+            <p class="text-xs text-text-secondary">{{ __('dashboard.unequal_month_days') }}</p>
+        @endif
         <p class="text-sm leading-relaxed">
             {{ __('assistant_briefing.insights.current_net_sales') }}:
             <strong><bdi>{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::format($insight['values']['current_net_sales'], $insight['currency']) }} {{ $insight['currency'] }}</bdi></strong>

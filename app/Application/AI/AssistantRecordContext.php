@@ -87,6 +87,63 @@ final class AssistantRecordContext
         return $fresh;
     }
 
+    /** Exact local questions only: never discard an extra qualifier or another intent. */
+    public function isExactInvoiceQuestion(string $text): bool
+    {
+        if ($this->type !== 'invoice') {
+            return false;
+        }
+        $clean = mb_strtolower(trim(preg_replace('/[.?!؟]+\z/u', '', trim($text)) ?? $text));
+
+        return in_array($clean, [
+            'what is this invoice total',
+            'what is the total of this invoice',
+            'what are the details of this invoice',
+            'what are this invoice details',
+            'this invoice details',
+            'show this invoice details',
+            'this invoice total',
+            'what is this invoice',
+            'what is this invoice amount',
+            'what is the balance of this invoice',
+            'what is the outstanding balance of this invoice',
+            'how much is remaining on this invoice',
+            'what is remaining on this invoice',
+            'شو تفاصيل هالفاتورة',
+            'شو تفاصيل هاي الفاتورة',
+            'شو تفاصيل هذه الفاتورة',
+            'تفاصيل هالفاتورة',
+            'تفاصيل هاي الفاتورة',
+            'تفاصيل هذه الفاتورة',
+            'شو مجموع هالفاتورة',
+            'كم مجموع هالفاتورة',
+            'قديش مجموع هالفاتورة',
+            'شو اجمالي هالفاتورة',
+            'شو إجمالي هالفاتورة',
+            'كم اجمالي هالفاتورة',
+            'كم إجمالي هالفاتورة',
+            'قديش اجمالي هالفاتورة',
+            'قديش إجمالي هالفاتورة',
+            'قديش هالفاتورة',
+            'كم هالفاتورة',
+            'شو هالفاتورة',
+            'شو هاي الفاتورة',
+            'شو هذه الفاتورة',
+            'قديش باقي على هالفاتورة',
+            'قديش باقي عليها',
+            'شو باقي على هالفاتورة',
+            'شو باقي عليها',
+            'شو المبلغ المتبقي على هالفاتورة',
+            'شو المبلغ المتبقي عليها',
+            'شو رصيد هالفاتورة',
+        ], true);
+    }
+
+    public function mentionsCurrentInvoice(string $text): bool
+    {
+        return $this->type === 'invoice' && preg_match('/\b(?:this\s+invoice|the\s+invoice)\b|(?:هالفاتورة|هاي\s+الفاتورة|هذه\s+الفاتورة|الفاتورة\s+الحالية)/iu', $text) === 1;
+    }
+
     /** @return array{0:string,1:string,2:?string,3:?string} */
     public function identity(): array
     {

@@ -235,7 +235,7 @@ final class DailyBriefingInsightsTest extends TestCase
             'customer_id' => $this->customer->id,
             'currency_code' => 'ILS',
             'exchange_rate' => '1.000000',
-            'issue_date' => '2026-09-20',
+            'issue_date' => '2026-09-10',
             'due_date' => null,
             'lines' => [
                 ['item_description' => 'High Sept Sales', 'quantity' => '16', 'unit_price' => '50.000000'],
@@ -267,6 +267,36 @@ final class DailyBriefingInsightsTest extends TestCase
         self::assertSame('800.000000', $values['previous_net_sales']);
         self::assertSame('-550.000000', $values['difference']);
         self::assertSame('down', $values['trend']);
+    }
+
+    public function test_sales_insight_excludes_future_and_later_previous_month_dates_without_writes_or_model_calls(): void
+    {
+        foreach (['2026-10-10' => '500', '2026-09-10' => '300', '2026-10-20' => '9000', '2026-09-20' => '7000'] as $date => $amount) {
+            $draft = app(CreateSalesInvoiceDraftAction::class)->execute($this->company, $this->owner, [
+                'customer_id' => $this->customer->id, 'currency_code' => 'ILS', 'exchange_rate' => '1', 'issue_date' => $date,
+                'lines' => [['item_description' => 'Synthetic service', 'quantity' => '1', 'unit_price' => $amount]],
+            ]);
+            app(PostSalesInvoiceAction::class)->execute($draft, $this->owner);
+        }
+        $before = DB::table('posting_lines')->where('company_id', $this->company->id)->orderBy('id')->get()->toJson();
+        $briefing = app(AssistantDailyBriefing::class)->generate($this->company, $this->owner, 'month-to-date-session');
+        $insight = array_column($briefing['insights'], null, 'kind')['sales_comparison'];
+        $this->assertSame('500.000000', $insight['values']['current_net_sales']);
+        $this->assertSame('300.000000', $insight['values']['previous_net_sales']);
+        $this->assertSame('2026-10-01', $insight['period']['start_date']);
+        $this->assertSame('2026-10-15', $insight['period']['end_date']);
+        $this->assertSame('2026-09-01', $insight['comparison_period']['start_date']);
+        $this->assertSame('2026-09-15', $insight['comparison_period']['end_date']);
+        $this->assertTrue($insight['month_to_date']);
+        $this->assertFalse($insight['unequal_days']);
+        $this->assertSame(0, $briefing['model_calls']);
+        $this->assertSame($before, DB::table('posting_lines')->where('company_id', $this->company->id)->orderBy('id')->get()->toJson());
+        foreach (['ar', 'en'] as $locale) {
+            app()->setLocale($locale);
+            Livewire::test(AssistantLauncher::class)->call('showAssistant')->call('loadDailyBriefing')
+                ->assertSee(__('dashboard.month_to_date_notice'))->assertSee('2026-09-15');
+        }
+        Http::assertNothingSent();
     }
 
     public function test_insights_actionable_links_and_bounded_values_for_unpaid_stock_expiry(): void

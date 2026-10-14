@@ -1,12 +1,13 @@
 # Small Trader Accounting — Hostinger Production Deployment Guide
-**Target Domain:** `account.palsync.net`  
-**Hosting Platform:** Hostinger Shared Hosting (Cloud / Business Web Hosting)  
+**Target Domain:** `account.palsync.net`
+**Hosting Platform:** Hostinger Shared Hosting (Cloud / Business Web Hosting)
 **Execution Context:** Production Deployment Guide
 
 ---
 
-## 1. Verified Hostinger Hosting Facts
+## 1. Historical Hostinger Hosting Facts (Initial Baseline Verification)
 
+*(Historical context preserved intact from baseline platform inspection)*
 These specifications were directly verified via the live Hostinger API/MCP read-only inspection:
 
 | Property | Value / Verified State | Verification Source |
@@ -73,7 +74,7 @@ ln -s /home/u556956644/domains/palsync.net/accounting/public account
 *Note: Never use destructive `rm -rf` commands on live document root directories.*
 
 #### Method B: Separated Public Assets via Deployment Script (Robust & Portable)
-When symbolic links are restricted or undesirable, `public_html/account` remains a standard directory. 
+When symbolic links are restricted or undesirable, `public_html/account` remains a standard directory.
 The repository's `public/index.php` dynamically checks candidates:
 1. Standard local root (`__DIR__.'/..'`)
 2. Explicit `LARAVEL_APP_PATH` environment variable
@@ -102,7 +103,7 @@ Follow these steps in exact chronological order on a clean server:
        SetHandler application/x-httpd-alt-php84
    </FilesMatch>
    ```
-   The included `bin/deploy.sh` script automatically detects Hostinger's `/opt/alt/php84/usr/bin/php` and ensures this directive is preserved during public asset synchronization.
+   **Important .htaccess Preservation Rule:** The `bin/deploy.sh` script preserves live `.htaccess` directives byte-for-byte. It will never overwrite an existing live `.htaccess` or apply blind `sed` modifications. Instead, it inspects live `.htaccess` to verify that both the Alt-PHP 8.4 handler (`x-httpd-alt-php84`) and the PWA manifest MIME type (`application/manifest+json`) are present. If either is missing or contradictory, deployment fails closed with explicit manual review instructions. On a fresh installation where no live `.htaccess` exists, the script validates reviewed source from `accounting/public/.htaccess` (which includes `AddType application/manifest+json .webmanifest`) before copying it. If Hostinger requires the Alt-PHP 8.4 handler, the operator must review and prepare that directive before running the script; no automatic handler insertion occurs.
 5. **Important distinction:** Web PHP (handled by LiteSpeed/Apache) and SSH CLI PHP may differ on Hostinger shared servers. In SSH, check your CLI version:
    ```bash
    php -v
@@ -168,7 +169,7 @@ Run the database migrations:
 ```
 
 ### Step 3.7: Supply Pre-compiled Production Frontend Assets
-A fresh Git clone does not include `public/build` (it is `.gitignore`d). Shared hosting does not require and should not run a permanent Node server. 
+A fresh Git clone does not include `public/build` (it is `.gitignore`d). Shared hosting does not require and should not run a permanent Node server.
 
 Compile the production assets on your development/CI machine and transfer them to the private application's `public/build` directory:
 ```bash
@@ -191,13 +192,21 @@ Because public self-registration is strictly disabled by default, run the intera
 ```
 The command will prompt for the password using hidden input (`secret()`) so passwords never appear in shell history, logs, or process lists. It immediately activates and verifies the initial user.
 
-### Step 3.9: Synchronize Public Assets & Warm Caches
+### Step 3.9: Synchronize Public Assets & Warm Caches (Leaves App in Maintenance Mode)
 Run the provided deployment script:
 ```bash
 chmod +x bin/deploy.sh
 PHP_BIN=/opt/alt/php84/usr/bin/php ./bin/deploy.sh
 ```
-The deployment script will verify all prerequisites, synchronize the public assets to `public_html/account`, and warm production route, config, view, and event caches.
+The deployment script verifies all runtime prerequisites, non-destructively synchronizes public assets to `public_html/account` while preserving existing live `.htaccess` byte-for-byte, and warms production route, config, view, and event caches.
+
+**Controlled Release Boundary:**
+`bin/deploy.sh` operates under a fail-closed maintenance contract. Upon completion, **the application remains in maintenance mode**. The script does NOT automatically execute `artisan up` or claim the application is live and healthy.
+
+Before bringing the site online, follow the post-deployment verification procedures outlined in `docs/CONTROLLED_RELEASE_CHECKLIST.md`. Only after explicit Owner authorization should the site be brought online:
+```bash
+/opt/alt/php84/usr/bin/php artisan up
+```
 
 ---
 
@@ -219,18 +228,37 @@ In hPanel → **Advanced** → **Cron Jobs**, add a custom cron job:
 ## 5. Deployment Update & Rollback Procedures
 
 ### Standard Update Workflow
-After migration handling and before cache warming, `bin/deploy.sh` runs `purchasing:bootstrap --all`, including with `--skip-migrate`. Provisioning failures stop deployment. This idempotent step ensures missing Purchase settings, sequence definitions and static permissions, and grants the current catalog to Owner. It preserves customized non-owner roles and existing sequence configuration/counters, consumes no document numbers and creates no business, accounting or stock transactions.
+By default, `bin/deploy.sh` operates conservatively:
+- **No migrations** are executed by default.
+- **No provisioning bootstraps** (`purchasing:bootstrap` or `documents:bootstrap`) are executed by default (UI and frontend asset releases need none).
+- **Maintenance mode is strictly held**: The script does not automatically bring the application up.
+- **Live `.htaccess` is preserved byte-for-byte**: Unrelated directives, custom rewrite rules, the Alt-PHP 8.4 handler, and PWA manifest MIME types are preserved. Missing required directives fail closed with manual review instructions rather than performing blind overwrites.
 
-Before updating, ensure pre-compiled frontend assets have been built (`npm run build`), transferred to `accounting/public/build`, and take a database backup:
+When an explicit, reviewed release requires database schema or seed updates:
+- Pass `--run-migrations` to execute audited forward migrations (`artisan migrate --force`).
+- Pass `--run-bootstrap` to execute foundation provisioning (`purchasing:bootstrap --all` and `documents:bootstrap --all`).
+- The `--skip-migrate` flag is retained for backward compatibility and behaves identically to the safe default (skipping migrations).
+
+#### Execution Steps:
+1. Record the exact currently deployed and accepted replacement SHAs. Stage the matching replacement build privately. Establish coherent SQL/code/build/public/private-file backup custody, configuration dependencies, protected encryption-key history and known-good rollback artifacts **before** changing source or assets. A local backup does not establish off-host recovery.
+2. Using the current deployed code, enter maintenance under the approved operator scope. Verify its marker and unauthenticated maintenance response. If an owned guard already exists, retain it and its bypass configuration. Stop if it cannot be verified. The new deployment script cannot guard a `git pull` that happened before it ran.
+3. Capture full business-row/schema, private/public-file and configuration fingerprints. Preserve live web configuration independently. Only then update source to the exact accepted revision and transfer its matching `public/build`. Avoid a blind `git pull origin main` that can advance beyond the accepted release.
+4. Run the preparation script under PHP 8.4:
 ```bash
 cd /home/u556956644/domains/palsync.net/accounting
-git pull origin main
 PHP_BIN=/opt/alt/php84/usr/bin/php ./bin/deploy.sh
+```
+Add migration or bootstrap options only for the explicitly reviewed scope. The script verifies `.htaccess` custody before dependencies, migrations, caches and asset replacement; symlinked public roots are refused. It preserves an existing maintenance guard and leaves maintenance held.
+5. Complete [the controlled-release checklist](CONTROLLED_RELEASE_CHECKLIST.md): exact identities, full preservation fingerprints, the six real reconciliation domains, fresh logs, authenticated AR/EN/API/Livewire checks and actual HTTPS asset/MIME responses. `/manifest.webmanifest` is a published static public-root file, not a build file. The script does not execute or certify these operational checks.
+6. Only after all gates pass and explicit Owner reopening authorization:
+```bash
+/opt/alt/php84/usr/bin/php artisan up
 ```
 
 ### Safe Revision-Controlled Rollback Procedure
 If a deployment needs to be rolled back to a known-good commit or tag:
-1. **Enter Maintenance Mode:**
+1. **Retain or Enter Verified Maintenance Mode:**
+   Keep an already owned maintenance guard and bypass configuration unchanged. Otherwise enter maintenance using the current code and verify the marker and public maintenance response before any rollback source change. Stop on failure.
    ```bash
    /opt/alt/php84/usr/bin/php artisan down
    ```
@@ -245,17 +273,19 @@ If a deployment needs to be rolled back to a known-good commit or tag:
    /opt/alt/php84/usr/bin/php $(which composer) install --no-dev --prefer-dist --optimize-autoloader --no-interaction
    ```
 4. **Database Schema Considerations:**
-   *Important:* Reverting application code does **not** automatically rollback database migrations. **Do NOT run `migrate --force` or blind `migrate:rollback` during rollback.**
-   - If the bad deployment did not alter the database schema, no database mutation is needed.
-   - If the bad deployment did alter database tables or data, restore the verified database backup taken immediately prior to the deployment (via Hostinger hPanel phpMyAdmin import or Hostinger daily backup snapshot) or deploy an audited forward compensating migration.
+   *CRITICAL ACCOUNTING INVARIANT: NEVER BLINDLY RESTORE DATABASE SNAPSHOTS OVER LIVE DATA.*
+   - In an active accounting system, restoring a past database backup over live tables destroys subsequent financial transactions, party postings, sequences, and immutable audit logs.
+   - **Always preserve forward migrations.** If a release must be rolled back, keep existing applied migrations intact unless an audited, forward-compensating migration is deployed.
+   - Do NOT run blind `migrate:rollback` or `migrate:fresh`. If schema reversal is mandatory, author an audited forward migration that reverses schema elements safely while preserving transactional data.
 5. **Restore Frontend Build Artifacts for Rollback Revision:**
    Ensure the `public/build` directory contains the build artifacts corresponding to the rollback revision.
-6. **Synchronize Public Assets & Warm Caches Without Re-running Migrations:**
-   Run `deploy.sh` with the `--skip-migrate` flag:
+6. **Synchronize Public Assets & Warm Caches:**
+   Run `deploy.sh` (default skips migrations and bootstrap, preserving existing live `.htaccess`):
    ```bash
-   PHP_BIN=/opt/alt/php84/usr/bin/php ./bin/deploy.sh --skip-migrate
+   PHP_BIN=/opt/alt/php84/usr/bin/php ./bin/deploy.sh
    ```
-7. **Exit Maintenance Mode:**
+7. **Verify & Reopen Under Owner Authorization:**
+   Perform the verification checklist in `docs/CONTROLLED_RELEASE_CHECKLIST.md` before reopening:
    ```bash
    /opt/alt/php84/usr/bin/php artisan up
    ```

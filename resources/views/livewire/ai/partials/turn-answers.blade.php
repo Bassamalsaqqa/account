@@ -37,9 +37,16 @@
                     @endif
                     · {{ $answer['timezone'] }}
                 </p>
+                @if (($answer['scope']['basis'] ?? null) === 'current_invoice')
+                    <p class="text-xs text-text-secondary">{{ __('assistant_invoice.currency') }}: <bdi>{{ $answer['currency']['filter_currency_code'] }}</bdi></p>
+                @else
                 <p class="text-xs text-text-secondary">{{ __('assistant_v2.base_currency') }}: <bdi>{{ $answer['currency']['base_currency_code'] }}</bdi>
                     · {{ __('assistant_v2.currency_filter') }}: <bdi>{{ $answer['currency']['filter_currency_code'] ?? __('assistant_v2.all_currencies') }}</bdi></p>
+                @endif
             </header>
+            @if (($answer['scope']['basis'] ?? null) === 'current_invoice')
+                @include('livewire.ai.partials.current-invoice', ['answer' => $answer])
+            @else
             @include('livewire.ai.partials.turn-values', ['values' => $answer['totals']])
             @if ($answer['rows'] !== [])
                 <div class="overflow-x-auto" tabindex="0" role="region" aria-label="{{ $answer['title'] }}">
@@ -71,6 +78,7 @@
             @else
                 <p class="text-sm text-text-secondary">{{ __('assistant_v2.no_data') }}</p>
             @endif
+            @endif
             @if (!empty($answer['comparison']))
                 <section class="rounded-control bg-surface p-3 space-y-2">
                     <h4 class="text-sm font-semibold">{{ __('assistant_v22.comparison') }}</h4>
@@ -78,7 +86,7 @@
                     @include('livewire.ai.partials.turn-values', ['values' => $answer['comparison']['totals'] ?? []])
                 </section>
             @endif
-            <a class="inline-flex min-h-11 items-center text-primary underline" href="{{ $answer['source_url'] }}" target="_blank" rel="noopener noreferrer">{{ __('assistant_v2.view_full_report') }}</a>
+            <a class="inline-flex min-h-11 items-center text-primary underline" href="{{ $answer['source_url'] }}" target="_blank" rel="noopener noreferrer">{{ ($answer['scope']['basis'] ?? null) === 'current_invoice' ? __('assistant_invoice.open_invoice') : __('assistant_v2.view_full_report') }}</a>
         </article>
     @endforeach
     @if ($isBriefing ?? false)

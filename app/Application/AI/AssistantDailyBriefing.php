@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Application\AI;
 
+use App\Application\Reporting\DTO\ReportPeriod;
 use App\Models\AiCompanyPolicy;
 use App\Models\Company;
 use App\Models\User;
@@ -107,7 +108,9 @@ final class AssistantDailyBriefing
         $executor = app(AssistantReportExecutor::class);
         $permitted = $catalog->permittedKeys($company, $actor);
 
-        $plans = $this->buildPlans();
+        $comparison = ReportPeriod::monthToDateComparison($company);
+        $plans = $this->buildPlans($comparison['current']);
+        $previousSales = null;
         $cards = [];
         $dtosByKey = [];
 
@@ -128,11 +131,15 @@ final class AssistantDailyBriefing
                 $cards[] = $dto->toArray();
             }
             $dtosByKey[$key] = $dto;
+            if ($key === 'sales.summary') {
+                // Two explicitly bounded canonical periods, not an adjacent custom interval.
+                $previousSales = $executor->execute($company, $actor, $this->salesPlan($comparison['previous']));
+            }
         }
 
         $insights = [];
         foreach ($dtosByKey as $dto) {
-            $insight = $this->buildInsight($dto);
+            $insight = $this->buildInsight($dto, $previousSales, $comparison['unequal_days']);
             if ($insight !== null) {
                 $insights[] = $insight;
             }
@@ -168,13 +175,13 @@ final class AssistantDailyBriefing
     /**
      * @return array<string, AssistantReportPlan>
      */
-    public function buildPlans(): array
+    private function buildPlans(ReportPeriod $salesPeriod): array
     {
         $plans = [];
         foreach (self::CARD_KEYS as $key) {
             $filters = match ($key) {
                 'money.balances' => [],
-                'sales.summary' => ['preset' => 'this_month', 'compare' => 'previous_period'],
+                'sales.summary' => ['start_date' => $salesPeriod->startDate, 'end_date' => $salesPeriod->endDate],
                 default => ['preset' => 'today'],
             };
             $plans[$key] = AssistantReportPlan::fromArray([
@@ -186,8 +193,16 @@ final class AssistantDailyBriefing
         return $plans;
     }
 
+    private function salesPlan(ReportPeriod $period): AssistantReportPlan
+    {
+        return AssistantReportPlan::fromArray([
+            'version' => 1, 'type' => 'report_query', 'report_key' => 'sales.summary',
+            'filters' => ['start_date' => $period->startDate, 'end_date' => $period->endDate], 'display' => 'summary',
+        ]);
+    }
+
     /** @return array<string,mixed>|null */
-    private function buildInsight(AssistantReportDto $dto): ?array
+    private function buildInsight(AssistantReportDto $dto, ?AssistantReportDto $previousSales, bool $unequalDays): ?array
     {
         $kind = match ($dto->reportKey) {
             'sales.summary' => 'sales_comparison',
@@ -204,7 +219,10 @@ final class AssistantDailyBriefing
         $amounts = [];
         $currency = null;
         if ($kind === 'sales_comparison') {
-            $previousTotals = $dto->comparison['totals'] ?? [];
+            if ($previousSales === null) {
+                throw new AssistantUnavailable('unavailable');
+            }
+            $previousTotals = $previousSales->totals;
             $current = $this->number($dto->totals, 'net_sales_base');
             $previous = $this->number($previousTotals, 'net_sales_base');
             $difference = BigDecimal::of($current)->minus($previous);
@@ -246,9 +264,11 @@ final class AssistantDailyBriefing
             'amounts' => $amounts,
             'currency' => $currency,
             'source_url' => $dto->sourceUrl,
-            'previous_source_url' => $dto->comparison['source_url'] ?? null,
+            'previous_source_url' => $kind === 'sales_comparison' ? $previousSales->sourceUrl : null,
             'period' => $dto->period,
-            'comparison_period' => $dto->comparison['period'] ?? null,
+            'comparison_period' => $kind === 'sales_comparison' ? $previousSales->period : null,
+            'month_to_date' => $kind === 'sales_comparison',
+            'unequal_days' => $kind === 'sales_comparison' && $unequalDays,
         ];
     }
 
