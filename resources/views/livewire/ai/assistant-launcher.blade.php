@@ -8,7 +8,7 @@
         </button>
         @if ($open)
             <section id="ai-dialog-{{ $this->getId() }}" role="dialog" aria-modal="true" aria-labelledby="assistant-title-{{ $this->getId() }}" class="ai-shell"
-                x-data="accountingAssistant($wire, @js(['locale' => app()->getLocale(), 'maxSeconds' => 60, 'autoSubmit' => (bool) config('ai_assistant.voice_auto_submit_enabled', false), 'quietMs' => (int) config('ai_assistant.voice_auto_submit_quiet_ms', 1000), 'graceMs' => (int) config('ai_assistant.voice_auto_submit_grace_ms', 1250), 'messages' => ['unsupported' => __('ai_product.voice_unsupported'), 'permission' => __('ai_product.voice_permission'), 'unavailable' => __('ai_product.voice_unavailable'), 'noSpeech' => __('ai_product.voice_no_speech')]]))"
+                x-data="accountingAssistant($wire, @js(['locale' => app()->getLocale(), 'maxSeconds' => 60, 'autoSubmit' => (bool) config('ai_assistant.voice_auto_submit_enabled', false), 'quietMs' => (int) config('ai_assistant.voice_auto_submit_quiet_ms', 1000), 'graceMs' => (int) config('ai_assistant.voice_auto_submit_grace_ms', 1250), 'messages' => ['unsupported' => __('ai_product.voice_unsupported'), 'permission' => __('ai_product.voice_permission'), 'unavailable' => __('ai_product.voice_unavailable'), 'noSpeech' => __('ai_product.voice_no_speech'), 'offline' => __('ai_product.voice_offline')]]))"
                 x-init="$nextTick(() => $refs.description?.focus())" x-trap.inert.noscroll="true"
                 @keydown.escape.window.stop.prevent="clear(); $wire.cancel()">
                 <div class="ai-backdrop" aria-hidden="true" @click="clear(); $wire.cancel()"></div>
@@ -25,11 +25,19 @@
                     </header>
                     <div class="ai-thread" aria-live="polite" aria-relevant="additions text">
                         <div x-show="sentText" x-cloak class="ai-user-turn" x-text="sentText"></div>
-                        @if ($reportResult === null && $turnReports === [] && $turnClarification === null && $clarifyPeriodReport === null && $ambiguousChoice === null && $questions === [])
+                        @if ($reportResult === null && $turnReports === [] && $turnClarification === null && $clarifyPeriodReport === null && $ambiguousChoice === null && $questions === [] && ! ($isBriefing ?? false))
                             <div x-show="!sentText" class="ai-welcome">
                                 <h3>{{ __('ai_product.welcome') }}</h3>
                                 <p class="mt-2 text-sm leading-relaxed text-text-secondary">{{ __('ai_product.welcome_help') }}</p>
                                 <div class="ai-suggestions">
+                                    @if ($briefingAvailable ?? false)
+                                        <button type="button" wire:click="loadDailyBriefing" @click="clear()" wire:loading.attr="disabled"
+                                            class="ai-suggestion col-span-full border-primary/30 bg-primary/5 hover:bg-primary/10 text-primary font-semibold"
+                                            aria-label="{{ __('assistant_briefing.action') }}">
+                                            <x-icon name="dashboard" />
+                                            <span>{{ __('assistant_briefing.action') }}</span>
+                                        </button>
+                                    @endif
                                     @if ($questionsAvailable)
                                         @foreach (['sales_question' => 'chart', 'purchases_question' => 'cart', 'inventory_question' => 'box'] as $suggestion => $icon)
                                             <button type="button" class="ai-suggestion" @click="suggest(@js(__('ai_product.'.$suggestion)))"><x-icon :name="$icon" /><span>{{ __('ai_product.'.$suggestion) }}</span></button>
@@ -71,7 +79,7 @@
                         </div>
                     </details>
 
-                    @if ($turnReports !== [] || $turnClarification !== null)
+                    @if ($turnReports !== [] || $turnClarification !== null || ($isBriefing ?? false))
                         @include('livewire.ai.partials.turn-answers')
                     @endif
                     @if ($reportResult !== null)
@@ -253,7 +261,7 @@
                         <button type="button" wire:click="clarify" wire:loading.attr="disabled" class="mt-4 min-h-11 rounded-control bg-primary px-4 text-sm font-bold text-white disabled:opacity-50">{{ __('assistant_v2.continue') }}</button>
                         <button type="button" wire:click="reviseDescription" class="mt-3 min-h-11 px-3 text-sm font-semibold underline">{{ __('assistant_v2.revise_description') }}</button>
                     @endif
-                        <div wire:loading wire:target="prepare,clarify,selectPeriod,chooseOperation" role="status" class="mt-4 flex items-center gap-2 text-sm text-text-secondary">
+                        <div wire:loading wire:target="prepare,clarify,selectPeriod,chooseOperation,loadDailyBriefing" role="status" class="mt-4 flex items-center gap-2 text-sm text-text-secondary">
                             <x-icon name="sparkles" class="h-4 w-4" />{{ __('ai_product.thinking') }}
                         </div>
                         @if ($error)<p role="alert" class="mt-4 rounded-control bg-danger-bg p-3 text-sm leading-relaxed text-danger">{{ $error }}</p>@endif
