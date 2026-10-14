@@ -27,6 +27,8 @@ use App\Models\User;
 use App\Models\Warehouse;
 use App\Services\Inventory\HistoricalSaleCost;
 use App\Services\Inventory\InventoryMovementService;
+use App\Services\Inventory\OwnsStockEvent;
+use App\Services\Inventory\StockEventOwner;
 use App\Services\Posting\AccountingPostingService;
 use App\Services\Sales\DocumentSequenceService;
 use App\Services\Sales\ReceivableBookValue;
@@ -38,11 +40,12 @@ use Brick\Math\BigDecimal;
 use Brick\Math\RoundingMode;
 use Carbon\Carbon;
 use Illuminate\Auth\Access\AuthorizationException;
-use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
 
-class PostSalesReturnAction
+class PostSalesReturnAction implements StockEventOwner
 {
+    use OwnsStockEvent;
+
     public function __construct(
         protected DocumentSequenceService $sequenceService,
         protected InventoryMovementService $inventoryMovementService,
@@ -70,7 +73,7 @@ class PostSalesReturnAction
             throw new AuthorizationException('User does not have permission to post sales returns.');
         }
 
-        return DB::transaction(function () use ($salesReturn, $user): SalesReturn {
+        return $this->stockTransaction((int) $salesReturn->company_id, (int) $salesReturn->id, $user, function () use ($salesReturn, $user): SalesReturn {
             // 1. Lock company FOR UPDATE
             /** @var Company $company */
             $company = Company::where('id', $salesReturn->company_id)->lockForUpdate()->firstOrFail();
@@ -236,7 +239,7 @@ class PostSalesReturnAction
                     reason: "Sales Return {$lockedReturn->return_number}",
                 );
 
-                $movements = $this->inventoryMovementService->record($stockCmd);
+                $movements = $this->recordStock($this->inventoryMovementService, $stockCmd);
 
                 $cogsByReturnLineId = [];
                 $firstMovementByReturnLineId = [];
@@ -401,7 +404,7 @@ class PostSalesReturnAction
                 lines: $postingLines,
             );
 
-            $batch = $this->accountingPostingService->post($postingCmd);
+            $batch = $this->postStock($this->accountingPostingService, $postingCmd);
 
             // 8. Update return
             $lockedReturn->return_number = $returnNumber;

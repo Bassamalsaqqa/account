@@ -22,6 +22,7 @@ use App\Support\Tenancy\CompanyContext;
 use Brick\Math\BigDecimal;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
+use Tests\Support\InventoryPrimitiveFixture;
 use Tests\TestCase;
 
 class MovingAverageCostingTest extends TestCase
@@ -80,7 +81,7 @@ class MovingAverageCostingTest extends TestCase
             'active' => true,
         ]);
 
-        $this->service = app(InventoryMovementService::class);
+        $this->service = InventoryPrimitiveFixture::createService();
     }
 
     public function test_exact_weighted_average_lifecycle_from_specification(): void

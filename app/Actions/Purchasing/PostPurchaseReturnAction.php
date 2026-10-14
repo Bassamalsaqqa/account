@@ -230,11 +230,20 @@ final class PostPurchaseReturnAction
                         }
 
                         $postingCommand = $builder->build($company, $lockedReturn, $number, $actor, false);
-                        $batch = $postingCommand !== null
-                            ? app(AccountingPostingService::class)->post($postingCommand)
-                            : null;
+                        if ($postingCommand !== null) {
+                            $scope->preparePosting($this, $postingCommand);
+                            $batch = app(AccountingPostingService::class)->post($postingCommand);
+                        } else {
+                            $batch = null;
+                        }
 
                         $lockedReturn->completeCanonicalPost($batch, $number, $actor, $capability);
+
+                        if ($postingCommand !== null) {
+                            $scope->assertPersistedBatch($this, $batch, $lockedReturn);
+                        } else {
+                            $scope->assertZeroValuePosting($this, $lockedReturn);
+                        }
 
                         app(AuditService::class)->log(
                             (int) $company->id,

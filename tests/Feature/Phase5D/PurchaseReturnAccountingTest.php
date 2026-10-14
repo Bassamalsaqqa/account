@@ -4,13 +4,15 @@ declare(strict_types=1);
 
 namespace Tests\Feature\Phase5D;
 
-use App\Domain\Inventory\DTO\StockMovementCommand;
-use App\Domain\Inventory\DTO\StockMovementLineCommand;
+use App\Actions\Inventory\AdjustStockAction;
+use App\Actions\Sales\CreateSalesInvoiceDraftAction;
+use App\Actions\Sales\PostSalesInvoiceAction;
 use App\Domain\Inventory\ValueObjects\Quantity;
+use App\Models\Customer;
 use App\Models\LedgerAccount;
 use App\Models\PurchaseReturn;
+use App\Models\SalesInvoice;
 use App\Models\StockMovement;
-use App\Services\Inventory\InventoryMovementService;
 use Brick\Math\BigDecimal;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -102,41 +104,21 @@ class PurchaseReturnAccountingTest extends Phase5DTestCase
         ]);
 
         // 2. Intervening adjustment increase: 10 units @ 20 = 200 (Total = 20 units @ 300, avg = 15)
-        app(InventoryMovementService::class)->record(new StockMovementCommand(
-            companyId: $this->company->id,
-            movementType: StockMovement::TYPE_ADJUSTMENT_INCREASE,
-            movementDate: '2026-10-04',
-            lines: [
-                new StockMovementLineCommand(
-                    productId: $this->product->id,
-                    warehouseId: $this->warehouse->id,
-                    quantity: Quantity::of(10),
-                    unitCostBase: '20.000000',
-                ),
-            ],
-            sourceType: 'manual_test',
-            sourceId: 1,
+        app(AdjustStockAction::class)->execute(
+            company: $this->company,
+            product: $this->product,
+            warehouse: $this->warehouse,
+            type: StockMovement::TYPE_ADJUSTMENT_INCREASE,
+            quantity: Quantity::of(10),
+            reason: 'Intervening adjustment increase',
+            user: $this->owner,
             idempotencyKey: (string) Str::ulid(),
-            createdBy: $this->owner->id,
-        ));
+            unitCostBase: '20.000000',
+            movementDate: '2026-10-04',
+        );
 
         // 3. Sell 10 units @ avg 15 = 150 removed (Leaves 10 units @ 150 value)
-        app(InventoryMovementService::class)->record(new StockMovementCommand(
-            companyId: $this->company->id,
-            movementType: StockMovement::TYPE_SALE,
-            movementDate: '2026-10-04',
-            lines: [
-                new StockMovementLineCommand(
-                    productId: $this->product->id,
-                    warehouseId: $this->warehouse->id,
-                    quantity: Quantity::of(10),
-                ),
-            ],
-            sourceType: 'sales_invoice',
-            sourceId: 1,
-            idempotencyKey: (string) Str::ulid(),
-            createdBy: $this->owner->id,
-        ));
+        $this->postSampleSale(10);
 
         // 4. Return all 10 units of original purchase (final depletion -> newQty = 0)
         // I = remaining carrying value = 150
@@ -172,41 +154,21 @@ class PurchaseReturnAccountingTest extends Phase5DTestCase
         ]);
 
         // 2. Intervening adjustment increase: 10 units @ 10 = 100 (Total = 20 units @ 300, avg = 15)
-        app(InventoryMovementService::class)->record(new StockMovementCommand(
-            companyId: $this->company->id,
-            movementType: StockMovement::TYPE_ADJUSTMENT_INCREASE,
-            movementDate: '2026-10-04',
-            lines: [
-                new StockMovementLineCommand(
-                    productId: $this->product->id,
-                    warehouseId: $this->warehouse->id,
-                    quantity: Quantity::of(10),
-                    unitCostBase: '10.000000',
-                ),
-            ],
-            sourceType: 'manual_test',
-            sourceId: 1,
+        app(AdjustStockAction::class)->execute(
+            company: $this->company,
+            product: $this->product,
+            warehouse: $this->warehouse,
+            type: StockMovement::TYPE_ADJUSTMENT_INCREASE,
+            quantity: Quantity::of(10),
+            reason: 'Intervening adjustment increase',
+            user: $this->owner,
             idempotencyKey: (string) Str::ulid(),
-            createdBy: $this->owner->id,
-        ));
+            unitCostBase: '10.000000',
+            movementDate: '2026-10-04',
+        );
 
         // 3. Sell 10 units @ avg 15 = 150 removed (Leaves 10 units @ 150 value)
-        app(InventoryMovementService::class)->record(new StockMovementCommand(
-            companyId: $this->company->id,
-            movementType: StockMovement::TYPE_SALE,
-            movementDate: '2026-10-04',
-            lines: [
-                new StockMovementLineCommand(
-                    productId: $this->product->id,
-                    warehouseId: $this->warehouse->id,
-                    quantity: Quantity::of(10),
-                ),
-            ],
-            sourceType: 'sales_invoice',
-            sourceId: 1,
-            idempotencyKey: (string) Str::ulid(),
-            createdBy: $this->owner->id,
-        ));
+        $this->postSampleSale(10);
 
         // 4. Return all 10 units of original purchase (final depletion -> newQty = 0)
         // I = remaining carrying value = 150
@@ -472,5 +434,32 @@ class PurchaseReturnAccountingTest extends Phase5DTestCase
 
         $this->assertNotNull($error, 'Positive USD supplier relief was silently treated as stock-only zero-value Return.');
         $this->assertSame($before, $this->snapshotState());
+    }
+
+    private function postSampleSale(int $quantity, string $unitPrice = '1.000000'): SalesInvoice
+    {
+        $customer = Customer::firstOrCreate(
+            ['company_id' => $this->company->id, 'name_ar' => 'عميل اختبار تجريبي'],
+            ['active' => true, 'created_by' => $this->owner->id]
+        );
+
+        $draft = app(CreateSalesInvoiceDraftAction::class)->execute($this->company, $this->owner, [
+            'customer_id' => $customer->id,
+            'warehouse_id' => $this->warehouse->id,
+            'currency_code' => 'ILS',
+            'exchange_rate' => '1.0000000000',
+            'issue_date' => '2026-10-04',
+            'lines' => [
+                [
+                    'product_id' => $this->product->id,
+                    'product_unit_id' => $this->unit->id,
+                    'item_description' => 'Fixture sale',
+                    'quantity' => (string) $quantity,
+                    'unit_price' => $unitPrice,
+                ],
+            ],
+        ]);
+
+        return app(PostSalesInvoiceAction::class)->execute($draft, $this->owner);
     }
 }

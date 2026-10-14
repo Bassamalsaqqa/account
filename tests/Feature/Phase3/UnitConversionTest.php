@@ -23,6 +23,7 @@ use App\Services\Inventory\InventoryMovementService;
 use App\Support\Tenancy\CompanyContext;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
+use Tests\Support\InventoryPrimitiveFixture;
 use Tests\TestCase;
 
 class UnitConversionTest extends TestCase
@@ -186,7 +187,7 @@ class UnitConversionTest extends TestCase
             idempotencyKey: (string) Str::ulid(),
             createdBy: $this->user->id,
         );
-        app(InventoryMovementService::class)->record($cmd);
+        InventoryPrimitiveFixture::record(app(InventoryMovementService::class), $cmd);
 
         // Now mutating conversion factor must throw HistoricalConversionLockedException
         $this->expectException(HistoricalConversionLockedException::class);
