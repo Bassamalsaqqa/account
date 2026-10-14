@@ -1,0 +1,28 @@
+# AI V2.2 A3 unified UNSAVED transaction handoff
+
+Branch: `feature/ai-v22-unsaved-drafting`. Prototype `500a98ae79635a373363990a252d1cfb804684a1` is now integrated into the unified launcher. History-preserving source-branch merges incorporate final A2 consent head `12812ff3e8f364ffbaba9d2bd33505ea9128dc53`; A2 remains in draft PR #39 pending independent acceptance. Main remains `45f7a1a61e2af8312bda97734def291cffaa8427`. This checkpoint is ready for source review, not production activation.
+
+Protected controlling Owner specification SHA-256: `d2bb378de74235a8329114f394dee0b3b1aeb8107bd2f84f8154f46972637aa8`; original preserved and unpublished.
+
+AGY implemented the bounded prototype and part of the launcher integration; Codex completed, independently corrected and verified it. AssistantDraftTurn delegates to existing TransactionAssistant, proposal validation, same-company entity resolution and encrypted form-state services. Deterministic requests use zero model calls; natural transaction cases use one mocked official SDK response. Unknown operation intent asks for a human choice. Past-tense report questions are not draft commands. No alternate transport or financial engine was added.
+
+Caller-owned locked request/form/session identities are mandatory; identical transaction retries retain their identity rather than reserving twice. Changed descriptions discard the old clarification and receive a new identity. Mounted conversations bind actor, company and session, and authorization is rechecked before returning handoff/clarification. Missing parties remain clarifications; a permitted manual-create link is informational only. No customer/vendor/product, walk-in, invoice, posting or stock record is automatically created. Existing manual Sales/Purchase routes receive editable UNSAVED forms and retain human Save/Post authority. Choosing a transaction clears report results and context; a report follow-up retains only its bounded authorized A2 context.
+
+The narrow TransactionAssistant readiness check refuses an unverified connection or known insufficient-credit health before reservation. Transient health failures do not erase existing verification.
+
+Verification actually executed on owned disposable MariaDB with fake credentials:
+
+- Combined relevant subset: 82 tests / 1,080 assertions, zero failures/errors/skips. Includes draft wrapper, unified launcher, existing transaction regressions, classifier, semantic routing, context security and consent scope. After the final mixed-operation presentation correction, focused mixed-operation/past-tense checks passed: 2 tests / 15 assertions. Counts describe executed runs, not distinct tests added together.
+- Scoped Pint and PHPStan pass for changed PHP files/new tests. An exploratory PHPStan run including the pre-existing classifier test file found 15 existing test-only narrowing/coalescing findings outside this change; that file is unchanged. No suppression or baseline change was added.
+- Production frontend build passed (61 modules; JavaScript 57.84 kB, gzip 21.59 kB). No frontend source or dependencies changed in A3.
+- Exact strings for quantities/prices; no automatic invoices, posting batches, stock movements or master-data writes.
+
+Practical local Edge verification used a newly owned disposable MariaDB schema, synthetic records and HTTP fakes with stray requests refused. English natural Sales input opened the existing invoice form for Ahmed, QA-SOAP, 2 pieces at ILS 5 (ILS 10 total). Arabic natural Purchase input opened the existing purchase form for Supplier, LOW-STOCK-01, 2 pieces at ILS 5. The Purchase form truthfully requests the missing supplier invoice number. Both displayed editable UNSAVED status. No Save/Post was clicked. Before/after business counts remained four fixture invoices, zero purchases, five fixture posting batches, ten posting lines, zero stock movements, one fixture customer receipt and zero vendor payments. Each natural input consumed one mocked request; no real tokens or paid calls were used.
+
+Private, ignored screenshot artifacts: `.ai/v22/a3-en-unsaved-sales.jpg` and `.ai/v22/a3-ar-mobile-unsaved-purchase.jpg` in the primary workspace. Arabic Purchase used a 390px viewport. Synthetic evidence is not production or actual model-language-quality evidence. The owned browser schema is cleaned after capture.
+
+Changed files relative to A2: AssistantDraftTurn.php (new), TransactionAssistant.php (readiness check), AssistantDeterministicClassifier.php, AssistantLauncher.php, AssistantDraftTurnTest.php (new), UnifiedDraftConversationTest.php (new), NaturalTransactionClassifierTest.php (new), this checkpoint. No migrations, dependencies or canonical financial writers changed.
+
+Verified cases include Palestinian Arabic/English Sales and Purchase, distinct exact multi-line values, missing quantity/party, ambiguous existing-party local selection without a second dispatch, foreign-company refusal, restricted staff, missing consent, mid-provider permission revocation, mounted-company switch, retry/cancel/change behavior and report-context transitions. Broader live model-language quality and actual microphone accuracy remain NOT VERIFIED. A4 is isolated on its own source branch; A5/A6 are outside this checkpoint. A2 Hostinger representative capacity and rollout limits still require authorized operational measurement.
+
+No production access/mutation, main/PR merge, deployment, GitHub CI, live provider request or historical reservation reset occurred. Source-only development-branch merges preserve published ancestry. Independent source acceptance and separate release authorization are required.
