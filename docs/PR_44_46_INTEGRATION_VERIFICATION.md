@@ -1,5 +1,7 @@
 # PR #44 / #46 integration verification
 
+**Latest correction:** the partial-allocation finding raised against publication head `e1b3b95` is reproduced and source-corrected in `7861536b8571daf1605a443e792f89bb3bfc1735`. See the final section below. Independent exact-head re-review is pending; no merge or deployment is authorized by this record. The preceding integration evidence remains historical evidence of its named source.
+
 ## Disposition
 
 Integration candidate for independent exact-head re-review; **not cleared for Owner merge or production release**. Both original PR heads remain unchanged, draft and unmerged. They were first combined without edits, then two narrowly verified defects were corrected on the separate integration branch. A later independent PR #46 review pauses acceptance; this record supplies source and test evidence without overriding that review.
@@ -91,3 +93,50 @@ This record is the eighth correction/evidence path. The final union against main
 - Execute all six strengthened reconciliations read-only on actual existing books under authorized maintenance. A new discrepancy requires private evidence and an Owner-reviewed resolution; never rewrite historical records to obtain a green result.
 - Verify authenticated AR/EN dashboard, Settings, reports, Sales/Purchase forms, API/Livewire and fresh logs on actual Linux; check HTTPS assets/web-manifest MIME, file preservation and intended feature flags. Reopen only after explicit authorization and successful gates. Preparation scripts never reopen.
 - Independent off-host backup/key recovery, isolated restore and real account-recovery mail remain separate operational requirements. Synthetic tests do not close them. No live model call or financial posting is required by this verification assignment.
+
+## PR #47 final partial-allocation correction
+
+### Review and red reproduction
+
+Baseline: `e1b3b95bf1a497d850c2a0c3f30884447153efb8`. Controlling finding: [independent PR #47 review](https://github.com/Bassamalsaqqa/account/pull/47#pullrequestreview-5523478020). This is a conditional corrupt-history integrity gap, not evidence of production corruption or a normal-UI exploit.
+
+Two initial disposable probes canonically sold/returned three zero-cost units across two expiry lots, then deleted exactly one allocation while retaining the original immutable movement and another valid allocation. Both canonical voids **committed**: only one unit was compensated while the entire document and GL became void/reversed. The probes failed their expected no-commit assertions: **2 tests / 8 assertions / 2 failures**. Their sanitized metadata distinguishes actual commit from a merely source-reasoned hypothesis.
+
+The full baseline matrix then executed **12 tests / 266 assertions**, with **6 complete-document controls passing**, **5 failed assertions** and **1 error**. Four partial-loss cases (zero-cost lots and mixed-cost product lines, Invoice and Return) did not reject; nonzero-cost partial loss already refused through existing valuation checks, but not the intended provenance category. No fixtures, allocations, movements or cost snapshots were rewritten to make a test green. All injections use explicit synthetic SQL, never production data.
+
+### Canonical correction
+
+Only `app/Services/Inventory/StockEventScope.php` changes runtime behavior. No new writer, transport, migration, observer side effect or domain engine is introduced.
+
+- Before recording compensation, reconstruct **all** same-company original Sales movements and require a bijection to the document's immutable allocation rows. Validate document/line/product identity, movement type/sign, lot, exact base quantity, historical unit cost and value. An existing non-null movement source-line reference must agree; canonical Sales uses nullable document-level movement references and retains its allocation-based line authority.
+- Before accounting reversal, independently query the persisted compensations. Require full quantity cancellation by product/warehouse/lot, invoice compensation by each original movement ID, and return compensation by the exact multiset of original returned quantities. Return voids keep their existing outbound costing and no-`reversal_of_id` semantics; no historical pointer is fabricated. Zero value cannot waive physical quantity completeness.
+- Recheck at scope completion and use the actual persisted compensation set for the Inventory GL comparison, including ordinary idempotent retries and no-stock documents. Existing company-first locks, fresh permissions, transaction ownership, reciprocal GL linkage and rollback protections remain.
+- Refuse missing/inconsistent provenance using **`InvalidInventoryMovementException` with exact diagnostic `sales_void_stock_provenance_incomplete`**. The four older all-missing tests now require that class/category, not a broad exception union. Unrelated authorization, precondition or test-assertion errors cannot satisfy their expected refusal.
+
+Valid complete multi-lot, mixed-cost, zero-cost and service-only voids remain supported. Posted history is immutable; damaged history is rejected and still detected read-only, without automatic repair. This proves the review's bounded scenarios, not every conceivable historical corruption.
+
+### Verification actually executed
+
+All database runs used the existing owned-schema runner, PHP 8.4.25 and local isolated MariaDB 10.4.32. No full application suite or GitHub CI was run.
+
+| Run | Actual result | Scope and limits |
+| --- | --- | --- |
+| First correction compatibility iteration | 124 tests / 1,758 assertions / 6 errors; 188.329 s | Detected an overly strict nullable source-line check on valid Invoice voids. Corrected before publication. No hidden PASS claim. |
+| Final corrected compatibility | **120 tests / 1,845 assertions, zero errors/failures/skips**; 101.237 s, 92 MB | Canonical stock authority, corruption/reconciliation, rollback/idempotency, fresh tenant/RBAC, Sales Invoice/Return/void, Accounting reversals, Purchasing boundaries/returns, company dates and integrated report truth. Includes all six synthetic reconciliations and unchanged economic fingerprints. |
+| Final expanded void verification | **28 tests / 832 assertions, zero errors/failures/skips**; 33.831 s (display 33.839), 80 MB | Final 20-case completeness suite plus 8 earlier service/full-loss/timezone diagnostics. Six complete controls, six partial-loss refusals, six wrong-quantity/lot/movement-ID refusals, two deliberately incomplete persisted-compensation rollbacks. |
+| Scoped concurrency evidence | **4 tests / 137 assertions PASS**, included in the first 124-test iteration | Identical/conflicting opening-stock races, role downgrade and membership revocation under company lock. These are existing Stock scope races, not new Sales-void races. Their code/path is unaffected by the subsequent nullable Sales-line condition correction; not redundantly rerun or counted as final-subset tests. |
+| Final formatting/static | **Pint PASS; targeted PHPStan PASS** | Changed PHP runtime and test formatting. No frontend assets or schema changes, so no repeated build or migration round-trip is claimed. |
+
+The 120-test and 28-test runs overlap; do **not** add their totals as unique coverage. The final 28-test run follows two added post-stock fault-injection tests and leaves the passing runtime source unchanged. Those tests run the real canonical stock engine, delete one newly created compensation inside the test transaction, require the precise pre-reversal refusal, and prove rollback of stock, balances, lots, GL, lifecycle, sequences and operation/provenance rows. Accounting, Inventory and Sales reconciliations remain healthy after rollback. Partial-input-loss tests assert reconciliation still reports the injected corruption and that the audit itself changes no rows.
+
+AGY implemented the initial bounded regression matrix and independently reviewed the guard. Codex corrected PHPUnit data-provider metadata, tightened/expanded cases, implemented the canonical scope change and independently ran all checks. AGY independently identified the same nullable Sales source-line issue found by compatibility testing; it was corrected before the final green runs. Source implementation/tests are committed at `7861536b8571daf1605a443e792f89bb3bfc1735` (tree `2ee9fcf314d2250208f8955fd164e11b76dd800f`); the subsequent publication commit changes only this evidence document.
+
+### Scope, custody and remaining gates
+
+This correction changes **four paths** against the reviewed head: one runtime file, the new `SalesVoidAllocationCompletenessTest.php`, tightened `SalesVoidIntegrationDiagnosticsTest.php`, and this evidence record. Existing Dashboard/UI/AI, company-timezone changes and the resolved unsupported-source GL audit are preserved. No migration, dependency, formula, pricing, budget, credential, permission catalog or historical business record changes are introduced. Original #44/#46 branches remain unchanged.
+
+Private logs/JUnit/AGY artifacts remain ignored under `.ai/pr47-allocation/`. The worker worktree deliberately retains one modified scope file and one untracked test file; the independently reviewed final versions are tracked in the integration branch. Owner originals and unrelated worktrees remain untouched.
+
+The initial two-case probe's PowerShell wrapper stopped on native stderr before completing runner cleanup. One newly created synthetic schema remains **quarantined locally**, isolated from application/production, without an available private cleanup capability. Automatic approval review rejected a proposed cleanup fallback because logs and row counts do not establish ownership. No fallback was applied or schema deleted. Its disposition requires explicit scoped cleanup authorization; older quarantined schemas were neither adopted nor dropped. All later baseline/compatibility/final runs reported owned-schema cleanup normally. This custody item does not excuse or replace source acceptance.
+
+**Ready for independent exact-head source review, not merge or deployment.** No production access, paid AI calls, GitHub merge, deployment, financial-history repair or usage reset occurred. Independent off-host recovery, actual Linux/Hostinger checks, six read-only live reconciliations, preservation fingerprints, rollback and separately approved reopening remain the controlled release requirements above.
