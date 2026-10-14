@@ -10,7 +10,6 @@ use App\Actions\Sales\PostSalesInvoiceAction;
 use App\Actions\Sales\PostSalesReturnAction;
 use App\Actions\Sales\VoidSalesInvoiceAction;
 use App\Actions\Sales\VoidSalesReturnAction;
-use App\Domain\Accounting\Exceptions\ImmutableRecordException;
 use App\Domain\Inventory\Exceptions\InvalidInventoryMovementException;
 use App\Domain\Inventory\ValueObjects\Quantity;
 use App\Models\InventoryBalance;
@@ -30,7 +29,6 @@ use Carbon\Carbon;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
-use InvalidArgumentException;
 use Tests\Support\StockAccountingIntegrity\StockAccountingIntegritySupportTrait;
 use Tests\TestCase;
 
@@ -130,11 +128,12 @@ final class SalesVoidIntegrationDiagnosticsTest extends TestCase
         $failure = null;
         try {
             app(VoidSalesInvoiceAction::class)->execute($postedInvoice, $owner, 'محاولة إلغاء فاتورة مبيعات مع مخصصات مفقودة');
-        } catch (InvalidArgumentException|InvalidInventoryMovementException|ImmutableRecordException $caught) {
+        } catch (InvalidInventoryMovementException $caught) {
             $failure = $caught;
         }
         $this->assertAccountingStockStateUnchanged($snapshot);
-        $this->assertNotNull($failure, 'Missing allocations must be rejected before any economic mutation.');
+        $this->assertInstanceOf(InvalidInventoryMovementException::class, $failure);
+        $this->assertSame('sales_void_stock_provenance_incomplete', $failure->getMessage());
 
         $freshInvoice = $postedInvoice->fresh();
         $this->assertSame(SalesInvoice::STATUS_POSTED, $freshInvoice->status);
@@ -207,11 +206,12 @@ final class SalesVoidIntegrationDiagnosticsTest extends TestCase
         $failure = null;
         try {
             app(VoidSalesInvoiceAction::class)->execute($postedInvoice, $owner, 'محاولة إلغاء فاتورة صفرية التكلفة مع مخصصات مفقودة');
-        } catch (InvalidArgumentException|InvalidInventoryMovementException|ImmutableRecordException $caught) {
+        } catch (InvalidInventoryMovementException $caught) {
             $failure = $caught;
         }
         $this->assertAccountingStockStateUnchanged($snapshot);
-        $this->assertNotNull($failure, 'Missing allocations must be rejected before any economic mutation.');
+        $this->assertInstanceOf(InvalidInventoryMovementException::class, $failure);
+        $this->assertSame('sales_void_stock_provenance_incomplete', $failure->getMessage());
 
         $freshInvoice = $postedInvoice->fresh();
         $this->assertSame(SalesInvoice::STATUS_POSTED, $freshInvoice->status);
@@ -292,11 +292,12 @@ final class SalesVoidIntegrationDiagnosticsTest extends TestCase
         $failure = null;
         try {
             app(VoidSalesReturnAction::class)->execute($postedReturn, $owner, 'محاولة إلغاء مردود مبيعات مع مخصصات مفقودة');
-        } catch (InvalidArgumentException|InvalidInventoryMovementException|ImmutableRecordException $caught) {
+        } catch (InvalidInventoryMovementException $caught) {
             $failure = $caught;
         }
         $this->assertAccountingStockStateUnchanged($snapshot);
-        $this->assertNotNull($failure, 'Missing allocations must be rejected before any economic mutation.');
+        $this->assertInstanceOf(InvalidInventoryMovementException::class, $failure);
+        $this->assertSame('sales_void_stock_provenance_incomplete', $failure->getMessage());
 
         $freshReturn = $postedReturn->fresh();
         $this->assertSame(SalesReturn::STATUS_POSTED, $freshReturn->status);
@@ -377,11 +378,12 @@ final class SalesVoidIntegrationDiagnosticsTest extends TestCase
         $failure = null;
         try {
             app(VoidSalesReturnAction::class)->execute($postedReturn, $owner, 'محاولة إلغاء مردود صفري التكلفة مع مخصصات مفقودة');
-        } catch (InvalidArgumentException|InvalidInventoryMovementException|ImmutableRecordException $caught) {
+        } catch (InvalidInventoryMovementException $caught) {
             $failure = $caught;
         }
         $this->assertAccountingStockStateUnchanged($snapshot);
-        $this->assertNotNull($failure, 'Missing allocations must be rejected before any economic mutation.');
+        $this->assertInstanceOf(InvalidInventoryMovementException::class, $failure);
+        $this->assertSame('sales_void_stock_provenance_incomplete', $failure->getMessage());
 
         $freshReturn = $postedReturn->fresh();
         $this->assertSame(SalesReturn::STATUS_POSTED, $freshReturn->status);

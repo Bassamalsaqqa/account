@@ -19,7 +19,10 @@ use App\Models\PostingBatch;
 use App\Models\PostingLine;
 use App\Models\SalesInvoice;
 use App\Models\SalesInvoiceLine;
+use App\Models\SalesInvoiceLotAllocation;
 use App\Models\SalesReturn;
+use App\Models\SalesReturnLine;
+use App\Models\SalesReturnLotAllocation;
 use App\Models\StockMovement;
 use App\Models\User;
 use App\Services\Sales\SalesActorGuard;
@@ -157,6 +160,9 @@ final class StockEventScope
         if ($command->movementType === 'adjustment_increase' && $command->lines[0]->unitCostBase !== null) {
             app(SalesActorGuard::class)->lockAndAuthorize($this->companyId, $this->actor, 'inventory.cost.view');
         }
+        if (str_ends_with($source, '_void')) {
+            $this->salesVoidOriginals($source);
+        }
         $capability = new StockEventCapability;
         $this->movements[spl_object_id($capability)] = ['capability' => $capability, 'command' => $command, 'used' => false, 'movements' => null];
 
@@ -239,6 +245,7 @@ final class StockEventScope
             || $batch->source_type !== str_replace('_void', '', $source) || (int) $batch->source_id !== $this->sourceId) {
             throw new InvalidInventoryMovementException('Matching canonical Sales void required for accounting reversal.');
         }
+        $this->assertSalesVoidCompensation($source);
         $this->reversalId = (int) $batch->id;
     }
 
@@ -287,6 +294,7 @@ final class StockEventScope
                 throw new InvalidInventoryMovementException('Canonical accounting batch status required.');
             }
             if ($isVoid) {
+                $movements = $this->assertSalesVoidCompensation($source);
                 $original = PostingBatch::withoutGlobalScopes()->where('company_id', $this->companyId)->find($document->posting_batch_id);
                 if ($original === null || (int) $original->reversed_by_batch_id !== (int) $batch->id
                     || $original->status !== PostingBatch::STATUS_REVERSED) {
@@ -295,7 +303,7 @@ final class StockEventScope
             } elseif ($this->posting !== null && ! $this->posting->matchesBatch($batch, null)) {
                 throw new InvalidInventoryMovementException('Persisted accounting must match the prepared Sales payload.');
             }
-            if ($movements !== []) {
+            if ($isVoid || $movements !== []) {
                 $this->assertInventoryValue($batch, $movements);
             }
         } else {
@@ -317,6 +325,117 @@ final class StockEventScope
                 $this->assertInventoryValue($batch, [$movement]);
             }
         }
+    }
+
+    /**
+     * Every immutable original movement needs exactly one matching immutable allocation.
+     * Never infer stock presence from today's product configuration or aggregate GL value.
+     *
+     * @return array<int, StockMovement>
+     */
+    private function salesVoidOriginals(string $source): array
+    {
+        $invoice = $source === 'sales_invoice_void';
+        $baseSource = $invoice ? 'sales_invoice' : 'sales_return';
+        $foreignKey = $invoice ? 'sales_invoice_id' : 'sales_return_id';
+        $lineKey = $invoice ? 'sales_invoice_line_id' : 'sales_return_line_id';
+        $allocationClass = $invoice ? SalesInvoiceLotAllocation::class : SalesReturnLotAllocation::class;
+        $lineClass = $invoice ? SalesInvoiceLine::class : SalesReturnLine::class;
+        $originals = StockMovement::withoutGlobalScopes()->where('company_id', $this->companyId)
+            ->where('source_type', $baseSource)->where('source_id', $this->sourceId)
+            ->orderBy('id')->lockForUpdate()->get()->keyBy('id');
+        $allocations = $allocationClass::withoutGlobalScopes()->where('company_id', $this->companyId)
+            ->where($foreignKey, $this->sourceId)->orderBy('id')->lockForUpdate()->get();
+        $lines = $lineClass::withoutGlobalScopes()->where('company_id', $this->companyId)
+            ->where($foreignKey, $this->sourceId)->get()->keyBy('id');
+        $seen = [];
+        foreach ($allocations as $allocation) {
+            $id = (int) $allocation->stock_movement_id;
+            $movement = $originals->get($id);
+            $line = $lines->get($allocation->getAttribute($lineKey));
+            if ($movement === null || $line === null || isset($seen[$id])
+                || (int) $line->product_id !== (int) $movement->product_id
+                || ($movement->source_line_id !== null && (int) $movement->source_line_id !== (int) $line->id)
+                || $movement->movement_type !== ($invoice ? StockMovement::TYPE_SALE : StockMovement::TYPE_SALE_RETURN)
+                || ($invoice ? ! BigDecimal::of($movement->quantity_delta_base)->isNegative() : ! BigDecimal::of($movement->quantity_delta_base)->isPositive())
+                || (int) ($allocation->inventory_lot_id ?? 0) !== (int) ($movement->lot_id ?? 0)
+                || ! BigDecimal::of($allocation->quantity_allocated_base)->isEqualTo(BigDecimal::of($movement->quantity_delta_base)->abs())
+                || ! BigDecimal::of($allocation->total_cost_base)->isEqualTo(BigDecimal::of($movement->value_delta_base)->abs())
+                || ! BigDecimal::of($allocation->unit_cost_base)->isEqualTo(BigDecimal::of($movement->unit_cost_base))) {
+                throw new InvalidInventoryMovementException('sales_void_stock_provenance_incomplete');
+            }
+            $seen[$id] = true;
+        }
+        if (count($seen) !== $originals->count()) {
+            throw new InvalidInventoryMovementException('sales_void_stock_provenance_incomplete');
+        }
+
+        return $originals->all();
+    }
+
+    /**
+     * Verify real persisted compensation, including physical quantity when historical value is zero.
+     *
+     * @return list<StockMovement>
+     */
+    private function assertSalesVoidCompensation(string $source): array
+    {
+        $originals = $this->salesVoidOriginals($source);
+        $compensations = StockMovement::withoutGlobalScopes()->where('company_id', $this->companyId)
+            ->where('source_type', $source)->where('source_id', $this->sourceId)->orderBy('id')->get();
+        $quantities = [];
+        $byOriginal = [];
+        $returnQuantities = [];
+        foreach ($originals as $movement) {
+            $key = $movement->product_id.':'.$movement->warehouse_id.':'.($movement->lot_id ?? 'none');
+            $quantities[$key] = ($quantities[$key] ?? BigDecimal::zero())->plus($movement->quantity_delta_base);
+            if ($source === 'sales_return_void') {
+                $allocationKey = $key.':'.BigDecimal::of($movement->quantity_delta_base)->abs()->toScale(6);
+                $returnQuantities[$allocationKey] = ($returnQuantities[$allocationKey] ?? 0) + 1;
+            }
+        }
+        foreach ($compensations as $movement) {
+            $key = $movement->product_id.':'.$movement->warehouse_id.':'.($movement->lot_id ?? 'none');
+            if (! isset($quantities[$key]) || $movement->movement_type !== ($source === 'sales_invoice_void' ? StockMovement::TYPE_SALE_RETURN : StockMovement::TYPE_SALE)
+                || ($source === 'sales_invoice_void' ? ! BigDecimal::of($movement->quantity_delta_base)->isPositive() : ! BigDecimal::of($movement->quantity_delta_base)->isNegative())) {
+                throw new InvalidInventoryMovementException('sales_void_stock_provenance_incomplete');
+            }
+            if ($source === 'sales_invoice_void') {
+                $original = $originals[(int) $movement->reversal_of_id] ?? null;
+                if ($original === null || (int) $original->product_id !== (int) $movement->product_id
+                    || (int) $original->warehouse_id !== (int) $movement->warehouse_id
+                    || (int) ($original->lot_id ?? 0) !== (int) ($movement->lot_id ?? 0)) {
+                    throw new InvalidInventoryMovementException('sales_void_stock_provenance_incomplete');
+                }
+                $id = (int) $original->id;
+                $byOriginal[$id] = ($byOriginal[$id] ?? BigDecimal::zero())->plus($movement->quantity_delta_base);
+            } else {
+                // Return voids retain their existing outbound costing semantics and have
+                // no reversal_of_id. Match each immutable returned quantity once instead.
+                $allocationKey = $key.':'.BigDecimal::of($movement->quantity_delta_base)->abs()->toScale(6);
+                if (($returnQuantities[$allocationKey] ?? 0) < 1) {
+                    throw new InvalidInventoryMovementException('sales_void_stock_provenance_incomplete');
+                }
+                $returnQuantities[$allocationKey]--;
+            }
+            $quantities[$key] = $quantities[$key]->plus($movement->quantity_delta_base);
+        }
+        foreach ($quantities as $quantity) {
+            if (! $quantity->isZero()) {
+                throw new InvalidInventoryMovementException('sales_void_stock_provenance_incomplete');
+            }
+        }
+        if ($source === 'sales_invoice_void') {
+            foreach ($originals as $id => $movement) {
+                if (! ($byOriginal[$id] ?? BigDecimal::zero())->plus($movement->quantity_delta_base)->isZero()) {
+                    throw new InvalidInventoryMovementException('sales_void_stock_provenance_incomplete');
+                }
+            }
+        } elseif (array_filter($returnQuantities, fn (int $remaining) => $remaining !== 0) !== []) {
+            throw new InvalidInventoryMovementException('sales_void_stock_provenance_incomplete');
+        }
+
+        return $compensations->all();
     }
 
     /** @param list<StockMovement> $movements */
