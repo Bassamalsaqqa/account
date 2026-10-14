@@ -102,7 +102,7 @@ class AssistantReportAuthorizationTest extends TestCase
     public function test_company_policy_is_default_deny_and_malformed_allowlist_is_refused(): void
     {
         $this->policy->update(['settings' => ['questions' => ['enabled' => true, 'allowed_reports' => 'sales.summary']]]);
-        $this->expectException(AuthorizationException::class);
+        $this->expectException(AssistantUnavailable::class);
         app(AssistantReportCatalog::class)->authorize($this->company, $this->reader, 'sales.summary');
     }
 
@@ -114,7 +114,7 @@ class AssistantReportAuthorizationTest extends TestCase
             app(AssistantReportCatalog::class)->authorize($this->company, $this->reader, 'sales.summary');
             $this->fail('Revoked company policy must block questions.');
         } catch (AssistantUnavailable $error) {
-            $this->assertSame('disabled', $error->reason);
+            $this->assertSame('question_disabled', $error->reason);
         }
     }
 

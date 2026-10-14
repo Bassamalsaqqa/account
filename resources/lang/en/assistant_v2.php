@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 return [
+    'error_question_disabled' => 'This report is not enabled in your company’s AI policy. Ask the company Owner to review its report access.',
     'error_proposal_invalid' => 'The extracted accounting details could not be verified. No financial action was taken. Revise the description or use the manual form.',
     'text_consent_help' => 'Only the text you choose to send is used for the approved AI purpose. Review the privacy details below. Approving does not send a request.',
     'error_connection_missing' => 'No active AI connection is configured. Ask the Company Owner to complete setup in Settings.',

@@ -6,6 +6,7 @@ namespace App\Application\AI;
 
 use App\Application\Reporting\Presentation\ReportRegistry;
 use App\Application\Reporting\Security\ReportingGuard;
+use App\Exceptions\NoActiveCompanyException;
 use App\Models\AiCompanyPolicy;
 use App\Models\Company;
 use App\Models\User;
@@ -17,6 +18,13 @@ final class AssistantReportCatalog
     public const KEYS = [
         'sales.summary', 'customers.balances', 'purchases.summary', 'vendors.balances',
         'inventory.low-stock', 'inventory.expiry', 'money.balances',
+        'sales.by-period', 'sales.by-customer', 'sales.by-product', 'sales.unpaid',
+        'customers.top', 'customers.aging',
+        'purchases.by-period', 'purchases.by-vendor', 'purchases.by-product', 'purchases.unpaid',
+        'vendors.aging',
+        'inventory.stock', 'inventory.movements',
+        'expenses.summary', 'expenses.by-period', 'expenses.by-category',
+        'sales.last-invoice',
     ];
 
     /** @return array<string, mixed> */
@@ -24,6 +32,16 @@ final class AssistantReportCatalog
     {
         if (! in_array($key, self::KEYS, true)) {
             throw new AssistantUnavailable('question_unsupported');
+        }
+
+        if ($key === 'sales.last-invoice') {
+            return [
+                'key' => $key, 'group' => 'sales',
+                'name_en' => 'Latest issued sales invoice', 'name_ar' => 'آخر فاتورة مبيعات صادرة',
+                'permissions' => ['sales.invoice.view', 'customers.view'],
+                'filters' => ['customer_id'], 'required' => ['customer_id'],
+                'defaults' => [], 'options' => [], 'columns' => [], 'current' => true,
+            ];
         }
 
         return app(ReportRegistry::class)->definition($key);
@@ -36,21 +54,28 @@ final class AssistantReportCatalog
             || in_array((string) $company->id, config('ai_assistant.disabled_company_ids', []), true)) {
             throw new AssistantUnavailable('disabled');
         }
-        // Verify identity and membership before disclosing supported report metadata.
-        app(ReportingGuard::class)->authorize($company, $actor, 'ai.assistant.use');
+        $permissions = app(ReportingGuard::class)->readPermissions($company, $actor, 'ai.assistant.use');
+        $definition = $this->definition($key);
+        $required = $definition['permissions'];
+        if (str_starts_with($key, 'purchases.') || str_starts_with($key, 'vendors.')) {
+            $required[] = 'purchasing.cost.view';
+        }
+        if (array_diff($required, $permissions) !== []) {
+            throw new AuthorizationException('The required report/source permission is missing.');
+        }
         $policy = AiCompanyPolicy::where('company_id', $company->id)->first();
         $questions = $policy?->settings['questions'] ?? [];
         if ($policy === null || ! $policy->enabled || ! is_array($questions) || ($questions['enabled'] ?? false) !== true) {
-            throw new AssistantUnavailable('disabled');
+            throw new AssistantUnavailable('question_disabled');
         }
-        $definition = $this->definition($key);
         $allowed = $questions['allowed_reports'] ?? [];
         if (! $this->validAllowlist($allowed) || ! in_array($key, $allowed, true)) {
-            throw new AuthorizationException('This question capability is not permitted.');
+            throw new AssistantUnavailable('question_disabled');
         }
-        app(ReportingGuard::class)->authorize($company, $actor, $definition['permissions']);
-        if (! app(ReportRegistry::class)->allows($company, $key)) {
-            throw new AuthorizationException('Report source access is required.');
+        if ($key === 'money.balances'
+            && ! in_array('money.cash.view', $permissions, true)
+            && ! in_array('money.bank.view', $permissions, true)) {
+            throw new AuthorizationException('Cash or Bank source access is required.');
         }
     }
 
@@ -62,7 +87,11 @@ final class AssistantReportCatalog
             return [];
         }
         $guard = app(ReportingGuard::class);
-        if (! $guard->allows($company, 'ai.assistant.use', $actor)) {
+        try {
+            // One fresh company/membership/permission snapshot for this enumeration only.
+            // Execution and delivery still authorize independently after any provider latency.
+            $permissions = $guard->readPermissions($company, $actor, 'ai.assistant.use');
+        } catch (AuthorizationException|NoActiveCompanyException) {
             return [];
         }
         $policy = AiCompanyPolicy::where('company_id', $company->id)->first();
@@ -74,20 +103,26 @@ final class AssistantReportCatalog
         if (! $this->validAllowlist($allowed)) {
             return [];
         }
-        $registry = app(ReportRegistry::class);
         $permitted = [];
         foreach (self::KEYS as $key) {
             if (! in_array($key, $allowed, true)) {
                 continue;
             }
-            try {
-                $definition = $registry->definition($key);
-                if ($guard->allows($company, $definition['permissions'], $actor) && $registry->allows($company, $key)) {
-                    $permitted[] = $key;
-                }
-            } catch (\Throwable) {
-                // Ignore unregistered or restricted definition errors
+            $definition = $this->definition($key);
+            if (array_diff($definition['permissions'], $permissions) !== []) {
+                continue;
             }
+            if ((str_starts_with($key, 'purchases.') || str_starts_with($key, 'vendors.'))
+                && ! in_array('purchasing.cost.view', $permissions, true)) {
+                continue;
+            }
+            // These are the only extra ReportRegistry source gates in this curated catalog.
+            // Payroll and vendor-payment sources are not registered assistant capabilities.
+            if ($key === 'money.balances' && ! in_array('money.cash.view', $permissions, true)
+                && ! in_array('money.bank.view', $permissions, true)) {
+                continue;
+            }
+            $permitted[] = $key;
         }
 
         return $permitted;

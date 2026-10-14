@@ -3,6 +3,8 @@
 declare(strict_types=1);
 
 return [
+    // New company-scoped read-only turn flow; staged rollout keeps the legacy launcher available.
+    'turn_enabled' => (bool) env('AI_TURN_ENABLED', false),
     // All three switches are mandatory. Approval includes provider, costs and privacy terms.
     'enabled' => env('AI_ASSISTANT_ENABLED', false),
     'provider_approved' => env('AI_PROVIDER_APPROVED', false),

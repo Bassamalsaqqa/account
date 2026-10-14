@@ -12,6 +12,9 @@ use App\Application\AI\AssistantQuestionPlanner;
 use App\Application\AI\AssistantReportCatalog;
 use App\Application\AI\AssistantReportExecutor;
 use App\Application\AI\AssistantReportPlan;
+use App\Application\AI\AssistantTurnConstraints;
+use App\Application\AI\AssistantTurnContext;
+use App\Application\AI\AssistantTurnService;
 use App\Application\AI\AssistantUnavailable;
 use App\Application\AI\DeepSeekQuickConnect;
 use App\Application\AI\TransactionAssistant;
@@ -64,6 +67,19 @@ final class AssistantLauncher extends Component
     /** @var array<string, mixed>|null */
     #[Locked]
     public ?array $reportResult = null;
+
+    /** @var list<array<string, mixed>> */
+    #[Locked]
+    public array $turnReports = [];
+
+    #[Locked]
+    public ?string $turnContextToken = null;
+
+    #[Locked]
+    public ?string $turnScope = null;
+
+    #[Locked]
+    public ?string $turnClarification = null;
 
     #[Locked]
     public ?string $clarifyPeriodReport = null;
@@ -205,9 +221,8 @@ final class AssistantLauncher extends Component
         }
         foreach (app(AiProviderRoutes::class)->resolve($company, $actor, $resolveIntent, 'text_structured') as $connection) {
             $fingerprint = $governance->consentFingerprint($policy, $connection, $scope);
-            $consentKey = $scope === 'question' ? 'question:'.$connection->public_id : $connection->public_id;
             $routes[] = ['public_id' => $connection->public_id, 'fingerprint' => $fingerprint,
-                'consented' => hash_equals($fingerprint, (string) ($preferences?->consents[$consentKey]['fingerprint'] ?? ''))];
+                'consented' => $governance->hasConsent($policy, $connection, $actor, $scope, $preferences)];
         }
 
         return $routes;
@@ -255,6 +270,30 @@ final class AssistantLauncher extends Component
                 && (bool) ($policy->settings['questions']['enabled'] ?? false)
                 && $governance->can($company, $actor, 'ai.assistant.use')
                 && app(AssistantReportCatalog::class)->permittedKeys($company, $actor) !== [];
+
+            if (config('ai_assistant.turn_enabled') === true && $canDoQuestions && $this->context === 'auto') {
+                try {
+                    $classified = app(AssistantDeterministicClassifier::class)->classify($this->text);
+                } catch (AssistantUnavailable) {
+                    $classified = null;
+                }
+                if (($classified['kind'] ?? null) === 'transaction' && $canDoTransactions
+                    && ! app(AssistantTurnConstraints::class)->isReadInvoiceQuestion($this->text)) {
+                    return $this->prepareTransaction();
+                }
+                $result = app(AssistantTurnService::class)->run($company, $actor, $this->text,
+                    $this->formKey, session()->getId(), $this->turnContextToken);
+                $this->turnReports = $result['reports'];
+                $this->turnContextToken = $result['conversation_token'];
+                $this->turnScope = $result['_authorization_scope'] ?? null;
+                $this->turnClarification = $result['status'] === 'clarification' ? ($result['reason'] ?? 'intent') : null;
+                if ($result['status'] === 'operation_choice') {
+                    $this->ambiguousChoice = ['report_key' => null, 'text' => $this->text];
+                }
+                $this->formKey = (string) Str::uuid();
+
+                return null;
+            }
 
             // Context explicit sales or purchase is always routed to transaction assistant
             if ($this->context !== 'auto' || ($canDoTransactions && ! $canDoQuestions)) {
@@ -512,6 +551,10 @@ final class AssistantLauncher extends Component
             app(AssistantQuestionContext::class)->clear(app(CompanyContext::class)->company(), auth()->user(), session()->getId());
         }
         $this->reportResult = null;
+        $this->turnReports = [];
+        $this->turnClarification = null;
+        // Keep the bounded opaque context for a natural next-period follow-up.
+        $this->formKey = (string) Str::uuid();
         $this->clarifyPeriodReport = null;
         $this->clarifyPeriodFilters = [];
         $this->ambiguousChoice = null;
@@ -585,6 +628,8 @@ final class AssistantLauncher extends Component
             app(AssistantQuestionContext::class)->clear($company, auth()->user(), session()->getId());
         }
         $this->open = false;
+        $this->turnReports = [];
+        $this->turnContextToken = $this->turnScope = $this->turnClarification = null;
         $this->text = '';
         $this->token = null;
         $this->answers = $this->questions = [];
@@ -621,7 +666,7 @@ final class AssistantLauncher extends Component
             'provider_authentication', 'provider_credit', 'provider_format', 'provider_parameters',
             'provider_rate_limit', 'provider_timeout', 'provider_outage', 'provider_invalid',
             'credential_invalid', 'credential_revoked', 'provider_configuration', 'connection_missing', 'connection_unverified',
-            'disabled', 'input_invalid', 'proposal_invalid', 'question_unsupported', 'question_invalid' => $reason,
+            'disabled', 'input_invalid', 'proposal_invalid', 'question_unsupported', 'question_invalid', 'question_disabled' => $reason,
             'invalid_request', 'choice_invalid' => 'input_invalid',
             'policy_invalid', 'budget_configuration', 'transition_required', 'fallback_invalid', 'personal_credentials_disabled' => 'provider_configuration',
             'connection_required' => 'connection_missing',
@@ -643,6 +688,8 @@ final class AssistantLauncher extends Component
             || $this->questionActorId !== (int) auth()->id()
             || ! hash_equals($this->questionSessionHash ?? '', hash('sha256', session()->getId())))) {
             $this->reportResult = null;
+            $this->turnReports = [];
+            $this->turnContextToken = $this->turnScope = $this->turnClarification = null;
             $this->clarifyPeriodReport = null;
             $this->clarifyPeriodFilters = [];
             $this->ambiguousChoice = null;
@@ -659,12 +706,18 @@ final class AssistantLauncher extends Component
                 $privacy = $policy->settings['privacy'] ?? [];
                 $transactionsAvailable = app(AiGovernance::class)->allowedIntents($context->company(), auth()->user()) !== [];
                 $questionsAvailable = $this->context === 'auto' && app(AssistantReportCatalog::class)->permittedKeys($context->company(), auth()->user()) !== [];
+                if ($this->turnReports !== [] && $this->turnScope !== app(AssistantTurnContext::class)->scope($context->company(), auth()->user(), session()->getId())) {
+                    $this->turnReports = [];
+                    $this->turnContextToken = $this->turnScope = null;
+                }
                 if ($this->reportResult !== null) {
                     app(AssistantReportCatalog::class)->authorize($context->company(), auth()->user(), $this->reportResult['report_key']);
                 }
             } catch (AssistantUnavailable|AuthorizationException) {
                 $available = false;
                 $this->reportResult = null;
+                $this->turnReports = [];
+                $this->turnContextToken = $this->turnScope = $this->turnClarification = null;
                 $this->clarifyPeriodReport = null;
                 $this->clarifyPeriodFilters = [];
                 $this->ambiguousChoice = null;

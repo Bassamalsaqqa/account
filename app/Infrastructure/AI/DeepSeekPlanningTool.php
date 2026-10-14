@@ -38,7 +38,7 @@ final class DeepSeekPlanningTool implements Tool
     public function description(): string
     {
         return $this->toolName === 'run_report'
-            ? 'Propose an approved read-only report, not an executable query. Preserve raw names, period and currency; never invent IDs or figures. Custom dates must be paired, ordered and at most 366 days; never combine them with a non-custom preset. Comparisons require an explicit period. A2 must authorize and resolve every constraint locally.'
+            ? 'Propose an approved read-only report, not an executable query. Preserve raw names, period and currency; never invent IDs or figures. Custom dates must be paired, ordered and at most 366 days; never combine them with a non-custom preset. Comparisons require an explicit period. For independent requests, request_fragment must copy the complete exact user clause for this report, including all qualifiers. Never truncate a clause or copy qualifiers from another clause. A2 authorizes and associates clauses locally.'
             : 'Request human clarification when intent, entity, period or currency is ambiguous or unsupported.';
     }
 
@@ -62,7 +62,8 @@ final class DeepSeekPlanningTool implements Tool
         return ['version' => $version, 'type' => $schema->string()->enum(['report_query'])->required(),
             'report_key' => $schema->string()->enum($this->reportKeys)->required(),
             'filters' => $schema->object($filters)->withoutAdditionalProperties()->required(),
-            'display' => $schema->string()->enum(['summary'])->required()];
+            'display' => $schema->string()->enum(['summary'])->required(),
+            'request_fragment' => $schema->string()->min(1)->max(4000)];
     }
 
     public function handle(Request $request): string
