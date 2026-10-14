@@ -59,10 +59,10 @@ trait OwnsStockEvent
         return $service->post($command);
     }
 
-    private function reverseStock(AccountingReversalService $service, PostingBatch $batch, User $actor, ?string $reason = null): PostingBatch
+    private function reverseStock(AccountingReversalService $service, PostingBatch $batch, User $actor, ?string $reason = null, ?string $postingDate = null): PostingBatch
     {
         app(StockEventScope::class)->prepareReversal($this, $batch, $actor);
 
-        return $service->reverse($batch, $actor, $reason);
+        return $service->reverse($batch, $actor, $reason, $postingDate);
     }
 }

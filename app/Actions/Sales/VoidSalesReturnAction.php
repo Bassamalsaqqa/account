@@ -22,7 +22,6 @@ use App\Services\Posting\AccountingReversalService;
 use App\Services\Sales\SalesActorGuard;
 use App\Support\Tenancy\CompanyContext;
 use Brick\Math\BigDecimal;
-use Carbon\Carbon;
 use Illuminate\Auth\Access\AuthorizationException;
 use InvalidArgumentException;
 
@@ -57,7 +56,7 @@ class VoidSalesReturnAction implements StockEventOwner
         }
 
         return $this->stockTransaction((int) $salesReturn->company_id, (int) $salesReturn->id, $user, function () use ($salesReturn, $user, $reason): SalesReturn {
-            Company::where('id', $salesReturn->company_id)->lockForUpdate()->firstOrFail();
+            $lockedCompany = Company::where('id', $salesReturn->company_id)->lockForUpdate()->firstOrFail();
             app(SalesActorGuard::class)->lockAndAuthorize((int) $salesReturn->company_id, $user, 'sales.return.void');
 
             /** @var SalesReturn $lockedReturn */
@@ -66,6 +65,8 @@ class VoidSalesReturnAction implements StockEventOwner
             if ($lockedReturn->isVoid()) {
                 return $lockedReturn;
             }
+
+            $voidDate = now($lockedCompany->timezone)->toDateString();
 
             if (! $lockedReturn->isPosted()) {
                 throw new InvalidArgumentException("Cannot void return in [{$lockedReturn->status}] status.");
@@ -94,7 +95,7 @@ class VoidSalesReturnAction implements StockEventOwner
                 $stockCmd = new StockMovementCommand(
                     companyId: $lockedReturn->company_id,
                     movementType: StockMovement::TYPE_SALE,
-                    movementDate: Carbon::today($lockedReturn->company->timezone)->toDateString(),
+                    movementDate: $voidDate,
                     lines: $compensatingLines,
                     sourceType: 'sales_return_void',
                     sourceId: $lockedReturn->id,
@@ -134,7 +135,8 @@ class VoidSalesReturnAction implements StockEventOwner
                     $reversalBatch = $this->reverseStock($this->accountingReversalService,
                         $postingBatch,
                         $user,
-                        $reason ?? "Void of Sales Return {$lockedReturn->return_number}"
+                        $reason ?? "Void of Sales Return {$lockedReturn->return_number}",
+                        $voidDate
                     );
                 }
             }
