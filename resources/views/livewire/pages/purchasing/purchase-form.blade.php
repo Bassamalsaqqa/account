@@ -18,7 +18,13 @@
     </section>
     <section class="space-y-3">
         <div class="flex flex-wrap justify-between items-center gap-3"><h2 class="font-bold">{{ __('purchasing.purchase_lines') }}</h2><button type="button" wire:click="addLine" class="h-11 px-3 text-primary border border-border rounded-control text-sm font-bold">{{ __('purchasing.add_line') }}</button></div>
-        <label for="purchase-product-search" class="sr-only">{{ __('purchasing.search_products') }}</label><input id="purchase-product-search" type="search" wire:model.live.debounce.300ms="productSearch" placeholder="{{ __('purchasing.search_products') }}" class="w-full h-11 px-3 border border-border bg-surface rounded-control text-sm" />
+        <div>
+            <label for="purchase-product-search" class="block text-sm font-bold mb-1">{{ __('purchasing.search_products') }}</label>
+            <input id="purchase-product-search" type="search" maxlength="160" wire:model.live.debounce.300ms="productSearch" x-on:keydown.enter.prevent placeholder="{{ __('purchasing.search_products') }}" aria-describedby="purchase-product-search-help" class="w-full h-11 px-3 border border-border bg-surface rounded-control text-sm" />
+            <p id="purchase-product-search-help" class="mt-1 text-xs text-text-secondary">{{ __('purchasing.product_search_help') }}</p>
+            <p wire:loading wire:target="productSearch" role="status" class="mt-1 text-xs text-text-secondary">{{ __('purchasing.products_searching') }}</p>
+            @if($products->isEmpty())<p role="status" class="mt-1 text-sm text-text-secondary">{{ __('purchasing.no_matching_products') }}</p>@endif
+        </div>
         @foreach($lines as $index => $line)
             <article wire:key="purchase-line-{{ $index }}-{{ $line['product_id'] ?? 'new' }}" class="bg-surface border border-border rounded-card p-4 space-y-3">
                 <div class="flex justify-between items-center gap-2"><h3 class="text-xs font-bold">{{ __('purchasing.line') }} <bdi>{{ $index + 1 }}</bdi></h3><button type="button" wire:click="removeLine({{ $index }})" class="h-10 px-3 text-danger text-xs">{{ __('purchasing.remove_line') }}</button></div>

@@ -27,8 +27,8 @@
             <input id="customers-search" aria-label="{{ __('sales.search') }}" type="text"
                    wire:model.live.debounce.300ms="search"
                    placeholder="{{ __('sales.search') }}"
-                   class="w-full h-9 pl-9 pr-3 rounded-control border border-border bg-canvas text-xs text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden" />
-            <div class="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none text-text-muted">
+                   class="w-full h-11 ps-9 pe-3 rounded-control border border-border bg-canvas text-sm text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden" />
+            <div class="absolute inset-y-0 start-0 ps-2.5 flex items-center pointer-events-none text-text-muted">
                 <x-icon name="search" class="w-4 h-4" />
             </div>
         </div>
@@ -89,11 +89,12 @@
                                 {{ $customer->phone ?? $customer->whatsapp ?? '—' }}
                             </td>
                             <td class="py-3 px-4 font-bold text-text-secondary">
-                                {{ $customer->default_currency_code }}
+                                {{ $customer->default_currency_code ?? '—' }}
                             </td>
                             <td class="py-3 px-4 font-bold" dir="ltr">
                                 <span class="{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::isPositive((string) ($balances[$customer->id] ?? '0')) ? 'text-danger' : 'text-text-primary' }}">
                                     {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency((string) ($balances[$customer->id] ?? '0'), $customer->default_currency_code ?? $company->base_currency_code) }}
+                                    <span class="text-text-muted">{{ $customer->default_currency_code ?? $company->base_currency_code }}</span>
                                     @foreach ($currencyBalances[$customer->id] ?? [] as $currency => $balance)
                                         @if ($currency !== ($customer->default_currency_code ?? $company->base_currency_code))
                                             <span class="block text-xs" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($balance['outstanding'], $currency) }} <span class="text-text-muted">{{ $currency }}</span></span>
@@ -178,6 +179,7 @@
                             <span class="text-text-muted block text-[10px]">{{ __('sales.outstanding_balance') }}</span>
                             <span class="font-bold text-sm {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::isPositive((string) ($balances[$customer->id] ?? '0')) ? 'text-danger' : 'text-text-primary' }}" dir="ltr">
                                 {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency((string) ($balances[$customer->id] ?? '0'), $customer->default_currency_code ?? $company->base_currency_code) }}
+                                <span class="text-text-muted">{{ $customer->default_currency_code ?? $company->base_currency_code }}</span>
                                     @foreach ($currencyBalances[$customer->id] ?? [] as $currency => $balance)
                                         @if ($currency !== ($customer->default_currency_code ?? $company->base_currency_code))
                                             <span class="block text-xs" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($balance['outstanding'], $currency) }} <span class="text-text-muted">{{ $currency }}</span></span>

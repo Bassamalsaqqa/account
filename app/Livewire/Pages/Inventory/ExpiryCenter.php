@@ -6,6 +6,7 @@ namespace App\Livewire\Pages\Inventory;
 
 use App\Actions\Inventory\DisposeExpiredStockAction;
 use App\Domain\Inventory\ValueObjects\Quantity;
+use App\Domain\Sales\Formatters\SalesMoneyFormatter;
 use App\Models\InventoryCostState;
 use App\Models\InventoryLotBalance;
 use App\Models\Product;
@@ -13,7 +14,7 @@ use App\Models\User;
 use App\Models\Warehouse;
 use App\Support\Tenancy\CompanyContext;
 use Brick\Math\BigDecimal;
-use Brick\Math\RoundingMode;
+use Carbon\Carbon;
 use Illuminate\Contracts\View\View;
 use Illuminate\Support\Str;
 use Livewire\Attributes\Layout;
@@ -57,7 +58,7 @@ class ExpiryCenter extends Component
 
     public ?string $errorMessage = null;
 
-    public function mount(): void
+    public function mount(CompanyContext $context): void
     {
         /** @var User $user */
         $user = auth()->user();
@@ -65,7 +66,7 @@ class ExpiryCenter extends Component
             abort(403);
         }
 
-        $this->disposalDate = now()->toDateString();
+        $this->disposalDate = now($context->company()->timezone)->toDateString();
         $this->formIdempotencyKey = (string) Str::ulid();
     }
 
@@ -88,7 +89,7 @@ class ExpiryCenter extends Component
         $this->disposingLotBalance = $lb;
         $this->disposalQuantity = (string) $lb->quantity_base;
         $this->disposalReason = __('inventory.default_disposal_reason');
-        $this->disposalDate = now()->toDateString();
+        $this->disposalDate = now($company->timezone)->toDateString();
         $this->formIdempotencyKey = (string) Str::ulid();
         $this->showDisposalModal = true;
     }
@@ -165,7 +166,9 @@ class ExpiryCenter extends Component
             $query->where('inventory_lot_balances.warehouse_id', $this->warehouseFilter);
         }
 
-        $today = now()->toDateString();
+        $today = now($company->timezone)->toDateString();
+        // Lot expiry is a date-only value: compare calendar days in one timezone.
+        $expiryReferenceDate = Carbon::parse($today)->startOfDay();
 
         if ($this->timeframeFilter === 'expired') {
             $query->whereNotNull('inventory_lots.expiry_date')
@@ -173,19 +176,19 @@ class ExpiryCenter extends Component
         } elseif ($this->timeframeFilter === '7') {
             $query->whereNotNull('inventory_lots.expiry_date')
                 ->where('inventory_lots.expiry_date', '>=', $today)
-                ->where('inventory_lots.expiry_date', '<=', now()->addDays(7)->toDateString());
+                ->where('inventory_lots.expiry_date', '<=', now($company->timezone)->addDays(7)->toDateString());
         } elseif ($this->timeframeFilter === '30') {
             $query->whereNotNull('inventory_lots.expiry_date')
                 ->where('inventory_lots.expiry_date', '>=', $today)
-                ->where('inventory_lots.expiry_date', '<=', now()->addDays(30)->toDateString());
+                ->where('inventory_lots.expiry_date', '<=', now($company->timezone)->addDays(30)->toDateString());
         } elseif ($this->timeframeFilter === '60') {
             $query->whereNotNull('inventory_lots.expiry_date')
                 ->where('inventory_lots.expiry_date', '>=', $today)
-                ->where('inventory_lots.expiry_date', '<=', now()->addDays(60)->toDateString());
+                ->where('inventory_lots.expiry_date', '<=', now($company->timezone)->addDays(60)->toDateString());
         } elseif ($this->timeframeFilter === '90') {
             $query->whereNotNull('inventory_lots.expiry_date')
                 ->where('inventory_lots.expiry_date', '>=', $today)
-                ->where('inventory_lots.expiry_date', '<=', now()->addDays(90)->toDateString());
+                ->where('inventory_lots.expiry_date', '<=', now($company->timezone)->addDays(90)->toDateString());
         } elseif ($this->timeframeFilter === 'custom') {
             if ($this->customFromDate !== '') {
                 $query->where('inventory_lots.expiry_date', '>=', $this->customFromDate);
@@ -206,10 +209,9 @@ class ExpiryCenter extends Component
                 if ($costState !== null) {
                     $qty = BigDecimal::of((string) $lb->quantity_base);
                     $avgCost = BigDecimal::of((string) $costState->average_cost_base);
-                    $val = $qty->multipliedBy($avgCost)->toScale(2, RoundingMode::HALF_UP);
-                    $lotValuations[$lb->id] = (string) $val;
+                    $lotValuations[$lb->id] = SalesMoneyFormatter::format($qty->multipliedBy($avgCost), $company->base_currency_code);
                 } else {
-                    $lotValuations[$lb->id] = '0.00';
+                    $lotValuations[$lb->id] = SalesMoneyFormatter::format('0', $company->base_currency_code);
                 }
             }
         }
@@ -225,6 +227,7 @@ class ExpiryCenter extends Component
             'canViewCost' => $canViewCost,
             'canAdjust' => $canAdjust,
             'company' => $company,
+            'expiryReferenceDate' => $expiryReferenceDate,
         ]);
     }
 }

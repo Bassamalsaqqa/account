@@ -44,7 +44,7 @@ class EnsureCompanyContext
                 return $next($request);
             }
 
-            return redirect()->route('companies.select');
+            return redirect()->guest(route('companies.select'));
         }
 
         return $next($request);

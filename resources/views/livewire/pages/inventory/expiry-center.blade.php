@@ -99,8 +99,8 @@
                 <tbody class="divide-y divide-border">
                     @forelse ($lotBalances as $lb)
                         @php
-                            $days = $lb->lot ? $lb->lot->daysUntilExpiry() : null;
-                            $isExpired = $lb->lot && $lb->lot->isExpired();
+                            $days = $lb->lot ? $lb->lot->daysUntilExpiry($expiryReferenceDate->copy()) : null;
+                            $isExpired = $lb->lot && $lb->lot->isExpired($expiryReferenceDate->copy());
                             $approxVal = $canViewCost ? ($lotValuations[$lb->id] ?? null) : null;
                         @endphp
                         <tr class="hover:bg-surface-soft/60 transition-colors {{ $isExpired ? 'bg-danger-bg/20' : '' }}">

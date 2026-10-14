@@ -359,7 +359,7 @@ class Phase10IdentityRecoveryTest extends TestCase
                 'recovery_code' => $recoveryCode,
             ]);
 
-        $firstResponse->assertRedirect('/settings');
+        $firstResponse->assertRedirect('/dashboard');
         $this->assertAuthenticatedAs($user);
 
         $user->refresh();

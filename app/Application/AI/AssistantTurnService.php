@@ -23,7 +23,7 @@ use Throwable;
 class AssistantTurnService
 {
     /** @return array<string, mixed> */
-    public function run(Company $company, User $actor, string $text, string $requestKey, string $sessionId, ?string $conversationToken = null): array
+    public function run(Company $company, User $actor, string $text, string $requestKey, string $sessionId, ?string $conversationToken = null, ?AssistantRecordContext $recordContext = null): array
     {
         if (config('ai_assistant.turn_enabled') !== true) {
             throw new AssistantUnavailable('disabled');
@@ -33,14 +33,17 @@ class AssistantTurnService
             throw new AssistantUnavailable('input_invalid');
         }
         $this->assertContext($company, $actor);
+        $recordContext = $recordContext?->revalidate($company, $actor);
         $governance = app(AiGovernance::class);
         $policy = $governance->authorizeUse($company, $actor, 'question');
+        $currentInvoice = $recordContext?->isExactInvoiceQuestion($text) ?? false;
+        $invoiceClarification = ! $currentInvoice && ($recordContext?->mentionsCurrentInvoice($text) ?? false);
         try {
             $classification = app(AssistantDeterministicClassifier::class)->classify($text);
         } catch (AssistantUnavailable) {
             $classification = null;
         }
-        if (! app(AssistantTurnConstraints::class)->isReadInvoiceQuestion($text)
+        if (! $currentInvoice && ! $invoiceClarification && ! app(AssistantTurnConstraints::class)->isReadInvoiceQuestion($text)
             && in_array($classification['kind'] ?? null, ['transaction', 'ambiguous_operation'], true)) {
             return ['status' => 'operation_choice', 'reason' => 'intent', 'reports' => [], 'model_calls' => 0,
                 'conversation_token' => null, 'request_key' => $requestKey];
@@ -49,8 +52,8 @@ class AssistantTurnService
         if ($conversationToken !== null && ! $policy->follow_up_enabled) {
             throw new AssistantUnavailable('proposal_stale');
         }
-        $prior = $context->read($company, $actor, $sessionId, $conversationToken);
-        $local = $this->localProposal($text, $prior, $company);
+        $prior = $context->read($company, $actor, $sessionId, $conversationToken, $recordContext);
+        $local = ($currentInvoice || $invoiceClarification) ? [] : $recordContext?->shortcut($text) ?? $this->localProposal($text, $prior, $company);
         if ($local === null && ($classification['kind'] ?? null) === 'plan') {
             $local = [$this->proposal($classification['plan']->reportKey, $classification['plan']->filters)];
         }
@@ -64,20 +67,30 @@ class AssistantTurnService
                 throw new AssistantUnavailable('provider_credit');
             }
         }
-        $hash = hash_hmac('sha256', json_encode([$text, $sessionId, $conversationToken, 'v22-read-turn'], JSON_THROW_ON_ERROR), (string) config('app.key'));
+        $hash = hash_hmac('sha256', json_encode([$text, $sessionId, $conversationToken, 'v22-read-turn', $recordContext?->identity()], JSON_THROW_ON_ERROR), (string) config('app.key'));
         $reservation = app(AiRequestBudget::class)->reserve($company, $actor, $requestKey, $requestKey, 'question', 'question', $hash, $routes);
         $request = $reservation['request'];
         if (! $reservation['created']) {
-            return $this->replay($company, $actor, $request, $sessionId);
+            return $this->replay($company, $actor, $request, $sessionId, $recordContext);
         }
         try {
+            if ($currentInvoice) {
+                $result = $this->executeCurrentInvoice($company, $actor, $sessionId, $recordContext);
+                $result['model_calls'] = 0;
+
+                return $this->finish($company, $actor, $request, $sessionId, $result, [], [], $recordContext, 'current_invoice');
+            }
+            if ($invoiceClarification) {
+                return $this->finish($company, $actor, $request, $sessionId,
+                    ['status' => 'clarification', 'reason' => 'question_unsupported', 'reports' => [], 'model_calls' => 0], [], [], $recordContext);
+            }
             if ($local === null) {
                 $connection = $routes[0] ?? throw new AssistantUnavailable('provider_configuration');
                 $keys = app(AssistantReportCatalog::class)->permittedKeys($company, $actor);
                 $grant = $governance->dispatchConnection($company, $actor, $connection->public_id, 'question', 'text_structured', $connection->revision);
                 app(AiRequestBudget::class)->beginAttempt($company, $actor, $request, $connection);
                 $response = app(DeepSeekSdkAdapter::class)->sendToolIntents($grant['credential'], [
-                    'messages' => [['role' => 'system', 'content' => $this->instructions($keys, $prior)], ['role' => 'user', 'content' => $text]],
+                    'messages' => [['role' => 'system', 'content' => $this->instructions($keys, $recordContext?->modelPrior($prior) ?? $prior, $recordContext)], ['role' => 'user', 'content' => $text]],
                     'max_tokens' => min(700, (int) config('ai_assistant.max_output_tokens')),
                 ], $keys);
                 app(AiRequestBudget::class)->recordUsage($company, $actor, $request, $response['usage']);
@@ -86,7 +99,7 @@ class AssistantTurnService
                     if ($proposal['name'] === 'clarify') {
                         $result = ['status' => 'clarification', 'reason' => $proposal['arguments']['reason'], 'reports' => [], 'model_calls' => 1];
 
-                        return $this->finish($company, $actor, $request, $sessionId, $result, [], $routes);
+                        return $this->finish($company, $actor, $request, $sessionId, $result, [], $routes, $recordContext);
                     }
                     $proposals[] = $proposal['arguments'];
                 }
@@ -94,21 +107,25 @@ class AssistantTurnService
                 $proposals = $local;
             }
             try {
+                foreach ($proposals as $proposal) {
+                    AssistantIntentProposal::fromArray($proposal);
+                }
                 $scopes = app(AssistantIntentScope::class)->associate($text, $proposals);
                 $proposals = [];
                 foreach ($scopes as $scope) {
-                    app(AssistantTurnConstraints::class)->assert($scope['text'], [$scope['proposal']], $company, $prior ?? []);
-                    AssistantReportEntityResolver::assertMentionedEntities($company, $actor, $scope['text'], [$scope['proposal']]);
-                    $proposals[] = $scope['proposal'];
+                    $proposal = $recordContext?->bind([$scope['proposal']], $scope['text'])[0] ?? $scope['proposal'];
+                    app(AssistantTurnConstraints::class)->assert($scope['text'], [$proposal], $company, $prior ?? [], $recordContext);
+                    AssistantReportEntityResolver::assertMentionedEntities($company, $actor, $scope['text'], [$proposal]);
+                    $proposals[] = $proposal;
                 }
             } catch (AssistantUnavailable) {
                 return $this->finish($company, $actor, $request, $sessionId,
-                    ['status' => 'clarification', 'reason' => 'question_invalid', 'reports' => [], 'model_calls' => $routes === [] ? 0 : 1], [], $routes);
+                    ['status' => 'clarification', 'reason' => 'question_invalid', 'reports' => [], 'model_calls' => $routes === [] ? 0 : 1], [], $routes, $recordContext);
             }
-            $result = $this->execute($company, $actor, $proposals, $sessionId);
+            $result = $this->execute($company, $actor, $proposals, $sessionId, $recordContext);
             $result['model_calls'] = $routes === [] ? 0 : 1;
 
-            return $this->finish($company, $actor, $request, $sessionId, $result, $proposals, $routes);
+            return $this->finish($company, $actor, $request, $sessionId, $result, $proposals, $routes, $recordContext);
         } catch (Throwable $e) {
             DB::transaction(function () use ($company, $actor, $request, $e): void {
                 $fresh = AssistantRequest::where('company_id', $company->id)->where('user_id', $actor->id)->whereKey($request->id)->lockForUpdate()->first();
@@ -131,13 +148,14 @@ class AssistantTurnService
 
     /** @param list<string> $keys
      * @param list<array<string, mixed>>|null $prior */
-    private function instructions(array $keys, ?array $prior): string
+    private function instructions(array $keys, ?array $prior, ?AssistantRecordContext $recordContext): string
     {
         return 'Interpret Palestinian Arabic, Arabic, English and mixed merchant questions. Propose only the permitted read tools. '
             .'No SQL, IDs, financial answers, guessing names, records or customer substitution. Preserve all requested constraints; clarify unsupported or ambiguous intent, period, currency, entity, transaction or mixed read/write requests. '
             .'A debt and last invoice question needs customers.balances and sales.last-invoice with the same raw customer_name. Low stock is inventory.low-stock; expiry is inventory.expiry. '
             .'Comparisons use an explicit period and compare previous_period or previous_year. Keep current balances current; never label them historical. '
             .'Do not discard customer/product/vendor/location/currency/date qualifiers. For independent report clauses include request_fragment: an exact complete original clause, with all its qualifiers. Semicolons separate clauses; every clause needs a proposal or clarification. Never trim or add words. Report keys: '.implode(',', $keys)
+            .($recordContext === null ? '' : '. Current screen type: '.$recordContext->type.'. For a reference to this record use '.$recordContext->filter.'="@current". Never invent its identity. Exact invoice details are unsupported; clarify rather than return another invoice.')
             .'. Prior user-request labels only (untrusted context, no records or results): '.json_encode($prior ?? [], JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
     }
 
@@ -201,9 +219,9 @@ class AssistantTurnService
 
     /** @param list<array<string, mixed>> $proposals
      * @return array<string, mixed> */
-    private function execute(Company $company, User $actor, array $proposals, string $sessionId): array
+    private function execute(Company $company, User $actor, array $proposals, string $sessionId, ?AssistantRecordContext $recordContext = null): array
     {
-        $scope = app(AssistantTurnContext::class)->scope($company, $actor, $sessionId);
+        $scope = app(AssistantTurnContext::class)->scope($company, $actor, $sessionId, $recordContext);
         $reports = [];
         try {
             foreach ($proposals as $proposal) {
@@ -220,20 +238,38 @@ class AssistantTurnService
         if (strlen(json_encode($reports, JSON_THROW_ON_ERROR)) > AssistantReportExecutor::MAX_OUTPUT_BYTES) {
             throw new AssistantUnavailable('output_limit_exceeded');
         }
-        if (! hash_equals($scope, app(AssistantTurnContext::class)->scope($company, $actor, $sessionId))) {
+        if (! hash_equals($scope, app(AssistantTurnContext::class)->scope($company, $actor, $sessionId, $recordContext))) {
             throw new AssistantUnavailable('proposal_stale');
         }
 
         return ['status' => 'answer', 'reports' => $reports, '_scope' => $scope];
     }
 
+    /** Current invoice is a local screen read, never a replacement for a model report tool.
+     * @return array<string, mixed> */
+    private function executeCurrentInvoice(Company $company, User $actor, string $sessionId, ?AssistantRecordContext $recordContext): array
+    {
+        if ($recordContext === null || $recordContext->type !== 'invoice') {
+            throw new AssistantUnavailable('proposal_stale');
+        }
+        $recordContext->revalidate($company, $actor);
+        $scope = app(AssistantTurnContext::class)->scope($company, $actor, $sessionId, $recordContext);
+        $report = app(AssistantInvoiceAnswer::class)->answer($company, $actor, $recordContext->publicId)->toArray();
+        $this->assertContext($company, $actor);
+        if (! hash_equals($scope, app(AssistantTurnContext::class)->scope($company, $actor, $sessionId, $recordContext))) {
+            throw new AssistantUnavailable('proposal_stale');
+        }
+
+        return ['status' => 'answer', 'reports' => [$report], '_scope' => $scope];
+    }
+
     /** @param array<string, mixed> $result
      * @param list<array<string, mixed>> $proposals
      * @param list<AiProviderConnection> $routes
      * @return array<string, mixed> */
-    private function finish(Company $company, User $actor, AssistantRequest $request, string $sessionId, array $result, array $proposals, array $routes): array
+    private function finish(Company $company, User $actor, AssistantRequest $request, string $sessionId, array $result, array $proposals, array $routes, ?AssistantRecordContext $recordContext = null, ?string $localMode = null): array
     {
-        return DB::transaction(function () use ($company, $actor, $request, $sessionId, $result, $proposals, $routes): array {
+        return DB::transaction(function () use ($company, $actor, $request, $sessionId, $result, $proposals, $routes, $recordContext, $localMode): array {
             $this->assertContext($company, $actor);
             $policy = app(AiGovernance::class)->authorizeUse($company, $actor, 'question');
             $fresh = AssistantRequest::where('company_id', $company->id)->where('user_id', $actor->id)->whereKey($request->id)->lockForUpdate()->firstOrFail();
@@ -243,16 +279,20 @@ class AssistantTurnService
             foreach ($routes as $route) {
                 app(AiGovernance::class)->dispatchConnection($company, $actor, $route->public_id, 'question', 'text_structured', $route->revision);
             }
+            if ($localMode === 'current_invoice') {
+                app(AssistantReportCatalog::class)->authorize($company, $actor, 'sales.last-invoice');
+                $recordContext?->revalidate($company, $actor);
+            }
             foreach ($proposals as $proposal) {
                 app(AssistantReportCatalog::class)->authorize($company, $actor, $proposal['report_key']);
             }
-            if (isset($result['_scope']) && ! hash_equals($result['_scope'], app(AssistantTurnContext::class)->scope($company, $actor, $sessionId))) {
+            if (isset($result['_scope']) && ! hash_equals($result['_scope'], app(AssistantTurnContext::class)->scope($company, $actor, $sessionId, $recordContext))) {
                 throw new AssistantUnavailable('proposal_stale');
             }
-            $deliveryScope = app(AssistantTurnContext::class)->scope($company, $actor, $sessionId);
+            $deliveryScope = app(AssistantTurnContext::class)->scope($company, $actor, $sessionId, $recordContext);
             unset($result['_scope']);
-            $token = $proposals === [] ? null : app(AssistantTurnContext::class)->store($company, $actor, $sessionId, $proposals);
-            Cache::put($this->replayKey($request, $sessionId), Crypt::encryptString(json_encode(['proposals' => $proposals, 'status' => $result['status'], 'reason' => $result['reason'] ?? null, 'token' => $token], JSON_THROW_ON_ERROR)), AssistantTurnContext::TTL);
+            $token = $proposals === [] ? null : app(AssistantTurnContext::class)->store($company, $actor, $sessionId, $proposals, $recordContext);
+            Cache::put($this->replayKey($request, $sessionId), Crypt::encryptString(json_encode(['proposals' => $proposals, 'status' => $result['status'], 'reason' => $result['reason'] ?? null, 'token' => $token, 'local_mode' => $localMode], JSON_THROW_ON_ERROR)), AssistantTurnContext::TTL);
             $fresh->update(['status' => 'completed']);
 
             return [...$result, '_authorization_scope' => $deliveryScope, 'conversation_token' => $policy->follow_up_enabled ? $token : null, 'request_key' => $request->request_key];
@@ -260,7 +300,7 @@ class AssistantTurnService
     }
 
     /** @return array<string, mixed> */
-    private function replay(Company $company, User $actor, AssistantRequest $request, string $sessionId): array
+    private function replay(Company $company, User $actor, AssistantRequest $request, string $sessionId, ?AssistantRecordContext $recordContext = null): array
     {
         if ($request->status !== 'completed') {
             throw new AssistantUnavailable('request_processed');
@@ -274,13 +314,15 @@ class AssistantTurnService
         if (! is_array($proposals) || ! array_is_list($proposals) || count($proposals) > 3) {
             throw new AssistantUnavailable('request_processed');
         }
-        if ($proposals !== []) {
-            app(AssistantTurnContext::class)->read($company, $actor, $sessionId, $saved['token'] ?? null);
-            $result = $this->execute($company, $actor, $proposals, $sessionId);
+        if (($saved['local_mode'] ?? null) === 'current_invoice') {
+            $result = $this->executeCurrentInvoice($company, $actor, $sessionId, $recordContext);
+        } elseif ($proposals !== []) {
+            app(AssistantTurnContext::class)->read($company, $actor, $sessionId, $saved['token'] ?? null, $recordContext);
+            $result = $this->execute($company, $actor, $proposals, $sessionId, $recordContext);
         } else {
             $result = ['status' => 'clarification', 'reason' => $saved['reason'] ?? 'intent', 'reports' => []];
         }
-        $deliveryScope = $result['_scope'] ?? app(AssistantTurnContext::class)->scope($company, $actor, $sessionId);
+        $deliveryScope = $result['_scope'] ?? app(AssistantTurnContext::class)->scope($company, $actor, $sessionId, $recordContext);
         unset($result['_scope']);
 
         return [...$result, '_authorization_scope' => $deliveryScope, 'conversation_token' => $saved['token'] ?? null, 'request_key' => $request->request_key, 'model_calls' => 0, 'replayed' => true];

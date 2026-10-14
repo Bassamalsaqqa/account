@@ -21,3 +21,7 @@ Enter a masked API key, explicitly approve the disclosed cost/privacy terms, con
 ## Authorities
 
 The Owner's 12 October 2026 final product directive supersedes earlier multi-provider onboarding requirements. Accounting policy remains governed by the Master Specification, Engineering Blueprint and accepted ADRs. Protected originals remain untouched.
+
+## 14 October product improvement authority
+
+The Owner authorizes a substantial Dashboard redesign and coherent improvements to the important existing business screens. This supersedes the earlier restriction to assistant-only visual work. Arabic RTL is primary; English LTR, keyboard use and mobile must be equally usable. Prioritize understanding performance, money owed, cash, stock concerns and the next useful action. Reuse canonical reports and workflows. Current-record assistant context and deterministic, actionable daily insights remain permission-scoped; conversation memory is temporary. No new accounting engine, provider, paid call, production financial mutation, merge or deployment is part of this source-development task.

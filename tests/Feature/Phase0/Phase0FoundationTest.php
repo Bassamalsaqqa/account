@@ -210,7 +210,7 @@ class Phase0FoundationTest extends TestCase
                 'recovery_code' => $recoveryCode,
             ]);
 
-        $response->assertRedirect('/settings');
+        $response->assertRedirect('/dashboard');
         $this->assertAuthenticatedAs($user);
     }
 
