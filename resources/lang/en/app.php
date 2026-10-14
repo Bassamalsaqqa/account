@@ -1,6 +1,9 @@
 <?php
 
 return [
+    'workspace' => 'Business workspace',
+    'skip_content' => 'Skip to main content',
+
     'app_name' => 'Small Trader',
     'app_subtitle' => 'Accounting & Business Management',
     'main_branch' => 'Company',

@@ -139,7 +139,7 @@ fi
 normalize_static_build_permissions "$APP_DIR/public/build"
 
 echo "===> [2/7] Entering maintenance mode..."
-"$PHP_BIN" artisan down --retry=60 || true
+"$PHP_BIN" artisan down --retry=60
 MAINTENANCE_ACTIVE=1
 
 echo "===> [3/7] Installing production PHP dependencies (under PHP 8.4)..."

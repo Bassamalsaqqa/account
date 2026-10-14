@@ -27,8 +27,10 @@
         <link rel="apple-touch-icon" href="{{ asset('icons/icon-192.png') }}">
     @endif
 </head>
-<body class="bg-canvas text-text-primary antialiased font-arabic selection:bg-primary-100 selection:text-primary min-h-screen"
-      x-data="{ mobileMenuOpen: false }" @keydown.escape.window="mobileMenuOpen = false">
+<body class="business-app bg-canvas text-text-primary antialiased font-arabic selection:bg-primary-100 selection:text-primary min-h-screen"
+      x-data="{ mobileMenuOpen: false, mobileLayout: window.innerWidth < 1024 }"
+      @resize.window="mobileLayout = window.innerWidth < 1024"
+      @keydown.escape.window="if (mobileMenuOpen) { mobileMenuOpen = false; $refs.navToggle?.focus(); }">
 
     @php
         $isRtl = app()->getLocale() === 'ar';
@@ -53,7 +55,8 @@
     <aside id="app-sidebar" class="fixed top-0 bottom-0 z-50 w-[264px] bg-white transition-transform duration-200 ease-in-out flex flex-col
                   {{ $isRtl ? 'right-0 border-l border-border' : 'left-0 border-r border-border' }}
                   {{ $isRtl ? 'max-lg:translate-x-full' : 'max-lg:-translate-x-full' }}"
-           :class="mobileMenuOpen ? 'translate-x-0!' : ''">
+           :class="mobileMenuOpen ? 'translate-x-0!' : ''"
+           :inert="mobileLayout && !mobileMenuOpen">
 
         <!-- Sidebar Header / Brand -->
         <div class="p-4 pb-3 border-b border-border">
@@ -95,12 +98,12 @@
         </div>
 
         <!-- Sidebar Navigation Items -->
-        <div class="flex-1 overflow-y-auto px-3 py-3 space-y-4 text-xs">
+        <div class="flex-1 overflow-y-auto px-3 py-3 space-y-4 text-sm">
 
             <!-- Dashboard -->
             <div class="space-y-0.5">
                 <a href="{{ route('dashboard') }}"
-                   class="flex items-center justify-between h-[39px] px-3 rounded-control text-text-secondary hover:bg-surface-soft hover:text-text-primary font-semibold transition-colors
+                   class="flex items-center justify-between min-h-11 px-3 rounded-control text-text-secondary hover:bg-surface-soft hover:text-text-primary font-semibold transition-colors
                           {{ request()->routeIs('dashboard') ? 'bg-primary-50 text-primary! font-bold shadow-[inset_3px_0_0_#255fd6] rtl:shadow-[inset_-3px_0_0_#255fd6]' : '' }}">
                     <div class="flex items-center gap-2.5">
                         <x-icon name="dashboard" class="w-4.5 h-4.5" />
@@ -110,7 +113,7 @@
             </div>
 
             @if($sidebarCompany && app(\App\Application\Reporting\Presentation\ReportRegistry::class)->hasVisible($sidebarCompany))
-            <a href="{{ route('reports.index') }}" class="flex items-center gap-2.5 h-[39px] px-3 rounded-control text-sm font-semibold text-text-secondary hover:bg-surface-soft {{ request()->routeIs('reports.*') ? 'bg-primary-50 text-primary' : '' }}"><x-icon name="chart" class="w-4.5 h-4.5" /><span>{{ __('reports.title') }}</span></a>
+            <a href="{{ route('reports.index') }}" class="flex items-center gap-2.5 min-h-11 px-3 rounded-control text-sm font-semibold text-text-secondary hover:bg-surface-soft {{ request()->routeIs('reports.*') ? 'bg-primary-50 text-primary' : '' }}"><x-icon name="chart" class="w-4.5 h-4.5" /><span>{{ __('reports.title') }}</span></a>
             @endif
 
             <!-- Sales & Customers -->
@@ -120,7 +123,7 @@
                 </div>
                 <div class="space-y-0.5">
                     <a href="{{ route('invoices.index') }}"
-                       class="flex items-center justify-between h-[38px] px-3 rounded-control text-text-secondary hover:bg-surface-soft hover:text-text-primary font-semibold transition-colors
+                       class="flex items-center justify-between min-h-11 px-3 rounded-control text-text-secondary hover:bg-surface-soft hover:text-text-primary font-semibold transition-colors
                               {{ request()->routeIs('invoices.*') ? 'bg-primary-50 text-primary! font-bold shadow-[inset_3px_0_0_#255fd6] rtl:shadow-[inset_-3px_0_0_#255fd6]' : '' }}">
                         <div class="flex items-center gap-2.5">
                             <x-icon name="receipt" class="w-4.5 h-4.5" />
@@ -128,7 +131,7 @@
                         </div>
                     </a>
                     <a href="{{ route('quotations.index') }}"
-                       class="flex items-center justify-between h-[38px] px-3 rounded-control text-text-secondary hover:bg-surface-soft hover:text-text-primary font-semibold transition-colors
+                       class="flex items-center justify-between min-h-11 px-3 rounded-control text-text-secondary hover:bg-surface-soft hover:text-text-primary font-semibold transition-colors
                               {{ request()->routeIs('quotations.*') ? 'bg-primary-50 text-primary! font-bold shadow-[inset_3px_0_0_#255fd6] rtl:shadow-[inset_-3px_0_0_#255fd6]' : '' }}">
                         <div class="flex items-center gap-2.5">
                             <x-icon name="quote" class="w-4.5 h-4.5" />
@@ -136,7 +139,7 @@
                         </div>
                     </a>
                     <a href="{{ route('returns.index') }}"
-                       class="flex items-center justify-between h-[38px] px-3 rounded-control text-text-secondary hover:bg-surface-soft hover:text-text-primary font-semibold transition-colors
+                       class="flex items-center justify-between min-h-11 px-3 rounded-control text-text-secondary hover:bg-surface-soft hover:text-text-primary font-semibold transition-colors
                               {{ request()->routeIs('returns.*') ? 'bg-primary-50 text-primary! font-bold shadow-[inset_3px_0_0_#255fd6] rtl:shadow-[inset_-3px_0_0_#255fd6]' : '' }}">
                         <div class="flex items-center gap-2.5">
                             <x-icon name="history" class="w-4.5 h-4.5" />
@@ -144,7 +147,7 @@
                         </div>
                     </a>
                     <a href="{{ route('payments.index') }}"
-                       class="flex items-center justify-between h-[38px] px-3 rounded-control text-text-secondary hover:bg-surface-soft hover:text-text-primary font-semibold transition-colors
+                       class="flex items-center justify-between min-h-11 px-3 rounded-control text-text-secondary hover:bg-surface-soft hover:text-text-primary font-semibold transition-colors
                               {{ request()->routeIs('payments.*') ? 'bg-primary-50 text-primary! font-bold shadow-[inset_3px_0_0_#255fd6] rtl:shadow-[inset_-3px_0_0_#255fd6]' : '' }}">
                         <div class="flex items-center gap-2.5">
                             <x-icon name="money" class="w-4.5 h-4.5" />
@@ -152,7 +155,7 @@
                         </div>
                     </a>
                     <a href="{{ route('customers.index') }}"
-                       class="flex items-center justify-between h-[38px] px-3 rounded-control text-text-secondary hover:bg-surface-soft hover:text-text-primary font-semibold transition-colors
+                       class="flex items-center justify-between min-h-11 px-3 rounded-control text-text-secondary hover:bg-surface-soft hover:text-text-primary font-semibold transition-colors
                               {{ request()->routeIs('customers.*') ? 'bg-primary-50 text-primary! font-bold shadow-[inset_3px_0_0_#255fd6] rtl:shadow-[inset_-3px_0_0_#255fd6]' : '' }}">
                         <div class="flex items-center gap-2.5">
                             <x-icon name="users" class="w-4.5 h-4.5" />
@@ -169,13 +172,13 @@
                 </div>
                 <div class="space-y-0.5">
                     @can('purchasing.purchase.view')
-                    <a href="{{ route('purchases.index') }}" class="flex items-center justify-between h-[38px] px-3 rounded-control text-text-secondary hover:bg-surface-soft hover:text-text-primary font-semibold {{ request()->routeIs('purchases.*') ? 'bg-primary-50 text-primary!' : '' }}">
+                    <a href="{{ route('purchases.index') }}" class="flex items-center justify-between min-h-11 px-3 rounded-control text-text-secondary hover:bg-surface-soft hover:text-text-primary font-semibold {{ request()->routeIs('purchases.*') ? 'bg-primary-50 text-primary!' : '' }}">
                         <div class="flex items-center gap-2.5">
                             <x-icon name="cart" class="w-4.5 h-4.5" />
                             <span>{{ __('app.nav_purchase_invoices') }}</span>
                         </div>
                     </a>
-                    <a href="{{ route('purchase-returns.index') }}" class="flex items-center justify-between h-[38px] px-3 rounded-control text-text-secondary hover:bg-surface-soft hover:text-text-primary font-semibold {{ request()->routeIs('purchase-returns.*') ? 'bg-primary-50 text-primary!' : '' }}">
+                    <a href="{{ route('purchase-returns.index') }}" class="flex items-center justify-between min-h-11 px-3 rounded-control text-text-secondary hover:bg-surface-soft hover:text-text-primary font-semibold {{ request()->routeIs('purchase-returns.*') ? 'bg-primary-50 text-primary!' : '' }}">
                         <div class="flex items-center gap-2.5">
                             <x-icon name="history" class="w-4.5 h-4.5" />
                             <span>{{ __('app.nav_purchase_returns') }}</span>
@@ -189,7 +192,7 @@
                         auth()->user()->can('vendors.statement.view')
                     ))
                     <a href="{{ route('vendor-payments.index') }}"
-                       class="flex items-center justify-between h-[38px] px-3 rounded-control text-text-secondary hover:bg-surface-soft hover:text-text-primary font-semibold transition-colors
+                       class="flex items-center justify-between min-h-11 px-3 rounded-control text-text-secondary hover:bg-surface-soft hover:text-text-primary font-semibold transition-colors
                               {{ request()->routeIs('vendor-payments.*') ? 'bg-primary-50 text-primary! font-bold shadow-[inset_3px_0_0_#255fd6] rtl:shadow-[inset_-3px_0_0_#255fd6]' : '' }}">
                         <div class="flex items-center gap-2.5">
                             <x-icon name="money" class="w-4.5 h-4.5" />
@@ -199,7 +202,7 @@
                     @endif
                     @can('vendors.view')
                     <a href="{{ route('vendors.index') }}"
-                       class="flex items-center justify-between h-[38px] px-3 rounded-control text-text-secondary hover:bg-surface-soft hover:text-text-primary font-semibold transition-colors
+                       class="flex items-center justify-between min-h-11 px-3 rounded-control text-text-secondary hover:bg-surface-soft hover:text-text-primary font-semibold transition-colors
                               {{ request()->routeIs('vendors.*') ? 'bg-primary-50 text-primary! font-bold shadow-[inset_3px_0_0_#255fd6] rtl:shadow-[inset_-3px_0_0_#255fd6]' : '' }}">
                         <div class="flex items-center gap-2.5">
                             <x-icon name="truck" class="w-4.5 h-4.5" />
@@ -208,7 +211,7 @@
                     </a>
                     @endcan
                     <a href="{{ route('products.index') }}"
-                       class="flex items-center justify-between h-[38px] px-3 rounded-control text-text-secondary hover:bg-surface-soft hover:text-text-primary font-semibold transition-colors
+                       class="flex items-center justify-between min-h-11 px-3 rounded-control text-text-secondary hover:bg-surface-soft hover:text-text-primary font-semibold transition-colors
                               {{ request()->routeIs('products.*') ? 'bg-primary-50 text-primary! font-bold shadow-[inset_3px_0_0_#255fd6] rtl:shadow-[inset_-3px_0_0_#255fd6]' : '' }}">
                         <div class="flex items-center gap-2.5">
                             <x-icon name="box" class="w-4.5 h-4.5" />
@@ -225,7 +228,7 @@
                     <a href="{{ route('money.overview') }}" class="flex items-center gap-3 px-3 py-2 text-sm rounded-control hover:bg-primary-50 text-text-secondary">{{ __('money.title') }}</a>
                     @endif
                     <a href="{{ route('inventory.overview') }}"
-                       class="flex items-center justify-between h-[38px] px-3 rounded-control text-text-secondary hover:bg-surface-soft hover:text-text-primary font-semibold transition-colors
+                       class="flex items-center justify-between min-h-11 px-3 rounded-control text-text-secondary hover:bg-surface-soft hover:text-text-primary font-semibold transition-colors
                               {{ request()->routeIs('inventory.overview', 'inventory.movements', 'inventory.adjustments.*', 'inventory.transfers.*') ? 'bg-primary-50 text-primary! font-bold shadow-[inset_3px_0_0_#255fd6] rtl:shadow-[inset_-3px_0_0_#255fd6]' : '' }}">
                         <div class="flex items-center gap-2.5">
                             <x-icon name="store" class="w-4.5 h-4.5" />
@@ -233,7 +236,7 @@
                         </div>
                     </a>
                     <a href="{{ route('inventory.expiry') }}"
-                       class="flex items-center justify-between h-[38px] px-3 rounded-control text-text-secondary hover:bg-surface-soft hover:text-text-primary font-semibold transition-colors
+                       class="flex items-center justify-between min-h-11 px-3 rounded-control text-text-secondary hover:bg-surface-soft hover:text-text-primary font-semibold transition-colors
                               {{ request()->routeIs('inventory.expiry') ? 'bg-primary-50 text-primary! font-bold shadow-[inset_3px_0_0_#255fd6] rtl:shadow-[inset_-3px_0_0_#255fd6]' : '' }}">
                         <div class="flex items-center gap-2.5">
                             <x-icon name="expiry" class="w-4.5 h-4.5" />
@@ -250,20 +253,20 @@
                 </div>
                 <div class="space-y-0.5">
                     @if(auth()->user()->can('money.cash.view') || auth()->user()->can('money.bank.view'))
-                    <a href="{{ route('money.overview') }}" class="flex items-center gap-2.5 h-[38px] px-3 rounded-control text-text-secondary hover:bg-primary-50">
+                    <a href="{{ route('money.overview') }}" class="flex items-center gap-2.5 min-h-11 px-3 rounded-control text-text-secondary hover:bg-primary-50">
                         <x-icon name="bank" class="w-4.5 h-4.5" />
                         <span>{{ __('app.nav_treasury_banks') }}</span>
                     </a>
                     @endif
                     @can('money.check.view')
-                    <a href="{{ route('money.checks.index') }}" class="flex items-center gap-2.5 h-[38px] px-3 rounded-control text-text-secondary hover:bg-primary-50">
+                    <a href="{{ route('money.checks.index') }}" class="flex items-center gap-2.5 min-h-11 px-3 rounded-control text-text-secondary hover:bg-primary-50">
                         <x-icon name="check" class="w-4.5 h-4.5" />
                         <span>{{ __('app.nav_checkbook') }}</span>
                     </a>
                     @endcan
                     @can('money.expense.view')
                     <a href="{{ route('expenses.index') }}"
-                       class="flex items-center justify-between h-[38px] px-3 rounded-control text-text-secondary hover:bg-surface-soft hover:text-text-primary font-semibold transition-colors
+                       class="flex items-center justify-between min-h-11 px-3 rounded-control text-text-secondary hover:bg-surface-soft hover:text-text-primary font-semibold transition-colors
                               {{ request()->routeIs('expenses.*') ? 'bg-primary-50 text-primary! font-bold shadow-[inset_3px_0_0_#255fd6] rtl:shadow-[inset_-3px_0_0_#255fd6]' : '' }}">
                         <div class="flex items-center gap-2.5">
                             <x-icon name="receipt" class="w-4.5 h-4.5" />
@@ -271,12 +274,7 @@
                         </div>
                     </a>
                     @endcan
-                    <span title="{{ __('app.future_module_notice') }}" class="flex items-center justify-between h-[38px] px-3 rounded-control text-text-muted opacity-60 cursor-not-allowed">
-                        <div class="flex items-center gap-2.5">
-                            <x-icon name="chart" class="w-4.5 h-4.5" />
-                            <span>{{ __('app.nav_financial_reports') }}</span>
-                        </div>
-                    </span>
+
                 </div>
             </div>
 
@@ -288,7 +286,7 @@
                 </div>
                 <div class="space-y-0.5">
                     <a href="{{ route('employees.index') }}"
-                       class="flex items-center justify-between h-[38px] px-3 rounded-control text-text-secondary hover:bg-surface-soft hover:text-text-primary font-semibold transition-colors
+                       class="flex items-center justify-between min-h-11 px-3 rounded-control text-text-secondary hover:bg-surface-soft hover:text-text-primary font-semibold transition-colors
                               {{ request()->routeIs('employees.*', 'payroll.*') ? 'bg-primary-50 text-primary! font-bold shadow-[inset_3px_0_0_#255fd6] rtl:shadow-[inset_-3px_0_0_#255fd6]' : '' }}">
                         <div class="flex items-center gap-2.5">
                             <x-icon name="users" class="w-4.5 h-4.5" />
@@ -306,7 +304,7 @@
                 </div>
                 <div class="space-y-0.5">
                     <a href="{{ route('settings.index') }}"
-                       class="flex items-center justify-between h-[39px] px-3 rounded-control font-semibold transition-colors
+                       class="flex items-center justify-between min-h-11 px-3 rounded-control font-semibold transition-colors
                               {{ request()->routeIs('settings.*') ? 'bg-primary-50 text-primary font-bold shadow-[inset_3px_0_0_#255fd6] rtl:shadow-[inset_-3px_0_0_#255fd6]' : 'text-text-secondary hover:bg-surface-soft hover:text-text-primary' }}">
                         <div class="flex items-center gap-2.5">
                             <x-icon name="settings" class="w-4.5 h-4.5 text-primary" />
@@ -318,7 +316,7 @@
         </div>
 
         <div class="p-3 px-4 border-t border-border text-[11px] text-text-muted bg-surface-soft/40">
-            {{ __('app.phase_zero_preview') }}
+            {{ __('app.workspace') }}
         </div>
     </aside>
 
@@ -329,38 +327,37 @@
 
         <!-- Left / Start Area (Mobile button + Search) -->
         <div class="flex items-center gap-3 flex-1 min-w-0">
-            <button @click="mobileMenuOpen = !mobileMenuOpen" :aria-expanded="mobileMenuOpen.toString()" aria-controls="app-sidebar" aria-label="{{ __('app.open_navigation') }}"
+            <button x-ref="navToggle" @click="mobileMenuOpen = !mobileMenuOpen" :aria-expanded="mobileMenuOpen.toString()" aria-controls="app-sidebar" aria-label="{{ __('app.open_navigation') }}"
                     type="button"
                     class="lg:hidden w-10 h-10 rounded-control border border-border flex items-center justify-center text-text-secondary hover:bg-surface-soft">
                 <x-icon name="menu" class="w-5 h-5" />
             </button>
 
-            <!-- Search Field -->
-            <div class="relative w-full max-w-[480px]">
-                <div class="flex items-center h-10 px-3 rounded-control bg-surface-soft border border-transparent focus-within:border-primary/40 focus-within:bg-white focus-within:shadow-focus-primary transition-all">
-                    <x-icon name="search" class="w-4.5 h-4.5 text-text-muted shrink-0" />
-                    <input type="text"
-                           id="globalSearchInput"
-                           disabled aria-disabled="true"
-                           aria-label="{{ __('app.search_future') }}"
-                           title="{{ __('app.search_future') }}"
-                           placeholder="{{ __('app.search_future') }}"
-                           class="w-full bg-transparent border-0 text-xs px-2.5 text-text-primary placeholder:text-text-muted focus:ring-0 focus:outline-none" />
-                </div>
-            </div>
+            <a href="{{ route('dashboard') }}" class="min-w-0 truncate text-sm font-bold text-text-primary hover:text-primary">
+                {{ $activeCompany?->displayName() ?? __('app.app_name') }}
+            </a>
+        </div>
         </div>
 
         <!-- Right / End Area (Actions + User Profile) -->
         <div class="flex items-center gap-2 sm:gap-3 shrink-0">
 
-            <!-- Quick Add Button -->
-            <button type="button" disabled aria-disabled="true"
-                    title="{{ __('app.future_module_notice') }}"
-                    class="hidden sm:flex items-center gap-1.5 h-[38px] px-3 rounded-control bg-primary/55 text-white text-xs font-bold cursor-not-allowed">
-                <x-icon name="plus" class="w-4 h-4" />
-                <span>{{ __('app.quick_add') }}</span>
-                <x-icon name="expand" class="w-3 h-3 opacity-80" />
-            </button>
+            @if(auth()->user()->can('sales.invoice.create') || auth()->user()->can('purchasing.purchase.create'))
+                <details class="relative app-quick-add">
+                    <summary class="flex min-h-11 cursor-pointer items-center gap-1.5 rounded-control bg-primary px-3 text-sm font-bold text-white hover:bg-primary-hover">
+                        <x-icon name="plus" class="w-4 h-4" aria-hidden="true" />
+                        <span class="hidden sm:inline">{{ __('app.quick_add') }}</span>
+                    </summary>
+                    <div class="absolute end-0 mt-2 w-52 rounded-card border border-border bg-surface p-2 shadow-panel z-50">
+                        @can('sales.invoice.create')
+                            <a href="{{ route('invoices.create') }}" class="block rounded-control px-3 py-3 text-sm hover:bg-surface-soft">{{ __('dashboard.new_sale') }}</a>
+                        @endcan
+                        @can('purchasing.purchase.create')
+                            <a href="{{ route('purchases.create') }}" class="block rounded-control px-3 py-3 text-sm hover:bg-surface-soft">{{ __('dashboard.new_purchase') }}</a>
+                        @endcan
+                    </div>
+                </details>
+            @endif
 
             <!-- Language Switcher -->
             @if ($isRtl)
@@ -369,7 +366,7 @@
                         @csrf
                         <input type="hidden" name="locale" value="en">
                         <button type="submit"
-                           class="h-[38px] px-2.5 rounded-control border border-border bg-white text-xs font-semibold text-text-secondary hover:bg-surface-soft hover:text-text-primary flex items-center gap-1.5 transition-colors cursor-pointer"
+                           class="min-h-11 px-2.5 rounded-control border border-border bg-white text-xs font-semibold text-text-secondary hover:bg-surface-soft hover:text-text-primary flex items-center gap-1.5 transition-colors cursor-pointer"
                            title="{{ __('app.switch_language') }}">
                             <x-icon name="globe" class="w-4 h-4 text-text-muted" />
                             <span class="font-bold">EN</span>
@@ -381,25 +378,13 @@
                     @csrf
                     <input type="hidden" name="locale" value="ar">
                     <button type="submit"
-                       class="h-[38px] px-2.5 rounded-control border border-border bg-white text-xs font-semibold text-text-secondary hover:bg-surface-soft hover:text-text-primary flex items-center gap-1.5 transition-colors cursor-pointer"
+                       class="min-h-11 px-2.5 rounded-control border border-border bg-white text-xs font-semibold text-text-secondary hover:bg-surface-soft hover:text-text-primary flex items-center gap-1.5 transition-colors cursor-pointer"
                        title="{{ __('app.switch_language') }}">
                         <x-icon name="globe" class="w-4 h-4 text-text-muted" />
                         <span class="font-bold">عربي</span>
                     </button>
                 </form>
             @endif
-
-            <!-- Notifications Button -->
-            <button type="button" disabled aria-disabled="true" title="{{ __('app.future_module_notice') }}"
-                    class="relative w-[38px] h-[38px] rounded-control text-text-muted opacity-60 cursor-not-allowed flex items-center justify-center">
-                <x-icon name="bell" class="w-5 h-5" />
-            </button>
-
-            <!-- Help Button -->
-            <button type="button" disabled aria-disabled="true" title="{{ __('app.future_module_notice') }}"
-                    class="hidden sm:flex w-[38px] h-[38px] rounded-control text-text-muted opacity-60 cursor-not-allowed items-center justify-center">
-                <x-icon name="help" class="w-5 h-5" />
-            </button>
 
             <!-- User Menu Dropdown -->
             <div class="relative" x-data="{ openUserMenu: false }" @click.outside="openUserMenu = false">
@@ -446,7 +431,8 @@
 
     <!-- Main Content Wrapper -->
     <div class="min-h-screen pt-[64px] {{ $isRtl ? 'lg:mr-[264px]' : 'lg:ml-[264px]' }}">
-        <main class="max-w-[1440px] mx-auto p-4 sm:p-6 lg:p-8">
+        <a href="#app-main" class="app-skip-link">{{ __('app.skip_content') }}</a>
+        <main id="app-main" tabindex="-1" class="max-w-[1440px] mx-auto p-4 sm:p-6 lg:p-8">
             <livewire:ai.assistant-launcher :context="request()->routeIs('invoices.create') ? 'sales' : (request()->routeIs('purchases.create') ? 'purchase' : 'auto')" />
             {{ $slot }}
         </main>

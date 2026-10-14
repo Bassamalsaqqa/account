@@ -18,10 +18,10 @@ final class AssistantTurnContext
     public const int TTL = 1200;
 
     /** @param list<array<string, mixed>> $proposals */
-    public function store(Company $company, User $actor, string $sessionId, array $proposals): string
+    public function store(Company $company, User $actor, string $sessionId, array $proposals, ?AssistantRecordContext $recordContext = null): string
     {
         $token = (string) Str::uuid();
-        $json = json_encode(['scope' => $this->scope($company, $actor, $sessionId), 'proposals' => $proposals], JSON_THROW_ON_ERROR);
+        $json = json_encode(['scope' => $this->scope($company, $actor, $sessionId, $recordContext), 'proposals' => $proposals], JSON_THROW_ON_ERROR);
         if (strlen($json) > 8192) {
             throw new AssistantUnavailable('input_invalid');
         }
@@ -31,7 +31,7 @@ final class AssistantTurnContext
     }
 
     /** @return list<array<string, mixed>>|null */
-    public function read(Company $company, User $actor, string $sessionId, ?string $token): ?array
+    public function read(Company $company, User $actor, string $sessionId, ?string $token, ?AssistantRecordContext $recordContext = null): ?array
     {
         if ($token === null) {
             return null;
@@ -46,7 +46,7 @@ final class AssistantTurnContext
                 throw new AssistantUnavailable('proposal_stale');
             }
             $data = json_decode(Crypt::decryptString($cipher), true, 12, JSON_THROW_ON_ERROR);
-            if (! is_array($data) || ($data['scope'] ?? null) !== $this->scope($company, $actor, $sessionId)
+            if (! is_array($data) || ($data['scope'] ?? null) !== $this->scope($company, $actor, $sessionId, $recordContext)
                 || ! is_array($data['proposals'] ?? null) || ! array_is_list($data['proposals']) || count($data['proposals']) > 3) {
                 throw new AssistantUnavailable('proposal_stale');
             }
@@ -68,7 +68,7 @@ final class AssistantTurnContext
     }
 
     /** Recomputed each turn; permission downgrade invalidates rather than redelivers stored data. */
-    public function scope(Company $company, User $actor, string $sessionId): string
+    public function scope(Company $company, User $actor, string $sessionId, ?AssistantRecordContext $recordContext = null): string
     {
         $governance = app(AiGovernance::class);
         $policy = $governance->authorizeUse($company, $actor, 'question');
@@ -79,7 +79,9 @@ final class AssistantTurnContext
             $permissions[$permission] = in_array($permission, $freshPermissions, true);
         }
 
-        return hash_hmac('sha256', json_encode([$company->id, $actor->id, $sessionId, $policy->revision, $keys, $permissions], JSON_THROW_ON_ERROR), (string) config('app.key'));
+        $identity = $recordContext?->revalidate($company, $actor)->identity();
+
+        return hash_hmac('sha256', json_encode([$company->id, $actor->id, $sessionId, $policy->revision, $keys, $permissions, $identity], JSON_THROW_ON_ERROR), (string) config('app.key'));
     }
 
     private function key(Company $company, User $actor, string $sessionId, string $token): string

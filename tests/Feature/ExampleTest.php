@@ -13,7 +13,7 @@ class ExampleTest extends TestCase
     {
         $response = $this->get('/');
 
-        // Root redirects to settings (which requires auth and redirects to login)
-        $response->assertRedirect('/settings');
+        // The Dashboard destination remains authenticated.
+        $response->assertRedirect('/dashboard');
     }
 }

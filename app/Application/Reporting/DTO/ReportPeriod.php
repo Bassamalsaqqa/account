@@ -67,6 +67,22 @@ final readonly class ReportPeriod
         self::validateTimezoneString($this->timezone);
     }
 
+    /** The adjacent complete calendar months, or an equally long preceding date range. */
+    public function previous(): self
+    {
+        $start = CarbonImmutable::parse($this->startDate, $this->timezone)->startOfDay();
+        $end = CarbonImmutable::parse($this->endDate, $this->timezone)->startOfDay();
+        if ($start->day === 1 && $end->format('Y-m-d') === $end->endOfMonth()->format('Y-m-d')) {
+            $months = ($end->year - $start->year) * 12 + $end->month - $start->month + 1;
+            $previousStart = $start->subMonthsNoOverflow($months)->startOfMonth();
+        } else {
+            $days = (new \DateTimeImmutable($this->startDate))->diff(new \DateTimeImmutable($this->endDate))->days;
+            $previousStart = $start->subDays((int) $days + 1);
+        }
+
+        return new self(self::PRESET_CUSTOM, $previousStart->format('Y-m-d'), $start->subDay()->format('Y-m-d'), $this->timezone);
+    }
+
     /**
      * Resolve preset period in Company timezone.
      */

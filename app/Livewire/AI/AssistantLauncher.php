@@ -11,6 +11,7 @@ use App\Application\AI\AssistantDeterministicClassifier;
 use App\Application\AI\AssistantDraftTurn;
 use App\Application\AI\AssistantQuestionContext;
 use App\Application\AI\AssistantQuestionPlanner;
+use App\Application\AI\AssistantRecordContext;
 use App\Application\AI\AssistantReportCatalog;
 use App\Application\AI\AssistantReportExecutor;
 use App\Application\AI\AssistantReportPlan;
@@ -88,6 +89,10 @@ final class AssistantLauncher extends Component
     #[Locked]
     public array $turnReports = [];
 
+    /** @var list<array<string,mixed>> */
+    #[Locked]
+    public array $briefingInsights = [];
+
     #[Locked]
     public bool $isBriefing = false;
 
@@ -126,6 +131,12 @@ final class AssistantLauncher extends Component
     #[Locked]
     public ?string $questionSessionHash = null;
 
+    #[Locked]
+    public ?string $recordType = null;
+
+    #[Locked]
+    public ?string $recordPublicId = null;
+
     public function mount(string $context = 'auto'): void
     {
         abort_unless(in_array($context, ['auto', 'sales', 'purchase'], true), 422);
@@ -136,7 +147,26 @@ final class AssistantLauncher extends Component
             $this->conversationCompanyId = (int) app(CompanyContext::class)->companyId();
             $this->conversationActorId = (int) auth()->id();
             $this->conversationSessionHash = hash('sha256', session()->getId());
+            $record = AssistantRecordContext::fromRoute();
+            $this->recordType = $record['type'] ?? null;
+            $this->recordPublicId = $record['public_id'] ?? null;
         }
+    }
+
+    private function resolveCurrentRecord(): ?AssistantRecordContext
+    {
+        if ($this->recordType === null && $this->recordPublicId === null) {
+            return null;
+        }
+        $context = app(CompanyContext::class);
+        if ($this->recordType === null || $this->recordPublicId === null || ! auth()->check() || ! $context->hasCompany()
+            || $this->conversationCompanyId !== (int) $context->companyId()
+            || $this->conversationActorId !== (int) auth()->id()
+            || ! hash_equals($this->conversationSessionHash ?? '', hash('sha256', session()->getId()))) {
+            throw new AssistantUnavailable('proposal_stale');
+        }
+
+        return AssistantRecordContext::resolve(app(CompanyContext::class)->company(), auth()->user(), $this->recordType, $this->recordPublicId);
     }
 
     private function assertConversationContext(): void
@@ -307,6 +337,7 @@ final class AssistantLauncher extends Component
         $this->clarifyPeriodFilters = [];
         $this->ambiguousChoice = null;
         $this->turnReports = [];
+        $this->briefingInsights = [];
         $this->turnClarification = null;
         $this->turnContextToken = null;
         $this->turnScope = null;
@@ -322,6 +353,7 @@ final class AssistantLauncher extends Component
             $this->questionActorId = (int) $actor->id;
             $this->questionSessionHash = hash('sha256', session()->getId());
             $this->turnReports = $result['reports'];
+            $this->briefingInsights = $result['insights'];
             $this->turnScope = $result['_authorization_scope'];
             $this->turnContextToken = null;
             $this->turnClarification = null;
@@ -343,6 +375,7 @@ final class AssistantLauncher extends Component
         $this->clarifyPeriodFilters = [];
         $this->ambiguousChoice = null;
         $this->turnReports = [];
+        $this->briefingInsights = [];
         $this->turnClarification = null;
         $this->isBriefing = false;
 
@@ -398,7 +431,7 @@ final class AssistantLauncher extends Component
                 }
 
                 $result = app(AssistantTurnService::class)->run($company, $actor, $this->text,
-                    $this->requestKey, session()->getId(), $this->turnContextToken);
+                    $this->requestKey, session()->getId(), $this->turnContextToken, $this->resolveCurrentRecord());
                 $this->turnReports = $result['reports'];
                 $this->turnContextToken = $result['conversation_token'];
                 $this->turnScope = $result['_authorization_scope'] ?? null;
@@ -519,6 +552,7 @@ final class AssistantLauncher extends Component
 
         $this->reportResult = null;
         $this->turnReports = [];
+        $this->briefingInsights = [];
         $this->turnContextToken = $this->turnScope = $this->turnClarification = null;
         $this->clarifyPeriodReport = null;
         $this->clarifyPeriodFilters = [];
@@ -680,7 +714,7 @@ final class AssistantLauncher extends Component
 
                 if (config('ai_assistant.turn_enabled') === true && $this->context === 'auto') {
                     $result = app(AssistantTurnService::class)->run($company, auth()->user(), $this->text,
-                        $this->requestKey, session()->getId(), $this->turnContextToken);
+                        $this->requestKey, session()->getId(), $this->turnContextToken, $this->resolveCurrentRecord());
                     $this->turnReports = $result['reports'];
                     $this->turnContextToken = $result['conversation_token'];
                     $this->turnScope = $result['_authorization_scope'] ?? null;
@@ -697,6 +731,7 @@ final class AssistantLauncher extends Component
             if ($choice === 'transaction') {
                 $this->reportResult = null;
                 $this->turnReports = [];
+                $this->briefingInsights = [];
                 $this->turnContextToken = $this->turnScope = $this->turnClarification = null;
                 $this->clarifyPeriodReport = null;
                 $this->clarifyPeriodFilters = [];
@@ -723,6 +758,7 @@ final class AssistantLauncher extends Component
         }
         $this->reportResult = null;
         $this->turnReports = [];
+        $this->briefingInsights = [];
         $this->turnClarification = null;
         $this->isBriefing = false;
         // Preserve the bounded A2 report context for an explicitly requested follow-up.
@@ -802,6 +838,7 @@ final class AssistantLauncher extends Component
         $this->questions = $this->answers = [];
         $this->reportResult = null;
         $this->turnReports = [];
+        $this->briefingInsights = [];
         $this->turnContextToken = $this->turnScope = $this->turnClarification = null;
         $this->isBriefing = false;
         $this->clarifyPeriodReport = null;
@@ -823,6 +860,7 @@ final class AssistantLauncher extends Component
         }
         $this->open = false;
         $this->turnReports = [];
+        $this->briefingInsights = [];
         $this->turnContextToken = $this->turnScope = $this->turnClarification = null;
         $this->isBriefing = false;
         $this->text = '';
@@ -891,6 +929,7 @@ final class AssistantLauncher extends Component
             || ! hash_equals($this->questionSessionHash ?? '', hash('sha256', session()->getId())))) {
             $this->reportResult = null;
             $this->turnReports = [];
+            $this->briefingInsights = [];
             $this->turnContextToken = $this->turnScope = $this->turnClarification = null;
             $this->clarifyPeriodReport = null;
             $this->clarifyPeriodFilters = [];
@@ -902,9 +941,12 @@ final class AssistantLauncher extends Component
         $privacy = [];
         $questionsAvailable = $transactionsAvailable = false;
         $briefingAvailable = false;
+        $recordLabel = null;
         if ($context->hasCompany()) {
             $setupAvailable = app(DeepSeekQuickConnect::class)->isOwner($context->company(), auth()->user());
             try {
+                $recordContext = $this->resolveCurrentRecord();
+                $recordLabel = $recordContext?->name;
                 $policy = app(AiGovernance::class)->authorizeLauncher($context->company(), auth()->user(), $this->context);
                 $available = true;
                 $privacy = $policy->settings['privacy'] ?? [];
@@ -915,10 +957,12 @@ final class AssistantLauncher extends Component
                     && array_intersect(AssistantDailyBriefing::CARD_KEYS, $questionKeys) !== [];
                 if ($this->isBriefing && config('ai_assistant.daily_briefing_enabled') !== true) {
                     $this->turnReports = [];
+                    $this->briefingInsights = [];
                     $this->isBriefing = false;
                 }
-                if ($this->turnReports !== [] && $this->turnScope !== app(AssistantTurnContext::class)->scope($context->company(), auth()->user(), session()->getId())) {
+                if (($this->turnReports !== [] || $this->briefingInsights !== []) && $this->turnScope !== app(AssistantTurnContext::class)->scope($context->company(), auth()->user(), session()->getId(), $this->isBriefing ? null : $recordContext)) {
                     $this->turnReports = [];
+                    $this->briefingInsights = [];
                     $this->turnContextToken = $this->turnScope = null;
                     $this->isBriefing = false;
                 }
@@ -930,6 +974,7 @@ final class AssistantLauncher extends Component
                 $briefingAvailable = false;
                 $this->reportResult = null;
                 $this->turnReports = [];
+                $this->briefingInsights = [];
                 $this->turnContextToken = $this->turnScope = $this->turnClarification = null;
                 $this->clarifyPeriodReport = null;
                 $this->clarifyPeriodFilters = [];
@@ -939,6 +984,6 @@ final class AssistantLauncher extends Component
             }
         }
 
-        return view('livewire.ai.assistant-launcher', compact('available', 'setupAvailable', 'privacy', 'questionsAvailable', 'transactionsAvailable', 'briefingAvailable'));
+        return view('livewire.ai.assistant-launcher', compact('available', 'setupAvailable', 'privacy', 'questionsAvailable', 'transactionsAvailable', 'briefingAvailable', 'recordLabel'));
     }
 }

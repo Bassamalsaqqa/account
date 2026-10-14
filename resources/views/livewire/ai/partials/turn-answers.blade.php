@@ -7,7 +7,10 @@
             </div>
             <p class="text-xs text-text-secondary leading-relaxed">{{ __('assistant_briefing.truthful_notice') }}</p>
         </div>
-        @if ($turnReports === [])
+        @foreach ($briefingInsights ?? [] as $insight)
+            @include('livewire.ai.partials.briefing-insight', ['insight' => $insight])
+        @endforeach
+        @if ($turnReports === [] && ($briefingInsights ?? []) === [])
             <p role="status" class="rounded-card border border-border bg-canvas p-4 text-sm leading-relaxed text-text-secondary">
                 {{ __('assistant_briefing.no_cards') }}
             </p>
@@ -17,6 +20,10 @@
         <p role="status" class="rounded-card border border-border bg-canvas p-4 text-sm leading-relaxed">
             {{ __('assistant_v22.clarify_'.$turnClarification) }}
         </p>
+    @endif
+    @if ($isBriefing ?? false)
+        <details class="space-y-3">
+            <summary class="min-h-11 cursor-pointer py-3 text-sm font-semibold text-primary">{{ __('dashboard.briefing_details') }}</summary>
     @endif
     @foreach ($turnReports as $answer)
         <article class="rounded-card border border-border bg-canvas p-4 space-y-3">
@@ -74,5 +81,8 @@
             <a class="inline-flex min-h-11 items-center text-primary underline" href="{{ $answer['source_url'] }}" target="_blank" rel="noopener noreferrer">{{ __('assistant_v2.view_full_report') }}</a>
         </article>
     @endforeach
+    @if ($isBriefing ?? false)
+        </details>
+    @endif
     <button type="button" wire:click="resetQuestion" @click="clear()" class="min-h-11 text-primary underline">{{ ($isBriefing ?? false) ? __('assistant_briefing.dismiss') : __('assistant_v22.followup') }}</button>
 </div>

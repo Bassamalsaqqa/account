@@ -75,7 +75,7 @@ class DisposeExpiredStockAction
             $unitId,
             $movementDate,
         ): array {
-            $date = $movementDate ?? now()->toDateString();
+            $date = $movementDate ?? now($company->timezone)->toDateString();
 
             // 1. Record Inventory Movement — lot expiry validation happens inside InventoryMovementService
             $movementCommand = new StockMovementCommand(

@@ -13,7 +13,7 @@ final class AssistantTurnConstraints
     /** @param list<array<string, mixed>> $proposals
      * @param  list<array<string, mixed>>  $prior
      */
-    public function assert(string $text, array $proposals, Company $company, array $prior = []): void
+    public function assert(string $text, array $proposals, Company $company, array $prior = [], ?AssistantRecordContext $recordContext = null): void
     {
         $currency = app(AssistantDeterministicClassifier::class)->extractCurrencyFromText($text);
         // Recognize other common ISO currencies too: never turn an unsupported currency into the default.
@@ -50,7 +50,7 @@ final class AssistantTurnConstraints
             } catch (AssistantUnavailable) {
                 throw new AssistantUnavailable('question_invalid');
             }
-            $this->assertNames($normalized, $filters, $prior);
+            $this->assertNames($normalized, $filters, $prior, $recordContext);
             if ($currency !== null && ($filters['currency_code'] ?? null) !== $currency) {
                 throw new AssistantUnavailable('question_invalid');
             }
@@ -74,14 +74,14 @@ final class AssistantTurnConstraints
     /** @param array<string, string> $filters
      * @param  list<array<string, mixed>>  $prior
      */
-    private function assertNames(string $text, array $filters, array $prior): void
+    private function assertNames(string $text, array $filters, array $prior, ?AssistantRecordContext $recordContext): void
     {
         foreach (AssistantIntentProposal::NAME_FILTERS as $key) {
             if (! isset($filters[$key])) {
                 continue;
             }
             $name = $this->normalize($filters[$key]);
-            if ($this->containsName($text, $name)) {
+            if ($this->containsName($text, $name) || $recordContext?->permitsReference($key, $filters[$key])) {
                 continue;
             }
             $inPrior = false;
