@@ -135,13 +135,13 @@
                                 {{ app()->getLocale() === 'en' && $lb->warehouse?->name_en ? $lb->warehouse->name_en : $lb->warehouse?->name_ar }}
                             </td>
                             <td class="p-3.5 font-mono dir-ltr text-text-secondary">
-                                {{ $lb->lot?->expiry_date ?? '—' }}
+                                <bdi dir="ltr">{{ $lb->lot?->expiry_date?->toDateString() ?? '—' }}</bdi>
                             </td>
                             <td class="p-3.5 text-center">
                                 @if ($isExpired)
                                     <x-badge variant="danger">{{ __('inventory.expired') }}</x-badge>
                                 @elseif ($days !== null && $days <= $savedWarningDays)
-                                    <x-badge variant="alert">{{ $days }} {{ __('inventory.days') }}</x-badge>
+                                    <x-badge variant="warn">{{ $days }} {{ __('inventory.days') }}</x-badge>
                                 @elseif ($days !== null)
                                     <x-badge variant="success">{{ $days }} {{ __('inventory.days') }}</x-badge>
                                 @else
@@ -160,10 +160,14 @@
                             @endif
                             @if ($canAdjust)
                                 <td class="p-3.5 text-center">
+                                    @if ($isExpired)
                                     <button type="button" wire:click="openDisposalModal({{ $lb->id }})"
                                             class="px-2.5 py-1 rounded-control bg-danger-bg hover:bg-danger/20 text-danger font-bold text-xs transition-colors">
                                         {{ __('inventory.dispose_expired') }}
                                     </button>
+                                    @else
+                                        <span class="text-text-muted">—</span>
+                                    @endif
                                 </td>
                             @endif
                         </tr>
