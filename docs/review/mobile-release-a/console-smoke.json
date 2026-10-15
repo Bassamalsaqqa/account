@@ -1,0 +1,12 @@
+{
+  "checks": [
+    "/invoices/create",
+    "/quotations/create",
+    "/purchases/create",
+    "/products",
+    "search-live-request"
+  ],
+  "consoleErrors": [],
+  "pageErrors": [],
+  "provenance": "Online headless desktop Edge on final source; loopback synthetic MariaDB fixture, 390px viewport."
+}

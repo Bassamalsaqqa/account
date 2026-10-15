@@ -1,0 +1,25 @@
+{
+  "checks": [
+    "invoice/one-save-from-two-hotkeys",
+    "quotation/one-save-from-two-hotkeys",
+    "purchase/one-save-from-two-hotkeys",
+    "drawer-trap-escape-focus",
+    "scan-destination-sheet",
+    "offline-no-camera-open"
+  ],
+  "calls": [
+    "scanCameraBarcode",
+    "incrementQuantity",
+    "saveDraft",
+    "$commit",
+    "scanCameraBarcode",
+    "incrementQuantity",
+    "saveDraft",
+    "$commit",
+    "scanCameraBarcode",
+    "incrementQuantity",
+    "saveDraft"
+  ],
+  "errors": [],
+  "physicalDevices": false
+}
