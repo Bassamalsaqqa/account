@@ -118,6 +118,7 @@
                 @if($line['track_expiry'] && count($line['allocations']))
                     <div class="mt-3 pt-3 border-t border-border space-y-2">
                         <h4 class="text-xs font-bold text-text-secondary">{{ __('purchasing.original_lots') }}</h4>
+                        <p class="text-xs text-text-secondary">{{ __('inventory.return_lot_hint') }}</p>
                         <div class="space-y-2">
                             @foreach($line['allocations'] as $aIdx => $alloc)
                                 <div class="grid grid-cols-2 sm:grid-cols-5 gap-2 items-center text-xs bg-surface p-2 rounded-control border border-border" wire:key="alloc-{{ $idx }}-{{ $aIdx }}">
@@ -131,11 +132,11 @@
                                     </div>
                                     <div>
                                         <span class="text-text-secondary block text-[10px]">{{ __('purchasing.remaining_quantity') }}</span>
-                                        <bdi>{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatQuantity($alloc['remaining_quantity']) }}</bdi>
+                                        <bdi>{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatQuantity($alloc['remaining_quantity']) }}</bdi> {{ $line['unit_name'] }}
                                     </div>
                                     <div>
                                         <span class="text-text-secondary block text-[10px]">{{ __('purchasing.available_quantity') }}</span>
-                                        <bdi>{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatQuantity($alloc['available_quantity']) }}</bdi>
+                                        <bdi>{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatQuantity($alloc['available_quantity']) }}</bdi> {{ $line['unit_name'] }}
                                     </div>
                                     <div>
                                         <label for="alloc_qty_{{ $idx }}_{{ $aIdx }}" class="text-text-secondary block text-[10px]">{{ __('purchasing.return_quantity') }}</label>

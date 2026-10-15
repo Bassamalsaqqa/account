@@ -4,9 +4,12 @@ declare(strict_types=1);
 
 namespace App\Livewire\Pages\Inventory;
 
+use App\Actions\Company\UpdateExpiryWarningDaysAction;
 use App\Actions\Inventory\DisposeExpiredStockAction;
 use App\Domain\Inventory\ValueObjects\Quantity;
 use App\Domain\Sales\Formatters\SalesMoneyFormatter;
+use App\Livewire\Pages\Inventory\Concerns\AuthorizesInventoryPages;
+use App\Models\Company;
 use App\Models\InventoryCostState;
 use App\Models\InventoryLotBalance;
 use App\Models\Product;
@@ -24,8 +27,12 @@ use Livewire\Component;
 #[Layout('layouts.app')]
 class ExpiryCenter extends Component
 {
+    use AuthorizesInventoryPages;
+
+    public string $warningDays = '30';
+
     #[Url(as: 'filter')]
-    public string $timeframeFilter = 'all'; // all, expired, 7, 30, 60, 90, custom
+    public string $timeframeFilter = 'all'; // all, expired, warning, 7, 30, 60, 90, custom
 
     #[Url(as: 'from')]
     public string $customFromDate = '';
@@ -60,25 +67,42 @@ class ExpiryCenter extends Component
 
     public function mount(CompanyContext $context): void
     {
-        /** @var User $user */
-        $user = auth()->user();
-        if (! $user->hasAnyPermission(['inventory.stock.view', 'inventory.product.manage'])) {
-            abort(403);
-        }
+        $this->pageCompanyId = $context->companyId();
+        $company = $this->authorizeExpiry();
+        $this->warningDays = (string) ($company->inventorySettings->default_expiry_warning_days ?? 30);
 
         $this->disposalDate = now($context->company()->timezone)->toDateString();
         $this->formIdempotencyKey = (string) Str::ulid();
     }
 
-    public function openDisposalModal(int $lotBalanceId, CompanyContext $context): void
+    private function authorizeExpiry(): Company
     {
+        abort_unless(auth()->check(), 403);
         /** @var User $user */
         $user = auth()->user();
-        if (! $user->hasPermissionTo('inventory.stock.adjust')) {
-            abort(403);
-        }
+        $user->unsetRelation('roles')->unsetRelation('permissions');
 
-        $company = $context->company();
+        return $this->authorizeInventory($user->hasPermissionTo('inventory.stock.view') ? 'inventory.stock.view' : 'inventory.product.manage');
+    }
+
+    public function boot(): void
+    {
+        if (isset($this->pageCompanyId)) {
+            $this->authorizeExpiry();
+        }
+    }
+
+    public function saveWarningDays(UpdateExpiryWarningDaysAction $action): void
+    {
+        $company = $this->authorizeExpiry();
+        $this->validate(['warningDays' => ['required', 'integer', 'min:1', 'max:365']]);
+        $action->execute($company, (int) $this->warningDays, auth()->user());
+        $this->successMessage = __('inventory.warning_saved');
+    }
+
+    public function openDisposalModal(int $lotBalanceId, CompanyContext $context): void
+    {
+        $company = $this->authorizeInventory('inventory.stock.adjust');
         /** @var InventoryLotBalance $lb */
         $lb = InventoryLotBalance::where('company_id', $company->id)
             ->where('id', $lotBalanceId)
@@ -96,13 +120,9 @@ class ExpiryCenter extends Component
 
     public function confirmDisposal(CompanyContext $context, DisposeExpiredStockAction $action): void
     {
+        $company = $this->authorizeInventory('inventory.stock.adjust');
         /** @var User $user */
         $user = auth()->user();
-        if (! $user->hasPermissionTo('inventory.stock.adjust')) {
-            abort(403);
-        }
-
-        $company = $context->company();
 
         $validated = $this->validate([
             'disposalQuantity' => ['required', 'regex:/\A\d+(\.\d+)?\z/', 'gt:0'],
@@ -145,12 +165,14 @@ class ExpiryCenter extends Component
 
     public function render(CompanyContext $context): View
     {
-        $company = $context->company();
+        $company = $this->authorizeExpiry();
 
         /** @var User $user */
         $user = auth()->user();
         $canViewCost = $user->hasPermissionTo('inventory.cost.view');
         $canAdjust = $user->hasPermissionTo('inventory.stock.adjust');
+        $canManageWarning = $user->can('update', $company);
+        $savedWarningDays = $company->inventorySettings()->value('default_expiry_warning_days') ?? 30;
 
         $query = InventoryLotBalance::where('inventory_lot_balances.company_id', $company->id)
             ->where('inventory_lot_balances.quantity_base', '>', 0)
@@ -170,7 +192,11 @@ class ExpiryCenter extends Component
         // Lot expiry is a date-only value: compare calendar days in one timezone.
         $expiryReferenceDate = Carbon::parse($today)->startOfDay();
 
-        if ($this->timeframeFilter === 'expired') {
+        if ($this->timeframeFilter === 'warning') {
+            $query->whereNotNull('inventory_lots.expiry_date')
+                ->where('inventory_lots.expiry_date', '>=', $today)
+                ->where('inventory_lots.expiry_date', '<=', now($company->timezone)->addDays($savedWarningDays)->toDateString());
+        } elseif ($this->timeframeFilter === 'expired') {
             $query->whereNotNull('inventory_lots.expiry_date')
                 ->where('inventory_lots.expiry_date', '<', $today);
         } elseif ($this->timeframeFilter === '7') {
@@ -226,6 +252,8 @@ class ExpiryCenter extends Component
             'lotValuations' => $lotValuations,
             'canViewCost' => $canViewCost,
             'canAdjust' => $canAdjust,
+            'canManageWarning' => $canManageWarning,
+            'savedWarningDays' => $savedWarningDays,
             'company' => $company,
             'expiryReferenceDate' => $expiryReferenceDate,
         ]);
