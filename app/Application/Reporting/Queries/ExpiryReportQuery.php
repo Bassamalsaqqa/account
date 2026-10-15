@@ -34,7 +34,7 @@ final class ExpiryReportQuery
             ->groupBy('lot.id', 'lot.lot_number', 'lot.expiry_date', 'p.id', 'p.sku', 'p.name_ar', 'p.name_en', 'u.code', 'sm.warehouse_id', 'w.name_ar', 'w.name_en')
             ->selectRaw('SUM(sm.quantity_delta_base) AS remaining_quantity')->havingRaw('SUM(sm.quantity_delta_base)>0')
             ->selectRaw("CASE WHEN lot.expiry_date IS NULL THEN 'unknown' WHEN lot.expiry_date < ? THEN 'expired'
-                WHEN lot.expiry_date > ? AND lot.expiry_date <= DATE_ADD(?, INTERVAL 30 DAY) THEN 'soon' ELSE 'valid' END AS expiry_status",
+                WHEN lot.expiry_date >= ? AND lot.expiry_date <= DATE_ADD(?, INTERVAL 30 DAY) THEN 'soon' ELSE 'valid' END AS expiry_status",
                 [$f->period->endDate, $f->period->endDate, $f->period->endDate]);
         $scope = DB::query()->fromSub($q, 'lot_positions');
         if ($f->status !== null) {

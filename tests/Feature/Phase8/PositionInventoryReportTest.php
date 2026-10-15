@@ -24,6 +24,10 @@ use Spatie\Permission\Models\Role;
 
 class PositionInventoryReportTest extends PositionTestCase
 {
+    /**
+     * @param  array<string, mixed>  $values
+     * @return array<string, mixed>
+     */
     private function filters(array $values = []): array
     {
         return ['from' => '2026-10-01', 'to' => '2026-10-10', ...$values];
@@ -65,7 +69,7 @@ class PositionInventoryReportTest extends PositionTestCase
 
     public function test_canonical_lot_expiry_is_strictly_before_cutoff_and_null_unknown(): void
     {
-        foreach (['expired' => '2026-10-09', 'valid' => '2026-10-10', 'soon' => '2026-10-25', 'unknown' => null] as $status => $date) {
+        foreach (['expired' => '2026-10-09', 'valid' => '2026-11-10', 'soon' => '2026-10-10', 'unknown' => null] as $status => $date) {
             $this->postOpeningStock($this->stockProduct, $this->warehouseA, '5', '2', '2026-10-01', 'LOT-'.$status, $date);
         }
         $result = $this->assertZeroEconomicWrites(fn () => app(ExpiryReportQuery::class)->execute($this->company, $this->filters(), $this->owner));
