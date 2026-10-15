@@ -1,22 +1,31 @@
 <div class="min-w-0 space-y-6">
 @include('livewire.pages.money.nav')
-<h1 class="text-2xl font-bold">{{ $type ? __('money.'.$type) : __('money.title') }}</h1>
-<div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-@forelse($accounts as $account)
-<a class="rounded-card border border-border bg-white p-4 sm:p-6 space-y-3 focus:ring-2 focus:ring-primary" href="{{ route('money.accounts.show', $account['public_id']) }}">
-    <div class="flex gap-3 items-start justify-between">
-<h2 class="font-semibold break-words">{{ $account['name'] }}</h2>
-<span class="text-xs text-text-secondary">{{ __('money.'.$account['account_type']) }}</span>
+<div class="space-y-4">
+    <div class="flex flex-wrap items-center justify-between gap-3">
+        <h1 class="text-2xl font-bold">{{ $type ? __('money.'.$type) : __('money.title') }}</h1>
+        <span class="text-xs text-text-secondary">{{ __('money.current_balance') }}</span>
+    </div>
+    <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+    @forelse($accounts as $account)
+    <a class="rounded-card border border-border bg-white p-4 sm:p-6 space-y-3 focus:ring-2 focus:ring-primary" href="{{ route('money.accounts.show', $account['public_id']) }}">
+        <div class="flex gap-3 items-start justify-between">
+            <h2 class="font-semibold break-words">{{ $account['name'] }}</h2>
+            <span class="text-xs text-text-secondary">{{ __('money.'.$account['account_type']) }}</span>
+        </div>
+        <p class="text-2xl font-semibold tabular-nums" dir="ltr">{{ $account['balance_currency'] ?? __('money.unavailable') }} {{ $account['currency_code'] }}</p>
+        <p class="text-xs text-text-secondary">{{ __('money.base_value') }}: <bdi>{{ $account['balance_base'] }} {{ $account['base_currency_code'] }}</bdi></p>
+        @if(!$account['currency_balance_available'])<p class="text-xs text-amber-800">{{ __('money.native_unavailable') }}</p>@endif
+        @if(!$account['is_active'])<span class="text-xs text-text-muted">{{ __('money.inactive') }}</span>@endif
+    </a>
+    @empty<p class="text-text-secondary">{{ __('money.no_accounts') }}</p>
+    @endforelse
+    </div>
 </div>
-    <p class="text-2xl font-semibold tabular-nums" dir="ltr">{{ $account['balance_currency'] ?? __('money.unavailable') }} {{ $account['currency_code'] }}</p>
-    <p class="text-xs text-text-secondary">{{ __('money.base_value') }}: <bdi>{{ $account['balance_base'] }} {{ $account['base_currency_code'] }}</bdi>
-</p>
-    @if(!$account['currency_balance_available'])<p class="text-xs text-amber-800">{{ __('money.native_unavailable') }}</p>@endif
-    @if(!$account['is_active'])<span class="text-xs text-text-muted">{{ __('money.inactive') }}</span>@endif
-</a>
-@empty<p class="text-text-secondary">{{ __('money.no_accounts') }}</p>
-@endforelse
-</div>
+
+@if(!empty($dailySummaries))
+<x-money-daily-summary :summaries="$dailySummaries" :selected-date="$selectedDate" :today="$today" />
+@endif
+
 @if($checkSummary !== [])<section class="rounded-card border border-border bg-white p-4 sm:p-6 space-y-3">
 <h2 class="font-bold">{{ __('money.outstanding_checks') }}</h2>
 @foreach($checkSummary as $summary)<p>{{ __('money.'.$summary['direction']) }} · {{ $summary['count'] }} · <bdi>{{ $summary['total'] }} {{ $summary['currency_code'] }}</bdi>

@@ -115,14 +115,25 @@
 
             <!-- Brand -->
             <div class="space-y-1">
-                <label for="product-brand-id" class="block text-xs font-bold text-text-secondary">
-                    {{ __('inventory.brand') }}
-                </label>
+                <div class="flex items-center justify-between">
+                    <label for="product-brand-id" class="block text-xs font-bold text-text-secondary">
+                        {{ __('inventory.brand') }}
+                    </label>
+                    @if ($canManageProduct)
+                        <button type="button" wire:click="openCreateBrandModal"
+                                class="text-[11px] text-primary hover:underline font-bold flex items-center gap-1">
+                            <x-icon name="plus" class="w-3 h-3" />
+                            <span>{{ __('inventory.add_brand') }}</span>
+                        </button>
+                    @endif
+                </div>
                 <select id="product-brand-id" @error('brand_id') aria-invalid="true" aria-describedby="product-brand-id-error" @enderror wire:model="brand_id"
                         class="w-full h-9 px-3 rounded-control border border-border bg-white text-xs text-text-primary focus:outline-none focus:border-primary focus:ring-2 focus:ring-focus-ring">
                     <option value="">{{ __('inventory.select_brand') }}</option>
                     @foreach ($brands as $b)
-                        <option value="{{ $b->id }}">{{ $b->name_ar }}</option>
+                        <option value="{{ $b->id }}">
+                            {{ $b->name_ar }}@if(! $b->active) ({{ __('inventory.inactive') }})@endif
+                        </option>
                     @endforeach
                 </select>
                 @error('brand_id') <span id="product-brand-id-error" role="alert" class="text-[11px] text-danger">{{ $message }}</span> @enderror
@@ -477,5 +488,59 @@
                 @endif
             </div>
         </x-card>
+    @endif
+
+    <!-- Inline Brand Modal -->
+    @if ($showBrandModal)
+        <div x-data x-trap.inert.noscroll="true" @keydown.escape.window="$wire.closeCreateBrandModal()"
+             role="dialog" aria-modal="true" aria-labelledby="inline-brand-modal-title"
+             class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4">
+            <div class="bg-white rounded-card border border-border shadow-xl w-full max-w-md p-6 space-y-4">
+                <div class="flex items-center justify-between border-b border-border pb-3">
+                    <h3 id="inline-brand-modal-title" class="font-extrabold text-sm text-text-primary flex items-center gap-2">
+                        <x-icon name="box" class="w-4 h-4 text-primary" />
+                        <span>{{ __('inventory.add_brand') }}</span>
+                    </h3>
+                    <button type="button" aria-label="{{ __('inventory.close') }}" wire:click="closeCreateBrandModal"
+                            class="text-text-muted hover:text-text-primary text-base font-bold">&times;</button>
+                </div>
+
+                <div class="space-y-3 text-xs">
+                    <div>
+                        <label for="inline-brand-name-ar" class="block font-bold text-text-secondary mb-1">
+                            {{ __('inventory.brand_name_ar') }} <span class="text-danger">*</span>
+                        </label>
+                        <input id="inline-brand-name-ar" type="text" wire:model="new_brand_name_ar" dir="rtl"
+                               @error('new_brand_name_ar') aria-invalid="true" aria-describedby="inline-brand-name-ar-error" @enderror
+                               class="w-full h-8 px-2.5 rounded-control border border-border text-xs focus:outline-none focus:border-primary @error('new_brand_name_ar') border-danger @enderror" />
+                        @error('new_brand_name_ar')
+                            <span role="alert" id="inline-brand-name-ar-error" class="text-danger text-[10px]">{{ $message }}</span>
+                        @enderror
+                    </div>
+                    <div>
+                        <label for="inline-brand-name-en" class="block font-bold text-text-secondary mb-1">
+                            {{ __('inventory.brand_name_en') }}
+                        </label>
+                        <input id="inline-brand-name-en" type="text" wire:model="new_brand_name_en" dir="ltr"
+                               @error('new_brand_name_en') aria-invalid="true" aria-describedby="inline-brand-name-en-error" @enderror
+                               class="w-full h-8 px-2.5 rounded-control border border-border text-xs focus:outline-none focus:border-primary @error('new_brand_name_en') border-danger @enderror" />
+                        @error('new_brand_name_en')
+                            <span role="alert" id="inline-brand-name-en-error" class="text-danger text-[10px]">{{ $message }}</span>
+                        @enderror
+                    </div>
+                </div>
+
+                <div class="flex items-center justify-end gap-2 pt-3 border-t border-border">
+                    <button type="button" wire:click="closeCreateBrandModal"
+                            class="px-3.5 py-1.5 rounded-control border border-border text-text-secondary hover:bg-surface-soft text-xs font-semibold">
+                        {{ __('inventory.cancel') }}
+                    </button>
+                    <button type="button" wire:click="saveInlineBrand" wire:loading.attr="disabled"
+                            class="px-4 py-1.5 rounded-control bg-primary text-white hover:bg-primary-hover text-xs font-bold shadow-button">
+                        {{ __('inventory.save') }}
+                    </button>
+                </div>
+            </div>
+        </div>
     @endif
 </div>

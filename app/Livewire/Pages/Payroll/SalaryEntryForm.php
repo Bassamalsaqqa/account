@@ -16,6 +16,7 @@ use Carbon\Carbon;
 use Illuminate\Contracts\View\View;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Locked;
 use Livewire\Attributes\Url;
@@ -122,7 +123,7 @@ class SalaryEntryForm extends Component
         $this->authorizeMoney('payroll.salary.post');
 
         $this->validate([
-            'employeeId' => 'required|integer|exists:employees,id',
+            'employeeId' => ['required', 'integer', Rule::exists('employees', 'id')->where('company_id', $this->pageCompanyId)],
             'recognitionDate' => 'required|date_format:Y-m-d',
             'periodStart' => 'required|date_format:Y-m-d',
             'periodEnd' => 'required|date_format:Y-m-d|after_or_equal:periodStart',

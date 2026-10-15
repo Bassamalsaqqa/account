@@ -27,6 +27,20 @@
                         {{ $invoice->customer->displayName() }}
                     </a>
                 </div>
+                @if (auth()->user()?->hasPermissionTo('sales.quote.view') && $invoice->quotation)
+                    <div class="text-xs text-text-secondary mt-1">
+                        {{ __('sales.quotation') }}:
+                        @if (auth()->user()?->hasPermissionTo('sales.quote.view'))
+                            <a href="{{ route('quotations.show', $invoice->quotation->public_id) }}" class="font-mono font-bold text-text-primary hover:text-primary" dir="ltr">
+                                {{ $invoice->quotation->quotation_number ?? __('sales.draft') }}
+                            </a>
+                        @else
+                            <span class="font-mono font-bold text-text-primary" dir="ltr">
+                                {{ $invoice->quotation->quotation_number ?? __('sales.draft') }}
+                            </span>
+                        @endif
+                    </div>
+                @endif
             </div>
 
             <!-- Action Buttons -->

@@ -155,9 +155,9 @@ class SalaryPaymentForm extends Component
         if ($this->paymentMethod === 'check') {
             $rules['checkNumber'] = 'required|string|max:64';
             $rules['dueDate'] = 'required|date_format:Y-m-d';
-            $rules['drawnMoneyAccountId'] = 'required|integer|exists:money_accounts,id';
+            $rules['drawnMoneyAccountId'] = ['required', 'integer', Rule::exists('money_accounts', 'id')->where('company_id', $this->pageCompanyId)];
         } else {
-            $rules['moneyAccountId'] = 'required|integer|exists:money_accounts,id';
+            $rules['moneyAccountId'] = ['required', 'integer', Rule::exists('money_accounts', 'id')->where('company_id', $this->pageCompanyId)];
         }
 
         $this->validate($rules);

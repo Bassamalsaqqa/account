@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Livewire\Pages\Inventory;
 
+use App\Domain\Inventory\Services\StockQuantityBreakdown;
 use App\Domain\Sales\Formatters\SalesMoneyFormatter;
 use App\Models\InventoryCostState;
 use App\Models\InventoryLot;
@@ -62,7 +63,7 @@ class InventoryOverview extends Component
             ->where('active', true)
             ->where('track_stock', true)
             ->whereNotNull('minimum_stock_base')
-            ->with(['baseUnit'])
+            ->with(['baseUnit', 'costState:id,company_id,product_id,quantity_base'])
             ->get();
 
         $lowStockProducts = $allTrackedProducts->filter(function ($p) {
@@ -74,6 +75,12 @@ class InventoryOverview extends Component
 
             return $stock->isLessThanOrEqualTo($min);
         })->take(10);
+        $lowStockProducts->load('productUnits.unit');
+
+        $stockBreakdowns = [];
+        foreach ($lowStockProducts as $product) {
+            $stockBreakdowns[$product->id] = app(StockQuantityBreakdown::class)->forProduct($product, $product->stock_quantity);
+        }
 
         // Recent stock movements
         $recentMovements = StockMovement::where('company_id', $company->id)
@@ -88,6 +95,7 @@ class InventoryOverview extends Component
             'expiringLotsCount' => $expiringLotsCount,
             'totalValuation' => $totalValuation,
             'lowStockProducts' => $lowStockProducts,
+            'stockBreakdowns' => $stockBreakdowns,
             'recentMovements' => $recentMovements,
             'canViewCost' => $canViewCost,
             'canAdjust' => $canAdjust,

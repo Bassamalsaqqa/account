@@ -1,4 +1,21 @@
-<form wire:submit="save" class="space-y-5">
+<div>
+<form wire:submit="save"
+      class="space-y-5"
+      x-data="{
+          saving: false,
+          handleSaveDraft() {
+              if ([...document.querySelectorAll('[role=dialog]')].some(el => el.getClientRects().length > 0) || this.saving || $wire.showQuickVendorModal) return;
+              this.saving = true;
+              $wire.saveDraft().finally(() => { this.saving = false; });
+          },
+          handleAddLine() {
+              if ([...document.querySelectorAll('[role=dialog]')].some(el => el.getClientRects().length > 0) || this.saving || $wire.showQuickVendorModal) return;
+              $wire.addLine();
+          }
+      }"
+      @keydown.window.prevent.ctrl.s="handleSaveDraft()"
+      @keydown.window.prevent.meta.s="handleSaveDraft()"
+      @keydown.window.prevent.alt.n="if (!$event.repeat) handleAddLine()">
     <header class="flex flex-wrap justify-between items-center gap-3">
         <div><a href="{{ route('purchases.index') }}" class="text-xs text-primary">{{ __('purchasing.purchases') }}</a><h1 class="text-2xl font-bold mt-1">{{ __($publicId ? 'purchasing.edit_purchase' : 'purchasing.new_purchase') }}</h1></div>
         <span class="text-xs font-bold bg-surface-blue text-primary px-3 py-2 rounded-control">{{ __('purchasing.draft') }}</span>
@@ -8,26 +25,73 @@
     @if($errors->any())<div role="alert" class="p-3 bg-danger-bg text-danger text-sm rounded-control"><ul class="list-disc ps-4">@foreach($errors->all() as $error)<li>{{ $error }}</li>@endforeach</ul></div>@endif
     @if($duplicateWarning)<p role="status" class="p-3 bg-warning-bg text-warning text-sm rounded-control">{{ __('purchasing.duplicate_vendor_invoice') }}</p>@endif
     <section class="bg-surface border border-border rounded-card p-4 grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div class="sm:col-span-2"><label for="purchase-vendor" class="block text-xs font-bold mb-1.5">{{ __('purchasing.vendor') }}</label><select id="purchase-vendor" wire:model.live="vendor_id" required class="w-full h-11 px-3 border border-border rounded-control text-sm"><option value="">{{ __('purchasing.select_vendor') }}</option>@foreach($vendors as $vendor)<option value="{{ $vendor->id }}">{{ $vendor->displayName() }}</option>@endforeach</select></div>
-        <div class="sm:col-span-2"><label for="supplier-number" class="block text-xs font-bold mb-1.5">{{ __('purchasing.vendor_invoice_number') }}</label><input id="supplier-number" wire:model.live.debounce.400ms="vendor_invoice_number" maxlength="128" dir="ltr" class="w-full h-11 px-3 border border-border rounded-control text-sm" /></div>
+        <div class="sm:col-span-2">
+            <div class="flex items-center justify-between mb-1.5">
+                <label for="purchase-vendor" class="block text-xs font-bold">{{ __('purchasing.vendor') }}</label>
+                @if ($canManageVendors)
+                    <button type="button" wire:click="openQuickVendorModal" class="text-xs text-primary font-bold hover:underline cursor-pointer" aria-haspopup="dialog">
+                        + {{ __('workflow.quick_vendor') }}
+                    </button>
+                @endif
+            </div>
+            <div class="flex gap-2 mb-1.5">
+                <input type="text"
+                       wire:model.live.debounce.300ms="vendorSearch"
+                       placeholder="{{ __('workflow.search_vendors') }}"
+                       class="w-full h-8 px-2.5 rounded-control border border-border bg-canvas text-xs text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden" />
+            </div>
+            <select id="purchase-vendor" wire:model.live="vendor_id" required class="w-full h-11 px-3 border border-border rounded-control text-sm">
+                <option value="">{{ __('purchasing.select_vendor') }}</option>
+                @foreach($vendors as $vendor)
+                    <option value="{{ $vendor->id }}">{{ $vendor->displayName() }}</option>
+                @endforeach
+            </select>
+        </div>
+        <div class="sm:col-span-2"><label for="supplier-number" class="block text-xs font-bold mb-1.5">{{ __('purchasing.vendor_invoice_number') }}</label><input id="supplier-number" wire:model.blur="vendor_invoice_number" maxlength="128" dir="ltr" class="w-full h-11 px-3 border border-border rounded-control text-sm" /></div>
         @foreach(['purchase_date' => 'purchase_date', 'due_date' => 'due_date'] as $field => $label)<div><label for="purchase-{{ $field }}" class="block text-xs font-bold mb-1.5">{{ __('purchasing.'.$label) }}</label><input id="purchase-{{ $field }}" type="date" wire:model="{{ $field }}" class="w-full min-w-0 h-11 px-3 border border-border rounded-control text-sm" @if($field === 'purchase_date') required @endif /></div>@endforeach
         <div><label for="purchase-currency" class="block text-xs font-bold mb-1.5">{{ __('purchasing.currency') }}</label><select id="purchase-currency" wire:model.live="currency_code" class="w-full h-11 px-3 border border-border rounded-control text-sm">@foreach($currencies as $currency)<option value="{{ $currency->currency_code }}">{{ $currency->currency_code }}</option>@endforeach</select></div>
-        <div><label for="purchase-rate" class="block text-xs font-bold mb-1.5">{{ __('purchasing.exchange_rate') }}</label><input id="purchase-rate" wire:model.live.debounce.400ms="exchange_rate" inputmode="decimal" dir="ltr" class="w-full h-11 px-3 border border-border rounded-control text-sm" /></div>
+        <div><label for="purchase-rate" class="block text-xs font-bold mb-1.5">{{ __('purchasing.exchange_rate') }}</label><input id="purchase-rate" wire:model.blur="exchange_rate" wire:change="updatedExchangeRate" inputmode="decimal" dir="ltr" class="w-full h-11 px-3 border border-border rounded-control text-sm font-mono" /></div>
         <div class="sm:col-span-2"><label for="purchase-warehouse" class="block text-xs font-bold mb-1.5">{{ __('purchasing.receiving_warehouse') }}</label><select id="purchase-warehouse" wire:model="warehouse_id" required class="w-full h-11 px-3 border border-border rounded-control text-sm"><option value="">{{ __('purchasing.select_warehouse') }}</option>@foreach($warehouses as $warehouse)<option value="{{ $warehouse->id }}">{{ $warehouse->displayName() }}</option>@endforeach</select></div>
         <div class="sm:col-span-2"><label for="purchase-locale" class="block text-xs font-bold mb-1.5">{{ __('purchasing.document_language') }}</label><select id="purchase-locale" wire:model="document_locale" class="w-full h-11 px-3 border border-border rounded-control text-sm">@foreach($languages as $language)<option value="{{ $language->locale }}">{{ __('purchasing.locale_'.$language->locale) }}</option>@endforeach</select></div>
     </section>
-    <section class="space-y-3">
-        <div class="flex flex-wrap justify-between items-center gap-3"><h2 class="font-bold">{{ __('purchasing.purchase_lines') }}</h2><button type="button" wire:click="addLine" class="h-11 px-3 text-primary border border-border rounded-control text-sm font-bold">{{ __('purchasing.add_line') }}</button></div>
+
+    <!-- Quick Barcode Scanner & Product Search -->
+    <div class="bg-surface border border-border rounded-card p-4 grid gap-4 md:grid-cols-2">
+        <div>
+            <label for="purchase-barcodeSearch" class="block text-sm font-bold text-text-primary mb-1">{{ __('workflow.scan_barcode_or_sku') }}</label>
+            <div class="relative">
+                <input id="purchase-barcodeSearch" type="text"
+                       maxlength="128"
+                       wire:model="barcodeSearch"
+                       wire:keydown.enter.prevent="scanBarcode"
+                       placeholder="{{ __('workflow.scan_barcode_hint') }}"
+                       class="w-full h-11 ps-3 pe-10 rounded-control border border-border bg-canvas text-sm text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden" />
+                <div class="absolute inset-y-0 end-0 pe-3 flex items-center pointer-events-none text-text-muted">
+                    <x-icon name="barcode" class="w-4 h-4" />
+                </div>
+            </div>
+            @error('barcodeSearch') <span class="text-danger text-xs mt-1 block">{{ $message }}</span> @enderror
+        </div>
         <div>
             <label for="purchase-product-search" class="block text-sm font-bold mb-1">{{ __('purchasing.search_products') }}</label>
-            <input id="purchase-product-search" type="search" maxlength="160" wire:model.live.debounce.300ms="productSearch" x-on:keydown.enter.prevent placeholder="{{ __('purchasing.search_products') }}" aria-describedby="purchase-product-search-help" class="w-full h-11 px-3 border border-border bg-surface rounded-control text-sm" />
+            <input id="purchase-product-search" type="search" maxlength="160" wire:model.live.debounce.300ms="productSearch" x-on:keydown.enter.prevent placeholder="{{ __('purchasing.search_products') }}" aria-describedby="purchase-product-search-help" class="w-full h-11 px-3 border border-border bg-canvas rounded-control text-sm" />
             <p id="purchase-product-search-help" class="mt-1 text-xs text-text-secondary">{{ __('purchasing.product_search_help') }}</p>
             <p wire:loading wire:target="productSearch" role="status" class="mt-1 text-xs text-text-secondary">{{ __('purchasing.products_searching') }}</p>
             @if($products->isEmpty())<p role="status" class="mt-1 text-sm text-text-secondary">{{ __('purchasing.no_matching_products') }}</p>@endif
         </div>
+    </div>
+
+    <section class="space-y-3">
+        <div class="flex flex-wrap justify-between items-center gap-3">
+            <h2 class="font-bold">{{ __('purchasing.purchase_lines') }}</h2>
+            <button type="button" wire:click="addLine" class="h-11 px-3 text-primary border border-border rounded-control text-sm font-bold inline-flex items-center gap-1.5 cursor-pointer">
+                <span>{{ __('purchasing.add_line') }}</span>
+                <kbd class="px-1 py-0.5 text-[10px] font-mono rounded border border-border bg-surface-soft text-text-secondary leading-none">Alt+N</kbd>
+            </button>
+        </div>
         @foreach($lines as $index => $line)
             <article wire:key="purchase-line-{{ $index }}-{{ $line['product_id'] ?? 'new' }}" class="bg-surface border border-border rounded-card p-4 space-y-3">
-                <div class="flex justify-between items-center gap-2"><h3 class="text-xs font-bold">{{ __('purchasing.line') }} <bdi>{{ $index + 1 }}</bdi></h3><button type="button" wire:click="removeLine({{ $index }})" class="h-10 px-3 text-danger text-xs">{{ __('purchasing.remove_line') }}</button></div>
+                <div class="flex justify-between items-center gap-2"><h3 class="text-xs font-bold">{{ __('purchasing.line') }} <bdi>{{ $index + 1 }}</bdi></h3><button type="button" wire:click="removeLine({{ $index }})" class="h-10 px-3 text-danger text-xs cursor-pointer">{{ __('purchasing.remove_line') }}</button></div>
                 <div class="grid grid-cols-2 lg:grid-cols-12 gap-3">
                     <div class="col-span-2 lg:col-span-4"><label for="line-product-{{ $index }}" class="block text-xs text-text-secondary mb-1">{{ __('purchasing.product') }}</label><select id="line-product-{{ $index }}" wire:change="selectProduct({{ $index }}, $event.target.value)" class="w-full h-11 px-2 border border-border rounded-control text-sm"><option value="">{{ __('purchasing.select_product') }}</option>
                         @if(!empty($line['product_id']) && !$products->contains('id', $line['product_id']))<option selected value="{{ $line['product_id'] }}">{{ $line['item_description'] }}</option>@endif
@@ -37,7 +101,7 @@
                     @foreach(['quantity', 'unit_cost'] as $field)
                         <div class="lg:col-span-2">
                             <label for="line-{{ $field }}-{{ $index }}" class="block text-xs text-text-secondary mb-1">{{ __('purchasing.'.$field) }}</label>
-                            <input id="line-{{ $field }}-{{ $index }}" wire:model.live.debounce.400ms="lines.{{ $index }}.{{ $field }}" inputmode="decimal" dir="ltr" class="w-full min-w-0 h-11 px-2 border border-border rounded-control text-sm" />
+                            <input id="line-{{ $field }}-{{ $index }}" wire:model.blur="lines.{{ $index }}.{{ $field }}" wire:change="recalculate" inputmode="decimal" dir="ltr" class="w-full min-w-0 h-11 px-2 border border-border rounded-control text-sm font-mono" />
                             @if($field === 'unit_cost' && isset($lastPriceHints[$index]))
                                 <p class="text-[11px] text-text-muted mt-1 leading-tight" dir="{{ app()->getLocale() === 'ar' ? 'rtl' : 'ltr' }}">
                                     @php
@@ -57,12 +121,12 @@
                             @endif
                         </div>
                     @endforeach
-                    <div class="col-span-2 lg:col-span-2"><span class="block text-xs text-text-secondary mb-1">{{ __('purchasing.line_total') }}</span><output class="block h-11 px-2 py-3 text-sm font-bold bg-surface-soft rounded-control"><bdi>{{ isset($line['preview_total']) ? \App\Domain\Sales\Formatters\SalesMoneyFormatter::format($line['preview_total'], $currency_code) : '—' }} {{ $currency_code }}</bdi></output></div>
+                    <div class="col-span-2 lg:col-span-2"><span class="block text-xs text-text-secondary mb-1">{{ __('purchasing.line_total') }} <span class="text-[10px] font-normal text-text-muted">({{ __('workflow.preview') }})</span></span><output class="block h-11 px-2 py-3 text-sm font-bold bg-surface-soft rounded-control"><bdi>{{ isset($line['preview_total']) ? \App\Domain\Sales\Formatters\SalesMoneyFormatter::format($line['preview_total'], $currency_code) : '—' }} {{ $currency_code }}</bdi></output></div>
                 </div>
                 <div class="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
                     <div><label for="line-description-{{ $index }}" class="block text-xs text-text-secondary mb-1">{{ __('purchasing.description') }}</label><input id="line-description-{{ $index }}" wire:model="lines.{{ $index }}.item_description" maxlength="500" class="w-full h-11 px-2 border border-border rounded-control text-sm" /></div>
                     <div><label for="line-discount-type-{{ $index }}" class="block text-xs text-text-secondary mb-1">{{ __('purchasing.discount') }}</label><select id="line-discount-type-{{ $index }}" wire:model.live="lines.{{ $index }}.discount_type" class="w-full h-11 px-2 border border-border rounded-control text-sm">@foreach(['none', 'percent', 'fixed'] as $type)<option value="{{ $type }}">{{ __('purchasing.discount_'.$type) }}</option>@endforeach</select></div>
-                    <div><label for="line-discount-value-{{ $index }}" class="block text-xs text-text-secondary mb-1">{{ __('purchasing.discount_value') }}</label><input id="line-discount-value-{{ $index }}" wire:model.live.debounce.400ms="lines.{{ $index }}.discount_value" dir="ltr" inputmode="decimal" class="w-full h-11 px-2 border border-border rounded-control text-sm" /></div>
+                    <div><label for="line-discount-value-{{ $index }}" class="block text-xs text-text-secondary mb-1">{{ __('purchasing.discount_value') }}</label><input id="line-discount-value-{{ $index }}" wire:model.blur="lines.{{ $index }}.discount_value" wire:change="recalculate" dir="ltr" inputmode="decimal" class="w-full h-11 px-2 border border-border rounded-control text-sm font-mono" /></div>
                     @if($taxes->isNotEmpty())<div><label for="line-tax-{{ $index }}" class="block text-xs text-text-secondary mb-1">{{ __('purchasing.tax') }}</label><select id="line-tax-{{ $index }}" wire:model.live="lines.{{ $index }}.tax_rate_id" class="w-full h-11 px-2 border border-border rounded-control text-sm"><option value="">{{ __('purchasing.no_tax') }}</option>@foreach($taxes as $tax)<option value="{{ $tax->id }}">{{ $tax->displayName() }} ({{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::format($tax->rate, 'ILS') }}%)</option>@endforeach</select></div>@endif
                 </div>
                 @if($expiryLines[$index] ?? false)
@@ -79,7 +143,86 @@
             </article>
         @endforeach
     </section>
-    <section class="bg-surface border border-border rounded-card p-4 grid grid-cols-2 md:grid-cols-4 gap-4">@foreach(['subtotal', 'discount', 'tax', 'total'] as $field)<div><span class="text-xs text-text-secondary">{{ __('purchasing.'.$field) }}</span><p class="font-bold mt-1"><bdi>{{ isset($totals[$field]) ? \App\Domain\Sales\Formatters\SalesMoneyFormatter::format($totals[$field], $currency_code) : '—' }} {{ $currency_code }}</bdi></p></div>@endforeach</section>
+    <section class="bg-surface border border-border rounded-card p-4 space-y-2">
+        <div class="flex items-center justify-between pb-1 border-b border-border/50">
+            <span class="text-xs font-bold text-text-secondary uppercase tracking-wider">{{ __('purchasing.purchase_summary') ?? __('sales.invoice_details') }} <span class="text-[10px] font-normal text-text-muted">({{ __('workflow.preview') }})</span></span>
+        </div>
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+            @foreach(['subtotal', 'discount', 'tax', 'total'] as $field)
+                <div>
+                    <span class="text-xs text-text-secondary">{{ __('purchasing.'.$field) }}</span>
+                    <p class="font-bold mt-1"><bdi>{{ isset($totals[$field]) ? \App\Domain\Sales\Formatters\SalesMoneyFormatter::format($totals[$field], $currency_code) : '—' }} {{ $currency_code }}</bdi></p>
+                </div>
+            @endforeach
+        </div>
+    </section>
     <div><label for="purchase-notes" class="block text-xs font-bold mb-1.5">{{ __('purchasing.notes') }}</label><textarea id="purchase-notes" wire:model="notes" rows="3" class="w-full border border-border rounded-control bg-surface p-3 text-sm"></textarea></div>
-    <footer class="flex flex-wrap gap-3"><button type="submit" wire:loading.attr="disabled" wire:target="save" class="h-11 px-5 bg-primary text-white font-bold text-sm rounded-control">{{ __('purchasing.save_draft') }}</button><a href="{{ route('purchases.index') }}" class="inline-flex items-center h-11 px-4 border border-border rounded-control text-sm">{{ __('purchasing.cancel') }}</a></footer>
+    <footer class="flex flex-wrap gap-3">
+        <button type="submit" wire:loading.attr="disabled" wire:target="save" class="h-11 px-5 bg-primary text-white font-bold text-sm rounded-control inline-flex items-center gap-1.5 cursor-pointer">
+            <span>{{ __('purchasing.save_draft') }}</span>
+            <kbd class="px-1 py-0.5 text-[10px] font-mono rounded bg-white/20 text-white leading-none">Ctrl+S</kbd>
+        </button>
+        <a href="{{ route('purchases.index') }}" class="inline-flex items-center h-11 px-4 border border-border rounded-control text-sm">{{ __('purchasing.cancel') }}</a>
+    </footer>
 </form>
+
+    @if ($showQuickVendorModal)
+        <div x-data="{
+                triggerEl: null,
+                init() {
+                    this.triggerEl = document.activeElement;
+                    this.$nextTick(() => { this.$refs.firstInput?.focus(); });
+                },
+                destroy() {
+                    if (this.triggerEl && typeof this.triggerEl.focus === 'function') {
+                        this.triggerEl.focus();
+                    }
+                }
+             }"
+             x-trap.inert.noscroll="true"
+             @keydown.escape.window.stop.prevent="$wire.closeQuickVendorModal()"
+             @keydown.enter.stop.prevent="saveQuickVendor"
+             class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-xs"
+             role="dialog"
+             aria-modal="true"
+             aria-labelledby="quick-vendor-modal-title">
+            <div class="bg-surface border border-border rounded-card p-6 w-full max-w-md shadow-lg space-y-4">
+                <div class="flex items-center justify-between pb-3 border-b border-border">
+                    <h3 id="quick-vendor-modal-title" class="text-base font-bold text-text-primary">{{ __('workflow.quick_vendor') }}</h3>
+                    <button type="button" wire:click="closeQuickVendorModal" class="text-text-muted hover:text-text-primary text-sm font-bold cursor-pointer">✕</button>
+                </div>
+                <div class="space-y-3">
+                    <div>
+                        <label for="purchase-quick-vendor-name-ar" class="block text-xs font-bold text-text-primary mb-1">{{ __('workflow.vendor_name_ar') }} <span class="text-danger">*</span></label>
+                        <input x-ref="firstInput" id="purchase-quick-vendor-name-ar" type="text" wire:model="quick_vendor_name_ar" required maxlength="255" class="w-full h-9 px-3 rounded-control border border-border bg-canvas text-xs text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden" />
+                        @error('quick_vendor_name_ar') <span class="text-danger text-[11px] block mt-1">{{ $message }}</span> @enderror
+                    </div>
+                    <div>
+                        <label for="purchase-quick-vendor-name-en" class="block text-xs font-bold text-text-primary mb-1">{{ __('workflow.vendor_name_en') }}</label>
+                        <input id="purchase-quick-vendor-name-en" type="text" wire:model="quick_vendor_name_en" maxlength="255" dir="ltr" class="w-full h-9 px-3 rounded-control border border-border bg-canvas text-xs text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden" />
+                        @error('quick_vendor_name_en') <span class="text-danger text-[11px] block mt-1">{{ $message }}</span> @enderror
+                    </div>
+                    <div class="grid grid-cols-2 gap-3">
+                        <div>
+                            <label for="purchase-quick-vendor-phone" class="block text-xs font-bold text-text-primary mb-1">{{ __('workflow.phone') }}</label>
+                            <input id="purchase-quick-vendor-phone" type="text" wire:model="quick_vendor_phone" maxlength="64" dir="ltr" class="w-full h-9 px-3 rounded-control border border-border bg-canvas text-xs text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden" />
+                            @error('quick_vendor_phone') <span class="text-danger text-[11px] block mt-1">{{ $message }}</span> @enderror
+                        </div>
+                        <div>
+                            <label for="purchase-quick-vendor-code" class="block text-xs font-bold text-text-primary mb-1">{{ __('workflow.code') }}</label>
+                            <input id="purchase-quick-vendor-code" type="text" wire:model="quick_vendor_code" maxlength="64" dir="ltr" class="w-full h-9 px-3 rounded-control border border-border bg-canvas text-xs text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden" />
+                            @error('quick_vendor_code') <span class="text-danger text-[11px] block mt-1">{{ $message }}</span> @enderror
+                        </div>
+                    </div>
+                </div>
+                <div class="flex items-center justify-end gap-2 pt-3 border-t border-border">
+                    <button type="button" wire:click="closeQuickVendorModal" class="px-3 py-1.5 rounded-control border border-border text-xs font-bold text-text-secondary hover:bg-surface-soft cursor-pointer">{{ __('workflow.cancel') }}</button>
+                    <button type="button" wire:click="saveQuickVendor" wire:loading.attr="disabled" class="px-4 py-1.5 rounded-control bg-primary text-white text-xs font-bold hover:bg-primary-hover shadow-xs cursor-pointer">
+                        <span wire:loading.remove wire:target="saveQuickVendor">{{ __('workflow.save_vendor') }}</span>
+                        <span wire:loading wire:target="saveQuickVendor">...</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    @endif
+</div>

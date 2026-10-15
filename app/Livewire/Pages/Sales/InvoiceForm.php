@@ -6,12 +6,19 @@ namespace App\Livewire\Pages\Sales;
 
 use App\Application\AI\AiDraftProvenance;
 use App\Application\Commands\SalesInvoiceCommands;
+use App\Application\Reporting\Security\ReportingGuard;
+use App\Domain\Inventory\Exceptions\InvalidQuantityException;
+use App\Domain\Inventory\Exceptions\InvalidUnitConversionException;
+use App\Domain\Money\Exceptions\InvalidMoneyException;
 use App\Domain\Sales\Calculators\SalesDocumentTotalsCalculator;
 use App\Domain\Sales\Calculators\SalesLineCalculationInput;
 use App\Domain\Sales\Calculators\SalesLineCalculator;
 use App\Domain\Sales\Queries\CustomerCreditLimitQuery;
+use App\Domain\Sales\Queries\CustomerLastPriceQuery;
 use App\Exceptions\NoActiveCompanyException;
 use App\Livewire\Concerns\AiUnsavedForm;
+use App\Livewire\Concerns\QuickPartyCreate;
+use App\Models\Company;
 use App\Models\Customer;
 use App\Models\Product;
 use App\Models\ProductBarcode;
@@ -26,8 +33,10 @@ use Brick\Math\BigDecimal;
 use Carbon\Carbon;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Contracts\View\View;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Locked;
 use Livewire\Component;
@@ -38,6 +47,28 @@ use Symfony\Component\HttpKernel\Exception\HttpException;
 class InvoiceForm extends Component
 {
     use AiUnsavedForm;
+    use QuickPartyCreate;
+
+    protected function quickPartyKind(): string
+    {
+        return 'customer';
+    }
+
+    protected function quickPartyFormPermission(): string
+    {
+        return $this->isEditing ? 'sales.invoice.edit_draft' : 'sales.invoice.create';
+    }
+
+    protected function authorizeQuickPartyForm(): Company
+    {
+        return DB::transaction(fn () => app(SalesActorGuard::class)->lockAndAuthorize($this->pageCompanyId, auth()->user(), $this->quickPartyFormPermission()));
+    }
+
+    protected function selectQuickParty(int $id): void
+    {
+        $this->customer_id = $id;
+        $this->updatedCustomerId();
+    }
 
     public ?SalesInvoice $invoice = null;
 
@@ -62,6 +93,8 @@ class InvoiceForm extends Component
     public string $document_locale = 'ar';
 
     public string $barcodeSearch = '';
+
+    public string $customerSearch = '';
 
     public string $productSearch = '';
 
@@ -155,7 +188,7 @@ class InvoiceForm extends Component
             $this->currency_code = $this->invoice->currency_code;
             $this->exchange_rate = (string) $this->invoice->exchange_rate;
             $this->issue_date = $this->invoice->issue_date->toDateString();
-            $this->due_date = $this->invoice->due_date ? $this->invoice->due_date->toDateString() : Carbon::now()->addDays(30)->toDateString();
+            $this->due_date = $this->invoice->due_date ? $this->invoice->due_date->toDateString() : Carbon::now($company->timezone)->addDays(30)->toDateString();
             $this->notes = $this->invoice->notes;
             $this->terms = $this->invoice->terms;
             $this->document_locale = $this->invoice->document_locale ?? 'ar';
@@ -189,8 +222,8 @@ class InvoiceForm extends Component
 
             $this->customer_id = $customer_id;
             $this->currency_code = $company->base_currency_code;
-            $this->issue_date = Carbon::now()->toDateString();
-            $this->due_date = Carbon::now()->addDays(30)->toDateString();
+            $this->issue_date = Carbon::now($company->timezone)->toDateString();
+            $this->due_date = Carbon::now($company->timezone)->addDays(30)->toDateString();
             $this->document_locale = $company->default_locale ?? 'ar';
             $this->warehouse_id = $company->inventorySettings?->default_warehouse_id;
 
@@ -247,21 +280,45 @@ class InvoiceForm extends Component
         $this->recalculate();
     }
 
+    public function saveDraft(): mixed
+    {
+        if ($this->showPreview || $this->showQuickCustomerModal) {
+            return null;
+        }
+
+        return $this->save(false, app(SalesInvoiceCommands::class));
+    }
+
     public function scanBarcode(): void
     {
-        $term = trim($this->barcodeSearch);
-        if ($term === '') {
+        $context = app(CompanyContext::class);
+        abort_unless(auth()->check() && $context->hasCompany() && (int) $context->companyId() === (int) $this->pageCompanyId, 403);
+        $user = auth()->user();
+        abort_unless($user->hasPermissionTo($this->isEditing ? 'sales.invoice.edit_draft' : 'sales.invoice.create'), 403);
+
+        $raw = trim((string) $this->barcodeSearch);
+        if ($raw === '') {
             return;
         }
+
+        // Reject oversized barcode instead of truncating to a different valid barcode
+        if (mb_strlen($raw) > 128) {
+            $this->addError('barcodeSearch', __('workflow.barcode_too_long'));
+
+            return;
+        }
+
+        $term = $raw;
 
         if ($this->showPreview) {
             $this->cancelPreview();
         }
 
-        $company = app(CompanyContext::class)->company();
+        $company = Company::where('id', $this->pageCompanyId)->firstOrFail();
 
         // 1. Try exact barcode
         $barcode = ProductBarcode::with(['product.productUnits', 'unit'])
+            ->where('company_id', $company->id)
             ->whereHas('product', fn ($q) => $q->where('company_id', $company->id)->where('active', true))
             ->where('barcode', $term)
             ->first();
@@ -271,9 +328,23 @@ class InvoiceForm extends Component
 
         if ($barcode !== null) {
             $product = $barcode->product;
-            $productUnit = $barcode->unit_id
-                ? ProductUnit::where('product_id', $product->id)->where('unit_id', $barcode->unit_id)->first()
-                : null;
+            if ($barcode->unit_id !== null) {
+                $productUnit = ProductUnit::where('company_id', $company->id)
+                    ->where('product_id', $product->id)
+                    ->where('unit_id', $barcode->unit_id)
+                    ->where('active', true)
+                    ->whereHas('unit', fn ($u) => $u->where('company_id', $company->id)->where('active', true))
+                    ->first();
+
+                // Reject missing, inactive or foreign unit rather than fallback!
+                if ($productUnit === null) {
+                    $this->addError('barcodeSearch', __('workflow.barcode_unit_mismatch'));
+
+                    return;
+                }
+            } else {
+                $productUnit = null;
+            }
         } else {
             // 2. Try SKU exact match
             $product = Product::with('productUnits')
@@ -287,53 +358,96 @@ class InvoiceForm extends Component
             }
         }
 
-        if ($product !== null) {
-            // Check if product already exists in lines
-            $existingIndex = null;
-            foreach ($this->lines as $idx => $line) {
-                if ($line['product_id'] === $product->id && ($productUnit === null || $line['product_unit_id'] === $productUnit->id)) {
-                    $existingIndex = $idx;
-                    break;
-                }
-            }
+        if ($product === null) {
+            $this->addError('barcodeSearch', __('workflow.product_not_found'));
 
-            if ($existingIndex !== null) {
-                $curQty = BigDecimal::of((string) ($this->lines[$existingIndex]['quantity'] ?: 0));
-                $this->lines[$existingIndex]['quantity'] = (string) $curQty->plus(1);
-            } else {
-                // If first line is empty, replace it
-                $targetIndex = (count($this->lines) === 1 && empty($this->lines[0]['product_id']) && empty($this->lines[0]['item_description']))
-                    ? 0
-                    : count($this->lines);
-
-                $selected = app(SalesProductSelection::class)->select($product->id, $productUnit?->id, $this->currency_code, $this->exchange_rate, $this->warehouse_id);
-
-                $newLine = [
-                    'product_id' => $product->id,
-                    'product_unit_id' => $productUnit?->id,
-                    'item_description' => $product->displayName(),
-                    'quantity' => '1',
-                    'unit_price' => $selected['unit_price'],
-                    'discount_type' => 'none',
-                    'discount_value' => '0',
-                    'tax_rate_id' => null,
-                    'subtotal' => '0.00',
-                    'discount_amount' => '0.00',
-                    'tax_amount' => '0.00',
-                    'line_total' => '0.00',
-                ];
-
-                $newLine = array_merge($newLine, $selected);
-                if ($targetIndex === 0 && count($this->lines) === 1 && empty($this->lines[0]['product_id'])) {
-                    $this->lines[0] = $newLine;
-                } else {
-                    $this->lines[] = $newLine;
-                }
-            }
-
-            $this->barcodeSearch = '';
-            $this->recalculate();
+            return;
         }
+
+        // Canonical product selection BEFORE matching existing row to resolve concrete effective product_unit_id
+        try {
+            $selected = app(SalesProductSelection::class)->select(
+                (int) $product->id,
+                $productUnit?->id,
+                $this->currency_code,
+                $this->exchange_rate,
+                $this->warehouse_id
+            );
+        } catch (\InvalidArgumentException|ModelNotFoundException|InvalidMoneyException|InvalidQuantityException|InvalidUnitConversionException $e) {
+            $this->addError('barcodeSearch', __('commands.code_validation_failed'));
+
+            return;
+        }
+
+        $selectedUnitId = (int) $selected['product_unit_id'];
+        $selectedPrice = (string) $selected['unit_price'];
+        $selectedDescription = (string) $selected['item_description'];
+
+        // Preserve lot/line data; safest append or fill truly empty row, do not silently merge differing unit/lot/cost/price/discount/tax/description lines.
+        $existingIndex = null;
+        foreach ($this->lines as $idx => $line) {
+            $linePid = ! empty($line['product_id']) ? (int) $line['product_id'] : null;
+            $lineUnitId = ! empty($line['product_unit_id']) ? (int) $line['product_unit_id'] : null;
+            $linePrice = (string) ($line['unit_price']);
+            $lineDesc = (string) ($line['item_description']);
+            $discountType = $line['discount_type'];
+            $taxRateId = $line['tax_rate_id'] ?? null;
+
+            if ($linePid === (int) $product->id
+                && $lineUnitId === $selectedUnitId
+                && $linePrice === $selectedPrice
+                && $lineDesc === $selectedDescription
+                && $discountType === 'none'
+                && empty($taxRateId)
+            ) {
+                $existingIndex = $idx;
+                break;
+            }
+        }
+
+        if ($existingIndex !== null) {
+            if (! is_string($this->lines[$existingIndex]['quantity']) || preg_match('/^\d+(?:\.\d{1,6})?$/D', $this->lines[$existingIndex]['quantity']) !== 1) {
+                $this->addError("lines.{$existingIndex}.quantity", __('commands.exact_string_required'));
+
+                return;
+            }
+            $curQty = BigDecimal::of((string) ($this->lines[$existingIndex]['quantity'] ?: '0'));
+            $this->lines[$existingIndex]['quantity'] = (string) $curQty->plus(1);
+        } else {
+            $isTrulyEmptyFirstRow = count($this->lines) === 1
+                && empty($this->lines[0]['product_id'])
+                && trim((string) ($this->lines[0]['item_description'])) === ''
+                && in_array((string) ($this->lines[0]['quantity']), ['1', '1.000000', '1.00', ''], true)
+                && in_array((string) ($this->lines[0]['unit_price']), ['0', '0.00', '0.000000', ''], true)
+                && (($this->lines[0]['discount_type']) === 'none')
+                && empty($this->lines[0]['tax_rate_id']);
+
+            $newLine = [
+                'product_id' => (int) $product->id,
+                'product_unit_id' => $selectedUnitId,
+                'item_description' => $selectedDescription,
+                'quantity' => '1',
+                'unit_price' => $selectedPrice,
+                'discount_type' => 'none',
+                'discount_value' => '0',
+                'tax_rate_id' => null,
+                'available_quantity' => $selected['available_quantity'] ?? null,
+                'subtotal' => '0.00',
+                'discount_amount' => '0.00',
+                'tax_amount' => '0.00',
+                'line_total' => '0.00',
+            ];
+
+            if ($isTrulyEmptyFirstRow) {
+                $this->lines[0] = $newLine;
+            } else {
+                $this->lines[] = $newLine;
+            }
+        }
+
+        $this->barcodeSearch = '';
+        $this->resetErrorBag('barcodeSearch');
+        $this->recalculate();
     }
 
     public function addLine(): void
@@ -519,8 +633,8 @@ class InvoiceForm extends Component
         }
 
         $this->validate([
-            'customer_id' => ['required', 'integer', 'exists:customers,id'],
-            'warehouse_id' => ['nullable', 'integer', 'exists:warehouses,id'],
+            'customer_id' => ['required', 'integer', Rule::exists('customers', 'id')->where('company_id', $company->id)],
+            'warehouse_id' => ['nullable', 'integer', Rule::exists('warehouses', 'id')->where('company_id', $company->id)],
             'currency_code' => ['required', 'string', 'size:3'],
             'exchange_rate' => ['required', 'string', 'regex:/^\d+(\.\d{1,10})?$/'],
             'issue_date' => ['required', 'date'],
@@ -789,7 +903,26 @@ class InvoiceForm extends Component
         $canChangePrice = $user->hasPermissionTo('sales.invoice.change_price');
         $canChangeDiscount = $user->hasPermissionTo('sales.invoice.change_discount');
         $canPost = $user->hasPermissionTo('sales.invoice.post');
-        $customers = Customer::where('company_id', $company->id)->where('status', 'active')->orderBy('name_ar')->get();
+        $cTerm = mb_substr(trim($this->customerSearch), 0, 100);
+        $customersQuery = Customer::where('company_id', $company->id)->where('status', 'active');
+        if ($cTerm !== '') {
+            $customersQuery->where(function ($q) use ($cTerm) {
+                $q->where('name_ar', 'like', "%{$cTerm}%")
+                    ->orWhere('name_en', 'like', "%{$cTerm}%")
+                    ->orWhere('code', 'like', "%{$cTerm}%")
+                    ->orWhere('phone', 'like', "%{$cTerm}%");
+            });
+        }
+        $matchingCustomers = $customersQuery->orderBy('name_ar')->limit(50)->get();
+        if ($this->customer_id) {
+            $selectedCustomer = Customer::where('company_id', $company->id)
+                ->where('id', $this->customer_id)
+                ->where('status', 'active')
+                ->first();
+            $customers = $selectedCustomer !== null ? $matchingCustomers->push($selectedCustomer)->unique('id') : $matchingCustomers;
+        } else {
+            $customers = $matchingCustomers;
+        }
         $currencies = $company->currencies()->where('enabled', true)->get();
         $warehouses = Warehouse::where('company_id', $company->id)->where('active', true)->get();
         $term = mb_substr(trim($this->productSearch), 0, 160);
@@ -805,6 +938,9 @@ class InvoiceForm extends Component
         abort_unless($selectedProducts->count() === count($selectedProductIds), 404);
         $matchingProducts = $productsQuery->orderBy('name_ar')->limit(50)->get();
         $products = $matchingProducts->merge($selectedProducts);
+        $lastCustomerPrices = $this->customer_id !== null && count($selectedProductIds) <= 100
+            && app(ReportingGuard::class)->allows($company, ['reports.sales.view', 'sales.invoice.view'], $user)
+            ? app(CustomerLastPriceQuery::class)->execute($company, $user, $this->customer_id, array_map('intval', $selectedProductIds)) : [];
         $taxes = TaxRate::where('company_id', $company->id)->where('active', true)->get();
         $selectedCustomer = $customers->firstWhere('id', $this->customer_id);
         $creditLimitWarning = false;
@@ -824,6 +960,8 @@ class InvoiceForm extends Component
             'canChangePrice' => $canChangePrice,
             'canChangeDiscount' => $canChangeDiscount,
             'canPost' => $canPost,
+            'canManageCustomers' => $user->hasPermissionTo('customers.manage'),
+            'lastCustomerPrices' => $lastCustomerPrices,
             'creditLimitWarning' => $creditLimitWarning,
         ]);
     }

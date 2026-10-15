@@ -42,9 +42,10 @@
         <x-card padding="p-4" class="space-y-1">
             <div class="text-[11px] font-bold text-text-muted uppercase tracking-wider">{{ __('inventory.total_stock') }}</div>
             <div class="text-xl font-extrabold font-mono tabular-nums dir-ltr text-text-primary">
-                {{ $product->stock_quantity }}
+                {{ $stockTotal }}
                 <span class="text-xs font-normal text-text-secondary font-arabic">{{ (app()->getLocale() === 'en' && $product->baseUnit?->name_en) ? $product->baseUnit->name_en : $product->baseUnit?->name_ar }}</span>
             </div>
+            <x-stock-breakdown :parts="$stockBreakdown" />
         </x-card>
 
         <!-- Suggested Sale Price KPI -->
@@ -205,6 +206,7 @@
                                 </td>
                                 <td class="p-3.5 text-center font-mono font-bold text-sm tabular-nums dir-ltr text-text-primary">
                                     {{ $bal->quantity_base }}
+                                    <x-stock-breakdown :parts="$warehouseBreakdowns[$bal->id]" />
                                 </td>
                                 <td class="p-3.5 text-center text-text-secondary">
                                     {{ app()->getLocale() === 'en' ? ($product->baseUnit?->name_en ?: $product->baseUnit?->name_ar) : $product->baseUnit?->name_ar }}

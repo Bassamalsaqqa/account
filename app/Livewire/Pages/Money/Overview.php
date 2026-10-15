@@ -6,10 +6,12 @@ namespace App\Livewire\Pages\Money;
 
 use App\Domain\Money\Queries\MoneyActivityQuery;
 use App\Domain\Money\Queries\MoneyBalanceQuery;
+use App\Domain\Money\Queries\MoneyDailySummaryQuery;
 use App\Domain\Money\Queries\MoneySourceLinksQuery;
 use App\Livewire\Pages\Money\Concerns\AuthorizesMoneyPages;
 use App\Models\Check;
 use App\Services\Phase7\Phase7FinancialRead;
+use App\Services\Sales\SalesDocumentRules;
 use App\Support\Tenancy\CompanyContext;
 use Carbon\Carbon;
 use Illuminate\Contracts\View\View;
@@ -25,10 +27,18 @@ class Overview extends Component
     #[Locked]
     public ?string $type = null;
 
+    public string $date = '';
+
+    public function updatedDate(): void
+    {
+        $this->resetErrorBag('date');
+    }
+
     public function mount(?string $type = null): void
     {
         abort_unless($type === null || in_array($type, ['cash', 'bank'], true), 404);
         $this->type = $type;
+        $this->date = now(app(CompanyContext::class)->company()->timezone)->format('Y-m-d');
         if ($type !== null) {
             $this->authorizeMoney('money.'.$type.'.view');
         }
@@ -51,13 +61,26 @@ class Overview extends Component
             $checkSummary = $query->selectRaw('direction, currency_code, COUNT(*) AS count, SUM(amount) AS total')->groupBy('direction', 'currency_code')->get()->toArray();
         }
         $today = Carbon::now($company->timezone)->toDateString();
+        $selectedDate = $this->date !== '' ? $this->date : $today;
+        try {
+            app(SalesDocumentRules::class)->date($selectedDate);
+        } catch (\InvalidArgumentException) {
+            $selectedDate = $today;
+            $this->date = $today;
+            $this->addError('date', __('money.daily_date_invalid'));
+        }
+
+        $types = array_values(array_filter([$cash ? 'cash' : null, $bank ? 'bank' : null]));
+        $dailySummaries = $types !== []
+            ? app(MoneyDailySummaryQuery::class)->forTypes($company, $types, $selectedDate)
+            : [];
+
         $dueSoon = $checks ? Check::where('company_id', $this->pageCompanyId)->whereNotIn('status', ['cleared', 'returned', 'cancelled'])
             ->whereIn('id', app(Phase7FinancialRead::class)->visibleCheckIds($this->pageCompanyId))
             ->where('due_date', '<=', Carbon::parse($today)->addDays(7)->toDateString())->orderBy('due_date')->orderBy('id')->limit(8)->get() : collect();
-        $types = array_values(array_filter([$cash ? 'cash' : null, $bank ? 'bank' : null]));
         $activity = app(MoneyActivityQuery::class)->recent($this->pageCompanyId, $types);
         $sourceLinks = app(MoneySourceLinksQuery::class)->forRows($this->pageCompanyId, $activity);
 
-        return view('livewire.pages.money.overview', compact('accounts', 'checkSummary', 'dueSoon', 'today', 'activity', 'sourceLinks', 'company'));
+        return view('livewire.pages.money.overview', compact('accounts', 'checkSummary', 'dueSoon', 'today', 'selectedDate', 'dailySummaries', 'activity', 'sourceLinks', 'company'));
     }
 }

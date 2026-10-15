@@ -218,6 +218,16 @@
                             <span>{{ __('app.nav_products') }}</span>
                         </div>
                     </a>
+                    @if(auth()->user()->can('inventory.product.manage'))
+                    <a href="{{ route('brands.index') }}"
+                       class="flex items-center justify-between min-h-11 px-3 rounded-control text-text-secondary hover:bg-surface-soft hover:text-text-primary font-semibold transition-colors
+                              {{ request()->routeIs('brands.*') ? 'bg-primary-50 text-primary! font-bold shadow-[inset_3px_0_0_#255fd6] rtl:shadow-[inset_-3px_0_0_#255fd6]' : '' }}">
+                        <div class="flex items-center gap-2.5">
+                            <x-icon name="box" class="w-4.5 h-4.5" />
+                            <span>{{ __('inventory.brands') }}</span>
+                        </div>
+                    </a>
+                    @endif
                     @if(auth()->user()->can('catalogs.view') && auth()->user()->hasAnyPermission(['inventory.stock.view','inventory.product.manage']))
                     <a href="{{ route('catalogs.index') }}" class="flex min-h-11 items-center gap-3 px-3 text-sm rounded-control hover:bg-primary-50 text-text-secondary">{{ __('catalogs.catalogs') }}</a>
                     @endif

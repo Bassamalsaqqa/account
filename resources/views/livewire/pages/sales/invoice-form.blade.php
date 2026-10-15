@@ -1,4 +1,19 @@
-<div class="max-w-5xl mx-auto space-y-6">
+<div class="max-w-5xl mx-auto space-y-6"
+     x-data="{
+         saving: false,
+         handleSaveDraft() {
+             if ([...document.querySelectorAll('[role=dialog]')].some(el => el.getClientRects().length > 0) || this.saving || $wire.showPreview || $wire.showQuickCustomerModal) return;
+             this.saving = true;
+             $wire.saveDraft().finally(() => { this.saving = false; });
+         },
+         handleAddLine() {
+             if ([...document.querySelectorAll('[role=dialog]')].some(el => el.getClientRects().length > 0) || this.saving || $wire.showPreview || $wire.showQuickCustomerModal) return;
+             $wire.addLine();
+         }
+     }"
+     @keydown.window.prevent.ctrl.s="handleSaveDraft()"
+     @keydown.window.prevent.meta.s="handleSaveDraft()"
+     @keydown.window.prevent.alt.n="if (!$event.repeat) handleAddLine()">
     <!-- Header -->
     <div class="flex items-center justify-between gap-4">
         <div>
@@ -37,6 +52,7 @@
         <label for="invoice-barcodeSearch" class="block text-sm font-bold text-text-primary mb-1">{{ __('sales.scan_barcode_or_sku') }}</label>
         <div class="relative">
             <input id="invoice-barcodeSearch" type="text"
+                   maxlength="128"
                    wire:model="barcodeSearch"
                    wire:keydown.enter.prevent="scanBarcode"
                    placeholder="{{ __('sales.scan_barcode_hint') }}"
@@ -45,6 +61,7 @@
                 <x-icon name="barcode" class="w-4 h-4" />
             </div>
         </div>
+        @error('barcodeSearch') <span class="text-danger text-xs mt-1 block">{{ $message }}</span> @enderror
         </div>
         <div>
             <label for="invoice-product-search" class="block text-sm font-bold text-text-primary mb-1">{{ __('sales.search_products') }}</label>
@@ -63,9 +80,22 @@
         <div class="grid grid-cols-1 md:grid-cols-4 gap-4 pb-4 border-b border-border">
             <!-- Customer -->
             <div class="md:col-span-2">
-                <label for="invoice-customer-id" class="block text-xs font-bold text-text-primary mb-1">
-                    {{ __('sales.customer') }} <span class="text-danger">*</span>
-                </label>
+                <div class="flex items-center justify-between mb-1">
+                    <label for="invoice-customer-id" class="block text-xs font-bold text-text-primary">
+                        {{ __('sales.customer') }} <span class="text-danger">*</span>
+                    </label>
+                    @if ($canManageCustomers)
+                        <button type="button" wire:click="openQuickCustomerModal" class="text-xs text-primary font-bold hover:underline cursor-pointer" aria-haspopup="dialog">
+                            + {{ __('workflow.quick_customer') }}
+                        </button>
+                    @endif
+                </div>
+                <div class="flex gap-2 mb-1.5">
+                    <input type="text"
+                           wire:model.live.debounce.300ms="customerSearch"
+                           placeholder="{{ __('workflow.search_customers') }}"
+                           class="w-full h-8 px-2.5 rounded-control border border-border bg-canvas text-xs text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden" />
+                </div>
                 <select id="invoice-customer-id" @error('customer_id') aria-invalid="true" aria-describedby="invoice-customer-id-error" @enderror wire:model.live="customer_id"
                         required
                         class="w-full h-9 px-3 rounded-control border border-border bg-canvas text-xs text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden">
@@ -152,8 +182,9 @@
                 </h2>
                 <button type="button"
                         wire:click="addLine"
-                        class="px-2.5 py-1 rounded-control bg-primary text-white text-xs font-bold hover:bg-primary-hover transition-colors">
-                    + {{ __('sales.add_line') }}
+                        class="px-2.5 py-1 rounded-control bg-primary text-white text-xs font-bold hover:bg-primary-hover transition-colors inline-flex items-center gap-1.5 cursor-pointer">
+                    <span>+ {{ __('sales.add_line') }}</span>
+                    <kbd class="px-1 py-0.5 text-[10px] font-mono rounded bg-white/20 text-white leading-none">Alt+N</kbd>
                 </button>
             </div>
 
@@ -170,7 +201,7 @@
                             @if ($taxes->isNotEmpty())
                                 <th class="py-2 px-2 text-start w-28">{{ __('sales.tax') }}</th>
                             @endif
-                            <th class="py-2 px-2 text-end w-24">{{ __('sales.total') }}</th>
+                            <th class="py-2 px-2 text-end w-28">{{ __('sales.total') }} <span class="text-[10px] font-normal text-text-muted">({{ __('workflow.preview') }})</span></th>
                             <th class="py-2 px-1 text-center w-8"></th>
                         </tr>
                     </thead>
@@ -237,7 +268,8 @@
                                            min="0"
                                            dir="ltr"
                                            @if (! $canChangePrice) readonly title="{{ __('sales.price_permission_required') }}" @endif
-                                           class="w-full h-8 px-2 rounded-control border border-border bg-canvas text-xs font-mono {{ ! $canChangePrice ? 'opacity-70 bg-slate-100 cursor-not-allowed' : '' }}" /> @error('lines.'.$index.'.unit_price') <span id="invoice-desktop-line-{{ $index }}-unit-price-error" role="alert" class="text-danger text-[11px] block">{{ $message }}</span> @enderror
+                                           class="w-full h-8 px-2 rounded-control border border-border bg-canvas text-xs font-mono {{ ! $canChangePrice ? 'opacity-70 bg-slate-100 cursor-not-allowed' : '' }}" />
+<x-customer-last-price :price="$lastCustomerPrices[$line['product_id'] ?? 0] ?? null" /> @error('lines.'.$index.'.unit_price') <span id="invoice-desktop-line-{{ $index }}-unit-price-error" role="alert" class="text-danger text-[11px] block">{{ $message }}</span> @enderror
                                 </td>
 
                                 <td class="py-2 px-2 align-top space-y-1">
@@ -380,7 +412,8 @@
                                        min="0"
                                        dir="ltr"
                                        @if (! $canChangePrice) readonly @endif
-                                       class="w-full h-8 px-2 rounded-control border border-border bg-white text-xs font-mono {{ ! $canChangePrice ? 'opacity-70 bg-slate-100 cursor-not-allowed' : '' }}" /> @error('lines.'.$index.'.unit_price') <span id="invoice-mobile-line-{{ $index }}-unit-price-error" role="alert" class="text-danger text-[11px] block">{{ $message }}</span> @enderror
+                                       class="w-full h-8 px-2 rounded-control border border-border bg-white text-xs font-mono {{ ! $canChangePrice ? 'opacity-70 bg-slate-100 cursor-not-allowed' : '' }}" />
+<x-customer-last-price :price="$lastCustomerPrices[$line['product_id'] ?? 0] ?? null" /> @error('lines.'.$index.'.unit_price') <span id="invoice-mobile-line-{{ $index }}-unit-price-error" role="alert" class="text-danger text-[11px] block">{{ $message }}</span> @enderror
                             </div>
                             <div>
                                 <label for="invoice-mobile-line-{{ $index }}-discount-type" class="block text-[11px] font-bold text-text-secondary">{{ __('sales.discount') }}</label>
@@ -492,8 +525,9 @@
                 <button type="button"
                         wire:click="save(false)"
                         wire:loading.attr="disabled"
-                        class="px-4 py-2 rounded-control border border-primary text-primary hover:bg-primary-50 text-xs font-bold transition-colors cursor-pointer">
-                    {{ __('sales.save_draft') }}
+                        class="px-4 py-2 rounded-control border border-primary text-primary hover:bg-primary-50 text-xs font-bold transition-colors cursor-pointer inline-flex items-center gap-1.5">
+                    <span>{{ __('sales.save_draft') }}</span>
+                    <kbd class="px-1 py-0.5 text-[10px] font-mono rounded border border-primary/30 bg-primary-50/50 text-primary leading-none">Ctrl+S</kbd>
                 </button>
                 @if ($canPost)
                     <button id="invoice-post-button"
@@ -507,4 +541,64 @@
             </div>
         @endif
     </div>
+
+    @if ($showQuickCustomerModal)
+        <div x-data="{
+                triggerEl: null,
+                init() {
+                    this.triggerEl = document.activeElement;
+                    this.$nextTick(() => { this.$refs.firstInput?.focus(); });
+                },
+                destroy() {
+                    if (this.triggerEl && typeof this.triggerEl.focus === 'function') {
+                        this.triggerEl.focus();
+                    }
+                }
+             }"
+             x-trap.inert.noscroll="true"
+             @keydown.escape.window.stop.prevent="$wire.closeQuickCustomerModal()"
+             @keydown.enter.stop.prevent="saveQuickCustomer"
+             class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-xs"
+             role="dialog"
+             aria-modal="true"
+             aria-labelledby="quick-customer-modal-title">
+            <div class="bg-surface border border-border rounded-card p-6 w-full max-w-md shadow-lg space-y-4">
+                <div class="flex items-center justify-between pb-3 border-b border-border">
+                    <h3 id="quick-customer-modal-title" class="text-base font-bold text-text-primary">{{ __('workflow.quick_customer') }}</h3>
+                    <button type="button" wire:click="closeQuickCustomerModal" class="text-text-muted hover:text-text-primary text-sm font-bold cursor-pointer">✕</button>
+                </div>
+                <div class="space-y-3">
+                    <div>
+                        <label for="invoice-quick-customer-name-ar" class="block text-xs font-bold text-text-primary mb-1">{{ __('workflow.customer_name_ar') }} <span class="text-danger">*</span></label>
+                        <input x-ref="firstInput" id="invoice-quick-customer-name-ar" type="text" wire:model="quick_customer_name_ar" required maxlength="255" class="w-full h-9 px-3 rounded-control border border-border bg-canvas text-xs text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden" />
+                        @error('quick_customer_name_ar') <span class="text-danger text-[11px] block mt-1">{{ $message }}</span> @enderror
+                    </div>
+                    <div>
+                        <label for="invoice-quick-customer-name-en" class="block text-xs font-bold text-text-primary mb-1">{{ __('workflow.customer_name_en') }}</label>
+                        <input id="invoice-quick-customer-name-en" type="text" wire:model="quick_customer_name_en" maxlength="255" dir="ltr" class="w-full h-9 px-3 rounded-control border border-border bg-canvas text-xs text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden" />
+                        @error('quick_customer_name_en') <span class="text-danger text-[11px] block mt-1">{{ $message }}</span> @enderror
+                    </div>
+                    <div class="grid grid-cols-2 gap-3">
+                        <div>
+                            <label for="invoice-quick-customer-phone" class="block text-xs font-bold text-text-primary mb-1">{{ __('workflow.phone') }}</label>
+                            <input id="invoice-quick-customer-phone" type="text" wire:model="quick_customer_phone" maxlength="64" dir="ltr" class="w-full h-9 px-3 rounded-control border border-border bg-canvas text-xs text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden" />
+                            @error('quick_customer_phone') <span class="text-danger text-[11px] block mt-1">{{ $message }}</span> @enderror
+                        </div>
+                        <div>
+                            <label for="invoice-quick-customer-code" class="block text-xs font-bold text-text-primary mb-1">{{ __('workflow.code') }}</label>
+                            <input id="invoice-quick-customer-code" type="text" wire:model="quick_customer_code" maxlength="64" dir="ltr" class="w-full h-9 px-3 rounded-control border border-border bg-canvas text-xs text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden" />
+                            @error('quick_customer_code') <span class="text-danger text-[11px] block mt-1">{{ $message }}</span> @enderror
+                        </div>
+                    </div>
+                </div>
+                <div class="flex items-center justify-end gap-2 pt-3 border-t border-border">
+                    <button type="button" wire:click="closeQuickCustomerModal" class="px-3 py-1.5 rounded-control border border-border text-xs font-bold text-text-secondary hover:bg-surface-soft cursor-pointer">{{ __('workflow.cancel') }}</button>
+                    <button type="button" wire:click="saveQuickCustomer" wire:loading.attr="disabled" class="px-4 py-1.5 rounded-control bg-primary text-white text-xs font-bold hover:bg-primary-hover shadow-xs cursor-pointer">
+                        <span wire:loading.remove wire:target="saveQuickCustomer">{{ __('workflow.save_customer') }}</span>
+                        <span wire:loading wire:target="saveQuickCustomer">...</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    @endif
 </div>

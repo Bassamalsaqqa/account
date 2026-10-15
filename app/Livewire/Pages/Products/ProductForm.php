@@ -15,10 +15,15 @@ use App\Models\Unit;
 use App\Models\User;
 use App\Services\Inventory\ProductCatalogService;
 use App\Services\Inventory\ProductImageService;
+use App\Services\Sales\SalesActorGuard;
 use App\Support\Tenancy\CompanyContext;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Contracts\View\View;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Livewire\Attributes\Layout;
+use Livewire\Attributes\Locked;
 use Livewire\Component;
 use Livewire\WithFileUploads;
 
@@ -88,9 +93,33 @@ class ProductForm extends Component
 
     public bool $hasMovements = false;
 
+    // Inline Brand Creation
+    #[Locked]
+    public int $lockedCompanyId;
+
+    public bool $showBrandModal = false;
+
+    public string $new_brand_name_ar = '';
+
+    public string $new_brand_name_en = '';
+
+    public function hydrate(): void
+    {
+        $context = app(CompanyContext::class);
+        if (! $context->hasCompany() || ! isset($this->lockedCompanyId) || (int) $context->companyId() !== $this->lockedCompanyId || ! auth()->check()) {
+            abort(403);
+        }
+        $this->authorizeInlineBrand();
+    }
+
     public function mount(CompanyContext $context, ?string $publicId = null): void
     {
+        if (! $context->hasCompany() || ! auth()->check()) {
+            abort(403);
+        }
+
         $company = $context->company();
+        $this->lockedCompanyId = (int) $company->id;
 
         /** @var User $user */
         $user = auth()->user();
@@ -396,16 +425,139 @@ class ProductForm extends Component
         }
     }
 
+    public function openCreateBrandModal(): void
+    {
+        $this->authorizeInlineBrand();
+
+        $this->reset(['new_brand_name_ar', 'new_brand_name_en']);
+        $this->resetErrorBag(['new_brand_name_ar', 'new_brand_name_en']);
+        $this->showBrandModal = true;
+    }
+
+    public function closeCreateBrandModal(): void
+    {
+        $this->authorizeInlineBrand();
+        $this->showBrandModal = false;
+        $this->reset(['new_brand_name_ar', 'new_brand_name_en']);
+        $this->resetErrorBag(['new_brand_name_ar', 'new_brand_name_en']);
+    }
+
+    public function saveInlineBrand(): void
+    {
+        $context = app(CompanyContext::class);
+        if (! $context->hasCompany() || ! isset($this->lockedCompanyId) || (int) $context->companyId() !== $this->lockedCompanyId || ! auth()->check()) {
+            abort(403);
+        }
+
+        $this->new_brand_name_ar = trim($this->new_brand_name_ar);
+        $this->new_brand_name_en = trim($this->new_brand_name_en);
+
+        $validated = $this->validate([
+            'new_brand_name_ar' => ['required', 'string', 'max:255'],
+            'new_brand_name_en' => ['nullable', 'string', 'max:255'],
+        ]);
+
+        $normAr = $validated['new_brand_name_ar'];
+        $normEn = $validated['new_brand_name_en'] !== null && $validated['new_brand_name_en'] !== '' ? $validated['new_brand_name_en'] : null;
+
+        try {
+            $brand = DB::transaction(function () use ($normAr, $normEn) {
+                /** @var User $actor */
+                $actor = auth()->user();
+                app(SalesActorGuard::class)->lockAndAuthorize(
+                    $this->lockedCompanyId,
+                    $actor,
+                    'inventory.product.manage'
+                );
+
+                // On inline retry/double click, avoid duplicates: inside company lock reuse an active exact normalized name_ar/name_en match, else create.
+                $existingQuery = Brand::where('company_id', $this->lockedCompanyId)
+                    ->where('name_ar', $normAr)
+                    ->where('active', true)
+                    ->lockForUpdate();
+
+                if ($normEn !== null) {
+                    $existingQuery->where('name_en', $normEn);
+                } else {
+                    $existingQuery->whereNull('name_en');
+                }
+
+                $existing = $existingQuery->first();
+
+                if ($existing !== null) {
+                    return $existing;
+                }
+
+                return Brand::create([
+                    'company_id' => $this->lockedCompanyId,
+                    'name_ar' => $normAr,
+                    'name_en' => $normEn,
+                    'active' => true,
+                ]);
+            });
+        } catch (AuthorizationException $e) {
+            abort(403);
+        }
+
+        $this->brand_id = (int) $brand->id;
+        $this->closeCreateBrandModal();
+        $this->successMessage = __('inventory.brand_saved_success');
+    }
+
+    private function authorizeInlineBrand(): void
+    {
+        $context = app(CompanyContext::class);
+        if (! $context->hasCompany() || ! isset($this->lockedCompanyId) || (int) $context->companyId() !== $this->lockedCompanyId || ! auth()->check()) {
+            abort(403);
+        }
+
+        try {
+            DB::transaction(function () {
+                /** @var User $actor */
+                $actor = auth()->user();
+                app(SalesActorGuard::class)->lockAndAuthorize(
+                    $this->lockedCompanyId,
+                    $actor,
+                    'inventory.product.manage'
+                );
+            });
+        } catch (AuthorizationException $e) {
+            abort(403);
+        }
+    }
+
     public function render(CompanyContext $context): View
     {
+        if (! $context->hasCompany() || ! isset($this->lockedCompanyId) || (int) $context->companyId() !== $this->lockedCompanyId || ! auth()->check()) {
+            abort(403);
+        }
+        $this->authorizeInlineBrand();
+
         $company = $context->company();
 
         /** @var User $user */
         $user = auth()->user();
         $canViewCost = $user->hasPermissionTo('inventory.cost.view');
+        $canManageProduct = $user->hasPermissionTo('inventory.product.manage');
+        if (! $canViewCost) {
+            // Revoke previously hydrated cost state as well as hiding the control.
+            $this->suggested_purchase_cost = '';
+        }
 
         $categories = ProductCategory::where('company_id', $company->id)->where('active', true)->orderBy('sort_order')->get();
-        $brands = Brand::where('company_id', $company->id)->where('active', true)->orderBy('name_ar')->get();
+
+        $brandsQuery = Brand::where('company_id', $company->id);
+        if ($this->brand_id !== null) {
+            $selectedBrandId = $this->brand_id;
+            $brandsQuery->where(function (Builder $q) use ($selectedBrandId) {
+                $q->where('active', true)
+                    ->orWhere('id', $selectedBrandId);
+            });
+        } else {
+            $brandsQuery->where('active', true);
+        }
+        $brands = $brandsQuery->orderBy('name_ar')->get();
+
         $units = Unit::where('company_id', $company->id)->where('active', true)->orderBy('name_ar')->get();
 
         $productUnits = collect();
@@ -426,6 +578,7 @@ class ProductForm extends Component
             'productBarcodes' => $productBarcodes,
             'productImages' => $productImages,
             'canViewCost' => $canViewCost,
+            'canManageProduct' => $canManageProduct,
             'company' => $company,
         ]);
     }
