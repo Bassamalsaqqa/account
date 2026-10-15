@@ -16,6 +16,7 @@ use App\Domain\Purchasing\Queries\VendorProductPriceHistoryQuery;
 use App\Domain\Sales\Calculators\SalesDocumentTotalsCalculator;
 use App\Livewire\Concerns\AiUnsavedForm;
 use App\Livewire\Concerns\QuickPartyCreate;
+use App\Livewire\Concerns\QuickProductCreate;
 use App\Livewire\Pages\Purchasing\Concerns\AuthorizesPurchasingPages;
 use App\Models\Company;
 use App\Models\Product;
@@ -45,6 +46,17 @@ class PurchaseForm extends Component
     use AiUnsavedForm;
     use AuthorizesPurchasingPages;
     use QuickPartyCreate;
+    use QuickProductCreate;
+
+    protected function quickProductFormPermission(): string
+    {
+        return $this->quickPartyFormPermission();
+    }
+
+    protected function assertQuickProductDraft(): void
+    {
+        $this->authorizeForm();
+    }
 
     protected function quickPartyKind(): string
     {
@@ -100,6 +112,9 @@ class PurchaseForm extends Component
 
     public ?string $notes = null;
 
+    #[Locked]
+    public bool $receivingStock = false;
+
     public string $barcodeSearch = '';
 
     public string $vendorSearch = '';
@@ -123,11 +138,15 @@ class PurchaseForm extends Component
         return $company;
     }
 
-    public function mount(CompanyContext $context, ?string $publicId = null): void
+    public function mount(CompanyContext $context, ?string $publicId = null, ?string $receiveProduct = null): void
     {
         $this->pageCompanyId = $context->companyId();
         $this->publicId = $publicId;
+        $receiveProduct ??= request()->query('receiveProduct');
+        abort_unless($receiveProduct === null || is_string($receiveProduct), 422);
         $company = $this->authorizeForm();
+        // These are separate explicit entry intents; neither may silently replace the other's lines.
+        abort_if($publicId === null && $receiveProduct !== null && request()->query('assistant') !== null, 422);
         if ($publicId !== null) {
             $purchase = Purchase::where('company_id', $company->id)->where('public_id', $publicId)->firstOrFail();
             foreach (app(PurchaseDraftBuilder::class)->editableData($purchase) as $key => $value) {
@@ -145,6 +164,12 @@ class PurchaseForm extends Component
                 $this->warehouse_id = null;
             }
             $this->addLine();
+            if ($receiveProduct !== null) {
+                $product = Product::where('company_id', $company->id)->where('public_id', $receiveProduct)
+                    ->where('active', true)->where('track_stock', true)->firstOrFail();
+                $this->selectProduct(0, $product->id);
+                $this->receivingStock = true;
+            }
         }
         if ($publicId === null) {
             $this->mountAiInput('purchase');
@@ -214,7 +239,7 @@ class PurchaseForm extends Component
 
     public function saveDraft(): mixed
     {
-        if ($this->showQuickVendorModal) {
+        if ($this->showQuickVendorModal || $this->showQuickProductModal) {
             return null;
         }
 
@@ -386,6 +411,7 @@ class PurchaseForm extends Component
         $this->barcodeSearch = '';
         $this->resetErrorBag('barcodeSearch');
         $this->recalculate();
+        $this->dispatch('barcode-scanned');
     }
 
     public function addLine(): void
@@ -403,7 +429,7 @@ class PurchaseForm extends Component
         $this->recalculate();
     }
 
-    public function selectProduct(int $index, mixed $productId): void
+    public function selectProduct(int $index, mixed $productId): bool
     {
         $this->authorizeForm();
         abort_unless(isset($this->lines[$index]), 422);
@@ -412,18 +438,20 @@ class PurchaseForm extends Component
                 'quantity' => '1', 'unit_cost' => '0', 'discount_type' => 'none', 'discount_value' => '0', 'tax_rate_id' => null, 'lots' => []];
             $this->recalculate();
 
-            return;
+            return true;
         }
         try {
             $selected = app(PurchaseProductSelection::class)->select((int) $productId, null, $this->currency_code, $this->exchange_rate);
         } catch (\InvalidArgumentException|InvalidMoneyException|InvalidUnitConversionException $exception) {
             $this->addError('draft', __('purchasing.invalid_draft'));
 
-            return;
+            return false;
         }
         unset($this->lines[$index]['public_id']);
         $this->lines[$index] = array_replace($this->lines[$index], $selected, ['lots' => []]);
         $this->recalculate();
+
+        return true;
     }
 
     public function changeUnit(int $index, mixed $unitId): void

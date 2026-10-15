@@ -7,22 +7,30 @@ namespace App\Livewire\Pages\Sales;
 use App\Actions\Sales\CreateQuotationAction;
 use App\Actions\Sales\UpdateQuotationAction;
 use App\Application\Reporting\Security\ReportingGuard;
+use App\Domain\Inventory\Exceptions\InvalidQuantityException;
+use App\Domain\Inventory\Exceptions\InvalidUnitConversionException;
+use App\Domain\Money\Exceptions\InvalidMoneyException;
 use App\Domain\Sales\Calculators\SalesDocumentTotalsCalculator;
 use App\Domain\Sales\Calculators\SalesLineCalculationInput;
 use App\Domain\Sales\Calculators\SalesLineCalculator;
 use App\Domain\Sales\Queries\CustomerLastPriceQuery;
 use App\Livewire\Concerns\QuickPartyCreate;
+use App\Livewire\Concerns\QuickProductCreate;
 use App\Models\Company;
 use App\Models\Customer;
 use App\Models\Product;
+use App\Models\ProductBarcode;
+use App\Models\ProductUnit;
 use App\Models\Quotation;
 use App\Models\TaxRate;
 use App\Services\Sales\SalesActorGuard;
 use App\Services\Sales\SalesProductSelection;
 use App\Support\Tenancy\CompanyContext;
 use Brick\Math\BigDecimal;
+use Brick\Math\Exception\MathException;
 use Carbon\Carbon;
 use Illuminate\Contracts\View\View;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Livewire\Attributes\Layout;
@@ -33,6 +41,20 @@ use Livewire\Component;
 class QuotationForm extends Component
 {
     use QuickPartyCreate;
+    use QuickProductCreate;
+
+    protected function quickProductFormPermission(): string
+    {
+        return $this->quickProductDocumentId === null ? 'sales.quote.create' : 'sales.quote.edit';
+    }
+
+    protected function assertQuickProductDraft(): void
+    {
+        if ($this->quickProductDocumentId !== null) {
+            $document = Quotation::where('company_id', $this->pageCompanyId)->findOrFail($this->quickProductDocumentId);
+            abort_unless($document->isDraft(), 403);
+        }
+    }
 
     protected function quickPartyKind(): string
     {
@@ -69,6 +91,8 @@ class QuotationForm extends Component
     public string $customerSearch = '';
 
     public string $productSearch = '';
+
+    public string $barcodeSearch = '';
 
     public string $currency_code = 'ILS';
 
@@ -135,6 +159,7 @@ class QuotationForm extends Component
                 abort(400, 'Cannot edit quotation in status: '.$this->quotation->status);
             }
 
+            $this->quickProductDocumentId = (int) $this->quotation->id;
             $this->isEditing = true;
             $this->customer_id = $this->quotation->customer_id;
             $this->currency_code = $this->quotation->currency_code;
@@ -248,6 +273,161 @@ class QuotationForm extends Component
         $this->recalculate();
     }
 
+    public function scanBarcode(): void
+    {
+        $this->authorizeQuoteAction();
+
+        $raw = trim((string) $this->barcodeSearch);
+        if ($raw === '') {
+            return;
+        }
+
+        // Reject oversized barcode instead of truncating to a different valid barcode
+        if (mb_strlen($raw) > 128) {
+            $this->addError('barcodeSearch', __('workflow.barcode_too_long'));
+
+            return;
+        }
+
+        $term = $raw;
+
+        $company = Company::where('id', $this->pageCompanyId)->firstOrFail();
+
+        // 1. Try exact barcode
+        $barcode = ProductBarcode::with(['product.productUnits', 'unit'])
+            ->where('company_id', $company->id)
+            ->whereHas('product', fn ($q) => $q->where('company_id', $company->id)->where('active', true))
+            ->where('barcode', $term)
+            ->first();
+
+        $product = null;
+        $productUnit = null;
+
+        if ($barcode !== null) {
+            $product = $barcode->product;
+            if ($barcode->unit_id !== null) {
+                $productUnit = ProductUnit::where('company_id', $company->id)
+                    ->where('product_id', $product->id)
+                    ->where('unit_id', $barcode->unit_id)
+                    ->where('active', true)
+                    ->whereHas('unit', fn ($u) => $u->where('company_id', $company->id)->where('active', true))
+                    ->first();
+
+                // Reject missing, inactive or foreign unit rather than fallback!
+                if ($productUnit === null) {
+                    $this->addError('barcodeSearch', __('workflow.barcode_unit_mismatch'));
+
+                    return;
+                }
+            } else {
+                $productUnit = null;
+            }
+        } else {
+            // 2. Try SKU exact match
+            $product = Product::with('productUnits')
+                ->where('company_id', $company->id)
+                ->where('active', true)
+                ->where('sku', $term)
+                ->first();
+
+            if ($product !== null) {
+                $productUnit = null;
+            }
+        }
+
+        if ($product === null) {
+            $this->addError('barcodeSearch', __('workflow.product_not_found'));
+
+            return;
+        }
+
+        // Canonical product selection BEFORE matching existing row to resolve concrete effective product_unit_id
+        try {
+            $selected = app(SalesProductSelection::class)->select(
+                (int) $product->id,
+                $productUnit?->id,
+                $this->currency_code,
+                $this->exchange_rate,
+                null
+            );
+        } catch (\InvalidArgumentException|MathException|ModelNotFoundException|InvalidMoneyException|InvalidQuantityException|InvalidUnitConversionException $e) {
+            $this->addError('barcodeSearch', __('commands.code_validation_failed'));
+
+            return;
+        }
+
+        $selectedUnitId = (int) $selected['product_unit_id'];
+        $selectedPrice = (string) $selected['unit_price'];
+        $selectedDescription = (string) $selected['item_description'];
+
+        // Preserve lot/line data; safest append or fill truly empty row, do not silently merge differing unit/lot/cost/price/discount/tax/description lines.
+        $existingIndex = null;
+        foreach ($this->lines as $idx => $line) {
+            $linePid = ! empty($line['product_id']) ? (int) $line['product_id'] : null;
+            $lineUnitId = ! empty($line['product_unit_id']) ? (int) $line['product_unit_id'] : null;
+            $linePrice = (string) ($line['unit_price']);
+            $lineDesc = (string) ($line['item_description']);
+            $discountType = $line['discount_type'];
+            $taxRateId = $line['tax_rate_id'] ?? null;
+
+            if ($linePid === (int) $product->id
+                && $lineUnitId === $selectedUnitId
+                && $linePrice === $selectedPrice
+                && $lineDesc === $selectedDescription
+                && $discountType === 'none'
+                && empty($taxRateId)
+            ) {
+                $existingIndex = $idx;
+                break;
+            }
+        }
+
+        if ($existingIndex !== null) {
+            if (! is_string($this->lines[$existingIndex]['quantity']) || preg_match('/^\d+(?:\.\d{1,6})?$/D', $this->lines[$existingIndex]['quantity']) !== 1) {
+                $this->addError("lines.{$existingIndex}.quantity", __('commands.exact_string_required'));
+
+                return;
+            }
+            $curQty = BigDecimal::of((string) ($this->lines[$existingIndex]['quantity'] ?: '0'));
+            $this->lines[$existingIndex]['quantity'] = (string) $curQty->plus(1);
+        } else {
+            $isTrulyEmptyFirstRow = count($this->lines) === 1
+                && empty($this->lines[0]['product_id'])
+                && trim((string) ($this->lines[0]['item_description'])) === ''
+                && in_array((string) ($this->lines[0]['quantity']), ['1', '1.000000', '1.00', ''], true)
+                && in_array((string) ($this->lines[0]['unit_price']), ['0', '0.00', '0.000000', ''], true)
+                && (($this->lines[0]['discount_type']) === 'none')
+                && empty($this->lines[0]['tax_rate_id']);
+
+            $newLine = [
+                'product_id' => (int) $product->id,
+                'product_unit_id' => $selectedUnitId,
+                'item_description' => $selectedDescription,
+                'quantity' => '1',
+                'unit_price' => $selectedPrice,
+                'discount_type' => 'none',
+                'discount_value' => '0',
+                'tax_rate_id' => null,
+                'available_quantity' => $selected['available_quantity'] ?? null,
+                'subtotal' => '0.00',
+                'discount_amount' => '0.00',
+                'tax_amount' => '0.00',
+                'line_total' => '0.00',
+            ];
+
+            if ($isTrulyEmptyFirstRow) {
+                $this->lines[0] = $newLine;
+            } else {
+                $this->lines[] = $newLine;
+            }
+        }
+
+        $this->barcodeSearch = '';
+        $this->resetErrorBag('barcodeSearch');
+        $this->recalculate();
+        $this->dispatch('barcode-scanned');
+    }
+
     public function addLine(): void
     {
         $this->authorizeQuoteAction();
@@ -275,12 +455,14 @@ class QuotationForm extends Component
         $this->recalculate();
     }
 
-    public function selectProduct(int $index, int $productId): void
+    public function selectProduct(int $index, int $productId): bool
     {
         $this->authorizeQuoteAction();
         $selected = app(SalesProductSelection::class)->select($productId, null, $this->currency_code, $this->exchange_rate, null);
         $this->lines[$index] = array_merge($this->lines[$index], $selected);
         $this->recalculate();
+
+        return true;
     }
 
     public function changeUnit(int $index, int $productUnitId): void
@@ -298,6 +480,15 @@ class QuotationForm extends Component
     public function recalculate(): void
     {
         $company = app(CompanyContext::class)->company();
+        foreach ($this->lines as $index => $line) {
+            foreach (['quantity', 'unit_price', 'discount_value'] as $field) {
+                if (! is_string($line[$field])) {
+                    $this->addError("lines.{$index}.{$field}", __('commands.exact_string_required'));
+
+                    return;
+                }
+            }
+        }
         $lineCalculator = app(SalesLineCalculator::class);
         $totalsCalculator = app(SalesDocumentTotalsCalculator::class);
 
@@ -406,7 +597,7 @@ class QuotationForm extends Component
 
     public function saveDraft(CreateQuotationAction $createAction, UpdateQuotationAction $updateAction): mixed
     {
-        if ($this->showQuickCustomerModal) {
+        if ($this->showQuickCustomerModal || $this->showQuickProductModal) {
             return null;
         }
 

@@ -48,26 +48,17 @@
     @include('livewire.ai.unsaved-notice')
 
     <div class="bg-white p-4 rounded-card border border-border shadow-xs grid gap-4 md:grid-cols-2">
-        <div>
-        <label for="invoice-barcodeSearch" class="block text-sm font-bold text-text-primary mb-1">{{ __('sales.scan_barcode_or_sku') }}</label>
-        <div class="relative">
-            <input id="invoice-barcodeSearch" type="text"
-                   maxlength="128"
-                   wire:model="barcodeSearch"
-                   wire:keydown.enter.prevent="scanBarcode"
-                   placeholder="{{ __('sales.scan_barcode_hint') }}"
-                   class="w-full h-11 ps-3 pe-10 rounded-control border border-border bg-canvas text-sm text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden" />
-            <div class="absolute inset-y-0 end-0 pe-3 flex items-center pointer-events-none text-text-muted">
-                <x-icon name="barcode" class="w-4 h-4" />
-            </div>
-        </div>
-        @error('barcodeSearch') <span class="text-danger text-xs mt-1 block">{{ $message }}</span> @enderror
-        </div>
+        @include('livewire.partials.barcode-entry', ['prefix' => 'invoice'])
         <div>
             <label for="invoice-product-search" class="block text-sm font-bold text-text-primary mb-1">{{ __('sales.search_products') }}</label>
             <input id="invoice-product-search" type="search" maxlength="160" wire:model.live.debounce.300ms="productSearch" x-on:keydown.enter.prevent
                    placeholder="{{ __('sales.search_products_hint') }}" aria-describedby="invoice-product-search-help"
                    class="w-full h-11 px-3 rounded-control border border-border bg-canvas text-sm text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden" />
+            @if (auth()->user()->hasPermissionTo('inventory.product.manage'))
+                <button type="button" wire:click="openQuickProductModal" aria-haspopup="dialog" class="mt-2 min-h-11 px-3 py-2 rounded-control border border-border text-sm font-bold text-primary hover:bg-surface-soft focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary">
+                    {{ __('quick_product.create') }}
+                </button>
+            @endif
             <p id="invoice-product-search-help" class="mt-1 text-xs text-text-secondary">{{ __('sales.product_search_help') }}</p>
             <p wire:loading wire:target="productSearch" role="status" class="mt-1 text-xs text-text-secondary">{{ __('sales.products_searching') }}</p>
             @if($productMatchCount === 0)<p role="status" class="mt-1 text-sm text-text-secondary">{{ __('sales.no_matching_products') }}</p>@endif
@@ -601,4 +592,5 @@
             </div>
         </div>
     @endif
+    @include('livewire.partials.quick-product-modal')
 </div>

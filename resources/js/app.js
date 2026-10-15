@@ -4,3 +4,4 @@ import './transaction-recorder';
 import './assistant-memory';
 import './assistant-browser-voice';
 import './pwa';
+import './financial-share-controls';

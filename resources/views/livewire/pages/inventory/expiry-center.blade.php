@@ -10,6 +10,21 @@
         </div>
     </div>
 
+    @if ($canManageWarning)
+        <form wire:submit="saveWarningDays" class="flex flex-col sm:flex-row sm:items-end gap-3 border border-border rounded-control p-4 bg-white">
+            <div class="flex-1">
+                <label for="expiry-warning-days" class="block text-sm font-bold text-text-primary">{{ __('inventory.warning_window') }}</label>
+                <p id="expiry-warning-hint" class="mt-1 text-sm text-text-secondary">{{ __('inventory.warning_hint') }}</p>
+                <div class="mt-3 flex items-center gap-2">
+                    <input id="expiry-warning-days" type="number" min="1" max="365" wire:model="warningDays" aria-describedby="expiry-warning-hint @if ($errors->has('warningDays')) expiry-warning-error @endif" aria-invalid="{{ $errors->has('warningDays') ? 'true' : 'false' }}" dir="ltr" class="h-11 w-24 px-3 rounded-control border border-border text-sm focus-visible:outline-2 focus-visible:outline-primary" />
+                    <span class="text-sm text-text-secondary">{{ __('inventory.days') }}</span>
+                </div>
+                @error('warningDays') <p role="alert" id="expiry-warning-error" class="mt-1 text-sm text-danger">{{ $message }}</p> @enderror
+            </div>
+            <button type="submit" wire:loading.attr="disabled" wire:target="saveWarningDays" class="h-11 px-4 rounded-control bg-primary text-white text-sm font-bold disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary">{{ __('inventory.save_warning') }}</button>
+        </form>
+    @endif
+
     <!-- Messages -->
     @if ($successMessage)
         <div role="status" class="p-3.5 rounded-control bg-success-bg border border-success/30 text-success text-xs font-semibold flex items-center justify-between">
@@ -33,6 +48,7 @@
                 <select id="expiry-timeframe" wire:model.live="timeframeFilter" class="w-full h-8 px-2 rounded-control border border-border text-xs bg-white">
                     <option value="all">{{ __('inventory.filter_all_lots') }}</option>
                     <option value="expired">{{ __('inventory.filter_expired_only') }}</option>
+                    <option value="warning">{{ __('inventory.warning_filter', ['days' => $savedWarningDays]) }}</option>
                     <option value="7">{{ __('inventory.within_7_days') }}</option>
                     <option value="30">{{ __('inventory.filter_30_days') }}</option>
                     <option value="60">{{ __('inventory.filter_60_days') }}</option>
@@ -119,16 +135,12 @@
                                 {{ app()->getLocale() === 'en' && $lb->warehouse?->name_en ? $lb->warehouse->name_en : $lb->warehouse?->name_ar }}
                             </td>
                             <td class="p-3.5 font-mono dir-ltr text-text-secondary">
-                                {{ $lb->lot?->expiry_date ?? '—' }}
+                                <bdi dir="ltr">{{ $lb->lot?->expiry_date?->toDateString() ?? '—' }}</bdi>
                             </td>
                             <td class="p-3.5 text-center">
                                 @if ($isExpired)
                                     <x-badge variant="danger">{{ __('inventory.expired') }}</x-badge>
-                                @elseif ($days !== null && $days <= 7)
-                                    <x-badge variant="danger">{{ $days }} {{ __('inventory.days') }}</x-badge>
-                                @elseif ($days !== null && $days <= 30)
-                                    <x-badge variant="alert">{{ $days }} {{ __('inventory.days') }}</x-badge>
-                                @elseif ($days !== null && $days <= 90)
+                                @elseif ($days !== null && $days <= $savedWarningDays)
                                     <x-badge variant="warn">{{ $days }} {{ __('inventory.days') }}</x-badge>
                                 @elseif ($days !== null)
                                     <x-badge variant="success">{{ $days }} {{ __('inventory.days') }}</x-badge>
@@ -148,10 +160,14 @@
                             @endif
                             @if ($canAdjust)
                                 <td class="p-3.5 text-center">
+                                    @if ($isExpired)
                                     <button type="button" wire:click="openDisposalModal({{ $lb->id }})"
                                             class="px-2.5 py-1 rounded-control bg-danger-bg hover:bg-danger/20 text-danger font-bold text-xs transition-colors">
                                         {{ __('inventory.dispose_expired') }}
                                     </button>
+                                    @else
+                                        <span class="text-text-muted">—</span>
+                                    @endif
                                 </td>
                             @endif
                         </tr>

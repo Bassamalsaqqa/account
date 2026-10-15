@@ -3,6 +3,10 @@
 declare(strict_types=1);
 
 return [
+    'add_scanned_product' => 'إضافة صنف',
+    'scan_entry_help' => 'امسح أو أدخل الباركود أو رمز الصنف كاملاً، ثم اضغط إدخال أو إضافة صنف.',
+    'scan_added' => 'تمت إضافة الصنف. جاهز للمسح التالي.',
+    'scan_loading' => 'جارٍ إضافة الصنف…',
     'quick_customer' => 'عميل جديد',
     'quick_vendor' => 'مورد جديد',
     'customer_name_ar' => 'اسم العميل (بالعربية)',
