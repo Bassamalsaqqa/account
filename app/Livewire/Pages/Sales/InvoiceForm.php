@@ -500,7 +500,7 @@ class InvoiceForm extends Component
         $this->recalculate();
     }
 
-    public function selectProduct(int $index, int $productId): void
+    public function selectProduct(int $index, int $productId): bool
     {
         if ($this->showPreview) {
             $this->cancelPreview();
@@ -509,6 +509,8 @@ class InvoiceForm extends Component
         $selected = app(SalesProductSelection::class)->select($productId, null, $this->currency_code, $this->exchange_rate, $this->warehouse_id);
         $this->lines[$index] = array_merge($this->lines[$index], $selected);
         $this->recalculate();
+
+        return true;
     }
 
     public function changeUnit(int $index, int $productUnitId): void

@@ -455,12 +455,14 @@ class QuotationForm extends Component
         $this->recalculate();
     }
 
-    public function selectProduct(int $index, int $productId): void
+    public function selectProduct(int $index, int $productId): bool
     {
         $this->authorizeQuoteAction();
         $selected = app(SalesProductSelection::class)->select($productId, null, $this->currency_code, $this->exchange_rate, null);
         $this->lines[$index] = array_merge($this->lines[$index], $selected);
         $this->recalculate();
+
+        return true;
     }
 
     public function changeUnit(int $index, int $productUnitId): void
