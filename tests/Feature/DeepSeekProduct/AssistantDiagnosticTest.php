@@ -100,10 +100,17 @@ class AssistantDiagnosticTest extends TestCase
             'ai_assistant.daily_user_cost_ceiling_micros' => 100000,
             'ai_assistant.monthly_user_cost_ceiling_micros' => 1000000]);
         Http::preventStrayRequests();
-        Http::fakeSequence()->push(['model' => 'deepseek-flash',
-            'choices' => [['message' => ['content' => '{"status":"ok"}'], 'finish_reason' => 'stop']],
-            'usage' => ['prompt_tokens' => 12, 'completion_tokens' => 5]])
-            ->push(['error' => ['message' => 'private synthetic provider body']], 401);
+        Http::fakeSequence()->push([
+            'is_available' => true,
+            'balance_infos' => [
+                [
+                    'currency' => 'USD',
+                    'total_balance' => '10.00',
+                    'granted_balance' => '0.00',
+                    'topped_up_balance' => '10.00',
+                ],
+            ],
+        ])->push(['error' => ['message' => 'private synthetic provider body']], 401);
         $this->assertSame('verified', app(DeepSeekQuickConnect::class)->testConnection($this->company, $this->owner,
             'synthetic-test-key-not-a-real-key', 'synthetic-owner-password', true, (string) Str::uuid(), 0, 0)['status']);
         Livewire::test(AssistantLauncher::class, ['context' => 'sales'])->call('showAssistant')
