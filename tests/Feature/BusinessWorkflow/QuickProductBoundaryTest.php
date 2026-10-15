@@ -27,6 +27,14 @@ use Tests\Feature\Phase5E\Phase5ETestCase;
 
 final class QuickProductBoundaryTest extends Phase5ETestCase
 {
+    public function test_receive_and_assistant_entry_intents_cannot_silently_replace_each_other(): void
+    {
+        $before = [Product::count(), Purchase::count(), DB::table('posting_batches')->count(), DB::table('stock_movements')->count()];
+        Livewire::withQueryParams(['receiveProduct' => $this->product->public_id, 'assistant' => 'synthetic-unused-token'])
+            ->test(PurchaseForm::class)->assertStatus(422);
+        $this->assertSame($before, [Product::count(), Purchase::count(), DB::table('posting_batches')->count(), DB::table('stock_movements')->count()]);
+    }
+
     public function test_posted_invoice_cannot_create_product_from_stale_editor(): void
     {
         $customer = Customer::create(['company_id' => $this->company->id, 'name_ar' => 'Synthetic customer', 'active' => true, 'created_by' => $this->owner->id]);

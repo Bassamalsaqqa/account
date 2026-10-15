@@ -1,6 +1,7 @@
 <?php
 
 return [
+    'purchase_summary' => 'Purchase summary',
     'post_purchase' => 'Post Purchase',
     'post_confirmation' => 'Posting receives inventory, records the amount owed to the vendor, and locks this purchase. Continue?',
     'purchase_posted' => 'Purchase posted successfully.',

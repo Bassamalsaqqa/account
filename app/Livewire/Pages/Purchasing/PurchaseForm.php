@@ -145,6 +145,8 @@ class PurchaseForm extends Component
         $receiveProduct ??= request()->query('receiveProduct');
         abort_unless($receiveProduct === null || is_string($receiveProduct), 422);
         $company = $this->authorizeForm();
+        // These are separate explicit entry intents; neither may silently replace the other's lines.
+        abort_if($publicId === null && $receiveProduct !== null && request()->query('assistant') !== null, 422);
         if ($publicId !== null) {
             $purchase = Purchase::where('company_id', $company->id)->where('public_id', $publicId)->firstOrFail();
             foreach (app(PurchaseDraftBuilder::class)->editableData($purchase) as $key => $value) {

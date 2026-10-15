@@ -59,8 +59,11 @@ final class ExpiryLotUsabilityTest extends PositionTestCase
         $this->assertZeroEconomicWrites(function (): void {
             Livewire::test(ExpiryCenter::class)->set('timeframeFilter', 'warning')
                 ->assertViewHas('savedWarningDays', 14)
+                ->assertDontSee('wire:click="openDisposalModal(', false)
+                ->assertDontSee('2026-10-15 00:00:00')
                 ->assertViewHas('lotBalances', fn ($lots) => $lots->pluck('lot.lot_number')->all() === ['today', 'boundary']);
             Livewire::test(ExpiryCenter::class)->set('timeframeFilter', 'expired')
+                ->assertSee('wire:click="openDisposalModal(', false)
                 ->assertViewHas('lotBalances', fn ($lots) => $lots->pluck('lot.lot_number')->all() === ['yesterday']);
         });
     }
