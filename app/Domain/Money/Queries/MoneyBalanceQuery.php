@@ -59,7 +59,7 @@ final class MoneyBalanceQuery
                 if ($group->transaction_currency_code !== $account->currency_code) {
                     $available = false;
                     $hasForeignMetadata = $hasForeignMetadata || $group->transaction_currency_code !== null;
-                } else {
+                } elseif ($group->currency_balance !== null) {
                     $currency = $currency->plus((string) $group->currency_balance);
                 }
             }
@@ -67,8 +67,8 @@ final class MoneyBalanceQuery
             if ($account->currency_code === $company->base_currency_code && ! $hasForeignMetadata) {
                 $currency = $base;
                 $available = true;
-            } elseif (! $hasForeignMetadata && (int) ($totals->get($account->ledger_account_id)->unknown_count ?? 0) === 0) {
-                $available = true;
+            } elseif (! $hasForeignMetadata) {
+                $available = (int) ($totals->get($account->ledger_account_id)->unknown_count ?? 0) === 0;
             }
             $rows[] = [
                 'public_id' => $account->public_id, 'name' => $account->displayName(), 'account_type' => $type,
