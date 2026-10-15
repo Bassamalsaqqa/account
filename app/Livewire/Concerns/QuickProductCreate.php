@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Livewire\Concerns;
 
+use App\Domain\Inventory\Exceptions\InvalidUnitConversionException;
 use App\Domain\Money\Exceptions\InvalidMoneyException;
 use App\Domain\Money\ValueObjects\ExchangeRate;
 use App\Exceptions\IdempotencyConflictException;
@@ -16,6 +17,7 @@ use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
+use InvalidArgumentException;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Locked;
 
@@ -95,13 +97,29 @@ trait QuickProductCreate
 
     public function saveQuickProduct(): void
     {
-        // Keep the fresh draft check, master creation and canonical line selection behind one company lock.
-        DB::transaction(function (): void {
-            $this->createAndSelectQuickProduct();
-        });
+        $lines = $this->lines;
+        $errors = $this->getErrorBag()->messages();
+        try {
+            // A selector refusal must escape the transaction before becoming a recoverable UI error.
+            $selected = DB::transaction(fn (): bool => $this->createAndSelectQuickProduct());
+        } catch (InvalidArgumentException|InvalidMoneyException|InvalidUnitConversionException $exception) {
+            $this->lines = $lines;
+            $this->setErrorBag($errors);
+            $this->addError('quick_product_name_ar', __('quick_product.selection_failed'));
+
+            return;
+        } catch (\Throwable $exception) {
+            $this->lines = $lines;
+            throw $exception;
+        }
+        if ($selected) {
+            $this->productSearch = '';
+            $this->closeQuickProductModal();
+            $this->dispatch('quick-product-created');
+        }
     }
 
-    private function createAndSelectQuickProduct(): void
+    private function createAndSelectQuickProduct(): bool
     {
         $company = $this->authorizeQuickProduct();
         abort_unless($this->showQuickProductModal && $this->quickProductToken !== null, 403);
@@ -110,7 +128,7 @@ trait QuickProductCreate
         } catch (InvalidMoneyException) {
             $this->addError('quick_product_name_ar', __('quick_product.rate_required'));
 
-            return;
+            return false;
         }
         try {
             $product = app(QuickProductCreation::class)->execute($company, auth()->user(), $this->quickProductToken, [
@@ -125,11 +143,11 @@ trait QuickProductCreate
                 }
             }
 
-            return;
+            return false;
         } catch (IdempotencyConflictException) {
             $this->addError('quick_product_name_ar', __('workflow.token_payload_mismatch'));
 
-            return;
+            return false;
         }
         // Reuse only an untouched empty row; preserve descriptions, prices and other edits.
         $index = null;
@@ -147,9 +165,12 @@ trait QuickProductCreate
             $this->addLine();
             $index = array_key_last($this->lines);
         }
-        $this->selectProduct($index, (int) $product->id);
-        $this->productSearch = '';
-        $this->closeQuickProductModal();
-        $this->dispatch('quick-product-created');
+        if (! $this->selectProduct($index, (int) $product->id)
+            || ($this->lines[$index]['product_id'] ?? null) !== (int) $product->id
+            || empty($this->lines[$index]['product_unit_id'])) {
+            throw new InvalidArgumentException('Quick product selection was refused.');
+        }
+
+        return true;
     }
 }

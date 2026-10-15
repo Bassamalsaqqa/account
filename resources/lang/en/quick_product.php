@@ -1,6 +1,7 @@
 <?php
 
 return [
+    'selection_failed' => 'The product could not be added. Check the enabled document currency, exchange rate, language and active base unit, then retry.',
     'rate_required' => 'Enter a valid positive exchange rate on the document before adding a product.',
     'create' => 'New product',
     'help' => 'Create a stock product and add it to this form. No stock or financial entry is created. Set prices and quantities on the document.',

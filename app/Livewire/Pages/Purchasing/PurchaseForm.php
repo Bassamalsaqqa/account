@@ -429,7 +429,7 @@ class PurchaseForm extends Component
         $this->recalculate();
     }
 
-    public function selectProduct(int $index, mixed $productId): void
+    public function selectProduct(int $index, mixed $productId): bool
     {
         $this->authorizeForm();
         abort_unless(isset($this->lines[$index]), 422);
@@ -438,18 +438,20 @@ class PurchaseForm extends Component
                 'quantity' => '1', 'unit_cost' => '0', 'discount_type' => 'none', 'discount_value' => '0', 'tax_rate_id' => null, 'lots' => []];
             $this->recalculate();
 
-            return;
+            return true;
         }
         try {
             $selected = app(PurchaseProductSelection::class)->select((int) $productId, null, $this->currency_code, $this->exchange_rate);
         } catch (\InvalidArgumentException|InvalidMoneyException|InvalidUnitConversionException $exception) {
             $this->addError('draft', __('purchasing.invalid_draft'));
 
-            return;
+            return false;
         }
         unset($this->lines[$index]['public_id']);
         $this->lines[$index] = array_replace($this->lines[$index], $selected, ['lots' => []]);
         $this->recalculate();
+
+        return true;
     }
 
     public function changeUnit(int $index, mixed $unitId): void
