@@ -1,4 +1,4 @@
-<section class="rounded-card border border-border bg-white p-4 sm:p-6 space-y-4" x-data="{copied:false}">
+<section class="rounded-card border border-border bg-white p-4 sm:p-6 space-y-4" x-data="financialShareControls($wire)">
     <h2 class="text-lg font-bold text-text-primary">{{ __('sharing.manage') }}</h2>
     <p class="text-sm text-text-secondary">{{ __('sharing.issuer_notice') }}</p>
     <div class="rounded-control bg-surface-soft p-3 text-sm space-y-1">
@@ -66,26 +66,29 @@
         <div class="space-y-3 pt-2 border-t border-border">
             <div>
                 <label for="share-link-input" class="block text-sm font-medium text-text-primary mb-1">{{ __('sharing.link') }}</label>
-                <input id="share-link-input" readonly value="{{ $url }}" dir="ltr" class="min-h-11 w-full rounded-control border border-border px-3 text-xs sm:text-sm bg-slate-50 font-mono">
+                <input id="share-link-input" x-ref="link" readonly value="{{ $url }}" dir="ltr" class="min-h-11 w-full rounded-control border border-border px-3 text-xs sm:text-sm bg-slate-50 font-mono">
             </div>
             <div class="flex flex-wrap items-center gap-2">
-                <button type="button" @click="navigator.clipboard.writeText(@js($url)).then(()=>copied=true)" class="min-h-11 min-w-11 rounded-control border border-border bg-white hover:bg-slate-50 px-3 text-xs sm:text-sm font-medium transition">
+                <button type="button" @click="await copy($wire.url); if (feedback === 'copy-failed') { $refs.link.focus(); $refs.link.select(); }" :disabled="busy" class="min-h-11 min-w-11 rounded-control border border-border bg-white hover:bg-slate-50 px-3 text-xs sm:text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 disabled:opacity-50">
                     {{ __('sharing.copy') }}
                 </button>
-                <button type="button" wire:click="showQr" aria-label="{{ __('sharing.qr_alt') }}" class="min-h-11 min-w-11 rounded-control border border-border bg-white hover:bg-slate-50 px-3 text-xs sm:text-sm font-medium transition">
+                <button type="button" wire:click="showQr" aria-label="{{ __('sharing.qr_alt') }}" class="min-h-11 min-w-11 rounded-control border border-border bg-white hover:bg-slate-50 px-3 text-xs sm:text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 disabled:opacity-50">
                     QR
                 </button>
-                <a href="https://wa.me/?text={{ rawurlencode($url) }}" target="_blank" rel="noopener noreferrer" class="inline-flex min-h-11 min-w-11 items-center justify-center rounded-control border border-border bg-white hover:bg-slate-50 px-3 text-xs sm:text-sm font-medium transition">
+                <a href="https://wa.me/?text={{ rawurlencode($shareMessage) }}" target="_blank" rel="noopener noreferrer" class="inline-flex min-h-11 min-w-11 items-center justify-center rounded-control border border-border bg-white hover:bg-slate-50 px-3 text-xs sm:text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 disabled:opacity-50">
                     WhatsApp
                 </a>
-                <a href="mailto:?body={{ rawurlencode($url) }}" class="inline-flex min-h-11 min-w-11 items-center justify-center rounded-control border border-border bg-white hover:bg-slate-50 px-3 text-xs sm:text-sm font-medium transition">
+                <a href="mailto:?body={{ rawurlencode($shareMessage) }}" class="inline-flex min-h-11 min-w-11 items-center justify-center rounded-control border border-border bg-white hover:bg-slate-50 px-3 text-xs sm:text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 disabled:opacity-50">
                     {{ __('sharing.email') }}
                 </a>
-                <button type="button" x-show="typeof navigator.share === 'function'" @click="navigator.share({url:@js($url)}).catch(()=>{})" class="min-h-11 min-w-11 rounded-control border border-border bg-white hover:bg-slate-50 px-3 text-xs sm:text-sm font-medium transition">
+                <button type="button" x-show="typeof navigator.share === 'function'" x-cloak @click="share({title:@js(__('sharing.neutral_title')), text:@js($shareText), url:$wire.url})" :disabled="busy" class="min-h-11 min-w-11 rounded-control border border-border bg-white hover:bg-slate-50 px-3 text-xs sm:text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 disabled:opacity-50">
                     {{ __('sharing.native_share') }}
                 </button>
             </div>
-            <p x-show="copied" role="status" aria-live="polite" class="text-xs sm:text-sm text-emerald-700 font-medium">{{ __('sharing.copied') }}</p>
+            <p x-show="feedback === 'copied'" x-cloak role="status" aria-live="polite" class="text-xs sm:text-sm text-emerald-700 font-medium">{{ __('sharing.copied') }}</p>
+            <p x-show="feedback === 'shared'" x-cloak role="status" aria-live="polite" class="text-sm text-emerald-700">{{ __('sharing.shared') }}</p>
+            <p x-show="feedback === 'copy-failed'" x-cloak role="alert" class="text-sm text-red-700">{{ __('sharing.copy_failed') }}</p>
+            <p x-show="feedback === 'share-failed'" x-cloak role="alert" class="text-sm text-red-700">{{ __('sharing.share_failed') }}</p>
             @if($qr)
                 <div class="pt-2">
                     <img src="{{ $qr }}" alt="{{ __('sharing.qr_alt') }}" width="200" height="200" class="rounded border border-border">

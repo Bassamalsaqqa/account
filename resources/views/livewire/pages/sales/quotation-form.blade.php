@@ -39,6 +39,10 @@
         </a>
     </div>
 
+    <div class="bg-white rounded-card border border-border p-4">
+        @include('livewire.partials.barcode-entry', ['prefix' => 'quotation'])
+    </div>
+
     <!-- Main Form -->
     <form wire:submit="save" class="bg-white rounded-card border border-border shadow-xs p-6 space-y-6">
         <!-- Document Meta Section -->

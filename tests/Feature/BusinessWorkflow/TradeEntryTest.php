@@ -42,7 +42,7 @@ class TradeEntryTest extends TestCase
 
     public function test_scanning_an_invalid_unit_conversion_reports_an_error_without_changing_the_line(): void
     {
-        foreach ([InvoiceForm::class, PurchaseForm::class] as $component) {
+        foreach ([InvoiceForm::class, PurchaseForm::class, QuotationForm::class] as $component) {
             $page = Livewire::test($component);
             $lines = $page->get('lines');
             DB::table('product_units')->where('product_id', $this->product->id)->update(['conversion_to_base' => '0']);
@@ -53,7 +53,7 @@ class TradeEntryTest extends TestCase
 
     public function test_scanning_cannot_convert_a_raw_float_quantity_into_an_accepted_string(): void
     {
-        foreach ([InvoiceForm::class, PurchaseForm::class] as $component) {
+        foreach ([InvoiceForm::class, PurchaseForm::class, QuotationForm::class] as $component) {
             $page = Livewire::test($component)->call('selectProduct', 0, $this->product->id)
                 ->set('lines.0.quantity', 1.5)->set('barcodeSearch', $this->product->sku)->call('scanBarcode');
             $page->assertHasErrors(['lines.0.quantity']);
@@ -82,6 +82,45 @@ class TradeEntryTest extends TestCase
     }
 
     protected User $owner;
+
+    public function test_quotation_scanning_uses_exact_unit_price_and_preserves_customized_lines_without_writes(): void
+    {
+        ProductBarcode::create(['company_id' => $this->company->id, 'product_id' => $this->product->id,
+            'unit_id' => $this->cartonUnit->id, 'barcode' => 'QUOTE-CARTON', 'type' => 'code128', 'is_primary' => true]);
+        $before = array_map(fn (string $table) => DB::table($table)->count(), ['quotations', 'sales_invoices', 'purchases', 'posting_batches', 'posting_lines', 'stock_movements']);
+        $page = Livewire::test(QuotationForm::class)->set('currency_code', 'USD')->set('exchange_rate', '3')
+            ->set('barcodeSearch', 'QUOTE-CARTON')->call('scanBarcode')->assertHasNoErrors()->assertDispatched('barcode-scanned')
+            ->assertSet('barcodeSearch', '')->assertSet('lines.0.product_unit_id', $this->cartonProductUnit->id)
+            ->assertSet('lines.0.unit_price', '20.00')->assertSet('lines.0.quantity', '1');
+        $page->set('barcodeSearch', 'QUOTE-CARTON')->call('scanBarcode')->assertSet('lines.0.quantity', '2')->assertCount('lines', 1);
+        $page->set('lines.0.unit_price', '19.99')->set('barcodeSearch', 'QUOTE-CARTON')->call('scanBarcode')
+            ->assertCount('lines', 2)->assertSet('lines.0.unit_price', '19.99')->assertSet('lines.0.quantity', '2')
+            ->assertSet('lines.1.quantity', '1')->assertSet('lines.1.unit_price', '20.00');
+        $lines = $page->get('lines');
+        foreach (['QUOTE-CARTON-prefix', str_repeat('9', 129)] as $invalid) {
+            $page->set('barcodeSearch', $invalid)->call('scanBarcode')->assertHasErrors('barcodeSearch');
+            $this->assertSame($lines, $page->get('lines'));
+        }
+        foreach (['0', 'invalid-rate'] as $invalidRate) {
+            $page->set('exchange_rate', $invalidRate)->set('barcodeSearch', 'QUOTE-CARTON')
+                ->call('scanBarcode')->assertHasErrors('barcodeSearch');
+            $this->assertSame($lines, $page->get('lines'));
+        }
+        $this->assertSame($before, array_map(fn (string $table) => DB::table($table)->count(), ['quotations', 'sales_invoices', 'purchases', 'posting_batches', 'posting_lines', 'stock_movements']));
+    }
+
+    public function test_quotation_scanning_checks_fresh_permissions_and_active_products(): void
+    {
+        $page = Livewire::test(QuotationForm::class);
+        $this->product->update(['active' => false]);
+        $page->set('barcodeSearch', $this->product->sku)->call('scanBarcode')->assertHasErrors('barcodeSearch')->assertSet('lines.0.product_id', null);
+        $actor = $this->createMemberWithPermissions($this->company, ['sales.quote.create']);
+        $page = Livewire::test(QuotationForm::class)->set('barcodeSearch', $this->product->sku);
+        DB::table('model_has_roles')->where('model_id', $actor->id)->delete();
+        $page->call('scanBarcode')->assertForbidden();
+        $this->assertSame(0, DB::table('posting_batches')->count());
+        $this->assertSame(0, DB::table('stock_movements')->count());
+    }
 
     protected Company $company;
 
@@ -430,6 +469,8 @@ class TradeEntryTest extends TestCase
             ->set('barcodeSearch', 'BAR-COMPB-ONLY')
             ->call('scanBarcode')
             ->assertHasErrors(['barcodeSearch']);
+        $quoteForm = Livewire::test(QuotationForm::class)->set('barcodeSearch', 'BAR-COMPB-ONLY')
+            ->call('scanBarcode')->assertHasErrors('barcodeSearch')->assertSet('lines.0.product_id', null);
 
         // In Company A, attach a barcode linked to carton unit
         ProductBarcode::create([
@@ -452,6 +493,8 @@ class TradeEntryTest extends TestCase
         $invoiceForm->set('barcodeSearch', 'BAR-A-CARTON')
             ->call('scanBarcode')
             ->assertHasErrors(['barcodeSearch']);
+        $quoteForm->set('barcodeSearch', 'BAR-A-CARTON')->call('scanBarcode')
+            ->assertHasErrors('barcodeSearch')->assertSet('lines.0.product_id', null);
 
         // Cross-tenant product injection in quotation form lines aborts 404
         $quoteForm = Livewire::test(QuotationForm::class);

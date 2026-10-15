@@ -57,21 +57,7 @@
 
     <!-- Quick Barcode Scanner & Product Search -->
     <div class="bg-surface border border-border rounded-card p-4 grid gap-4 md:grid-cols-2">
-        <div>
-            <label for="purchase-barcodeSearch" class="block text-sm font-bold text-text-primary mb-1">{{ __('workflow.scan_barcode_or_sku') }}</label>
-            <div class="relative">
-                <input id="purchase-barcodeSearch" type="text"
-                       maxlength="128"
-                       wire:model="barcodeSearch"
-                       wire:keydown.enter.prevent="scanBarcode"
-                       placeholder="{{ __('workflow.scan_barcode_hint') }}"
-                       class="w-full h-11 ps-3 pe-10 rounded-control border border-border bg-canvas text-sm text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden" />
-                <div class="absolute inset-y-0 end-0 pe-3 flex items-center pointer-events-none text-text-muted">
-                    <x-icon name="barcode" class="w-4 h-4" />
-                </div>
-            </div>
-            @error('barcodeSearch') <span class="text-danger text-xs mt-1 block">{{ $message }}</span> @enderror
-        </div>
+        @include('livewire.partials.barcode-entry', ['prefix' => 'purchase'])
         <div>
             <label for="purchase-product-search" class="block text-sm font-bold mb-1">{{ __('purchasing.search_products') }}</label>
             <input id="purchase-product-search" type="search" maxlength="160" wire:model.live.debounce.300ms="productSearch" x-on:keydown.enter.prevent placeholder="{{ __('purchasing.search_products') }}" aria-describedby="purchase-product-search-help" class="w-full h-11 px-3 border border-border bg-canvas rounded-control text-sm" />

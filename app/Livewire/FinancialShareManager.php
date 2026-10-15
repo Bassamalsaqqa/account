@@ -16,6 +16,7 @@ use App\Services\Sales\PublicShareService;
 use App\Support\Tenancy\CompanyContext;
 use Illuminate\Contracts\Encryption\DecryptException;
 use Illuminate\Contracts\View\View;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
@@ -52,6 +53,9 @@ final class FinancialShareManager extends Component
     #[Locked]
     public ?string $qr = null;
 
+    #[Locked]
+    public ?string $selectedShareId = null;
+
     public function mount(string $subjectType, int $subjectId): void
     {
         $this->companyId = app(CompanyContext::class)->companyId();
@@ -85,6 +89,7 @@ final class FinancialShareManager extends Component
             return;
         }
         $this->url = $result['url'];
+        $this->selectedShareId = $result['share']->public_id;
         $this->password = null;
         $this->qr = null;
         $this->requestKey = (string) Str::uuid();
@@ -95,8 +100,10 @@ final class FinancialShareManager extends Component
         $this->authorizeShare();
         $this->url = null;
         $this->qr = null;
+        $this->selectedShareId = null;
         try {
             $this->url = app(PublicShareService::class)->urlFor($this->managed($publicId), auth()->user());
+            $this->selectedShareId = $publicId;
         } catch (\InvalidArgumentException|DecryptException) {
             $this->addError('share', __('sharing.issuance_unavailable'));
         }
@@ -121,6 +128,7 @@ final class FinancialShareManager extends Component
         app(PublicShareService::class)->revokeShare($this->managed($publicId), auth()->user());
         $this->url = null;
         $this->qr = null;
+        $this->selectedShareId = null;
     }
 
     private function managed(string $publicId): PublicShare
@@ -171,6 +179,19 @@ final class FinancialShareManager extends Component
             }
         }
 
-        return view('livewire.financial-share-manager', ['preview' => $preview, 'previewError' => $previewError, 'shares' => $shares, 'available' => $available]);
+        if ($this->url !== null && $this->selectedShareId !== null) {
+            try {
+                app(IssuedFinancialShares::class)->valid($this->managed($this->selectedShareId));
+            } catch (\InvalidArgumentException|ModelNotFoundException) {
+                $this->url = null;
+                $this->qr = null;
+                $this->selectedShareId = null;
+            }
+        }
+        $message = __('sharing.message', [], in_array($this->locale, ['ar', 'en'], true) ? $this->locale : 'ar');
+        $shareMessage = $this->url === null ? null : $message."\n".$this->url;
+
+        return view('livewire.financial-share-manager', ['preview' => $preview, 'previewError' => $previewError, 'shares' => $shares, 'available' => $available,
+            'shareMessage' => $shareMessage, 'shareText' => $message]);
     }
 }

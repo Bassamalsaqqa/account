@@ -49,6 +49,38 @@ class FinancialSharesTest extends Phase5ETestCase
         RateLimiter::clear('financial-ip:'.hash('sha256', '127.0.0.1'));
     }
 
+    public function test_share_message_is_localized_neutral_and_only_appears_after_explicit_issuance(): void
+    {
+        $invoice = $this->invoice();
+        $counts = array_map(fn (string $table) => DB::table($table)->count(), ['posting_batches', 'posting_lines', 'stock_movements']);
+        $page = Livewire::test(FinancialShareManager::class, ['subjectType' => PublicShare::SUBJECT_SALES_INVOICE, 'subjectId' => $invoice->id]);
+        $page->assertViewHas('shareMessage', null)->assertDontSee('https://wa.me/', false);
+        $this->assertSame(0, PublicShare::count());
+        foreach (['ar', 'en'] as $locale) {
+            $page->set('locale', $locale)->set('password', 'private-share-password')->call('create')->assertHasNoErrors();
+            $url = $page->get('url');
+            $message = __('sharing.message', [], $locale)."\n".$url;
+            $page->assertViewHas('shareMessage', $message)->assertSee('https://wa.me/?text='.rawurlencode($message), false);
+            foreach (['Secret customer', 'Private line', $invoice->invoice_number, '160.00', 'private-share-password'] as $private) {
+                $this->assertStringNotContainsString($private, $message);
+            }
+            $this->assertSame(0, PublicShare::latest('id')->firstOrFail()->view_count);
+        }
+        $this->assertSame($counts, array_map(fn (string $table) => DB::table($table)->count(), ['posting_batches', 'posting_lines', 'stock_movements']));
+    }
+
+    public function test_displayed_share_actions_clear_after_expiry_or_external_revocation(): void
+    {
+        $invoice = $this->invoice();
+        foreach (['expires_at' => now()->subMinute(), 'is_active' => false] as $field => $value) {
+            $page = Livewire::test(FinancialShareManager::class, ['subjectType' => PublicShare::SUBJECT_SALES_INVOICE, 'subjectId' => $invoice->id])->call('create');
+            $share = PublicShare::where('public_id', $page->get('selectedShareId'))->firstOrFail();
+            $share->update([$field => $value]);
+            $page->call('$refresh')->assertSet('url', null)->assertSet('qr', null)->assertSet('selectedShareId', null)
+                ->assertViewHas('shareMessage', null)->assertDontSee('https://wa.me/', false);
+        }
+    }
+
     public function test_share_manager_formats_money_validates_dates_and_handles_issuance_refusal(): void
     {
         $invoice = $this->invoice();

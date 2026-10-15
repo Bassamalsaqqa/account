@@ -386,6 +386,7 @@ class PurchaseForm extends Component
         $this->barcodeSearch = '';
         $this->resetErrorBag('barcodeSearch');
         $this->recalculate();
+        $this->dispatch('barcode-scanned');
     }
 
     public function addLine(): void
