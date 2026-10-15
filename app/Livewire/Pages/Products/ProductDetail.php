@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Livewire\Pages\Products;
 
+use App\Domain\Inventory\Services\StockQuantityBreakdown;
 use App\Domain\Purchasing\Queries\ProductPurchaseHistoryQuery;
 use App\Models\InventoryBalance;
 use App\Models\InventoryCostState;
@@ -57,7 +58,9 @@ class ProductDetail extends Component
     public function render(CompanyContext $context): View
     {
         $company = $context->company();
+        abort_unless((int) $this->product->company_id === (int) $company->id, 403);
         $this->authorize('view', $this->product);
+        $this->product->load(['baseUnit', 'productUnits.unit']);
 
         /** @var User $user */
         $user = auth()->user();
@@ -76,6 +79,14 @@ class ProductDetail extends Component
             ->where('product_id', $this->product->id)
             ->with('warehouse')
             ->get();
+
+        $stockTotal = BigDecimal::zero();
+        $warehouseBreakdowns = [];
+        foreach ($warehouseBalances as $balance) {
+            $stockTotal = $stockTotal->plus((string) $balance->quantity_base);
+            $warehouseBreakdowns[$balance->id] = app(StockQuantityBreakdown::class)->forProduct($this->product, (string) $balance->quantity_base);
+        }
+        $stockBreakdown = app(StockQuantityBreakdown::class)->forProduct($this->product, (string) $stockTotal);
 
         // Lots if expiry tracked
         $lots = collect();
@@ -111,6 +122,9 @@ class ProductDetail extends Component
         return view('livewire.pages.products.product-detail', [
             'product' => $this->product,
             'warehouseBalances' => $warehouseBalances,
+            'stockTotal' => (string) $stockTotal->toScale(6),
+            'stockBreakdown' => $stockBreakdown,
+            'warehouseBreakdowns' => $warehouseBreakdowns,
             'lots' => $lots,
             'movements' => $movements,
             'costState' => $costState,

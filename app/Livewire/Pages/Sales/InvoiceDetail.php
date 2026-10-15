@@ -71,7 +71,7 @@ class InvoiceDetail extends Component
             abort(403, 'Unauthorized.');
         }
 
-        $this->invoice = SalesInvoice::with(['lines', 'customer', 'warehouse', 'allocations.payment', 'returns'])
+        $this->invoice = SalesInvoice::with(['lines', 'customer', 'warehouse', 'allocations.payment', 'returns', 'quotation'])
             ->where('company_id', $company->id)
             ->where('public_id', $publicId)
             ->firstOrFail();

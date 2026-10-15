@@ -13,6 +13,11 @@
 
         @if ($canManageProduct)
             <div class="flex items-center gap-2">
+                <a href="{{ route('brands.index') }}"
+                   class="inline-flex items-center gap-1.5 px-3 py-2 border border-border bg-white hover:bg-surface-soft text-text-secondary hover:text-text-primary text-xs font-semibold rounded-control transition-colors">
+                    <x-icon name="box" class="w-4 h-4" />
+                    <span>{{ __('inventory.brands') }}</span>
+                </a>
                 <a href="{{ route('products.create') }}"
                    class="inline-flex items-center gap-2 px-4 py-2 bg-primary hover:bg-primary-hover text-white text-xs font-bold rounded-control shadow-button transition-colors">
                     <x-icon name="plus" class="w-4 h-4" />
@@ -26,7 +31,7 @@
     <x-card padding="p-4">
         <div class="grid grid-cols-1 md:grid-cols-4 lg:grid-cols-12 gap-3">
             <!-- Search Input -->
-            <div class="md:col-span-2 lg:col-span-4 relative">
+            <div class="md:col-span-2 lg:col-span-3 relative">
                 <input id="products-search" aria-label="{{ __('inventory.search_products_placeholder') }}" type="text"
                        wire:model.live.debounce.300ms="search"
                        placeholder="{{ __('inventory.search_products_placeholder') }}"
@@ -37,13 +42,27 @@
             </div>
 
             <!-- Category Filter -->
-            <div class="md:col-span-1 lg:col-span-3">
+            <div class="md:col-span-1 lg:col-span-2">
                 <select id="products-category-filter" wire:model.live="categoryFilter"
                         aria-label="{{ __('inventory.category') }}"
                         class="w-full h-9 px-3 rounded-control border border-border bg-white text-xs text-text-primary focus:outline-none focus:border-primary focus:ring-2 focus:ring-focus-ring">
                     <option value="">{{ __('inventory.filter_category') }}</option>
                     @foreach ($categories as $cat)
                         <option value="{{ $cat->id }}">{{ $cat->name_ar }}</option>
+                    @endforeach
+                </select>
+            </div>
+
+            <!-- Brand Filter -->
+            <div class="md:col-span-1 lg:col-span-2">
+                <select id="products-brand-filter" wire:model.live="brandFilter"
+                        aria-label="{{ __('inventory.brand') }}"
+                        class="w-full h-9 px-3 rounded-control border border-border bg-white text-xs text-text-primary focus:outline-none focus:border-primary focus:ring-2 focus:ring-focus-ring">
+                    <option value="">{{ __('inventory.filter_brand') }}</option>
+                    @foreach ($brands as $b)
+                        <option value="{{ $b->id }}">
+                            {{ $b->name_ar }}@if(! $b->active) ({{ __('inventory.inactive') }})@endif
+                        </option>
                     @endforeach
                 </select>
             </div>
@@ -60,7 +79,7 @@
             </div>
 
             <!-- Toggles -->
-            <div class="md:col-span-4 lg:col-span-3 flex items-center gap-3">
+            <div class="md:col-span-3 lg:col-span-3 flex items-center gap-3">
                 <label for="products-low-stock-only" class="flex items-center gap-1.5 cursor-pointer text-xs text-text-secondary select-none">
                     <input id="products-low-stock-only" type="checkbox" wire:model.live="lowStockOnly" class="rounded border-border text-primary focus:ring-primary w-4 h-4" />
                     <span>{{ __('inventory.filter_low_stock') }}</span>

@@ -28,9 +28,23 @@
                 @if ($canConvert)
                     <button type="button"
                             wire:click="convertToInvoice"
-                            class="px-3 py-1.5 rounded-control bg-success text-white text-xs font-bold hover:opacity-90 transition-opacity shadow-xs">
+                            class="px-3 py-1.5 rounded-control bg-success text-white text-xs font-bold hover:opacity-90 transition-opacity shadow-xs cursor-pointer">
                         ⚡ {{ __('sales.convert_to_invoice') }}
                     </button>
+                @endif
+
+                @if ($quotation->isConverted() && $quotation->convertedInvoice && $canViewInvoice)
+                    @if ($quotation->convertedInvoice->isDraft() && $canEditInvoiceDraft)
+                        <a href="{{ route('invoices.edit', $quotation->convertedInvoice->public_id) }}"
+                           class="px-3 py-1.5 rounded-control bg-primary text-white text-xs font-bold hover:bg-primary-hover transition-colors shadow-xs">
+                            ✏️ {{ __('workflow.edit_invoice_draft') }}
+                        </a>
+                    @else
+                        <a href="{{ route('invoices.show', $quotation->convertedInvoice->public_id) }}"
+                           class="px-3 py-1.5 rounded-control border border-border text-xs font-bold text-text-secondary hover:bg-surface-soft transition-colors">
+                            📄 {{ __('workflow.view_invoice_draft') }}
+                        </a>
+                    @endif
                 @endif
 
                 @if ($canSend)
@@ -102,6 +116,48 @@
             </div>
         </div>
     </div>
+
+    <!-- Provenance Banner -->
+    @if ($quotation->isConverted() && $quotation->convertedInvoice)
+        <div class="bg-primary-50/50 border border-primary/20 rounded-card p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div class="flex items-center gap-3">
+                <span class="text-primary text-lg">🔗</span>
+                <div>
+                    <h3 class="text-xs font-bold text-text-primary">{{ __('workflow.converted_to_invoice') }}</h3>
+                    <p class="text-[11px] text-text-secondary">
+                        {{ __('workflow.converted_invoice_provenance') }}:
+                        @if ($canViewInvoice)
+                            <a href="{{ route('invoices.show', $quotation->convertedInvoice->public_id) }}" class="font-mono font-bold text-primary hover:underline" dir="ltr">
+                                {{ $quotation->convertedInvoice->invoice_number ?? __('sales.draft_invoice') }}
+                            </a>
+                        @else
+                            <span class="font-mono font-bold text-text-primary" dir="ltr">
+                                {{ $quotation->convertedInvoice->invoice_number ?? __('sales.draft_invoice') }}
+                            </span>
+                        @endif
+                        @if ($quotation->converted_at)
+                            <span class="text-text-muted">({{ $quotation->converted_at->toDateString() }})</span>
+                        @endif
+                    </p>
+                </div>
+            </div>
+            @if ($canViewInvoice)
+                <div class="flex items-center gap-2">
+                    @if ($quotation->convertedInvoice->isDraft() && $canEditInvoiceDraft)
+                        <a href="{{ route('invoices.edit', $quotation->convertedInvoice->public_id) }}"
+                           class="px-3 py-1.5 rounded-control bg-primary text-white text-xs font-bold hover:bg-primary-hover transition-colors shadow-xs">
+                            {{ __('workflow.edit_invoice_draft') }}
+                        </a>
+                    @else
+                        <a href="{{ route('invoices.show', $quotation->convertedInvoice->public_id) }}"
+                           class="px-3 py-1.5 rounded-control border border-border bg-white text-xs font-bold text-text-secondary hover:bg-surface-soft transition-colors">
+                            {{ __('workflow.view_invoice_draft') }}
+                        </a>
+                    @endif
+                </div>
+            @endif
+        </div>
+    @endif
 
     <!-- Items Table -->
     <div class="bg-white rounded-card border border-border shadow-xs overflow-hidden">

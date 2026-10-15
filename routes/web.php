@@ -9,6 +9,7 @@ use App\Http\Controllers\PurchasingDocumentController;
 use App\Http\Controllers\ReportCsvController;
 use App\Http\Middleware\PrivateDocumentResponse;
 use App\Livewire\AI\AiSettings;
+use App\Livewire\Pages\Catalog\BrandIndex;
 use App\Livewire\Pages\Catalog\CategoryIndex;
 use App\Livewire\Pages\Catalog\UnitIndex;
 use App\Livewire\Pages\Catalog\WarehouseIndex;
@@ -158,6 +159,7 @@ Route::middleware(['auth'])->group(function () {
         Route::get('products/{publicId}', ProductDetail::class)->name('products.show');
 
         Route::get('categories', CategoryIndex::class)->name('categories.index');
+        Route::get('brands', BrandIndex::class)->name('brands.index');
         Route::get('units', UnitIndex::class)->name('units.index');
         Route::get('warehouses', WarehouseIndex::class)->name('warehouses.index');
 

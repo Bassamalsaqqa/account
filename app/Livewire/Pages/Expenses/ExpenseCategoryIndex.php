@@ -11,6 +11,7 @@ use App\Models\LedgerAccount;
 use App\Support\Tenancy\CompanyContext;
 use Illuminate\Contracts\View\View;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
+use Illuminate\Validation\Rule;
 use Livewire\Attributes\Layout;
 use Livewire\Component;
 
@@ -52,7 +53,7 @@ class ExpenseCategoryIndex extends Component
             'nameAr' => 'required|string|max:128',
             'nameEn' => 'nullable|string|max:128',
             'code' => 'required|string|max:32',
-            'ledgerAccountId' => 'required|integer|exists:ledger_accounts,id',
+            'ledgerAccountId' => ['required', 'integer', Rule::exists('ledger_accounts', 'id')->where('company_id', $this->pageCompanyId)],
         ]);
 
         try {

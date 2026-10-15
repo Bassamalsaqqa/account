@@ -15,9 +15,12 @@ use App\Domain\Purchasing\PurchaseCalculator;
 use App\Domain\Purchasing\Queries\VendorProductPriceHistoryQuery;
 use App\Domain\Sales\Calculators\SalesDocumentTotalsCalculator;
 use App\Livewire\Concerns\AiUnsavedForm;
+use App\Livewire\Concerns\QuickPartyCreate;
 use App\Livewire\Pages\Purchasing\Concerns\AuthorizesPurchasingPages;
 use App\Models\Company;
 use App\Models\Product;
+use App\Models\ProductBarcode;
+use App\Models\ProductUnit;
 use App\Models\Purchase;
 use App\Models\TaxRate;
 use App\Models\Vendor;
@@ -27,6 +30,7 @@ use App\Services\Purchasing\PurchaseDocumentRules;
 use App\Services\Purchasing\PurchaseDraftBuilder;
 use App\Services\Purchasing\PurchaseProductSelection;
 use App\Support\Tenancy\CompanyContext;
+use Brick\Math\BigDecimal;
 use Brick\Math\Exception\MathException;
 use Illuminate\Contracts\View\View;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
@@ -40,9 +44,37 @@ class PurchaseForm extends Component
 {
     use AiUnsavedForm;
     use AuthorizesPurchasingPages;
+    use QuickPartyCreate;
+
+    protected function quickPartyKind(): string
+    {
+        return 'vendor';
+    }
+
+    protected function quickPartyFormPermission(): string
+    {
+        return $this->publicId === null ? 'purchasing.purchase.create' : 'purchasing.purchase.edit_draft';
+    }
+
+    protected function authorizeQuickPartyForm(): Company
+    {
+        return $this->authorizeForm();
+    }
+
+    protected function selectQuickParty(int $id): void
+    {
+        $this->vendor_id = $id;
+        $this->updatedVendorId();
+    }
 
     #[Locked]
     public ?string $publicId = null;
+
+    #[Locked]
+    public ?string $savedDraftPublicId = null;
+
+    #[Locked]
+    public ?string $savedDraftPayloadHash = null;
 
     public ?int $vendor_id = null;
 
@@ -67,6 +99,10 @@ class PurchaseForm extends Component
     public string $document_locale = 'ar';
 
     public ?string $notes = null;
+
+    public string $barcodeSearch = '';
+
+    public string $vendorSearch = '';
 
     public string $productSearch = '';
 
@@ -173,6 +209,182 @@ class PurchaseForm extends Component
 
     public function updatedLines(): void
     {
+        $this->recalculate();
+    }
+
+    public function saveDraft(): mixed
+    {
+        if ($this->showQuickVendorModal) {
+            return null;
+        }
+
+        if ($this->savedDraftPublicId !== null) {
+            $this->authorizeForm();
+            if (! hash_equals((string) $this->savedDraftPayloadHash, hash('sha256', json_encode($this->draftData(), JSON_THROW_ON_ERROR)))) {
+                $this->addError('draft', __('workflow.saved_draft_changed'));
+
+                return null;
+            }
+
+            return redirect()->route('purchases.show', $this->savedDraftPublicId);
+        }
+
+        return $this->save();
+    }
+
+    public function scanBarcode(): void
+    {
+        $this->authorizeForm();
+        $raw = trim((string) $this->barcodeSearch);
+        if ($raw === '') {
+            return;
+        }
+
+        // Reject oversized barcode instead of truncating to a different valid barcode
+        if (mb_strlen($raw) > 128) {
+            $this->addError('barcodeSearch', __('workflow.barcode_too_long'));
+
+            return;
+        }
+
+        $term = $raw;
+        $company = Company::where('id', $this->pageCompanyId)->firstOrFail();
+
+        // 1. Try exact barcode
+        $barcode = ProductBarcode::with(['product.productUnits.unit', 'unit'])
+            ->where('company_id', $company->id)
+            ->whereHas('product', fn ($q) => $q->where('company_id', $company->id)
+                ->where('active', true)
+                ->where('product_type', Product::TYPE_STOCK)
+                ->where('track_stock', true))
+            ->where('barcode', $term)
+            ->first();
+
+        $product = null;
+        $productUnit = null;
+
+        if ($barcode !== null) {
+            $product = $barcode->product;
+            if ($barcode->unit_id !== null) {
+                // Must strictly find active unit in same company for this product
+                $productUnit = ProductUnit::where('company_id', $company->id)
+                    ->where('product_id', $product->id)
+                    ->where('unit_id', $barcode->unit_id)
+                    ->where('active', true)
+                    ->whereHas('unit', fn ($u) => $u->where('company_id', $company->id)->where('active', true))
+                    ->first();
+
+                // Reject missing, inactive or foreign unit rather than fallback!
+                if ($productUnit === null) {
+                    $this->addError('barcodeSearch', __('workflow.barcode_unit_mismatch'));
+
+                    return;
+                }
+            } else {
+                $productUnit = null;
+            }
+        } else {
+            // 2. Try SKU exact match
+            $product = Product::with(['productUnits.unit'])
+                ->where('company_id', $company->id)
+                ->where('active', true)
+                ->where('product_type', Product::TYPE_STOCK)
+                ->where('track_stock', true)
+                ->where('sku', $term)
+                ->first();
+
+            if ($product !== null) {
+                $productUnit = null;
+            }
+        }
+
+        if ($product === null) {
+            $this->addError('barcodeSearch', __('workflow.product_not_found'));
+
+            return;
+        }
+
+        // Canonical product selection BEFORE matching existing row to resolve concrete effective product_unit_id
+        try {
+            $selected = app(PurchaseProductSelection::class)->select(
+                (int) $product->id,
+                $productUnit?->id,
+                $this->currency_code,
+                $this->exchange_rate
+            );
+        } catch (\InvalidArgumentException|ModelNotFoundException|InvalidMoneyException|InvalidQuantityException|InvalidUnitConversionException $e) {
+            $this->addError('barcodeSearch', __('purchasing.invalid_draft'));
+
+            return;
+        }
+
+        $selectedUnitId = (int) $selected['product_unit_id'];
+        $selectedCost = (string) $selected['unit_cost'];
+        $selectedDescription = (string) $selected['item_description'];
+
+        // Preserve lot/line data; safest append or fill truly empty row, do not silently merge differing unit/lot/cost/tax/discount/description lines.
+        $existingIndex = null;
+        foreach ($this->lines as $idx => $line) {
+            $linePid = ! empty($line['product_id']) ? (int) $line['product_id'] : null;
+            $lineUnitId = ! empty($line['product_unit_id']) ? (int) $line['product_unit_id'] : null;
+            $lineCost = (string) ($line['unit_cost'] ?? '');
+            $lineDesc = (string) ($line['item_description'] ?? '');
+            $hasLots = ! empty($line['lots']);
+            $discountType = $line['discount_type'] ?? 'none';
+            $taxRateId = $line['tax_rate_id'] ?? null;
+
+            if ($linePid === (int) $product->id
+                && $lineUnitId === $selectedUnitId
+                && ! $hasLots
+                && $lineCost === $selectedCost
+                && $lineDesc === $selectedDescription
+                && $discountType === 'none'
+                && empty($taxRateId)
+            ) {
+                $existingIndex = $idx;
+                break;
+            }
+        }
+
+        if ($existingIndex !== null) {
+            if (! is_string($this->lines[$existingIndex]['quantity']) || preg_match('/^\d+(?:\.\d{1,6})?$/D', $this->lines[$existingIndex]['quantity']) !== 1) {
+                $this->addError("lines.{$existingIndex}.quantity", __('commands.exact_string_required'));
+
+                return;
+            }
+            $curQty = BigDecimal::of((string) ($this->lines[$existingIndex]['quantity'] ?: '0'));
+            $this->lines[$existingIndex]['quantity'] = (string) $curQty->plus(1);
+        } else {
+            $isTrulyEmptyFirstRow = count($this->lines) === 1
+                && empty($this->lines[0]['product_id'])
+                && trim((string) ($this->lines[0]['item_description'] ?? '')) === ''
+                && empty($this->lines[0]['lots'])
+                && in_array((string) ($this->lines[0]['quantity'] ?? ''), ['1', '1.000000', '1.00', ''], true)
+                && in_array((string) ($this->lines[0]['unit_cost'] ?? ''), ['0', '0.00', '0.000000', ''], true)
+                && (($this->lines[0]['discount_type'] ?? 'none') === 'none')
+                && empty($this->lines[0]['tax_rate_id']);
+
+            $newLine = array_replace([
+                'product_id' => $product->id,
+                'product_unit_id' => $selectedUnitId,
+                'item_description' => $selectedDescription,
+                'quantity' => '1',
+                'unit_cost' => $selectedCost,
+                'discount_type' => 'none',
+                'discount_value' => '0',
+                'tax_rate_id' => null,
+                'lots' => [],
+            ], $selected);
+
+            if ($isTrulyEmptyFirstRow) {
+                $this->lines[0] = $newLine;
+            } else {
+                $this->lines[] = $newLine;
+            }
+        }
+
+        $this->barcodeSearch = '';
+        $this->resetErrorBag('barcodeSearch');
         $this->recalculate();
     }
 
@@ -284,10 +496,7 @@ class PurchaseForm extends Component
     public function save(): mixed
     {
         $company = $this->authorizeForm();
-        $data = [];
-        foreach (['vendor_id', 'vendor_invoice_number', 'warehouse_id', 'purchase_date', 'due_date', 'currency_code', 'exchange_rate', 'document_locale', 'notes', 'lines'] as $field) {
-            $data[$field] = $this->{$field};
-        }
+        $data = $this->draftData();
         try {
             $purchase = $this->publicId === null
                 ? ($this->aiFormToken !== null && $this->aiFormKey !== null
@@ -303,10 +512,23 @@ class PurchaseForm extends Component
 
             return null;
         }
+        $this->savedDraftPublicId = $purchase->public_id;
+        $this->savedDraftPayloadHash = hash('sha256', json_encode($data, JSON_THROW_ON_ERROR));
         $this->discardAiInput();
         session()->flash('success', __('purchasing.draft_saved'));
 
         return redirect()->route('purchases.show', $purchase->public_id);
+    }
+
+    /** @return array<string, mixed> */
+    private function draftData(): array
+    {
+        $data = [];
+        foreach (['vendor_id', 'vendor_invoice_number', 'warehouse_id', 'purchase_date', 'due_date', 'currency_code', 'exchange_rate', 'document_locale', 'notes', 'lines'] as $field) {
+            $data[$field] = $this->{$field};
+        }
+
+        return $data;
     }
 
     public function render(): View
@@ -364,9 +586,30 @@ class PurchaseForm extends Component
             }
         }
 
+        $vTerm = mb_substr(trim($this->vendorSearch), 0, 100);
+        $vendorsQuery = Vendor::where('company_id', $company->id)->where('status', 'active');
+        if ($vTerm !== '') {
+            $vendorsQuery->where(function ($q) use ($vTerm) {
+                $q->where('name_ar', 'like', "%{$vTerm}%")
+                    ->orWhere('name_en', 'like', "%{$vTerm}%")
+                    ->orWhere('code', 'like', "%{$vTerm}%")
+                    ->orWhere('phone', 'like', "%{$vTerm}%");
+            });
+        }
+        $matchingVendors = $vendorsQuery->orderBy('name_ar')->limit(50)->get();
+        if ($this->vendor_id) {
+            $selectedVendor = Vendor::where('company_id', $company->id)
+                ->where('id', $this->vendor_id)
+                ->where('status', 'active')
+                ->first();
+            $vendors = $selectedVendor !== null ? $matchingVendors->push($selectedVendor)->unique('id') : $matchingVendors;
+        } else {
+            $vendors = $matchingVendors;
+        }
+
         return view('livewire.pages.purchasing.purchase-form', [
             'products' => $products->orderBy('name_ar')->limit(50)->get(['id', 'name_ar', 'name_en', 'sku']),
-            'vendors' => Vendor::where('company_id', $company->id)->where('status', 'active')->orderBy('name_ar')->get(),
+            'vendors' => $vendors,
             'warehouses' => Warehouse::where('company_id', $company->id)->where('active', true)->get(),
             'currencies' => $company->currencies()->where('enabled', true)->get(),
             'languages' => $company->languages()->where('enabled', true)->get(),
@@ -374,6 +617,7 @@ class PurchaseForm extends Component
             'unitOptions' => $unitOptions, 'expiryLines' => $expiryLines,
             'duplicateWarning' => app(DuplicateVendorInvoice::class)->exists($company->id, $this->vendor_id, $this->vendor_invoice_number, $except),
             'lastPriceHints' => $lastPriceHints,
+            'canManageVendors' => auth()->user()->can('vendors.manage'),
         ]);
     }
 }

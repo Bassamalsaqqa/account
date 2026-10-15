@@ -6,29 +6,69 @@ namespace App\Livewire\Pages\Sales;
 
 use App\Actions\Sales\CreateQuotationAction;
 use App\Actions\Sales\UpdateQuotationAction;
+use App\Application\Reporting\Security\ReportingGuard;
 use App\Domain\Sales\Calculators\SalesDocumentTotalsCalculator;
 use App\Domain\Sales\Calculators\SalesLineCalculationInput;
 use App\Domain\Sales\Calculators\SalesLineCalculator;
+use App\Domain\Sales\Queries\CustomerLastPriceQuery;
+use App\Livewire\Concerns\QuickPartyCreate;
+use App\Models\Company;
 use App\Models\Customer;
 use App\Models\Product;
 use App\Models\Quotation;
 use App\Models\TaxRate;
+use App\Services\Sales\SalesActorGuard;
 use App\Services\Sales\SalesProductSelection;
 use App\Support\Tenancy\CompanyContext;
 use Brick\Math\BigDecimal;
 use Carbon\Carbon;
 use Illuminate\Contracts\View\View;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
 use Livewire\Attributes\Layout;
+use Livewire\Attributes\Locked;
 use Livewire\Component;
 
 #[Layout('layouts.app')]
 class QuotationForm extends Component
 {
+    use QuickPartyCreate;
+
+    protected function quickPartyKind(): string
+    {
+        return 'customer';
+    }
+
+    protected function quickPartyFormPermission(): string
+    {
+        return $this->isEditing ? 'sales.quote.edit' : 'sales.quote.create';
+    }
+
+    protected function authorizeQuickPartyForm(): Company
+    {
+        $this->authorizeQuoteAction();
+
+        return app(CompanyContext::class)->company();
+    }
+
+    protected function selectQuickParty(int $id): void
+    {
+        $this->customer_id = $id;
+        $this->updatedCustomerId();
+    }
+
+    #[Locked]
+    public int $pageCompanyId;
+
     public ?Quotation $quotation = null;
 
     public bool $isEditing = false;
 
     public ?int $customer_id = null;
+
+    public string $customerSearch = '';
+
+    public string $productSearch = '';
 
     public string $currency_code = 'ILS';
 
@@ -78,6 +118,7 @@ class QuotationForm extends Component
     public function mount(CompanyContext $context, ?string $publicId = null): void
     {
         $company = $context->company();
+        $this->pageCompanyId = (int) $company->id;
         $user = auth()->user();
 
         if ($publicId !== null) {
@@ -129,7 +170,7 @@ class QuotationForm extends Component
             }
 
             $this->currency_code = $company->base_currency_code;
-            $this->issue_date = Carbon::now()->toDateString();
+            $this->issue_date = Carbon::now($company->timezone)->toDateString();
             $this->document_locale = $company->documentSettings->default_document_locale ?? $company->default_locale ?? 'ar';
             $this->terms = $company->documentSettings?->getAttribute('quotation_terms_'.$this->document_locale);
             $this->include_product_images = (bool) $company->documentSettings?->show_product_images_on_quotes;
@@ -155,20 +196,45 @@ class QuotationForm extends Component
         $this->recalculate();
     }
 
+    public function hydrate(CompanyContext $context): void
+    {
+        $this->authorizeQuoteAction();
+    }
+
+    protected function authorizeQuoteAction(): void
+    {
+        $user = auth()->user();
+        $context = app(CompanyContext::class);
+        abort_unless($user !== null && $context->hasCompany() && (int) $context->companyId() === (int) $this->pageCompanyId, 403);
+
+        DB::transaction(fn () => app(SalesActorGuard::class)->lockAndAuthorize($this->pageCompanyId, $user,
+            $this->isEditing ? 'sales.quote.edit' : 'sales.quote.create'));
+        if ($this->isEditing) {
+            $quote = Quotation::where('company_id', $this->pageCompanyId)->whereKey($this->quotation?->id)->firstOrFail();
+            abort_unless($quote->status === Quotation::STATUS_DRAFT, 403);
+        }
+    }
+
     public function updatedCustomerId(): void
     {
+        $this->authorizeQuoteAction();
         if ($this->customer_id !== null) {
-            $customer = Customer::find($this->customer_id);
+            $customer = Customer::where('company_id', $this->pageCompanyId)
+                ->where('status', 'active')
+                ->find($this->customer_id);
             if ($customer !== null) {
                 $this->currency_code = $customer->default_currency_code ?? app(CompanyContext::class)->company()->base_currency_code;
                 $this->document_locale = $customer->preferred_locale ?? app(CompanyContext::class)->company()->default_locale;
                 $this->recalculate();
+            } else {
+                $this->customer_id = null;
             }
         }
     }
 
     public function updatedCurrencyCode(): void
     {
+        $this->authorizeQuoteAction();
         $company = app(CompanyContext::class)->company();
         if ($this->currency_code === $company->base_currency_code) {
             $this->exchange_rate = '1.0000000000';
@@ -176,8 +242,15 @@ class QuotationForm extends Component
         $this->recalculate();
     }
 
+    public function updatedLines(): void
+    {
+        $this->authorizeQuoteAction();
+        $this->recalculate();
+    }
+
     public function addLine(): void
     {
+        $this->authorizeQuoteAction();
         $this->lines[] = [
             'product_id' => null,
             'product_unit_id' => null,
@@ -196,6 +269,7 @@ class QuotationForm extends Component
 
     public function removeLine(int $index): void
     {
+        $this->authorizeQuoteAction();
         unset($this->lines[$index]);
         $this->lines = array_values($this->lines);
         $this->recalculate();
@@ -203,6 +277,7 @@ class QuotationForm extends Component
 
     public function selectProduct(int $index, int $productId): void
     {
+        $this->authorizeQuoteAction();
         $selected = app(SalesProductSelection::class)->select($productId, null, $this->currency_code, $this->exchange_rate, null);
         $this->lines[$index] = array_merge($this->lines[$index], $selected);
         $this->recalculate();
@@ -210,6 +285,7 @@ class QuotationForm extends Component
 
     public function changeUnit(int $index, int $productUnitId): void
     {
+        $this->authorizeQuoteAction();
         $productId = $this->lines[$index]['product_id'] ?? null;
         if ($productId === null) {
             return;
@@ -272,21 +348,12 @@ class QuotationForm extends Component
 
     public function save(CreateQuotationAction $createAction, UpdateQuotationAction $updateAction): mixed
     {
+        $this->authorizeQuoteAction();
         $company = app(CompanyContext::class)->company();
         $user = auth()->user();
 
-        if ($this->isEditing) {
-            if (! $user->hasPermissionTo('sales.quote.edit')) {
-                abort(403, 'Unauthorized.');
-            }
-        } else {
-            if (! $user->hasPermissionTo('sales.quote.create')) {
-                abort(403, 'Unauthorized.');
-            }
-        }
-
         $this->validate([
-            'customer_id' => ['required', 'integer', 'exists:customers,id'],
+            'customer_id' => ['required', 'integer', Rule::exists('customers', 'id')->where('company_id', $company->id)],
             'currency_code' => ['required', 'string', 'size:3'],
             'exchange_rate' => ['required', 'numeric', 'gt:0'],
             'issue_date' => ['required', 'date'],
@@ -337,19 +404,71 @@ class QuotationForm extends Component
         return redirect()->route('quotations.show', $quotation->public_id);
     }
 
+    public function saveDraft(CreateQuotationAction $createAction, UpdateQuotationAction $updateAction): mixed
+    {
+        if ($this->showQuickCustomerModal) {
+            return null;
+        }
+
+        return $this->save($createAction, $updateAction);
+    }
+
     public function render(CompanyContext $context): View
     {
+        $this->authorizeQuoteAction();
+        $user = auth()->user();
         $company = $context->company();
-        $customers = Customer::where('company_id', $company->id)->where('status', 'active')->orderBy('name_ar')->get();
+
+        $cTerm = mb_substr(trim($this->customerSearch), 0, 100);
+        $customersQuery = Customer::where('company_id', $company->id)->where('status', 'active');
+        if ($cTerm !== '') {
+            $customersQuery->where(function ($q) use ($cTerm) {
+                $q->where('name_ar', 'like', "%{$cTerm}%")
+                    ->orWhere('name_en', 'like', "%{$cTerm}%")
+                    ->orWhere('code', 'like', "%{$cTerm}%")
+                    ->orWhere('phone', 'like', "%{$cTerm}%");
+            });
+        }
+        $matchingCustomers = $customersQuery->orderBy('name_ar')->limit(50)->get();
+        if ($this->customer_id) {
+            $selectedCustomer = Customer::where('company_id', $company->id)
+                ->where('id', $this->customer_id)
+                ->where('status', 'active')
+                ->first();
+            $customers = $selectedCustomer !== null ? $matchingCustomers->push($selectedCustomer)->unique('id') : $matchingCustomers;
+        } else {
+            $customers = $matchingCustomers;
+        }
+
         $currencies = $company->currencies()->where('enabled', true)->get();
-        $products = Product::with(['productUnits.unit', 'baseUnit'])->where('company_id', $company->id)->where('active', true)->orderBy('name_ar')->get();
+
+        $term = mb_substr(trim($this->productSearch), 0, 160);
+        $productsQuery = Product::where('company_id', $company->id)->where('active', true);
+        if ($term !== '') {
+            $productsQuery->where(fn ($query) => $query->where('name_ar', 'like', "%{$term}%")
+                ->orWhere('name_en', 'like', "%{$term}%")->orWhere('sku', 'like', "%{$term}%")
+                ->orWhereHas('barcodes', fn ($barcodes) => $barcodes->where('company_id', $company->id)->where('barcode', $term)));
+        }
+        $selectedProductIds = collect($this->lines)->pluck('product_id')->filter()->unique()->values()->all();
+        $selectedProducts = Product::with(['productUnits.unit', 'baseUnit'])->where('company_id', $company->id)
+            ->whereIn('id', $selectedProductIds)->get();
+        abort_unless($selectedProducts->count() === count($selectedProductIds), 404);
+        $matchingProducts = $productsQuery->with(['productUnits.unit', 'baseUnit'])->orderBy('name_ar')->limit(50)->get();
+        $products = $matchingProducts->merge($selectedProducts)->unique('id');
+        $lastCustomerPrices = $this->customer_id !== null && count($selectedProductIds) <= 100
+            && app(ReportingGuard::class)->allows($company, ['reports.sales.view', 'sales.invoice.view'], $user)
+            ? app(CustomerLastPriceQuery::class)->execute($company, $user, $this->customer_id, array_map('intval', $selectedProductIds)) : [];
+
         $taxes = TaxRate::where('company_id', $company->id)->where('active', true)->get();
 
         return view('livewire.pages.sales.quotation-form', [
             'customers' => $customers,
             'currencies' => $currencies,
             'products' => $products,
+            'productMatchCount' => $matchingProducts->count(),
             'taxes' => $taxes,
+            'canManageCustomers' => $user->hasPermissionTo('customers.manage'),
+            'lastCustomerPrices' => $lastCustomerPrices,
         ]);
     }
 }

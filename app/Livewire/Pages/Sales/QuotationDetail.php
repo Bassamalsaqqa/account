@@ -36,7 +36,7 @@ class QuotationDetail extends Component
             abort(403, 'Unauthorized.');
         }
 
-        $this->quotation = Quotation::with(['lines', 'customer'])
+        $this->quotation = Quotation::with(['lines', 'customer', 'convertedInvoice'])
             ->where('company_id', $company->id)
             ->where('public_id', $publicId)
             ->firstOrFail();
@@ -101,7 +101,15 @@ class QuotationDetail extends Component
         $invoice = $convertAction->execute($this->quotation, $user);
         session()->flash('success', __('sales.status_converted'));
 
-        return redirect()->route('invoices.show', $invoice->public_id);
+        if ($invoice->isDraft() && $user->hasPermissionTo('sales.invoice.edit_draft')) {
+            return redirect()->route('invoices.edit', $invoice->public_id);
+        }
+
+        if ($user->hasPermissionTo('sales.invoice.view')) {
+            return redirect()->route('invoices.show', $invoice->public_id);
+        }
+
+        return redirect()->route('quotations.show', $this->quotation->public_id);
     }
 
     public function createShareLink(PublicShareService $shareService, CompanyContext $context): void
@@ -147,6 +155,8 @@ class QuotationDetail extends Component
         $canSend = $user->hasPermissionTo('sales.quote.send') && $this->quotation->status === Quotation::STATUS_DRAFT;
         $canConvert = $user->hasPermissionTo('sales.quote.convert') && $this->quotation->status === Quotation::STATUS_ACCEPTED;
         $canShare = $user->hasPermissionTo('sales.document.share');
+        $canViewInvoice = $user->hasPermissionTo('sales.invoice.view');
+        $canEditInvoiceDraft = $user->hasPermissionTo('sales.invoice.edit_draft');
 
         return view('livewire.pages.sales.quotation-detail', [
             'canEdit' => $canEdit,
@@ -154,6 +164,8 @@ class QuotationDetail extends Component
             'canSend' => $canSend,
             'canConvert' => $canConvert,
             'canShare' => $canShare,
+            'canViewInvoice' => $canViewInvoice,
+            'canEditInvoiceDraft' => $canEditInvoiceDraft,
         ]);
     }
 }

@@ -16,6 +16,7 @@ use Brick\Math\BigDecimal;
 use Carbon\Carbon;
 use Illuminate\Contracts\View\View;
 use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Locked;
 use Livewire\Component;
@@ -239,8 +240,8 @@ class PaymentForm extends Component
         }
 
         $this->validate([
-            'customer_id' => ['required', 'integer', 'exists:customers,id'],
-            'money_account_id' => ['required', 'integer', 'exists:money_accounts,id'],
+            'customer_id' => ['required', 'integer', Rule::exists('customers', 'id')->where('company_id', $company->id)],
+            'money_account_id' => ['required', 'integer', Rule::exists('money_accounts', 'id')->where('company_id', $company->id)],
             'payment_method' => ['required', 'string', 'in:cash,bank_transfer'],
             'payment_date' => ['required', 'date'],
             'amount' => ['required', 'numeric', 'gt:0'],

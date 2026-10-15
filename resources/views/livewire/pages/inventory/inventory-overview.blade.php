@@ -110,7 +110,7 @@
                     <div class="p-3.5 flex items-center justify-between text-xs hover:bg-surface-soft/50 transition-colors">
                         <div>
                             <a href="{{ route('products.show', $prod->public_id) }}" class="font-bold text-text-primary hover:text-primary">
-                                {{ $prod->name_ar }}
+                                {{ $prod->displayName() }}
                             </a>
                             <div class="text-[11px] text-text-muted font-mono dir-ltr mt-0.5">
                                 {{ $prod->sku ?? '—' }}
@@ -120,7 +120,8 @@
                             <div class="font-mono font-bold text-danger text-sm tabular-nums dir-ltr">
                                 {{ $prod->stock_quantity }} / {{ $prod->minimum_stock }}
                             </div>
-                            <div class="text-[10px] text-text-muted">{{ $prod->baseUnit?->name_ar }}</div>
+                            <div class="text-xs text-text-secondary">{{ $prod->baseUnit?->name() }}</div>
+                            <x-stock-breakdown :parts="$stockBreakdowns[$prod->id]" />
                         </div>
                     </div>
                 @empty

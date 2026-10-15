@@ -13,6 +13,7 @@ use Brick\Math\BigDecimal;
 use Carbon\Carbon;
 use Illuminate\Contracts\View\View;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
 use Livewire\Attributes\Layout;
 use Livewire\Component;
 
@@ -129,7 +130,7 @@ class ReturnForm extends Component
         }
 
         $this->validate([
-            'sales_invoice_id' => ['required', 'integer', 'exists:sales_invoices,id'],
+            'sales_invoice_id' => ['required', 'integer', Rule::exists('sales_invoices', 'id')->where('company_id', $company->id)],
             'issue_date' => ['required', 'date'],
             'reason' => ['nullable', 'string', 'max:255'],
             'notes' => ['nullable', 'string'],

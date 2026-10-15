@@ -1,4 +1,26 @@
-<div class="max-w-5xl mx-auto space-y-6">
+<div class="max-w-5xl mx-auto space-y-6"
+     x-data="{
+         isSaving: false,
+         handleKeydown(e) {
+             const isCtrlS = (e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S');
+             const isAltN = e.altKey && (e.key === 'n' || e.key === 'N');
+             if ((!isCtrlS && !isAltN) || e.repeat) return;
+
+             const activeModal = [...document.querySelectorAll('[role=dialog]')].some(el => el.getClientRects().length > 0);
+             if (activeModal) return;
+
+             if (isCtrlS) {
+                 e.preventDefault();
+                 if (this.isSaving) return;
+                 this.isSaving = true;
+                 $wire.saveDraft().finally(() => { this.isSaving = false; });
+             } else if (isAltN) {
+                 e.preventDefault();
+                 $wire.addLine();
+             }
+         }
+     }"
+     @keydown.window="handleKeydown($event)">
     <label class="flex items-center gap-2 text-sm"><input type="checkbox" wire:model="include_product_images">{{ __('sales.include_product_images') }}</label>
     <!-- Header -->
     <div class="flex items-center justify-between gap-4">
@@ -23,9 +45,24 @@
         <div class="grid grid-cols-1 md:grid-cols-4 gap-4 pb-4 border-b border-border">
             <!-- Customer -->
             <div class="md:col-span-2">
-                <label class="block text-xs font-bold text-text-primary mb-1">
-                    {{ __('sales.customer') }} <span class="text-danger">*</span>
-                </label>
+                <div class="flex items-center justify-between mb-1">
+                    <label class="block text-xs font-bold text-text-primary">
+                        {{ __('sales.customer') }} <span class="text-danger">*</span>
+                    </label>
+                    @if ($canManageCustomers)
+                        <button type="button"
+                                wire:click="openQuickCustomerModal"
+                                class="text-xs text-primary hover:underline font-medium cursor-pointer">
+                            + {{ __('workflow.quick_customer') }}
+                        </button>
+                    @endif
+                </div>
+                <div class="flex gap-2 mb-1.5">
+                    <input type="text"
+                           wire:model.live.debounce.300ms="customerSearch"
+                           placeholder="{{ __('workflow.search_customers') }}"
+                           class="w-full h-8 px-2.5 rounded-control border border-border bg-canvas text-xs text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden" />
+                </div>
                 <select wire:model.live="customer_id"
                         required
                         class="w-full h-9 px-3 rounded-control border border-border bg-canvas text-xs text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden">
@@ -103,14 +140,23 @@
 
         <!-- Lines Section -->
         <div>
-            <div class="flex items-center justify-between pb-2 border-b border-border">
-                <h2 class="text-sm font-bold text-text-primary">
-                    {{ __('sales.quotation_details') }}
-                </h2>
+            <div class="flex flex-wrap items-center justify-between gap-3 pb-2 border-b border-border">
+                <div class="flex min-w-0 flex-1 flex-wrap items-center gap-3">
+                    <h2 class="text-sm font-bold text-text-primary">
+                        {{ __('sales.quotation_details') }}
+                    </h2>
+                    <div class="w-full sm:w-64">
+                        <input type="text"
+                               wire:model.live.debounce.300ms="productSearch"
+                               placeholder="{{ __('workflow.search_products') }}"
+                               class="w-full min-w-0 h-11 px-2.5 rounded-control border border-border bg-canvas text-sm text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden" />
+                    </div>
+                </div>
                 <button type="button"
                         wire:click="addLine"
-                        class="px-2.5 py-1 rounded-control bg-primary text-white text-xs font-bold hover:bg-primary-hover transition-colors">
-                    + {{ __('sales.add_line') }}
+                        class="min-h-11 shrink-0 px-2.5 py-2 rounded-control bg-primary text-white text-xs font-bold hover:bg-primary-hover transition-colors inline-flex items-center gap-1.5 cursor-pointer">
+                    <span>+ {{ __('sales.add_line') }}</span>
+                    <kbd class="px-1 py-0.5 text-[10px] font-mono rounded bg-white/20 text-white leading-none">Alt+N</kbd>
                 </button>
             </div>
 
@@ -127,7 +173,10 @@
                             @if ($taxes->isNotEmpty())
                                 <th class="py-2 px-2 text-start w-28">{{ __('sales.tax') }}</th>
                             @endif
-                            <th class="py-2 px-2 text-end w-24">{{ __('sales.total') }}</th>
+                            <th class="py-2 px-2 text-end w-24">
+                                {{ __('sales.total') }}
+                                <span class="text-[10px] text-text-muted font-normal block">{{ __('workflow.preview') }}</span>
+                            </th>
                             <th class="py-2 px-1 text-center w-8"></th>
                         </tr>
                     </thead>
@@ -194,6 +243,7 @@
                                            min="0"
                                            dir="ltr"
                                            class="w-full h-8 px-2 rounded-control border border-border bg-canvas text-xs font-mono" />
+<x-customer-last-price :price="$lastCustomerPrices[$line['product_id'] ?? 0] ?? null" />
                                 </td>
 
                                 <td class="py-2 px-2 align-top space-y-1">
@@ -334,6 +384,7 @@
                                        min="0"
                                        dir="ltr"
                                        class="w-full h-8 px-2 rounded-control border border-border bg-white text-xs font-mono" />
+<x-customer-last-price :price="$lastCustomerPrices[$line['product_id'] ?? 0] ?? null" />
                             </div>
                             <div>
                                 <label class="block text-[11px] font-bold text-text-secondary">{{ __('sales.discount') }}</label>
@@ -433,9 +484,71 @@
                 {{ __('sales.cancel') }}
             </a>
             <button type="submit"
-                    class="px-5 py-2 rounded-control bg-primary text-white text-xs font-bold hover:bg-primary-hover transition-colors shadow-sm cursor-pointer">
-                {{ __('sales.save_draft') }}
+                    wire:loading.attr="disabled"
+                    class="px-5 py-2 rounded-control bg-primary text-white text-xs font-bold hover:bg-primary-hover transition-colors shadow-sm cursor-pointer inline-flex items-center gap-1.5">
+                <span>{{ __('sales.save_draft') }}</span>
+                <kbd class="px-1 py-0.5 text-[10px] font-mono rounded bg-white/20 text-white leading-none">Ctrl+S</kbd>
             </button>
         </div>
     </form>
+
+    @if ($showQuickCustomerModal)
+        <div x-data="{
+                triggerEl: null,
+                init() {
+                    this.triggerEl = document.activeElement;
+                    this.$nextTick(() => { this.$refs.firstInput?.focus(); });
+                },
+                destroy() {
+                    if (this.triggerEl && typeof this.triggerEl.focus === 'function') {
+                        this.triggerEl.focus();
+                    }
+                }
+             }"
+             x-trap.inert.noscroll="true"
+             @keydown.escape.window.stop.prevent="$wire.closeQuickCustomerModal()"
+             @keydown.enter.stop.prevent="saveQuickCustomer"
+             class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-xs"
+             role="dialog"
+             aria-modal="true"
+             aria-labelledby="quick-customer-modal-title">
+            <div class="bg-surface border border-border rounded-card p-6 w-full max-w-md shadow-lg space-y-4">
+                <div class="flex items-center justify-between pb-3 border-b border-border">
+                    <h3 id="quick-customer-modal-title" class="text-base font-bold text-text-primary">{{ __('workflow.quick_customer') }}</h3>
+                    <button type="button" wire:click="closeQuickCustomerModal" class="text-text-muted hover:text-text-primary text-sm font-bold cursor-pointer">✕</button>
+                </div>
+                <div class="space-y-3">
+                    <div>
+                        <label for="quote-quick-customer-name-ar" class="block text-xs font-bold text-text-primary mb-1">{{ __('workflow.customer_name_ar') }} <span class="text-danger">*</span></label>
+                        <input x-ref="firstInput" id="quote-quick-customer-name-ar" type="text" wire:model="quick_customer_name_ar" required maxlength="255" class="w-full h-9 px-3 rounded-control border border-border bg-canvas text-xs text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden" />
+                        @error('quick_customer_name_ar') <span class="text-danger text-[11px] block mt-1">{{ $message }}</span> @enderror
+                    </div>
+                    <div>
+                        <label for="quote-quick-customer-name-en" class="block text-xs font-bold text-text-primary mb-1">{{ __('workflow.customer_name_en') }}</label>
+                        <input id="quote-quick-customer-name-en" type="text" wire:model="quick_customer_name_en" maxlength="255" dir="ltr" class="w-full h-9 px-3 rounded-control border border-border bg-canvas text-xs text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden" />
+                        @error('quick_customer_name_en') <span class="text-danger text-[11px] block mt-1">{{ $message }}</span> @enderror
+                    </div>
+                    <div class="grid grid-cols-2 gap-3">
+                        <div>
+                            <label for="quote-quick-customer-phone" class="block text-xs font-bold text-text-primary mb-1">{{ __('workflow.phone') }}</label>
+                            <input id="quote-quick-customer-phone" type="text" wire:model="quick_customer_phone" maxlength="64" dir="ltr" class="w-full h-9 px-3 rounded-control border border-border bg-canvas text-xs text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden" />
+                            @error('quick_customer_phone') <span class="text-danger text-[11px] block mt-1">{{ $message }}</span> @enderror
+                        </div>
+                        <div>
+                            <label for="quote-quick-customer-code" class="block text-xs font-bold text-text-primary mb-1">{{ __('workflow.code') }}</label>
+                            <input id="quote-quick-customer-code" type="text" wire:model="quick_customer_code" maxlength="64" dir="ltr" class="w-full h-9 px-3 rounded-control border border-border bg-canvas text-xs text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden" />
+                            @error('quick_customer_code') <span class="text-danger text-[11px] block mt-1">{{ $message }}</span> @enderror
+                        </div>
+                    </div>
+                </div>
+                <div class="flex items-center justify-end gap-2 pt-3 border-t border-border">
+                    <button type="button" wire:click="closeQuickCustomerModal" class="px-3 py-1.5 rounded-control border border-border text-xs font-bold text-text-secondary hover:bg-surface-soft cursor-pointer">{{ __('workflow.cancel') }}</button>
+                    <button type="button" wire:click="saveQuickCustomer" wire:loading.attr="disabled" class="px-4 py-1.5 rounded-control bg-primary text-white text-xs font-bold hover:bg-primary-hover shadow-xs cursor-pointer">
+                        <span wire:loading.remove wire:target="saveQuickCustomer">{{ __('workflow.save_customer') }}</span>
+                        <span wire:loading wire:target="saveQuickCustomer">...</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    @endif
 </div>

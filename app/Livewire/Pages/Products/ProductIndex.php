@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Livewire\Pages\Products;
 
+use App\Models\Brand;
 use App\Models\Product;
 use App\Models\ProductCategory;
 use App\Models\User;
@@ -26,6 +27,9 @@ class ProductIndex extends Component
     #[Url(as: 'category')]
     public string $categoryFilter = '';
 
+    #[Url(as: 'brand')]
+    public string $brandFilter = '';
+
     #[Url(as: 'status')]
     public string $statusFilter = 'all';
 
@@ -41,6 +45,11 @@ class ProductIndex extends Component
     }
 
     public function updatedCategoryFilter(): void
+    {
+        $this->resetPage();
+    }
+
+    public function updatedBrandFilter(): void
     {
         $this->resetPage();
     }
@@ -71,7 +80,7 @@ class ProductIndex extends Component
         $canManageProduct = $user->hasPermissionTo('inventory.product.manage');
 
         $query = Product::where('company_id', $company->id)
-            ->with(['category', 'baseUnit', 'primaryImage']);
+            ->with(['category', 'brand', 'baseUnit', 'primaryImage']);
 
         if ($canViewCost) {
             $query->with('costState');
@@ -93,6 +102,11 @@ class ProductIndex extends Component
         // Category filter
         if ($this->categoryFilter !== '') {
             $query->where('category_id', $this->categoryFilter);
+        }
+
+        // Brand filter
+        if ($this->brandFilter !== '') {
+            $query->where('brand_id', $this->brandFilter);
         }
 
         // Status filter
@@ -122,10 +136,15 @@ class ProductIndex extends Component
         $products = $query->orderBy('name_ar')->paginate(15);
 
         $categories = ProductCategory::where('company_id', $company->id)->where('active', true)->orderBy('sort_order')->get();
+        $brands = Brand::where('company_id', $company->id)
+            ->withCount('products')
+            ->orderBy('name_ar')
+            ->get();
 
         return view('livewire.pages.products.product-index', [
             'products' => $products,
             'categories' => $categories,
+            'brands' => $brands,
             'canViewCost' => $canViewCost,
             'canManageProduct' => $canManageProduct,
             'company' => $company,

@@ -19,6 +19,7 @@ use Carbon\Carbon;
 use Illuminate\Contracts\View\View;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
 use Livewire\Attributes\Layout;
 use Livewire\Component;
 
@@ -294,8 +295,8 @@ class PaymentForm extends Component
         $user = auth()->user();
 
         $this->validate([
-            'vendor_id' => ['required', 'integer', 'exists:vendors,id'],
-            'money_account_id' => ['required', 'integer', 'exists:money_accounts,id'],
+            'vendor_id' => ['required', 'integer', Rule::exists('vendors', 'id')->where('company_id', $company->id)],
+            'money_account_id' => ['required', 'integer', Rule::exists('money_accounts', 'id')->where('company_id', $company->id)],
             'payment_method' => ['required', 'string', 'in:cash,bank_transfer'],
             'payment_date' => ['required', 'date'],
             'amount' => ['required', 'numeric', 'gt:0'],
