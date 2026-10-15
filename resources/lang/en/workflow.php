@@ -3,6 +3,10 @@
 declare(strict_types=1);
 
 return [
+    'add_scanned_product' => 'Add item',
+    'scan_entry_help' => 'Scan or enter an exact barcode or SKU, then press Enter or Add item.',
+    'scan_added' => 'Item added. Ready for the next scan.',
+    'scan_loading' => 'Adding item…',
     'quick_customer' => 'New Customer',
     'quick_vendor' => 'New Vendor',
     'customer_name_ar' => 'Customer Name (Arabic)',
