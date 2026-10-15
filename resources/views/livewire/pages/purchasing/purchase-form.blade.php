@@ -24,6 +24,9 @@
     @include('livewire.ai.unsaved-notice')
     @if($errors->any())<div role="alert" class="p-3 bg-danger-bg text-danger text-sm rounded-control"><ul class="list-disc ps-4">@foreach($errors->all() as $error)<li>{{ $error }}</li>@endforeach</ul></div>@endif
     @if($duplicateWarning)<p role="status" class="p-3 bg-warning-bg text-warning text-sm rounded-control">{{ __('purchasing.duplicate_vendor_invoice') }}</p>@endif
+    @if ($receivingStock)
+        <p role="status" class="text-sm text-text-secondary">{{ __('quick_product.receive_help') }}</p>
+    @endif
     <section class="bg-surface border border-border rounded-card p-4 grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <div class="sm:col-span-2">
             <div class="flex items-center justify-between mb-1.5">
@@ -61,6 +64,11 @@
         <div>
             <label for="purchase-product-search" class="block text-sm font-bold mb-1">{{ __('purchasing.search_products') }}</label>
             <input id="purchase-product-search" type="search" maxlength="160" wire:model.live.debounce.300ms="productSearch" x-on:keydown.enter.prevent placeholder="{{ __('purchasing.search_products') }}" aria-describedby="purchase-product-search-help" class="w-full h-11 px-3 border border-border bg-canvas rounded-control text-sm" />
+            @if (auth()->user()->hasPermissionTo('inventory.product.manage'))
+                <button type="button" wire:click="openQuickProductModal" aria-haspopup="dialog" class="mt-2 min-h-11 px-3 py-2 rounded-control border border-border text-sm font-bold text-primary hover:bg-surface-soft focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary">
+                    {{ __('quick_product.create') }}
+                </button>
+            @endif
             <p id="purchase-product-search-help" class="mt-1 text-xs text-text-secondary">{{ __('purchasing.product_search_help') }}</p>
             <p wire:loading wire:target="productSearch" role="status" class="mt-1 text-xs text-text-secondary">{{ __('purchasing.products_searching') }}</p>
             @if($products->isEmpty())<p role="status" class="mt-1 text-sm text-text-secondary">{{ __('purchasing.no_matching_products') }}</p>@endif
@@ -211,4 +219,5 @@
             </div>
         </div>
     @endif
+    @include('livewire.partials.quick-product-modal')
 </div>

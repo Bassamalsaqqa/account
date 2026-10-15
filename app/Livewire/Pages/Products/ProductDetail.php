@@ -120,6 +120,7 @@ class ProductDetail extends Component
         }
 
         return view('livewire.pages.products.product-detail', [
+            'canReceiveStock' => $this->product->active && $this->product->track_stock && $user->hasPermissionTo('purchasing.purchase.create') && $canViewPurchasingCost,
             'product' => $this->product,
             'warehouseBalances' => $warehouseBalances,
             'stockTotal' => (string) $stockTotal->toScale(6),

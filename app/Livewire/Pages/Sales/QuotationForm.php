@@ -15,6 +15,7 @@ use App\Domain\Sales\Calculators\SalesLineCalculationInput;
 use App\Domain\Sales\Calculators\SalesLineCalculator;
 use App\Domain\Sales\Queries\CustomerLastPriceQuery;
 use App\Livewire\Concerns\QuickPartyCreate;
+use App\Livewire\Concerns\QuickProductCreate;
 use App\Models\Company;
 use App\Models\Customer;
 use App\Models\Product;
@@ -40,6 +41,20 @@ use Livewire\Component;
 class QuotationForm extends Component
 {
     use QuickPartyCreate;
+    use QuickProductCreate;
+
+    protected function quickProductFormPermission(): string
+    {
+        return $this->quickProductDocumentId === null ? 'sales.quote.create' : 'sales.quote.edit';
+    }
+
+    protected function assertQuickProductDraft(): void
+    {
+        if ($this->quickProductDocumentId !== null) {
+            $document = Quotation::where('company_id', $this->pageCompanyId)->findOrFail($this->quickProductDocumentId);
+            abort_unless($document->isDraft(), 403);
+        }
+    }
 
     protected function quickPartyKind(): string
     {
@@ -144,6 +159,7 @@ class QuotationForm extends Component
                 abort(400, 'Cannot edit quotation in status: '.$this->quotation->status);
             }
 
+            $this->quickProductDocumentId = (int) $this->quotation->id;
             $this->isEditing = true;
             $this->customer_id = $this->quotation->customer_id;
             $this->currency_code = $this->quotation->currency_code;
@@ -579,7 +595,7 @@ class QuotationForm extends Component
 
     public function saveDraft(CreateQuotationAction $createAction, UpdateQuotationAction $updateAction): mixed
     {
-        if ($this->showQuickCustomerModal) {
+        if ($this->showQuickCustomerModal || $this->showQuickProductModal) {
             return null;
         }
 

@@ -154,6 +154,11 @@
                                wire:model.live.debounce.300ms="productSearch"
                                placeholder="{{ __('workflow.search_products') }}"
                                class="w-full min-w-0 h-11 px-2.5 rounded-control border border-border bg-canvas text-sm text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden" />
+            @if (auth()->user()->hasPermissionTo('inventory.product.manage'))
+                <button type="button" wire:click="openQuickProductModal" aria-haspopup="dialog" class="mt-2 min-h-11 px-3 py-2 rounded-control border border-border text-sm font-bold text-primary hover:bg-surface-soft focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary">
+                    {{ __('quick_product.create') }}
+                </button>
+            @endif
                     </div>
                 </div>
                 <button type="button"
@@ -555,4 +560,5 @@
             </div>
         </div>
     @endif
+    @include('livewire.partials.quick-product-modal')
 </div>
