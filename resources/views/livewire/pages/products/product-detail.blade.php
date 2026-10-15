@@ -25,7 +25,13 @@
             @endif
         </div>
 
-        <div class="flex items-center gap-2">
+        <div class="flex flex-wrap items-center gap-2">
+            @if ($canReceiveStock)
+                <a href="{{ route('purchases.create', ['receiveProduct' => $product->public_id]) }}" class="inline-flex items-center gap-2 px-3 py-2 bg-primary text-white hover:bg-primary-hover text-sm font-bold rounded-control focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary">
+                    <x-icon name="plus" class="w-4 h-4" />
+                    {{ __('quick_product.receive_stock') }}
+                </a>
+            @endif
             @if ($canManageProduct)
                 <a href="{{ route('products.edit', $product->public_id) }}"
                    class="inline-flex items-center gap-1.5 px-3 py-2 bg-white border border-border hover:bg-surface-soft text-text-primary text-xs font-bold rounded-control transition-colors">

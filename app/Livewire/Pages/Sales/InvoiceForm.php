@@ -18,6 +18,7 @@ use App\Domain\Sales\Queries\CustomerLastPriceQuery;
 use App\Exceptions\NoActiveCompanyException;
 use App\Livewire\Concerns\AiUnsavedForm;
 use App\Livewire\Concerns\QuickPartyCreate;
+use App\Livewire\Concerns\QuickProductCreate;
 use App\Models\Company;
 use App\Models\Customer;
 use App\Models\Product;
@@ -48,6 +49,20 @@ class InvoiceForm extends Component
 {
     use AiUnsavedForm;
     use QuickPartyCreate;
+    use QuickProductCreate;
+
+    protected function quickProductFormPermission(): string
+    {
+        return $this->quickProductDocumentId === null ? 'sales.invoice.create' : 'sales.invoice.edit_draft';
+    }
+
+    protected function assertQuickProductDraft(): void
+    {
+        if ($this->quickProductDocumentId !== null) {
+            $document = SalesInvoice::where('company_id', $this->pageCompanyId)->findOrFail($this->quickProductDocumentId);
+            abort_unless($document->isDraft(), 403);
+        }
+    }
 
     protected function quickPartyKind(): string
     {
@@ -182,6 +197,7 @@ class InvoiceForm extends Component
                 abort(400, 'Cannot edit invoice in non-draft status.');
             }
 
+            $this->quickProductDocumentId = (int) $this->invoice->id;
             $this->isEditing = true;
             $this->customer_id = $this->invoice->customer_id;
             $this->warehouse_id = $this->invoice->warehouse_id;
@@ -282,7 +298,7 @@ class InvoiceForm extends Component
 
     public function saveDraft(): mixed
     {
-        if ($this->showPreview || $this->showQuickCustomerModal) {
+        if ($this->showPreview || $this->showQuickCustomerModal || $this->showQuickProductModal) {
             return null;
         }
 
