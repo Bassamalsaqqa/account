@@ -114,16 +114,7 @@
                     @else
                         <!-- Outbound requires lot selection -->
                         <div class="md:col-span-2">
-                            <label class="block font-bold text-text-secondary mb-1">{{ __('inventory.select_affected_lot') }} *</label>
-                            <select wire:model="lot_id" class="w-full h-9 px-2.5 rounded-control border border-border bg-white text-xs text-text-primary">
-                                <option value="">{{ __('inventory.select_lot') }}</option>
-                                @foreach ($availableLots as $lb)
-                                    <option value="{{ $lb->lot_id }}">
-                                        {{ $lb->lot?->lot_number ?? __('inventory.lot_prefix') . $lb->lot_id }} — {{ __('inventory.expiry_date') }}: {{ $lb->lot?->expiry_date ?? '—' }} ({{ __('inventory.current_stock') }}: {{ $lb->quantity_base }})
-                                    </option>
-                                @endforeach
-                            </select>
-                            @error('lot_id') <span class="text-danger text-[10px]">{{ $message }}</span> @enderror
+                            @include('livewire.pages.inventory.partials.lot-picker', ['lotLabel' => __('inventory.select_affected_lot')])
                         </div>
                     @endif
                 @endif

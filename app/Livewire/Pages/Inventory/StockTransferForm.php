@@ -4,10 +4,11 @@ declare(strict_types=1);
 
 namespace App\Livewire\Pages\Inventory;
 
+use App\Application\Inventory\AvailableLotQuery;
 use App\Domain\Inventory\DTO\StockTransferCommand;
 use App\Domain\Inventory\DTO\StockTransferLineCommand;
 use App\Domain\Inventory\ValueObjects\Quantity;
-use App\Models\InventoryLotBalance;
+use App\Livewire\Pages\Inventory\Concerns\AuthorizesInventoryPages;
 use App\Models\Product;
 use App\Models\User;
 use App\Models\Warehouse;
@@ -22,6 +23,8 @@ use Livewire\Component;
 #[Layout('layouts.app')]
 class StockTransferForm extends Component
 {
+    use AuthorizesInventoryPages;
+
     public ?int $source_warehouse_id = null;
 
     public ?int $destination_warehouse_id = null;
@@ -46,13 +49,8 @@ class StockTransferForm extends Component
 
     public function mount(CompanyContext $context): void
     {
-        /** @var User $user */
-        $user = auth()->user();
-        if (! $user->hasPermissionTo('inventory.stock.transfer')) {
-            abort(403);
-        }
-
-        $company = $context->company();
+        $this->pageCompanyId = $context->companyId();
+        $company = $this->authorizeInventory('inventory.stock.transfer');
         $this->movement_date = now($company->timezone)->toDateString();
         $this->formIdempotencyKey = (string) Str::ulid();
 
@@ -68,8 +66,10 @@ class StockTransferForm extends Component
     public function updatedProductId(): void
     {
         $this->lot_id = null;
+        $company = $this->authorizeInventory('inventory.stock.transfer');
+        $this->unit_id = null;
         if ($this->product_id) {
-            $product = Product::find($this->product_id);
+            $product = Product::where('company_id', $company->id)->where('active', true)->where('track_stock', true)->find($this->product_id);
             if ($product) {
                 $this->unit_id = $product->base_unit_id;
             }
@@ -83,13 +83,9 @@ class StockTransferForm extends Component
 
     public function save(CompanyContext $context, InventoryMovementService $movementService): void
     {
+        $company = $this->authorizeInventory('inventory.stock.transfer');
         /** @var User $user */
         $user = auth()->user();
-        if (! $user->hasPermissionTo('inventory.stock.transfer')) {
-            abort(403);
-        }
-
-        $company = $context->company();
 
         $validated = $this->validate([
             'source_warehouse_id' => ['required', 'integer', Rule::exists('warehouses', 'id')->where('company_id', $company->id)],
@@ -152,9 +148,16 @@ class StockTransferForm extends Component
         }
     }
 
+    public function boot(): void
+    {
+        if (isset($this->pageCompanyId)) {
+            $this->authorizeInventory('inventory.stock.transfer');
+        }
+    }
+
     public function render(CompanyContext $context): View
     {
-        $company = $context->company();
+        $company = $this->authorizeInventory('inventory.stock.transfer');
 
         $products = Product::where('company_id', $company->id)
             ->where('active', true)
@@ -186,12 +189,7 @@ class StockTransferForm extends Component
             $availableUnits = collect($unitsList);
 
             if ($selectedProduct->track_expiry && $this->source_warehouse_id) {
-                $availableLots = InventoryLotBalance::where('company_id', $company->id)
-                    ->where('product_id', $selectedProduct->id)
-                    ->where('warehouse_id', $this->source_warehouse_id)
-                    ->where('quantity_base', '>', 0)
-                    ->with('lot')
-                    ->get();
+                $availableLots = app(AvailableLotQuery::class)->get($company->id, $selectedProduct->id, $this->source_warehouse_id);
             }
         }
 
@@ -202,6 +200,7 @@ class StockTransferForm extends Component
             'availableUnits' => $availableUnits,
             'availableLots' => $availableLots,
             'company' => $company,
+            'lotReferenceDate' => now($company->timezone)->startOfDay(),
         ]);
     }
 }

@@ -5,8 +5,9 @@ declare(strict_types=1);
 namespace App\Livewire\Pages\Inventory;
 
 use App\Actions\Inventory\AdjustStockAction;
+use App\Application\Inventory\AvailableLotQuery;
 use App\Domain\Inventory\ValueObjects\Quantity;
-use App\Models\InventoryLotBalance;
+use App\Livewire\Pages\Inventory\Concerns\AuthorizesInventoryPages;
 use App\Models\Product;
 use App\Models\StockMovement;
 use App\Models\User;
@@ -21,6 +22,8 @@ use Livewire\Component;
 #[Layout('layouts.app')]
 class StockAdjustmentForm extends Component
 {
+    use AuthorizesInventoryPages;
+
     public ?int $product_id = null;
 
     public ?int $warehouse_id = null;
@@ -51,13 +54,8 @@ class StockAdjustmentForm extends Component
 
     public function mount(CompanyContext $context): void
     {
-        /** @var User $user */
-        $user = auth()->user();
-        if (! $user->hasPermissionTo('inventory.stock.adjust')) {
-            abort(403);
-        }
-
-        $company = $context->company();
+        $this->pageCompanyId = $context->companyId();
+        $company = $this->authorizeInventory('inventory.stock.adjust');
         $this->movement_date = now($company->timezone)->toDateString();
         $this->formIdempotencyKey = (string) Str::ulid();
 
@@ -73,23 +71,33 @@ class StockAdjustmentForm extends Component
         $this->lot_number = '';
         $this->expiry_date = '';
 
+        $company = $this->authorizeInventory('inventory.stock.adjust');
+        $this->unit_id = null;
         if ($this->product_id) {
-            $product = Product::find($this->product_id);
+            $product = Product::where('company_id', $company->id)->where('active', true)->where('track_stock', true)->find($this->product_id);
             if ($product) {
                 $this->unit_id = $product->base_unit_id;
             }
         }
     }
 
+    public function updatedWarehouseId(): void
+    {
+        $this->lot_id = null;
+    }
+
+    public function updatedType(): void
+    {
+        $this->lot_id = null;
+        $this->lot_number = '';
+        $this->expiry_date = '';
+    }
+
     public function save(CompanyContext $context, AdjustStockAction $action): void
     {
+        $company = $this->authorizeInventory('inventory.stock.adjust');
         /** @var User $user */
         $user = auth()->user();
-        if (! $user->hasPermissionTo('inventory.stock.adjust')) {
-            abort(403);
-        }
-
-        $company = $context->company();
         $canViewCost = $user->hasPermissionTo('inventory.cost.view');
 
         $validated = $this->validate([
@@ -169,9 +177,16 @@ class StockAdjustmentForm extends Component
         }
     }
 
+    public function boot(): void
+    {
+        if (isset($this->pageCompanyId)) {
+            $this->authorizeInventory('inventory.stock.adjust');
+        }
+    }
+
     public function render(CompanyContext $context): View
     {
-        $company = $context->company();
+        $company = $this->authorizeInventory('inventory.stock.adjust');
 
         /** @var User $user */
         $user = auth()->user();
@@ -208,12 +223,7 @@ class StockAdjustmentForm extends Component
             $availableUnits = collect($unitsList);
 
             if ($selectedProduct->track_expiry && $this->warehouse_id) {
-                $availableLots = InventoryLotBalance::where('company_id', $company->id)
-                    ->where('product_id', $selectedProduct->id)
-                    ->where('warehouse_id', $this->warehouse_id)
-                    ->where('quantity_base', '>', 0)
-                    ->with('lot')
-                    ->get();
+                $availableLots = app(AvailableLotQuery::class)->get($company->id, $selectedProduct->id, $this->warehouse_id);
             }
         }
 
@@ -225,6 +235,7 @@ class StockAdjustmentForm extends Component
             'availableLots' => $availableLots,
             'canViewCost' => $canViewCost,
             'company' => $company,
+            'lotReferenceDate' => now($company->timezone)->startOfDay(),
         ]);
     }
 }
