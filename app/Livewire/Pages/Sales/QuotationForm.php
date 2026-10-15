@@ -14,6 +14,8 @@ use App\Domain\Sales\Calculators\SalesDocumentTotalsCalculator;
 use App\Domain\Sales\Calculators\SalesLineCalculationInput;
 use App\Domain\Sales\Calculators\SalesLineCalculator;
 use App\Domain\Sales\Queries\CustomerLastPriceQuery;
+use App\Livewire\Concerns\AdjustsDocumentQuantity;
+use App\Livewire\Concerns\CameraBarcodeScan;
 use App\Livewire\Concerns\QuickPartyCreate;
 use App\Livewire\Concerns\QuickProductCreate;
 use App\Models\Company;
@@ -40,6 +42,8 @@ use Livewire\Component;
 #[Layout('layouts.app')]
 class QuotationForm extends Component
 {
+    use AdjustsDocumentQuantity;
+    use CameraBarcodeScan;
     use QuickPartyCreate;
     use QuickProductCreate;
 
@@ -482,7 +486,7 @@ class QuotationForm extends Component
         $company = app(CompanyContext::class)->company();
         foreach ($this->lines as $index => $line) {
             foreach (['quantity', 'unit_price', 'discount_value'] as $field) {
-                if (! is_string($line[$field])) {
+                if (! is_string($line[$field]) || preg_match('/^\d{1,14}(?:\.\d{1,6})?$/D', $line[$field]) !== 1) {
                     $this->addError("lines.{$index}.{$field}", __('commands.exact_string_required'));
 
                     return;

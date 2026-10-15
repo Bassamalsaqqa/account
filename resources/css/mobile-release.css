@@ -1,0 +1,21 @@
+:root { --mobile-nav-height: calc(4.5rem + env(safe-area-inset-bottom, 0px)); }
+[x-cloak] { display: none !important; }
+.mobile-bottom-nav { position: fixed; inset-inline: 0; bottom: 0; z-index: 46; height: var(--mobile-nav-height); padding: 4px max(4px, env(safe-area-inset-right)) max(4px, env(safe-area-inset-bottom)) max(4px, env(safe-area-inset-left)); grid-template-columns: repeat(5, minmax(0, 1fr)); background: var(--color-surface); border-top: 1px solid var(--color-border); }
+.mobile-bottom-nav > :is(a, button) { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; min-width: 0; min-height: 52px; border-radius: 10px; color: var(--color-text-secondary); font-size: 11px; font-weight: 700; text-align: center; }
+.mobile-bottom-nav > :is(a, button):focus-visible { outline: 2px solid var(--color-primary); outline-offset: -2px; }
+.mobile-bottom-nav > [aria-current="page"] { color: var(--color-primary); background: var(--color-primary-50); }
+.mobile-bottom-nav > .mobile-scan-button { color: var(--color-primary); }
+.mobile-bottom-nav svg { height: 22px; width: 22px; }
+.mobile-scan-choices { position: fixed; inset: 0; z-index: 80; background: rgb(23 32 51 / 40%); display: flex; align-items: flex-end; }
+.mobile-scan-choice-sheet { background: var(--color-surface); width: 100%; padding: 20px 20px max(20px, env(safe-area-inset-bottom)); border-radius: 16px 16px 0 0; max-height: 85dvh; overflow-y: auto; }
+.mobile-scan-choice-sheet > a { display: flex; align-items: center; justify-content: space-between; padding: 12px; min-height: 48px; border-bottom: 1px solid var(--color-border); font-size: 14px; font-weight: 600; }
+@media (max-width: 1023px) {
+    .mobile-bottom-nav { display: grid; }
+    .business-app #app-main { padding-bottom: calc(var(--mobile-nav-height) + 112px); scroll-padding-bottom: calc(var(--mobile-nav-height) + 120px); }
+    .business-app #app-main :is(input, select, textarea) { scroll-margin-block: 88px 180px; }
+    .business-app .ai-launcher { position: static; margin-inline-start: auto; margin-block-end: 12px; width: fit-content; min-height: 44px; padding: 8px 14px; }
+    .mobile-keyboard-open .mobile-bottom-nav, .mobile-keyboard-open .business-app .ai-launcher { display: none; }
+    .mobile-keyboard-open { --mobile-nav-height: 0px; }
+    .mobile-keyboard-open .mobile-document-actions { position: static !important; }
+}
+@media (min-width: 1024px) { :root { --mobile-nav-height: 0px; } }

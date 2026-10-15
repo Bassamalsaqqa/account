@@ -1,27 +1,22 @@
-<div class="max-w-5xl mx-auto space-y-6"
+<div class="max-w-5xl mx-auto space-y-6 pb-28 md:pb-6"
      x-data="{
-         isSaving: false,
-         handleKeydown(e) {
-             const isCtrlS = (e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S');
-             const isAltN = e.altKey && (e.key === 'n' || e.key === 'N');
-             if ((!isCtrlS && !isAltN) || e.repeat) return;
-
-             const activeModal = [...document.querySelectorAll('[role=dialog]')].some(el => el.getClientRects().length > 0);
-             if (activeModal) return;
-
-             if (isCtrlS) {
-                 e.preventDefault();
-                 if (this.isSaving) return;
-                 this.isSaving = true;
-                 $wire.saveDraft().finally(() => { this.isSaving = false; });
-             } else if (isAltN) {
-                 e.preventDefault();
-                 $wire.addLine();
-             }
+         saving: false, documentBusy: false, operationFailed: false,
+         handleSaveDraft() {
+             if (this.saving || window.isDocumentBusy($wire) || [...document.querySelectorAll('[role=dialog]')].some(el => el.getClientRects().length)) return;
+             this.saving = true;
+             window.enqueueDocumentOperation($wire, 'saveDraft').catch(() => { this.operationFailed = true; }).finally(() => this.saving = false);
+         },
+         handleAddLine() {
+             if (this.saving || window.isDocumentBusy($wire) || [...document.querySelectorAll('[role=dialog]')].some(el => el.getClientRects().length)) return;
+             window.enqueueDocumentOperation($wire, 'addLine').catch(() => { this.operationFailed = true; });
          }
      }"
-     @keydown.window="handleKeydown($event)">
+     @document-operation-state.window="if ($event.detail.id === $wire.$id) documentBusy = $event.detail.busy"
+     @keydown.window.prevent.ctrl.s="if (!$event.repeat) handleSaveDraft()"
+     @keydown.window.prevent.meta.s="if (!$event.repeat) handleSaveDraft()"
+     @keydown.window.prevent.alt.n="if (!$event.repeat) handleAddLine()">
     <label class="flex items-center gap-2 text-sm"><input type="checkbox" wire:model="include_product_images">{{ __('sales.include_product_images') }}</label>
+    <p x-cloak x-show="operationFailed" role="alert" class="text-sm text-danger">{{ __('camera.network_error') }}</p>
     <!-- Header -->
     <div class="flex items-center justify-between gap-4">
         <div>
@@ -44,7 +39,7 @@
     </div>
 
     <!-- Main Form -->
-    <form wire:submit="save" class="bg-white rounded-card border border-border shadow-xs p-6 space-y-6">
+    <form @submit.prevent="handleSaveDraft()" class="bg-white rounded-card border border-border shadow-xs p-6 space-y-6">
         <!-- Document Meta Section -->
         <div class="grid grid-cols-1 md:grid-cols-4 gap-4 pb-4 border-b border-border">
             <!-- Customer -->
@@ -162,7 +157,7 @@
                     </div>
                 </div>
                 <button type="button"
-                        wire:click="addLine"
+                        @click="handleAddLine()"
                         class="min-h-11 shrink-0 px-2.5 py-2 rounded-control bg-primary text-white text-xs font-bold hover:bg-primary-hover transition-colors inline-flex items-center gap-1.5 cursor-pointer">
                     <span>+ {{ __('sales.add_line') }}</span>
                     <kbd class="px-1 py-0.5 text-[10px] font-mono rounded bg-white/20 text-white leading-none">Alt+N</kbd>
@@ -364,15 +359,19 @@
                                 @endif
                             </div>
                             <div>
-                                <label class="block text-[11px] font-bold text-text-secondary">{{ __('sales.quantity') }}</label>
-                                <input type="number"
-                                       step="any"
-                                       wire:model.blur="lines.{{ $index }}.quantity"
-                                       wire:change="recalculate"
-                                       required
-                                       min="0.000001"
-                                       dir="ltr"
-                                       class="w-full h-8 px-2 rounded-control border border-border bg-white text-xs font-mono" />
+                                <label for="quote-mobile-line-{{ $index }}-quantity" class="block text-[11px] font-bold text-text-secondary mb-1">{{ __('sales.quantity') }}</label>
+                                @php
+                                    $lineProduct = !empty($line['product_id']) ? $products->firstWhere('id', $line['product_id']) : null;
+                                    $selectedProductUnit = $lineProduct && !empty($line['product_unit_id']) ? $lineProduct->productUnits->firstWhere('id', $line['product_unit_id']) : null;
+                                    $lineAllowsFraction = $selectedProductUnit?->unit?->allows_fraction ?? false;
+                                @endphp
+                                <x-touch-quantity-stepper
+                                    :index="$index"
+                                    :allows-fraction="$lineAllowsFraction"
+                                    id="quote-mobile-line-{{ $index }}-quantity"
+                                    :aria-label="__('sales.quantity') . ' ' . ($index + 1)"
+                                />
+                                @error('lines.'.$index.'.quantity') <span id="quote-mobile-line-{{ $index }}-quantity-error" role="alert" class="text-danger text-[11px] block mt-1">{{ $message }}</span> @enderror
                                 @if (!empty($line['available_quantity']))
                                     <div class="text-[10px] text-text-secondary mt-0.5" dir="ltr">
                                         {{ __('sales.available') }}: <span class="font-bold">{{ $line['available_quantity'] }}</span>
@@ -499,6 +498,58 @@
                 <kbd class="px-1 py-0.5 text-[10px] font-mono rounded bg-white/20 text-white leading-none">Ctrl+S</kbd>
             </button>
         </div>
+
+        <!-- Responsive Sticky Mobile Summary & Actions Toolbar -->
+        <div class="md:hidden fixed inset-x-0 z-30 bg-white/95 backdrop-blur-xs border-t border-border shadow-lg px-3 py-2 transition-transform mobile-document-actions"
+             style="bottom: var(--mobile-nav-height, calc(4.5rem + env(safe-area-inset-bottom)));"
+             x-data="{ busy: false }">
+            <div class="max-w-[500px] mx-auto flex items-center justify-between gap-2">
+                <div class="min-w-0 flex-1">
+                    <span class="text-[10px] text-text-muted block leading-none truncate">{{ __('mobile.grand_total') }}</span>
+                    <span class="text-xs font-mono font-extrabold text-primary block leading-tight truncate" dir="ltr">
+                        {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($previewGrandTotal, $currency_code) }} {{ $currency_code }}
+                    </span>
+                </div>
+                <div class="flex items-center gap-1.5 shrink-0">
+                    <button type="button"
+                            @click="$dispatch('mobile-camera-open')"
+                            :disabled="busy || documentBusy || saving"
+                            wire:loading.attr="disabled"
+                            wire:target="scanBarcode,addLine,saveDraft,save"
+                            class="min-h-[44px] min-w-[44px] px-2.5 rounded-control border border-border bg-surface-soft hover:bg-slate-200 active:bg-slate-300 text-text-primary text-xs font-bold flex items-center justify-center gap-1 cursor-pointer transition-colors"
+                            title="{{ __('mobile.scan') }}">
+                        <x-icon name="barcode" class="w-4 h-4 shrink-0" />
+                        <span class="hidden xs:inline text-[11px]">{{ __('mobile.scan') }}</span>
+                    </button>
+                    <button type="button"
+                            :disabled="busy || documentBusy || saving"
+                            wire:loading.attr="disabled"
+                            wire:target="addLine,scanBarcode,saveDraft,save"
+                            @click="if (busy) return; busy = true; (window.enqueueDocumentOperation ? window.enqueueDocumentOperation($wire, 'addLine') : $wire.addLine()).catch(() => { operationFailed = true; }).finally(() => { busy = false; })"
+                            class="min-h-[44px] min-w-[44px] px-2.5 rounded-control border border-primary/30 bg-primary-50 text-primary hover:bg-primary-100 active:bg-primary-200 text-xs font-bold flex items-center justify-center gap-1 cursor-pointer transition-colors"
+                            title="{{ __('mobile.add_item') }}">
+                        <x-icon name="plus" class="w-4 h-4 shrink-0" />
+                        <span class="hidden xs:inline text-[11px]">{{ __('mobile.add_item') }}</span>
+                    </button>
+                    <button type="button"
+                            :disabled="busy || documentBusy || saving"
+                            wire:loading.attr="disabled"
+                            wire:target="saveDraft,save,addLine,scanBarcode"
+                            @click="if (busy) return; busy = true; (window.enqueueDocumentOperation ? window.enqueueDocumentOperation($wire, 'saveDraft') : $wire.saveDraft()).catch(() => { operationFailed = true; }).finally(() => { busy = false; })"
+                            class="min-h-[44px] px-3 rounded-control bg-primary text-white hover:bg-primary-hover active:bg-primary-hover/90 text-xs font-bold flex items-center justify-center gap-1 shadow-xs cursor-pointer transition-colors"
+                            title="{{ __('mobile.save_draft') }}">
+                        <span wire:loading.remove wire:target="saveDraft">{{ __('mobile.save_draft') }}</span>
+                        <span wire:loading wire:target="saveDraft">...</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+        <style>
+            html.mobile-keyboard-open .mobile-document-actions,
+            body.--mobile-keyboard-open .mobile-document-actions {
+                display: none !important;
+            }
+        </style>
     </form>
 
     @if ($showQuickCustomerModal)

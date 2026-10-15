@@ -14,7 +14,9 @@ use App\Domain\Money\Exceptions\InvalidMoneyException;
 use App\Domain\Purchasing\PurchaseCalculator;
 use App\Domain\Purchasing\Queries\VendorProductPriceHistoryQuery;
 use App\Domain\Sales\Calculators\SalesDocumentTotalsCalculator;
+use App\Livewire\Concerns\AdjustsDocumentQuantity;
 use App\Livewire\Concerns\AiUnsavedForm;
+use App\Livewire\Concerns\CameraBarcodeScan;
 use App\Livewire\Concerns\QuickPartyCreate;
 use App\Livewire\Concerns\QuickProductCreate;
 use App\Livewire\Pages\Purchasing\Concerns\AuthorizesPurchasingPages;
@@ -43,8 +45,10 @@ use Livewire\Component;
 #[Layout('layouts.app')]
 class PurchaseForm extends Component
 {
+    use AdjustsDocumentQuantity;
     use AiUnsavedForm;
     use AuthorizesPurchasingPages;
+    use CameraBarcodeScan;
     use QuickPartyCreate;
     use QuickProductCreate;
 

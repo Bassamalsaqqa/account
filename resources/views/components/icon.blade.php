@@ -2,6 +2,7 @@
 
 @php
 $icons = [
+    'barcode' => '<path d="M4 4H2v4m18-4h2v4M2 16v4h4m16-4v4h-4M6 7v10M9 7v10M12 7v10M15 7v10M18 7v10"/>',
     'store' => '<path d="M4 9h16M5 9v11h14V9M3 9l2-5h14l2 5M9 13v7M15 13v7"/>',
     'branch' => '<path d="M4 20h16M6 20V8h12v12M9 8V4h6v4M9 12h2M13 12h2M9 16h2M13 16h2"/>',
     'expand' => '<path d="m8 10 4-4 4 4M8 14l4 4 4-4"/>',

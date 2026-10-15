@@ -3,6 +3,8 @@
 declare(strict_types=1);
 
 return [
+    'public_catalog_message' => 'Our published product catalog',
+    'whatsapp_composer_notice' => 'Opens your sharing app. Review the message and choose whether to send it; opening is not delivery.',
     // General & Navigation
     'title' => 'Product Catalog',
     'catalogs' => 'Catalogs',

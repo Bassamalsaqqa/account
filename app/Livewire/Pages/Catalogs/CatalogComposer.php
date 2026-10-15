@@ -12,6 +12,7 @@ use App\Models\ProductImage;
 use App\Models\ProductUnit;
 use App\Models\PublicShare;
 use App\Services\Catalogs\ApprovedCatalogMedia;
+use App\Services\Catalogs\CatalogBrowserShare;
 use App\Services\Catalogs\CatalogRenderer;
 use App\Services\Catalogs\CatalogService;
 use App\Services\Sales\ShareExpiry;
@@ -1042,6 +1043,9 @@ class CatalogComposer extends Component
         $canRevoke = $user->hasPermissionTo('catalogs.revoke');
         $canShowPrices = $user->hasPermissionTo('catalogs.show_prices');
 
+        $browserShareUrl = $canShare && $this->catalogId !== null
+            ? app(CatalogBrowserShare::class)->existingUrl($this->catalogId) : null;
+
         $selectedProductIds = array_column($this->items, 'product_id');
         $selectedProductsMeta = [];
         $selectableUnitsByProduct = [];
@@ -1144,6 +1148,7 @@ class CatalogComposer extends Component
         }
 
         return view('livewire.pages.catalogs.catalog-composer', [
+            'browserShareUrl' => $browserShareUrl,
             'canManage' => $canManage,
             'canPublish' => $canPublish,
             'canShare' => $canShare,
