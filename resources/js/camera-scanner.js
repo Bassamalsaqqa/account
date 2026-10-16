@@ -291,6 +291,13 @@ export function cameraScanner(wire, options = {}) {
             }
         },
 
+        handleEscape(event) {
+            if (!this.isOpen) return;
+            event.preventDefault();
+            event.stopPropagation();
+            this.close();
+        },
+
         close() {
             this.stopTracks();
             this.isOpen = false;
@@ -389,9 +396,9 @@ export function cameraScanner(wire, options = {}) {
             request.then(response => {
                 if (!this.isOpen || sessionToken !== activeSession) return;
                 if (response?.ok) {
-                    this.status = 'scanning';
-                    this.errorMessage = '';
-                    this.triggerFeedback();
+                    this.status = response.requiresReview ? 'review' : 'scanning';
+                    this.errorMessage = response.requiresReview ? response.message : '';
+                    if (!response.requiresReview) this.triggerFeedback();
                 } else {
                     this.status = 'error';
                     this.errorMessage = response?.message || options.networkErrorMessage || 'Scan error';

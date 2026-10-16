@@ -171,6 +171,7 @@ final class GlobalSearch
                     ->orWhere('name_en', 'like', $likePattern)
                     ->orWhere('business_name_ar', 'like', $likePattern)
                     ->orWhere('business_name_en', 'like', $likePattern)
+                    ->orWhere('phone', 'like', $likePattern)
                     ->orWhere('code', 'like', $likePattern);
             })
             ->select(['id', 'public_id', 'company_id', 'name_ar', 'name_en', 'code', 'status'])
@@ -206,6 +207,7 @@ final class GlobalSearch
                     ->orWhere('name_en', 'like', $likePattern)
                     ->orWhere('business_name_ar', 'like', $likePattern)
                     ->orWhere('business_name_en', 'like', $likePattern)
+                    ->orWhere('phone', 'like', $likePattern)
                     ->orWhere('code', 'like', $likePattern);
             })
             ->select(['id', 'public_id', 'company_id', 'name_ar', 'name_en', 'code', 'status'])

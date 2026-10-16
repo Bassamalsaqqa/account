@@ -156,10 +156,11 @@
             <span class="text-xs font-bold text-text-secondary uppercase tracking-wider">{{ __('purchasing.purchase_summary') ?? __('sales.invoice_details') }} <span class="text-[10px] font-normal text-text-muted">({{ __('workflow.preview') }})</span></span>
         </div>
         <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+            @if (! $documentTotalsValid)<p role="status" class="text-sm text-amber-800">{{ __('camera.totals_unavailable') }}</p>@endif
             @foreach(['subtotal', 'discount', 'tax', 'total'] as $field)
                 <div>
                     <span class="text-xs text-text-secondary">{{ __('purchasing.'.$field) }}</span>
-                    <p class="font-bold mt-1"><bdi>{{ isset($totals[$field]) ? \App\Domain\Sales\Formatters\SalesMoneyFormatter::format($totals[$field], $currency_code) : '—' }} {{ $currency_code }}</bdi></p>
+                    <p class="font-bold mt-1"><bdi @if($documentTotalsValid && $field === 'total') data-document-total @endif>{{ $documentTotalsValid && isset($totals[$field]) ? \App\Domain\Sales\Formatters\SalesMoneyFormatter::format($totals[$field], $currency_code) : '—' }} {{ $currency_code }}</bdi></p>
                 </div>
             @endforeach
         </div>
@@ -174,7 +175,7 @@
     </footer>
     <div class="mobile-document-actions md:hidden fixed inset-x-0 z-30 bg-white border-t border-border px-3 py-2" style="bottom: var(--mobile-nav-height)">
         <div class="flex items-center justify-between gap-2 max-w-lg mx-auto">
-            <div class="min-w-0"><span class="text-xs text-text-secondary block">{{ __('mobile.grand_total') }}</span><bdi class="text-sm font-bold text-primary">{{ isset($totals['total']) ? \App\Domain\Sales\Formatters\SalesMoneyFormatter::format($totals['total'], $currency_code) : '—' }} {{ $currency_code }}</bdi></div>
+            <div class="min-w-0"><span class="text-xs text-text-secondary block">{{ __('mobile.grand_total') }}</span><bdi @if($documentTotalsValid) data-document-total @endif class="text-sm font-bold text-primary">{{ ! $documentTotalsValid ? __('camera.totals_unavailable') : (isset($totals['total']) ? \App\Domain\Sales\Formatters\SalesMoneyFormatter::format($totals['total'], $currency_code) : '—') }} @if($documentTotalsValid) {{ $currency_code }} @endif</bdi></div>
             <div class="flex gap-1">
                 <button type="button" @click="$dispatch('mobile-camera-open')" :disabled="documentBusy || saving" class="min-h-11 min-w-11 rounded-control bg-surface-soft px-2" aria-label="{{ __('mobile.scan') }}"><x-icon name="barcode" /></button>
                 <button type="button" @click="handleAddLine()" :disabled="documentBusy || saving" class="min-h-11 min-w-11 rounded-control bg-surface-soft px-2" aria-label="{{ __('mobile.add_item') }}"><x-icon name="plus" /></button>

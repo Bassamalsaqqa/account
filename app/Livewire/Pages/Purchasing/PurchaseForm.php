@@ -495,8 +495,12 @@ class PurchaseForm extends Component
         $this->lines[$index]['lots'] = array_values($this->lines[$index]['lots']);
     }
 
+    #[Locked]
+    public bool $documentTotalsValid = false;
+
     public function recalculate(): void
     {
+        $this->documentTotalsValid = false;
         $this->authorizeForm();
         $this->resetErrorBag('calculation');
         $this->resetErrorBag('exchange_rate');
@@ -513,6 +517,7 @@ class PurchaseForm extends Component
             $this->totals = ['subtotal' => (string) $total->subtotalCurrency, 'discount' => (string) $total->discountTotalCurrency,
                 'tax' => (string) $total->taxTotalCurrency, 'total' => (string) $total->grandTotalCurrency];
             $this->resetErrorBag('currency');
+            $this->documentTotalsValid = true;
         } catch (\InvalidArgumentException|MathException|ModelNotFoundException|InvalidMoneyException|InvalidQuantityException|InvalidUnitConversionException $exception) {
             $this->totals = [];
             foreach ($this->lines as &$line) {

@@ -28,3 +28,14 @@ test('independent documents do not block each other and unknown operations are r
     const pending=enqueueDocumentOperation(first,'saveDraft');
     assert.equal(await enqueueDocumentOperation(second,'saveDraft'),'done'); await pending;
 });
+
+test('hardware entry distinguishes an added item needing review without restoring or replaying it', async () => {
+    const wire = {$id:'hardware-review', scanCameraBarcode:async () => ({ok:true, requiresReview:true, message:'Review other lines'})};
+    const entry = barcodeEntry(wire);
+    entry.$el = {dataset:{networkError:'offline'}};
+    entry.entry = 'ALREADY-ADDED';
+    await entry.submit();
+    assert.equal(entry.entry, '');
+    assert.equal(entry.scanned, false);
+    assert.equal(entry.feedback, 'Review other lines');
+});

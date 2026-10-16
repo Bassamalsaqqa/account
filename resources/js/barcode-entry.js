@@ -12,7 +12,8 @@ export function barcodeEntry(wire) {
             this.feedback = '';
             try {
                 const result = await enqueueDocumentOperation(wire, 'scanCameraBarcode', [code]);
-                this.scanned = Boolean(result?.ok);
+                this.scanned = Boolean(result?.ok && !result.requiresReview);
+                if (result?.ok && result.requiresReview) this.feedback = result.message || '';
                 if (!result?.ok) {
                     this.feedback = result?.message || '';
                     if (!this.entry && this.pending === 1) this.entry = code;

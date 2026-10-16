@@ -70,6 +70,30 @@ class DocumentTouchControlsTest extends Phase5ETestCase
         $form->call('scanCameraBarcode', 'ANY')->assertForbidden();
     }
 
+    public function test_scan_beside_invalid_line_warns_and_withholds_stale_totals_until_corrected(): void
+    {
+        $otherProduct = $this->product->replicate(['public_id'])->fill(['sku' => 'MOBILE-OTHER']);
+        $otherProduct->save();
+        $this->unit->replicate(['public_id'])->fill(['product_id' => $otherProduct->id])->save();
+        ProductBarcode::create(['company_id' => $this->company->id, 'product_id' => $otherProduct->id,
+            'unit_id' => $this->unit->unit_id, 'barcode' => 'MOBILE-OTHER', 'type' => 'code128', 'is_primary' => true]);
+        $before = $this->economicCounts();
+        foreach ([InvoiceForm::class, QuotationForm::class, PurchaseForm::class] as $type) {
+            $form = Livewire::test($type)->call('selectProduct', 0, $this->product->id)
+                ->set('lines.0.quantity', 'not-exact')->call('recalculate');
+            $form->call('scanCameraBarcode', 'MOBILE-OTHER')
+                ->assertReturned(['ok' => true, 'requiresReview' => true, 'message' => __('camera.scan_added_review')])
+                ->assertSet('lines.1.product_id', $otherProduct->id)->assertSet('documentTotalsValid', false)
+                ->assertSee(__('camera.totals_unavailable'));
+            $this->assertStringNotContainsString('data-document-total', $form->html());
+            $this->assertSame('1', $form->get('lines.1.quantity'));
+            $form->set('lines.0.quantity', '1')->call('recalculate')
+                ->assertSet('documentTotalsValid', true)->assertDontSee(__('camera.totals_unavailable'));
+            $this->assertStringContainsString('data-document-total', $form->html());
+        }
+        $this->assertSame($before, $this->economicCounts());
+    }
+
     /** @return array<string,int> */
     private function economicCounts(): array
     {

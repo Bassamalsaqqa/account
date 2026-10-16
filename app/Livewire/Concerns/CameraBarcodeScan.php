@@ -15,7 +15,7 @@ trait CameraBarcodeScan
     /**
      * Handle incoming camera barcode scan in a single server round-trip.
      *
-     * @return array{ok: bool, message: string}
+     * @return array{ok: bool, message: string, requiresReview?: bool}
      */
     public function scanCameraBarcode(mixed $code): array
     {
@@ -101,6 +101,16 @@ trait CameraBarcodeScan
                 return [
                     'ok' => false,
                     'message' => $errorMessage,
+                ];
+            }
+
+            // The item was added. Do not invite a retry that would add it again, or
+            // represent an earlier total as a freshly calculated document preview.
+            if (property_exists($this, 'documentTotalsValid') && ! $this->documentTotalsValid) {
+                return [
+                    'ok' => true,
+                    'requiresReview' => true,
+                    'message' => __('camera.scan_added_review'),
                 ];
             }
 

@@ -20,6 +20,8 @@ return [
     'network_error' => 'Network error connecting to the server.',
     'camera_error' => 'Failed to access or start the camera.',
     'scan_again' => 'Scan again',
+    'scan_added_review' => 'Item added. Fix the other document lines before reviewing totals. Do not scan it again unless another unit is needed.',
+    'totals_unavailable' => 'Totals unavailable until the document lines are corrected.',
     'scan_success' => 'Code scanned successfully.',
     'code_found' => 'Code detected successfully',
     'barcode_too_long' => 'Barcode is too long (maximum 128 characters).',

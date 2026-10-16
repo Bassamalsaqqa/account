@@ -552,8 +552,12 @@ class InvoiceForm extends Component
         }
     }
 
+    #[Locked]
+    public bool $documentTotalsValid = false;
+
     public function recalculate(): void
     {
+        $this->documentTotalsValid = false;
         if ($this->showPreview) {
             $this->cancelPreview();
         }
@@ -619,6 +623,7 @@ class InvoiceForm extends Component
         $this->previewDiscountTotal = (string) $totals->discountTotalCurrency;
         $this->previewTaxTotal = (string) $totals->taxTotalCurrency;
         $this->previewGrandTotal = (string) $totals->grandTotalCurrency;
+        $this->documentTotalsValid = true;
     }
 
     public function save(bool $andPost, SalesInvoiceCommands $commands): mixed

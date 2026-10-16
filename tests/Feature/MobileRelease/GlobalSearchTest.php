@@ -297,4 +297,37 @@ class GlobalSearchTest extends TestCase
             ->assertDontSee('Private database diagnostic')
             ->assertDontSee(__('search.no_results'));
     }
+
+    public function test_phone_lookup_is_authorized_tenant_scoped_and_never_projects_phone(): void
+    {
+        $phone = '+970599876543';
+        $this->customer->update(['phone' => $phone]);
+        $vendor = Vendor::create(['company_id' => $this->company->id, 'name_ar' => 'Phone Vendor',
+            'name_en' => 'Phone Vendor', 'phone' => $phone, 'code' => 'PHONE-VENDOR', 'created_by' => $this->owner->id]);
+        app(CompanyContext::class)->clear();
+        $other = app(CreateCompanyAction::class)->execute($this->owner, ['name_ar' => 'Other', 'name_en' => 'Other', 'base_currency_code' => 'ILS']);
+        app(CompanyContext::class)->setCompany($other, $this->owner);
+        $this->customer->replicate(['public_id'])->fill(['company_id' => $other->id, 'code' => 'FOREIGN-PHONE'])->save();
+        $vendor->replicate(['public_id'])->fill(['company_id' => $other->id, 'code' => 'FOREIGN-VENDOR'])->save();
+        app(CompanyContext::class)->setCompany($this->company, $this->owner);
+        $search = app(GlobalSearch::class);
+        $results = $search->search('599876');
+        $this->assertSame($this->customer->public_id, $results['customer'][0]['public_id']);
+        $this->assertCount(1, $results['customer']);
+        $this->assertSame($vendor->public_id, $results['vendor'][0]['public_id']);
+        $this->assertCount(1, $results['vendor']);
+        $this->assertStringNotContainsString($phone, json_encode($results));
+        $this->assertEmpty($search->search('599%876'));
+        foreach (['customers.view' => 'customer', 'vendors.view' => 'vendor'] as $permission => $category) {
+            $actor = $this->createRestrictedActor([$permission]);
+            app(CompanyContext::class)->setCompany($this->company, $actor);
+            $this->actingAs($actor);
+            $restricted = $search->search($phone);
+            $this->assertSame([$category], array_keys($restricted));
+            $this->assertStringNotContainsString($phone, json_encode($restricted));
+            $actor->roles()->firstOrFail()->revokePermissionTo($permission);
+            app(PermissionRegistrar::class)->forgetCachedPermissions();
+            $this->assertEmpty($search->search($phone));
+        }
+    }
 }

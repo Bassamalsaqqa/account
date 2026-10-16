@@ -481,8 +481,12 @@ class QuotationForm extends Component
         $this->recalculate();
     }
 
+    #[Locked]
+    public bool $documentTotalsValid = false;
+
     public function recalculate(): void
     {
+        $this->documentTotalsValid = false;
         $company = app(CompanyContext::class)->company();
         foreach ($this->lines as $index => $line) {
             foreach (['quantity', 'unit_price', 'discount_value'] as $field) {
@@ -539,6 +543,7 @@ class QuotationForm extends Component
         $this->previewDiscountTotal = (string) $totals->discountTotalCurrency;
         $this->previewTaxTotal = (string) $totals->taxTotalCurrency;
         $this->previewGrandTotal = (string) $totals->grandTotalCurrency;
+        $this->documentTotalsValid = true;
     }
 
     public function save(CreateQuotationAction $createAction, UpdateQuotationAction $updateAction): mixed

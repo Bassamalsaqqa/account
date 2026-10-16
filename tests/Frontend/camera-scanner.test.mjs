@@ -110,6 +110,38 @@ function createMockEnvironment() {
     };
 }
 
+test('a hidden scanner leaves Escape untouched; an open scanner consumes it and releases tracks', async () => {
+    const env = createMockEnvironment();
+    const scanner = cameraScanner({}, {navigator: env.mockNav, document: env.mockDoc, window: env.mockWin, createReader: () => env.mockReader});
+    const trace = [];
+    const event = {preventDefault: () => trace.push('prevent'), stopPropagation: () => trace.push('stop')};
+    scanner.handleEscape(event);
+    assert.deepEqual(trace, []);
+    await scanner.open();
+    scanner.handleEscape(event);
+    assert.deepEqual(trace, ['prevent', 'stop']);
+    assert.equal(scanner.isOpen, false);
+    assert.equal(env.mockTrack.stopped, true);
+});
+
+test('an added scan needing line review is not green success, not replayed and gives no success feedback', async () => {
+    const env = createMockEnvironment();
+    const received = [];
+    const wire = {scanCameraBarcode: async code => {received.push(code); return {ok:true, requiresReview:true, message:'Item added; review lines'};}};
+    const scanner = cameraScanner(wire, {navigator: env.mockNav, document: env.mockDoc, window: env.mockWin, createReader: () => env.mockReader});
+    scanner.feedbackEnabled = true;
+    await scanner.open();
+    scanner.onCodeDetected('ADDED');
+    await new Promise(r => setTimeout(r, 10));
+    assert.equal(scanner.status, 'review');
+    assert.equal(scanner.errorMessage, 'Item added; review lines');
+    assert.deepEqual(env.mockNav.vibrateCalls, []);
+    scanner.onCodeDetected('ADDED');
+    await new Promise(r => setTimeout(r, 10));
+    assert.deepEqual(received, ['ADDED']);
+    scanner.close();
+});
+
 test('explicit open() starts stream and stops on explicit close()', async () => {
     const env = createMockEnvironment();
     const wire = { scanCameraBarcode: async () => ({ ok: true, message: 'Success' }) };

@@ -32,7 +32,7 @@
     <template x-teleport="body">
         <div x-show="isOpen"
              x-cloak
-             @keydown.escape.window.stop.prevent="close()"
+             @keydown.escape.window="handleEscape($event)"
              class="fixed inset-0 z-[95] overflow-y-auto"
              role="dialog"
              aria-modal="true"
@@ -114,7 +114,7 @@
                                muted></video>
 
                         <!-- Viewfinder Reticle Overlay -->
-                        <div x-show="status === 'scanning' || status === 'processing' || status === 'slow_server'"
+                        <div x-show="status === 'scanning' || status === 'processing' || status === 'slow_server' || status === 'review'"
                              class="absolute inset-0 pointer-events-none flex items-center justify-center p-8">
                             <div class="relative w-64 h-40 max-w-[80%] max-h-[80%] border-2 rounded-lg transition-colors duration-200"
                                  :class="busy ? 'border-primary shadow-[0_0_15px_rgba(59,130,246,0.5)]' : 'border-white/70 shadow-[0_0_10px_rgba(0,0,0,0.5)]'">
@@ -129,7 +129,7 @@
                         </div>
 
                         <!-- Status Overlay Over Video (Starting / Permission / Errors) -->
-                        <div x-show="status !== 'scanning' && status !== 'processing' && status !== 'slow_server'"
+                        <div x-show="status !== 'scanning' && status !== 'processing' && status !== 'slow_server' && status !== 'review'"
                              class="absolute inset-0 bg-slate-900/90 text-white flex flex-col items-center justify-center p-6 text-center">
 
                             <div x-show="status === 'starting'" class="flex flex-col items-center gap-3">
@@ -175,6 +175,7 @@
                     <!-- Footer & Status Bar (Distinct live status presentation) -->
                     <div class="px-4 py-3 bg-canvas border-t border-border flex flex-col sm:flex-row items-center justify-between gap-3">
                         <div class="text-xs text-text-secondary text-center sm:text-start" role="status" aria-live="polite">
+                            <p x-show="status === 'review'" class="text-amber-800 font-bold" x-text="errorMessage"></p>
                             <span :id="$id('camera-modal-desc')">
                                 <span x-show="status === 'scanning' && !lastScannedCode">{{ __('camera.scanning') }}</span>
                                 <span x-show="status === 'processing'" class="text-primary font-bold flex items-center gap-1.5">
