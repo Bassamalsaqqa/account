@@ -1,5 +1,7 @@
 # Mobile-First Release A: independent review handback
 
+**16 October finalization:** the head documented below was independently source-accepted. See [the finalization handback](MOBILE_RELEASE_A_FINALIZATION_HANDOFF.md) for the requested follow-up corrections, physical iPhone preview defect/correction, current exact application SHA, staging and remaining device gates. The original evidence below is retained with its original provenance.
+
 Release A is a source-review candidate. It has not been merged or deployed. Production/main remains `f9ef4bd5d179ae524c697df7cb839aa94857b5f1`.
 
 Implementation source: **`511f17b4dc7f229d5fb19877a6095c4799e085d6`**. Its direct parent is the production baseline above. The following evidence/documentation commit contains no application changes; the PR head is the delivery SHA, available in the PR and Git history. Review the full baseline-to-head diff.

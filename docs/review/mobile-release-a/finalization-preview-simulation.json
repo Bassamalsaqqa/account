@@ -1,0 +1,78 @@
+{
+  "samples": [
+    {
+      "label": "opened",
+      "connected": true,
+      "src": true,
+      "ready": 4,
+      "paused": false,
+      "width": 580,
+      "height": 580,
+      "time": 0.017847,
+      "rect": {
+        "width": 364,
+        "height": 273
+      },
+      "same": true,
+      "tracks": [
+        "live"
+      ]
+    },
+    {
+      "label": "after-livewire-scan",
+      "connected": true,
+      "src": true,
+      "ready": 4,
+      "paused": false,
+      "width": 580,
+      "height": 580,
+      "time": 0.959872,
+      "rect": {
+        "width": 364,
+        "height": 273
+      },
+      "same": true,
+      "tracks": [
+        "live"
+      ]
+    },
+    {
+      "label": "later",
+      "connected": true,
+      "src": true,
+      "ready": 4,
+      "paused": false,
+      "width": 580,
+      "height": 580,
+      "time": 2.571981,
+      "rect": {
+        "width": 364,
+        "height": 273
+      },
+      "same": true,
+      "tracks": [
+        "live"
+      ]
+    },
+    {
+      "label": "reopened-fresh-element",
+      "connected": true,
+      "src": true,
+      "ready": 4,
+      "paused": false,
+      "width": 580,
+      "height": 580,
+      "time": 0.049605,
+      "rect": {
+        "width": 364,
+        "height": 273
+      },
+      "same": false,
+      "tracks": [
+        "live"
+      ]
+    }
+  ],
+  "errors": [],
+  "consoleErrors": []
+}

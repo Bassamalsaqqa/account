@@ -1,0 +1,22 @@
+{
+  "source_sha": "b5a1ec31bc560330cee28b2780da628b5991f7e5",
+  "accepted_parent": "15820ad8e1dc65e2f6225d9345dac8cc7bc67db7",
+  "environment": "isolated synthetic LAN staging",
+  "url": "https://192.168.1.118:8443",
+  "production_changed": false,
+  "assets": {
+    "assets/index-B2ZkNDM-.js": {
+      "sha256": "2cb64c36fcb8cb89411b6b0e6d1dce4b048d5776f2097e54c8ec24c22a6003f0",
+      "bytes": 454373
+    },
+    "assets/app-BBdDewJm.css": {
+      "sha256": "574c2b1362e6f71f1bec7a60838d1ca39e926dc2005b7d9299f4b52f3e167c41",
+      "bytes": 111821
+    },
+    "assets/app-B9uUC30F.js": {
+      "sha256": "3643c43b5e299be7b805f7fb29f3fa52de964b4a0ba2c5caa5750d3bb412a9df",
+      "bytes": 78050
+    }
+  },
+  "physical_device_evidence": "Owner-reported iPhone 17 Pro Max Safari: moving preview, barcode product addition, close/reopen and rotation passed; exact iOS/Safari version unverified; remaining matrix pending."
+}

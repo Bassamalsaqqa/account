@@ -1,0 +1,11 @@
+{
+    "environment": "synthetic-LAN-staging",
+    "audits": {
+        "Accounting": true,
+        "Inventory": true,
+        "Sales": true,
+        "Payables": true,
+        "Money": true,
+        "Phase7": true
+    }
+}
