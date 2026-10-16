@@ -189,7 +189,13 @@
                         </div>
                     </div>
 
-                    <div class="flex items-center justify-end gap-2 pt-2 border-t border-border">
+                    <div class="flex flex-wrap items-center justify-end gap-2 pt-2 border-t border-border">
+                        @can('sales.invoice.create')
+                            <a href="{{ route('invoices.create', ['customer_id' => $customer->id]) }}" class="min-h-11 inline-flex items-center px-3 rounded-control bg-primary-50 text-primary text-xs font-bold">{{ __('mobile.new_invoice') }}</a>
+                        @endcan
+                        @can('money.receipt.create')
+                            <a href="{{ route('payments.create', ['customer_id' => $customer->id]) }}" class="min-h-11 inline-flex items-center px-3 rounded-control border border-border text-xs font-bold">{{ __('mobile.record_payment') }}</a>
+                        @endcan
                         <a href="{{ route('customers.show', $customer->public_id) }}"
                            class="px-3 py-1.5 rounded-control bg-surface-soft text-text-primary text-xs font-bold">
                             {{ __('sales.customer_details') }}

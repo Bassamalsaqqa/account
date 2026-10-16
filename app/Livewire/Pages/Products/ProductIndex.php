@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Livewire\Pages\Products;
 
+use App\Livewire\Concerns\CameraBarcodeScan;
 use App\Models\Brand;
 use App\Models\Product;
 use App\Models\ProductCategory;
@@ -19,7 +20,11 @@ use Livewire\WithPagination;
 #[Layout('layouts.app')]
 class ProductIndex extends Component
 {
+    use CameraBarcodeScan;
     use WithPagination;
+
+    #[Url(as: 'barcode')]
+    public ?string $cameraBarcode = null;
 
     #[Url(as: 'q')]
     public string $search = '';
@@ -41,6 +46,13 @@ class ProductIndex extends Component
 
     public function updatedSearch(): void
     {
+        $this->cameraBarcode = null;
+        $this->resetPage();
+    }
+
+    public function clearCameraBarcode(): void
+    {
+        $this->cameraBarcode = null;
         $this->resetPage();
     }
 
@@ -69,6 +81,49 @@ class ProductIndex extends Component
         $this->resetPage();
     }
 
+    /**
+     * @return array{ok: bool, message: string}
+     */
+    protected function handleCameraBarcodeScan(string $code): array
+    {
+        $this->authorize('viewAny', Product::class);
+
+        $trimmed = trim($code);
+        if ($trimmed === '' || mb_strlen($trimmed) > 128) {
+            return [
+                'ok' => false,
+                'message' => __('camera.invalid_code'),
+            ];
+        }
+
+        $context = app(CompanyContext::class);
+        $company = $context->company();
+
+        $matched = Product::where('company_id', $company->id)
+            ->where(function (Builder $q) use ($trimmed, $company) {
+                $q->where('sku', $trimmed)
+                    ->orWhereHas('barcodes', function (Builder $bQ) use ($trimmed, $company) {
+                        $bQ->where('company_id', $company->id)->where('barcode', $trimmed);
+                    });
+            })
+            ->first();
+
+        if ($matched === null) {
+            return [
+                'ok' => false,
+                'message' => __('camera.product_not_found'),
+            ];
+        }
+
+        $this->cameraBarcode = $trimmed;
+        $this->resetPage();
+
+        return [
+            'ok' => true,
+            'message' => __('camera.scan_success'),
+        ];
+    }
+
     public function render(CompanyContext $context): View
     {
         $company = $context->company();
@@ -86,15 +141,30 @@ class ProductIndex extends Component
             $query->with('costState');
         }
 
-        // Search query
-        if (trim($this->search) !== '') {
+        // Camera barcode filter takes precedence for exact matching; bounds strictly verified
+        $sanitizedBarcode = is_string($this->cameraBarcode) ? trim($this->cameraBarcode) : '';
+        if (mb_strlen($sanitizedBarcode) > 128) {
+            $this->cameraBarcode = null;
+            $sanitizedBarcode = '';
+            $this->addError('cameraBarcode', __('camera.barcode_too_long'));
+        }
+        if ($sanitizedBarcode !== '' && mb_strlen($sanitizedBarcode) <= 128) {
+            $term = $sanitizedBarcode;
+            $query->where(function (Builder $q) use ($term, $company) {
+                $q->where('sku', $term)
+                    ->orWhereHas('barcodes', function (Builder $bQ) use ($term, $company) {
+                        $bQ->where('company_id', $company->id)->where('barcode', $term);
+                    });
+            });
+        } elseif (trim($this->search) !== '') {
             $term = trim($this->search);
-            $query->where(function (Builder $q) use ($term) {
+            $query->where(function (Builder $q) use ($term, $company) {
                 $q->where('name_ar', 'like', "%{$term}%")
                     ->orWhere('name_en', 'like', "%{$term}%")
                     ->orWhere('sku', 'like', "%{$term}%")
-                    ->orWhereHas('barcodes', function (Builder $bQ) use ($term) {
-                        $bQ->where('barcode', 'like', "%{$term}%");
+                    ->orWhereHas('barcodes', function (Builder $bQ) use ($term, $company) {
+                        $bQ->where('company_id', $company->id)
+                            ->where('barcode', 'like', "%{$term}%");
                     });
             });
         }

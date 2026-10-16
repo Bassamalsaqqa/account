@@ -1,0 +1,26 @@
+{
+  "checks": [
+    "ar/phone-purchase",
+    "ar/phone-products",
+    "ar/desktop-invoice",
+    "ar/toolbar-camera-without-keyboard",
+    "ar/search-clear",
+    "en/phone-purchase",
+    "en/phone-products",
+    "en/desktop-invoice",
+    "en/toolbar-camera-without-keyboard",
+    "en/search-clear"
+  ],
+  "screens": [
+    "ar-phone-purchase",
+    "ar-phone-products",
+    "ar-desktop-invoice",
+    "ar-phone-search",
+    "en-phone-purchase",
+    "en-phone-products",
+    "en-desktop-invoice",
+    "en-phone-search"
+  ],
+  "errors": [],
+  "provenance": "Headless desktop Edge, simulated phone/desktop viewport; synthetic permission denial. Not physical-device evidence."
+}

@@ -3,6 +3,8 @@
 declare(strict_types=1);
 
 return [
+    'public_catalog_message' => 'كتالوج منتجاتنا المنشور',
+    'whatsapp_composer_notice' => 'يفتح تطبيق المشاركة. راجع الرسالة واختر إرسالها بنفسك؛ فتح التطبيق لا يعني تسليم الرسالة.',
     // General & Navigation
     'title' => 'كتالوج المنتجات',
     'catalogs' => 'الكتالوجات',

@@ -1,0 +1,27 @@
+<?php
+
+declare(strict_types=1);
+
+return [
+    'scan' => 'Scan',
+    'add_item' => 'Add Item',
+    'save_draft' => 'Save Draft',
+    'quantity' => 'Quantity',
+    'increment' => 'Increase',
+    'decrement' => 'Decrease',
+    'quantity_must_be_positive' => 'Quantity must be greater than zero.',
+    'invalid_unit' => 'Selected unit is invalid.',
+    'fraction_not_allowed' => 'Unit does not allow fractional quantities.',
+    'invalid_direction' => 'Invalid adjustment direction.',
+    'line_not_found' => 'Line not found.',
+    'new_invoice' => 'New Invoice',
+    'record_payment' => 'Record Payment',
+    'new_purchase' => 'New Purchase',
+    'record_vendor_payment' => 'Record Payment',
+    'view_details' => 'Details',
+    'edit_draft' => 'Edit Draft',
+    'actions' => 'Actions',
+    'subtotal' => 'Subtotal',
+    'grand_total' => 'Grand Total',
+    'summary' => 'Summary',
+];

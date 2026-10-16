@@ -1,0 +1,82 @@
+{
+  "source_sha": "511f17b4dc7f229d5fb19877a6095c4799e085d6",
+  "parent_sha": "f9ef4bd5d179ae524c697df7cb839aa94857b5f1",
+  "database": "Disposable owned MariaDB, loopback port 33312; no production database",
+  "php": "8.4.25",
+  "phpunit": "12.5.36",
+  "vite": "7.3.6",
+  "checks": [
+    {
+      "scope": "MobileRelease + QuickProductSelectionAtomicity + ProductSelectionSearch + ApplicationSecurityHeaders",
+      "tests": 37,
+      "assertions": 253,
+      "result": "pass",
+      "schema_cleaned": true
+    },
+    {
+      "scope": "Final GlobalSearchTest after sanitized failure handling; overlaps prior run",
+      "tests": 10,
+      "assertions": 36,
+      "result": "pass",
+      "schema_cleaned": true
+    },
+    {
+      "scope": "Selected financial-sharing compatibility, all five share subjects and issued-link lifecycle",
+      "tests": 7,
+      "assertions": 274,
+      "result": "pass",
+      "schema_cleaned": true
+    },
+    {
+      "scope": "Camera, document FIFO/hardware input, existing financial-share controls Node tests",
+      "tests": 20,
+      "result": "pass"
+    },
+    {
+      "scope": "Changed PHP Pint --test",
+      "result": "pass"
+    },
+    {
+      "scope": "Changed application PHP PHPStan with repository configuration",
+      "result": "pass"
+    },
+    {
+      "scope": "Production Vite build",
+      "result": "pass"
+    },
+    {
+      "scope": "npm audit --omit=dev",
+      "vulnerabilities": 0,
+      "result": "pass"
+    },
+    {
+      "scope": "Impeccable changed-UI detector",
+      "findings": 0,
+      "result": "pass"
+    },
+    {
+      "scope": "Final online desktop Edge console smoke, all four entry/catalog pages and live search",
+      "checks": 5,
+      "console_errors": 0,
+      "page_errors": 0,
+      "result": "pass"
+    }
+  ],
+  "build": {
+    "app_css_kb": 111.82,
+    "app_css_gzip_kb": 19.16,
+    "app_js_kb": 75.3,
+    "app_js_gzip_kb": 27.07,
+    "lazy_zxing_kb": 454.37,
+    "lazy_zxing_gzip_kb": 117.45
+  },
+  "real_device_verification": "Not performed. Physical iOS Safari and Android Chrome, installed PWA and virtual keyboards remain release acceptance gates.",
+  "production_access": false,
+  "merged": false,
+  "deployed": false,
+  "operations_outstanding": [
+    "Off-host backup recovery",
+    "Isolated restoration",
+    "Real password-reset email verification"
+  ]
+}

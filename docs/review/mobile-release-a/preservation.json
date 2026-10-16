@@ -1,0 +1,19 @@
+{
+    "economic_fingerprints_preserved": true,
+    "reconciliations_before": {
+        "Accounting": true,
+        "Inventory": true,
+        "Sales": true,
+        "Payables": true,
+        "Money": true,
+        "Phase7": true
+    },
+    "reconciliations_after": {
+        "Accounting": true,
+        "Inventory": true,
+        "Sales": true,
+        "Payables": true,
+        "Money": true,
+        "Phase7": true
+    }
+}

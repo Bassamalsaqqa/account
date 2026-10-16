@@ -61,6 +61,12 @@
                         <div><dt class="text-text-secondary">{{ __('purchasing.default_currency') }}</dt><dd class="mt-1"><bdi>{{ $vendor->default_currency_code ?? '—' }}</bdi></dd></div>
                         <div class="col-span-2"><dt class="text-text-secondary">{{ __('purchasing.phone') }}</dt><dd class="mt-1"><bdi>{{ $vendor->phone ?? $vendor->whatsapp ?? '—' }}</bdi></dd></div>
                     </dl>
+                    <div class="flex flex-wrap gap-2 pt-2 border-t border-border">
+                        <a href="{{ route('vendors.show', $vendor->public_id) }}" class="min-h-11 inline-flex items-center px-3 rounded-control bg-surface-soft text-xs font-bold">{{ __('mobile.view_details') }}</a>
+                        @if(auth()->user()->hasPermissionTo('money.vendor_payment.create') && auth()->user()->hasPermissionTo('purchasing.cost.view'))
+                            <a href="{{ route('vendor-payments.create', ['vendor_id' => $vendor->id]) }}" class="min-h-11 inline-flex items-center px-3 rounded-control bg-primary-50 text-primary text-xs font-bold">{{ __('mobile.record_vendor_payment') }}</a>
+                        @endif
+                    </div>
                 </article>
             @empty
                 <p class="p-8 text-center text-sm text-text-secondary">{{ __('purchasing.no_vendors_found') }}</p>

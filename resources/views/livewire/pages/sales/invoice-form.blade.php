@@ -1,19 +1,21 @@
-<div class="max-w-5xl mx-auto space-y-6"
+<div class="max-w-5xl mx-auto space-y-6 pb-28 md:pb-6"
      x-data="{
-         saving: false,
+         saving: false, documentBusy: false, operationFailed: false,
          handleSaveDraft() {
-             if ([...document.querySelectorAll('[role=dialog]')].some(el => el.getClientRects().length > 0) || this.saving || $wire.showPreview || $wire.showQuickCustomerModal) return;
+             if ([...document.querySelectorAll('[role=dialog]')].some(el => el.getClientRects().length > 0) || this.saving || window.isDocumentBusy($wire) || $wire.showPreview || $wire.showQuickCustomerModal) return;
              this.saving = true;
-             $wire.saveDraft().finally(() => { this.saving = false; });
+             window.enqueueDocumentOperation($wire, 'saveDraft').catch(() => { this.operationFailed = true; }).finally(() => { this.saving = false; });
          },
          handleAddLine() {
-             if ([...document.querySelectorAll('[role=dialog]')].some(el => el.getClientRects().length > 0) || this.saving || $wire.showPreview || $wire.showQuickCustomerModal) return;
-             $wire.addLine();
+             if ([...document.querySelectorAll('[role=dialog]')].some(el => el.getClientRects().length > 0) || this.saving || window.isDocumentBusy($wire) || $wire.showPreview || $wire.showQuickCustomerModal) return;
+             window.enqueueDocumentOperation($wire, 'addLine').catch(() => { this.operationFailed = true; });
          }
      }"
+     @document-operation-state.window="if ($event.detail.id === $wire.$id) documentBusy = $event.detail.busy"
      @keydown.window.prevent.ctrl.s="handleSaveDraft()"
      @keydown.window.prevent.meta.s="handleSaveDraft()"
      @keydown.window.prevent.alt.n="if (!$event.repeat) handleAddLine()">
+    <p x-cloak x-show="operationFailed" role="alert" class="text-sm text-danger">{{ __('camera.network_error') }}</p>
     <!-- Header -->
     <div class="flex items-center justify-between gap-4">
         <div>
@@ -172,7 +174,7 @@
                     {{ __('sales.invoice_details') }}
                 </h2>
                 <button type="button"
-                        wire:click="addLine"
+                        @click="handleAddLine()"
                         class="px-2.5 py-1 rounded-control bg-primary text-white text-xs font-bold hover:bg-primary-hover transition-colors inline-flex items-center gap-1.5 cursor-pointer">
                     <span>+ {{ __('sales.add_line') }}</span>
                     <kbd class="px-1 py-0.5 text-[10px] font-mono rounded bg-white/20 text-white leading-none">Alt+N</kbd>
@@ -302,7 +304,7 @@
 
                                 <td class="py-2 px-2 align-top text-end font-mono font-bold" dir="ltr">
                                     <div class="pt-1.5">
-                                        {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($line['line_total'] ?? '0', $currency_code) }}
+                                        {{ $documentTotalsValid ? \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($line['line_total'] ?? '0', $currency_code) : '—' }}
                                     </div>
                                 </td>
 
@@ -374,15 +376,19 @@
                                 @endif
                             </div>
                             <div>
-                                <label for="invoice-mobile-line-{{ $index }}-quantity" class="block text-[11px] font-bold text-text-secondary">{{ __('sales.quantity') }}</label>
-                                <input id="invoice-mobile-line-{{ $index }}-quantity" aria-label="{{ __('sales.quantity') }} {{ $index + 1 }}" @error('lines.'.$index.'.quantity') aria-invalid="true" aria-describedby="invoice-mobile-line-{{ $index }}-quantity-error" @enderror type="number"
-                                       step="any"
-                                       wire:model.blur="lines.{{ $index }}.quantity"
-                                       wire:change="recalculate"
-                                       required
-                                       min="0.000001"
-                                       dir="ltr"
-                                       class="w-full h-8 px-2 rounded-control border border-border bg-white text-xs font-mono" /> @error('lines.'.$index.'.quantity') <span id="invoice-mobile-line-{{ $index }}-quantity-error" role="alert" class="text-danger text-[11px] block">{{ $message }}</span> @enderror
+                                <label for="invoice-mobile-line-{{ $index }}-quantity" class="block text-[11px] font-bold text-text-secondary mb-1">{{ __('sales.quantity') }}</label>
+                                @php
+                                    $lineProduct = !empty($line['product_id']) ? $products->firstWhere('id', $line['product_id']) : null;
+                                    $selectedProductUnit = $lineProduct && !empty($line['product_unit_id']) ? $lineProduct->productUnits->firstWhere('id', $line['product_unit_id']) : null;
+                                    $lineAllowsFraction = $selectedProductUnit?->unit?->allows_fraction ?? false;
+                                @endphp
+                                <x-touch-quantity-stepper
+                                    :index="$index"
+                                    :allows-fraction="$lineAllowsFraction"
+                                    id="invoice-mobile-line-{{ $index }}-quantity"
+                                    :aria-label="__('sales.quantity') . ' ' . ($index + 1)"
+                                />
+                                @error('lines.'.$index.'.quantity') <span id="invoice-mobile-line-{{ $index }}-quantity-error" role="alert" class="text-danger text-[11px] block mt-1">{{ $message }}</span> @enderror
                                 @if (!empty($line['available_quantity']))
                                     <div class="text-[10px] text-text-secondary mt-0.5" dir="ltr">
                                         {{ __('sales.available') }}: <span class="font-bold">{{ $line['available_quantity'] }}</span>
@@ -449,7 +455,7 @@
                         <div class="flex justify-between items-center pt-2 border-t border-border text-xs">
                             <span class="text-text-muted font-bold">{{ __('sales.line_total') }}:</span>
                             <span class="font-mono font-bold text-text-primary" dir="ltr">
-                                {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($line['line_total'] ?? '0', $currency_code) }}
+                                {{ $documentTotalsValid ? \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($line['line_total'] ?? '0', $currency_code) : '—' }}
                             </span>
                         </div>
                     </div>
@@ -480,6 +486,9 @@
 
             <!-- Preview Calculation Card -->
             <div class="bg-surface-soft p-4 rounded-control border border-border space-y-2 text-xs">
+                @if (! $documentTotalsValid)
+                    <p role="status" class="text-amber-800 font-semibold">{{ __('camera.totals_unavailable') }}</p>
+                @else
                 <div class="flex justify-between py-1 border-b border-border/50">
                     <span class="text-text-muted">{{ __('sales.subtotal') }}:</span>
                     <span class="font-mono font-bold" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($previewSubtotal, $currency_code) }} {{ $currency_code }}</span>
@@ -494,8 +503,9 @@
                 </div>
                 <div class="flex justify-between py-2 border-t border-border text-base font-extrabold text-text-primary">
                     <span>{{ __('sales.grand_total') }}:</span>
-                    <span class="font-mono text-primary" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($previewGrandTotal, $currency_code) }} {{ $currency_code }}</span>
+                    <span data-document-total class="font-mono text-primary" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($previewGrandTotal, $currency_code) }} {{ $currency_code }}</span>
                 </div>
+                @endif
             </div>
         </div>
 
@@ -514,7 +524,7 @@
                     {{ __('sales.cancel') }}
                 </a>
                 <button type="button"
-                        wire:click="save(false)"
+                        @click="handleSaveDraft()"
                         wire:loading.attr="disabled"
                         class="px-4 py-2 rounded-control border border-primary text-primary hover:bg-primary-50 text-xs font-bold transition-colors cursor-pointer inline-flex items-center gap-1.5">
                     <span>{{ __('sales.save_draft') }}</span>
@@ -523,13 +533,71 @@
                 @if ($canPost)
                     <button id="invoice-post-button"
                             type="button"
-                            wire:click="save(true)"
+                            @click="if (!saving && !documentBusy) { saving = true; window.enqueueDocumentOperation($wire, 'save', [true]).catch(() => { this.operationFailed = true; }).finally(() => saving = false); }"
                             wire:loading.attr="disabled"
                             class="px-5 py-2 rounded-control bg-primary text-white text-xs font-bold hover:bg-primary-hover transition-colors shadow-sm cursor-pointer">
                         ⚡ {{ __('commands.review_post') }}
                     </button>
                 @endif
             </div>
+        @endif
+
+        <!-- Responsive Sticky Mobile Summary & Actions Toolbar -->
+        @if (! $showPreview)
+            <div class="md:hidden fixed inset-x-0 z-30 bg-white/95 backdrop-blur-xs border-t border-border shadow-lg px-3 py-2 transition-transform mobile-document-actions"
+                 style="bottom: var(--mobile-nav-height, calc(4.5rem + env(safe-area-inset-bottom)));"
+                 x-data="{ busy: false }">
+                <div class="max-w-[500px] mx-auto flex items-center justify-between gap-2">
+                    <div class="min-w-0 flex-1">
+                        <span class="text-[10px] text-text-muted block leading-none truncate">{{ __('mobile.grand_total') }}</span>
+                        @if ($documentTotalsValid)
+<span data-document-total class="text-xs font-mono font-extrabold text-primary block leading-tight truncate" dir="ltr">
+                            {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($previewGrandTotal, $currency_code) }} {{ $currency_code }}
+                        </span>
+                    @else
+                        <span role="status" class="text-xs text-amber-800">{{ __('camera.totals_unavailable') }}</span>
+                    @endif
+                    </div>
+                    <div class="flex items-center gap-1.5 shrink-0">
+                        <button type="button"
+                                @click="$dispatch('mobile-camera-open')"
+                                :disabled="busy || documentBusy || saving"
+                                wire:loading.attr="disabled"
+                                wire:target="scanBarcode,addLine,saveDraft,save"
+                                class="min-h-[44px] min-w-[44px] px-2.5 rounded-control border border-border bg-surface-soft hover:bg-slate-200 active:bg-slate-300 text-text-primary text-xs font-bold flex items-center justify-center gap-1 cursor-pointer transition-colors"
+                                title="{{ __('mobile.scan') }}">
+                            <x-icon name="barcode" class="w-4 h-4 shrink-0" />
+                            <span class="hidden xs:inline text-[11px]">{{ __('mobile.scan') }}</span>
+                        </button>
+                        <button type="button"
+                                :disabled="busy || documentBusy || saving"
+                                wire:loading.attr="disabled"
+                                wire:target="addLine,scanBarcode,saveDraft,save"
+                                @click="if (busy) return; busy = true; (window.enqueueDocumentOperation ? window.enqueueDocumentOperation($wire, 'addLine') : $wire.addLine()).catch(() => { operationFailed = true; }).finally(() => { busy = false; })"
+                                class="min-h-[44px] min-w-[44px] px-2.5 rounded-control border border-primary/30 bg-primary-50 text-primary hover:bg-primary-100 active:bg-primary-200 text-xs font-bold flex items-center justify-center gap-1 cursor-pointer transition-colors"
+                                title="{{ __('mobile.add_item') }}">
+                            <x-icon name="plus" class="w-4 h-4 shrink-0" />
+                            <span class="hidden xs:inline text-[11px]">{{ __('mobile.add_item') }}</span>
+                        </button>
+                        <button type="button"
+                                :disabled="busy || documentBusy || saving"
+                                wire:loading.attr="disabled"
+                                wire:target="saveDraft,save,addLine,scanBarcode"
+                                @click="if (busy) return; busy = true; (window.enqueueDocumentOperation ? window.enqueueDocumentOperation($wire, 'saveDraft') : $wire.saveDraft()).catch(() => { operationFailed = true; }).finally(() => { busy = false; })"
+                                class="min-h-[44px] px-3 rounded-control bg-primary text-white hover:bg-primary-hover active:bg-primary-hover/90 text-xs font-bold flex items-center justify-center gap-1 shadow-xs cursor-pointer transition-colors"
+                                title="{{ __('mobile.save_draft') }}">
+                            <span wire:loading.remove wire:target="saveDraft">{{ __('mobile.save_draft') }}</span>
+                            <span wire:loading wire:target="saveDraft">...</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+            <style>
+                html.mobile-keyboard-open .mobile-document-actions,
+                body.--mobile-keyboard-open .mobile-document-actions {
+                    display: none !important;
+                }
+            </style>
         @endif
     </div>
 

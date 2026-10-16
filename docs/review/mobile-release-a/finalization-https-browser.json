@@ -1,0 +1,46 @@
+{
+  "checks": [
+    "HTTPS-synthetic-login",
+    "invoice/hidden-camera-allows-search-Escape",
+    "invoice/hidden-camera-allows-quick-product-Escape",
+    "invoice/actual-ZXing-invalid-other-line-warning-repeat-and-recovery",
+    "quotation/hidden-camera-allows-search-Escape",
+    "quotation/hidden-camera-allows-quick-product-Escape",
+    "quotation/actual-ZXing-invalid-other-line-warning-repeat-and-recovery",
+    "purchase/hidden-camera-allows-search-Escape",
+    "purchase/hidden-camera-allows-quick-product-Escape",
+    "purchase/actual-ZXing-invalid-other-line-warning-repeat-and-recovery",
+    "catalog-actual-ZXing-and-Escape",
+    "HTTPS-service-worker",
+    "lazy-ZXing-chunk-available-HTTPS"
+  ],
+  "pageErrors": [],
+  "consoleErrors": [],
+  "provenance": "Headless desktop Edge on isolated LAN HTTPS, per-leaf SPKI certificate exception only; synthetic canvas MediaStream, actual bundled ZXing. Not physical iPhone/Android evidence.",
+  "manifest": {
+    "node_modules/@zxing/browser/esm/index.js": {
+      "file": "assets/index-B2ZkNDM-.js",
+      "name": "index",
+      "src": "node_modules/@zxing/browser/esm/index.js",
+      "isDynamicEntry": true
+    },
+    "resources/css/app.css": {
+      "file": "assets/app-BBdDewJm.css",
+      "src": "resources/css/app.css",
+      "isEntry": true,
+      "name": "app",
+      "names": [
+        "app.css"
+      ]
+    },
+    "resources/js/app.js": {
+      "file": "assets/app-B9uUC30F.js",
+      "name": "app",
+      "src": "resources/js/app.js",
+      "isEntry": true,
+      "dynamicImports": [
+        "node_modules/@zxing/browser/esm/index.js"
+      ]
+    }
+  }
+}

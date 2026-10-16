@@ -16,7 +16,9 @@ use App\Domain\Sales\Calculators\SalesLineCalculator;
 use App\Domain\Sales\Queries\CustomerCreditLimitQuery;
 use App\Domain\Sales\Queries\CustomerLastPriceQuery;
 use App\Exceptions\NoActiveCompanyException;
+use App\Livewire\Concerns\AdjustsDocumentQuantity;
 use App\Livewire\Concerns\AiUnsavedForm;
+use App\Livewire\Concerns\CameraBarcodeScan;
 use App\Livewire\Concerns\QuickPartyCreate;
 use App\Livewire\Concerns\QuickProductCreate;
 use App\Models\Company;
@@ -47,7 +49,9 @@ use Symfony\Component\HttpKernel\Exception\HttpException;
 #[Layout('layouts.app')]
 class InvoiceForm extends Component
 {
+    use AdjustsDocumentQuantity;
     use AiUnsavedForm;
+    use CameraBarcodeScan;
     use QuickPartyCreate;
     use QuickProductCreate;
 
@@ -176,6 +180,7 @@ class InvoiceForm extends Component
 
     public function mount(CompanyContext $context, ?string $publicId = null, ?int $customer_id = null): void
     {
+        $customer_id ??= request()->integer('customer_id') ?: null;
         $company = $context->company();
         $this->pageCompanyId = (int) $company->id;
         $user = auth()->user();
@@ -263,6 +268,9 @@ class InvoiceForm extends Component
 
         if (! $this->isEditing) {
             $this->mountAiInput('sales');
+            if ($this->customer_id !== null) {
+                $this->updatedCustomerId();
+            }
         }
         $this->updatedWarehouseId();
         $this->recalculate();
@@ -544,8 +552,12 @@ class InvoiceForm extends Component
         }
     }
 
+    #[Locked]
+    public bool $documentTotalsValid = false;
+
     public function recalculate(): void
     {
+        $this->documentTotalsValid = false;
         if ($this->showPreview) {
             $this->cancelPreview();
         }
@@ -553,7 +565,7 @@ class InvoiceForm extends Component
         $company = app(CompanyContext::class)->company();
         foreach ($this->lines as $index => $line) {
             foreach (['quantity', 'unit_price', 'discount_value'] as $field) {
-                if (! is_string($line[$field])) {
+                if (! is_string($line[$field]) || preg_match('/^\d{1,14}(?:\.\d{1,6})?$/D', $line[$field]) !== 1) {
                     $this->addError("lines.{$index}.{$field}", __('commands.exact_string_required'));
 
                     return;
@@ -586,10 +598,10 @@ class InvoiceForm extends Component
             }
 
             $input = new SalesLineCalculationInput(
-                quantity: $line['quantity'] !== '' ? $line['quantity'] : '0',
-                unitPrice: $line['unit_price'] !== '' ? $line['unit_price'] : '0',
+                quantity: $line['quantity'],
+                unitPrice: $line['unit_price'],
                 discountType: $discountType !== 'none' ? $discountType : null,
-                discountValue: $line['discount_value'] !== '' ? $line['discount_value'] : '0',
+                discountValue: $line['discount_value'],
                 taxRate: $taxRate,
                 taxInclusive: $taxInclusive,
                 currencyMinorUnits: $minorUnits,
@@ -611,6 +623,7 @@ class InvoiceForm extends Component
         $this->previewDiscountTotal = (string) $totals->discountTotalCurrency;
         $this->previewTaxTotal = (string) $totals->taxTotalCurrency;
         $this->previewGrandTotal = (string) $totals->grandTotalCurrency;
+        $this->documentTotalsValid = true;
     }
 
     public function save(bool $andPost, SalesInvoiceCommands $commands): mixed

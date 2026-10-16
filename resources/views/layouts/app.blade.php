@@ -2,7 +2,7 @@
 <html lang="{{ str_replace('_', '-', app()->getLocale()) }}" dir="{{ app()->getLocale() === 'ar' ? 'rtl' : 'ltr' }}">
 <head>
     <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <meta name="csrf-token" content="{{ csrf_token() }}">
 
     <title>{{ $title ?? __('app.app_name') }} — {{ __('app.app_subtitle') }}</title>
@@ -28,7 +28,7 @@
     @endif
 </head>
 <body class="business-app bg-canvas text-text-primary antialiased font-arabic selection:bg-primary-100 selection:text-primary min-h-screen"
-      x-data="{ mobileMenuOpen: false, mobileLayout: window.innerWidth < 1024 }"
+      x-data="accountingMobileShell"
       @resize.window="mobileLayout = window.innerWidth < 1024"
       @keydown.escape.window="if (mobileMenuOpen) { mobileMenuOpen = false; $refs.navToggle?.focus(); }">
 
@@ -56,7 +56,7 @@
                   {{ $isRtl ? 'right-0 border-l border-border' : 'left-0 border-r border-border' }}
                   {{ $isRtl ? 'max-lg:translate-x-full' : 'max-lg:-translate-x-full' }}"
            :class="mobileMenuOpen ? 'translate-x-0!' : ''"
-           :inert="mobileLayout && !mobileMenuOpen">
+           :inert="mobileLayout && !mobileMenuOpen" x-trap.inert.noscroll="mobileLayout && mobileMenuOpen">
 
         <!-- Sidebar Header / Brand -->
         <div class="p-4 pb-3 border-b border-border">
@@ -339,14 +339,13 @@
         <div class="flex items-center gap-3 flex-1 min-w-0">
             <button x-ref="navToggle" @click="mobileMenuOpen = !mobileMenuOpen" :aria-expanded="mobileMenuOpen.toString()" aria-controls="app-sidebar" aria-label="{{ __('app.open_navigation') }}"
                     type="button"
-                    class="lg:hidden w-10 h-10 rounded-control border border-border flex items-center justify-center text-text-secondary hover:bg-surface-soft">
+                    class="lg:hidden w-11 h-11 rounded-control border border-border flex items-center justify-center text-text-secondary hover:bg-surface-soft">
                 <x-icon name="menu" class="w-5 h-5" />
             </button>
 
             <a href="{{ route('dashboard') }}" class="min-w-0 truncate text-sm font-bold text-text-primary hover:text-primary">
                 {{ $activeCompany?->displayName() ?? __('app.app_name') }}
             </a>
-        </div>
         </div>
 
         <!-- Right / End Area (Actions + User Profile) -->
@@ -368,6 +367,8 @@
                     </div>
                 </details>
             @endif
+
+            <livewire:global-search />
 
             <!-- Language Switcher -->
             @if ($isRtl)
@@ -447,6 +448,8 @@
             {{ $slot }}
         </main>
     </div>
+
+    @include('layouts.mobile-navigation')
 
     @livewireScripts
 </body>

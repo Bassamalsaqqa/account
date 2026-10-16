@@ -781,7 +781,7 @@
                             @endif
                         </div>
                     </div>
-                @elseif($url)
+                @elseif($url && $browserShareUrl !== null && hash_equals($browserShareUrl, $url))
                     <div class="space-y-4">
                         <div class="p-3 bg-slate-50 border border-slate-200 rounded-lg text-xs break-all font-mono select-all text-slate-800">
                             {{ $url }}
@@ -808,7 +808,7 @@
 
                             <!-- WhatsApp Composition -->
                             <a
-                                href="https://api.whatsapp.com/send?text={{ rawurlencode(($headers['name_ar'] ?: 'Catalog') . ' ' . $url) }}"
+                                href="https://api.whatsapp.com/send?text={{ rawurlencode(__('catalogs.public_catalog_message') . ' ' . $browserShareUrl) }}"
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 class="min-h-[44px] px-3 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-lg text-xs font-medium flex items-center justify-center gap-1.5"
@@ -818,7 +818,7 @@
 
                             <!-- Mailto Composition -->
                             <a
-                                href="mailto:?subject={{ rawurlencode($headers['name_ar'] ?: 'Catalog') }}&body={{ rawurlencode($url) }}"
+                                href="mailto:?subject={{ rawurlencode(__('catalogs.public_catalog_message')) }}&body={{ rawurlencode($browserShareUrl) }}"
                                 class="min-h-[44px] px-3 py-2 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-lg text-xs font-medium flex items-center justify-center gap-1.5"
                             >
                                 {{ __('catalogs.share_email') }}
@@ -830,12 +830,14 @@
                         <div x-data x-show="typeof navigator.share === 'function'">
                             <button
                                 type="button"
-                                @click="navigator.share({title: @js($headers['name_'.$locale] ?: $headers['name_ar']), url: @js($url)}).catch(() => {})"
+                                @click="navigator.share({title: @js(__('catalogs.public_catalog_message')), url: @js($browserShareUrl)}).catch(() => {})"
                                 class="w-full min-h-[44px] px-3 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-lg text-xs font-medium flex items-center justify-center gap-1.5 mt-2"
                             >
                                 {{ __('catalogs.native_share') }}
                             </button>
                         </div>
+
+                        <p class="text-xs text-text-secondary mt-2">{{ __('catalogs.whatsapp_composer_notice') }}</p>
 
                         <!-- Edit Link Access Action -->
                         <button

@@ -14,7 +14,9 @@ use App\Domain\Money\Exceptions\InvalidMoneyException;
 use App\Domain\Purchasing\PurchaseCalculator;
 use App\Domain\Purchasing\Queries\VendorProductPriceHistoryQuery;
 use App\Domain\Sales\Calculators\SalesDocumentTotalsCalculator;
+use App\Livewire\Concerns\AdjustsDocumentQuantity;
 use App\Livewire\Concerns\AiUnsavedForm;
+use App\Livewire\Concerns\CameraBarcodeScan;
 use App\Livewire\Concerns\QuickPartyCreate;
 use App\Livewire\Concerns\QuickProductCreate;
 use App\Livewire\Pages\Purchasing\Concerns\AuthorizesPurchasingPages;
@@ -43,8 +45,10 @@ use Livewire\Component;
 #[Layout('layouts.app')]
 class PurchaseForm extends Component
 {
+    use AdjustsDocumentQuantity;
     use AiUnsavedForm;
     use AuthorizesPurchasingPages;
+    use CameraBarcodeScan;
     use QuickPartyCreate;
     use QuickProductCreate;
 
@@ -491,8 +495,12 @@ class PurchaseForm extends Component
         $this->lines[$index]['lots'] = array_values($this->lines[$index]['lots']);
     }
 
+    #[Locked]
+    public bool $documentTotalsValid = false;
+
     public function recalculate(): void
     {
+        $this->documentTotalsValid = false;
         $this->authorizeForm();
         $this->resetErrorBag('calculation');
         $this->resetErrorBag('exchange_rate');
@@ -509,6 +517,7 @@ class PurchaseForm extends Component
             $this->totals = ['subtotal' => (string) $total->subtotalCurrency, 'discount' => (string) $total->discountTotalCurrency,
                 'tax' => (string) $total->taxTotalCurrency, 'total' => (string) $total->grandTotalCurrency];
             $this->resetErrorBag('currency');
+            $this->documentTotalsValid = true;
         } catch (\InvalidArgumentException|MathException|ModelNotFoundException|InvalidMoneyException|InvalidQuantityException|InvalidUnitConversionException $exception) {
             $this->totals = [];
             foreach ($this->lines as &$line) {

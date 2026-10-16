@@ -30,15 +30,18 @@
     <!-- Filters & Search Toolbar -->
     <x-card padding="p-4">
         <div class="grid grid-cols-1 md:grid-cols-4 lg:grid-cols-12 gap-3">
-            <!-- Search Input -->
-            <div class="md:col-span-2 lg:col-span-3 relative">
-                <input id="products-search" aria-label="{{ __('inventory.search_products_placeholder') }}" type="text"
-                       wire:model.live.debounce.300ms="search"
-                       placeholder="{{ __('inventory.search_products_placeholder') }}"
-                       class="w-full h-9 pl-9 pr-3 rounded-control border border-border bg-white text-xs text-text-primary placeholder:text-text-muted focus:outline-none focus:border-primary focus:ring-2 focus:ring-focus-ring" />
-                <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-text-muted rtl:left-auto rtl:right-0 rtl:pl-0 rtl:pr-3">
-                    <x-icon name="search" class="w-4 h-4" />
+            <!-- Search Input with Camera Scanner -->
+            <div class="md:col-span-2 lg:col-span-4 flex items-center gap-2">
+                <div class="relative flex-1">
+                    <input id="products-search" aria-label="{{ __('inventory.search_products_placeholder') }}" type="text"
+                           wire:model.live.debounce.300ms="search"
+                           placeholder="{{ __('inventory.search_products_placeholder') }}"
+                           class="w-full h-11 pl-9 pr-3 rounded-control border border-border bg-white text-xs text-text-primary placeholder:text-text-muted focus:outline-none focus:border-primary focus:ring-2 focus:ring-focus-ring" />
+                    <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-text-muted rtl:left-auto rtl:right-0 rtl:pl-0 rtl:pr-3">
+                        <x-icon name="search" class="w-4 h-4" />
+                    </div>
                 </div>
+                <x-camera-scanner />
             </div>
 
             <!-- Category Filter -->
@@ -90,6 +93,17 @@
                 </label>
             </div>
         </div>
+
+        @if (! empty($cameraBarcode))
+            <div class="mt-3 pt-3 border-t border-border flex items-center justify-between gap-2">
+                <div class="inline-flex items-center gap-2 px-3 py-1.5 bg-primary/10 text-primary text-xs font-semibold rounded-control">
+                    <span>{{ __('camera.filtered_by_barcode') }} <strong dir="ltr" class="font-mono">{{ $cameraBarcode }}</strong></span>
+                </div>
+                <button type="button" wire:click="clearCameraBarcode" class="min-h-[44px] min-w-[44px] px-3 py-2 text-xs font-semibold text-danger hover:underline inline-flex items-center justify-center">
+                    {{ __('camera.clear_filter') }}
+                </button>
+            </div>
+        @endif
     </x-card>
 
     <!-- Products Table / Cards -->

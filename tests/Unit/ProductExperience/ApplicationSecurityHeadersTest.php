@@ -7,6 +7,7 @@ namespace Tests\Unit\ProductExperience;
 use App\Http\Middleware\ApplicationSecurityHeaders;
 use App\Models\User;
 use Illuminate\Http\Request;
+use Illuminate\Routing\Route;
 use Symfony\Component\HttpFoundation\Response;
 use Tests\TestCase;
 
@@ -50,5 +51,61 @@ final class ApplicationSecurityHeadersTest extends TestCase
             'Cache-Control' => 'must-revalidate, no-cache, no-store, private',
         ]));
         $this->assertSame('must-revalidate, no-cache, no-store, private', $response->headers->get('Cache-Control'));
+    }
+
+    public function test_authenticated_camera_routes_permit_self_camera(): void
+    {
+        $cameraRoutes = [
+            'products.index',
+            'invoices.create',
+            'invoices.edit',
+            'quotations.create',
+            'quotations.edit',
+            'purchases.create',
+            'purchases.edit',
+        ];
+
+        foreach ($cameraRoutes as $routeName) {
+            $request = Request::create('/test-route');
+            $request->setUserResolver(fn () => new User);
+            $route = (new Route('GET', '/test-route', ['uses' => fn () => '']))->name($routeName);
+            $request->setRouteResolver(fn () => $route);
+
+            $response = (new ApplicationSecurityHeaders)->handle($request, fn () => new Response('ok'));
+            $this->assertSame(
+                'camera=(self), geolocation=(), microphone=(self)',
+                $response->headers->get('Permissions-Policy'),
+                "Route {$routeName} should have camera=(self) when authenticated"
+            );
+        }
+    }
+
+    public function test_unauthenticated_camera_routes_keep_camera_empty(): void
+    {
+        $request = Request::create('/products');
+        $route = (new Route('GET', '/products', ['uses' => fn () => '']))->name('products.index');
+        $request->setRouteResolver(fn () => $route);
+
+        $response = (new ApplicationSecurityHeaders)->handle($request, fn () => new Response('ok'));
+        $this->assertSame('camera=(), geolocation=(), microphone=(self)', $response->headers->get('Permissions-Policy'));
+    }
+
+    public function test_non_camera_authenticated_routes_keep_camera_empty(): void
+    {
+        $nonCameraRoutes = ['invoices.index', 'products.show', 'dashboard', 'settings.index'];
+
+        foreach ($nonCameraRoutes as $routeName) {
+            $request = Request::create('/other');
+            $request->setUserResolver(fn () => new User);
+            $route = (new Route('GET', '/other', ['uses' => fn () => '']))->name($routeName);
+            $request->setRouteResolver(fn () => $route);
+
+            $response = (new ApplicationSecurityHeaders)->handle($request, fn () => new Response('ok'));
+            $this->assertSame(
+                'camera=(), geolocation=(), microphone=(self)',
+                $response->headers->get('Permissions-Policy'),
+                "Route {$routeName} should have camera=()"
+            );
+        }
     }
 }

@@ -1,0 +1,12 @@
+{
+  "checks": [
+    "/quotations/create/real-zxing-on-synthetic-video",
+    "/invoices/create/real-zxing-on-synthetic-video",
+    "/purchases/create/real-zxing-on-synthetic-video",
+    "product-catalog-exact-scan-and-livewire-navigation-stop",
+    "pwa-serviceworker-registration",
+    "offline-no-private-page-cache"
+  ],
+  "errors": [],
+  "provenance": "Actual bundled ZXing decoding a generated QR in a synthetic canvas MediaStream on desktop Edge. Not physical-device camera verification."
+}

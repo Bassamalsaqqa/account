@@ -1,0 +1,37 @@
+{
+  "accepted_head": "15820ad8e1dc65e2f6225d9345dac8cc7bc67db7",
+  "final_source_sha": "b5a1ec31bc560330cee28b2780da628b5991f7e5",
+  "php_focused": [
+    {
+      "scope": "GlobalSearchTest + SearchVisibilityTest",
+      "tests": 13,
+      "assertions": 69,
+      "result": "pass",
+      "database": "owned disposable MariaDB; cleaned"
+    },
+    {
+      "scope": "DocumentTouchControlsTest after scan dispatch correction",
+      "tests": 5,
+      "assertions": 99,
+      "result": "pass",
+      "database": "owned disposable MariaDB; cleaned"
+    }
+  ],
+  "javascript": {
+    "scope": "Camera + document operations/hardware",
+    "tests": 20,
+    "result": "pass"
+  },
+  "pint": "scoped pass",
+  "phpstan": "scoped application files plus all four CameraBarcodeScan hosts: pass",
+  "vite": "production build pass",
+  "reconciliations": "all six synthetic healthy",
+  "dependencies_changed": false,
+  "migrations_changed": false,
+  "github_ci_run": false,
+  "production_access": false,
+  "merged": false,
+  "deployed_to_production": false,
+  "staging": "local LAN-only HTTPS synthetic fixture; temporary Node proxy is development-only",
+  "physical_evidence": "See finalization-physical-iphone.json; not blanket device acceptance"
+}

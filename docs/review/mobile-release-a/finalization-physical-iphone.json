@@ -1,0 +1,28 @@
+{
+  "provenance": "Owner reports in this conversation, physical iPhone on isolated LAN HTTPS; agent did not remotely control the phone",
+  "device": "iPhone 17 Pro Max",
+  "browser": "Safari",
+  "ios_version": "Owner reports latest iOS; exact numeric version not supplied or verified",
+  "initial_defect": "Product scan added to Purchase but visible preview black/frozen; Owner supplied screenshot. Plain staging camera worked. Native controls/flat CSS/fresh component element did not resolve the application preview. A fresh independent body-level video on the same stream showed the scene.",
+  "final_results": {
+    "live_preview": "Owner confirmed moving",
+    "purchase_product_scan": "Owner separately confirmed product added after fixture scan",
+    "close_reopen": "Owner confirmed works",
+    "rotation": "Owner confirmed remains visible and correctly positioned"
+  },
+  "final_asset": "assets/app-B9uUC30F.js",
+  "source_equivalence": "b5a1ec31bc560330cee28b2780da628b5991f7e5",
+  "not_verified": [
+    "Physical Android Chrome",
+    "Full Invoice/Quotation/Catalog physical scan matrix",
+    "Permission denial/regrant prompts",
+    "Repeated adjacent reads on physical device",
+    "Autofocus at varied distance/lighting",
+    "Physical background/resume and logout/offline",
+    "Onscreen keyboard and AR/EN full workflow matrix",
+    "Installed iOS/Android PWA",
+    "Mobile certificate chain trust without warning",
+    "Exact OS/Safari version"
+  ],
+  "camera_images_uploaded_by_component": false
+}

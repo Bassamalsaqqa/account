@@ -175,7 +175,12 @@
                         </div>
                     </div>
 
-                    <div class="pt-2 border-t border-border flex justify-end">
+                    <div class="pt-2 border-t border-border flex flex-wrap justify-end gap-2">
+                        @if($inv->isDraft() && auth()->user()->can('sales.invoice.edit_draft'))
+                            <a href="{{ route('invoices.edit', $inv->public_id) }}" class="min-h-11 inline-flex items-center px-3 rounded-control bg-primary-50 text-primary text-xs font-bold">{{ __('mobile.edit_draft') }}</a>
+                        @elseif($inv->status === 'posted' && auth()->user()->can('money.receipt.create'))
+                            <a href="{{ route('payments.create', ['invoice_id' => $inv->id]) }}" class="min-h-11 inline-flex items-center px-3 rounded-control bg-primary-50 text-primary text-xs font-bold">{{ __('mobile.record_payment') }}</a>
+                        @endif
                         <a href="{{ route('invoices.show', $inv->public_id) }}"
                            class="px-3 py-1.5 rounded-control bg-surface-soft text-text-primary text-xs font-bold">
                             {{ __('sales.invoice_details') }}
