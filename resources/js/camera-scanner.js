@@ -7,7 +7,7 @@ import { enqueueDocumentOperation } from './document-operations.js';
  * - Native BarcodeDetector guard + @zxing/browser fallback.
  * - Strict lifecycle teardown (pagehide, hidden visibility, offline, Livewire navigation, Alpine destroy).
  * - Immediate track teardown on offline / close / navigation / error.
- * - Session token guards preventing late getUserMedia, late getSupportedFormats, and late decodeFromStream leaks.
+ * - Session token guards preventing late getUserMedia, late getSupportedFormats, and late decoder completion leaks.
  * - Non-overlapping sequential native detection guard.
  * - Visual absence detection allowing re-scanning of the same code after being removed.
  * - Bounded FIFO queue for distinct rapid scans, serialized one wire call at a time.
@@ -29,6 +29,9 @@ export function cameraScanner(wire, options = {}) {
     let activeSession = 0;
     let stream = null;
     let zxingControls = null;
+    let visiblePreview = null;
+    let previewReticle = null;
+    let previewLayoutObserver = null;
     let nativeDetectTimer = null;
     let isDetectingNative = false;
     let previouslyFocused = null;
@@ -47,8 +50,14 @@ export function cameraScanner(wire, options = {}) {
         lastScannedCode: null,
         feedbackEnabled: false, // Default opt-in is false
         busy: false,
+        resumingPreview: false,
 
         init() {
+            this.handlePreviewLayout = () => this.positionPreview();
+            if (this.$watch) this.$watch('status', () => this.positionPreview());
+            win?.addEventListener('resize', this.handlePreviewLayout);
+            win?.visualViewport?.addEventListener('resize', this.handlePreviewLayout);
+            win?.visualViewport?.addEventListener('scroll', this.handlePreviewLayout);
             this.handleVisibilityChange = () => {
                 if (doc?.visibilityState === 'hidden' && this.isOpen) {
                     this.close();
@@ -80,6 +89,9 @@ export function cameraScanner(wire, options = {}) {
 
         destroy() {
             this.stopTracks();
+            win?.removeEventListener('resize', this.handlePreviewLayout);
+            win?.visualViewport?.removeEventListener('resize', this.handlePreviewLayout);
+            win?.visualViewport?.removeEventListener('scroll', this.handlePreviewLayout);
             doc?.removeEventListener('visibilitychange', this.handleVisibilityChange);
             win?.removeEventListener('pagehide', this.handlePageHide);
             win?.removeEventListener('offline', this.handleOffline);
@@ -130,13 +142,46 @@ export function cameraScanner(wire, options = {}) {
                 }
 
                 stream = mediaStream;
+                // WebKit must see a visible, laid-out inline video before playback.
+                if (this.$nextTick) await this.$nextTick();
+                if (win?.requestAnimationFrame) await new Promise(resolve => win.requestAnimationFrame(resolve));
+                if (sessionToken !== activeSession || !this.isOpen) return;
                 const videoEl = this.$refs?.video;
 
                 if (videoEl) {
                     videoEl.srcObject = mediaStream;
                     videoEl.setAttribute('playsinline', 'true');
+                    videoEl.setAttribute('webkit-playsinline', 'true');
                     videoEl.muted = true;
-                    await videoEl.play().catch(() => {});
+                    videoEl.defaultMuted = true;
+                    if (!await this.playPreview(videoEl, sessionToken)) return;
+                    if (doc?.body && this.$refs?.previewHost) {
+                        // Keep the displayed native video outside the modal's compositing
+                        // ancestry. Physical iPhone testing showed frames playing there
+                        // but painting black, while this same-stream body preview paints.
+                        visiblePreview = doc.createElement('video');
+                        visiblePreview.muted = true;
+                        visiblePreview.playsInline = true;
+                        visiblePreview.setAttribute('playsinline', '');
+                        visiblePreview.setAttribute('aria-hidden', 'true');
+                        visiblePreview.dataset.cameraPreview = '';
+                        visiblePreview.style.cssText = 'position:fixed;z-index:96;object-fit:cover;background:black;pointer-events:none';
+                        previewReticle = doc.createElement('div');
+                        previewReticle.setAttribute('aria-hidden', 'true');
+                        previewReticle.style.cssText = 'position:fixed;z-index:97;pointer-events:none;display:flex;align-items:center;justify-content:center';
+                        const target = doc.createElement('div');
+                        target.style.cssText = 'width:70%;height:55%;border:2px solid rgba(255,255,255,.8);border-radius:8px';
+                        previewReticle.appendChild(target);
+                        doc.body.appendChild(visiblePreview);
+                        doc.body.appendChild(previewReticle);
+                        if (win?.ResizeObserver) {
+                            previewLayoutObserver = new win.ResizeObserver(() => this.positionPreview());
+                            previewLayoutObserver.observe(this.$refs.previewHost.parentElement);
+                        }
+                        this.positionPreview();
+                        visiblePreview.srcObject = mediaStream;
+                        if (!await this.playPreview(visiblePreview, sessionToken)) return;
+                    }
                 }
 
                 if (sessionToken !== activeSession || !this.isOpen) {
@@ -161,6 +206,47 @@ export function cameraScanner(wire, options = {}) {
                     this.status = 'camera_error';
                 }
             }
+        },
+
+        async playPreview(videoEl, sessionToken) {
+            try {
+                await videoEl.play();
+                return sessionToken === activeSession && this.isOpen;
+            } catch {
+                if (sessionToken === activeSession && this.isOpen) this.status = 'preview_paused';
+                return false;
+            }
+        },
+
+        positionPreview() {
+            const host = this.$refs?.previewHost;
+            if (!host || !visiblePreview) return;
+            const rect = host.getBoundingClientRect();
+            const visible = this.isOpen && ['starting', 'scanning', 'processing', 'slow_server', 'review'].includes(this.status);
+            for (const element of [visiblePreview, previewReticle]) {
+                if (!element) continue;
+                element.style.visibility = visible ? 'visible' : 'hidden';
+                element.style.left = `${rect.left}px`;
+                element.style.top = `${rect.top}px`;
+                element.style.width = `${rect.width}px`;
+                element.style.height = `${rect.height}px`;
+            }
+        },
+
+        async resumePreview() {
+            if (!stream || !this.isOpen || this.resumingPreview) return;
+            this.resumingPreview = true;
+            this.status = 'starting';
+            this.positionPreview();
+            const sessionToken = activeSession;
+            const videoEl = this.$refs?.video;
+            try {
+                if (videoEl && await this.playPreview(videoEl, sessionToken)
+                    && (!visiblePreview || await this.playPreview(visiblePreview, sessionToken))) {
+                    this.status = 'scanning';
+                    await this.startDetection(sessionToken, videoEl);
+                }
+            } finally { this.resumingPreview = false; }
         },
 
         async startDetection(sessionToken, videoEl, fallbackOnly = false) {
@@ -231,8 +317,10 @@ export function cameraScanner(wire, options = {}) {
             try {
                 const reader = await createReader();
                 if (sessionToken !== activeSession || !this.isOpen) return;
-                if (typeof reader.decodeFromStream === 'function' && videoEl && stream) {
-                    const controls = await reader.decodeFromStream(stream, videoEl, (result, err) => {
+                if (videoEl && stream) {
+                    // Read frames from the component video; the separately displayed
+                    // body preview shares its stream and is never read by the decoder.
+                    const controls = await reader.scan(videoEl, (result, err) => {
                         if (sessionToken !== activeSession || !this.isOpen) return;
                         if (result) {
                             this.onCodeDetected(result.getText());
@@ -241,7 +329,7 @@ export function cameraScanner(wire, options = {}) {
                         }
                     });
 
-                    // Late controls check: if closed while decodeFromStream was awaiting
+                    // Late controls check: if closed while decoder startup was awaiting
                     if (sessionToken !== activeSession || !this.isOpen) {
                         try {
                             controls?.stop();
@@ -277,6 +365,14 @@ export function cameraScanner(wire, options = {}) {
                 } catch {}
                 zxingControls = null;
             }
+            previewLayoutObserver?.disconnect();
+            previewLayoutObserver = null;
+            if (visiblePreview) {
+                try { visiblePreview.pause(); visiblePreview.srcObject = null; visiblePreview.remove(); } catch {}
+                visiblePreview = null;
+            }
+            previewReticle?.remove();
+            previewReticle = null;
             if (stream) {
                 try {
                     stream.getTracks().forEach((track) => track.stop());

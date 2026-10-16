@@ -53,12 +53,6 @@
             <!-- Dialog Content Shell -->
             <div class="fixed inset-0 z-10 flex items-center justify-center p-3 sm:p-4 pointer-events-none">
                 <div x-show="isOpen"
-                     x-transition:enter="ease-out duration-200"
-                     x-transition:enter-start="opacity-0 scale-95"
-                     x-transition:enter-end="opacity-100 scale-100"
-                     x-transition:leave="ease-in duration-150"
-                     x-transition:leave-start="opacity-100 scale-100"
-                     x-transition:leave-end="opacity-0 scale-95"
                      @click.stop
                      x-trap.inert.noscroll="isOpen"
                      class="pointer-events-auto relative w-full max-w-lg bg-white rounded-control shadow-xl border border-border overflow-hidden flex flex-col max-h-[90vh]">
@@ -106,12 +100,18 @@
                     </div>
 
                     <!-- Viewfinder & Video Frame -->
-                    <div class="relative bg-black flex items-center justify-center aspect-4/3 sm:aspect-16/9 overflow-hidden">
-                        <video x-ref="video"
-                               class="w-full h-full object-cover"
-                               autoplay
-                               playsinline
-                               muted></video>
+                    <div x-ref="previewHost" class="relative shrink-0 bg-black aspect-4/3 sm:aspect-16/9 overflow-hidden">
+                        {{-- Safari can play frames but paint black when reusing a video initialized hidden.
+                             Create a fresh preview per explicit camera session; preserve it across wire morphs. --}}
+                        <div wire:ignore class="absolute inset-0">
+                            <template x-if="isOpen">
+                                <video x-ref="video"
+                                       class="block w-full h-full object-cover"
+                                       autoplay
+                                       playsinline
+                                       muted></video>
+                            </template>
+                        </div>
 
                         <!-- Viewfinder Reticle Overlay -->
                         <div x-show="status === 'scanning' || status === 'processing' || status === 'slow_server' || status === 'review'"
@@ -138,6 +138,11 @@
                                     <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
                                 </svg>
                                 <p class="text-sm font-medium">{{ __('camera.starting') }}</p>
+                            </div>
+
+                            <div x-show="status === 'preview_paused'" class="flex flex-col items-center gap-3">
+                                <p class="text-sm font-medium">{{ __('camera.preview_paused') }}</p>
+                                <button type="button" @click="resumePreview()" :disabled="resumingPreview" class="min-h-11 px-4 rounded-control bg-white text-slate-900 font-bold disabled:opacity-50">{{ __('camera.play_preview') }}</button>
                             </div>
 
                             <div x-show="status === 'permission_denied'" class="flex flex-col items-center gap-2 max-w-xs">

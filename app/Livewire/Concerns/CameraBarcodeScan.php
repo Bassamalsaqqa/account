@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Livewire\Concerns;
 
+use App\Livewire\Pages\Products\ProductIndex;
 use App\Models\Company;
 use App\Models\User;
 use App\Support\Tenancy\CompanyContext;
@@ -32,10 +33,6 @@ trait CameraBarcodeScan
             && Company::whereKey($company->id)->where('status', 'active')->exists(), 403);
         abort_unless($user->belongsToCompany($company->id), 403, 'User does not belong to active company.');
 
-        if (property_exists($this, 'pageCompanyId') && $this->pageCompanyId !== null) {
-            abort_unless((int) $context->companyId() === (int) $this->pageCompanyId, 403, 'Company context mismatch.');
-        }
-
         // 2. Exact bounded string validation (<= 128 chars, non-empty)
         if (! is_string($code)) {
             return [
@@ -53,76 +50,69 @@ trait CameraBarcodeScan
         }
 
         // 3. Delegate to component-specific handler if implemented (e.g. ProductIndex)
-        if (method_exists($this, 'handleCameraBarcodeScan')) {
+        if ($this instanceof ProductIndex) {
             return $this->handleCameraBarcodeScan($raw);
         }
 
-        // 4. Standard canonical document forms (InvoiceForm, QuotationForm, PurchaseForm)
-        if (method_exists($this, 'scanBarcode')) {
-            if (property_exists($this, 'barcodeSearch')) {
-                $this->barcodeSearch = $raw;
+        // 4. Remaining hosts are the three canonical document forms; each owns these properties and scanBarcode.
+        // Standard canonical document forms (InvoiceForm, QuotationForm, PurchaseForm)
+        abort_unless((int) $context->companyId() === (int) $this->pageCompanyId, 403, 'Company context mismatch.');
+        $this->barcodeSearch = $raw;
+
+        $this->resetErrorBag('barcodeSearch');
+
+        try {
+            $this->scanBarcode();
+        } catch (HttpException|AuthorizationException $e) {
+            // Preserve HTTP/auth 403 exceptions - never convert to success-like 200
+            throw $e;
+        } catch (\Throwable $e) {
+            // Prevent schema / SQL / stack disclosures: return bounded localized error
+            return [
+                'ok' => false,
+                'message' => __('camera.network_error'),
+            ];
+        }
+
+        // Existing scanBarcode clears barcodeSearch ONLY on success.
+        // Any failure (e.g. barcodeSearch error or lines.* quantity error) leaves barcodeSearch populated or sets error bag.
+        $barcodeSearchCleared = (string) $this->barcodeSearch === '';
+        $hasBarcodeError = $this->getErrorBag()->has('barcodeSearch');
+
+        $lineError = null;
+        foreach ($this->getErrorBag()->messages() as $key => $messages) {
+            if (str_starts_with($key, 'lines.')) {
+                $lineError = $messages[0] ?? null;
+                break;
             }
+        }
 
-            $this->resetErrorBag('barcodeSearch');
-
-            try {
-                $this->scanBarcode();
-            } catch (HttpException|AuthorizationException $e) {
-                // Preserve HTTP/auth 403 exceptions - never convert to success-like 200
-                throw $e;
-            } catch (\Throwable $e) {
-                // Prevent schema / SQL / stack disclosures: return bounded localized error
-                return [
-                    'ok' => false,
-                    'message' => __('camera.network_error'),
-                ];
-            }
-
-            // Existing scanBarcode clears barcodeSearch ONLY on success.
-            // Any failure (e.g. barcodeSearch error or lines.* quantity error) leaves barcodeSearch populated or sets error bag.
-            $barcodeSearchCleared = ! property_exists($this, 'barcodeSearch') || (string) $this->barcodeSearch === '';
-            $hasBarcodeError = $this->getErrorBag()->has('barcodeSearch');
-
-            $lineError = null;
-            foreach ($this->getErrorBag()->messages() as $key => $messages) {
-                if (str_starts_with($key, 'lines.')) {
-                    $lineError = $messages[0] ?? null;
-                    break;
-                }
-            }
-
-            if (! $barcodeSearchCleared || $hasBarcodeError) {
-                $errorMessage = (string) (
-                    $this->getErrorBag()->first('barcodeSearch')
-                    ?: $lineError
-                    ?: __('camera.product_not_found')
-                );
-
-                return [
-                    'ok' => false,
-                    'message' => $errorMessage,
-                ];
-            }
-
-            // The item was added. Do not invite a retry that would add it again, or
-            // represent an earlier total as a freshly calculated document preview.
-            if (property_exists($this, 'documentTotalsValid') && ! $this->documentTotalsValid) {
-                return [
-                    'ok' => true,
-                    'requiresReview' => true,
-                    'message' => __('camera.scan_added_review'),
-                ];
-            }
+        if (! $barcodeSearchCleared || $hasBarcodeError) {
+            $errorMessage = (string) (
+                $this->getErrorBag()->first('barcodeSearch')
+                ?: $lineError
+                ?: __('camera.product_not_found')
+            );
 
             return [
+                'ok' => false,
+                'message' => $errorMessage,
+            ];
+        }
+
+        // The item was added. Do not invite a retry that would add it again, or
+        // represent an earlier total as a freshly calculated document preview.
+        if (! $this->documentTotalsValid) {
+            return [
                 'ok' => true,
-                'message' => __('camera.scan_success'),
+                'requiresReview' => true,
+                'message' => __('camera.scan_added_review'),
             ];
         }
 
         return [
-            'ok' => false,
-            'message' => __('camera.unsupported'),
+            'ok' => true,
+            'message' => __('camera.scan_success'),
         ];
     }
 }

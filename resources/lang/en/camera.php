@@ -9,6 +9,8 @@ return [
     'camera_scanner' => 'Camera Barcode Scanner',
     'scanner_modal_title' => 'Scan Barcode via Camera',
     'scanner_description' => 'Point the rear camera at the barcode for automatic scanning.',
+    'preview_paused' => 'Camera access is ready, but video playback paused. Tap Play to show the live preview.',
+    'play_preview' => 'Play camera preview',
     'starting' => 'Starting camera…',
     'scanning' => 'Camera ready, point at barcode',
     'processing' => 'Verifying code…',

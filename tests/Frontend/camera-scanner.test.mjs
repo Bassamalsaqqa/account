@@ -26,6 +26,9 @@ function createMockEnvironment() {
     const docListeners = new Map();
 
     const mockDoc = {
+        createElement() {
+            return {style:{},dataset:{},children:[],appendChild(child){this.children.push(child);},setAttribute(){}, play:async()=>{}, pause(){}, remove(){this.removed=true;}};
+        },
         visibilityState: 'visible',
         activeElement: { focus: () => {} },
         addEventListener(event, fn) {
@@ -83,7 +86,7 @@ function createMockEnvironment() {
         stoppedControls: false,
         shouldDelayDecode: false,
         resolveDecode: null,
-        decodeFromStream(stream, videoEl, cb) {
+        scan(videoEl, cb) {
             this.decodeCalls++;
             this.cb = cb;
             const controls = {
@@ -217,7 +220,7 @@ test('late permission resolve / user closed modal before getUserMedia resolved',
     assert.equal(env.mockTrack.stopped, true);
 });
 
-test('late ZXing decodeFromStream resolve after close immediately stops controls', async () => {
+test('late ZXing scan resolve after close immediately stops controls', async () => {
     const env = createMockEnvironment();
     env.mockReader.shouldDelayDecode = true;
 
@@ -234,11 +237,11 @@ test('late ZXing decodeFromStream resolve after close immediately stops controls
     const openPromise = scanner.open();
     await new Promise((r) => setTimeout(r, 5));
 
-    // User closes while decodeFromStream is still resolving
+    // User closes while scan is still resolving
     scanner.close();
     assert.equal(scanner.isOpen, false);
 
-    // decodeFromStream now finishes
+    // scan now finishes
     env.mockReader.resolveDecode();
     await openPromise;
 
@@ -462,4 +465,48 @@ test('backgrounding, pagehide, navigation and teardown release tracks and ignore
         await new Promise(r => setTimeout(r, 0));
         assert.deepEqual(received, [], event);
     }
+});
+
+
+test('frame source attaches once after layout and is passed to the decoder', async () => {
+    const env = createMockEnvironment(), order = [];
+    let assignments = 0;
+    const video = {setAttribute() {}, play: async () => {order.push('play');}};
+    Object.defineProperty(video, 'srcObject', {set(value) {assignments++;}, configurable:true});
+    let decoder;
+    env.mockReader.scan = async (element, callback) => {decoder=element;assert.equal(element, video);order.push('decode');return {stop(){}};};
+    const scanner = cameraScanner({}, {navigator:env.mockNav,document:env.mockDoc,window:env.mockWin,createReader:()=>env.mockReader});
+    scanner.$refs = {video};scanner.$nextTick = async () => {order.push('layout');};
+    await scanner.open();
+    assert.deepEqual(order,['layout','play','decode']);assert.equal(assignments,1);
+    scanner.close();
+
+});
+
+test('blocked preview is visible and explicit Play resumes without a second stream assignment', async () => {
+    const env=createMockEnvironment();let blocked=true,assignments=0;
+    const video={setAttribute(){},play:async()=>{if(blocked)throw new Error('autoplay refused');}};
+    Object.defineProperty(video,'srcObject',{set(){assignments++;},configurable:true});
+    const scanner=cameraScanner({}, {navigator:env.mockNav,document:env.mockDoc,window:env.mockWin,createReader:()=>env.mockReader});scanner.$refs={video};
+    await scanner.open();assert.equal(scanner.status,'preview_paused');assert.equal(env.mockReader.decodeCalls,0);
+    blocked=false;await scanner.resumePreview();assert.equal(scanner.status,'scanning');assert.equal(env.mockReader.decodeCalls,1);assert.equal(assignments,1);scanner.close();assert.equal(env.mockTrack.stopped,true);
+});
+
+
+test('body preview shares one camera, aligns after modal resize, hides errors and is fully removed on close', async () => {
+    const env=createMockEnvironment(),children=[];
+    env.mockDoc.body={appendChild:el=>children.push(el)};
+    let resized,disconnected=false;
+    env.mockWin.ResizeObserver=class{constructor(cb){resized=cb;}observe(){}disconnect(){disconnected=true;}};
+    let rectangle={left:12,top:100,width:300,height:225};
+    const host={parentElement:{},getBoundingClientRect:()=>rectangle};
+    const source={setAttribute(){},play:async()=>{}};
+    const scanner=cameraScanner({}, {navigator:env.mockNav,document:env.mockDoc,window:env.mockWin,createReader:()=>env.mockReader});scanner.$refs={video:source,previewHost:host};
+    scanner.init();await scanner.open();
+    const preview=children[0],reticle=children[1];
+    assert.equal(preview.srcObject,env.mockStream);assert.equal(env.mockNav.mediaDevices.getUserMediaCalls,1);
+    assert.equal(preview.style.top,'100px');rectangle={...rectangle,top:140,width:320};resized();assert.equal(preview.style.top,'140px');assert.equal(reticle.style.width,'320px');
+    scanner.status='error';scanner.positionPreview();assert.equal(preview.style.visibility,'hidden');
+    scanner.status='scanning';scanner.positionPreview();assert.equal(preview.style.visibility,'visible');
+    scanner.close();assert.equal(preview.srcObject,null);assert.equal(preview.removed,true);assert.equal(reticle.removed,true);assert.equal(disconnected,true);assert.equal(env.mockTrack.stopped,true);scanner.destroy();
 });
