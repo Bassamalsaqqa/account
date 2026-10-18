@@ -1,4 +1,16 @@
-<div class="max-w-4xl mx-auto space-y-6">
+<div class="max-w-4xl mx-auto space-y-6" x-data="{
+        saving: false, operationFailed: false,
+        run(method, args = [], terminal = false) {
+            if (this.saving) return;
+            if (terminal &amp;&amp; [...document.querySelectorAll('[role=dialog]')].some(el => el.getClientRects().length > 0)) return;
+            if (terminal) this.saving = true;
+            this.operationFailed = false;
+            window.enqueueDocumentOperation($wire, method, args)
+                .catch(() => { this.operationFailed = true; })
+                .finally(() => { if (terminal) this.saving = false; });
+        }
+    }">
+    <p x-cloak x-show="operationFailed" role="alert" class="text-sm text-danger">{{ __('camera.network_error') }}</p>
     <!-- Header -->
     <div class="flex items-center justify-between gap-4">
         <div>
@@ -11,13 +23,13 @@
         </div>
 
         <a href="{{ route('payments.index') }}"
-           class="px-3 py-1.5 rounded-control bg-surface-soft text-text-secondary hover:text-text-primary text-xs font-bold transition-colors">
+           class="min-h-11 inline-flex items-center justify-center gap-2 px-3 active:bg-surface-soft focus-visible:ring-2 focus-visible:ring-primary py-1.5 rounded-control bg-surface-soft text-text-secondary hover:text-text-primary text-xs font-bold transition-colors">
             {{ __('sales.back') }}
         </a>
     </div>
 
     <!-- Main Form -->
-    <form wire:submit="save" class="bg-white rounded-card border border-border shadow-xs p-6 space-y-6">
+    <form @submit.prevent="run('save', [], true)" class="bg-white rounded-card border border-border shadow-xs p-6 space-y-6">
         <!-- Payment Details Header -->
         <div class="grid grid-cols-1 md:grid-cols-3 gap-4 pb-4 border-b border-border">
             <!-- Customer -->
@@ -27,7 +39,7 @@
                 </label>
                 <select wire:model.live="customer_id"
                         required
-                        class="w-full h-9 px-3 rounded-control border border-border bg-canvas text-xs text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden">
+                        class="w-full min-h-11 px-3 rounded-control border border-border bg-canvas text-xs text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden">
                     <option value="">{{ __('sales.select_customer') }}</option>
                     @foreach ($customers as $c)
                         <option value="{{ $c->id }}">{{ $c->displayName() }}</option>
@@ -43,7 +55,7 @@
                 </label>
                 <select wire:model.live="money_account_id"
                         required
-                        class="w-full h-9 px-3 rounded-control border border-border bg-canvas text-xs text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden">
+                        class="w-full min-h-11 px-3 rounded-control border border-border bg-canvas text-xs text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden">
                     <option value="">{{ __('sales.select_money_account') }}</option>
                     @foreach ($accounts as $acc)
                         <option value="{{ $acc->id }}">{{ $acc->displayName() }} ({{ $acc->currency_code }})</option>
@@ -59,7 +71,7 @@
                 </label>
                 <select wire:model="payment_method"
                         required
-                        class="w-full h-9 px-3 rounded-control border border-border bg-canvas text-xs text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden">
+                        class="w-full min-h-11 px-3 rounded-control border border-border bg-canvas text-xs text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden">
                     <option value="cash">{{ __('sales.cash') }}</option>
                     <option value="bank_transfer">{{ __('sales.bank_transfer') }}</option>
                 </select>
@@ -74,13 +86,13 @@
                 <input type="date"
                        wire:model="payment_date"
                        required
-                       class="w-full h-9 px-3 rounded-control border border-border bg-canvas text-xs text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden" />
+                       class="w-full min-h-11 px-3 rounded-control border border-border bg-canvas text-xs text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden" />
                 @error('payment_date') <span class="text-danger text-[11px] mt-1 block">{{ $message }}</span> @enderror
             </div>
 
             <div>
                 <label class="block text-xs font-bold text-text-primary mb-1">{{ __('sales.document_language') }}</label>
-                <select wire:model="document_locale" class="w-full h-9 px-3 rounded-control border border-border bg-canvas text-xs">
+                <select wire:model="document_locale" class="w-full min-h-11 px-3 rounded-control border border-border bg-canvas text-xs">
                     @foreach ($company->languages()->where('enabled', true)->get() as $language)
                         <option value="{{ $language->locale }}">{{ __('sales.language_'.$language->locale) }}</option>
                     @endforeach
@@ -100,7 +112,9 @@
                        required
                        min="{{ $currency_code === 'JOD' ? '0.001' : '0.01' }}"
                        dir="ltr"
-                       class="w-full h-9 px-3 rounded-control border border-border bg-canvas text-xs font-mono font-bold text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden text-start" />
+                       class="w-full min-h-11 px-3 rounded-control border border-border bg-canvas text-xs font-mono font-bold text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden text-start" inputmode="decimal" />
+                <button type="button" @click="run('useFullBalance')" :disabled="saving" wire:loading.attr="disabled" class="min-h-11 mt-2 inline-flex items-center justify-center rounded-control border border-primary px-3 py-2 text-sm font-semibold text-primary disabled:opacity-50">{{ __('refinement.full_balance') }}</button>
+                <p class="text-xs text-text-secondary mt-1">{{ __('refinement.same_currency_shortcuts') }}</p>
                 @error('amount') <span class="text-danger text-[11px] mt-1 block">{{ $message }}</span> @enderror
             </div>
 
@@ -115,7 +129,7 @@
                        wire:change="recalculateAllocations"
                        dir="ltr"
                        required
-                       class="w-full h-9 px-3 rounded-control border border-border bg-canvas text-xs text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden font-mono text-start" />
+                       class="w-full min-h-11 px-3 rounded-control border border-border bg-canvas text-xs text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden font-mono text-start" inputmode="decimal" />
                 @error('exchange_rate') <span class="text-danger text-[11px] mt-1 block">{{ $message }}</span> @enderror
             </div>
 
@@ -127,7 +141,7 @@
                 <input type="text"
                        wire:model="reference_number"
                        placeholder="{{ __('sales.payment_reference_placeholder') }}"
-                       class="w-full h-9 px-3 rounded-control border border-border bg-canvas text-xs text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden" />
+                       class="w-full min-h-11 px-3 rounded-control border border-border bg-canvas text-xs text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden" />
             </div>
         </div>
 
@@ -140,7 +154,7 @@
                 @if (! empty($allocations))
                     <button type="button"
                             wire:click="autoAllocate"
-                            class="px-2.5 py-1 rounded-control bg-surface-soft hover:bg-primary-50 text-text-secondary hover:text-primary text-xs font-bold transition-colors">
+                            class="min-h-11 inline-flex items-center justify-center gap-2 px-3 active:bg-surface-soft focus-visible:ring-2 focus-visible:ring-primary px-2.5 py-1 rounded-control bg-surface-soft hover:bg-primary-50 text-text-secondary hover:text-primary text-xs font-bold transition-colors" wire:loading.attr="disabled">
                         ⚡ {{ __('sales.auto_allocate') }}
                     </button>
                 @endif
@@ -158,13 +172,16 @@
                     <section class="rounded-control border border-border p-3 space-y-2" wire:key="allocation-{{ $alloc['sales_invoice_id'] }}">
                         <div class="flex flex-wrap justify-between gap-2"><span dir="ltr" class="font-mono text-sm">{{ $alloc['invoice_number'] }}</span><span dir="ltr" class="text-sm">{{ $alloc['outstanding'] }} {{ $alloc['document_currency_code'] }}</span></div>
                         <div class="grid sm:grid-cols-2 gap-3">
-                            <label class="block text-sm">{{ __('money.document_amount') }} ({{ $alloc['document_currency_code'] }})<input type="text" inputmode="decimal" wire:model.blur="allocations.{{ $idx }}.allocated_amount" wire:change="recalculateAllocations" dir="ltr" class="w-full rounded-control border-border" /></label>
+                            <label class="block text-sm">{{ __('money.document_amount') }} ({{ $alloc['document_currency_code'] }})<input type="text" inputmode="decimal" wire:model.blur="allocations.{{ $idx }}.allocated_amount" wire:change="recalculateAllocations" dir="ltr" class="w-full min-h-11 px-3 rounded-control border border-border font-mono tabular-nums" /></label>
                             @error('allocations.'.$idx.'.allocated_amount') <p class="text-danger text-xs">{{ $message }}</p> @enderror
                             @if($alloc['document_currency_code'] !== $currency_code)
-                            <label class="block text-sm">{{ __('money.payment_consumed') }} ({{ $currency_code }})<input type="text" inputmode="decimal" wire:model.blur="allocations.{{ $idx }}.payment_currency_amount" wire:change="recalculateAllocations" dir="ltr" class="w-full rounded-control border-border" /></label>
+                            <label class="block text-sm">{{ __('money.payment_consumed') }} ({{ $currency_code }})<input type="text" inputmode="decimal" wire:model.blur="allocations.{{ $idx }}.payment_currency_amount" wire:change="recalculateAllocations" dir="ltr" class="w-full min-h-11 px-3 rounded-control border border-border font-mono tabular-nums" /></label>
                             @error('allocations.'.$idx.'.payment_currency_amount') <p class="text-danger text-xs">{{ $message }}</p> @enderror
                             @endif
                         </div>
+                        @if ($alloc['document_currency_code'] === $currency_code)
+                            <button type="button" @click="run('payRemaining', [{{ $idx }}])" :disabled="saving" wire:loading.attr="disabled" class="min-h-11 inline-flex items-center justify-center rounded-control border border-primary px-3 py-2 text-sm font-semibold text-primary disabled:opacity-50">{{ __('refinement.pay_remaining') }}</button>
+                        @endif
                         <p class="text-xs text-text-muted">{{ __('money.fx_preview') }}: <span dir="ltr">{{ $alloc['preview_fx'] ?? '—' }} {{ $company->base_currency_code }}</span></p>
                     </section>
                     @endforeach
@@ -194,13 +211,14 @@
         </div>
 
         <!-- Buttons -->
-        <div class="flex items-center justify-end gap-3 pt-4 border-t border-border">
+        <p wire:loading role="status" class="text-sm font-semibold text-primary">{{ __('refinement.working') }}</p>
+            <div class="sticky bottom-[calc(5rem+env(safe-area-inset-bottom))] z-20 flex flex-wrap items-center justify-end gap-3 border-t border-border bg-white p-3 shadow-sm md:static md:shadow-none">
             <a href="{{ route('payments.index') }}"
-               class="px-4 py-2 rounded-control border border-border text-xs font-bold text-text-secondary hover:bg-surface-soft transition-colors">
+               class="min-h-11 inline-flex items-center justify-center gap-2 px-3 active:bg-surface-soft focus-visible:ring-2 focus-visible:ring-primary px-4 py-2 rounded-control border border-border text-xs font-bold text-text-secondary hover:bg-surface-soft transition-colors">
                 {{ __('sales.cancel') }}
             </a>
-            <button type="submit"
-                    class="px-5 py-2 rounded-control bg-primary text-white text-xs font-bold hover:bg-primary-hover transition-colors shadow-sm cursor-pointer">
+            <button type="submit" :disabled="saving"
+                    class="min-h-11 inline-flex items-center justify-center gap-2 px-3 active:bg-surface-soft focus-visible:ring-2 focus-visible:ring-primary px-5 py-2 rounded-control bg-primary text-white text-xs font-bold hover:bg-primary-hover transition-colors shadow-sm cursor-pointer" wire:loading.attr="disabled" wire:target="save">
                 ⚡ {{ __('sales.confirm') }}
             </button>
         </div>

@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace App\Livewire\Pages\Sales;
 
 use App\Actions\Sales\PostCustomerPaymentAction;
+use App\Models\Company;
 use App\Models\CompanyCurrency;
 use App\Models\Customer;
 use App\Models\SalesInvoice;
+use App\Models\User;
 use App\Services\Money\EligibleMoneyAccounts;
 use App\Services\Money\MoneyActorGuard;
 use App\Services\Sales\ReceiptPreview;
@@ -15,6 +17,7 @@ use App\Support\Tenancy\CompanyContext;
 use Brick\Math\BigDecimal;
 use Carbon\Carbon;
 use Illuminate\Contracts\View\View;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Livewire\Attributes\Layout;
@@ -207,6 +210,85 @@ class PaymentForm extends Component
         }
 
         $this->recalculateAllocations();
+    }
+
+    /**
+     * Authorize fresh company and actor context for payment operations.
+     */
+    protected function authorizePaymentAction(): Company
+    {
+        abort_unless(auth()->check(), 403, 'Unauthorized.');
+        $context = app(CompanyContext::class);
+        abort_unless($context->hasCompany(), 403, 'No active company context.');
+        if (isset($this->pageCompanyId)) {
+            abort_unless((int) $context->companyId() === $this->pageCompanyId, 403, 'Company context mismatch.');
+        }
+        $company = $context->company();
+        /** @var User $user */
+        $user = auth()->user();
+        abort_unless($user->belongsToCompany($company->id), 403, 'User does not belong to active company.');
+        abort_unless(Company::whereKey($company->id)->where('status', 'active')->exists(), 403, 'Inactive company.');
+        app(MoneyActorGuard::class)->authorize((int) $company->id, 'money.receipt.create');
+
+        return $company;
+    }
+
+    /** Copy a fresh same-currency document balance into one draft allocation. */
+    public function payRemaining(int $index): void
+    {
+        $this->authorizePaymentAction();
+        if (! isset($this->allocations[$index])) {
+            return;
+        }
+        $document = $this->quickBalanceDocuments()->whereKey((int) $this->allocations[$index]['sales_invoice_id'])->first();
+        if ($document === null) {
+            $this->addError('allocations', __('refinement.source_line_not_found'));
+
+            return;
+        }
+        $this->validate(['amount' => ['required', 'string', 'regex:/^\d{1,12}(?:\.\d{1,6})?$/D'],
+            'exchange_rate' => ['nullable', 'string', 'regex:/^(?:\s*|\d{1,12}(?:\.\d{1,10})?)$/D'], ...$this->allocationRules()]);
+        $remaining = $document->calculateOutstanding();
+        $this->allocations[$index]['outstanding'] = (string) $remaining;
+        $this->allocations[$index]['allocated_amount'] = (string) $remaining;
+        $this->allocations[$index]['document_currency_code'] = $document->currency_code;
+        // Existing preview knows payment-currency consumption for mixed currency rows.
+        $this->recalculateAllocations();
+        if (preg_match('/^\d+(?:\.\d+)?$/D', $this->amount) === 1
+            && BigDecimal::of($this->amount)->isLessThan(BigDecimal::of($this->allocatedTotal))) {
+            $this->amount = $this->allocatedTotal;
+            $this->recalculateAllocations();
+        }
+    }
+
+    /** Fill payment amount only; allocation edits remain deliberate operator choices. */
+    public function useFullBalance(): void
+    {
+        $this->authorizePaymentAction();
+        $this->validate(['exchange_rate' => ['nullable', 'string', 'regex:/^(?:\s*|\d{1,12}(?:\.\d{1,10})?)$/D'], ...$this->allocationRules()]);
+        $total = BigDecimal::zero();
+        foreach ($this->quickBalanceDocuments()->get() as $document) {
+            $remaining = $document->calculateOutstanding();
+            if ($remaining->isPositive()) {
+                $total = $total->plus($remaining);
+            }
+        }
+        $this->amount = (string) $total;
+        $this->recalculateAllocations();
+    }
+
+    /** @return Builder<SalesInvoice> */
+    private function quickBalanceDocuments(): Builder
+    {
+        $this->authorizePaymentAction();
+        $account = app(EligibleMoneyAccounts::class)->query($this->pageCompanyId)->find($this->money_account_id);
+        abort_unless($account !== null && $account->currency_code === $this->currency_code, 403);
+        abort_unless(Customer::where('company_id', $this->pageCompanyId)->where('status', 'active')->whereKey($this->customer_id)->exists(), 403);
+
+        return SalesInvoice::where('company_id', $this->pageCompanyId)
+            ->where('customer_id', $this->customer_id)
+            ->where('currency_code', $account->currency_code)
+            ->where('status', SalesInvoice::STATUS_POSTED);
     }
 
     public function recalculateAllocations(): void

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Livewire\Pages\Products;
 
 use App\Models\Brand;
+use App\Models\Company;
 use App\Models\Product;
 use App\Models\ProductBarcode;
 use App\Models\ProductCategory;
@@ -361,6 +362,66 @@ class ProductForm extends Component
         } catch (\Throwable $e) {
             $this->errorMessage = $e->getMessage();
         }
+    }
+
+    /**
+     * Handle camera barcode scan for new barcode input on product form.
+     * ONLY populates new_barcode in draft state; never persists.
+     *
+     * @return array{ok: bool, message: string}
+     */
+    public function scanCameraBarcode(mixed $code): array
+    {
+        // 1. Fresh actor, company context, locked company guard and membership
+        abort_unless(auth()->check(), 403, 'Unauthorized.');
+        $context = app(CompanyContext::class);
+        abort_unless($context->hasCompany() && isset($this->lockedCompanyId) && (int) $context->companyId() === $this->lockedCompanyId, 403, 'Company context mismatch.');
+        $company = $context->company();
+        /** @var User $user */
+        $user = auth()->user();
+        abort_unless($user->belongsToCompany($company->id), 403, 'User does not belong to active company.');
+        abort_unless(Company::whereKey($company->id)->where('status', 'active')->exists(), 403, 'Inactive company.');
+
+        // 2. Fresh authorizeInlineBrand (checks inventory.product.manage) and update/create policy
+        $this->authorizeInlineBrand();
+        if ($this->isEditing && $this->product !== null) {
+            $this->authorize('update', $this->product);
+        } else {
+            $this->authorize('create', Product::class);
+        }
+
+        // 3. Exact bounded string validation (1..128 chars, non-empty, no control chars or URL commands)
+        if (! is_string($code)) {
+            return [
+                'ok' => false,
+                'message' => __('refinement.invalid_barcode_format'),
+            ];
+        }
+
+        $raw = trim($code);
+        if ($raw === '' || mb_strlen($raw) > 128) {
+            return [
+                'ok' => false,
+                'message' => mb_strlen($raw) > 128
+                    ? __('refinement.barcode_too_long')
+                    : __('refinement.invalid_barcode_format'),
+            ];
+        }
+
+        if (preg_match('/[\x00-\x1F\x7F]/', $raw) || preg_match('/^(?:javascript|data|file|vbscript):/i', $raw)) {
+            return [
+                'ok' => false,
+                'message' => __('refinement.invalid_barcode_format'),
+            ];
+        }
+
+        // 4. Populate ONLY draft property without persisting
+        $this->new_barcode = $raw;
+
+        return [
+            'ok' => true,
+            'message' => __('refinement.camera_scan_success'),
+        ];
     }
 
     public function uploadImage(CompanyContext $context, ProductImageService $imageService): void

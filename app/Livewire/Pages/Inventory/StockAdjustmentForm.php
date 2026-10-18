@@ -6,8 +6,11 @@ namespace App\Livewire\Pages\Inventory;
 
 use App\Actions\Inventory\AdjustStockAction;
 use App\Application\Inventory\AvailableLotQuery;
+use App\Application\Inventory\InventoryFormAvailability;
 use App\Domain\Inventory\ValueObjects\Quantity;
 use App\Livewire\Pages\Inventory\Concerns\AuthorizesInventoryPages;
+use App\Livewire\Pages\Inventory\Concerns\HandlesInventoryDraftControls;
+use App\Models\Company;
 use App\Models\Product;
 use App\Models\StockMovement;
 use App\Models\User;
@@ -23,6 +26,12 @@ use Livewire\Component;
 class StockAdjustmentForm extends Component
 {
     use AuthorizesInventoryPages;
+    use HandlesInventoryDraftControls;
+
+    protected function authorizeInventoryContext(): Company
+    {
+        return $this->authorizeInventory('inventory.stock.adjust');
+    }
 
     public ?int $product_id = null;
 
@@ -231,6 +240,7 @@ class StockAdjustmentForm extends Component
             'products' => $products,
             'warehouses' => $warehouses,
             'selectedProduct' => $selectedProduct,
+            'stockAvailability' => app(InventoryFormAvailability::class)->forProduct((int) $company->id, $selectedProduct, $this->warehouse_id),
             'availableUnits' => $availableUnits,
             'availableLots' => $availableLots,
             'canViewCost' => $canViewCost,

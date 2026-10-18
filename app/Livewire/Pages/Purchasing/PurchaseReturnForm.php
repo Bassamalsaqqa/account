@@ -7,8 +7,10 @@ namespace App\Livewire\Pages\Purchasing;
 use App\Actions\Purchasing\CreatePurchaseReturnDraftAction;
 use App\Actions\Purchasing\UpdatePurchaseReturnDraftAction;
 use App\Livewire\Pages\Purchasing\Concerns\AuthorizesPurchasingPages;
+use App\Models\InventoryBalance;
 use App\Models\InventoryLotBalance;
 use App\Models\Purchase;
+use App\Models\PurchaseLine;
 use App\Models\PurchaseReturn;
 use App\Models\PurchaseReturnAllocation;
 use App\Models\PurchaseReturnLine;
@@ -329,6 +331,248 @@ class PurchaseReturnForm extends Component
         }
 
         return view('livewire.pages.purchasing.purchase-return-form');
+    }
+
+    /**
+     * Step return quantity for a purchase line within 0..currentremaining DB cap.
+     */
+    public function stepReturnQuantity(int|string $index, string $direction): void
+    {
+        $this->authorizePurchasing('purchasing.purchase.view');
+        $company = $this->authorizePurchasing('purchasing.return.manage');
+        $this->authorizePurchasing('purchasing.cost.view');
+
+        if (! array_key_exists($index, $this->lines)) {
+            return;
+        }
+
+        $validDirections = ['up', '+', 'increment', 'down', '-', 'decrement'];
+        $dir = strtolower(trim($direction));
+        if (! in_array($dir, $validDirections, true)) {
+            $this->addError("lines.{$index}.return_quantity", __('refinement.invalid_direction'));
+
+            return;
+        }
+
+        if ($this->returnId !== null) {
+            abort_unless(PurchaseReturn::where('company_id', $company->id)->whereKey($this->returnId)
+                ->where('purchase_id', $this->purchaseId)->where('status', PurchaseReturn::STATUS_DRAFT)->exists(), 403);
+        }
+        $lineData = $this->lines[$index];
+        $purchaseLineId = (int) $lineData['purchase_line_id'];
+
+        /** @var PurchaseLine|null $sourceLine */
+        $sourceLine = PurchaseLine::where('id', $purchaseLineId)
+            ->where('company_id', $company->id)
+            ->where('purchase_id', $this->purchaseId)
+            ->whereHas('purchase', function ($q) use ($company) {
+                $q->where('company_id', $company->id)
+                    ->where('status', Purchase::STATUS_POSTED);
+            })
+            ->with(['productUnit.unit', 'product.baseUnit'])
+            ->first();
+
+        if ($sourceLine === null) {
+            $this->addError("lines.{$index}.return_quantity", __('refinement.source_line_not_found'));
+
+            return;
+        }
+
+        // Recalculate fresh authorized returnable DB cap - do not trust client remaining_quantity
+        $alreadyReturned = (string) DB::table('purchase_return_lines')
+            ->join('purchase_returns', 'purchase_return_lines.purchase_return_id', '=', 'purchase_returns.id')
+            ->where('purchase_returns.company_id', $company->id)
+            ->where('purchase_returns.status', PurchaseReturn::STATUS_POSTED)
+            ->where('purchase_return_lines.purchase_line_id', $sourceLine->id)
+            ->sum('purchase_return_lines.quantity');
+
+        $origQty = BigDecimal::of((string) $sourceLine->quantity);
+        $priorQty = BigDecimal::of($alreadyReturned ?: '0');
+        $freshMaxReturnable = $origQty->minus($priorQty);
+        if ($freshMaxReturnable->isNegative()) {
+            $freshMaxReturnable = BigDecimal::zero();
+        }
+
+        $warehouseId = Purchase::where('company_id', $company->id)->whereKey($this->purchaseId)->value('warehouse_id');
+        $stockBase = (string) (InventoryBalance::where('company_id', $company->id)
+            ->where('product_id', $sourceLine->product_id)->where('warehouse_id', $warehouseId)->value('quantity_base') ?? '0');
+        $ratio = BigDecimal::of((string) $sourceLine->unit_conversion_ratio);
+        if ($sourceLine->stock_movement_id !== null && $ratio->isPositive()) {
+            $stockUnits = BigDecimal::of($stockBase)->dividedBy($ratio, 6, RoundingMode::DOWN);
+            $freshMaxReturnable = BigDecimal::min($freshMaxReturnable, BigDecimal::max('0', $stockUnits));
+        }
+        if ($sourceLine->lots->isNotEmpty() && $ratio->isPositive()) {
+            $lotCapacity = BigDecimal::zero();
+            foreach ($sourceLine->lots as $originalLot) {
+                $priorLot = (string) DB::table('purchase_return_allocations')
+                    ->join('purchase_returns', 'purchase_return_allocations.purchase_return_id', '=', 'purchase_returns.id')
+                    ->where('purchase_returns.company_id', $company->id)->where('purchase_returns.status', PurchaseReturn::STATUS_POSTED)
+                    ->where('purchase_return_allocations.purchase_line_lot_id', $originalLot->id)->sum('purchase_return_allocations.quantity');
+                $lotRemaining = BigDecimal::max('0', BigDecimal::of((string) $originalLot->quantity)->minus($priorLot));
+                $lotBase = (string) (InventoryLotBalance::where('company_id', $company->id)->where('product_id', $sourceLine->product_id)
+                    ->where('warehouse_id', $warehouseId)->where('lot_id', $originalLot->created_inventory_lot_id)->value('quantity_base') ?? '0');
+                $lotAvailable = BigDecimal::max('0', BigDecimal::of($lotBase)->dividedBy($ratio, 6, RoundingMode::DOWN));
+                $lotCapacity = $lotCapacity->plus(BigDecimal::min($lotRemaining, $lotAvailable));
+            }
+            $freshMaxReturnable = BigDecimal::min($freshMaxReturnable, $lotCapacity);
+        }
+        $this->lines[$index]['remaining_quantity'] = (string) $freshMaxReturnable;
+        $this->lines[$index]['prior_returned_quantity'] = (string) $priorQty;
+
+        // Resolve unit precision
+        $unit = $sourceLine->productUnit !== null ? $sourceLine->productUnit->unit : $sourceLine->product?->baseUnit;
+        $allowsFraction = $unit ? (bool) $unit->allows_fraction : false;
+        $maxDecimals = $allowsFraction ? min(max(0, (int) $unit->decimal_places), 6) : 0;
+        foreach ([(string) $sourceLine->quantity, (string) $freshMaxReturnable] as $historicalQuantity) {
+            $decPart = explode('.', $historicalQuantity)[1] ?? '';
+            $maxDecimals = max($maxDecimals, min(strlen(rtrim($decPart, '0')), 6));
+        }
+        $allowsFraction = $maxDecimals > 0;
+
+        $stepValue = $maxDecimals > 0
+            ? '0.'.str_repeat('0', $maxDecimals - 1).'1'
+            : '1';
+
+        $rawCurrent = trim((string) $lineData['return_quantity']);
+        if ($rawCurrent === '') {
+            $rawCurrent = '0';
+        }
+
+        if (preg_match('/^\d{1,12}(?:\.\d{1,6})?$/D', $rawCurrent) !== 1) {
+            $this->addError("lines.{$index}.return_quantity", __('refinement.exact_string_required'));
+
+            return;
+        }
+        $normalizedCurrent = str_contains($rawCurrent, '.') ? rtrim(rtrim($rawCurrent, '0'), '.') : $rawCurrent;
+        if (str_contains($normalizedCurrent, '.') && strlen(explode('.', $normalizedCurrent)[1]) > $maxDecimals) {
+            $this->addError("lines.{$index}.return_quantity", __('refinement.exact_string_required'));
+
+            return;
+        }
+        try {
+            $currentBd = BigDecimal::of($rawCurrent);
+        } catch (\Throwable) {
+            $this->addError("lines.{$index}.return_quantity", __('refinement.exact_string_required'));
+
+            return;
+        }
+
+        if ($currentBd->isNegative()) {
+            $currentBd = BigDecimal::zero();
+        }
+
+        $isIncrement = in_array($dir, ['up', '+', 'increment'], true);
+        $stepBd = BigDecimal::of($stepValue);
+
+        if ($isIncrement) {
+            $newBd = $currentBd->plus($stepBd);
+            if ($newBd->isGreaterThan($freshMaxReturnable)) {
+                $newBd = $freshMaxReturnable;
+            }
+        } else {
+            $newBd = $currentBd->minus($stepBd);
+            if ($newBd->isNegative()) {
+                $newBd = BigDecimal::zero();
+            }
+            if ($newBd->isGreaterThan($freshMaxReturnable)) {
+                $newBd = $freshMaxReturnable;
+            }
+        }
+
+        $formatted = (string) $newBd->toScale($maxDecimals, RoundingMode::DOWN);
+        $this->lines[$index]['return_quantity'] = $formatted;
+        $this->resetErrorBag("lines.{$index}.return_quantity");
+    }
+
+    /**
+     * Set return quantity for a purchase line directly to full fresh returnable DB cap.
+     */
+    public function returnFullRemaining(int|string $index): void
+    {
+        $this->authorizePurchasing('purchasing.purchase.view');
+        $company = $this->authorizePurchasing('purchasing.return.manage');
+        $this->authorizePurchasing('purchasing.cost.view');
+
+        if (! array_key_exists($index, $this->lines)) {
+            return;
+        }
+
+        if ($this->returnId !== null) {
+            abort_unless(PurchaseReturn::where('company_id', $company->id)->whereKey($this->returnId)
+                ->where('purchase_id', $this->purchaseId)->where('status', PurchaseReturn::STATUS_DRAFT)->exists(), 403);
+        }
+        $lineData = $this->lines[$index];
+        $purchaseLineId = (int) $lineData['purchase_line_id'];
+
+        /** @var PurchaseLine|null $sourceLine */
+        $sourceLine = PurchaseLine::where('id', $purchaseLineId)
+            ->where('company_id', $company->id)
+            ->where('purchase_id', $this->purchaseId)
+            ->whereHas('purchase', function ($q) use ($company) {
+                $q->where('company_id', $company->id)
+                    ->where('status', Purchase::STATUS_POSTED);
+            })
+            ->with(['productUnit.unit', 'product.baseUnit'])
+            ->first();
+
+        if ($sourceLine === null) {
+            $this->addError("lines.{$index}.return_quantity", __('refinement.source_line_not_found'));
+
+            return;
+        }
+
+        $alreadyReturned = (string) DB::table('purchase_return_lines')
+            ->join('purchase_returns', 'purchase_return_lines.purchase_return_id', '=', 'purchase_returns.id')
+            ->where('purchase_returns.company_id', $company->id)
+            ->where('purchase_returns.status', PurchaseReturn::STATUS_POSTED)
+            ->where('purchase_return_lines.purchase_line_id', $sourceLine->id)
+            ->sum('purchase_return_lines.quantity');
+
+        $origQty = BigDecimal::of((string) $sourceLine->quantity);
+        $priorQty = BigDecimal::of($alreadyReturned ?: '0');
+        $freshMaxReturnable = $origQty->minus($priorQty);
+        if ($freshMaxReturnable->isNegative()) {
+            $freshMaxReturnable = BigDecimal::zero();
+        }
+
+        $warehouseId = Purchase::where('company_id', $company->id)->whereKey($this->purchaseId)->value('warehouse_id');
+        $stockBase = (string) (InventoryBalance::where('company_id', $company->id)
+            ->where('product_id', $sourceLine->product_id)->where('warehouse_id', $warehouseId)->value('quantity_base') ?? '0');
+        $ratio = BigDecimal::of((string) $sourceLine->unit_conversion_ratio);
+        if ($sourceLine->stock_movement_id !== null && $ratio->isPositive()) {
+            $stockUnits = BigDecimal::of($stockBase)->dividedBy($ratio, 6, RoundingMode::DOWN);
+            $freshMaxReturnable = BigDecimal::min($freshMaxReturnable, BigDecimal::max('0', $stockUnits));
+        }
+        if ($sourceLine->lots->isNotEmpty() && $ratio->isPositive()) {
+            $lotCapacity = BigDecimal::zero();
+            foreach ($sourceLine->lots as $originalLot) {
+                $priorLot = (string) DB::table('purchase_return_allocations')
+                    ->join('purchase_returns', 'purchase_return_allocations.purchase_return_id', '=', 'purchase_returns.id')
+                    ->where('purchase_returns.company_id', $company->id)->where('purchase_returns.status', PurchaseReturn::STATUS_POSTED)
+                    ->where('purchase_return_allocations.purchase_line_lot_id', $originalLot->id)->sum('purchase_return_allocations.quantity');
+                $lotRemaining = BigDecimal::max('0', BigDecimal::of((string) $originalLot->quantity)->minus($priorLot));
+                $lotBase = (string) (InventoryLotBalance::where('company_id', $company->id)->where('product_id', $sourceLine->product_id)
+                    ->where('warehouse_id', $warehouseId)->where('lot_id', $originalLot->created_inventory_lot_id)->value('quantity_base') ?? '0');
+                $lotAvailable = BigDecimal::max('0', BigDecimal::of($lotBase)->dividedBy($ratio, 6, RoundingMode::DOWN));
+                $lotCapacity = $lotCapacity->plus(BigDecimal::min($lotRemaining, $lotAvailable));
+            }
+            $freshMaxReturnable = BigDecimal::min($freshMaxReturnable, $lotCapacity);
+        }
+        $this->lines[$index]['remaining_quantity'] = (string) $freshMaxReturnable;
+        $this->lines[$index]['prior_returned_quantity'] = (string) $priorQty;
+
+        $unit = $sourceLine->productUnit !== null ? $sourceLine->productUnit->unit : $sourceLine->product?->baseUnit;
+        $allowsFraction = $unit ? (bool) $unit->allows_fraction : false;
+        $maxDecimals = $allowsFraction ? min(max(0, (int) $unit->decimal_places), 6) : 0;
+        foreach ([(string) $sourceLine->quantity, (string) $freshMaxReturnable] as $historicalQuantity) {
+            $decPart = explode('.', $historicalQuantity)[1] ?? '';
+            $maxDecimals = max($maxDecimals, min(strlen(rtrim($decPart, '0')), 6));
+        }
+        $allowsFraction = $maxDecimals > 0;
+
+        $formatted = $maxDecimals > 0 ? (string) $freshMaxReturnable : (string) $freshMaxReturnable->toScale(0, RoundingMode::DOWN);
+        $this->lines[$index]['return_quantity'] = $formatted;
+        $this->resetErrorBag("lines.{$index}.return_quantity");
     }
 
     public function saveDraft(): void
