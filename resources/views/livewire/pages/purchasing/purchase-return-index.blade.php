@@ -2,20 +2,27 @@
     <header class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div><h1 class="text-2xl font-bold">{{ __('purchasing.purchase_returns') }}</h1></div>
     </header>
-    <div class="bg-surface border border-border rounded-card p-4 grid sm:grid-cols-3 gap-3">
-        <input type="search" wire:model.live.debounce.300ms="search" aria-label="{{ __('purchasing.search_purchase_returns') }}" placeholder="{{ __('purchasing.search_purchase_returns') }}" class="h-11 min-w-0 px-3 rounded-control border border-border text-sm" />
-        <select wire:model.live="vendorFilter" aria-label="{{ __('purchasing.vendor') }}" class="h-11 min-w-0 px-3 rounded-control border border-border text-sm">
+    <x-refinement-filters :active-count="(int) ($statusFilter !== 'all') + (int) filled($vendorFilter)">
+        <x-slot:search>
+            <input type="search" wire:model.live.debounce.300ms="search" aria-label="{{ __('purchasing.search_purchase_returns') }}" placeholder="{{ __('purchasing.search_purchase_returns') }}" class="min-h-11 w-full min-w-0 rounded-control border border-border bg-white px-3 py-2 text-sm focus:border-primary focus:ring-primary" />
+        </x-slot:search>
+        <x-slot:statuses>
+        <button type="button" wire:click="$set('statusFilter', 'all')" wire:loading.attr="disabled" wire:target="statusFilter" aria-pressed="{{ $statusFilter === 'all' ? 'true' : 'false' }}" class="touch-action shrink-0 border text-sm font-semibold {{ $statusFilter === 'all' ? 'border-primary bg-primary text-white' : 'border-border bg-white text-text-secondary' }}">{{ __('purchasing.all_statuses') }}</button>
+        <button type="button" wire:click="$set('statusFilter', 'draft')" wire:loading.attr="disabled" wire:target="statusFilter" aria-pressed="{{ $statusFilter === 'draft' ? 'true' : 'false' }}" class="touch-action shrink-0 border text-sm font-semibold {{ $statusFilter === 'draft' ? 'border-primary bg-primary text-white' : 'border-border bg-white text-text-secondary' }}">{{ __('purchasing.draft') }}</button>
+        <button type="button" wire:click="$set('statusFilter', 'posted')" wire:loading.attr="disabled" wire:target="statusFilter" aria-pressed="{{ $statusFilter === 'posted' ? 'true' : 'false' }}" class="touch-action shrink-0 border text-sm font-semibold {{ $statusFilter === 'posted' ? 'border-primary bg-primary text-white' : 'border-border bg-white text-text-secondary' }}">{{ __('purchasing.posted') }}</button>
+        </x-slot:statuses>
+        <select wire:model.live="vendorFilter" aria-label="{{ __('purchasing.vendor') }}" class="min-h-11 h-11 min-w-0 px-3 rounded-control border border-border text-sm">
             <option value="">{{ __('purchasing.all_vendors') }}</option>
             @foreach($vendors as $vendor)
                 <option value="{{ $vendor->id }}">{{ $vendor->displayName() }}</option>
             @endforeach
         </select>
-        <select wire:model.live="statusFilter" aria-label="{{ __('purchasing.status') }}" class="h-11 px-3 rounded-control border border-border text-sm">
+        <select wire:model.live="statusFilter" aria-label="{{ __('purchasing.status') }}" class="min-h-11 h-11 px-3 rounded-control border border-border text-sm">
             <option value="all">{{ __('purchasing.all_statuses') }}</option>
             <option value="draft">{{ __('purchasing.draft') }}</option>
             <option value="posted">{{ __('purchasing.posted') }}</option>
         </select>
-    </div>
+    </x-refinement-filters>
     <section class="bg-surface border border-border rounded-card overflow-hidden">
         <div class="hidden md:block">
             <table class="w-full text-xs">
@@ -34,14 +41,14 @@
                         <tr wire:key="return-{{ $return->public_id }}">
                             <td class="px-4 py-4"><bdi>{{ $return->return_date->format('Y-m-d') }}</bdi></td>
                             <td class="px-4 py-4">
-                                <a class="font-bold text-primary" href="{{ route('purchase-returns.show', $return->public_id) }}">
+                                <a class="touch-action font-bold text-primary" href="{{ route('purchase-returns.show', $return->public_id) }}">
                                     {{ $return->vendor->displayName() }}
                                 </a>
                                 <p class="mt-1"><bdi>{{ $return->return_number ?? __('purchasing.draft') }}</bdi></p>
                             </td>
                             <td class="px-4 py-4">
                                 @if($return->purchase)
-                                    <a class="text-primary hover:underline" href="{{ route('purchases.show', $return->purchase->public_id) }}">
+                                    <a class="touch-action text-primary hover:underline" href="{{ route('purchases.show', $return->purchase->public_id) }}">
                                         <bdi>{{ $return->purchase->purchase_number ?? '—' }}</bdi>
                                     </a>
                                 @else
@@ -68,7 +75,7 @@
             @forelse($returns as $return)
                 <article class="p-4 space-y-3" wire:key="return-mobile-{{ $return->public_id }}">
                     <div class="flex justify-between gap-3">
-                        <a href="{{ route('purchase-returns.show', $return->public_id) }}" class="font-bold text-primary text-sm">
+                        <a href="{{ route('purchase-returns.show', $return->public_id) }}" class="touch-action font-bold text-primary text-sm">
                             {{ $return->vendor->displayName() }}
                         </a>
                         <span class="text-xs">{{ __('purchasing.'.$return->status) }}</span>
@@ -86,7 +93,7 @@
                             <dt class="text-text-secondary">{{ __('purchasing.purchase_number') }}</dt>
                             <dd>
                                 @if($return->purchase)
-                                    <a class="text-primary hover:underline" href="{{ route('purchases.show', $return->purchase->public_id) }}">
+                                    <a class="touch-action text-primary hover:underline" href="{{ route('purchases.show', $return->purchase->public_id) }}">
                                         <bdi>{{ $return->purchase->purchase_number ?? '—' }}</bdi>
                                     </a>
                                 @else

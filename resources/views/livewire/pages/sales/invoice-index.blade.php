@@ -13,7 +13,7 @@
         @if ($canCreate)
             <div class="flex items-center gap-2">
                 <a href="{{ route('invoices.create') }}"
-                   class="inline-flex items-center justify-center gap-1.5 px-4 h-9 rounded-control bg-primary text-white text-xs font-bold hover:bg-primary-hover transition-colors shadow-sm">
+                   class="touch-action gap-1.5 bg-primary text-white text-xs font-bold hover:bg-primary-hover transition-colors shadow-sm">
                     <x-icon name="plus" class="w-4 h-4" />
                     <span>{{ __('sales.new_invoice') }}</span>
                 </a>
@@ -22,33 +22,32 @@
     </div>
 
     <!-- Filters & Search Bar -->
-    <div class="bg-white p-4 rounded-card border border-border shadow-xs flex flex-col md:flex-row gap-4 items-stretch md:items-center justify-between">
-        <div class="flex-1 max-w-md relative">
+    <x-refinement-filters :active-count="(int) ($statusFilter !== 'all') + (int) filled($customerFilter)">
+        <x-slot:search>
             <input id="invoices-search" aria-label="{{ __('sales.search') }}" type="text"
                    wire:model.live.debounce.300ms="search"
                    placeholder="{{ __('sales.search') }}"
-                   class="w-full h-9 pl-9 pr-3 rounded-control border border-border bg-canvas text-xs text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden" />
-            <div class="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none text-text-muted">
-                <x-icon name="search" class="w-4 h-4" />
-            </div>
-        </div>
-
-        <div class="flex flex-wrap items-center gap-3">
-            <select id="invoices-statusFilter" aria-label="{{ __('sales.status') }}" wire:model.live="statusFilter" class="h-9 px-3 rounded-control border border-border bg-canvas text-xs text-text-primary">
+                   class="min-h-11 w-full min-w-0 rounded-control border border-border bg-white px-3 py-2 text-sm focus:border-primary focus:ring-primary" />
+        </x-slot:search>
+        <x-slot:statuses>
+        <button type="button" wire:click="$set('statusFilter', 'all')" wire:loading.attr="disabled" wire:target="statusFilter" aria-pressed="{{ $statusFilter === 'all' ? 'true' : 'false' }}" class="touch-action shrink-0 border text-sm font-semibold {{ $statusFilter === 'all' ? 'border-primary bg-primary text-white' : 'border-border bg-white text-text-secondary' }}">{{ __('sales.all') }}</button>
+        <button type="button" wire:click="$set('statusFilter', 'draft')" wire:loading.attr="disabled" wire:target="statusFilter" aria-pressed="{{ $statusFilter === 'draft' ? 'true' : 'false' }}" class="touch-action shrink-0 border text-sm font-semibold {{ $statusFilter === 'draft' ? 'border-primary bg-primary text-white' : 'border-border bg-white text-text-secondary' }}">{{ __('sales.draft') }}</button>
+        <button type="button" wire:click="$set('statusFilter', 'posted')" wire:loading.attr="disabled" wire:target="statusFilter" aria-pressed="{{ $statusFilter === 'posted' ? 'true' : 'false' }}" class="touch-action shrink-0 border text-sm font-semibold {{ $statusFilter === 'posted' ? 'border-primary bg-primary text-white' : 'border-border bg-white text-text-secondary' }}">{{ __('sales.posted') }}</button>
+        <button type="button" wire:click="$set('statusFilter', 'void')" wire:loading.attr="disabled" wire:target="statusFilter" aria-pressed="{{ $statusFilter === 'void' ? 'true' : 'false' }}" class="touch-action shrink-0 border text-sm font-semibold {{ $statusFilter === 'void' ? 'border-primary bg-primary text-white' : 'border-border bg-white text-text-secondary' }}">{{ __('sales.voided') }}</button>
+        </x-slot:statuses>
+        <select id="invoices-statusFilter" aria-label="{{ __('sales.status') }}" wire:model.live="statusFilter" class="min-h-11 h-11 px-3 rounded-control border border-border bg-canvas text-xs text-text-primary">
                 <option value="all">{{ __('sales.all') }}</option>
                 <option value="draft">{{ __('sales.draft') }}</option>
                 <option value="posted">{{ __('sales.posted') }}</option>
                 <option value="void">{{ __('sales.voided') }}</option>
             </select>
-
-            <select id="invoices-customerFilter" aria-label="{{ __('sales.customer') }}" wire:model.live="customerFilter" class="h-9 px-3 rounded-control border border-border bg-canvas text-xs text-text-primary">
+        <select id="invoices-customerFilter" aria-label="{{ __('sales.customer') }}" wire:model.live="customerFilter" class="min-h-11 h-11 px-3 rounded-control border border-border bg-canvas text-xs text-text-primary">
                 <option value="">{{ __('sales.select_customer') }}</option>
                 @foreach ($customers as $c)
                     <option value="{{ $c->id }}">{{ $c->displayName() }}</option>
                 @endforeach
             </select>
-        </div>
-    </div>
+    </x-refinement-filters>
 
     <!-- Invoices Table / Cards -->
     <div class="bg-white rounded-card border border-border shadow-xs overflow-hidden">
@@ -70,12 +69,12 @@
                     @forelse ($invoices as $inv)
                         <tr class="hover:bg-surface-soft/60 transition-colors">
                             <td class="py-3 px-4 font-mono font-bold" dir="ltr">
-                                <a href="{{ route('invoices.show', $inv->public_id) }}" class="text-primary hover:underline">
+                                <a href="{{ route('invoices.show', $inv->public_id) }}" class="touch-action text-primary hover:underline">
                                     {{ $inv->invoice_number ?? __('sales.draft') }}
                                 </a>
                             </td>
                             <td class="py-3 px-4">
-                                <a href="{{ route('customers.show', $inv->customer->public_id) }}" class="font-bold text-text-primary hover:text-primary">
+                                <a href="{{ route('customers.show', $inv->customer->public_id) }}" class="touch-action font-bold text-text-primary hover:text-primary">
                                     {{ $inv->customer->displayName() }}
                                 </a>
                             </td>
@@ -83,10 +82,7 @@
                                 {{ $inv->issue_date ? $inv->issue_date->toDateString() : '—' }}
                             </td>
                             <td class="py-3 px-4">
-                                <span class="px-2 py-0.5 rounded-full text-[10px] font-bold
-                                    @if ($inv->status === 'posted') bg-success-bg text-success
-                                    @elseif ($inv->status === 'void') bg-danger-bg text-danger
-                                    @else bg-slate-100 text-slate-600 @endif">
+                                <span class="px-2 py-0.5 rounded-full text-[10px] font-bold @if ($inv->status === 'posted') bg-success-bg text-success @elseif ($inv->status === 'void') bg-danger-bg text-danger @else bg-slate-100 text-slate-600 @endif">
                                     {{ __('sales.' . $inv->status) }}
                                 </span>
                             </td>
@@ -94,11 +90,7 @@
                                 @php
                                     $paymentStatus = $inv->derivedPaymentStatus();
                                 @endphp
-                                <span class="px-2 py-0.5 rounded-full text-[10px] font-bold
-                                    @if ($paymentStatus === 'paid') bg-success-bg text-success
-                                    @elseif ($paymentStatus === 'partially_paid') bg-warning-bg text-warning
-                                    @elseif ($paymentStatus === 'credit') bg-primary-50 text-primary
-                                    @else bg-slate-100 text-slate-600 @endif">
+                                <span class="px-2 py-0.5 rounded-full text-[10px] font-bold @if ($paymentStatus === 'paid') bg-success-bg text-success @elseif ($paymentStatus === 'partially_paid') bg-warning-bg text-warning @elseif ($paymentStatus === 'credit') bg-primary-50 text-primary @else bg-slate-100 text-slate-600 @endif">
                                     {{ __('sales.' . $paymentStatus) }}
                                 </span>
                             </td>
@@ -117,7 +109,7 @@
                             <td class="py-3 px-4 text-end">
                                 <div class="flex items-center justify-end gap-2">
                                     <a href="{{ route('invoices.show', $inv->public_id) }}"
-                                       class="px-2 py-1 rounded-control bg-surface-soft hover:bg-primary-50 text-text-secondary hover:text-primary font-bold text-[11px] transition-colors">
+                                       class="touch-action bg-surface-soft hover:bg-primary-50 text-text-secondary hover:text-primary font-bold text-[11px] transition-colors">
                                         {{ __('sales.invoice_details') }}
                                     </a>
                                 </div>
@@ -141,17 +133,14 @@
                 <div class="p-4 space-y-3">
                     <div class="flex items-start justify-between gap-2">
                         <div>
-                            <a href="{{ route('invoices.show', $inv->public_id) }}" class="font-mono font-bold text-primary" dir="ltr">
+                            <a href="{{ route('invoices.show', $inv->public_id) }}" class="touch-action font-mono font-bold text-primary" dir="ltr">
                                 {{ $inv->invoice_number ?? __('sales.draft') }}
                             </a>
                             <div class="font-bold text-text-primary text-xs mt-0.5">
                                 {{ $inv->customer->displayName() }}
                             </div>
                         </div>
-                        <span class="px-2 py-0.5 rounded-full text-[10px] font-bold
-                            @if ($inv->status === 'posted') bg-success-bg text-success
-                            @elseif ($inv->status === 'void') bg-danger-bg text-danger
-                            @else bg-slate-100 text-slate-600 @endif">
+                        <span class="px-2 py-0.5 rounded-full text-[10px] font-bold @if ($inv->status === 'posted') bg-success-bg text-success @elseif ($inv->status === 'void') bg-danger-bg text-danger @else bg-slate-100 text-slate-600 @endif">
                             {{ __('sales.' . $inv->status) }}
                         </span>
                     </div>
@@ -176,13 +165,16 @@
                     </div>
 
                     <div class="pt-2 border-t border-border flex flex-wrap justify-end gap-2">
+                        @can('sales.document.pdf')
+                            <a href="{{ route('pdf.invoice', ['publicId' => $inv->public_id, 'locale' => app()->getLocale()]) }}" target="_blank" rel="noopener noreferrer" class="touch-action bg-white text-primary text-sm font-semibold"><x-icon name="receipt" class="h-4 w-4" />{{ __('refinement_lists.pdf') }}</a>
+                        @endcan
                         @if($inv->isDraft() && auth()->user()->can('sales.invoice.edit_draft'))
-                            <a href="{{ route('invoices.edit', $inv->public_id) }}" class="min-h-11 inline-flex items-center px-3 rounded-control bg-primary-50 text-primary text-xs font-bold">{{ __('mobile.edit_draft') }}</a>
-                        @elseif($inv->status === 'posted' && auth()->user()->can('money.receipt.create'))
-                            <a href="{{ route('payments.create', ['invoice_id' => $inv->id]) }}" class="min-h-11 inline-flex items-center px-3 rounded-control bg-primary-50 text-primary text-xs font-bold">{{ __('mobile.record_payment') }}</a>
+                            <a href="{{ route('invoices.edit', $inv->public_id) }}" class="touch-action bg-primary-50 text-primary text-xs font-bold">{{ __('mobile.edit_draft') }}</a>
+                        @elseif($inv->status === 'posted' && \App\Domain\Sales\Formatters\SalesMoneyFormatter::isPositive($inv->calculateOutstanding()) && auth()->user()->can('money.receipt.create'))
+                            <a href="{{ route('payments.create', ['invoice_id' => $inv->id]) }}" class="touch-action bg-primary-50 text-primary text-xs font-bold">{{ __('mobile.record_payment') }}</a>
                         @endif
                         <a href="{{ route('invoices.show', $inv->public_id) }}"
-                           class="px-3 py-1.5 rounded-control bg-surface-soft text-text-primary text-xs font-bold">
+                           class="touch-action bg-surface-soft text-text-primary text-xs font-bold">
                             {{ __('sales.invoice_details') }}
                         </a>
                     </div>

@@ -13,7 +13,7 @@
         @if ($canCreate)
             <div class="flex items-center gap-2">
                 <a href="{{ route('returns.create') }}"
-                   class="inline-flex items-center justify-center gap-1.5 px-4 h-9 rounded-control bg-primary text-white text-xs font-bold hover:bg-primary-hover transition-colors shadow-sm">
+                   class="touch-action gap-1.5 bg-primary text-white text-xs font-bold hover:bg-primary-hover transition-colors shadow-sm">
                     <x-icon name="plus" class="w-4 h-4" />
                     <span>{{ __('sales.new_return') }}</span>
                 </a>
@@ -22,33 +22,32 @@
     </div>
 
     <!-- Filters & Search Bar -->
-    <div class="bg-white p-4 rounded-card border border-border shadow-xs flex flex-col md:flex-row gap-4 items-stretch md:items-center justify-between">
-        <div class="flex-1 max-w-md relative">
-            <input type="text"
+    <x-refinement-filters :active-count="(int) ($statusFilter !== 'all') + (int) filled($customerFilter)">
+        <x-slot:search>
+            <input aria-label="{{ __('sales.search') }}" type="text"
                    wire:model.live.debounce.300ms="search"
                    placeholder="{{ __('sales.search') }}"
-                   class="w-full h-9 pl-9 pr-3 rounded-control border border-border bg-canvas text-xs text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden" />
-            <div class="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none text-text-muted">
-                <x-icon name="search" class="w-4 h-4" />
-            </div>
-        </div>
-
-        <div class="flex flex-wrap items-center gap-3">
-            <select wire:model.live="statusFilter" class="h-9 px-3 rounded-control border border-border bg-canvas text-xs text-text-primary">
+                   class="min-h-11 w-full min-w-0 rounded-control border border-border bg-white px-3 py-2 text-sm focus:border-primary focus:ring-primary" />
+        </x-slot:search>
+        <x-slot:statuses>
+        <button type="button" wire:click="$set('statusFilter', 'all')" wire:loading.attr="disabled" wire:target="statusFilter" aria-pressed="{{ $statusFilter === 'all' ? 'true' : 'false' }}" class="touch-action shrink-0 border text-sm font-semibold {{ $statusFilter === 'all' ? 'border-primary bg-primary text-white' : 'border-border bg-white text-text-secondary' }}">{{ __('sales.all') }}</button>
+        <button type="button" wire:click="$set('statusFilter', 'draft')" wire:loading.attr="disabled" wire:target="statusFilter" aria-pressed="{{ $statusFilter === 'draft' ? 'true' : 'false' }}" class="touch-action shrink-0 border text-sm font-semibold {{ $statusFilter === 'draft' ? 'border-primary bg-primary text-white' : 'border-border bg-white text-text-secondary' }}">{{ __('sales.draft') }}</button>
+        <button type="button" wire:click="$set('statusFilter', 'posted')" wire:loading.attr="disabled" wire:target="statusFilter" aria-pressed="{{ $statusFilter === 'posted' ? 'true' : 'false' }}" class="touch-action shrink-0 border text-sm font-semibold {{ $statusFilter === 'posted' ? 'border-primary bg-primary text-white' : 'border-border bg-white text-text-secondary' }}">{{ __('sales.posted') }}</button>
+        <button type="button" wire:click="$set('statusFilter', 'void')" wire:loading.attr="disabled" wire:target="statusFilter" aria-pressed="{{ $statusFilter === 'void' ? 'true' : 'false' }}" class="touch-action shrink-0 border text-sm font-semibold {{ $statusFilter === 'void' ? 'border-primary bg-primary text-white' : 'border-border bg-white text-text-secondary' }}">{{ __('sales.voided') }}</button>
+        </x-slot:statuses>
+        <select aria-label="{{ __('sales.all') }}" wire:model.live="statusFilter" class="min-h-11 h-11 px-3 rounded-control border border-border bg-canvas text-xs text-text-primary">
                 <option value="all">{{ __('sales.all') }}</option>
                 <option value="draft">{{ __('sales.draft') }}</option>
                 <option value="posted">{{ __('sales.posted') }}</option>
                 <option value="void">{{ __('sales.voided') }}</option>
             </select>
-
-            <select wire:model.live="customerFilter" class="h-9 px-3 rounded-control border border-border bg-canvas text-xs text-text-primary">
+        <select aria-label="{{ __('sales.select_customer') }}" wire:model.live="customerFilter" class="min-h-11 h-11 px-3 rounded-control border border-border bg-canvas text-xs text-text-primary">
                 <option value="">{{ __('sales.select_customer') }}</option>
                 @foreach ($customers as $c)
                     <option value="{{ $c->id }}">{{ $c->displayName() }}</option>
                 @endforeach
             </select>
-        </div>
-    </div>
+    </x-refinement-filters>
 
     <!-- Returns Table -->
     <div class="bg-white rounded-card border border-border shadow-xs overflow-hidden">
@@ -69,18 +68,18 @@
                     @forelse ($returns as $ret)
                         <tr class="hover:bg-surface-soft/60 transition-colors">
                             <td class="py-3 px-4 font-mono font-bold" dir="ltr">
-                                <a href="{{ route('returns.show', $ret->public_id) }}" class="text-primary hover:underline">
+                                <a href="{{ route('returns.show', $ret->public_id) }}" class="touch-action text-primary hover:underline">
                                     {{ $ret->return_number ?? __('sales.draft') }}
                                 </a>
                             </td>
                             <td class="py-3 px-4">
-                                <a href="{{ route('customers.show', $ret->customer->public_id) }}" class="font-bold text-text-primary hover:text-primary">
+                                <a href="{{ route('customers.show', $ret->customer->public_id) }}" class="touch-action font-bold text-text-primary hover:text-primary">
                                     {{ $ret->customer->displayName() }}
                                 </a>
                             </td>
                             <td class="py-3 px-4 font-mono" dir="ltr">
                                 @if ($ret->salesInvoice)
-                                    <a href="{{ route('invoices.show', $ret->salesInvoice->public_id) }}" class="text-text-secondary hover:text-primary underline">
+                                    <a href="{{ route('invoices.show', $ret->salesInvoice->public_id) }}" class="touch-action text-text-secondary hover:text-primary underline">
                                         {{ $ret->salesInvoice->invoice_number }}
                                     </a>
                                 @else
@@ -94,16 +93,13 @@
                                 {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($ret->grand_total_currency ?? $ret->grand_total, $ret->currency_code) }} {{ $ret->currency_code }}
                             </td>
                             <td class="py-3 px-4">
-                                <span class="px-2 py-0.5 rounded-full text-[10px] font-bold
-                                    @if ($ret->status === 'posted') bg-success-bg text-success
-                                    @elseif ($ret->status === 'void') bg-danger-bg text-danger
-                                    @else bg-slate-100 text-slate-600 @endif">
+                                <span class="px-2 py-0.5 rounded-full text-[10px] font-bold @if ($ret->status === 'posted') bg-success-bg text-success @elseif ($ret->status === 'void') bg-danger-bg text-danger @else bg-slate-100 text-slate-600 @endif">
                                     {{ __('sales.' . $ret->status) }}
                                 </span>
                             </td>
                             <td class="py-3 px-4 text-end">
                                 <a href="{{ route('returns.show', $ret->public_id) }}"
-                                   class="px-2 py-1 rounded-control bg-surface-soft hover:bg-primary-50 text-text-secondary hover:text-primary font-bold text-[11px] transition-colors">
+                                   class="touch-action bg-surface-soft hover:bg-primary-50 text-text-secondary hover:text-primary font-bold text-[11px] transition-colors">
                                     {{ __('sales.return_details') }}
                                 </a>
                             </td>
@@ -126,17 +122,14 @@
                 <div class="p-4 space-y-3">
                     <div class="flex items-start justify-between gap-2">
                         <div>
-                            <a href="{{ route('returns.show', $ret->public_id) }}" class="font-mono font-bold text-primary" dir="ltr">
+                            <a href="{{ route('returns.show', $ret->public_id) }}" class="touch-action font-mono font-bold text-primary" dir="ltr">
                                 {{ $ret->return_number ?? __('sales.draft') }}
                             </a>
                             <div class="font-bold text-text-primary text-xs mt-0.5">
                                 {{ $ret->customer->displayName() }}
                             </div>
                         </div>
-                        <span class="px-2 py-0.5 rounded-full text-[10px] font-bold
-                            @if ($ret->status === 'posted') bg-success-bg text-success
-                            @elseif ($ret->status === 'void') bg-danger-bg text-danger
-                            @else bg-slate-100 text-slate-600 @endif">
+                        <span class="px-2 py-0.5 rounded-full text-[10px] font-bold @if ($ret->status === 'posted') bg-success-bg text-success @elseif ($ret->status === 'void') bg-danger-bg text-danger @else bg-slate-100 text-slate-600 @endif">
                             {{ __('sales.' . $ret->status) }}
                         </span>
                     </div>
@@ -154,7 +147,7 @@
 
                     <div class="pt-2 border-t border-border flex justify-end">
                         <a href="{{ route('returns.show', $ret->public_id) }}"
-                           class="px-3 py-1.5 rounded-control bg-surface-soft text-text-primary text-xs font-bold">
+                           class="touch-action bg-surface-soft text-text-primary text-xs font-bold">
                             {{ __('sales.return_details') }}
                         </a>
                     </div>

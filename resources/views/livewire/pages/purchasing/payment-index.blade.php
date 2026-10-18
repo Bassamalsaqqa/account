@@ -13,7 +13,7 @@
         @if ($canCreate)
             <div class="flex items-center gap-2">
                 <a href="{{ route('vendor-payments.create') }}"
-                   class="inline-flex items-center justify-center gap-1.5 px-4 h-9 rounded-control bg-primary text-white text-xs font-bold hover:bg-primary-hover transition-colors shadow-sm">
+                   class="touch-action gap-1.5 bg-primary text-white text-xs font-bold hover:bg-primary-hover transition-colors shadow-sm">
                     <x-icon name="plus" class="w-4 h-4" />
                     <span>{{ __('purchasing.new_vendor_payment') }}</span>
                 </a>
@@ -22,33 +22,27 @@
     </div>
 
     <!-- Filters & Search Bar -->
-    <div class="bg-white p-4 rounded-card border border-border shadow-xs flex flex-col md:flex-row gap-4 items-stretch md:items-center justify-between">
-        <div class="flex-1 max-w-md relative">
-            <input type="text"
+    <x-refinement-filters :active-count="(int) filled($vendorFilter) + (int) filled($accountFilter)">
+        <x-slot:search>
+            <input aria-label="{{ __('purchasing.search_purchases') }}" type="text"
                    wire:model.live.debounce.300ms="search"
                    placeholder="{{ __('purchasing.search_purchases') }}"
-                   class="w-full h-9 pl-9 pr-3 rounded-control border border-border bg-canvas text-xs text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden" />
-            <div class="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none text-text-muted">
-                <x-icon name="search" class="w-4 h-4" />
-            </div>
-        </div>
+                   class="min-h-11 w-full min-w-0 rounded-control border border-border bg-white px-3 py-2 text-sm focus:border-primary focus:ring-primary" />
+        </x-slot:search>
 
-        <div class="flex flex-wrap items-center gap-3">
-            <select wire:model.live="vendorFilter" class="h-9 px-3 rounded-control border border-border bg-canvas text-xs text-text-primary">
+        <select aria-label="{{ __('purchasing.select_vendor') }}" wire:model.live="vendorFilter" class="min-h-11 h-11 px-3 rounded-control border border-border bg-canvas text-xs text-text-primary">
                 <option value="">{{ __('purchasing.select_vendor') }}</option>
                 @foreach ($vendors as $v)
                     <option value="{{ $v->id }}">{{ $v->displayName() }}</option>
                 @endforeach
             </select>
-
-            <select wire:model.live="accountFilter" class="h-9 px-3 rounded-control border border-border bg-canvas text-xs text-text-primary">
+        <select aria-label="{{ __('purchasing.select_money_account') }}" wire:model.live="accountFilter" class="min-h-11 h-11 px-3 rounded-control border border-border bg-canvas text-xs text-text-primary">
                 <option value="">{{ __('purchasing.select_money_account') }}</option>
                 @foreach ($accounts as $acc)
                     <option value="{{ $acc->id }}">{{ $acc->displayName() }} ({{ $acc->currency_code }})</option>
                 @endforeach
             </select>
-        </div>
-    </div>
+    </x-refinement-filters>
 
     <!-- Payments Table -->
     <div class="bg-white rounded-card border border-border shadow-xs overflow-hidden">
@@ -72,13 +66,13 @@
                     @forelse ($payments as $pmt)
                         <tr class="hover:bg-surface-soft/60 transition-colors">
                             <td class="py-3 px-4 font-mono font-bold" dir="ltr">
-                                <a href="{{ route('vendor-payments.show', $pmt->public_id) }}" class="text-primary hover:underline">
+                                <a href="{{ route('vendor-payments.show', $pmt->public_id) }}" class="touch-action text-primary hover:underline">
                                     {{ $pmt->payment_number }}
                                 </a>
                             </td>
                             <td class="py-3 px-4">
                                 @if ($pmt->vendor || isset($pmt->vendor_snapshot['public_id']))
-                                    <a href="{{ route('vendors.show', $pmt->vendor?->public_id ?? $pmt->vendor_snapshot['public_id']) }}" class="font-bold text-text-primary hover:text-primary">
+                                    <a href="{{ route('vendors.show', $pmt->vendor?->public_id ?? $pmt->vendor_snapshot['public_id']) }}" class="touch-action font-bold text-text-primary hover:text-primary">
                                         {{ $pmt->vendorDisplayName() }}
                                     </a>
                                 @else
@@ -118,7 +112,7 @@
                             </td>
                             <td class="py-3 px-4 text-end">
                                 <a href="{{ route('vendor-payments.show', $pmt->public_id) }}"
-                                   class="px-2 py-1 rounded-control bg-surface-soft hover:bg-primary-50 text-text-secondary hover:text-primary font-bold text-[11px] transition-colors">
+                                   class="touch-action bg-surface-soft hover:bg-primary-50 text-text-secondary hover:text-primary font-bold text-[11px] transition-colors">
                                     {{ __('purchasing.vendor_details') }}
                                 </a>
                             </td>
@@ -141,7 +135,7 @@
                 <div class="p-4 space-y-3">
                     <div class="flex items-start justify-between gap-2">
                         <div>
-                            <a href="{{ route('vendor-payments.show', $pmt->public_id) }}" class="font-mono font-bold text-primary" dir="ltr">
+                            <a href="{{ route('vendor-payments.show', $pmt->public_id) }}" class="touch-action font-mono font-bold text-primary" dir="ltr">
                                 {{ $pmt->payment_number }}
                             </a>
                             <div class="font-bold text-text-primary text-xs mt-0.5">
@@ -185,7 +179,7 @@
                     </div>
 
                     <div class="pt-2 border-t border-border flex justify-end">
-                        <a href="{{ route('vendor-payments.show', $pmt->public_id) }}" class="text-xs font-bold text-primary hover:underline">
+                        <a href="{{ route('vendor-payments.show', $pmt->public_id) }}" class="touch-action text-xs font-bold text-primary hover:underline">
                             {{ __('purchasing.vendor_details') }} &rarr;
                         </a>
                     </div>

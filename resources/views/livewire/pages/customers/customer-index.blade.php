@@ -13,7 +13,7 @@
         @if ($canManage)
             <div class="flex items-center gap-2">
                 <a href="{{ route('customers.create') }}"
-                   class="inline-flex items-center justify-center gap-1.5 px-4 h-9 rounded-control bg-primary text-white text-xs font-bold hover:bg-primary-hover transition-colors shadow-sm">
+                   class="touch-action gap-1.5 bg-primary text-white text-xs font-bold hover:bg-primary-hover transition-colors shadow-sm">
                     <x-icon name="plus" class="w-4 h-4" />
                     <span>{{ __('sales.new_customer') }}</span>
                 </a>
@@ -22,37 +22,30 @@
     </div>
 
     <!-- Filters & Search Bar -->
-    <div class="bg-white p-4 rounded-card border border-border shadow-xs flex flex-col md:flex-row gap-4 items-stretch md:items-center justify-between">
-        <div class="flex-1 max-w-md relative">
+    <x-refinement-filters :active-count="(int) ($statusFilter !== 'all')">
+        <x-slot:search>
             <input id="customers-search" aria-label="{{ __('sales.search') }}" type="text"
                    wire:model.live.debounce.300ms="search"
                    placeholder="{{ __('sales.search') }}"
-                   class="w-full h-11 ps-9 pe-3 rounded-control border border-border bg-canvas text-sm text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden" />
-            <div class="absolute inset-y-0 start-0 ps-2.5 flex items-center pointer-events-none text-text-muted">
-                <x-icon name="search" class="w-4 h-4" />
-            </div>
-        </div>
-
-        <div class="flex items-center gap-3">
-            <div class="flex items-center gap-1 text-xs">
-                <button type="button"
-                        wire:click="$set('statusFilter', 'all')"
-                        class="px-3 py-1.5 rounded-control font-semibold transition-colors {{ $statusFilter === 'all' ? 'bg-primary text-white' : 'bg-surface-soft text-text-secondary hover:text-text-primary' }}">
+                   class="min-h-11 w-full min-w-0 rounded-control border border-border bg-white px-3 py-2 text-sm focus:border-primary focus:ring-primary" />
+        </x-slot:search>
+        <x-slot:statuses><button wire:loading.attr="disabled" type="button"
+                        wire:click="$set('statusFilter', 'all')" aria-pressed="{{ $statusFilter === 'all' ? 'true' : 'false' }}"
+                        class="touch-action font-semibold transition-colors {{ $statusFilter === 'all' ? 'bg-primary text-white' : 'bg-surface-soft text-text-secondary hover:text-text-primary' }}">
                     {{ __('sales.all') }}
                 </button>
-                <button type="button"
-                        wire:click="$set('statusFilter', 'active')"
-                        class="px-3 py-1.5 rounded-control font-semibold transition-colors {{ $statusFilter === 'active' ? 'bg-primary text-white' : 'bg-surface-soft text-text-secondary hover:text-text-primary' }}">
+        <button wire:loading.attr="disabled" type="button"
+                        wire:click="$set('statusFilter', 'active')" aria-pressed="{{ $statusFilter === 'active' ? 'true' : 'false' }}"
+                        class="touch-action font-semibold transition-colors {{ $statusFilter === 'active' ? 'bg-primary text-white' : 'bg-surface-soft text-text-secondary hover:text-text-primary' }}">
                     {{ __('sales.active') }}
                 </button>
-                <button type="button"
-                        wire:click="$set('statusFilter', 'inactive')"
-                        class="px-3 py-1.5 rounded-control font-semibold transition-colors {{ $statusFilter === 'inactive' ? 'bg-primary text-white' : 'bg-surface-soft text-text-secondary hover:text-text-primary' }}">
+        <button wire:loading.attr="disabled" type="button"
+                        wire:click="$set('statusFilter', 'inactive')" aria-pressed="{{ $statusFilter === 'inactive' ? 'true' : 'false' }}"
+                        class="touch-action font-semibold transition-colors {{ $statusFilter === 'inactive' ? 'bg-primary text-white' : 'bg-surface-soft text-text-secondary hover:text-text-primary' }}">
                     {{ __('sales.inactive') }}
-                </button>
-            </div>
-        </div>
-    </div>
+                </button></x-slot:statuses>
+
+    </x-refinement-filters>
 
     <!-- Customers Table / Cards -->
     <div class="bg-white rounded-card border border-border shadow-xs overflow-hidden">
@@ -76,7 +69,7 @@
                                 {{ $customer->code ?? '—' }}
                             </td>
                             <td class="py-3 px-4">
-                                <a href="{{ route('customers.show', $customer->public_id) }}" class="font-bold text-text-primary hover:text-primary transition-colors">
+                                <a href="{{ route('customers.show', $customer->public_id) }}" class="touch-action font-bold text-text-primary hover:text-primary transition-colors">
                                     {{ $customer->displayName() }}
                                 </a>
                                 @if ($customer->business_name_ar || $customer->business_name_en)
@@ -116,12 +109,12 @@
                             <td class="py-3 px-4 text-end">
                                 <div class="flex items-center justify-end gap-2">
                                     <a href="{{ route('customers.show', $customer->public_id) }}"
-                                       class="px-2 py-1 rounded-control bg-surface-soft hover:bg-primary-50 text-text-secondary hover:text-primary font-bold text-[11px] transition-colors">
+                                       class="touch-action bg-surface-soft hover:bg-primary-50 text-text-secondary hover:text-primary font-bold text-[11px] transition-colors">
                                         {{ __('sales.customer_details') }}
                                     </a>
                                     @if ($canManage)
                                         <a href="{{ route('customers.edit', $customer->public_id) }}"
-                                           class="px-2 py-1 rounded-control bg-surface-soft hover:bg-slate-200 text-text-secondary font-bold text-[11px] transition-colors">
+                                           class="touch-action bg-surface-soft hover:bg-slate-200 text-text-secondary font-bold text-[11px] transition-colors">
                                             {{ __('sales.edit_customer') }}
                                         </a>
                                     @endif
@@ -146,7 +139,7 @@
                 <div class="p-4 space-y-3">
                     <div class="flex items-start justify-between gap-2">
                         <div>
-                            <a href="{{ route('customers.show', $customer->public_id) }}" class="font-bold text-text-primary text-sm hover:text-primary">
+                            <a href="{{ route('customers.show', $customer->public_id) }}" class="touch-action font-bold text-text-primary text-sm hover:text-primary">
                                 {{ $customer->displayName() }}
                             </a>
                             @if ($customer->business_name_ar || $customer->business_name_en)
@@ -191,18 +184,18 @@
 
                     <div class="flex flex-wrap items-center justify-end gap-2 pt-2 border-t border-border">
                         @can('sales.invoice.create')
-                            <a href="{{ route('invoices.create', ['customer_id' => $customer->id]) }}" class="min-h-11 inline-flex items-center px-3 rounded-control bg-primary-50 text-primary text-xs font-bold">{{ __('mobile.new_invoice') }}</a>
+                            <a href="{{ route('invoices.create', ['customer_id' => $customer->id]) }}" class="touch-action bg-primary-50 text-primary text-xs font-bold">{{ __('mobile.new_invoice') }}</a>
                         @endcan
                         @can('money.receipt.create')
-                            <a href="{{ route('payments.create', ['customer_id' => $customer->id]) }}" class="min-h-11 inline-flex items-center px-3 rounded-control border border-border text-xs font-bold">{{ __('mobile.record_payment') }}</a>
+                            <a href="{{ route('payments.create', ['customer_id' => $customer->id]) }}" class="touch-action border border-border text-xs font-bold">{{ __('mobile.record_payment') }}</a>
                         @endcan
                         <a href="{{ route('customers.show', $customer->public_id) }}"
-                           class="px-3 py-1.5 rounded-control bg-surface-soft text-text-primary text-xs font-bold">
+                           class="touch-action bg-surface-soft text-text-primary text-xs font-bold">
                             {{ __('sales.customer_details') }}
                         </a>
                         @if ($canManage)
                             <a href="{{ route('customers.edit', $customer->public_id) }}"
-                               class="px-3 py-1.5 rounded-control bg-surface-soft text-text-secondary text-xs font-semibold">
+                               class="touch-action bg-surface-soft text-text-secondary text-xs font-semibold">
                                 {{ __('sales.edit_customer') }}
                             </a>
                         @endif
