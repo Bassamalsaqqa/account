@@ -98,6 +98,19 @@ test('recovery cannot start during an unresolved request and failed recovery rem
     finish();await assert.rejects(tap);wire.recalculate=async()=>{throw Error('still offline');};
     await assert.rejects(resyncDocumentQueue(wire));assert.equal(isDocumentBlocked(wire),true);
 });
+test('unresolved request times out truthfully; recovery waits for its late response and never replays',async()=>{
+    const {wire,calls}=fixture('never-settles');let finish;let requests=0;
+    wire.batchStepQuantity=()=>{requests++;return new Promise(resolve=>{finish=()=>{wire.lines[0].quantity='2';resolve({ok:true,quantity:'2'});};});};
+    const tap=enqueueQuantityStep(wire,0,'up',{debounceMs:0,timeoutMs:10});
+    const save=enqueueDocumentOperation(wire,'saveDraft');
+    const outcomes=await Promise.allSettled([tap,save]);
+    assert.ok(outcomes.every(result=>result.status==='rejected'));
+    assert.equal(isDocumentBlocked(wire),true);assert.equal(isDocumentBusy(wire),true);
+    await assert.rejects(resyncDocumentQueue(wire),/Wait/);assert.equal(calls.length,0);
+    finish();await wait(1);assert.equal(isDocumentBusy(wire),false);assert.equal(isDocumentBlocked(wire),true);
+    await resyncDocumentQueue(wire);assert.equal(wire.lines[0].quantity,'2');assert.equal(requests,1);
+    assert.deepEqual(calls.map(call=>call.method),['recalculate']);
+});
 test('legacy generic FIFO stays serialized and independent documents remain independent',async()=>{
     const trace=[];let active=0,max=0;
     const perform=async name=>{active++;max=Math.max(max,active);await wait(5);trace.push(name);active--;if(name==='fail')throw Error('refused');};

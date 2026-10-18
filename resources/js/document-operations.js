@@ -37,6 +37,7 @@ function quarantine(state, job, failure) {
         settle(queued, 'reject', error('Document operation blocked; review pending quantity changes'));
     }
     settle(job, 'reject', failure);
+    announce(state);
 }
 async function drain(state) {
     if (state.active || state.blocked || !state.jobs[0]?.ready) return;
@@ -50,6 +51,12 @@ async function drain(state) {
             if (!current || !same(identityFor(current), job.identity)) throw error('Line changed; review pending quantity changes');
             const confirmed = state.confirmed.get(job.index);
             const expected = confirmed && same(confirmed.identity, job.identity) ? confirmed.quantity : job.expected;
+            // A timeout is an ambiguous outcome, not permission to cancel/replay the edit.
+            // Keep the actual request active so a late response cannot race recovery.
+            job.timeout = setTimeout(() => {
+                job.timedOut = true;
+                quarantine(state, job, error('Quantity confirmation timed out; wait for the current request before reviewing'));
+            }, job.timeoutMs);
             result = await state.wire.batchStepQuantity(job.index, expected, job.identity, [...job.directions]);
             if (!result?.ok || typeof result.quantity !== 'string') throw error(result?.message || 'Quantity change refused; review the line');
             state.confirmed.set(job.index, {identity: job.identity, quantity: result.quantity});
@@ -59,9 +66,10 @@ async function drain(state) {
         }
         settle(job, 'resolve', result);
     } catch (failure) {
-        if (job.kind === 'quantity') quarantine(state, job, failure);
+        if (job.kind === 'quantity' && !job.timedOut) quarantine(state, job, failure);
         else settle(job, 'reject', failure);
     } finally {
+        clearTimeout(job.timeout);
         state.active = null;
         announce(state);
         if (!state.blocked && !state.jobs.length) queues.delete(keyFor(state.wire));
@@ -84,7 +92,7 @@ export function enqueueQuantityStep(wire, index, direction, options = {}) {
     if (!job || job.index !== index || !same(job.identity, identity) || job.directions.length >= 100) {
         if (state.jobs.length >= 10) return Promise.reject(error('Document queue full'));
         seal(state);
-        job = {kind: 'quantity', index, expected: line.quantity, identity, directions: [], waiters: [], ready: false, timer: null, created: Date.now()};
+        job = {kind: 'quantity', index, expected: line.quantity, identity, directions: [], waiters: [], ready: false, timer: null, created: Date.now(), timeoutMs: Math.min(30000, Math.max(1, Number(options.timeoutMs) || 30000))};
         state.jobs.push(job);
         state.open = job;
     }
