@@ -6,7 +6,9 @@ namespace Tests\Feature\Refinement;
 
 use App\Actions\Company\CreateCompanyAction;
 use App\Actions\Sales\CreateSalesInvoiceDraftAction;
+use App\Actions\Sales\CreateSalesReturnDraftAction;
 use App\Actions\Sales\PostSalesInvoiceAction;
+use App\Actions\Sales\PostSalesReturnAction;
 use App\Livewire\Pages\Inventory\OpeningStockForm;
 use App\Livewire\Pages\Inventory\StockAdjustmentForm;
 use App\Livewire\Pages\Inventory\StockTransferForm;
@@ -25,6 +27,7 @@ use App\Services\Purchasing\VendorCatalogService;
 use App\Support\Tenancy\CompanyContext;
 use Brick\Math\BigDecimal;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 use Livewire\Livewire;
 use Tests\Feature\Phase5E\Phase5ETestCase;
 
@@ -368,6 +371,64 @@ class RefinementDraftControlsTest extends Phase5ETestCase
         $vendor->call('useFullBalance')->assertHasNoErrors();
         $this->assertTrue(BigDecimal::of($vendor->get('amount'))->isEqualTo('280'));
         $this->assertSame($before, $vendor->get('allocations'));
+    }
+
+    public function test_vendor_payment_shortcuts_reject_whitespace_rate_before_mutating_draft(): void
+    {
+        $purchase = $this->createAndPostPurchase(['lines' => [['product_id' => $this->product->id, 'quantity' => '2', 'unit_cost' => '40']]]);
+        foreach (['payRemaining', 'useFullBalance'] as $method) {
+            $component = Livewire::test(PurchasingPaymentForm::class, ['vendor_id' => $this->vendor->id])
+                ->set('money_account_id', $this->ilsCashAccount->id);
+            $form = $component->instance();
+            if (! $form instanceof PurchasingPaymentForm) {
+                $this->fail('Expected the vendor payment component.');
+            }
+            // Exercise the public handler boundary without invoking the separate input-update hook.
+            $form->exchange_rate = '   ';
+            $form->amount = '7.00';
+            $beforeAllocations = $form->allocations;
+            $beforeCounts = $this->economicCounts();
+            $index = array_search($purchase->id, array_column($form->allocations, 'purchase_id'), true);
+            $this->assertNotFalse($index);
+            try {
+                $method === 'payRemaining' ? $form->payRemaining($index) : $form->useFullBalance();
+                $this->fail('Whitespace rate must yield a field validation error.');
+            } catch (ValidationException $exception) {
+                $this->assertArrayHasKey('exchange_rate', $exception->errors());
+                $this->assertNotSame('', $exception->errors()['exchange_rate'][0]);
+            }
+            $this->assertSame('   ', $form->exchange_rate);
+            $this->assertSame('7.00', $form->amount);
+            $this->assertSame($beforeAllocations, $form->allocations);
+            $this->assertSame($beforeCounts, $this->economicCounts());
+        }
+    }
+
+    public function test_payment_shortcuts_preserve_edits_when_fresh_document_is_fully_returned(): void
+    {
+        $purchase = $this->createAndPostPurchase(['lines' => [['product_id' => $this->product->id, 'quantity' => '2', 'unit_cost' => '40']]]);
+        $draft = app(CreateSalesInvoiceDraftAction::class)->execute($this->company, $this->owner, [
+            'customer_id' => $this->customer->id, 'currency_code' => 'ILS', 'exchange_rate' => '1',
+            'issue_date' => '2026-10-02', 'lines' => [['product_id' => $this->product->id, 'item_description' => 'Item', 'quantity' => '1', 'unit_price' => '50']],
+        ]);
+        $invoice = app(PostSalesInvoiceAction::class)->execute($draft, $this->owner);
+        $sales = Livewire::test(SalesPaymentForm::class, ['customer_id' => $this->customer->id])
+            ->set('money_account_id', $this->ilsCashAccount->id)->set('amount', '7');
+        $vendor = Livewire::test(PurchasingPaymentForm::class, ['vendor_id' => $this->vendor->id])
+            ->set('money_account_id', $this->ilsCashAccount->id)->set('amount', '7');
+        $return = app(CreateSalesReturnDraftAction::class)->execute($this->company, $this->owner, [
+            'sales_invoice_id' => $invoice->id, 'issue_date' => '2026-10-02',
+            'lines' => [['sales_invoice_line_id' => $invoice->lines()->firstOrFail()->id, 'quantity' => '1']],
+        ]);
+        app(PostSalesReturnAction::class)->execute($return, $this->owner);
+        $this->createAndPostReturn($purchase, ['lines' => [['quantity' => '2']]]);
+        foreach ([$sales, $vendor] as $component) {
+            $before = $component->get('allocations');
+            $beforeCounts = $this->economicCounts();
+            $component->call('payRemaining', 0)->assertHasErrors('allocations')->assertSet('amount', '7');
+            $this->assertSame($before, $component->get('allocations'));
+            $this->assertSame($beforeCounts, $this->economicCounts());
+        }
     }
 
     public function test_payment_and_return_actions_refuse_revoked_memberships(): void

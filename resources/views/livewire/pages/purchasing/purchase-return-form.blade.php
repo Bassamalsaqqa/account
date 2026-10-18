@@ -1,7 +1,7 @@
 <div class="space-y-6" x-data="{
-        saving: false, operationFailed: false,
+        saving: false, documentBusy: false, operationFailed: false,
         run(method, args = [], terminal = false) {
-            if (this.saving) return;
+            if (this.saving || window.isDocumentBlocked($wire)) return;
             if (terminal &amp;&amp; [...document.querySelectorAll('[role=dialog]')].some(el => el.getClientRects().length > 0)) return;
             if (terminal) this.saving = true;
             this.operationFailed = false;
@@ -9,7 +9,8 @@
                 .catch(() => { this.operationFailed = true; })
                 .finally(() => { if (terminal) this.saving = false; });
         }
-    }">
+    }" @document-operation-state.window="if ($event.detail.id === $wire.$id) documentBusy = $event.detail.busy">
+    <x-draft-operation-feedback />
     <p x-cloak x-show="operationFailed" role="alert" class="text-sm text-danger">{{ __('camera.network_error') }}</p>
     <header class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
@@ -24,7 +25,7 @@
             <a href="{{ $mode === 'create' ? route('purchases.show', $purchasePublicId) : route('purchase-returns.show', $returnPublicId) }}" class="min-h-11 inline-flex items-center justify-center gap-2 px-3 active:bg-surface-soft focus-visible:ring-2 focus-visible:ring-primary h-11 px-4 rounded-control border border-border text-sm font-semibold hover:bg-surface-soft">
                 {{ __('purchasing.cancel') }}
             </a>
-            <button type="button" @click="run('saveDraft', [], true)" :disabled="saving" wire:loading.attr="disabled" class="min-h-11 inline-flex items-center justify-center gap-2 px-3 active:bg-surface-soft focus-visible:ring-2 focus-visible:ring-primary h-11 px-4 rounded-control bg-primary text-white text-sm font-bold disabled:opacity-50">
+            <button type="button" @click="run('saveDraft', [], true)" :disabled="saving || window.isDocumentBlocked($wire)" wire:loading.attr="disabled" class="min-h-11 inline-flex items-center justify-center gap-2 px-3 active:bg-surface-soft focus-visible:ring-2 focus-visible:ring-primary h-11 px-4 rounded-control bg-primary text-white text-sm font-bold disabled:opacity-50">
                 {{ __('purchasing.save_draft') }}
             </button>
         </div>
@@ -70,14 +71,14 @@
                 <label for="return_date" class="block text-xs font-semibold text-text-secondary mb-1">
                     {{ __('purchasing.return_date') }} *
                 </label>
-                <input type="date" id="return_date" wire:model="return_date" min="{{ $purchaseDate }}" class="w-full h-11 px-3 rounded-control border border-border text-sm" />
+                <input type="date" id="return_date" wire:model="return_date" min="{{ $purchaseDate }}" class="w-full h-11 px-3 rounded-control border border-border text-sm"  :disabled="documentBusy || saving"/>
                 @error('return_date') <p class="text-danger text-xs mt-1">{{ $message }}</p> @enderror
             </div>
             <div>
                 <label for="reason" class="block text-xs font-semibold text-text-secondary mb-1">
                     {{ __('purchasing.return_reason') }}
                 </label>
-                <input type="text" id="reason" wire:model="reason" placeholder="{{ __('purchasing.return_reason') }}" class="w-full h-11 px-3 rounded-control border border-border text-sm" />
+                <input type="text" id="reason" wire:model="reason" placeholder="{{ __('purchasing.return_reason') }}" class="w-full h-11 px-3 rounded-control border border-border text-sm"  :disabled="documentBusy || saving"/>
                 @error('reason') <p class="text-danger text-xs mt-1">{{ $message }}</p> @enderror
             </div>
         </div>
@@ -85,7 +86,7 @@
             <label for="notes" class="block text-xs font-semibold text-text-secondary mb-1">
                 {{ __('purchasing.notes') }}
             </label>
-            <textarea id="notes" wire:model="notes" rows="2" class="w-full p-3 rounded-control border border-border text-sm"></textarea>
+            <textarea id="notes" wire:model="notes" rows="2" class="w-full p-3 rounded-control border border-border text-sm" :disabled="documentBusy || saving"></textarea>
             @error('notes') <p class="text-danger text-xs mt-1">{{ $message }}</p> @enderror
         </div>
     </section>
@@ -120,11 +121,11 @@
                     <div class="col-span-2 sm:col-span-3">
                         <label class="text-text-secondary font-semibold">{{ __('purchasing.return_quantity') }}</label>
                         <div class="flex items-center gap-2" dir="ltr">
-    <button type="button" @click="run('stepReturnQuantity', [{{ $idx }}, 'down'])" :disabled="saving" wire:loading.attr="disabled" class="min-h-11 min-w-11 rounded-control border border-border bg-white px-3 font-semibold disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-primary" aria-label="{{ __('refinement.decrease_quantity') }}">-</button>
-    <input type="text" inputmode="decimal" wire:model="lines.{{ $idx }}.return_quantity" dir="ltr" aria-label="{{ __('refinement.return_quantity') }}" class="min-h-11 min-w-0 w-full px-2 rounded-control border border-border text-center font-mono tabular-nums" />
-    <button type="button" @click="run('stepReturnQuantity', [{{ $idx }}, 'up'])" :disabled="saving" wire:loading.attr="disabled" class="min-h-11 min-w-11 rounded-control border border-border bg-white px-3 font-semibold disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-primary" aria-label="{{ __('refinement.increase_quantity') }}">+</button>
+    <button type="button" @click="run('stepReturnQuantity', [{{ $idx }}, 'down'])" :disabled="saving || window.isDocumentBlocked($wire)" wire:loading.attr="disabled" class="min-h-11 min-w-11 rounded-control border border-border bg-white px-3 font-semibold disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-primary" aria-label="{{ __('refinement.decrease_quantity') }}">-</button>
+    <input type="text" inputmode="decimal" wire:model="lines.{{ $idx }}.return_quantity" dir="ltr" aria-label="{{ __('refinement.return_quantity') }}" class="min-h-11 min-w-0 w-full px-2 rounded-control border border-border text-center font-mono tabular-nums"  :disabled="documentBusy || saving"/>
+    <button type="button" @click="run('stepReturnQuantity', [{{ $idx }}, 'up'])" :disabled="saving || window.isDocumentBlocked($wire)" wire:loading.attr="disabled" class="min-h-11 min-w-11 rounded-control border border-border bg-white px-3 font-semibold disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-primary" aria-label="{{ __('refinement.increase_quantity') }}">+</button>
 </div>
-<button type="button" @click="run('returnFullRemaining', [{{ $idx }}])" :disabled="saving" wire:loading.attr="disabled" class="min-h-11 w-full mt-2 rounded-control border border-primary px-3 py-2 text-primary font-semibold disabled:opacity-50">{{ __('refinement.return_remaining') }}</button>
+<button type="button" @click="run('returnFullRemaining', [{{ $idx }}])" :disabled="saving || window.isDocumentBlocked($wire)" wire:loading.attr="disabled" class="min-h-11 w-full mt-2 rounded-control border border-primary px-3 py-2 text-primary font-semibold disabled:opacity-50">{{ __('refinement.return_remaining') }}</button>
                     </div>
                 </div>
 
@@ -157,7 +158,7 @@
                                     </div>
                                     <div>
                                         <label for="alloc_qty_{{ $idx }}_{{ $aIdx }}" class="text-text-secondary block text-[10px]">{{ __('purchasing.return_quantity') }}</label>
-                                        <input type="text" id="alloc_qty_{{ $idx }}_{{ $aIdx }}" wire:model="lines.{{ $idx }}.allocations.{{ $aIdx }}.quantity" placeholder="0" class="w-full min-h-11 px-2 rounded-control border border-border text-xs text-end" dir="ltr" inputmode="decimal" />
+                                        <input type="text" id="alloc_qty_{{ $idx }}_{{ $aIdx }}" wire:model="lines.{{ $idx }}.allocations.{{ $aIdx }}.quantity" placeholder="0" class="w-full min-h-11 px-2 rounded-control border border-border text-xs text-end" dir="ltr" inputmode="decimal"  :disabled="documentBusy || saving"/>
                                         @error("lines.{$idx}.allocations.{$aIdx}.quantity")
                                             <p class="text-danger text-[10px]">{{ $message }}</p>
                                         @enderror
@@ -176,7 +177,7 @@
         <a href="{{ $mode === 'create' ? route('purchases.show', $purchasePublicId) : route('purchase-returns.show', $returnPublicId) }}" class="min-h-11 inline-flex items-center justify-center gap-2 px-3 active:bg-surface-soft focus-visible:ring-2 focus-visible:ring-primary h-11 px-4 rounded-control border border-border text-sm font-semibold hover:bg-surface-soft">
             {{ __('purchasing.cancel') }}
         </a>
-        <button type="button" @click="run('saveDraft', [], true)" :disabled="saving" wire:loading.attr="disabled" class="min-h-11 inline-flex items-center justify-center gap-2 px-3 active:bg-surface-soft focus-visible:ring-2 focus-visible:ring-primary h-11 px-4 rounded-control bg-primary text-white text-sm font-bold disabled:opacity-50">
+        <button type="button" @click="run('saveDraft', [], true)" :disabled="saving || window.isDocumentBlocked($wire)" wire:loading.attr="disabled" class="min-h-11 inline-flex items-center justify-center gap-2 px-3 active:bg-surface-soft focus-visible:ring-2 focus-visible:ring-primary h-11 px-4 rounded-control bg-primary text-white text-sm font-bold disabled:opacity-50">
             {{ __('purchasing.save_draft') }}
         </button>
     </div>

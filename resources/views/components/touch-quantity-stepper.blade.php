@@ -32,7 +32,7 @@
         <!-- Decrement Button (>=44px touch target) -->
         <button type="button"
                 wire:loading.attr="disabled"
-                wire:target="save,saveDraft"
+                wire:target="save,saveDraft,selectProduct,changeUnit,scanCameraBarcode,addLine,removeLine"
                 :disabled="failed || recovering || (typeof saving !== 'undefined' && saving) || {{ $disabled ? 'true' : 'false' }}"
                 @click="tap('down')"
                 class="min-h-[44px] min-w-[44px] px-3 flex items-center justify-center bg-surface-soft hover:bg-slate-200 active:bg-slate-300 text-text-primary border-e border-border text-base font-bold transition-colors select-none cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
@@ -57,7 +57,7 @@
         <!-- Increment Button (>=44px touch target) -->
         <button type="button"
                 wire:loading.attr="disabled"
-                wire:target="save,saveDraft"
+                wire:target="save,saveDraft,selectProduct,changeUnit,scanCameraBarcode,addLine,removeLine"
                 :disabled="failed || recovering || (typeof saving !== 'undefined' && saving) || {{ $disabled ? 'true' : 'false' }}"
                 @click="tap('up')"
                 class="min-h-[44px] min-w-[44px] px-3 flex items-center justify-center bg-surface-soft hover:bg-slate-200 active:bg-slate-300 text-text-primary border-s border-border text-base font-bold transition-colors select-none cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"

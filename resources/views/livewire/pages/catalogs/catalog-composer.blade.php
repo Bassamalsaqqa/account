@@ -627,7 +627,7 @@
                                         <button
                                             type="button"
                                             wire:click="addProduct({{ $prod->id }})"
-                                            @disabled($isAdded || count($items)  wire:loading.attr="disabled" wire:target="addProduct">= 250 || ! $canManage)
+                                            wire:loading.attr="disabled" wire:target="addProduct" @disabled($isAdded || count($items) >= 250 || ! $canManage)
                                             class="min-h-[44px] px-3 py-1.5 rounded-lg text-xs font-medium transition-colors {{ $isAdded ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'bg-blue-50 text-blue-700 hover:bg-blue-100' }}"
                                         >
                                             {{ $isAdded ? __('catalogs.already_added') : __('catalogs.add_product') }}

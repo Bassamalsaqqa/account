@@ -249,6 +249,11 @@ class PaymentForm extends Component
         $this->validate(['amount' => ['required', 'string', 'regex:/^\d{1,12}(?:\.\d{1,6})?$/D'],
             'exchange_rate' => ['nullable', 'string', 'regex:/^(?:\s*|\d{1,12}(?:\.\d{1,10})?)$/D'], ...$this->allocationRules()]);
         $remaining = $document->calculateOutstanding();
+        if (! $remaining->isPositive()) {
+            $this->addError('allocations', __('refinement.source_line_not_found'));
+
+            return;
+        }
         $this->allocations[$index]['outstanding'] = (string) $remaining;
         $this->allocations[$index]['allocated_amount'] = (string) $remaining;
         $this->allocations[$index]['document_currency_code'] = $document->currency_code;

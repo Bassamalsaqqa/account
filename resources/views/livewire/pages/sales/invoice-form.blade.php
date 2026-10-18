@@ -42,7 +42,7 @@
     @if ($previewError)
         <div role="alert" class="rounded-card border border-danger/30 bg-danger/10 p-3 text-xs text-danger font-medium flex items-center justify-between">
             <span>{{ $previewError }}</span>
-            <button type="button" wire:click="$set('previewError', null)" class="text-danger hover:opacity-75 font-bold cursor-pointer">âœ•</button>
+            <button type="button" wire:click="$set('previewError', null)" class="text-danger hover:opacity-75 font-bold cursor-pointer">×</button>
         </div>
     @endif
 
@@ -58,7 +58,7 @@
                    placeholder="{{ __('sales.search_products_hint') }}" aria-describedby="invoice-product-search-help"
                    class="w-full h-11 px-3 rounded-control border border-border bg-canvas text-sm text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden"  :disabled="documentBusy || saving"/>
             @if (auth()->user()->hasPermissionTo('inventory.product.manage'))
-                <button type="button" wire:click="openQuickProductModal" aria-haspopup="dialog" class="mt-2 min-h-11 px-3 py-2 rounded-control border border-border text-sm font-bold text-primary hover:bg-surface-soft focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary" wire:loading.attr="disabled" wire:target="openQuickProductModal">
+                <button type="button" wire:click="openQuickProductModal" aria-haspopup="dialog" class="mt-2 min-h-11 px-3 py-2 rounded-control border border-border text-sm font-bold text-primary hover:bg-surface-soft focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary" wire:loading.attr="disabled" wire:target="openQuickProductModal" :disabled="documentBusy || saving">
                     {{ __('quick_product.create') }}
                 </button>
             @endif
@@ -79,7 +79,7 @@
                         {{ __('sales.customer') }} <span class="text-danger">*</span>
                     </label>
                     @if ($canManageCustomers)
-                        <button type="button" wire:click="openQuickCustomerModal" class="text-xs text-primary font-bold hover:underline cursor-pointer" aria-haspopup="dialog" wire:loading.attr="disabled" wire:target="openQuickCustomerModal">
+                        <button type="button" wire:click="openQuickCustomerModal" class="text-xs text-primary font-bold hover:underline cursor-pointer" aria-haspopup="dialog" wire:loading.attr="disabled" wire:target="openQuickCustomerModal" :disabled="documentBusy || saving">
                             + {{ __('workflow.quick_customer') }}
                         </button>
                     @endif
@@ -225,7 +225,7 @@
                                 <td class="py-2 px-2 align-top">
                                     @if ($selectedProduct && $selectedProduct->productUnits->isNotEmpty())
                                         <select id="invoice-desktop-line-{{ $index }}-product-unit-id" aria-label="{{ __('sales.unit') }} {{ $index + 1 }}" @error('lines.'.$index.'.product_unit_id') aria-invalid="true" aria-describedby="invoice-desktop-line-{{ $index }}-product-unit-id-error" @enderror wire:change="changeUnit({{ $index }}, $event.target.value)"
-                                                class="w-full h-8 px-1.5 rounded-control border border-border bg-canvas text-xs">
+                                                class="w-full h-8 px-1.5 rounded-control border border-border bg-canvas text-xs" :disabled="documentBusy || saving">
                                             @foreach ($selectedProduct->productUnits as $pu)
                                                 <option value="{{ $pu->id }}" @selected(($line['product_unit_id'] ?? null) == $pu->id)>
                                                     {{ $pu->unit?->name() ?? $pu->unit?->code ?? 'Unit' }}
@@ -305,7 +305,7 @@
 
                                 <td class="py-2 px-2 align-top text-end font-mono font-bold" dir="ltr">
                                     <div class="pt-1.5">
-                                        {{ $documentTotalsValid ? \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($line['line_total'] ?? '0', $currency_code) : 'â€”' }}
+                                        {{ $documentTotalsValid ? \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($line['line_total'] ?? '0', $currency_code) : '—' }}
                                     </div>
                                 </td>
 
@@ -314,7 +314,7 @@
                                         <button type="button"
                                                 wire:click="removeLine({{ $index }})"
                                                 class="text-danger hover:opacity-80 p-1 text-sm font-bold" wire:loading.attr="disabled" wire:target="removeLine" :disabled="documentBusy || saving">
-                                            âœ•
+                                            ×
                                         </button>
                                     @endif
                                 </td>
@@ -365,7 +365,7 @@
                                 <label for="invoice-mobile-line-{{ $index }}-product-unit-id" class="block text-[11px] font-bold text-text-secondary">{{ __('sales.unit') }}</label>
                                 @if ($selectedProduct && $selectedProduct->productUnits->isNotEmpty())
                                     <select id="invoice-mobile-line-{{ $index }}-product-unit-id" aria-label="{{ __('sales.unit') }} {{ $index + 1 }}" @error('lines.'.$index.'.product_unit_id') aria-invalid="true" aria-describedby="invoice-mobile-line-{{ $index }}-product-unit-id-error" @enderror wire:change="changeUnit({{ $index }}, $event.target.value)"
-                                            class="w-full h-8 px-1.5 rounded-control border border-border bg-white text-xs">
+                                            class="w-full h-8 px-1.5 rounded-control border border-border bg-white text-xs" :disabled="documentBusy || saving">
                                         @foreach ($selectedProduct->productUnits as $pu)
                                             <option value="{{ $pu->id }}" @selected(($line['product_unit_id'] ?? null) == $pu->id)>
                                                 {{ $pu->unit?->name() ?? $pu->unit?->code ?? 'Unit' }}
@@ -456,7 +456,7 @@
                         <div class="flex justify-between items-center pt-2 border-t border-border text-xs">
                             <span class="text-text-muted font-bold">{{ __('sales.line_total') }}:</span>
                             <span class="font-mono font-bold text-text-primary" dir="ltr">
-                                {{ $documentTotalsValid ? \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($line['line_total'] ?? '0', $currency_code) : 'â€”' }}
+                                {{ $documentTotalsValid ? \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($line['line_total'] ?? '0', $currency_code) : '—' }}
                             </span>
                         </div>
                     </div>
@@ -537,7 +537,7 @@
                             @click="if (!saving && !window.isDocumentBlocked($wire)) { saving = true; window.enqueueDocumentOperation($wire, 'save', [true]).catch(() => { this.operationFailed = true; }).finally(() => saving = false); }"
                             wire:loading.attr="disabled"
                             class="px-5 py-2 rounded-control bg-primary text-white text-xs font-bold hover:bg-primary-hover transition-colors shadow-sm cursor-pointer">
-                        âš¡ {{ __('commands.review_post') }}
+                        ⚡ {{ __('commands.review_post') }}
                     </button>
                 @endif
             </div>
@@ -625,7 +625,7 @@
             <div class="bg-surface border border-border rounded-card p-6 w-full max-w-md shadow-lg space-y-4">
                 <div class="flex items-center justify-between pb-3 border-b border-border">
                     <h3 id="quick-customer-modal-title" class="text-base font-bold text-text-primary">{{ __('workflow.quick_customer') }}</h3>
-                    <button type="button" wire:click="closeQuickCustomerModal" class="text-text-muted hover:text-text-primary text-sm font-bold cursor-pointer" wire:loading.attr="disabled" wire:target="closeQuickCustomerModal">âœ•</button>
+                    <button type="button" wire:click="closeQuickCustomerModal" class="text-text-muted hover:text-text-primary text-sm font-bold cursor-pointer" wire:loading.attr="disabled" wire:target="closeQuickCustomerModal">×</button>
                 </div>
                 <div class="space-y-3">
                     <div>

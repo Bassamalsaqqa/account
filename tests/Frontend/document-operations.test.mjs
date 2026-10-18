@@ -3,6 +3,26 @@ import assert from 'node:assert/strict';
 import {enqueueDocumentOperation, enqueueQuantityStep, isDocumentBusy, isDocumentBlocked, resyncDocumentQueue} from '../../resources/js/document-operations.js';
 import {barcodeEntry} from '../../resources/js/barcode-entry.js';
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+test('failed secondary helper stops queued Save and requires explicit review without replay', async () => {
+    const calls = [];
+    const wire = {$id: 'secondary-failure',
+        async stepInventoryQuantity() { calls.push('step'); await wait(10); throw new Error('Disconnected'); },
+        async save() { calls.push('save'); },
+        async $refresh() { calls.push('refresh'); },
+    };
+    const step = enqueueDocumentOperation(wire, 'stepInventoryQuantity', ['up']);
+    const save = enqueueDocumentOperation(wire, 'save');
+    const results = await Promise.allSettled([step, save]);
+    assert.deepEqual(results.map(result => result.status), ['rejected', 'rejected']);
+    assert.deepEqual(calls, ['step']);
+    assert.equal(isDocumentBlocked(wire), true);
+    await resyncDocumentQueue(wire, true);
+    assert.deepEqual(calls, ['step', 'refresh']);
+    assert.equal(isDocumentBlocked(wire), false);
+    await enqueueDocumentOperation(wire, 'save');
+    assert.deepEqual(calls, ['step', 'refresh', 'save']);
+});
 function fixture(id, latency = 0) {
     const calls = [];
     const wire = {$id:id, lines:[{quantity:'1', product_id:10, product_unit_id:20, unit_price:'2.00', lots:[]}],
@@ -115,8 +135,8 @@ test('legacy generic FIFO stays serialized and independent documents remain inde
     const trace=[];let active=0,max=0;
     const perform=async name=>{active++;max=Math.max(max,active);await wait(5);trace.push(name);active--;if(name==='fail')throw Error('refused');};
     const wire={$id:'legacy',scanCameraBarcode:code=>perform(code),incrementQuantity:()=>perform('quantity'),saveDraft:()=>perform('save')};
-    await Promise.all([enqueueDocumentOperation(wire,'scanCameraBarcode',['first']),enqueueDocumentOperation(wire,'incrementQuantity'),enqueueDocumentOperation(wire,'scanCameraBarcode',['fail']).catch(()=>false),enqueueDocumentOperation(wire,'saveDraft')]);
-    assert.deepEqual(trace,['first','quantity','fail','save']);assert.equal(max,1);assert.equal(isDocumentBusy(wire),false);
+    await Promise.all([enqueueDocumentOperation(wire,'scanCameraBarcode',['first']),enqueueDocumentOperation(wire,'incrementQuantity'),enqueueDocumentOperation(wire,'scanCameraBarcode',['fail']).catch(()=>false),enqueueDocumentOperation(wire,'saveDraft').catch(()=>false)]);
+    assert.deepEqual(trace,['first','quantity','fail']);assert.equal(isDocumentBlocked(wire),true);assert.equal(max,1);assert.equal(isDocumentBusy(wire),false);
     await assert.rejects(enqueueDocumentOperation(wire,'post'));const other=fixture('separate');await enqueueDocumentOperation(other.wire,'saveDraft');
 });
 test('hardware strings remain intact and review-required scan never restores already-added code',async()=>{

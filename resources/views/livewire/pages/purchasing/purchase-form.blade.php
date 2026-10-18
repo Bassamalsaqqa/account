@@ -35,7 +35,7 @@
             <div class="flex items-center justify-between mb-1.5">
                 <label for="purchase-vendor" class="block text-xs font-bold">{{ __('purchasing.vendor') }}</label>
                 @if ($canManageVendors)
-                    <button type="button" wire:click="openQuickVendorModal" class="text-xs text-primary font-bold hover:underline cursor-pointer" aria-haspopup="dialog" wire:loading.attr="disabled" wire:target="openQuickVendorModal">
+                    <button type="button" wire:click="openQuickVendorModal" class="text-xs text-primary font-bold hover:underline cursor-pointer" aria-haspopup="dialog" wire:loading.attr="disabled" wire:target="openQuickVendorModal" :disabled="documentBusy || saving">
                         + {{ __('workflow.quick_vendor') }}
                     </button>
                 @endif
@@ -68,7 +68,7 @@
             <label for="purchase-product-search" class="block text-sm font-bold mb-1">{{ __('purchasing.search_products') }}</label>
             <input id="purchase-product-search" type="search" maxlength="160" wire:model.live.debounce.300ms="productSearch" x-on:keydown.enter.prevent placeholder="{{ __('purchasing.search_products') }}" aria-describedby="purchase-product-search-help" class="w-full h-11 px-3 border border-border bg-canvas rounded-control text-sm"  :disabled="documentBusy || saving"/>
             @if (auth()->user()->hasPermissionTo('inventory.product.manage'))
-                <button type="button" wire:click="openQuickProductModal" aria-haspopup="dialog" class="mt-2 min-h-11 px-3 py-2 rounded-control border border-border text-sm font-bold text-primary hover:bg-surface-soft focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary" wire:loading.attr="disabled" wire:target="openQuickProductModal">
+                <button type="button" wire:click="openQuickProductModal" aria-haspopup="dialog" class="mt-2 min-h-11 px-3 py-2 rounded-control border border-border text-sm font-bold text-primary hover:bg-surface-soft focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary" wire:loading.attr="disabled" wire:target="openQuickProductModal" :disabled="documentBusy || saving">
                     {{ __('quick_product.create') }}
                 </button>
             @endif
@@ -94,7 +94,7 @@
                         @if(!empty($line['product_id']) && !$products->contains('id', $line['product_id']))<option selected value="{{ $line['product_id'] }}">{{ $line['item_description'] }}</option>@endif
                         @foreach($products as $product)<option value="{{ $product->id }}" @selected(($line['product_id'] ?? null) == $product->id)>{{ $product->displayName() }} {{ $product->sku }}</option>@endforeach
                     </select></div>
-                    <div class="lg:col-span-2"><label for="line-unit-{{ $index }}" class="block text-xs text-text-secondary mb-1">{{ __('purchasing.unit') }}</label><select id="line-unit-{{ $index }}" wire:change="changeUnit({{ $index }}, $event.target.value)" class="w-full h-11 px-2 border border-border rounded-control text-sm" @disabled(empty($line['product_id']))><option value="">{{ __('purchasing.select_unit') }}</option>@foreach($unitOptions[$index] ?? [] as $unit)<option value="{{ $unit->id }}" @selected(($line['product_unit_id'] ?? null) == $unit->id)>{{ $unit->unit->name() }}</option>@endforeach</select></div>
+                    <div class="lg:col-span-2"><label for="line-unit-{{ $index }}" class="block text-xs text-text-secondary mb-1">{{ __('purchasing.unit') }}</label><select id="line-unit-{{ $index }}" wire:change="changeUnit({{ $index }}, $event.target.value)" class="w-full h-11 px-2 border border-border rounded-control text-sm" @disabled(empty($line['product_id'])) :disabled="documentBusy || saving"><option value="">{{ __('purchasing.select_unit') }}</option>@foreach($unitOptions[$index] ?? [] as $unit)<option value="{{ $unit->id }}" @selected(($line['product_unit_id'] ?? null) == $unit->id)>{{ $unit->unit->name() }}</option>@endforeach</select></div>
                     <div class="lg:col-span-2">
                         <label for="line-quantity-{{ $index }}" class="block text-xs text-text-secondary mb-1">{{ __('purchasing.quantity') }}</label>
                         @php
@@ -140,11 +140,11 @@
                 </div>
                 @if($expiryLines[$index] ?? false)
                     <div class="border-t border-border pt-3 space-y-3">
-                        <div class="flex flex-wrap items-center justify-between gap-2"><div><h4 class="text-xs font-bold">{{ __('purchasing.receiving_intent') }}</h4><p class="text-xs text-text-secondary mt-1">{{ __('purchasing.partial_lot_hint') }}</p></div><button type="button" wire:click="addLot({{ $index }})" class="h-10 px-3 border border-border rounded-control text-primary text-xs" wire:loading.attr="disabled" wire:target="addLot">{{ __('purchasing.add_lot') }}</button></div>
+                        <div class="flex flex-wrap items-center justify-between gap-2"><div><h4 class="text-xs font-bold">{{ __('purchasing.receiving_intent') }}</h4><p class="text-xs text-text-secondary mt-1">{{ __('purchasing.partial_lot_hint') }}</p></div><button type="button" wire:click="addLot({{ $index }})" class="h-10 px-3 border border-border rounded-control text-primary text-xs" wire:loading.attr="disabled" wire:target="addLot" :disabled="documentBusy || saving">{{ __('purchasing.add_lot') }}</button></div>
                         @foreach($line['lots'] ?? [] as $lotIndex => $lot)
                             <div wire:key="intent-{{ $index }}-{{ $lotIndex }}" class="grid grid-cols-2 lg:grid-cols-4 gap-3 bg-surface-soft rounded-control p-3">
                                 @foreach(['lot_number' => 'text', 'expiry_date' => 'date', 'quantity' => 'text'] as $field => $type)<div><label for="lot-{{ $index }}-{{ $lotIndex }}-{{ $field }}" class="block text-xs text-text-secondary mb-1">{{ __('purchasing.'.($field === 'quantity' ? 'allocated_quantity' : $field)) }}</label><input id="lot-{{ $index }}-{{ $lotIndex }}-{{ $field }}" type="{{ $type }}" wire:model="lines.{{ $index }}.lots.{{ $lotIndex }}.{{ $field }}" dir="ltr" class="w-full min-w-0 h-11 px-2 border border-border bg-surface rounded-control text-sm"  :disabled="documentBusy || saving"/></div>@endforeach
-                                <button type="button" wire:click="removeLot({{ $index }}, {{ $lotIndex }})" class="self-end h-11 px-3 text-danger text-xs" wire:loading.attr="disabled" wire:target="removeLot">{{ __('purchasing.remove_lot') }}</button>
+                                <button type="button" wire:click="removeLot({{ $index }}, {{ $lotIndex }})" class="self-end h-11 px-3 text-danger text-xs" wire:loading.attr="disabled" wire:target="removeLot" :disabled="documentBusy || saving">{{ __('purchasing.remove_lot') }}</button>
                             </div>
                         @endforeach
                     </div>

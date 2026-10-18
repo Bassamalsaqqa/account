@@ -21,6 +21,7 @@ use Illuminate\Contracts\View\View;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use Livewire\Attributes\Layout;
 use Livewire\Component;
 
@@ -284,9 +285,15 @@ class PaymentForm extends Component
 
             return;
         }
+        $this->rejectWhitespaceShortcutRate();
         $this->validate(['amount' => ['required', 'string', 'regex:/^\d{1,12}(?:\.\d{1,6})?$/D'],
             'exchange_rate' => ['nullable', 'string', 'regex:/^(?:\s*|\d{1,12}(?:\.\d{1,10})?)$/D'], ...$this->allocationRules()]);
         $remaining = $document->payablePosition()->outstanding;
+        if (! $remaining->isPositive()) {
+            $this->addError('allocations', __('refinement.source_line_not_found'));
+
+            return;
+        }
         $this->allocations[$index]['outstanding'] = (string) $remaining;
         $this->allocations[$index]['allocated_amount'] = (string) $remaining;
         $this->allocations[$index]['document_currency_code'] = $document->currency_code;
@@ -303,6 +310,7 @@ class PaymentForm extends Component
     public function useFullBalance(): void
     {
         $this->authorizeVendorPaymentAction();
+        $this->rejectWhitespaceShortcutRate();
         $this->validate(['exchange_rate' => ['nullable', 'string', 'regex:/^(?:\s*|\d{1,12}(?:\.\d{1,10})?)$/D'], ...$this->allocationRules()]);
         $total = BigDecimal::zero();
         foreach ($this->quickBalanceDocuments()->get() as $document) {
@@ -313,6 +321,15 @@ class PaymentForm extends Component
         }
         $this->amount = (string) $total;
         $this->recalculateAllocations();
+    }
+
+    private function rejectWhitespaceShortcutRate(): void
+    {
+        if ($this->exchange_rate !== '' && trim($this->exchange_rate) === '') {
+            throw ValidationException::withMessages([
+                'exchange_rate' => __('validation.numeric', ['attribute' => __('purchasing.exchange_rate')]),
+            ]);
+        }
     }
 
     /** @return Builder<Purchase> */
