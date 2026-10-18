@@ -12,41 +12,25 @@
         <div class="flex flex-wrap items-center gap-2">
             @if ($canAdjust)
                 <a href="{{ route('inventory.opening-stock.create') }}"
-<<<<<<< HEAD
                    class="touch-action inline-flex items-center gap-1.5 px-3 py-2 bg-white border border-border hover:bg-surface-soft text-text-primary text-xs font-bold rounded-control transition-colors">
-=======
-                   class="touch-action gap-1.5 bg-white border border-border hover:bg-surface-soft text-text-primary text-xs font-bold transition-colors">
->>>>>>> 2e514b6 (refine: complete mobile list cards and compact touch filters)
                     <x-icon name="plus" class="w-4 h-4 text-primary" />
                     <span>{{ __('inventory.opening_stock') }}</span>
                 </a>
                 <a href="{{ route('inventory.adjustments.create') }}"
-<<<<<<< HEAD
                    class="touch-action inline-flex items-center gap-1.5 px-3 py-2 bg-white border border-border hover:bg-surface-soft text-text-primary text-xs font-bold rounded-control transition-colors">
-=======
-                   class="touch-action gap-1.5 bg-white border border-border hover:bg-surface-soft text-text-primary text-xs font-bold transition-colors">
->>>>>>> 2e514b6 (refine: complete mobile list cards and compact touch filters)
                     <x-icon name="plus" class="w-4 h-4 text-primary" />
                     <span>{{ __('inventory.adjust_stock') }}</span>
                 </a>
             @endif
             @if ($canTransfer)
                 <a href="{{ route('inventory.transfers.create') }}"
-<<<<<<< HEAD
                    class="touch-action inline-flex items-center gap-1.5 px-3 py-2 bg-white border border-border hover:bg-surface-soft text-text-primary text-xs font-bold rounded-control transition-colors">
-=======
-                   class="touch-action gap-1.5 bg-white border border-border hover:bg-surface-soft text-text-primary text-xs font-bold transition-colors">
->>>>>>> 2e514b6 (refine: complete mobile list cards and compact touch filters)
                     <x-icon name="truck" class="w-4 h-4 text-primary" />
                     <span>{{ __('inventory.transfer_stock') }}</span>
                 </a>
             @endif
             <a href="{{ route('inventory.movements') }}"
-<<<<<<< HEAD
                class="touch-action inline-flex items-center gap-1.5 px-3 py-2 bg-primary hover:bg-primary-hover text-white text-xs font-bold rounded-control shadow-button transition-colors">
-=======
-               class="touch-action gap-1.5 bg-primary hover:bg-primary-hover text-white text-xs font-bold shadow-button transition-colors">
->>>>>>> 2e514b6 (refine: complete mobile list cards and compact touch filters)
                 <x-icon name="receipt" class="w-4 h-4" />
                 <span>{{ __('inventory.stock_movements') }}</span>
             </a>
