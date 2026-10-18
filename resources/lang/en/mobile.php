@@ -3,6 +3,11 @@
 declare(strict_types=1);
 
 return [
+    'quantity_pending' => 'Confirming quantity?',
+    'quantity_recovery' => 'Quantity changes were not confirmed. Review the visible quantity before continuing.',
+    'quantity_discard' => 'Keep visible quantity and discard pending taps',
+    'quantity_stale' => 'This line changed. Review its product, unit and quantity before trying again.',
+
     'scan' => 'Scan',
     'add_item' => 'Add Item',
     'save_draft' => 'Save Draft',
