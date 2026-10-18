@@ -3,7 +3,7 @@
     <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
             <div class="flex items-center gap-2 mb-1">
-                <a href="{{ route('products.index') }}" class="text-xs text-text-muted hover:text-primary transition-colors">&larr; {{ __('inventory.products') }}</a>
+                <a href="{{ route('products.index') }}" class="touch-action text-xs text-text-muted hover:text-primary transition-colors">&larr; {{ __('inventory.products') }}</a>
                 <span class="text-text-muted">/</span>
                 <span class="text-xs text-text-secondary">{{ (app()->getLocale() === 'en' && $product->category?->name_en) ? $product->category->name_en : ($product->category?->name_ar ?? __('inventory.general')) }}</span>
             </div>
@@ -27,14 +27,14 @@
 
         <div class="flex flex-wrap items-center gap-2">
             @if ($canReceiveStock)
-                <a href="{{ route('purchases.create', ['receiveProduct' => $product->public_id]) }}" class="inline-flex items-center gap-2 px-3 py-2 bg-primary text-white hover:bg-primary-hover text-sm font-bold rounded-control focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary">
+                <a href="{{ route('purchases.create', ['receiveProduct' => $product->public_id]) }}" class="touch-action inline-flex items-center gap-2 px-3 py-2 bg-primary text-white hover:bg-primary-hover text-sm font-bold rounded-control focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary">
                     <x-icon name="plus" class="w-4 h-4" />
                     {{ __('quick_product.receive_stock') }}
                 </a>
             @endif
             @if ($canManageProduct)
                 <a href="{{ route('products.edit', $product->public_id) }}"
-                   class="inline-flex items-center gap-1.5 px-3 py-2 bg-white border border-border hover:bg-surface-soft text-text-primary text-xs font-bold rounded-control transition-colors">
+                   class="touch-action inline-flex items-center gap-1.5 px-3 py-2 bg-white border border-border hover:bg-surface-soft text-text-primary text-xs font-bold rounded-control transition-colors">
                     <x-icon name="pencil" class="w-4 h-4 text-text-secondary" />
                     <span>{{ __('inventory.edit_product') }}</span>
                 </a>
@@ -87,38 +87,38 @@
     <!-- Navigation Tabs -->
     <div class="border-b border-border flex flex-wrap items-center gap-6 text-xs font-bold select-none">
         <button type="button" wire:click="setTab('overview')"
-                class="pb-3 border-b-2 transition-colors {{ $activeTab === 'overview' ? 'border-primary text-primary' : 'border-transparent text-text-secondary hover:text-text-primary' }}">
+                class="pb-3 border-b-2 transition-colors {{ $activeTab === 'overview' ? 'border-primary text-primary' : 'border-transparent text-text-secondary hover:text-text-primary' }}" wire:loading.attr="disabled" wire:target="setTab">
             {{ __('inventory.overview') }}
         </button>
         <button type="button" wire:click="setTab('warehouses')"
-                class="pb-3 border-b-2 transition-colors {{ $activeTab === 'warehouses' ? 'border-primary text-primary' : 'border-transparent text-text-secondary hover:text-text-primary' }}">
+                class="pb-3 border-b-2 transition-colors {{ $activeTab === 'warehouses' ? 'border-primary text-primary' : 'border-transparent text-text-secondary hover:text-text-primary' }}" wire:loading.attr="disabled" wire:target="setTab">
             {{ __('inventory.stock_by_warehouse') }} ({{ $warehouseBalances->count() }})
         </button>
         @if ($product->track_expiry)
             <button type="button" wire:click="setTab('lots')"
-                    class="pb-3 border-b-2 transition-colors {{ $activeTab === 'lots' ? 'border-primary text-primary' : 'border-transparent text-text-secondary hover:text-text-primary' }}">
+                    class="pb-3 border-b-2 transition-colors {{ $activeTab === 'lots' ? 'border-primary text-primary' : 'border-transparent text-text-secondary hover:text-text-primary' }}" wire:loading.attr="disabled" wire:target="setTab">
                 {{ __('inventory.lots_and_expiry') }} ({{ $lots->count() }})
             </button>
         @endif
         <button type="button" wire:click="setTab('movements')"
-                class="pb-3 border-b-2 transition-colors {{ $activeTab === 'movements' ? 'border-primary text-primary' : 'border-transparent text-text-secondary hover:text-text-primary' }}">
+                class="pb-3 border-b-2 transition-colors {{ $activeTab === 'movements' ? 'border-primary text-primary' : 'border-transparent text-text-secondary hover:text-text-primary' }}" wire:loading.attr="disabled" wire:target="setTab">
             {{ __('inventory.stock_movements') }}
         </button>
         <button type="button" wire:click="setTab('units')"
-                class="pb-3 border-b-2 transition-colors {{ $activeTab === 'units' ? 'border-primary text-primary' : 'border-transparent text-text-secondary hover:text-text-primary' }}">
+                class="pb-3 border-b-2 transition-colors {{ $activeTab === 'units' ? 'border-primary text-primary' : 'border-transparent text-text-secondary hover:text-text-primary' }}" wire:loading.attr="disabled" wire:target="setTab">
             {{ __('inventory.units') }} ({{ $product->productUnits->count() }})
         </button>
         <button type="button" wire:click="setTab('barcodes')"
-                class="pb-3 border-b-2 transition-colors {{ $activeTab === 'barcodes' ? 'border-primary text-primary' : 'border-transparent text-text-secondary hover:text-text-primary' }}">
+                class="pb-3 border-b-2 transition-colors {{ $activeTab === 'barcodes' ? 'border-primary text-primary' : 'border-transparent text-text-secondary hover:text-text-primary' }}" wire:loading.attr="disabled" wire:target="setTab">
             {{ __('inventory.barcodes') }} ({{ $product->barcodes->count() }})
         </button>
         <button type="button" wire:click="setTab('images')"
-                class="pb-3 border-b-2 transition-colors {{ $activeTab === 'images' ? 'border-primary text-primary' : 'border-transparent text-text-secondary hover:text-text-primary' }}">
+                class="pb-3 border-b-2 transition-colors {{ $activeTab === 'images' ? 'border-primary text-primary' : 'border-transparent text-text-secondary hover:text-text-primary' }}" wire:loading.attr="disabled" wire:target="setTab">
             {{ __('inventory.images') }} ({{ $product->images->count() }})
         </button>
         @if ($canViewPurchasingCost)
             <button type="button" wire:click="setTab('purchase_history')"
-                    class="pb-3 border-b-2 transition-colors {{ $activeTab === 'purchase_history' ? 'border-primary text-primary' : 'border-transparent text-text-secondary hover:text-text-primary' }}">
+                    class="pb-3 border-b-2 transition-colors {{ $activeTab === 'purchase_history' ? 'border-primary text-primary' : 'border-transparent text-text-secondary hover:text-text-primary' }}" wire:loading.attr="disabled" wire:target="setTab">
                 {{ __('purchasing.purchase_price_history') }}
             </button>
         @endif
@@ -516,7 +516,7 @@
                                     <tr class="hover:bg-canvas transition-colors">
                                         <td class="py-3 px-4 font-mono font-bold whitespace-nowrap">
                                             @if ($canViewPurchases)
-                                                <a href="{{ route('purchases.show', $item->purchase_public_id) }}" class="text-primary hover:underline">
+                                                <a href="{{ route('purchases.show', $item->purchase_public_id) }}" class="touch-action text-primary hover:underline">
                                                     {{ $item->purchase_number }}
                                                 </a>
                                             @else
@@ -528,7 +528,7 @@
                                         </td>
                                         <td class="py-3 px-4 font-bold text-text-primary">
                                             @if ($item->vendor_public_id && $canViewVendors)
-                                                <a href="{{ route('vendors.show', $item->vendor_public_id) }}" class="text-primary hover:underline">
+                                                <a href="{{ route('vendors.show', $item->vendor_public_id) }}" class="touch-action text-primary hover:underline">
                                                     {{ $item->vendor_name }}
                                                 </a>
                                             @else

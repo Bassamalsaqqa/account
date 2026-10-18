@@ -6,6 +6,7 @@ namespace App\Livewire\Pages\Purchasing;
 
 use App\Actions\Purchasing\PostVendorPaymentAction;
 use App\Livewire\Pages\Purchasing\Concerns\AuthorizesPurchasingPages;
+use App\Models\Company;
 use App\Models\CompanyCurrency;
 use App\Models\Currency;
 use App\Models\MoneyAccount;
@@ -20,6 +21,7 @@ use Illuminate\Contracts\View\View;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use Livewire\Attributes\Layout;
 use Livewire\Component;
 
@@ -258,6 +260,90 @@ class PaymentForm extends Component
         }
 
         $this->recalculateAllocations();
+    }
+
+    /**
+     * Authorize fresh company and actor context for vendor payment operations.
+     */
+    protected function authorizeVendorPaymentAction(): Company
+    {
+        $this->authorizePurchasing('purchasing.cost.view');
+
+        return $this->authorizePurchasing('money.vendor_payment.create');
+    }
+
+    /** Copy a fresh same-currency document balance into one draft allocation. */
+    public function payRemaining(int $index): void
+    {
+        $this->authorizeVendorPaymentAction();
+        if (! isset($this->allocations[$index])) {
+            return;
+        }
+        $document = $this->quickBalanceDocuments()->whereKey((int) $this->allocations[$index]['purchase_id'])->first();
+        if ($document === null) {
+            $this->addError('allocations', __('refinement.source_line_not_found'));
+
+            return;
+        }
+        $this->rejectWhitespaceShortcutRate();
+        $this->validate(['amount' => ['required', 'string', 'regex:/^\d{1,12}(?:\.\d{1,6})?$/D'],
+            'exchange_rate' => ['nullable', 'string', 'regex:/^(?:\s*|\d{1,12}(?:\.\d{1,10})?)$/D'], ...$this->allocationRules()]);
+        $remaining = $document->payablePosition()->outstanding;
+        if (! $remaining->isPositive()) {
+            $this->addError('allocations', __('refinement.source_line_not_found'));
+
+            return;
+        }
+        $this->allocations[$index]['outstanding'] = (string) $remaining;
+        $this->allocations[$index]['allocated_amount'] = (string) $remaining;
+        $this->allocations[$index]['document_currency_code'] = $document->currency_code;
+        // Existing preview knows payment-currency consumption for mixed currency rows.
+        $this->recalculateAllocations();
+        if (preg_match('/^\d+(?:\.\d+)?$/D', $this->amount) === 1
+            && BigDecimal::of($this->amount)->isLessThan(BigDecimal::of($this->allocatedTotal))) {
+            $this->amount = $this->allocatedTotal;
+            $this->recalculateAllocations();
+        }
+    }
+
+    /** Fill payment amount only; allocation edits remain deliberate operator choices. */
+    public function useFullBalance(): void
+    {
+        $this->authorizeVendorPaymentAction();
+        $this->rejectWhitespaceShortcutRate();
+        $this->validate(['exchange_rate' => ['nullable', 'string', 'regex:/^(?:\s*|\d{1,12}(?:\.\d{1,10})?)$/D'], ...$this->allocationRules()]);
+        $total = BigDecimal::zero();
+        foreach ($this->quickBalanceDocuments()->get() as $document) {
+            $remaining = $document->payablePosition()->outstanding;
+            if ($remaining->isPositive()) {
+                $total = $total->plus($remaining);
+            }
+        }
+        $this->amount = (string) $total;
+        $this->recalculateAllocations();
+    }
+
+    private function rejectWhitespaceShortcutRate(): void
+    {
+        if ($this->exchange_rate !== '' && trim($this->exchange_rate) === '') {
+            throw ValidationException::withMessages([
+                'exchange_rate' => __('validation.numeric', ['attribute' => __('purchasing.exchange_rate')]),
+            ]);
+        }
+    }
+
+    /** @return Builder<Purchase> */
+    private function quickBalanceDocuments(): Builder
+    {
+        $this->authorizeVendorPaymentAction();
+        $account = $this->eligibleMoneyAccounts()->find($this->money_account_id);
+        abort_unless($account !== null && $account->currency_code === $this->currency_code, 403);
+        abort_unless(Vendor::where('company_id', $this->pageCompanyId)->where('status', 'active')->whereKey($this->vendor_id)->exists(), 403);
+
+        return Purchase::where('company_id', $this->pageCompanyId)
+            ->where('vendor_id', $this->vendor_id)
+            ->where('currency_code', $account->currency_code)
+            ->where('status', Purchase::STATUS_POSTED);
     }
 
     public function recalculateAllocations(): void

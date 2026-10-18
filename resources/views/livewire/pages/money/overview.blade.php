@@ -32,7 +32,7 @@
 </p>@endforeach</section>@endif
 @if($dueSoon->isNotEmpty())<section class="rounded-card border border-border bg-white p-4 sm:p-6 space-y-3">
 <h2 class="font-bold">{{ __('money.due_soon') }}</h2>
-@foreach($dueSoon as $check)<a href="{{ route('money.checks.show', $check->public_id) }}" class="flex flex-wrap justify-between gap-3 border-b border-border py-2">
+@foreach($dueSoon as $check)<a href="{{ route('money.checks.show', $check->public_id) }}" class="touch-action flex flex-wrap justify-between gap-3 border-b border-border py-2">
 <bdi>{{ $check->check_number }}</bdi>
 <span>{{ $check->due_date->toDateString() }}</span>
 <bdi>{{ $check->amount }} {{ $check->currency_code }}</bdi>
@@ -41,8 +41,8 @@
 <h2 class="font-bold">{{ __('money.recent_activity') }}</h2>
 @forelse($activity as $movement)
 <article class="grid sm:grid-cols-3 gap-2 border-b border-border py-2 text-sm">
-<div><a class="text-primary" href="{{ route('money.accounts.show', $movement->account_public_id) }}">{{ app()->getLocale() === 'en' ? ($movement->name_en ?: $movement->name_ar) : $movement->name_ar }}</a><p class="text-xs text-text-muted">{{ $movement->posting_date }}</p></div>
-<p class="break-words">{{ $movement->description }} @if(isset($sourceLinks[$movement->id]))<a class="text-primary" href="{{ $sourceLinks[$movement->id] }}">{{ __('money.source') }}</a>@endif</p>
+<div><a class="touch-action text-primary" href="{{ route('money.accounts.show', $movement->account_public_id) }}">{{ app()->getLocale() === 'en' ? ($movement->name_en ?: $movement->name_ar) : $movement->name_ar }}</a><p class="text-xs text-text-muted">{{ $movement->posting_date }}</p></div>
+<p class="break-words">{{ $movement->description }} @if(isset($sourceLinks[$movement->id]))<a class="touch-action text-primary" href="{{ $sourceLinks[$movement->id] }}">{{ __('money.source') }}</a>@endif</p>
 <p dir="ltr">{{ $movement->transaction_amount ?? '—' }} {{ $movement->transaction_currency_code }}<span class="block text-xs">{{ __('money.base_value') }}: {{ $movement->debit_base }} / {{ $movement->credit_base }} {{ $company->base_currency_code }}</span></p>
 </article>
 @empty<p class="text-sm text-text-muted">{{ __('money.empty') }}</p>@endforelse

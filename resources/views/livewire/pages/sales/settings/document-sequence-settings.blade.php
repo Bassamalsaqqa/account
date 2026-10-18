@@ -11,7 +11,7 @@
         </div>
 
         <a href="{{ route('settings.index') }}"
-           class="px-3 py-1.5 rounded-control bg-surface-soft text-text-secondary hover:text-text-primary text-xs font-bold transition-colors">
+           class="touch-action px-3 py-1.5 rounded-control bg-surface-soft text-text-secondary hover:text-text-primary text-xs font-bold transition-colors">
             {{ __('sales.back') }}
         </a>
     </div>
@@ -54,7 +54,7 @@
                                 {{ $seq['next_number'] }}
                             </td>
                             <td class="py-3 px-4">
-                                <input type="number"
+                                <input type="number" inputmode="decimal"
                                        min="1"
                                        max="10"
                                        wire:model="sequences.{{ $idx }}.padding"
@@ -70,7 +70,7 @@
                             <td class="py-3 px-4 text-end">
                                 <button type="button"
                                         wire:click="updateSequence({{ $idx }})"
-                                        class="px-3 py-1 rounded-control bg-primary text-white text-xs font-bold hover:bg-primary-hover transition-colors">
+                                        class="px-3 py-1 rounded-control bg-primary text-white text-xs font-bold hover:bg-primary-hover transition-colors" wire:loading.attr="disabled" wire:target="updateSequence">
                                     {{ __('sales.save') }}
                                 </button>
                             </td>

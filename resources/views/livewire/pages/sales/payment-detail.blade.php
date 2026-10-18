@@ -19,7 +19,7 @@
                 </div>
                 <div class="text-xs text-text-secondary mt-1">
                     {{ __('sales.customer') }}:
-                    <a href="{{ route('customers.show', $payment->customer->public_id) }}" class="font-bold text-text-primary hover:text-primary">
+                    <a href="{{ route('customers.show', $payment->customer->public_id) }}" class="touch-action font-bold text-text-primary hover:text-primary">
                         {{ $payment->customer->displayName() }}
                     </a>
                 </div>
@@ -27,7 +27,7 @@
 
             <div class="flex flex-wrap items-center gap-2">
                 @if($canAllocate)
-                    <button type="button" wire:click="openCreditForm" class="px-3 py-2 bg-primary text-white rounded-control text-xs font-bold">{{ __('sales.allocate_customer_credit') }}</button>
+                    <button type="button" wire:click="openCreditForm" class="px-3 py-2 bg-primary text-white rounded-control text-xs font-bold" wire:loading.attr="disabled" wire:target="openCreditForm">{{ __('sales.allocate_customer_credit') }}</button>
                 @endif
                 @if ($canReverse)
                     <button type="button"
@@ -40,7 +40,7 @@
                 <x-document-actions route-name="pdf.payment" :parameters="['publicId' => $payment->public_id]" :permissions="['sales.document.pdf', 'money.receipt.view']" />
 
                 <a href="{{ route('payments.index') }}"
-                   class="px-3 py-1.5 rounded-control bg-surface-soft text-text-secondary hover:text-text-primary text-xs font-bold transition-colors">
+                   class="touch-action px-3 py-1.5 rounded-control bg-surface-soft text-text-secondary hover:text-text-primary text-xs font-bold transition-colors">
                     {{ __('sales.back') }}
                 </a>
             </div>
@@ -109,7 +109,7 @@
                     @forelse ($payment->allocations as $alloc)
                         <tr>
                             <td class="py-2.5 px-4 font-mono font-bold" dir="ltr">
-                                <a href="{{ route('invoices.show', $alloc->salesInvoice->public_id) }}" class="text-primary hover:underline">
+                                <a href="{{ route('invoices.show', $alloc->salesInvoice->public_id) }}" class="touch-action text-primary hover:underline">
                                     {{ $alloc->salesInvoice->invoice_number }}
                                 </a>
                             </td>
@@ -188,7 +188,7 @@
                     <button type="button" wire:click="$set('showReverseModal', false)" class="px-3 py-1.5 rounded-control border border-border text-xs font-bold">
                         {{ __('sales.cancel') }}
                     </button>
-                    <button type="button" wire:click="reversePayment" class="px-4 py-1.5 rounded-control bg-danger text-white text-xs font-bold">
+                    <button type="button" wire:click="reversePayment" class="px-4 py-1.5 rounded-control bg-danger text-white text-xs font-bold" wire:loading.attr="disabled" wire:target="reversePayment">
                         {{ __('sales.reverse') }}
                     </button>
                 </div>

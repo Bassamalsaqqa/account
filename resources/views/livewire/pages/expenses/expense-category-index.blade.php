@@ -1,7 +1,7 @@
 <div class="max-w-4xl mx-auto space-y-6">
     <div class="flex items-center justify-between">
         <div class="flex items-center gap-3">
-            <a href="{{ route('expenses.index') }}" class="inline-flex items-center justify-center w-8 h-8 rounded-control border border-border bg-white text-text-secondary hover:bg-surface-soft">
+            <a href="{{ route('expenses.index') }}" aria-label="{{ __('expenses.expenses') }}" class="touch-action border border-border bg-white text-text-secondary hover:bg-surface-soft">
                 &larr;
             </a>
             <div>
@@ -24,12 +24,12 @@
         <div class="grid gap-4 sm:grid-cols-2">
             <div>
                 <label class="block text-xs font-semibold text-text-secondary mb-1">{{ __('expenses.name_ar') }} *</label>
-                <input type="text" wire:model="nameAr" class="w-full rounded-control border border-border bg-white px-3 py-2 text-sm focus:border-primary focus:ring-primary" required>
+                <input type="text" wire:model="nameAr" class="min-h-11 w-full rounded-control border border-border bg-white px-3 py-2 text-sm focus:border-primary focus:ring-primary" required>
                 @error('nameAr') <span class="text-xs text-rose-600">{{ $message }}</span> @enderror
             </div>
             <div>
                 <label class="block text-xs font-semibold text-text-secondary mb-1">{{ __('expenses.name_en') }}</label>
-                <input type="text" wire:model="nameEn" class="w-full rounded-control border border-border bg-white px-3 py-2 text-sm focus:border-primary focus:ring-primary">
+                <input type="text" wire:model="nameEn" class="min-h-11 w-full rounded-control border border-border bg-white px-3 py-2 text-sm focus:border-primary focus:ring-primary">
                 @error('nameEn') <span class="text-xs text-rose-600">{{ $message }}</span> @enderror
             </div>
         </div>
@@ -37,12 +37,12 @@
         <div class="grid gap-4 sm:grid-cols-2">
             <div>
                 <label class="block text-xs font-semibold text-text-secondary mb-1">{{ __('expenses.code') }} *</label>
-                <input type="text" wire:model="code" placeholder="utilities / maintenance" class="w-full rounded-control border border-border bg-white px-3 py-2 text-sm focus:border-primary focus:ring-primary" required>
+                <input type="text" wire:model="code" placeholder="utilities / maintenance" class="min-h-11 w-full rounded-control border border-border bg-white px-3 py-2 text-sm focus:border-primary focus:ring-primary" required>
                 @error('code') <span class="text-xs text-rose-600">{{ $message }}</span> @enderror
             </div>
             <div>
                 <label class="block text-xs font-semibold text-text-secondary mb-1">{{ __('expenses.ledger_account') }} *</label>
-                <select wire:model="ledgerAccountId" class="w-full rounded-control border border-border bg-white px-3 py-2 text-sm focus:border-primary focus:ring-primary" required>
+                <select wire:model="ledgerAccountId" class="min-h-11 w-full rounded-control border border-border bg-white px-3 py-2 text-sm focus:border-primary focus:ring-primary" required>
                     @foreach($accounts as $acc)
                         <option value="{{ $acc->id }}">{{ $acc->code }} - {{ $acc->displayName() }}</option>
                     @endforeach
@@ -56,7 +56,7 @@
                 <input type="checkbox" wire:model="active" class="rounded text-primary focus:ring-primary">
                 <span class="text-sm font-semibold text-text-secondary">{{ __('expenses.active') }}</span>
             </label>
-            <button type="submit" class="inline-flex justify-center items-center rounded-control bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary-hover focus:ring-2 focus:ring-primary">
+            <button type="submit" wire:loading.attr="disabled" wire:target="createCategory" class="touch-action bg-primary text-sm font-semibold text-white hover:bg-primary-hover focus:ring-2 focus:ring-primary">
                 {{ __('expenses.save') }}
             </button>
         </div>
@@ -64,7 +64,7 @@
 
     <!-- Categories List -->
     <div class="rounded-card border border-border bg-white overflow-hidden shadow-sm">
-        <div class="overflow-x-auto">
+        <div class="hidden md:block overflow-x-auto">
             <table class="w-full text-sm text-start">
                 <thead class="bg-surface-soft border-b border-border text-xs uppercase text-text-muted">
                     <tr>
@@ -106,5 +106,50 @@
                 </tbody>
             </table>
         </div>
+<div class="md:hidden divide-y divide-border">
+                    @forelse($categories as $cat)
+                        <article class="p-4">
+                            <dl class="grid grid-cols-2 gap-x-3 gap-y-4">
+                            <div class="min-w-0 space-y-1 col-span-2">
+                                <dt class="text-xs font-medium text-text-secondary">{{ __('expenses.code') }}</dt>
+                                <dd class="break-words text-sm tabular-nums text-text-primary">{{ $cat->code }}</dd>
+                            </div>
+                            <div class="min-w-0 space-y-1">
+                                <dt class="text-xs font-medium text-text-secondary">{{ __('expenses.name_ar') }}</dt>
+                                <dd class="break-words text-sm tabular-nums text-text-primary">{{ $cat->name_ar }}</dd>
+                            </div>
+                            <div class="min-w-0 space-y-1">
+                                <dt class="text-xs font-medium text-text-secondary">{{ __('expenses.name_en') }}</dt>
+                                <dd class="break-words text-sm tabular-nums text-text-primary">{{ $cat->name_en ?: '-' }}</dd>
+                            </div>
+                            <div class="min-w-0 space-y-1">
+                                <dt class="text-xs font-medium text-text-secondary">{{ __('expenses.ledger_account') }}</dt>
+                                <dd class="break-words text-sm tabular-nums text-text-primary">{{ $cat->ledgerAccount ? $cat->ledgerAccount->code . ' - ' . $cat->ledgerAccount->displayName() : '-' }}</dd>
+                            </div>
+                            <div class="min-w-0 space-y-1 col-span-2">
+                                <dt class="text-xs font-medium text-text-secondary">{{ __('expenses.status') }}</dt>
+                                <dd class="break-words text-sm tabular-nums text-text-primary">@if($cat->active)
+                                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-emerald-100 text-emerald-800">
+                                        {{ __('expenses.active') }}
+                                    </span>
+                                @else
+                                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-slate-100 text-slate-700">
+                                        {{ __('expenses.inactive') }}
+                                    </span>
+                                @endif</dd>
+                            </div>
+                        </dl>
+                        </article>
+                    @empty
+                        <article class="p-4">
+                            <dl class="grid grid-cols-2 gap-x-3 gap-y-4">
+                            <div class="col-span-2 py-4 text-center text-sm text-text-secondary">
+                                {{ __('expenses.empty') }}
+                            </div>
+                        </dl>
+                        </article>
+                    @endforelse
+                </div>
+
     </div>
 </div>

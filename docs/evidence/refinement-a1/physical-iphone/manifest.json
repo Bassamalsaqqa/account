@@ -1,0 +1,137 @@
+{
+  "source_sha": "e4ed56359001ce5b665ece800c0e0999edf52c1b",
+  "provenance": "Owner-supplied iPhone 17 Pro Max / Safari screenshots of isolated synthetic LAN acceptance build; Owner reports all requested view checks performed. Exact iOS/Safari version not supplied. Still images do not certify dynamic interaction timing or teardown.",
+  "provided_images": 16,
+  "unique_images": 15,
+  "images": [
+    {
+      "name": "WhatsApp Image 2026-10-18 at 5.48.17 PM.jpeg",
+      "sha256": "ad78a4d74f05097e2296868887cffdc9fad39d0619691b63e1cf7ca9f89b91e9",
+      "width": 880,
+      "height": 2184,
+      "artifact": "../../../images/refinement-a1/physical-iphone/iphone17pro-max-ar-products-54817.jpeg",
+      "screen": "products"
+    },
+    {
+      "name": "WhatsApp Image 2026-10-18 at 5.49.03 PM.jpeg",
+      "sha256": "12103d1c82e52ce34966d7992880bede3e8a6fcc8b1715c3d27fa60c419112d8",
+      "width": 880,
+      "height": 1780,
+      "artifact": "../../../images/refinement-a1/physical-iphone/iphone17pro-max-ar-customers-54903.jpeg",
+      "screen": "customers"
+    },
+    {
+      "name": "WhatsApp Image 2026-10-18 at 5.50.13 PM.jpeg",
+      "sha256": "c690c37788db082e8fd340746e53d123337fb2b01bc0945e07567c551d5f8631",
+      "width": 880,
+      "height": 3900,
+      "artifact": "../../../images/refinement-a1/physical-iphone/iphone17pro-max-ar-product-create-55013.jpeg",
+      "screen": "product-create"
+    },
+    {
+      "name": "WhatsApp Image 2026-10-18 at 5.50.54 PM.jpeg",
+      "sha256": "b30d964b67aa6214c0a3d7fe9fb689c4b74a9d0c590c0f823577a7314a4dac0e",
+      "width": 880,
+      "height": 2366,
+      "artifact": "../../../images/refinement-a1/physical-iphone/iphone17pro-max-ar-stock-transfer-55054.jpeg",
+      "screen": "stock-transfer"
+    },
+    {
+      "name": "WhatsApp Image 2026-10-18 at 5.51.18 PM.jpeg",
+      "sha256": "8f81d30b2e96e7c94bc75ee29e80efb3720223a0a12e0024e6461df17be32ad0",
+      "width": 880,
+      "height": 3056,
+      "artifact": "../../../images/refinement-a1/physical-iphone/iphone17pro-max-ar-inventory-overview-55118.jpeg",
+      "screen": "inventory-overview"
+    },
+    {
+      "name": "WhatsApp Image 2026-10-18 at 5.51.32 PM.jpeg",
+      "sha256": "fab8182df198aa3f47296562446b797a06772dd1ce6b2309476aac58f15dbf27",
+      "width": 880,
+      "height": 2688,
+      "artifact": "../../../images/refinement-a1/physical-iphone/iphone17pro-max-ar-opening-stock-55132.jpeg",
+      "screen": "opening-stock"
+    },
+    {
+      "name": "WhatsApp Image 2026-10-18 at 5.51.53 PM.jpeg",
+      "sha256": "54087762a823d5826c18fb7ef7b3e1d8e9bebcd72d7676c077095491eae002a7",
+      "width": 734,
+      "height": 4160,
+      "artifact": "../../../images/refinement-a1/physical-iphone/iphone17pro-max-ar-invoice-form-55153.jpeg",
+      "screen": "invoice-form"
+    },
+    {
+      "name": "WhatsApp Image 2026-10-18 at 5.52.12 PM.jpeg",
+      "sha256": "04717fad67110a490e985d2b75e9dc10257074426c1e40e226d934ab0f6996a3",
+      "width": 748,
+      "height": 4160,
+      "artifact": "../../../images/refinement-a1/physical-iphone/iphone17pro-max-ar-quotation-form-55212.jpeg",
+      "screen": "quotation-form"
+    },
+    {
+      "name": "WhatsApp Image 2026-10-18 at 5.52.33 PM.jpeg",
+      "sha256": "b7be9a31de973be4473fb9ecfc9ba8493d8163ced927add1b62f8d096bac434d",
+      "width": 642,
+      "height": 4160,
+      "artifact": "../../../images/refinement-a1/physical-iphone/iphone17pro-max-ar-purchase-form-55233.jpeg",
+      "screen": "purchase-form"
+    },
+    {
+      "name": "WhatsApp Image 2026-10-18 at 5.52.47 PM.jpeg",
+      "sha256": "cc4c0dee971b205de32ab3322d7e61103d5066295655e76c77b0707cfcfef1ca",
+      "width": 880,
+      "height": 2452,
+      "artifact": "../../../images/refinement-a1/physical-iphone/iphone17pro-max-ar-sales-return-55247.jpeg",
+      "screen": "sales-return"
+    },
+    {
+      "name": "WhatsApp Image 2026-10-18 at 5.53.04 PM.jpeg",
+      "sha256": "0bd8ec8247673c73da24eaaccaef784788c6b0412b6aa81bc942eb27981c951d",
+      "width": 880,
+      "height": 3250,
+      "artifact": "../../../images/refinement-a1/physical-iphone/iphone17pro-max-ar-purchase-return-55304.jpeg",
+      "screen": "purchase-return"
+    },
+    {
+      "name": "WhatsApp Image 2026-10-18 at 5.53.19 PM.jpeg",
+      "sha256": "d0215113ab08989a1af83f0d4a241cbf651499286a62412f98151cfdcfc0818c",
+      "width": 880,
+      "height": 3440,
+      "artifact": "../../../images/refinement-a1/physical-iphone/iphone17pro-max-ar-customer-receipt-55319.jpeg",
+      "screen": "customer-receipt"
+    },
+    {
+      "name": "WhatsApp Image 2026-10-18 at 5.53.32 PM.jpeg",
+      "sha256": "c0a0a60f3a6b9c6a110e326d5b975f85b86037dfcb49157359dcef61045d8bf6",
+      "width": 880,
+      "height": 3440,
+      "artifact": "../../../images/refinement-a1/physical-iphone/iphone17pro-max-ar-vendor-payment-55332.jpeg",
+      "screen": "vendor-payment"
+    },
+    {
+      "name": "WhatsApp Image 2026-10-18 at 6.26.57 PM.jpeg",
+      "sha256": "d0215113ab08989a1af83f0d4a241cbf651499286a62412f98151cfdcfc0818c",
+      "width": 880,
+      "height": 3440,
+      "duplicate_of": "iphone17pro-max-ar-customer-receipt-55319.jpeg",
+      "artifact": "../../../images/refinement-a1/physical-iphone/iphone17pro-max-ar-customer-receipt-55319.jpeg",
+      "screen": "customer-receipt"
+    },
+    {
+      "name": "WhatsApp Image 2026-10-18 at 6.27.18 PM.jpeg",
+      "sha256": "26565e58d7498b16668c92421a109b2d97a78eab513aa8b4e41a74a0c39e4b41",
+      "width": 880,
+      "height": 3250,
+      "artifact": "../../../images/refinement-a1/physical-iphone/iphone17pro-max-ar-purchase-return-edited-62718.jpeg",
+      "screen": "purchase-return-edited"
+    },
+    {
+      "name": "WhatsApp Image 2026-10-18 at 6.31.39 PM.jpeg",
+      "sha256": "09258d37eb3a99072a8482b8d4fb227266d7ce4355ba2664d73549e60db92cda",
+      "width": 880,
+      "height": 2876,
+      "artifact": "../../../images/refinement-a1/physical-iphone/iphone17pro-max-ar-money-overview-63139.jpeg",
+      "screen": "money-overview"
+    }
+  ]
+}

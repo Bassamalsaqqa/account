@@ -1,0 +1,70 @@
+{
+  "provenance": "Real HTTP Livewire protocol against local PHP8.4 development server and disposable MariaDB10.4 synthetic merchant fixture. Not browser tap timing, not Hostinger production timing. Baseline sends 20 serial requests; after sends one ordered batch. Canonical saveDraft only, never post. No financial/stock history writes authorized.",
+  "tag": "after",
+  "quantity": {
+    "request_count": 1,
+    "initial_quantity": "1",
+    "final_quantity": "21",
+    "wall_ms": 358.71,
+    "queries": 40,
+    "sql_ms": 31.2,
+    "response_bytes": 72236,
+    "request_bytes": 3425
+  },
+  "draft_save": {
+    "path": "/livewire-1f673f54/update",
+    "status": 200,
+    "wall_ms": 410.8,
+    "queries": 49,
+    "sql_ms": 35.45,
+    "server_ms": 406.75,
+    "response_bytes": 3033,
+    "request_bytes": 2914,
+    "operation": "saveDraft"
+  },
+  "samples": [
+    {
+      "path": "/invoices/create?customer_id=1",
+      "status": 200,
+      "wall_ms": 413.2,
+      "queries": 51,
+      "sql_ms": 43.95,
+      "server_ms": 409.47,
+      "response_bytes": 110232,
+      "request_bytes": 0
+    },
+    {
+      "path": "/livewire-1f673f54/update",
+      "status": 200,
+      "wall_ms": 381.24,
+      "queries": 43,
+      "sql_ms": 42.07,
+      "server_ms": 356.29,
+      "response_bytes": 72180,
+      "request_bytes": 2781,
+      "operation": "selectProduct"
+    },
+    {
+      "path": "/livewire-1f673f54/update",
+      "status": 200,
+      "wall_ms": 358.71,
+      "queries": 40,
+      "sql_ms": 31.2,
+      "server_ms": 338.43,
+      "response_bytes": 72236,
+      "request_bytes": 3425,
+      "operation": "batchStepQuantity"
+    },
+    {
+      "path": "/livewire-1f673f54/update",
+      "status": 200,
+      "wall_ms": 410.8,
+      "queries": 49,
+      "sql_ms": 35.45,
+      "server_ms": 406.75,
+      "response_bytes": 3033,
+      "request_bytes": 2914,
+      "operation": "saveDraft"
+    }
+  ]
+}

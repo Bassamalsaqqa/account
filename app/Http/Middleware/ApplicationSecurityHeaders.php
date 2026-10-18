@@ -13,6 +13,11 @@ final class ApplicationSecurityHeaders
     /** @var list<string> */
     private const CAMERA_ALLOWED_ROUTES = [
         'products.index',
+        'products.create',
+        'products.edit',
+        'inventory.opening-stock.create',
+        'inventory.adjustments.create',
+        'inventory.transfers.create',
         'invoices.create',
         'invoices.edit',
         'quotations.create',

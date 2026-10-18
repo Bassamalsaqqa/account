@@ -5,7 +5,11 @@ declare(strict_types=1);
 namespace App\Livewire\Pages\Inventory;
 
 use App\Actions\Inventory\PostOpeningStockAction;
+use App\Application\Inventory\InventoryFormAvailability;
 use App\Domain\Inventory\ValueObjects\Quantity;
+use App\Livewire\Pages\Inventory\Concerns\AuthorizesInventoryPages;
+use App\Livewire\Pages\Inventory\Concerns\HandlesInventoryDraftControls;
+use App\Models\Company;
 use App\Models\Product;
 use App\Models\User;
 use App\Models\Warehouse;
@@ -19,6 +23,9 @@ use Livewire\Component;
 #[Layout('layouts.app')]
 class OpeningStockForm extends Component
 {
+    use AuthorizesInventoryPages;
+    use HandlesInventoryDraftControls;
+
     public ?int $product_id = null;
 
     public ?int $warehouse_id = null;
@@ -43,15 +50,25 @@ class OpeningStockForm extends Component
 
     public ?string $errorMessage = null;
 
+    public function boot(): void
+    {
+        if (isset($this->pageCompanyId)) {
+            $this->authorizeInventoryContext();
+        }
+    }
+
+    protected function authorizeInventoryContext(): Company
+    {
+        $company = $this->authorizeInventory('inventory.stock.adjust');
+        abort_unless(auth()->user()->hasPermissionTo('inventory.cost.view'), 403);
+
+        return $company;
+    }
+
     public function mount(CompanyContext $context): void
     {
-        /** @var User $user */
-        $user = auth()->user();
-        if (! $user->hasPermissionTo('inventory.stock.adjust') || ! $user->hasPermissionTo('inventory.cost.view')) {
-            abort(403);
-        }
-
-        $company = $context->company();
+        $this->pageCompanyId = (int) $context->companyId();
+        $company = $this->authorizeInventoryContext();
         $this->movement_date = now($company->timezone)->toDateString();
         $this->formIdempotencyKey = (string) Str::ulid();
         $this->reason = __('inventory.default_opening_stock_reason');
@@ -67,8 +84,10 @@ class OpeningStockForm extends Component
         $this->lot_number = '';
         $this->expiry_date = '';
 
+        $company = $this->authorizeInventoryContext();
+        $this->unit_id = null;
         if ($this->product_id) {
-            $product = Product::find($this->product_id);
+            $product = Product::where('company_id', $company->id)->where('active', true)->where('track_stock', true)->find($this->product_id);
             if ($product) {
                 $this->unit_id = $product->base_unit_id;
                 /** @var User $user */
@@ -82,13 +101,9 @@ class OpeningStockForm extends Component
 
     public function save(CompanyContext $context, PostOpeningStockAction $action): void
     {
+        $company = $this->authorizeInventoryContext();
         /** @var User $user */
         $user = auth()->user();
-        if (! $user->hasPermissionTo('inventory.stock.adjust') || ! $user->hasPermissionTo('inventory.cost.view')) {
-            abort(403);
-        }
-
-        $company = $context->company();
 
         $validated = $this->validate([
             'product_id' => ['required', 'integer', Rule::exists('products', 'id')->where('company_id', $company->id)],
@@ -146,7 +161,7 @@ class OpeningStockForm extends Component
 
     public function render(CompanyContext $context): View
     {
-        $company = $context->company();
+        $company = $this->authorizeInventoryContext();
 
         /** @var User $user */
         $user = auth()->user();
@@ -185,6 +200,7 @@ class OpeningStockForm extends Component
             'products' => $products,
             'warehouses' => $warehouses,
             'selectedProduct' => $selectedProduct,
+            'stockAvailability' => app(InventoryFormAvailability::class)->forProduct((int) $company->id, $selectedProduct, $this->warehouse_id),
             'availableUnits' => $availableUnits,
             'canViewCost' => $canViewCost,
             'company' => $company,

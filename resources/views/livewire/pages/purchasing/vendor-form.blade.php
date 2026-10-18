@@ -1,7 +1,7 @@
 <div class="max-w-4xl mx-auto space-y-5">
     <header class="flex items-center justify-between gap-3">
         <h1 class="text-xl sm:text-2xl font-bold text-text-primary">{{ __($vendorId ? 'purchasing.edit_vendor' : 'purchasing.create_vendor') }}</h1>
-        @if ($canView)<a href="{{ route('vendors.index') }}" class="text-sm text-primary px-3 py-3">{{ __('purchasing.back') }}</a>@endif
+        @if ($canView)<a href="{{ route('vendors.index') }}" class="touch-action text-sm text-primary px-3 py-3">{{ __('purchasing.back') }}</a>@endif
     </header>
     @if (session()->has('success'))<p role="status" class="p-3 rounded-control bg-success-bg text-success text-sm">{{ session('success') }}</p>@endif
     <form wire:submit="save" class="space-y-4">

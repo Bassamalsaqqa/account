@@ -5,10 +5,13 @@ declare(strict_types=1);
 namespace App\Livewire\Pages\Inventory;
 
 use App\Application\Inventory\AvailableLotQuery;
+use App\Application\Inventory\InventoryFormAvailability;
 use App\Domain\Inventory\DTO\StockTransferCommand;
 use App\Domain\Inventory\DTO\StockTransferLineCommand;
 use App\Domain\Inventory\ValueObjects\Quantity;
 use App\Livewire\Pages\Inventory\Concerns\AuthorizesInventoryPages;
+use App\Livewire\Pages\Inventory\Concerns\HandlesInventoryDraftControls;
+use App\Models\Company;
 use App\Models\Product;
 use App\Models\User;
 use App\Models\Warehouse;
@@ -24,6 +27,12 @@ use Livewire\Component;
 class StockTransferForm extends Component
 {
     use AuthorizesInventoryPages;
+    use HandlesInventoryDraftControls;
+
+    protected function authorizeInventoryContext(): Company
+    {
+        return $this->authorizeInventory('inventory.stock.transfer');
+    }
 
     public ?int $source_warehouse_id = null;
 
@@ -197,6 +206,7 @@ class StockTransferForm extends Component
             'products' => $products,
             'warehouses' => $warehouses,
             'selectedProduct' => $selectedProduct,
+            'stockAvailability' => app(InventoryFormAvailability::class)->forProduct((int) $company->id, $selectedProduct, $this->source_warehouse_id),
             'availableUnits' => $availableUnits,
             'availableLots' => $availableLots,
             'company' => $company,

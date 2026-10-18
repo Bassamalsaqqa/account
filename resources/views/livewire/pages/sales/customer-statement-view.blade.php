@@ -14,7 +14,7 @@
             <div class="flex items-center gap-2">
                 <x-document-actions route-name="pdf.statement" :parameters="['publicId' => $customer->public_id, 'from' => $fromDate, 'to' => $toDate]" :permissions="['sales.document.pdf', 'sales.statement.view', 'customers.statement.view']" />
                 <a href="{{ route('customers.show', $customer->public_id) }}"
-                   class="px-3 py-1.5 rounded-control bg-surface-soft text-text-secondary hover:text-text-primary text-xs font-bold transition-colors">
+                   class="touch-action px-3 py-1.5 rounded-control bg-surface-soft text-text-secondary hover:text-text-primary text-xs font-bold transition-colors">
                     {{ __('sales.back') }}
                 </a>
             </div>
@@ -35,12 +35,12 @@
 
     @can('sales.document.share')
         <div class="bg-white rounded-card border border-border p-4 flex flex-wrap gap-3 items-center text-xs">
-            <label>{{ __('sales.share_expires_in') }} <input type="number" wire:model="shareExpiryDays" min="0" max="3650" class="w-20 rounded-control border-border"></label>
+            <label>{{ __('sales.share_expires_in') }} <input type="number" inputmode="decimal" wire:model="shareExpiryDays" min="0" max="3650" class="w-20 rounded-control border-border"></label>
             <label>{{ __('sales.password_protected') }} <input type="password" wire:model="sharePassword" class="rounded-control border-border"></label>
-            <button type="button" wire:click="createShareLink" class="bg-primary text-white rounded-control px-3 py-2">{{ __('sales.create_share') }}</button>
+            <button type="button" wire:click="createShareLink" class="bg-primary text-white rounded-control px-3 py-2" wire:loading.attr="disabled" wire:target="createShareLink">{{ __('sales.create_share') }}</button>
             @if($shareUrl)
-                <a href="{{ $shareUrl }}" target="_blank" class="text-primary">{{ __('sales.share_link') }}</a>
-                <button type="button" wire:click="revokeShareLink" class="text-danger">{{ __('sales.revoke_share') }}</button>
+                <a href="{{ $shareUrl }}" target="_blank" class="touch-action text-primary">{{ __('sales.share_link') }}</a>
+                <button type="button" wire:click="revokeShareLink" class="text-danger" wire:loading.attr="disabled" wire:target="revokeShareLink">{{ __('sales.revoke_share') }}</button>
             @endif
         </div>
     @endcan

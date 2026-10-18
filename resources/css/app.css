@@ -105,3 +105,36 @@ summary:focus-visible {
     }
     .business-app #app-main button:not(.assistant-icon-button) { min-height: 44px; }
 }
+
+/* Explicit action surfaces across detail, form and settings screens. */
+.business-app #app-main .touch-action {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: .5rem;
+    min-height: 40px;
+    min-width: 40px;
+    padding: .5rem .75rem;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-control);
+    font-weight: 600;
+    line-height: 1.4;
+    text-decoration: none;
+    overflow-wrap: anywhere;
+    touch-action: manipulation;
+}
+.business-app #app-main .touch-action:active { filter: brightness(.94); }
+.business-app #app-main :is(button, a, input, select, textarea) { -webkit-tap-highlight-color: transparent; }
+.business-app #app-main :is(button:disabled, [aria-disabled='true']) { cursor: not-allowed; opacity: .6; }
+.money-section-nav { flex-wrap: nowrap; overflow-x: auto; padding-block: 4px; scrollbar-width: thin; }
+.money-section-nav > a { flex-shrink: 0; white-space: nowrap; }
+@media (max-width: 1023px) {
+    .business-app #app-main .touch-action { min-height: 44px; min-width: 44px; }
+    .business-app #app-main .font-mono { font-variant-numeric: tabular-nums; }
+}
+@media (min-width: 768px) { .money-section-nav { flex-wrap: wrap; } }
+@media (max-width: 767px) {
+    .business-app #app-main :is(h1, h2) { overflow-wrap: anywhere; }
+    .business-app #app-main :is(th, td) { overflow-wrap: anywhere; }
+    .business-app #app-main .touch-action { max-width: 100%; }
+}

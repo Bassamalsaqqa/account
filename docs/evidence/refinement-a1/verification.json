@@ -1,0 +1,56 @@
+{
+  "baseline": "e5129d50aa7e9abbdd04a21b006a87afd59b2ca1",
+  "application_commit": "001272d801b3c3479795de9da0cb83e8fad9f766",
+  "php": "8.4.25",
+  "database": "disposable MariaDB 10.4",
+  "focused_php_runs": [
+    {
+      "tests": 15,
+      "assertions": 238,
+      "suites": [
+        "QuantityBatchTest",
+        "ListTouchUsabilityTest",
+        "DocumentTouchControlsTest"
+      ]
+    },
+    {
+      "tests": 18,
+      "assertions": 134,
+      "suites": [
+        "RefinementDraftControlsTest (original 11 tests)",
+        "ApplicationSecurityHeadersTest"
+      ]
+    },
+    {
+      "tests": 2,
+      "assertions": 26,
+      "suites": [
+        "final payment whitespace and stale-source boundary corrections"
+      ]
+    }
+  ],
+  "javascript": {
+    "tests": 29,
+    "suites": [
+      "document-operations.test.mjs",
+      "camera-scanner.test.mjs"
+    ]
+  },
+  "scoped_phpstan": "12 changed application files clean; final three payment correction files clean separately",
+  "pint": "scoped pass",
+  "blade": "compiled and 172 generated PHP templates parsed without errors",
+  "design_detector": "scoped static detector: no findings",
+  "build": {
+    "modules": 308,
+    "css": "assets/app-CmmHF-fr.css",
+    "javascript": "assets/app-l1JPhigY.js",
+    "lazy_zxing": "assets/index-B2ZkNDM-.js",
+    "dynamic_manifest_link": true
+  },
+  "migrations": 0,
+  "dependency_changes": 0,
+  "production_access": false,
+  "merge": false,
+  "deployment": false,
+  "physical_device_evidence": "No A.1 physical-device verification; responsive desktop Edge only"
+}

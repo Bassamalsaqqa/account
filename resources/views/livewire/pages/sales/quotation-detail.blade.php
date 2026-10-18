@@ -17,7 +17,7 @@
                 </div>
                 <div class="text-xs text-text-secondary mt-1">
                     {{ __('sales.customer') }}:
-                    <a href="{{ route('customers.show', $quotation->customer->public_id) }}" class="font-bold text-text-primary hover:text-primary">
+                    <a href="{{ route('customers.show', $quotation->customer->public_id) }}" class="touch-action font-bold text-text-primary hover:text-primary">
                         {{ $quotation->customer->displayName() }}
                     </a>
                 </div>
@@ -28,7 +28,7 @@
                 @if ($canConvert)
                     <button type="button"
                             wire:click="convertToInvoice"
-                            class="px-3 py-1.5 rounded-control bg-success text-white text-xs font-bold hover:opacity-90 transition-opacity shadow-xs cursor-pointer">
+                            class="px-3 py-1.5 rounded-control bg-success text-white text-xs font-bold hover:opacity-90 transition-opacity shadow-xs cursor-pointer" wire:loading.attr="disabled" wire:target="convertToInvoice">
                         ⚡ {{ __('sales.convert_to_invoice') }}
                     </button>
                 @endif
@@ -36,12 +36,12 @@
                 @if ($quotation->isConverted() && $quotation->convertedInvoice && $canViewInvoice)
                     @if ($quotation->convertedInvoice->isDraft() && $canEditInvoiceDraft)
                         <a href="{{ route('invoices.edit', $quotation->convertedInvoice->public_id) }}"
-                           class="px-3 py-1.5 rounded-control bg-primary text-white text-xs font-bold hover:bg-primary-hover transition-colors shadow-xs">
+                           class="touch-action px-3 py-1.5 rounded-control bg-primary text-white text-xs font-bold hover:bg-primary-hover transition-colors shadow-xs">
                             ✏️ {{ __('workflow.edit_invoice_draft') }}
                         </a>
                     @else
                         <a href="{{ route('invoices.show', $quotation->convertedInvoice->public_id) }}"
-                           class="px-3 py-1.5 rounded-control border border-border text-xs font-bold text-text-secondary hover:bg-surface-soft transition-colors">
+                           class="touch-action px-3 py-1.5 rounded-control border border-border text-xs font-bold text-text-secondary hover:bg-surface-soft transition-colors">
                             📄 {{ __('workflow.view_invoice_draft') }}
                         </a>
                     @endif
@@ -50,7 +50,7 @@
                 @if ($canSend)
                     <button type="button"
                             wire:click="markAsSent"
-                            class="px-3 py-1.5 rounded-control bg-primary text-white text-xs font-bold hover:bg-primary-hover transition-colors shadow-xs">
+                            class="px-3 py-1.5 rounded-control bg-primary text-white text-xs font-bold hover:bg-primary-hover transition-colors shadow-xs" wire:loading.attr="disabled" wire:target="markAsSent">
                         {{ __('sales.mark_as_sent') }}
                     </button>
                 @endif
@@ -58,12 +58,12 @@
                 @if ($quotation->status === 'sent')
                     <button type="button"
                             wire:click="markAsAccepted"
-                            class="px-3 py-1.5 rounded-control bg-success-bg text-success border border-success/30 text-xs font-bold hover:bg-success hover:text-white transition-colors">
+                            class="px-3 py-1.5 rounded-control bg-success-bg text-success border border-success/30 text-xs font-bold hover:bg-success hover:text-white transition-colors" wire:loading.attr="disabled" wire:target="markAsAccepted">
                         ✓ {{ __('sales.mark_as_accepted') }}
                     </button>
                     <button type="button"
                             wire:click="markAsRejected"
-                            class="px-3 py-1.5 rounded-control bg-danger-bg text-danger border border-danger/30 text-xs font-bold hover:bg-danger hover:text-white transition-colors">
+                            class="px-3 py-1.5 rounded-control bg-danger-bg text-danger border border-danger/30 text-xs font-bold hover:bg-danger hover:text-white transition-colors" wire:loading.attr="disabled" wire:target="markAsRejected">
                         ✕ {{ __('sales.mark_as_rejected') }}
                     </button>
                 @endif
@@ -71,14 +71,14 @@
                 @if ($canReturnToDraft)
                     <button type="button"
                             wire:click="returnToDraft"
-                            class="px-3 py-1.5 rounded-control border border-border text-xs font-bold text-text-secondary hover:bg-surface-soft transition-colors">
+                            class="px-3 py-1.5 rounded-control border border-border text-xs font-bold text-text-secondary hover:bg-surface-soft transition-colors" wire:loading.attr="disabled" wire:target="returnToDraft">
                         {{ __('sales.return_to_draft') }}
                     </button>
                 @endif
 
                 @if ($canEdit)
                     <a href="{{ route('quotations.edit', $quotation->public_id) }}"
-                       class="px-3 py-1.5 rounded-control border border-border text-xs font-bold text-text-secondary hover:bg-surface-soft transition-colors">
+                       class="touch-action px-3 py-1.5 rounded-control border border-border text-xs font-bold text-text-secondary hover:bg-surface-soft transition-colors">
                         {{ __('sales.edit_quotation') }}
                     </a>
                 @endif
@@ -88,7 +88,7 @@
 
 
                 <a href="{{ route('quotations.index') }}"
-                   class="px-3 py-1.5 rounded-control bg-surface-soft text-text-secondary hover:text-text-primary text-xs font-bold transition-colors">
+                   class="touch-action px-3 py-1.5 rounded-control bg-surface-soft text-text-secondary hover:text-text-primary text-xs font-bold transition-colors">
                     {{ __('sales.back') }}
                 </a>
             </div>
@@ -127,7 +127,7 @@
                     <p class="text-[11px] text-text-secondary">
                         {{ __('workflow.converted_invoice_provenance') }}:
                         @if ($canViewInvoice)
-                            <a href="{{ route('invoices.show', $quotation->convertedInvoice->public_id) }}" class="font-mono font-bold text-primary hover:underline" dir="ltr">
+                            <a href="{{ route('invoices.show', $quotation->convertedInvoice->public_id) }}" class="touch-action font-mono font-bold text-primary hover:underline" dir="ltr">
                                 {{ $quotation->convertedInvoice->invoice_number ?? __('sales.draft_invoice') }}
                             </a>
                         @else
@@ -145,12 +145,12 @@
                 <div class="flex items-center gap-2">
                     @if ($quotation->convertedInvoice->isDraft() && $canEditInvoiceDraft)
                         <a href="{{ route('invoices.edit', $quotation->convertedInvoice->public_id) }}"
-                           class="px-3 py-1.5 rounded-control bg-primary text-white text-xs font-bold hover:bg-primary-hover transition-colors shadow-xs">
+                           class="touch-action px-3 py-1.5 rounded-control bg-primary text-white text-xs font-bold hover:bg-primary-hover transition-colors shadow-xs">
                             {{ __('workflow.edit_invoice_draft') }}
                         </a>
                     @else
                         <a href="{{ route('invoices.show', $quotation->convertedInvoice->public_id) }}"
-                           class="px-3 py-1.5 rounded-control border border-border bg-white text-xs font-bold text-text-secondary hover:bg-surface-soft transition-colors">
+                           class="touch-action px-3 py-1.5 rounded-control border border-border bg-white text-xs font-bold text-text-secondary hover:bg-surface-soft transition-colors">
                             {{ __('workflow.view_invoice_draft') }}
                         </a>
                     @endif

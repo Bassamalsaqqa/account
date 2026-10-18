@@ -13,11 +13,11 @@
         <div class="flex items-center gap-2">
             <button type="button"
                     wire:click="newTaxRate"
-                    class="px-3.5 py-1.5 rounded-control bg-primary text-white text-xs font-bold hover:bg-primary-hover transition-colors shadow-xs">
+                    class="px-3.5 py-1.5 rounded-control bg-primary text-white text-xs font-bold hover:bg-primary-hover transition-colors shadow-xs" wire:loading.attr="disabled" wire:target="newTaxRate">
                 {{ __('sales.add_tax_rate') }}
             </button>
             <a href="{{ route('settings.index') }}"
-               class="px-3 py-1.5 rounded-control bg-surface-soft text-text-secondary hover:text-text-primary text-xs font-bold transition-colors">
+               class="touch-action px-3 py-1.5 rounded-control bg-surface-soft text-text-secondary hover:text-text-primary text-xs font-bold transition-colors">
                 {{ __('sales.back') }}
             </a>
         </div>
@@ -75,7 +75,7 @@
                             <td class="py-3 px-4 text-end">
                                 <button type="button"
                                         wire:click="editTaxRate({{ $tax->id }})"
-                                        class="px-2.5 py-1 rounded-control bg-surface-soft hover:bg-slate-200 text-text-primary text-xs font-bold transition-colors">
+                                        class="px-2.5 py-1 rounded-control bg-surface-soft hover:bg-slate-200 text-text-primary text-xs font-bold transition-colors" wire:loading.attr="disabled" wire:target="editTaxRate">
                                     {{ __('sales.edit') }}
                                 </button>
                             </td>
@@ -121,7 +121,7 @@
                     <div class="grid grid-cols-2 gap-3">
                         <div>
                             <label class="block font-bold text-text-primary mb-1">{{ __('sales.rate_percent') }} <span class="text-danger">*</span></label>
-                            <input type="number" step="0.000001" min="0" max="100" wire:model="rate" required dir="ltr" class="w-full h-8 px-2 rounded-control border border-border font-mono" />
+                            <input type="number" inputmode="decimal" step="0.000001" min="0" max="100" wire:model="rate" required dir="ltr" class="w-full h-8 px-2 rounded-control border border-border font-mono" />
                             @error('rate') <span class="text-danger text-[11px] block mt-0.5">{{ $message }}</span> @enderror
                         </div>
 

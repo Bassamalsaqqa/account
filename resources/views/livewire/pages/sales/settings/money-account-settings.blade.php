@@ -13,11 +13,11 @@
         <div class="flex items-center gap-2">
             <button type="button"
                     wire:click="newAccount"
-                    class="px-3.5 py-1.5 rounded-control bg-primary text-white text-xs font-bold hover:bg-primary-hover transition-colors shadow-xs">
+                    class="px-3.5 py-1.5 rounded-control bg-primary text-white text-xs font-bold hover:bg-primary-hover transition-colors shadow-xs" wire:loading.attr="disabled" wire:target="newAccount">
                 {{ __('sales.add_account') }}
             </button>
             <a href="{{ route('settings.index') }}"
-               class="px-3 py-1.5 rounded-control bg-surface-soft text-text-secondary hover:text-text-primary text-xs font-bold transition-colors">
+               class="touch-action px-3 py-1.5 rounded-control bg-surface-soft text-text-secondary hover:text-text-primary text-xs font-bold transition-colors">
                 {{ __('sales.back') }}
             </a>
         </div>
@@ -71,7 +71,7 @@
                             <td class="py-3 px-4 text-end">
                                 <button type="button"
                                         wire:click="editAccount({{ $acc->id }})"
-                                        class="px-2.5 py-1 rounded-control bg-surface-soft hover:bg-slate-200 text-text-primary text-xs font-bold transition-colors">
+                                        class="px-2.5 py-1 rounded-control bg-surface-soft hover:bg-slate-200 text-text-primary text-xs font-bold transition-colors" wire:loading.attr="disabled" wire:target="editAccount">
                                     {{ __('sales.edit') }}
                                 </button>
                             </td>

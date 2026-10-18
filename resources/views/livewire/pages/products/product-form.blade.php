@@ -1,9 +1,21 @@
-<div class="space-y-6 max-w-5xl mx-auto">
+<div class="space-y-6 max-w-5xl mx-auto" x-data="{
+        saving: false, operationFailed: false,
+        run(method, args = [], terminal = false) {
+            if (this.saving) return;
+            if (terminal &amp;&amp; [...document.querySelectorAll('[role=dialog]')].some(el => el.getClientRects().length > 0)) return;
+            if (terminal) this.saving = true;
+            this.operationFailed = false;
+            window.enqueueDocumentOperation($wire, method, args)
+                .catch(() => { this.operationFailed = true; })
+                .finally(() => { if (terminal) this.saving = false; });
+        }
+    }">
+    <p x-cloak x-show="operationFailed" role="alert" class="text-sm text-danger">{{ __('camera.network_error') }}</p>
     <!-- Header -->
     <div class="flex items-center justify-between gap-4">
         <div class="flex items-center gap-3">
             <a href="{{ route('products.index') }}"
-               class="p-2 rounded-control border border-border bg-white text-text-secondary hover:text-text-primary hover:bg-surface-soft transition-colors">
+               class="min-h-11 inline-flex items-center justify-center gap-2 px-3 active:bg-surface-soft focus-visible:ring-2 focus-visible:ring-primary p-2 rounded-control border border-border bg-white text-text-secondary hover:text-text-primary hover:bg-surface-soft transition-colors">
                 <x-icon name="arrow-right" class="w-4 h-4 rtl:rotate-0 ltr:rotate-180" />
             </a>
             <div>
@@ -17,9 +29,9 @@
         </div>
 
         <button type="button"
-                wire:click="save"
+                @click="run('save', [], true)" :disabled="saving"
                 wire:loading.attr="disabled"
-                class="inline-flex items-center gap-2 px-5 py-2.5 bg-primary hover:bg-primary-hover text-white text-xs font-bold rounded-control shadow-button transition-colors disabled:opacity-50">
+                class="min-h-11 inline-flex items-center justify-center gap-2 px-3 active:bg-surface-soft focus-visible:ring-2 focus-visible:ring-primary px-5 py-2.5 bg-primary hover:bg-primary-hover text-white text-xs font-bold rounded-control shadow-button transition-colors disabled:opacity-50">
             <span wire:loading.remove wire:target="save">{{ __('inventory.save_data') }}</span>
             <span wire:loading wire:target="save">{{ __('inventory.saving') }}</span>
         </button>
@@ -29,13 +41,13 @@
     @if ($successMessage)
         <div class="p-3.5 rounded-control bg-success-bg border border-success/30 text-success text-xs font-semibold flex items-center justify-between">
             <span>{{ $successMessage }}</span>
-            <button type="button" wire:click="$set('successMessage', null)" class="text-success hover:opacity-75">&times;</button>
+            <button type="button" wire:click="$set('successMessage', null)" class="min-h-11 inline-flex items-center justify-center gap-2 px-3 active:bg-surface-soft focus-visible:ring-2 focus-visible:ring-primary text-success hover:opacity-75" wire:loading.attr="disabled">&times;</button>
         </div>
     @endif
     @if ($errorMessage)
         <div class="p-3.5 rounded-control bg-danger-bg border border-danger/30 text-danger text-xs font-semibold flex items-center justify-between">
             <span>{{ $errorMessage }}</span>
-            <button type="button" wire:click="$set('errorMessage', null)" class="text-danger hover:opacity-75">&times;</button>
+            <button type="button" wire:click="$set('errorMessage', null)" class="min-h-11 inline-flex items-center justify-center gap-2 px-3 active:bg-surface-soft focus-visible:ring-2 focus-visible:ring-primary text-danger hover:opacity-75" wire:loading.attr="disabled">&times;</button>
         </div>
     @endif
 
@@ -55,7 +67,7 @@
                 <input id="product-name-ar" @error('name_ar') aria-invalid="true" aria-describedby="product-name-ar-error" @enderror type="text"
                        wire:model="name_ar"
                        dir="rtl"
-                       class="w-full h-9 px-3 rounded-control border border-border bg-white text-xs text-text-primary focus:outline-none focus:border-primary focus:ring-2 focus:ring-focus-ring @error('name_ar') border-danger @enderror" />
+                       class="w-full min-h-11 px-3 rounded-control border border-border bg-white text-xs text-text-primary focus:outline-none focus:border-primary focus:ring-2 focus:ring-focus-ring @error('name_ar') border-danger @enderror" />
                 @error('name_ar') <span id="product-name-ar-error" role="alert" class="text-[11px] text-danger">{{ $message }}</span> @enderror
             </div>
 
@@ -67,7 +79,7 @@
                 <input id="product-name-en" @error('name_en') aria-invalid="true" aria-describedby="product-name-en-error" @enderror type="text"
                        wire:model="name_en"
                        dir="ltr"
-                       class="w-full h-9 px-3 rounded-control border border-border bg-white text-xs text-text-primary focus:outline-none focus:border-primary focus:ring-2 focus:ring-focus-ring @error('name_en') border-danger @enderror" />
+                       class="w-full min-h-11 px-3 rounded-control border border-border bg-white text-xs text-text-primary focus:outline-none focus:border-primary focus:ring-2 focus:ring-focus-ring @error('name_en') border-danger @enderror" />
                 @error('name_en') <span id="product-name-en-error" role="alert" class="text-[11px] text-danger">{{ $message }}</span> @enderror
             </div>
 
@@ -80,7 +92,7 @@
                        wire:model="sku"
                        dir="ltr"
                        placeholder="{{ __('inventory.sku_placeholder') }}"
-                       class="w-full h-9 px-3 rounded-control border border-border bg-white text-xs font-mono text-text-primary focus:outline-none focus:border-primary focus:ring-2 focus:ring-focus-ring @error('sku') border-danger @enderror" />
+                       class="w-full min-h-11 px-3 rounded-control border border-border bg-white text-xs font-mono text-text-primary focus:outline-none focus:border-primary focus:ring-2 focus:ring-focus-ring @error('sku') border-danger @enderror" />
                 @error('sku') <span id="product-sku-error" role="alert" class="text-[11px] text-danger">{{ $message }}</span> @enderror
             </div>
 
@@ -90,7 +102,7 @@
                     {{ __('inventory.product_type') }} <span class="text-danger">*</span>
                 </label>
                 <select id="product-product-type" @error('product_type') aria-invalid="true" aria-describedby="product-product-type-error" @enderror wire:model="product_type"
-                        class="w-full h-9 px-3 rounded-control border border-border bg-white text-xs text-text-primary focus:outline-none focus:border-primary focus:ring-2 focus:ring-focus-ring">
+                        class="w-full min-h-11 px-3 rounded-control border border-border bg-white text-xs text-text-primary focus:outline-none focus:border-primary focus:ring-2 focus:ring-focus-ring">
                     <option value="{{ \App\Models\Product::TYPE_STOCK }}">{{ __('inventory.type_stock') }}</option>
                     <option value="{{ \App\Models\Product::TYPE_NON_STOCK }}">{{ __('inventory.type_non_stock') }}</option>
                     <option value="{{ \App\Models\Product::TYPE_SERVICE }}">{{ __('inventory.type_service') }}</option>
@@ -104,7 +116,7 @@
                     {{ __('inventory.category') }}
                 </label>
                 <select id="product-category-id" @error('category_id') aria-invalid="true" aria-describedby="product-category-id-error" @enderror wire:model="category_id"
-                        class="w-full h-9 px-3 rounded-control border border-border bg-white text-xs text-text-primary focus:outline-none focus:border-primary focus:ring-2 focus:ring-focus-ring">
+                        class="w-full min-h-11 px-3 rounded-control border border-border bg-white text-xs text-text-primary focus:outline-none focus:border-primary focus:ring-2 focus:ring-focus-ring">
                     <option value="">{{ __('inventory.select_category') }}</option>
                     @foreach ($categories as $c)
                         <option value="{{ $c->id }}">{{ $c->name_ar }}</option>
@@ -121,14 +133,14 @@
                     </label>
                     @if ($canManageProduct)
                         <button type="button" wire:click="openCreateBrandModal"
-                                class="text-[11px] text-primary hover:underline font-bold flex items-center gap-1">
+                                class="min-h-11 inline-flex items-center justify-center gap-2 px-3 active:bg-surface-soft focus-visible:ring-2 focus-visible:ring-primary text-[11px] text-primary hover:underline font-bold flex gap-1" wire:loading.attr="disabled">
                             <x-icon name="plus" class="w-3 h-3" />
                             <span>{{ __('inventory.add_brand') }}</span>
                         </button>
                     @endif
                 </div>
                 <select id="product-brand-id" @error('brand_id') aria-invalid="true" aria-describedby="product-brand-id-error" @enderror wire:model="brand_id"
-                        class="w-full h-9 px-3 rounded-control border border-border bg-white text-xs text-text-primary focus:outline-none focus:border-primary focus:ring-2 focus:ring-focus-ring">
+                        class="w-full min-h-11 px-3 rounded-control border border-border bg-white text-xs text-text-primary focus:outline-none focus:border-primary focus:ring-2 focus:ring-focus-ring">
                     <option value="">{{ __('inventory.select_brand') }}</option>
                     @foreach ($brands as $b)
                         <option value="{{ $b->id }}">
@@ -146,7 +158,7 @@
                 </label>
                 <select id="product-base-unit-id" @error('base_unit_id') aria-invalid="true" aria-describedby="product-base-unit-id-error" @enderror wire:model="base_unit_id"
                         @disabled($hasMovements)
-                        class="w-full h-9 px-3 rounded-control border border-border bg-white text-xs text-text-primary focus:outline-none focus:border-primary focus:ring-2 focus:ring-focus-ring disabled:bg-surface-soft disabled:text-text-muted">
+                        class="w-full min-h-11 px-3 rounded-control border border-border bg-white text-xs text-text-primary focus:outline-none focus:border-primary focus:ring-2 focus:ring-focus-ring disabled:bg-surface-soft disabled:text-text-muted">
                     <option value="">{{ __('inventory.select_base_unit') }}</option>
                     @foreach ($units as $u)
                         <option value="{{ $u->id }}">{{ $u->name_ar }} ({{ $u->symbol_ar ?? $u->code }})</option>
@@ -202,7 +214,7 @@
                        wire:model="minimum_stock"
                        dir="ltr"
                        placeholder="0"
-                       class="w-full h-9 px-3 rounded-control border border-border bg-white text-xs font-mono text-text-primary focus:outline-none focus:border-primary focus:ring-2 focus:ring-focus-ring @error('minimum_stock') border-danger @enderror" />
+                       class="w-full min-h-11 px-3 rounded-control border border-border bg-white text-xs font-mono text-text-primary focus:outline-none focus:border-primary focus:ring-2 focus:ring-focus-ring @error('minimum_stock') border-danger @enderror" inputmode="decimal" />
                 @error('minimum_stock') <span id="product-minimum-stock-error" role="alert" class="text-[11px] text-danger">{{ $message }}</span> @enderror
             </div>
 
@@ -216,7 +228,7 @@
                        wire:model="suggested_sale_price"
                        dir="ltr"
                        placeholder="0.00"
-                       class="w-full h-9 px-3 rounded-control border border-border bg-white text-xs font-mono text-text-primary focus:outline-none focus:border-primary focus:ring-2 focus:ring-focus-ring @error('suggested_sale_price') border-danger @enderror" />
+                       class="w-full min-h-11 px-3 rounded-control border border-border bg-white text-xs font-mono text-text-primary focus:outline-none focus:border-primary focus:ring-2 focus:ring-focus-ring @error('suggested_sale_price') border-danger @enderror" inputmode="decimal" />
                 <span class="text-[10px] text-text-muted">{{ __('inventory.suggested_sale_price_hint') }}</span>
                 @error('suggested_sale_price') <span id="product-suggested-sale-price-error" role="alert" class="text-[11px] text-danger">{{ $message }}</span> @enderror
             </div>
@@ -232,13 +244,23 @@
                            wire:model="suggested_purchase_cost"
                            dir="ltr"
                            placeholder="0.00"
-                           class="w-full h-9 px-3 rounded-control border border-border bg-white text-xs font-mono text-text-primary focus:outline-none focus:border-primary focus:ring-2 focus:ring-focus-ring @error('suggested_purchase_cost') border-danger @enderror" />
+                           class="w-full min-h-11 px-3 rounded-control border border-border bg-white text-xs font-mono text-text-primary focus:outline-none focus:border-primary focus:ring-2 focus:ring-focus-ring @error('suggested_purchase_cost') border-danger @enderror" inputmode="decimal" />
                     <span class="text-[10px] text-text-muted">{{ __('inventory.suggested_purchase_cost_hint') }}</span>
                     @error('suggested_purchase_cost') <span id="product-suggested-purchase-cost-error" role="alert" class="text-[11px] text-danger">{{ $message }}</span> @enderror
                 </div>
             @endif
         </div>
     </x-card>
+
+    @if (! $isEditing)
+        <x-card padding="p-4 sm:p-6">
+            <label for="product-draft-barcode" class="block font-bold text-sm mb-2">{{ __('inventory.barcode') }}</label>
+            <input id="product-draft-barcode" type="text" wire:model="new_barcode" maxlength="128" dir="ltr" class="w-full min-h-11 rounded-control border border-border px-3 font-mono" />
+            <div class="mt-3"><x-camera-scanner /></div>
+            <p class="text-xs text-text-secondary mt-2">{{ __('refinement.barcode_create_hint') }}</p>
+            @error('new_barcode') <p role="alert" class="text-sm text-danger">{{ $message }}</p> @enderror
+        </x-card>
+    @endif
 
     @if ($isEditing && $product)
         <!-- Alternate Units Management -->
@@ -256,7 +278,7 @@
                     <div>
                         <label for="product-new-alt-unit-id" class="block text-xs font-bold text-text-secondary mb-1">{{ __('inventory.alternate_unit') }}</label>
                         <select id="product-new-alt-unit-id" @error('new_alt_unit_id') aria-invalid="true" aria-describedby="product-new-alt-unit-id-error" @enderror wire:model="new_alt_unit_id"
-                                class="w-full h-8 px-2 rounded-control border border-border bg-white text-xs text-text-primary">
+                                class="w-full min-h-11 px-2 rounded-control border border-border bg-white text-xs text-text-primary">
                             <option value="">{{ __('inventory.select_unit') }}</option>
                             @foreach ($units as $u)
                                 @if ($u->id !== $product->base_unit_id)
@@ -269,7 +291,7 @@
                     <div>
                         <label for="product-new-alt-conversion" class="block text-xs font-bold text-text-secondary mb-1">{{ __('inventory.conversion_factor') }}</label>
                         <input id="product-new-alt-conversion" @error('new_alt_conversion') aria-invalid="true" aria-describedby="product-new-alt-conversion-error" @enderror type="number" step="any" wire:model="new_alt_conversion" dir="ltr" placeholder="{{ __('inventory.example_conversion') }}"
-                               class="w-full h-8 px-2 rounded-control border border-border bg-white text-xs font-mono" />
+                               class="w-full min-h-11 px-2 rounded-control border border-border bg-white text-xs font-mono" inputmode="decimal" />
                         @error('new_alt_conversion') <span id="product-new-alt-conversion-error" role="alert" class="text-[10px] text-danger">{{ $message }}</span> @enderror
                     </div>
                     <div class="flex items-center gap-3 pb-1">
@@ -284,7 +306,7 @@
                     </div>
                     <div>
                         <button type="button" wire:click="addAlternateUnit"
-                                class="w-full h-8 px-3 rounded-control bg-primary text-white text-xs font-bold hover:bg-primary-hover transition-colors">
+                                class="min-h-11 inline-flex items-center justify-center gap-2 px-3 active:bg-surface-soft focus-visible:ring-2 focus-visible:ring-primary w-full rounded-control bg-primary text-white text-xs font-bold hover:bg-primary-hover transition-colors" wire:loading.attr="disabled">
                             {{ __('inventory.add_alternate_unit') }}
                         </button>
                     </div>
@@ -339,8 +361,8 @@
                                             @if ($pu->is_base)
                                                 <span class="text-text-muted">-</span>
                                             @else
-                                                <button type="button" wire:click="removeAlternateUnit({{ $pu->id }})"
-                                                        class="text-danger hover:underline text-xs">
+                                                <button type="button" wire:click="removeAlternateUnit({{ $pu->id }})" wire:loading.attr="disabled"
+                                                        class="min-h-11 inline-flex items-center justify-center rounded-control border border-danger/30 px-3 py-2 text-danger hover:bg-danger-bg text-xs">
                                                     {{ __('inventory.delete') }}
                                                 </button>
                                             @endif
@@ -369,13 +391,15 @@
                     <div>
                         <label for="product-new-barcode" class="block text-xs font-bold text-text-secondary mb-1">{{ __('inventory.barcode') }}</label>
                         <input id="product-new-barcode" @error('new_barcode') aria-invalid="true" aria-describedby="product-new-barcode-error" @enderror type="text" wire:model="new_barcode" dir="ltr" placeholder="{{ __('inventory.scan_or_type_barcode') }}"
-                               class="w-full h-8 px-2 rounded-control border border-border bg-white text-xs font-mono" />
+                               class="w-full min-h-11 px-2 rounded-control border border-border bg-white text-xs font-mono" />
+                        <div class="mt-2"><x-camera-scanner /></div>
+                        <p class="text-xs text-text-secondary mt-2">{{ __('refinement.barcode_capture_hint') }}</p>
                         @error('new_barcode') <span id="product-new-barcode-error" role="alert" class="text-[10px] text-danger">{{ $message }}</span> @enderror
                     </div>
                     <div>
                         <label for="product-new-barcode-unit-id" class="block text-xs font-bold text-text-secondary mb-1">{{ __('inventory.associated_unit') }}</label>
                         <select id="product-new-barcode-unit-id" wire:model="new_barcode_unit_id"
-                                class="w-full h-8 px-2 rounded-control border border-border bg-white text-xs text-text-primary">
+                                class="w-full min-h-11 px-2 rounded-control border border-border bg-white text-xs text-text-primary">
                             <option value="">{{ __('inventory.base_unit') }} ({{ app()->getLocale() === 'en' ? ($product->baseUnit?->name_en ?: $product->baseUnit?->name_ar) : $product->baseUnit?->name_ar }})</option>
                             @foreach ($productUnits as $pu)
                                 <option value="{{ $pu->unit_id }}">{{ app()->getLocale() === 'en' ? ($pu->unit?->name_en ?: $pu->unit?->name_ar) : $pu->unit?->name_ar }}</option>
@@ -390,7 +414,7 @@
                     </div>
                     <div>
                         <button type="button" wire:click="addBarcode"
-                                class="w-full h-8 px-3 rounded-control bg-primary text-white text-xs font-bold hover:bg-primary-hover transition-colors">
+                                class="min-h-11 inline-flex items-center justify-center gap-2 px-3 active:bg-surface-soft focus-visible:ring-2 focus-visible:ring-primary w-full rounded-control bg-primary text-white text-xs font-bold hover:bg-primary-hover transition-colors" wire:loading.attr="disabled">
                             {{ __('inventory.add_barcode') }}
                         </button>
                     </div>
@@ -419,8 +443,8 @@
                                             @endif
                                         </td>
                                         <td class="p-2.5 text-center">
-                                            <button type="button" wire:click="removeBarcode({{ $pb->id }})"
-                                                    class="text-danger hover:underline text-xs">
+                                            <button type="button" wire:click="removeBarcode({{ $pb->id }})" wire:loading.attr="disabled"
+                                                    class="min-h-11 inline-flex items-center justify-center rounded-control border border-danger/30 px-3 py-2 text-danger hover:bg-danger-bg text-xs">
                                                 {{ __('inventory.delete') }}
                                             </button>
                                         </td>
@@ -452,7 +476,7 @@
                     <div class="flex items-center gap-2">
                         <input id="product-new-image" aria-label="{{ __('inventory.add_product_images') }}" @error('new_image') aria-invalid="true" aria-describedby="product-new-image-error" @enderror type="file" wire:model="new_image" accept="image/jpeg,image/png,image/webp" class="text-xs text-text-secondary file:mr-2 file:py-1.5 file:px-3 file:rounded-control file:border-0 file:text-xs file:font-semibold file:bg-primary-50 file:text-primary hover:file:bg-primary-100" />
                         <button type="button" wire:click="uploadImage" wire:loading.attr="disabled"
-                                class="px-3 py-1.5 rounded-control bg-primary text-white text-xs font-bold hover:bg-primary-hover transition-colors disabled:opacity-50">
+                                class="min-h-11 inline-flex items-center justify-center gap-2 px-3 active:bg-surface-soft focus-visible:ring-2 focus-visible:ring-primary py-1.5 rounded-control bg-primary text-white text-xs font-bold hover:bg-primary-hover transition-colors disabled:opacity-50">
                             {{ __('inventory.upload_image') }}
                         </button>
                     </div>
@@ -467,13 +491,13 @@
                                 <img src="{{ asset('storage/' . $img->thumbnail_path) }}" alt="{{ $product->name_ar }}" class="w-full h-24 object-cover" />
                                 <div class="absolute inset-0 bg-slate-900/60 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-1.5 p-1 text-[10px]">
                                     @if (! $img->is_primary)
-                                        <button type="button" wire:click="setPrimaryImage({{ $img->id }})" class="text-white hover:underline">
+                                        <button type="button" wire:click="setPrimaryImage({{ $img->id }})" wire:loading.attr="disabled" class="min-h-11 rounded-control border border-white/50 px-3 py-2 text-white hover:bg-black/20">
                                             {{ __('inventory.set_as_primary') }}
                                         </button>
                                     @else
                                         <span class="text-success font-bold">{{ __('inventory.primary') }}</span>
                                     @endif
-                                    <button type="button" wire:click="deleteImage({{ $img->id }})" class="text-danger hover:underline">
+                                    <button type="button" wire:click="deleteImage({{ $img->id }})" wire:loading.attr="disabled" class="min-h-11 rounded-control border border-danger/30 px-3 py-2 text-danger hover:bg-danger-bg">
                                         {{ __('inventory.delete') }}
                                     </button>
                                 </div>
@@ -502,7 +526,7 @@
                         <span>{{ __('inventory.add_brand') }}</span>
                     </h3>
                     <button type="button" aria-label="{{ __('inventory.close') }}" wire:click="closeCreateBrandModal"
-                            class="text-text-muted hover:text-text-primary text-base font-bold">&times;</button>
+                            class="min-h-11 inline-flex items-center justify-center gap-2 px-3 active:bg-surface-soft focus-visible:ring-2 focus-visible:ring-primary text-text-muted hover:text-text-primary text-base font-bold" wire:loading.attr="disabled">&times;</button>
                 </div>
 
                 <div class="space-y-3 text-xs">
@@ -512,7 +536,7 @@
                         </label>
                         <input id="inline-brand-name-ar" type="text" wire:model="new_brand_name_ar" dir="rtl"
                                @error('new_brand_name_ar') aria-invalid="true" aria-describedby="inline-brand-name-ar-error" @enderror
-                               class="w-full h-8 px-2.5 rounded-control border border-border text-xs focus:outline-none focus:border-primary @error('new_brand_name_ar') border-danger @enderror" />
+                               class="w-full min-h-11 px-2.5 rounded-control border border-border text-xs focus:outline-none focus:border-primary @error('new_brand_name_ar') border-danger @enderror" />
                         @error('new_brand_name_ar')
                             <span role="alert" id="inline-brand-name-ar-error" class="text-danger text-[10px]">{{ $message }}</span>
                         @enderror
@@ -523,7 +547,7 @@
                         </label>
                         <input id="inline-brand-name-en" type="text" wire:model="new_brand_name_en" dir="ltr"
                                @error('new_brand_name_en') aria-invalid="true" aria-describedby="inline-brand-name-en-error" @enderror
-                               class="w-full h-8 px-2.5 rounded-control border border-border text-xs focus:outline-none focus:border-primary @error('new_brand_name_en') border-danger @enderror" />
+                               class="w-full min-h-11 px-2.5 rounded-control border border-border text-xs focus:outline-none focus:border-primary @error('new_brand_name_en') border-danger @enderror" />
                         @error('new_brand_name_en')
                             <span role="alert" id="inline-brand-name-en-error" class="text-danger text-[10px]">{{ $message }}</span>
                         @enderror
@@ -532,15 +556,19 @@
 
                 <div class="flex items-center justify-end gap-2 pt-3 border-t border-border">
                     <button type="button" wire:click="closeCreateBrandModal"
-                            class="px-3.5 py-1.5 rounded-control border border-border text-text-secondary hover:bg-surface-soft text-xs font-semibold">
+                            class="min-h-11 inline-flex items-center justify-center gap-2 px-3 active:bg-surface-soft focus-visible:ring-2 focus-visible:ring-primary px-3.5 py-1.5 rounded-control border border-border text-text-secondary hover:bg-surface-soft text-xs font-semibold" wire:loading.attr="disabled">
                         {{ __('inventory.cancel') }}
                     </button>
                     <button type="button" wire:click="saveInlineBrand" wire:loading.attr="disabled"
-                            class="px-4 py-1.5 rounded-control bg-primary text-white hover:bg-primary-hover text-xs font-bold shadow-button">
+                            class="min-h-11 inline-flex items-center justify-center gap-2 px-3 active:bg-surface-soft focus-visible:ring-2 focus-visible:ring-primary px-4 py-1.5 rounded-control bg-primary text-white hover:bg-primary-hover text-xs font-bold shadow-button">
                         {{ __('inventory.save') }}
                     </button>
                 </div>
             </div>
         </div>
     @endif
+    <div class="sticky bottom-[calc(5rem+env(safe-area-inset-bottom))] z-20 flex items-center justify-end gap-3 rounded-control border border-border bg-white p-3 shadow-sm md:hidden">
+        <span wire:loading wire:target="save" role="status" class="text-sm text-primary">{{ __('refinement.working') }}</span>
+        <button type="button" @click="run('save', [], true)" :disabled="saving" wire:loading.attr="disabled" class="min-h-11 rounded-control bg-primary px-5 py-2 text-sm font-bold text-white disabled:opacity-50">{{ __('inventory.save') }}</button>
+    </div>
 </div>

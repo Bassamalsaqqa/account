@@ -4,12 +4,12 @@
     @endif
     <header class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div class="min-w-0">
-            <a href="{{ route('purchase-returns.index') }}" class="text-xs text-primary">{{ __('purchasing.purchase_returns') }}</a>
+            <a href="{{ route('purchase-returns.index') }}" class="touch-action text-xs text-primary">{{ __('purchasing.purchase_returns') }}</a>
             <h1 class="text-2xl font-bold mt-1 break-words">{{ $document['return_number'] ?? __('purchasing.purchase_return_draft') }}</h1>
             <p class="text-sm mt-1">{{ __('purchasing.'.$document['status']) }}</p>
         </div>
         @if($canEdit)
-            <a href="{{ route('purchase-returns.edit', $document['public_id']) }}" class="inline-flex h-11 items-center justify-center px-4 rounded-control bg-primary text-white text-sm font-bold">
+            <a href="{{ route('purchase-returns.edit', $document['public_id']) }}" class="touch-action inline-flex h-11 items-center justify-center px-4 rounded-control bg-primary text-white text-sm font-bold">
                 {{ __('purchasing.edit_purchase_return') }}
             </a>
         @endif
@@ -48,7 +48,7 @@
                 <dt class="text-xs text-text-secondary">{{ __('purchasing.purchase_number') }}</dt>
                 <dd class="mt-1 font-semibold">
                     @if(!empty($document['purchase_public_id']))
-                        <a href="{{ route('purchases.show', $document['purchase_public_id']) }}" class="text-primary hover:underline">
+                        <a href="{{ route('purchases.show', $document['purchase_public_id']) }}" class="touch-action text-primary hover:underline">
                             <bdi>{{ $document['purchase_number'] ?? '—' }}</bdi>
                         </a>
                     @else

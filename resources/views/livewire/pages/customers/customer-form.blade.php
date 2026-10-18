@@ -11,7 +11,7 @@
         </div>
 
         <a href="{{ $isEditing ? route('customers.show', $customer->public_id) : route('customers.index') }}"
-           class="px-3 py-1.5 rounded-control bg-surface-soft text-text-secondary hover:text-text-primary text-xs font-bold transition-colors">
+           class="touch-action px-3 py-1.5 rounded-control bg-surface-soft text-text-secondary hover:text-text-primary text-xs font-bold transition-colors">
             {{ __('sales.back') }}
         </a>
     </div>
@@ -195,7 +195,7 @@
                     <label for="customer-credit-limit" class="block text-xs font-bold text-text-primary mb-1">
                         {{ __('sales.credit_limit') }} ({{ $baseCurrency }})
                     </label>
-                    <input id="customer-credit-limit" @error('credit_limit') aria-invalid="true" aria-describedby="customer-credit-limit-error" @enderror type="number"
+                    <input id="customer-credit-limit" @error('credit_limit') aria-invalid="true" aria-describedby="customer-credit-limit-error" @enderror type="number" inputmode="decimal"
                            step="0.01"
                            wire:model="credit_limit"
                            dir="ltr"
@@ -219,7 +219,7 @@
         <!-- Buttons -->
         <div class="flex items-center justify-end gap-3 pt-4 border-t border-border">
             <a href="{{ $isEditing ? route('customers.show', $customer->public_id) : route('customers.index') }}"
-               class="px-4 py-2 rounded-control border border-border text-xs font-bold text-text-secondary hover:bg-surface-soft transition-colors">
+               class="touch-action px-4 py-2 rounded-control border border-border text-xs font-bold text-text-secondary hover:bg-surface-soft transition-colors">
                 {{ __('sales.cancel') }}
             </a>
             <button type="submit"

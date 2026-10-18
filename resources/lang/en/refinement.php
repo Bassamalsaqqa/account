@@ -1,0 +1,42 @@
+<?php
+
+declare(strict_types=1);
+
+return [
+    'tax_inclusive' => 'Tax included in price',
+    'tax_exclusive' => 'Tax added to price',
+    'tax_help' => 'The selected tax defines whether the entered price already includes tax. The summary shows the net amount, tax and final total.',
+    'inventory_scan_hint' => 'Scan to select a product and its barcode unit. Review warehouse, quantity and lots before saving.',
+    'barcode_capture_hint' => 'Scanning fills this field only. Review the unit, then tap Add barcode to save it.',
+    'barcode_create_hint' => 'Capture now, save the product, then review the unit and tap Add barcode. Scanning never saves a record.',
+    'decrease_quantity' => 'Decrease quantity',
+    'increase_quantity' => 'Increase quantity',
+    'return_quantity' => 'Return quantity',
+    'original_quantity' => 'Original',
+    'previously_returned' => 'Returned',
+    'remaining_quantity' => 'Remaining',
+    'return_remaining' => 'Return remaining',
+    'pay_remaining' => 'Pay remaining',
+    'full_balance' => 'Full balance',
+    'same_currency_shortcuts' => 'Quick amounts use open documents in this payment currency only. Review allocations before confirming.',
+    'working' => 'Working…',
+    'cancel_check_confirm' => 'Cancel this check? Review the date and reason before confirming.',
+    'available_stock' => 'Available stock',
+    'availability_hint' => 'Current warehouse balance in base units. Stock and lot availability are checked again when saving.',
+    'camera_scan_success' => 'Barcode scanned successfully.',
+    'barcode_too_long' => 'Barcode exceeds maximum allowed length of 128 characters.',
+    'invalid_barcode_format' => 'Invalid barcode format or unsupported characters.',
+    'barcode_not_found' => 'No active stock product found for this barcode.',
+    'product_selected' => 'Product selected successfully.',
+    'unsupported_product_type' => 'Only stock products can be selected.',
+    'unit_not_permitted' => 'The unit specified is not permitted for this product.',
+    'product_must_be_selected' => 'A product must be selected before adjusting quantity.',
+    'invalid_direction' => 'Invalid step direction.',
+    'fraction_not_allowed' => 'Fractional quantities are not permitted for this unit.',
+    'exact_string_required' => 'Quantity must be a valid exact decimal value.',
+    'source_line_not_found' => 'Source document line not found or unauthorized.',
+
+    'invalid_unit' => 'Select an active unit for this product.',
+    'select_product_first' => 'Select a product first.',
+    'quantity_cannot_be_negative' => 'Quantity cannot be below zero.',
+];
