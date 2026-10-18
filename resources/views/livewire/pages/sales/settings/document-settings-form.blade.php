@@ -3,7 +3,7 @@
     <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
             <nav class="flex items-center gap-2 text-xs text-text-muted mb-1.5" aria-label="Breadcrumb">
-                <a href="{{ route('settings.index') }}" class="hover:text-primary transition">{{ __('settings.breadcrumb_settings') ?? __('documents.back_to_settings') }}</a>
+                <a href="{{ route('settings.index') }}" class="touch-action hover:text-primary transition">{{ __('settings.breadcrumb_settings') ?? __('documents.back_to_settings') }}</a>
                 <span class="text-slate-300">/</span>
                 <span class="text-text-primary font-medium">{{ __('documents.title') }}</span>
             </nav>
@@ -16,7 +16,7 @@
         </div>
         <div class="flex items-center gap-3">
             <a href="{{ route('settings.index') }}"
-               class="inline-flex items-center justify-center min-h-11 px-4 rounded-control border border-border bg-white text-xs sm:text-sm font-semibold text-text-secondary hover:text-text-primary hover:bg-slate-50 focus-visible:outline-2 focus-visible:outline-primary transition">
+               class="touch-action inline-flex items-center justify-center min-h-11 px-4 rounded-control border border-border bg-white text-xs sm:text-sm font-semibold text-text-secondary hover:text-text-primary hover:bg-slate-50 focus-visible:outline-2 focus-visible:outline-primary transition">
                 {{ __('documents.back_to_settings') }}
             </a>
         </div>

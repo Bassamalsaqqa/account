@@ -4,7 +4,7 @@
             <h1 class="text-2xl font-bold">{{ __('expenses.create_expense') }}</h1>
             <p class="text-sm text-text-muted">{{ __('expenses.expenses') }}</p>
         </div>
-        <a href="{{ route('expenses.index') }}" class="inline-flex items-center rounded-control border border-border bg-white px-3 py-2 text-sm font-semibold text-text-secondary hover:bg-surface-soft">
+        <a href="{{ route('expenses.index') }}" class="touch-action inline-flex items-center rounded-control border border-border bg-white px-3 py-2 text-sm font-semibold text-text-secondary hover:bg-surface-soft">
             {{ __('expenses.cancel') }}
         </a>
     </div>
@@ -184,7 +184,7 @@
         </div>
 
         <div class="flex justify-end gap-3 pt-4 border-t border-border">
-            <a href="{{ route('expenses.index') }}" class="inline-flex justify-center items-center rounded-control border border-border bg-white px-4 py-2 text-sm font-semibold text-text-secondary hover:bg-surface-soft">
+            <a href="{{ route('expenses.index') }}" class="touch-action inline-flex justify-center items-center rounded-control border border-border bg-white px-4 py-2 text-sm font-semibold text-text-secondary hover:bg-surface-soft">
                 {{ __('expenses.cancel') }}
             </a>
             <button type="submit" wire:loading.attr="disabled" class="inline-flex justify-center items-center rounded-control bg-primary px-6 py-2 text-sm font-semibold text-white hover:bg-primary-hover focus:ring-2 focus:ring-primary focus:ring-offset-2">

@@ -1,7 +1,7 @@
 <div class="max-w-4xl mx-auto space-y-6">
     <div class="flex flex-wrap items-center justify-between gap-3">
         <div class="flex items-center gap-3">
-            <a href="{{ route('expenses.index') }}" class="inline-flex items-center justify-center w-8 h-8 rounded-control border border-border bg-white text-text-secondary hover:bg-surface-soft">
+            <a href="{{ route('expenses.index') }}" class="touch-action inline-flex items-center justify-center w-8 h-8 rounded-control border border-border bg-white text-text-secondary hover:bg-surface-soft">
                 &larr;
             </a>
             <div>
@@ -75,7 +75,7 @@
                 <span class="block text-xs font-semibold text-text-muted uppercase">{{ __('expenses.account') }}</span>
                 <span class="text-sm font-medium text-text-primary">
                     @if($expense->payment_method === 'check' && $detail['check'])
-                        <a href="{{ route('money.checks.show', $detail['check']->public_id) }}" class="text-primary hover:underline font-semibold">
+                        <a href="{{ route('money.checks.show', $detail['check']->public_id) }}" class="touch-action text-primary hover:underline font-semibold">
                             {{ $detail['check']->check_number }} ({{ $detail['check']->bank_name }})
                         </a>
                     @elseif($detail['moneyAccount'])
@@ -89,7 +89,7 @@
                 <span class="block text-xs font-semibold text-text-muted uppercase">{{ __('expenses.payee') }}</span>
                 <span class="text-sm font-medium text-text-primary">
                     @if($expense->vendor_snapshot)
-                        @if($canViewVendor && $detail['vendor'] && !$detail['vendor']->trashed())<a href="{{ route('vendors.show', $detail['vendor']->public_id) }}" class="text-primary hover:underline">@endif
+                        @if($canViewVendor && $detail['vendor'] && !$detail['vendor']->trashed())<a href="{{ route('vendors.show', $detail['vendor']->public_id) }}" class="touch-action text-primary hover:underline">@endif
                             {{ app()->getLocale()==='en' ? ($expense->vendor_snapshot['name_en'] ?: $expense->vendor_snapshot['name_ar']) : ($expense->vendor_snapshot['name_ar'] ?: $expense->vendor_snapshot['name_en']) }}
                         @if($canViewVendor && $detail['vendor'] && !$detail['vendor']->trashed())</a>@endif
                     @elseif($expense->payee_name)
@@ -120,7 +120,7 @@
         @if($expense->attachment_path)
             <div class="border-t border-border pt-4">
                 <span class="block text-xs font-semibold text-text-muted uppercase mb-2">{{ __('expenses.attachment') }}</span>
-                <a href="{{ route('attachments.expenses.download', $expense->public_id) }}" class="inline-flex items-center gap-2 rounded-control border border-border bg-white px-3 py-2 text-sm font-semibold text-primary hover:bg-surface-soft">
+                <a href="{{ route('attachments.expenses.download', $expense->public_id) }}" class="touch-action inline-flex items-center gap-2 rounded-control border border-border bg-white px-3 py-2 text-sm font-semibold text-primary hover:bg-surface-soft">
                     <x-icon name="document" class="w-4 h-4" />
                     <span>{{ $expense->attachment_name ?: __('expenses.download_attachment') }}</span>
                 </a>
@@ -153,7 +153,7 @@
                             @foreach($detail['allocations'] as $alloc)
                                 <tr>
                                     <td class="px-3 py-2 font-medium text-primary">
-                                        @if($canViewPurchase)<a href="{{ route('purchases.show', $alloc->purchase->public_id) }}" class="hover:underline">@endif
+                                        @if($canViewPurchase)<a href="{{ route('purchases.show', $alloc->purchase->public_id) }}" class="touch-action hover:underline">@endif
                                             {{ $alloc->purchase->purchase_number }}
                                         @if($canViewPurchase)</a>@endif
                                     </td>
@@ -196,7 +196,7 @@
                 </div>
             </div>
 
-            <button type="button" wire:click="reverse" wire:confirm="{{ __('expenses.reverse_confirm') }}" class="inline-flex justify-center items-center rounded-control bg-rose-600 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-700 focus:ring-2 focus:ring-rose-500">
+            <button type="button" wire:click="reverse" wire:confirm="{{ __('expenses.reverse_confirm') }}" class="inline-flex justify-center items-center rounded-control bg-rose-600 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-700 focus:ring-2 focus:ring-rose-500" wire:loading.attr="disabled" wire:target="reverse">
                 {{ __('expenses.reverse') }}
             </button>
         </div>

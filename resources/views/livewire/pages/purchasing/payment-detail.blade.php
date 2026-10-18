@@ -30,7 +30,7 @@
                 <div class="text-xs text-text-secondary mt-1">
                     {{ __('purchasing.vendor') }}:
                     @if ($payment->vendor || isset($payment->vendor_snapshot['public_id']))
-                        <a href="{{ route('vendors.show', $payment->vendor?->public_id ?? $payment->vendor_snapshot['public_id']) }}" class="font-bold text-text-primary hover:text-primary">
+                        <a href="{{ route('vendors.show', $payment->vendor?->public_id ?? $payment->vendor_snapshot['public_id']) }}" class="touch-action font-bold text-text-primary hover:text-primary">
                             {{ $payment->vendorDisplayName() }}
                         </a>
                     @else
@@ -41,7 +41,7 @@
 
             <div class="flex flex-wrap items-center gap-2">
                 @if ($canAllocate)
-                    <button type="button" wire:click="openCreditForm" class="px-3 py-1.5 bg-primary text-white rounded-control text-xs font-bold hover:bg-primary-hover transition-colors shadow-sm cursor-pointer">
+                    <button type="button" wire:click="openCreditForm" class="px-3 py-1.5 bg-primary text-white rounded-control text-xs font-bold hover:bg-primary-hover transition-colors shadow-sm cursor-pointer" wire:loading.attr="disabled" wire:target="openCreditForm">
                         ⚡ {{ __('purchasing.apply_advance') }}
                     </button>
                 @endif
@@ -54,7 +54,7 @@
                 @endif
 
                 <a href="{{ route('vendor-payments.index') }}"
-                   class="px-3 py-1.5 rounded-control bg-surface-soft text-text-secondary hover:text-text-primary text-xs font-bold transition-colors">
+                   class="touch-action px-3 py-1.5 rounded-control bg-surface-soft text-text-secondary hover:text-text-primary text-xs font-bold transition-colors">
                     {{ __('purchasing.cancel') }}
                 </a>
             </div>
@@ -210,7 +210,7 @@
                         <tr>
                             <td class="py-2.5 px-4 font-mono font-bold" dir="ltr">
                                 @if ($alloc->purchase)
-                                    <a href="{{ route('purchases.show', $alloc->purchase->public_id) }}" class="text-primary hover:underline">
+                                    <a href="{{ route('purchases.show', $alloc->purchase->public_id) }}" class="touch-action text-primary hover:underline">
                                         {{ $alloc->purchase->purchase_number }}
                                     </a>
                                 @else
@@ -295,7 +295,7 @@
                     </button>
                     <button type="button"
                             wire:click="reversePayment"
-                            class="px-4 py-1.5 rounded-control bg-danger text-white text-xs font-bold hover:bg-danger/90 transition-colors shadow-sm cursor-pointer">
+                            class="px-4 py-1.5 rounded-control bg-danger text-white text-xs font-bold hover:bg-danger/90 transition-colors shadow-sm cursor-pointer" wire:loading.attr="disabled" wire:target="reversePayment">
                         ✕ {{ __('purchasing.reverse_payment') }}
                     </button>
                 </div>

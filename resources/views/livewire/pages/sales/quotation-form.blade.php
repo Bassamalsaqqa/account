@@ -29,7 +29,7 @@
         </div>
 
         <a href="{{ $isEditing ? route('quotations.show', $quotation->public_id) : route('quotations.index') }}"
-           class="px-3 py-1.5 rounded-control bg-surface-soft text-text-secondary hover:text-text-primary text-xs font-bold transition-colors">
+           class="touch-action px-3 py-1.5 rounded-control bg-surface-soft text-text-secondary hover:text-text-primary text-xs font-bold transition-colors">
             {{ __('sales.back') }}
         </a>
     </div>
@@ -51,7 +51,7 @@
                     @if ($canManageCustomers)
                         <button type="button"
                                 wire:click="openQuickCustomerModal"
-                                class="text-xs text-primary hover:underline font-medium cursor-pointer">
+                                class="text-xs text-primary hover:underline font-medium cursor-pointer" wire:loading.attr="disabled" wire:target="openQuickCustomerModal">
                             + {{ __('workflow.quick_customer') }}
                         </button>
                     @endif
@@ -114,7 +114,7 @@
                 <label class="block text-xs font-bold text-text-primary mb-1">
                     {{ __('sales.exchange_rate') }} <span class="text-danger">*</span>
                 </label>
-                <input type="number"
+                <input type="number" inputmode="decimal"
                        step="0.0000000001"
                        wire:model.blur="exchange_rate"
                        wire:change="recalculate"
@@ -150,7 +150,7 @@
                                placeholder="{{ __('workflow.search_products') }}"
                                class="w-full min-w-0 h-11 px-2.5 rounded-control border border-border bg-canvas text-sm text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden" />
             @if (auth()->user()->hasPermissionTo('inventory.product.manage'))
-                <button type="button" wire:click="openQuickProductModal" aria-haspopup="dialog" class="mt-2 min-h-11 px-3 py-2 rounded-control border border-border text-sm font-bold text-primary hover:bg-surface-soft focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary">
+                <button type="button" wire:click="openQuickProductModal" aria-haspopup="dialog" class="mt-2 min-h-11 px-3 py-2 rounded-control border border-border text-sm font-bold text-primary hover:bg-surface-soft focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary" wire:loading.attr="disabled" wire:target="openQuickProductModal">
                     {{ __('quick_product.create') }}
                 </button>
             @endif
@@ -223,7 +223,7 @@
                                 </td>
 
                                 <td class="py-2 px-2 align-top space-y-1">
-                                    <input type="number"
+                                    <input type="number" inputmode="decimal"
                                            step="any"
                                            wire:model.blur="lines.{{ $index }}.quantity"
                                            wire:change="recalculate"
@@ -239,7 +239,7 @@
                                 </td>
 
                                 <td class="py-2 px-2 align-top">
-                                    <input type="number"
+                                    <input type="number" inputmode="decimal"
                                            step="any"
                                            wire:model.blur="lines.{{ $index }}.unit_price"
                                            wire:change="recalculate"
@@ -260,7 +260,7 @@
                                             <option value="percentage">%</option>
                                         </select>
                                         @if (($line['discount_type'] ?? 'none') !== 'none')
-                                            <input type="number"
+                                            <input type="number" inputmode="decimal"
                                                    step="any"
                                                    wire:model.blur="lines.{{ $index }}.discount_value"
                                                    wire:change="recalculate"
@@ -278,7 +278,7 @@
                                             <option value="">{{ __('sales.none') }} (0%)</option>
                                             @foreach ($taxes as $t)
                                                 <option value="{{ $t->id }}">
-                                                    {{ $t->displayName() }} ({{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatQuantity($t->rate) }}%)
+                                                    {{ $t->displayName() }} ({{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatQuantity($t->rate) }}%) — {{ __('refinement.tax_'.$t->calculation) }}
                                                 </option>
                                             @endforeach
                                         </select>
@@ -287,7 +287,7 @@
 
                                 <td class="py-2 px-2 align-top text-end font-mono font-bold" dir="ltr">
                                     <div class="pt-1.5">
-                                        {{ $documentTotalsValid ? \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($line['line_total'] ?? '0', $currency_code) : '—' }}
+                                        {{ $documentTotalsValid ? \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($line['line_total'] ?? '0', $currency_code) : 'â€”' }}
                                     </div>
                                 </td>
 
@@ -295,8 +295,8 @@
                                     @if (count($lines) > 1)
                                         <button type="button"
                                                 wire:click="removeLine({{ $index }})"
-                                                class="text-danger hover:opacity-80 p-1 text-sm font-bold">
-                                            ✕
+                                                class="text-danger hover:opacity-80 p-1 text-sm font-bold" wire:loading.attr="disabled" wire:target="removeLine">
+                                            âœ•
                                         </button>
                                     @endif
                                 </td>
@@ -316,7 +316,7 @@
                         <div class="flex items-center justify-between">
                             <span class="text-xs font-bold text-text-primary">#{{ $index + 1 }}</span>
                             @if (count($lines) > 1)
-                                <button type="button" wire:click="removeLine({{ $index }})" class="text-danger text-xs font-bold px-2 py-1 rounded-control hover:bg-danger/10">
+                                <button type="button" wire:click="removeLine({{ $index }})" class="text-danger text-xs font-bold px-2 py-1 rounded-control hover:bg-danger/10" wire:loading.attr="disabled" wire:target="removeLine">
                                     {{ __('sales.remove_line') }}
                                 </button>
                             @endif
@@ -384,7 +384,7 @@
                         <div class="grid grid-cols-2 gap-2">
                             <div>
                                 <label class="block text-[11px] font-bold text-text-secondary">{{ __('sales.unit_price') }}</label>
-                                <input type="number"
+                                <input type="number" inputmode="decimal"
                                        step="any"
                                        wire:model.blur="lines.{{ $index }}.unit_price"
                                        wire:change="recalculate"
@@ -405,7 +405,7 @@
                                         <option value="percentage">%</option>
                                     </select>
                                     @if (($line['discount_type'] ?? 'none') !== 'none')
-                                        <input type="number"
+                                        <input type="number" inputmode="decimal"
                                                step="any"
                                                wire:model.blur="lines.{{ $index }}.discount_value"
                                                wire:change="recalculate"
@@ -425,7 +425,7 @@
                                     <option value="">{{ __('sales.none') }} (0%)</option>
                                     @foreach ($taxes as $t)
                                         <option value="{{ $t->id }}">
-                                            {{ $t->displayName() }} ({{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatQuantity($t->rate) }}%)
+                                            {{ $t->displayName() }} ({{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatQuantity($t->rate) }}%) — {{ __('refinement.tax_'.$t->calculation) }}
                                         </option>
                                     @endforeach
                                 </select>
@@ -435,7 +435,7 @@
                         <div class="flex justify-between items-center pt-2 border-t border-border text-xs">
                             <span class="text-text-muted font-bold">{{ __('sales.line_total') }}:</span>
                             <span class="font-mono font-bold text-text-primary" dir="ltr">
-                                {{ $documentTotalsValid ? \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($line['line_total'] ?? '0', $currency_code) : '—' }}
+                                {{ $documentTotalsValid ? \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($line['line_total'] ?? '0', $currency_code) : 'â€”' }}
                             </span>
                         </div>
                     </div>
@@ -492,7 +492,7 @@
         <!-- Buttons -->
         <div class="flex items-center justify-end gap-3 pt-4 border-t border-border">
             <a href="{{ $isEditing ? route('quotations.show', $quotation->public_id) : route('quotations.index') }}"
-               class="px-4 py-2 rounded-control border border-border text-xs font-bold text-text-secondary hover:bg-surface-soft transition-colors">
+               class="touch-action px-4 py-2 rounded-control border border-border text-xs font-bold text-text-secondary hover:bg-surface-soft transition-colors">
                 {{ __('sales.cancel') }}
             </a>
             <button type="submit"
@@ -583,7 +583,7 @@
             <div class="bg-surface border border-border rounded-card p-6 w-full max-w-md shadow-lg space-y-4">
                 <div class="flex items-center justify-between pb-3 border-b border-border">
                     <h3 id="quick-customer-modal-title" class="text-base font-bold text-text-primary">{{ __('workflow.quick_customer') }}</h3>
-                    <button type="button" wire:click="closeQuickCustomerModal" class="text-text-muted hover:text-text-primary text-sm font-bold cursor-pointer">✕</button>
+                    <button type="button" wire:click="closeQuickCustomerModal" class="text-text-muted hover:text-text-primary text-sm font-bold cursor-pointer" wire:loading.attr="disabled" wire:target="closeQuickCustomerModal">âœ•</button>
                 </div>
                 <div class="space-y-3">
                     <div>
@@ -610,7 +610,7 @@
                     </div>
                 </div>
                 <div class="flex items-center justify-end gap-2 pt-3 border-t border-border">
-                    <button type="button" wire:click="closeQuickCustomerModal" class="px-3 py-1.5 rounded-control border border-border text-xs font-bold text-text-secondary hover:bg-surface-soft cursor-pointer">{{ __('workflow.cancel') }}</button>
+                    <button type="button" wire:click="closeQuickCustomerModal" class="px-3 py-1.5 rounded-control border border-border text-xs font-bold text-text-secondary hover:bg-surface-soft cursor-pointer" wire:loading.attr="disabled" wire:target="closeQuickCustomerModal">{{ __('workflow.cancel') }}</button>
                     <button type="button" wire:click="saveQuickCustomer" wire:loading.attr="disabled" class="px-4 py-1.5 rounded-control bg-primary text-white text-xs font-bold hover:bg-primary-hover shadow-xs cursor-pointer">
                         <span wire:loading.remove wire:target="saveQuickCustomer">{{ __('workflow.save_customer') }}</span>
                         <span wire:loading wire:target="saveQuickCustomer">...</span>

@@ -3,11 +3,11 @@
         <div class="flex justify-end"><x-document-actions route-name="pdf.purchase" :parameters="['publicId' => $document['public_id']]" :permissions="['purchasing.document.pdf']" /></div>
     @endif
     <header class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div class="min-w-0"><a href="{{ route('purchases.index') }}" class="text-xs text-primary">{{ __('purchasing.purchases') }}</a><h1 class="text-2xl font-bold mt-1 break-words">{{ $document['purchase_number'] ?? __('purchasing.purchase_draft') }}</h1><p class="text-sm mt-1">{{ __('purchasing.'.$document['status']) }}</p></div>
+        <div class="min-w-0"><a href="{{ route('purchases.index') }}" class="touch-action text-xs text-primary">{{ __('purchasing.purchases') }}</a><h1 class="text-2xl font-bold mt-1 break-words">{{ $document['purchase_number'] ?? __('purchasing.purchase_draft') }}</h1><p class="text-sm mt-1">{{ __('purchasing.'.$document['status']) }}</p></div>
         <div class="flex items-center gap-3">
-            @if($canPayVendor)<a href="{{ route('vendor-payments.create', ['purchase_id' => $purchase->id]) }}" class="inline-flex h-11 items-center justify-center px-4 rounded-control bg-success text-white text-sm font-bold shadow-sm hover:opacity-90">{{ __('purchasing.pay_vendor') }}</a>@endif
-            @if($canCreateReturn)<a href="{{ route('purchase-returns.create', $document['public_id']) }}" class="inline-flex h-11 items-center justify-center px-4 rounded-control border border-border bg-surface text-sm font-bold hover:bg-surface-soft">{{ __('purchasing.create_purchase_return') }}</a>@endif
-            @if($canEdit)<a href="{{ route('purchases.edit', $document['public_id']) }}" class="inline-flex h-11 items-center justify-center px-4 rounded-control bg-primary text-white text-sm font-bold">{{ __('purchasing.edit_purchase') }}</a>@endif
+            @if($canPayVendor)<a href="{{ route('vendor-payments.create', ['purchase_id' => $purchase->id]) }}" class="touch-action inline-flex h-11 items-center justify-center px-4 rounded-control bg-success text-white text-sm font-bold shadow-sm hover:opacity-90">{{ __('purchasing.pay_vendor') }}</a>@endif
+            @if($canCreateReturn)<a href="{{ route('purchase-returns.create', $document['public_id']) }}" class="touch-action inline-flex h-11 items-center justify-center px-4 rounded-control border border-border bg-surface text-sm font-bold hover:bg-surface-soft">{{ __('purchasing.create_purchase_return') }}</a>@endif
+            @if($canEdit)<a href="{{ route('purchases.edit', $document['public_id']) }}" class="touch-action inline-flex h-11 items-center justify-center px-4 rounded-control bg-primary text-white text-sm font-bold">{{ __('purchasing.edit_purchase') }}</a>@endif
         </div>
     </header>
     @if($document['status'] === 'draft')<p class="p-3 rounded-control bg-info-bg text-info text-sm">{{ __('purchasing.draft_notice') }}</p>@else<p class="p-3 rounded-control bg-success-bg text-success text-sm">{{ __('purchasing.posted_notice') }} <bdi>{{ $document['posted_at'] }}</bdi></p>@endif
@@ -96,7 +96,7 @@
                                     {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::format($allocations->sum('allocated_base'), $document['base_currency_code']) }} {{ $document['base_currency_code'] }}
                                 </span>
                                 @if($canManageLanded)
-                                    <button type="button" wire:click="removeLandedCost({{ $expenseId }})" wire:confirm="{{ __('purchasing.remove_landed_cost') }}?" class="px-2.5 py-1 rounded bg-danger/10 text-danger hover:bg-danger/20 font-semibold transition-colors">
+                                    <button type="button" wire:click="removeLandedCost({{ $expenseId }})" wire:confirm="{{ __('purchasing.remove_landed_cost') }}?" class="px-2.5 py-1 rounded bg-danger/10 text-danger hover:bg-danger/20 font-semibold transition-colors" wire:loading.attr="disabled" wire:target="removeLandedCost">
                                         {{ __('purchasing.remove_landed_cost') }}
                                     </button>
                                 @endif

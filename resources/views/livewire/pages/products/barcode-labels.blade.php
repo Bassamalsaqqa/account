@@ -255,7 +255,7 @@
                             type="button"
                             wire:click="closePreview"
                             class="min-h-[44px] px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-800 font-medium text-sm rounded-md transition"
-                        >
+                         wire:loading.attr="disabled" wire:target="closePreview">
                             @lang('labels.close')
                         </button>
                     </div>

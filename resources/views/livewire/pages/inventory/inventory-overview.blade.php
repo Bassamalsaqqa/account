@@ -12,25 +12,25 @@
         <div class="flex flex-wrap items-center gap-2">
             @if ($canAdjust)
                 <a href="{{ route('inventory.opening-stock.create') }}"
-                   class="inline-flex items-center gap-1.5 px-3 py-2 bg-white border border-border hover:bg-surface-soft text-text-primary text-xs font-bold rounded-control transition-colors">
+                   class="touch-action inline-flex items-center gap-1.5 px-3 py-2 bg-white border border-border hover:bg-surface-soft text-text-primary text-xs font-bold rounded-control transition-colors">
                     <x-icon name="plus" class="w-4 h-4 text-primary" />
                     <span>{{ __('inventory.opening_stock') }}</span>
                 </a>
                 <a href="{{ route('inventory.adjustments.create') }}"
-                   class="inline-flex items-center gap-1.5 px-3 py-2 bg-white border border-border hover:bg-surface-soft text-text-primary text-xs font-bold rounded-control transition-colors">
+                   class="touch-action inline-flex items-center gap-1.5 px-3 py-2 bg-white border border-border hover:bg-surface-soft text-text-primary text-xs font-bold rounded-control transition-colors">
                     <x-icon name="plus" class="w-4 h-4 text-primary" />
                     <span>{{ __('inventory.adjust_stock') }}</span>
                 </a>
             @endif
             @if ($canTransfer)
                 <a href="{{ route('inventory.transfers.create') }}"
-                   class="inline-flex items-center gap-1.5 px-3 py-2 bg-white border border-border hover:bg-surface-soft text-text-primary text-xs font-bold rounded-control transition-colors">
+                   class="touch-action inline-flex items-center gap-1.5 px-3 py-2 bg-white border border-border hover:bg-surface-soft text-text-primary text-xs font-bold rounded-control transition-colors">
                     <x-icon name="truck" class="w-4 h-4 text-primary" />
                     <span>{{ __('inventory.transfer_stock') }}</span>
                 </a>
             @endif
             <a href="{{ route('inventory.movements') }}"
-               class="inline-flex items-center gap-1.5 px-3 py-2 bg-primary hover:bg-primary-hover text-white text-xs font-bold rounded-control shadow-button transition-colors">
+               class="touch-action inline-flex items-center gap-1.5 px-3 py-2 bg-primary hover:bg-primary-hover text-white text-xs font-bold rounded-control shadow-button transition-colors">
                 <x-icon name="receipt" class="w-4 h-4" />
                 <span>{{ __('inventory.stock_movements') }}</span>
             </a>
@@ -45,7 +45,7 @@
             <div class="text-2xl font-extrabold font-mono tabular-nums text-text-primary">
                 {{ $productsCount }}
             </div>
-            <a href="{{ route('products.index') }}" class="text-[11px] text-primary hover:underline font-bold block pt-1">
+            <a href="{{ route('products.index') }}" class="touch-action text-[11px] text-primary hover:underline font-bold block pt-1">
                 {{ __('inventory.view_catalog_link') }} &larr;
             </a>
         </x-card>
@@ -56,7 +56,7 @@
             <div class="text-2xl font-extrabold font-mono tabular-nums text-text-primary">
                 {{ $warehousesCount }}
             </div>
-            <a href="{{ route('warehouses.index') }}" class="text-[11px] text-primary hover:underline font-bold block pt-1">
+            <a href="{{ route('warehouses.index') }}" class="touch-action text-[11px] text-primary hover:underline font-bold block pt-1">
                 {{ __('inventory.manage_warehouses_link') }} &larr;
             </a>
         </x-card>
@@ -67,7 +67,7 @@
             <div class="text-2xl font-extrabold font-mono tabular-nums {{ $expiringLotsCount > 0 ? 'text-danger' : 'text-text-primary' }}">
                 {{ $expiringLotsCount }}
             </div>
-            <a href="{{ route('inventory.expiry') }}" class="text-[11px] text-primary hover:underline font-bold block pt-1">
+            <a href="{{ route('inventory.expiry') }}" class="touch-action text-[11px] text-primary hover:underline font-bold block pt-1">
                 {{ __('inventory.expiry_center_link') }} &larr;
             </a>
         </x-card>
@@ -109,7 +109,7 @@
                 @forelse ($lowStockProducts as $prod)
                     <div class="p-3.5 flex items-center justify-between text-xs hover:bg-surface-soft/50 transition-colors">
                         <div>
-                            <a href="{{ route('products.show', $prod->public_id) }}" class="font-bold text-text-primary hover:text-primary">
+                            <a href="{{ route('products.show', $prod->public_id) }}" class="touch-action font-bold text-text-primary hover:text-primary">
                                 {{ $prod->displayName() }}
                             </a>
                             <div class="text-[11px] text-text-muted font-mono dir-ltr mt-0.5">
@@ -139,7 +139,7 @@
                     <x-icon name="receipt" class="w-4 h-4 text-primary" />
                     <h2 class="text-xs font-bold text-text-primary uppercase tracking-wider">{{ __('inventory.latest_stock_movements') }}</h2>
                 </div>
-                <a href="{{ route('inventory.movements') }}" class="text-[11px] text-primary hover:underline font-bold">
+                <a href="{{ route('inventory.movements') }}" class="touch-action text-[11px] text-primary hover:underline font-bold">
                     {{ __('inventory.view_full_ledger') }} &larr;
                 </a>
             </div>

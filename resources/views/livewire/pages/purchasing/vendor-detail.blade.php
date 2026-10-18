@@ -47,24 +47,24 @@
 
             <!-- Header Quick Actions -->
             <div class="flex flex-wrap items-center gap-2">
-                <a href="{{ route('vendors.index') }}" class="px-3 py-1.5 text-xs text-text-secondary hover:text-text-primary">
+                <a href="{{ route('vendors.index') }}" class="touch-action px-3 py-1.5 text-xs text-text-secondary hover:text-text-primary">
                     {{ __('purchasing.back') }}
                 </a>
                 @if ($canManage)
                     <a href="{{ route('vendors.edit', $vendor->public_id) }}"
-                       class="px-3 py-1.5 rounded-control border border-border text-xs font-bold text-text-secondary hover:bg-surface-soft transition-colors">
+                       class="touch-action px-3 py-1.5 rounded-control border border-border text-xs font-bold text-text-secondary hover:bg-surface-soft transition-colors">
                         {{ __('purchasing.edit_vendor_button') }}
                     </a>
                 @endif
                 @if ($vendor->status === 'active' && $canCreatePurchase)
                     <a href="{{ route('purchases.create', ['vendor_id' => $vendor->id]) }}"
-                       class="px-3 py-1.5 rounded-control bg-primary text-white text-xs font-bold hover:bg-primary-hover transition-colors shadow-xs">
+                       class="touch-action px-3 py-1.5 rounded-control bg-primary text-white text-xs font-bold hover:bg-primary-hover transition-colors shadow-xs">
                         + {{ __('purchasing.new_purchase') }}
                     </a>
                 @endif
                 @if ($vendor->status === 'active' && $canCreatePayment)
                     <a href="{{ route('vendor-payments.create', ['vendor_id' => $vendor->id]) }}"
-                       class="px-3 py-1.5 rounded-control bg-success text-white text-xs font-bold hover:opacity-90 transition-opacity shadow-xs">
+                       class="touch-action px-3 py-1.5 rounded-control bg-success text-white text-xs font-bold hover:opacity-90 transition-opacity shadow-xs">
                         + {{ __('purchasing.new_vendor_payment') }}
                     </a>
                 @endif
@@ -189,7 +189,7 @@
                         @forelse ($tabPurchases as $purchase)
                             <tr>
                                 <td class="py-2.5 px-4 font-mono font-bold" dir="ltr">
-                                    <a href="{{ route('purchases.show', $purchase->public_id) }}" class="text-primary hover:underline">
+                                    <a href="{{ route('purchases.show', $purchase->public_id) }}" class="touch-action text-primary hover:underline">
                                         {{ $purchase->purchase_number ?? __('purchasing.draft') }}
                                     </a>
                                 </td>
@@ -225,7 +225,7 @@
                         @forelse ($tabReturns as $ret)
                             <tr>
                                 <td class="py-2.5 px-4 font-mono font-bold" dir="ltr">
-                                    <a href="{{ route('purchase-returns.show', $ret->public_id) }}" class="text-primary hover:underline">
+                                    <a href="{{ route('purchase-returns.show', $ret->public_id) }}" class="touch-action text-primary hover:underline">
                                         {{ $ret->return_number ?? __('purchasing.draft') }}
                                     </a>
                                 </td>
@@ -262,7 +262,7 @@
                         @forelse ($tabPayments as $pmt)
                             <tr>
                                 <td class="py-2.5 px-4 font-mono font-bold" dir="ltr">
-                                    <a href="{{ route('vendor-payments.show', $pmt->public_id) }}" class="text-primary hover:underline">
+                                    <a href="{{ route('vendor-payments.show', $pmt->public_id) }}" class="touch-action text-primary hover:underline">
                                         {{ $pmt->payment_number }}
                                     </a>
                                 </td>
@@ -433,7 +433,7 @@
                     <div><h3 class="text-sm font-extrabold text-text-primary">{{ __('purchasing.supplied_products') }}</h3>
                     <p class="text-xs text-text-muted mt-1">{{ __('purchasing.supplied_products_window', ['count' => \App\Domain\Purchasing\Queries\VendorProductHistoryQuery::SUMMARY_LINE_LIMIT]) }}</p></div>
                     @if ($selectedProductId !== null)
-                        <button type="button" wire:click="selectProductFilter(null)" class="text-xs text-primary font-bold hover:underline">
+                        <button type="button" wire:click="selectProductFilter(null)" class="text-xs text-primary font-bold hover:underline" wire:loading.attr="disabled" wire:target="selectProductFilter">
                             {{ __('purchasing.all_supplied_products') }}
                         </button>
                     @endif
@@ -458,7 +458,7 @@
                                     <tr class="hover:bg-canvas transition-colors {{ $selectedProductId === $p['product_id'] ? 'bg-primary-50/50' : '' }}">
                                         <td class="py-3 px-4 font-bold text-text-primary">
                                             @if ($p['product_public_id'] && $canViewProducts)
-                                                <a href="{{ route('products.show', $p['product_public_id']) }}" class="text-primary hover:underline">
+                                                <a href="{{ route('products.show', $p['product_public_id']) }}" class="touch-action text-primary hover:underline">
                                                     {{ $p['product_name'] }}
                                                 </a>
                                             @else
@@ -491,11 +491,11 @@
                                         </td>
                                         <td class="py-3 px-4 text-center whitespace-nowrap">
                                             @if ($selectedProductId === $p['product_id'])
-                                                <button type="button" wire:click="selectProductFilter(null)" class="px-2.5 py-1 bg-surface-soft border border-border rounded text-[11px] font-bold text-text-secondary hover:text-text-primary">
+                                                <button type="button" wire:click="selectProductFilter(null)" class="px-2.5 py-1 bg-surface-soft border border-border rounded text-[11px] font-bold text-text-secondary hover:text-text-primary" wire:loading.attr="disabled" wire:target="selectProductFilter">
                                                     {{ __('purchasing.all_products') }}
                                                 </button>
                                             @else
-                                                <button type="button" wire:click="selectProductFilter({{ $p['product_id'] }})" class="px-2.5 py-1 bg-primary text-white rounded text-[11px] font-bold hover:opacity-90">
+                                                <button type="button" wire:click="selectProductFilter({{ $p['product_id'] }})" class="px-2.5 py-1 bg-primary text-white rounded text-[11px] font-bold hover:opacity-90" wire:loading.attr="disabled" wire:target="selectProductFilter">
                                                     {{ __('purchasing.filter_by_product') }}
                                                 </button>
                                             @endif
@@ -541,7 +541,7 @@
                                     <tr class="hover:bg-canvas transition-colors">
                                         <td class="py-3 px-4 font-mono font-bold whitespace-nowrap">
                                             @if ($canViewPurchases)
-                                                <a href="{{ route('purchases.show', $line->purchase_public_id) }}" class="text-primary hover:underline">
+                                                <a href="{{ route('purchases.show', $line->purchase_public_id) }}" class="touch-action text-primary hover:underline">
                                                     {{ $line->purchase_number }}
                                                 </a>
                                             @else
@@ -553,7 +553,7 @@
                                         </td>
                                         <td class="py-3 px-4 font-bold text-text-primary">
                                             @if ($line->product_public_id && $canViewProducts)
-                                                <a href="{{ route('products.show', $line->product_public_id) }}" class="text-primary hover:underline">
+                                                <a href="{{ route('products.show', $line->product_public_id) }}" class="touch-action text-primary hover:underline">
                                                     {{ $line->product_name }}
                                                 </a>
                                             @else

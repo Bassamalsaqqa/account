@@ -20,7 +20,7 @@
 @forelse($movements as $movement)<article class="grid gap-2 border-b border-border py-3 sm:grid-cols-3">
 <div>
 <p class="text-sm font-semibold break-words">{{ $movement->description ?: __('money.movement') }}</p>
-<p class="text-xs text-text-secondary">{{ $movement->posting_date }}</p>@if(isset($sourceLinks[$movement->id]))<a class="text-sm text-primary" href="{{ $sourceLinks[$movement->id] }}">{{ __('money.source') }}</a>@endif</div>
+<p class="text-xs text-text-secondary">{{ $movement->posting_date }}</p>@if(isset($sourceLinks[$movement->id]))<a class="touch-action text-sm text-primary" href="{{ $sourceLinks[$movement->id] }}">{{ __('money.source') }}</a>@endif</div>
 <div class="text-sm">
 <p>{{ __('money.in') }}: <bdi>{{ $movement->debit_base }}</bdi>
 </p>

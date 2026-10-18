@@ -46,19 +46,19 @@
             <div class="flex flex-wrap items-center gap-2">
                 @if ($canManage)
                     <a href="{{ route('customers.edit', $customer->public_id) }}"
-                       class="px-3 py-1.5 rounded-control border border-border text-xs font-bold text-text-secondary hover:bg-surface-soft transition-colors">
+                       class="touch-action px-3 py-1.5 rounded-control border border-border text-xs font-bold text-text-secondary hover:bg-surface-soft transition-colors">
                         {{ __('sales.edit_customer') }}
                     </a>
                 @endif
                 @if ($customer->is_active && $canInvoice)
                     <a href="{{ route('invoices.create', ['customer_id' => $customer->id]) }}"
-                       class="px-3 py-1.5 rounded-control bg-primary text-white text-xs font-bold hover:bg-primary-hover transition-colors shadow-xs">
+                       class="touch-action px-3 py-1.5 rounded-control bg-primary text-white text-xs font-bold hover:bg-primary-hover transition-colors shadow-xs">
                         + {{ __('sales.new_invoice') }}
                     </a>
                 @endif
                 @if ($customer->is_active && $canPayment)
                     <a href="{{ route('payments.create', ['customer_id' => $customer->id]) }}"
-                       class="px-3 py-1.5 rounded-control bg-success text-white text-xs font-bold hover:opacity-90 transition-opacity shadow-xs">
+                       class="touch-action px-3 py-1.5 rounded-control bg-success text-white text-xs font-bold hover:opacity-90 transition-opacity shadow-xs">
                         + {{ __('sales.new_payment') }}
                     </a>
                 @endif
@@ -231,7 +231,7 @@
                         @forelse ($tabInvoices as $inv)
                             <tr class="hover:bg-surface-soft/60">
                                 <td class="py-2.5 px-3 font-mono font-bold" dir="ltr">
-                                    <a href="{{ route('invoices.show', $inv->public_id) }}" class="text-primary hover:underline">
+                                    <a href="{{ route('invoices.show', $inv->public_id) }}" class="touch-action text-primary hover:underline">
                                         {{ $inv->invoice_number ?? __('sales.draft') }}
                                     </a>
                                 </td>
@@ -253,7 +253,7 @@
                                     {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::format($inv->calculateOutstanding(), $inv->currency_code) }} {{ $inv->currency_code }}
                                 </td>
                                 <td class="py-2.5 px-3 text-end">
-                                    <a href="{{ route('invoices.show', $inv->public_id) }}" class="text-primary hover:underline font-bold text-[11px]">
+                                    <a href="{{ route('invoices.show', $inv->public_id) }}" class="touch-action text-primary hover:underline font-bold text-[11px]">
                                         {{ __('sales.invoice_details') }}
                                     </a>
                                 </td>
@@ -286,7 +286,7 @@
                         @forelse ($tabQuotations as $quote)
                             <tr class="hover:bg-surface-soft/60">
                                 <td class="py-2.5 px-3 font-mono font-bold" dir="ltr">
-                                    <a href="{{ route('quotations.show', $quote->public_id) }}" class="text-primary hover:underline">
+                                    <a href="{{ route('quotations.show', $quote->public_id) }}" class="touch-action text-primary hover:underline">
                                         {{ $quote->quotation_number }}
                                     </a>
                                 </td>
@@ -301,7 +301,7 @@
                                     {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::format($quote->grand_total_currency, $quote->currency_code) }} {{ $quote->currency_code }}
                                 </td>
                                 <td class="py-2.5 px-3 text-end">
-                                    <a href="{{ route('quotations.show', $quote->public_id) }}" class="text-primary hover:underline font-bold text-[11px]">
+                                    <a href="{{ route('quotations.show', $quote->public_id) }}" class="touch-action text-primary hover:underline font-bold text-[11px]">
                                         {{ __('sales.quotation_details') }}
                                     </a>
                                 </td>
@@ -335,7 +335,7 @@
                         @forelse ($tabPayments as $pmt)
                             <tr class="hover:bg-surface-soft/60">
                                 <td class="py-2.5 px-3 font-mono font-bold" dir="ltr">
-                                    <a href="{{ route('payments.show', $pmt->public_id) }}" class="text-primary hover:underline">
+                                    <a href="{{ route('payments.show', $pmt->public_id) }}" class="touch-action text-primary hover:underline">
                                         {{ $pmt->payment_number }}
                                     </a>
                                 </td>
@@ -357,7 +357,7 @@
                                     @endif
                                 </td>
                                 <td class="py-2.5 px-3 text-end">
-                                    <a href="{{ route('payments.show', $pmt->public_id) }}" class="text-primary hover:underline font-bold text-[11px]">
+                                    <a href="{{ route('payments.show', $pmt->public_id) }}" class="touch-action text-primary hover:underline font-bold text-[11px]">
                                         {{ __('sales.payment_details') }}
                                     </a>
                                 </td>
@@ -390,7 +390,7 @@
                         @forelse ($tabReturns as $ret)
                             <tr class="hover:bg-surface-soft/60">
                                 <td class="py-2.5 px-3 font-mono font-bold" dir="ltr">
-                                    <a href="{{ route('returns.show', $ret->public_id) }}" class="text-primary hover:underline">
+                                    <a href="{{ route('returns.show', $ret->public_id) }}" class="touch-action text-primary hover:underline">
                                         {{ $ret->return_number ?? __('sales.draft') }}
                                     </a>
                                 </td>
@@ -405,7 +405,7 @@
                                     {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::format($ret->grand_total_currency, $ret->currency_code) }} {{ $ret->currency_code }}
                                 </td>
                                 <td class="py-2.5 px-3 text-end">
-                                    <a href="{{ route('returns.show', $ret->public_id) }}" class="text-primary hover:underline font-bold text-[11px]">
+                                    <a href="{{ route('returns.show', $ret->public_id) }}" class="touch-action text-primary hover:underline font-bold text-[11px]">
                                         {{ __('sales.return_details') }}
                                     </a>
                                 </td>
@@ -435,7 +435,7 @@
                     </div>
                     <a href="{{ route('pdf.statement', ['publicId' => $customer->public_id, 'from' => $statementFrom, 'to' => $statementTo]) }}"
                        target="_blank"
-                       class="ml-auto px-3 py-1.5 rounded-control bg-primary text-white text-xs font-bold hover:bg-primary-hover transition-colors">
+                       class="touch-action ml-auto px-3 py-1.5 rounded-control bg-primary text-white text-xs font-bold hover:bg-primary-hover transition-colors">
                         📄 {{ __('sales.download_pdf') }}
                     </a>
                 </div>

@@ -16,12 +16,12 @@
                 </div>
                 <div class="text-xs text-text-secondary mt-1">
                     {{ __('sales.customer') }}:
-                    <a href="{{ route('customers.show', $return->customer->public_id) }}" class="font-bold text-text-primary hover:text-primary">
+                    <a href="{{ route('customers.show', $return->customer->public_id) }}" class="touch-action font-bold text-text-primary hover:text-primary">
                         {{ $return->customer->displayName() }}
                     </a>
                     @if ($return->salesInvoice)
                         | {{ __('sales.original_invoice') }}:
-                        <a href="{{ route('invoices.show', $return->salesInvoice->public_id) }}" class="font-mono text-primary hover:underline">
+                        <a href="{{ route('invoices.show', $return->salesInvoice->public_id) }}" class="touch-action font-mono text-primary hover:underline">
                             {{ $return->salesInvoice->invoice_number }}
                         </a>
                     @endif
@@ -34,7 +34,7 @@
                     <button type="button"
                             wire:click="postReturn"
                             wire:confirm="{{ __('sales.confirm_post_return') }}"
-                            class="px-3.5 py-1.5 rounded-control bg-primary text-white text-xs font-bold hover:bg-primary-hover transition-colors shadow-xs cursor-pointer">
+                            class="px-3.5 py-1.5 rounded-control bg-primary text-white text-xs font-bold hover:bg-primary-hover transition-colors shadow-xs cursor-pointer" wire:loading.attr="disabled" wire:target="postReturn">
                         ⚡ {{ __('sales.post') }}
                     </button>
                 @endif
@@ -52,7 +52,7 @@
 
 
                 <a href="{{ route('returns.index') }}"
-                   class="px-3 py-1.5 rounded-control bg-surface-soft text-text-secondary hover:text-text-primary text-xs font-bold transition-colors">
+                   class="touch-action px-3 py-1.5 rounded-control bg-surface-soft text-text-secondary hover:text-text-primary text-xs font-bold transition-colors">
                     {{ __('sales.back') }}
                 </a>
             </div>
@@ -179,7 +179,7 @@
                     <button type="button" wire:click="$set('showVoidModal', false)" class="px-3 py-1.5 rounded-control border border-border text-xs font-bold">
                         {{ __('sales.cancel') }}
                     </button>
-                    <button type="button" wire:click="voidReturn" class="px-4 py-1.5 rounded-control bg-danger text-white text-xs font-bold">
+                    <button type="button" wire:click="voidReturn" class="px-4 py-1.5 rounded-control bg-danger text-white text-xs font-bold" wire:loading.attr="disabled" wire:target="voidReturn">
                         {{ __('sales.void') }}
                     </button>
                 </div>

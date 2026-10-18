@@ -147,7 +147,7 @@
                             wire:click="manageState('paused')"
                             @disabled(! $canRevoke)
                             class="min-h-[44px] px-3 py-2 bg-amber-50 text-amber-700 border border-amber-200 rounded-lg text-sm hover:bg-amber-100 disabled:opacity-50"
-                        >
+                         wire:loading.attr="disabled" wire:target="manageState">
                             {{ __('catalogs.pause') }}
                         </button>
                     @elseif($status === 'paused')
@@ -156,7 +156,7 @@
                             wire:click="manageState('active')"
                             @disabled(! $canPublish)
                             class="min-h-[44px] px-3 py-2 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-lg text-sm hover:bg-emerald-100 disabled:opacity-50"
-                        >
+                         wire:loading.attr="disabled" wire:target="manageState">
                             {{ __('catalogs.resume') }}
                         </button>
                     @endif
@@ -168,7 +168,7 @@
                             wire:confirm="{{ __('catalogs.revoke_confirm_warning') }}"
                             @disabled(! $canRevoke)
                             class="min-h-[44px] px-3 py-2 bg-rose-50 text-rose-700 border border-rose-200 rounded-lg text-sm hover:bg-rose-100 disabled:opacity-50"
-                        >
+                         wire:loading.attr="disabled" wire:target="manageState">
                             {{ __('catalogs.revoke') }}
                         </button>
                     @endif
@@ -181,7 +181,7 @@
                         wire:click="openNewLink"
                         @disabled(! $canShare || ! $canPublish)
                         class="min-h-[44px] px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-medium shadow-sm transition-colors disabled:opacity-50"
-                    >
+                     wire:loading.attr="disabled" wire:target="openNewLink">
                         {{ __('catalogs.new_link') }}
                     </button>
                 @endif
@@ -193,7 +193,7 @@
                         wire:click="createOrRecoverLink"
                         @disabled(! $canShare)
                         class="min-h-[44px] px-4 py-2 bg-indigo-50 border border-indigo-200 text-indigo-700 rounded-lg text-sm font-medium hover:bg-indigo-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50 transition-colors"
-                    >
+                     wire:loading.attr="disabled" wire:target="createOrRecoverLink">
                         {{ __('catalogs.share_link') }}
                     </button>
                 @endif
@@ -213,7 +213,7 @@
                         wire:click="createCatalog"
                         @disabled(! $canManage)
                         class="text-xs text-blue-600 hover:text-blue-800 font-medium py-1 px-2 rounded hover:bg-blue-50 disabled:opacity-50"
-                    >
+                     wire:loading.attr="disabled" wire:target="createCatalog">
                         + {{ __('catalogs.new_catalog') }}
                     </button>
                 </div>
@@ -223,7 +223,7 @@
                         <button type="button"
                             wire:click="loadCatalog('{{ $cat->public_id }}')"
                             class="w-full text-start p-3 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary rounded-lg border text-sm cursor-pointer transition-colors {{ $publicId === $cat->public_id ? 'border-blue-500 bg-blue-50/50' : 'border-slate-200 hover:bg-slate-50' }}"
-                        >
+                         wire:loading.attr="disabled" wire:target="loadCatalog">
                             <span class="block font-medium text-slate-900 truncate">
                                 {{ $cat->name_ar ?: ($cat->name_en ?: __('catalogs.title')) }}
                             </span>
@@ -480,7 +480,7 @@
                                             @disabled($idx === 0 || ! $canManage)
                                             title="{{ __('catalogs.move_up') }}"
                                             class="min-h-[44px] min-w-[44px] inline-flex items-center justify-center p-2 rounded-lg bg-white border border-slate-200 text-slate-600 hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                        >
+                                         wire:loading.attr="disabled" wire:target="moveItemUp">
                                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7" /></svg>
                                         </button>
 
@@ -490,7 +490,7 @@
                                             @disabled($idx === count($items) - 1 || ! $canManage)
                                             title="{{ __('catalogs.move_down') }}"
                                             class="min-h-[44px] min-w-[44px] inline-flex items-center justify-center p-2 rounded-lg bg-white border border-slate-200 text-slate-600 hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                        >
+                                         wire:loading.attr="disabled" wire:target="moveItemDown">
                                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg>
                                         </button>
 
@@ -500,7 +500,7 @@
                                             @disabled(! $canManage)
                                             title="{{ __('catalogs.remove') }}"
                                             class="min-h-[44px] min-w-[44px] inline-flex items-center justify-center p-2 rounded-lg bg-rose-50 border border-rose-200 text-rose-600 hover:bg-rose-100 disabled:opacity-30 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-rose-500"
-                                        >
+                                         wire:loading.attr="disabled" wire:target="removeItem">
                                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
                                         </button>
                                     </div>
@@ -627,7 +627,7 @@
                                         <button
                                             type="button"
                                             wire:click="addProduct({{ $prod->id }})"
-                                            @disabled($isAdded || count($items) >= 250 || ! $canManage)
+                                            @disabled($isAdded || count($items)  wire:loading.attr="disabled" wire:target="addProduct">= 250 || ! $canManage)
                                             class="min-h-[44px] px-3 py-1.5 rounded-lg text-xs font-medium transition-colors {{ $isAdded ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'bg-blue-50 text-blue-700 hover:bg-blue-100' }}"
                                         >
                                             {{ $isAdded ? __('catalogs.already_added') : __('catalogs.add_product') }}
@@ -677,7 +677,7 @@
                         <div class="flex items-center justify-between pb-2 border-b border-slate-100">
                             <h4 class="text-sm font-semibold text-slate-800">{{ __('catalogs.edit_link_access') }}</h4>
                             @if($url)
-                                <button type="button" wire:click="closeLinkAccess" class="text-xs text-indigo-600 hover:text-indigo-800 font-medium min-h-[44px] px-2 flex items-center">
+                                <button type="button" wire:click="closeLinkAccess" class="text-xs text-indigo-600 hover:text-indigo-800 font-medium min-h-[44px] px-2 flex items-center" wire:loading.attr="disabled" wire:target="closeLinkAccess">
                                     &larr; {{ __('catalogs.back_to_link') }}
                                 </button>
                             @endif
@@ -767,7 +767,7 @@
                                     type="button"
                                     wire:click="closeLinkAccess"
                                     class="min-h-[44px] px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-sm font-medium transition-colors"
-                                >
+                                 wire:loading.attr="disabled" wire:target="closeLinkAccess">
                                     {{ __('catalogs.cancel') }}
                                 </button>
                             @else
@@ -802,7 +802,7 @@
                                 type="button"
                                 wire:click="showQr"
                                 class="min-h-[44px] px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-medium flex items-center justify-center gap-1.5"
-                            >
+                             wire:loading.attr="disabled" wire:target="showQr">
                                 {{ __('catalogs.show_qr') }}
                             </button>
 
@@ -811,7 +811,7 @@
                                 href="https://api.whatsapp.com/send?text={{ rawurlencode(__('catalogs.public_catalog_message') . ' ' . $browserShareUrl) }}"
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                class="min-h-[44px] px-3 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-lg text-xs font-medium flex items-center justify-center gap-1.5"
+                                class="touch-action min-h-[44px] px-3 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-lg text-xs font-medium flex items-center justify-center gap-1.5"
                             >
                                 {{ __('catalogs.share_whatsapp') }}
                             </a>
@@ -819,7 +819,7 @@
                             <!-- Mailto Composition -->
                             <a
                                 href="mailto:?subject={{ rawurlencode(__('catalogs.public_catalog_message')) }}&body={{ rawurlencode($browserShareUrl) }}"
-                                class="min-h-[44px] px-3 py-2 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-lg text-xs font-medium flex items-center justify-center gap-1.5"
+                                class="touch-action min-h-[44px] px-3 py-2 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-lg text-xs font-medium flex items-center justify-center gap-1.5"
                             >
                                 {{ __('catalogs.share_email') }}
                             </a>
@@ -844,7 +844,7 @@
                             type="button"
                             wire:click="openLinkAccess"
                             class="w-full min-h-[44px] px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 rounded-lg text-xs font-medium flex items-center justify-center gap-1.5 mt-2 transition-colors"
-                        >
+                         wire:loading.attr="disabled" wire:target="openLinkAccess">
                             {{ __('catalogs.edit_link_access') }}
                         </button>
 
@@ -853,7 +853,7 @@
                             type="button"
                             wire:click="openNewLink"
                             class="w-full min-h-[44px] px-3 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-lg text-xs font-medium flex items-center justify-center gap-1.5 mt-2 transition-colors"
-                        >
+                         wire:loading.attr="disabled" wire:target="openNewLink">
                             {{ __('catalogs.issue_new_link') }}
                         </button>
 
@@ -872,7 +872,7 @@
                             type="button"
                             wire:click="openLinkAccess"
                             class="w-full min-h-[44px] bg-indigo-600 hover:bg-indigo-700 text-white font-medium text-sm rounded-lg flex items-center justify-center transition-colors"
-                        >
+                         wire:loading.attr="disabled" wire:target="openLinkAccess">
                             {{ __('catalogs.renew_link_access') }}
                         </button>
 
@@ -880,7 +880,7 @@
                             type="button"
                             wire:click="openNewLink"
                             class="w-full min-h-[44px] bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 font-medium text-sm rounded-lg flex items-center justify-center transition-colors mt-2"
-                        >
+                         wire:loading.attr="disabled" wire:target="openNewLink">
                             {{ __('catalogs.issue_new_link') }}
                         </button>
                     </div>
@@ -922,7 +922,7 @@
                             type="button"
                             wire:click="createOrRecoverLink"
                             class="w-full min-h-[44px] bg-blue-600 text-white font-medium text-sm rounded-lg hover:bg-blue-700"
-                        >
+                         wire:loading.attr="disabled" wire:target="createOrRecoverLink">
                             {{ __('catalogs.create_link') }}
                         </button>
                     </div>
@@ -937,7 +937,7 @@
             <div class="bg-white rounded-xl shadow-xl border border-slate-200 max-w-lg w-full p-6 text-slate-900">
                 <div class="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
                     <h3 id="catalog-new-link-title" class="text-base font-bold text-slate-900">{{ __('catalogs.new_link_title') }}</h3>
-                    <button type="button" aria-label="{{ __('catalogs.close') }}" wire:click="closeNewLink" class="min-h-[44px] min-w-[44px] text-slate-400 hover:text-slate-600 p-1">
+                    <button type="button" aria-label="{{ __('catalogs.close') }}" wire:click="closeNewLink" class="min-h-[44px] min-w-[44px] text-slate-400 hover:text-slate-600 p-1" wire:loading.attr="disabled" wire:target="closeNewLink">
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
                     </button>
                 </div>
@@ -1010,7 +1010,7 @@
                             type="button"
                             wire:click="closeNewLink"
                             class="min-h-[44px] px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-sm font-medium transition-colors"
-                        >
+                         wire:loading.attr="disabled" wire:target="closeNewLink">
                             {{ __('catalogs.cancel') }}
                         </button>
                     </div>

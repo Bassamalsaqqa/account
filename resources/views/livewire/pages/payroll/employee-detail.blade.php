@@ -9,7 +9,7 @@
 
     <div class="flex flex-wrap items-center justify-between gap-3">
         <div class="flex items-center gap-3">
-            <a href="{{ route('employees.index') }}" class="inline-flex items-center justify-center w-8 h-8 rounded-control border border-border bg-white text-text-secondary hover:bg-surface-soft">
+            <a href="{{ route('employees.index') }}" class="touch-action inline-flex items-center justify-center w-8 h-8 rounded-control border border-border bg-white text-text-secondary hover:bg-surface-soft">
                 &larr;
             </a>
             <div>
@@ -19,22 +19,22 @@
         </div>
         <div class="flex flex-wrap items-center gap-2">
             @if($detail['has_manage'] && ! $employee->trashed())
-                <a href="{{ route('employees.edit', $employee->public_id) }}" class="inline-flex items-center rounded-control border border-border bg-white px-3 py-2 text-sm font-semibold text-text-secondary hover:bg-surface-soft">
+                <a href="{{ route('employees.edit', $employee->public_id) }}" class="touch-action inline-flex items-center rounded-control border border-border bg-white px-3 py-2 text-sm font-semibold text-text-secondary hover:bg-surface-soft">
                     {{ __('payroll.edit_employee') }}
                 </a>
             @endif
             @if($detail['has_advance_manage'] && $employee->active && ! $employee->trashed())
-                <a href="{{ route('payroll.advances.create', ['employee' => $employee->public_id]) }}" class="inline-flex items-center rounded-control border border-border bg-white px-3 py-2 text-sm font-semibold text-text-secondary hover:bg-surface-soft">
+                <a href="{{ route('payroll.advances.create', ['employee' => $employee->public_id]) }}" class="touch-action inline-flex items-center rounded-control border border-border bg-white px-3 py-2 text-sm font-semibold text-text-secondary hover:bg-surface-soft">
                     {{ __('payroll.create_advance') }}
                 </a>
             @endif
             @if($canPostSalary && $employee->active && ! $employee->trashed())
-                <a href="{{ route('payroll.salary-entries.create', ['employee' => $employee->public_id]) }}" class="inline-flex items-center rounded-control bg-primary px-3 py-2 text-sm font-semibold text-white hover:bg-primary-hover">
+                <a href="{{ route('payroll.salary-entries.create', ['employee' => $employee->public_id]) }}" class="touch-action inline-flex items-center rounded-control bg-primary px-3 py-2 text-sm font-semibold text-white hover:bg-primary-hover">
                     {{ __('payroll.create_salary_entry') }}
                 </a>
             @endif
             @if($canPaySalary)
-                <a href="{{ route('payroll.salary-payments.create', ['employee' => $employee->public_id]) }}" class="inline-flex items-center rounded-control bg-emerald-600 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-700">
+                <a href="{{ route('payroll.salary-payments.create', ['employee' => $employee->public_id]) }}" class="touch-action inline-flex items-center rounded-control bg-emerald-600 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-700">
                     {{ __('payroll.create_salary_payment') }}
                 </a>
             @endif
@@ -138,7 +138,7 @@
             <div class="p-4 border-b border-border flex justify-between items-center bg-surface-soft">
                 <h2 class="font-bold text-sm text-text-primary">{{ __('payroll.advances') }}</h2>
                 @if($detail['has_advance_manage'] && $employee->active)
-                    <a href="{{ route('payroll.advances.create', ['employee' => $employee->public_id]) }}" class="inline-flex items-center rounded-control bg-primary px-3 py-1.5 text-xs font-semibold text-white hover:bg-primary-hover">
+                    <a href="{{ route('payroll.advances.create', ['employee' => $employee->public_id]) }}" class="touch-action inline-flex items-center rounded-control bg-primary px-3 py-1.5 text-xs font-semibold text-white hover:bg-primary-hover">
                         {{ __('payroll.create_advance') }}
                     </a>
                 @endif
@@ -177,11 +177,11 @@
                                 @if($detail['has_advance_manage'])
                                     <td class="px-4 py-3 text-end">
                                         @if($adv->status === 'posted' && $pos['is_available'] && $adv->payment_method !== 'check')
-                                            <button type="button" wire:click="reverseAdvance({{ $adv->id }})" wire:confirm="{{ __('payroll.reverse_advance_confirm') }}" class="text-xs font-semibold text-rose-600 hover:text-rose-800">
+                                            <button type="button" wire:click="reverseAdvance({{ $adv->id }})" wire:confirm="{{ __('payroll.reverse_advance_confirm') }}" class="text-xs font-semibold text-rose-600 hover:text-rose-800" wire:loading.attr="disabled" wire:target="reverseAdvance">
                                                 {{ __('payroll.reverse_advance') }}
                                             </button>
                                         @elseif($adv->payment_method === 'check' && $adv->check)
-                                            <a href="{{ route('money.checks.show', $adv->check->public_id) }}" class="text-xs font-semibold text-primary hover:underline">
+                                            <a href="{{ route('money.checks.show', $adv->check->public_id) }}" class="touch-action text-xs font-semibold text-primary hover:underline">
                                                 {{ __('payroll.check') }}
                                             </a>
                                         @endif
@@ -208,7 +208,7 @@
                 <h2 class="font-bold text-sm text-text-primary">{{ __('payroll.salary_entries') }}</h2>
                 <div class="flex gap-2">
                     @if($canPostSalary && $employee->active)
-                        <a href="{{ route('payroll.salary-entries.create', ['employee' => $employee->public_id]) }}" class="inline-flex items-center rounded-control bg-primary px-3 py-1.5 text-xs font-semibold text-white hover:bg-primary-hover">
+                        <a href="{{ route('payroll.salary-entries.create', ['employee' => $employee->public_id]) }}" class="touch-action inline-flex items-center rounded-control bg-primary px-3 py-1.5 text-xs font-semibold text-white hover:bg-primary-hover">
                             {{ __('payroll.create_salary_entry') }}
                         </a>
                     @endif
@@ -254,7 +254,7 @@
                                 @if($canReverseSalary)
                                     <td class="px-4 py-3 text-end">
                                         @if($ent->status === 'posted')
-                                            <button type="button" wire:click="reverseSalaryEntry({{ $ent->id }})" wire:confirm="{{ __('payroll.reverse_salary_entry_confirm') }}" class="text-xs font-semibold text-rose-600 hover:text-rose-800">
+                                            <button type="button" wire:click="reverseSalaryEntry({{ $ent->id }})" wire:confirm="{{ __('payroll.reverse_salary_entry_confirm') }}" class="text-xs font-semibold text-rose-600 hover:text-rose-800" wire:loading.attr="disabled" wire:target="reverseSalaryEntry">
                                                 {{ __('payroll.reverse_salary_entry') }}
                                             </button>
                                         @endif

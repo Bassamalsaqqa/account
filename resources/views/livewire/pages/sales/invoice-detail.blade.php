@@ -23,7 +23,7 @@
                 </div>
                 <div class="text-xs text-text-secondary mt-1">
                     {{ __('sales.customer') }}:
-                    <a href="{{ route('customers.show', $invoice->customer->public_id) }}" class="font-bold text-text-primary hover:text-primary">
+                    <a href="{{ route('customers.show', $invoice->customer->public_id) }}" class="touch-action font-bold text-text-primary hover:text-primary">
                         {{ $invoice->customer->displayName() }}
                     </a>
                 </div>
@@ -31,7 +31,7 @@
                     <div class="text-xs text-text-secondary mt-1">
                         {{ __('sales.quotation') }}:
                         @if (auth()->user()?->hasPermissionTo('sales.quote.view'))
-                            <a href="{{ route('quotations.show', $invoice->quotation->public_id) }}" class="font-mono font-bold text-text-primary hover:text-primary" dir="ltr">
+                            <a href="{{ route('quotations.show', $invoice->quotation->public_id) }}" class="touch-action font-mono font-bold text-text-primary hover:text-primary" dir="ltr">
                                 {{ $invoice->quotation->quotation_number ?? __('sales.draft') }}
                             </a>
                         @else
@@ -57,21 +57,21 @@
 
                 @if ($canEditDraft)
                     <a href="{{ route('invoices.edit', $invoice->public_id) }}"
-                       class="px-3 py-1.5 rounded-control border border-border text-xs font-bold text-text-secondary hover:bg-surface-soft transition-colors">
+                       class="touch-action px-3 py-1.5 rounded-control border border-border text-xs font-bold text-text-secondary hover:bg-surface-soft transition-colors">
                         {{ __('sales.edit_invoice_draft') }}
                     </a>
                 @endif
 
                 @if ($canPay && \App\Domain\Sales\Formatters\SalesMoneyFormatter::isPositive($outstanding))
                     <a href="{{ route('payments.create', ['customer_id' => $invoice->customer_id, 'invoice_id' => $invoice->id]) }}"
-                       class="px-3 py-1.5 rounded-control bg-success text-white text-xs font-bold hover:opacity-90 transition-opacity shadow-xs">
+                       class="touch-action px-3 py-1.5 rounded-control bg-success text-white text-xs font-bold hover:opacity-90 transition-opacity shadow-xs">
                         + {{ __('sales.new_payment') }}
                     </a>
                 @endif
 
                 @if ($canReturn)
                     <a href="{{ route('returns.create', ['invoice_id' => $invoice->id]) }}"
-                       class="px-3 py-1.5 rounded-control border border-border text-xs font-bold text-text-secondary hover:bg-surface-soft transition-colors">
+                       class="touch-action px-3 py-1.5 rounded-control border border-border text-xs font-bold text-text-secondary hover:bg-surface-soft transition-colors">
                         ↩ {{ __('sales.new_return') }}
                     </a>
                 @endif
@@ -89,7 +89,7 @@
 
 
                 <a href="{{ route('invoices.index') }}"
-                   class="px-3 py-1.5 rounded-control bg-surface-soft text-text-secondary hover:text-text-primary text-xs font-bold transition-colors">
+                   class="touch-action px-3 py-1.5 rounded-control bg-surface-soft text-text-secondary hover:text-text-primary text-xs font-bold transition-colors">
                     {{ __('sales.back') }}
                 </a>
             </div>
@@ -264,7 +264,7 @@
                         @foreach ($invoice->allocations as $alloc)
                             <tr>
                                 <td class="py-2.5 px-4 font-mono font-bold" dir="ltr">
-                                    <a href="{{ route('payments.show', $alloc->payment->public_id) }}" class="text-primary hover:underline">
+                                    <a href="{{ route('payments.show', $alloc->payment->public_id) }}" class="touch-action text-primary hover:underline">
                                         {{ $alloc->payment->payment_number }}
                                     </a>
                                 </td>
@@ -276,7 +276,7 @@
                                     {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::format($alloc->realized_fx_gain_loss_base) }}
                                 </td>
                                 <td class="py-2.5 px-4 text-end">
-                                    <a href="{{ route('payments.show', $alloc->payment->public_id) }}" class="text-primary hover:underline font-bold text-[11px]">
+                                    <a href="{{ route('payments.show', $alloc->payment->public_id) }}" class="touch-action text-primary hover:underline font-bold text-[11px]">
                                          {{ __('sales.payment_details') }}
                                      </a>
                                  </td>
@@ -309,7 +309,7 @@
                         @foreach ($invoice->returns as $ret)
                             <tr>
                                 <td class="py-2.5 px-4 font-mono font-bold" dir="ltr">
-                                    <a href="{{ route('returns.show', $ret->public_id) }}" class="text-primary hover:underline">
+                                    <a href="{{ route('returns.show', $ret->public_id) }}" class="touch-action text-primary hover:underline">
                                         {{ $ret->return_number ?? __('sales.draft') }}
                                     </a>
                                 </td>
@@ -323,7 +323,7 @@
                                     </span>
                                 </td>
                                 <td class="py-2.5 px-4 text-end">
-                                    <a href="{{ route('returns.show', $ret->public_id) }}" class="text-primary hover:underline font-bold text-[11px]">
+                                    <a href="{{ route('returns.show', $ret->public_id) }}" class="touch-action text-primary hover:underline font-bold text-[11px]">
                                         {{ __('sales.return_details') }}
                                     </a>
                                 </td>
@@ -353,7 +353,7 @@
                     <button type="button" wire:click="$set('showVoidModal', false)" class="px-3 py-1.5 rounded-control border border-border text-xs font-bold">
                         {{ __('sales.cancel') }}
                     </button>
-                    <button type="button" wire:click="voidInvoice" class="px-4 py-1.5 rounded-control bg-danger text-white text-xs font-bold">
+                    <button type="button" wire:click="voidInvoice" class="px-4 py-1.5 rounded-control bg-danger text-white text-xs font-bold" wire:loading.attr="disabled" wire:target="voidInvoice">
                         {{ __('sales.void') }}
                     </button>
                 </div>

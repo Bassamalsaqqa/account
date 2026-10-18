@@ -4,7 +4,7 @@
     $mobileMoney = $mobileActor->hasAnyPermission(['money.cash.view', 'money.bank.view', 'money.check.view', 'money.transfer.view']);
     $mobileProducts = $mobileActor->can('viewAny', \App\Models\Product::class);
     $mobileCanScan = $mobileProducts || $mobileActor->can('sales.invoice.create') || $mobileActor->can('sales.quote.create') || ($mobileActor->can('purchasing.purchase.create') && $mobileActor->can('purchasing.cost.view'));
-    $mobileOnScanPage = request()->routeIs('invoices.create', 'invoices.edit', 'quotations.create', 'quotations.edit', 'purchases.create', 'purchases.edit', 'products.index');
+    $mobileOnScanPage = request()->routeIs('invoices.create', 'invoices.edit', 'quotations.create', 'quotations.edit', 'purchases.create', 'purchases.edit', 'products.index', 'products.create', 'products.edit', 'inventory.opening-stock.create', 'inventory.adjustments.create', 'inventory.transfers.create');
 @endphp
 <nav class="mobile-bottom-nav lg:hidden" aria-label="{{ __('mobile_shell.navigation') }}" x-data="{ scanChoices: false }">
     <a href="{{ route('dashboard') }}" @if(request()->routeIs('dashboard')) aria-current="page" @endif>

@@ -1,13 +1,13 @@
 <div class="max-w-2xl mx-auto space-y-5">
     <header class="flex items-center justify-between gap-3">
         <h1 class="text-xl sm:text-2xl font-bold text-text-primary">{{ __('purchasing.purchase_settings') }}</h1>
-        <a href="{{ route('settings.index') }}" class="py-3 text-sm text-primary">{{ __('purchasing.back') }}</a>
+        <a href="{{ route('settings.index') }}" class="touch-action py-3 text-sm text-primary">{{ __('purchasing.back') }}</a>
     </header>
     @if (session()->has('success'))<p role="status" class="p-3 rounded-control bg-success-bg text-success text-sm">{{ session('success') }}</p>@endif
     <form wire:submit="save" class="bg-white border border-border rounded-card p-4 sm:p-5 space-y-5">
         <div>
             <label for="paymentTerms" class="block text-sm font-bold mb-2">{{ __('purchasing.default_payment_terms_days') }}</label>
-            <input id="paymentTerms" type="number" min="0" max="3650" step="1" wire:model="default_payment_terms_days" dir="ltr" class="w-full h-11 px-3 border border-border rounded-control text-sm" />
+            <input id="paymentTerms" type="number" inputmode="decimal" min="0" max="3650" step="1" wire:model="default_payment_terms_days" dir="ltr" class="w-full h-11 px-3 border border-border rounded-control text-sm" />
             <p class="text-xs text-text-secondary mt-2">{{ __('purchasing.payment_terms_hint') }}</p>
             @error('default_payment_terms_days')<p role="alert" class="text-xs text-danger">{{ $message }}</p>@enderror
         </div>

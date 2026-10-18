@@ -32,7 +32,7 @@
             @endcan
 
             @can('ai.assistant.use')
-                <button type="button" wire:click="openAssistant" class="dashboard-btn-secondary">
+                <button type="button" wire:click="openAssistant" class="dashboard-btn-secondary" wire:loading.attr="disabled" wire:target="openAssistant">
                     <x-icon name="sparkles" class="w-4 h-4 text-primary shrink-0" aria-hidden="true" />
                     <span>{{ __('dashboard.ask_assistant') }}</span>
                 </button>
@@ -123,7 +123,7 @@
                         <h2 id="heading-performance" class="dashboard-card-title">{{ __('dashboard.performance_heading') }}</h2>
                     </div>
                     @if (isset($data['activity']['sales.summary']))
-                        <a href="{{ $data['activity']['sales.summary']['url'] }}" class="dashboard-card-link">
+                        <a href="{{ $data['activity']['sales.summary']['url'] }}" class="touch-action dashboard-card-link">
                             <span>{{ __('dashboard.view_full_report') }}</span>
                             <x-icon name="chevron" class="w-3.5 h-3.5 rtl:rotate-180 shrink-0" aria-hidden="true" />
                         </a>
@@ -136,7 +136,7 @@
                         <div class="dashboard-comparison-header">
                             <span class="dashboard-comparison-title">{{ __('dashboard.net_sales') }}</span>
                             <span class="dashboard-comparison-period-badge">
-                                <bdi class="num">{{ $data['period']['start_date'] }}</bdi> – <bdi class="num">{{ $data['period']['end_date'] }}</bdi>
+                                <bdi class="num">{{ $data['period']['start_date'] }}</bdi> â€“ <bdi class="num">{{ $data['period']['end_date'] }}</bdi>
                             </span>
                         </div>
 
@@ -156,7 +156,7 @@
                             </div>
                             <div class="dashboard-comparison-value-item">
                                 <span class="dashboard-comparison-val-label">
-                                    {{ __('dashboard.previous_period') }} (<bdi class="num">{{ $data['comparison']['previous_period']['start_date'] }}</bdi> – <bdi class="num">{{ $data['comparison']['previous_period']['end_date'] }}</bdi>)
+                                    {{ __('dashboard.previous_period') }} (<bdi class="num">{{ $data['comparison']['previous_period']['start_date'] }}</bdi> â€“ <bdi class="num">{{ $data['comparison']['previous_period']['end_date'] }}</bdi>)
                                 </span>
                                 <span class="dashboard-comparison-amount-prior num">
                                     <bdi>{{ $data['comparison']['previous_display'] }} {{ $data['currency'] }}</bdi>
@@ -376,7 +376,7 @@
                                 <x-icon name="bank" class="w-5 h-5 text-primary" aria-hidden="true" />
                                 <h3 class="dashboard-card-title">{{ $moneyReport['title'] }}</h3>
                             </div>
-                            <a href="{{ $moneyReport['url'] }}" class="dashboard-card-link">
+                            <a href="{{ $moneyReport['url'] }}" class="touch-action dashboard-card-link">
                                 <span>{{ __('dashboard.view_full_report') }}</span>
                                 <x-icon name="chevron" class="w-3.5 h-3.5 rtl:rotate-180 shrink-0" aria-hidden="true" />
                             </a>
@@ -414,7 +414,7 @@
                                 <x-icon name="users" class="w-5 h-5 text-primary" aria-hidden="true" />
                                 <h3 class="dashboard-card-title">{{ $custReport['title'] }}</h3>
                             </div>
-                            <a href="{{ $custReport['url'] }}" class="dashboard-card-link">
+                            <a href="{{ $custReport['url'] }}" class="touch-action dashboard-card-link">
                                 <span>{{ __('dashboard.view_full_report') }}</span>
                                 <x-icon name="chevron" class="w-3.5 h-3.5 rtl:rotate-180 shrink-0" aria-hidden="true" />
                             </a>
@@ -447,7 +447,7 @@
                                 <x-icon name="cart" class="w-5 h-5 text-primary" aria-hidden="true" />
                                 <h3 class="dashboard-card-title">{{ $vendReport['title'] }}</h3>
                             </div>
-                            <a href="{{ $vendReport['url'] }}" class="dashboard-card-link">
+                            <a href="{{ $vendReport['url'] }}" class="touch-action dashboard-card-link">
                                 <span>{{ __('dashboard.view_full_report') }}</span>
                                 <x-icon name="chevron" class="w-3.5 h-3.5 rtl:rotate-180 shrink-0" aria-hidden="true" />
                             </a>
@@ -489,7 +489,7 @@
                             <div class="dashboard-more-item">
                                 <div class="dashboard-more-item-header">
                                     <h4 class="dashboard-more-item-title">{{ $otherReport['title'] }}</h4>
-                                    <a href="{{ $otherReport['url'] }}" class="dashboard-more-link">
+                                    <a href="{{ $otherReport['url'] }}" class="touch-action dashboard-more-link">
                                         <span>{{ __('dashboard.view_full_report') }}</span>
                                         <x-icon name="chevron" class="w-3.5 h-3.5 rtl:rotate-180 shrink-0" aria-hidden="true" />
                                     </a>
