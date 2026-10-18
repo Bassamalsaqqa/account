@@ -89,7 +89,7 @@
                                     </p>
                                 </div>
                             </div>
-                            <button type="button" wire:click="setSection('identity')"
+                            <button type="button" wire:loading.attr="disabled" wire:target="setSection" wire:click="setSection('identity')"
                                     class="px-2.5 py-1.5 rounded-control border border-border bg-surface-soft hover:bg-surface-blue hover:border-primary text-text-secondary hover:text-primary text-xs font-bold shrink-0 transition-colors cursor-pointer">
                                 {{ __('settings.edit_company_data') }}
                             </button>
@@ -188,7 +188,7 @@
                     <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         <!-- Company Details -->
                         <div x-show="matches('{{ __('settings.card_company_title') }} {{ __('settings.card_company_desc') }}')"
-                             wire:click="setSection('identity')"
+                             wire:loading.attr="disabled" wire:target="setSection" wire:click="setSection('identity')"
                              class="bg-white border border-border hover:border-primary/60 rounded-card p-3.5 shadow-panel hover:shadow-panel-hover hover:-translate-y-0.5 transition-all flex items-start justify-between gap-3 group cursor-pointer">
                             <div class="flex items-start gap-3 min-w-0">
                                 <div class="w-9 h-9 rounded-control bg-primary-50 text-primary grid place-items-center shrink-0 group-hover:bg-primary group-hover:text-white transition-colors">
@@ -208,7 +208,7 @@
 
                         <!-- Languages & Region -->
                         <div x-show="matches('{{ __('settings.card_localization_title') }} {{ __('settings.card_localization_desc') }}')"
-                             wire:click="setSection('localization')"
+                             wire:loading.attr="disabled" wire:target="setSection" wire:click="setSection('localization')"
                              class="bg-white border border-border hover:border-primary/60 rounded-card p-3.5 shadow-panel hover:shadow-panel-hover hover:-translate-y-0.5 transition-all flex items-start justify-between gap-3 group cursor-pointer">
                             <div class="flex items-start gap-3 min-w-0">
                                 <div class="w-9 h-9 rounded-control bg-primary-50 text-primary grid place-items-center shrink-0 group-hover:bg-primary group-hover:text-white transition-colors">
@@ -228,7 +228,7 @@
 
                         <!-- Currencies & FX -->
                         <div x-show="matches('{{ __('settings.card_currencies_title') }} {{ __('settings.card_currencies_desc') }} ILS USD JOD')"
-                             wire:click="setSection('currencies')"
+                             wire:loading.attr="disabled" wire:target="setSection" wire:click="setSection('currencies')"
                              class="bg-white border border-border hover:border-primary/60 rounded-card p-3.5 shadow-panel hover:shadow-panel-hover hover:-translate-y-0.5 transition-all flex items-start justify-between gap-3 group cursor-pointer">
                             <div class="flex items-start gap-3 min-w-0">
                                 <div class="w-9 h-9 rounded-control bg-primary-50 text-primary grid place-items-center shrink-0 group-hover:bg-primary group-hover:text-white transition-colors">
@@ -408,7 +408,7 @@
                         @canany(['settings.users.view', 'settings.users.manage'])
                             <!-- Users -->
                             <div x-show="matches('{{ __('settings.card_users_title') }} {{ __('settings.card_users_desc') }}')"
-                                 wire:click="setSection('users')"
+                                 wire:loading.attr="disabled" wire:target="setSection" wire:click="setSection('users')"
                                  class="bg-white border border-border hover:border-primary/60 rounded-card p-3.5 shadow-panel hover:shadow-panel-hover hover:-translate-y-0.5 transition-all flex items-start justify-between gap-3 group cursor-pointer">
                                 <div class="flex items-start gap-3 min-w-0">
                                     <div class="w-9 h-9 rounded-control bg-primary-50 text-primary grid place-items-center shrink-0 group-hover:bg-primary group-hover:text-white transition-colors">
@@ -450,7 +450,7 @@
                         @canany(['settings.roles.view', 'settings.roles.manage'])
                             <!-- Roles & Permissions -->
                             <div x-show="matches('{{ __('settings.card_roles_title') }} {{ __('settings.card_roles_desc') }}')"
-                                 wire:click="setSection('roles')"
+                                 wire:loading.attr="disabled" wire:target="setSection" wire:click="setSection('roles')"
                                  class="bg-white border border-border hover:border-primary/60 rounded-card p-3.5 shadow-panel hover:shadow-panel-hover hover:-translate-y-0.5 transition-all flex items-start justify-between gap-3 group cursor-pointer">
                                 <div class="flex items-start gap-3 min-w-0">
                                     <div class="w-9 h-9 rounded-control bg-primary-50 text-primary grid place-items-center shrink-0 group-hover:bg-primary group-hover:text-white transition-colors">
@@ -491,7 +491,7 @@
 
                         <!-- Security -->
                         <div x-show="matches('{{ __('settings.card_security_title') }} {{ __('settings.card_security_desc') }}')"
-                             wire:click="setSection('security')"
+                             wire:loading.attr="disabled" wire:target="setSection" wire:click="setSection('security')"
                              class="bg-white border border-border hover:border-primary/60 rounded-card p-3.5 shadow-panel hover:shadow-panel-hover hover:-translate-y-0.5 transition-all flex items-start justify-between gap-3 group cursor-pointer">
                             <div class="flex items-start gap-3 min-w-0">
                                 <div class="w-9 h-9 rounded-control bg-primary-50 text-primary grid place-items-center shrink-0 group-hover:bg-primary group-hover:text-white transition-colors">
@@ -512,7 +512,7 @@
                         @can('audit.events.view')
                             <!-- Audit Log -->
                             <div x-show="matches('{{ __('settings.card_audit_title') }} {{ __('settings.card_audit_desc') }}')"
-                                 wire:click="setSection('audit')"
+                                 wire:loading.attr="disabled" wire:target="setSection" wire:click="setSection('audit')"
                                  class="bg-white border border-border hover:border-primary/60 rounded-card p-3.5 shadow-panel hover:shadow-panel-hover hover:-translate-y-0.5 transition-all flex items-start justify-between gap-3 group cursor-pointer">
                                 <div class="flex items-start gap-3 min-w-0">
                                     <div class="w-9 h-9 rounded-control bg-primary-50 text-primary grid place-items-center shrink-0 group-hover:bg-primary group-hover:text-white transition-colors">
@@ -735,7 +735,7 @@
                     <h4 class="text-xs font-extrabold text-text-primary mb-3 flex items-center justify-between gap-2">
                         <span>{{ __('settings.aside_activity_title') }}</span>
                         @can('audit.events.view')
-                            <button type="button" wire:click="setSection('audit')" class="text-[10px] text-primary hover:underline font-bold">
+                            <button type="button" wire:loading.attr="disabled" wire:target="setSection" wire:click="setSection('audit')" class="text-[10px] text-primary hover:underline font-bold">
                                 {{ __('settings.card_audit_title') }} &rarr;
                             </button>
                         @endcan
@@ -775,7 +775,7 @@
         <div class="space-y-4">
             <!-- Back Button & Section Title -->
             <div class="flex items-center justify-between gap-3 pb-3 border-b border-border">
-                <button type="button" wire:click="setSection('overview')"
+                <button type="button" wire:loading.attr="disabled" wire:target="setSection" wire:click="setSection('overview')"
                         class="inline-flex items-center gap-2 text-xs font-bold text-primary hover:underline cursor-pointer">
                     <x-icon name="chevron" class="w-3.5 h-3.5 ltr:rotate-180" />
                     <span>{{ __('settings.back_to_all_settings') }}</span>
@@ -1130,7 +1130,7 @@
                                             <td class="py-3 px-3 text-end">
                                                 @can('settings.users.manage')
                                                     @if (! $m->is_owner || $memberships->where('is_owner', true)->count() > 1)
-                                                        <button type="button" wire:click="toggleUserStatus({{ $m->id }})"
+                                                        <button type="button" wire:loading.attr="disabled" wire:target="toggleUserStatus" wire:click="toggleUserStatus({{ $m->id }})"
                                                                 class="text-[11px] font-bold text-primary hover:underline cursor-pointer">
                                                             {{ $m->status === 'active' ? __('settings.status_inactive') : __('settings.status_active') }}
                                                         </button>
@@ -1257,7 +1257,7 @@
                                                         <input type="checkbox"
                                                                {{ !empty($rolePermissions[$perm->name]) ? 'checked' : '' }}
                                                                {{ $selectedRoleName === 'Owner' ? 'disabled' : '' }}
-                                                               wire:click="toggleRolePermission('{{ $perm->name }}')"
+                                                               wire:loading.attr="disabled" wire:target="toggleRolePermission" wire:click="toggleRolePermission('{{ $perm->name }}')"
                                                                class="rounded border-border text-primary focus:ring-primary w-3.5 h-3.5" />
                                                     </label>
                                                 @endforeach

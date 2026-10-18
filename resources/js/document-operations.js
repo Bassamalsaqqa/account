@@ -1,5 +1,5 @@
 ﻿const queues = new Map();
-const allowed = new Set(['scanCameraBarcode', 'incrementQuantity', 'decrementQuantity', 'stepQuantity', 'addLine', 'saveDraft', 'save']);
+const allowed = new Set(['scanCameraBarcode', 'incrementQuantity', 'decrementQuantity', 'stepQuantity', 'addLine', 'saveDraft', 'save', 'stepInventoryQuantity', 'stepReturnQuantity', 'returnFullRemaining', 'payRemaining', 'useFullBalance']);
 const identityFields = ['id', 'product_id', 'product_unit_id', 'item_description', 'unit_price', 'unit_cost', 'discount_type', 'discount_value', 'tax_rate_id', 'tax_inclusive', 'lot_id', 'lots', 'lot_allocations', 'warehouse_id'];
 const keyFor = wire => wire.$id || wire.id || wire;
 const copy = value => JSON.parse(JSON.stringify(value));
@@ -66,7 +66,7 @@ async function drain(state) {
         }
         settle(job, 'resolve', result);
     } catch (failure) {
-        if (job.kind === 'quantity' && !job.timedOut) quarantine(state, job, failure);
+        if (!job.timedOut) quarantine(state, job, failure);
         else settle(job, 'reject', failure);
     } finally {
         clearTimeout(job.timeout);
@@ -121,11 +121,12 @@ export function enqueueDocumentOperation(wire, method, args = []) {
 }
 // Explicit recovery never automatically replays an ambiguous request or a queued Save.
 // The user first reviews the still-visible confirmed quantity and chooses to discard unconfirmed taps.
-export async function resyncDocumentQueue(wire) {
+export async function resyncDocumentQueue(wire, refreshOnly = false) {
     const state = queues.get(keyFor(wire));
     if (!state?.blocked) return;
     if (state.active || state.jobs.length) throw error('Wait for the current request to finish');
-    await wire.recalculate();
+    if (refreshOnly) await wire.$refresh();
+    else await wire.recalculate();
     state.failed = [];
     state.confirmed.clear();
     state.blocked = false;

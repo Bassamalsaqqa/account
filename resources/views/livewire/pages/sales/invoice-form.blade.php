@@ -2,12 +2,12 @@
      x-data="{
          saving: false, documentBusy: false, operationFailed: false,
          handleSaveDraft() {
-             if ([...document.querySelectorAll('[role=dialog]')].some(el => el.getClientRects().length > 0) || this.saving || window.isDocumentBusy($wire) || $wire.showPreview || $wire.showQuickCustomerModal) return;
+             if ([...document.querySelectorAll('[role=dialog]')].some(el => el.getClientRects().length > 0) || this.saving || window.isDocumentBlocked($wire) || $wire.showPreview || $wire.showQuickCustomerModal) return;
              this.saving = true;
              window.enqueueDocumentOperation($wire, 'saveDraft').catch(() => { this.operationFailed = true; }).finally(() => { this.saving = false; });
          },
          handleAddLine() {
-             if ([...document.querySelectorAll('[role=dialog]')].some(el => el.getClientRects().length > 0) || this.saving || window.isDocumentBusy($wire) || $wire.showPreview || $wire.showQuickCustomerModal) return;
+             if ([...document.querySelectorAll('[role=dialog]')].some(el => el.getClientRects().length > 0) || this.saving || window.isDocumentBlocked($wire) || $wire.showPreview || $wire.showQuickCustomerModal) return;
              window.enqueueDocumentOperation($wire, 'addLine').catch(() => { this.operationFailed = true; });
          }
      }"
@@ -56,7 +56,7 @@
             <label for="invoice-product-search" class="block text-sm font-bold text-text-primary mb-1">{{ __('sales.search_products') }}</label>
             <input id="invoice-product-search" type="search" maxlength="160" wire:model.live.debounce.300ms="productSearch" x-on:keydown.enter.prevent
                    placeholder="{{ __('sales.search_products_hint') }}" aria-describedby="invoice-product-search-help"
-                   class="w-full h-11 px-3 rounded-control border border-border bg-canvas text-sm text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden" />
+                   class="w-full h-11 px-3 rounded-control border border-border bg-canvas text-sm text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden"  :disabled="documentBusy || saving"/>
             @if (auth()->user()->hasPermissionTo('inventory.product.manage'))
                 <button type="button" wire:click="openQuickProductModal" aria-haspopup="dialog" class="mt-2 min-h-11 px-3 py-2 rounded-control border border-border text-sm font-bold text-primary hover:bg-surface-soft focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary" wire:loading.attr="disabled" wire:target="openQuickProductModal">
                     {{ __('quick_product.create') }}
@@ -88,11 +88,11 @@
                     <input type="text"
                            wire:model.live.debounce.300ms="customerSearch"
                            placeholder="{{ __('workflow.search_customers') }}"
-                           class="w-full h-8 px-2.5 rounded-control border border-border bg-canvas text-xs text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden" />
+                           class="w-full h-8 px-2.5 rounded-control border border-border bg-canvas text-xs text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden"  :disabled="documentBusy || saving"/>
                 </div>
                 <select id="invoice-customer-id" @error('customer_id') aria-invalid="true" aria-describedby="invoice-customer-id-error" @enderror wire:model.live="customer_id"
                         required
-                        class="w-full h-9 px-3 rounded-control border border-border bg-canvas text-xs text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden">
+                        class="w-full h-9 px-3 rounded-control border border-border bg-canvas text-xs text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden" :disabled="documentBusy || saving">
                     <option value="">{{ __('sales.select_customer') }}</option>
                     @foreach ($customers as $c)
                         <option value="{{ $c->id }}">{{ $c->displayName() }} ({{ $c->default_currency_code ?? $baseCurrencyCode }})</option>
@@ -107,7 +107,7 @@
                     {{ __('sales.warehouse') }}
                 </label>
                 <select id="invoice-warehouse-id" @error('warehouse_id') aria-invalid="true" aria-describedby="invoice-warehouse-id-error" @enderror wire:model.live="warehouse_id"
-                        class="w-full h-9 px-3 rounded-control border border-border bg-canvas text-xs text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden">
+                        class="w-full h-9 px-3 rounded-control border border-border bg-canvas text-xs text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden" :disabled="documentBusy || saving">
                     <option value="">{{ __('sales.select_warehouse') }}</option>
                     @foreach ($warehouses as $w)
                         <option value="{{ $w->id }}">{{ $w->displayName() }}</option>
@@ -124,7 +124,7 @@
                 <input id="invoice-issue-date" @error('issue_date') aria-invalid="true" aria-describedby="invoice-issue-date-error" @enderror type="date"
                        wire:model="issue_date"
                        required
-                       class="w-full h-9 px-3 rounded-control border border-border bg-canvas text-xs text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden" />
+                       class="w-full h-9 px-3 rounded-control border border-border bg-canvas text-xs text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden"  :disabled="documentBusy || saving"/>
                 @error('issue_date') <span id="invoice-issue-date-error" role="alert" class="text-danger text-[11px] mt-1 block">{{ $message }}</span> @enderror
             </div>
 
@@ -135,7 +135,7 @@
                 </label>
                 <input id="invoice-due-date" @error('due_date') aria-invalid="true" aria-describedby="invoice-due-date-error" @enderror type="date"
                        wire:model="due_date"
-                       class="w-full h-9 px-3 rounded-control border border-border bg-canvas text-xs text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden" />
+                       class="w-full h-9 px-3 rounded-control border border-border bg-canvas text-xs text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden"  :disabled="documentBusy || saving"/>
                 @error('due_date') <span id="invoice-due-date-error" role="alert" class="text-danger text-[11px] mt-1 block">{{ $message }}</span> @enderror
             </div>
 
@@ -145,7 +145,7 @@
                     {{ __('sales.currency') }} <span class="text-danger">*</span>
                 </label>
                 <select id="invoice-currency-code" wire:model.live="currency_code"
-                        class="w-full h-9 px-3 rounded-control border border-border bg-canvas text-xs text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden">
+                        class="w-full h-9 px-3 rounded-control border border-border bg-canvas text-xs text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden" :disabled="documentBusy || saving">
                     @foreach ($currencies as $curr)
                         <option value="{{ $curr->currency_code }}">{{ $curr->currency_code }}</option>
                     @endforeach
@@ -163,7 +163,7 @@
                        wire:change="recalculate"
                        dir="ltr"
                        required
-                       class="w-full h-9 px-3 rounded-control border border-border bg-canvas text-xs text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden font-mono" />
+                       class="w-full h-9 px-3 rounded-control border border-border bg-canvas text-xs text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden font-mono"  :disabled="documentBusy || saving"/>
                 @error('exchange_rate') <span id="invoice-exchange-rate-error" role="alert" class="text-danger text-[11px] mt-1 block">{{ $message }}</span> @enderror
             </div>
         </div>
@@ -207,7 +207,7 @@
                             <tr wire:key="inv-line-{{ $index }}">
                                 <td class="py-2 px-2 align-top space-y-1">
                                     <select id="invoice-desktop-line-{{ $index }}-product-id" aria-label="{{ __('sales.product') }} {{ $index + 1 }}" @error('lines.'.$index.'.product_id') aria-invalid="true" aria-describedby="invoice-desktop-line-{{ $index }}-product-id-error" @enderror wire:change="selectProduct({{ $index }}, $event.target.value)"
-                                            class="w-full h-8 px-2 rounded-control border border-border bg-canvas text-xs">
+                                            class="w-full h-8 px-2 rounded-control border border-border bg-canvas text-xs" :disabled="documentBusy || saving">
                                         <option value="">-- {{ __('sales.product') }} --</option>
                                         @foreach ($products as $p)
                                             <option value="{{ $p->id }}" @selected($line['product_id'] == $p->id)>
@@ -219,7 +219,7 @@
                                            wire:model="lines.{{ $index }}.item_description"
                                            placeholder="{{ __('sales.description') }}..."
                                            required
-                                           class="w-full h-8 px-2 rounded-control border border-border bg-canvas text-xs text-text-primary" /> @error('lines.'.$index.'.item_description') <span id="invoice-desktop-line-{{ $index }}-item-description-error" role="alert" class="text-danger text-[11px] block">{{ $message }}</span> @enderror
+                                           class="w-full h-8 px-2 rounded-control border border-border bg-canvas text-xs text-text-primary"  :disabled="documentBusy || saving"/> @error('lines.'.$index.'.item_description') <span id="invoice-desktop-line-{{ $index }}-item-description-error" role="alert" class="text-danger text-[11px] block">{{ $message }}</span> @enderror
                                 </td>
 
                                 <td class="py-2 px-2 align-top">
@@ -245,7 +245,7 @@
                                            required
                                            min="0.000001"
                                            dir="ltr"
-                                           class="w-full h-8 px-2 rounded-control border border-border bg-canvas text-xs font-mono" /> @error('lines.'.$index.'.quantity') <span id="invoice-desktop-line-{{ $index }}-quantity-error" role="alert" class="text-danger text-[11px] block">{{ $message }}</span> @enderror
+                                           class="w-full h-8 px-2 rounded-control border border-border bg-canvas text-xs font-mono"  :disabled="documentBusy || saving"/> @error('lines.'.$index.'.quantity') <span id="invoice-desktop-line-{{ $index }}-quantity-error" role="alert" class="text-danger text-[11px] block">{{ $message }}</span> @enderror
                                     @if (!empty($line['available_quantity']))
                                         <div class="text-[10px] text-text-secondary whitespace-nowrap" dir="ltr">
                                             {{ __('sales.available') }}: <span class="font-bold">{{ $line['available_quantity'] }}</span>
@@ -262,7 +262,7 @@
                                            min="0"
                                            dir="ltr"
                                            @if (! $canChangePrice) readonly title="{{ __('sales.price_permission_required') }}" @endif
-                                           class="w-full h-8 px-2 rounded-control border border-border bg-canvas text-xs font-mono {{ ! $canChangePrice ? 'opacity-70 bg-slate-100 cursor-not-allowed' : '' }}" />
+                                           class="w-full h-8 px-2 rounded-control border border-border bg-canvas text-xs font-mono {{ ! $canChangePrice ? 'opacity-70 bg-slate-100 cursor-not-allowed' : '' }}"  :disabled="documentBusy || saving"/>
 <x-customer-last-price :price="$lastCustomerPrices[$line['product_id'] ?? 0] ?? null" /> @error('lines.'.$index.'.unit_price') <span id="invoice-desktop-line-{{ $index }}-unit-price-error" role="alert" class="text-danger text-[11px] block">{{ $message }}</span> @enderror
                                 </td>
 
@@ -271,7 +271,7 @@
                                         <select id="invoice-desktop-line-{{ $index }}-discount-type" aria-label="{{ __('sales.discount_type') }} {{ $index + 1 }}" @error('lines.'.$index.'.discount_type') aria-invalid="true" aria-describedby="invoice-desktop-line-{{ $index }}-discount-type-error" @enderror wire:model.change="lines.{{ $index }}.discount_type"
                                                 wire:change="recalculate"
                                                 @if (! $canChangeDiscount) disabled title="{{ __('sales.discount_permission_required') }}" @endif
-                                                class="w-20 h-8 px-1 rounded-control border border-border bg-canvas text-[11px] {{ ! $canChangeDiscount ? 'opacity-70 cursor-not-allowed' : '' }}">
+                                                class="w-20 h-8 px-1 rounded-control border border-border bg-canvas text-[11px] {{ ! $canChangeDiscount ? 'opacity-70 cursor-not-allowed' : '' }}" :disabled="documentBusy || saving || {{ ! $canChangeDiscount ? 'true' : 'false' }}">
                                             <option value="none">{{ __('sales.none') }}</option>
                                             <option value="fixed">{{ __('sales.fixed') }}</option>
                                             <option value="percent">%</option>
@@ -283,7 +283,7 @@
                                                    wire:change="recalculate"
                                                    dir="ltr"
                                                    @if (! $canChangeDiscount) readonly @endif
-                                                   class="w-full h-8 px-1.5 rounded-control border border-border bg-canvas text-xs font-mono {{ ! $canChangeDiscount ? 'opacity-70 cursor-not-allowed' : '' }}" /> @error('lines.'.$index.'.discount_value') <span id="invoice-desktop-line-{{ $index }}-discount-value-error" role="alert" class="text-danger text-[11px] block">{{ $message }}</span> @enderror
+                                                   class="w-full h-8 px-1.5 rounded-control border border-border bg-canvas text-xs font-mono {{ ! $canChangeDiscount ? 'opacity-70 cursor-not-allowed' : '' }}"  :disabled="documentBusy || saving"/> @error('lines.'.$index.'.discount_value') <span id="invoice-desktop-line-{{ $index }}-discount-value-error" role="alert" class="text-danger text-[11px] block">{{ $message }}</span> @enderror
                                         @endif
                                     </div>
                                 </td>
@@ -292,7 +292,7 @@
                                     <td class="py-2 px-2 align-top">
                                         <select id="invoice-desktop-line-{{ $index }}-tax-rate-id" aria-label="{{ __('sales.tax') }} {{ $index + 1 }}" @error('lines.'.$index.'.tax_rate_id') aria-invalid="true" aria-describedby="invoice-desktop-line-{{ $index }}-tax-rate-id-error" @enderror wire:model.change="lines.{{ $index }}.tax_rate_id"
                                                 wire:change="recalculate"
-                                                class="w-full h-8 px-1.5 rounded-control border border-border bg-canvas text-xs">
+                                                class="w-full h-8 px-1.5 rounded-control border border-border bg-canvas text-xs" :disabled="documentBusy || saving">
                                             <option value="">{{ __('sales.none') }} (0%)</option>
                                             @foreach ($taxes as $t)
                                                 <option value="{{ $t->id }}">
@@ -313,7 +313,7 @@
                                     @if (count($lines) > 1)
                                         <button type="button"
                                                 wire:click="removeLine({{ $index }})"
-                                                class="text-danger hover:opacity-80 p-1 text-sm font-bold" wire:loading.attr="disabled" wire:target="removeLine">
+                                                class="text-danger hover:opacity-80 p-1 text-sm font-bold" wire:loading.attr="disabled" wire:target="removeLine" :disabled="documentBusy || saving">
                                             âœ•
                                         </button>
                                     @endif
@@ -334,7 +334,7 @@
                         <div class="flex items-center justify-between">
                             <span class="text-xs font-bold text-text-primary">#{{ $index + 1 }}</span>
                             @if (count($lines) > 1)
-                                <button type="button" wire:click="removeLine({{ $index }})" class="text-danger text-xs font-bold px-2 py-1 rounded-control hover:bg-danger/10" wire:loading.attr="disabled" wire:target="removeLine">
+                                <button type="button" wire:click="removeLine({{ $index }})" class="text-danger text-xs font-bold px-2 py-1 rounded-control hover:bg-danger/10" wire:loading.attr="disabled" wire:target="removeLine" :disabled="documentBusy || saving">
                                     {{ __('sales.remove_line') }}
                                 </button>
                             @endif
@@ -344,7 +344,7 @@
                         <div class="space-y-1">
                             <label for="invoice-mobile-line-{{ $index }}-product-id" class="block text-[11px] font-bold text-text-secondary">{{ __('sales.product') }}</label>
                             <select id="invoice-mobile-line-{{ $index }}-product-id" aria-label="{{ __('sales.product') }} {{ $index + 1 }}" @error('lines.'.$index.'.product_id') aria-invalid="true" aria-describedby="invoice-mobile-line-{{ $index }}-product-id-error" @enderror wire:change="selectProduct({{ $index }}, $event.target.value)"
-                                    class="w-full h-8 px-2 rounded-control border border-border bg-white text-xs">
+                                    class="w-full h-8 px-2 rounded-control border border-border bg-white text-xs" :disabled="documentBusy || saving">
                                 <option value="">-- {{ __('sales.product') }} --</option>
                                 @foreach ($products as $p)
                                     <option value="{{ $p->id }}" @selected($line['product_id'] == $p->id)>
@@ -356,7 +356,7 @@
                                    wire:model="lines.{{ $index }}.item_description"
                                    placeholder="{{ __('sales.description') }}..."
                                    required
-                                   class="w-full h-8 px-2 rounded-control border border-border bg-white text-xs text-text-primary" /> @error('lines.'.$index.'.item_description') <span id="invoice-mobile-line-{{ $index }}-item-description-error" role="alert" class="text-danger text-[11px] block">{{ $message }}</span> @enderror
+                                   class="w-full h-8 px-2 rounded-control border border-border bg-white text-xs text-text-primary"  :disabled="documentBusy || saving"/> @error('lines.'.$index.'.item_description') <span id="invoice-mobile-line-{{ $index }}-item-description-error" role="alert" class="text-danger text-[11px] block">{{ $message }}</span> @enderror
                         </div>
 
                         <!-- Unit & Quantity -->
@@ -410,7 +410,7 @@
                                        min="0"
                                        dir="ltr"
                                        @if (! $canChangePrice) readonly @endif
-                                       class="w-full h-8 px-2 rounded-control border border-border bg-white text-xs font-mono {{ ! $canChangePrice ? 'opacity-70 bg-slate-100 cursor-not-allowed' : '' }}" />
+                                       class="w-full h-8 px-2 rounded-control border border-border bg-white text-xs font-mono {{ ! $canChangePrice ? 'opacity-70 bg-slate-100 cursor-not-allowed' : '' }}"  :disabled="documentBusy || saving"/>
 <x-customer-last-price :price="$lastCustomerPrices[$line['product_id'] ?? 0] ?? null" /> @error('lines.'.$index.'.unit_price') <span id="invoice-mobile-line-{{ $index }}-unit-price-error" role="alert" class="text-danger text-[11px] block">{{ $message }}</span> @enderror
                             </div>
                             <div>
@@ -419,7 +419,7 @@
                                     <select id="invoice-mobile-line-{{ $index }}-discount-type" aria-label="{{ __('sales.discount_type') }} {{ $index + 1 }}" @error('lines.'.$index.'.discount_type') aria-invalid="true" aria-describedby="invoice-mobile-line-{{ $index }}-discount-type-error" @enderror wire:model.change="lines.{{ $index }}.discount_type"
                                             wire:change="recalculate"
                                             @if (! $canChangeDiscount) disabled @endif
-                                            class="w-16 h-8 px-1 rounded-control border border-border bg-white text-[11px] {{ ! $canChangeDiscount ? 'opacity-70 cursor-not-allowed' : '' }}">
+                                            class="w-16 h-8 px-1 rounded-control border border-border bg-white text-[11px] {{ ! $canChangeDiscount ? 'opacity-70 cursor-not-allowed' : '' }}" :disabled="documentBusy || saving || {{ ! $canChangeDiscount ? 'true' : 'false' }}">
                                         <option value="none">{{ __('sales.none') }}</option>
                                         <option value="fixed">{{ __('sales.fixed') }}</option>
                                         <option value="percent">%</option>
@@ -431,7 +431,7 @@
                                                wire:change="recalculate"
                                                dir="ltr"
                                                @if (! $canChangeDiscount) readonly @endif
-                                               class="w-full h-8 px-1.5 rounded-control border border-border bg-white text-xs font-mono {{ ! $canChangeDiscount ? 'opacity-70 cursor-not-allowed' : '' }}" /> @error('lines.'.$index.'.discount_value') <span id="invoice-mobile-line-{{ $index }}-discount-value-error" role="alert" class="text-danger text-[11px] block">{{ $message }}</span> @enderror
+                                               class="w-full h-8 px-1.5 rounded-control border border-border bg-white text-xs font-mono {{ ! $canChangeDiscount ? 'opacity-70 cursor-not-allowed' : '' }}"  :disabled="documentBusy || saving"/> @error('lines.'.$index.'.discount_value') <span id="invoice-mobile-line-{{ $index }}-discount-value-error" role="alert" class="text-danger text-[11px] block">{{ $message }}</span> @enderror
                                     @endif
                                 </div>
                             </div>
@@ -442,7 +442,7 @@
                                 <label for="invoice-mobile-line-{{ $index }}-tax-rate-id" class="block text-[11px] font-bold text-text-secondary">{{ __('sales.tax') }}</label>
                                 <select id="invoice-mobile-line-{{ $index }}-tax-rate-id" aria-label="{{ __('sales.tax') }} {{ $index + 1 }}" @error('lines.'.$index.'.tax_rate_id') aria-invalid="true" aria-describedby="invoice-mobile-line-{{ $index }}-tax-rate-id-error" @enderror wire:model.change="lines.{{ $index }}.tax_rate_id"
                                         wire:change="recalculate"
-                                        class="w-full h-8 px-1.5 rounded-control border border-border bg-white text-xs">
+                                        class="w-full h-8 px-1.5 rounded-control border border-border bg-white text-xs" :disabled="documentBusy || saving">
                                     <option value="">{{ __('sales.none') }} (0%)</option>
                                     @foreach ($taxes as $t)
                                         <option value="{{ $t->id }}">
@@ -473,7 +473,7 @@
                     </label>
                     <textarea id="invoice-terms" wire:model="terms"
                               rows="3"
-                              class="w-full p-2.5 rounded-control border border-border bg-canvas text-xs text-text-primary outline-hidden"></textarea>
+                              class="w-full p-2.5 rounded-control border border-border bg-canvas text-xs text-text-primary outline-hidden" :disabled="documentBusy || saving"></textarea>
                 </div>
                 <div>
                     <label for="invoice-notes" class="block text-xs font-bold text-text-primary mb-1">
@@ -481,7 +481,7 @@
                     </label>
                     <textarea id="invoice-notes" wire:model="notes"
                               rows="2"
-                              class="w-full p-2.5 rounded-control border border-border bg-canvas text-xs text-text-primary outline-hidden"></textarea>
+                              class="w-full p-2.5 rounded-control border border-border bg-canvas text-xs text-text-primary outline-hidden" :disabled="documentBusy || saving"></textarea>
                 </div>
             </div>
 
@@ -534,7 +534,7 @@
                 @if ($canPost)
                     <button id="invoice-post-button"
                             type="button"
-                            @click="if (!saving && !documentBusy) { saving = true; window.enqueueDocumentOperation($wire, 'save', [true]).catch(() => { this.operationFailed = true; }).finally(() => saving = false); }"
+                            @click="if (!saving && !window.isDocumentBlocked($wire)) { saving = true; window.enqueueDocumentOperation($wire, 'save', [true]).catch(() => { this.operationFailed = true; }).finally(() => saving = false); }"
                             wire:loading.attr="disabled"
                             class="px-5 py-2 rounded-control bg-primary text-white text-xs font-bold hover:bg-primary-hover transition-colors shadow-sm cursor-pointer">
                         âš¡ {{ __('commands.review_post') }}
@@ -562,7 +562,7 @@
                     <div class="flex items-center gap-1.5 shrink-0">
                         <button type="button"
                                 @click="$dispatch('mobile-camera-open')"
-                                :disabled="busy || documentBusy || saving"
+                                :disabled="busy || saving || window.isDocumentBlocked($wire)"
                                 wire:loading.attr="disabled"
                                 wire:target="scanBarcode,addLine,saveDraft,save"
                                 class="min-h-[44px] min-w-[44px] px-2.5 rounded-control border border-border bg-surface-soft hover:bg-slate-200 active:bg-slate-300 text-text-primary text-xs font-bold flex items-center justify-center gap-1 cursor-pointer transition-colors"
@@ -571,20 +571,20 @@
                             <span class="hidden xs:inline text-[11px]">{{ __('mobile.scan') }}</span>
                         </button>
                         <button type="button"
-                                :disabled="busy || documentBusy || saving"
+                                :disabled="busy || saving || window.isDocumentBlocked($wire)"
                                 wire:loading.attr="disabled"
                                 wire:target="addLine,scanBarcode,saveDraft,save"
-                                @click="if (busy) return; busy = true; (window.enqueueDocumentOperation ? window.enqueueDocumentOperation($wire, 'addLine') : $wire.addLine()).catch(() => { operationFailed = true; }).finally(() => { busy = false; })"
+                                @click="handleAddLine()"
                                 class="min-h-[44px] min-w-[44px] px-2.5 rounded-control border border-primary/30 bg-primary-50 text-primary hover:bg-primary-100 active:bg-primary-200 text-xs font-bold flex items-center justify-center gap-1 cursor-pointer transition-colors"
                                 title="{{ __('mobile.add_item') }}">
                             <x-icon name="plus" class="w-4 h-4 shrink-0" />
                             <span class="hidden xs:inline text-[11px]">{{ __('mobile.add_item') }}</span>
                         </button>
                         <button type="button"
-                                :disabled="busy || documentBusy || saving"
+                                :disabled="busy || saving || window.isDocumentBlocked($wire)"
                                 wire:loading.attr="disabled"
                                 wire:target="saveDraft,save,addLine,scanBarcode"
-                                @click="if (busy) return; busy = true; (window.enqueueDocumentOperation ? window.enqueueDocumentOperation($wire, 'saveDraft') : $wire.saveDraft()).catch(() => { operationFailed = true; }).finally(() => { busy = false; })"
+                                @click="handleSaveDraft()"
                                 class="min-h-[44px] px-3 rounded-control bg-primary text-white hover:bg-primary-hover active:bg-primary-hover/90 text-xs font-bold flex items-center justify-center gap-1 shadow-xs cursor-pointer transition-colors"
                                 title="{{ __('mobile.save_draft') }}">
                             <span wire:loading.remove wire:target="saveDraft">{{ __('mobile.save_draft') }}</span>
@@ -630,23 +630,23 @@
                 <div class="space-y-3">
                     <div>
                         <label for="invoice-quick-customer-name-ar" class="block text-xs font-bold text-text-primary mb-1">{{ __('workflow.customer_name_ar') }} <span class="text-danger">*</span></label>
-                        <input x-ref="firstInput" id="invoice-quick-customer-name-ar" type="text" wire:model="quick_customer_name_ar" required maxlength="255" class="w-full h-9 px-3 rounded-control border border-border bg-canvas text-xs text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden" />
+                        <input x-ref="firstInput" id="invoice-quick-customer-name-ar" type="text" wire:model="quick_customer_name_ar" required maxlength="255" class="w-full h-9 px-3 rounded-control border border-border bg-canvas text-xs text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden"  :disabled="documentBusy || saving"/>
                         @error('quick_customer_name_ar') <span class="text-danger text-[11px] block mt-1">{{ $message }}</span> @enderror
                     </div>
                     <div>
                         <label for="invoice-quick-customer-name-en" class="block text-xs font-bold text-text-primary mb-1">{{ __('workflow.customer_name_en') }}</label>
-                        <input id="invoice-quick-customer-name-en" type="text" wire:model="quick_customer_name_en" maxlength="255" dir="ltr" class="w-full h-9 px-3 rounded-control border border-border bg-canvas text-xs text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden" />
+                        <input id="invoice-quick-customer-name-en" type="text" wire:model="quick_customer_name_en" maxlength="255" dir="ltr" class="w-full h-9 px-3 rounded-control border border-border bg-canvas text-xs text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden"  :disabled="documentBusy || saving"/>
                         @error('quick_customer_name_en') <span class="text-danger text-[11px] block mt-1">{{ $message }}</span> @enderror
                     </div>
                     <div class="grid grid-cols-2 gap-3">
                         <div>
                             <label for="invoice-quick-customer-phone" class="block text-xs font-bold text-text-primary mb-1">{{ __('workflow.phone') }}</label>
-                            <input id="invoice-quick-customer-phone" type="text" wire:model="quick_customer_phone" maxlength="64" dir="ltr" class="w-full h-9 px-3 rounded-control border border-border bg-canvas text-xs text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden" />
+                            <input id="invoice-quick-customer-phone" type="text" wire:model="quick_customer_phone" maxlength="64" dir="ltr" class="w-full h-9 px-3 rounded-control border border-border bg-canvas text-xs text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden"  :disabled="documentBusy || saving"/>
                             @error('quick_customer_phone') <span class="text-danger text-[11px] block mt-1">{{ $message }}</span> @enderror
                         </div>
                         <div>
                             <label for="invoice-quick-customer-code" class="block text-xs font-bold text-text-primary mb-1">{{ __('workflow.code') }}</label>
-                            <input id="invoice-quick-customer-code" type="text" wire:model="quick_customer_code" maxlength="64" dir="ltr" class="w-full h-9 px-3 rounded-control border border-border bg-canvas text-xs text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden" />
+                            <input id="invoice-quick-customer-code" type="text" wire:model="quick_customer_code" maxlength="64" dir="ltr" class="w-full h-9 px-3 rounded-control border border-border bg-canvas text-xs text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden"  :disabled="documentBusy || saving"/>
                             @error('quick_customer_code') <span class="text-danger text-[11px] block mt-1">{{ $message }}</span> @enderror
                         </div>
                     </div>

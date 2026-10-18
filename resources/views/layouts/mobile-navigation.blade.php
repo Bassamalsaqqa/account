@@ -4,6 +4,10 @@
     $mobileMoney = $mobileActor->hasAnyPermission(['money.cash.view', 'money.bank.view', 'money.check.view', 'money.transfer.view']);
     $mobileProducts = $mobileActor->can('viewAny', \App\Models\Product::class);
     $mobileCanScan = $mobileProducts || $mobileActor->can('sales.invoice.create') || $mobileActor->can('sales.quote.create') || ($mobileActor->can('purchasing.purchase.create') && $mobileActor->can('purchasing.cost.view'));
+    $mobileInventoryScan = (request()->routeIs('inventory.adjustments.create') && $mobileActor->can('inventory.stock.adjust'))
+        || (request()->routeIs('inventory.opening-stock.create') && $mobileActor->can('inventory.stock.adjust') && $mobileActor->can('inventory.cost.view'))
+        || (request()->routeIs('inventory.transfers.create') && $mobileActor->can('inventory.stock.transfer'));
+    $mobileCanScan = $mobileCanScan || $mobileInventoryScan;
     $mobileOnScanPage = request()->routeIs('invoices.create', 'invoices.edit', 'quotations.create', 'quotations.edit', 'purchases.create', 'purchases.edit', 'products.index', 'products.create', 'products.edit', 'inventory.opening-stock.create', 'inventory.adjustments.create', 'inventory.transfers.create');
 @endphp
 <nav class="mobile-bottom-nav lg:hidden" aria-label="{{ __('mobile_shell.navigation') }}" x-data="{ scanChoices: false }">

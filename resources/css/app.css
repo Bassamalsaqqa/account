@@ -123,7 +123,7 @@ summary:focus-visible {
     overflow-wrap: anywhere;
     touch-action: manipulation;
 }
-.business-app #app-main .touch-action:active { background-color: var(--color-primary-50); }
+.business-app #app-main .touch-action:active { filter: brightness(.94); }
 .business-app #app-main :is(button, a, input, select, textarea) { -webkit-tap-highlight-color: transparent; }
 .business-app #app-main :is(button:disabled, [aria-disabled='true']) { cursor: not-allowed; opacity: .6; }
 .money-section-nav { flex-wrap: nowrap; overflow-x: auto; padding-block: 4px; scrollbar-width: thin; }

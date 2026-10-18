@@ -33,7 +33,7 @@
         <button type="button"
                 wire:loading.attr="disabled"
                 wire:target="save,saveDraft"
-                :disabled="failed || recovering || {{ $disabled ? 'true' : 'false' }}"
+                :disabled="failed || recovering || (typeof saving !== 'undefined' && saving) || {{ $disabled ? 'true' : 'false' }}"
                 @click="tap('down')"
                 class="min-h-[44px] min-w-[44px] px-3 flex items-center justify-center bg-surface-soft hover:bg-slate-200 active:bg-slate-300 text-text-primary border-e border-border text-base font-bold transition-colors select-none cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                 aria-label="{{ __('mobile.decrement') }} {{ $index + 1 }}">
@@ -50,7 +50,7 @@
                wire:change="recalculate"
                dir="ltr"
                required
-               :disabled="pending > 0 || failed || recovering || {{ $disabled ? 'true' : 'false' }}"
+               :disabled="pending > 0 || (typeof documentBusy !== 'undefined' && documentBusy) || failed || recovering || (typeof saving !== 'undefined' && saving) || {{ $disabled ? 'true' : 'false' }}"
                @disabled($disabled)
                class="min-h-[44px] w-16 text-center border-0 bg-white text-xs font-mono font-bold text-text-primary focus:ring-1 focus:ring-primary focus:outline-hidden disabled:opacity-60" />
 
@@ -58,7 +58,7 @@
         <button type="button"
                 wire:loading.attr="disabled"
                 wire:target="save,saveDraft"
-                :disabled="failed || recovering || {{ $disabled ? 'true' : 'false' }}"
+                :disabled="failed || recovering || (typeof saving !== 'undefined' && saving) || {{ $disabled ? 'true' : 'false' }}"
                 @click="tap('up')"
                 class="min-h-[44px] min-w-[44px] px-3 flex items-center justify-center bg-surface-soft hover:bg-slate-200 active:bg-slate-300 text-text-primary border-s border-border text-base font-bold transition-colors select-none cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                 aria-label="{{ __('mobile.increment') }} {{ $index + 1 }}">

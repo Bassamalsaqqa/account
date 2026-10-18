@@ -57,6 +57,11 @@ final class ApplicationSecurityHeadersTest extends TestCase
     {
         $cameraRoutes = [
             'products.index',
+            'products.create',
+            'products.edit',
+            'inventory.opening-stock.create',
+            'inventory.adjustments.create',
+            'inventory.transfers.create',
             'invoices.create',
             'invoices.edit',
             'quotations.create',
