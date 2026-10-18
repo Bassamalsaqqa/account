@@ -1,0 +1,46 @@
+{
+  "provenance": "Read-only canonical reconciliation of local disposable MariaDB synthetic merchant fixture, not production. No source data or credentials included.",
+  "reconciliations": {
+    "Accounting": true,
+    "Inventory": true,
+    "Sales": true,
+    "Payables": true,
+    "Money": true,
+    "Phase7": true
+  },
+  "fingerprints": {
+    "posting_batches": {
+      "rows": 9,
+      "sha256": "c6db82275d3ac01355c238e2d34ef6bc1c7847e6ab923252f937cd07494e914a"
+    },
+    "posting_lines": {
+      "rows": 22,
+      "sha256": "f62be228263d8555907ec0dad3db1899f93e397aaca2567a753d33a12cd92476"
+    },
+    "stock_movements": {
+      "rows": 7,
+      "sha256": "1df9efbce6ddd8f280a7319fbd8583cf7584a11e59c036b80d3d977a15db0f17"
+    },
+    "inventory_balances": {
+      "rows": 2,
+      "sha256": "d24f4977c5b0df7ca54cafcc21744723a9485e945f848b0a9f41330556fa2ba3"
+    },
+    "inventory_cost_states": {
+      "rows": 2,
+      "sha256": "cd99bd79c68366ed1b0d661f1b9da1a3c90e28c88cfcb76474bd29c8da4875cc"
+    },
+    "inventory_lots": {
+      "rows": 4,
+      "sha256": "0cd565714f7b95f5854fc87dd9445a1469c4bccba2d5b29a7e7c9e7e9f159d3a"
+    },
+    "inventory_lot_balances": {
+      "rows": 4,
+      "sha256": "d830d60e56d97965f8b3d1aa72e7c49045519ea5b9dc3924c67ee4f0d6291229"
+    },
+    "document_sequences": {
+      "rows": 12,
+      "sha256": "26698707bf74a400cc2ebb779dbd692d8d92e41d098b14a6ca1744d4f6c49ec7"
+    }
+  },
+  "reconciliation_read_only_preserved": true
+}

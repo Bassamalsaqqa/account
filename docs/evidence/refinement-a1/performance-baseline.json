@@ -1,0 +1,258 @@
+{
+  "provenance": "Local PHP8.4 development server, disposable MariaDB10.4, synthetic merchant fixture; not Hostinger production timing. Query counts include auth/tenancy/render; samples sequential. First-hit compilation separate from warm samples.",
+  "samples": [
+    {
+      "path": "/dashboard",
+      "status": 200,
+      "wall_ms": 3841.82,
+      "queries": 337,
+      "sql_ms": 2524.62,
+      "server_ms": 3377.79,
+      "response_bytes": 88089,
+      "request_bytes": 0,
+      "sample": 1
+    },
+    {
+      "path": "/dashboard",
+      "status": 200,
+      "wall_ms": 4951.26,
+      "queries": 337,
+      "sql_ms": 3730.66,
+      "server_ms": 4569.12,
+      "response_bytes": 88089,
+      "request_bytes": 0,
+      "sample": 2
+    },
+    {
+      "path": "/dashboard",
+      "status": 200,
+      "wall_ms": 4452.39,
+      "queries": 337,
+      "sql_ms": 3512.49,
+      "server_ms": 4406.74,
+      "response_bytes": 88089,
+      "request_bytes": 0,
+      "sample": 3
+    },
+    {
+      "path": "/invoices/create",
+      "status": 200,
+      "wall_ms": 8987.45,
+      "queries": 38,
+      "sql_ms": 1769.81,
+      "server_ms": 8958.56,
+      "response_bytes": 107999,
+      "request_bytes": 0,
+      "sample": 1
+    },
+    {
+      "path": "/invoices/create",
+      "status": 200,
+      "wall_ms": 643.97,
+      "queries": 38,
+      "sql_ms": 21.1,
+      "server_ms": 617.17,
+      "response_bytes": 107999,
+      "request_bytes": 0,
+      "sample": 2
+    },
+    {
+      "path": "/invoices/create",
+      "status": 200,
+      "wall_ms": 709.18,
+      "queries": 38,
+      "sql_ms": 42.94,
+      "server_ms": 702.41,
+      "response_bytes": 107999,
+      "request_bytes": 0,
+      "sample": 3
+    },
+    {
+      "path": "/purchases/create",
+      "status": 200,
+      "wall_ms": 3283.07,
+      "queries": 68,
+      "sql_ms": 31.69,
+      "server_ms": 3277.6,
+      "response_bytes": 91420,
+      "request_bytes": 0,
+      "sample": 1
+    },
+    {
+      "path": "/purchases/create",
+      "status": 200,
+      "wall_ms": 585.42,
+      "queries": 68,
+      "sql_ms": 40.37,
+      "server_ms": 566.54,
+      "response_bytes": 91420,
+      "request_bytes": 0,
+      "sample": 2
+    },
+    {
+      "path": "/purchases/create",
+      "status": 200,
+      "wall_ms": 569.14,
+      "queries": 68,
+      "sql_ms": 29.05,
+      "server_ms": 546.52,
+      "response_bytes": 91420,
+      "request_bytes": 0,
+      "sample": 3
+    },
+    {
+      "path": "/products",
+      "status": 200,
+      "wall_ms": 4415.96,
+      "queries": 36,
+      "sql_ms": 24.19,
+      "server_ms": 4387.45,
+      "response_bytes": 98038,
+      "request_bytes": 0,
+      "sample": 1
+    },
+    {
+      "path": "/products",
+      "status": 200,
+      "wall_ms": 527.97,
+      "queries": 36,
+      "sql_ms": 42.8,
+      "server_ms": 523.94,
+      "response_bytes": 98038,
+      "request_bytes": 0,
+      "sample": 2
+    },
+    {
+      "path": "/products",
+      "status": 200,
+      "wall_ms": 549.33,
+      "queries": 36,
+      "sql_ms": 25.68,
+      "server_ms": 544.56,
+      "response_bytes": 98038,
+      "request_bytes": 0,
+      "sample": 3
+    },
+    {
+      "path": "/customers",
+      "status": 200,
+      "wall_ms": 1993.66,
+      "queries": 33,
+      "sql_ms": 36.81,
+      "server_ms": 1978.73,
+      "response_bytes": 62650,
+      "request_bytes": 0,
+      "sample": 1
+    },
+    {
+      "path": "/customers",
+      "status": 200,
+      "wall_ms": 523.52,
+      "queries": 33,
+      "sql_ms": 26.35,
+      "server_ms": 502.53,
+      "response_bytes": 62650,
+      "request_bytes": 0,
+      "sample": 2
+    },
+    {
+      "path": "/customers",
+      "status": 200,
+      "wall_ms": 485.17,
+      "queries": 33,
+      "sql_ms": 42.4,
+      "server_ms": 481.65,
+      "response_bytes": 62650,
+      "request_bytes": 0,
+      "sample": 3
+    },
+    {
+      "path": "/reports/sales.summary",
+      "status": 200,
+      "wall_ms": 2538.79,
+      "queries": 73,
+      "sql_ms": 90.48,
+      "server_ms": 2534.85,
+      "response_bytes": 68667,
+      "request_bytes": 0,
+      "sample": 1
+    },
+    {
+      "path": "/reports/sales.summary",
+      "status": 200,
+      "wall_ms": 611.72,
+      "queries": 73,
+      "sql_ms": 97.87,
+      "server_ms": 582.43,
+      "response_bytes": 68667,
+      "request_bytes": 0,
+      "sample": 2
+    },
+    {
+      "path": "/reports/sales.summary",
+      "status": 200,
+      "wall_ms": 551.97,
+      "queries": 73,
+      "sql_ms": 64.82,
+      "server_ms": 531.53,
+      "response_bytes": 68667,
+      "request_bytes": 0,
+      "sample": 3
+    },
+    {
+      "path": "/livewire-88e1f9a2/update",
+      "status": 200,
+      "wall_ms": 634.9,
+      "queries": 18,
+      "sql_ms": 29.54,
+      "server_ms": 609.96,
+      "response_bytes": 42069,
+      "request_bytes": 664,
+      "operation": "search {'search': 'OIL'}"
+    },
+    {
+      "path": "/livewire-88e1f9a2/update",
+      "status": 200,
+      "wall_ms": 416.08,
+      "queries": 15,
+      "sql_ms": 13.02,
+      "server_ms": 396.18,
+      "response_bytes": 13348,
+      "request_bytes": 556,
+      "operation": "search {'search': 'Shop'}"
+    },
+    {
+      "path": "/livewire-88e1f9a2/update",
+      "status": 200,
+      "wall_ms": 437.57,
+      "queries": 42,
+      "sql_ms": 20.74,
+      "server_ms": 417.69,
+      "response_bytes": 18757,
+      "request_bytes": 513,
+      "operation": "search {'query': 'OIL'}"
+    },
+    {
+      "path": "/livewire-88e1f9a2/update",
+      "status": 200,
+      "wall_ms": 403.54,
+      "queries": 30,
+      "sql_ms": 14.88,
+      "server_ms": 399.62,
+      "response_bytes": 68403,
+      "request_bytes": 2784,
+      "operation": "selectProduct"
+    },
+    {
+      "path": "/livewire-88e1f9a2/update",
+      "status": 200,
+      "wall_ms": 545.23,
+      "queries": 75,
+      "sql_ms": 37.44,
+      "server_ms": 527.6,
+      "response_bytes": 49359,
+      "request_bytes": 2584,
+      "operation": "scanCameraBarcode"
+    }
+  ]
+}

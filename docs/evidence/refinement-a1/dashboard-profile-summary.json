@@ -1,0 +1,56 @@
+{
+  "provenance": "Read-only local synthetic GET /dashboard under baseline source. Normalized SQL recorded without bindings; identical SQL may have different bindings. One warm sample906.05ms wall,881.28server,308.79sql;337queries. Earlier warm samples much slower under concurrent local work; not Hostinger.",
+  "top_repeated_sql_shapes": [
+    {
+      "category": "fresh permission union",
+      "count": 57,
+      "sql_ms": 43.18
+    },
+    {
+      "category": "membership and active-company guard",
+      "count": 55,
+      "sql_ms": 19.06
+    },
+    {
+      "category": "persisted active company reload",
+      "count": 19,
+      "sql_ms": 5.91
+    },
+    {
+      "category": "direct permission relation reload",
+      "count": 16,
+      "sql_ms": 6.09
+    },
+    {
+      "category": "role relation reload",
+      "count": 16,
+      "sql_ms": 5.67
+    },
+    {
+      "category": "membership guard",
+      "count": 14,
+      "sql_ms": 3.37
+    },
+    {
+      "category": "active company guard",
+      "count": 12,
+      "sql_ms": 3.51
+    },
+    {
+      "category": "canonical source provenance guard",
+      "count": 4,
+      "sql_ms": 1.4
+    },
+    {
+      "category": "canonical source provenance guard",
+      "count": 4,
+      "sql_ms": 1.24
+    },
+    {
+      "category": "canonical source provenance guard",
+      "count": 4,
+      "sql_ms": 1.22
+    }
+  ],
+  "finding": "Dominant repeats are fresh authorization and immutable source-integrity checks required by current architecture. No data-row N+1 demonstrated. Preserve guards; no safe worthwhile narrow A1 application optimization established. Small ExpenseReportQuery conditional aggregate consolidation would save few low-cost data queries but is not justified in this refinement."
+}
