@@ -1,0 +1,15 @@
+{
+    "provenance": "Actual local PHP HTTP\/1.1 server and curl cookie session, synthetic disposable MariaDB; not Hostinger or physical-device evidence",
+    "accept": "application\/json, application\/zip",
+    "unconfirmed_status": 423,
+    "unconfirmed_json": true,
+    "redirect": false,
+    "fortify_confirmation_status": 201,
+    "explicit_download_status": 200,
+    "declared_and_received_bytes": 19829,
+    "content_encoding": null,
+    "datasets": 40,
+    "files": 41,
+    "all_manifest_row_counts_match": true,
+    "private_archive_cleanup": true
+}

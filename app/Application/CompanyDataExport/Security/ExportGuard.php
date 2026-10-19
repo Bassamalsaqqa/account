@@ -249,7 +249,7 @@ final class ExportGuard
         $timeout = (int) config('auth.password_timeout', 10800);
 
         if ($confirmedAt <= 0 || (time() - $confirmedAt) >= $timeout) {
-            abort(403, __('company_data_export.password_confirmation_required'));
+            abort(423, __('company_data_export.password_confirmation_required'));
         }
 
         return $confirmedAt;

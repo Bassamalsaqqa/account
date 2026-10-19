@@ -144,8 +144,11 @@ export function profileTwoFactor(config = {}) {
                 return data;
             } catch (error) {
                 if (version !== generation) throw cancelled();
-                if ((!response || response.ok) && (options.method || 'GET') !== 'GET') {
+                if ((!response || response.ok || response.status >= 500) && (options.method || 'GET') !== 'GET') {
                     this.uncertain = true;
+                    // A response failure may follow a committed Fortify write.
+                    // Previous codes/setup material can no longer be trusted.
+                    this.clearSecrets();
                     throw new Error(translations.request_uncertain || translations.generic_error);
                 }
                 if (error.name === 'AbortError') throw new Error(translations.generic_error);

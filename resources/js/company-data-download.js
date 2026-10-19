@@ -17,7 +17,9 @@ export function companyDataDownload(config = {}) {
             try {
                 const response = await fetch(form.action, {
                     method: 'POST', body: new FormData(form), credentials: 'same-origin', cache: 'no-store',
-                    headers: {Accept:'application/zip, application/json', 'X-Requested-With':'XMLHttpRequest'},
+                    // Laravel password.confirm negotiates its 423 response from
+                    // the preferred Accept type; successful downloads remain ZIPs.
+                    headers: {Accept:'application/json, application/zip', 'X-Requested-With':'XMLHttpRequest'},
                     signal: controller.signal,
                 });
                 if (version !== generation) return;
