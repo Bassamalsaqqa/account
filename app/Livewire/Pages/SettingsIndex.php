@@ -20,8 +20,11 @@ use App\Support\Tenancy\CompanyContext;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Contracts\View\View;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use Livewire\Attributes\Layout;
+use Livewire\Attributes\Locked;
 use Livewire\Component;
+use Livewire\WithPagination;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
@@ -29,6 +32,17 @@ use Spatie\Permission\PermissionRegistrar;
 #[Layout('layouts.app')]
 class SettingsIndex extends Component
 {
+    use WithPagination;
+
+    #[Locked]
+    public ?int $settingsCompanyId = null;
+
+    public string $auditFrom = '';
+
+    public string $auditUntil = '';
+
+    public string $auditEvent = '';
+
     public string $activeSection = 'overview';
 
     // Search query on overview
@@ -105,6 +119,53 @@ class SettingsIndex extends Component
     /** @var array<string, bool> */
     public array $rolePermissions = [];
 
+    private function verifiedCompany(CompanyContext $context): Company
+    {
+        $user = auth()->user();
+        abort_unless($user instanceof User, 403);
+        abort_unless($context->hasCompany(), 403);
+        abort_if($this->settingsCompanyId !== null && $this->settingsCompanyId !== $context->companyId(), 403);
+        $company = Company::query()->findOrFail($context->companyId());
+        $context->setCompany($company, $user);
+        $this->authorize('view', $company);
+
+        return $company;
+    }
+
+    public function hydrate(): void
+    {
+        $context = app(CompanyContext::class);
+        abort_if($this->settingsCompanyId !== null && ! $context->hasCompany(), 403);
+        if ($context->hasCompany()) {
+            $this->verifiedCompany($context);
+        }
+    }
+
+    public function applyAuditFilters(CompanyContext $context): void
+    {
+        $this->verifiedCompany($context);
+        abort_unless(auth()->user()?->can('audit.events.view'), 403);
+        $this->validateAuditFilters();
+        $this->resetPage('auditPage');
+    }
+
+    private function validateAuditFilters(): void
+    {
+        $this->validate([
+            'auditFrom' => ['nullable', 'date_format:Y-m-d'],
+            'auditUntil' => ['nullable', 'date_format:Y-m-d', ...($this->auditFrom !== '' ? ['after_or_equal:auditFrom'] : [])],
+            'auditEvent' => ['nullable', 'string', 'max:80', 'regex:/^[a-zA-Z0-9_.-]*$/'],
+        ]);
+    }
+
+    public function prepareCompanyDataDownload(CompanyContext $context): void
+    {
+        $company = $this->verifiedCompany($context);
+        abort_unless(CompanyUser::query()->where('company_id', $company->id)
+            ->where('user_id', auth()->id())->where('status', 'active')->where('is_owner', true)->exists(), 403);
+        $this->ensurePasswordIsConfirmed();
+    }
+
     protected function resetMessages(): void
     {
         $this->errorMessage = null;
@@ -133,10 +194,11 @@ class SettingsIndex extends Component
             return;
         }
 
-        $company = $context->company();
+        $company = $this->verifiedCompany($context);
 
         // Enforce settings read permission
         $this->authorize('view', $company);
+        $this->settingsCompanyId = (int) $company->id;
 
         // Identity
         $this->name_ar = (string) $company->name_ar;
@@ -175,7 +237,7 @@ class SettingsIndex extends Component
 
     public function setSection(string $section, CompanyContext $context): void
     {
-        $company = $context->company();
+        $company = $this->verifiedCompany($context);
 
         // Authorize per-section read
         /** @var User $user */
@@ -205,6 +267,7 @@ class SettingsIndex extends Component
 
     public function selectRole(string $roleName, CompanyContext $context): void
     {
+        $this->verifiedCompany($context);
         /** @var User $user */
         $user = auth()->user();
         if (! $user->hasAnyPermission(['settings.roles.view', 'settings.roles.manage'])) {
@@ -231,7 +294,7 @@ class SettingsIndex extends Component
 
     public function saveIdentity(CompanyContext $context, UpdateCompanyIdentityAction $action): void
     {
-        $company = $context->company();
+        $company = $this->verifiedCompany($context);
         $this->authorize('update', $company);
 
         $validated = $this->validate([
@@ -265,7 +328,7 @@ class SettingsIndex extends Component
 
     public function saveLocalization(CompanyContext $context, UpdateCompanyLocalizationAction $action): void
     {
-        $company = $context->company();
+        $company = $this->verifiedCompany($context);
         $this->authorize('update', $company);
 
         $validated = $this->validate([
@@ -293,7 +356,7 @@ class SettingsIndex extends Component
 
     public function saveCurrencies(CompanyContext $context, UpdateCompanyCurrenciesAction $action): void
     {
-        $company = $context->company();
+        $company = $this->verifiedCompany($context);
         $this->authorize('update', $company);
 
         $this->validate([
@@ -316,7 +379,7 @@ class SettingsIndex extends Component
 
     public function saveSecurity(CompanyContext $context, UpdateCompanySecurityAction $action): void
     {
-        $company = $context->company();
+        $company = $this->verifiedCompany($context);
         $this->authorize('update', $company);
 
         if (! $this->ensurePasswordIsConfirmed()) {
@@ -339,7 +402,7 @@ class SettingsIndex extends Component
     public function createUser(CompanyContext $context, AddCompanyMemberAction $action): void
     {
         $this->authorize('create', CompanyUser::class);
-        $company = $context->company();
+        $company = $this->verifiedCompany($context);
 
         $validated = $this->validate([
             'new_user_name' => ['required', 'string', 'max:255'],
@@ -379,7 +442,7 @@ class SettingsIndex extends Component
 
     public function toggleUserStatus(int $membershipId, CompanyContext $context, ToggleCompanyMemberStatusAction $action): void
     {
-        $company = $context->company();
+        $company = $this->verifiedCompany($context);
 
         /** @var CompanyUser|null $membership */
         $membership = CompanyUser::with('user')
@@ -415,7 +478,7 @@ class SettingsIndex extends Component
 
     public function updateUserRole(int $membershipId, string $newRoleName, CompanyContext $context, UpdateCompanyMemberRoleAction $action): void
     {
-        $company = $context->company();
+        $company = $this->verifiedCompany($context);
 
         /** @var CompanyUser|null $membership */
         $membership = CompanyUser::with('user')
@@ -467,7 +530,7 @@ class SettingsIndex extends Component
             return;
         }
 
-        $company = $context->company();
+        $company = $this->verifiedCompany($context);
         setPermissionsTeamId($company->id);
         app(PermissionRegistrar::class)->setPermissionsTeamId($company->id);
 
@@ -500,7 +563,8 @@ class SettingsIndex extends Component
     {
         $context = app(CompanyContext::class);
         $hasCompany = $context->hasCompany();
-        $company = $hasCompany ? $context->company() : null;
+        abort_if($this->settingsCompanyId !== null && ! $hasCompany, 403);
+        $company = $hasCompany ? $this->verifiedCompany($context) : null;
 
         $memberships = collect();
         $roles = collect();
@@ -510,6 +574,17 @@ class SettingsIndex extends Component
         if ($hasCompany && $company && auth()->check()) {
             /** @var User $user */
             $user = auth()->user();
+
+            // Public Livewire state is not section authorization.
+            if ($this->activeSection === 'audit') {
+                abort_unless($user->can('audit.events.view'), 403);
+            }
+            if ($this->activeSection === 'roles') {
+                abort_unless($user->hasAnyPermission(['settings.roles.view', 'settings.roles.manage']), 403);
+            }
+            if ($this->activeSection === 'users') {
+                abort_unless($user->hasAnyPermission(['settings.users.view', 'settings.users.manage']), 403);
+            }
 
             // Guard member list serialization
             if ($user->hasAnyPermission(['settings.users.view', 'settings.users.manage'])) {
@@ -530,11 +605,31 @@ class SettingsIndex extends Component
 
             // Guard audit event serialization
             if ($user->hasPermissionTo('audit.events.view')) {
-                $auditEvents = AuditEvent::with('actor')
+                $auditQuery = AuditEvent::query()
+                    ->select(['id', 'company_id', 'actor_user_id', 'event_key', 'summary', 'created_at'])
+                    ->with('actor:id,name')
                     ->where('company_id', $company->id)
-                    ->orderByDesc('created_at')
-                    ->limit(10)
-                    ->get();
+                    ->orderByDesc('created_at')->orderByDesc('id');
+                if ($this->activeSection === 'audit') {
+                    try {
+                        $this->validateAuditFilters();
+                        $filtersValid = true;
+                    } catch (ValidationException $exception) {
+                        $this->setErrorBag($exception->validator->errors());
+                        $filtersValid = false;
+                    }
+                    if ($filtersValid) {
+                        $auditQuery
+                            ->when($this->auditFrom !== '', fn ($q) => $q->where('created_at', '>=', $this->auditFrom.' 00:00:00'))
+                            ->when($this->auditUntil !== '', fn ($q) => $q->where('created_at', '<=', $this->auditUntil.' 23:59:59'))
+                            ->when($this->auditEvent !== '', fn ($q) => $q->where('event_key', 'like', str_replace('_', '\\_', $this->auditEvent).'%'));
+                    } else {
+                        $auditQuery->whereRaw('1 = 0');
+                    }
+                    $auditEvents = $auditQuery->simplePaginate(20, ['*'], 'auditPage', max(1, min(10000, $this->getPage('auditPage'))));
+                } else {
+                    $auditEvents = $auditQuery->limit(4)->get();
+                }
             }
         }
 
@@ -544,6 +639,10 @@ class SettingsIndex extends Component
         }
 
         return view('livewire.pages.settings-index', [
+            'isCompanyOwner' => $company && CompanyUser::query()->where('company_id', $company->id)
+                ->where('user_id', auth()->id())->where('status', 'active')->where('is_owner', true)->exists(),
+            'personalTwoFactorEnabled' => auth()->user()->two_factor_secret !== null && auth()->user()->two_factor_confirmed_at !== null,
+            'passwordConfirmed' => (int) session('auth.password_confirmed_at', 0) > time() - (int) config('auth.password_timeout', 10800),
             'hasCompany' => $hasCompany,
             'company' => $company,
             'memberships' => $memberships,

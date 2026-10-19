@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\AssistantMemoryController;
+use App\Http\Controllers\CompanyDataExportController;
 use App\Http\Controllers\ExpenseAttachmentController;
 use App\Http\Controllers\PdfDocumentController;
 use App\Http\Controllers\PublicCatalogController;
@@ -151,6 +152,9 @@ Route::middleware(['auth'])->group(function () {
 
         Route::get('settings', SettingsIndex::class)
             ->name('settings.index');
+        Route::post('settings/company-data/download', CompanyDataExportController::class)
+            ->middleware(['password.confirm', 'throttle:5,60'])
+            ->name('settings.company-data.download');
 
         // Phase 3 Catalog & Products
         Route::get('products', ProductIndex::class)->name('products.index');
