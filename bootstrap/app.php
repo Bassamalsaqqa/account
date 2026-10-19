@@ -32,5 +32,5 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
-        $exceptions->dontFlash(['current_password', 'provider_secret', 'password', 'password_confirmation']);
+        $exceptions->dontFlash(['current_password', 'provider_secret', 'password', 'password_confirmation', 'code', 'recovery_code']);
     })->create();

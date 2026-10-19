@@ -135,9 +135,7 @@
                             </div>
                             <div>
                                 <span class="text-[10px] text-text-muted block">{{ __('settings.status_2fa') }}</span>
-                                <span class="text-xs font-bold {{ $company->securitySettings?->require_2fa_for_owner ? 'text-emerald-700' : 'text-amber-700' }}">
-                                    {{ $company->securitySettings?->require_2fa_for_owner ? 'Owner 2FA ON' : 'Optional' }}
-                                </span>
+                                <span class="text-xs font-bold text-text-secondary">{{ __('settings.policy_preference_only') }}</span>
                             </div>
                         </div>
                     </div>
@@ -187,9 +185,9 @@
 
                     <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         <!-- Company Details -->
-                        <div x-show="matches('{{ __('settings.card_company_title') }} {{ __('settings.card_company_desc') }}')"
+                        <div role="button" tabindex="0" wire:keydown.enter="setSection('identity')" wire:keydown.space.prevent="setSection('identity')" x-show="matches('{{ __('settings.card_company_title') }} {{ __('settings.card_company_desc') }}')"
                              wire:loading.attr="disabled" wire:target="setSection" wire:click="setSection('identity')"
-                             class="bg-white border border-border hover:border-primary/60 rounded-card p-3.5 shadow-panel hover:shadow-panel-hover hover:-translate-y-0.5 transition-all flex items-start justify-between gap-3 group cursor-pointer">
+                             class="bg-white border border-border hover:border-primary/60 rounded-card p-3.5 shadow-panel hover:shadow-panel-hover hover:-translate-y-0.5 transition-all flex items-start justify-between gap-3 group cursor-pointer focus-visible:outline-2 focus-visible:outline-primary">
                             <div class="flex items-start gap-3 min-w-0">
                                 <div class="w-9 h-9 rounded-control bg-primary-50 text-primary grid place-items-center shrink-0 group-hover:bg-primary group-hover:text-white transition-colors">
                                     <x-icon name="store" class="w-5 h-5" />
@@ -207,9 +205,9 @@
                         </div>
 
                         <!-- Languages & Region -->
-                        <div x-show="matches('{{ __('settings.card_localization_title') }} {{ __('settings.card_localization_desc') }}')"
+                        <div role="button" tabindex="0" wire:keydown.enter="setSection('localization')" wire:keydown.space.prevent="setSection('localization')" x-show="matches('{{ __('settings.card_localization_title') }} {{ __('settings.card_localization_desc') }}')"
                              wire:loading.attr="disabled" wire:target="setSection" wire:click="setSection('localization')"
-                             class="bg-white border border-border hover:border-primary/60 rounded-card p-3.5 shadow-panel hover:shadow-panel-hover hover:-translate-y-0.5 transition-all flex items-start justify-between gap-3 group cursor-pointer">
+                             class="bg-white border border-border hover:border-primary/60 rounded-card p-3.5 shadow-panel hover:shadow-panel-hover hover:-translate-y-0.5 transition-all flex items-start justify-between gap-3 group cursor-pointer focus-visible:outline-2 focus-visible:outline-primary">
                             <div class="flex items-start gap-3 min-w-0">
                                 <div class="w-9 h-9 rounded-control bg-primary-50 text-primary grid place-items-center shrink-0 group-hover:bg-primary group-hover:text-white transition-colors">
                                     <x-icon name="globe" class="w-5 h-5" />
@@ -227,9 +225,9 @@
                         </div>
 
                         <!-- Currencies & FX -->
-                        <div x-show="matches('{{ __('settings.card_currencies_title') }} {{ __('settings.card_currencies_desc') }} ILS USD JOD')"
+                        <div role="button" tabindex="0" wire:keydown.enter="setSection('currencies')" wire:keydown.space.prevent="setSection('currencies')" x-show="matches('{{ __('settings.card_currencies_title') }} {{ __('settings.card_currencies_desc') }} ILS USD JOD')"
                              wire:loading.attr="disabled" wire:target="setSection" wire:click="setSection('currencies')"
-                             class="bg-white border border-border hover:border-primary/60 rounded-card p-3.5 shadow-panel hover:shadow-panel-hover hover:-translate-y-0.5 transition-all flex items-start justify-between gap-3 group cursor-pointer">
+                             class="bg-white border border-border hover:border-primary/60 rounded-card p-3.5 shadow-panel hover:shadow-panel-hover hover:-translate-y-0.5 transition-all flex items-start justify-between gap-3 group cursor-pointer focus-visible:outline-2 focus-visible:outline-primary">
                             <div class="flex items-start gap-3 min-w-0">
                                 <div class="w-9 h-9 rounded-control bg-primary-50 text-primary grid place-items-center shrink-0 group-hover:bg-primary group-hover:text-white transition-colors">
                                     <x-icon name="money" class="w-5 h-5" />
@@ -250,7 +248,7 @@
                         </div>
 
                         <!-- Taxes -->
-                        @if (auth()->user()->hasRole(['Owner', 'Administrator']))
+                        @if (auth()->user()->can('settings.taxes.manage'))
                             <a href="{{ route('settings.taxes') }}"
                                x-show="matches('{{ __('settings.card_taxes_title') }} {{ __('settings.card_taxes_desc') }}')"
                                class="bg-white border border-border hover:border-primary/60 rounded-card p-3.5 shadow-panel hover:shadow-panel-hover hover:-translate-y-0.5 transition-all flex items-start justify-between gap-3 group cursor-pointer">
@@ -302,23 +300,6 @@
                     </div>
 
                     <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        <!-- Sales -->
-                        <div x-show="matches('{{ __('settings.card_sales_title') }} {{ __('settings.card_sales_desc') }}')"
-                             class="bg-white/60 border border-border/70 rounded-card p-3.5 flex items-start justify-between gap-3 opacity-75">
-                            <div class="flex items-start gap-3 min-w-0">
-                                <div class="w-9 h-9 rounded-control bg-slate-100 text-slate-400 grid place-items-center shrink-0">
-                                    <x-icon name="receipt" class="w-5 h-5" />
-                                </div>
-                                <div class="min-w-0">
-                                    <div class="flex items-center gap-1.5">
-                                        <h4 class="text-xs font-extrabold text-text-muted">{{ __('settings.card_sales_title') }}</h4>
-                                        <span class="text-[9px] px-1.5 py-0.5 rounded bg-slate-100 text-text-muted font-bold">{{ __('settings.future_phase_badge') }}</span>
-                                    </div>
-                                    <p class="text-[11px] text-text-muted mt-0.5 leading-snug">{{ __('settings.card_sales_desc') }}</p>
-                                </div>
-                            </div>
-                        </div>
-
                         <!-- Purchases -->
                         @can('settings.purchases.manage')
                         <a href="{{ route('settings.purchases') }}" x-show="matches('{{ __('settings.card_purchases_title') }} {{ __('settings.card_purchases_desc') }}')"
@@ -337,25 +318,8 @@
                         </a>
                         @endcan
 
-                        <!-- Inventory -->
-                        <div x-show="matches('{{ __('settings.card_inventory_title') }} {{ __('settings.card_inventory_desc') }}')"
-                             class="bg-white/60 border border-border/70 rounded-card p-3.5 flex items-start justify-between gap-3 opacity-75">
-                            <div class="flex items-start gap-3 min-w-0">
-                                <div class="w-9 h-9 rounded-control bg-slate-100 text-slate-400 grid place-items-center shrink-0">
-                                    <x-icon name="box" class="w-5 h-5" />
-                                </div>
-                                <div class="min-w-0">
-                                    <div class="flex items-center gap-1.5">
-                                        <h4 class="text-xs font-extrabold text-text-muted">{{ __('settings.card_inventory_title') }}</h4>
-                                        <span class="text-[9px] px-1.5 py-0.5 rounded bg-slate-100 text-text-muted font-bold">{{ __('settings.future_phase_badge') }}</span>
-                                    </div>
-                                    <p class="text-[11px] text-text-muted mt-0.5 leading-snug">{{ __('settings.card_inventory_desc') }}</p>
-                                </div>
-                            </div>
-                        </div>
-
                         <!-- Banking -->
-                        @if (auth()->user()->hasRole(['Owner', 'Administrator']))
+                        @if (auth()->user()->can('settings.money_accounts.manage'))
                             <a href="{{ route('settings.money-accounts') }}"
                                x-show="matches('{{ __('settings.card_banking_title') }} {{ __('settings.card_banking_desc') }}')"
                                class="bg-white border border-border hover:border-primary/60 rounded-card p-3.5 shadow-panel hover:shadow-panel-hover hover:-translate-y-0.5 transition-all flex items-start justify-between gap-3 group cursor-pointer">
@@ -407,9 +371,9 @@
                     <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         @canany(['settings.users.view', 'settings.users.manage'])
                             <!-- Users -->
-                            <div x-show="matches('{{ __('settings.card_users_title') }} {{ __('settings.card_users_desc') }}')"
+                            <div role="button" tabindex="0" wire:keydown.enter="setSection('users')" wire:keydown.space.prevent="setSection('users')" x-show="matches('{{ __('settings.card_users_title') }} {{ __('settings.card_users_desc') }}')"
                                  wire:loading.attr="disabled" wire:target="setSection" wire:click="setSection('users')"
-                                 class="bg-white border border-border hover:border-primary/60 rounded-card p-3.5 shadow-panel hover:shadow-panel-hover hover:-translate-y-0.5 transition-all flex items-start justify-between gap-3 group cursor-pointer">
+                                 class="bg-white border border-border hover:border-primary/60 rounded-card p-3.5 shadow-panel hover:shadow-panel-hover hover:-translate-y-0.5 transition-all flex items-start justify-between gap-3 group cursor-pointer focus-visible:outline-2 focus-visible:outline-primary">
                                 <div class="flex items-start gap-3 min-w-0">
                                     <div class="w-9 h-9 rounded-control bg-primary-50 text-primary grid place-items-center shrink-0 group-hover:bg-primary group-hover:text-white transition-colors">
                                         <x-icon name="users" class="w-5 h-5" />
@@ -449,9 +413,9 @@
 
                         @canany(['settings.roles.view', 'settings.roles.manage'])
                             <!-- Roles & Permissions -->
-                            <div x-show="matches('{{ __('settings.card_roles_title') }} {{ __('settings.card_roles_desc') }}')"
+                            <div role="button" tabindex="0" wire:keydown.enter="setSection('roles')" wire:keydown.space.prevent="setSection('roles')" x-show="matches('{{ __('settings.card_roles_title') }} {{ __('settings.card_roles_desc') }}')"
                                  wire:loading.attr="disabled" wire:target="setSection" wire:click="setSection('roles')"
-                                 class="bg-white border border-border hover:border-primary/60 rounded-card p-3.5 shadow-panel hover:shadow-panel-hover hover:-translate-y-0.5 transition-all flex items-start justify-between gap-3 group cursor-pointer">
+                                 class="bg-white border border-border hover:border-primary/60 rounded-card p-3.5 shadow-panel hover:shadow-panel-hover hover:-translate-y-0.5 transition-all flex items-start justify-between gap-3 group cursor-pointer focus-visible:outline-2 focus-visible:outline-primary">
                                 <div class="flex items-start gap-3 min-w-0">
                                     <div class="w-9 h-9 rounded-control bg-primary-50 text-primary grid place-items-center shrink-0 group-hover:bg-primary group-hover:text-white transition-colors">
                                         <x-icon name="shield" class="w-5 h-5" />
@@ -490,9 +454,9 @@
                         @endcanany
 
                         <!-- Security -->
-                        <div x-show="matches('{{ __('settings.card_security_title') }} {{ __('settings.card_security_desc') }}')"
+                        <div role="button" tabindex="0" wire:keydown.enter="setSection('security')" wire:keydown.space.prevent="setSection('security')" x-show="matches('{{ __('settings.card_security_title') }} {{ __('settings.card_security_desc') }}')"
                              wire:loading.attr="disabled" wire:target="setSection" wire:click="setSection('security')"
-                             class="bg-white border border-border hover:border-primary/60 rounded-card p-3.5 shadow-panel hover:shadow-panel-hover hover:-translate-y-0.5 transition-all flex items-start justify-between gap-3 group cursor-pointer">
+                             class="bg-white border border-border hover:border-primary/60 rounded-card p-3.5 shadow-panel hover:shadow-panel-hover hover:-translate-y-0.5 transition-all flex items-start justify-between gap-3 group cursor-pointer focus-visible:outline-2 focus-visible:outline-primary">
                             <div class="flex items-start gap-3 min-w-0">
                                 <div class="w-9 h-9 rounded-control bg-primary-50 text-primary grid place-items-center shrink-0 group-hover:bg-primary group-hover:text-white transition-colors">
                                     <x-icon name="lock" class="w-5 h-5" />
@@ -511,9 +475,9 @@
 
                         @can('audit.events.view')
                             <!-- Audit Log -->
-                            <div x-show="matches('{{ __('settings.card_audit_title') }} {{ __('settings.card_audit_desc') }}')"
+                            <div role="button" tabindex="0" wire:keydown.enter="setSection('audit')" wire:keydown.space.prevent="setSection('audit')" x-show="matches('{{ __('settings.card_audit_title') }} {{ __('settings.card_audit_desc') }}')"
                                  wire:loading.attr="disabled" wire:target="setSection" wire:click="setSection('audit')"
-                                 class="bg-white border border-border hover:border-primary/60 rounded-card p-3.5 shadow-panel hover:shadow-panel-hover hover:-translate-y-0.5 transition-all flex items-start justify-between gap-3 group cursor-pointer">
+                                 class="bg-white border border-border hover:border-primary/60 rounded-card p-3.5 shadow-panel hover:shadow-panel-hover hover:-translate-y-0.5 transition-all flex items-start justify-between gap-3 group cursor-pointer focus-visible:outline-2 focus-visible:outline-primary">
                                 <div class="flex items-start gap-3 min-w-0">
                                     <div class="w-9 h-9 rounded-control bg-primary-50 text-primary grid place-items-center shrink-0 group-hover:bg-primary group-hover:text-white transition-colors">
                                         <x-icon name="history" class="w-5 h-5" />
@@ -563,7 +527,7 @@
 
                     <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         <!-- Document Numbering -->
-                        @if (auth()->user()->hasRole(['Owner', 'Administrator']))
+                        @if (auth()->user()->can('settings.sequences.manage'))
                             <a href="{{ route('settings.sequences') }}"
                                x-show="matches('{{ __('settings.card_numbering_title') }} {{ __('settings.card_numbering_desc') }}')"
                                class="bg-white border border-border hover:border-primary/60 rounded-card p-3.5 shadow-panel hover:shadow-panel-hover hover:-translate-y-0.5 transition-all flex items-start justify-between gap-3 group cursor-pointer">
@@ -681,22 +645,59 @@
                             </div>
                         @endif
 
-                        <!-- Data Export & Backups -->
-                        <div x-show="matches('{{ __('settings.card_backup_title') }} {{ __('settings.card_backup_desc') }}')"
-                             class="bg-white/60 border border-border/70 rounded-card p-3.5 flex items-start justify-between gap-3 opacity-75">
-                            <div class="flex items-start gap-3 min-w-0">
-                                <div class="w-9 h-9 rounded-control bg-slate-100 text-slate-400 grid place-items-center shrink-0">
-                                    <x-icon name="database" class="w-5 h-5" />
-                                </div>
-                                <div class="min-w-0">
-                                    <div class="flex items-center gap-1.5">
-                                        <h4 class="text-xs font-extrabold text-text-muted">{{ __('settings.card_backup_title') }}</h4>
-                                        <span class="text-[9px] px-1.5 py-0.5 rounded bg-slate-100 text-text-muted font-bold">{{ __('settings.future_phase_badge') }}</span>
-                                    </div>
-                                    <p class="text-[11px] text-text-muted mt-0.5 leading-snug">{{ __('settings.card_backup_desc') }}</p>
-                                </div>
-                            </div>
-                        </div>
+                        @if ($isCompanyOwner && \Illuminate\Support\Facades\Route::has('settings.company-data.download'))
+                            <section class="bg-white border border-border rounded-card p-4 space-y-3" aria-labelledby="company-data-title">
+                                <h4 id="company-data-title" class="text-sm font-bold">{{ __('settings.company_data_title') }}</h4>
+                                <p class="text-xs text-text-secondary">{{ __('settings.company_data_description') }}</p>
+                                @if ($passwordConfirmed)
+                                    <form method="POST" action="{{ route('settings.company-data.download') }}" x-data="companyDataDownload({preparing: @js(__('settings.company_data_preparing')), failed: @js(__('settings.company_data_failed')), started: @js(__('settings.company_data_started')), confirmRequired: @js(__('settings.password_confirmation_required'))})" x-on:submit.prevent="download($el)">
+                                        @csrf
+                                        <button type="submit" class="min-h-11 px-4 py-2 rounded-control bg-primary text-white font-bold text-sm focus-visible:ring-2" x-bind:disabled="preparing">{{ __('settings.company_data_title') }}</button>
+                                        <p x-cloak x-show="message" x-text="message" role="status" class="text-xs mt-2"></p>
+                                        <p x-cloak x-show="error" x-text="error" role="alert" class="text-xs mt-2 text-rose-700"></p>
+                                        <button x-cloak x-show="needsConfirmation" type="button" wire:click="prepareCompanyDataDownload" wire:loading.attr="disabled" class="min-h-11 px-3 py-2 rounded-control border border-primary text-sm text-primary">{{ __('settings.confirm_password_action') }}</button>
+                                    </form>
+                                @else
+                                    <button type="button" wire:click="prepareCompanyDataDownload" wire:loading.attr="disabled" class="min-h-11 px-4 py-2 rounded-control border border-primary text-primary font-bold text-sm">{{ __('settings.confirm_password_action') }}</button>
+                                @endif
+                                @if (session('company_data_export_error'))
+                                    <p role="alert" class="text-sm text-rose-700">{{ session('company_data_export_error') }}</p>
+                                @endif
+                            </section>
+                        @endif
+                    </div>
+                </section>
+                <section class="bg-white border border-border rounded-card p-4 space-y-3">
+                    <h3 class="text-sm font-bold">{{ __('settings.existing_configuration') }}</h3>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        <a href="{{ route('profile') }}" class="min-h-11 flex items-center rounded-control border border-border px-3 py-2 text-sm font-semibold hover:bg-primary-50 focus-visible:ring-2">{{ __('settings.personal_security') }}</a>
+                        @can('settings.taxes.manage')
+                            <a href="{{ route('settings.taxes') }}" class="min-h-11 flex items-center rounded-control border border-border px-3 py-2 text-sm font-semibold hover:bg-primary-50 focus-visible:ring-2">{{ __('settings.nav_taxes') }}</a>
+                        @endcan
+                        @can('settings.sequences.manage')
+                            <a href="{{ route('settings.sequences') }}" class="min-h-11 flex items-center rounded-control border border-border px-3 py-2 text-sm font-semibold hover:bg-primary-50 focus-visible:ring-2">{{ __('settings.nav_sequences') }}</a>
+                        @endcan
+                        @can('settings.purchases.manage')
+                            <a href="{{ route('settings.purchases') }}" class="min-h-11 flex items-center rounded-control border border-border px-3 py-2 text-sm font-semibold hover:bg-primary-50 focus-visible:ring-2">{{ __('settings.nav_purchases') }}</a>
+                        @endcan
+                        @can('settings.money_accounts.manage')
+                            <a href="{{ route('settings.money-accounts') }}" class="min-h-11 flex items-center rounded-control border border-border px-3 py-2 text-sm font-semibold hover:bg-primary-50 focus-visible:ring-2">{{ __('settings.nav_money_accounts') }}</a>
+                        @endcan
+                        @can('inventory.product.manage')
+                            <a href="{{ route('warehouses.index') }}" class="min-h-11 flex items-center rounded-control border border-border px-3 py-2 text-sm font-semibold hover:bg-primary-50 focus-visible:ring-2">{{ __('settings.nav_warehouses') }}</a>
+                        @endcan
+                        @can('inventory.product.manage')
+                            <a href="{{ route('units.index') }}" class="min-h-11 flex items-center rounded-control border border-border px-3 py-2 text-sm font-semibold hover:bg-primary-50 focus-visible:ring-2">{{ __('settings.nav_units') }}</a>
+                        @endcan
+                        @can('inventory.product.manage')
+                            <a href="{{ route('categories.index') }}" class="min-h-11 flex items-center rounded-control border border-border px-3 py-2 text-sm font-semibold hover:bg-primary-50 focus-visible:ring-2">{{ __('settings.nav_categories') }}</a>
+                        @endcan
+                        @can('inventory.product.manage')
+                            <a href="{{ route('brands.index') }}" class="min-h-11 flex items-center rounded-control border border-border px-3 py-2 text-sm font-semibold hover:bg-primary-50 focus-visible:ring-2">{{ __('settings.nav_brands') }}</a>
+                        @endcan
+                        @can('money.expense.manage')
+                            <a href="{{ route('expenses.categories') }}" class="min-h-11 flex items-center rounded-control border border-border px-3 py-2 text-sm font-semibold hover:bg-primary-50 focus-visible:ring-2">{{ __('settings.nav_expense_categories') }}</a>
+                        @endcan
                     </div>
                 </section>
             </div>
@@ -708,7 +709,7 @@
                 <div class="bg-white border border-border rounded-card p-4 shadow-panel">
                     <h4 class="text-xs font-extrabold text-text-primary mb-3 flex items-center justify-between gap-2">
                         <span>{{ __('settings.aside_status_title') }}</span>
-                        <x-badge variant="success">{{ __('settings.system_normal') }}</x-badge>
+                        <x-badge variant="neutral">{{ __('settings.configuration_summary') }}</x-badge>
                     </h4>
                     <div class="divide-y divide-border/60 text-xs">
                         <div class="py-2 flex items-center justify-between first:pt-0">
@@ -720,8 +721,8 @@
                             <span class="font-bold text-text-primary uppercase">{{ $company?->default_locale ?? 'ar' }}</span>
                         </div>
                         <div class="py-2 flex items-center justify-between">
-                            <span class="text-text-muted">{{ __('settings.status_2fa') }}</span>
-                            <span class="font-bold text-emerald-700">{{ $company?->securitySettings?->require_2fa_for_owner ? __('settings.status_2fa_owner_active') : __('settings.status_2fa_optional') }}</span>
+                            <span class="text-text-muted">{{ __('settings.personal_security') }}</span>
+                            <span class="font-bold text-text-secondary">{{ $personalTwoFactorEnabled ? __('settings.personal_2fa_enabled') : __('settings.personal_2fa_not_enabled') }}</span>
                         </div>
                         <div class="py-2 flex items-center justify-between last:pb-0">
                             <span class="text-text-muted">{{ __('settings.usage_users') }}</span>
@@ -735,7 +736,7 @@
                     <h4 class="text-xs font-extrabold text-text-primary mb-3 flex items-center justify-between gap-2">
                         <span>{{ __('settings.aside_activity_title') }}</span>
                         @can('audit.events.view')
-                            <button type="button" wire:loading.attr="disabled" wire:target="setSection" wire:click="setSection('audit')" class="text-[10px] text-primary hover:underline font-bold">
+                            <button type="button" wire:loading.attr="disabled" wire:target="setSection" wire:click="setSection('audit')" class="min-h-11 px-3 rounded-control border border-border text-xs text-primary hover:bg-primary-50 font-bold">
                                 {{ __('settings.card_audit_title') }} &rarr;
                             </button>
                         @endcan
@@ -861,7 +862,7 @@
                         </div>
 
                         <div class="pt-3 border-t border-border flex justify-end">
-                            <button type="submit"
+                            <button type="submit" wire:loading.attr="disabled"
                                     class="px-4 py-2 rounded-control bg-primary text-white text-xs font-bold hover:bg-primary-hover transition-colors shadow-xs cursor-pointer">
                                 <span wire:loading.remove wire:target="saveIdentity">{{ __('settings.save_changes') }}</span>
                                 <span wire:loading wire:target="saveIdentity">{{ __('settings.saving') }}</span>
@@ -932,7 +933,7 @@
                         </div>
 
                         <div class="pt-3 border-t border-border flex justify-end">
-                            <button type="submit"
+                            <button type="submit" wire:loading.attr="disabled"
                                     class="px-4 py-2 rounded-control bg-primary text-white text-xs font-bold hover:bg-primary-hover transition-colors shadow-xs cursor-pointer">
                                 <span wire:loading.remove wire:target="saveLocalization">{{ __('settings.save_changes') }}</span>
                                 <span wire:loading wire:target="saveLocalization">{{ __('settings.saving') }}</span>
@@ -993,7 +994,7 @@
                         </div>
 
                         <div class="pt-3 border-t border-border flex justify-end">
-                            <button type="submit"
+                            <button type="submit" wire:loading.attr="disabled"
                                     class="px-4 py-2 rounded-control bg-primary text-white text-xs font-bold hover:bg-primary-hover transition-colors shadow-xs cursor-pointer">
                                 <span wire:loading.remove wire:target="saveCurrencies">{{ __('settings.save_changes') }}</span>
                                 <span wire:loading wire:target="saveCurrencies">{{ __('settings.saving') }}</span>
@@ -1016,6 +1017,7 @@
                         </div>
 
                         <div class="space-y-3">
+                            <p class="text-sm text-amber-900 bg-amber-50 rounded-control p-3" role="note">{{ __('settings.policy_not_enforced') }} <a href="{{ route('profile') }}" class="underline font-semibold">{{ __('settings.personal_security') }}</a></p>
                             <label class="flex items-start gap-3 p-3 rounded-control border border-border hover:bg-surface-soft cursor-pointer">
                                 <input type="checkbox" wire:model="require_2fa_for_owner"
                                        class="rounded border-border text-primary focus:ring-primary w-4 h-4 mt-0.5" />
@@ -1049,7 +1051,7 @@
                         </div>
 
                         <div class="pt-3 border-t border-border flex justify-end">
-                            <button type="submit"
+                            <button type="submit" wire:loading.attr="disabled"
                                     class="px-4 py-2 rounded-control bg-primary text-white text-xs font-bold hover:bg-primary-hover transition-colors shadow-xs cursor-pointer">
                                 <span wire:loading.remove wire:target="saveSecurity">{{ __('settings.save_changes') }}</span>
                                 <span wire:loading wire:target="saveSecurity">{{ __('settings.saving') }}</span>
@@ -1105,18 +1107,18 @@
                                             <td class="py-3 px-3 font-mono text-[11px] text-text-secondary">{{ $u->email }}</td>
                                             <td class="py-3 px-3">
                                                 @if ($m->is_owner)
-                                                    <span class="font-bold text-text-primary">Owner</span>
+                                                    <span class="font-bold text-text-primary">{{ __('settings.role_owner') }}</span>
                                                 @elseif (auth()->user()?->can('settings.users.manage'))
                                                     <select wire:change="updateUserRole({{ $m->id }}, $event.target.value)"
                                                             class="text-[11px] py-1 px-2 rounded border border-border bg-white font-medium">
                                                         @foreach (['Administrator', 'Manager', 'Sales', 'Purchasing', 'Warehouse', 'Cashier', 'Viewer'] as $rName)
                                                             <option value="{{ $rName }}" {{ $userRole?->name === $rName ? 'selected' : '' }}>
-                                                                {{ $rName }}
+                                                                {{ __('settings.roles_labels.'.$rName) }}
                                                             </option>
                                                         @endforeach
                                                     </select>
                                                 @else
-                                                    <span class="text-[11px] font-medium text-text-secondary">{{ $userRole?->name ?? '—' }}</span>
+                                                    <span class="text-[11px] font-medium text-text-secondary">{{ $userRole ? (\Illuminate\Support\Facades\Lang::has('settings.roles_labels.'.$userRole->name) ? __('settings.roles_labels.'.$userRole->name) : $userRole->name) : '—' }}</span>
                                                 @endif
                                             </td>
                                             <td class="py-3 px-3">
@@ -1131,7 +1133,7 @@
                                                 @can('settings.users.manage')
                                                     @if (! $m->is_owner || $memberships->where('is_owner', true)->count() > 1)
                                                         <button type="button" wire:loading.attr="disabled" wire:target="toggleUserStatus" wire:click="toggleUserStatus({{ $m->id }})"
-                                                                class="text-[11px] font-bold text-primary hover:underline cursor-pointer">
+                                                                class="min-h-11 px-3 rounded-control border border-border text-xs font-bold text-primary hover:bg-primary-50 cursor-pointer">
                                                             {{ $m->status === 'active' ? __('settings.status_inactive') : __('settings.status_active') }}
                                                         </button>
                                                     @endif
@@ -1188,7 +1190,7 @@
                             </div>
 
                             <div class="pt-2 flex justify-end">
-                                <button type="submit"
+                                <button type="submit" wire:loading.attr="disabled"
                                         class="px-4 py-2 rounded-control bg-primary text-white text-xs font-bold hover:bg-primary-hover transition-colors shadow-xs cursor-pointer">
                                     <span wire:loading.remove wire:target="createUser">{{ __('settings.add_new_user') }}</span>
                                     <span wire:loading wire:target="createUser">{{ __('settings.saving') }}</span>
@@ -1212,9 +1214,9 @@
                         <div class="flex flex-wrap gap-2 pt-2">
                             @foreach ($roles as $role)
                                 <button type="button" wire:click="selectRole('{{ $role->name }}')"
-                                        class="px-3 py-1.5 rounded-control text-xs font-bold transition-all cursor-pointer
+                                        class="min-h-11 px-3 py-2 rounded-control text-xs font-bold transition-all cursor-pointer
                                                {{ $selectedRoleName === $role->name ? 'bg-primary text-white shadow-xs' : 'bg-surface-soft text-text-secondary hover:bg-slate-200' }}">
-                                    {{ $role->name }}
+                                    {{ \Illuminate\Support\Facades\Lang::has('settings.roles_labels.'.$role->name) ? __('settings.roles_labels.'.$role->name) : $role->name }}
                                     @if ($role->name === 'Owner')
                                         <span class="text-[9px] opacity-80">({{ __('settings.role_owner') }})</span>
                                     @endif
@@ -1280,15 +1282,35 @@
                         </div>
                     </div>
 
-                    <div class="overflow-x-auto">
+                    <form wire:submit="applyAuditFilters" class="grid grid-cols-1 sm:grid-cols-4 gap-3">
+                        <label class="text-xs font-semibold">{{ __('settings.audit_from') }}<input type="date" wire:model="auditFrom" class="mt-1 w-full min-h-11 rounded-control border-border" />@error('auditFrom') <span role="alert" class="text-rose-700">{{ $message }}</span> @enderror</label>
+                        <label class="text-xs font-semibold">{{ __('settings.audit_until') }}<input type="date" wire:model="auditUntil" class="mt-1 w-full min-h-11 rounded-control border-border" />@error('auditUntil') <span role="alert" class="text-rose-700">{{ $message }}</span> @enderror</label>
+                        <label class="text-xs font-semibold">{{ __('settings.audit_event_prefix') }}<input type="text" wire:model="auditEvent" maxlength="80" dir="ltr" class="mt-1 w-full min-h-11 rounded-control border-border" />@error('auditEvent') <span role="alert" class="text-rose-700">{{ $message }}</span> @enderror</label>
+                        <button type="submit" wire:loading.attr="disabled" class="min-h-11 self-end rounded-control border border-primary px-3 py-2 font-bold text-primary">{{ __('settings.audit_apply') }}</button>
+                    </form>
+                    <div class="md:hidden space-y-3">
+                        @forelse ($auditEvents as $event)
+                            <article class="rounded-control border border-border p-3 space-y-2 text-sm" wire:key="audit-card-{{ $event->id }}">
+                                <div class="flex flex-wrap items-center justify-between gap-2">
+                                    <span class="font-bold text-text-primary break-words">{{ $event->actor?->name ?? __('settings.actor_system') }}</span>
+                                    <time class="font-mono text-xs text-text-muted" dir="ltr">{{ $event->created_at->format('Y-m-d H:i') }}</time>
+                                </div>
+                                <p class="font-mono text-xs text-primary break-all" dir="ltr">{{ $event->event_key }}</p>
+                                <p class="text-text-secondary break-words">{{ $event->summary }}</p>
+                            </article>
+                        @empty
+                            <p class="py-6 text-center text-text-muted">{{ __('settings.no_audit_events') }}</p>
+                        @endforelse
+                    </div>
+                    <div class="hidden md:block overflow-x-auto">
                         <table class="w-full text-xs text-start">
                             <thead>
                                 <tr class="border-b border-border text-text-muted text-[11px]">
-                                    <th class="py-2.5 px-3 font-bold text-start">{{ __('settings.joined_at') }}</th>
+                                    <th class="py-2.5 px-3 font-bold text-start">{{ __('settings.audit_occurred_at') }}</th>
                                     <th class="py-2.5 px-3 font-bold text-start">{{ __('settings.user_name') }}</th>
                                     <th class="py-2.5 px-3 font-bold text-start">{{ __('settings.audit_event') }}</th>
                                     <th class="py-2.5 px-3 font-bold text-start">{{ __('settings.audit_details') }}</th>
-                                    <th class="py-2.5 px-3 font-bold text-end">IP</th>
+
                                 </tr>
                             </thead>
                             <tbody class="divide-y divide-border/60">
@@ -1306,13 +1328,11 @@
                                         <td class="py-3 px-3 text-text-secondary">
                                             {{ $event->summary }}
                                         </td>
-                                        <td class="py-3 px-3 font-mono text-[10px] text-text-muted text-end">
-                                            {{ $event->ip_address ?: '-' }}
-                                        </td>
+
                                     </tr>
                                 @empty
                                     <tr>
-                                        <td colspan="5" class="py-6 text-center text-text-muted">
+                                        <td colspan="4" class="py-6 text-center text-text-muted">
                                             {{ __('settings.no_audit_events') }}
                                         </td>
                                     </tr>
@@ -1320,6 +1340,7 @@
                             </tbody>
                         </table>
                     </div>
+                    {{ $auditEvents->links() }}
                 </div>
             @endif
         </div>
