@@ -1,5 +1,9 @@
 # Small Trader Accounting
 
+<!-- proprietary-license-notice: Bassamalsaqqa -->
+> **License:** Proprietary. Copyright (c) 2026 Bassamalsaqqa. All rights reserved for the original application code. Third-party components retain their own licenses. See [LICENSE](LICENSE) and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
+
 Small Trader Accounting (`التاجر الصغير`) is a multi-tenant, double-entry accounting and trading management system engineered for small merchants in Palestine and the Arab world.
 
 The authoritative product requirements and architectural blueprints reside in `docs/`:
