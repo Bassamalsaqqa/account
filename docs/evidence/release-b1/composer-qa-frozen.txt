@@ -1,0 +1,1372 @@
+{"tool":"pint","result":"passed"}Note: Using configuration file [release worktree]\phpstan.neon.
+   0/651 [>---------------------------]   0%
+  20/651 [>---------------------------]   3%
+ 594/651 [=========================>--]  91%
+ 651/651 [============================] 100%
+
+
+ [OK] No errors                                                                                                        
+
+
+   INFO  Configuration cache cleared successfully.  
+
+
+   PASS  Tests\Unit\AiV22\AssistantIntentProposalTest
+  ✓ raw names dates comparisons are data only not query authority                                                0.07s  
+  ✓ invalid or authority bearing filters are rejected with data set "raw customer i d"                           0.02s  
+  ✓ invalid or authority bearing filters are rejected with data set "tenant i d"                                 0.02s  
+  ✓ invalid or authority bearing filters are rejected with data set "sql"                                        0.02s  
+  ✓ invalid or authority bearing filters are rejected with data set "arbitrary field"                            0.01s  
+  ✓ invalid or authority bearing filters are rejected with data set "empty name"                                 0.01s  
+  ✓ invalid or authority bearing filters are rejected with data set "blank name"                                 0.01s  
+  ✓ invalid or authority bearing filters are rejected with data set "padded name"                                0.02s  
+  ✓ invalid or authority bearing filters are rejected with data set "overlong name"                              0.02s  
+  ✓ invalid or authority bearing filters are rejected with data set "control name"                               0.02s  
+  ✓ invalid or authority bearing filters are rejected with data set "name u r l"                                 0.02s  
+  ✓ invalid or authority bearing filters are rejected with data set "non-string name"                            0.01s  
+  ✓ invalid or authority bearing filters are rejected with data set "array name"                                 0.01s  
+  ✓ invalid or authority bearing filters are rejected with data set "invalid preset"                             0.02s  
+  ✓ invalid or authority bearing filters are rejected with data set "missing custom dates"                       0.02s  
+  ✓ invalid or authority bearing filters are rejected with data set "missing end"                                0.02s  
+  ✓ invalid or authority bearing filters are rejected with data set "missing start"                              0.02s  
+  ✓ invalid or authority bearing filters are rejected with data set "invalid calendar"                           0.02s  
+  ✓ invalid or authority bearing filters are rejected with data set "non- i s o date"                            0.02s  
+  ✓ invalid or authority bearing filters are rejected with data set "reversed dates"                             0.02s  
+  ✓ invalid or authority bearing filters are rejected with data set "oversized span"                             0.01s  
+  ✓ invalid or authority bearing filters are rejected with data set "conflicting period"                         0.02s  
+  ✓ invalid or authority bearing filters are rejected with data set "lowercase currency"                         0.02s  
+  ✓ invalid or authority bearing filters are rejected with data set "unknown grouping"                           0.02s  
+  ✓ invalid or authority bearing filters are rejected with data set "unknown comparison"                         0.01s  
+  ✓ invalid or authority bearing filters are rejected with data set "comparison without period"                  0.02s  
+  ✓ unapproved report and extra envelope fields are rejected                                                     0.02s  
+
+   PASS  Tests\Unit\AiV22\AssistantIntentScopeTest
+  ✓ independent qualifiers are verified in their own complete scope with data set "architect exact english word… 0.05s  
+  ✓ independent qualifiers are verified in their own complete scope with data set "natural request prefix with…  0.02s  
+  ✓ independent qualifiers are verified in their own complete scope with data set " english current debt and in… 0.02s  
+  ✓ independent qualifiers are verified in their own complete scope with data set " arabic independent debt and… 0.02s  
+  ✓ independent qualifiers are verified in their own complete scope with data set " arabic independent currency… 0.02s  
+  ✓ independent qualifiers are verified in their own complete scope with data set "date pairs and different cur… 0.02s  
+  ✓ independent qualifiers are verified in their own complete scope with data set "distinct period comparisons"  0.02s  
+  ✓ independent qualifiers are verified in their own complete scope with data set "same domain with exact bound… 0.02s  
+  ✓ independent qualifiers are verified in their own complete scope with data set "mixed arabic and english"     0.02s  
+  ✓ independent qualifiers are verified in their own complete scope with data set "shared customer debt and pro… 0.02s  
+  ✓ independent qualifiers are verified in their own complete scope with data set "shared english customer"      0.02s  
+  ✓ cannot drop a clause or trust model fragment boundaries with data set "missing independent report"           0.02s  
+  ✓ cannot drop a clause or trust model fragment boundaries with data set "missing unsupported tail"             0.01s  
+  ✓ cannot drop a clause or trust model fragment boundaries with data set "truncated currency qualifier"         0.02s  
+  ✓ cannot drop a clause or trust model fragment boundaries with data set "truncated compound entity"            0.01s  
+  ✓ cannot drop a clause or trust model fragment boundaries with data set "invented fragment"                    0.02s  
+  ✓ cannot drop a clause or trust model fragment boundaries with data set "cross domain fragment"                0.02s  
+  ✓ cannot drop a clause or trust model fragment boundaries with data set "same domain ambiguous without fragme… 0.02s  
+  ✓ cannot drop a clause or trust model fragment boundaries with data set "duplicated clause leaves another omi… 0.02s  
+  ✓ filters cannot be borrowed from another clause with data set "currency switched"                             0.02s  
+  ✓ filters cannot be borrowed from another clause with data set "date pairs switched"                           0.02s  
+  ✓ filters cannot be borrowed from another clause with data set "period switched"                               0.02s  
+  ✓ filters cannot be borrowed from another clause with data set "party name switched"                           0.02s  
+  ✓ filters cannot be borrowed from another clause with data set "comparison discarded"                          0.02s  
+  ✓ fragment is untrusted metadata not an extra filter                                                           0.02s  
+
+   PASS  Tests\Unit\AiV22\AssistantTurnConstraintsTest
+  ✓ preserves explicit constraints without a fixed language grammar with data set "dialect month comparison"     0.03s  
+  ✓ preserves explicit constraints without a fixed language grammar with data set " english month comparison"    0.02s  
+  ✓ preserves explicit constraints without a fixed language grammar with data set "year comparison"              0.02s  
+  ✓ preserves explicit constraints without a fixed language grammar with data set "single period"                0.02s  
+  ✓ preserves explicit constraints without a fixed language grammar with data set "canonical date equivalent"    0.02s  
+  ✓ preserves explicit constraints without a fixed language grammar with data set "explicit i s o interval"      0.02s  
+  ✓ preserves explicit constraints without a fixed language grammar with data set " n i s alias"                 0.02s  
+  ✓ preserves explicit constraints without a fixed language grammar with data set "nondefault i s o retained fo… 0.02s  
+  ✓ preserves explicit constraints without a fixed language grammar with data set "natural vocabulary and entit… 0.02s  
+  ✓ preserves explicit constraints without a fixed language grammar with data set "no fixed vocabulary rejectio… 0.02s  
+  ✓ preserves explicit constraints without a fixed language grammar with data set "quoted customer name"         0.02s  
+  ✓ preserves explicit constraints without a fixed language grammar with data set " arabic labelled customer"    0.02s  
+  ✓ refuses dropped or changed explicit constraints with data set " u s d dropped"                               0.02s  
+  ✓ refuses dropped or changed explicit constraints with data set " u s d replaced"                              0.02s  
+  ✓ refuses dropped or changed explicit constraints with data set " e u r cannot become company default"         0.02s  
+  ✓ refuses dropped or changed explicit constraints with data set "explicit unknown i s o cannot be ignored"     0.02s  
+  ✓ refuses dropped or changed explicit constraints with data set "contradictory currencies"                     0.02s  
+  ✓ refuses dropped or changed explicit constraints with data set "period dropped"                               0.02s  
+  ✓ refuses dropped or changed explicit constraints with data set " palestinian month dropped"                   0.02s  
+  ✓ refuses dropped or changed explicit constraints with data set "comparison dropped"                           0.02s  
+  ✓ refuses dropped or changed explicit constraints with data set "comparison reversed"                          0.02s  
+  ✓ refuses dropped or changed explicit constraints with data set "prior year changed to prior month"            0.02s  
+  ✓ refuses dropped or changed explicit constraints with data set "one date is incomplete"                       0.02s  
+  ✓ refuses dropped or changed explicit constraints with data set "explicit dates changed"                       0.02s  
+  ✓ refuses dropped or changed explicit constraints with data set "invalid calendar date"                        0.02s  
+  ✓ refuses dropped or changed explicit constraints with data set "unrepresentable contradictory periods"        0.02s  
+  ✓ refuses dropped or changed explicit constraints with data set "substituted entity"                           0.02s  
+  ✓ refuses dropped or changed explicit constraints with data set "quoted named qualifier dropped"               0.02s  
+  ✓ refuses dropped or changed explicit constraints with data set " arabic named qualifier dropped"              0.02s  
+  ✓ refuses dropped or changed explicit constraints with data set "partial name is not provenance"               0.02s  
+  ✓ same customer followup may reuse only prior request labels                                                   0.02s  
+  ✓ prior customer cannot supply an unrequested vendor                                                           0.02s  
+  ✓ every returned proposal must preserve the requested currency                                                 0.02s  
+  ✓ invoice reads do not capture creation commands with data set #0                                              0.02s  
+  ✓ invoice reads do not capture creation commands with data set #1                                              0.02s  
+  ✓ invoice reads do not capture creation commands with data set #2                                              0.02s  
+  ✓ invoice reads do not capture creation commands with data set #3                                              0.02s  
+  ✓ invoice reads do not capture creation commands with data set #4                                              0.02s  
+  ✓ invoice reads do not capture creation commands with data set #5                                              0.02s  
+  ✓ invoice reads do not capture creation commands with data set #6                                              0.01s  
+  ✓ invoice reads do not capture creation commands with data set #7                                              0.02s  
+
+   PASS  Tests\Unit\AiV22\NaturalTransactionClassifierTest
+  ✓ past tense business questions are never draft commands                                                       0.03s  
+
+   PASS  Tests\Unit\AiV22\SdkToolIntentContractTest
+  ✓ one sdk response returns proposals and usage without tool execution or result egress                         0.05s  
+  ✓ multiple read proposals are returned without second model round                                              0.02s  
+  ✓ expanded named date and comparison proposals match advertised schema without execution                       0.02s  
+  ✓ invalid expanded tool proposals are refused without another model round with data set "raw customer i d"     0.04s  
+  ✓ invalid expanded tool proposals are refused without another model round with data set "tenant i d"           0.02s  
+  ✓ invalid expanded tool proposals are refused without another model round with data set "sql"                  0.02s  
+  ✓ invalid expanded tool proposals are refused without another model round with data set "arbitrary field"      0.02s  
+  ✓ invalid expanded tool proposals are refused without another model round with data set "empty name"           0.02s  
+  ✓ invalid expanded tool proposals are refused without another model round with data set "blank name"           0.02s  
+  ✓ invalid expanded tool proposals are refused without another model round with data set "padded name"          0.02s  
+  ✓ invalid expanded tool proposals are refused without another model round with data set "overlong name"        0.02s  
+  ✓ invalid expanded tool proposals are refused without another model round with data set "control name"         0.02s  
+  ✓ invalid expanded tool proposals are refused without another model round with data set "name u r l"           0.02s  
+  ✓ invalid expanded tool proposals are refused without another model round with data set "non-string name"      0.02s  
+  ✓ invalid expanded tool proposals are refused without another model round with data set "array name"           0.02s  
+  ✓ invalid expanded tool proposals are refused without another model round with data set "invalid preset"       0.02s  
+  ✓ invalid expanded tool proposals are refused without another model round with data set "missing custom dates… 0.02s  
+  ✓ invalid expanded tool proposals are refused without another model round with data set "missing end"          0.02s  
+  ✓ invalid expanded tool proposals are refused without another model round with data set "missing start"        0.02s  
+  ✓ invalid expanded tool proposals are refused without another model round with data set "invalid calendar"     0.02s  
+  ✓ invalid expanded tool proposals are refused without another model round with data set "non- i s o date"      0.02s  
+  ✓ invalid expanded tool proposals are refused without another model round with data set "reversed dates"       0.02s  
+  ✓ invalid expanded tool proposals are refused without another model round with data set "oversized span"       0.02s  
+  ✓ invalid expanded tool proposals are refused without another model round with data set "conflicting period"   0.02s  
+  ✓ invalid expanded tool proposals are refused without another model round with data set "lowercase currency"   0.02s  
+  ✓ invalid expanded tool proposals are refused without another model round with data set "unknown grouping"     0.02s  
+  ✓ invalid expanded tool proposals are refused without another model round with data set "unknown comparison"   0.02s  
+  ✓ invalid expanded tool proposals are refused without another model round with data set "comparison without p… 0.02s  
+  ✓ tool call only response with absent content is valid                                                         0.02s  
+  ✓ no report permission exposes only static clarification schema                                                0.02s  
+  ✓ malformed or unapproved proposals and usage fail without retry with data set "finish stop"                   0.02s  
+  ✓ malformed or unapproved proposals and usage fail without retry with data set "finish length"                 0.02s  
+  ✓ malformed or unapproved proposals and usage fail without retry with data set "finish content filter"         0.02s  
+  ✓ malformed or unapproved proposals and usage fail without retry with data set "finish unknown"                0.02s  
+  ✓ malformed or unapproved proposals and usage fail without retry with data set "usage missing"                 0.02s  
+  ✓ malformed or unapproved proposals and usage fail without retry with data set "usage negative"                0.02s  
+  ✓ malformed or unapproved proposals and usage fail without retry with data set "usage over input"              0.02s  
+  ✓ malformed or unapproved proposals and usage fail without retry with data set "usage over output"             0.02s  
+  ✓ malformed or unapproved proposals and usage fail without retry with data set "usage string"                  0.03s  
+  ✓ malformed or unapproved proposals and usage fail without retry with data set "unknown"                       0.02s  
+  ✓ malformed or unapproved proposals and usage fail without retry with data set "duplicate"                     0.03s  
+  ✓ malformed or unapproved proposals and usage fail without retry with data set "too many"                      0.04s  
+  ✓ malformed or unapproved proposals and usage fail without retry with data set "empty"                         0.04s  
+  ✓ malformed or unapproved proposals and usage fail without retry with data set "wrong type"                    0.03s  
+  ✓ malformed or unapproved proposals and usage fail without retry with data set "wrong role"                    0.04s  
+  ✓ malformed or unapproved proposals and usage fail without retry with data set "bad id"                        0.04s  
+  ✓ malformed or unapproved proposals and usage fail without retry with data set "bad json"                      0.03s  
+  ✓ malformed or unapproved proposals and usage fail without retry with data set "list json"                     0.02s  
+  ✓ malformed or unapproved proposals and usage fail without retry with data set "numeric json"                  0.02s  
+  ✓ malformed or unapproved proposals and usage fail without retry with data set "unexpected argument"           0.02s  
+  ✓ malformed or unapproved proposals and usage fail without retry with data set "raw id"                        0.03s  
+  ✓ malformed or unapproved proposals and usage fail without retry with data set "url"                           0.04s  
+  ✓ malformed or unapproved proposals and usage fail without retry with data set "unapproved report"             0.03s  
+  ✓ malformed or unapproved proposals and usage fail without retry with data set "invalid filter"                0.02s  
+  ✓ malformed or unapproved proposals and usage fail without retry with data set "clarify and read"              0.04s  
+  ✓ malformed or unapproved proposals and usage fail without retry with data set "clarify private prose"         0.04s  
+  ✓ malformed or unapproved proposals and usage fail without retry with data set "extra choice"                  0.02s  
+  ✓ input boundary refuses history and invalid report allowlists before dispatch                                 0.02s  
+  ✓ disable switch refuses planning without dispatch                                                             0.02s  
+  ✓ entire prompt and static tool schemas are bounded before dispatch                                            0.03s  
+  ✓ unknown body overrides cannot enter the sdk request                                                          0.03s  
+  ✓ http error is sanitized and never retried                                                                    0.03s  
+  ✓ timeout is sanitized without retry or tool execution                                                         0.02s  
+  ✓ response body cap is preserved for tool planning                                                             0.03s  
+
+   PASS  Tests\Unit\DeepSeekOnlyTransportTest
+  ✓ catalog contains exactly one reviewed text route                                                             0.05s  
+  ✓ retired or client supplied routes fail before dispatch with data set #0                                      0.02s  
+  ✓ retired or client supplied routes fail before dispatch with data set #1                                      0.02s  
+  ✓ retired or client supplied routes fail before dispatch with data set #2                                      0.02s  
+  ✓ retired or client supplied routes fail before dispatch with data set #3                                      0.02s  
+  ✓ retired or client supplied routes fail before dispatch with data set #4                                      0.02s  
+  ✓ retired or client supplied routes fail before dispatch with data set #5                                      0.02s  
+  ✓ retired or client supplied routes fail before dispatch with data set #6                                      0.03s  
+  ✓ retired or client supplied routes fail before dispatch with data set #7                                      0.02s  
+  ✓ retired or client supplied routes fail before dispatch with data set #8                                      0.02s  
+  ✓ all supported text workflows use one sdk request and preserve exact payload and usage with data set #0       0.02s  
+  ✓ all supported text workflows use one sdk request and preserve exact payload and usage with data set #1       0.02s  
+  ✓ all supported text workflows use one sdk request and preserve exact payload and usage with data set #2       0.02s  
+  ✓ all supported text workflows use one sdk request and preserve exact payload and usage with data set #3       0.03s  
+  ✓ all supported text workflows use one sdk request and preserve exact payload and usage with data set #4       0.02s  
+  ✓ untrusted response json completion and token limits fail without retry with data set #0                      0.02s  
+  ✓ untrusted response json completion and token limits fail without retry with data set #1                      0.02s  
+  ✓ untrusted response json completion and token limits fail without retry with data set #2                      0.02s  
+  ✓ untrusted response json completion and token limits fail without retry with data set #3                      0.03s  
+  ✓ untrusted response json completion and token limits fail without retry with data set #4                      0.02s  
+  ✓ untrusted response json completion and token limits fail without retry with data set #5                      0.02s  
+  ✓ untrusted response json completion and token limits fail without retry with data set #6                      0.02s  
+  ✓ untrusted response json completion and token limits fail without retry with data set #7                      0.02s  
+  ✓ untrusted response json completion and token limits fail without retry with data set #8                      0.02s  
+  ✓ untrusted response json completion and token limits fail without retry with data set #9                      0.02s  
+  ✓ schema and text byte budget is enforced before any dispatch with data set #0                                 0.02s  
+  ✓ schema and text byte budget is enforced before any dispatch with data set #1                                 0.02s  
+  ✓ schema and text byte budget is enforced before any dispatch with data set #2                                 0.02s  
+  ✓ schema and text byte budget is enforced before any dispatch with data set #3                                 0.03s  
+  ✓ schema and text byte budget is enforced before any dispatch with data set #4                                 0.03s  
+  ✓ stale non deepseek selection is not reinterpreted as the approved route                                      0.02s  
+  ✓ blank oversized and unknown intent inputs are refused locally                                                0.02s  
+  ✓ sdk gateway preserves fixed https tls dns and no proxy redirect controls                                     0.02s  
+  ✓ diagnostics keep only safe http status and stage                                                             0.05s  
+
+   PASS  Tests\Unit\DeepSeekProduct\DeepSeekBalanceHealthTest
+  ✓ 2xx available returns key valid funds available                                                              0.03s  
+  ✓ 2xx no credit returns no available credit                                                                    0.02s  
+  ✓ valid empty balance list honors availability with data set #0                                                0.02s  
+  ✓ valid empty balance list honors availability with data set #1                                                0.02s  
+  ✓ http error statuses are mapped safely and distinctly with data set #0                                        0.02s  
+  ✓ http error statuses are mapped safely and distinctly with data set #1                                        0.02s  
+  ✓ http error statuses are mapped safely and distinctly with data set #2                                        0.02s  
+  ✓ http error statuses are mapped safely and distinctly with data set #3                                        0.02s  
+  ✓ http error statuses are mapped safely and distinctly with data set #4                                        0.02s  
+  ✓ http error statuses are mapped safely and distinctly with data set #5                                        0.02s  
+  ✓ http error statuses are mapped safely and distinctly with data set #6                                        0.03s  
+  ✓ http error statuses are mapped safely and distinctly with data set #7                                        0.03s  
+  ✓ http error statuses are mapped safely and distinctly with data set #8                                        0.02s  
+  ✓ http error statuses are mapped safely and distinctly with data set #9                                        0.03s  
+  ✓ timeout throws provider timeout without raw payload                                                          0.03s  
+  ✓ oversized response is rejected before unbounded decode                                                       0.02s  
+  ✓ fake stream chunked oversize is rejected before decode                                                       0.02s  
+  ✓ malformed json is rejected                                                                                   0.02s  
+  ✓ invalid json shapes are rejected with data set "non-array json"                                              0.03s  
+  ✓ invalid json shapes are rejected with data set "array list json"                                             0.03s  
+  ✓ invalid json shapes are rejected with data set "missing is available"                                        0.03s  
+  ✓ invalid json shapes are rejected with data set "string is available"                                         0.03s  
+  ✓ invalid json shapes are rejected with data set "integer is available"                                        0.02s  
+  ✓ invalid json shapes are rejected with data set "missing balance infos"                                       0.03s  
+  ✓ invalid json shapes are rejected with data set "non-array balance infos"                                     0.04s  
+  ✓ invalid json shapes are rejected with data set "empty object balance infos"                                  0.04s  
+  ✓ invalid json shapes are rejected with data set "assoc balance infos"                                         0.03s  
+  ✓ invalid json shapes are rejected with data set "too many balance infos (>10)"                                0.03s  
+  ✓ invalid json shapes are rejected with data set "missing currency"                                            0.03s  
+  ✓ invalid json shapes are rejected with data set "lowercase currency"                                          0.04s  
+  ✓ invalid json shapes are rejected with data set "missing total balance"                                       0.03s  
+  ✓ invalid json shapes are rejected with data set "float total balance"                                         0.02s  
+  ✓ invalid json shapes are rejected with data set "non-numeric string balance"                                  0.02s  
+  ✓ invalid json shapes are rejected with data set "null granted balance"                                        0.04s  
+  ✓ no exact balance exposed in result or credential                                                             0.04s  
+  ✓ client enforces tls timeouts and security options                                                            0.03s  
+
+   PASS  Tests\Unit\DeepSeekProduct\DeepSeekHttpBoundaryTest
+  ✓ fixed endpoint options tls and no redirects proxy retries                                                    0.05s  
+  ✓ streaming sink rejects oversized payload during write                                                        0.02s  
+  ✓ empty stalled body timeout throws provider timeout                                                           0.02s  
+  ✓ read bounded body rejects oversized response                                                                 0.02s  
+  ✓ sanitized distinct http error mappings with data set #0                                                      0.02s  
+  ✓ sanitized distinct http error mappings with data set #1                                                      0.03s  
+  ✓ sanitized distinct http error mappings with data set #2                                                      0.02s  
+  ✓ sanitized distinct http error mappings with data set #3                                                      0.03s  
+  ✓ sanitized distinct http error mappings with data set #4                                                      0.04s  
+  ✓ sanitized distinct http error mappings with data set #5                                                      0.04s  
+  ✓ sanitized distinct http error mappings with data set #6                                                      0.03s  
+  ✓ sanitized distinct http error mappings with data set #7                                                      0.02s  
+  ✓ sanitized distinct http error mappings with data set #8                                                      0.02s  
+  ✓ sanitized distinct http error mappings with data set #9                                                      0.03s  
+  ✓ sanitized distinct http error mappings with data set #10                                                     0.02s  
+  ✓ sanitized distinct http error mappings with data set #11                                                     0.02s  
+  ✓ chat request after response accepts valid json object                                                        0.02s  
+  ✓ chat request after response rejects non object or malformed json with data set "raw list"                    0.04s  
+  ✓ chat request after response rejects non object or malformed json with data set "string literal"              0.02s  
+  ✓ chat request after response rejects non object or malformed json with data set "malformed json"              0.02s  
+  ✓ chat request after response rejects non object or malformed json with data set "empty body"                  0.02s  
+  ✓ request local streams are isolated and never share state                                                     0.02s  
+
+   PASS  Tests\Unit\DeepSeekProduct\DeepSeekSdkAdapterTest
+  ✓ sdk builds one fixed no tool request and preserves usage                                                     0.04s  
+  ✓ errors are sanitized distinct and never retried with data set #0                                             0.02s  
+  ✓ errors are sanitized distinct and never retried with data set #1                                             0.02s  
+  ✓ errors are sanitized distinct and never retried with data set #2                                             0.02s  
+  ✓ errors are sanitized distinct and never retried with data set #3                                             0.02s  
+  ✓ errors are sanitized distinct and never retried with data set #4                                             0.02s  
+  ✓ errors are sanitized distinct and never retried with data set #5                                             0.02s  
+  ✓ errors are sanitized distinct and never retried with data set #6                                             0.02s  
+  ✓ verification requires exact reply and real bounded usage with data set #0                                    0.03s  
+  ✓ verification requires exact reply and real bounded usage with data set #1                                    0.02s  
+  ✓ verification requires exact reply and real bounded usage with data set #2                                    0.02s  
+  ✓ verification requires exact reply and real bounded usage with data set #3                                    0.02s  
+  ✓ disabled test cannot bypass dispatch switches                                                                0.02s  
+  ✓ oversized response fails before sdk parsing                                                                  0.02s  
+
+   PASS  Tests\Unit\ExampleTest
+  ✓ that true is true                                                                                            0.01s  
+
+   PASS  Tests\Unit\Inventory\StockQuantityBreakdownTest
+  ✓ whole packages preserve the exact fractional base remainder                                                  0.01s  
+  ✓ fractional factors large values and duplicate factors are exact
+  ✓ zero negative and sub base units do not suggest packages
+
+   PASS  Tests\Unit\NaturalAssistant\AssistantReportPlanSharedContractTest
+  ✓ all curated catalog reports accept standard plan                                                             0.04s  
+  ✓ explicit start and end date range is accepted for temporal reports                                           0.02s  
+  ✓ temporal reports accept compare previous period                                                              0.03s  
+  ✓ compare is rejected on current reports                                                                       0.02s  
+  ✓ compare rejects unsupported comparison mode                                                                  0.02s  
+  ✓ entity name filters accepted only when report supports corresponding id                                      0.02s  
+  ✓ unsupported entity filter throws question unsupported                                                        0.03s  
+  ✓ model ids and untrusted fields are strictly rejected                                                         0.02s  
+  ✓ non scalar string filters are rejected                                                                       0.02s  
+  ✓ inverted or malformed dates are rejected                                                                     0.03s  
+
+   PASS  Tests\Unit\Phase12\DeterministicTransactionParserTest
+  ✓ complete english sales and arabic purchase preserve exact strings without provider calls                     0.03s  
+  ✓ unsupported payments and partial ambiguous templates never become purchases                                  0.02s  
+  ✓ contextual sales action refuses purchase intent                                                              0.02s  
+
+   PASS  Tests\Unit\Phase12\FormPatchSchemaTest
+  ✓ exact arabic follow ups and line ordinals are bounded                                                        0.02s  
+  ✓ malformed arbitrary fields floats and ambiguous lines fail closed                                            0.03s  
+
+   PASS  Tests\Unit\Phase12\TransactionProposalSchemaTest
+  ✓ deterministic sale and purchase pass independent schema and exact spoken evidence                            0.05s  
+  ✓ fabricated fields numeric floats exponents confidence and changed intent fail                                0.04s  
+  ✓ provider evidence list and partial lines are valid but missing evidence is not                               0.02s  
+  ✓ negative embedded number is not proof for a positive value                                                   0.02s  
+
+   PASS  Tests\Unit\Phase4\SalesCalculatorsTest
+  ✓ zero values return zero results
+  ✓ exclusive tax calculation and rounding
+  ✓ inclusive tax non terminating division
+  ✓ percent discount and fixed discount
+  ✓ document totals calculator aggregates lines
+
+   PASS  Tests\Unit\ProductExperience\ApplicationSecurityHeadersTest
+  ✓ login and disabled api boundary keep baseline headers                                                        1.39s  
+  ✓ authenticated application responses are not cacheable                                                        0.04s  
+  ✓ stricter public document headers are preserved                                                               0.02s  
+  ✓ existing api revalidation directives are preserved                                                           0.02s  
+  ✓ authenticated camera routes permit self camera                                                               0.02s  
+  ✓ unauthenticated camera routes keep camera empty                                                              0.02s  
+  ✓ non camera authenticated routes keep camera empty                                                            0.02s  
+
+   WARN  Tests\Unit\ProductExperience\DeploymentScriptContractTest
+  ✓ script exists and has fail closed maintenance contract                                                       0.02s  
+  ✓ synthetic shell execution fails closed when down fails                                                       0.96s  
+  ✓ synthetic shell execution holds maintenance on subsequent failure                                            1.15s  
+  ✓ fail if down exits zero without maintenance marker                                                           0.72s  
+  ✓ preserves preexisting maintenance ownership                                                                  1.17s  
+  ✓ default skips migrations and bootstrapping and leaves app closed                                             1.73s  
+  ✓ opt in flags execute migrations and bootstrap and app remains closed                                         1.88s  
+  ✓ skip migrate flag is compatibility safe                                                                      1.89s  
+  ✓ preserves live htaccess byte for byte with custom directives                                                 2.20s  
+  ✓ refuses when live htaccess missing manifest mime                                                             1.20s  
+  ! refuses unsafe symlink public directory when custody not proved → symlink(): Permission denied               0.07s  
+  ! refuses unsafe symlink htaccess → symlink(): Permission denied                                               0.08s  
+  ✓ refuses when live htaccess missing php84 handler on hostinger                                                1.30s  
+  ✓ tracks manifest https check and economic reconciliations as external prerequisites not performed             1.90s  
+  ✓ web configuration is preserved before a dependency failure                                                   1.23s  
+  ✓ live configuration is preserved on cache failure                                                             1.23s  
+  ✓ reviewed source contains correct manifest extension directive                                                0.01s  
+  ✓ static pwa assets are published without touching uploaded business files                                     1.79s  
+  ✓ comments wrong extensions and conflicting mime do not pass preflight                                         4.58s  
+  ! public symlink to application public is also refused → symlink(): Permission denied                          0.08s  
+  ! symlinked private backup custody is refused before dependencies → symlink(): Permission denied               0.07s  
+
+   PASS  Tests\Unit\ProductExperience\MonthToDateComparisonTest
+  ✓ mid month does not compare with later prior month dates                                                      0.01s  
+  ✓ short prior month clamps without overflow in leap and non leap years
+  ✓ company local midnight and year boundary are used
+  ✓ short current month preserves same day comparison and canonical full month behavior
+
+   PASS  Tests\Unit\UnifiedAssistant\AssistantReportPlanTest
+  ✓ all curated tools use explicit canonical periods or current truth and bounded rows                           0.02s  
+  ✓ every bounded canonical preset is preserved without inventing dates                                          0.02s  
+  ✓ untrusted shape sql actor tenant urls and unbounded filters are refused                                      0.04s  
+
+   PASS  Tests\Unit\UnifiedAssistant\ClassifierLanguageBoundaryTest
+  ✓ arabic taa marbuta normalization across all intents                                                          0.03s  
+  ✓ arabic common question how much sales this month is deterministic                                            0.02s  
+  ✓ english seven report intents                                                                                 0.05s  
+  ✓ mixed language seven report intents                                                                          0.03s  
+  ✓ explicit period and currency extraction                                                                      0.02s  
+  ✓ transaction draft commands retained                                                                          0.02s  
+  ✓ missing period clarification                                                                                 0.02s  
+  ✓ current balances refuse historical presets                                                                   0.02s  
+  ✓ contradictory currencies and periods do not produce silent single value plan                                 0.02s  
+  ✓ named customer and vendor filters do not silently produce broad reports                                      0.02s  
+  ✓ negation and unsupported comparisons fail closed                                                             0.02s  
+  ✓ boundary safety and unrelated inputs fail closed                                                             0.02s  
+  ✓ classify followup same question last month                                                                   0.02s  
+  ✓ classify followup current balance refusal                                                                    0.03s  
+  ✓ classify followup currency overrides                                                                         0.04s  
+  ✓ classify followup refuses invalid metadata and qualifiers                                                    0.03s  
+  ✓ classify followup expiry context handling                                                                    0.03s  
+  ✓ has unsupported qualifiers guard                                                                             0.03s  
+
+   PASS  Tests\Unit\UnifiedAssistant\QuestionSemanticConstraintTest
+  ✓ positive broad sales and arabic questions remain supported                                                   0.03s  
+  ✓ unsupported named customer vendor product and location constraints in report query                           0.04s  
+  ✓ unsupported named constraints in followup                                                                    0.03s  
+  ✓ unsupported inventory currency raises question invalid not silently dropped                                  0.02s  
+  ✓ unsupported currencies refused in classify and followup                                                      0.02s  
+  ✓ custom dates and future periods and contradictions refused                                                   0.02s  
+  ✓ expand general invoice create arabic and informal english transactions                                       0.02s  
+  ✓ planner refuses unsupported semantic constraints                                                             0.02s  
+
+   PASS  Tests\Feature\AiV22\AccountingTurnAcceptanceTest
+  ✓ question one ahmed debt and last invoice                                                                    12.38s  
+  ✓ question two compare this month with last month                                                              1.37s  
+  ✓ question three low stock items                                                                               1.11s  
+  ✓ question four followup reuses typed period context with zero model calls                                     1.44s  
+  ✓ negative foreign customer never resolves and no data leaks                                                   1.65s  
+  ✓ negative ambiguous customer names returns clarification                                                      1.16s  
+  ✓ no financial writes after fixtures and no walkin customers                                                   1.04s  
+  ✓ known named customer cannot be dropped into company wide balances                                            1.02s  
+  ✓ model cannot discard the requested period or currency                                                        1.06s  
+  ✓ latest invoice english question is a read not a transaction                                                  1.19s  
+  ✓ replaying same question recomputes authorized results without another model call                             1.35s  
+  ✓ same request key cannot silently replace the question                                                        1.43s  
+  ✓ followup context is not used when company has disabled followups                                             1.01s  
+
+   PASS  Tests\Feature\AiV22\AccountingTurnProfileTest
+  ✓ question one ahmed debt and last invoice                                                                     1.23s  
+  ✓ question two compare this month with last month                                                              1.42s  
+  ✓ question three low stock items                                                                               1.32s  
+  ✓ question four followup reuses typed period context with zero model calls                                     1.36s  
+  ✓ negative foreign customer never resolves and no data leaks                                                   1.74s  
+  ✓ negative ambiguous customer names returns clarification                                                      1.16s  
+  ✓ no financial writes after fixtures and no walkin customers                                                   1.03s  
+  ✓ known named customer cannot be dropped into company wide balances                                            1.03s  
+  ✓ model cannot discard the requested period or currency                                                        1.22s  
+  ✓ latest invoice english question is a read not a transaction                                                  1.12s  
+  ✓ replaying same question recomputes authorized results without another model call                             1.26s  
+  ✓ same request key cannot silently replace the question                                                        1.14s  
+  ✓ followup context is not used when company has disabled followups                                             0.87s  
+  ✓ profile s monthly comparison and followup                                                                    1.41s  
+  ✓ profile m monthly comparison and followup                                                                    1.95s  
+
+   PASS  Tests\Feature\AiV22\AssistantDraftTurnTest
+  ✓ active context authorization is enforced                                                                     1.38s  
+  ✓ missing caller identity cannot manufacture a new dispatch or reservation                                     0.69s  
+  ✓ deterministic sales command returns unsaved handoff and zero db invoices                                     0.78s  
+  ✓ arabic deterministic sales command returns unsaved handoff                                                   0.78s  
+  ✓ deterministic purchase command returns unsaved purchase handoff                                              0.84s  
+  ✓ natural language provider path executes single request without second planning                               1.10s  
+  ✓ missing existing customer returns clarification with manual create link when permitted                       0.79s  
+  ✓ missing existing customer without manage permission omits manual create link                                 0.77s  
+  ✓ candidate ambiguity returns clarifying with candidates and no create link                                    1.05s  
+  ✓ foreign company customer is not accessible and remains missing                                               1.62s  
+  ✓ replay returns same handoff token and conflict fails closed                                                  1.05s  
+  ✓ cancellation discards memory and prevents subsequent replay                                                  0.84s  
+  ✓ unsaved form adoption and exact amount strings                                                               7.13s  
+  ✓ unverified connection fails closed with readiness gap                                                        0.71s  
+
+   PASS  Tests\Feature\AiV22\AssistantReadConcurrencyTest
+  ✓ four independent readers return identical canonical values without writes                                   12.69s  
+  ✓ permission downgrade after warmed authorization refuses both readers                                        12.06s  
+  ✓ membership revocation after warmed authorization refuses both readers                                       11.86s  
+
+   PASS  Tests\Feature\AiV22\AssistantReportPolicySettingsTest
+  ✓ existing seven report policy expands explicitly without altering keys limits usage or permissions            0.67s  
+  ✓ report selection changes preserve question consent without a new acknowledgement                             0.63s  
+  ✓ disabled company and empty selection remain disabled without password for reduction                          0.62s  
+  ✓ scope expansion requires fresh correct owner password                                                        0.59s  
+  ✓ stale revision cannot overwrite concurrent policy change                                                     0.64s  
+  ✓ invalid or protected report keys are not available for expansion                                             0.63s  
+  ✓ revoked membership cannot read or change report policy                                                       0.61s  
+  ✓ administrator with settings permission cannot manage protected owner allowlist                               0.60s  
+  ✓ foreign company policy cannot be changed under current company context                                       1.23s  
+  ✓ owner settings screen exposes finite explicit selection and saves it                                         1.52s  
+  ✓ unchanged selection is idempotent and does not create policy audits                                          0.60s  
+  ✓ report access does not normalize unrelated legacy settings                                                   0.61s  
+  ✓ arabic report settings render with no payroll report choice                                                  0.74s  
+  ✓ invalid saved report selection keeps settings available without silent filtering                             0.82s  
+
+   PASS  Tests\Feature\AiV22\AssistantTurnApiSecurityTest
+  ✓ authenticated turn runs outside company and session lock transaction                                         0.92s  
+  ✓ actual read only turn executes canonical report and strips internal delivery scope                           0.79s  
+  ✓ changed projection scope is refused before sensitive answer delivery                                         0.68s  
+  ✓ wrong company is rejected before service                                                                     0.62s  
+  ✓ revoked persisted session is rejected before service                                                         0.65s  
+  ✓ csrf is required for a real authenticated database session                                                   0.67s  
+  ✓ session revocation during provider io prevents answer release                                                0.60s  
+  ✓ membership revocation during provider io prevents answer release                                             0.53s  
+  ✓ payload rejects unknown fields invalid types and bounds                                                      0.53s  
+  ✓ disabled turn flags return 404 with zero queries even when commands enabled                                  0.58s  
+  ✓ ai turn can run with commands disabled while other api paths stay closed                                     0.48s  
+  ✓ unavailable categories are allowlisted and never include raw exception data                                  0.61s  
+
+   PASS  Tests\Feature\AiV22\AssistantTurnContextSecurityTest
+  ✓ revoking cash with bank retained changes scope and invalidates context                                       0.82s  
+  ✓ revoking bank with cash retained changes scope and invalidates context                                       0.85s  
+
+   PASS  Tests\Feature\AiV22\AssistantUiApiParityTest
+  ✓ question one ahmed debt and last invoice                                                                     1.53s  
+  ✓ question two compare this month with last month                                                              1.35s  
+  ✓ question three low stock items                                                                               1.11s  
+  ✓ question four followup reuses typed period context with zero model calls                                     1.83s  
+  ✓ negative foreign customer never resolves and no data leaks                                                   1.94s  
+  ✓ negative ambiguous customer names returns clarification                                                      0.99s  
+  ✓ no financial writes after fixtures and no walkin customers                                                   1.17s  
+  ✓ known named customer cannot be dropped into company wide balances                                            1.55s  
+  ✓ model cannot discard the requested period or currency                                                        1.64s  
+  ✓ latest invoice english question is a read not a transaction                                                  1.48s  
+  ✓ replaying same question recomputes authorized results without another model call                             2.63s  
+  ✓ same request key cannot silently replace the question                                                        2.09s  
+  ✓ followup context is not used when company has disabled followups                                             1.65s  
+  ✓ ui api parity of canonical answers model calls and economic fingerprints with data set " arabic named debt"  5.27s  
+  ✓ ui api parity of canonical answers model calls and economic fingerprints with data set " english named debt… 2.31s  
+  ✓ ui api parity of canonical answers model calls and economic fingerprints with data set " arabic comparison"  2.14s  
+  ✓ ui api parity of canonical answers model calls and economic fingerprints with data set " english comparison… 2.46s  
+  ✓ ui api parity of canonical answers model calls and economic fingerprints with data set " arabic determinist… 1.84s  
+  ✓ ui api parity of canonical answers model calls and economic fingerprints with data set " english determinis… 1.86s  
+
+   PASS  Tests\Feature\AiV22\CompoundAccountingTurnTest
+  ✓ question one ahmed debt and last invoice                                                                     1.53s  
+  ✓ question two compare this month with last month                                                              1.43s  
+  ✓ question three low stock items                                                                               1.56s  
+  ✓ question four followup reuses typed period context with zero model calls                                     1.69s  
+  ✓ negative foreign customer never resolves and no data leaks                                                   1.60s  
+  ✓ negative ambiguous customer names returns clarification                                                      1.07s  
+  ✓ no financial writes after fixtures and no walkin customers                                                   1.11s  
+  ✓ known named customer cannot be dropped into company wide balances                                            1.15s  
+  ✓ model cannot discard the requested period or currency                                                        1.45s  
+  ✓ latest invoice english question is a read not a transaction                                                  1.20s  
+  ✓ replaying same question recomputes authorized results without another model call                             1.65s  
+  ✓ same request key cannot silently replace the question                                                        1.51s  
+  ✓ followup context is not used when company has disabled followups                                             1.28s  
+  ✓ compound current customer debt does not inherit independent sales period with data set " english architect…  1.55s  
+  ✓ compound current customer debt does not inherit independent sales period with data set " palestinian arabic… 1.33s  
+  ✓ compound omitted named entity does not return a company wide customer balance                                1.19s  
+  ✓ compound model cannot drop an independent clause even if the surviving report is authorized                  1.02s  
+  ✓ compound model cannot borrow another scopes currency                                                         1.17s  
+
+   PASS  Tests\Feature\AiV22\DailyBriefingTest
+  ✓ daily briefing disabled by default in config                                                                 2.09s  
+  ✓ exact values equal authorized canonical reports for same role date timezone currencies                       1.39s  
+  ✓ real nonzero canonical totals                                                                                1.43s  
+  ✓ restricted and disabled cards are omitted not zeroed                                                         1.07s  
+  ✓ mid query permission revocation fails proposal stale                                                         0.98s  
+  ✓ zero http traffic zero tokens and no assistant requests                                                      3.30s  
+  ✓ economic fingerprint unchanged                                                                               1.87s  
+  ✓ empty data truth for authorized cards with no records                                                        1.62s  
+  ✓ tenant and session switch refuses cached briefing                                                            1.84s  
+  ✓ session regeneration invalidates briefing                                                                    2.20s  
+  ✓ permission revocation after retrieval refuses render                                                         1.91s  
+  ✓ transition from clarifying draft into briefing                                                               2.34s  
+  ✓ assistant launcher offers clear action in ar and en                                                          2.10s  
+  ✓ briefing does not trigger automatically on opening assistant                                                 1.28s  
+  ✓ truthful semantics unpaid invoices not called overdue                                                        1.25s  
+  ✓ invalid session id rejected                                                                                  0.58s  
+  ✓ oversized session id rejected                                                                                0.58s  
+
+   PASS  Tests\Feature\AiV22\IntegratedReleaseCandidateTest
+  ✓ reports and both unsaved forms preserve history credentials and company policy with data set " english"      4.13s  
+  ✓ reports and both unsaved forms preserve history credentials and company policy with data set " palestinian…  5.00s  
+
+   PASS  Tests\Feature\AiV22\PwaShellSecurityTest
+  ✓ pwa is disabled by default                                                                                   0.02s  
+  ✓ manifest and offline shell assets exist and are neutral                                                      0.06s  
+  ✓ login route renders pwa head tags only when enabled                                                          0.04s  
+
+   PASS  Tests\Feature\AiV22\QuestionConsentCompatibilityTest
+  ✓ new consent survives expansion reduction and order without new acknowledgement                               0.86s  
+  ✓ valid legacy consent is accepted by both dispatch and launcher without writing history                       1.43s  
+  ✓ valid legacy proof survives owner list edit before first use with original hash and date                     0.83s  
+  ✓ simultaneous allowlist and privacy change cannot acknowledge new terms                                       0.92s  
+  ✓ compatible legacy consent still rejects material changes with data set "privacy"                             0.75s  
+  ✓ compatible legacy consent still rejects material changes with data set "revision"                            0.85s  
+  ✓ compatible legacy consent still rejects material changes with data set "connection"                          0.86s  
+  ✓ compatible legacy consent still rejects material changes with data set "provider"                            0.70s  
+  ✓ compatible legacy consent still rejects material changes with data set "region"                              0.80s  
+  ✓ compatible legacy consent still rejects material changes with data set "model"                               0.87s  
+  ✓ compatible legacy consent still rejects material changes with data set "capability"                          0.79s  
+  ✓ missing revoked or already invalid legacy proof is not upgraded                                              0.71s  
+  ✓ removed connection and user scope cannot reuse a compatible proof                                            0.73s  
+  ✓ consent does not grant removed report permission                                                             0.64s  
+  ✓ clearing original acknowledgement cannot reuse leftover compatibility metadata                               0.72s  
+
+   PASS  Tests\Feature\AiV22\ReportingPermissionReadTest
+  ✓ direct and company role permissions match installed spatie                                                   0.59s  
+  ✓ global role uses the current company pivot only                                                              0.68s  
+  ✓ foreign company role and direct permissions are excluded                                                     1.34s  
+  ✓ non web guard permissions are excluded from direct and role reads                                            0.59s  
+  ✓ warmed role permission is rechecked after direct database revocation                                         0.71s  
+  ✓ inactive membership cannot use a warmed permission grant                                                     0.64s  
+  ✓ inactive company cannot use a warmed permission grant                                                        0.60s  
+
+   PASS  Tests\Feature\AiV22\UnifiedDraftConversationTest
+  ✓ natural request uses one sdk response then opens existing editable unsaved form with data set " palestinian… 1.94s  
+  ✓ natural request uses one sdk response then opens existing editable unsaved form with data set " english sal… 1.89s  
+  ✓ natural request uses one sdk response then opens existing editable unsaved form with data set " palestinian… 2.06s  
+  ✓ natural request uses one sdk response then opens existing editable unsaved form with data set " english pur… 2.21s  
+  ✓ multiline natural sales preserves exact distinct line values                                                 1.51s  
+  ✓ missing party and quantity are clarified without creating records                                            1.51s  
+  ✓ ambiguous party can be selected locally without second dispatch                                              1.78s  
+  ✓ retry reuses request identity and does not dispatch twice                                                    1.74s  
+  ✓ report followup keeps bounded context then transaction discards it                                           2.41s  
+  ✓ changed description and cancellation do not replay old clarification                                         2.35s  
+  ✓ mixed report transaction choice requests clarity without dispatch                                            1.15s  
+  ✓ foreign party is not resolved or created                                                                     2.32s  
+  ✓ revoked permission during model latency prevents handoff                                                     1.35s  
+  ✓ missing consent blocks request before reservation                                                            1.11s  
+  ✓ company switch cannot reuse mounted conversation                                                             1.28s  
+  ✓ restricted report reader cannot dispatch transaction                                                         0.95s  
+
+   PASS  Tests\Feature\Auth\AuthenticationTest
+  ✓ login screen can be rendered                                                                                10.23s  
+  ✓ users can authenticate using the login screen                                                                0.30s  
+  ✓ users can not authenticate with invalid password                                                             0.24s  
+  ✓ navigation menu can be rendered                                                                             15.29s  
+  ✓ users can logout                                                                                             0.04s  
+
+   PASS  Tests\Feature\Auth\EmailVerificationTest
+  ✓ email verification screen can be rendered                                                                    0.35s  
+  ✓ email can be verified                                                                                        0.03s  
+  ✓ email is not verified with invalid hash                                                                      0.06s  
+
+   PASS  Tests\Feature\Auth\PasswordConfirmationTest
+  ✓ confirm password screen can be rendered                                                                      0.68s  
+  ✓ password can be confirmed                                                                                    0.07s  
+  ✓ password is not confirmed with invalid password                                                              0.26s  
+
+   PASS  Tests\Feature\Auth\PasswordResetTest
+  ✓ reset password link screen can be rendered                                                                   0.74s  
+  ✓ reset password link can be requested                                                                         0.27s  
+  ✓ reset password screen can be rendered                                                                        1.72s  
+  ✓ password can be reset with valid token                                                                       0.30s  
+
+   PASS  Tests\Feature\Auth\PasswordUpdateTest
+  ✓ password can be updated                                                                                      1.74s  
+  ✓ correct password must be provided to update password                                                         0.07s  
+
+   PASS  Tests\Feature\Auth\Phase10IdentityRecoveryTest
+  ✓ valid password reset changes password hash and remember token and invalidates old password                   0.27s  
+  ✓ password reset token cannot be bound to different account                                                    0.49s  
+  ✓ password reset rejects expired token                                                                         0.48s  
+  ✓ password reset token cannot be replayed after successful reset                                               0.32s  
+  ✓ password broker throttles rapid reset link requests                                                          0.69s  
+  ✓ login throttling locks out after maximum failed attempts                                                     1.18s  
+  ✓ logout session invalidation and unauthenticated state                                                        0.03s  
+  ✓ two factor challenge rejects invalid recovery code                                                           0.04s  
+  ✓ two factor challenge rejects replayed recovery code                                                          0.05s  
+  ✓ csrf middleware enforcement and unauthorized company switch                                                  0.04s  
+  ✓ unauthorized company switch aborts with forbidden status                                                     1.01s  
+
+   PASS  Tests\Feature\Auth\ProfileTwoFactorAuthenticationTest
+  ✓ profile page displays two factor section for regular user without settings permission                        7.19s  
+  ✓ two factor endpoints require password confirmation when timeout expired                                      0.06s  
+  ✓ password can be confirmed via fortify endpoint                                                               0.28s  
+  ✓ two factor enrollment lifecycle pending state distinguished from confirmed                                   0.32s  
+  ✓ two factor confirmation rejects invalid totp code                                                            0.06s  
+  ✓ two factor confirmation succeeds with valid totp code                                                        0.03s  
+  ✓ recovery codes retrieval and regeneration                                                                    0.07s  
+  ✓ two factor authentication can be disabled                                                                    0.03s  
+  ✓ pending two factor enrollment can be cancelled                                                               0.03s  
+  ✓ raw secrets and recovery codes are never in livewire or public snapshots                                     0.08s  
+  ✓ existing confirmed users are challenged on login                                                             0.24s  
+
+   PASS  Tests\Feature\Auth\RegistrationTest
+  ✓ registration is disabled by default                                                                          0.09s  
+  ✓ registration can be enabled via config                                                                       4.66s  
+
+   PASS  Tests\Feature\BusinessWorkflow\BrandManagementTest
+  ✓ product cost revocation redacts the existing livewire state                                                  6.68s  
+  ✓ brand index requires authentication and active company                                                       0.68s  
+  ✓ brand index requires inventory product manage permission on mount                                            0.70s  
+  ✓ inactive membership denies brand index and product form inline                                               2.75s  
+  ✓ permission loss blocks subsequent actions and hydration                                                      0.68s  
+  ✓ tenant switch aborts on actions                                                                              1.13s  
+  ✓ cross tenant brand access is rejected                                                                        1.02s  
+  ✓ whitespace only name cannot save                                                                             0.54s  
+  ✓ bilingual search and pagination                                                                              0.74s  
+  ✓ creation edit and active toggle                                                                              0.61s  
+  ✓ products count is eagerly computed                                                                           0.49s  
+  ✓ product index filters by brand and includes inactive brands                                                  4.53s  
+  ✓ product form inline brand creation preserves unsaved fields                                                  0.79s  
+  ✓ product form inline brand deduplication on retry                                                             0.68s  
+  ✓ product form inline company switch denies and prevents insertion                                             1.15s  
+  ✓ product form brand selection includes current inactive brand when editing                                    0.61s  
+
+   PASS  Tests\Feature\BusinessWorkflow\ChecksAttentionTest
+  ✓ invalid date range shows recoverable errors without breaking the page                                        1.96s  
+  ✓ attention filters and company local today partitioning                                                       1.36s  
+  ✓ terminal checks strictly excluded from all attention filters                                                 1.56s  
+  ✓ clear reset restores all filters                                                                             1.07s  
+  ✓ source sensitive checks visibility with attention filters                                                    1.03s  
+  ✓ composition of attention with direction and date range filters                                               1.21s  
+  ✓ no writes and no endorsement state changes                                                                   1.15s  
+
+   PASS  Tests\Feature\BusinessWorkflow\CustomerLastPriceTest
+  ✓ latest price uses posted document date and historical unit not mutable master data                           1.35s  
+  ✓ create permission alone cannot reveal historical prices                                                      0.89s  
+
+   PASS  Tests\Feature\BusinessWorkflow\ExpiryLotUsabilityTest
+  ✓ warning setting only changes warning days and is audited without economic writes                             4.01s  
+  ✓ warning window is inclusive and does not reclassify expired lots                                             1.27s  
+  ✓ invalid warning values do not save and readers cannot change the preference                                  1.22s  
+  ✓ action rechecks revoked permissions and cross company context                                                1.47s  
+  ✓ lot picker has stable expiry order base units status and no costs in both languages                          5.20s  
+  ✓ product warehouse and adjustment direction changes clear lot and unit state                                  1.25s  
+  ✓ transfer retry after depleting lot reuses the canonical result                                               1.16s  
+  ✓ foreign product hook and company switch cannot expose lot or unit data                                       1.47s  
+  ✓ a stale lot cannot commit a transfer from the old source warehouse                                           1.09s  
+  ✓ expiry modal rechecks adjust permission after the page was opened                                            1.07s  
+
+   PASS  Tests\Feature\BusinessWorkflow\InventoryPresentationTest
+  ✓ stock packages and warehouse remainders are bilingual read only and cost redacted                            9.92s  
+
+   PASS  Tests\Feature\BusinessWorkflow\MoneyDailySummaryTest
+  ✓ boundary dates before any activity returns zero balances                                                     0.70s  
+  ✓ boundary dates on and around single inflow                                                                   0.83s  
+  ✓ negative reversal flows count on actual posting date                                                         1.02s  
+  ✓ base only fallback policy for base currency account with missing metadata                                    0.79s  
+  ✓ foreign currency account indicates native unavailable when metadata missing or mismatched                    0.76s  
+  ✓ restricted checks and sensitive phase7 sources prevent hidden leakage                                        0.99s  
+  ✓ tenant switch and permission loss fail closed                                                                1.20s  
+  ✓ read only query performs no financial or stock writes                                                        0.85s  
+  ✓ stale account type cannot bypass the persisted bank permission                                               0.71s  
+  ✓ revoked money permission denies an open page on next request                                                 2.50s  
+  ✓ livewire overview and account detail date selection and distinct current balance                             1.20s  
+
+   PASS  Tests\Feature\BusinessWorkflow\MoneyNativeMetadataTest
+  ✓ matching code missing amount is unavailable across all reads with data set "all null debit"                  0.86s  
+  ✓ matching code missing amount is unavailable across all reads with data set "all null credit"                 1.25s  
+  ✓ matching code missing amount is unavailable across all reads with data set "unknown then known"              1.22s  
+  ✓ matching code missing amount is unavailable across all reads with data set "known then unknown"              1.26s  
+  ✓ empty and complete foreign history have truthful zero and native amounts                                     1.09s  
+  ✓ base currency fallback survives null aggregates and base only entries                                        1.19s  
+  ✓ explicit zero native amount is not confused with null                                                        1.18s  
+  ✓ historical cutoffs and running windows exclude future missing metadata                                       1.20s  
+  ✓ residual exception requires a complete same account native sibling                                           1.12s  
+  ✓ missing and wrong currency codes are not treated as complete                                                 0.88s  
+  ✓ money pages render unavailable in both languages without economic writes                                     1.32s  
+  ✓ restricted history remains redacted when its native amount is missing                                        0.90s  
+  ✓ canonical fx preserves native values and all six reconciliations                                             0.90s  
+  ✓ foreign company context is denied                                                                            1.20s  
+
+   PASS  Tests\Feature\BusinessWorkflow\QuickPartyCreationTest
+  ✓ same request replays one customer even when cache is cleared                                                 0.65s  
+  ✓ changed payload with same key is rejected                                                                    0.68s  
+  ✓ failure after receipt insertion rolls back customer and receipt                                              0.68s  
+  ✓ master manage permission alone cannot create from a trade form                                               0.79s  
+  ✓ replay rechecks fresh permissions                                                                            0.88s  
+
+   PASS  Tests\Feature\BusinessWorkflow\QuickProductBoundaryTest
+  ✓ receive and assistant entry intents cannot silently replace each other                                      16.55s  
+  ✓ posted invoice cannot create product from stale editor                                                       0.91s  
+  ✓ sent quote cannot create product from stale editor                                                           3.54s  
+  ✓ invalid exchange rate retains modal input and creates no master                                              0.93s  
+  ✓ quick receive canonical post remains healthy under all six reconciliations                                   1.14s  
+
+   PASS  Tests\Feature\BusinessWorkflow\QuickProductConcurrencyTest
+  ✓ two connections retry same payload into one product unit and receipt                                        13.15s  
+  ✓ conflicting payloads same key have one success and one conflict                                             12.67s  
+  ✓ receipt migration round trip preserves posted purchase and stock                                            11.65s  
+
+   PASS  Tests\Feature\BusinessWorkflow\QuickProductReceiveTest
+  ✓ replay uses normalized complete payload and creates only master records                                      0.79s  
+  ✓ retry key cannot change expiry or other payload                                                              0.70s  
+  ✓ final audit failure rolls back product base unit and receipt                                                 0.75s  
+  ✓ duplicate soft deleted sku is validation error                                                               0.67s  
+  ✓ invalid or excess payload is rejected without creating product with data set "fractional unit"               0.69s  
+  ✓ invalid or excess payload is rejected without creating product with data set "boolean text"                  0.64s  
+  ✓ invalid or excess payload is rejected without creating product with data set "name array"                    0.61s  
+  ✓ invalid or excess payload is rejected without creating product with data set "price injection"               0.62s  
+  ✓ invalid or excess payload is rejected without creating product with data set "initial stock injection"       0.72s  
+  ✓ inactive and other company units are rejected                                                                0.72s  
+  ✓ replay checks fresh permissions and form access                                                              0.72s  
+  ✓ product manage alone does not authorize trade entry                                                          0.67s  
+  ✓ quick product preserves edited rows currency and does not save document with data set "invoice"              0.84s  
+  ✓ quick product preserves edited rows currency and does not save document with data set "quote"                0.89s  
+  ✓ quick product preserves edited rows currency and does not save document with data set "purchase"             1.20s  
+  ✓ first empty row is reused and cancel leaves form unchanged                                                   1.10s  
+  ✓ receive opens unsaved canonical purchase then posts atomically                                               1.11s  
+  ✓ receive query cannot overwrite existing draft                                                                0.74s  
+  ✓ receive rejects missing inactive product and cost restricted actor                                           0.83s  
+  ✓ company switch cannot replay product or receive foreign product                                              1.43s  
+
+   PASS  Tests\Feature\BusinessWorkflow\QuickProductSelectionAtomicityTest
+  ✓ disabled currency with positive rate rolls back creation and retains input for retry                         1.19s  
+  ✓ disabled company language refusal keeps master and document state unchanged                                  0.87s  
+  ✓ downstream unit refusal rolls back all master effects in each form with data set "purchase"                  1.06s  
+  ✓ downstream unit refusal rolls back all master effects in each form with data set "invoice"                   0.84s  
+  ✓ downstream unit refusal rolls back all master effects in each form with data set "quotation"                 0.81s  
+
+   PASS  Tests\Feature\BusinessWorkflow\TenantValidationTest
+  ✓ foreign customer is rejected as a field error before receipt posting                                         2.78s  
+
+   PASS  Tests\Feature\BusinessWorkflow\TradeEntryTest
+  ✓ scanning an invalid unit conversion reports an error without changing the line                               0.92s  
+  ✓ scanning cannot convert a raw float quantity into an accepted string                                         1.12s  
+  ✓ new sales documents use company local day at the utc midnight boundary                                       0.83s  
+  ✓ quick party creation preserves current currency rate and line amounts                                        1.22s  
+  ✓ quotation scanning uses exact unit price and preserves customized lines without writes                       1.23s  
+  ✓ quotation scanning checks fresh permissions and active products                                              0.86s  
+  ✓ unsaved preservation when quick creating party                                                               1.92s  
+  ✓ permission loss and context switch guarding                                                                  1.67s  
+  ✓ quick party idempotent token replay and catalog validation mapping                                           0.97s  
+  ✓ cross tenant unit rejection without fallback                                                                 1.61s  
+  ✓ exact barcode carton pricing and line safety                                                                 1.25s  
+  ✓ duplicate clicks save draft only no posting                                                                  1.47s  
+  ✓ quotation conversion path and provenance                                                                     4.17s  
+  ✓ quotation and selectors bounded queries                                                                      0.84s  
+
+   PASS  Tests\Feature\CompanyDataExport\CompanyDataExportLimitsTest
+  ✓ client only sessions cannot claim live revocation guarantees                                                 0.84s  
+  ✓ limits fail closed without archive audit or leftover files with data set "per-dataset rows"                  0.82s  
+  ✓ limits fail closed without archive audit or leftover files with data set "total rows"                        0.81s  
+  ✓ limits fail closed without archive audit or leftover files with data set "compressed bytes"                  1.06s  
+  ✓ limits fail closed without archive audit or leftover files with data set "uncompressed bytes"                0.82s  
+  ✓ limits fail closed without archive audit or leftover files with data set "memory"                            0.86s  
+  ✓ limits fail closed without archive audit or leftover files with data set "deadline"                          1.12s  
+  ✓ disabled export cannot prepare or deliver archive                                                            0.88s  
+  ✓ global lock prevents another company export from starting                                                    0.92s  
+
+   PASS  Tests\Feature\CompanyDataExport\CompanyDataExportTest
+  ✓ owner can successfully download complete company data export zip                                             1.02s  
+  ✓ tenant isolation does not leak other company records                                                         1.12s  
+  ✓ non owner is forbidden even if admin                                                                         0.84s  
+  ✓ revoked or inactive membership is forbidden                                                                  1.04s  
+  ✓ unconfirmed password is forbidden                                                                            0.82s  
+  ✓ stale password confirmation is forbidden                                                                     0.78s  
+  ✓ changed password revokes export authority                                                                    0.97s  
+  ✓ session revocation during delivery halts delivery                                                            0.95s  
+  ✓ destroyed persisted session revokes authority even when request still has values                             0.89s  
+  ✓ secrets and passwords are strictly excluded                                                                  0.92s  
+  ✓ hostile csv formula injection and arabic quotes and leading zeros                                            1.30s  
+  ✓ employee pii in gl postings is redacted while preserving numeric completeness                                1.03s  
+  ✓ filesystem concurrency lock preserves lock file without unlink                                               1.17s  
+  ✓ temporary directory and files are cleaned up                                                                 1.06s  
+  ✓ no economic mutation occurs during export                                                                    1.72s  
+  ✓ large synthetic directory export is bounded and complete                                                     1.96s  
+
+   PASS  Tests\Feature\CompanyDataExport\ExportReauthenticationTest
+  ✓ browser headers with expired session returns 423 json without redirect or artifacts                          0.81s  
+  ✓ fortify password confirm store then explicit post downloads complete zip                                     1.18s  
+  ✓ direct export guard authorize request with stale timestamp produces 423                                      1.21s  
+
+   PASS  Tests\Feature\Console\CreateUserCommandTest
+  ✓ can create user via command with hidden password prompt                                                      0.05s  
+  ✓ can create user via fully interactive prompts                                                                0.02s  
+  ✓ password option is not accepted as a command option                                                          0.02s  
+  ✓ fails when email already exists                                                                              0.03s  
+  ✓ fails when password is shorter than eight characters                                                         0.03s  
+
+   PASS  Tests\Feature\DeepSeekOnly\RetiredAiEndpointsTest
+  ✓ legacy endpoints are closed even when all platform flags are enabled                                         0.02s  
+  ✓ stale commercial audio token cannot trigger transaction prepare                                              0.02s  
+
+   PASS  Tests\Feature\DeepSeekProduct\AssistantDiagnosticTest
+  ✓ actionable categories have safe distinct arabic and english messages                                         0.04s  
+  ✓ transcription is editable and never dispatches or creates records                                            1.22s  
+  ✓ launcher contains no provider picker and oversize transcript is refused                                      0.85s  
+  ✓ provider authentication failure is shown without raw response or financial writes                            1.25s  
+
+   PASS  Tests\Feature\DeepSeekProduct\DeepSeekSetupTest
+  ✓ fresh owner key test use is truthful encrypted and unsaved                                                   1.01s  
+  ✓ existing saved key is reused without reentry                                                                 0.78s  
+  ✓ disabled and empty policy test does not activate or expand workflows                                         0.75s  
+  ✓ revoked credential is never revived and replacement preserves history                                        0.84s  
+  ✓ legacy fallback personal and other provider transition preserves limits audits and reservations              0.74s  
+  ✓ explicit transition reuses unique active key after selected key revocation                                   0.67s  
+  ✓ stale preferences and former fallback cannot override company route                                          0.66s  
+  ✓ transition is idempotent and stale concurrent owner is refused                                               0.69s  
+  ✓ transition requires current owner password                                                                   0.58s  
+  ✓ no consent or spending budget never dispatches or raises caps                                                0.68s  
+  ✓ provider failure retains unknown reservation and safe error                                                  0.73s  
+  ✓ replay and inflight test do not dispatch twice                                                               0.82s  
+  ✓ policy change during test is refused without refund                                                          0.72s  
+  ✓ membership revoked during test cannot verify connection                                                      0.79s  
+  ✓ no credit reports no available credit and remains unverified                                                 0.80s  
+  ✓ company and session change block mounted setup                                                               0.69s  
+  ✓ settings no longer exposes routing or manual price fields                                                    0.85s  
+  ✓ saved selected key still requires fresh owner password before health dispatch                                0.66s  
+  ✓ transient saved key refresh preserves verified state and reports latest failure with data set #0             1.02s  
+  ✓ transient saved key refresh preserves verified state and reports latest failure with data set #1             1.31s  
+  ✓ transient saved key refresh preserves verified state and reports latest failure with data set #2             1.10s  
+  ✓ transient saved key refresh preserves verified state and reports latest failure with data set #3             1.13s  
+  ✓ saved key refresh is one click reusable and does not mint consent                                            1.21s  
+  ✓ saved key refresh requires current consent without creating it                                               0.84s  
+  ✓ material privacy change blocks refresh without implicit reconsent                                            1.02s  
+  ✓ authoritative 401 marks saved key unverified without revealing provider body                                 0.94s  
+  ✓ empty no credit refresh preserves old key verification but prevents start                                    1.00s  
+  ✓ replaced key timeout stays unverified and does not inherit old health                                        0.94s  
+  ✓ refresh rechecks membership even after transient error                                                       1.00s  
+  ✓ refresh rechecks revisions and cannot verify concurrent key replacement                                      1.05s  
+  ✓ free health has separate throttle and preserves zero model caps and unknown history                          1.55s  
+  ✓ no credit does not bypass fresh membership check after io                                                    0.78s  
+
+   PASS  Tests\Feature\ExampleTest
+  ✓ the application returns a successful response                                                                0.03s  
+
+   PASS  Tests\Feature\Hostinger\SeparatedPublicRootTest
+  ✓ standard local public index boots request successfully                                                       0.24s  
+  ✓ separated hostinger topology boots request successfully                                                      1.62s  
+  ✓ explicit laravel app path environment variable boots request                                                 0.25s  
+  ✓ separated index fails closed when app path cannot be resolved                                                0.25s  
+
+   PASS  Tests\Feature\MobileRelease\CatalogBrowserShareTest
+  ✓ only existing active publication is shareable and draft copy is never in message                             1.84s  
+  ✓ paused catalog and foreign company are refused without issuing links                                         0.99s  
+
+   PASS  Tests\Feature\MobileRelease\DocumentTouchControlsTest
+  ✓ exact unit steps preserve prices and no financial or stock effects                                           0.93s  
+  ✓ whole unit database scale and inactive or mismatched unit are safe                                           1.01s  
+  ✓ camera lookup respects barcode unit and reports quantity refusal                                             0.81s  
+  ✓ camera and quantity refuse fresh company or membership revocation                                            0.56s  
+  ✓ scan beside invalid line warns and withholds stale totals until corrected                                    0.91s  
+
+   PASS  Tests\Feature\MobileRelease\GlobalSearchTest
+  ✓ logged out context actor rejected                                                                            0.49s  
+  ✓ freshly deactivated company returns empty                                                                    0.50s  
+  ✓ service empty or short term handling                                                                         0.46s  
+  ✓ tenant isolation prevents cross company results and barcodes                                                 1.03s  
+  ✓ category permissions strictly enforced                                                                       0.67s  
+  ✓ malicious select result method removed                                                                       0.50s  
+  ✓ same company switch clears hydrated query                                                                    0.94s  
+  ✓ results capped at five per category deterministically                                                        0.49s  
+  ✓ no sensitive fields serialized                                                                               0.53s  
+  ✓ query failure is sanitized and does not break the application shell                                          0.46s  
+  ✓ phone lookup is authorized tenant scoped and never projects phone                                            1.31s  
+
+   PASS  Tests\Feature\MobileRelease\SearchVisibilityTest
+  ✓ each document category uses its permission and readonly safe projection                                      0.94s  
+  ✓ search only role has no financial mobile destination or camera write controls                                2.04s  
+
+   PASS  Tests\Feature\NaturalAssistant\AssistantReportEntityResolverTest
+  ✓ resolves exact customer by name and code                                                                     0.61s  
+  ✓ resolves exact vendor by name and code                                                                       0.62s  
+  ✓ resolves product by sku and name                                                                             0.67s  
+  ✓ resolves warehouse by name                                                                                   0.62s  
+  ✓ resolves category according to domain                                                                        0.58s  
+  ✓ foreign company entities are never resolved                                                                  0.62s  
+  ✓ ambiguous entity matches throw entity ambiguous                                                              0.63s  
+  ✓ missing entity throws entity missing                                                                         0.61s  
+  ✓ compare parameter is stripped from canonical filters                                                         0.63s  
+
+   PASS  Tests\Feature\NaturalAssistant\AssistantReportExecutionAndComparisonTest
+  ✓ prioritized reports execute via canonical registry and produce bounded dto                                   3.28s  
+  ✓ comparison mode executes two adjacent periods and appends comparison data                                    0.68s  
+  ✓ purchases and vendor reports deny actors without purchasing cost view                                        0.65s  
+  ✓ source url contains all applied canonical filters                                                            0.65s  
+  ✓ adjacent comparison is anchored to actual calendar period with data set #0                                   0.62s  
+  ✓ adjacent comparison is anchored to actual calendar period with data set #1                                   0.57s  
+  ✓ adjacent comparison is anchored to actual calendar period with data set #2                                   0.59s  
+  ✓ adjacent comparison is anchored to actual calendar period with data set #3                                   0.63s  
+  ✓ adjacent comparison is anchored to actual calendar period with data set #4                                   0.54s  
+  ✓ adjacent comparison is anchored to actual calendar period with data set #5                                   0.57s  
+  ✓ adjacent comparison is anchored to actual calendar period with data set #6                                   0.56s  
+  ✓ adjacent comparison is anchored to actual calendar period with data set #7                                   0.54s  
+  ✓ adjacent comparison is anchored to actual calendar period with data set #8                                   0.57s  
+  ✓ adjacent comparison is anchored to actual calendar period with data set #9                                   0.59s  
+  ✓ invalid comparison period refuses without guessing with data set #0                                          0.56s  
+  ✓ invalid comparison period refuses without guessing with data set #1                                          0.61s  
+  ✓ invalid comparison period refuses without guessing with data set #2                                          0.59s  
+  ✓ invalid comparison period refuses without guessing with data set #3                                          0.58s  
+
+   PASS  Tests\Feature\Phase0\Phase0FoundationTest
+  ✓ application boots and sign in page loads                                                                     0.05s  
+  ✓ protected routes require authentication                                                                      0.06s  
+  ✓ public registration is disabled by default                                                                   0.03s  
+  ✓ arabic locale renders rtl direction                                                                          0.05s  
+  ✓ english locale renders ltr direction                                                                         0.06s  
+  ✓ locale switcher route updates session for guest                                                              0.03s  
+  ✓ locale switcher persists for authenticated user                                                              0.03s  
+  ✓ locale switcher rejects invalid locale                                                                       0.05s  
+  ✓ locale get request does not mutate state                                                                     2.71s  
+  ✓ user model has fortify two factor authenticatable trait                                                      0.05s  
+  ✓ authenticated user can enable and disable two factor authentication                                          0.07s  
+  ✓ user with two factor enabled is redirected to challenge on login                                             0.27s  
+  ✓ two factor challenge view renders when user is challenged                                                    1.29s  
+  ✓ two factor challenge can authenticate with recovery code                                                     0.06s  
+  ✓ authenticated user can view settings visual proof screen                                                     7.20s  
+  ✓ authenticated user can view settings in english ltr                                                          0.61s  
+  ✓ dev ui specimen is accessible in local                                                                       0.91s  
+  ✓ https scheme is enforced when app url is https                                                               0.06s  
+  ✓ production env example is configured for hostinger without secrets                                           0.06s  
+  ✓ public index supports shared hosting app path resolution                                                     0.04s  
+
+   PASS  Tests\Feature\Phase10\BarcodeCertificationTest
+  ✓ arabic pdf sheet renders and decodes all five symbologies                                                    5.20s  
+  ✓ english pdf sheet renders and decodes all five symbologies                                                   3.20s  
+  ✓ upce suffix expansion branches and number systems certified                                                  2.77s  
+  ✓ product and unit identity and conversion integrity                                                           0.69s  
+  ✓ cross tenant and foreign barcode refusal                                                                     1.26s  
+  ✓ inactive and deleted catalog refusals                                                                        0.71s  
+  ✓ batch capacity and character set refusals                                                                    0.67s  
+  ✓ invalid check digits refusal across all keyed symbologies                                                    0.62s  
+  ✓ zero economic or inventory side effects                                                                      1.63s  
+
+   PASS  Tests\Feature\Phase10\CapacityMeasurementTest
+  ✓ capacity measurement and evidence generation                                                                11.25s  
+  ✓ csv export bounds and fail closed guard                                                                      0.76s  
+  ✓ document render preflight caps                                                                               0.79s  
+  ✓ barcode label service caps                                                                                   0.84s  
+
+   FAIL  Tests\Feature\Phase10\ConcurrentCapacityMeasurementTest
+  ⨯ independent local kernel workers measure widths one two and four without economic mutation                  20.02s  
+
+   PASS  Tests\Feature\Phase10\ConcurrentStockRaceTest
+  ✓ competing sales cannot oversell and loser rolls back sequence and all business legs                         14.41s  
+  ✓ simultaneous same receipt key with conflicting economic payload has one complete winner                     14.18s  
+  ✓ simultaneous same invoice posting converges to one atomic canonical event                                   13.98s  
+  ✓ sale and purchase overlap preserve exact stock cost and fefo with adequate starting stock                   13.83s  
+
+   PASS  Tests\Feature\Phase10\CustomerStatementCertificationTest
+  ✓ authenticated outputs keep independent historical currency figures with data set #0                          1.47s  
+  ✓ authenticated outputs keep independent historical currency figures with data set #1                          1.55s  
+  ✓ authenticated outputs keep independent historical currency figures with data set #2                          1.87s  
+  ✓ authenticated outputs keep independent historical currency figures with data set #3                          1.67s  
+  ✓ equal date window and later reversal void cutoffs are inclusive                                              2.00s  
+  ✓ invalid and inverted dates are rejected before statement hydration                                           0.99s  
+  ✓ real source guard refuses counter seam 1001 before hydration or rendering with data set #0                   0.71s  
+  ✓ real source guard refuses counter seam 1001 before hydration or rendering with data set #1                   0.80s  
+  ✓ real source guard refuses counter seam 1001 before hydration or rendering with data set #2                   0.71s  
+  ✓ real source guard refuses counter seam 1001 before hydration or rendering with data set #3                   0.58s  
+
+   PASS  Tests\Feature\Phase10\DocumentAuthorizationTest
+  ✓ default viewer is denied vendor payment and vendor statement with no document bytes                          1.04s  
+  ✓ explicitly authorized purchase and return reader lacking cost gets permitted server redacted projection      5.93s  
+  ✓ pdf only vendor statement missing statement or cost fails before expensive rendering                         1.38s  
+  ✓ foreign company subjects fail and leak no document bytes                                                     2.26s  
+  ✓ mid render downgrade or revocation refuses purchasing document delivery                                      1.33s  
+  ✓ mid render downgrade or revocation refuses sales document delivery                                           1.49s  
+  ✓ cached in memory role and membership relations do not bypass delivery guards                                 1.33s  
+  ✓ customer statement and vendor statement parity under permission discipline                                   2.30s  
+
+   PASS  Tests\Feature\Phase10\EnvironmentSecurityTest
+  ✓ debug disabled error response does not disclose exception details                                            0.21s  
+  ✓ locale switch rejects missing token when real csrf guard is enabled                                          0.10s  
+  ✓ locale switch accepts matching csrf token                                                                    0.03s  
+  ✓ company switch without csrf token cannot change active company                                               1.27s  
+
+   PASS  Tests\Feature\Phase10\ErrorPresentationTest
+  ✓ denied html is localized accessible and does not disclose exception details with data set " arabic"          0.04s  
+  ✓ denied html is localized accessible and does not disclose exception details with data set " english"         0.02s  
+  ✓ denied json remains json without the html error page with data set " arabic"                                 0.03s  
+  ✓ denied json remains json without the html error page with data set " english"                                0.02s  
+  ✓ unsupported active locale uses safe arabic markup and copy                                                   0.07s  
+
+   FAIL  Tests\Feature\Phase10\FormAccessibilityTest
+  ⨯ scoped list create edit and repeated controls have unique accessible names with data set #0                  3.41s  
+  ⨯ scoped list create edit and repeated controls have unique accessible names with data set #1                  0.98s  
+  ⨯ real validation links errors and preserves entered values without economic writes with data set #0           0.98s  
+  ⨯ real validation links errors and preserves entered values without economic writes with data set #1           0.94s  
+
+   PASS  Tests\Feature\Phase10\GoldenTradingJourneyTest
+  ✓ connected golden trading journey                                                                             3.50s  
+  ✓ usd invoice and jod payment with historical fx and later credit application                                  2.28s  
+  ✓ expiry tracked product fefo depletion and quotation conversion                                               2.34s  
+
+   PASS  Tests\Feature\Phase10\ReportNavigationPerformanceTest
+  ✓ navigation existence preserves visibility with fewer owner queries                                           2.72s  
+  ✓ same instance rechecks role membership and company after prior success                                       1.22s  
+  ✓ foreign company never has visible navigation                                                                 1.58s  
+  ✓ empty source rows keep one fresh guard and skip irrelevant source lookups                                    1.07s  
+  ✓ existing row authority is rechecked before source lookup                                                     1.09s  
+
+   PASS  Tests\Feature\Phase10\SettingsNavigationTruthTest
+  ✓ owner sees active print and sharing navigation links                                                         0.82s  
+  ✓ owner can navigate to document settings and catalogs                                                         1.80s  
+  ✓ viewer sees restricted cards and cannot access routes                                                        0.97s  
+  ✓ user with delegated document permissions can access print card                                               1.31s  
+  ✓ user with delegated catalog permissions can access share card                                                1.39s  
+  ✓ user with only manage without company view is restricted                                                     0.73s  
+  ✓ catalog reader without product selection authority has no dead navigation link                               1.01s  
+  ✓ product manager catalog reader can use the existing selection policy alternative                             1.20s  
+  ✓ bilingual navigation copy truth in arabic and english                                                        0.75s  
+
+   PASS  Tests\Feature\Phase11\ApiCommandParityTest
+  ✓ real http lifecycle requires confirmation and retries without duplicate posting                              0.78s  
+  ✓ http exact tax discount and fx match posted canonical amounts                                                0.86s  
+  ✓ expired and edited preview refuse execution without any financial effect                                     1.13s  
+  ✓ foreign customer and invoice are refused without writes                                                      1.57s  
+  ✓ role downgrade and membership revocation deny confirmation and exact replay                                  1.19s  
+  ✓ session and password revocation between middleware and command prevent writes                                0.71s  
+  ✓ owned device enumeration and revocation require fresh password confirmation                                  0.67s  
+  ✓ late receipt failure rolls back numbering inventory ledger and lifecycle                                     1.06s  
+
+   PASS  Tests\Feature\Phase11\ApiSecurityTest
+  ✓ disabled api returns 404 before session csrf and zero db queries                                             1.23s  
+  ✓ unauthenticated request triggers guest limiter and returns 401                                               1.30s  
+  ✓ actual guest limiter repeated 401 results in 429                                                             1.32s  
+  ✓ fresh login event sets session marker even with remember checkbox                                            1.19s  
+  ✓ future or expired marker refuses 401 without acting as                                                       1.19s  
+  ✓ non database session driver capability refusal                                                               1.12s  
+  ✓ persisted database session then revoked and refused without acting as                                        1.26s  
+  ✓ separate session connection fails closed                                                                     1.24s  
+  ✓ tenant mismatch returns 403 and never switches active company                                                1.26s  
+  ✓ foreign public id fails 404                                                                                  1.28s  
+  ✓ direct view grant revoked mid session denies projection                                                      1.20s  
+  ✓ csrf token strictly enforced with testing bypass disabled                                                    1.05s  
+  ✓ mutation payload validation and sanitized errors without sql or path leak                                    1.29s  
+  ✓ unexpected rendered error with app debug true sanitizes response and logs                                    1.06s  
+  ✓ all lookups exercise actual schema without cost leak                                                         1.36s  
+  ✓ foreign session handle revocation denied                                                                     1.30s  
+  ✓ sales invoice conflict distinguished from internal error                                                     1.24s  
+
+   PASS  Tests\Feature\Phase11\CommandConcurrencyTest
+  ✓ concurrent identical create key and payload yields one draft and one receipt                                13.68s  
+  ✓ concurrent conflicting create payload same key yields one draft and one conflict                            13.55s  
+  ✓ concurrent execute same reviewed token and key yields one canonical invoice and one receipt                 13.43s  
+  ✓ concurrent execute same key with differing target conflicts                                                 13.16s  
+  ✓ concurrent execute same key with differing token conflicts                                                  14.05s  
+  ✓ concurrent independent stock change vs confirm refuses oversell without partial posting                     14.97s  
+  ✓ revoked membership at lock boundary refuses confirm without partial posting                                 14.15s  
+
+   PASS  Tests\Feature\Phase11\CommandMigrationPreservationTest
+  ✓ forward and rollback preserve existing financial history and configuration                                  11.79s  
+
+   PASS  Tests\Feature\Phase11\SalesCommandWorkflowTest
+  ✓ create draft invoice with exact decimals and receipt                                                         0.58s  
+  ✓ create draft invoice idempotent retry returns same instance                                                  0.53s  
+  ✓ create draft invoice conflict on changed payload with same key                                               0.70s  
+  ✓ create draft invoice scoped by actor and tenant                                                              1.54s  
+  ✓ create draft invoice rejects integer and float economic values                                               0.72s  
+  ✓ create draft invoice rejects malformed and scientific values                                                 0.70s  
+  ✓ create draft invoice rejects unknown keys and malformed idempotency keys                                     0.60s  
+  ✓ update draft invoice updates fields and persists receipt                                                     0.65s  
+  ✓ preview is read only and does not post reserve or number                                                     0.64s  
+  ✓ preview strictly excludes sensitive cogs and unit costs                                                      0.81s  
+  ✓ preview and execute with combined repeated stock lines                                                       1.01s  
+  ✓ execute posts invoice atomically with confirmation token and receipt                                         0.75s  
+  ✓ execute idempotent retry does not repost                                                                     0.69s  
+  ✓ execute conflict on reused key with different token or target                                                0.73s  
+  ✓ execute rejects tampered and invalid tokens                                                                  0.69s  
+  ✓ execute rejects expired confirmation token                                                                   0.68s  
+  ✓ execute detects stale line revision when draft was modified                                                  0.79s  
+  ✓ execute detects stale preview revision when inventory changes                                                1.00s  
+  ✓ fresh rbac and membership check on replay and downgrade                                                      0.62s  
+  ✓ preview requires both view and post permissions and does not catch auth as stock blocker                     0.67s  
+  ✓ exact currencies ils usd jod formatting and minor units                                                      0.82s  
+  ✓ equivalent decimal retry converges to same receipt                                                           1.24s  
+  ✓ canonical percent discount with tax exact totals                                                             1.88s  
+  ✓ erased draft tombstone returns 409 gone on retry                                                             1.88s  
+  ✓ stale company or customer identity triggers stale preview conflict                                           1.73s  
+  ✓ preview fresh membership role and status checks                                                              2.00s  
+  ✓ replay requires fresh view permission                                                                        1.96s  
+  ✓ missing company context refuses commands                                                                     0.96s  
+  ✓ product unit tax invalid eligibility blocks preview                                                          1.33s  
+
+   PASS  Tests\Feature\Phase11\WebCommandParityTest
+  ✓ save draft only persists draft and redirects without posting                                                 2.18s  
+  ✓ form review not post saves draft and displays actual preview shape                                           3.36s  
+  ✓ explicit confirm then one post with double click idempotency                                                 2.68s  
+  ✓ detail review not post then confirm posts invoice                                                            2.56s  
+  ✓ form change after preview rejects confirmation and invalidates preview                                       0.90s  
+  ✓ expired confirmation keeps real invoice draft                                                                0.67s  
+  ✓ exact amount parity jod and percent discount                                                                 0.91s  
+  ✓ blocked stock prevents confirm                                                                               0.62s  
+  ✓ ar en blocker code translations without raw leak                                                             0.62s  
+  ✓ no exception message leak on unexpected failure                                                              0.74s  
+  ✓ raw float or integer economic inputs are refused                                                             1.27s  
+  ✓ translated preview error and actual amount fx in ar and en                                                   0.89s  
+  ✓ real member post permission revoked after preview                                                            0.96s  
+
+   PASS  Tests\Feature\Phase12\AiCompanyControlsTest
+  ✓ owner controls preserve allowed scopes while settings show only simple setup                                 1.39s  
+  ✓ global button control preserves permitted contextual workflow                                                1.27s  
+  ✓ disabled purchase cannot be selected or inferred by an owner                                                 1.94s  
+  ✓ no enabled intents refuses global and contextual usage                                                       2.14s  
+  ✓ policy change invalidates an existing form and open global launcher                                          3.39s  
+  ✓ invalid intent lists cannot change policy or revision                                                        1.95s  
+  ✓ administrator in a has no ai authority after switching to viewer only b                                      2.06s  
+
+   FAIL  Tests\Feature\Phase12\AiFormCorrectionsTest
+  ✓ arabic follow up uses current human fields and undo preserves them without saving                            1.08s  
+  ✓ manual edit invalidates undo instead of being overwritten                                                    1.02s  
+  ⨯ manual edit during provider inference refuses the late patch                                                 1.15s  
+  ✓ wrong session or tab and disabled corrections dispatch nothing                                               0.91s  
+  ✓ fabricated value and model database ids fail without fallback                                                0.94s  
+  ✓ livewire correction highlights and undoes on the existing form                                               2.02s  
+  ✓ prepared correction is unsaved bound single use and rechecked before commit                                  1.76s  
+  ✓ unsynchronized browser edit after prepare refuses commit without overwriting the form                        1.72s  
+  ✓ policy revocation after prepare refuses the edit                                                             1.31s  
+  ✓ prepared patch expiry does not extend original form memory                                                   0.91s  
+  ✓ unsynchronized manual fields in the same request are preserved during preparation                            1.56s  
+
+   PASS  Tests\Feature\Phase12\AiFormStateTest
+  ✓ state is encrypted and session form and revision bound                                                       0.85s  
+  ✓ stale voice response and undo cannot overwrite a later manual revision                                       0.72s  
+  ✓ policy revision change expiry and cancel invalidate memory                                                   0.66s  
+
+   PASS  Tests\Feature\Phase12\AiGovernanceTest
+  ✓ owner catalog does not automatically grant administrators ai capabilities                                    1.04s  
+  ✓ credentials are encrypted write only unverified and never dispatched by validation                           0.71s  
+  ✓ wrong password cannot create or revoke credentials                                                           0.59s  
+  ✓ retired personal and alternative provider credentials are fail closed                                        0.65s  
+  ✓ generic admin cannot self delegate protected ai permissions                                                  0.64s  
+  ✓ dispatch requires current consent and rotation invalidates it                                                0.68s  
+
+   PASS  Tests\Feature\Phase12\AiRequestBudgetConcurrencyTest
+  ✓ concurrent identical reservations yield one row and same id with exact combined reservation                 14.03s  
+  ✓ concurrent conflicting hash yields one reservation and one request conflict                                 13.43s  
+  ✓ concurrent monetary caps permit exactly one reservation                                                     19.08s  
+  ✓ concurrent daily request count boundary refuses second deterministic reservation                            13.31s  
+  ✓ fresh authority refuses pending reservations at lock boundary                                               14.66s  
+  ✓ concurrent begin attempt for same connection allows exactly one increment                                   11.85s  
+  ✓ foreign company connection and request cannot be adopted                                                    14.56s  
+
+   PASS  Tests\Feature\Phase12\AiRequestBudgetTest
+  ✓ single primary is reserved and replay is not another dispatch                                                0.90s  
+  ✓ only one reserved attempt is allowed                                                                         0.90s  
+  ✓ zero platform budget and changed payload cannot reserve or dispatch                                          0.68s  
+  ✓ deterministic path has zero text cost and unknown provider cost is never refunded                            0.68s  
+
+   PASS  Tests\Feature\Phase12\AiRetentionTest
+  ✓ own company retention clears only expired content and preserves usage and provenance                         1.30s  
+  ✓ prune expires only old open states and removes their temporary locators                                      0.66s  
+
+   PASS  Tests\Feature\Phase12\AiSettingsSecurityTest
+  ✓ settings are write only without legacy route or price controls                                               0.78s  
+  ✓ retired credential endpoint does not flash or persist secrets                                                0.63s  
+  ✓ delegated settings reader cannot replace installation owner key                                              0.74s  
+  ✓ admin without explicit ai delegation cannot open settings                                                    0.67s  
+  ✓ string request counts are normalized and enforced without resetting usage                                    0.84s  
+  ✓ stale revision cannot overwrite company policy                                                               0.76s  
+
+   FAIL  Tests\Feature\Phase12\AiTranscriptRevisionsTest
+  ✓ original description is available only on demand and reprocessing requires confirmation                      4.14s  
+  ✓ explicit reprocessing opens a new unsaved sales form only after acknowledgement                              1.67s  
+  ✓ unsynchronized latest browser edit refuses replacement and discard cancels only the new request              1.06s  
+  ✓ clarification preserves the old form and requires a second acknowledgement                                   1.38s  
+  ⨯ numeric clarification uses the rendered index and keeps exact rate until acknowledgement                     2.05s  
+  ✓ original intent session and current policy remain authoritative                                              1.28s  
+
+   PASS  Tests\Feature\Phase12\AiUsageSummaryTest
+  ✓ exact company and user aggregates exclude foreign tenants and distinguish unknown cost                       1.61s  
+  ✓ self usage permission does not grant company usage and membership is rechecked                               0.89s  
+
+   PASS  Tests\Feature\Phase12\AssistantConsentScopeTest
+  ✓ single company route has separate explicit transaction and question consent in ar and en                     9.82s  
+  ✓ question consent never authorizes transaction or connection test purposes                                    1.70s  
+  ✓ unrelated policy revision limits retention and workflow changes preserve consent                             1.23s  
+  ✓ unrelated change after display still allows explicit acceptance                                              5.11s  
+  ✓ key revision change after disclosure refuses stale consent atomically                                        4.58s  
+  ✓ material privacy change invalidates both existing purpose consents                                           1.58s  
+  ✓ transaction scope changes affect its consent but report permissions are independent                          1.26s  
+  ✓ metadata disclosure and consent do not decrypt or activate credentials                                       1.80s  
+  ✓ revoked selected connection is an actionable safe error without fallback                                     1.50s  
+  ✓ historical user route and fallback preferences cannot change active disclosure                               2.47s  
+  ✓ revoked membership and role downgrade cannot accept displayed consent                                        1.71s  
+  ✓ foreign company connection cannot be disclosed or consented                                                  2.36s  
+
+   PASS  Tests\Feature\Phase12\AssistantLauncherMountTest
+  ✓ blade alias resolves the exact case sensitive class without prior class mount                                0.69s  
+  ✓ disabled launcher does not break authenticated ar en layout and both forms                                   1.56s  
+  ✓ enabled alias mount uses controller render data and existing consent picker                                  0.75s  
+
+   PASS  Tests\Feature\Phase12\AssistantMemoryTest
+  ✓ leaving a form discards only owned session memory and is idempotent                                          0.59s  
+  ✓ foreign actor and session tokens are indistinguishable but not deleted                                       0.59s  
+  ✓ revocation and disabled ai do not prevent sensitive memory cleanup                                           0.53s  
+  ✓ invalid tokens are rejected and guests cannot discard state                                                  0.53s  
+
+   FAIL  Tests\Feature\Phase12\AssistantMigrationPreservationTest
+  ⨯ additive audit migration round trip preserves business data and all six reconciliations                      9.84s  
+
+   PASS  Tests\Feature\Phase12\FinalAssistantEconomicJourneyTest
+  ✓ current unsaved purchase and sales forms preserve canonical fefo tax and six reconciliations                 2.17s  
+
+   PASS  Tests\Feature\Phase12\PurchaseDraftCommandsTest
+  ✓ manual explicit save without ai creates only one draft and no posting effects                                0.55s  
+  ✓ canonical decimal replay survives master name changes and rejects changed economics                          0.56s  
+  ✓ float and reserved effect fields cannot enter the draft command                                              0.49s  
+  ✓ actor downgrade rechecks cost permission even on receipt replay                                              0.59s  
+  ✓ final human fields are atomically recorded with purchase receipt and encrypted provenance                    0.59s  
+  ✓ provenance failure rolls back draft lines receipt and audit atomically                                       0.60s  
+  ✓ wrong form or expired source cannot be recorded as accepted ai                                               0.69s  
+
+   PASS  Tests\Feature\Phase12\PurchaseDraftConcurrencyTest
+  ✓ concurrent identical create yields one draft and one receipt                                                13.37s  
+  ✓ concurrent conflicting payload same form key yields one draft one conflict                                  13.45s  
+  ✓ actor role downgrade at lock boundary refuses both attempts without writes                                  37.57s  
+  ✓ revoked membership at lock boundary refuses both attempts without writes                                    24.27s  
+  ✓ foreign company entity cannot be used to create draft and control tenant is unchanged                       13.62s  
+
+   PASS  Tests\Feature\Phase12\PurchaseFormCorrectionsTest
+  ✓ exact unit cost and quantity correction preserves human fields and undoes without database writes            1.47s  
+  ✓ purchase patch rejects sales price field with intent mismatch                                                1.03s  
+  ✓ add and remove line patches operate on canonical purchase lines                                              1.98s  
+  ✓ unit conversion patch preserves authoritative product identity and cost                                      1.75s  
+  ✓ purchase tax discount and foreign currency fx patches                                                        2.64s  
+  ✓ missing vendor invoice and expiry lot fields remain unresolved and reject hallucinations                     1.48s  
+  ✓ purchase corrections require cost view and fresh domain permissions                                          1.11s  
+  ✓ livewire purchase form lifecycle highlights refuses overwriting manual edits and saves explicitly            2.89s  
+  ✓ normal purchase form save without ai creates draft without ai records                                        1.00s  
+
+   PASS  Tests\Feature\Phase12\TenantSpeechCandidatesTest
+  ✓ exact sku and barcode take precedence over fuzzy candidates                                                  0.67s  
+  ✓ arabic normalized collisions produce ambiguity requiring explicit choice                                     0.75s  
+  ✓ english minor typo requires choice and does not silently auto select                                         0.66s  
+  ✓ candidates capped at five and refusal when exceeding finite scan cap                                         0.96s  
+  ✓ foreign company and inactive records excluded including explicit choice                                      1.35s  
+  ✓ same person admin in company a and viewer in company b is gated by permissions                               1.47s  
+  ✓ piece carton spoken variants map against product active units preserving prices                              0.77s  
+  ✓ bogus reference returns no candidates and does not select unrelated records                                  0.62s  
+  ✓ multiline payload preserves valid lines while clarifying unresolved line                                     0.72s  
+  ✓ financial history invariance and no stray requests                                                           0.66s  
+  ✓ normalization choices handle digits tatweel diacritics alef and whitespace                                   0.62s  
+
+   PASS  Tests\Feature\Phase12\TransactionAssistantTest
+  ✓ global deterministic sale replays one unsaved handoff with zero text calls                                   0.92s  
+  ✓ unsupported vendor payment never maps to a purchase writer                                                   0.89s  
+  ✓ outage has one attempt no fallback and retains reservation                                                   1.11s  
+  ✓ invalid output never retries and unknown cost reservation is retained                                        1.02s  
+  ✓ high confidence fabricated numeric payload cannot route or fallback                                          1.05s  
+  ✓ cancel during inference suppresses late handoff without claiming unbilled request                            0.92s  
+  ✓ human currency rate clarification retains exact resolved line and does not dispatch again                    1.04s  
+  ✓ cancel after handoff deletes memory and cannot replay it                                                     0.72s  
+
+   PASS  Tests\Feature\Phase12\TransactionProposalResolverTest
+  ✓ sale resolves exact carton identity into unsaved fields and labels defaults                                  0.68s  
+  ✓ partial second line preserves first line and asks only for unresolved product                                0.71s  
+  ✓ ambiguous party is bounded and explicit choice does not erase resolved lines                                 0.72s  
+  ✓ purchase resolves canonical stock unit without inventing supplier number or lots                             0.70s  
+  ✓ nonbase currency requires fx without losing resolved identity or price                                       0.62s  
+  ✓ purchase cost permission is rechecked before any suggestion is exposed                                       0.63s  
+  ✓ sku barcode collision requires a choice instead of selecting a product                                       0.68s  
+
+   PASS  Tests\Feature\Phase12\UnsavedAssistantFormsTest
+  ✓ launcher opens the existing unsaved sales form without an apply step                                         1.16s  
+  ✓ sales form is editable unsaved and save audits the human final fields                                        1.10s  
+  ✓ purchase form is unsaved and save uses the idempotent canonical draft facade                                 1.40s  
+  ✓ discard keeps manual fields but forgets assistant memory                                                     1.08s  
+  ✓ global feature disabled preserves the manual form without assistant controls                                 0.66s  
+  ✓ reload preserves human edits and obsolete tab cannot save                                                    3.97s  
+
+   PASS  Tests\Feature\Phase1\AuditServiceTest
+  ✓ audit service logs event with actor and metadata                                                             0.49s  
+  ✓ audit service redacts sensitive keys                                                                         0.55s  
+  ✓ audit event is immutable and cannot be updated                                                               0.52s  
+  ✓ audit event is immutable and cannot be deleted                                                               0.52s  
+
+   PASS  Tests\Feature\Phase1\BootstrapCompanyCommandTest
+  ✓ existing zero company user bootstraps company safely                                                         0.60s  
+  ✓ duplicate bootstrap safely reuses and does not duplicate records                                             0.54s  
+  ✓ bootstrap fails for non existent user                                                                        0.05s  
+  ✓ bootstrap fails for invalid currency                                                                         0.06s  
+
+   FAIL  Tests\Feature\Phase1\CompanyDomainActionsTest
+  ✓ update currencies action enforces single enabled base                                                        0.56s  
+  ✓ update localization action enforces single default language                                                  0.51s  
+  ✓ add company member action rejects owner role                                                                 0.61s  
+  ✓ add company member action creates member atomically                                                          0.57s  
+  ✓ add company member action rejects existing user email and prevents partial writes                            0.65s  
+  ✓ update member role action prevents unauthorized owner promotion and last owner demotion                      0.60s  
+  ✓ update role permissions action enforces catalog and owner immutability                                       0.64s  
+  ✓ toggle member status action toggles ordinary member and prevents deactivating last owner                     0.60s  
+  ✓ owner invariant failures are atomic and roll back without audit records                                      0.50s  
+  ✓ non owner cannot demote or deactivate owner at domain action level                                           0.76s  
+  ⨯ permission catalog is authoritative and external permissions are not seeded                                  0.71s  
+
+   FAIL  Tests\Feature\Phase1\CompanyLanguagePolicyTest
+  ✓ arabic is always enabled and english can be disabled                                                         1.19s  
+  ✓ disabling english when default normalizes company and document defaults to arabic                            1.21s  
+  ✓ disabling english does not overwrite user stored locale preference                                           1.26s  
+  ⨯ user sees english in company enabling it and arabic in company disabling it and english on return            1.27s  
+  ✓ guest zero company and selection states follow user or session locale normally                               1.38s  
+  ✓ post locale switch refuses disabled english                                                                  1.12s  
+  ✓ post locale switch allows arabic                                                                             1.24s  
+  ✓ post locale switch remains usable without active company                                                     1.40s  
+  ✓ no state changing get locale route exists                                                                    3.50s  
+  ✓ livewire settings saves english enabled toggle and normalizes default                                        1.32s  
+  ✓ tenant isolation of language settings between companies                                                      0.94s  
+  ✓ real livewire request resolves company before effective locale                                               1.02s  
+  ✓ app shell hides english switch for english disabled company and shows on return                              1.12s  

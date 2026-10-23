@@ -26,6 +26,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 use Livewire\Livewire;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\Support\Phase12\AssistantFixtures;
@@ -114,7 +115,7 @@ class DeepSeekSetupTest extends TestCase
         Http::fake(fn () => Http::response($this->reply()));
         $component = Livewire::test(DeepSeekSetup::class)->assertSee('DeepSeek AI')->assertSee('Not connected yet')
             ->call('testConnection', 'synthetic-key-never-real', 'synthetic-owner-password', true)
-            ->assertSet('status', 'verified')->call('startUsing')->assertDispatched('ai:open-assistant');
+            ->assertSet('status', 'verified')->call('startUsing')->assertRedirect(route('settings.ai', ['open_assistant' => 1]));
         $this->assertStringNotContainsString('synthetic-key-never-real', $component->html());
         $this->assertArrayNotHasKey('newKey', $component->snapshot['data']);
         $connection = AiProviderConnection::sole();
@@ -145,16 +146,20 @@ class DeepSeekSetupTest extends TestCase
     {
         $policy = $this->legacyPolicy(false, ['allowed_intents' => [], 'questions' => ['enabled' => false, 'allowed_reports' => []]]);
         Http::fake(fn () => Http::response($this->reply()));
-        $this->assertSame('verified', $this->connect()['status']);
+        $result = $this->connect();
+        $this->assertSame('failed', $result['status']);
+        $this->assertSame('disabled', $result['reason']);
+        Http::assertNothingSent();
         $policy->refresh();
         $this->assertFalse($policy->enabled);
         $this->assertSame([], $policy->settings['allowed_intents']);
         $this->assertFalse($policy->settings['questions']['enabled']);
         $this->assertFalse(app(DeepSeekQuickConnect::class)->canStartUsing($this->company, $this->owner));
+        // A malformed legacy policy must not become valid merely by testing a key.
+        $this->transition($policy);
+        $policy->refresh();
+        $this->expectException(ValidationException::class);
         app(DeepSeekQuickConnect::class)->enableCompany($this->company, $this->owner, 'synthetic-owner-password', $policy->revision);
-        $this->assertTrue($policy->fresh()->enabled);
-        $this->assertSame([], $policy->fresh()->settings['allowed_intents']);
-        Http::assertSentCount(1);
     }
 
     public function test_revoked_credential_is_never_revived_and_replacement_preserves_history(): void
@@ -415,7 +420,7 @@ class DeepSeekSetupTest extends TestCase
         $this->assertSame($policy, AiCompanyPolicy::sole()->getRawOriginal());
         $this->assertSame($consents, AiUserPreference::sole()->getRawOriginal());
         $this->assertSame($reason, app(DeepSeekQuickConnect::class)->latestHealth($this->company)['status']);
-        $component->call('startUsing')->assertDispatched('ai:open-assistant');
+        $component->call('startUsing')->assertRedirect(route('settings.ai', ['open_assistant' => 1]));
         $this->assertDatabaseCount('assistant_requests', 0);
         $this->assertSame(1, $attempted);
         Http::assertSentCount($case === 'timeout' ? 0 : 1);

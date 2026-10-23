@@ -150,6 +150,13 @@ final class AssistantLauncher extends Component
             $record = AssistantRecordContext::fromRoute();
             $this->recordType = $record['type'] ?? null;
             $this->recordPublicId = $record['public_id'] ?? null;
+            if (request()->routeIs('settings.ai') && request()->boolean('open_assistant')) {
+                try {
+                    $this->showAssistant();
+                } catch (AssistantUnavailable|AuthorizationException) {
+                    $this->open = false;
+                }
+            }
         }
     }
 
@@ -942,7 +949,7 @@ final class AssistantLauncher extends Component
         $questionsAvailable = $transactionsAvailable = false;
         $briefingAvailable = false;
         $recordLabel = null;
-        if ($context->hasCompany()) {
+        if ($context->hasCompany() && AiGovernance::isPresentationEligible($context->company())) {
             $setupAvailable = app(DeepSeekQuickConnect::class)->isOwner($context->company(), auth()->user());
             try {
                 $recordContext = $this->resolveCurrentRecord();
@@ -971,6 +978,8 @@ final class AssistantLauncher extends Component
                 }
             } catch (AssistantUnavailable|AuthorizationException) {
                 $available = false;
+                $setupAvailable = false;
+                $this->open = false;
                 $briefingAvailable = false;
                 $this->reportResult = null;
                 $this->turnReports = [];

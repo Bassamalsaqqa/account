@@ -40,6 +40,34 @@ final class AiGovernance
         }
     }
 
+    /**
+     * Cheap presentation eligibility gate.
+     * Short-circuits global OFF before policy lookup; it is NEVER authorization.
+     * Does not cache permissions or membership, and introduces no static/singleton cross-request cached policy.
+     */
+    public static function isPresentationEligible(?Company $company): bool
+    {
+        if ($company === null) {
+            return false;
+        }
+
+        if (config('ai_assistant.enabled') !== true) {
+            return false;
+        }
+
+        $disabledCompanyIds = config('ai_assistant.disabled_company_ids', []);
+        if (in_array((string) $company->id, $disabledCompanyIds, true)) {
+            return false;
+        }
+
+        $policy = AiCompanyPolicy::where('company_id', $company->id)->first();
+        if ($policy === null || ! $policy->enabled) {
+            return false;
+        }
+
+        return true;
+    }
+
     public function authorizeUse(Company $company, User $actor, string $intent, bool $speech = false): AiCompanyPolicy
     {
         if (config('ai_assistant.enabled') !== true
@@ -54,7 +82,7 @@ final class AiGovernance
                 throw new AssistantUnavailable('intent_unsupported');
             }
             $policy = AiCompanyPolicy::where('company_id', $company->id)->lockForUpdate()->first();
-            if ($policy === null || (! $policy->enabled && $intent !== 'connection_test')) {
+            if ($policy === null || ! $policy->enabled) {
                 throw new AssistantUnavailable('disabled');
             }
             if ($intent === 'connection_test') {

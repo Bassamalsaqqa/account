@@ -70,6 +70,18 @@ return [
     'card_security_desc' => 'Company security preferences and password confirmation. Manage personal 2FA in Profile.',
     'card_audit_title' => 'Audit Log',
     'card_audit_desc' => 'Review user activities and sensitive system operations.',
+    'card_ai_title' => 'AI Assistant',
+    'card_ai_desc' => 'Company-wide Master AI Switch, governance, DeepSeek BYOK connection, and reports.',
+    'ai_status_enabled' => 'Active',
+    'ai_status_disabled' => 'Disabled',
+    'ai_status_not_configured' => 'Setup Required',
+    'ai_status_globally_disabled' => 'Unavailable',
+    'ai_switch_label' => 'Company Master AI Switch',
+    'ai_switch_help' => 'When disabled, all AI assistance and external provider calls are completely stopped across this company while preserving credentials, settings, and manual drafts.',
+    'ai_switch_enable' => 'Enable AI for Company',
+    'ai_switch_disable' => 'Disable AI for Company',
+    'ai_switch_disabled_notice' => 'AI Assistant is currently turned off for this company. No data is sent to external AI providers.',
+    'ai_switch_globally_unavailable_notice' => 'AI Assistant is globally unavailable or disabled for this company by server configuration.',
 
     // Section 4: Documents & Data
     'sec_docs_title' => 'Documents & Data',

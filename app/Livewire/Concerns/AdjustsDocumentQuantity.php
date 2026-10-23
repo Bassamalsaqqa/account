@@ -218,7 +218,7 @@ trait AdjustsDocumentQuantity
             return $refuse(__('mobile.invalid_direction'));
         }
         foreach ($directions as $direction) {
-            if (! is_string($direction) || ! in_array($direction, ['up', 'down'], true)) {
+            if (! in_array($direction, ['up', 'down'], true)) {
                 return $refuse(__('mobile.invalid_direction'));
             }
         }

@@ -1,0 +1,47 @@
+[
+  {
+    "path": "/products",
+    "method": "scanCameraBarcode",
+    "hardware": false,
+    "wall_ms": 759,
+    "status": 200,
+    "queries": "21",
+    "server_ms": "289.238",
+    "request_bytes": 706,
+    "response_bytes": 45133,
+    "result": {
+      "ok": true,
+      "message": "تم مسح الرمز بنجاح."
+    }
+  },
+  {
+    "path": "/invoices/create",
+    "method": "scanCameraBarcode",
+    "hardware": false,
+    "wall_ms": 1087,
+    "status": 200,
+    "queries": "43",
+    "server_ms": "459.975",
+    "request_bytes": 2784,
+    "response_bytes": 79613,
+    "result": {
+      "ok": true,
+      "message": "تم مسح الرمز بنجاح."
+    }
+  },
+  {
+    "path": "/purchases/create",
+    "method": "scanCameraBarcode",
+    "hardware": false,
+    "wall_ms": 892,
+    "status": 200,
+    "queries": "75",
+    "server_ms": "416.483",
+    "request_bytes": 2568,
+    "response_bytes": 53499,
+    "result": {
+      "ok": true,
+      "message": "تم مسح الرمز بنجاح."
+    }
+  }
+]

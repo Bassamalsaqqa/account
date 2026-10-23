@@ -27,6 +27,11 @@ use Tests\TestCase;
 /** Real independent connections; no RefreshDatabase transaction hides fixtures from children. */
 class PublicationConcurrencyTest extends TestCase
 {
+    private ?DisposableMariaDbSchema $fixtureSchema = null;
+
+    /** @var array<string,int> */
+    private array $primaryCounts = [];
+
     private Company $company;
 
     private User $owner;
@@ -34,7 +39,13 @@ class PublicationConcurrencyTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        DisposableMariaDbSchema::assertPrimarySchema(DB::connection()->getDatabaseName());
+        $primary = DB::connection()->getDatabaseName();
+        DisposableMariaDbSchema::assertPrimarySchema($primary);
+        foreach (['companies', 'users', 'sales_invoices', 'posting_batches', 'stock_movements'] as $table) {
+            $this->primaryCounts[$table] = DB::table($table)->count();
+        }
+        $this->fixtureSchema = DisposableMariaDbSchema::createFromSource($primary);
+        $this->fixtureSchema->switchLaravelConnection();
         app(CompanyContext::class)->clear();
         $this->owner = User::factory()->create();
         $this->company = app(CreateCompanyAction::class)->execute($this->owner, ['name_ar' => 'Publication race company', 'base_currency_code' => 'ILS']);
@@ -42,6 +53,19 @@ class PublicationConcurrencyTest extends TestCase
         auth()->login($this->owner);
         setPermissionsTeamId($this->company->id);
         $this->assertSame(0, DB::transactionLevel());
+    }
+
+    protected function tearDown(): void
+    {
+        try {
+            $this->fixtureSchema?->restoreLaravelConnection();
+            $this->fixtureSchema?->drop();
+            foreach ($this->primaryCounts as $table => $count) {
+                $this->assertSame($count, DB::table($table)->count(), 'Publication fixtures must not leak into the primary test schema.');
+            }
+        } finally {
+            parent::tearDown();
+        }
     }
 
     private function customer(): Customer
@@ -185,8 +209,9 @@ class PublicationConcurrencyTest extends TestCase
         $environment = ['APP_KEY' => (string) config('app.key'), 'APP_URL' => (string) config('app.url'), 'DB_URL' => '',
             'APP_ENV' => 'testing', 'CACHE_STORE' => 'array', 'SESSION_DRIVER' => 'array'];
         foreach (['host', 'port', 'database', 'username', 'password'] as $key) {
-            $environment['DB_'.strtoupper($key)] = (string) config('database.connections.mysql.'.$key);
+            $environment['DB_'.strtoupper($key)] = (string) config('database.connections.'.DB::getDefaultConnection().'.'.$key);
         }
+        $environment = array_replace($environment, $this->fixtureSchema->environment());
         file_put_contents($payloadPath, json_encode(['company_id' => $this->company->id, 'actor_id' => $this->owner->id,
             'operation' => 'catalog-read', 'grant_id' => $grant->id, 'ready' => $ready, 'release' => $release,
             'attempting' => $attempting, 'rendering' => $rendering, 'finish_render' => $finish], JSON_THROW_ON_ERROR));
@@ -234,8 +259,9 @@ class PublicationConcurrencyTest extends TestCase
         $environment = ['APP_KEY' => (string) config('app.key'), 'APP_URL' => (string) config('app.url'),
             'DB_URL' => '', 'APP_ENV' => 'testing', 'CACHE_STORE' => 'array', 'SESSION_DRIVER' => 'array'];
         foreach (['host', 'port', 'database', 'username', 'password'] as $key) {
-            $environment['DB_'.strtoupper($key)] = (string) config('database.connections.mysql.'.$key);
+            $environment['DB_'.strtoupper($key)] = (string) config('database.connections.'.DB::getDefaultConnection().'.'.$key);
         }
+        $environment = array_replace($environment, $this->fixtureSchema->environment());
         $locked = false;
         try {
             DB::beginTransaction();

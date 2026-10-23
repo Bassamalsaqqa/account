@@ -410,6 +410,16 @@
     @elseif ($activeTab === 'barcodes')
         <!-- Barcodes Tab -->
         <x-card padding="p-0">
+            @if ($product->barcodes->isNotEmpty() && auth()->user()?->hasPermissionTo('inventory.barcode_labels.print') && auth()->user()?->hasAnyPermission(['inventory.stock.view', 'inventory.product.manage']))
+                <div class="flex items-center justify-between p-3.5 border-b border-border bg-surface-soft">
+                    <span class="text-xs font-bold text-text-secondary">{{ __('inventory.barcodes') }}</span>
+                    <a href="{{ route('labels.index', ['search' => $product->sku ?? ($product->barcodes->first()?->barcode ?? '')]) }}"
+                       class="touch-action inline-flex items-center gap-1.5 px-3 py-1.5 rounded-control border border-border bg-white text-xs font-bold text-text-secondary hover:text-text-primary hover:bg-surface transition-colors focus-visible:ring-2 focus-visible:ring-primary">
+                        <x-icon name="printer" class="w-3.5 h-3.5 text-primary" />
+                        <span>{{ __('release_b1_workflow.print_barcode_labels') }}</span>
+                    </a>
+                </div>
+            @endif
             <div class="overflow-x-auto">
                 <table class="w-full text-xs text-right rtl:text-right ltr:text-left">
                     <thead class="bg-surface-soft border-b border-border text-text-secondary font-bold">

@@ -151,6 +151,8 @@ class CatalogPublicationTest extends Phase5ETestCase
 
     public function test_genuine_catalog_v1_timestamp_where_local_differs_from_utc_preserves_db_instant_and_profile_on_password_edit(): void
     {
+        // Keep the historical grant unexpired while testing its stored instant.
+        $this->travelTo(Carbon::parse('2026-10-15 20:00:00', 'UTC'));
         $catalog = $this->catalog();
         $link = $this->publish($catalog);
         $service = app(CatalogService::class);

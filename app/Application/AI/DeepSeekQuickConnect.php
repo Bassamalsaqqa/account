@@ -126,6 +126,35 @@ final class DeepSeekQuickConnect
         });
     }
 
+    /**
+     * Disabled companies retain credentials, settings, grants, caps and consent history.
+     * Disable must work even when setup/legacy config is invalid; no normalization occurs.
+     */
+    public function disableCompany(Company $company, User $actor, #[SensitiveParameter] string $password, int $expectedPolicyRevision): void
+    {
+        DB::transaction(function () use ($company, $actor, $password, $expectedPolicyRevision): void {
+            $this->authorize($company, $actor);
+            app(AiGovernance::class)->confirmOwner($company, $actor, $password);
+            $policy = AiCompanyPolicy::where('company_id', $company->id)->lockForUpdate()->first();
+            if ($policy === null || (int) $policy->revision !== $expectedPolicyRevision) {
+                throw new AssistantUnavailable('proposal_stale');
+            }
+            if ($policy->enabled) {
+                $policy->enabled = false;
+                $policy->revision = (int) $policy->revision + 1;
+                $policy->save();
+                app(AuditService::class)->log(
+                    (int) $company->id,
+                    'ai.policy.updated',
+                    'AI company policy disabled by owner.',
+                    (int) $actor->id,
+                    $policy,
+                    meta: ['revision' => $policy->revision, 'enabled' => false]
+                );
+            }
+        });
+    }
+
     private function assertRevisions(?AiCompanyPolicy $policy, ?AiProviderConnection $connection, int $policyRevision, int $connectionRevision): void
     {
         if (($policy === null ? 0 : (int) $policy->revision) !== $policyRevision
@@ -236,6 +265,9 @@ final class DeepSeekQuickConnect
                 if (($policy === null ? 0 : (int) $policy->revision) !== $expectedPolicyRevision
                     || ($connection === null ? 0 : $connection->revision) !== $expectedConnectionRevision) {
                     throw new AssistantUnavailable('proposal_stale');
+                }
+                if ($policy !== null && ! $policy->enabled) {
+                    throw new AssistantUnavailable('disabled');
                 }
                 if ($this->needsTransition($company)) {
                     throw new AssistantUnavailable('transition_required');

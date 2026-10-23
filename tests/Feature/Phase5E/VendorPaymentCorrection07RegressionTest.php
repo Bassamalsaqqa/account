@@ -8,7 +8,11 @@ use App\Actions\Purchasing\ApplyVendorPaymentCreditAction;
 use App\Actions\Purchasing\PostVendorPaymentAction;
 use App\Actions\Purchasing\ReverseVendorPaymentAction;
 use App\Domain\Accounting\Exceptions\ImmutableRecordException;
+use App\Domain\Money\ValueObjects\ExchangeRate;
+use App\Domain\Posting\DTO\PostingCommand;
+use App\Domain\Posting\DTO\PostingLineCommand;
 use App\Domain\Purchasing\Queries\VendorStatementQuery;
+use App\Models\LedgerAccount;
 use App\Models\PostingBatch;
 use App\Models\VendorPayment;
 use App\Services\Accounting\AccountingReconciliationService;
@@ -56,6 +60,23 @@ final class VendorPaymentCorrection07RegressionTest extends Phase5ETestCase
             'payment_date' => '2026-10-01', 'payment_method' => 'cash',
             'amount' => '100.00', 'exchange_rate' => '1', 'idempotency_key' => 'c07-payment', 'allocations' => [],
         ], $changes));
+    }
+
+    /** Exercise generic date semantics without bypassing the protected Purchase Return boundary. */
+    private function sharedReversalBatch(): PostingBatch
+    {
+        $cash = LedgerAccount::where('company_id', $this->company->id)->where('system_key', 'cash_control')->firstOrFail();
+        $revenue = LedgerAccount::where('company_id', $this->company->id)->where('system_key', 'sales_revenue')->firstOrFail();
+
+        return app(AccountingPostingService::class)->post(new PostingCommand(
+            company: $this->company, postingDate: now(), sourceType: 'manual_journal', sourceId: 901,
+            transactionCurrencyCode: 'ILS', baseCurrencyCode: 'ILS', exchangeRate: ExchangeRate::one(),
+            idempotencyKey: 'c07-shared-date-fixture', postedBy: $this->owner,
+            lines: [
+                PostingLineCommand::debit(1, $cash->id, '10.000000', 'ILS', '10.000000', ExchangeRate::one()),
+                PostingLineCommand::credit(2, $revenue->id, '10.000000', 'ILS', '10.000000', ExchangeRate::one()),
+            ],
+        ));
     }
 
     public static function localDateBoundaries(): array
@@ -145,8 +166,8 @@ final class VendorPaymentCorrection07RegressionTest extends Phase5ETestCase
     public function test_unspecified_shared_reversal_date_retains_existing_utc_default(): void
     {
         $this->freezeCompanyTime('2026-10-06 22:30:00', 'Asia/Hebron');
-        $purchase = $this->createAndPostPurchase();
-        $reversal = app(AccountingReversalService::class)->reverse($purchase->postingBatch, $this->owner);
+        $batch = $this->sharedReversalBatch();
+        $reversal = app(AccountingReversalService::class)->reverse($batch, $this->owner);
         $this->assertSame('2026-10-06', $reversal->posting_date->toDateString());
         $this->assertSame('2026-10-07', Carbon::now($this->company->timezone)->toDateString());
     }
@@ -257,13 +278,13 @@ final class VendorPaymentCorrection07RegressionTest extends Phase5ETestCase
     public function test_shared_explicit_date_is_preserved_without_conversion_and_retry_keeps_original_date(): void
     {
         $this->freezeCompanyTime('2026-10-06 22:30:00', 'Asia/Hebron');
-        $purchase = $this->createAndPostPurchase();
+        $batch = $this->sharedReversalBatch();
         $service = app(AccountingReversalService::class);
-        $reversal = $service->reverse($purchase->postingBatch, $this->owner, null, '2026-10-04');
+        $reversal = $service->reverse($batch, $this->owner, null, '2026-10-04');
         $this->assertSame('2026-10-04', $reversal->posting_date->toDateString());
         $before = PostingBatch::count();
         Carbon::setTestNow(Carbon::parse('2026-10-08 22:30:00', 'UTC'));
-        $retry = $service->reverse($purchase->postingBatch->fresh(), $this->owner, null, '2026-10-09');
+        $retry = $service->reverse($batch->fresh(), $this->owner, null, '2026-10-09');
         $this->assertSame($reversal->id, $retry->id);
         $this->assertSame('2026-10-04', $retry->posting_date->toDateString());
         $this->assertSame($before, PostingBatch::count());

@@ -37,6 +37,14 @@
                     </button>
                 @endif
 
+                @if ($singleAllocatedInvoice)
+                    <a href="{{ route('invoices.show', $singleAllocatedInvoice->public_id) }}"
+                       class="touch-action inline-flex items-center gap-1.5 px-3 py-1.5 rounded-control border border-border text-xs font-bold text-text-secondary hover:text-text-primary hover:bg-surface-soft transition-colors focus-visible:ring-2 focus-visible:ring-primary">
+                        <x-icon name="arrow-right" class="w-3.5 h-3.5 rtl:rotate-0 ltr:rotate-180 text-primary" />
+                        <span>{{ __('release_b1_workflow.back_to_invoice') }}: {{ $singleAllocatedInvoice->invoice_number }}</span>
+                    </a>
+                @endif
+
                 <x-document-actions route-name="pdf.payment" :parameters="['publicId' => $payment->public_id]" :permissions="['sales.document.pdf', 'money.receipt.view']" />
 
                 <a href="{{ route('payments.index') }}"
@@ -109,9 +117,13 @@
                     @forelse ($payment->allocations as $alloc)
                         <tr>
                             <td class="py-2.5 px-4 font-mono font-bold" dir="ltr">
-                                <a href="{{ route('invoices.show', $alloc->salesInvoice->public_id) }}" class="touch-action text-primary hover:underline">
-                                    {{ $alloc->salesInvoice->invoice_number }}
-                                </a>
+                                @if (auth()->user()?->hasPermissionTo('sales.invoice.view'))
+                                    <a href="{{ route('invoices.show', $alloc->salesInvoice->public_id) }}" class="touch-action text-primary hover:underline">
+                                        {{ $alloc->salesInvoice->invoice_number }}
+                                    </a>
+                                @else
+                                    <span>{{ $alloc->salesInvoice->invoice_number }}</span>
+                                @endif
                             </td>
                             <td class="py-2.5 px-4" dir="ltr">{{ $alloc->salesInvoice->issue_date ? $alloc->salesInvoice->issue_date->toDateString() : '—' }}</td>
                             <td class="py-2.5 px-4 font-bold" dir="ltr">

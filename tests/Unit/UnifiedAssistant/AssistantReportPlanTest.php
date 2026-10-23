@@ -23,6 +23,9 @@ class AssistantReportPlanTest extends TestCase
         foreach (AssistantReportCatalog::KEYS as $key) {
             $definition = app(AssistantReportCatalog::class)->definition($key);
             $filters = $definition['current'] ? [] : ['preset' => 'last_month'];
+            if ($key === 'sales.last-invoice') {
+                $filters['customer_name'] = 'Ahmed';
+            }
             $plan = AssistantReportPlan::fromArray($this->plan($key, $filters));
             $this->assertSame($key, $plan->reportKey);
             $this->assertSame([...$filters, 'page' => 1, 'per_page' => 5], $plan->queryFilters());

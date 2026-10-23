@@ -23,10 +23,19 @@
             </p>
         </div>
 
-        <a href="{{ route('payments.index') }}"
-           class="min-h-11 inline-flex items-center justify-center gap-2 px-3 active:bg-surface-soft focus-visible:ring-2 focus-visible:ring-primary py-1.5 rounded-control bg-surface-soft text-text-secondary hover:text-text-primary text-xs font-bold transition-colors">
-            {{ __('sales.back') }}
-        </a>
+        <div class="flex flex-wrap items-center gap-2">
+            @if ($sourceInvoicePublicId && auth()->user()?->hasPermissionTo('sales.invoice.view'))
+                <a href="{{ route('invoices.show', $sourceInvoicePublicId) }}"
+                   class="min-h-11 inline-flex items-center justify-center gap-2 px-3 active:bg-surface-soft focus-visible:ring-2 focus-visible:ring-primary py-1.5 rounded-control border border-border bg-white text-text-secondary hover:text-text-primary hover:bg-surface-soft text-xs font-bold transition-colors">
+                    <x-icon name="arrow-right" class="w-4 h-4 rtl:rotate-0 ltr:rotate-180 text-primary" />
+                    <span>{{ __('release_b1_workflow.back_to_invoice') }}: {{ $sourceInvoiceNumber }}</span>
+                </a>
+            @endif
+            <a href="{{ route('payments.index') }}"
+               class="min-h-11 inline-flex items-center justify-center gap-2 px-3 active:bg-surface-soft focus-visible:ring-2 focus-visible:ring-primary py-1.5 rounded-control bg-surface-soft text-text-secondary hover:text-text-primary text-xs font-bold transition-colors">
+                {{ __('sales.back') }}
+            </a>
+        </div>
     </div>
 
     <!-- Main Form -->

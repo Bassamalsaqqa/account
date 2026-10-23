@@ -1,0 +1,19 @@
+{
+  "composer-qa-frozen": "INCOMPLETE; not a pass",
+  "ordered-assistant-isolation-final": "OK (152 tests, 977 assertions)",
+  "agy-corrections-final": "OK (50 tests, 355 assertions)",
+  "start-compatibility-final": "OK (9 tests, 241 assertions)",
+  "export-opcache-final": "OK (28 tests, 488 assertions)",
+  "isolated-BarcodeCertificationTest": "OK (9 tests, 300 assertions)",
+  "remaining-financial-regressions": "Tests: 1564, Assertions: 26655, Errors: 1, Failures: 23.\r",
+  "phase1-purchasing-final": "Tests: 796, Assertions: 4113, Errors: 2, Failures: 1.\r",
+  "phase1-corrected-complete": "OK (87 tests, 681 assertions)",
+  "reversal-date-corrected": "OK (15 tests, 87 assertions)",
+  "money-boundary-final": "OK (2 tests, 11 assertions)",
+  "accessibility-corrected": "OK (4 tests, 1240 assertions)",
+  "full-failure-diagnostics": "Tests: 5, Assertions: 1070, Failures: 4.\r",
+  "catalog-corrected": "OK (13 tests, 128 assertions)",
+  "phpstan-final-source": "PASS; No errors",
+  "pint-final-source": "PASS; formatting",
+  "build-last": "PASS; production assets built"
+}

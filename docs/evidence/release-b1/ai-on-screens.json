@@ -1,0 +1,16 @@
+[
+  {
+    "locale": "ar",
+    "width": 390,
+    "state": "ON",
+    "disable_toggle_height": 44,
+    "launcher": 1
+  },
+  {
+    "locale": "en",
+    "width": 1440,
+    "state": "ON",
+    "disable_toggle_height": 40,
+    "launcher": 1
+  }
+]

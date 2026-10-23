@@ -1,0 +1,87 @@
+{
+  "baseline": [
+    {
+      "path": "/company/switch",
+      "method": "POST",
+      "status": 302,
+      "queries": 10,
+      "sql_ms": 20.389999999999993,
+      "server_ms": 113.4679,
+      "bytes": 370
+    },
+    {
+      "path": "/company/switch",
+      "method": "POST",
+      "status": 302,
+      "queries": 10,
+      "sql_ms": 55.74,
+      "server_ms": 287.2512,
+      "bytes": 370
+    },
+    {
+      "path": "/company/switch",
+      "method": "POST",
+      "status": 302,
+      "queries": 10,
+      "sql_ms": 47.089999999999996,
+      "server_ms": 131.5019,
+      "bytes": 370
+    },
+    {
+      "path": "/company/switch",
+      "method": "POST",
+      "status": 302,
+      "queries": 10,
+      "sql_ms": 62.23,
+      "server_ms": 148.0266,
+      "bytes": 370
+    },
+    {
+      "path": "/company/switch",
+      "method": "POST",
+      "status": 302,
+      "queries": 10,
+      "sql_ms": 70.47,
+      "server_ms": 175.0303,
+      "bytes": 370
+    }
+  ],
+  "final": [
+    {
+      "path": "/company/switch",
+      "method": "POST",
+      "status": 302,
+      "queries": 9,
+      "sql_ms": 29.719999999999995,
+      "server_ms": 115.1751,
+      "bytes": 370
+    },
+    {
+      "path": "/company/switch",
+      "method": "POST",
+      "status": 302,
+      "queries": 9,
+      "sql_ms": 231.94,
+      "server_ms": 295.483,
+      "bytes": 370
+    },
+    {
+      "path": "/company/switch",
+      "method": "POST",
+      "status": 302,
+      "queries": 9,
+      "sql_ms": 25.9,
+      "server_ms": 84.7428,
+      "bytes": 370
+    },
+    {
+      "path": "/company/switch",
+      "method": "POST",
+      "status": 302,
+      "queries": 9,
+      "sql_ms": 11.73,
+      "server_ms": 74.4006,
+      "bytes": 370
+    }
+  ]
+}

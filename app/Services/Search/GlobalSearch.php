@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Services\Search;
 
 use App\Models\Check;
-use App\Models\Company;
 use App\Models\CompanyUser;
 use App\Models\Customer;
 use App\Models\Product;
@@ -71,19 +70,11 @@ final class GlobalSearch
             return [];
         }
 
-        // Fresh company query on every request (do not trust cached status)
-        $company = Company::whereKey($companyId)
-            ->where('status', 'active')
-            ->first();
-
-        if (! $company) {
-            return [];
-        }
-
-        // Fresh active membership check
+        // One fresh indexed query checks membership and persisted company status.
         $isMember = CompanyUser::where('company_id', $companyId)
             ->where('user_id', $user->id)
             ->where('status', 'active')
+            ->whereHas('company', fn ($query) => $query->where('status', 'active'))
             ->exists();
 
         if (! $isMember) {

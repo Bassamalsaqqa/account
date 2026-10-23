@@ -1,0 +1,152 @@
+[
+  {
+    "width": 1440,
+    "path": "/products",
+    "operation": "$set",
+    "args": [
+      "search",
+      "Soap"
+    ],
+    "status": 200,
+    "wall_ms": 619,
+    "server_ms": 198.46,
+    "queries": 18,
+    "request_bytes": 699,
+    "response_bytes": 206828
+  },
+  {
+    "width": 1440,
+    "path": "/invoices/create",
+    "operation": "selectProduct",
+    "args": [
+      0,
+      1
+    ],
+    "status": 200,
+    "wall_ms": 588,
+    "server_ms": 218.661,
+    "queries": 31,
+    "request_bytes": 2774,
+    "response_bytes": 69317
+  },
+  {
+    "width": 1440,
+    "path": "/purchases/create",
+    "operation": "selectProduct",
+    "args": [
+      0,
+      1
+    ],
+    "status": 200,
+    "wall_ms": 578,
+    "server_ms": 217.174,
+    "queries": 64,
+    "request_bytes": 2558,
+    "response_bytes": 44023
+  },
+  {
+    "width": 1440,
+    "path": "/settings",
+    "operation": "$set",
+    "args": [
+      "activeSection",
+      "identity"
+    ],
+    "status": 200,
+    "wall_ms": 576,
+    "server_ms": 210.826,
+    "queries": 26,
+    "request_bytes": 1629,
+    "response_bytes": 10760
+  },
+  {
+    "width": 1440,
+    "path": "/dashboard",
+    "operation": "$set",
+    "args": [
+      "query",
+      "Soap"
+    ],
+    "status": 200,
+    "wall_ms": 661,
+    "server_ms": 253.028,
+    "queries": 43,
+    "request_bytes": 540,
+    "response_bytes": 30511
+  },
+  {
+    "width": 390,
+    "path": "/products",
+    "operation": "$set",
+    "args": [
+      "search",
+      "Soap"
+    ],
+    "status": 200,
+    "wall_ms": 578,
+    "server_ms": 206.436,
+    "queries": 18,
+    "request_bytes": 699,
+    "response_bytes": 206828
+  },
+  {
+    "width": 390,
+    "path": "/invoices/create",
+    "operation": "selectProduct",
+    "args": [
+      0,
+      1
+    ],
+    "status": 200,
+    "wall_ms": 703,
+    "server_ms": 270.667,
+    "queries": 31,
+    "request_bytes": 2774,
+    "response_bytes": 69317
+  },
+  {
+    "width": 390,
+    "path": "/purchases/create",
+    "operation": "selectProduct",
+    "args": [
+      0,
+      1
+    ],
+    "status": 200,
+    "wall_ms": 651,
+    "server_ms": 232.941,
+    "queries": 64,
+    "request_bytes": 2558,
+    "response_bytes": 44023
+  },
+  {
+    "width": 390,
+    "path": "/settings",
+    "operation": "$set",
+    "args": [
+      "activeSection",
+      "identity"
+    ],
+    "status": 200,
+    "wall_ms": 490,
+    "server_ms": 146.651,
+    "queries": 26,
+    "request_bytes": 1629,
+    "response_bytes": 10760
+  },
+  {
+    "width": 390,
+    "path": "/dashboard",
+    "operation": "$set",
+    "args": [
+      "query",
+      "Soap"
+    ],
+    "status": 200,
+    "wall_ms": 595,
+    "server_ms": 225.695,
+    "queries": 43,
+    "request_bytes": 540,
+    "response_bytes": 30511
+  }
+]

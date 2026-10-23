@@ -18,10 +18,20 @@
                 <time class="block mt-1 text-xs" datetime="{{ $latestHealth['checked_at'] }}">{{ $latestHealth['checked_at'] }}</time>
             </p>
         @endif
-        @if ($connectionStatus !== 'not_configured' && ! $needsTransition)
+        @if ($connectionStatus !== 'not_configured' && ! $needsTransition && ! $companyDisabled && ! $globallyDisabled)
             <button type="button" wire:click="refreshHealth" wire:loading.attr="disabled" wire:target="refreshHealth,testConnection"
                 class="ai-send mt-4"><x-icon name="shield" class="h-4 w-4" />{{ __('ai_product.refresh_health') }}</button>
             <span wire:loading wire:target="refreshHealth" role="status" class="text-sm text-text-secondary">{{ __('ai_product.checking_health') }}</span>
+        @endif
+        @if ($companyDisabled)
+            <div class="mt-4 rounded-control bg-amber-50 border border-amber-200 p-3 text-sm leading-relaxed text-amber-800" role="status">
+                <p class="font-bold">{{ __('ai_product.disabled_status_banner') }}</p>
+            </div>
+        @endif
+        @if ($globallyDisabled)
+            <div class="mt-4 rounded-control bg-slate-100 border border-slate-200 p-3 text-sm leading-relaxed text-slate-700" role="status">
+                <p>{{ __('settings.ai_switch_globally_unavailable_notice') }}</p>
+            </div>
         @endif
         @if ($needsTransition)
             <p class="mt-4 rounded-control bg-info-bg p-3 text-sm leading-relaxed text-info">{{ __('ai_product.existing_settings') }}</p>
@@ -58,8 +68,10 @@
                     <button type="button" @click="if (!busy) { busy = true; const pending = $wire.useDeepSeekOnly(password); password = ''; pending.finally(() => busy = false); }" :disabled="busy" class="ai-send">{{ __('ai_product.transition_action') }}</button>
                 @elseif ($companyDisabled)
                     <button type="button" @click="if (!busy) { busy = true; const pending = $wire.enableCompany(password, consent); password = ''; pending.finally(() => busy = false); }" :disabled="busy" class="ai-send">{{ __('ai_product.enable_company') }}</button>
+                @elseif ($hasPolicy && ! $companyDisabled)
+                    <button type="button" @click="if (!busy) { busy = true; const pending = $wire.disableCompany(password); password = ''; pending.finally(() => busy = false); }" :disabled="busy" class="px-4 py-2 rounded-control border border-rose-300 bg-rose-50 text-rose-700 hover:bg-rose-100 text-sm font-bold">{{ __('ai_product.disable_company') }}</button>
                 @endif
-                <button type="submit" :disabled="busy" @disabled($status !== 'idle' || $needsTransition) wire:loading.attr="disabled" wire:target="testConnection" class="ai-send"><x-icon name="shield" class="h-4 w-4" /><span>{{ __('ai_product.test') }}</span></button>
+                <button type="submit" :disabled="busy || @js($companyDisabled) || @js($globallyDisabled)" @disabled($status !== 'idle' || $needsTransition || $companyDisabled || $globallyDisabled) wire:loading.attr="disabled" wire:target="testConnection" class="ai-send"><x-icon name="shield" class="h-4 w-4" /><span>{{ __('ai_product.test') }}</span></button>
                 <span wire:loading wire:target="testConnection" role="status" class="text-sm text-text-secondary">{{ __('ai_product.thinking') }}</span>
             </div>
         </form>

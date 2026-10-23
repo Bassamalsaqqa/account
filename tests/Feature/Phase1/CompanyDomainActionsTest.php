@@ -462,11 +462,11 @@ class CompanyDomainActionsTest extends TestCase
         foreach (CompanyRoleService::PERMISSIONS as $expectedPerm) {
             $this->assertContains($expectedPerm, $ownerPermNames);
         }
-        $adminDefaults = array_values(array_diff(CompanyRoleService::PERMISSIONS, CompanyRoleService::PHASE9_PERMISSIONS));
+        $adminDefaults = array_values(array_diff(CompanyRoleService::PERMISSIONS, [...CompanyRoleService::PHASE9_PERMISSIONS, ...CompanyRoleService::AI_PERMISSIONS]));
         foreach ($adminDefaults as $expectedPerm) {
             $this->assertContains($expectedPerm, $adminPermNames);
         }
-        foreach (CompanyRoleService::PHASE9_PERMISSIONS as $newCapability) {
+        foreach ([...CompanyRoleService::PHASE9_PERMISSIONS, ...CompanyRoleService::AI_PERMISSIONS] as $newCapability) {
             $this->assertContains($newCapability, $ownerPermNames);
             $this->assertNotContains($newCapability, $adminPermNames);
         }
