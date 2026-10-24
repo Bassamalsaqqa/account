@@ -122,17 +122,14 @@ final class DeepSeekSetup extends Component
         }
     }
 
-    public function enableCompany(#[SensitiveParameter] string $password = '', bool $consent = false): void
+    public function enableCompany(#[SensitiveParameter] string $password = ''): void
     {
         $this->authorizeSetup();
         try {
-            if (! $consent) {
-                throw new AssistantUnavailable('consent');
-            }
             app(DeepSeekQuickConnect::class)->enableCompany(app(CompanyContext::class)->company(), auth()->user(),
                 $password, $this->policyRevision);
             $this->refreshRevisions();
-            $this->message = __('ai_product.enabled_review_consent');
+            $this->message = __('ai_product.enabled_done');
             $this->redirect(route('settings.ai'));
         } catch (AssistantUnavailable $e) {
             $this->message = __('ai_product.result_'.$e->diagnosticReason());

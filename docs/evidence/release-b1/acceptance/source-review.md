@@ -40,13 +40,13 @@ AGY source review is evidence only; Codex independently inspected the combined d
 
 AGY migration diagnosis: ### Diagnosis
 
-The failure in [`DisposableMariaDbSchema::migrate`](file:///C:/Users/bassa/AppData/Local/Codex/google-worker-workspaces/r_5b78e9902b6de712cd2bc2e6/task_19f8f1bf6c2f45ec9ff5ad9d4038b88d/worktree/tests/Support/DisposableMariaDbSchema.php#L179-L185) was caused by running the complete migration suite cold against a freshly created MariaDB database on Windows, exceeding Symfony `Process`’s 120-second timeout limit. Windows NTFS metadata and process spawning overhead during 100+ DDL operations account for the latency. [`DisposableMariaDbSchema::__destruct`](file:///C:/Users/bassa/AppData/Local/Codex/google-worker-workspaces/r_5b78e9902b6de712cd2bc2e6/task_19f8f1bf6c2f45ec9ff5ad9d4038b88d/worktree/tests/Support/DisposableMariaDbSchema.php#L45-L52) successfully cleaned the synthetic schema without test failures.
+The failure in [`DisposableMariaDbSchema::migrate`](https://github.com/Bassamalsaqqa/account/blob/fc4cda942bf1602c952559cf87f4cceace65e5c3/tests/Support/DisposableMariaDbSchema.php#L179) was caused by running the complete migration suite cold against a freshly created MariaDB database on Windows, exceeding Symfony `Process`’s 120-second timeout limit. Windows NTFS metadata and process spawning overhead during 100+ DDL operations account for the latency. [`DisposableMariaDbSchema::__destruct`](https://github.com/Bassamalsaqqa/account/blob/fc4cda942bf1602c952559cf87f4cceace65e5c3/tests/Support/DisposableMariaDbSchema.php#L45) successfully cleaned the synthetic schema without test failures.
 
 ### Local Harness Solution
 
 Without altering source code, dependencies, or security assertions, configure the local external runner wrapper to provision the initial primary schema before invoking `composer qa`:
 
-1. **Instantiate Schema**: Call [`DisposableMariaDbSchema::create()`](file:///C:/Users/bassa/AppData/Local/Codex/google-worker-workspaces/r_5b78e9902b6de712cd2bc2e6/task_19f8f1bf6c2f45ec9ff5ad9d4038b88d/worktree/tests/Support/DisposableMariaDbSchema.php#L54-L64) to obtain a verified, owned schema instance.
+1. **Instantiate Schema**: Call [`DisposableMariaDbSchema::create()`](https://github.com/Bassamalsaqqa/account/blob/fc4cda942bf1602c952559cf87f4cceace65e5c3/tests/Support/DisposableMariaDbSchema.php#L54) to obtain a verified, owned schema instance.
 2. **Execute Initial Migration (600s)**:
    ```php
    (new Symfony\Component\Process\Process(

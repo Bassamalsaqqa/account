@@ -55,7 +55,7 @@ class MasterAiSwitchTest extends TestCase
         $this->get(route('settings.ai'))->assertDontSee('wire:name="ai.assistant-launcher"', false);
         Livewire::actingAs($this->owner)
             ->test(DeepSeekSetup::class)
-            ->call('enableCompany', 'synthetic-configuration-only', true)
+            ->call('enableCompany', 'synthetic-configuration-only')
             ->assertRedirect(route('settings.ai'));
         $this->get(route('settings.ai'))->assertSee('wire:name="ai.assistant-launcher"', false);
         Http::assertNothingSent();
@@ -73,11 +73,11 @@ class MasterAiSwitchTest extends TestCase
 
         $setup = Livewire::test(DeepSeekSetup::class);
         $this->aiPolicy->increment('revision');
-        $setup->call('enableCompany', 'synthetic-configuration-only', true)
+        $setup->call('enableCompany', 'synthetic-configuration-only')
             ->assertNoRedirect()
             ->assertSet('policyRevision', (int) $this->aiPolicy->fresh()->revision);
         $this->assertFalse($this->aiPolicy->fresh()->enabled);
-        $setup->call('enableCompany', 'synthetic-configuration-only', true)->assertRedirect(route('settings.ai'));
+        $setup->call('enableCompany', 'synthetic-configuration-only')->assertRedirect(route('settings.ai'));
         Http::assertNothingSent();
     }
 
@@ -427,10 +427,10 @@ class MasterAiSwitchTest extends TestCase
             ->assertSee(__('settings.ai_status_disabled'))
             ->assertSee(__('settings.ai_switch_enable'));
 
-        // Toggle back ON from Settings Overview with consent
+        // Toggle back ON from Settings Overview without checkbox (reusing valid consent)
         Livewire::actingAs($this->owner)
             ->test(SettingsIndex::class)
-            ->call('enableCompanyAi', 'synthetic-configuration-only', true)
+            ->call('enableCompanyAi', 'synthetic-configuration-only')
             ->assertHasNoErrors();
 
         $this->assertTrue($this->aiPolicy->fresh()->enabled);

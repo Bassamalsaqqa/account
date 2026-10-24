@@ -24,7 +24,7 @@
     "recovery": "Outer pythonw wrapper disappeared after Composer completed; cause unverified. Codex separately ran six read-only reconciliations, verified immutable source and lock, and gracefully stopped the identity-verified owned MariaDB. No outer-wrapper exit status is claimed."
   },
   "ownership": {
-    "schema": "accounting_p8_tmp_2eb08448aae1",
+    "schema": "[owned-disposable-schema]",
     "host": "127.0.0.1",
     "port": 3318,
     "owned_fresh_schema": true,
@@ -73,5 +73,7 @@
     "local_barcode_tools": true,
     "disposable_flush_policy": 2
   },
-  "acceptance_pass": true
+  "acceptance_pass": true,
+  "record_status": "SUPERSEDED_HISTORICAL_ACCEPTANCE_OF_SOURCE_11c7cf7",
+  "current_receipt": "../pr58-review/qa-result.json"
 }

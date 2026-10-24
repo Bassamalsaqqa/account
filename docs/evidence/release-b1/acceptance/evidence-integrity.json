@@ -1,10 +1,12 @@
 {
   "source_commit": "11c7cf778018c842aadbedfe6eba29338aaac81c",
-  "complete_log_byte_identity": true,
+  "complete_log_byte_identity": false,
   "archive_integrity": true,
   "obvious_token_and_private_key_scan": "no matches",
   "private_environment_and_ownership_proof_files_excluded": true,
   "wrapper_limitation_disclosed": true,
   "qa_and_package_source_match": true,
-  "six_final_reconciliations_healthy": true
+  "six_final_reconciliations_healthy": true,
+  "record_status": "Historical validation amended for public path sanitization; original byte-identical artifact remains at reviewed baseline commit.",
+  "sanitized_summaries_exits_and_isolation_counts_preserved": true
 }

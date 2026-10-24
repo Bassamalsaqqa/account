@@ -101,7 +101,7 @@
                                 </div>
 
                                 @if ($isCompanyOwner && $aiStatus !== 'globally_disabled')
-                                    <div class="pt-2 border-t border-border/60 flex flex-wrap items-center justify-between gap-2 text-xs" x-data="{ openToggle: false, password: '', consent: false, busy: false }">
+                                    <div class="pt-2 border-t border-border/60 flex flex-wrap items-center justify-between gap-2 text-xs" x-data="{ openToggle: false, password: '', busy: false }">
                                         @if ($aiStatus === 'enabled')
                                             <button type="button" @click="openToggle = !openToggle" class="min-h-11 inline-flex items-center text-rose-600 hover:text-rose-700 font-bold text-sm underline">
                                                 {{ __('settings.ai_switch_disable') }}
@@ -131,16 +131,12 @@
                                                     {{ __('settings.ai_switch_enable') }}
                                                 </button>
                                                 <div x-show="openToggle" x-cloak class="w-full mt-2 p-2.5 rounded-control bg-emerald-50 border border-emerald-200 text-xs space-y-2">
-                                                    <label class="flex items-start gap-2 text-sm text-emerald-950">
-                                                        <input type="checkbox" x-model="consent" class="mt-0.5 rounded border-emerald-300 text-emerald-600" />
-                                                        <span>{{ __('ai_product.setup_consent') }}</span>
-                                                    </label>
                                                     <label class="block">
                                                         <span class="text-sm text-emerald-900 font-bold">{{ __('assistant_v2.current_password') }}</span>
                                                         <input type="password" x-model="password" autocomplete="current-password" class="mt-1 block w-full rounded border border-emerald-300 bg-white px-2 py-1 text-xs text-text-primary" />
                                                     </label>
                                                     <div class="flex items-center gap-2">
-                                                        <button type="button" :disabled="busy || !password || !consent" @click="busy = true; const p = $wire.enableCompanyAi(password, consent); password = ''; openToggle = false; p.finally(() => busy = false);" class="min-h-11 px-4 py-2 bg-emerald-700 text-white rounded text-xs font-bold hover:bg-emerald-800 disabled:opacity-50">
+                                                        <button type="button" :disabled="busy || !password" @click="busy = true; const p = $wire.enableCompanyAi(password); password = ''; openToggle = false; p.finally(() => busy = false);" class="min-h-11 px-4 py-2 bg-emerald-700 text-white rounded text-xs font-bold hover:bg-emerald-800 disabled:opacity-50">
                                                             {{ __('settings.ai_switch_enable') }}
                                                         </button>
                                                         <button type="button" @click="openToggle = false; password = '';" class="min-h-11 px-3 text-text-secondary text-sm hover:text-text-primary">

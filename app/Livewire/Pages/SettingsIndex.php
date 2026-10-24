@@ -592,7 +592,7 @@ class SettingsIndex extends Component
         }
     }
 
-    public function enableCompanyAi(#[SensitiveParameter] string $password = '', bool $consent = false): void
+    public function enableCompanyAi(#[SensitiveParameter] string $password = ''): void
     {
         $context = app(CompanyContext::class);
         $company = $this->verifiedCompany($context);
@@ -609,16 +609,10 @@ class SettingsIndex extends Component
 
             return;
         }
-        if (! $consent) {
-            $this->resetMessages();
-            $this->errorMessage = __('ai_product.result_consent');
-
-            return;
-        }
         try {
             app(DeepSeekQuickConnect::class)->enableCompany($company, $actor, $password, $this->aiPolicyRevision);
             $this->resetMessages();
-            session()->flash('ai_switch_success', __('ai_product.enabled_review_consent'));
+            session()->flash('ai_switch_success', __('ai_product.enabled_done'));
             $this->redirect(route('settings.index'));
         } catch (AssistantUnavailable $e) {
             $this->resetMessages();

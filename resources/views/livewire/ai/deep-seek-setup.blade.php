@@ -45,7 +45,7 @@
                 <label for="deepseek-key-{{ $this->getId() }}" class="block text-sm font-semibold">{{ __('ai_product.key') }}</label>
                 <input id="deepseek-key-{{ $this->getId() }}" type="password" x-model="key" dir="ltr" maxlength="4096"
                     autocomplete="new-password" spellcheck="false" autocapitalize="off" class="ai-setup-input mt-2"
-                    placeholder="{{ $connectionStatus === 'not_configured' ? '' : '••••••••••••••••' }}"
+                    placeholder="{{ $connectionStatus === 'not_configured' ? '' : 'â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢' }}"
                     aria-describedby="deepseek-key-help-{{ $this->getId() }}" />
                 <p id="deepseek-key-help-{{ $this->getId() }}" class="mt-1.5 text-xs text-text-secondary">{{ __('ai_product.key_help') }}</p>
             </div>
@@ -56,18 +56,20 @@
             <div class="rounded-control bg-canvas p-3 text-xs leading-relaxed text-text-secondary">
                 <p>{{ __('ai_product.cost_summary', ['input' => $disclosure['pricing']['input_display'], 'output' => $disclosure['pricing']['output_display']]) }}</p>
                 <p class="mt-1">{{ __('ai_product.privacy_summary') }}</p>
-                <details class="mt-2"><summary class="cursor-pointer">{{ __('ai_product.privacy') }}</summary><p class="mt-1">{{ $disclosure['operator'] }} · {{ $disclosure['retention'] }}</p></details>
+                <details class="mt-2"><summary class="cursor-pointer">{{ __('ai_product.privacy') }}</summary><p class="mt-1">{{ $disclosure['operator'] }} Â· {{ $disclosure['retention'] }}</p></details>
                 <div class="mt-2 flex flex-wrap gap-x-4 gap-y-2 text-xs">
                     <a href="{{ $disclosure['privacy_url'] }}" target="_blank" rel="noopener noreferrer" class="text-primary underline">{{ __('assistant_v2.privacy_policy') }}</a>
                     <a href="{{ $disclosure['pricing']['reference'] }}" target="_blank" rel="noopener noreferrer" class="text-primary underline">{{ __('ai_product.pricing_as_of', ['date' => $disclosure['pricing']['checked_at']]) }}</a>
                 </div>
             </div>
+            @if (! $companyDisabled)
             <label class="flex items-start gap-3 text-sm leading-relaxed"><input type="checkbox" x-model="consent" class="mt-1 h-4 w-4 rounded border-border" /><span>{{ __('ai_product.setup_consent') }} {{ __('ai_product.setup_question_consent') }} {{ __('ai_product.test_help') }}</span></label>
+            @endif
             <div class="flex flex-wrap items-center gap-3">
                 @if ($needsTransition)
                     <button type="button" @click="if (!busy) { busy = true; const pending = $wire.useDeepSeekOnly(password); password = ''; pending.finally(() => busy = false); }" :disabled="busy" class="ai-send">{{ __('ai_product.transition_action') }}</button>
                 @elseif ($companyDisabled)
-                    <button type="button" @click="if (!busy) { busy = true; const pending = $wire.enableCompany(password, consent); password = ''; pending.finally(() => busy = false); }" :disabled="busy" class="ai-send">{{ __('ai_product.enable_company') }}</button>
+                    <button type="button" @click="if (!busy) { busy = true; const pending = $wire.enableCompany(password); password = ''; pending.finally(() => busy = false); }" :disabled="busy" class="ai-send">{{ __('ai_product.enable_company') }}</button>
                 @elseif ($hasPolicy && ! $companyDisabled)
                     <button type="button" @click="if (!busy) { busy = true; const pending = $wire.disableCompany(password); password = ''; pending.finally(() => busy = false); }" :disabled="busy" class="px-4 py-2 rounded-control border border-rose-300 bg-rose-50 text-rose-700 hover:bg-rose-100 text-sm font-bold">{{ __('ai_product.disable_company') }}</button>
                 @endif

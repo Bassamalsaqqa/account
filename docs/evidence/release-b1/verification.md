@@ -1,10 +1,13 @@
 # Verification results and corrected baseline drift
 
+> [!NOTE]
+> **SUPERSEDED HISTORICAL RECORD**: This document records early intermediate bounded batch results and baseline diagnostic runs captured prior to full acceptance QA execution. The authoritative final complete QA result (unfiltered Composer QA exit code 0, 3440 passed, 41586 assertions, 4 symlink warnings, explicit wrapper recovery) is certified in [`acceptance/qa-result.json`](acceptance/qa-result.json) and [`docs/RELEASE_B1_HANDBACK.md`](../../RELEASE_B1_HANDBACK.md). No current GO/HOLD disposition is made here; do not infer that a new current correction QA pass has been run.
+
 The complete composer QA command was attempted, but multiple processes were interrupted when new user input ended their tool sessions. It is **not reported as a complete PASS**. Formatting/static checks completed; the broad test process also exposed old test drift. Raw incomplete output is retained. Verification then used completed bounded batches on disposable MariaDB, with verification-only CLI OPcache to avoid PHPUnit memory accumulating past the unchanged exporter cap. Barcode decoder libraries were local tools, not application dependencies. No production data or provider activation was used.
 
 | Run | Actual result |
 |---|---|
-| `composer-qa-frozen` | INCOMPLETE; not a pass |
+| `composer-qa-frozen` | SUPERSEDED_HISTORICAL (Originally: INCOMPLETE; not a pass — superseded by full acceptance exit 0 in `acceptance/qa-result.json`) |
 | `ordered-assistant-isolation-final` | OK (152 tests, 977 assertions) |
 | `agy-corrections-final` | OK (50 tests, 355 assertions) |
 | `start-compatibility-final` | OK (9 tests, 241 assertions) |

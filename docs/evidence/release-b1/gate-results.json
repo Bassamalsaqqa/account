@@ -1,5 +1,9 @@
 {
-  "composer-qa-frozen": "INCOMPLETE; not a pass",
+  "_status": "SUPERSEDED_HISTORICAL",
+  "_canonical_reference": "docs/evidence/release-b1/acceptance/qa-result.json",
+  "_handback_reference": "docs/RELEASE_B1_HANDBACK.md",
+  "_note": "Historical intermediate gate results from earlier bounded batch execution prior to full composer qa completion. Superseded by final acceptance run in docs/evidence/release-b1/acceptance/qa-result.json and authoritative docs/RELEASE_B1_HANDBACK.md.",
+  "composer-qa-frozen": "SUPERSEDED_HISTORICAL (Originally: INCOMPLETE; not a pass. Full unfiltered composer qa achieved exit 0: 3440 passed, 41586 assertions, 4 symlink warnings with explicit wrapper recovery documented in docs/evidence/release-b1/acceptance/qa-result.json and docs/RELEASE_B1_HANDBACK.md)",
   "ordered-assistant-isolation-final": "OK (152 tests, 977 assertions)",
   "agy-corrections-final": "OK (50 tests, 355 assertions)",
   "start-compatibility-final": "OK (9 tests, 241 assertions)",

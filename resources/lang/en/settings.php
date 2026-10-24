@@ -77,10 +77,10 @@ return [
     'ai_status_not_configured' => 'Setup Required',
     'ai_status_globally_disabled' => 'Unavailable',
     'ai_switch_label' => 'Company Master AI Switch',
-    'ai_switch_help' => 'When disabled, all AI assistance and external provider calls are completely stopped across this company while preserving credentials, settings, and manual drafts.',
+    'ai_switch_help' => 'When disabled, new requests and external provider dispatches are immediately rejected across this company. Requests already authorized may finish and incur provider charges, while credentials, settings, and manual drafts are preserved.',
     'ai_switch_enable' => 'Enable AI for Company',
     'ai_switch_disable' => 'Disable AI for Company',
-    'ai_switch_disabled_notice' => 'AI Assistant is currently turned off for this company. No data is sent to external AI providers.',
+    'ai_switch_disabled_notice' => 'AI Assistant is currently turned off for this company. New requests and provider dispatches are stopped.',
     'ai_switch_globally_unavailable_notice' => 'AI Assistant is globally unavailable or disabled for this company by server configuration.',
 
     // Section 4: Documents & Data

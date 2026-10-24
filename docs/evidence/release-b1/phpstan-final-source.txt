@@ -1,11 +1,10 @@
-php.exe : Note: Using configuration file C:\Users\bassa\AppData\Local\Codex\google-worker-workspaces\r_5b78e9902b6de712
-cd2bc2e6\task_19f8f1bf6c2f45ec9ff5ad9d4038b88d\worktree\phpstan.neon.
+php.exe : Note: Using configuration file [worktree]\phpstan.neon.
 At line:2 char:252
 + ... ource.log'; & $p vendor/bin/phpstan analyse --no-progress --memory-li ...
 +                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     + CategoryInfo          : NotSpecified: (Note: Using con...e\phpstan.neon.:String) [], RemoteException
     + FullyQualifiedErrorId : NativeCommandError
- 
 
- [OK] No errors                                                                                                        
+
+ [OK] No errors
 

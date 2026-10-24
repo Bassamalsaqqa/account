@@ -410,7 +410,15 @@ final class AiGovernance
         });
     }
 
-    /** @return array{connection: AiProviderConnection, policy: AiCompanyPolicy, credential: ProviderCredential} */
+    /**
+     * Linearization boundary: a dispatch grant committed before company AI is disabled (OFF)
+     * may still be sent to the external provider, finish, and incur charges upstream.
+     * New dispatch grant attempts after OFF are immediately rejected.
+     * No database transactions or row locks may be held across external network/provider I/O.
+     * Late publication must recheck current policy enablement and revision before committing handoffs or mutations.
+     *
+     * @return array{connection: AiProviderConnection, policy: AiCompanyPolicy, credential: ProviderCredential}
+     */
     public function dispatchConnection(Company $company, User $actor, string $id, string $intent, string $capability, ?int $expectedRevision = null): array
     {
         return DB::transaction(function () use ($company, $actor, $id, $intent, $capability, $expectedRevision): array {
