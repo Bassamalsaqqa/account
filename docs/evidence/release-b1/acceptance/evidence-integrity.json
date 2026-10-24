@@ -1,0 +1,10 @@
+{
+  "source_commit": "11c7cf778018c842aadbedfe6eba29338aaac81c",
+  "complete_log_byte_identity": true,
+  "archive_integrity": true,
+  "obvious_token_and_private_key_scan": "no matches",
+  "private_environment_and_ownership_proof_files_excluded": true,
+  "wrapper_limitation_disclosed": true,
+  "qa_and_package_source_match": true,
+  "six_final_reconciliations_healthy": true
+}

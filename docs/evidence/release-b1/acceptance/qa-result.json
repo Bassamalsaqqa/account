@@ -1,0 +1,77 @@
+{
+  "status": {
+    "state": "completed_with_wrapper_recovery",
+    "started_utc": "2026-10-24T05:21:31.819796+00:00",
+    "wrapper_pid": 24440,
+    "launcher": "Windows Task Scheduler pythonw.exe; CREATE_NO_WINDOW for all child processes",
+    "command": "PHP 8.4 qa-with-metadata.php RELEASE -> PHP 8.4 composer.phar qa",
+    "qa_exit_code": 0,
+    "database_pid": 38532,
+    "database_shutdown_exit": 0,
+    "completed_utc": "2026-10-24T07:25:37.831755+00:00",
+    "error": null,
+    "mode": "complete composer qa",
+    "targets": [],
+    "source_head": "11c7cf778018c842aadbedfe6eba29338aaac81c",
+    "source_tree": "29b2a5a78984d3f5b9c5d48492dea51533c07735",
+    "tracked_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "lock_sha256": "75446b7f7a9defeccd8c9d9f916c3f6c127aa52eb3e063addbf61dacb80e9a81",
+    "reconciliation_before_exit": 0,
+    "qa_pid": 34356,
+    "reconciliation_after_exit": 0,
+    "outer_wrapper_completed": false,
+    "qa_exit_source": "Actual Symfony Process getExitCode captured in schema-ownership.json before disposable schema cleanup",
+    "recovery": "Outer pythonw wrapper disappeared after Composer completed; cause unverified. Codex separately ran six read-only reconciliations, verified immutable source and lock, and gracefully stopped the identity-verified owned MariaDB. No outer-wrapper exit status is claimed."
+  },
+  "ownership": {
+    "schema": "accounting_p8_tmp_2eb08448aae1",
+    "host": "127.0.0.1",
+    "port": 3318,
+    "owned_fresh_schema": true,
+    "composer_exit_code": 0,
+    "primary_counts_before": {
+      "companies": 0,
+      "users": 0,
+      "sales_invoices": 0,
+      "purchases": 0,
+      "stock_movements": 0,
+      "posting_batches": 0,
+      "posting_lines": 0,
+      "customer_payments": 0,
+      "vendor_payments": 0,
+      "checks": 0
+    },
+    "primary_counts_after": {
+      "companies": 0,
+      "users": 0,
+      "sales_invoices": 0,
+      "purchases": 0,
+      "stock_movements": 0,
+      "posting_batches": 0,
+      "posting_lines": 0,
+      "customer_payments": 0,
+      "vendor_payments": 0,
+      "checks": 0
+    },
+    "primary_counts_unchanged": true,
+    "schema_absent_after_cleanup": true,
+    "command": "composer qa",
+    "phpunit_exit_code": null
+  },
+  "complete_command": "PHP 8.4 composer.phar qa (existing composer qa, unfiltered)",
+  "summary_lines": [
+    "WARN  Tests\\Unit\\ProductExperience\\DeploymentScriptContractTest",
+    "Tests:    4 warnings, 3440 passed (41586 assertions)",
+    "Duration: 6377.42s"
+  ],
+  "all_six_reconciliations_healthy": true,
+  "economic_fingerprints_equal_original_baseline": true,
+  "environment": {
+    "MariaDB": "10.4.32",
+    "PHP": "8.4.25",
+    "CLI_OPcache": true,
+    "local_barcode_tools": true,
+    "disposable_flush_policy": 2
+  },
+  "acceptance_pass": true
+}

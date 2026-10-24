@@ -1,0 +1,62 @@
+{
+  "source_commit": "11c7cf778018c842aadbedfe6eba29338aaac81c",
+  "composer_install_exit": 0,
+  "platform_exit": 0,
+  "composer_audit_exit": 0,
+  "package_discovery_exit": 0,
+  "runtime_autoload_exit": 0,
+  "runtime_packages": 112,
+  "runtime_set_equals_composer_lock_production_set": true,
+  "composer_lock_sha256": "1eaf741c421cefbd027912aef255044fea4c76d748e868113c7170176ddf8b12",
+  "npm_lock_sha256": "75446b7f7a9defeccd8c9d9f916c3f6c127aa52eb3e063addbf61dacb80e9a81",
+  "development_tools_absent": [
+    "PHPUnit",
+    "Pint",
+    "Larastan",
+    "Mockery",
+    "Faker"
+  ],
+  "first_party_exclusions": [
+    ".env",
+    "auth.json",
+    ".git",
+    "node_modules",
+    "tests",
+    "docs",
+    "references",
+    "synthetic data",
+    "local QA harness/logs",
+    "existing runtime storage",
+    "bootstrap cache contents"
+  ],
+  "existing_storage_empty": true,
+  "npm_license_files_preserved": 88,
+  "asset_files": {
+    "manifest.json": {
+      "bytes": 607,
+      "sha256": "1c622954ff13bcbd38894828ddcb37b2ba8282d4279189b6e07c6e75a9e01b27"
+    },
+    "assets/app-Bur_rs_Q.css": {
+      "bytes": 114515,
+      "sha256": "488266a6da9f33ef0b63b3b885cfd876d1c95640b1eb7fe808d6a39283d92753"
+    },
+    "assets/app-D6NVJO4y.js": {
+      "bytes": 91243,
+      "sha256": "4ccce1b1ca6749242ee13a0b6dc49cb8f228172fd41e7b46a977c1640b2b0135"
+    },
+    "assets/index-B2ZkNDM-.js": {
+      "bytes": 454373,
+      "sha256": "2cb64c36fcb8cb89411b6b0e6d1dce4b048d5776f2097e54c8ec24c22a6003f0"
+    }
+  },
+  "zip_file_count": 11313,
+  "zip_bytes": 63223896,
+  "zip_sha256": "beb169b8b84c8de28091339cbd8c7acaedd71f7e6b3a6e277fc321f259599456",
+  "zip_integrity_pass": true,
+  "zip_permissions": {
+    "directories": "0755",
+    "files": "0644"
+  },
+  "deployment_performed": false,
+  "host_configuration_or_permissions_verified": false
+}
