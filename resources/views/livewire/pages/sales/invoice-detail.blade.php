@@ -84,6 +84,14 @@
                     </button>
                 @endif
 
+                @if ($canCreateInvoice)
+                    <a href="{{ route('invoices.create') }}"
+                       class="touch-action inline-flex items-center gap-1.5 px-3 py-1.5 rounded-control border border-border text-xs font-bold text-text-secondary hover:text-text-primary hover:bg-surface-soft transition-colors focus-visible:ring-2 focus-visible:ring-primary">
+                        <x-icon name="plus" class="w-3.5 h-3.5 text-primary" />
+                        <span>{{ __('release_b1_workflow.new_invoice') }}</span>
+                    </a>
+                @endif
+
                 <x-document-actions route-name="pdf.invoice" :parameters="['publicId' => $invoice->public_id]" :permissions="['sales.document.pdf', 'sales.invoice.view']" />
 
 

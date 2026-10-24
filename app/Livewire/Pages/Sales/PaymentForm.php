@@ -70,6 +70,12 @@ class PaymentForm extends Component
     public string $idempotency_key = '';
 
     #[Locked]
+    public ?string $sourceInvoicePublicId = null;
+
+    #[Locked]
+    public ?string $sourceInvoiceNumber = null;
+
+    #[Locked]
     public int $pageCompanyId;
 
     public function boot(CompanyContext $context): void
@@ -109,6 +115,10 @@ class PaymentForm extends Component
         if ($invoice_id !== null) {
             $inv = SalesInvoice::where('company_id', $company->id)->find($invoice_id);
             if ($inv !== null) {
+                if ($user->hasPermissionTo('sales.invoice.view')) {
+                    $this->sourceInvoicePublicId = $inv->public_id;
+                    $this->sourceInvoiceNumber = $inv->invoice_number ?? __('sales.draft');
+                }
                 $this->customer_id = $inv->customer_id;
                 $accWithCurr = app(EligibleMoneyAccounts::class)->query((int) $company->id)
                     ->where('currency_code', $inv->currency_code)

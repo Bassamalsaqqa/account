@@ -69,9 +69,13 @@
                                 </x-badge>
                             </td>
                             <td class="p-3.5 font-bold text-text-primary">
-                                <a href="{{ route('products.show', $m->product?->public_id) }}" class="touch-action hover:text-primary transition-colors">
-                                    {{ app()->getLocale() === 'en' ? ($m->product?->name_en ?: $m->product?->name_ar) : $m->product?->name_ar }}
-                                </a>
+                                @if ($m->product)
+                                    <a href="{{ route('products.show', $m->product->public_id) }}" class="touch-action hover:text-primary transition-colors">
+                                        {{ app()->getLocale() === 'en' ? ($m->product->name_en ?: $m->product->name_ar) : $m->product->name_ar }}
+                                    </a>
+                                @else
+                                    <span class="text-text-muted">—</span>
+                                @endif
                             </td>
                             <td class="p-3.5 text-text-secondary">
                                 {{ app()->getLocale() === 'en' ? ($m->warehouse?->name_en ?: $m->warehouse?->name_ar) : $m->warehouse?->name_ar }}
@@ -126,9 +130,15 @@
                             </div>
                             <div class="min-w-0 space-y-1">
                                 <dt class="text-xs font-medium text-text-secondary">{{ __('inventory.product') }}</dt>
-                                <dd class="break-words text-sm tabular-nums text-text-primary"><a href="{{ route('products.show', $m->product?->public_id) }}" class="touch-action hover:text-primary transition-colors">
-                                    {{ app()->getLocale() === 'en' ? ($m->product?->name_en ?: $m->product?->name_ar) : $m->product?->name_ar }}
-                                </a></dd>
+                                <dd class="break-words text-sm tabular-nums text-text-primary">
+                                    @if ($m->product)
+                                        <a href="{{ route('products.show', $m->product->public_id) }}" class="touch-action hover:text-primary transition-colors">
+                                            {{ app()->getLocale() === 'en' ? ($m->product->name_en ?: $m->product->name_ar) : $m->product->name_ar }}
+                                        </a>
+                                    @else
+                                        <span class="text-text-muted">—</span>
+                                    @endif
+                                </dd>
                             </div>
                             <div class="min-w-0 space-y-1">
                                 <dt class="text-xs font-medium text-text-secondary">{{ __('inventory.warehouse') }}</dt>

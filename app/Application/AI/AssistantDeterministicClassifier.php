@@ -291,7 +291,7 @@ final class AssistantDeterministicClassifier
             'money balances', 'money balance', 'cash balance', 'bank balance', 'cash and bank balances', 'cash and bank', 'how much cash',
             'low stock', 'out of stock', 'stock shortage', 'items running low', 'item running low',
             'expiry report', 'inventory expiry', 'expired stock', 'expiring items', 'expiring item', 'lots expiring', 'lot expiring', 'expiration', 'expiry',
-            'المبيعات', 'مبيعاتنا', 'مبيعات', 'المشتريات', 'مشترياتنا', 'مشتريات', 'بعنا', 'اشترينا',
+            'المبيعات', 'مبيعاتنا', 'مبيعاتي', 'مبيعات', 'المشتريات', 'مشترياتنا', 'مشتريات', 'بعنا', 'اشترينا',
             'ارصده customers', 'ارصده clients', 'ارصده suppliers', 'ارصده vendors',
             'ارصده العملاء', 'ارصده الزبائن', 'رصيد العملاء', 'رصيد الزبائن', 'ديون العملاء', 'ديون الزبائن', 'مستحقات العملاء', 'مستحقات الزبائن',
             'ارصده الموردين', 'رصيد الموردين', 'ديون الموردين', 'مستحقات الموردين', 'كم للموردين', 'كم علينا للموردين',
@@ -316,7 +316,7 @@ final class AssistantDeterministicClassifier
             || preg_match('/\b(?:by|from|to|at|of)\b|\bfor\s+(?!\s*\x01)|\bin\s+(?!\s*[\x01\x02])|(?:^|\s)(?:من|ل|لل)\s|(?:^|\s)في\s+(?!\s*[\x01\x02])/u', $remaining)) {
             return false;
         }
-        $fillers = 'show|me|please|what|about|how|much|did|we|our|the|total|summary|report|give|for|in|and|are|is|current|now|doing|business'
+        $fillers = 'show|me|please|what|about|how|much|did|we|our|my|was|were|the|total|summary|report|give|for|in|and|are|is|current|now|doing|business'
             .'|كم|ملخص|تقرير|اعطني|اظهر|عرض|ما|ماذا|عن|و|في|هذا|هذه|حاليا|الان';
         $remaining = preg_replace('/(?<!\p{L})(?:'.$fillers.')(?!\p{L})/u', ' ', $remaining) ?? $remaining;
 
@@ -383,7 +383,7 @@ final class AssistantDeterministicClassifier
         ];
 
         // Explicit reporting keywords presence
-        $hasReportKeyword = preg_match('/(?:^|\s|[^\p{L}])(تقرير|ملخص|كم\s+مبيعات|كم\s+مشتريات|كم\s+بعنا|كم\s+اشترينا)(?:[^\p{L}]|\s|$)/u', $ar)
+        $hasReportKeyword = preg_match('/(?:^|\s|[^\p{L}])(تقرير|ملخص|كم\s+مبيعات(?:نا|ي)?|كم\s+مشتريات|كم\s+بعنا|كم\s+اشترينا)(?:[^\p{L}]|\s|$)/u', $ar)
             || preg_match('/\b(summary|balances?|report|how much did we)\b/i', $en);
 
         $hasTx = false;
@@ -434,7 +434,7 @@ final class AssistantDeterministicClassifier
             || preg_match('/(?:^|\s)(?:انشئ|انشاء|اعمل|سوي|جهز|اكتب|اضف|سجل|طلع|حضر|اصدر)\s+(?:لي\s+)?(?:فاتور[ةه]|بيع[ةه]?|مبيعات|شراء|مشتريات)(?:[^\p{L}]|\s|$)/u', $ar)
             || preg_match('/\b(sales invoice|purchase invoice|purchase order|invoice for|sell to|sold to|buy from|bought from|we sold|we bought|record a sale|record purchase)\b/i', $en);
 
-        $hasReportKeyword = preg_match('/(?:^|\s|[^\p{L}])(تقرير|ملخص|كم\s+مبيعات|كم\s+مشتريات|كم\s+بعنا|كم\s+اشترينا)(?:[^\p{L}]|\s|$)/u', $ar)
+        $hasReportKeyword = preg_match('/(?:^|\s|[^\p{L}])(تقرير|ملخص|كم\s+مبيعات(?:نا|ي)?|كم\s+مشتريات|كم\s+بعنا|كم\s+اشترينا)(?:[^\p{L}]|\s|$)/u', $ar)
             || preg_match('/\b(summary|balances?|report|how much did we)\b/i', $en);
 
         // 1. Customers balances
@@ -477,7 +477,7 @@ final class AssistantDeterministicClassifier
 
         // 7. Sales summary
         if (! $isPureTxCommand || $hasReportKeyword) {
-            if (preg_match('/(?:^|\s|[^\p{L}])(ملخص\s+(?:ال)?مبيعات|تقرير\s+(?:ال)?مبيعات|ملخص\s+sales|تقرير\s+sales|كم\s+مبيعات|كم\s+بعنا|(?:ال)?مبيعات|مبيعاتنا)(?:[^\p{L}]|\s|$)/u', $ar)
+            if (preg_match('/(?:^|\s|[^\p{L}])(ملخص\s+(?:ال)?مبيعات(?:نا|ي)?|تقرير\s+(?:ال)?مبيعات(?:نا|ي)?|ملخص\s+sales|تقرير\s+sales|كم\s+مبيعات(?:نا|ي)?|كم\s+بعنا|(?:ال)?مبيعات(?:نا|ي)?)(?:[^\p{L}]|\s|$)/u', $ar)
                 || preg_match('/\b(sales summary|sales|how much did we sell|total sales)\b/i', $en)) {
                 $matched[] = 'sales.summary';
             }

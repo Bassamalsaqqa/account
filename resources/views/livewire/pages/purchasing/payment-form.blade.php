@@ -23,10 +23,19 @@
             </p>
         </div>
 
-        <a href="{{ route('vendor-payments.index') }}"
-           class="min-h-11 inline-flex items-center justify-center gap-2 px-3 active:bg-surface-soft focus-visible:ring-2 focus-visible:ring-primary py-1.5 rounded-control bg-surface-soft text-text-secondary hover:text-text-primary text-xs font-bold transition-colors">
-            {{ __('purchasing.cancel') }}
-        </a>
+        <div class="flex flex-wrap items-center gap-2">
+            @if ($sourcePurchasePublicId && auth()->user()?->hasPermissionTo('purchasing.purchase.view'))
+                <a href="{{ route('purchases.show', $sourcePurchasePublicId) }}"
+                   class="min-h-11 inline-flex items-center justify-center gap-2 px-3 active:bg-surface-soft focus-visible:ring-2 focus-visible:ring-primary py-1.5 rounded-control border border-border bg-white text-text-secondary hover:text-text-primary hover:bg-surface-soft text-xs font-bold transition-colors">
+                    <x-icon name="arrow-right" class="w-4 h-4 rtl:rotate-0 ltr:rotate-180 text-primary" />
+                    <span>{{ __('release_b1_workflow.back_to_purchase') }}: {{ $sourcePurchaseNumber }}</span>
+                </a>
+            @endif
+            <a href="{{ route('vendor-payments.index') }}"
+               class="min-h-11 inline-flex items-center justify-center gap-2 px-3 active:bg-surface-soft focus-visible:ring-2 focus-visible:ring-primary py-1.5 rounded-control bg-surface-soft text-text-secondary hover:text-text-primary text-xs font-bold transition-colors">
+                {{ __('purchasing.cancel') }}
+            </a>
+        </div>
     </div>
 
     <!-- Main Form -->

@@ -226,13 +226,17 @@ final class UnifiedDraftConversationTest extends TestCase
         Http::assertSentCount(1);
     }
 
-    public function test_missing_consent_blocks_request_before_reservation(): void
+    public function test_missing_text_acceptance_allows_unsaved_draft_without_fabricated_records_or_economic_writes(): void
     {
         AiUserPreference::where('company_id', $this->company->id)->where('user_id', $this->owner->id)->update(['consents' => []]);
+        $before = $this->economicCounts();
+        $this->fakeProposal($this->proposal());
         Livewire::test(AssistantLauncher::class)->set('text', 'Please sell to Ahmed 5 carton SOAP-3L at 80 ILS')->call('prepare')
-            ->assertNoRedirect()->assertSet('error', __('assistant_v2.error_consent'));
-        self::assertSame(0, AssistantRequest::count());
-        Http::assertNothingSent();
+            ->assertRedirect();
+        self::assertSame('form_ready', AssistantRequest::sole()->status);
+        self::assertSame([], AiUserPreference::where('company_id', $this->company->id)->where('user_id', $this->owner->id)->firstOrFail()->consents);
+        self::assertSame($before, $this->economicCounts());
+        Http::assertSentCount(1);
     }
 
     public function test_company_switch_cannot_reuse_mounted_conversation(): void

@@ -10,7 +10,10 @@ use App\Actions\Company\UpdateCompanyLocalizationAction;
 use App\Actions\Company\UpdateCompanyMemberRoleAction;
 use App\Actions\Company\UpdateCompanySecurityAction;
 use App\Actions\Company\UpdateRolePermissionsAction;
+use App\Application\AI\AssistantUnavailable;
+use App\Application\AI\DeepSeekQuickConnect;
 use App\Domain\Accounting\Exceptions\BaseCurrencyLockedException;
+use App\Models\AiCompanyPolicy;
 use App\Models\AuditEvent;
 use App\Models\Company;
 use App\Models\CompanyUser;
@@ -25,6 +28,7 @@ use Livewire\Attributes\Layout;
 use Livewire\Attributes\Locked;
 use Livewire\Component;
 use Livewire\WithPagination;
+use SensitiveParameter;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
@@ -36,6 +40,9 @@ class SettingsIndex extends Component
 
     #[Locked]
     public ?int $settingsCompanyId = null;
+
+    #[Locked]
+    public int $aiPolicyRevision = 0;
 
     public string $auditFrom = '';
 
@@ -559,6 +566,63 @@ class SettingsIndex extends Component
         }
     }
 
+    public function disableCompanyAi(#[SensitiveParameter] string $password = ''): void
+    {
+        $context = app(CompanyContext::class);
+        $company = $this->verifiedCompany($context);
+        $actor = auth()->user();
+        abort_unless($actor instanceof User && app(DeepSeekQuickConnect::class)->isOwner($company, $actor), 403);
+        $policy = AiCompanyPolicy::where('company_id', $company->id)->first();
+        if ($policy === null) {
+            $this->errorMessage = __('assistant_policy.setup_first');
+
+            return;
+        }
+        try {
+            app(DeepSeekQuickConnect::class)->disableCompany($company, $actor, $password, $this->aiPolicyRevision);
+            $this->resetMessages();
+            session()->flash('ai_switch_success', __('ai_product.disabled_done'));
+            $this->redirect(route('settings.index'));
+        } catch (AssistantUnavailable $e) {
+            $this->resetMessages();
+            $this->errorMessage = __('ai_product.result_'.$e->diagnosticReason());
+        } catch (AuthorizationException) {
+            $this->resetMessages();
+            $this->errorMessage = __('settings.owner_password_invalid') ?: 'Invalid password.';
+        }
+    }
+
+    public function enableCompanyAi(#[SensitiveParameter] string $password = ''): void
+    {
+        $context = app(CompanyContext::class);
+        $company = $this->verifiedCompany($context);
+        $actor = auth()->user();
+        abort_unless($actor instanceof User && app(DeepSeekQuickConnect::class)->isOwner($company, $actor), 403);
+        $policy = AiCompanyPolicy::where('company_id', $company->id)->first();
+        if ($policy === null) {
+            $this->redirect(route('settings.ai'));
+
+            return;
+        }
+        if (app(DeepSeekQuickConnect::class)->needsTransition($company)) {
+            $this->redirect(route('settings.ai'));
+
+            return;
+        }
+        try {
+            app(DeepSeekQuickConnect::class)->enableCompany($company, $actor, $password, $this->aiPolicyRevision);
+            $this->resetMessages();
+            session()->flash('ai_switch_success', __('ai_product.enabled_done'));
+            $this->redirect(route('settings.index'));
+        } catch (AssistantUnavailable $e) {
+            $this->resetMessages();
+            $this->errorMessage = __('ai_product.result_'.$e->diagnosticReason());
+        } catch (AuthorizationException) {
+            $this->resetMessages();
+            $this->errorMessage = __('settings.owner_password_invalid') ?: 'Invalid password.';
+        }
+    }
+
     public function render(): View
     {
         $context = app(CompanyContext::class);
@@ -570,10 +634,34 @@ class SettingsIndex extends Component
         $roles = collect();
         $auditEvents = collect();
         $allPermissions = collect();
+        $memberCount = $roleCount = 0;
+        $aiStatus = 'globally_disabled';
+        $this->aiPolicyRevision = 0;
+        $aiNeedsTransition = false;
+        $canManageAi = false;
 
         if ($hasCompany && $company && auth()->check()) {
             /** @var User $user */
             $user = auth()->user();
+
+            $canManageAi = $user->can('ai.settings.manage');
+            $isGloballyDisabled = config('ai_assistant.enabled') !== true
+                || in_array((string) $company->id, config('ai_assistant.disabled_company_ids', []), true);
+            if ($isGloballyDisabled) {
+                $aiStatus = 'globally_disabled';
+            } else {
+                $policy = AiCompanyPolicy::where('company_id', $company->id)->first();
+                if ($policy === null) {
+                    $aiStatus = 'not_configured';
+                } elseif (! $policy->enabled) {
+                    $aiStatus = 'disabled';
+                    $this->aiPolicyRevision = (int) $policy->revision;
+                    $aiNeedsTransition = app(DeepSeekQuickConnect::class)->needsTransition($company);
+                } else {
+                    $aiStatus = 'enabled';
+                    $this->aiPolicyRevision = (int) $policy->revision;
+                }
+            }
 
             // Public Livewire state is not section authorization.
             if ($this->activeSection === 'audit') {
@@ -588,10 +676,15 @@ class SettingsIndex extends Component
 
             // Guard member list serialization
             if ($user->hasAnyPermission(['settings.users.view', 'settings.users.manage'])) {
-                $memberships = CompanyUser::with('user')
-                    ->where('company_id', $company->id)
-                    ->orderBy('is_owner', 'desc')
-                    ->get();
+                if ($this->activeSection === 'overview') {
+                    $memberCount = CompanyUser::where('company_id', $company->id)->count();
+                }
+                if ($this->activeSection === 'users') {
+                    $memberships = CompanyUser::with('user.roles')
+                        ->where('company_id', $company->id)
+                        ->orderBy('is_owner', 'desc')
+                        ->get();
+                }
             }
 
             // Guard roles & permissions serialization
@@ -599,12 +692,19 @@ class SettingsIndex extends Component
                 setPermissionsTeamId($company->id);
                 app(PermissionRegistrar::class)->setPermissionsTeamId($company->id);
 
-                $roles = Role::where('company_id', $company->id)->get();
-                $allPermissions = Permission::where('guard_name', 'web')->orderBy('name')->get();
+                if ($this->activeSection === 'overview') {
+                    $roleCount = Role::where('company_id', $company->id)->count();
+                }
+                if (in_array($this->activeSection, ['users', 'roles'], true)) {
+                    $roles = Role::where('company_id', $company->id)->get();
+                }
+                if ($this->activeSection === 'roles') {
+                    $allPermissions = Permission::where('guard_name', 'web')->orderBy('name')->get();
+                }
             }
 
             // Guard audit event serialization
-            if ($user->hasPermissionTo('audit.events.view')) {
+            if (in_array($this->activeSection, ['overview', 'audit'], true) && $user->hasPermissionTo('audit.events.view')) {
                 $auditQuery = AuditEvent::query()
                     ->select(['id', 'company_id', 'actor_user_id', 'event_key', 'summary', 'created_at'])
                     ->with('actor:id,name')
@@ -634,7 +734,7 @@ class SettingsIndex extends Component
         }
 
         $isBaseCurrencyLocked = false;
-        if ($hasCompany && $company) {
+        if ($hasCompany && $company && $this->activeSection === 'currencies') {
             $isBaseCurrencyLocked = PostingBatch::where('company_id', $company->id)->exists();
         }
 
@@ -645,11 +745,17 @@ class SettingsIndex extends Component
             'passwordConfirmed' => (int) session('auth.password_confirmed_at', 0) > time() - (int) config('auth.password_timeout', 10800),
             'hasCompany' => $hasCompany,
             'company' => $company,
+            'memberCount' => $memberCount,
+            'roleCount' => $roleCount,
             'memberships' => $memberships,
             'roles' => $roles,
             'allPermissions' => $allPermissions,
             'auditEvents' => $auditEvents,
             'isBaseCurrencyLocked' => $isBaseCurrencyLocked,
+            'aiStatus' => $aiStatus,
+            'aiPolicyRevision' => $this->aiPolicyRevision,
+            'aiNeedsTransition' => $aiNeedsTransition,
+            'canManageAi' => $canManageAi,
         ]);
     }
 }

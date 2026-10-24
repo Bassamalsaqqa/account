@@ -19,12 +19,11 @@ use App\Application\AI\AssistantTurnConstraints;
 use App\Application\AI\AssistantTurnContext;
 use App\Application\AI\AssistantTurnService;
 use App\Application\AI\AssistantUnavailable;
+use App\Application\AI\DeepSeekDefaults;
 use App\Application\AI\DeepSeekQuickConnect;
-use App\Models\AiUserPreference;
 use App\Support\Tenancy\CompanyContext;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Contracts\View\View;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Livewire\Attributes\Locked;
 use Livewire\Attributes\On;
@@ -150,6 +149,13 @@ final class AssistantLauncher extends Component
             $record = AssistantRecordContext::fromRoute();
             $this->recordType = $record['type'] ?? null;
             $this->recordPublicId = $record['public_id'] ?? null;
+            if (request()->routeIs('settings.ai') && request()->boolean('open_assistant')) {
+                try {
+                    $this->showAssistant();
+                } catch (AssistantUnavailable|AuthorizationException) {
+                    $this->open = false;
+                }
+            }
         }
     }
 
@@ -186,132 +192,34 @@ final class AssistantLauncher extends Component
         $governance = app(AiGovernance::class);
         $policy = $governance->authorizeLauncher($company, auth()->user(), $this->context);
         $this->mode = $policy->workflow_mode;
-        $isReportOnly = $governance->allowedIntents($company, auth()->user()) === [];
         $this->error = null;
-        $this->consentRoutes = [];
-        try {
-            $this->consentRoutes = $this->selectedConsentRoutes();
-        } catch (AssistantUnavailable $e) {
-            $this->error = __('assistant_v2.error_'.$this->safeReason($e->diagnosticReason()));
-        }
-        $this->consentSelection = $this->selectionFingerprint($this->consentRoutes);
-        $this->consent = $this->consentRoutes !== [] && collect($this->consentRoutes)->every(fn ($row) => $row['consented']);
-
-        $this->questionConsentRoutes = [];
-        $this->questionConsent = $isReportOnly && $this->consent;
-        if (! $isReportOnly && (bool) ($policy->settings['questions']['enabled'] ?? false) && app(AssistantReportCatalog::class)->permittedKeys($company, auth()->user()) !== []) {
+        if (is_string($policy->settings['text_connection'] ?? null) && $policy->settings['text_connection'] !== '') {
+            $intent = $this->context === 'auto' && $governance->allowedIntents($company, auth()->user()) === [] ? 'question' : $this->context;
             try {
-                $this->questionConsentRoutes = $this->selectedConsentRoutes('question');
-                $this->questionConsent = $this->questionConsentRoutes !== [] && collect($this->questionConsentRoutes)->every(fn ($row) => $row['consented']);
-            } catch (AssistantUnavailable) {
-                // If question routes unavailable, keep disabled without blocking launcher
+                app(AiProviderRoutes::class)->resolve($company, auth()->user(), $intent, 'text_structured');
+            } catch (AssistantUnavailable $e) {
+                $this->error = __('assistant_v2.error_'.$this->safeReason($e->diagnosticReason()));
             }
         }
+        // Compatibility state for already-mounted clients; no acceptance is recorded or required.
+        $this->consentRoutes = $this->questionConsentRoutes = [];
+        $this->consentSelection = '';
+        $this->consent = $this->questionConsent = true;
         $this->open = true;
     }
 
     public function acceptConsent(): void
     {
         $this->assertConversationContext();
-        if (! $this->consent) {
-            throw new AssistantUnavailable('consent');
-        }
-        $company = app(CompanyContext::class)->company();
-        try {
-            DB::transaction(function () use ($company): void {
-                $governance = app(AiGovernance::class);
-                $actor = auth()->user();
-                $policy = $governance->authorizeLauncher($company, $actor, $this->context);
-                $routes = $this->selectedConsentRoutes();
-                if ($routes === [] || ! hash_equals($this->consentSelection, $this->selectionFingerprint())
-                    || $this->routeFingerprints($routes) !== $this->routeFingerprints($this->consentRoutes)) {
-                    throw new AssistantUnavailable('consent_stale');
-                }
-                $isReportOnly = $governance->allowedIntents($company, $actor) === [];
-                $scope = $isReportOnly ? 'question' : 'transaction';
-                $governance->recordConsents($company, $actor, $this->routeFingerprints($routes), $scope);
-            });
-        } catch (AssistantUnavailable) {
-            $this->consent = false;
-            $this->error = __('assistant_v2.error_consent');
-
-            return;
-        }
-        $this->showAssistant();
+        app(AiGovernance::class)->authorizeLauncher(app(CompanyContext::class)->company(), auth()->user(), $this->context);
+        $this->consent = true;
     }
 
     public function acceptQuestionConsent(): void
     {
         $this->assertConversationContext();
-        if (! $this->questionConsent) {
-            throw new AssistantUnavailable('consent');
-        }
-        $company = app(CompanyContext::class)->company();
-        try {
-            DB::transaction(function () use ($company): void {
-                $governance = app(AiGovernance::class);
-                $actor = auth()->user();
-                $policy = $governance->authorizeLauncher($company, $actor, $this->context);
-                $routes = $this->selectedConsentRoutes('question');
-                if ($routes === [] || $this->routeFingerprints($routes) !== $this->routeFingerprints($this->questionConsentRoutes)) {
-                    throw new AssistantUnavailable('consent_stale');
-                }
-                $governance->recordConsents($company, $actor, $this->routeFingerprints($routes), 'question');
-            });
-        } catch (AssistantUnavailable) {
-            $this->questionConsent = false;
-            $this->error = __('assistant_v2.error_consent');
-
-            return;
-        }
-        $this->showAssistant();
-    }
-
-    /** Resolve disclosure without reading keys or granting dispatch authority.
-     * @return list<array<string, mixed>>
-     */
-    private function selectedConsentRoutes(?string $overrideScope = null): array
-    {
-        $company = app(CompanyContext::class)->company();
-        $actor = auth()->user();
-        $governance = app(AiGovernance::class);
-        $policy = $governance->authorizeLauncher($company, $actor, $this->context);
-        $preferences = AiUserPreference::where('company_id', $company->id)->where('user_id', $actor->id)->first();
-        $routes = [];
-        $isReportOnly = $governance->allowedIntents($company, $actor) === [];
-        $scope = $overrideScope ?? ($isReportOnly ? 'question' : 'transaction');
-        $resolveIntent = $overrideScope === 'question' ? 'question' : (($this->context === 'auto' && $isReportOnly) ? 'question' : $this->context);
-        // The company route is authoritative. Historical per-user routing stays inactive.
-        // Missing setup must not block local deterministic reports or manual workflows.
-        if (! is_string($policy->settings['text_connection'] ?? null) || $policy->settings['text_connection'] === '') {
-            return [];
-        }
-        foreach (app(AiProviderRoutes::class)->resolve($company, $actor, $resolveIntent, 'text_structured') as $connection) {
-            $fingerprint = $governance->consentFingerprint($policy, $connection, $scope);
-            $routes[] = ['public_id' => $connection->public_id, 'fingerprint' => $fingerprint,
-                'consented' => $governance->hasConsent($policy, $connection, $actor, $scope, $preferences)];
-        }
-
-        return $routes;
-    }
-
-    /** @param list<array<string, mixed>>|null $routes */
-    private function selectionFingerprint(?array $routes = null): string
-    {
-        return hash('sha256', json_encode($this->routeFingerprints($routes ?? $this->selectedConsentRoutes()), JSON_THROW_ON_ERROR));
-    }
-
-    /** @param list<array<string, mixed>> $routes
-     * @return array<string, string>
-     */
-    private function routeFingerprints(array $routes): array
-    {
-        $fingerprints = [];
-        foreach ($routes as $route) {
-            $fingerprints[$route['public_id']] = $route['fingerprint'];
-        }
-
-        return $fingerprints;
+        app(AiGovernance::class)->authorizeLauncher(app(CompanyContext::class)->company(), auth()->user(), $this->context);
+        $this->questionConsent = true;
     }
 
     public function loadDailyBriefing(): void
@@ -939,12 +847,14 @@ final class AssistantLauncher extends Component
         $available = false;
         $setupAvailable = false;
         $privacy = [];
+        $disclosure = [];
         $questionsAvailable = $transactionsAvailable = false;
         $briefingAvailable = false;
         $recordLabel = null;
-        if ($context->hasCompany()) {
+        if ($context->hasCompany() && AiGovernance::isPresentationEligible($context->company())) {
             $setupAvailable = app(DeepSeekQuickConnect::class)->isOwner($context->company(), auth()->user());
             try {
+                $disclosure = DeepSeekDefaults::disclosure();
                 $recordContext = $this->resolveCurrentRecord();
                 $recordLabel = $recordContext?->name;
                 $policy = app(AiGovernance::class)->authorizeLauncher($context->company(), auth()->user(), $this->context);
@@ -971,6 +881,8 @@ final class AssistantLauncher extends Component
                 }
             } catch (AssistantUnavailable|AuthorizationException) {
                 $available = false;
+                $setupAvailable = false;
+                $this->open = false;
                 $briefingAvailable = false;
                 $this->reportResult = null;
                 $this->turnReports = [];
@@ -984,6 +896,6 @@ final class AssistantLauncher extends Component
             }
         }
 
-        return view('livewire.ai.assistant-launcher', compact('available', 'setupAvailable', 'privacy', 'questionsAvailable', 'transactionsAvailable', 'briefingAvailable', 'recordLabel'));
+        return view('livewire.ai.assistant-launcher', compact('available', 'setupAvailable', 'privacy', 'disclosure', 'questionsAvailable', 'transactionsAvailable', 'briefingAvailable', 'recordLabel'));
     }
 }

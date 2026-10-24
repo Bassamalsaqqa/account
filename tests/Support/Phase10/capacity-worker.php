@@ -77,11 +77,56 @@ try {
         $isPdf = str_starts_with($content, '%PDF-');
         $isHtml = str_contains(strtolower(substr(ltrim($content), 0, 256)), '<html')
             || str_starts_with(strtolower(ltrim($content)), '<!doctype html');
-        $operations[$name] = ['status' => $response->getStatusCode(), 'signature' => $isPdf ? 'PDF' : ($isHtml ? 'HTML' : 'OTHER'),
+        $operation = ['status' => $response->getStatusCode(), 'signature' => $isPdf ? 'PDF' : ($isHtml ? 'HTML' : 'OTHER'),
             'response_bytes' => strlen($content), 'response_sha256' => hash('sha256', $content),
             'started_unix' => $started, 'ended_unix' => $ended, 'wall_ms' => round((hrtime(true) - $clock) / 1_000_000, 3),
             'query_count' => $queries - $queryStart, 'process_peak_memory_bytes' => memory_get_peak_usage(true)];
-        unset($content, $response, $request);
+        if ($response->getStatusCode() !== 200) {
+            $context = app(CompanyContext::class);
+            $user = auth()->user();
+            $denialReason = 'none';
+            $exceptionClass = null;
+            if (property_exists($response, 'exception') && $response->exception instanceof Throwable) {
+                $exceptionClass = $response->exception::class;
+                $denialReason = 'unknown';
+                $current = $response->exception;
+                $depth = 0;
+                while ($current !== null && $depth < 4) {
+                    $msg = $current->getMessage();
+                    if ($msg === 'Dashboard authority changed during report retrieval.') {
+                        $denialReason = 'authority_changed';
+                        break;
+                    }
+                    if ($msg === 'Active matching company membership is required for reports.') {
+                        $denialReason = 'membership';
+                        break;
+                    }
+                    if ($msg === 'The required report/source permission is missing.') {
+                        $denialReason = 'permission';
+                        break;
+                    }
+                    if ($msg === 'Matching company actor required.') {
+                        $denialReason = 'actor';
+                        break;
+                    }
+                    $current = $current->getPrevious();
+                    $depth++;
+                }
+            }
+            $operation['diagnostics'] = [
+                'auth_check' => auth()->check(),
+                'auth_id_matches' => ($user !== null && (int) $user->id === (int) $owner->id),
+                'context_has_company' => $context->hasCompany(),
+                'context_company_id_matches' => ($context->hasCompany() && (int) $context->companyId() === (int) $company->id),
+                'team_id_matches' => ((int) getPermissionsTeamId() === (int) $company->id),
+                'session_company_id_matches' => ((int) session('active_company_id') === (int) $company->id),
+                'can_sales_view' => ($user !== null && $user->can('reports.sales.view')),
+                'exception_class' => $exceptionClass,
+                'denial_reason' => $denialReason,
+            ];
+        }
+        $operations[$name] = $operation;
+        unset($content, $response, $request, $operation);
     }
     $cpuAfter = $cpuBefore !== null ? getrusage() : null;
     $cpu = null;

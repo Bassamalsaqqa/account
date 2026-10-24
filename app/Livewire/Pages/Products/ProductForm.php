@@ -126,6 +126,10 @@ class ProductForm extends Component
         $user = auth()->user();
         $canViewCost = $user->hasPermissionTo('inventory.cost.view');
 
+        if (session()->has('product_saved_success')) {
+            $this->successMessage = (string) session('product_saved_success');
+        }
+
         if ($publicId !== null) {
             $this->isEditing = true;
             $this->product = Product::where('company_id', $company->id)
@@ -168,8 +172,11 @@ class ProductForm extends Component
         }
     }
 
-    public function save(CompanyContext $context): void
+    public function save(CompanyContext $context, bool $andAddAnother = false): void
     {
+        $this->errorMessage = null;
+        $this->successMessage = null;
+
         $company = $context->company();
 
         /** @var User $user */
@@ -236,15 +243,34 @@ class ProductForm extends Component
 
             if ($this->isEditing && $this->product) {
                 $this->product = $catalogService->updateProduct($this->product, $data, (int) auth()->id());
+                $this->isEditing = true;
+                if ($andAddAnother) {
+                    session()->flash('product_saved_success', __('inventory.product_saved_success'));
+                    $this->redirect(route('products.create'), navigate: false);
+
+                    return;
+                }
                 $this->successMessage = __('inventory.product_saved_success');
             } else {
                 $this->product = $catalogService->createProduct($company, $data, (int) auth()->id());
+                $this->isEditing = true;
+                if ($andAddAnother) {
+                    session()->flash('product_saved_success', __('inventory.product_saved_success'));
+                    $this->redirect(route('products.create'), navigate: false);
+
+                    return;
+                }
                 $this->isEditing = true;
                 $this->successMessage = __('inventory.product_saved_success');
             }
         } catch (\Throwable $e) {
             $this->errorMessage = $e->getMessage();
         }
+    }
+
+    public function saveAndAddAnother(CompanyContext $context): void
+    {
+        $this->save($context, true);
     }
 
     public function addAlternateUnit(CompanyContext $context): void
@@ -640,6 +666,7 @@ class ProductForm extends Component
             'productImages' => $productImages,
             'canViewCost' => $canViewCost,
             'canManageProduct' => $canManageProduct,
+            'canViewProduct' => $this->product ? $user->can('view', $this->product) : false,
             'company' => $company,
         ]);
     }

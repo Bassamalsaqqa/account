@@ -1,0 +1,190 @@
+{
+  "scope": "deterministic classifier only; no provider dispatch, tokens, voice or generated-answer quality measured",
+  "provider_calls": 0,
+  "samples": [
+    {
+      "text": "What were my sales today?",
+      "result": {
+        "kind": "plan",
+        "plan": {
+          "reportKey": "sales.summary",
+          "filters": {
+            "preset": "today"
+          }
+        }
+      },
+      "wall_ms": 9.969
+    },
+    {
+      "text": "كم مبيعات اليوم؟",
+      "result": {
+        "kind": "plan",
+        "plan": {
+          "reportKey": "sales.summary",
+          "filters": {
+            "preset": "today"
+          }
+        }
+      },
+      "wall_ms": 0.29
+    },
+    {
+      "text": "Show purchases this month",
+      "result": {
+        "kind": "plan",
+        "plan": {
+          "reportKey": "purchases.summary",
+          "filters": {
+            "preset": "this_month"
+          }
+        }
+      },
+      "wall_ms": 0.591
+    },
+    {
+      "text": "كم مشتريات هذا الشهر؟",
+      "result": {
+        "kind": "plan",
+        "plan": {
+          "reportKey": "purchases.summary",
+          "filters": {
+            "preset": "this_month"
+          }
+        }
+      },
+      "wall_ms": 0.195
+    },
+    {
+      "text": "What is my current stock?",
+      "error": "question_invalid",
+      "wall_ms": 0.603
+    },
+    {
+      "text": "كم المخزون الحالي؟",
+      "error": "question_invalid",
+      "wall_ms": 0.227
+    },
+    {
+      "text": "Customer balances",
+      "result": {
+        "kind": "plan",
+        "plan": {
+          "reportKey": "customers.balances",
+          "filters": []
+        }
+      },
+      "wall_ms": 0.195
+    },
+    {
+      "text": "أرصدة العملاء",
+      "result": {
+        "kind": "plan",
+        "plan": {
+          "reportKey": "customers.balances",
+          "filters": []
+        }
+      },
+      "wall_ms": 0.179
+    },
+    {
+      "text": "Sales last month in USD",
+      "result": {
+        "kind": "plan",
+        "plan": {
+          "reportKey": "sales.summary",
+          "filters": {
+            "currency_code": "USD",
+            "preset": "last_month"
+          }
+        }
+      },
+      "wall_ms": 0.213
+    },
+    {
+      "text": "مبيعات الشهر الماضي بالدولار",
+      "result": {
+        "kind": "plan",
+        "plan": {
+          "reportKey": "sales.summary",
+          "filters": {
+            "currency_code": "USD",
+            "preset": "last_month"
+          }
+        }
+      },
+      "wall_ms": 0.188
+    },
+    {
+      "text": "Show my sales",
+      "result": {
+        "kind": "clarify_period",
+        "report_key": "sales.summary",
+        "filters": []
+      },
+      "wall_ms": 0.154
+    },
+    {
+      "text": "كم مبيعاتي؟",
+      "result": {
+        "kind": "clarify_period",
+        "report_key": "sales.summary",
+        "filters": []
+      },
+      "wall_ms": 0.151
+    },
+    {
+      "text": "Create an invoice for Ahmed",
+      "result": {
+        "kind": "transaction"
+      },
+      "wall_ms": 0.014
+    },
+    {
+      "text": "جهز فاتورة لأحمد",
+      "result": {
+        "kind": "transaction"
+      },
+      "wall_ms": 0.013
+    },
+    {
+      "text": "What were sales excluding Ahmed today?",
+      "error": "question_invalid",
+      "wall_ms": 0.032
+    },
+    {
+      "text": "مبيعات اليوم بدون أحمد",
+      "error": "question_invalid",
+      "wall_ms": 0.032
+    },
+    {
+      "text": "What were my sales yesterday compared to today?",
+      "error": "question_invalid",
+      "wall_ms": 0.026
+    },
+    {
+      "text": "مبيعات أمس مقارنة باليوم",
+      "error": "question_invalid",
+      "wall_ms": 0.027
+    },
+    {
+      "text": "How much profit did I make this month?",
+      "result": null,
+      "wall_ms": 0.016
+    },
+    {
+      "text": "كم ربحي هذا الشهر؟",
+      "result": null,
+      "wall_ms": 0.015
+    },
+    {
+      "text": "كم بعت اليوم؟",
+      "result": null,
+      "wall_ms": 0.011
+    },
+    {
+      "text": "شو مبيعات اليوم؟",
+      "error": "question_invalid",
+      "wall_ms": 0.184
+    }
+  ]
+}

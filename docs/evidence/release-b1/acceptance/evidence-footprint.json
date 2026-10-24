@@ -1,0 +1,48 @@
+{
+  "removed_duplicate_files": [
+    {
+      "path": "docs/evidence/release-b1/build-last.txt",
+      "bytes": 478,
+      "sha256": "14a059187f71e6599ae16ba38b8b5f766d2fe3ea018120e4531ce08099cdf6f5"
+    },
+    {
+      "path": "docs/evidence/release-b1/phpstan-accepted.txt",
+      "bytes": 786,
+      "sha256": "3435f2bd0bfb766acf76f46090e72304dfa145b4a6aedff9b4a2a6ca5d1efeb7"
+    },
+    {
+      "path": "docs/evidence/release-b1/phpstan-final2.txt",
+      "bytes": 750,
+      "sha256": "7cd6b7be1546ac16aceabfb1a1179b8aa0d7a271bccbbd87120a7974a05e97a1"
+    },
+    {
+      "path": "docs/evidence/release-b1/phpstan-last.txt",
+      "bytes": 750,
+      "sha256": "b2271108c94f368e940c142073c77e9464d05db0540d4e278a7b52ac0b585466"
+    },
+    {
+      "path": "docs/evidence/release-b1/pint-accepted.txt",
+      "bytes": 35,
+      "sha256": "acbf5da6385237b6f4cd342c4454d93f6c4df8bfcf1687838edb3b651981c4e1"
+    },
+    {
+      "path": "docs/evidence/release-b1/pint-final.txt",
+      "bytes": 35,
+      "sha256": "acbf5da6385237b6f4cd342c4454d93f6c4df8bfcf1687838edb3b651981c4e1"
+    },
+    {
+      "path": "docs/evidence/release-b1/pint-last.txt",
+      "bytes": 35,
+      "sha256": "acbf5da6385237b6f4cd342c4454d93f6c4df8bfcf1687838edb3b651981c4e1"
+    },
+    {
+      "path": "docs/evidence/release-b1/focused-final3.txt",
+      "bytes": 395,
+      "sha256": "95a7b12ac9a79557bbabb9d164f977cbbfbd628a6a7f558d3c039279bf50ab01"
+    }
+  ],
+  "removed_bytes": 3264,
+  "reason": "Redundant formatting/static/build/focused outputs superseded by complete final QA; unique failure/correction history, SQL/performance measurements and screenshots retained",
+  "archive_policy": "Full complete gate compressed once under acceptance/complete-qa.zip; no raw large production package or local services/log trees committed",
+  "local_custody_zip_sha256": "4c00713f6dc2330c7da124b349c6bc3ac2523d29177a8dbff614fc44b39779ec"
+}

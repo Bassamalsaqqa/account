@@ -68,7 +68,7 @@ final class DeepSeekSetup extends Component
         $this->connectionRevision = $connection === null ? 0 : $connection->revision;
     }
 
-    public function testConnection(#[SensitiveParameter] string $key = '', #[SensitiveParameter] string $password = '', bool $consent = false): void
+    public function testConnection(#[SensitiveParameter] string $key = '', #[SensitiveParameter] string $password = '', bool $consent = true): void
     {
         $this->authorizeSetup();
         $result = app(DeepSeekQuickConnect::class)->testConnection(app(CompanyContext::class)->company(), auth()->user(),
@@ -122,19 +122,37 @@ final class DeepSeekSetup extends Component
         }
     }
 
-    public function enableCompany(#[SensitiveParameter] string $password = '', bool $consent = false): void
+    public function enableCompany(#[SensitiveParameter] string $password = ''): void
     {
         $this->authorizeSetup();
         try {
-            if (! $consent) {
-                throw new AssistantUnavailable('consent');
-            }
             app(DeepSeekQuickConnect::class)->enableCompany(app(CompanyContext::class)->company(), auth()->user(),
                 $password, $this->policyRevision);
             $this->refreshRevisions();
-            $this->message = __('ai_product.enabled_review_consent');
+            $this->message = __('ai_product.enabled_done');
+            $this->redirect(route('settings.ai'));
         } catch (AssistantUnavailable $e) {
             $this->message = __('ai_product.result_'.$e->diagnosticReason());
+            $this->refreshRevisions();
+        }
+    }
+
+    public function disableCompany(#[SensitiveParameter] string $password = ''): void
+    {
+        $this->authorizeSetup();
+        try {
+            app(DeepSeekQuickConnect::class)->disableCompany(
+                app(CompanyContext::class)->company(),
+                auth()->user(),
+                $password,
+                $this->policyRevision
+            );
+            $this->refreshRevisions();
+            $this->message = __('ai_product.disabled_done');
+            $this->redirect(route('settings.ai'));
+        } catch (AssistantUnavailable $e) {
+            $this->message = __('ai_product.result_'.$e->diagnosticReason());
+            $this->refreshRevisions();
         }
     }
 
@@ -146,7 +164,9 @@ final class DeepSeekSetup extends Component
 
             return;
         }
+        // Preserve the existing event for an already-mounted launcher; the reload also covers first setup.
         $this->dispatch('ai:open-assistant');
+        $this->redirect(route('settings.ai', ['open_assistant' => 1]));
     }
 
     public function render(): View
@@ -154,13 +174,18 @@ final class DeepSeekSetup extends Component
         $this->authorizeSetup();
         $company = app(CompanyContext::class)->company();
         $service = app(DeepSeekQuickConnect::class);
+        $policy = AiCompanyPolicy::where('company_id', $company->id)->first();
 
         return view('livewire.ai.deep-seek-setup', [
-            'ownerAuthorized' => true, 'connectionStatus' => $service->getConnectionStatus($company),
-            'disclosure' => $service->disclosure($company), 'needsTransition' => $service->needsTransition($company),
+            'ownerAuthorized' => true,
+            'connectionStatus' => $service->getConnectionStatus($company),
+            'disclosure' => $service->disclosure($company),
+            'needsTransition' => $service->needsTransition($company),
             'latestHealth' => $service->latestHealth($company),
             'canStartUsing' => $service->canStartUsing($company, auth()->user()),
-            'companyDisabled' => AiCompanyPolicy::where('company_id', $company->id)->where('enabled', false)->exists(),
+            'companyDisabled' => $policy !== null && ! $policy->enabled,
+            'hasPolicy' => $policy !== null,
+            'globallyDisabled' => config('ai_assistant.enabled') !== true || in_array((string) $company->id, config('ai_assistant.disabled_company_ids', []), true),
         ]);
     }
 }

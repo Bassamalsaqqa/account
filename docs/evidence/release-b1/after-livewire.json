@@ -1,0 +1,112 @@
+[
+  {
+    "width": 1440,
+    "path": "/products",
+    "method": "$set",
+    "status": 200,
+    "wall_ms": 610,
+    "server_ms": 270.578,
+    "queries": 18,
+    "request_bytes": 699,
+    "response_bytes": 206828
+  },
+  {
+    "width": 1440,
+    "path": "/invoices/create",
+    "method": "selectProduct",
+    "status": 200,
+    "wall_ms": 738,
+    "server_ms": 390.415,
+    "queries": 31,
+    "request_bytes": 2774,
+    "response_bytes": 69317
+  },
+  {
+    "width": 1440,
+    "path": "/purchases/create",
+    "method": "selectProduct",
+    "status": 200,
+    "wall_ms": 820,
+    "server_ms": 350.751,
+    "queries": 64,
+    "request_bytes": 2558,
+    "response_bytes": 44023
+  },
+  {
+    "width": 1440,
+    "path": "/settings",
+    "method": "$set",
+    "status": 200,
+    "wall_ms": 710,
+    "server_ms": 239.131,
+    "queries": 23,
+    "request_bytes": 1652,
+    "response_bytes": 10844
+  },
+  {
+    "width": 1440,
+    "path": "/dashboard",
+    "method": "$set",
+    "status": 200,
+    "wall_ms": 855,
+    "server_ms": 314.601,
+    "queries": 39,
+    "request_bytes": 540,
+    "response_bytes": 30511
+  },
+  {
+    "width": 390,
+    "path": "/products",
+    "method": "$set",
+    "status": 200,
+    "wall_ms": 829,
+    "server_ms": 304.373,
+    "queries": 18,
+    "request_bytes": 699,
+    "response_bytes": 206828
+  },
+  {
+    "width": 390,
+    "path": "/invoices/create",
+    "method": "selectProduct",
+    "status": 200,
+    "wall_ms": 834,
+    "server_ms": 278.07,
+    "queries": 31,
+    "request_bytes": 2774,
+    "response_bytes": 69317
+  },
+  {
+    "width": 390,
+    "path": "/purchases/create",
+    "method": "selectProduct",
+    "status": 200,
+    "wall_ms": 760,
+    "server_ms": 288.884,
+    "queries": 64,
+    "request_bytes": 2558,
+    "response_bytes": 44023
+  },
+  {
+    "width": 390,
+    "path": "/settings",
+    "method": "$set",
+    "status": 200,
+    "wall_ms": 702,
+    "server_ms": 237.63,
+    "queries": 23,
+    "request_bytes": 1652,
+    "response_bytes": 10844
+  },
+  {
+    "width": 390,
+    "path": "/dashboard",
+    "method": "$set",
+    "status": 200,
+    "wall_ms": 484,
+    "server_ms": 168.819,
+    "queries": 39,
+    "request_bytes": 540,
+    "response_bytes": 30511
+  }
+]

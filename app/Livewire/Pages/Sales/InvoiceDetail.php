@@ -253,6 +253,7 @@ class InvoiceDetail extends Component
             'canViewCost' => $canViewCost,
             'canReturn' => $canReturn,
             'canPay' => $canPay,
+            'canCreateInvoice' => $user->hasPermissionTo('sales.invoice.create'),
             'outstanding' => (string) $outstanding,
             'paymentStatus' => $paymentStatus,
         ]);

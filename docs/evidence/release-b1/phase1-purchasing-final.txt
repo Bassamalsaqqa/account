@@ -1,0 +1,57 @@
+PHPUnit 12.5.36 by Sebastian Bergmann and contributors.
+
+Runtime:       PHP 8.4.25
+Configuration: [release worktree]\phpunit.xml
+
+.........................................................F.....  63 / 796 (  7%)
+............................................................... 126 / 796 ( 15%)
+............................................................... 189 / 796 ( 23%)
+............................................................... 252 / 796 ( 31%)
+............................................................... 315 / 796 ( 39%)
+............................................................... 378 / 796 ( 47%)
+............................................................... 441 / 796 ( 55%)
+............................................................... 504 / 796 ( 63%)
+............................................................... 567 / 796 ( 71%)
+............................................................... 630 / 796 ( 79%)
+...................E........E.................................. 693 / 796 ( 87%)
+............................................................... 756 / 796 ( 94%)
+........................................                        796 / 796 (100%)
+
+Time: 17:31.707, Memory: 42.00 MB
+
+There were 2 errors:
+
+1) Tests\Feature\Phase5E\VendorPaymentCorrection07RegressionTest::test_unspecified_shared_reversal_date_retains_existing_utc_default
+InvalidArgumentException: Use the canonical Purchase Return workflow; raw Purchasing accounting reversal cannot leave stock unchanged.
+
+[release worktree]\app\Services\Posting\AccountingPostingService.php:381
+[release worktree]\app\Services\Posting\AccountingReversalService.php:59
+[release worktree]\tests\Feature\Phase5E\VendorPaymentCorrection07RegressionTest.php:149
+
+2) Tests\Feature\Phase5E\VendorPaymentCorrection07RegressionTest::test_shared_explicit_date_is_preserved_without_conversion_and_retry_keeps_original_date
+InvalidArgumentException: Use the canonical Purchase Return workflow; raw Purchasing accounting reversal cannot leave stock unchanged.
+
+[release worktree]\app\Services\Posting\AccountingPostingService.php:381
+[release worktree]\app\Services\Posting\AccountingReversalService.php:59
+[release worktree]\tests\Feature\Phase5E\VendorPaymentCorrection07RegressionTest.php:262
+
+--
+
+There was 1 failure:
+
+1) Tests\Feature\Phase1\CompanyTenancyTest::test_csrf_protected_company_switch_route_switches_company
+Failed asserting that two strings are equal.
+--- Expected
++++ Actual
+@@ @@
+-'http://127.0.0.1:8818/settings'
++'http://127.0.0.1:8818/dashboard'
+
+[release worktree]\vendor\laravel\framework\src\Illuminate\Testing\TestResponseAssert.php:46
+[release worktree]\vendor\laravel\framework\src\Illuminate\Testing\TestResponse.php:440
+[release worktree]\vendor\laravel\framework\src\Illuminate\Testing\TestResponse.php:214
+[release worktree]\tests\Feature\Phase1\CompanyTenancyTest.php:125
+
+ERRORS!
+Tests: 796, Assertions: 4113, Errors: 2, Failures: 1.
+Owned QA schema cleaned.

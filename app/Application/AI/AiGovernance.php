@@ -40,6 +40,34 @@ final class AiGovernance
         }
     }
 
+    /**
+     * Cheap presentation eligibility gate.
+     * Short-circuits global OFF before policy lookup; it is NEVER authorization.
+     * Does not cache permissions or membership, and introduces no static/singleton cross-request cached policy.
+     */
+    public static function isPresentationEligible(?Company $company): bool
+    {
+        if ($company === null) {
+            return false;
+        }
+
+        if (config('ai_assistant.enabled') !== true) {
+            return false;
+        }
+
+        $disabledCompanyIds = config('ai_assistant.disabled_company_ids', []);
+        if (in_array((string) $company->id, $disabledCompanyIds, true)) {
+            return false;
+        }
+
+        $policy = AiCompanyPolicy::where('company_id', $company->id)->first();
+        if ($policy === null || ! $policy->enabled) {
+            return false;
+        }
+
+        return true;
+    }
+
     public function authorizeUse(Company $company, User $actor, string $intent, bool $speech = false): AiCompanyPolicy
     {
         if (config('ai_assistant.enabled') !== true
@@ -54,7 +82,7 @@ final class AiGovernance
                 throw new AssistantUnavailable('intent_unsupported');
             }
             $policy = AiCompanyPolicy::where('company_id', $company->id)->lockForUpdate()->first();
-            if ($policy === null || (! $policy->enabled && $intent !== 'connection_test')) {
+            if ($policy === null || ! $policy->enabled) {
                 throw new AssistantUnavailable('disabled');
             }
             if ($intent === 'connection_test') {
@@ -382,7 +410,15 @@ final class AiGovernance
         });
     }
 
-    /** @return array{connection: AiProviderConnection, policy: AiCompanyPolicy, credential: ProviderCredential} */
+    /**
+     * Linearization boundary: a dispatch grant committed before company AI is disabled (OFF)
+     * may still be sent to the external provider, finish, and incur charges upstream.
+     * New dispatch grant attempts after OFF are immediately rejected.
+     * No database transactions or row locks may be held across external network/provider I/O.
+     * Late publication must recheck current policy enablement and revision before committing handoffs or mutations.
+     *
+     * @return array{connection: AiProviderConnection, policy: AiCompanyPolicy, credential: ProviderCredential}
+     */
     public function dispatchConnection(Company $company, User $actor, string $id, string $intent, string $capability, ?int $expectedRevision = null): array
     {
         return DB::transaction(function () use ($company, $actor, $id, $intent, $capability, $expectedRevision): array {
@@ -392,8 +428,6 @@ final class AiGovernance
             if (config('ai_assistant.provider_approved') !== true || config('ai_assistant.provider') !== 'direct') {
                 throw new AssistantUnavailable('disabled');
             }
-
-            $this->requireConsent($policy, $connection, $actor, $intent === 'connection_test' ? 'connection_test' : ($intent === 'question' ? 'question' : 'transaction'));
 
             return ['connection' => $connection, 'policy' => $policy, 'credential' => $this->credential($connection)];
         });
@@ -535,6 +569,7 @@ final class AiGovernance
 
     public function requireConsent(AiCompanyPolicy $policy, AiProviderConnection $connection, User $actor, string $scope = 'transaction'): void
     {
+        // Legacy explicit audit-consent validation only; runtime dispatch does not call this method.
         if (! $this->hasConsent($policy, $connection, $actor, $scope)) {
             throw new AssistantUnavailable('consent');
         }

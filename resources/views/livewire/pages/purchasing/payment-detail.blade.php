@@ -53,6 +53,14 @@
                     </button>
                 @endif
 
+                @if ($singleAllocatedPurchase)
+                    <a href="{{ route('purchases.show', $singleAllocatedPurchase->public_id) }}"
+                       class="touch-action inline-flex items-center gap-1.5 px-3 py-1.5 rounded-control border border-border text-xs font-bold text-text-secondary hover:text-text-primary hover:bg-surface-soft transition-colors focus-visible:ring-2 focus-visible:ring-primary">
+                        <x-icon name="arrow-right" class="w-3.5 h-3.5 rtl:rotate-0 ltr:rotate-180 text-primary" />
+                        <span>{{ __('release_b1_workflow.back_to_purchase') }}: {{ $singleAllocatedPurchase->purchase_number }}</span>
+                    </a>
+                @endif
+
                 <a href="{{ route('vendor-payments.index') }}"
                    class="touch-action px-3 py-1.5 rounded-control bg-surface-soft text-text-secondary hover:text-text-primary text-xs font-bold transition-colors">
                     {{ __('purchasing.cancel') }}
@@ -209,12 +217,12 @@
                     @forelse ($payment->allocations as $alloc)
                         <tr>
                             <td class="py-2.5 px-4 font-mono font-bold" dir="ltr">
-                                @if ($alloc->purchase)
+                                @if ($alloc->purchase && auth()->user()?->hasPermissionTo('purchasing.purchase.view'))
                                     <a href="{{ route('purchases.show', $alloc->purchase->public_id) }}" class="touch-action text-primary hover:underline">
                                         {{ $alloc->purchase->purchase_number }}
                                     </a>
                                 @else
-                                    #{{ $alloc->purchase_id }}
+                                    <span>{{ $alloc->purchase ? $alloc->purchase->purchase_number : ('#' . $alloc->purchase_id) }}</span>
                                 @endif
                             </td>
                             <td class="py-2.5 px-4" dir="ltr">

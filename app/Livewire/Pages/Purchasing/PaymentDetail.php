@@ -174,10 +174,19 @@ class PaymentDetail extends Component
             $openPurchases = app(SettlementTargetsQuery::class)->forParty((int) $this->payment->company_id, (int) $this->payment->vendor_id, 'vendor', 'allocate');
         }
 
+        $singleAllocatedPurchase = null;
+        if ($this->payment->allocations->count() === 1 && $user->hasPermissionTo('purchasing.purchase.view')) {
+            $firstPurchase = $this->payment->allocations->first()?->purchase;
+            if ($firstPurchase && (int) $firstPurchase->company_id === (int) $this->payment->company_id) {
+                $singleAllocatedPurchase = $firstPurchase;
+            }
+        }
+
         return view('livewire.pages.purchasing.payment-detail', [
             'canReverse' => $canReverse,
             'canAllocate' => $canAllocate,
             'openPurchases' => $openPurchases,
+            'singleAllocatedPurchase' => $singleAllocatedPurchase,
         ]);
     }
 }

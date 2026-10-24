@@ -1,0 +1,96 @@
+[
+  {
+    "attempt": "qa-06",
+    "targets": [
+      "tests/Feature/Phase10/ConcurrentCapacityMeasurementTest.php",
+      "tests/Feature/Phase12/AiFormCorrectionsTest.php",
+      "tests/Feature/Phase12/AiTranscriptRevisionsTest.php",
+      "tests/Feature/Phase12/AssistantMigrationPreservationTest.php"
+    ],
+    "exit": 1,
+    "summaries": [
+      "Time: 05:48.431, Memory: 30.00 MB",
+      "FAILURES!",
+      "Tests: 19, Assertions: 333, Failures: 3."
+    ],
+    "primary_counts_unchanged": true,
+    "owned_schema_dropped": true,
+    "full_output_sha256": "b618dbfb23845b3b4e926ba1ad70d3e26f41ae9ce843f5ef71a1256840f9574a",
+    "tracked_diff_sha256": null
+  },
+  {
+    "attempt": "qa-07",
+    "targets": [
+      "tests/Feature/Phase10/CapacityMeasurementTest.php",
+      "tests/Feature/Phase10/ConcurrentCapacityMeasurementTest.php",
+      "tests/Feature/Phase12/AiFormCorrectionsTest.php",
+      "tests/Feature/Phase12/AiTranscriptRevisionsTest.php",
+      "tests/Feature/Phase12/AssistantMigrationPreservationTest.php"
+    ],
+    "exit": 1,
+    "summaries": [
+      "Time: 04:11.968, Memory: 38.00 MB",
+      "There was 1 failure:",
+      "FAILURES!",
+      "Tests: 24, Assertions: 309, Failures: 1."
+    ],
+    "primary_counts_unchanged": true,
+    "owned_schema_dropped": true,
+    "full_output_sha256": "c6ef59982632b7f7c1669272fbcb039aa966f3f44c1479d127f67377aaa29ddc",
+    "tracked_diff_sha256": null
+  },
+  {
+    "attempt": "qa-08",
+    "targets": [
+      "tests/Feature/Phase10/CapacityMeasurementTest.php",
+      "tests/Feature/Phase10/ConcurrentCapacityMeasurementTest.php"
+    ],
+    "exit": 0,
+    "summaries": [
+      "Time: 01:19.563, Memory: 36.00 MB",
+      "OK (5 tests, 282 assertions)"
+    ],
+    "primary_counts_unchanged": true,
+    "owned_schema_dropped": true,
+    "full_output_sha256": "e3ad12243ac5105cead761ae056a1375fac0910d26be2d1e02d082839d69b258",
+    "tracked_diff_sha256": null
+  },
+  {
+    "attempt": "qa-09",
+    "targets": [
+      "tests/Feature/AiV22/ReportingPermissionReadTest.php"
+    ],
+    "exit": 1,
+    "summaries": [
+      "Time: 00:47.204, Memory: 24.00 MB",
+      "There was 1 failure:",
+      "FAILURES!",
+      "Tests: 8, Assertions: 22, Failures: 1."
+    ],
+    "primary_counts_unchanged": true,
+    "owned_schema_dropped": true,
+    "full_output_sha256": "395362bed932a81ca45d8a30661faa5555b157e929ef4c6834bb0c9f7bf3bef7",
+    "tracked_diff_sha256": null
+  },
+  {
+    "attempt": "qa-10",
+    "targets": [
+      "tests/Feature/AiV22/ReportingPermissionReadTest.php",
+      "tests/Feature/Phase10/CapacityMeasurementTest.php",
+      "tests/Feature/Phase10/ConcurrentCapacityMeasurementTest.php",
+      "tests/Feature/Phase12/AiFormCorrectionsTest.php",
+      "tests/Feature/Phase12/AiTranscriptRevisionsTest.php",
+      "tests/Feature/Phase12/AssistantMigrationPreservationTest.php",
+      "tests/Feature/ProductExperience/DashboardReviewTest.php"
+    ],
+    "exit": 0,
+    "summaries": [
+      "Time: 03:42.543, Memory: 38.00 MB",
+      "OK (36 tests, 519 assertions)"
+    ],
+    "primary_counts_unchanged": true,
+    "owned_schema_dropped": true,
+    "full_output_sha256": "0a60fb12766c018d0aee79be3d6afb73c52f62dbeaec84ac7dccf2728e59caba",
+    "tracked_diff_sha256": "4560e0527be4d24374b006e4a50740893d91f226f6e2bdc61ffbeeba3a073ff1"
+  }
+]

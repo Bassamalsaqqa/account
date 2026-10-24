@@ -122,7 +122,7 @@ class CompanyTenancyTest extends TestCase
                 'public_id' => $this->companyB->public_id,
             ]);
 
-        $response->assertRedirect(route('settings.index'));
+        $response->assertRedirect(route('dashboard'));
         $this->assertSame($this->companyB->id, session('active_company_id'));
         $this->assertSame($this->companyB->id, $this->sharedUser->fresh()->last_active_company_id);
     }

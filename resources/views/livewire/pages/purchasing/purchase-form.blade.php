@@ -41,7 +41,7 @@
                 @endif
             </div>
             <div class="flex gap-2 mb-1.5">
-                <input type="text"
+                <input id="purchase-vendor-search" aria-label="{{ __('workflow.search_vendors') }}" type="text"
                        wire:model.live.debounce.300ms="vendorSearch"
                        placeholder="{{ __('workflow.search_vendors') }}"
                        class="w-full h-8 px-2.5 rounded-control border border-border bg-canvas text-xs text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden"  :disabled="documentBusy || saving"/>

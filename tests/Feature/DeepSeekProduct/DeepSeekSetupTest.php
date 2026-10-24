@@ -26,6 +26,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 use Livewire\Livewire;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\Support\Phase12\AssistantFixtures;
@@ -114,7 +115,7 @@ class DeepSeekSetupTest extends TestCase
         Http::fake(fn () => Http::response($this->reply()));
         $component = Livewire::test(DeepSeekSetup::class)->assertSee('DeepSeek AI')->assertSee('Not connected yet')
             ->call('testConnection', 'synthetic-key-never-real', 'synthetic-owner-password', true)
-            ->assertSet('status', 'verified')->call('startUsing')->assertDispatched('ai:open-assistant');
+            ->assertSet('status', 'verified')->call('startUsing')->assertRedirect(route('settings.ai', ['open_assistant' => 1]));
         $this->assertStringNotContainsString('synthetic-key-never-real', $component->html());
         $this->assertArrayNotHasKey('newKey', $component->snapshot['data']);
         $connection = AiProviderConnection::sole();
@@ -145,16 +146,20 @@ class DeepSeekSetupTest extends TestCase
     {
         $policy = $this->legacyPolicy(false, ['allowed_intents' => [], 'questions' => ['enabled' => false, 'allowed_reports' => []]]);
         Http::fake(fn () => Http::response($this->reply()));
-        $this->assertSame('verified', $this->connect()['status']);
+        $result = $this->connect();
+        $this->assertSame('failed', $result['status']);
+        $this->assertSame('disabled', $result['reason']);
+        Http::assertNothingSent();
         $policy->refresh();
         $this->assertFalse($policy->enabled);
         $this->assertSame([], $policy->settings['allowed_intents']);
         $this->assertFalse($policy->settings['questions']['enabled']);
         $this->assertFalse(app(DeepSeekQuickConnect::class)->canStartUsing($this->company, $this->owner));
+        // A malformed legacy policy must not become valid merely by testing a key.
+        $this->transition($policy);
+        $policy->refresh();
+        $this->expectException(ValidationException::class);
         app(DeepSeekQuickConnect::class)->enableCompany($this->company, $this->owner, 'synthetic-owner-password', $policy->revision);
-        $this->assertTrue($policy->fresh()->enabled);
-        $this->assertSame([], $policy->fresh()->settings['allowed_intents']);
-        Http::assertSentCount(1);
     }
 
     public function test_revoked_credential_is_never_revived_and_replacement_preserves_history(): void
@@ -278,12 +283,15 @@ class DeepSeekSetupTest extends TestCase
         Http::assertNothingSent();
     }
 
-    public function test_no_consent_or_spending_budget_never_dispatches_or_raises_caps(): void
+    public function test_connection_check_is_nonblocking_without_recording_acceptance_or_spending_budget(): void
     {
-        Livewire::test(DeepSeekSetup::class)->call('testConnection', 'synthetic-key-never-real', 'synthetic-owner-password', false)->assertSet('status', 'failed');
-        $this->assertSame('consent', $this->connect(consent: false)['reason']);
+        Http::fake(fn () => Http::response($this->reply()));
+        Livewire::test(DeepSeekSetup::class)
+            ->call('testConnection', 'synthetic-key-never-real', 'synthetic-owner-password', false)
+            ->assertSet('status', 'verified');
+        $this->assertDatabaseCount('ai_user_preferences', 0);
         $this->assertDatabaseCount('assistant_requests', 0);
-        Http::assertNothingSent();
+        Http::assertSentCount(1);
     }
 
     public function test_provider_failure_retains_unknown_reservation_and_safe_error(): void
@@ -398,7 +406,7 @@ class DeepSeekSetupTest extends TestCase
         $connection = AiProviderConnection::sole();
         $before = $connection->getRawOriginal();
         $policy = AiCompanyPolicy::sole()->getRawOriginal();
-        $consents = AiUserPreference::sole()->getRawOriginal();
+        $consents = AiUserPreference::query()->get()->map->getRawOriginal()->all();
         $attempted = 0;
         Http::fake(function () use ($case, &$attempted) {
             $attempted++;
@@ -413,9 +421,9 @@ class DeepSeekSetupTest extends TestCase
             ->assertSee('Key previously verified')->assertSee('Start using AI');
         $this->assertSame($before, $connection->fresh()->getRawOriginal());
         $this->assertSame($policy, AiCompanyPolicy::sole()->getRawOriginal());
-        $this->assertSame($consents, AiUserPreference::sole()->getRawOriginal());
+        $this->assertSame($consents, AiUserPreference::query()->get()->map->getRawOriginal()->all());
         $this->assertSame($reason, app(DeepSeekQuickConnect::class)->latestHealth($this->company)['status']);
-        $component->call('startUsing')->assertDispatched('ai:open-assistant');
+        $component->call('startUsing')->assertRedirect(route('settings.ai', ['open_assistant' => 1]));
         $this->assertDatabaseCount('assistant_requests', 0);
         $this->assertSame(1, $attempted);
         Http::assertSentCount($case === 'timeout' ? 0 : 1);
@@ -424,41 +432,42 @@ class DeepSeekSetupTest extends TestCase
     public function test_saved_key_refresh_is_one_click_reusable_and_does_not_mint_consent(): void
     {
         $this->establishVerifiedKey();
-        $before = AiUserPreference::sole()->getRawOriginal();
+        $before = AiUserPreference::query()->get()->map->getRawOriginal()->all();
         Http::fake(fn () => Http::response($this->reply()));
         $component = Livewire::test(DeepSeekSetup::class)->assertSee('Refresh connection health');
         $requestKey = $component->get('refreshRequestKey');
         $component->call('refreshHealth')->assertSet('status', 'verified');
         $this->assertNotSame($requestKey, $component->get('refreshRequestKey'));
         $component->call('refreshHealth')->assertSet('status', 'verified');
-        $this->assertSame($before, AiUserPreference::sole()->getRawOriginal());
+        $this->assertSame($before, AiUserPreference::query()->get()->map->getRawOriginal()->all());
         Http::assertSentCount(2);
         $this->assertDatabaseCount('assistant_requests', 0);
     }
 
-    public function test_saved_key_refresh_requires_current_consent_without_creating_it(): void
+    public function test_saved_key_refresh_without_acceptance_does_not_create_it(): void
     {
         $connection = $this->legacyConnection();
         $policy = $this->legacyPolicy(settings: ['text_connection' => $connection->public_id]);
         $this->transition($policy);
-        Livewire::test(DeepSeekSetup::class)->call('refreshHealth')->assertSet('status', 'failed')
-            ->assertSee(__('ai_product.result_consent'));
+        Http::fake(fn () => Http::response($this->reply()));
+        Livewire::test(DeepSeekSetup::class)->call('refreshHealth')->assertSet('status', 'verified');
         $this->assertDatabaseCount('ai_user_preferences', 0);
-        Http::assertNothingSent();
+        Http::assertSentCount(1);
     }
 
-    public function test_material_privacy_change_blocks_refresh_without_implicit_reconsent(): void
+    public function test_material_privacy_change_is_disclosed_without_fabricating_acceptance(): void
     {
         $this->establishVerifiedKey();
         $policy = AiCompanyPolicy::sole();
         $settings = $policy->settings;
         $settings['privacy']['retention'] = 'Changed synthetic disclosure';
         $policy->update(['settings' => $settings, 'revision' => $policy->revision + 1]);
-        $before = AiUserPreference::sole()->getRawOriginal();
-        Http::fake();
-        Livewire::test(DeepSeekSetup::class)->call('refreshHealth')->assertSet('status', 'failed');
-        $this->assertSame($before, AiUserPreference::sole()->getRawOriginal());
-        Http::assertNothingSent();
+        $before = AiUserPreference::query()->get()->map->getRawOriginal()->all();
+        Http::fake(fn () => Http::response($this->reply()));
+        Livewire::test(DeepSeekSetup::class)->assertSee('Changed synthetic disclosure')
+            ->call('refreshHealth')->assertSet('status', 'verified');
+        $this->assertSame($before, AiUserPreference::query()->get()->map->getRawOriginal()->all());
+        Http::assertSentCount(1);
     }
 
     public function test_authoritative_401_marks_saved_key_unverified_without_revealing_provider_body(): void

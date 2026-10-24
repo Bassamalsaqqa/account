@@ -160,7 +160,7 @@ class CompanyLanguagePolicyTest extends TestCase
                 'public_id' => $this->companyB->public_id,
             ]);
 
-        $switchResponse->assertRedirect(route('settings.index'));
+        $switchResponse->assertRedirect(route('dashboard'));
 
         $responseB = $this->actingAs($this->owner)
             ->withSession(['active_company_id' => $this->companyB->id])
@@ -178,7 +178,7 @@ class CompanyLanguagePolicyTest extends TestCase
                 'public_id' => $this->companyA->public_id,
             ]);
 
-        $switchBackResponse->assertRedirect(route('settings.index'));
+        $switchBackResponse->assertRedirect(route('dashboard'));
 
         $responseReturnA = $this->actingAs($this->owner)
             ->withSession(['active_company_id' => $this->companyA->id])

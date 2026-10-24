@@ -45,21 +45,36 @@ class AssistantMigrationPreservationTest extends TestCase
         $this->assertTrue($posted->isPosted());
         $migration = '2026_10_11_130000_add_ai_tenant_governance_and_purchase_draft_receipts';
         $latest = '2026_10_11_140000_bind_ai_attempts_to_reserved_plan';
-        $this->assertSame($latest, DB::table('migrations')->orderByDesc('migration')->value('migration'));
+        $this->assertTrue(DB::table('migrations')->where('migration', $migration)->exists());
+        $this->assertTrue(DB::table('migrations')->where('migration', $latest)->exists());
         $before = $this->fingerprint();
         $tables = count(Schema::getTables(DB::connection()->getDatabaseName()));
         $migrations = DB::table('migrations')->count();
-        $this->assertSame(89, $tables);
-        $this->assertSame(67, $migrations);
-        $this->assertSame(0, Artisan::call('migrate:rollback', ['--step' => 2, '--force' => true]), Artisan::output());
+        $this->assertSame(0, Artisan::call('migrate:rollback', [
+            '--database' => DB::getDefaultConnection(),
+            '--step' => $migrations,
+            '--force' => true,
+            '--path' => 'database/migrations/'.$latest.'.php',
+        ]), Artisan::output());
+        $this->assertSame(0, Artisan::call('migrate:rollback', [
+            '--database' => DB::getDefaultConnection(),
+            '--step' => $migrations,
+            '--force' => true,
+            '--path' => 'database/migrations/'.$migration.'.php',
+        ]), Artisan::output());
         $this->assertTrue(Schema::hasTable('assistant_requests'));
         $this->assertFalse(Schema::hasTable('ai_provider_connections'));
         $this->assertFalse(Schema::hasColumn('assistant_requests', 'purchase_id'));
+        $this->assertFalse(Schema::hasColumn('assistant_requests', 'attempt_plan'));
         $this->assertTrue(Schema::hasTable('command_receipts'));
         $this->assertSame($tables - 4, count(Schema::getTables(DB::connection()->getDatabaseName())));
         $this->assertSame($migrations - 2, DB::table('migrations')->count());
         $this->assertSame($before, $this->fingerprint());
-        $this->assertSame(0, Artisan::call('migrate', ['--path' => ['database/migrations/'.$migration.'.php', 'database/migrations/'.$latest.'.php'], '--force' => true]), Artisan::output());
+        $this->assertSame(0, Artisan::call('migrate', [
+            '--database' => DB::getDefaultConnection(),
+            '--path' => ['database/migrations/'.$migration.'.php', 'database/migrations/'.$latest.'.php'],
+            '--force' => true,
+        ]), Artisan::output());
         $this->assertTrue(Schema::hasTable('assistant_requests'));
         $this->assertTrue(Schema::hasTable('ai_provider_connections'));
         $this->assertTrue(Schema::hasColumn('assistant_requests', 'purchase_id'));

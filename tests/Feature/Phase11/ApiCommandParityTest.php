@@ -242,30 +242,36 @@ class ApiCommandParityTest extends TestCase
 
     public function test_owned_device_enumeration_and_revocation_require_fresh_password_confirmation(): void
     {
-        DB::table('sessions')->where('id', $this->device['id'])->delete();
-        $otherDevice = $this->device($this->owner, $this->company);
-        $this->device = $this->device($this->owner, $this->company);
-        $this->withCredentials()->withCookie(config('session.cookie'), $this->device['id'])
-            ->getJson('/api/v1/sessions')->assertStatus(423);
-        foreach ([now()->timestamp + 1 => 423, now()->timestamp => 200] as $confirmedAt => $status) {
-            $row = DB::table('sessions')->where('id', $this->device['id'])->first();
-            $payload = unserialize(base64_decode($row->payload), ['allowed_classes' => false]);
-            $payload['auth.password_confirmed_at'] = $confirmedAt;
-            DB::table('sessions')->where('id', $this->device['id'])->update(['payload' => base64_encode(serialize($payload))]);
-            app('session')->forgetDrivers();
-            app()->forgetInstance('session.store');
+        $this->freezeTime();
+
+        try {
+            DB::table('sessions')->where('id', $this->device['id'])->delete();
+            $otherDevice = $this->device($this->owner, $this->company);
+            $this->device = $this->device($this->owner, $this->company);
+            $this->withCredentials()->withCookie(config('session.cookie'), $this->device['id'])
+                ->getJson('/api/v1/sessions')->assertStatus(423);
+            foreach ([now()->timestamp + 1 => 423, now()->timestamp => 200] as $confirmedAt => $status) {
+                $row = DB::table('sessions')->where('id', $this->device['id'])->first();
+                $payload = unserialize(base64_decode($row->payload), ['allowed_classes' => false]);
+                $payload['auth.password_confirmed_at'] = $confirmedAt;
+                DB::table('sessions')->where('id', $this->device['id'])->update(['payload' => base64_encode(serialize($payload))]);
+                app('session')->forgetDrivers();
+                app()->forgetInstance('session.store');
+                auth()->forgetGuards();
+                $listed = $this->withCredentials()->withCookie(config('session.cookie'), $this->device['id'])
+                    ->getJson('/api/v1/sessions')->assertStatus($status);
+            }
+            $this->assertCount(2, $listed->json('sessions'));
+            $this->assertStringNotContainsString($otherDevice['id'], $listed->getContent());
+            $target = collect($listed->json('sessions'))->firstWhere('is_current', false);
             auth()->forgetGuards();
-            $listed = $this->withCredentials()->withCookie(config('session.cookie'), $this->device['id'])
-                ->getJson('/api/v1/sessions')->assertStatus($status);
+            $this->withCredentials()->withCookie(config('session.cookie'), $this->device['id'])
+                ->deleteJson('/api/v1/sessions/'.$target['handle'], [], ['X-CSRF-TOKEN' => $this->device['token']])->assertOk();
+            $this->assertFalse(DB::table('sessions')->where('id', $otherDevice['id'])->exists());
+            $this->assertTrue(DB::table('sessions')->where('id', $this->device['id'])->exists());
+        } finally {
+            $this->travelBack();
         }
-        $this->assertCount(2, $listed->json('sessions'));
-        $this->assertStringNotContainsString($otherDevice['id'], $listed->getContent());
-        $target = collect($listed->json('sessions'))->firstWhere('is_current', false);
-        auth()->forgetGuards();
-        $this->withCredentials()->withCookie(config('session.cookie'), $this->device['id'])
-            ->deleteJson('/api/v1/sessions/'.$target['handle'], [], ['X-CSRF-TOKEN' => $this->device['token']])->assertOk();
-        $this->assertFalse(DB::table('sessions')->where('id', $otherDevice['id'])->exists());
-        $this->assertTrue(DB::table('sessions')->where('id', $this->device['id'])->exists());
     }
 
     public function test_late_receipt_failure_rolls_back_numbering_inventory_ledger_and_lifecycle(): void
