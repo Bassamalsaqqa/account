@@ -11,6 +11,7 @@ use App\Application\AI\AssistantUnavailable;
 use App\Application\AI\TransactionAssistant;
 use App\Livewire\Pages\Sales\InvoiceForm;
 use App\Models\AssistantRequest;
+use App\Models\Customer;
 use App\Models\Purchase;
 use App\Models\SalesInvoice;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -147,6 +148,29 @@ class AiTranscriptRevisionsTest extends TestCase
         Livewire::withQueryParams(['assistant' => $prepared])->test(InvoiceForm::class)
             ->assertSet('currency_code', 'USD')->assertSet('exchange_rate', '3.6500000000')
             ->assertSet('lines.0.quantity', '5')->assertSet('lines.0.unit_price', '80');
+        $this->noBusinessWrites();
+    }
+
+    public function test_manual_customer_selection_still_applies_customer_defaults_without_assistant(): void
+    {
+        $usdCustomer = Customer::create([
+            'company_id' => $this->company->id,
+            'name_ar' => 'عميل الدولار',
+            'name_en' => 'USD Customer',
+            'code' => 'C-USD',
+            'default_currency_code' => 'USD',
+            'preferred_locale' => 'en',
+            'created_by' => $this->owner->id,
+        ]);
+        Livewire::test(InvoiceForm::class, ['customer_id' => $usdCustomer->id])
+            ->assertSet('customer_id', $usdCustomer->id)
+            ->assertSet('currency_code', 'USD')
+            ->assertSet('document_locale', 'en');
+
+        Livewire::test(InvoiceForm::class)
+            ->set('customer_id', $usdCustomer->id)
+            ->assertSet('currency_code', 'USD')
+            ->assertSet('document_locale', 'en');
         $this->noBusinessWrites();
     }
 

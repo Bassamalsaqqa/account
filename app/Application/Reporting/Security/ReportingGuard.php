@@ -74,7 +74,11 @@ final class ReportingGuard
             DB::table('role_has_permissions')->whereIn('role_id', $roleIds->getQuery())->select('permission_id'))
             ->select('permissions.name');
 
-        return $direct->union($viaRoles)->pluck('name')->all();
+        $names = $direct->union($viaRoles)->pluck('name')->all();
+        // Authority snapshots compare effective permission names deterministically.
+        sort($names, SORT_STRING);
+
+        return $names;
     }
 
     /** Resolve configuration from persisted company identity, never caller attributes. */

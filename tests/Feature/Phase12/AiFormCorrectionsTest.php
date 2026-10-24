@@ -8,6 +8,7 @@ use App\Application\AI\AiFormCorrections;
 use App\Application\AI\AiFormEditing;
 use App\Application\AI\AiFormState;
 use App\Application\AI\AssistantUnavailable;
+use App\Application\AI\ProviderCostEstimate;
 use App\Application\AI\TransactionAssistant;
 use App\Livewire\Pages\Sales\InvoiceForm;
 use App\Models\AssistantRequest;
@@ -97,7 +98,15 @@ class AiFormCorrectionsTest extends TestCase
         Http::assertSentCount(1);
         $request = AssistantRequest::where('purpose', 'patch')->firstOrFail();
         $this->assertSame('failed', $request->status);
-        $this->assertSame(28, $request->reserved_cost_micros);
+        $tariff = $this->aiPolicy->settings['pricing'][$this->textConnection->public_id];
+        $expectedCost = app(ProviderCostEstimate::class)->tokens(
+            (int) config('ai_assistant.max_input_tokens'),
+            (int) config('ai_assistant.max_output_tokens'),
+            (int) $tariff['input_micros_per_million'],
+            (int) $tariff['output_micros_per_million']
+        );
+        $this->assertSame($expectedCost, $request->reserved_cost_micros);
+        $this->assertSame([['id' => (int) $this->textConnection->id, 'revision' => (int) $this->textConnection->revision, 'public_id' => $this->textConnection->public_id]], $request->attempt_plan);
         $this->assertNull($request->reported_cost_micros);
         $this->assertSame(0, SalesInvoice::count());
     }
