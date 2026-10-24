@@ -115,7 +115,7 @@ class AiGovernanceTest extends TestCase
         Http::assertNothingSent();
     }
 
-    public function test_dispatch_requires_current_consent_and_rotation_invalidates_it(): void
+    public function test_dispatch_without_text_acceptance_still_rejects_rotated_credentials(): void
     {
         $governance = app(AiGovernance::class);
         $connection = $governance->provision($this->company, $this->owner, $this->selection(), 'synthetic-provider-secret-only', 'synthetic-confirm-only');
@@ -123,13 +123,7 @@ class AiGovernanceTest extends TestCase
         $values['settings']['allowed_connections'] = [$connection->public_id];
         $values['settings']['text_connection'] = $connection->public_id;
         $policy = $governance->updatePolicy($this->company, $this->owner, $values);
-        try {
-            $governance->dispatchConnection($this->company, $this->owner, $connection->public_id, 'sales', 'text_structured');
-            $this->fail('Explicit privacy consent required.');
-        } catch (AssistantUnavailable $e) {
-            $this->assertSame('consent', $e->reason);
-        }
-        $governance->recordConsent($this->company, $this->owner, $connection->public_id, $governance->consentFingerprint($policy, $connection));
+        $this->assertDatabaseCount('ai_user_preferences', 0);
         $grant = $governance->dispatchConnection($this->company, $this->owner, $connection->public_id, 'sales', 'text_structured', 1);
         $this->assertSame(1, $grant['connection']->revision);
         $governance->provision($this->company, $this->owner, $this->selection(), 'synthetic-replaced-secret-only', 'synthetic-confirm-only', $connection->public_id);

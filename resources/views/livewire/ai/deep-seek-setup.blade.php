@@ -38,14 +38,14 @@
         @endif
         <details class="mt-5" @if ($connectionStatus === 'not_configured' || $needsTransition || $companyDisabled) open @endif>
         <summary class="cursor-pointer text-sm font-semibold">{{ __('ai_product.'.($connectionStatus === 'not_configured' ? 'connect_key' : 'manage_key')) }}</summary>
-        <form x-data="{ key: '', password: '', consent: false, busy: false }"
-            @submit.prevent="if (!busy) { busy = true; const pending = $wire.testConnection(key, password, consent); key = ''; password = ''; pending.finally(() => busy = false); }"
+        <form x-data="{ key: '', password: '', busy: false }"
+            @submit.prevent="if (!busy) { busy = true; const pending = $wire.testConnection(key, password); key = ''; password = ''; pending.finally(() => busy = false); }"
             class="mt-5 space-y-4" autocomplete="off">
             <div>
                 <label for="deepseek-key-{{ $this->getId() }}" class="block text-sm font-semibold">{{ __('ai_product.key') }}</label>
                 <input id="deepseek-key-{{ $this->getId() }}" type="password" x-model="key" dir="ltr" maxlength="4096"
                     autocomplete="new-password" spellcheck="false" autocapitalize="off" class="ai-setup-input mt-2"
-                    placeholder="{{ $connectionStatus === 'not_configured' ? '' : 'â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢' }}"
+                    placeholder="{{ $connectionStatus === 'not_configured' ? '' : '••••••••••••••••' }}"
                     aria-describedby="deepseek-key-help-{{ $this->getId() }}" />
                 <p id="deepseek-key-help-{{ $this->getId() }}" class="mt-1.5 text-xs text-text-secondary">{{ __('ai_product.key_help') }}</p>
             </div>
@@ -56,15 +56,12 @@
             <div class="rounded-control bg-canvas p-3 text-xs leading-relaxed text-text-secondary">
                 <p>{{ __('ai_product.cost_summary', ['input' => $disclosure['pricing']['input_display'], 'output' => $disclosure['pricing']['output_display']]) }}</p>
                 <p class="mt-1">{{ __('ai_product.privacy_summary') }}</p>
-                <details class="mt-2"><summary class="cursor-pointer">{{ __('ai_product.privacy') }}</summary><p class="mt-1">{{ $disclosure['operator'] }} Â· {{ $disclosure['retention'] }}</p></details>
+                <details class="mt-2"><summary class="cursor-pointer">{{ __('ai_product.privacy') }}</summary><p class="mt-1">{{ $disclosure['operator'] }} &middot; {{ $disclosure['retention'] }}</p></details>
                 <div class="mt-2 flex flex-wrap gap-x-4 gap-y-2 text-xs">
                     <a href="{{ $disclosure['privacy_url'] }}" target="_blank" rel="noopener noreferrer" class="text-primary underline">{{ __('assistant_v2.privacy_policy') }}</a>
                     <a href="{{ $disclosure['pricing']['reference'] }}" target="_blank" rel="noopener noreferrer" class="text-primary underline">{{ __('ai_product.pricing_as_of', ['date' => $disclosure['pricing']['checked_at']]) }}</a>
                 </div>
             </div>
-            @if (! $companyDisabled)
-            <label class="flex items-start gap-3 text-sm leading-relaxed"><input type="checkbox" x-model="consent" class="mt-1 h-4 w-4 rounded border-border" /><span>{{ __('ai_product.setup_consent') }} {{ __('ai_product.setup_question_consent') }} {{ __('ai_product.test_help') }}</span></label>
-            @endif
             <div class="flex flex-wrap items-center gap-3">
                 @if ($needsTransition)
                     <button type="button" @click="if (!busy) { busy = true; const pending = $wire.useDeepSeekOnly(password); password = ''; pending.finally(() => busy = false); }" :disabled="busy" class="ai-send">{{ __('ai_product.transition_action') }}</button>

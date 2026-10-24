@@ -11,6 +11,8 @@ use App\Application\AI\DeepSeekQuickConnect;
 use App\Application\AI\DeterministicTransactionParser;
 use App\Application\AI\TransactionAssistant;
 use App\Infrastructure\AI\DirectTextProvider;
+use App\Livewire\AI\AssistantLauncher;
+use App\Livewire\AI\DeepSeekSetup;
 use App\Livewire\Pages\SettingsIndex;
 use App\Models\AiUserPreference;
 use App\Models\AssistantRequest;
@@ -52,6 +54,30 @@ class AiOffConcurrencyTest extends TestCase
         $settings['limits']['request_micros'] = 10000;
         $this->aiPolicy->update(['settings' => $settings]);
         Http::preventStrayRequests();
+    }
+
+    public function test_setup_and_launcher_disclose_privacy_without_affirmative_text_controls_in_both_locales(): void
+    {
+        $before = AiUserPreference::query()->get()->map->getRawOriginal()->all();
+        foreach (['en', 'ar'] as $locale) {
+            app()->setLocale($locale);
+            Livewire::test(DeepSeekSetup::class)
+                ->assertSee(__('ai_product.privacy_summary'))
+                ->assertSee(__('assistant_v2.privacy_policy'))
+                ->assertDontSeeHtml('x-model="consent"')
+                ->assertDontSee(__('ai_product.setup_consent'));
+            Livewire::test(AssistantLauncher::class)
+                ->call('showAssistant')
+                ->assertSet('open', true)
+                ->assertSee(__('ai_product.browser_privacy_policy'))
+                ->assertSee(__('assistant_v2.privacy_policy'))
+                ->assertDontSeeHtml('wire:model="consent"')
+                ->assertDontSeeHtml('wire:model="questionConsent"')
+                ->assertDontSeeHtml('wire:click="acceptConsent"')
+                ->assertDontSeeHtml('wire:click="acceptQuestionConsent"');
+        }
+        $this->assertSame($before, AiUserPreference::query()->get()->map->getRawOriginal()->all());
+        Http::assertNothingSent();
     }
 
     public function test_before_auth_off_dispatch_rejects_and_http_nothing(): void
@@ -373,7 +399,7 @@ class AiOffConcurrencyTest extends TestCase
         $this->actingAs($this->owner);
         app(CompanyContext::class)->setCompany($this->company, $this->owner);
 
-        // Materially changed consent (e.g. privacy policy altered) still enforced at dispatch boundary
+        // Material privacy changes retain revision invalidation without affirmative consent gates.
         $quickConnect->enableCompany(
             $this->company,
             $this->owner,
@@ -381,47 +407,45 @@ class AiOffConcurrencyTest extends TestCase
             (int) $this->aiPolicy->fresh()->revision
         );
 
-        // Materially alter policy privacy without user consent renewal
+        // Materially alter policy privacy: no affirmative consent gate, but stale expected revision still revokes old state
+        $oldRevision = (int) $this->aiPolicy->fresh()->revision;
         $policy = $this->aiPolicy->fresh();
         $settings = $policy->settings;
         $settings['privacy']['policy_url'] = 'https://deepseek.example.com/updated-privacy';
         $policy->settings = $settings;
-        $policy->revision = (int) $policy->revision + 1;
+        $policy->revision = $oldRevision + 1;
         $policy->save();
 
-        try {
-            app(AiGovernance::class)->dispatchConnection(
-                $this->company,
-                $this->owner,
-                $this->textConnection->public_id,
-                'sales',
-                'text_structured'
-            );
-            $this->fail('Dispatch must strictly reject when material privacy terms change without consent renewal.');
-        } catch (AssistantUnavailable $e) {
-            $this->assertSame('consent', $e->reason);
-        }
+        // Fresh dispatch succeeds without affirmative consent renewal (nonblocking disclosure)
+        $grant = app(AiGovernance::class)->dispatchConnection(
+            $this->company,
+            $this->owner,
+            $this->textConnection->public_id,
+            'sales',
+            'text_structured'
+        );
+        $this->assertSame($this->textConnection->public_id, $grant['connection']->public_id);
+
     }
 
-    public function test_missing_initial_consent_fresh_dispatch_rejects_without_fabrication(): void
+    public function test_missing_initial_consent_fresh_dispatch_allows_without_fabrication(): void
     {
         AiUserPreference::where('company_id', $this->company->id)
             ->where('user_id', $this->owner->id)
             ->update(['consents' => []]);
 
-        try {
-            app(AiGovernance::class)->dispatchConnection(
-                $this->company,
-                $this->owner,
-                $this->textConnection->public_id,
-                'sales',
-                'text_structured'
-            );
-            $this->fail('Dispatch must strictly reject when initial consent is missing.');
-        } catch (AssistantUnavailable $e) {
-            $this->assertSame('consent', $e->reason);
-        }
+        // Nonblocking: dispatch succeeds even when initial consent record is absent
+        $grant = app(AiGovernance::class)->dispatchConnection(
+            $this->company,
+            $this->owner,
+            $this->textConnection->public_id,
+            'sales',
+            'text_structured'
+        );
+        $this->assertNotNull($grant['credential']);
+        $this->assertSame($this->textConnection->public_id, $grant['connection']->public_id);
 
+        // Crucial invariant: no consent record is fabricated into database
         $pref = AiUserPreference::where('company_id', $this->company->id)
             ->where('user_id', $this->owner->id)
             ->first();
@@ -435,12 +459,14 @@ class AiOffConcurrencyTest extends TestCase
         $quick->disableCompany($this->company, $this->owner, 'synthetic-configuration-only', (int) $this->aiPolicy->fresh()->revision);
         AiUserPreference::where('company_id', $this->company->id)->where('user_id', $this->owner->id)->update(['consents' => []]);
         $quick->enableCompany($this->company, $this->owner, 'synthetic-configuration-only', (int) $this->aiPolicy->fresh()->revision);
-        try {
-            app(AiGovernance::class)->dispatchConnection($this->company, $this->owner, $this->textConnection->public_id, 'sales', 'text_structured');
-            $this->fail('Initial disclosure acceptance remains required before dispatch.');
-        } catch (AssistantUnavailable $e) {
-            $this->assertSame('consent', $e->reason);
-        }
+
+        // Crucial invariant: re-enabling does not fabricate new consent records
+        $pref = AiUserPreference::where('company_id', $this->company->id)->where('user_id', $this->owner->id)->first();
+        $this->assertSame([], $pref?->consents ?? []);
+
+        // And dispatch proceeds without affirmative consent blocking
+        $grant = app(AiGovernance::class)->dispatchConnection($this->company, $this->owner, $this->textConnection->public_id, 'sales', 'text_structured');
+        $this->assertNotNull($grant['credential']);
         Http::assertNothingSent();
     }
 

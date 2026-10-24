@@ -46,6 +46,24 @@ class MasterAiSwitchTest extends TestCase
         Http::preventStrayRequests();
     }
 
+    public function test_setup_saved_key_and_disclosure_separator_render_without_encoding_corruption_in_both_locales(): void
+    {
+        foreach (['ar', 'en'] as $locale) {
+            app()->setLocale($locale);
+            $component = Livewire::actingAs($this->owner)->test(DeepSeekSetup::class);
+            $component->assertSee(str_repeat('•', 16), false)
+                ->assertSee('&middot;', false)
+                ->assertDontSee('â€¢', false)
+                ->assertDontSee('Â·', false);
+            $dom = new \DOMDocument;
+            @$dom->loadHTML('<?xml encoding="UTF-8">'.$component->html());
+            $input = (new \DOMXPath($dom))->query('//input[@placeholder]')->item(0);
+            $this->assertNotNull($input);
+            $this->assertSame(str_repeat('•', 16), $input->getAttribute('placeholder'));
+        }
+        Http::assertNothingSent();
+    }
+
     public function test_setup_switch_reload_removes_and_remounts_the_layout_launcher(): void
     {
         Livewire::actingAs($this->owner)

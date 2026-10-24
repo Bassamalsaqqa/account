@@ -128,19 +128,14 @@ final class QuestionSemanticRoutingTest extends TestCase
         $this->assertNoEconomicWrites();
     }
 
-    public function test_explicit_report_choice_preserves_filters_and_requires_question_consent(): void
+    public function test_explicit_report_choice_preserves_filters_without_text_acceptance(): void
     {
         Http::fake(['*' => Http::response($this->response($this->reportPlan()))]);
         $query = 'Show our turnover for this month';
         $component = Livewire::test('ai.assistant-launcher')->call('showAssistant')
             ->set('text', $query)->call('prepare');
         $this->assertNotNull($component->get('ambiguousChoice'));
-        $component->call('chooseOperation', 'report')->assertSet('reportResult', null)
-            ->assertSet('error', __('assistant_v2.error_consent'));
-        Http::assertNothingSent();
-        $this->consent('question');
-        Livewire::test('ai.assistant-launcher')->call('showAssistant')->set('text', $query)->call('prepare')
-            ->call('chooseOperation', 'report')->assertSet('reportResult.report_key', 'sales.summary')
+        $component->call('chooseOperation', 'report')->assertSet('reportResult.report_key', 'sales.summary')
             ->assertSet('reportResult.period.preset', 'this_month');
         Http::assertSentCount(1);
         $this->assertSame('question', AssistantRequest::sole()->purpose);
@@ -180,13 +175,6 @@ final class QuestionSemanticRoutingTest extends TestCase
         $query = 'put that on the usual bill please';
         // Unsupported is a valid transaction-provider response; no guessed customer/product.
         Http::fake(['*' => Http::response($this->response(['version' => 2, 'intent' => 'uncertain']))]);
-        $this->consent('question');
-        $component = Livewire::test('ai.assistant-launcher')->call('showAssistant')
-            ->set('text', $query)->call('prepare');
-        $component->call('chooseOperation', 'transaction')->assertSet('reportResult', null)
-            ->assertSet('error', __('assistant_v2.error_consent'));
-        Http::assertNothingSent();
-        $this->consent('transaction');
         $component = Livewire::test('ai.assistant-launcher')->call('showAssistant')
             ->set('text', $query)->call('prepare')->set('text', 'sales today')
             ->call('chooseOperation', 'transaction')->assertSet('reportResult', null);

@@ -7,6 +7,7 @@ namespace Tests\Feature\UnifiedAssistant;
 use App\Application\AI\AiGovernance;
 use App\Application\AI\AssistantQuestionPlanner;
 use App\Application\AI\AssistantUnavailable;
+use App\Models\AiUserPreference;
 use App\Models\AssistantRequest;
 use App\Models\CompanyUser;
 use App\Models\User;
@@ -34,21 +35,20 @@ final class QuestionProviderBoundaryTest extends TestCase
         Http::preventStrayRequests();
     }
 
-    public function test_transaction_consent_cannot_authorize_question_dispatch(): void
+    public function test_question_dispatch_requires_no_additional_text_acceptance_and_does_not_record_it(): void
     {
         $governance = app(AiGovernance::class);
         foreach ([$this->textConnection] as $connection) {
             $governance->recordConsent($this->company, $this->owner, $connection->public_id,
                 $governance->consentFingerprint($this->aiPolicy, $connection));
         }
-        try {
-            $this->plan();
-            $this->fail('Transaction consent must not authorize question processing.');
-        } catch (AssistantUnavailable $e) {
-            $this->assertSame('consent', $e->reason);
-        }
-        $this->assertSame(0, AssistantRequest::count());
-        Http::assertNothingSent();
+        $before = AiUserPreference::query()->get()->map->getRawOriginal()->all();
+        Http::fake(['*' => Http::response($this->response())]);
+        $plan = $this->plan();
+        $this->assertSame('sales.summary', $plan->reportKey);
+        $this->assertSame($before, AiUserPreference::query()->get()->map->getRawOriginal()->all());
+        $this->assertSame(1, AssistantRequest::count());
+        Http::assertSentCount(1);
     }
 
     public function test_one_bounded_question_plan_contains_no_business_data_and_retains_unknown_cost(): void

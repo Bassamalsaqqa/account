@@ -68,7 +68,7 @@ final class DeepSeekSetup extends Component
         $this->connectionRevision = $connection === null ? 0 : $connection->revision;
     }
 
-    public function testConnection(#[SensitiveParameter] string $key = '', #[SensitiveParameter] string $password = '', bool $consent = false): void
+    public function testConnection(#[SensitiveParameter] string $key = '', #[SensitiveParameter] string $password = '', bool $consent = true): void
     {
         $this->authorizeSetup();
         $result = app(DeepSeekQuickConnect::class)->testConnection(app(CompanyContext::class)->company(), auth()->user(),

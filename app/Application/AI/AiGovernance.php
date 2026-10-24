@@ -429,8 +429,6 @@ final class AiGovernance
                 throw new AssistantUnavailable('disabled');
             }
 
-            $this->requireConsent($policy, $connection, $actor, $intent === 'connection_test' ? 'connection_test' : ($intent === 'question' ? 'question' : 'transaction'));
-
             return ['connection' => $connection, 'policy' => $policy, 'credential' => $this->credential($connection)];
         });
     }
@@ -571,6 +569,7 @@ final class AiGovernance
 
     public function requireConsent(AiCompanyPolicy $policy, AiProviderConnection $connection, User $actor, string $scope = 'transaction'): void
     {
+        // Legacy explicit audit-consent validation only; runtime dispatch does not call this method.
         if (! $this->hasConsent($policy, $connection, $actor, $scope)) {
             throw new AssistantUnavailable('consent');
         }
