@@ -1,3 +1,5 @@
+> SUPERSEDED HISTORICAL REVIEW: this report assessed the earlier source and consent contract. The Owner replaced affirmative text-consent gates on 2026-10-24. See [current source review](nonblocking-source-review.md), [current QA receipt](qa-result.json) and [current handback](../../../RELEASE_B1_HANDBACK.md). Earlier readiness wording below is not current acceptance.
+
 # Fresh independent AGY source review
 
 Codex verified byte identity of all11 changed application/view/translation/test files with the separately reviewed snapshot. The review made no edits or database calls. Reported test totals were supplied by Codex, not rerun by AGY. The snapshot is intentionally dirty; the worker description of a clean workspace means no new review edits, not a clean Git index. Final acceptance remains conditional on the complete gate.

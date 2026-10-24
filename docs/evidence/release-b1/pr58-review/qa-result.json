@@ -1,9 +1,40 @@
 {
-  "record_status": "PENDING_FINAL_COMPLETE_GATE",
+  "record_status": "PENDING_FINAL_COMPLETE_GATE_AFTER_LIVEWIRE_PATCH",
   "comparison_baseline": "fc4cda942bf1602c952559cf87f4cceace65e5c3",
-  "focused_tests": 38,
-  "focused_assertions": 259,
-  "focused_exit_code": 0,
   "complete_qa_exit_code": null,
-  "acceptance": "HOLD"
+  "acceptance": "HOLD",
+  "historical_complete_attempt": {
+    "source_commit": "b6e19db3802c85e206ead41149cc2aef8928940f",
+    "exit_code": 1,
+    "passed": 3448,
+    "failed": 2,
+    "warnings": 4,
+    "assertions": 41657
+  },
+  "focused_runs": [
+    {
+      "tests": 38,
+      "assertions": 259,
+      "exit_code": 0,
+      "status": "historical earlier contract"
+    },
+    {
+      "tests": 52,
+      "assertions": 379,
+      "exit_code": 0,
+      "status": "intermediate nonblocking implementation"
+    },
+    {
+      "tests": 93,
+      "assertions": 677,
+      "exit_code": 0,
+      "status": "broader nonblocking implementation"
+    },
+    {
+      "tests": 78,
+      "assertions": 567,
+      "exit_code": 0,
+      "status": "Livewire4.4.8 plus final test corrections; committed source pending"
+    }
+  ]
 }

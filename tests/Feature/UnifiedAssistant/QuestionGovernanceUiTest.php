@@ -189,7 +189,7 @@ class QuestionGovernanceUiTest extends TestCase
         app(AiGovernance::class)->updatePolicy($this->company, $admin, $input);
     }
 
-    public function test_report_only_staff_renders_launcher_with_question_consent_and_no_tx_rights(): void
+    public function test_report_only_staff_renders_nonblocking_disclosure_and_no_tx_rights(): void
     {
         $this->enableQuestionsPolicy();
         $reader = $this->createReportReader();
@@ -201,7 +201,9 @@ class QuestionGovernanceUiTest extends TestCase
             ->assertStatus(200)
             ->call('showAssistant')
             ->assertSet('open', true)
-            ->assertSee(__('assistant_v2.question_consent'))
+            ->assertSee(__('assistant_v2.privacy_policy'))
+            ->assertDontSee(__('assistant_v2.question_consent'))
+            ->assertDontSeeHtml('wire:click="acceptQuestionConsent"')
             ->assertSet('context', 'auto');
 
         $this->assertFalse($reader->hasPermissionTo('sales.invoice.create'));
