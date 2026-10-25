@@ -1,8 +1,8 @@
 {
     "$schema": "https://getcomposer.org/schema.json",
-    "name": "laravel/laravel",
+    "name": "bassamalsaqqa/account",
     "type": "project",
-    "description": "The skeleton application for the Laravel framework.",
+    "description": "Small Trader Accounting: company-scoped accounting and inventory management.",
     "keywords": ["laravel", "framework"],
     "license": "proprietary",
     "require": {
