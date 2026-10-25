@@ -83,3 +83,21 @@ LINUX_CONTRACT_EXIT=1
 STDERR
 
 EXIT 1
+
+
+SUPERSEDING POST-RELEASE FIXTURE-ISOLATION REPEAT
+Only the isolated synthetic test process overrides HOSTINGER_ALT_PHP_BIN to an absent generic-fixture executable. The explicit Hostinger-required-handler test provides its own executable and remains exercised. No application source, assertion or production configuration changed.
+
+PHPUnit 12.5.36 by Sebastian Bergmann and contributors.
+
+Runtime:       PHP 8.4.26
+
+.....................                                             21 / 21 (100%)
+
+Time: 00:01.989, Memory: 30.50 MB
+
+OK (21 tests, 147 assertions)
+
+STDERR
+
+EXIT 0

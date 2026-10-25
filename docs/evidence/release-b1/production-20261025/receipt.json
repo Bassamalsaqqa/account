@@ -36,11 +36,7 @@
       "comparison_performed_locally": true,
       "recovered_user_metadata_uploaded": false
     },
-    "volatile_exclusions": [
-      "cache",
-      "cache_locks",
-      "sessions"
-    ],
+    "volatile_exclusions": ["cache","cache_locks","sessions"],
     "tables_total": 91,
     "migrations": 69,
     "new_migrations": 0,
@@ -75,7 +71,9 @@
       "assertions": 98,
       "failures": 8,
       "exit": 1,
-      "classification": "Hostinger installed-handler requirement rejects generic synthetic fixtures without that directive; complete failure output retained."
+      "classification": "Hostinger installed-handler requirement rejects generic synthetic fixtures without that directive; complete failure output retained.",
+      "historical_attempt": true,
+      "superseded_by": "postrelease_acceptance.linux_repeat"
     }
   },
   "latency_before": {
@@ -195,5 +193,167 @@
     "provider_calls": 0
   },
   "physical_devices_live_company_toggle_and_provider_quality": "not verified",
-  "runtime_changes_in_this_evidence_branch": false
+  "runtime_changes_in_this_evidence_branch": false,
+  "postrelease_acceptance": {
+    "reviewed_documentation_head": "68a1b268034b3314d331eb1551637c06a2f4e79e",
+    "documentation_recommendation": "GO; do not merge without Owner authorization",
+    "owner_device_accessibility_acceptance": "HOLD",
+    "production_source_unchanged": "183b7074790bb6f1a25d8223116be4514055e405",
+    "linux_repeat": {
+      "tests": 21,
+      "assertions": 147,
+      "exit": 0,
+      "method": "Generic synthetic-fixture process only: HOSTINGER_ALT_PHP_BIN points to a nonexistent executable; explicit Hostinger-required-handler test overrides it with its own executable fixture. No assertions or app source changed."
+    },
+    "authenticated_gets": {
+      "captured_utc": "2026-10-25T08:41:38+00:00",
+      "source": "183b7074790bb6f1a25d8223116be4514055e405",
+      "method": "Sequential authenticated HTTPS GETs from the production host using an existing Owner session; first/reused curl handles. TTFB includes network/CDN/PHP; not pure PHP processing. No app/OPcache/database cache flushing. Bodies discarded; only aggregate timings/sizes retained.",
+      "concurrency": 1,
+      "samples_per_workflow": 5,
+      "company_policy_enabled": true,
+      "global_ai_enabled": true,
+      "company_switching": "Not submitted",
+      "ai_state_changes": false,
+      "sql_counts": "Unavailable from current HTTP instrumentation; no instrumentation deployed.",
+      "skipped": {
+        "invoice_edit": "No existing same-company draft; no synthetic document created."
+      },
+      "request_columns": ["workflow","sample","connection","status","dns_ms","connect_ms","tls_ms","ttfb_ms","total_ms","decoded_html_bytes","download_bytes","cache_control","server_timing","launcher_mounted"],
+      "request_rows": [
+        ["dashboard",1,"first_in_handle",200,1.146,44.392,92.354,801.987,844.95,87450,19838,"max-age=0, must-revalidate, no-cache, no-store, private",null,true],
+        ["dashboard",2,"reuse_eligible",200,0,0,0,456.954,469.666,87450,19836,"max-age=0, must-revalidate, no-cache, no-store, private",null,true],
+        ["dashboard",3,"reuse_eligible",200,0,0,0,437.696,450.555,87450,19845,"max-age=0, must-revalidate, no-cache, no-store, private",null,true],
+        ["dashboard",4,"reuse_eligible",200,0,0,0,505.698,517.294,87450,19841,"max-age=0, must-revalidate, no-cache, no-store, private",null,true],
+        ["dashboard",5,"reuse_eligible",200,0,0,0,493.352,504.047,87450,19837,"max-age=0, must-revalidate, no-cache, no-store, private",null,true],
+        ["invoice_create",1,"first_in_handle",200,0.541,42.112,88.731,301.409,352.879,111514,28805,"max-age=0, must-revalidate, no-cache, no-store, private",null,true],
+        ["invoice_create",2,"reuse_eligible",200,0,0,0,207.452,224.659,111514,28810,"max-age=0, must-revalidate, no-cache, no-store, private",null,true],
+        ["invoice_create",3,"reuse_eligible",200,0,0,0,188.027,203.137,111514,28816,"max-age=0, must-revalidate, no-cache, no-store, private",null,true],
+        ["invoice_create",4,"reuse_eligible",200,0,0,0,193.08,208.53,111514,28815,"max-age=0, must-revalidate, no-cache, no-store, private",null,true],
+        ["invoice_create",5,"reuse_eligible",200,0,0,0,194.253,209.35,111514,28813,"max-age=0, must-revalidate, no-cache, no-store, private",null,true],
+        ["purchase_create",1,"first_in_handle",200,0.506,43.522,89.836,313.095,362.544,95040,26414,"max-age=0, must-revalidate, no-cache, no-store, private",null,true],
+        ["purchase_create",2,"reuse_eligible",200,0,0,0,200.951,217,95040,26424,"max-age=0, must-revalidate, no-cache, no-store, private",null,true],
+        ["purchase_create",3,"reuse_eligible",200,0,0,0,203.481,218.355,95040,26426,"max-age=0, must-revalidate, no-cache, no-store, private",null,true],
+        ["purchase_create",4,"reuse_eligible",200,0,0,0,228.34,243.002,95040,26421,"max-age=0, must-revalidate, no-cache, no-store, private",null,true],
+        ["purchase_create",5,"reuse_eligible",200,0,0,0,218.467,233.105,95040,26415,"max-age=0, must-revalidate, no-cache, no-store, private",null,true],
+        ["products",1,"first_in_handle",200,0.524,41.794,86.127,312.056,360.298,112213,25792,"max-age=0, must-revalidate, no-cache, no-store, private",null,true],
+        ["products",2,"reuse_eligible",200,0,0,0,223.759,239.101,112213,25784,"max-age=0, must-revalidate, no-cache, no-store, private",null,true],
+        ["products",3,"reuse_eligible",200,0,0,0,222.664,236.682,112213,25784,"max-age=0, must-revalidate, no-cache, no-store, private",null,true],
+        ["products",4,"reuse_eligible",200,0,0,0,191.077,205.195,112213,25796,"max-age=0, must-revalidate, no-cache, no-store, private",null,true],
+        ["products",5,"reuse_eligible",200,0,0,0,194.964,208.989,112213,25792,"max-age=0, must-revalidate, no-cache, no-store, private",null,true],
+        ["settings",1,"first_in_handle",200,0.498,43.552,91.142,312.641,362.889,113736,26220,"max-age=0, must-revalidate, no-cache, no-store, private",null,true],
+        ["settings",2,"reuse_eligible",200,0,0,0,229.066,245.025,113736,26232,"max-age=0, must-revalidate, no-cache, no-store, private",null,true],
+        ["settings",3,"reuse_eligible",200,0,0,0,224.41,238.339,113736,26217,"max-age=0, must-revalidate, no-cache, no-store, private",null,true],
+        ["settings",4,"reuse_eligible",200,0,0,0,212.125,226.077,113736,26220,"max-age=0, must-revalidate, no-cache, no-store, private",null,true],
+        ["settings",5,"reuse_eligible",200,0,0,0,230.591,244.529,113736,26224,"max-age=0, must-revalidate, no-cache, no-store, private",null,true],
+        ["ai_settings",1,"first_in_handle",200,0.606,43.768,91.266,427.424,470.418,77569,19517,"max-age=0, must-revalidate, no-cache, no-store, private",null,true],
+        ["ai_settings",2,"reuse_eligible",200,0,0,0,358.012,372.743,77569,19505,"max-age=0, must-revalidate, no-cache, no-store, private",null,true],
+        ["ai_settings",3,"reuse_eligible",200,0,0,0,337.49,349.643,77569,19510,"max-age=0, must-revalidate, no-cache, no-store, private",null,true],
+        ["ai_settings",4,"reuse_eligible",200,0,0,0,336.631,348.243,77569,19505,"max-age=0, must-revalidate, no-cache, no-store, private",null,true],
+        ["ai_settings",5,"reuse_eligible",200,0,0,0,351.857,363.458,77569,19508,"max-age=0, must-revalidate, no-cache, no-store, private",null,true],
+        ["inventory",1,"first_in_handle",200,0.504,43.664,89.615,287.837,330.758,65927,16360,"max-age=0, must-revalidate, no-cache, no-store, private",null,true],
+        ["inventory",2,"reuse_eligible",200,0,0,0,213.376,228.039,65927,16352,"max-age=0, must-revalidate, no-cache, no-store, private",null,true],
+        ["inventory",3,"reuse_eligible",200,0,0,0,196.291,212.105,65927,16375,"max-age=0, must-revalidate, no-cache, no-store, private",null,true],
+        ["inventory",4,"reuse_eligible",200,0,0,0,202.698,216.052,65927,16374,"max-age=0, must-revalidate, no-cache, no-store, private",null,true],
+        ["inventory",5,"reuse_eligible",200,0,0,0,223.367,236.712,65927,16379,"max-age=0, must-revalidate, no-cache, no-store, private",null,true],
+        ["purchase_edit",1,"first_in_handle",200,0.458,43.635,91.074,345.897,396.312,96468,27122,"max-age=0, must-revalidate, no-cache, no-store, private",null,true],
+        ["purchase_edit",2,"reuse_eligible",200,0,0,0,258.67,275.43,96468,27124,"max-age=0, must-revalidate, no-cache, no-store, private",null,true],
+        ["purchase_edit",3,"reuse_eligible",200,0,0,0,249.1,264.231,96468,27124,"max-age=0, must-revalidate, no-cache, no-store, private",null,true],
+        ["purchase_edit",4,"reuse_eligible",200,0,0,0,232.131,246.441,96468,27124,"max-age=0, must-revalidate, no-cache, no-store, private",null,true],
+        ["purchase_edit",5,"reuse_eligible",200,0,0,0,251.709,267.3,96468,27126,"max-age=0, must-revalidate, no-cache, no-store, private",null,true]
+      ]
+    },
+    "read_only_interactions_and_assets": {
+      "captured_utc": "2026-10-25T08:46:52+00:00",
+      "method": "Ephemeral sequential authenticated HTTP client from production host; signed snapshots read from actual pages; calls array empty; only GlobalSearch.query and ProductIndex.search string updates. No document component POST, save/addLine, document writes, policy changes or provider calls. Generic no-match/common-prefix/clear terms; not a large-data or physical-device benchmark.",
+      "initial_snapshot_bytes": {
+        "/dashboard": {
+          "global-search": 325,
+          "ai.assistant-launcher": 1205,
+          "pages.reporting.dashboard": 334
+        },
+        "/invoices/create": {
+          "global-search": 332,
+          "ai.assistant-launcher": 1213,
+          "pages.sales.invoice-form": 2312
+        },
+        "/products": {
+          "global-search": 324,
+          "ai.assistant-launcher": 1204,
+          "pages.products.product-index": 461
+        },
+        "/settings": {
+          "global-search": 324,
+          "ai.assistant-launcher": 1204,
+          "pages.settings-index": 1159
+        }
+      },
+      "skipped": ["invoice_product_search: transaction form hydration excluded from POST measurement"],
+      "sql_count_processing_and_browser_paint": "Unavailable: no deployed server instrumentation, and browser DOM bridge does not expose Performance API.",
+      "company_switch_and_ai_off_comparison": "Not performed; no state mutation.",
+      "request_columns": ["operation","status","ttfb_ms","total_ms","payload_bytes","decoded_response_bytes","download_bytes"],
+      "request_rows": [
+        ["snapshot_/dashboard",200,639,681.532,0,87450,19840],
+        ["snapshot_/invoices/create",200,168.945,186.425,0,111514,28803],
+        ["snapshot_/products",200,261.723,275.215,0,112213,25786],
+        ["snapshot_/settings",200,218.808,232.295,0,113736,26221],
+        ["omnibox_no_match",200,140.754,142.342,518,14612,4085],
+        ["omnibox_common_ascii_prefix",200,131.066,132.643,520,14589,4065],
+        ["omnibox_clear",200,109.832,111.299,495,13828,3881],
+        ["product_list_no_match",200,114.568,117.617,677,33295,8465],
+        ["product_list_common_ascii_prefix",200,111.754,115.735,679,33272,8446],
+        ["product_list_clear",200,144.708,150.417,654,68712,13118],
+        ["asset_1_sample_1",200,86.155,95.799,0,114479,17542],
+        ["asset_1_sample_2",200,41.549,50.819,0,114479,17542],
+        ["asset_1_sample_3",200,41.401,51.136,0,114479,17542],
+        ["asset_2_sample_1",200,89.419,106.94,0,91243,30451],
+        ["asset_2_sample_2",200,41.541,59.118,0,91243,30451],
+        ["asset_2_sample_3",200,41.506,59.023,0,91243,30451],
+        ["asset_3_sample_1",200,93.214,156.499,0,261969,108758],
+        ["asset_3_sample_2",200,41.754,63.557,0,261969,108758],
+        ["asset_3_sample_3",200,41.552,62.831,0,261969,108758]
+      ]
+    },
+    "browser_observations": {
+      "performance_api": "Not exposed by DOM-only bridge; no paint/CPU/ResourceTiming claims.",
+      "settings_rtl_viewports": [
+        {
+          "requested": 390,
+          "client_width": 375,
+          "scroll_width": 375
+        },
+        {
+          "requested": 768,
+          "client_width": 753,
+          "scroll_width": 753
+        },
+        {
+          "requested": 1440,
+          "client_width": 1425,
+          "scroll_width": 1425
+        }
+      ],
+      "viewport_override_reset": true,
+      "omnibox": "Visible search trigger observed under aria-hidden=true ancestor after Escape; role selection subsequently failed. A settled repeat had focus on BUTTON but lingering aria-hidden=true; another settled observation had BODY focus. Reload restores normal state. Immediate trial observations varied; treat as asynchronous accessibility cleanup issue requiring focused correction and device reproduction.",
+      "application_changes": false,
+      "browser_console": "One asynchronous message-channel listener error observed; origin not established, not attributed to application without evidence."
+    },
+    "local_alignment": {
+      "explicit_owner_authorization": true,
+      "main_matches_production": true,
+      "tracked_changes": 0,
+      "translation_edits_preserved_named_stash_and_patch": true,
+      "private_untracked_files": 40,
+      "private_original_hashes_verified": true,
+      "composer_install_no_scripts_exit": 0,
+      "livewire": "4.4.8",
+      "npm_ci_exit": 0,
+      "npm_vulnerabilities": 0,
+      "vite": "7.3.7",
+      "production_build_exit": 0,
+      "manifest_matches_deployed": true,
+      "composer_warning": "Existing standalone recovery-preflight runner is outside Tests PSR-4 namespace; skipped during optimized autoload generation. No source change."
+    },
+    "implementation_recommendation": "No performance implementation justified yet. Request authorization for bounded Omnibox accessibility correction and optional aggregate request profiling; no paid AI activity."
+  }
 }
