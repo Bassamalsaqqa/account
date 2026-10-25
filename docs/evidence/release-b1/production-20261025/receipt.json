@@ -5,23 +5,14 @@
   "previous_production_sha": "9c7bf6be70cac7fec576591702bef9b954a0c566",
   "final_online_verified_utc": "2026-10-25T05:55:49Z",
   "recovery": {
-    "offhost_artifact_hashes_verified": true,
-    "plain_backup_owner_acl": true,
-    "separate_application_key_history_matches_archived_environment": true,
-    "archive_readable_no_code_or_env_executed": true,
+    "verification_result": "Bounded recovery checks passed; complete isolated application boot remains unverified.",
     "isolated_restore_import_exit": 0,
-    "old_client_compatibility": {
-      "sandbox_metadata_directive_removed_from_import_stream_only": true,
-      "original_backup_unchanged": true
-    },
-    "networking_disabled": true,
-    "event_scheduler_disabled": true,
     "tables_restored": 91,
     "full_row_fingerprints_match": 91,
     "schema_fingerprints_match": 91,
     "schema_difference_tables": [],
     "six_production_reconciliations": "healthy at coherent capture",
-    "production_database_never_targeted": true
+    "operational_details": "Retained in private Owner custody; excluded from this public receipt."
   },
   "preservation": {
     "deployed_sha": "183b7074790bb6f1a25d8223116be4514055e405",
