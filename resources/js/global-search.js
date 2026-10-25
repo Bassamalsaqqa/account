@@ -1,37 +1,59 @@
 export function globalSearchComponent() {
     let generation = 0;
+    let opening = false;
+    let destroyed = false;
     return {
         clientOpen: false, activeIndex: -1, activeId: null, term: '',
         searching: false, dirty: false, failed: false, offline: false,
         previouslyFocused: null,
         init() {
-            this.$wire.$watch('isOpen', value => { if (!value) this.clientOpen = false; });
+            this.$wire.$watch('isOpen', value => {
+                if (!value) this.dismiss();
+            });
         },
+        destroy() { destroyed = true; this.dismiss(false); },
         isModalVisible() { return this.clientOpen && this.$wire.isOpen; },
         handleWindowKeydown(event) {
             if (event.repeat || !(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== 'k') return;
             if ([...document.querySelectorAll('dialog[open],[role="dialog"]')].some(el => el.id !== 'global-search-dialog' && el.getClientRects().length)) return;
             event.preventDefault();
-            this.clientOpen ? this.closeModal() : this.openModal();
+            this.clientOpen || opening ? this.closeModal() : this.openModal();
         },
         async openModal() {
-            if (this.clientOpen) return;
+            if (this.clientOpen || opening || destroyed) return;
+            const version = ++generation;
+            opening = true;
             this.previouslyFocused = document.activeElement;
             this.failed = false;
             this.offline = !navigator.onLine;
             try {
                 await this.$wire.open();
+                if (destroyed || version !== generation) return;
                 this.clientOpen = this.$wire.isOpen;
-                this.$nextTick(() => this.$refs.searchInput?.focus());
-            } catch { this.failed = true; }
+                this.$nextTick(() => {
+                    if (destroyed || version !== generation || !this.clientOpen) return;
+                    // Native modal inertness is owned by the browser, not sibling
+                    // aria-hidden mutations that can race Livewire morphs.
+                    this.$refs.dialog.showModal();
+                    this.$refs.searchInput?.focus();
+                });
+            } catch { if (!destroyed && version === generation) this.failed = true; }
+            finally { if (version === generation) opening = false; }
         },
-        closeModal() {
+        dismiss(restoreFocus = true) {
             generation++;
+            opening = false;
             this.clientOpen = false;
             this.term = '';
             this.resetActive();
+            if (this.$refs.dialog?.open) this.$refs.dialog.close();
+            const trigger = this.previouslyFocused;
+            if (restoreFocus && trigger?.isConnected && trigger.getClientRects().length
+                && !trigger.closest('[inert], [aria-hidden="true"]')) trigger.focus();
+        },
+        closeModal() {
+            this.dismiss();
             this.$wire.close().catch(() => {});
-            this.previouslyFocused?.focus();
         },
         queryChanged() { generation++; this.dirty = true; this.failed = false; this.resetActive(); },
         async search() {

@@ -29,18 +29,15 @@
 
     <!-- Teleported Accessible Dialog / Modal (z-index >= 80 to escape fixed-header stacking) -->
     <template x-teleport="body">
-        <div x-show="isModalVisible()"
-             x-cloak
+        <dialog x-ref="dialog"
+             wire:ignore.self
              id="global-search-dialog"
              role="dialog"
              aria-modal="true"
              aria-labelledby="global-search-title"
-             :aria-hidden="!isModalVisible()"
-             :inert="!isModalVisible()"
-             x-trap.inert.noscroll="isModalVisible()"
-             @keydown.escape.stop.prevent="closeModal()"
-             class="fixed inset-0 z-[85] overflow-y-auto p-4 sm:p-6 md:p-12 flex items-start justify-center"
-             style="display: none;">
+             @cancel.prevent="closeModal()"
+             @close="if (!$refs.dialog.open && clientOpen) closeModal()"
+             class="fixed inset-0 z-[85] m-0 h-full max-h-none w-full max-w-none border-0 bg-transparent overflow-y-auto p-4 sm:p-6 md:p-12 open:flex items-start justify-center backdrop:bg-transparent">
 
             <!-- Backdrop -->
             <div x-show="isModalVisible()"
@@ -275,6 +272,6 @@
                 </div>
 
             </div>
-        </div>
+        </dialog>
     </template>
 </div>
