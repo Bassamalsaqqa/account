@@ -1,0 +1,64 @@
+# Accounting B.1 — production acceptance and performance baseline
+
+Proprietary — All Rights Reserved. Existing licensing and third-party notices remain unchanged.
+
+**Documentation recommendation: GO for PR [#59](https://github.com/Bassamalsaqqa/account/pull/59); no merge authorized or performed. Full Owner/device/accessibility acceptance: HOLD.** Production remains online at **`183b7074790bb6f1a25d8223116be4514055e405`**, tree `42c1fe7403a77530669c68de9d38a5c2e00910f5`, matching independently approved `f7834155142b745b24de29fca81cc54ed0a369cc`. Previous production: `9c7bf6be70cac7fec576591702bef9b954a0c566`. The current read-only check reconfirmed the exact clean tracked source and accepted build manifest. This documentation is not deployed application source.
+
+## Release and workspace review
+
+Codex independently inspected PR #59 at `68a1b268034b3314d331eb1551637c06a2f4e79e`: five documentation/evidence files, no application/dependency/migration/licensing changes. Its [original deployment record](https://github.com/Bassamalsaqqa/account/blob/68a1b268034b3314d331eb1551637c06a2f4e79e/docs/RELEASE_B1_PRODUCTION_ACCEPTANCE_20261025.md) accurately distinguishes completed gates from unverified live toggles/devices. The added text was scanned for workstation paths, identifiers and credential markers; no recovery material, customer records or credentials are included. This is a review of the PR's additions, not an all-history secret certification. Historical path exposures already documented in the [source handback](RELEASE_B1_HANDBACK.md) were not rewritten.
+
+The [receipt](evidence/release-b1/production-20261025/receipt.json) preserves the completed deployment evidence: bounded recovery verification: all **91 restored table row/schema fingerprints matched**, import exit **0**. Complete isolated application boot remains unverified. Recovery custody, backup format, key handling and detailed procedures are retained privately with the Owner, outside the public receipt. Before reopening, all **88 nonvolatile tables** matched; final verification classified exactly one language-test user timestamp change, with every other user field matching and the other **87 tables identical**. All six reconciliation domains were healthy for every company; 69 migrations and all financial/stock/payment/check history, permissions, memberships, flags and limits were preserved. Held/online checks: **60 + 44 authenticated requests**, **11 HTTPS assets**, no fresh application errors. These are the completed deployment gates, not newly rerun gates today.
+
+The eight broad Linux failures were independently traced to generic fixtures omitting a PHP handler while autodetecting Hostinger's installed executable. A repeat isolated **only the generic test runner's** `HOSTINGER_ALT_PHP_BIN` to a nonexistent fixture path: **21 tests / 147 assertions, exit 0**. The explicit required-handler test supplies its own executable fixture and still runs; no assertion or application code changed. The previous **21/98, eight failures, exit 1** and focused **6/22, exit 0** remain preserved. [Full original failure and successful isolated repeat](evidence/release-b1/production-20261025/linux-contract.txt). This closes the fixture-classification gap, not a production-script defect.
+
+With explicit Owner authorization, the primary local `main` fast-forwarded to the deployed SHA. Two existing translation edits are preserved in a named stash and separate patch; **40 private files remain in place, with original hashes verified**. Tracked source is clean. Installed packages were aligned from accepted lockfiles without scripts or application bootstrap; Livewire is 4.4.8, Vite 7.3.7, npm audit is clean and the local production build matches the deployed manifest. Composer's unchanged standalone recovery-runner PSR-4 warning is nonblocking. The existing documentation checkout is used; no new worktree, automatic AGY, application development or full QA rerun occurred. Existing full source QA remains [exit 0, 3,450 tests / 41,668 assertions](evidence/release-b1/pr58-review/qa-result.json).
+
+## Authenticated production measurements
+
+Measurements on 2026-10-25 used an existing authorized Owner session and the selected AI-enabled company. An ephemeral authorized read-only client collected the samples; no endpoint, middleware, instrumentation or configuration was deployed. Each workflow had **five serial HTTPS GETs**, concurrency one, 250 ms pauses, compression enabled, no redirects and no retained bodies/cookies/terms/record IDs. First handle versus reused handle measures connection reuse; **it is not controlled application cold/warm testing**. TTFB includes network/CDN/PHP/database time, not pure server processing. [All samples, payload sizes and methodology](evidence/release-b1/production-20261025/receipt.json).
+
+| Workflow | Median TTFB ms | Median total ms | First / reused-handle median TTFB ms |
+|---|---:|---:|---:|
+| Dashboard | 493.4 | 504.0 | 802.0 / 475.2 |
+| Sales invoice creation | 194.3 | 209.3 | 301.4 / 193.7 |
+| Purchase creation | 218.5 | 233.1 | 313.1 / 211.0 |
+| Existing purchase draft editing | 251.7 | 267.3 | 345.9 / 250.4 |
+| Products | 222.7 | 236.7 | 312.1 / 208.8 |
+| Settings | 229.1 | 244.5 | 312.6 / 226.7 |
+| AI Settings | 351.9 | 363.5 | 427.4 / 344.7 |
+| Inventory | 213.4 | 228.0 | 287.8 / 208.0 |
+
+There was no existing same-company sales draft, so invoice editing was skipped; no synthetic document was created. Product selection, saving, company switching and live AI policy changes were not submitted. An AI-OFF comparison is unavailable because no other state was authorized for mutation. Prior public `/login` medians of 916.37/966.19 ms are availability samples and are not used to infer application performance.
+
+Six additional Livewire requests updated only `GlobalSearch.query` or `ProductIndex.search`, using actual signed snapshots, empty method-call arrays and generic no-match/common-prefix/clear terms. Inspected handlers perform authorization and read queries, with in-memory pagination/filter resets. No transaction-form POST was made. Omnibox TTFB: **109.8–140.8 ms**, payload **495–520 bytes**; product filtering: **111.8–144.7 ms**, **654–679 bytes**. Compressed responses were approximately **3.9–4.1 KB** and **8.4–13.1 KB**. These are a tiny current-data sample, not a large-dataset or typing-speed benchmark. Initial component snapshots were 0.3–2.3 KB each; no large hydration-state bottleneck is demonstrated.
+
+Three same-origin startup assets were fetched three times each: CSS **17,542 bytes transferred**, app JS **30,451**, Livewire JS **108,758**. Reused-connection total medians were approximately **51, 59 and 63 ms**. Transfer observations do not measure parsing, execution or paint. Settings at requested widths **390/768/1440** showed Arabic RTL and no document horizontal overflow; client widths exclude the scrollbar. Viewport emulation is not physical-device acceptance and was reset afterward.
+
+SQL counts, query plans, expensive SQL, isolated PHP time, browser paint/CPU and complete browser request traces are **unavailable**: current responses have no Server-Timing data, and the DOM-only browser bridge does not expose the Performance API/network inspector. No instrumentation was deployed. A separately approved, temporary Owner-only request profiler could emit total duration, SQL count/time and query-template hashes without bindings, raw SQL or customer values; test it first and remove it after measurement. Owner DevTools/physical-device traces should retain aggregate metrics only. No index or permission-cache change is justified by the available evidence.
+
+## Ranked findings and proposed next work
+
+| Priority | Evidence and recommendation | Complexity / expected benefit | Regression risk and required verification |
+|---|---|---|---|
+| 1 | **Accessibility finding:** after Omnibox open then Escape, a visible search trigger was observed under an ancestor still marked `aria-hidden="true"`; subsequent role-based selection failed. Settled focus varied between body and trigger. Reload restored normal accessibility. Investigate trap/morph cleanup and focus restoration as a bounded follow-up. | Small–medium; restore reliable keyboard/screen-reader access. No millisecond benefit claimed. | Medium: Alpine trap/teleport and Livewire morph races. Reproduce on actual browsers; test open/search/Escape, focus return, failed requests, repeated cycles, navigation, RTL and company changes. No fix made. |
+| 2 | **Measured relative cost:** dashboard median TTFB 493 ms exceeds other measured workflows. Profile it before choosing an optimization. PHP/database/authorization/CDN attribution remains a hypothesis. | Small measurement package; potential benefit unquantified until attribution. | Low for an approved aggregate profiler; medium for later query changes. Preserve fresh authorization and financial reads; compare identical repeated requests and six reconciliations if economic read behavior changes. |
+| 3 | Livewire JS is the largest observed startup transfer; no browser CPU/paint bottleneck was measured. Gather real-device traces before proposing asset changes. | Small measurement exercise; benefit unknown. | Low for private aggregate measurement. Compare cache state, network, first paint and interaction on iPhone/Android. |
+
+There is **no demonstrated missing-index, permission-query, speculative-cache, AI-OFF initialization or broad frontend-refactor bottleneck warranting implementation**. Fresh authorization checks visible in source are safeguards, not proven waste. Recommend no performance implementation now. A bounded accessibility correction and further measurement require Owner authorization; paid provider evaluation remains separate.
+
+## Owner acceptance and risk decision
+
+- On actual iPhone, Android and desktop, open Dashboard, Sales, Purchasing, Products and Settings; check loading, scrolling, tap targets, quantities, decimal keyboard, Back/Forward and tab resume. Use only Owner-controlled legitimate business operations for saving/navigation; Codex posted none.
+- Test camera/barcode permission grant/denial, scan selection, repeated scans, cancel/resume and external scanner/keyboard focus. Verify no stale listeners or duplicate lines.
+- Check Arabic RTL and English LTR, long names/numbers and narrow layouts. Repeatedly open Omnibox and close with Escape; require usable focus and no lingering hidden/inert ancestors.
+- Switch between authorized companies with different permissions/configurations. Verify list/detail/form context, sensitive-cost redaction, no old search results, and safe handling of unsaved work. Codex did not switch the live company.
+- In an authorized company, retain unsaved manually entered form values; open the assistant without submitting a model request, confirm the company OFF/ON switch with the Owner password, verify launcher disappearance/reappearance and preserved values/settings. Do not submit AI questions, test provider health or activate a provider during this acceptance. Previously authorized in-flight work may finish/charge; deterministic source tests cover that concurrency contract.
+
+**Blocking full Owner acceptance:** the observed Omnibox accessibility cleanup issue and outstanding physical-device, scanner, tenant-switch and submitted password-confirmed AI checks. These do not establish a financial regression or authorize rollback. **Nonblocking operational limitations:** uninstrumented SQL/PHP/paint attribution, uncontrolled cold cache and tiny current-data samples; the local standalone-runner autoload warning and preserved private untracked files. No new financial/security/source-integrity blocker was found. Keep the accepted production source online; do not claim complete everyday-use acceptance or a production speed improvement.
+
+This pass made no deployment, production configuration/database changes, financial posting, provider calls, migrations, GitHub merge or source implementation. Stop at these findings and await Owner authorization for any corrective implementation.
+
+## Subsequent corrective release
+
+The Omnibox finding is addressed by the separately reviewed [B.1.1 corrective record](https://github.com/Bassamalsaqqa/account/blob/09ea2c810e78b7192717ceb4d6af01691162bc20/docs/RELEASE_B1_1_HANDBACK.md). This B.1 record remains historical evidence and does not assert that B.1.1 is deployed. Public recovery details were minimized following independent review; the original detailed record remains preserved privately. Earlier published commits were not rewritten.

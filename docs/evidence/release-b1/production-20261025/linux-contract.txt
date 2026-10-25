@@ -1,0 +1,103 @@
+PHPUnit 12.5.36 by Sebastian Bergmann and contributors.
+
+Runtime:       PHP 8.4.26
+
+..F..FFF.....FFF.F...                                             21 / 21 (100%)
+
+Time: 00:01.632, Memory: 30.50 MB
+
+There were 8 failures:
+
+1) Tests\Unit\ProductExperience\DeploymentScriptContractTest::test_synthetic_shell_execution_holds_maintenance_on_subsequent_failure
+Failed asserting that 'down --retry=60\n
+' [ASCII](length: 16) contains "migrate --force" [ASCII](length: 15).
+
+[isolated-linux-fixture]/tests/Unit/ProductExperience/DeploymentScriptContractTest.php:118
+
+2) Tests\Unit\ProductExperience\DeploymentScriptContractTest::test_default_skips_migrations_and_bootstrapping_and_leaves_app_closed
+Nominal deployment must exit 0: ===> [1/7] Pre-flight verification...
+===> [2/7] Entering maintenance mode...
+ERROR: missing the Hostinger CloudLinux PHP 8.4 handler. Manual review required.
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+DEPLOYMENT FAILED at line 286 with exit code 1.
+WARNING: Application was left in maintenance mode due to a deployment failure.
+Maintenance mode remains held. Do NOT blindly bring online without owner review and rollback verification.
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+Failed asserting that 1 is identical to 0.
+
+[isolated-linux-fixture]/tests/Unit/ProductExperience/DeploymentScriptContractTest.php:191
+
+3) Tests\Unit\ProductExperience\DeploymentScriptContractTest::test_opt_in_flags_execute_migrations_and_bootstrap_and_app_remains_closed
+Opt-in deployment must exit 0: ===> [1/7] Pre-flight verification...
+===> [2/7] Entering maintenance mode...
+ERROR: missing the Hostinger CloudLinux PHP 8.4 handler. Manual review required.
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+DEPLOYMENT FAILED at line 286 with exit code 1.
+WARNING: Application was left in maintenance mode due to a deployment failure.
+Maintenance mode remains held. Do NOT blindly bring online without owner review and rollback verification.
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+Failed asserting that 1 is identical to 0.
+
+[isolated-linux-fixture]/tests/Unit/ProductExperience/DeploymentScriptContractTest.php:230
+
+4) Tests\Unit\ProductExperience\DeploymentScriptContractTest::test_skip_migrate_flag_is_compatibility_safe
+Failed asserting that 1 is identical to 0.
+
+[isolated-linux-fixture]/tests/Unit/ProductExperience/DeploymentScriptContractTest.php:255
+
+5) Tests\Unit\ProductExperience\DeploymentScriptContractTest::test_tracks_manifest_https_check_and_economic_reconciliations_as_external_prerequisites_not_performed
+Failed asserting that 1 is identical to 0.
+
+[isolated-linux-fixture]/tests/Unit/ProductExperience/DeploymentScriptContractTest.php:463
+
+6) Tests\Unit\ProductExperience\DeploymentScriptContractTest::test_web_configuration_is_preserved_before_a_dependency_failure
+Failed asserting that 1 is identical to 43.
+
+[isolated-linux-fixture]/tests/Unit/ProductExperience/DeploymentScriptContractTest.php:486
+
+7) Tests\Unit\ProductExperience\DeploymentScriptContractTest::test_live_configuration_is_preserved_on_cache_failure
+Failed asserting that 1 is identical to 44.
+
+[isolated-linux-fixture]/tests/Unit/ProductExperience/DeploymentScriptContractTest.php:512
+
+8) Tests\Unit\ProductExperience\DeploymentScriptContractTest::test_static_pwa_assets_are_published_without_touching_uploaded_business_files
+===> [1/7] Pre-flight verification...
+===> [2/7] Entering maintenance mode...
+ERROR: missing the Hostinger CloudLinux PHP 8.4 handler. Manual review required.
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+DEPLOYMENT FAILED at line 286 with exit code 1.
+WARNING: Application was left in maintenance mode due to a deployment failure.
+Maintenance mode remains held. Do NOT blindly bring online without owner review and rollback verification.
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+Failed asserting that 1 is identical to 0.
+
+[isolated-linux-fixture]/tests/Unit/ProductExperience/DeploymentScriptContractTest.php:544
+
+FAILURES!
+Tests: 21, Assertions: 98, Failures: 8.
+LINUX_CONTRACT_EXIT=1
+
+STDERR
+
+EXIT 1
+
+
+SUPERSEDING POST-RELEASE FIXTURE-ISOLATION REPEAT
+Only the isolated synthetic test process overrides HOSTINGER_ALT_PHP_BIN to an absent generic-fixture executable. The explicit Hostinger-required-handler test provides its own executable and remains exercised. No application source, assertion or production configuration changed.
+
+PHPUnit 12.5.36 by Sebastian Bergmann and contributors.
+
+Runtime:       PHP 8.4.26
+
+.....................                                             21 / 21 (100%)
+
+Time: 00:01.989, Memory: 30.50 MB
+
+OK (21 tests, 147 assertions)
+
+STDERR
+
+EXIT 0
