@@ -378,6 +378,10 @@ class ShareExpiryTest extends Phase5ETestCase
 
     public function test_genuine_legacy_profile_null_resolves_with_unchanged_timestamp(): void
     {
+        // Exercise legacy resolution before the fixed fixture expires, regardless
+        // of the wall-clock date. tearDown clears this test clock.
+        Carbon::setTestNow(Carbon::parse('2026-10-20 12:00:00', 'UTC'));
+
         $invoice = $this->invoice();
         $rawTimestamp = Carbon::parse('2026-10-25 15:30:45', 'UTC');
         $rawToken = str_repeat('m', 40);
