@@ -1,0 +1,14 @@
+ceb243760df954f50e25813e2f1ba53f279c81cb711652cc4cdcf46e129ad36d  linux-contract.tar.gz
+PHPUnit 12.5.36 by Sebastian Bergmann and contributors.
+
+Runtime:       PHP 8.4.26
+
+......                                                              6 / 6 (100%)
+
+Time: 00:00.411, Memory: 30.50 MB
+
+OK (6 tests, 22 assertions)
+
+STDERR
+
+EXIT 0

@@ -1,5 +1,7 @@
 # Accounting B.1 — PR #58 final correction handback
 
+> Historical source-acceptance record. Its merge/deployment HOLD and not-deployed statements describe the earlier handback. See the [2026-10-25 production acceptance record](RELEASE_B1_PRODUCTION_ACCEPTANCE_20261025.md) for the approved merge, actual deployment, recovery evidence and remaining Owner checks.
+
 Proprietary — All Rights Reserved. Existing LICENSE, README copyright, third-party notices and proprietary metadata are preserved.
 
 Branch: `feature/release-b1-20261023`. Verified final runtime source: `5aac8e00e13b2c5e9877e5cbc64b93512dc74946`, tree `14db606cfba3bf26e1c938ff2a16b1781a957127`. Review baseline: `fc4cda942bf1602c952559cf87f4cceace65e5c3`; original B.1 comparison baseline: `87e1a4bae08feddd3964f91559684613612768cf`. [Correction diff](https://github.com/Bassamalsaqqa/account/compare/fc4cda942bf1602c952559cf87f4cceace65e5c3...5aac8e00e13b2c5e9877e5cbc64b93512dc74946). Subsequent handback/evidence commits contain no runtime changes; their exact SHA is the PR evidence HEAD.
