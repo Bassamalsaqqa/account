@@ -1,0 +1,51 @@
+{
+  "source_commit": "5aac8e00e13b2c5e9877e5cbc64b93512dc74946",
+  "runtime_dependencies_match_locked_production_set": true,
+  "runtime_package_count": 112,
+  "runtime_dependency_install_inherited_from_prior_verified_package": false,
+  "dependency_files_unchanged": false,
+  "refreshed_runtime_files": [
+    "app/Application/AI/AiGovernance.php",
+    "app/Application/AI/DeepSeekQuickConnect.php",
+    "app/Application/AI/TransactionAssistant.php",
+    "app/Livewire/AI/AssistantLauncher.php",
+    "app/Livewire/AI/DeepSeekSetup.php",
+    "app/Livewire/Pages/SettingsIndex.php",
+    "resources/lang/ar/ai_product.php",
+    "resources/lang/ar/settings.php",
+    "resources/lang/en/ai_product.php",
+    "resources/lang/en/settings.php",
+    "resources/views/livewire/ai/assistant-launcher.blade.php",
+    "resources/views/livewire/ai/deep-seek-setup.blade.php",
+    "resources/views/livewire/pages/settings-index.blade.php"
+  ],
+  "asset_sha256": {
+    "manifest.json": "e7e85cb3b424135edb645609dc4ae637303e4958be2ca1b8445a6ffd4c210052",
+    "assets/app-D6NVJO4y.js": "4ccce1b1ca6749242ee13a0b6dc49cb8f228172fd41e7b46a977c1640b2b0135",
+    "assets/app-nYvNtXIu.css": "953fb4a03e23c2442dc8e6650e2f97c086ba472a764b65919f6fc4518c3268b0",
+    "assets/index-B2ZkNDM-.js": "2cb64c36fcb8cb89411b6b0e6d1dce4b048d5776f2097e54c8ec24c22a6003f0"
+  },
+  "secret_and_development_exclusions_checked": true,
+  "licensing_bytes_preserved": true,
+  "deployment_performed": false,
+  "platform_requirements_exit_code": 0,
+  "reviewed_classes_autoload_exit_code": 0,
+  "reviewed_classes_loaded": 6,
+  "composer_audit_exit_code": 0,
+  "composer_advisories": [],
+  "zip_permissions": {
+    "directories": "0755",
+    "files": "0644"
+  },
+  "installed_production_dependency_attribute_scan_matches": 0,
+  "host_permissions_verified": false,
+  "production_composer_install_exit_code": 0,
+  "livewire_version": "v4.4.8",
+  "composer_lock_sha256": "fd86a4cecd0e2cdd48ff8fc2daa12c305f6f8cf6c23b0e0bd07268d06258cbc3",
+  "advisory_resolved": "GHSA-mhf7-xp6r-6qrc",
+  "authorized_dependency_scope": "Only livewire/livewire4.4.7 to4.4.8; manifest and every other package unchanged",
+  "zip_integrity_pass": true,
+  "zip_file_count": 11315,
+  "zip_bytes": 63229964,
+  "zip_sha256": "aef08f76f51317d51c92e9409ccd20e433848a059b19311b9ae2c503878aa5e2"
+}

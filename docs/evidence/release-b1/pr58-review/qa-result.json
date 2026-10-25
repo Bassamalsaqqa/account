@@ -1,40 +1,146 @@
 {
-  "record_status": "PENDING_FINAL_COMPLETE_GATE_AFTER_LIVEWIRE_PATCH",
+  "record_status": "FINAL_COMPLETE_GATE",
   "comparison_baseline": "fc4cda942bf1602c952559cf87f4cceace65e5c3",
-  "complete_qa_exit_code": null,
-  "acceptance": "HOLD",
-  "historical_complete_attempt": {
-    "source_commit": "b6e19db3802c85e206ead41149cc2aef8928940f",
-    "exit_code": 1,
-    "passed": 3448,
-    "failed": 2,
-    "warnings": 4,
-    "assertions": 41657
+  "source_commit": "5aac8e00e13b2c5e9877e5cbc64b93512dc74946",
+  "source_tree": "14db606cfba3bf26e1c938ff2a16b1781a957127",
+  "command": "PHP 8.4 composer.phar qa (existing unfiltered composer qa: pint --test, phpstan, config:clear, artisan test)",
+  "complete_qa_exit_code": 0,
+  "composer_process_exit_code": 0,
+  "summary_lines": [
+    "[OK] No errors",
+    "Tests:    4 warnings, 3450 passed (41668 assertions)",
+    "Duration: 6529.12s"
+  ],
+  "primary_counts_unchanged": true,
+  "schema_absent_after_cleanup": true,
+  "source_clean_and_unchanged_during_gate": true,
+  "all_six_reconciliations_healthy": true,
+  "economic_fingerprints_unchanged": true,
+  "reconciliations": {
+    "accounting": {
+      "healthy": true,
+      "violations": [],
+      "stats": {
+        "batches_count": 2,
+        "lines_count": 6,
+        "accounts_count": 35,
+        "total_debit": "550.000000",
+        "total_credit": "550.000000"
+      },
+      "ms": 577.967
+    },
+    "inventory": {
+      "healthy": true,
+      "violations": [],
+      "stats": [],
+      "ms": 1084.714
+    },
+    "sales": {
+      "healthy": true,
+      "violations": [],
+      "stats": {
+        "customers_count": 1,
+        "quotations_count": 0,
+        "invoices_count": 2,
+        "returns_count": 0,
+        "payments_count": 0,
+        "money_accounts_count": 1
+      },
+      "ms": 455.416
+    },
+    "money": {
+      "healthy": true,
+      "violations": [],
+      "stats": {
+        "accounts_count": 1,
+        "base_only_historical_lines": 0
+      },
+      "ms": 110.968
+    },
+    "payables": {
+      "healthy": true,
+      "violations": [],
+      "stats": {
+        "total_vendor_payments": 0,
+        "posted_vendor_payments": 0,
+        "reversed_vendor_payments": 0,
+        "total_application_events": 0,
+        "violations_count": 0
+      },
+      "ms": 380.199
+    },
+    "phase7": {
+      "healthy": true,
+      "violations": [],
+      "stats": {
+        "expenses_count": 0,
+        "advances_count": 0,
+        "salary_entries_count": 0,
+        "salary_payments_count": 0,
+        "employees_count": 0,
+        "landed_cost_allocations_count": 0
+      },
+      "ms": 337.796
+    }
   },
   "focused_runs": [
     {
-      "tests": 38,
-      "assertions": 259,
-      "exit_code": 0,
-      "status": "historical earlier contract"
-    },
-    {
+      "attempt": "qa-21",
       "tests": 52,
       "assertions": 379,
       "exit_code": 0,
-      "status": "intermediate nonblocking implementation"
+      "source_head": "50c3cc81b7dcd6723ff480e2ba3d5495105c48b7",
+      "tracked_diff_sha256": "e7ecd3f08da14df0d2781e9c5a11f679abc7ec0c9bff9aa1df015fbf86f531bb",
+      "source_state": "intermediate working tree; fingerprint recorded"
     },
     {
+      "attempt": "qa-22",
       "tests": 93,
       "assertions": 677,
       "exit_code": 0,
-      "status": "broader nonblocking implementation"
+      "source_head": "50c3cc81b7dcd6723ff480e2ba3d5495105c48b7",
+      "tracked_diff_sha256": "18f14b0aef01f8d7a4aa81b138f0391a24bed449a104cd930ce12c59cd83f546",
+      "source_state": "intermediate working tree; fingerprint recorded"
     },
     {
+      "attempt": "qa-24",
+      "tests": 1,
+      "assertions": 8,
+      "exit_code": 0,
+      "scope": "unchanged timestamp test isolated reproduction",
+      "source_head": "b6e19db3802c85e206ead41149cc2aef8928940f",
+      "tracked_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "source_state": "committed clean"
+    },
+    {
+      "attempt": "qa-25",
       "tests": 78,
       "assertions": 567,
       "exit_code": 0,
-      "status": "Livewire4.4.8 plus final test corrections; committed source pending"
+      "scope": "Livewire4.4.8 and corrected tests",
+      "source_head": "b6e19db3802c85e206ead41149cc2aef8928940f",
+      "tracked_diff_sha256": "7ebccb915948d3f78b5f7453160f4387e99d068e18fa008fd055f4787996f2d9",
+      "source_state": "intermediate working tree; fingerprint recorded"
     }
-  ]
+  ],
+  "archive": {
+    "path": "complete-qa.zip",
+    "entries": 45,
+    "bytes": 227543,
+    "sha256": "41fcaf955807b88c6cea539fb2571643a9b1a7878e5cc6aa1fb742445fe31fdd",
+    "sanitization": "Local paths, worker/schema identifiers replaced; complete final process output retained. Historical attempts labelled superseded. Pre-test runner embedded source dump retained privately, not republished."
+  },
+  "environment": {
+    "PHP": "8.4.25",
+    "MariaDB": "10.4.32",
+    "disposable_local_database_only": true,
+    "local_barcode_tools": true,
+    "CLI_OPcache": true
+  },
+  "acceptance": "CODEX SOURCE GO; merge/deployment HOLD pending fresh independent GitHub acceptance",
+  "warnings": {
+    "count": 4,
+    "cause": "Windows symlink(): Permission denied in existing DeploymentScriptContractTest",
+    "verification_limit": "Four symlink-custody scenarios not verified on this Windows account; no assertions suppressed or security checks disabled."
+  }
 }

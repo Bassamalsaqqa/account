@@ -1,0 +1,262 @@
+[
+  {
+    "state": "interrupted",
+    "mode": null,
+    "source_head": "a6f6f58fc994c1006c1422f5fa403d1d7d7ade94",
+    "qa_exit_code": null,
+    "started_utc": "2026-10-23T17:46:14.4385477Z",
+    "completed_utc": null,
+    "attempt": "qa-01",
+    "record_status": "SUPERSEDED_HISTORICAL_ATTEMPT"
+  },
+  {
+    "state": "failed",
+    "mode": null,
+    "source_head": "a6f6f58fc994c1006c1422f5fa403d1d7d7ade94",
+    "qa_exit_code": null,
+    "started_utc": "2026-10-23T18:04:27.154039+00:00",
+    "completed_utc": "2026-10-23T18:04:27.281222+00:00",
+    "attempt": "qa-02",
+    "record_status": "SUPERSEDED_HISTORICAL_ATTEMPT"
+  },
+  {
+    "state": "completed_with_failure",
+    "mode": null,
+    "source_head": "a6f6f58fc994c1006c1422f5fa403d1d7d7ade94",
+    "qa_exit_code": 255,
+    "started_utc": "2026-10-23T18:07:07.957916+00:00",
+    "completed_utc": "2026-10-23T18:11:28.341988+00:00",
+    "attempt": "qa-03",
+    "record_status": "SUPERSEDED_HISTORICAL_ATTEMPT"
+  },
+  {
+    "state": "completed_with_failure",
+    "mode": null,
+    "source_head": "a6f6f58fc994c1006c1422f5fa403d1d7d7ade94",
+    "qa_exit_code": 255,
+    "started_utc": "2026-10-23T18:14:39.643735+00:00",
+    "completed_utc": "2026-10-23T18:15:22.413359+00:00",
+    "attempt": "qa-04",
+    "record_status": "SUPERSEDED_HISTORICAL_ATTEMPT"
+  },
+  {
+    "state": "completed_with_failure",
+    "mode": null,
+    "source_head": "a6f6f58fc994c1006c1422f5fa403d1d7d7ade94",
+    "qa_exit_code": 1,
+    "started_utc": "2026-10-23T18:16:20.231259+00:00",
+    "completed_utc": "2026-10-23T20:14:09.193452+00:00",
+    "attempt": "qa-05",
+    "record_status": "SUPERSEDED_HISTORICAL_ATTEMPT"
+  },
+  {
+    "state": "completed_with_failure",
+    "mode": "focused phpunit",
+    "source_head": "a6f6f58fc994c1006c1422f5fa403d1d7d7ade94",
+    "qa_exit_code": 1,
+    "started_utc": "2026-10-24T04:21:39.876465+00:00",
+    "completed_utc": "2026-10-24T04:30:42.231825+00:00",
+    "attempt": "qa-06",
+    "record_status": "SUPERSEDED_HISTORICAL_ATTEMPT"
+  },
+  {
+    "state": "completed_with_failure",
+    "mode": "focused phpunit",
+    "source_head": "a6f6f58fc994c1006c1422f5fa403d1d7d7ade94",
+    "qa_exit_code": 1,
+    "started_utc": "2026-10-24T04:56:36.172249+00:00",
+    "completed_utc": "2026-10-24T05:04:15.303921+00:00",
+    "attempt": "qa-07",
+    "record_status": "SUPERSEDED_HISTORICAL_ATTEMPT"
+  },
+  {
+    "state": "completed",
+    "mode": "focused phpunit",
+    "source_head": "a6f6f58fc994c1006c1422f5fa403d1d7d7ade94",
+    "qa_exit_code": 0,
+    "started_utc": "2026-10-24T05:04:31.779888+00:00",
+    "completed_utc": "2026-10-24T05:06:49.573130+00:00",
+    "attempt": "qa-08",
+    "record_status": "SUPERSEDED_HISTORICAL_ATTEMPT"
+  },
+  {
+    "state": "completed_with_failure",
+    "mode": "focused phpunit",
+    "source_head": "a6f6f58fc994c1006c1422f5fa403d1d7d7ade94",
+    "qa_exit_code": 1,
+    "started_utc": "2026-10-24T05:13:07.095933+00:00",
+    "completed_utc": "2026-10-24T05:14:37.465072+00:00",
+    "attempt": "qa-09",
+    "record_status": "SUPERSEDED_HISTORICAL_ATTEMPT"
+  },
+  {
+    "state": "completed",
+    "mode": "focused phpunit",
+    "source_head": "a6f6f58fc994c1006c1422f5fa403d1d7d7ade94",
+    "qa_exit_code": 0,
+    "started_utc": "2026-10-24T05:16:22.504468+00:00",
+    "completed_utc": "2026-10-24T05:20:55.200051+00:00",
+    "attempt": "qa-10",
+    "record_status": "SUPERSEDED_HISTORICAL_ATTEMPT"
+  },
+  {
+    "state": "completed_with_wrapper_recovery",
+    "mode": "complete composer qa",
+    "source_head": "11c7cf778018c842aadbedfe6eba29338aaac81c",
+    "qa_exit_code": 0,
+    "started_utc": "2026-10-24T05:21:31.819796+00:00",
+    "completed_utc": "2026-10-24T07:25:37.831755+00:00",
+    "attempt": "qa-11",
+    "record_status": "SUPERSEDED_HISTORICAL_ATTEMPT"
+  },
+  {
+    "state": "failed",
+    "mode": "focused phpunit",
+    "source_head": "fc4cda942bf1602c952559cf87f4cceace65e5c3",
+    "qa_exit_code": null,
+    "started_utc": "2026-10-24T09:46:23.927738+00:00",
+    "completed_utc": "2026-10-24T09:46:24.447774+00:00",
+    "attempt": "qa-12",
+    "record_status": "SUPERSEDED_HISTORICAL_ATTEMPT"
+  },
+  {
+    "state": "completed_with_failure",
+    "mode": "focused phpunit",
+    "source_head": "fc4cda942bf1602c952559cf87f4cceace65e5c3",
+    "qa_exit_code": 255,
+    "started_utc": "2026-10-24T09:47:32.443912+00:00",
+    "completed_utc": "2026-10-24T09:50:03.493455+00:00",
+    "attempt": "qa-13",
+    "record_status": "SUPERSEDED_HISTORICAL_ATTEMPT"
+  },
+  {
+    "state": "completed_with_failure",
+    "mode": "focused phpunit",
+    "source_head": "fc4cda942bf1602c952559cf87f4cceace65e5c3",
+    "qa_exit_code": 2,
+    "started_utc": "2026-10-24T11:27:04.964640+00:00",
+    "completed_utc": "2026-10-24T11:32:57.156095+00:00",
+    "attempt": "qa-14",
+    "record_status": "SUPERSEDED_HISTORICAL_ATTEMPT"
+  },
+  {
+    "state": "completed",
+    "mode": "focused phpunit",
+    "source_head": "fc4cda942bf1602c952559cf87f4cceace65e5c3",
+    "qa_exit_code": 0,
+    "started_utc": "2026-10-24T11:34:12.975704+00:00",
+    "completed_utc": "2026-10-24T11:36:37.141431+00:00",
+    "attempt": "qa-15",
+    "record_status": "SUPERSEDED_HISTORICAL_ATTEMPT"
+  },
+  {
+    "state": "INTERRUPTED_NOT_A_PASS",
+    "mode": "complete composer qa",
+    "source_head": "50c3cc81b7dcd6723ff480e2ba3d5495105c48b7",
+    "qa_exit_code": null,
+    "started_utc": "2026-10-24T11:41:04.838489+00:00",
+    "completed_utc": null,
+    "attempt": "qa-16",
+    "record_status": "SUPERSEDED_HISTORICAL_ATTEMPT"
+  },
+  {
+    "state": "INTERRUPTED_NOT_A_PASS",
+    "mode": "complete composer qa",
+    "source_head": "50c3cc81b7dcd6723ff480e2ba3d5495105c48b7",
+    "qa_exit_code": null,
+    "started_utc": "2026-10-24T13:10:21.748835+00:00",
+    "completed_utc": null,
+    "attempt": "qa-17",
+    "record_status": "SUPERSEDED_HISTORICAL_ATTEMPT"
+  },
+  {
+    "state": "completed",
+    "mode": "focused phpunit",
+    "source_head": "50c3cc81b7dcd6723ff480e2ba3d5495105c48b7",
+    "qa_exit_code": 0,
+    "started_utc": "2026-10-24T13:17:05.045646+00:00",
+    "completed_utc": "2026-10-24T13:23:43.017243+00:00",
+    "attempt": "qa-18",
+    "record_status": "SUPERSEDED_HISTORICAL_ATTEMPT"
+  },
+  {
+    "state": "completed_with_failure",
+    "mode": "focused phpunit",
+    "source_head": "50c3cc81b7dcd6723ff480e2ba3d5495105c48b7",
+    "qa_exit_code": 1,
+    "started_utc": "2026-10-24T13:24:33.991870+00:00",
+    "completed_utc": "2026-10-24T13:25:38.362304+00:00",
+    "attempt": "qa-19",
+    "record_status": "SUPERSEDED_HISTORICAL_ATTEMPT"
+  },
+  {
+    "state": "completed",
+    "mode": "focused phpunit",
+    "source_head": "50c3cc81b7dcd6723ff480e2ba3d5495105c48b7",
+    "qa_exit_code": 0,
+    "started_utc": "2026-10-24T13:26:28.727325+00:00",
+    "completed_utc": "2026-10-24T13:31:09.121347+00:00",
+    "attempt": "qa-20",
+    "record_status": "SUPERSEDED_HISTORICAL_ATTEMPT"
+  },
+  {
+    "state": "completed",
+    "mode": "focused phpunit",
+    "source_head": "50c3cc81b7dcd6723ff480e2ba3d5495105c48b7",
+    "qa_exit_code": 0,
+    "started_utc": "2026-10-24T15:11:51.979664+00:00",
+    "completed_utc": "2026-10-24T15:17:01.506931+00:00",
+    "attempt": "qa-21",
+    "record_status": "SUPERSEDED_HISTORICAL_ATTEMPT"
+  },
+  {
+    "state": "completed",
+    "mode": "focused phpunit",
+    "source_head": "50c3cc81b7dcd6723ff480e2ba3d5495105c48b7",
+    "qa_exit_code": 0,
+    "started_utc": "2026-10-24T15:21:36.462382+00:00",
+    "completed_utc": "2026-10-24T15:27:35.810480+00:00",
+    "attempt": "qa-22",
+    "record_status": "SUPERSEDED_HISTORICAL_ATTEMPT"
+  },
+  {
+    "state": "completed_with_failure",
+    "mode": "complete composer qa",
+    "source_head": "b6e19db3802c85e206ead41149cc2aef8928940f",
+    "qa_exit_code": 1,
+    "started_utc": "2026-10-24T15:29:46.106648+00:00",
+    "completed_utc": "2026-10-24T17:27:56.325671+00:00",
+    "attempt": "qa-23",
+    "record_status": "SUPERSEDED_HISTORICAL_ATTEMPT"
+  },
+  {
+    "state": "completed",
+    "mode": "focused phpunit",
+    "source_head": "b6e19db3802c85e206ead41149cc2aef8928940f",
+    "qa_exit_code": 0,
+    "started_utc": "2026-10-24T18:11:38.073256+00:00",
+    "completed_utc": "2026-10-24T18:14:34.566454+00:00",
+    "attempt": "qa-24",
+    "record_status": "SUPERSEDED_HISTORICAL_ATTEMPT"
+  },
+  {
+    "state": "completed",
+    "mode": "focused phpunit",
+    "source_head": "b6e19db3802c85e206ead41149cc2aef8928940f",
+    "qa_exit_code": 0,
+    "started_utc": "2026-10-24T18:20:56.500136+00:00",
+    "completed_utc": "2026-10-24T18:23:47.642777+00:00",
+    "attempt": "qa-25",
+    "record_status": "SUPERSEDED_HISTORICAL_ATTEMPT"
+  },
+  {
+    "state": "completed",
+    "mode": "complete composer qa",
+    "source_head": "5aac8e00e13b2c5e9877e5cbc64b93512dc74946",
+    "qa_exit_code": 0,
+    "started_utc": "2026-10-24T18:24:46.731428+00:00",
+    "completed_utc": "2026-10-24T20:16:13.040622+00:00",
+    "attempt": "qa-26",
+    "record_status": "FINAL_COMPLETE_GATE"
+  }
+]
