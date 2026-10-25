@@ -444,7 +444,9 @@
     <div class="min-h-screen pt-[64px] {{ $isRtl ? 'lg:mr-[264px]' : 'lg:ml-[264px]' }}">
         <a href="#app-main" class="app-skip-link">{{ __('app.skip_content') }}</a>
         <main id="app-main" tabindex="-1" class="max-w-[1440px] mx-auto p-4 sm:p-6 lg:p-8">
-            <livewire:ai.assistant-launcher :context="request()->routeIs('invoices.create') ? 'sales' : (request()->routeIs('purchases.create') ? 'purchase' : 'auto')" />
+            @if (\App\Application\AI\AiGovernance::isPresentationEligible($activeCompany))
+                <livewire:ai.assistant-launcher :context="request()->routeIs('invoices.create') ? 'sales' : (request()->routeIs('purchases.create') ? 'purchase' : 'auto')" />
+            @endif
             {{ $slot }}
         </main>
     </div>

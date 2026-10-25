@@ -1,0 +1,146 @@
+{
+  "source_commit": "11c7cf778018c842aadbedfe6eba29338aaac81c",
+  "advisory_reconfirmation_before_lock_edit": [
+    {
+      "ghsa": "GHSA-9jrq-w75r-8gcw",
+      "severity": "low",
+      "updated_at": "2026-10-21T16:48:15Z",
+      "package": "vite",
+      "vulnerable_range": ">= 7.0.0, <= 7.3.6",
+      "first_patched_version": "7.3.7"
+    },
+    {
+      "ghsa": "GHSA-rq7h-c2jc-7f22",
+      "severity": "medium",
+      "updated_at": "2026-10-21T16:47:43Z",
+      "package": "vite",
+      "vulnerable_range": ">= 7.0.0, <= 7.3.6",
+      "first_patched_version": "7.3.7"
+    },
+    {
+      "ghsa": "GHSA-r825-w8mm-5pxw",
+      "severity": "medium",
+      "updated_at": "2026-10-20T19:51:54Z",
+      "package": "vite",
+      "vulnerable_range": ">= 7.0.0, <= 7.3.6",
+      "first_patched_version": "7.3.7"
+    },
+    {
+      "ghsa": "GHSA-587h-7wmj-h5pm",
+      "severity": "high",
+      "updated_at": "2026-10-20T19:48:26Z",
+      "package": "vite",
+      "vulnerable_range": ">= 7.0.0, <= 7.3.6",
+      "first_patched_version": "7.3.7"
+    },
+    {
+      "ghsa": "GHSA-698v-4r3x-3vcv",
+      "severity": "medium",
+      "updated_at": "2026-10-20T18:30:25Z",
+      "package": "vite",
+      "vulnerable_range": ">= 7.0.0, <= 7.3.6",
+      "first_patched_version": "7.3.7"
+    },
+    {
+      "ghsa": "GHSA-q3jh-wrc6-jgq8",
+      "severity": "high",
+      "updated_at": "2026-10-20T17:58:08Z",
+      "package": "follow-redirects",
+      "vulnerable_range": ">= 1.16.0, < 1.16.1",
+      "first_patched_version": "1.16.1"
+    },
+    {
+      "ghsa": "GHSA-8r9p-f939-6h3c",
+      "severity": "high",
+      "updated_at": "2026-10-20T17:53:07Z",
+      "package": "follow-redirects",
+      "vulnerable_range": ">= 1.16.0, < 1.16.1",
+      "first_patched_version": "1.16.1"
+    }
+  ],
+  "lock_changes": {
+    "node_modules/follow-redirects": {
+      "integrity": {
+        "before": "sha512-y5rN/uOsadFT/JfYwhxRS5R7Qce+g3zG97+JrtFZlC9klX/W5hD7iiLzScI4nZqUS7DNUdhPgw4xI8W2LuXlUw==",
+        "after": "sha512-FNvFGzoMLWmE6Yj9spb/zjd7yiNCHiAW9/Tg9CXrQ8wuu32HtlJOwWO11OJafl5FfY3DxTdQ0vj42zU1kvv5jg=="
+      },
+      "resolved": {
+        "before": "https://registry.npmjs.org/follow-redirects/-/follow-redirects-1.16.0.tgz",
+        "after": "https://registry.npmjs.org/follow-redirects/-/follow-redirects-1.16.1.tgz"
+      },
+      "version": {
+        "before": "1.16.0",
+        "after": "1.16.1"
+      }
+    },
+    "node_modules/vite": {
+      "integrity": {
+        "before": "sha512-4XP60spRGjSZFf1qYH+dJIkK2znL3zQfl9KkOV9MkkRR/3Dls0dxaBsQPTloEc5BLXWPL9vsOxopxyKoMmDueg==",
+        "after": "sha512-AHEzTORMbi7/7aXp7w7KZ5+DCUdSeLsJz0grY8xHpc9DHdYb0vQu6DqJfm2tOw3gDExNgPgnJTXxM6syYFHaCA=="
+      },
+      "resolved": {
+        "before": "https://registry.npmjs.org/vite/-/vite-7.3.6.tgz",
+        "after": "https://registry.npmjs.org/vite/-/vite-7.3.7.tgz"
+      },
+      "version": {
+        "before": "7.3.6",
+        "after": "7.3.7"
+      }
+    }
+  },
+  "full_audit": {
+    "auditReportVersion": 2,
+    "vulnerabilities": {},
+    "metadata": {
+      "vulnerabilities": {
+        "info": 0,
+        "low": 0,
+        "moderate": 0,
+        "high": 0,
+        "critical": 0,
+        "total": 0
+      },
+      "dependencies": {
+        "prod": 2,
+        "dev": 160,
+        "optional": 77,
+        "peer": 2,
+        "peerOptional": 0,
+        "total": 164
+      }
+    }
+  },
+  "production_audit": {
+    "auditReportVersion": 2,
+    "vulnerabilities": {},
+    "metadata": {
+      "vulnerabilities": {
+        "info": 0,
+        "low": 0,
+        "moderate": 0,
+        "high": 0,
+        "critical": 0,
+        "total": 0
+      },
+      "dependencies": {
+        "prod": 2,
+        "dev": 160,
+        "optional": 77,
+        "peer": 2,
+        "peerOptional": 0,
+        "total": 164
+      }
+    }
+  },
+  "exits": {
+    "npm_ci": 0,
+    "npm_audit_all": 0,
+    "npm_audit_production": 0,
+    "javascript": 0,
+    "build": 0
+  },
+  "javascript_test_count": 127,
+  "registry_integrities_independently_matched": true,
+  "changed_package_records": 2,
+  "changed_fields": 6
+}

@@ -1,0 +1,10 @@
+php.exe : Note: Using configuration file [worktree]\phpstan.neon.
+At line:2 char:252
++ ... ource.log'; & $p vendor/bin/phpstan analyse --no-progress --memory-li ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Note: Using con...e\phpstan.neon.:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+
+
+ [OK] No errors
+

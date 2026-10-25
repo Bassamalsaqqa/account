@@ -51,17 +51,17 @@ class AssistantConsentScopeTest extends TestCase
             $governance->consentFingerprint($this->aiPolicy->fresh(), $this->textConnection->fresh(), $scope), $scope);
     }
 
-    public function test_single_company_route_has_separate_explicit_transaction_and_question_consent_in_ar_and_en(): void
+    public function test_text_disclosure_is_nonblocking_and_compatibility_actions_do_not_record_acceptance_in_ar_and_en(): void
     {
         foreach (['ar', 'en'] as $locale) {
             AiUserPreference::query()->update(['consents' => []]);
             app()->setLocale($locale);
             $component = Livewire::test(AssistantLauncher::class)->call('showAssistant');
-            $this->assertSame([$this->textConnection->public_id], array_column($component->get('consentRoutes'), 'public_id'));
-            $component->set('consent', true)->call('acceptConsent')->assertSet('consent', true)->assertSet('questionConsent', false);
-            $this->assertSame([$this->textConnection->public_id], array_keys($this->consents()));
+            $this->assertSame([], $component->get('consentRoutes'));
+            $component->set('consent', true)->call('acceptConsent')->assertSet('consent', true)->assertSet('questionConsent', true);
+            $this->assertSame([], $this->consents());
             $component->set('questionConsent', true)->call('acceptQuestionConsent')->assertSet('questionConsent', true);
-            $this->assertSame([$this->textConnection->public_id, 'question:'.$this->textConnection->public_id], array_keys($this->consents()));
+            $this->assertSame([], $this->consents());
         }
         Http::assertNothingSent();
     }
@@ -97,47 +97,47 @@ class AssistantConsentScopeTest extends TestCase
         Http::assertNothingSent();
     }
 
-    public function test_unrelated_change_after_display_still_allows_explicit_acceptance(): void
+    public function test_unrelated_change_after_display_does_not_record_acceptance(): void
     {
         $component = Livewire::test(AssistantLauncher::class)->call('showAssistant');
         $settings = $this->aiPolicy->settings;
         $settings['limits']['daily_company_micros'] = 100;
         $this->aiPolicy->update(['revision' => $this->aiPolicy->revision + 1, 'settings' => $settings]);
         $component->set('consent', true)->call('acceptConsent')->assertSet('consent', true)->assertSet('error', null);
-        $this->assertArrayHasKey($this->textConnection->public_id, $this->consents());
-        Http::assertNothingSent();
-    }
-
-    public function test_key_revision_change_after_disclosure_refuses_stale_consent_atomically(): void
-    {
-        $component = Livewire::test(AssistantLauncher::class)->call('showAssistant');
-        $this->textConnection->increment('revision');
-        $component->set('consent', true)->call('acceptConsent')->assertSet('consent', false)
-            ->assertSet('error', __('assistant_v2.error_consent'));
         $this->assertSame([], $this->consents());
         Http::assertNothingSent();
     }
 
-    public function test_material_privacy_change_invalidates_both_existing_purpose_consents(): void
+    public function test_key_revision_change_after_disclosure_does_not_fabricate_acceptance(): void
+    {
+        $component = Livewire::test(AssistantLauncher::class)->call('showAssistant');
+        $this->textConnection->increment('revision');
+        $component->set('consent', true)->call('acceptConsent')->assertSet('consent', true)
+            ->assertSet('error', null);
+        $this->assertSame([], $this->consents());
+        Http::assertNothingSent();
+    }
+
+    public function test_material_privacy_change_retains_historical_records_without_prompting(): void
     {
         $this->consent();
         $this->consent('question');
         $settings = $this->aiPolicy->settings;
         $settings['privacy']['retention'] = 'Changed synthetic disclosure';
         $this->aiPolicy->update(['settings' => $settings, 'revision' => $this->aiPolicy->revision + 1]);
-        Livewire::test(AssistantLauncher::class)->call('showAssistant')->assertSet('consent', false)->assertSet('questionConsent', false);
+        Livewire::test(AssistantLauncher::class)->call('showAssistant')->assertSet('consent', true)->assertSet('questionConsent', true);
         $this->assertCount(2, $this->consents());
         Http::assertNothingSent();
     }
 
-    public function test_transaction_scope_changes_affect_its_consent_but_report_permissions_are_independent(): void
+    public function test_transaction_scope_changes_do_not_reintroduce_acceptance_gates(): void
     {
         $this->consent();
         $this->consent('question');
         $settings = $this->aiPolicy->settings;
         $settings['allowed_intents'] = ['sales'];
         $this->aiPolicy->update(['settings' => $settings]);
-        Livewire::test(AssistantLauncher::class)->call('showAssistant')->assertSet('consent', false)->assertSet('questionConsent', true);
+        Livewire::test(AssistantLauncher::class)->call('showAssistant')->assertSet('consent', true)->assertSet('questionConsent', true);
         $this->consent();
         $settings['questions']['allowed_reports'] = ['sales.summary'];
         $this->aiPolicy->update(['settings' => $settings]);
@@ -170,7 +170,7 @@ class AssistantConsentScopeTest extends TestCase
         foreach (['ar', 'en'] as $locale) {
             app()->setLocale($locale);
             Livewire::test(AssistantLauncher::class)->call('showAssistant')->assertSet('open', true)
-                ->assertSet('consentRoutes', [])->assertSet('consent', false)
+                ->assertSet('consentRoutes', [])->assertSet('consent', true)
                 ->assertSet('error', __('assistant_v2.error_credential_revoked'))
                 ->assertDontSee('synthetic-primary-key-never-real');
         }
@@ -186,9 +186,9 @@ class AssistantConsentScopeTest extends TestCase
         $settings['fallback'] = ['enabled' => true, 'text_connection' => 'historical-fallback', 'speech_connection' => null];
         $this->aiPolicy->update(['settings' => $settings]);
         $component = Livewire::test(AssistantLauncher::class)->call('showAssistant');
-        $this->assertSame([$this->textConnection->public_id], array_column($component->get('consentRoutes'), 'public_id'));
+        $this->assertSame([], $component->get('consentRoutes'));
         $component->set('consent', true)->call('acceptConsent');
-        $this->assertSame([$this->textConnection->public_id], array_keys($this->consents()));
+        $this->assertSame([], $this->consents());
         $this->assertSame($preferences, AiUserPreference::firstOrFail()->preferences);
         Http::assertNothingSent();
     }

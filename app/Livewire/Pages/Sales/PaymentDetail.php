@@ -151,10 +151,19 @@ class PaymentDetail extends Component
             $openInvoices = app(SettlementTargetsQuery::class)->forParty((int) $this->payment->company_id, (int) $this->payment->customer_id, 'customer', 'allocate');
         }
 
+        $singleAllocatedInvoice = null;
+        if ($this->payment->allocations->count() === 1 && $user->hasPermissionTo('sales.invoice.view')) {
+            $firstInvoice = $this->payment->allocations->first()?->salesInvoice;
+            if ($firstInvoice && (int) $firstInvoice->company_id === (int) $this->payment->company_id) {
+                $singleAllocatedInvoice = $firstInvoice;
+            }
+        }
+
         return view('livewire.pages.sales.payment-detail', [
             'canReverse' => $canReverse,
             'canAllocate' => $canAllocate,
             'openInvoices' => $openInvoices,
+            'singleAllocatedInvoice' => $singleAllocatedInvoice,
             'canViewFx' => $user->hasPermissionTo('reports.financial.view'),
         ]);
     }

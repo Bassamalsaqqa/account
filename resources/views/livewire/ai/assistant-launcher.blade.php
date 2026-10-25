@@ -54,33 +54,19 @@
                                 </div>
                             </div>
                         @endif
-                    @if (($consentRoutes !== [] && ! $consent) || ($questionConsentRoutes !== [] && ! $questionConsent))
-                        <div class="mt-4 space-y-3 rounded-control border border-border bg-canvas p-3 text-sm">
-                            <p class="leading-relaxed text-text-secondary">{{ __('assistant_v2.text_consent_help') }}</p>
-                            @if ($consentRoutes !== [] && ! $consent)
-                                <label class="flex items-start gap-2">
-                                    <input type="checkbox" wire:model="consent" class="mt-1 rounded border-border" />
-                                    <span>{{ ! $transactionsAvailable && $questionsAvailable ? __('assistant_v2.question_consent') : __('assistant_v2.consent') }}</span>
-                                </label>
-                                <button type="button" wire:click="acceptConsent" wire:loading.attr="disabled" class="min-h-11 rounded-control border border-border px-3 text-primary disabled:opacity-50">{{ __('assistant_v2.save_consent') }}</button>
-                            @endif
-                            @if ($questionConsentRoutes !== [] && ! $questionConsent)
-                                <label class="flex items-start gap-2">
-                                    <input type="checkbox" wire:model="questionConsent" class="mt-1 rounded border-border" />
-                                    <span>{{ __('assistant_v2.question_consent') }}</span>
-                                </label>
-                                <button type="button" wire:click="acceptQuestionConsent" wire:loading.attr="disabled" class="min-h-11 rounded-control border border-border px-3 text-primary disabled:opacity-50">{{ __('assistant_v2.save_question_consent') }}</button>
-                            @endif
-                        </div>
-                    @endif
                     <details class="mt-3 text-sm">
                         <summary class="cursor-pointer py-2 font-semibold">{{ __('ai_product.privacy') }}</summary>
                         <div class="space-y-2 py-2 text-text-secondary">
                             <p>{{ __('ai_product.browser_privacy_policy') }}</p>
-                            <p class="break-words">{{ $privacy['operator'] ?? '' }} ? {{ $privacy['retention'] ?? '' }}</p>
-                            @if (!empty($privacy['policy_url']))
-                                <a href="{{ $privacy['policy_url'] }}" target="_blank" rel="noopener noreferrer" class="inline-block text-primary underline underline-offset-4">{{ __('assistant_v2.privacy_policy') }}</a>
-                            @endif
+                            <p class="break-words">{{ $privacy['operator'] ?? ($disclosure['operator'] ?? '') }} &middot; {{ $privacy['retention'] ?? ($disclosure['retention'] ?? '') }}</p>
+                            <div class="flex flex-wrap gap-x-4 gap-y-1 text-xs">
+                                @if (!empty($privacy['policy_url'] ?? ($disclosure['privacy_url'] ?? null)))
+                                    <a href="{{ $privacy['policy_url'] ?? $disclosure['privacy_url'] }}" target="_blank" rel="noopener noreferrer" class="inline-block text-primary underline underline-offset-4">{{ __('assistant_v2.privacy_policy') }}</a>
+                                @endif
+                                @if (!empty($disclosure['pricing']['reference']))
+                                    <a href="{{ $disclosure['pricing']['reference'] }}" target="_blank" rel="noopener noreferrer" class="inline-block text-primary underline underline-offset-4">{{ __('ai_product.pricing_as_of', ['date' => $disclosure['pricing']['checked_at']]) }}</a>
+                                @endif
+                            </div>
                         </div>
                     </details>
 

@@ -1,0 +1,80 @@
+{
+    "source":  "GitHub Dependabot open alerts API",
+    "retrieved_utc":  "2026-10-23T17:16:06.0387193Z",
+    "repository":  "Bassamalsaqqa/account",
+    "branch_context":  "default branch; B.1 preserves the same dependency locks",
+    "open_advisories":  7,
+    "affected_packages":  2,
+    "alerts":  [
+                   {
+                       "ecosystem":  "npm",
+                       "ghsa":  "GHSA-9jrq-w75r-8gcw",
+                       "number":  7,
+                       "package":  "vite",
+                       "patched_version":  "7.3.7",
+                       "scope":  "development",
+                       "severity":  "low",
+                       "vulnerable_range":  "\u003e= 7.0.0, \u003c= 7.3.6"
+                   },
+                   {
+                       "ecosystem":  "npm",
+                       "ghsa":  "GHSA-rq7h-c2jc-7f22",
+                       "number":  6,
+                       "package":  "vite",
+                       "patched_version":  "7.3.7",
+                       "scope":  "development",
+                       "severity":  "medium",
+                       "vulnerable_range":  "\u003e= 7.0.0, \u003c= 7.3.6"
+                   },
+                   {
+                       "ecosystem":  "npm",
+                       "ghsa":  "GHSA-r825-w8mm-5pxw",
+                       "number":  5,
+                       "package":  "vite",
+                       "patched_version":  "7.3.7",
+                       "scope":  "development",
+                       "severity":  "medium",
+                       "vulnerable_range":  "\u003e= 7.0.0, \u003c= 7.3.6"
+                   },
+                   {
+                       "ecosystem":  "npm",
+                       "ghsa":  "GHSA-587h-7wmj-h5pm",
+                       "number":  4,
+                       "package":  "vite",
+                       "patched_version":  "7.3.7",
+                       "scope":  "development",
+                       "severity":  "high",
+                       "vulnerable_range":  "\u003e= 7.0.0, \u003c= 7.3.6"
+                   },
+                   {
+                       "ecosystem":  "npm",
+                       "ghsa":  "GHSA-698v-4r3x-3vcv",
+                       "number":  3,
+                       "package":  "vite",
+                       "patched_version":  "7.3.7",
+                       "scope":  "development",
+                       "severity":  "medium",
+                       "vulnerable_range":  "\u003e= 7.0.0, \u003c= 7.3.6"
+                   },
+                   {
+                       "ecosystem":  "npm",
+                       "ghsa":  "GHSA-q3jh-wrc6-jgq8",
+                       "number":  2,
+                       "package":  "follow-redirects",
+                       "patched_version":  "1.16.1",
+                       "scope":  "development",
+                       "severity":  "high",
+                       "vulnerable_range":  "\u003e= 1.16.0, \u003c 1.16.1"
+                   },
+                   {
+                       "ecosystem":  "npm",
+                       "ghsa":  "GHSA-8r9p-f939-6h3c",
+                       "number":  1,
+                       "package":  "follow-redirects",
+                       "patched_version":  "1.16.1",
+                       "scope":  "development",
+                       "severity":  "high",
+                       "vulnerable_range":  "\u003e= 1.16.0, \u003c 1.16.1"
+                   }
+               ]
+}

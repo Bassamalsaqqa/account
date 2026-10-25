@@ -1,0 +1,35 @@
+{
+  "comparison_baseline": "2283efec9a08471b89f8e0e8c626262f21fdc06b",
+  "source_commit": "11c7cf778018c842aadbedfe6eba29338aaac81c",
+  "changed_files": [
+    "app/Application/Reporting/Security/ReportingGuard.php",
+    "app/Livewire/Pages/Sales/InvoiceForm.php",
+    "package-lock.json",
+    "tests/Feature/AiV22/ReportingPermissionReadTest.php",
+    "tests/Feature/Phase10/ConcurrentCapacityMeasurementTest.php",
+    "tests/Feature/Phase12/AiFormCorrectionsTest.php",
+    "tests/Feature/Phase12/AiTranscriptRevisionsTest.php",
+    "tests/Feature/Phase12/AssistantMigrationPreservationTest.php",
+    "tests/Support/Phase10/capacity-worker.php"
+  ],
+  "npm_changed_fields": [
+    "node_modules/vite:version",
+    "node_modules/vite:resolved",
+    "node_modules/vite:integrity",
+    "node_modules/follow-redirects:version",
+    "node_modules/follow-redirects:resolved",
+    "node_modules/follow-redirects:integrity"
+  ],
+  "preserved_legal_and_manifests_sha256": {
+    "LICENSE": "9414baea288f5290e82abeb973c121dda633196c2703680d7aa0e576d766ca25",
+    "README.md": "f64593d7d27628d09971585b648082aacd7617da05220e539a70b63f3977a8ed",
+    "THIRD_PARTY_NOTICES.md": "88ef6ea8f5f0726cc92b1bd650d919b2149099de4780c4406d43a4c5fdefaf46",
+    "composer.json": "dd5acf90eefef94358bb68e935bfd7817c3715c9d4608de12e07d72904325494",
+    "composer.lock": "1eaf741c421cefbd027912aef255044fea4c76d748e868113c7170176ddf8b12",
+    "package.json": "30c30458df4fa1ac58f9682c452f2fc8240753e7f913b754488ee628cf347697"
+  },
+  "economic_writers_modified": false,
+  "migrations_modified": false,
+  "policy_files_modified": false,
+  "composer_dependencies_modified": false
+}

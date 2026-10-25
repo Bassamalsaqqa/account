@@ -51,6 +51,30 @@ class ReportingPermissionReadTest extends TestCase
         $this->assertTrue(app(ReportingGuard::class)->authorize($this->company, $this->reader, 'reports.sales.view')->is($this->reader));
     }
 
+    public function test_equivalent_role_and_direct_grants_keep_the_same_authority_snapshot(): void
+    {
+        $role = Role::create(['name' => 'Synthetic stable authority role', 'guard_name' => 'web', 'company_id' => $this->company->id]);
+        $role->givePermissionTo(['ai.assistant.use', 'reports.sales.view']);
+        $this->reader->assignRole($role);
+        $this->reader->givePermissionTo('sales.invoice.view');
+        $expected = ['ai.assistant.use', 'reports.sales.view', 'sales.invoice.view'];
+        $this->assertParity($expected);
+        $guard = app(ReportingGuard::class);
+        $before = $guard->permissionNames($this->reader);
+
+        // Moving a grant does not change the actor's effective authority.
+        $this->reader->givePermissionTo('ai.assistant.use');
+        $role->revokePermissionTo('ai.assistant.use');
+        $this->assertParity($expected);
+        $this->assertSame($before, $guard->permissionNames($this->reader));
+
+        // A real permission loss must still be refused immediately.
+        DB::table('role_has_permissions')->where('role_id', $role->id)->delete();
+        $this->assertParity(['ai.assistant.use', 'sales.invoice.view']);
+        $this->expectException(AuthorizationException::class);
+        $guard->authorize($this->company, $this->reader, 'reports.sales.view');
+    }
+
     public function test_global_role_uses_the_current_company_pivot_only(): void
     {
         $role = Role::create(['name' => 'Synthetic global report role', 'guard_name' => 'web', 'company_id' => null]);

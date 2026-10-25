@@ -1,0 +1,88 @@
+{
+  "environment": "Local Chromium via Playwright; synthetic local data; provider approval false",
+  "company_switch": [
+    {
+      "width": 390,
+      "company": "off",
+      "expected_launcher": 0,
+      "actual_launcher": 0,
+      "status": 200
+    },
+    {
+      "width": 390,
+      "company": "on",
+      "expected_launcher": 1,
+      "actual_launcher": 1,
+      "status": 200
+    },
+    {
+      "width": 1440,
+      "company": "off",
+      "expected_launcher": 0,
+      "actual_launcher": 0,
+      "status": 200
+    },
+    {
+      "width": 1440,
+      "company": "on",
+      "expected_launcher": 1,
+      "actual_launcher": 1,
+      "status": 200
+    }
+  ],
+  "real_policy_actions": {
+    "enable_remounted_launcher": true,
+    "disable_removed_launcher": true,
+    "re_enable_then_disable_again": true,
+    "owner_password_and_enable_consent_enforced": true
+  },
+  "product_save_add_another": {
+    "width": 390,
+    "status": 200,
+    "returned_to": "/products/create",
+    "empty_name_field": true,
+    "success_flash": true,
+    "fixture_only_product_created": true
+  },
+  "keyboard": {
+    "ctrl_k_opens_omnibox": true,
+    "combobox_focus": true,
+    "escape_closes": true,
+    "unsaved_invoice_notes_preserved": true,
+    "back_restored_unsaved_notes_in_this_browser": true,
+    "forward_returned_settings": true,
+    "mobile_drawer_open_close": true,
+    "escape_restored_toggle_focus": true
+  },
+  "documents": [
+    {
+      "locale": "en",
+      "view_status": 200,
+      "view_type": "application/pdf",
+      "download_status": 200,
+      "download_type": "application/pdf",
+      "print_status": 200,
+      "print_type": "text/html; charset=utf-8"
+    },
+    {
+      "locale": "ar",
+      "view_status": 200,
+      "view_type": "application/pdf",
+      "download_status": 200,
+      "download_type": "application/pdf",
+      "print_status": 200,
+      "print_type": "text/html; charset=utf-8"
+    }
+  ],
+  "limits": [
+    "No paid/live provider execution",
+    "No physical camera, USB scanner, printer or mobile device",
+    "Browser Back restoration is observed Chromium behavior, not durable draft persistence",
+    "Financial posting and check lifecycle covered by PHP suites, not exhaustive browser scenarios"
+  ],
+  "setup_first_use": {
+    "fresh_open_flag_mounts_authorized_open_launcher": true,
+    "same_flag_while_off_mounts_zero_launchers": true,
+    "provider_requests": 0
+  }
+}

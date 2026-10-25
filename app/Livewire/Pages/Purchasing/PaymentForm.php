@@ -23,6 +23,7 @@ use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Livewire\Attributes\Layout;
+use Livewire\Attributes\Locked;
 use Livewire\Component;
 
 #[Layout('layouts.app')]
@@ -73,6 +74,12 @@ class PaymentForm extends Component
 
     public string $idempotency_key = '';
 
+    #[Locked]
+    public ?string $sourcePurchasePublicId = null;
+
+    #[Locked]
+    public ?string $sourcePurchaseNumber = null;
+
     public function boot(CompanyContext $context): void
     {
         if (isset($this->pageCompanyId)) {
@@ -119,6 +126,10 @@ class PaymentForm extends Component
                 ->find($purchase_id);
 
             if ($purchase !== null) {
+                if (auth()->user()->hasPermissionTo('purchasing.purchase.view')) {
+                    $this->sourcePurchasePublicId = $purchase->public_id;
+                    $this->sourcePurchaseNumber = $purchase->purchase_number ?? __('purchasing.purchase_draft');
+                }
                 $position = $purchase->payablePosition();
                 if ($position->hasOutstanding()) {
                     $this->vendor_id = $purchase->vendor_id;

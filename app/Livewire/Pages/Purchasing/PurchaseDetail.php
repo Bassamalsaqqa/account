@@ -94,6 +94,7 @@ class PurchaseDetail extends Component
             'canEdit' => $purchase->isDraft() && auth()->user()->hasPermissionTo('purchasing.purchase.edit_draft'),
             'canPost' => $purchase->isDraft() && auth()->user()->hasPermissionTo('purchasing.purchase.post'),
             'canCreateReturn' => $purchase->isPosted() && $withCost && auth()->user()->hasPermissionTo('purchasing.return.manage'),
+            'canCreatePurchase' => $withCost && auth()->user()->hasPermissionTo('purchasing.purchase.create'),
             'duplicateWarning' => app(DuplicateVendorInvoice::class)->exists($company->id, $purchase->vendor_id, $purchase->vendor_invoice_number, $purchase->id),
             'canManageLanded' => $canManageLanded,
             'landedAllocations' => $landedAllocations,

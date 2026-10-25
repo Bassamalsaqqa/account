@@ -1,0 +1,242 @@
+[
+    {
+        "path":  "/dashboard",
+        "status":  200,
+        "queries":  422,
+        "sql_ms":  382.06000000000006,
+        "server_ms":  853.5091,
+        "bytes":  83010
+    },
+    {
+        "path":  "/dashboard",
+        "status":  200,
+        "queries":  422,
+        "sql_ms":  559.0800000000006,
+        "server_ms":  1218.0595,
+        "bytes":  83010
+    },
+    {
+        "path":  "/dashboard",
+        "status":  200,
+        "queries":  422,
+        "sql_ms":  457.6200000000002,
+        "server_ms":  1026.0434,
+        "bytes":  83010
+    },
+    {
+        "path":  "/invoices/create",
+        "status":  200,
+        "queries":  93,
+        "sql_ms":  74.69999999999997,
+        "server_ms":  435.4279,
+        "bytes":  114918
+    },
+    {
+        "path":  "/invoices/create",
+        "status":  200,
+        "queries":  93,
+        "sql_ms":  60.00999999999999,
+        "server_ms":  341.9752,
+        "bytes":  114918
+    },
+    {
+        "path":  "/invoices/create",
+        "status":  200,
+        "queries":  93,
+        "sql_ms":  47.400000000000006,
+        "server_ms":  312.191,
+        "bytes":  114918
+    },
+    {
+        "path":  "/invoices/{synthetic_document}/edit",
+        "status":  200,
+        "queries":  157,
+        "sql_ms":  88.26000000000008,
+        "server_ms":  538.5393,
+        "bytes":  117710
+    },
+    {
+        "path":  "/invoices/{synthetic_document}/edit",
+        "status":  200,
+        "queries":  157,
+        "sql_ms":  90.63999999999993,
+        "server_ms":  412.9312,
+        "bytes":  117710
+    },
+    {
+        "path":  "/invoices/{synthetic_document}/edit",
+        "status":  200,
+        "queries":  157,
+        "sql_ms":  91.18999999999998,
+        "server_ms":  465.6171,
+        "bytes":  117710
+    },
+    {
+        "path":  "/purchases/create",
+        "status":  200,
+        "queries":  127,
+        "sql_ms":  56.51,
+        "server_ms":  331.8245,
+        "bytes":  92002
+    },
+    {
+        "path":  "/purchases/create",
+        "status":  200,
+        "queries":  127,
+        "sql_ms":  64.42999999999998,
+        "server_ms":  352.3281,
+        "bytes":  92002
+    },
+    {
+        "path":  "/purchases/create",
+        "status":  200,
+        "queries":  127,
+        "sql_ms":  79.68999999999997,
+        "server_ms":  451.8045,
+        "bytes":  92002
+    },
+    {
+        "path":  "/purchases/{synthetic_document}/edit",
+        "status":  200,
+        "queries":  166,
+        "sql_ms":  80.34000000000002,
+        "server_ms":  446.1165,
+        "bytes":  92573
+    },
+    {
+        "path":  "/purchases/{synthetic_document}/edit",
+        "status":  200,
+        "queries":  166,
+        "sql_ms":  87.14,
+        "server_ms":  391.1878,
+        "bytes":  92573
+    },
+    {
+        "path":  "/purchases/{synthetic_document}/edit",
+        "status":  200,
+        "queries":  166,
+        "sql_ms":  82.07999999999997,
+        "server_ms":  426.2235,
+        "bytes":  92573
+    },
+    {
+        "path":  "/products",
+        "status":  200,
+        "queries":  120,
+        "sql_ms":  50.94999999999997,
+        "server_ms":  427.5899,
+        "bytes":  247559
+    },
+    {
+        "path":  "/products",
+        "status":  200,
+        "queries":  120,
+        "sql_ms":  56.13000000000002,
+        "server_ms":  397.8807,
+        "bytes":  247559
+    },
+    {
+        "path":  "/products",
+        "status":  200,
+        "queries":  120,
+        "sql_ms":  50.739999999999995,
+        "server_ms":  370.3044,
+        "bytes":  247559
+    },
+    {
+        "path":  "/inventory",
+        "status":  200,
+        "queries":  121,
+        "sql_ms":  56.38000000000004,
+        "server_ms":  342.7285,
+        "bytes":  60347
+    },
+    {
+        "path":  "/inventory",
+        "status":  200,
+        "queries":  121,
+        "sql_ms":  72.33,
+        "server_ms":  417.3565,
+        "bytes":  60347
+    },
+    {
+        "path":  "/inventory",
+        "status":  200,
+        "queries":  121,
+        "sql_ms":  61.29999999999999,
+        "server_ms":  343.2389,
+        "bytes":  60347
+    },
+    {
+        "path":  "/money",
+        "status":  200,
+        "queries":  304,
+        "sql_ms":  130.09000000000003,
+        "server_ms":  533.6368,
+        "bytes":  59166
+    },
+    {
+        "path":  "/money",
+        "status":  200,
+        "queries":  304,
+        "sql_ms":  108.15999999999985,
+        "server_ms":  412.7604,
+        "bytes":  59166
+    },
+    {
+        "path":  "/money",
+        "status":  200,
+        "queries":  304,
+        "sql_ms":  123.44999999999997,
+        "server_ms":  411.7226,
+        "bytes":  59166
+    },
+    {
+        "path":  "/money/checks",
+        "status":  200,
+        "queries":  172,
+        "sql_ms":  70.75000000000003,
+        "server_ms":  314.587,
+        "bytes":  57355
+    },
+    {
+        "path":  "/money/checks",
+        "status":  200,
+        "queries":  172,
+        "sql_ms":  74.18999999999997,
+        "server_ms":  322.5075,
+        "bytes":  57355
+    },
+    {
+        "path":  "/money/checks",
+        "status":  200,
+        "queries":  172,
+        "sql_ms":  58.19000000000002,
+        "server_ms":  304.145,
+        "bytes":  57355
+    },
+    {
+        "path":  "/settings",
+        "status":  200,
+        "queries":  132,
+        "sql_ms":  57.20999999999998,
+        "server_ms":  302.14,
+        "bytes":  103056
+    },
+    {
+        "path":  "/settings",
+        "status":  200,
+        "queries":  132,
+        "sql_ms":  45.55999999999999,
+        "server_ms":  287.7665,
+        "bytes":  103056
+    },
+    {
+        "path":  "/settings",
+        "status":  200,
+        "queries":  132,
+        "sql_ms":  48.55999999999999,
+        "server_ms":  328.5748,
+        "bytes":  103056
+    }
+]

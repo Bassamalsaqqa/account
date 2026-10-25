@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Livewire;
 
-use App\Models\Company;
 use App\Models\CompanyUser;
 use App\Models\User;
 use App\Services\Search\GlobalSearch as SearchService;
@@ -113,10 +112,7 @@ class GlobalSearch extends Component
         }
 
         $this->currentCompanyId = $activeCompanyId;
-
-        if (! $this->isActorAuthorized($context)) {
-            $this->resetState();
-        }
+        // Render and search independently verify fresh authority before reading results.
     }
 
     private function isActorAuthorized(CompanyContext $context): bool
@@ -138,19 +134,11 @@ class GlobalSearch extends Component
             return false;
         }
 
-        // Fresh company query on every request (do not trust cached status)
-        $company = Company::whereKey($companyId)
-            ->where('status', 'active')
-            ->first();
-
-        if (! $company) {
-            return false;
-        }
-
-        // Fresh active membership check
+        // One fresh indexed query checks membership and persisted company status.
         $isMember = CompanyUser::where('company_id', $companyId)
             ->where('user_id', $user->id)
             ->where('status', 'active')
+            ->whereHas('company', fn ($query) => $query->where('status', 'active'))
             ->exists();
 
         if (! $isMember) {

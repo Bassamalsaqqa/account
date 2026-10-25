@@ -1,0 +1,9 @@
+{
+  "source_archive_sha256": "6a2355c7e4707668c18a7d4f1cf3df6c5135fa95ae553eff3fa7518271312d05",
+  "sanitized_archive_sha256": "f0f7db1e6571413e1843232ff3fb0f4d754818250c057cb67ca24d41bbbc0b08",
+  "entries_preserved": 56,
+  "complete_and_historical_test_summaries_unchanged": true,
+  "process_exits_and_isolation_counts_unchanged": true,
+  "sanitized_output_is_not_byte_identical_to_original": true,
+  "originals_retained_in_published_history": true
+}

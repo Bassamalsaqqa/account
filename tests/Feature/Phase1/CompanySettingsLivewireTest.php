@@ -12,7 +12,6 @@ use App\Models\User;
 use App\Support\Tenancy\CompanyContext;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
-use Livewire\Drawer\Utils;
 use Livewire\Livewire;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
@@ -437,7 +436,7 @@ class CompanySettingsLivewireTest extends TestCase
         $arResponse->assertOk();
         $arResponse->assertSee('dir="rtl"', false);
         $arResponse->assertSee(__('settings.title', [], 'ar'));
-        $arResponse->assertSee(__('settings.status_2fa_owner_active', [], 'ar'));
+        $arResponse->assertSee(__('settings.policy_preference_only', [], 'ar'));
         $arResponse->assertSee(__('settings.aside_activity_title', [], 'ar'));
 
         // 2. English LTR/RTL check
@@ -448,7 +447,7 @@ class CompanySettingsLivewireTest extends TestCase
         $enResponse->assertOk();
         $enResponse->assertSee('dir="ltr"', false);
         $enResponse->assertSee('System Settings');
-        $enResponse->assertSee('Stored (Owner)');
+        $enResponse->assertSee(__('settings.policy_preference_only', [], 'en'));
         $enResponse->assertSee('Recent Activity');
 
         // Reset locale back
@@ -478,7 +477,11 @@ class CompanySettingsLivewireTest extends TestCase
 
         // Extract component snapshot from real rendered HTML
         $html = $getResponse->getContent();
-        $snapshot = Utils::extractAttributeDataFromHtml($html, 'wire:snapshot');
+        $dom = new \DOMDocument;
+        @$dom->loadHTML('<?xml encoding="UTF-8">'.$html);
+        $xpath = new \DOMXPath($dom);
+        $node = $xpath->query('//*[@*[name()="wire:name"]="pages.settings-index"]')->item(0);
+        $snapshot = json_decode($node->getAttribute('wire:snapshot'), true);
         $this->assertIsArray($snapshot);
         $this->assertSame('pages.settings-index', $snapshot['memo']['name'] ?? null);
 
@@ -809,7 +812,11 @@ class CompanySettingsLivewireTest extends TestCase
 
         $getResponse->assertOk();
         $html = $getResponse->getContent();
-        $snapshot = Utils::extractAttributeDataFromHtml($html, 'wire:snapshot');
+        $dom = new \DOMDocument;
+        @$dom->loadHTML('<?xml encoding="UTF-8">'.$html);
+        $xpath = new \DOMXPath($dom);
+        $node = $xpath->query('//*[@*[name()="wire:name"]="pages.settings-index"]')->item(0);
+        $snapshot = json_decode($node->getAttribute('wire:snapshot'), true);
         $this->assertIsArray($snapshot);
 
         // Ensure initially require_2fa_for_admin is false in DB

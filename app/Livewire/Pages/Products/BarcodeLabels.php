@@ -46,7 +46,7 @@ class BarcodeLabels extends Component
 
     public ?string $errorMessage = null;
 
-    public function mount(): void
+    public function mount(?string $search = null): void
     {
         $context = app(CompanyContext::class);
         if (! $context->hasCompany() || ! auth()->check()) {
@@ -55,6 +55,9 @@ class BarcodeLabels extends Component
 
         $this->lockedCompanyId = (int) $context->companyId();
         $this->locale = app()->getLocale() === 'en' ? 'en' : 'ar';
+        if ($search !== null && $search !== '') {
+            $this->search = trim($search);
+        }
 
         $this->authorizeAccess();
     }

@@ -1,20 +1,27 @@
 <div class="space-y-6 max-w-5xl mx-auto" x-data="{
-        saving: false, operationFailed: false,
+        saving: false, operationFailed: false, savingMode: null,
         run(method, args = [], terminal = false) {
             if (this.saving) return;
             if (terminal &amp;&amp; [...document.querySelectorAll('[role=dialog]')].some(el => el.getClientRects().length > 0)) return;
             if (terminal) this.saving = true;
             this.operationFailed = false;
+            this.savingMode = args[0] ? 'another' : 'normal';
             window.enqueueDocumentOperation($wire, method, args)
                 .catch(() => { this.operationFailed = true; })
-                .finally(() => { if (terminal) this.saving = false; });
+                .finally(() => {
+                    if (terminal) {
+                        this.saving = false;
+                        this.savingMode = null;
+                    }
+                });
         }
     }">
     <p x-cloak x-show="operationFailed" role="alert" class="text-sm text-danger">{{ __('camera.network_error') }}</p>
     <!-- Header -->
-    <div class="flex items-center justify-between gap-4">
+    <div class="flex flex-wrap items-center justify-between gap-4">
         <div class="flex items-center gap-3">
             <a href="{{ route('products.index') }}"
+               aria-label="{{ __('inventory.products') }}"
                class="min-h-11 inline-flex items-center justify-center gap-2 px-3 active:bg-surface-soft focus-visible:ring-2 focus-visible:ring-primary p-2 rounded-control border border-border bg-white text-text-secondary hover:text-text-primary hover:bg-surface-soft transition-colors">
                 <x-icon name="arrow-right" class="w-4 h-4 rtl:rotate-0 ltr:rotate-180" />
             </a>
@@ -28,26 +35,53 @@
             </div>
         </div>
 
-        <button type="button"
-                @click="run('save', [], true)" :disabled="saving"
-                wire:loading.attr="disabled"
-                class="min-h-11 inline-flex items-center justify-center gap-2 px-3 active:bg-surface-soft focus-visible:ring-2 focus-visible:ring-primary px-5 py-2.5 bg-primary hover:bg-primary-hover text-white text-xs font-bold rounded-control shadow-button transition-colors disabled:opacity-50">
-            <span wire:loading.remove wire:target="save">{{ __('inventory.save_data') }}</span>
-            <span wire:loading wire:target="save">{{ __('inventory.saving') }}</span>
-        </button>
+        <div class="flex flex-wrap items-center gap-2">
+            @if (! $isEditing)
+                <button type="button"
+                        @click="run('save', [true], true)" :disabled="saving"
+                        wire:loading.attr="disabled"
+                        class="min-h-11 inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-white hover:bg-surface-soft active:bg-surface-soft border border-border text-text-primary text-xs font-bold rounded-control shadow-xs transition-colors disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-primary">
+                    <span x-show="savingMode !== 'another'">{{ __('release_b1_workflow.save_and_add_another') }}</span>
+                    <span x-cloak x-show="savingMode === 'another'">{{ __('release_b1_workflow.saving_and_adding') }}</span>
+                </button>
+            @else
+                @if ($canViewProduct && $product)
+                    <a href="{{ route('products.show', $product->public_id) }}"
+                       class="min-h-11 inline-flex items-center justify-center gap-1.5 px-3 py-2 bg-white hover:bg-surface-soft border border-border text-text-secondary hover:text-text-primary text-xs font-bold rounded-control transition-colors focus-visible:ring-2 focus-visible:ring-primary">
+                        <x-icon name="dashboard" class="w-3.5 h-3.5 text-primary" />
+                        <span>{{ __('release_b1_workflow.view_product') }}</span>
+                    </a>
+                @endif
+                @if ($canManageProduct)
+                    <a href="{{ route('products.create') }}"
+                       class="min-h-11 inline-flex items-center justify-center gap-1.5 px-3 py-2 bg-white hover:bg-surface-soft border border-border text-text-secondary hover:text-text-primary text-xs font-bold rounded-control transition-colors focus-visible:ring-2 focus-visible:ring-primary">
+                        <x-icon name="plus" class="w-3.5 h-3.5 text-primary" />
+                        <span>{{ __('release_b1_workflow.add_new_product') }}</span>
+                    </a>
+                @endif
+            @endif
+
+            <button type="button"
+                    @click="run('save', [false], true)" :disabled="saving"
+                    wire:loading.attr="disabled"
+                    class="min-h-11 inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-primary hover:bg-primary-hover text-white text-xs font-bold rounded-control shadow-button transition-colors disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-primary">
+                <span x-show="savingMode !== 'normal'">{{ __('inventory.save_data') }}</span>
+                <span x-cloak x-show="savingMode === 'normal'">{{ __('inventory.saving') }}</span>
+            </button>
+        </div>
     </div>
 
     <!-- Messages -->
     @if ($successMessage)
         <div class="p-3.5 rounded-control bg-success-bg border border-success/30 text-success text-xs font-semibold flex items-center justify-between">
             <span>{{ $successMessage }}</span>
-            <button type="button" wire:click="$set('successMessage', null)" class="min-h-11 inline-flex items-center justify-center gap-2 px-3 active:bg-surface-soft focus-visible:ring-2 focus-visible:ring-primary text-success hover:opacity-75" wire:loading.attr="disabled">&times;</button>
+            <button type="button" aria-label="{{ __('inventory.close') }}" wire:click="$set('successMessage', null)" class="min-h-11 inline-flex items-center justify-center gap-2 px-3 active:bg-surface-soft focus-visible:ring-2 focus-visible:ring-primary text-success hover:opacity-75" wire:loading.attr="disabled">&times;</button>
         </div>
     @endif
     @if ($errorMessage)
         <div class="p-3.5 rounded-control bg-danger-bg border border-danger/30 text-danger text-xs font-semibold flex items-center justify-between">
             <span>{{ $errorMessage }}</span>
-            <button type="button" wire:click="$set('errorMessage', null)" class="min-h-11 inline-flex items-center justify-center gap-2 px-3 active:bg-surface-soft focus-visible:ring-2 focus-visible:ring-primary text-danger hover:opacity-75" wire:loading.attr="disabled">&times;</button>
+            <button type="button" aria-label="{{ __('inventory.close') }}" wire:click="$set('errorMessage', null)" class="min-h-11 inline-flex items-center justify-center gap-2 px-3 active:bg-surface-soft focus-visible:ring-2 focus-visible:ring-primary text-danger hover:opacity-75" wire:loading.attr="disabled">&times;</button>
         </div>
     @endif
 
@@ -567,8 +601,30 @@
             </div>
         </div>
     @endif
-    <div class="sticky bottom-[calc(5rem+env(safe-area-inset-bottom))] z-20 flex items-center justify-end gap-3 rounded-control border border-border bg-white p-3 shadow-sm md:hidden">
-        <span wire:loading wire:target="save" role="status" class="text-sm text-primary">{{ __('refinement.working') }}</span>
-        <button type="button" @click="run('save', [], true)" :disabled="saving" wire:loading.attr="disabled" class="min-h-11 rounded-control bg-primary px-5 py-2 text-sm font-bold text-white disabled:opacity-50">{{ __('inventory.save') }}</button>
+    <div class="sticky bottom-[calc(5rem+env(safe-area-inset-bottom))] z-20 flex flex-wrap items-center justify-end gap-2 rounded-control border border-border bg-white p-3 shadow-sm md:hidden">
+        <span wire:loading wire:target="save" role="status" class="text-xs text-primary">{{ __('refinement.working') }}</span>
+        @if (! $isEditing)
+            <button type="button" @click="run('save', [true], true)" :disabled="saving" wire:loading.attr="disabled" class="min-h-11 rounded-control border border-border bg-white px-3 py-2 text-xs font-bold text-text-primary hover:bg-surface-soft disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-primary">
+                <span x-show="savingMode !== 'another'">{{ __('release_b1_workflow.save_and_add_another') }}</span>
+                <span x-cloak x-show="savingMode === 'another'">{{ __('release_b1_workflow.saving_and_adding') }}</span>
+            </button>
+        @else
+            @if ($canViewProduct && $product)
+                <a href="{{ route('products.show', $product->public_id) }}" class="min-h-11 inline-flex items-center justify-center gap-1 rounded-control border border-border bg-white px-3 py-2 text-xs font-bold text-text-secondary hover:bg-surface-soft focus-visible:ring-2 focus-visible:ring-primary">
+                    <x-icon name="dashboard" class="w-3.5 h-3.5 text-primary" />
+                    <span>{{ __('release_b1_workflow.view_product') }}</span>
+                </a>
+            @endif
+            @if ($canManageProduct)
+                <a href="{{ route('products.create') }}" class="min-h-11 inline-flex items-center justify-center gap-1 rounded-control border border-border bg-white px-3 py-2 text-xs font-bold text-text-secondary hover:bg-surface-soft focus-visible:ring-2 focus-visible:ring-primary">
+                    <x-icon name="plus" class="w-3.5 h-3.5 text-primary" />
+                    <span>{{ __('release_b1_workflow.add_new_product') }}</span>
+                </a>
+            @endif
+        @endif
+        <button type="button" @click="run('save', [false], true)" :disabled="saving" wire:loading.attr="disabled" class="min-h-11 rounded-control bg-primary px-4 py-2 text-xs font-bold text-white hover:bg-primary-hover disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-primary">
+            <span x-show="savingMode !== 'normal'">{{ __('inventory.save') }}</span>
+            <span x-cloak x-show="savingMode === 'normal'">{{ __('inventory.saving') }}</span>
+        </button>
     </div>
 </div>

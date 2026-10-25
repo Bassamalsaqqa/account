@@ -253,52 +253,33 @@ final class QuestionAdditionalBoundaryTest extends TestCase
     // 3. Consent Scoping & Route Change / Revocation
     // =========================================================================
 
-    public function test_accept_consent_for_transactions_does_not_create_question_consent_entries(): void
+    public function test_legacy_transaction_accept_action_does_not_fabricate_acceptance(): void
     {
         $this->actingAs($this->owner);
         app(CompanyContext::class)->setCompany($this->company, $this->owner);
 
+        $before = AiUserPreference::query()->get()->map->getRawOriginal()->all();
         Livewire::test('ai.assistant-launcher')
             ->call('showAssistant')
             ->set('consent', true)
             ->call('acceptConsent');
 
-        $preferences = AiUserPreference::where('company_id', $this->company->id)
-            ->where('user_id', $this->owner->id)
-            ->firstOrFail();
-
-        $consents = $preferences->consents ?? [];
-        $this->assertNotEmpty($consents);
-
-        $questionConsents = collect(array_keys($consents))
-            ->filter(fn (string $key): bool => str_starts_with($key, 'question:'));
-
-        $this->assertEmpty($questionConsents);
+        $this->assertSame($before, AiUserPreference::query()->get()->map->getRawOriginal()->all());
         Http::assertNothingSent();
     }
 
-    public function test_accept_question_consent_scopes_only_question_routes_and_revocation_prevents_implicit_grant(): void
+    public function test_legacy_question_accept_action_does_not_record_acceptance_and_revocation_still_blocks_dispatch(): void
     {
         $this->actingAs($this->owner);
         app(CompanyContext::class)->setCompany($this->company, $this->owner);
 
+        $before = AiUserPreference::query()->get()->map->getRawOriginal()->all();
         $component = Livewire::test('ai.assistant-launcher')
             ->call('showAssistant');
 
-        // Assert selected question routes include both primary and approved fallback
-        $routes = $component->get('questionConsentRoutes');
-        $this->assertCount(1, $routes);
-        $this->assertSame($this->textConnection->public_id, $routes[0]['public_id']);
-
-        $component->set('questionConsent', true)
-            ->call('acceptQuestionConsent');
-
-        $preferences = AiUserPreference::where('company_id', $this->company->id)
-            ->where('user_id', $this->owner->id)
-            ->firstOrFail();
-
-        $consents = $preferences->consents ?? [];
-        $this->assertArrayHasKey('question:'.$this->textConnection->public_id, $consents);
+        $this->assertSame([], $component->get('questionConsentRoutes'));
+        $component->set('questionConsent', true)->call('acceptQuestionConsent');
+        $this->assertSame($before, AiUserPreference::query()->get()->map->getRawOriginal()->all());
 
         // Revoking selected route cannot implicitly grant dispatch
         app(AiGovernance::class)->revoke($this->company, $this->owner, $this->textConnection->public_id, 'synthetic-configuration-only');

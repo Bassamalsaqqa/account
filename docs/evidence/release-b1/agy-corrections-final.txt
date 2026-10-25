@@ -1,0 +1,11 @@
+PHPUnit 12.5.36 by Sebastian Bergmann and contributors.
+
+Runtime:       PHP 8.4.25
+Configuration: [release worktree]\phpunit.xml
+
+..................................................                50 / 50 (100%)
+
+Time: 01:50.528, Memory: 58.00 MB
+
+OK (50 tests, 355 assertions)
+Owned QA schema cleaned.

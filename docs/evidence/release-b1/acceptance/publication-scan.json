@@ -1,0 +1,71 @@
+{
+  "protocol_version": 5,
+  "scan_target": "Release B.1 published documentation, images, metadata, logs, and acceptance complete-qa.zip",
+  "review_threads": {
+    "4366402330": {
+      "topic": "source-review.md workstation file URI and internal workspace task IDs",
+      "status": "implemented_pending_independent_review",
+      "resolution": "Replaced absolute workstation file URIs and internal task IDs in docs/evidence/release-b1/acceptance/source-review.md with committed single-line anchor GitHub permalinks to tests/Support/DisposableMariaDbSchema.php."
+    },
+    "4366402332": {
+      "topic": "gate-results.json old composer-qa-frozen INCOMPLETE ambiguous",
+      "status": "implemented_pending_independent_review",
+      "resolution": "Marked gate-results.json and verification.md as SUPERSEDED_HISTORICAL pointing directly to authoritative final acceptance receipts in docs/evidence/release-b1/acceptance/qa-result.json and docs/RELEASE_B1_HANDBACK.md."
+    }
+  },
+  "scan_summary": {
+    "workstation_paths_found": 53,
+    "internal_task_or_workspace_ids_found": 66,
+    "disposable_schema_ids_found": 9,
+    "secrets_or_credentials_found_in_verified_scope": 0,
+    "images_scanned": 28,
+    "images_with_exposures": 0,
+    "images_scan_method": "PNG metadata chunks only; compressed pixels excluded to avoid random-byte false positives. No OCR or new visual inspection claimed."
+  },
+  "archive_reconciliation": {
+    "archive_path": "docs/evidence/release-b1/acceptance/complete-qa.zip",
+    "source_archive_sha256": "6a2355c7e4707668c18a7d4f1cf3df6c5135fa95ae553eff3fa7518271312d05",
+    "sanitized_archive_sha256": "f0f7db1e6571413e1843232ff3fb0f4d754818250c057cb67ca24d41bbbc0b08",
+    "entries_total": 56,
+    "entries_sanitized": 15,
+    "redaction_policy": {
+      "path_sanitization": "Workstation directory roots ([workstation-path]/worktree) replaced with [worktree] or repo-relative paths; local WinGet/tools directories replaced with [local-tools/...]; local runner harnesses replaced with [local-harness/...]; file URIs replaced with [file-uri].",
+      "identity_sanitization": "Worker workspace hashes (r_...) and task IDs (task_...) replaced with generic placeholders ([workspace-id], [task-id]).",
+      "evidence_preservation": "All verification assertions, failure diagnostics, error traces, exit codes, process stdout/stderr, and entry timestamps strictly preserved. Zero valuable verification evidence deleted.",
+      "secrets_status": "No credentials, tokens, or private secrets were detected or redacted in the verified review scope."
+    },
+    "codex_followup": "Independent scan found ten remaining synthetic schema labels (nine archive entries and qa-result); replaced with a stable public label. Original evidence remains in published history; no history rewritten.",
+    "additional_tool_path_entries_sanitized": [
+      "final/run-complete-qa.py",
+      "final/qa-with-metadata.php",
+      "final/production-platform.log",
+      "final/production-composer-install.log"
+    ]
+  },
+  "historical_commit_exposure": {
+    "status": "historical_commits_retain_local_paths_in_unscanned_history",
+    "verified_scope": "Reviewed HEAD and acceptance complete-qa.zip archive only; full repository git history has not been exhaustively credential-scanned.",
+    "historical_fc4_commit": "Commit fc4cda9 and prior commits retain workstation local paths; no known secrets exist in verified review scope.",
+    "policy_note": "In accordance with AGENTS.md contract forbidding rewriting published history, git history is preserved intact."
+  },
+  "acceptance_baseline_status": {
+    "canonical_qa_result": "docs/evidence/release-b1/acceptance/qa-result.json",
+    "authoritative_handback": "docs/RELEASE_B1_HANDBACK.md",
+    "final_qa_exit_code": 0,
+    "final_qa_counts": {
+      "passed": 3440,
+      "assertions": 41586,
+      "warnings": 4
+    },
+    "wrapper_recovery": "Explicitly documented (outer pythonw disappeared; read-only reconciliations healthy; owned DB cleanly terminated).",
+    "current_correction_qa_claimed": false
+  },
+  "files_corrected": [
+    "docs/evidence/release-b1/acceptance/source-review.md",
+    "docs/evidence/release-b1/phpstan-final-source.txt",
+    "docs/evidence/release-b1/gate-results.json",
+    "docs/evidence/release-b1/verification.md",
+    "docs/evidence/release-b1/acceptance/complete-qa.zip",
+    "docs/evidence/release-b1/acceptance/publication-scan.json"
+  ]
+}

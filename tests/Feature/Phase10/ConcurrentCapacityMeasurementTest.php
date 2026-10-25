@@ -255,7 +255,8 @@ final class ConcurrentCapacityMeasurementTest extends TestCase
                 $this->assertGreaterThan(0, $result['process_peak_memory_bytes']);
                 foreach (['dashboard' => 'HTML', 'sales_report' => 'HTML', 'invoice_pdf' => 'PDF'] as $name => $signature) {
                     $operation = $result['operations'][$name];
-                    $this->assertSame(200, $operation['status'], $name.' must use the real authenticated HTTP kernel successfully.');
+                    $diagMsg = isset($operation['diagnostics']) ? ' Diagnostics: '.json_encode($operation['diagnostics'], JSON_UNESCAPED_SLASHES) : '';
+                    $this->assertSame(200, $operation['status'], $name.' must use the real authenticated HTTP kernel successfully.'.$diagMsg);
                     $this->assertSame($signature, $operation['signature']);
                     $this->assertGreaterThan(0, $operation['response_bytes']);
                     $this->assertMatchesRegularExpression('/^[a-f0-9]{64}$/D', $operation['response_sha256']);

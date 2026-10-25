@@ -318,8 +318,16 @@ trait AiUnsavedForm
         if (! is_string($token)) {
             abort(422);
         }
+        $company = app(CompanyContext::class)->hasCompany() ? app(CompanyContext::class)->company() : null;
+        $actor = auth()->user();
+        if ($company === null || $actor === null) {
+            abort(403);
+        }
+        if (! AiGovernance::isPresentationEligible($company)) {
+            abort(403, __('assistant_v2.error_disabled'));
+        }
         try {
-            $adopted = app(AiFormEditing::class)->adopt(app(CompanyContext::class)->company(), auth()->user(), $token, session()->getId(), $intent);
+            $adopted = app(AiFormEditing::class)->adopt($company, $actor, $token, session()->getId(), $intent);
         } catch (AssistantUnavailable) {
             abort(409, __('assistant.proposal_changed'));
         }
@@ -346,24 +354,50 @@ trait AiUnsavedForm
 
     public function hydrateAiUnsavedForm(): void
     {
-        if ($this->aiFormToken !== null) {
-            $state = app(AiFormState::class)->read(app(CompanyContext::class)->company(), auth()->user(),
-                $this->aiFormToken, session()->getId(), $this->aiFormKey);
-            abort_unless($state['revision'] === $this->aiFormRevision, 409, __('assistant_v2.error_form_changed'));
+        if ($this->aiFormToken === null) {
+            return;
         }
+        $context = app(CompanyContext::class);
+        abort_unless($context->hasCompany() && auth()->check(), 403);
+        if (! AiGovernance::isPresentationEligible($context->company())) {
+            $this->detachDisabledAiInput();
+
+            return;
+        }
+        $state = app(AiFormState::class)->read($context->company(), auth()->user(),
+            $this->aiFormToken, session()->getId(), $this->aiFormKey);
+        abort_unless($state['revision'] === $this->aiFormRevision, 409, __('assistant_v2.error_form_changed'));
     }
 
     public function dehydrateAiUnsavedForm(): void
     {
-        if ($this->aiFormToken !== null && $this->aiFormKey !== null) {
-            $this->aiFormRevision = app(AiFormEditing::class)->synchronize(app(CompanyContext::class)->company(),
-                auth()->user(), $this->aiFormToken, session()->getId(), $this->aiFormKey, $this->aiFormRevision, $this->aiEditablePayload());
-            $state = app(AiFormState::class)->read(app(CompanyContext::class)->company(), auth()->user(), $this->aiFormToken, session()->getId(), $this->aiFormKey);
-            $this->aiFieldOrigins = $state['data']['resolved']['origins'];
-            $this->aiUnresolvedFields = $state['data']['resolved']['unresolved'];
-            $this->aiCanUndo = isset($state['data']['undo']);
-            $this->aiChangedFields = $state['data']['changed_fields'] ?? [];
+        if ($this->aiFormToken === null || $this->aiFormKey === null) {
+            return;
         }
+        $context = app(CompanyContext::class);
+        abort_unless($context->hasCompany() && auth()->check(), 403);
+        if (! AiGovernance::isPresentationEligible($context->company())) {
+            $this->detachDisabledAiInput();
+
+            return;
+        }
+        $this->aiFormRevision = app(AiFormEditing::class)->synchronize($context->company(),
+            auth()->user(), $this->aiFormToken, session()->getId(), $this->aiFormKey, $this->aiFormRevision, $this->aiEditablePayload());
+        $state = app(AiFormState::class)->read($context->company(), auth()->user(), $this->aiFormToken, session()->getId(), $this->aiFormKey);
+        $this->aiFieldOrigins = $state['data']['resolved']['origins'];
+        $this->aiUnresolvedFields = $state['data']['resolved']['unresolved'];
+        $this->aiCanUndo = isset($state['data']['undo']);
+        $this->aiChangedFields = $state['data']['changed_fields'] ?? [];
+    }
+
+    /** Relinquish the unsaved AI handoff; keep human-editable fields and persisted request history. */
+    protected function detachDisabledAiInput(): void
+    {
+        if ($this->aiFormToken !== null) {
+            app(AiFormState::class)->forgetForSession(auth()->user(), $this->aiFormToken, session()->getId());
+        }
+        // The subsequent save is manual, so it must not accept a revoked AI proposal.
+        $this->clearAiInput();
     }
 
     /** Discard only assistant memory; editable manual fields remain available. */

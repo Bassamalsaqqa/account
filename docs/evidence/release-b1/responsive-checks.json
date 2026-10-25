@@ -1,0 +1,218 @@
+[
+  {
+    "name": "settings",
+    "locale": "en",
+    "width": 390,
+    "status": 200,
+    "direction": "ltr",
+    "overflow": false,
+    "launcher": 0
+  },
+  {
+    "name": "settings",
+    "locale": "en",
+    "width": 768,
+    "status": 200,
+    "direction": "ltr",
+    "overflow": false,
+    "launcher": 0
+  },
+  {
+    "name": "settings",
+    "locale": "en",
+    "width": 1440,
+    "status": 200,
+    "direction": "ltr",
+    "overflow": false,
+    "launcher": 0
+  },
+  {
+    "name": "product",
+    "locale": "en",
+    "width": 390,
+    "status": 200,
+    "direction": "ltr",
+    "overflow": false,
+    "launcher": 0
+  },
+  {
+    "name": "product",
+    "locale": "en",
+    "width": 768,
+    "status": 200,
+    "direction": "ltr",
+    "overflow": false,
+    "launcher": 0
+  },
+  {
+    "name": "product",
+    "locale": "en",
+    "width": 1440,
+    "status": 200,
+    "direction": "ltr",
+    "overflow": false,
+    "launcher": 0
+  },
+  {
+    "name": "invoice",
+    "locale": "en",
+    "width": 390,
+    "status": 200,
+    "direction": "ltr",
+    "overflow": false,
+    "launcher": 0
+  },
+  {
+    "name": "invoice",
+    "locale": "en",
+    "width": 768,
+    "status": 200,
+    "direction": "ltr",
+    "overflow": false,
+    "launcher": 0
+  },
+  {
+    "name": "invoice",
+    "locale": "en",
+    "width": 1440,
+    "status": 200,
+    "direction": "ltr",
+    "overflow": false,
+    "launcher": 0
+  },
+  {
+    "name": "purchase",
+    "locale": "en",
+    "width": 390,
+    "status": 200,
+    "direction": "ltr",
+    "overflow": false,
+    "launcher": 0
+  },
+  {
+    "name": "purchase",
+    "locale": "en",
+    "width": 768,
+    "status": 200,
+    "direction": "ltr",
+    "overflow": false,
+    "launcher": 0
+  },
+  {
+    "name": "purchase",
+    "locale": "en",
+    "width": 1440,
+    "status": 200,
+    "direction": "ltr",
+    "overflow": false,
+    "launcher": 0
+  },
+  {
+    "name": "settings",
+    "locale": "ar",
+    "width": 390,
+    "status": 200,
+    "direction": "rtl",
+    "overflow": false,
+    "launcher": 0
+  },
+  {
+    "name": "settings",
+    "locale": "ar",
+    "width": 768,
+    "status": 200,
+    "direction": "rtl",
+    "overflow": false,
+    "launcher": 0
+  },
+  {
+    "name": "settings",
+    "locale": "ar",
+    "width": 1440,
+    "status": 200,
+    "direction": "rtl",
+    "overflow": false,
+    "launcher": 0
+  },
+  {
+    "name": "product",
+    "locale": "ar",
+    "width": 390,
+    "status": 200,
+    "direction": "rtl",
+    "overflow": false,
+    "launcher": 0
+  },
+  {
+    "name": "product",
+    "locale": "ar",
+    "width": 768,
+    "status": 200,
+    "direction": "rtl",
+    "overflow": false,
+    "launcher": 0
+  },
+  {
+    "name": "product",
+    "locale": "ar",
+    "width": 1440,
+    "status": 200,
+    "direction": "rtl",
+    "overflow": false,
+    "launcher": 0
+  },
+  {
+    "name": "invoice",
+    "locale": "ar",
+    "width": 390,
+    "status": 200,
+    "direction": "rtl",
+    "overflow": false,
+    "launcher": 0
+  },
+  {
+    "name": "invoice",
+    "locale": "ar",
+    "width": 768,
+    "status": 200,
+    "direction": "rtl",
+    "overflow": false,
+    "launcher": 0
+  },
+  {
+    "name": "invoice",
+    "locale": "ar",
+    "width": 1440,
+    "status": 200,
+    "direction": "rtl",
+    "overflow": false,
+    "launcher": 0
+  },
+  {
+    "name": "purchase",
+    "locale": "ar",
+    "width": 390,
+    "status": 200,
+    "direction": "rtl",
+    "overflow": false,
+    "launcher": 0
+  },
+  {
+    "name": "purchase",
+    "locale": "ar",
+    "width": 768,
+    "status": 200,
+    "direction": "rtl",
+    "overflow": false,
+    "launcher": 0
+  },
+  {
+    "name": "purchase",
+    "locale": "ar",
+    "width": 1440,
+    "status": 200,
+    "direction": "rtl",
+    "overflow": false,
+    "launcher": 0
+  }
+]

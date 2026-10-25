@@ -1,0 +1,42 @@
+PHPUnit 12.5.36 by Sebastian Bergmann and contributors.
+
+Runtime:       PHP 8.4.25
+Configuration: [release worktree]\phpunit.xml
+
+.FFFF                                                               5 / 5 (100%)
+
+Time: 00:35.915, Memory: 52.00 MB
+
+There were 4 failures:
+
+1) Tests\Feature\Phase10\FormAccessibilityTest::test_scoped_list_create_edit_and_repeated_controls_have_unique_accessible_names#0 with data ('ar')
+Bound control must have a unique ID: 
+Failed asserting that two strings are not identical.
+
+[release worktree]\tests\Feature\Phase10\FormAccessibilityTest.php:141
+[release worktree]\tests\Feature\Phase10\FormAccessibilityTest.php:68
+
+2) Tests\Feature\Phase10\FormAccessibilityTest::test_scoped_list_create_edit_and_repeated_controls_have_unique_accessible_names#1 with data ('en')
+Bound control must have a unique ID: 
+Failed asserting that two strings are not identical.
+
+[release worktree]\tests\Feature\Phase10\FormAccessibilityTest.php:141
+[release worktree]\tests\Feature\Phase10\FormAccessibilityTest.php:68
+
+3) Tests\Feature\Phase10\FormAccessibilityTest::test_real_validation_links_errors_and_preserves_entered_values_without_economic_writes#0 with data ('ar')
+Bound control must have a unique ID: 
+Failed asserting that two strings are not identical.
+
+[release worktree]\tests\Feature\Phase10\FormAccessibilityTest.php:141
+[release worktree]\tests\Feature\Phase10\FormAccessibilityTest.php:113
+
+4) Tests\Feature\Phase10\FormAccessibilityTest::test_real_validation_links_errors_and_preserves_entered_values_without_economic_writes#1 with data ('en')
+Bound control must have a unique ID: 
+Failed asserting that two strings are not identical.
+
+[release worktree]\tests\Feature\Phase10\FormAccessibilityTest.php:141
+[release worktree]\tests\Feature\Phase10\FormAccessibilityTest.php:113
+
+FAILURES!
+Tests: 5, Assertions: 1070, Failures: 4.
+Owned QA schema cleaned.

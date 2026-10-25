@@ -33,7 +33,14 @@ final class MoneyArchitectureTest extends TestCase
             if (! $file->isFile() || $file->getExtension() !== 'php') {
                 continue;
             }
-            if (preg_match('/\$scope->within\(/', file_get_contents($file->getPathname()))) {
+            $source = file_get_contents($file->getPathname());
+            // StockEventScope has its own canonical boundary; sharing a local variable name is not money authority.
+            if (preg_match('/\$scope->within\(/', $source) && str_contains($source, 'app(StockEventScope::class)') && ! str_contains($source, 'MoneyEventScope')) {
+                $this->assertSame('Services/Inventory/OwnsStockEvent.php', str_replace('\\', '/', substr($file->getPathname(), strlen(app_path()) + 1)));
+
+                continue;
+            }
+            if (preg_match('/\$scope->within\(/', $source)) {
                 $callers[] = str_replace('\\', '/', substr($file->getPathname(), strlen(app_path()) + 1));
             }
         }

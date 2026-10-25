@@ -268,7 +268,7 @@ class InvoiceForm extends Component
 
         if (! $this->isEditing) {
             $this->mountAiInput('sales');
-            if ($this->customer_id !== null) {
+            if ($this->customer_id !== null && $this->aiFormToken === null) {
                 $this->updatedCustomerId();
             }
         }

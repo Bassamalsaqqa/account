@@ -1,0 +1,322 @@
+[
+  {
+    "path": "/dashboard",
+    "samples": [
+      {
+        "status": 200,
+        "wall_ms": 1785,
+        "server_ms": 1300.431,
+        "queries": 343,
+        "bytes": 82706,
+        "launcherMounted": true,
+        "launcherButton": true
+      },
+      {
+        "status": 200,
+        "wall_ms": 1134,
+        "server_ms": 702.738,
+        "queries": 343,
+        "bytes": 82706,
+        "launcherMounted": true,
+        "launcherButton": true
+      },
+      {
+        "status": 200,
+        "wall_ms": 826,
+        "server_ms": 573.414,
+        "queries": 343,
+        "bytes": 82706,
+        "launcherMounted": true,
+        "launcherButton": true
+      }
+    ]
+  },
+  {
+    "path": "/invoices/create",
+    "samples": [
+      {
+        "status": 200,
+        "wall_ms": 4733,
+        "server_ms": 4484.973,
+        "queries": 44,
+        "bytes": 114614,
+        "launcherMounted": true,
+        "launcherButton": true
+      },
+      {
+        "status": 200,
+        "wall_ms": 482,
+        "server_ms": 234.062,
+        "queries": 44,
+        "bytes": 114614,
+        "launcherMounted": true,
+        "launcherButton": true
+      },
+      {
+        "status": 200,
+        "wall_ms": 503,
+        "server_ms": 243.353,
+        "queries": 44,
+        "bytes": 114614,
+        "launcherMounted": true,
+        "launcherButton": true
+      }
+    ]
+  },
+  {
+    "path": "/invoices/01M5KX7R2MHARBEES1QBSAE2CV/edit",
+    "samples": [
+      {
+        "status": 200,
+        "wall_ms": 619,
+        "server_ms": 347.218,
+        "queries": 78,
+        "bytes": 117406,
+        "launcherMounted": true,
+        "launcherButton": true
+      },
+      {
+        "status": 200,
+        "wall_ms": 517,
+        "server_ms": 264.519,
+        "queries": 78,
+        "bytes": 117406,
+        "launcherMounted": true,
+        "launcherButton": true
+      },
+      {
+        "status": 200,
+        "wall_ms": 502,
+        "server_ms": 251.875,
+        "queries": 78,
+        "bytes": 117406,
+        "launcherMounted": true,
+        "launcherButton": true
+      }
+    ]
+  },
+  {
+    "path": "/purchases/create",
+    "samples": [
+      {
+        "status": 200,
+        "wall_ms": 1554,
+        "server_ms": 1313.119,
+        "queries": 74,
+        "bytes": 91698,
+        "launcherMounted": true,
+        "launcherButton": true
+      },
+      {
+        "status": 200,
+        "wall_ms": 506,
+        "server_ms": 240.948,
+        "queries": 74,
+        "bytes": 91698,
+        "launcherMounted": true,
+        "launcherButton": true
+      },
+      {
+        "status": 200,
+        "wall_ms": 502,
+        "server_ms": 246.905,
+        "queries": 74,
+        "bytes": 91698,
+        "launcherMounted": true,
+        "launcherButton": true
+      }
+    ]
+  },
+  {
+    "path": "/purchases/01M5KX7QTTX1NV0T1EKHHTBGAB/edit",
+    "samples": [
+      {
+        "status": 200,
+        "wall_ms": 536,
+        "server_ms": 290.379,
+        "queries": 87,
+        "bytes": 92269,
+        "launcherMounted": true,
+        "launcherButton": true
+      },
+      {
+        "status": 200,
+        "wall_ms": 502,
+        "server_ms": 258.029,
+        "queries": 87,
+        "bytes": 92269,
+        "launcherMounted": true,
+        "launcherButton": true
+      },
+      {
+        "status": 200,
+        "wall_ms": 479,
+        "server_ms": 237.587,
+        "queries": 87,
+        "bytes": 92269,
+        "launcherMounted": true,
+        "launcherButton": true
+      }
+    ]
+  },
+  {
+    "path": "/products",
+    "samples": [
+      {
+        "status": 200,
+        "wall_ms": 3023,
+        "server_ms": 2783.604,
+        "queries": 41,
+        "bytes": 247255,
+        "launcherMounted": true,
+        "launcherButton": true
+      },
+      {
+        "status": 200,
+        "wall_ms": 491,
+        "server_ms": 244.029,
+        "queries": 41,
+        "bytes": 247255,
+        "launcherMounted": true,
+        "launcherButton": true
+      },
+      {
+        "status": 200,
+        "wall_ms": 480,
+        "server_ms": 229.625,
+        "queries": 41,
+        "bytes": 247255,
+        "launcherMounted": true,
+        "launcherButton": true
+      }
+    ]
+  },
+  {
+    "path": "/inventory",
+    "samples": [
+      {
+        "status": 200,
+        "wall_ms": 1435,
+        "server_ms": 1195.593,
+        "queries": 42,
+        "bytes": 60043,
+        "launcherMounted": true,
+        "launcherButton": true
+      },
+      {
+        "status": 200,
+        "wall_ms": 542,
+        "server_ms": 295.008,
+        "queries": 42,
+        "bytes": 60043,
+        "launcherMounted": true,
+        "launcherButton": true
+      },
+      {
+        "status": 200,
+        "wall_ms": 686,
+        "server_ms": 242.843,
+        "queries": 42,
+        "bytes": 60043,
+        "launcherMounted": true,
+        "launcherButton": true
+      }
+    ]
+  },
+  {
+    "path": "/money",
+    "samples": [
+      {
+        "status": 200,
+        "wall_ms": 2609,
+        "server_ms": 2282.652,
+        "queries": 225,
+        "bytes": 58862,
+        "launcherMounted": true,
+        "launcherButton": true
+      },
+      {
+        "status": 200,
+        "wall_ms": 719,
+        "server_ms": 337.825,
+        "queries": 225,
+        "bytes": 58862,
+        "launcherMounted": true,
+        "launcherButton": true
+      },
+      {
+        "status": 200,
+        "wall_ms": 558,
+        "server_ms": 314.222,
+        "queries": 225,
+        "bytes": 58862,
+        "launcherMounted": true,
+        "launcherButton": true
+      }
+    ]
+  },
+  {
+    "path": "/money/checks",
+    "samples": [
+      {
+        "status": 200,
+        "wall_ms": 915,
+        "server_ms": 675.601,
+        "queries": 93,
+        "bytes": 57051,
+        "launcherMounted": true,
+        "launcherButton": true
+      },
+      {
+        "status": 200,
+        "wall_ms": 779,
+        "server_ms": 416.96,
+        "queries": 93,
+        "bytes": 57051,
+        "launcherMounted": true,
+        "launcherButton": true
+      },
+      {
+        "status": 200,
+        "wall_ms": 630,
+        "server_ms": 343.773,
+        "queries": 93,
+        "bytes": 57051,
+        "launcherMounted": true,
+        "launcherButton": true
+      }
+    ]
+  },
+  {
+    "path": "/settings",
+    "samples": [
+      {
+        "status": 200,
+        "wall_ms": 7776,
+        "server_ms": 7450.409,
+        "queries": 53,
+        "bytes": 102846,
+        "launcherMounted": true,
+        "launcherButton": true
+      },
+      {
+        "status": 200,
+        "wall_ms": 647,
+        "server_ms": 331.521,
+        "queries": 53,
+        "bytes": 102846,
+        "launcherMounted": true,
+        "launcherButton": true
+      },
+      {
+        "status": 200,
+        "wall_ms": 610,
+        "server_ms": 294.918,
+        "queries": 53,
+        "bytes": 102846,
+        "launcherMounted": true,
+        "launcherButton": true
+      }
+    ]
+  }
+]

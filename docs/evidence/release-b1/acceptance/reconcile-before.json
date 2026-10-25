@@ -1,0 +1,200 @@
+{
+  "database_version": "10.4.32-MariaDB",
+  "fixture": "owned local synthetic merchant",
+  "reconciliations": {
+    "accounting": {
+      "healthy": true,
+      "violations": [],
+      "stats": {
+        "batches_count": 2,
+        "lines_count": 6,
+        "accounts_count": 35,
+        "total_debit": "550.000000",
+        "total_credit": "550.000000"
+      },
+      "ms": 25.245
+    },
+    "inventory": {
+      "healthy": true,
+      "violations": [],
+      "stats": [],
+      "ms": 69.32
+    },
+    "sales": {
+      "healthy": true,
+      "violations": [],
+      "stats": {
+        "customers_count": 1,
+        "quotations_count": 0,
+        "invoices_count": 2,
+        "returns_count": 0,
+        "payments_count": 0,
+        "money_accounts_count": 1
+      },
+      "ms": 37.31
+    },
+    "money": {
+      "healthy": true,
+      "violations": [],
+      "stats": {
+        "accounts_count": 1,
+        "base_only_historical_lines": 0
+      },
+      "ms": 10.346
+    },
+    "payables": {
+      "healthy": true,
+      "violations": [],
+      "stats": {
+        "total_vendor_payments": 0,
+        "posted_vendor_payments": 0,
+        "reversed_vendor_payments": 0,
+        "total_application_events": 0,
+        "violations_count": 0
+      },
+      "ms": 25.692
+    },
+    "phase7": {
+      "healthy": true,
+      "violations": [],
+      "stats": {
+        "expenses_count": 0,
+        "advances_count": 0,
+        "salary_entries_count": 0,
+        "salary_payments_count": 0,
+        "employees_count": 0,
+        "landed_cost_allocations_count": 0
+      },
+      "ms": 26.435
+    }
+  },
+  "read_only": true,
+  "fingerprints": {
+    "posting_batches": {
+      "rows": 2,
+      "sha256": "be1dfe6543e067817c5749020944ab44979c16efc203fa605c6b0d3aa03dc161"
+    },
+    "posting_lines": {
+      "rows": 6,
+      "sha256": "7c54c2175d215c746f56648620202924f1a01e406abae7fb754bad84ca43c610"
+    },
+    "stock_movements": {
+      "rows": 2,
+      "sha256": "9bd201cec1b789b3213b02445b60e4fb88090a0a56282908f4793493353c2ee7"
+    },
+    "inventory_balances": {
+      "rows": 1,
+      "sha256": "dd25c8fca8ddf42650def75adfe89b7ff9beb846fa79c0c027e810111c059675"
+    },
+    "inventory_cost_states": {
+      "rows": 1,
+      "sha256": "b739a12ec690c434de227b033039f25f5c17c460c04563e8e3434b547d36d1b3"
+    },
+    "sales_invoices": {
+      "rows": 2,
+      "sha256": "3a40646219d6bbca7aa631b8f6428e5a2e256c71b115a921fa82cec75bd3be2d"
+    },
+    "sales_invoice_lines": {
+      "rows": 2,
+      "sha256": "299797e36e21280ef37d9f5a0e0e2fac3e4e5474904dedc70b8052163b27beae"
+    },
+    "purchases": {
+      "rows": 2,
+      "sha256": "d6e4e817911e0efc56d66993e63e0f30b105e967b0ae6e928fe8d22fe98a6537"
+    },
+    "purchase_lines": {
+      "rows": 2,
+      "sha256": "f6069dee4803cc8c1dae3eb8d33134597dc6e87596307fe47ffb65df84920676"
+    },
+    "customer_payments": {
+      "rows": 0,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "customer_payment_allocations": {
+      "rows": 0,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "vendor_payments": {
+      "rows": 0,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "vendor_payment_allocations": {
+      "rows": 0,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "checks": {
+      "rows": 0,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    }
+  },
+  "plans": {
+    "barcode": {
+      "sql": "select * from product_barcodes where company_id = ? and barcode = ? limit 1",
+      "plan": [
+        {
+          "id": 1,
+          "select_type": "SIMPLE",
+          "table": "product_barcodes",
+          "type": "const",
+          "possible_keys": "product_barcodes_company_id_barcode_unique,product_barcodes_company_id_product_id_index",
+          "key": "product_barcodes_company_id_barcode_unique",
+          "key_len": "522",
+          "ref": "const,const",
+          "rows": "1",
+          "Extra": ""
+        }
+      ]
+    },
+    "policy": {
+      "sql": "select * from ai_company_policies where company_id = ? limit 1",
+      "plan": [
+        {
+          "id": 1,
+          "select_type": "SIMPLE",
+          "table": "ai_company_policies",
+          "type": "const",
+          "possible_keys": "ai_company_policies_company_id_unique",
+          "key": "ai_company_policies_company_id_unique",
+          "key_len": "8",
+          "ref": "const",
+          "rows": "1",
+          "Extra": ""
+        }
+      ]
+    },
+    "membership": {
+      "sql": "select * from company_user where company_id = ? and user_id = ? and status = ? limit 1",
+      "plan": [
+        {
+          "id": 1,
+          "select_type": "SIMPLE",
+          "table": "company_user",
+          "type": "const",
+          "possible_keys": "company_user_company_id_user_id_unique,company_user_user_id_status_index",
+          "key": "company_user_company_id_user_id_unique",
+          "key_len": "16",
+          "ref": "const,const",
+          "rows": "1",
+          "Extra": ""
+        }
+      ]
+    },
+    "product_search": {
+      "sql": "select id, sku, name_ar, name_en from products where company_id = ? and active = 1 and (name_ar like ? or name_en like ? or sku like ?) limit 20",
+      "plan": [
+        {
+          "id": 1,
+          "select_type": "SIMPLE",
+          "table": "products",
+          "type": "ALL",
+          "possible_keys": "products_company_id_unique,products_company_id_sku_unique,products_company_id_active_index,products_company_id_category_id_index,products_company_id_product_type_index",
+          "key": null,
+          "key_len": null,
+          "ref": null,
+          "rows": "20",
+          "Extra": "Using where"
+        }
+      ]
+    }
+  }
+}

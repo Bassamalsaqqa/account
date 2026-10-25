@@ -1,0 +1,15 @@
+{
+  "reconciliations": {
+    "accounting": true,
+    "inventory": true,
+    "sales": true,
+    "money": true,
+    "payables": true,
+    "phase7": true
+  },
+  "economic_fingerprints_equal_baseline": true,
+  "source_fingerprint": "4939b9325166316b288eb98b3a8aea22aed01036e7ab49d2ddcde876838e9469",
+  "paid_provider_calls": 0,
+  "new_dependencies": 0,
+  "new_migrations": 0
+}

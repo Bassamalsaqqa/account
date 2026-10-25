@@ -45,13 +45,13 @@ class AssistantLauncherMountTest extends TestCase
         Http::assertNothingSent();
     }
 
-    public function test_enabled_alias_mount_uses_controller_render_data_and_existing_consent_picker(): void
+    public function test_enabled_alias_mount_uses_controller_render_data_and_nonblocking_disclosure(): void
     {
         config(['ai_assistant.enabled' => true]);
         AiCompanyPolicy::create(['company_id' => $this->company->id, 'enabled' => true]);
         Livewire::test('ai.assistant-launcher')->assertSee(__('ai_product.launcher'))
             ->call('showAssistant')->assertSet('open', true)->assertSet('consentRoutes', [])
-            ->assertSet('consent', false);
+            ->assertSet('consent', true);
         Http::assertNothingSent();
     }
 }

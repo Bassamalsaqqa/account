@@ -1,0 +1,24 @@
+{
+  "source_state": "clean committed patched source",
+  "npm_audit": {
+    "follow_redirects": "1.16.1",
+    "vulnerabilities": 0,
+    "vite": "7.3.7",
+    "exit_code": 0
+  },
+  "javascript": {
+    "passed": 127,
+    "command": "node --test tests/Frontend/*.test.js tests/Frontend/*.test.mjs tests/JavaScript/*.test.mjs",
+    "tests": 127,
+    "failed": 0,
+    "exit_code": 0
+  },
+  "production_build": {
+    "modules": 310,
+    "command": "npm run build",
+    "exit_code": 0
+  },
+  "source_head": "5aac8e00e13b2c5e9877e5cbc64b93512dc74946",
+  "verified_at": "2026-10-24T18:35:20.431507+00:00",
+  "limitations": "This receipt is not complete composer QA or acceptance."
+}

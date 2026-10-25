@@ -6,6 +6,9 @@
     }
 }">
 
+    @if (session('ai_switch_success'))
+        <p role="status" class="rounded-control bg-success-bg p-3 text-sm text-success">{{ session('ai_switch_success') }}</p>
+    @endif
     <!-- Alerts & Feedback -->
     @if ($successMessage)
         <div class="p-3.5 rounded-card bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-bold flex items-center justify-between shadow-xs">
@@ -53,6 +56,126 @@
                 </p>
             </div>
         </div>
+
+        @if ($hasCompany && $canManageAi)
+                        <!-- AI Assistant & Master Switch Card -->
+                        @if ($canManageAi)
+                            <div id="company-ai-control" x-show="matches('{{ __('settings.card_ai_title') }} {{ __('settings.card_ai_desc') }} AI DeepSeek')"
+                                 class="bg-white border border-border hover:border-primary/60 rounded-card p-4 sm:p-5 shadow-panel hover:shadow-panel-hover transition-all flex flex-col justify-between gap-3 group focus-visible:outline-2 focus-visible:outline-primary">
+                                <div class="flex items-start justify-between gap-3 min-w-0">
+                                    <div class="flex items-start gap-3 min-w-0">
+                                        <div class="w-9 h-9 rounded-control bg-primary-50 text-primary grid place-items-center shrink-0 group-hover:bg-primary group-hover:text-white transition-colors">
+                                            <x-icon name="sparkles" class="w-5 h-5" />
+                                        </div>
+                                        <div class="min-w-0">
+                                            <h4 class="text-base font-bold text-text-primary group-hover:text-primary transition-colors">
+                                                {{ __('settings.card_ai_title') }}
+                                            </h4>
+                                            <p class="text-sm text-text-muted mt-0.5 leading-snug">
+                                                {{ __('settings.card_ai_desc') }}
+                                            </p>
+                                            <div class="mt-2 flex items-center gap-2">
+                                                @if ($aiStatus === 'enabled')
+                                                    <span class="inline-block px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800 text-[9px] font-bold">
+                                                        {{ __('settings.ai_status_enabled') }}
+                                                    </span>
+                                                @elseif ($aiStatus === 'disabled')
+                                                    <span class="inline-block px-2 py-0.5 rounded-md bg-amber-100 text-amber-800 text-[9px] font-bold">
+                                                        {{ __('settings.ai_status_disabled') }}
+                                                    </span>
+                                                @elseif ($aiStatus === 'not_configured')
+                                                    <span class="inline-block px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 text-[9px] font-bold">
+                                                        {{ __('settings.ai_status_not_configured') }}
+                                                    </span>
+                                                @else
+                                                    <span class="inline-block px-2 py-0.5 rounded-md bg-slate-100 text-slate-500 text-[9px] font-bold">
+                                                        {{ __('settings.ai_status_globally_disabled') }}
+                                                    </span>
+                                                @endif
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <a href="{{ route('settings.ai') }}" class="text-text-muted hover:text-primary p-1 shrink-0" aria-label="{{ __('settings.card_ai_title') }}">
+                                        <x-icon name="chevron" class="w-4 h-4 rtl:rotate-180" />
+                                    </a>
+                                </div>
+
+                                @if ($isCompanyOwner && $aiStatus !== 'globally_disabled')
+                                    <div class="pt-2 border-t border-border/60 flex flex-wrap items-center justify-between gap-2 text-xs" x-data="{ openToggle: false, password: '', busy: false }">
+                                        @if ($aiStatus === 'enabled')
+                                            <button type="button" @click="openToggle = !openToggle" class="min-h-11 inline-flex items-center text-rose-600 hover:text-rose-700 font-bold text-sm underline">
+                                                {{ __('settings.ai_switch_disable') }}
+                                            </button>
+                                            <div x-show="openToggle" x-cloak class="w-full mt-2 p-2.5 rounded-control bg-rose-50 border border-rose-200 text-xs space-y-2">
+                                                <p class="text-rose-900 font-semibold">{{ __('settings.ai_switch_help') }}</p>
+                                                <label class="block">
+                                                    <span class="text-sm text-rose-800 font-bold">{{ __('assistant_v2.current_password') }}</span>
+                                                    <input type="password" x-model="password" autocomplete="current-password" class="mt-1 block w-full rounded border border-rose-300 bg-white px-2 py-1 text-xs text-text-primary" />
+                                                </label>
+                                                <div class="flex items-center gap-2">
+                                                    <button type="button" :disabled="busy || !password" @click="busy = true; const p = $wire.disableCompanyAi(password); password = ''; openToggle = false; p.finally(() => busy = false);" class="min-h-11 px-4 py-2 bg-rose-600 text-white rounded text-xs font-bold hover:bg-rose-700 disabled:opacity-50">
+                                                        {{ __('settings.ai_switch_disable') }}
+                                                    </button>
+                                                    <button type="button" @click="openToggle = false; password = '';" class="min-h-11 px-3 text-text-secondary text-sm hover:text-text-primary">
+                                                        {{ __('inventory.cancel') }}
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        @elseif ($aiStatus === 'disabled')
+                                            @if ($aiNeedsTransition)
+                                                <a href="{{ route('settings.ai') }}" class="text-primary hover:underline font-bold text-sm">
+                                                    {{ __('ai_product.transition_action') }} &rarr;
+                                                </a>
+                                            @else
+                                                <button type="button" @click="openToggle = !openToggle" class="min-h-11 inline-flex items-center text-emerald-700 hover:text-emerald-800 font-bold text-sm underline">
+                                                    {{ __('settings.ai_switch_enable') }}
+                                                </button>
+                                                <div x-show="openToggle" x-cloak class="w-full mt-2 p-2.5 rounded-control bg-emerald-50 border border-emerald-200 text-xs space-y-2">
+                                                    <label class="block">
+                                                        <span class="text-sm text-emerald-900 font-bold">{{ __('assistant_v2.current_password') }}</span>
+                                                        <input type="password" x-model="password" autocomplete="current-password" class="mt-1 block w-full rounded border border-emerald-300 bg-white px-2 py-1 text-xs text-text-primary" />
+                                                    </label>
+                                                    <div class="flex items-center gap-2">
+                                                        <button type="button" :disabled="busy || !password" @click="busy = true; const p = $wire.enableCompanyAi(password); password = ''; openToggle = false; p.finally(() => busy = false);" class="min-h-11 px-4 py-2 bg-emerald-700 text-white rounded text-xs font-bold hover:bg-emerald-800 disabled:opacity-50">
+                                                            {{ __('settings.ai_switch_enable') }}
+                                                        </button>
+                                                        <button type="button" @click="openToggle = false; password = '';" class="min-h-11 px-3 text-text-secondary text-sm hover:text-text-primary">
+                                                            {{ __('inventory.cancel') }}
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            @endif
+                                        @else
+                                            <a href="{{ route('settings.ai') }}" class="text-primary hover:underline font-bold text-sm">
+                                                {{ __('ai_product.setup') }} &rarr;
+                                            </a>
+                                        @endif
+                                    </div>
+                                @elseif ($aiStatus === 'globally_disabled')
+                                    <div class="pt-2 border-t border-border/60 text-xs text-text-muted">
+                                        {{ __('settings.ai_switch_globally_unavailable_notice') }}
+                                    </div>
+                                @endif
+                            </div>
+                        @else
+                            <div x-show="matches('{{ __('settings.card_ai_title') }} {{ __('settings.card_ai_desc') }} AI DeepSeek')"
+                                 class="bg-slate-50/70 border border-border/80 rounded-card p-3.5 flex items-start justify-between gap-3 opacity-60 cursor-not-allowed">
+                                <div class="flex items-start gap-3 min-w-0">
+                                    <div class="w-9 h-9 rounded-control bg-slate-200 text-slate-400 grid place-items-center shrink-0">
+                                        <x-icon name="sparkles" class="w-5 h-5" />
+                                    </div>
+                                    <div class="min-w-0">
+                                        <div class="flex items-center gap-1.5">
+                                            <h4 class="text-base font-bold text-text-muted">{{ __('settings.card_ai_title') }}</h4>
+                                            <span class="text-[9px] px-1.5 py-0.5 rounded bg-slate-200 text-text-muted font-bold">{{ __('settings.restricted_card_notice') }}</span>
+                                        </div>
+                                        <p class="text-sm text-text-muted mt-0.5 leading-snug">{{ __('settings.card_ai_desc') }}</p>
+                                    </div>
+                                </div>
+                                <x-icon name="lock" class="w-4 h-4 text-text-muted shrink-0 mt-1" />
+                            </div>
+                        @endif
+        @endif
 
         @if (! $hasCompany)
             <!-- Zero Company Bootstrap Notice -->
@@ -127,7 +250,7 @@
                             </div>
                             <div>
                                 <span class="text-[10px] text-text-muted block">{{ __('settings.usage_users') }}</span>
-                                <span class="text-sm font-extrabold text-text-primary num">{{ $memberships->count() }}</span>
+                                <span class="text-sm font-extrabold text-text-primary num">{{ $memberCount }}</span>
                             </div>
                             <div>
                                 <span class="text-[10px] text-text-muted block">{{ __('settings.card_localization_title') }}</span>
@@ -386,7 +509,7 @@
                                             {{ __('settings.card_users_desc') }}
                                         </p>
                                         <span class="inline-block mt-2 px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 text-[9px] font-bold num">
-                                            {{ $memberships->count() }} {{ __('settings.usage_users') }}
+                                            {{ $memberCount }} {{ __('settings.usage_users') }}
                                         </span>
                                     </div>
                                 </div>
@@ -428,7 +551,7 @@
                                             {{ __('settings.card_roles_desc') }}
                                         </p>
                                         <span class="inline-block mt-2 px-2 py-0.5 rounded-md bg-success-bg text-success text-[9px] font-bold">
-                                            {{ $roles->count() }} {{ __('settings.card_roles_title') }}
+                                            {{ $roleCount }} {{ __('settings.card_roles_title') }}
                                         </span>
                                     </div>
                                 </div>
@@ -511,6 +634,7 @@
                                 <x-icon name="lock" class="w-4 h-4 text-text-muted shrink-0 mt-1" />
                             </div>
                         @endcan
+
                     </div>
                 </section>
 
@@ -726,7 +850,7 @@
                         </div>
                         <div class="py-2 flex items-center justify-between last:pb-0">
                             <span class="text-text-muted">{{ __('settings.usage_users') }}</span>
-                            <span class="font-bold text-text-primary num">{{ $memberships->count() }}</span>
+                            <span class="font-bold text-text-primary num">{{ $memberCount }}</span>
                         </div>
                     </div>
                 </div>

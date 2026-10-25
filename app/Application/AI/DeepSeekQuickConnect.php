@@ -126,6 +126,35 @@ final class DeepSeekQuickConnect
         });
     }
 
+    /**
+     * Disabled companies retain credentials, settings, grants, caps and consent history.
+     * Disable must work even when setup/legacy config is invalid; no normalization occurs.
+     */
+    public function disableCompany(Company $company, User $actor, #[SensitiveParameter] string $password, int $expectedPolicyRevision): void
+    {
+        DB::transaction(function () use ($company, $actor, $password, $expectedPolicyRevision): void {
+            $this->authorize($company, $actor);
+            app(AiGovernance::class)->confirmOwner($company, $actor, $password);
+            $policy = AiCompanyPolicy::where('company_id', $company->id)->lockForUpdate()->first();
+            if ($policy === null || (int) $policy->revision !== $expectedPolicyRevision) {
+                throw new AssistantUnavailable('proposal_stale');
+            }
+            if ($policy->enabled) {
+                $policy->enabled = false;
+                $policy->revision = (int) $policy->revision + 1;
+                $policy->save();
+                app(AuditService::class)->log(
+                    (int) $company->id,
+                    'ai.policy.updated',
+                    'AI company policy disabled by owner.',
+                    (int) $actor->id,
+                    $policy,
+                    meta: ['revision' => $policy->revision, 'enabled' => false]
+                );
+            }
+        });
+    }
+
     private function assertRevisions(?AiCompanyPolicy $policy, ?AiProviderConnection $connection, int $policyRevision, int $connectionRevision): void
     {
         if (($policy === null ? 0 : (int) $policy->revision) !== $policyRevision
@@ -223,19 +252,19 @@ final class DeepSeekQuickConnect
             if (! Str::isUuid($requestKey)) {
                 throw new AssistantUnavailable('input_invalid');
             }
-            [$connection, $credential, $establishedPolicyRevision, $establishedConnectionRevision] = DB::transaction(function () use ($company, $actor, $key, $password, $consent, $requestKey, $expectedPolicyRevision, $expectedConnectionRevision, $refresh): array {
+            [$connection, $credential, $establishedPolicyRevision, $establishedConnectionRevision] = DB::transaction(function () use ($company, $actor, $key, $password, $requestKey, $expectedPolicyRevision, $expectedConnectionRevision, $refresh): array {
                 $this->authorize($company, $actor);
                 if (! $refresh) {
                     app(AiGovernance::class)->confirmOwner($company, $actor, $password);
-                    if (! $consent) {
-                        throw new AssistantUnavailable('consent');
-                    }
                 }
                 $policy = AiCompanyPolicy::where('company_id', $company->id)->lockForUpdate()->first();
                 $connection = $this->findExistingConnection($company);
                 if (($policy === null ? 0 : (int) $policy->revision) !== $expectedPolicyRevision
                     || ($connection === null ? 0 : $connection->revision) !== $expectedConnectionRevision) {
                     throw new AssistantUnavailable('proposal_stale');
+                }
+                if ($policy !== null && ! $policy->enabled) {
+                    throw new AssistantUnavailable('disabled');
                 }
                 if ($this->needsTransition($company)) {
                     throw new AssistantUnavailable('transition_required');
@@ -270,19 +299,6 @@ final class DeepSeekQuickConnect
                     }
                     $policy = $this->normalize($company, $actor, $policy, $connection);
                 }
-                if (! $refresh) {
-                    $governance->recordConsent($company, $actor, $connection->public_id,
-                        $governance->consentFingerprint($policy, $connection, 'connection_test'), 'connection_test');
-                    // Only the explicitly requested simple route/enablement changes; custom governance survives.
-                    if ($policy->enabled && $governance->allowedIntents($company, $actor) !== []) {
-                        $governance->recordConsent($company, $actor, $connection->public_id, $governance->consentFingerprint($policy, $connection));
-                    }
-                    if ($policy->enabled && ($policy->settings['questions']['enabled'] ?? false) === true
-                        && app(AssistantReportCatalog::class)->permittedKeys($company, $actor) !== []) {
-                        $governance->recordConsent($company, $actor, $connection->public_id, $governance->consentFingerprint($policy, $connection, 'question'), 'question');
-                    }
-                }
-
                 $grant = $governance->dispatchConnection($company, $actor, $connection->public_id, 'connection_test', 'text_structured', $connection->revision);
 
                 return [$connection, $grant['credential'], (int) $policy->revision, (int) $connection->revision];
