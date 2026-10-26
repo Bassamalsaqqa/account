@@ -1,10 +1,10 @@
 # Accounting B.1.2 Corrective Release Candidate Handback
 
-**Baseline Commit:** `aa6ee432251b78fedf3affb4d049b3d611bf816e`  
-**Reviewed Source HEAD:** `261ede072d8c1d3de9f7b13e47b2a5b88304bcc7`  
-**Source Tree Hash:** `466713719e94af39e7b67e898b54ed5777242f3b`  
-**Branch:** `fix/release-b1-2-product-names-omnibox`  
-**Pull Request:** [Draft PR #63](https://github.com/Bassamalsaqqa/account/pull/63)  
+**Baseline Commit:** `aa6ee432251b78fedf3affb4d049b3d611bf816e`
+**Reviewed Source HEAD:** `261ede072d8c1d3de9f7b13e47b2a5b88304bcc7`
+**Source Tree Hash:** `466713719e94af39e7b67e898b54ed5777242f3b`
+**Branch:** `fix/release-b1-2-product-names-omnibox`
+**Pull Request:** [Draft PR #63](https://github.com/Bassamalsaqqa/account/pull/63)
 **Status:** Verification complete; conditional recommendation for merge and production deployment by Codex. Not a deployed-release claim.
 
 ---
