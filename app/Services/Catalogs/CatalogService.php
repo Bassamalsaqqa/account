@@ -14,6 +14,7 @@ use App\Models\ProductUnit;
 use App\Models\PublicShare;
 use App\Models\Unit;
 use App\Services\Audit\AuditService;
+use App\Services\Sales\DocumentDescription;
 use App\Services\Sales\IssuedDocumentContent;
 use App\Services\Sales\ManagedPublicUrl;
 use App\Services\Sales\SalesActorGuard;
@@ -538,7 +539,7 @@ final class CatalogService
             $rows = $embedded ? $eligible : array_slice($eligible, ($page - 1) * 24, 24);
             $imageBytes = 0;
             foreach ($rows as $item) {
-                $row = ['name' => $item['name_'.$locale] ?: ($locale === 'en' ? $item['name_ar'] : $item['name_en']), 'unit' => $item['unit_'.$locale] ?: $item['unit_ar']];
+                $row = ['name' => DocumentDescription::choose(null, $item['name_ar'], $item['name_en'], $locale), 'unit' => $item['unit_'.$locale] ?: $item['unit_ar']];
                 if (isset($item['sku'])) {
                     $row['sku'] = $item['sku'];
                 }

@@ -184,9 +184,7 @@ class BarcodeLabelService
                 );
 
                 // Localized captions (RTL / LTR safe)
-                $productName = $locale === 'ar'
-                    ? (trim((string) $product->name_ar) ?: (string) $product->name_en)
-                    : (trim((string) $product->name_en) ?: (string) $product->name_ar);
+                $productName = $product->name($locale);
 
                 $unitName = $locale === 'ar'
                     ? (trim((string) $unit->name_ar) ?: (string) $unit->name_en)

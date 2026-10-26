@@ -11,7 +11,10 @@ use App\Livewire\Pages\Products\ProductForm;
 use App\Livewire\Pages\Purchasing\PurchaseForm;
 use App\Livewire\Pages\Sales\InvoiceForm;
 use App\Models\Product;
+use App\Models\ProductBarcode;
 use App\Models\ProductUnit;
+use App\Services\Catalogs\CatalogService;
+use App\Services\Inventory\BarcodeLabelService;
 use App\Services\Inventory\ProductCatalogService;
 use App\Services\Inventory\QuickProductCreation;
 use App\Services\Sales\DocumentDescription;
@@ -540,5 +543,39 @@ final class ProductNameFlexibilityTest extends Phase5ETestCase
         ], 'sales.invoice.create');
         $this->assertSame('اسم الصنف', $product->name_ar);
         $this->assertSame('Product name', $product->name_en);
+    }
+
+    public function test_english_zero_name_is_not_discarded_in_search_documents_labels_or_catalogs(): void
+    {
+        $this->activate($this->owner);
+        $product = app(ProductCatalogService::class)->createProduct($this->company, [
+            'name_ar' => null, 'name_en' => '0', 'sku' => 'ZERO-ENGLISH',
+            'base_unit_id' => $this->unit->unit_id,
+        ], (int) $this->owner->id);
+        $barcode = ProductBarcode::create([
+            'company_id' => $this->company->id, 'product_id' => $product->id,
+            'unit_id' => $this->unit->unit_id, 'barcode' => 'B12ZERO', 'type' => 'code128', 'is_primary' => true,
+        ]);
+        $catalogs = app(CatalogService::class);
+        $catalog = $catalogs->save(null, [
+            'name_ar' => 'كتالوج', 'locale' => 'ar', 'show_prices' => false,
+            'show_sku' => true, 'show_description' => false, 'show_images' => false,
+        ], [
+            ['product_id' => $product->id, 'unit_id' => $this->unit->unit_id],
+        ]);
+        $preview = $catalogs->preview($catalog->id);
+        $catalogs->publish($catalog->id, $preview['revision'], $preview['hash'], 'publish-zero-name');
+        $link = $catalogs->share($catalog->id);
+        foreach (['ar', 'en'] as $locale) {
+            app()->setLocale($locale);
+            $this->assertSame('0', $product->name());
+            $results = app(GlobalSearch::class)->search('ZERO-ENGLISH');
+            $this->assertSame('0', $results['product'][0]['title']);
+            $this->assertSame('0', DocumentDescription::choose(null, null, '0', $locale));
+            $labels = app(BarcodeLabelService::class)->prepare([$barcode->id => 1], $locale);
+            $this->assertSame('0', $labels['labels'][0]['name']);
+            $data = $catalogs->publicData($link['share'], $locale);
+            $this->assertSame('0', $data['items'][0]['name']);
+        }
     }
 }

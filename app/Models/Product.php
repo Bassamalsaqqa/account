@@ -243,14 +243,16 @@ class Product extends Model
         return $this->hasMany(StockMovement::class, 'product_id');
     }
 
-    public function name(): string
+    public function name(?string $locale = null): string
     {
-        $locale = app()->getLocale();
+        $locale ??= app()->getLocale();
+        $nameAr = trim((string) $this->name_ar);
+        $nameEn = trim((string) $this->name_en);
         if ($locale === 'en') {
-            return $this->name_en !== null && $this->name_en !== '' ? (string) $this->name_en : (string) ($this->name_ar ?? '');
+            return $nameEn !== '' ? $nameEn : $nameAr;
         }
 
-        return $this->name_ar !== null && $this->name_ar !== '' ? (string) $this->name_ar : (string) ($this->name_en ?? '');
+        return $nameAr !== '' ? $nameAr : $nameEn;
     }
 
     public function displayName(): string

@@ -461,7 +461,7 @@
                                         </div>
                                         <div>
                                             <div class="font-bold text-sm text-slate-900">
-                                                {{ ($meta['name_'.app()->getLocale()] ?? '') ?: ($meta['name_ar'] ?? '') ?: ($meta['name_en'] ?? '') ?: ('Product #' . $item['product_id']) }}
+                                                {{ $meta ? \App\Services\Sales\DocumentDescription::choose(null, $meta['name_ar'] ?? null, $meta['name_en'] ?? null, app()->getLocale()) : ('Product #' . $item['product_id']) }}
                                                 @if(!empty($meta['name_ar']) && !empty($meta['name_en']))
                                                     <span class="text-xs font-normal text-slate-500">({{ app()->getLocale() === 'en' ? $meta['name_ar'] : $meta['name_en'] }})</span>
                                                 @endif
