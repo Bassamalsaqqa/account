@@ -461,9 +461,9 @@
                                         </div>
                                         <div>
                                             <div class="font-bold text-sm text-slate-900">
-                                                {{ $meta['name_ar'] ?? ('Product #' . $item['product_id']) }}
-                                                @if(!empty($meta['name_en']))
-                                                    <span class="text-xs font-normal text-slate-500">({{ $meta['name_en'] }})</span>
+                                                {{ ($meta['name_'.app()->getLocale()] ?? '') ?: ($meta['name_ar'] ?? '') ?: ($meta['name_en'] ?? '') ?: ('Product #' . $item['product_id']) }}
+                                                @if(!empty($meta['name_ar']) && !empty($meta['name_en']))
+                                                    <span class="text-xs font-normal text-slate-500">({{ app()->getLocale() === 'en' ? $meta['name_ar'] : $meta['name_en'] }})</span>
                                                 @endif
                                             </div>
                                             @if(!empty($meta['sku']))

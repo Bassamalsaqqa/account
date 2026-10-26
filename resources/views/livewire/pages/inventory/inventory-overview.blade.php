@@ -149,7 +149,7 @@
                     <div class="p-3.5 flex items-center justify-between text-xs hover:bg-surface-soft/50 transition-colors">
                         <div class="space-y-0.5">
                             <div class="flex items-center gap-2">
-                                <span class="font-bold text-text-primary">{{ $mov->product?->name_ar }}</span>
+                                <span class="font-bold text-text-primary">{{ $mov->product?->name() }}</span>
                                 <x-badge variant="{{ $mov->isInbound() ? 'success' : 'alert' }}">
                                     {{ __('inventory.type_' . $mov->movement_type) }}
                                 </x-badge>

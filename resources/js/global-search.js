@@ -2,17 +2,22 @@ export function globalSearchComponent() {
     let generation = 0;
     let opening = false;
     let destroyed = false;
+    // Keep server lifecycle calls in user order; dismiss locally without waiting
+    // for the network. A stale close must settle before a newer open is sent.
+    let lifecycle = Promise.resolve();
     return {
         clientOpen: false, activeIndex: -1, activeId: null, term: '',
         searching: false, dirty: false, failed: false, offline: false,
         previouslyFocused: null,
         init() {
             this.$wire.$watch('isOpen', value => {
-                if (!value) this.dismiss();
+                if (!value && !opening && this.clientOpen) {
+                    this.dismiss();
+                }
             });
         },
         destroy() { destroyed = true; this.dismiss(false); },
-        isModalVisible() { return this.clientOpen && this.$wire.isOpen; },
+        isModalVisible() { return this.clientOpen; },
         handleWindowKeydown(event) {
             if (event.repeat || !(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== 'k') return;
             if ([...document.querySelectorAll('dialog[open],[role="dialog"]')].some(el => el.id !== 'global-search-dialog' && el.getClientRects().length)) return;
@@ -27,7 +32,10 @@ export function globalSearchComponent() {
             this.failed = false;
             this.offline = !navigator.onLine;
             try {
-                await this.$wire.open();
+                lifecycle = lifecycle.catch(() => {}).then(() => {
+                    if (!destroyed && version === generation) return this.$wire.open();
+                });
+                await lifecycle;
                 if (destroyed || version !== generation) return;
                 this.clientOpen = this.$wire.isOpen;
                 this.$nextTick(() => {
@@ -51,9 +59,12 @@ export function globalSearchComponent() {
             if (restoreFocus && trigger?.isConnected && trigger.getClientRects().length
                 && !trigger.closest('[inert], [aria-hidden="true"]')) trigger.focus();
         },
-        closeModal() {
+        async closeModal() {
             this.dismiss();
-            this.$wire.close().catch(() => {});
+            lifecycle = lifecycle.catch(() => {}).then(() => this.$wire.close());
+            try {
+                await lifecycle;
+            } catch {}
         },
         queryChanged() { generation++; this.dirty = true; this.failed = false; this.resetActive(); },
         async search() {

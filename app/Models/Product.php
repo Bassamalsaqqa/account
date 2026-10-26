@@ -245,9 +245,12 @@ class Product extends Model
 
     public function name(): string
     {
-        return (app()->getLocale() === 'en' && ! empty($this->name_en))
-            ? $this->name_en
-            : $this->name_ar;
+        $locale = app()->getLocale();
+        if ($locale === 'en') {
+            return $this->name_en !== null && $this->name_en !== '' ? (string) $this->name_en : (string) ($this->name_ar ?? '');
+        }
+
+        return $this->name_ar !== null && $this->name_ar !== '' ? (string) $this->name_ar : (string) ($this->name_en ?? '');
     }
 
     public function displayName(): string

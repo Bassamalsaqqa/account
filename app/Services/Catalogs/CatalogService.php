@@ -538,7 +538,7 @@ final class CatalogService
             $rows = $embedded ? $eligible : array_slice($eligible, ($page - 1) * 24, 24);
             $imageBytes = 0;
             foreach ($rows as $item) {
-                $row = ['name' => $item['name_'.$locale] ?: $item['name_ar'], 'unit' => $item['unit_'.$locale] ?: $item['unit_ar']];
+                $row = ['name' => $item['name_'.$locale] ?: ($locale === 'en' ? $item['name_ar'] : $item['name_en']), 'unit' => $item['unit_'.$locale] ?: $item['unit_ar']];
                 if (isset($item['sku'])) {
                     $row['sku'] = $item['sku'];
                 }

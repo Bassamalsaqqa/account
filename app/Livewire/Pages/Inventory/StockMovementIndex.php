@@ -103,7 +103,7 @@ class StockMovementIndex extends Component
 
         $movements = $query->orderByDesc('movement_date')->orderByDesc('id')->paginate(20);
 
-        $products = Product::where('company_id', $company->id)->orderBy('name_ar')->get(['id', 'name_ar', 'sku']);
+        $products = Product::where('company_id', $company->id)->orderBy('name_ar')->get(['id', 'name_ar', 'name_en', 'sku']);
         $warehouses = Warehouse::where('company_id', $company->id)->orderBy('name_ar')->get(['id', 'name_ar']);
 
         $movementTypes = [

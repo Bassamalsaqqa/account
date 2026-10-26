@@ -239,7 +239,7 @@ final class GlobalSearch
                     });
             })
             ->select(['id', 'public_id', 'company_id', 'name_ar', 'name_en', 'sku', 'active'])
-            ->orderBy('name_ar')
+            ->orderByRaw('COALESCE(name_ar, name_en) ASC')
             ->orderBy('id')
             ->limit(self::MAX_RESULTS_PER_CATEGORY)
             ->get();

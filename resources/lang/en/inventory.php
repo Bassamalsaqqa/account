@@ -1,6 +1,7 @@
 <?php
 
 return [
+    'product_name_required' => 'Enter a product name in Arabic, English, or both.',
     // Catalog & Products
     'products' => 'Product Catalog',
     'product' => 'Product',

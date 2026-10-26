@@ -138,7 +138,7 @@ class ProductForm extends Component
 
             $this->authorize('update', $this->product);
 
-            $this->name_ar = (string) $this->product->name_ar;
+            $this->name_ar = (string) ($this->product->name_ar ?? '');
             $this->name_en = (string) ($this->product->name_en ?? '');
             $this->sku = (string) ($this->product->sku ?? '');
             $this->category_id = $this->product->category_id;
@@ -189,9 +189,12 @@ class ProductForm extends Component
             $this->authorize('create', Product::class);
         }
 
+        $this->name_ar = trim($this->name_ar);
+        $this->name_en = trim($this->name_en);
+
         $validated = $this->validate([
-            'name_ar' => ['required', 'string', 'max:255'],
-            'name_en' => ['nullable', 'string', 'max:255'],
+            'name_ar' => ['nullable', 'string', 'max:255', 'required_without:name_en'],
+            'name_en' => ['nullable', 'string', 'max:255', 'required_without:name_ar'],
             'sku' => [
                 'nullable',
                 'string',
@@ -212,11 +215,14 @@ class ProductForm extends Component
             'suggested_sale_price' => ['nullable', 'regex:/\A\d+(\.\d+)?\z/', 'min:0'],
             'suggested_purchase_cost' => ['nullable', 'regex:/\A\d+(\.\d+)?\z/', 'min:0'],
             'minimum_stock' => ['nullable', 'regex:/\A\d+(\.\d+)?\z/', 'min:0'],
+        ], [
+            'name_ar.required_without' => __('inventory.product_name_required'),
+            'name_en.required_without' => __('inventory.product_name_required'),
         ]);
 
         $data = [
-            'name_ar' => $validated['name_ar'],
-            'name_en' => $validated['name_en'] ?: null,
+            'name_ar' => $validated['name_ar'] === '' ? null : $validated['name_ar'],
+            'name_en' => $validated['name_en'] === '' ? null : $validated['name_en'],
             'sku' => $validated['sku'] ?: null,
             'category_id' => $validated['category_id'] ?: null,
             'brand_id' => $validated['brand_id'] ?: null,

@@ -17,7 +17,7 @@
         <select aria-label="{{ __('inventory.all_products') }}" wire:model.live="productFilter" class="min-h-11 w-full h-11 px-2 rounded-control border border-border text-xs bg-white">
                     <option value="">{{ __('inventory.all_products') }}</option>
                     @foreach ($products as $p)
-                        <option value="{{ $p->id }}">{{ app()->getLocale() === 'en' ? ($p->name_en ?: $p->name_ar) : $p->name_ar }}</option>
+                        <option value="{{ $p->id }}">{{ $p->name() }}</option>
                     @endforeach
                 </select>
         <select aria-label="{{ __('inventory.all_warehouses') }}" wire:model.live="warehouseFilter" class="min-h-11 w-full h-11 px-2 rounded-control border border-border text-xs bg-white">
@@ -71,7 +71,7 @@
                             <td class="p-3.5 font-bold text-text-primary">
                                 @if ($m->product)
                                     <a href="{{ route('products.show', $m->product->public_id) }}" class="touch-action hover:text-primary transition-colors">
-                                        {{ app()->getLocale() === 'en' ? ($m->product->name_en ?: $m->product->name_ar) : $m->product->name_ar }}
+                                        {{ $m->product->name() }}
                                     </a>
                                 @else
                                     <span class="text-text-muted">—</span>
@@ -133,7 +133,7 @@
                                 <dd class="break-words text-sm tabular-nums text-text-primary">
                                     @if ($m->product)
                                         <a href="{{ route('products.show', $m->product->public_id) }}" class="touch-action hover:text-primary transition-colors">
-                                            {{ app()->getLocale() === 'en' ? ($m->product->name_en ?: $m->product->name_ar) : $m->product->name_ar }}
+                                            {{ $m->product->name() }}
                                         </a>
                                     @else
                                         <span class="text-text-muted">—</span>

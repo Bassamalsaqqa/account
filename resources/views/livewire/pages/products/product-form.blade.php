@@ -27,7 +27,7 @@
             </a>
             <div>
                 <h1 class="text-xl font-extrabold text-text-primary">
-                    {{ $isEditing ? __('inventory.edit_product') . ': ' . ($product && app()->getLocale() === 'en' && $product->name_en ? $product->name_en : $product?->name_ar) : __('inventory.add_product') }}
+                    {{ $isEditing ? __('inventory.edit_product') . ': ' . $product?->name() : __('inventory.add_product') }}
                 </h1>
                 <p class="text-xs text-text-secondary mt-0.5">
                     {{ $isEditing ? __('inventory.product_details') : __('inventory.add_product_subtitle') }}
@@ -96,7 +96,7 @@
             <!-- Arabic Name -->
             <div class="space-y-1">
                 <label for="product-name-ar" class="block text-xs font-bold text-text-secondary">
-                    {{ __('inventory.name_ar') }} <span class="text-danger">*</span>
+                    {{ __('inventory.name_ar') }}
                 </label>
                 <input id="product-name-ar" @error('name_ar') aria-invalid="true" aria-describedby="product-name-ar-error" @enderror type="text"
                        wire:model="name_ar"
@@ -522,7 +522,7 @@
                     <div class="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-3 pt-2">
                         @foreach ($productImages as $img)
                             <div class="relative group rounded-control border border-border overflow-hidden bg-surface-soft">
-                                <img src="{{ asset('storage/' . $img->thumbnail_path) }}" alt="{{ $product->name_ar }}" class="w-full h-24 object-cover" />
+                                <img src="{{ asset('storage/' . $img->thumbnail_path) }}" alt="{{ $product->name() }}" class="w-full h-24 object-cover" />
                                 <div class="absolute inset-0 bg-slate-900/60 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-1.5 p-1 text-[10px]">
                                     @if (! $img->is_primary)
                                         <button type="button" wire:click="setPrimaryImage({{ $img->id }})" wire:loading.attr="disabled" class="min-h-11 rounded-control border border-white/50 px-3 py-2 text-white hover:bg-black/20">

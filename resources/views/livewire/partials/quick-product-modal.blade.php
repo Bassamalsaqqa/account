@@ -13,9 +13,9 @@
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 @foreach (['name_ar', 'name_en', 'sku'] as $field)
                     <div class="{{ $field === 'name_ar' ? 'sm:col-span-2' : '' }}">
-                        <label for="quick-product-{{ $field }}" class="block text-sm font-bold text-text-primary mb-1">{{ __('inventory.'.$field) }}{{ $field !== 'name_en' ? ' *' : '' }}</label>
+                        <label for="quick-product-{{ $field }}" class="block text-sm font-bold text-text-primary mb-1">{{ __('inventory.'.$field) }}{{ $field === 'sku' ? ' *' : '' }}</label>
                         <input @if ($field === 'name_ar') x-ref="firstInput" @endif id="quick-product-{{ $field }}" type="text" wire:model="quick_product_{{ $field }}" maxlength="{{ $field === 'sku' ? 64 : 255 }}"
-                               @if ($field !== 'name_en') required @endif @if ($field !== 'name_ar') dir="ltr" @endif
+                               @if ($field === 'sku') required @endif @if ($field !== 'name_ar') dir="ltr" @endif
                                @error('quick_product_'.$field) aria-invalid="true" aria-describedby="quick-product-{{ $field }}-error" @enderror
                                class="w-full min-h-11 px-3 border border-border rounded-control bg-canvas text-sm text-text-primary focus:border-primary focus:ring-1 focus:ring-primary" />
                         @error('quick_product_'.$field)<p id="quick-product-{{ $field }}-error" class="mt-1 text-sm text-danger">{{ $message }}</p>@enderror

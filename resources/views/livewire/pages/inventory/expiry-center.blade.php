@@ -102,7 +102,7 @@
                         <tr class="hover:bg-surface-soft/60 transition-colors {{ $isExpired ? 'bg-danger-bg/20' : '' }}">
                             <td class="p-3.5 font-bold text-text-primary">
                                 <a href="{{ route('products.show', $lb->product?->public_id) }}" class="touch-action hover:text-primary transition-colors">
-                                    {{ app()->getLocale() === 'en' && $lb->product?->name_en ? $lb->product->name_en : $lb->product?->name_ar }}
+                                    {{ $lb->product?->name() }}
                                 </a>
                                 @if ($lb->product?->sku)
                                     <span class="block text-[11px] font-mono text-text-muted dir-ltr">{{ $lb->product?->sku }}</span>
@@ -173,7 +173,7 @@
                             <div class="min-w-0 space-y-1 col-span-2">
                                 <dt class="text-xs font-medium text-text-secondary">{{ __('inventory.product') }}</dt>
                                 <dd class="break-words text-sm tabular-nums text-text-primary"><a href="{{ route('products.show', $lb->product?->public_id) }}" class="touch-action hover:text-primary transition-colors">
-                                    {{ app()->getLocale() === 'en' && $lb->product?->name_en ? $lb->product->name_en : $lb->product?->name_ar }}
+                                    {{ $lb->product?->name() }}
                                 </a>
                                 @if ($lb->product?->sku)
                                     <span class="block text-[11px] font-mono text-text-muted dir-ltr">{{ $lb->product?->sku }}</span>
@@ -257,7 +257,7 @@
 
                 <div class="space-y-3 text-xs">
                     <div class="p-3 rounded-control bg-surface-soft border border-border space-y-1">
-                        <div><span class="text-text-muted">{{ __('inventory.product') }}:</span> <span class="font-bold text-text-primary">{{ app()->getLocale() === 'en' && $disposingLotBalance->product?->name_en ? $disposingLotBalance->product->name_en : $disposingLotBalance->product?->name_ar }}</span></div>
+                        <div><span class="text-text-muted">{{ __('inventory.product') }}:</span> <span class="font-bold text-text-primary">{{ $disposingLotBalance->product?->name() }}</span></div>
                         <div><span class="text-text-muted">{{ __('inventory.warehouse') }}:</span> <span class="text-text-secondary">{{ app()->getLocale() === 'en' && $disposingLotBalance->warehouse?->name_en ? $disposingLotBalance->warehouse->name_en : $disposingLotBalance->warehouse?->name_ar }}</span></div>
                         <div><span class="text-text-muted">{{ __('inventory.lot_number') }}:</span> <span class="font-mono dir-ltr">{{ $disposingLotBalance->lot?->lot_number }}</span></div>
                         <div><span class="text-text-muted">{{ __('inventory.current_stock') }}:</span> <span class="font-mono font-bold">{{ $disposingLotBalance->quantity_base }} {{ app()->getLocale() === 'en' && $disposingLotBalance->product?->baseUnit?->name_en ? $disposingLotBalance->product->baseUnit->name_en : $disposingLotBalance->product?->baseUnit?->name_ar }}</span></div>
