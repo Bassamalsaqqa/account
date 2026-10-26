@@ -110,7 +110,7 @@ final class GlobalSearch
 
         // 3. Product (name SKU exact barcode)
         if ($user->hasAnyPermission(['inventory.stock.view', 'inventory.product.manage'])) {
-            $productResults = $this->searchProducts($companyId, $likePattern, $term, $isArabic);
+            $productResults = $this->searchProducts($companyId, $likePattern, $term);
             if (! empty($productResults)) {
                 $results['product'] = $productResults;
             }
@@ -226,7 +226,7 @@ final class GlobalSearch
     /**
      * @return list<array{category: string, public_id: string, title: string, subtitle: string, status: string, url: string}>
      */
-    private function searchProducts(int $companyId, string $likePattern, string $exactBarcodeTerm, bool $isArabic): array
+    private function searchProducts(int $companyId, string $likePattern, string $exactBarcodeTerm): array
     {
         $products = Product::where('company_id', $companyId)
             ->where(function (Builder $q) use ($likePattern, $exactBarcodeTerm, $companyId) {
@@ -239,15 +239,13 @@ final class GlobalSearch
                     });
             })
             ->select(['id', 'public_id', 'company_id', 'name_ar', 'name_en', 'sku', 'active'])
-            ->orderBy('name_ar')
+            ->orderByRaw('COALESCE(name_ar, name_en) ASC')
             ->orderBy('id')
             ->limit(self::MAX_RESULTS_PER_CATEGORY)
             ->get();
 
-        return $products->map(function (Product $product) use ($isArabic) {
-            $title = $isArabic
-                ? ($product->name_ar ?: $product->name_en)
-                : ($product->name_en ?: $product->name_ar);
+        return $products->map(function (Product $product) {
+            $title = $product->name();
 
             return [
                 'category' => 'product',

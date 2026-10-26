@@ -8,7 +8,7 @@
                 <span class="text-xs text-text-secondary">{{ (app()->getLocale() === 'en' && $product->category?->name_en) ? $product->category->name_en : ($product->category?->name_ar ?? __('inventory.general')) }}</span>
             </div>
             <h1 class="text-xl font-extrabold text-text-primary flex items-center gap-3">
-                <span>{{ (app()->getLocale() === 'en' && $product->name_en) ? $product->name_en : $product->name_ar }}</span>
+                <span>{{ $product->name() }}</span>
                 @if ($product->active)
                     <x-badge variant="success">{{ __('inventory.active') }}</x-badge>
                 @else
@@ -133,7 +133,7 @@
                 <dl class="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
                     <div>
                         <dt class="text-text-muted">{{ __('inventory.name_ar') }}</dt>
-                        <dd class="font-bold text-text-primary mt-0.5">{{ $product->name_ar }}</dd>
+                        <dd class="font-bold text-text-primary mt-0.5">{{ $product->name_ar ?? '—' }}</dd>
                     </div>
                     <div>
                         <dt class="text-text-muted">{{ __('inventory.name_en') }}</dt>
@@ -172,7 +172,7 @@
                     <div class="grid grid-cols-2 gap-2">
                         @foreach ($product->images as $img)
                             <div class="rounded-control border border-border overflow-hidden bg-surface-soft aspect-square relative">
-                                <img src="{{ asset('storage/' . $img->thumbnail_path) }}" alt="{{ $product->name_ar }}" class="w-full h-full object-cover" />
+                                <img src="{{ asset('storage/' . $img->thumbnail_path) }}" alt="{{ $product->name() }}" class="w-full h-full object-cover" />
                                 @if ($img->is_primary)
                                     <div class="absolute top-1 right-1">
                                         <x-badge variant="success">{{ __('inventory.primary') }}</x-badge>
@@ -469,7 +469,7 @@
                     @foreach ($product->images as $img)
                         <div class="rounded-control border border-border overflow-hidden bg-surface-soft space-y-2 p-2">
                             <div class="aspect-square rounded-control overflow-hidden bg-white relative">
-                                <img src="{{ asset('storage/' . $img->path) }}" alt="{{ (app()->getLocale() === 'en' ? ($img->alt_en ?: $img->alt_ar) : $img->alt_ar) ?? (app()->getLocale() === 'en' ? ($product->name_en ?: $product->name_ar) : $product->name_ar) }}" class="w-full h-full object-cover" />
+                                <img src="{{ asset('storage/' . $img->path) }}" alt="{{ (app()->getLocale() === 'en' ? ($img->alt_en ?: $img->alt_ar) : $img->alt_ar) ?? $product->name() }}" class="w-full h-full object-cover" />
                                 @if ($img->is_primary)
                                     <div class="absolute top-1.5 right-1.5">
                                         <x-badge variant="success">{{ __('inventory.primary') }}</x-badge>

@@ -21,6 +21,7 @@ use App\Models\Unit;
 use App\Models\Warehouse;
 use Brick\Math\BigDecimal;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Validator;
 use InvalidArgumentException;
 
 class ProductCatalogService
@@ -36,6 +37,8 @@ class ProductCatalogService
      */
     public function createProduct(Company $company, array $data, int $actorId): Product
     {
+        $data = $this->normalizeNames($data);
+
         return DB::transaction(function () use ($company, $data, $actorId): Product {
             /** @var Company $lockedCompany */
             $lockedCompany = Company::where('id', $company->id)->lockForUpdate()->firstOrFail();
@@ -77,6 +80,8 @@ class ProductCatalogService
         return DB::transaction(function () use ($product, $data, $actorId): Product {
             /** @var Product $lockedProduct */
             $lockedProduct = Product::where('id', $product->id)->lockForUpdate()->firstOrFail();
+
+            $data = $this->normalizeNames($data, $lockedProduct);
 
             $hasMovements = StockMovement::where('company_id', $lockedProduct->company_id)
                 ->where('product_id', $lockedProduct->id)
@@ -229,6 +234,34 @@ class ProductCatalogService
 
             return $lockedProduct;
         });
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     * @return array<string, mixed>
+     */
+    private function normalizeNames(array $data, ?Product $product = null): array
+    {
+        // Partial updates validate the resulting names, including a locked name
+        // omitted from the payload. Never copy one language into the other.
+        $names = [];
+        foreach (['name_ar', 'name_en'] as $field) {
+            $value = array_key_exists($field, $data) ? $data[$field] : $product?->getAttribute($field);
+            if (is_string($value)) {
+                $value = trim($value);
+                $value = $value === '' ? null : $value;
+            }
+            $names[$field] = $value;
+        }
+        Validator::make($names, [
+            'name_ar' => ['nullable', 'string', 'max:255', 'required_without:name_en'],
+            'name_en' => ['nullable', 'string', 'max:255', 'required_without:name_ar'],
+        ], [
+            'name_ar.required_without' => __('inventory.product_name_required'),
+            'name_en.required_without' => __('inventory.product_name_required'),
+        ])->validate();
+
+        return array_replace($data, $names);
     }
 
     /**

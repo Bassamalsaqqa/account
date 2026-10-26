@@ -1,6 +1,7 @@
 <?php
 
 return [
+    'product_name_required' => 'أدخل اسم الصنف بالعربية أو الإنجليزية أو بكلتيهما.',
     // Catalog & Products
     'products' => 'دليل الأصناف',
     'product' => 'الصنف',

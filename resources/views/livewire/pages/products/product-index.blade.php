@@ -114,7 +114,7 @@
                                     <div class="w-10 h-10 rounded-control border border-border bg-surface-soft grid place-items-center shrink-0 overflow-hidden">
                                         @if ($product->primaryImage)
                                             <img src="{{ asset('storage/' . $product->primaryImage->thumbnail_path) }}"
-                                                 alt="{{ $product->name_ar }}"
+                                                 alt="{{ $product->name() }}"
                                                  class="w-full h-full object-cover" />
                                         @else
                                             <x-icon name="box" class="w-5 h-5 text-text-muted" />
@@ -123,14 +123,14 @@
                                     <div class="min-w-0">
                                         <a href="{{ route('products.show', $product->public_id) }}"
                                            class="touch-action font-bold text-text-primary hover:text-primary transition-colors block truncate">
-                                            {{ $product->name_ar }}
+                                            {{ $product->name() }}
                                         </a>
                                         <div class="flex items-center gap-2 mt-0.5 text-[11px] text-text-muted">
                                             @if ($product->sku)
                                                 <span class="font-mono dir-ltr">{{ $product->sku }}</span>
                                             @endif
-                                            @if ($product->name_en)
-                                                <span class="truncate">/ {{ $product->name_en }}</span>
+                                            @if ($product->name_ar && $product->name_en)
+                                                <span class="truncate">/ {{ app()->getLocale() === 'en' ? $product->name_ar : $product->name_en }}</span>
                                             @endif
                                         </div>
                                     </div>
@@ -223,7 +223,7 @@
                             <div class="w-12 h-12 rounded-control border border-border bg-surface-soft grid place-items-center shrink-0 overflow-hidden">
                                 @if ($product->primaryImage)
                                     <img src="{{ asset('storage/' . $product->primaryImage->thumbnail_path) }}"
-                                         alt="{{ $product->name_ar }}"
+                                         alt="{{ $product->name() }}"
                                          class="w-full h-full object-cover" />
                                 @else
                                     <x-icon name="box" class="w-6 h-6 text-text-muted" />
@@ -232,10 +232,13 @@
                             <div>
                                 <a href="{{ route('products.show', $product->public_id) }}"
                                    class="touch-action font-bold text-text-primary text-sm hover:text-primary transition-colors block">
-                                    {{ $product->name_ar }}
+                                    {{ $product->name() }}
                                 </a>
                                 @if ($product->sku)
                                     <span class="text-xs font-mono text-text-muted dir-ltr">{{ $product->sku }}</span>
+                                @endif
+                                @if ($product->name_ar && $product->name_en)
+                                    <span class="text-xs text-text-muted truncate">/ {{ app()->getLocale() === 'en' ? $product->name_ar : $product->name_en }}</span>
                                 @endif
                             </div>
                         </div>

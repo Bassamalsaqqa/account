@@ -13,6 +13,12 @@ final class DocumentDescription
             return $description;
         }
 
-        return ($locale === 'en' ? ($nameEn ?: $nameAr) : ($nameAr ?: $nameEn)) ?: ($description ?? '');
+        foreach ($locale === 'en' ? [$nameEn, $nameAr] : [$nameAr, $nameEn] as $name) {
+            if ($name !== null && $name !== '') {
+                return $name;
+            }
+        }
+
+        return $description ?? '';
     }
 }

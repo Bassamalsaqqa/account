@@ -968,7 +968,7 @@ class InvoiceForm extends Component
         $selectedProducts = Product::with(['productUnits.unit', 'baseUnit'])->where('company_id', $company->id)
             ->whereIn('id', $selectedProductIds)->get();
         abort_unless($selectedProducts->count() === count($selectedProductIds), 404);
-        $matchingProducts = $productsQuery->orderBy('name_ar')->limit(50)->get();
+        $matchingProducts = $productsQuery->orderByRaw('COALESCE(name_ar, name_en) ASC')->orderBy('id')->limit(50)->get();
         $products = $matchingProducts->merge($selectedProducts);
         $lastCustomerPrices = $this->customer_id !== null && count($selectedProductIds) <= 100
             && app(ReportingGuard::class)->allows($company, ['reports.sales.view', 'sales.invoice.view'], $user)

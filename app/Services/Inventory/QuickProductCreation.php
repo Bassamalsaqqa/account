@@ -81,6 +81,10 @@ final class QuickProductCreation
             ? trim($data['name_en'])
             : ($data['name_en'] ?? null);
 
+        if ($nameAr === '') {
+            $nameAr = null;
+        }
+
         if ($nameEn === '') {
             $nameEn = null;
         }
@@ -101,11 +105,14 @@ final class QuickProductCreation
         ];
 
         $validator = Validator::make($normalized, [
-            'name_ar' => ['required', 'string', 'max:255'],
-            'name_en' => ['nullable', 'string', 'max:255'],
+            'name_ar' => ['nullable', 'string', 'max:255', 'required_without:name_en'],
+            'name_en' => ['nullable', 'string', 'max:255', 'required_without:name_ar'],
             'sku' => ['required', 'string', 'max:64'],
             'base_unit_id' => ['required', 'integer'],
             'track_expiry' => ['boolean'],
+        ], [
+            'name_ar.required_without' => __('inventory.product_name_required'),
+            'name_en.required_without' => __('inventory.product_name_required'),
         ]);
 
         if ($validator->fails()) {

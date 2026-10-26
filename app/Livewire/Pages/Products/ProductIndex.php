@@ -203,7 +203,7 @@ class ProductIndex extends Component
                 });
         }
 
-        $products = $query->orderBy('name_ar')->paginate(15);
+        $products = $query->orderByRaw('COALESCE(name_ar, name_en) ASC')->orderBy('id')->paginate(15);
 
         $categories = ProductCategory::where('company_id', $company->id)->where('active', true)->orderBy('sort_order')->get();
         $brands = Brand::where('company_id', $company->id)
