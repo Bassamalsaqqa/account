@@ -313,6 +313,12 @@
                     {{ __('app.nav_group_system') }}
                 </div>
                 <div class="space-y-0.5">
+                    @if(\App\Models\PlatformOperatorGrant::query()->where('user_id', auth()->id())->where('active', true)->whereJsonContains('permissions', 'company.read')->exists())
+                        <a href="{{ route('platform.index') }}" class="flex min-h-11 items-center gap-2.5 px-3 rounded-control text-text-secondary hover:bg-surface-soft hover:text-primary font-semibold">
+                            <x-icon name="shield" class="w-4.5 h-4.5" />
+                            <span>{{ __('platform.title') }}</span>
+                        </a>
+                    @endif
                     <a href="{{ route('settings.index') }}"
                        class="flex items-center justify-between min-h-11 px-3 rounded-control font-semibold transition-colors
                               {{ request()->routeIs('settings.*') ? 'bg-primary-50 text-primary font-bold shadow-[inset_3px_0_0_#255fd6] rtl:shadow-[inset_-3px_0_0_#255fd6]' : 'text-text-secondary hover:bg-surface-soft hover:text-text-primary' }}">

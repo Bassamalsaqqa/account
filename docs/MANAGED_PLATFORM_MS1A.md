@@ -1,5 +1,20 @@
 # MS-1A managed-platform candidate
 
+## Owner-directed access correction — 2026-10-27
+
+This correction supersedes the original mandatory platform-MFA requirement documented below. Explicit host-issued operator grants remain mandatory; tenant Owner membership never confers platform authority. MFA enrollment and a separate MFA challenge are no longer required by the control plane. Existing optional account MFA and recovery remain intact.
+
+A real password login or successful password confirmation establishes a private session proof, bound to the user, current grant revision and credential/security fingerprint, expiring after one hour. Remember-cookie authentication alone cannot establish this proof. Expired or invalid proof requires password confirmation; a timestamp alone is insufficient. Revocation/regrant, password changes and personal MFA/recovery changes invalidate earlier proof. Sensitive company provisioning still requires recent password confirmation and transactional, locked reauthorization.
+
+Granted operators can open `/platform` from the business navigation or the no-company setup page. The directory, company/member projections, provisioning form and audit pages now use the existing application typography, colors and control styles, with separate administrative navigation. They do not mount tenant accounting menus, Omnibox or AI. Operational health remains explicitly unmeasured or timestamped; no health is fabricated.
+
+The host command `platform:operator <existing-account-email>` retains interactive confirmation, an explicit grant revision and platform audit. It does not enroll MFA, change passwords, create identities or grant customer Owners platform privileges. No migration, dependency or financial writer changes accompany this correction. Production grant assignment and deployment require separate operational verification; a source change does not itself grant an account access.
+
+The original source-pinned acceptance results below describe the earlier release and are retained as historical evidence. They are not certification of this authentication correction. Current focused verification: 76 tests / 654 assertions, exit 0, including password-only login/confirmation, stale proof and regrant, remembered-cookie rejection, concurrent provisioning, personal 2FA and export reauthentication. JavaScript: 44 tests passed; PHPStan: 662 files, zero errors; Pint passed; production build: 310 modules, exit 0; Composer/npm audits: zero advisories. Actual synthetic Edge verification covered password-only login, password-confirmed provisioning access, AR/EN mobile (390px), tablet (768px) and desktop (1440px) layouts, directory search, pagination, company-specific details, keyboard Tab and Back navigation. Browser-discovered English mobile clipping and tablet header overlap were corrected. All six reconciliations passed for each of 23 synthetic companies; business/provider tables remained empty. No production grant, policy or business data was modified during this verification. Final source-pinned full QA and deployment certification remain pending.
+
+## Original MS-1A acceptance record (historical authentication contract)
+
+
 Baseline: `543cc6a410499085b16dc664e1579bce526c69c7` (B.1.2). Owner initially accepted the MS-0 proposal for bounded implementation toward a draft PR. **Not authorized for merge, deployment, paid provider calls or live customer onboarding.**
 
 ## Scope

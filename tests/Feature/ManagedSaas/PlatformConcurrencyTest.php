@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Feature\ManagedSaas;
 
-use App\Application\Platform\PlatformMfaProof;
+use App\Application\Platform\PlatformSessionProof;
 use App\Models\PlatformOperatorGrant;
 use App\Models\User;
 use Illuminate\Support\Facades\Crypt;
@@ -30,7 +30,7 @@ class PlatformConcurrencyTest extends TestCase
             $grant = new PlatformOperatorGrant;
             $grant->forceFill(['user_id' => $user->id, 'active' => true, 'permissions' => ['company.provision'], 'revision' => 1])->save();
             $this->withSession(['login.id' => $user->id])->post('/two-factor-challenge', ['recovery_code' => 'race-recovery'])->assertRedirect();
-            $identity = ['actor' => $user->id, 'proof' => session(PlatformMfaProof::KEY)];
+            $identity = ['actor' => $user->id, 'proof' => session(PlatformSessionProof::KEY)];
             $this->assertIsArray($identity['proof']);
             $payload = ['request_key' => (string) Str::uuid(), 'name_ar' => 'شركة سباق تجريبية', 'name_en' => 'Race Synthetic Business', 'base_currency_code' => 'ILS', 'default_locale' => 'ar', 'timezone' => 'Asia/Hebron', 'owner_name' => 'Synthetic Owner', 'owner_email' => 'race.owner@example.test', 'password' => 'Race-synthetic-password!', 'password_confirmation' => 'Race-synthetic-password!'];
             $test($schema, $identity, $payload, $directory);

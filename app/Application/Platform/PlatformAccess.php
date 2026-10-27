@@ -18,7 +18,7 @@ final class PlatformAccess
     {
         $request = request();
         $actor = $request->user();
-        if (! $actor instanceof User || auth()->guard('web')->viaRemember() || ! in_array($permission, self::PERMISSIONS, true)
+        if (! $actor instanceof User || ! in_array($permission, self::PERMISSIONS, true)
             || ($lock && DB::transactionLevel() < 1)) {
             throw new AuthorizationException;
         }
@@ -34,9 +34,12 @@ final class PlatformAccess
         }
         $fresh = $identity->first();
         if ($grant === null || ! $grant->active || $fresh === null
-            || ! in_array($permission, $grant->permissions ?? [], true)
-            || ! app(PlatformMfaProof::class)->valid($request, $fresh, $grant)) {
+            || ! in_array($permission, $grant->permissions ?? [], true)) {
             throw new AuthorizationException;
+        }
+
+        if (! app(PlatformSessionProof::class)->valid($request, $fresh, $grant)) {
+            throw new PlatformReauthenticationRequired;
         }
 
         return $grant;

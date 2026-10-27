@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 use App\Actions\Purchasing\EnsurePurchasingFoundationAction;
-use App\Application\Platform\PlatformMfaProof;
+use App\Application\Platform\PlatformSessionProof;
 use App\Application\Platform\ProvisionCompany;
 use App\Models\Company;
 use App\Models\User;
@@ -28,7 +28,7 @@ $user = User::query()->findOrFail($input['actor']);
 $request = Request::create('/platform/companies', 'POST');
 $session = app('session')->driver();
 $session->start();
-$session->put(PlatformMfaProof::KEY, $input['proof']);
+$session->put(PlatformSessionProof::KEY, $input['proof']);
 $session->put('auth.password_confirmed_at', now()->timestamp);
 $request->setLaravelSession($session);
 $request->setUserResolver(static fn () => $user);

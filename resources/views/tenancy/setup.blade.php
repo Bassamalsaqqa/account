@@ -14,6 +14,9 @@
         </div>
 
         <div class="pt-4 border-t border-border flex items-center justify-center gap-4">
+            @if(\App\Models\PlatformOperatorGrant::query()->where('user_id', auth()->id())->where('active', true)->whereJsonContains('permissions', 'company.read')->exists())
+                <a href="{{ route('platform.index') }}" class="inline-flex min-h-11 items-center rounded-control bg-primary px-4 text-sm font-semibold text-white hover:bg-primary-hover">{{ __('platform.title') }}</a>
+            @endif
             <form method="POST" action="{{ route('logout') }}">
                 @csrf
                 <button type="submit" class="px-4 py-2 text-xs font-bold text-text-secondary hover:text-danger rounded-control border border-border bg-white transition-colors">

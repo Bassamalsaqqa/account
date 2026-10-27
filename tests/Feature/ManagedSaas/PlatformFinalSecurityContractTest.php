@@ -6,7 +6,7 @@ namespace Tests\Feature\ManagedSaas;
 
 use App\Actions\Company\CreateCompanyAction;
 use App\Application\Platform\PlatformAccess;
-use App\Application\Platform\PlatformMfaProof;
+use App\Application\Platform\PlatformSessionProof;
 use App\Models\PlatformAuditEvent;
 use App\Models\PlatformOperatorGrant;
 use App\Models\User;
@@ -100,7 +100,7 @@ final class PlatformFinalSecurityContractTest extends TestCase
         $this->post('/platform/companies', $payload)->assertForbidden();
         $this->get('/platform/audit')->assertForbidden();
 
-        $this->assertFalse(session()->has(PlatformMfaProof::KEY));
+        $this->assertFalse(session()->has(PlatformSessionProof::KEY));
     }
 
     /**
@@ -173,7 +173,7 @@ final class PlatformFinalSecurityContractTest extends TestCase
         // Step 1: Initial Fortify MFA challenge creates session proof at revision 1
         $this->performFortifyChallenge($operator, 'recovery-step-1');
         $this->get('/platform')->assertOk();
-        $this->assertSame(1, session(PlatformMfaProof::KEY)['grant_revision'] ?? null);
+        $this->assertSame(1, session(PlatformSessionProof::KEY)['grant_revision'] ?? null);
 
         // Step 2: Revoke grant increments revision to 2 and sets active false
         $grant->forceFill([
@@ -192,8 +192,8 @@ final class PlatformFinalSecurityContractTest extends TestCase
 
         $this->assertSame(3, $grant->fresh()->revision);
 
-        // Step 4: The existing session proof still carries revision 1, so access remains forbidden
-        $this->get('/platform')->assertForbidden();
+        // Step 4: Earlier proof cannot authorize the regrant; require real reauthentication.
+        $this->get('/platform')->assertRedirect(route('password.confirm'));
 
         // Step 5: Operator logs out of old session and completes a fresh Fortify MFA challenge
         auth()->logout();
@@ -201,7 +201,7 @@ final class PlatformFinalSecurityContractTest extends TestCase
 
         $this->performFortifyChallenge($operator->fresh(), 'recovery-step-2');
         $this->get('/platform')->assertOk();
-        $this->assertSame(3, session(PlatformMfaProof::KEY)['grant_revision'] ?? null);
+        $this->assertSame(3, session(PlatformSessionProof::KEY)['grant_revision'] ?? null);
     }
 
     /**
@@ -306,7 +306,7 @@ final class PlatformFinalSecurityContractTest extends TestCase
                 $this->assertNotSame('The provided two factor authentication code was invalid.', __('The provided two factor authentication code was invalid.'));
             }
             $this->assertGuest();
-            $this->assertFalse(session()->has(PlatformMfaProof::KEY));
+            $this->assertFalse(session()->has(PlatformSessionProof::KEY));
         }
     }
 }
