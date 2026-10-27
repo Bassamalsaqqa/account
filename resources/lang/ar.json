@@ -32,5 +32,7 @@
     "Once your account is deleted, all of its resources and data will be permanently deleted. Please enter your password to confirm you would like to permanently delete your account.": "سيُحذف الحساب وبياناته نهائيًا. أدخل كلمة المرور لتأكيد الحذف.",
     "Cancel": "إلغاء",
     "Save": "حفظ",
-    "Saved.": "تم الحفظ."
+    "Saved.": "تم الحفظ.",
+    "The provided two factor authentication code was invalid.": "رمز المصادقة المدخل غير صحيح.",
+    "The provided two factor recovery code was invalid.": "رمز الاسترداد المدخل غير صحيح."
 }

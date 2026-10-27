@@ -1,0 +1,128 @@
+{
+  "baseline": "543cc6a410499085b16dc664e1579bce526c69c7",
+  "tested_head": "19a18c8c4af0e2332611590287fd7eb36cb28788",
+  "tested_tree": "c637aec9d346c6f1d0848ef4a3cede3080ed67c7",
+  "command": "composer qa (isolated disposable MariaDB harness)",
+  "exit": 0,
+  "phpunit": {
+    "passed": 3504,
+    "assertions": 42088,
+    "warnings": 4,
+    "duration_seconds": 3652.42
+  },
+  "pint": "passed",
+  "phpstan": {
+    "files": 661,
+    "errors": 0
+  },
+  "warnings": "Four Windows symlink permission warnings in DeploymentScriptContractTest; Linux symlink behavior is not certified by this run.",
+  "source_unchanged": true,
+  "monitored_primary_tables": 10,
+  "primary_fingerprints_preserved": true,
+  "fingerprint_scope": "Isolated initially empty primary tables; not production data or a nonempty economic recovery proof.",
+  "disposable_schema_cleanup_verified": true,
+  "owned_server_stopped": true,
+  "owned_environment_removed": true,
+  "protected_private_files_verified": 40,
+  "translation_stash_preserved": true,
+  "private_log_sha256": {
+    "receipt.json": "fe94d1f3824d1be595f50f706b1e601c3eae726141527904c589d6928b090f05",
+    "full-qa.json": "e78b67bba9af9fd37f155cf1b4e1f44baf527f23af24915ba89b098519531ff0",
+    "phpunit.stdout.log": "3839129069fda08c3e01520b0fb91f87c699f9fea43edaf4332c40e7830473a8",
+    "phpunit.stderr.log": "eddadf73950de9f72740d0f152500c0b46ef7cceb5bd8772925e9ebc793f8818",
+    "database.log": "adf313685aa7d001a3f06316a2b36bdb6b51cc27daa7841e3fe5a209e9ad04fa"
+  },
+  "remaining_gate": "GO for final independent review. Keep draft pending independent acceptance; no merge/deployment authorized.",
+  "final_focused": {
+    "tests": 41,
+    "assertions": 407,
+    "exit": 0,
+    "coverage": "Platform access, provisioning, final security/presentation regressions and existing identity recovery",
+    "receipt_sha256": "3c1c0893cbd3ab5a642a79e961fb0fb8583e2465fbfe1ec5f6f7f7f12a0f0e99",
+    "test_after_pass": "Pint line endings normalized only"
+  },
+  "final_checks": {
+    "pint": {
+      "exit": 0,
+      "note": "Only test line endings normalized after focused pass; no assertion or runtime change."
+    },
+    "phpstan": {
+      "exit": 0
+    },
+    "javascript": {
+      "exit": 0
+    },
+    "composer-audit": {
+      "exit": 0
+    },
+    "npm-audit": {
+      "exit": 0
+    }
+  },
+  "final_browser": {
+    "languages": [
+      "ar",
+      "en"
+    ],
+    "viewports": [
+      1440,
+      768,
+      390
+    ],
+    "matrix_rows": 33,
+    "no_document_overflow_in_recorded_rows": true,
+    "screenshots": "Private synthetic-only PNGs retained outside published history",
+    "actual_flows": [
+      "Fortify TOTP login",
+      "Fortify recovery-code login",
+      "AR/EN password confirmation",
+      "AR/EN synthetic provisioning",
+      "required validation and duplicate-email recovery",
+      "review/Edit focus",
+      "Tab and Escape preservation",
+      "keyboard pagination",
+      "search and empty state",
+      "Back/Forward",
+      "member projection",
+      "health display fixtures",
+      "audit projection",
+      "AR/EN invalid recovery mode, focused field and linked alert"
+    ],
+    "limitations": [
+      "No physical device certification",
+      "Actual screen-reader speech not tested"
+    ]
+  },
+  "synthetic_reconciliations": {
+    "companies": 25,
+    "domains_per_company": 6,
+    "all_healthy": true,
+    "business_and_provider_record_counts_zero": true,
+    "health_presentation_snapshots": "Synthetic booleans separately injected for display-state tests; not operational health measurements"
+  },
+  "browser_fixture_cleanup": {
+    "owned_processes_stopped": true,
+    "exact_schema_absent": true
+  },
+  "linux_contract": {
+    "tested_source": "395340acccc5917c3e9221ec46dd4b774a56a4a4",
+    "image_id": "sha256:1d2cf2b7d715b5b3aa959f0150ccbcc7b71e0181b637e443abf40a7fb56bf79a",
+    "php": "8.4.26",
+    "phpunit": "12.5.36",
+    "command": "php vendor/phpunit/phpunit/phpunit --no-configuration --bootstrap vendor/autoload.php --do-not-cache-result tests/Unit/ProductExperience/DeploymentScriptContractTest.php",
+    "exit": 0,
+    "tests": 21,
+    "assertions": 147,
+    "warnings": 0,
+    "skipped": 0,
+    "all_four_symlink_cases_executed": true,
+    "network": "none",
+    "user_id": 65534,
+    "host_mounts": "Allowlisted source and locked vendor files only, read-only; no environment, credentials, private business files or DB",
+    "synthetic_fixtures": "Executable container tmpfs; removed with temporary container",
+    "container_cleanup_verified": true,
+    "stdout_sha256": "84058d956e526ddc3c0010d9c7f574ecc3a924bd7565819ffb0811226a7ead13",
+    "receipt_sha256": "5b18e71297ccd3a7ce7a22be49f45f1aa1091294a66d7c2e5996dc6ed1d836b5",
+    "superseded_attempt": "Initial isolated harness failed: tmpfs prevented executing test stub and public .htaccess was not mounted. Corrected harness only; no application/test assertion changes."
+  }
+}

@@ -4,6 +4,7 @@ use App\Http\Controllers\AssistantMemoryController;
 use App\Http\Controllers\CompanyDataExportController;
 use App\Http\Controllers\ExpenseAttachmentController;
 use App\Http\Controllers\PdfDocumentController;
+use App\Http\Controllers\PlatformController;
 use App\Http\Controllers\PublicCatalogController;
 use App\Http\Controllers\PublicShareController;
 use App\Http\Controllers\PurchasingDocumentController;
@@ -88,6 +89,15 @@ use Illuminate\Validation\ValidationException;
 
 Route::get('/', function () {
     return redirect()->route('dashboard');
+});
+
+// Separate control plane: no company Owner inheritance, impersonation or Livewire mutators.
+Route::prefix('platform')->name('platform.')->middleware(['auth', 'throttle:platform'])->group(function () {
+    Route::get('/', [PlatformController::class, 'index'])->middleware('platform:company.read')->name('index');
+    Route::get('/companies/create', [PlatformController::class, 'create'])->middleware(['platform:company.provision', 'password.confirm'])->name('companies.create');
+    Route::post('/companies', [PlatformController::class, 'store'])->middleware(['platform:company.provision', 'password.confirm', 'throttle:platform-provision'])->name('companies.store');
+    Route::get('/companies/{publicId}', [PlatformController::class, 'show'])->middleware('platform:company.read')->name('companies.show');
+    Route::get('/audit', [PlatformController::class, 'audit'])->middleware('platform:audit.read')->name('audit');
 });
 
 Route::post('locale', function (Request $request, CompanyContext $context) {

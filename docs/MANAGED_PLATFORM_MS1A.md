@@ -1,0 +1,89 @@
+# MS-1A managed-platform candidate
+
+Baseline: `543cc6a410499085b16dc664e1579bce526c69c7` (B.1.2). Owner initially accepted the MS-0 proposal for bounded implementation toward a draft PR. **Not authorized for merge, deployment, paid provider calls or live customer onboarding.**
+
+## Scope
+
+The platform operator manages the first 1–10 businesses using a separate `/platform` control plane. Company Owner roles do not grant platform authority. The existing accounting, stock, tenant membership and staff-management boundaries remain authoritative.
+
+- Existing User/Fortify authentication; explicit independent operator grant and current-session MFA proof. Enrollment, password-only login and remembered authentication alone cannot grant platform access.
+- Company list/search/detail and member/Owner metadata only. No financial records, customer impersonation, provider credentials, customer-account linking or general user directory.
+- Full-page business/new-Owner creation, review and recent password confirmation. The new identity, canonical company foundations, replay result and success audit commit together. Existing email identities are rejected without changing passwords or memberships.
+- AI starts OFF through the existing absent/disabled company policy, with no duplicate policy column or provider activation.
+- Separate platform audit and timestamped precomputed six-domain health booleans. Missing, stale or malformed results are not shown as current healthy results. HTTP page loads never run reconciliations.
+- Arabic/English, RTL/LTR and responsive layouts. Existing tenant Settings and staff password creation are retained. A confirmed prerequisite repair loads the existing Alpine dependency on the MFA challenge page and supplies its missing AR/EN control labels.
+
+Not included: billing, plans, grace/read-only entitlements, suspension actions, self-registration, email invitations/verification, payment gateways, invoice/receipt composition, opening balances, a general UX redesign or new infrastructure.
+
+## Authorization and session contract
+
+`platform:operator <existing-email>` is an interactive host administration command. Granting requires existing confirmed 2FA enrollment; it creates no credentials and sends no email. No account is granted automatically, including the application Owner. Revocation and permission changes advance the grant revision. Host-command audit uses a null web actor, identifies the target operator separately and does not claim to identify the human behind the SSH account.
+
+A fresh successful Fortify MFA challenge creates private pending proof which is transferred only to the corresponding real web login. Proof binds user, credential/MFA fingerprint, grant revision and time. It expires after one hour; credential/MFA/recovery changes and grant revisions invalidate it. Logout removes it; a remembered session cannot use it. The five-second pending transfer window is internal to the same challenge/login flow, not a client-controlled authorization token. Operators reauthenticate after expiry; enrollment timestamps are not challenge proof.
+
+Every platform HTTP route uses authentication, independent platform permission checks and throttling. Each controller/action repeats authorization. Platform mutation is ordinary CSRF-protected HTTP, not a Livewire component; altered Livewire parameters do not expose a platform mutation endpoint. Ordinary tenant Livewire behavior remains company-bound.
+
+Provisioning locks the current operator grant and identity in a transaction, then checks current session proof/permission. A revocation or credential reset committed before the lock/check rejects new work. A transaction already authorized while holding these locks may finish before concurrent revocation commits. No external calls occur under these locks. Canonical company foundation actions run inside the outer transaction, with bounded deadlock retries. Finally cleanup clears/restores tenant/team state without reviving revoked membership.
+
+The operator-scoped request key compares a keyed digest of canonical input, including the password, without storing plaintext passwords or ordinary password digests in request/audit records. Identical retries return the same business; changed payloads are rejected. Successful retry does not re-create identities, replace credentials, add audit duplicates or post financial events. The administrator-created account semantics are preserved; initial credentials need secure Owner-controlled handoff.
+
+## Operational commands and additive migration
+
+- `php artisan platform:operator <existing-email>`: interactive grant; append `--revoke` for revocation. This is powerful trusted-host administration, not tenant self-service. Do not run in production without separate authorization.
+- `php artisan platform:health-snapshot <company-public-id>`: bounded read-only reconciliation for one company followed by saving six booleans and a timestamp. Suitable for a separately approved shared-hosting cron; no scheduler or production cron is enabled by this candidate. Failure leaves the old snapshot to age into a stale indication.
+
+The new migration creates only platform operator grants, provisioning requests, audit events and health snapshots. It changes no financial/tenant table definitions and bootstraps no operator. Foreign keys protect access/audit custody from tenant/user deletion. Down migration refuses populated platform tables before any DDL. Source rollback should retain this additive schema. MariaDB DDL is not transactional: after an interrupted migration, inspect actual created tables and migration ledger before retrying; do not blindly rerun/drop partially created access/audit tables. No migration has been applied to production.
+
+Model audit update/delete guards protect application paths; this is not database-administrator tamper-proof logging. No implementation can turn the existing data export into full recovery media. Full confidential restored-application boot, physical-device acceptance, actual mail delivery and independent-customer hosting capacity remain separate gates.
+
+## Verification status
+
+This is an implementation checkpoint, **not final source acceptance**. Exact focused commands, historical failures and corrected passes are retained in private receipts. No old B.1.2 QA total is counted as proof of this feature.
+
+- Source-pinned focused platform/authentication gate: 40 tests / 327 assertions, exit 0. Includes provisioning/replay/rollback, enrollment-vs-challenge, permission/revocation/credential/MFA changes, privacy, localized server rendering, guarded additive migration roundtrip and existing identity recovery.
+- Separate actual multi-process MariaDB concurrency gate: 4 tests / 37 assertions, exit 0. Identical concurrent submissions converge; changed payload conflicts; revocation before authorization denies. The final test observes a real InnoDB lock wait when revocation follows transaction authorization, verifies the authorized create completes before revocation commits, and rejects subsequent work. This is local synthetic proof, not production stress/capacity testing.
+- Forty-four existing JavaScript tests passed. Production build passed with 310 modules. Locked Composer/npm audits both exit 0 with zero known advisories/vulnerabilities at the checkpoint. No dependency versions changed.
+- Six canonical reconciliations healthy for each of two fictional browser companies. Inspected business posting/stock/payment/check tables remain empty; no provider/policy rows created. Owned browser and QA processes stopped, disposable schemas absent. Protected private work remains preserved.
+- Actual local browser: successful MFA/recovery switch and challenge, platform grant access, password-confirmed create workspace, review of current nonsensitive values including changed currency, password excluded from review, directory search and company-specific member projection. Captured AR/EN mobile views and English final desktop table. Some earlier captures predate final desktop-table markup; they are discovery evidence, not final visual acceptance. Exact successful files/viewport facts remain private; no production data captured.
+- Browser control intermittently timed out, then automatic approval review reached its usage limit. No workaround was used. The corrected prototype's old file-protocol restriction remains separate; no alternate server exposed that prototype. This was the historical checkpoint; later browser coverage and remaining limits are recorded below.
+
+Earlier failures are retained: overly long new MariaDB index name, a named parameter mismatch in the new health command, misplaced translation files, a test-only Livewire asset-render lifecycle assumption and a stale review-summary implementation were corrected. Passing receipts supersede those attempts; failed/incomplete attempts are never counted as PASS.
+
+Full isolated `composer qa` on source commit `19a18c8c4af0e2332611590287fd7eb36cb28788` (tree `c637aec9d346c6f1d0848ef4a3cede3080ed67c7`) completed with exit **0**: **3,504 tests passed, 42,088 assertions, four warnings**, duration 3,652.42 seconds. Pint passed; PHPStan analyzed 661 files with zero errors. The four warnings are Windows symlink permission notices in `DeploymentScriptContractTest`; Linux symlink behavior is not certified here. Source stayed unchanged; monitored ten initially empty primary tables matched before/after. These fingerprints prove isolation of those tables, not production-data recovery. Disposable schema cleanup, owned server shutdown and temporary environment removal were verified. All 40 protected private files match their inventory hashes; the preserved translation stash remains available.
+
+The authoritative pass supersedes a Composer 300-second timeout, an interrupted run without a final exit, and a completed failed run (3,503 passed / one failed / 42,088 assertions). That failure found only empty root `lang` directories left by translation relocation. The verified-empty directories were removed without test/source changes; the unchanged translation regression passed six tests / 100 assertions before the final full pass. Historical failed/incomplete logs remain private and are not counted as PASS.
+
+Independent source inspection confirmed the bounded additive migration, locked provisioning authorization/replay, separate platform authority and audit, and no dependency, licensing or financial-writer changes. The compact [verification receipt](evidence/ms1a/verification.json) records actual results and hashes of the retained private logs. The later final-acceptance correction below changes only presentation, translations and focused regressions; the original full-gate result is not claimed to cover those later files.
+
+## Final acceptance corrections and verification
+
+Browser verification reproduced hidden desktop pagination, borderless/undersized platform fields, lost review/Edit and MFA-toggle focus, an unfocused validation summary, hidden invalid-recovery errors, and untranslated Arabic MFA errors. Corrections are confined to platform/authentication Blade, two platform translation files, two Arabic JSON messages and one focused regression suite. A platform-only pagination partial preserves search parameters with localized accessible links. Authentication decisions, grants, transaction services, schema, dependencies, licensing and financial writers did not change.
+
+Final focused isolated gate: **41 tests / 407 assertions, exit 0**, covering platform access/provisioning, final security/presentation contracts and existing identity recovery. Pint passes (only test line endings normalized afterward); independent PHPStan passes; 44 JavaScript tests pass; locked Composer/npm audits have zero known vulnerabilities. Production build passed with 310 modules. A second full suite was not justified by these localized presentation-only changes; the earlier 3,504-test full pass remains identified by its exact prior source SHA above.
+
+| Actual synthetic browser coverage | Arabic RTL | English LTR | Keyboard/accessibility evidence |
+|---|---|---|---|
+| Directory, detail/member projection, create form, audit | 1440 / 768 / 390px captures | 1440 / 768 / 390px captures | Accessible names; no document overflow in recorded viewport facts |
+| MFA challenge | 1440 / 768 / 390px captures; real TOTP login | 1440 / 768 / 390px captures; real recovery login | Recovery toggle focus; invalid recovery remains visible and focused in both locales |
+| Review and provisioning | Real fictional create after duplicate-email correction | Real fictional create after duplicate-email correction | Review heading focus; Edit returns to first input; password excluded from review/result |
+| Validation/failure recovery | Focused alert, linked field error, manual values retained, password cleared | Same; three-size error captures | Native required-field focus, server alert autofocus, aria-invalid/aria-describedby; actual screen-reader speech not tested |
+| Navigation and health | Localized pagination/search/empty state | Keyboard pagination and health labels | Tab order, Enter activation, Escape preserves full-page form, Back/Forward; no modal dismissal contract for full-page forms |
+
+Screenshots and viewport facts remain in private local custody, with no customer data or credentials published. The final recovery-error view has three-size captures in both languages. Synthetic health snapshots separately exercise healthy/stale/attention/future-unknown presentation; these injected booleans are not real operational measurements. Read-only six-domain reconciliations independently pass for all **25 fictional companies**; business document/posting/stock/payment/check/provider/policy counts remain zero. The exact browser schema was dropped and owned processes stopped. Temporary QA environment and owned schema/server cleanup are verified. Forty protected private files still match inventory hashes and the original translation stash is preserved.
+
+### Targeted security assessment
+
+- Administrator-set `email_verified_at` follows existing CLI semantics; it is **not evidence of inbox ownership**. `User` implements `MustVerifyEmail`, and a signed verification endpoint/controller exists. Fortify's email-verification feature is disabled and inspected business routes do not require `verified` middleware. No current path from this timestamp to platform authority or tenant accounting access was found. Password reset still requires its token; the timestamp does not satisfy that proof. Enabling future inbox-ownership-dependent workflows requires revisiting administrator verification semantics. The worker's broader claim that email is solely a login identifier is not adopted.
+- Denied requests make at most one platform audit insert attempt and do not invoke protected actions if it throws. The failure regression returns a safe 500 with debugging disabled; successful provisioning audit failure still rolls back its transaction. The real route limiter stops request 31 within its per-user minute window before denial auditing. This is a rate bound, not permanent storage retention or a measured maximum DB-lock duration; database waits follow runtime timeout configuration.
+- A real Fortify session at revision 1 is rejected after automatic model revoke/regrant advances to revisions 2 and 3; a fresh challenge restores access. Tests do not supply replacement revisions manually.
+- A tenant Owner receives no platform privilege; forged company switching is rejected. Platform read authority creates no tenant membership. Views use explicit nonfinancial projections; credentials and Owner email/password are excluded. These tests and source inspection do not claim production penetration testing.
+
+### Linux and independent verdict
+
+The four Windows symlink warnings occurred **before downstream deployment assertions**: fixture `symlink()` failed, then the tests skipped the remaining assertions. They were not evidence that Linux rejects those symlinks. The earlier WSL-only inventory found no suitable distribution, but subsequent read-only Docker inventory discovered an **already-installed** Linux PHP 8.4 CLI image; no software/image download or new persistent infrastructure was required.
+
+The unchanged `DeploymentScriptContractTest` executed on final application source **`395340acccc5917c3e9221ec46dd4b774a56a4a4`**, under Linux PHP **8.4.26**, PHPUnit **12.5.36**: **21 tests / 147 assertions, exit 0, zero warnings or skips**. All four symlink cases executed their downstream assertions. The container ran as UID 65534, with networking disabled, all capabilities dropped, a read-only root and only allowlisted source/vendor mounts read-only. No `.env`, credentials, private business files or database were mounted. Synthetic shell fixtures ran inside container tmpfs; both temporary containers were removed.
+
+An initial Linux harness attempt failed because its temporary mount did not permit execution of the test stub and the published `.htaccess` fixture input was not mounted. Its failed logs remain private. Correcting only those harness settings produced the pass above; no assertions or deployment source were changed. This certifies synthetic Linux script contracts, not Hostinger configuration or an actual deployment.
+
+**GO for final independent review.** The final acceptance corrections are ready for review; keep PR #64 draft until independent acceptance. Actual screen-reader speech and physical-device behavior remain explicitly uncertified, as do full confidential disaster recovery and customer-hosting capacity for a later pilot. No merge, production migration, deployment, real customer creation, real email or paid provider calls occurred. This final Linux-evidence update changes no application/test source.
