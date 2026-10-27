@@ -14,6 +14,9 @@
 
     <!-- Scripts & Styles -->
     @vite(['resources/css/app.css', 'resources/js/app.js'])
+    @if(request()->routeIs('two-factor.login'))
+        @livewireStyles
+    @endif
 
     @if (config('pwa.enabled', false))
         <meta name="pwa-enabled" content="true">
@@ -59,5 +62,8 @@
     <div class="text-center text-xs text-text-muted py-2 font-mono">
         {{ __('app.app_name') }} &bull; {{ __('app.version') }}
     </div>
+    @if(request()->routeIs('two-factor.login'))
+        @livewireScripts
+    @endif
 </body>
 </html>

@@ -2,6 +2,7 @@
 
 use App\Http\Middleware\ApplicationSecurityHeaders;
 use App\Http\Middleware\EnsureCompanyContext;
+use App\Http\Middleware\EnsurePlatformAccess;
 use App\Http\Middleware\Phase11ApiBoundary;
 use App\Http\Middleware\Phase12Boundary;
 use App\Http\Middleware\PublicDocumentHeaders;
@@ -29,6 +30,7 @@ return Application::configure(basePath: dirname(__DIR__))
 
         $middleware->alias([
             'company.ensure' => EnsureCompanyContext::class,
+            'platform' => EnsurePlatformAccess::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

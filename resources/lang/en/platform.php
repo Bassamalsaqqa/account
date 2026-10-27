@@ -1,0 +1,25 @@
+<?php
+
+return [
+    'edit' => 'Edit details',
+    'denied' => 'Platform access is unavailable', 'denied_help' => 'Company Owner roles do not grant platform access. Contact the host operator if an explicit grant is missing. Profile and personal security remain available.',
+    'stale' => 'Previous check is over 24 hours old', 'attention' => 'Recorded check needs review', 'checked_healthy' => 'Six domains healthy at recorded check',
+    'javascript_required' => 'Enable JavaScript to review and confirm these details before creation.',
+    'title' => 'Platform administration', 'scope' => 'Managed businesses', 'companies' => 'Companies',
+    'audit' => 'Platform audit', 'create' => 'Create business', 'back' => 'Back to companies',
+    'profile' => 'My profile and security', 'search' => 'Search by business name or public ID', 'find' => 'Search',
+    'name' => 'Business', 'status' => 'Administrative status', 'currency' => 'Base currency',
+    'locale' => 'Default language', 'timezone' => 'Timezone', 'view' => 'View', 'empty' => 'No businesses match this search.',
+    'health' => 'Operational health', 'unknown' => 'Not measured', 'health_help' => 'Saved checks describe the recorded time only. Missing results are not measured; old results are stale.',
+    'ai' => 'Company AI policy', 'on' => 'ON', 'off' => 'OFF', 'members' => 'Members', 'owner' => 'Owner', 'member' => 'Staff member',
+    'member_help' => 'Membership status is shown. This page does not grant access to business records or impersonation.',
+    'name_ar' => 'Business name in Arabic', 'name_en' => 'Business name in English (optional)', 'owner_name' => 'Initial Owner name',
+    'owner_email' => 'New Owner login email', 'password' => 'Initial password', 'password_confirmation' => 'Confirm initial password',
+    'review' => 'Review before creating', 'confirm' => 'Create this business and its initial Owner',
+    'create_help' => 'Creates a new business and a new account together. Existing emails cannot be linked. AI starts OFF. No email is sent. Hand credentials to the Owner securely; passwords never appear in the result.',
+    'created' => 'The business and initial Owner are ready. AI is OFF. No email was sent.',
+    'email_unavailable' => 'This email cannot be used for a new Owner. No existing account was linked or changed.',
+    'retry_changed' => 'This request was already submitted with different details. Return to the form to start a new request.',
+    'event' => 'Event', 'actor' => 'Operator user ID', 'target' => 'Company ID', 'time' => 'Recorded at',
+    'permission_help' => 'Only explicitly granted operations are available. Access requires a recent MFA login; sign out and sign in again if it expires.',
+];
