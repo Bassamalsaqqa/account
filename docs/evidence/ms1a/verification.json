@@ -1,0 +1,36 @@
+{
+  "baseline": "543cc6a410499085b16dc664e1579bce526c69c7",
+  "tested_head": "19a18c8c4af0e2332611590287fd7eb36cb28788",
+  "tested_tree": "c637aec9d346c6f1d0848ef4a3cede3080ed67c7",
+  "command": "composer qa (isolated disposable MariaDB harness)",
+  "exit": 0,
+  "phpunit": {
+    "passed": 3504,
+    "assertions": 42088,
+    "warnings": 4,
+    "duration_seconds": 3652.42
+  },
+  "pint": "passed",
+  "phpstan": {
+    "files": 661,
+    "errors": 0
+  },
+  "warnings": "Four Windows symlink permission warnings in DeploymentScriptContractTest; Linux symlink behavior is not certified by this run.",
+  "source_unchanged": true,
+  "monitored_primary_tables": 10,
+  "primary_fingerprints_preserved": true,
+  "fingerprint_scope": "Isolated initially empty primary tables; not production data or a nonempty economic recovery proof.",
+  "disposable_schema_cleanup_verified": true,
+  "owned_server_stopped": true,
+  "owned_environment_removed": true,
+  "protected_private_files_verified": 40,
+  "translation_stash_preserved": true,
+  "private_log_sha256": {
+    "receipt.json": "fe94d1f3824d1be595f50f706b1e601c3eae726141527904c589d6928b090f05",
+    "full-qa.json": "e78b67bba9af9fd37f155cf1b4e1f44baf527f23af24915ba89b098519531ff0",
+    "phpunit.stdout.log": "3839129069fda08c3e01520b0fb91f87c699f9fea43edaf4332c40e7830473a8",
+    "phpunit.stderr.log": "eddadf73950de9f72740d0f152500c0b46ef7cceb5bd8772925e9ebc793f8818",
+    "database.log": "adf313685aa7d001a3f06316a2b36bdb6b51cc27daa7841e3fe5a209e9ad04fa"
+  },
+  "remaining_gate": "Final complete AR/EN browser and keyboard verification remains incomplete. Draft PR only; no merge/deployment authorization."
+}
