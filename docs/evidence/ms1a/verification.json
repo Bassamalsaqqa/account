@@ -32,5 +32,77 @@
     "phpunit.stderr.log": "eddadf73950de9f72740d0f152500c0b46ef7cceb5bd8772925e9ebc793f8818",
     "database.log": "adf313685aa7d001a3f06316a2b36bdb6b51cc27daa7841e3fe5a209e9ad04fa"
   },
-  "remaining_gate": "Final complete AR/EN browser and keyboard verification remains incomplete. Draft PR only; no merge/deployment authorization."
+  "remaining_gate": "HOLD for final acceptance: four Linux symlink downstream assertions remain unexecuted; no suitable authorized local Linux PHP runtime. PR remains draft.",
+  "final_focused": {
+    "tests": 41,
+    "assertions": 407,
+    "exit": 0,
+    "coverage": "Platform access, provisioning, final security/presentation regressions and existing identity recovery",
+    "receipt_sha256": "3c1c0893cbd3ab5a642a79e961fb0fb8583e2465fbfe1ec5f6f7f7f12a0f0e99",
+    "test_after_pass": "Pint line endings normalized only"
+  },
+  "final_checks": {
+    "pint": {
+      "exit": 0,
+      "note": "Only test line endings normalized after focused pass; no assertion or runtime change."
+    },
+    "phpstan": {
+      "exit": 0
+    },
+    "javascript": {
+      "exit": 0
+    },
+    "composer-audit": {
+      "exit": 0
+    },
+    "npm-audit": {
+      "exit": 0
+    }
+  },
+  "final_browser": {
+    "languages": [
+      "ar",
+      "en"
+    ],
+    "viewports": [
+      1440,
+      768,
+      390
+    ],
+    "matrix_rows": 33,
+    "no_document_overflow_in_recorded_rows": true,
+    "screenshots": "Private synthetic-only PNGs retained outside published history",
+    "actual_flows": [
+      "Fortify TOTP login",
+      "Fortify recovery-code login",
+      "AR/EN password confirmation",
+      "AR/EN synthetic provisioning",
+      "required validation and duplicate-email recovery",
+      "review/Edit focus",
+      "Tab and Escape preservation",
+      "keyboard pagination",
+      "search and empty state",
+      "Back/Forward",
+      "member projection",
+      "health display fixtures",
+      "audit projection",
+      "AR/EN invalid recovery mode, focused field and linked alert"
+    ],
+    "limitations": [
+      "No physical device certification",
+      "Actual screen-reader speech not tested",
+      "Linux symlink downstream assertions unexecuted"
+    ]
+  },
+  "synthetic_reconciliations": {
+    "companies": 25,
+    "domains_per_company": 6,
+    "all_healthy": true,
+    "business_and_provider_record_counts_zero": true,
+    "health_presentation_snapshots": "Synthetic booleans separately injected for display-state tests; not operational health measurements"
+  },
+  "browser_fixture_cleanup": {
+    "owned_processes_stopped": true,
+    "exact_schema_absent": true
+  }
 }

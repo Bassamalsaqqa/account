@@ -6,7 +6,7 @@
     @endif
 </div>
 <form method="GET" class="mb-6 flex flex-wrap items-end gap-3">
-    <div class="min-w-0 flex-1"><label class="mb-1 block text-sm font-semibold" for="platform-search">{{ __('platform.search') }}</label><input class="w-full rounded-lg border-slate-300" id="platform-search" name="q" value="{{ $search }}" maxlength="100"></div>
+    <div class="min-w-0 flex-1"><label class="mb-1 block text-sm font-semibold" for="platform-search">{{ __('platform.search') }}</label><input class="min-h-11 w-full rounded-lg border border-slate-300 bg-white px-3" id="platform-search" name="q" value="{{ $search }}" maxlength="100"></div>
     <button class="min-h-11 rounded-lg border bg-white px-4">{{ __('platform.find') }}</button>
 </form>
 <div class="hidden overflow-x-auto rounded-xl border bg-white lg:block">
@@ -31,5 +31,5 @@
     <p>{{ __('platform.empty') }}</p>
 @endforelse
 </div>
-<div class="mt-5">{{ $companies->links() }}</div>
+<div class="mt-5">{{ $companies->links('platform.pagination') }}</div>
 @endsection

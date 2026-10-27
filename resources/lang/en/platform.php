@@ -22,4 +22,8 @@ return [
     'retry_changed' => 'This request was already submitted with different details. Return to the form to start a new request.',
     'event' => 'Event', 'actor' => 'Operator user ID', 'target' => 'Company ID', 'time' => 'Recorded at',
     'permission_help' => 'Only explicitly granted operations are available. Access requires a recent MFA login; sign out and sign in again if it expires.',
+    'pagination' => 'Page navigation',
+    'previous' => 'Previous',
+    'next' => 'Next',
+    'page' => 'Page :current of :last',
 ];

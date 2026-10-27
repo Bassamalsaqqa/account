@@ -12,5 +12,5 @@
 </dl>
 <h3 class="text-lg font-semibold">{{ __('platform.members') }}</h3><p class="my-2 text-sm text-slate-600">{{ __('platform.member_help') }}</p>
 <ul class="space-y-2">@foreach($members as $member)<li class="rounded-lg border bg-white p-4"><span class="font-semibold">{{ $member->name }}</span> — {{ __('platform.'.($member->is_owner ? 'owner' : 'member')) }} — <span dir="auto">{{ $member->role_names }}</span> — {{ $member->status }}</li>@endforeach</ul>
-<div class="mt-4">{{ $members->links() }}</div>
+<div class="mt-4">{{ $members->links('platform.pagination') }}</div>
 @endsection
