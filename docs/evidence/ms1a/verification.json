@@ -32,7 +32,7 @@
     "phpunit.stderr.log": "eddadf73950de9f72740d0f152500c0b46ef7cceb5bd8772925e9ebc793f8818",
     "database.log": "adf313685aa7d001a3f06316a2b36bdb6b51cc27daa7841e3fe5a209e9ad04fa"
   },
-  "remaining_gate": "HOLD for final acceptance: four Linux symlink downstream assertions remain unexecuted; no suitable authorized local Linux PHP runtime. PR remains draft.",
+  "remaining_gate": "GO for final independent review. Keep draft pending independent acceptance; no merge/deployment authorized.",
   "final_focused": {
     "tests": 41,
     "assertions": 407,
@@ -90,8 +90,7 @@
     ],
     "limitations": [
       "No physical device certification",
-      "Actual screen-reader speech not tested",
-      "Linux symlink downstream assertions unexecuted"
+      "Actual screen-reader speech not tested"
     ]
   },
   "synthetic_reconciliations": {
@@ -104,5 +103,26 @@
   "browser_fixture_cleanup": {
     "owned_processes_stopped": true,
     "exact_schema_absent": true
+  },
+  "linux_contract": {
+    "tested_source": "395340acccc5917c3e9221ec46dd4b774a56a4a4",
+    "image_id": "sha256:1d2cf2b7d715b5b3aa959f0150ccbcc7b71e0181b637e443abf40a7fb56bf79a",
+    "php": "8.4.26",
+    "phpunit": "12.5.36",
+    "command": "php vendor/phpunit/phpunit/phpunit --no-configuration --bootstrap vendor/autoload.php --do-not-cache-result tests/Unit/ProductExperience/DeploymentScriptContractTest.php",
+    "exit": 0,
+    "tests": 21,
+    "assertions": 147,
+    "warnings": 0,
+    "skipped": 0,
+    "all_four_symlink_cases_executed": true,
+    "network": "none",
+    "user_id": 65534,
+    "host_mounts": "Allowlisted source and locked vendor files only, read-only; no environment, credentials, private business files or DB",
+    "synthetic_fixtures": "Executable container tmpfs; removed with temporary container",
+    "container_cleanup_verified": true,
+    "stdout_sha256": "84058d956e526ddc3c0010d9c7f574ecc3a924bd7565819ffb0811226a7ead13",
+    "receipt_sha256": "5b18e71297ccd3a7ce7a22be49f45f1aa1091294a66d7c2e5996dc6ed1d836b5",
+    "superseded_attempt": "Initial isolated harness failed: tmpfs prevented executing test stub and public .htaccess was not mounted. Corrected harness only; no application/test assertion changes."
   }
 }
