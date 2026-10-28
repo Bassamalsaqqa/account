@@ -1,0 +1,543 @@
+{
+  "tested_source": "3c466663c9434f8a170f5c19ee22d845e63b4c8d",
+  "environment": "Fresh synthetic-only application; mail/AI disabled; no production data",
+  "capture_method": "Supported viewport override; reload after party-form resize; explicit viewport clip; original JPEGs",
+  "checks": [
+    {
+      "advancedOpen": false,
+      "dir": "rtl",
+      "form": {
+        "bottom": 731.9874877929688,
+        "height": 566.6749877929688,
+        "left": 24,
+        "right": 728.7999877929688,
+        "top": 165.3125,
+        "width": 704.7999877929688,
+        "x": 24,
+        "y": 165.3125
+      },
+      "heading": "عميل جديد",
+      "main": {
+        "bottom": 915.9874877929688,
+        "height": 851.9874877929688,
+        "left": 0,
+        "right": 752.7999877929688,
+        "top": 64,
+        "width": 752.7999877929688,
+        "x": 0,
+        "y": 64
+      },
+      "scroll": 753,
+      "width": 768,
+      "surface": "customer",
+      "locale": "ar"
+    },
+    {
+      "advancedOpen": false,
+      "dir": "rtl",
+      "form": {
+        "bottom": 735.9874877929688,
+        "height": 562.6749877929688,
+        "left": 140,
+        "right": 1036,
+        "top": 173.3125,
+        "width": 896,
+        "x": 140,
+        "y": 173.3125
+      },
+      "heading": "عميل جديد",
+      "main": {
+        "bottom": 767.9874877929688,
+        "height": 703.9874877929688,
+        "left": 0,
+        "right": 1176,
+        "top": 64,
+        "width": 1176,
+        "x": 0,
+        "y": 64
+      },
+      "scroll": 1440,
+      "width": 1440,
+      "surface": "customer",
+      "locale": "ar"
+    },
+    {
+      "advancedOpen": false,
+      "dir": "rtl",
+      "form": {
+        "bottom": 973.9625244140624,
+        "height": 816.6500244140625,
+        "left": 16,
+        "right": 359.20001220703125,
+        "top": 157.3125,
+        "width": 343.20001220703125,
+        "x": 16,
+        "y": 157.3125
+      },
+      "heading": "عميل جديد",
+      "main": {
+        "bottom": 1157.9625244140625,
+        "height": 1093.9625244140625,
+        "left": 0,
+        "right": 375.2000122070313,
+        "top": 64,
+        "width": 375.2000122070313,
+        "x": 0,
+        "y": 64
+      },
+      "scroll": 375,
+      "width": 390,
+      "surface": "customer",
+      "locale": "ar"
+    },
+    {
+      "advancedOpen": false,
+      "dir": "ltr",
+      "form": {
+        "bottom": 973.9625244140624,
+        "height": 816.6500244140625,
+        "left": 16,
+        "right": 359.20001220703125,
+        "top": 157.3125,
+        "width": 343.20001220703125,
+        "x": 16,
+        "y": 157.3125
+      },
+      "heading": "New Customer",
+      "main": {
+        "bottom": 1157.9625244140625,
+        "height": 1093.9625244140625,
+        "left": 0,
+        "right": 375.2000122070313,
+        "top": 64,
+        "width": 375.2000122070313,
+        "x": 0,
+        "y": 64
+      },
+      "scroll": 375,
+      "width": 390,
+      "surface": "customer",
+      "locale": "en"
+    },
+    {
+      "advancedOpen": false,
+      "dir": "ltr",
+      "form": {
+        "bottom": 731.9874877929688,
+        "height": 566.6749877929688,
+        "left": 24,
+        "right": 728.7999877929688,
+        "top": 165.3125,
+        "width": 704.7999877929688,
+        "x": 24,
+        "y": 165.3125
+      },
+      "heading": "New Customer",
+      "main": {
+        "bottom": 915.9874877929688,
+        "height": 851.9874877929688,
+        "left": 0,
+        "right": 752.7999877929688,
+        "top": 64,
+        "width": 752.7999877929688,
+        "x": 0,
+        "y": 64
+      },
+      "scroll": 753,
+      "width": 768,
+      "surface": "customer",
+      "locale": "en"
+    },
+    {
+      "advancedOpen": false,
+      "dir": "ltr",
+      "form": {
+        "bottom": 735.9874877929688,
+        "height": 562.6749877929688,
+        "left": 404,
+        "right": 1300,
+        "top": 173.3125,
+        "width": 896,
+        "x": 404,
+        "y": 173.3125
+      },
+      "heading": "New Customer",
+      "main": {
+        "bottom": 767.9874877929688,
+        "height": 703.9874877929688,
+        "left": 264,
+        "right": 1440,
+        "top": 64,
+        "width": 1176,
+        "x": 264,
+        "y": 64
+      },
+      "scroll": 1440,
+      "width": 1440,
+      "surface": "customer",
+      "locale": "en"
+    },
+    {
+      "advancedOpen": false,
+      "dir": "ltr",
+      "form": {
+        "bottom": 964.3500366210938,
+        "height": 808.3500366210938,
+        "left": 396.3999938964844,
+        "right": 1292.3999938964844,
+        "top": 156,
+        "width": 896,
+        "x": 396.3999938964844,
+        "y": 156
+      },
+      "heading": "Add New Vendor",
+      "main": {
+        "bottom": 996.3500366210938,
+        "height": 932.3500366210938,
+        "left": 264,
+        "right": 1424.800048828125,
+        "top": 64,
+        "width": 1160.800048828125,
+        "x": 264,
+        "y": 64
+      },
+      "scroll": 1425,
+      "width": 1440,
+      "surface": "vendor",
+      "locale": "en"
+    },
+    {
+      "advancedOpen": false,
+      "dir": "ltr",
+      "form": {
+        "bottom": 960.3500366210938,
+        "height": 808.3500366210938,
+        "left": 24,
+        "right": 728.7999877929688,
+        "top": 152,
+        "width": 704.7999877929688,
+        "x": 24,
+        "y": 152
+      },
+      "heading": "Add New Vendor",
+      "main": {
+        "bottom": 1144.3499755859375,
+        "height": 1080.3499755859375,
+        "left": 0,
+        "right": 752.7999877929688,
+        "top": 64,
+        "width": 752.7999877929688,
+        "x": 0,
+        "y": 64
+      },
+      "scroll": 753,
+      "width": 768,
+      "surface": "vendor",
+      "locale": "en"
+    },
+    {
+      "advancedOpen": false,
+      "dir": "ltr",
+      "form": {
+        "bottom": 1178.3250732421875,
+        "height": 1034.3250732421875,
+        "left": 16,
+        "right": 359.20001220703125,
+        "top": 144,
+        "width": 343.20001220703125,
+        "x": 16,
+        "y": 144
+      },
+      "heading": "Add New Vendor",
+      "main": {
+        "bottom": 1362.3250732421875,
+        "height": 1298.3250732421875,
+        "left": 0,
+        "right": 375.2000122070313,
+        "top": 64,
+        "width": 375.2000122070313,
+        "x": 0,
+        "y": 64
+      },
+      "scroll": 375,
+      "width": 390,
+      "surface": "vendor",
+      "locale": "en"
+    },
+    {
+      "advancedOpen": false,
+      "dir": "rtl",
+      "form": {
+        "bottom": 1178.3250732421875,
+        "height": 1034.3250732421875,
+        "left": 16,
+        "right": 359.20001220703125,
+        "top": 144,
+        "width": 343.20001220703125,
+        "x": 16,
+        "y": 144
+      },
+      "heading": "إضافة مورد جديد",
+      "main": {
+        "bottom": 1362.3250732421875,
+        "height": 1298.3250732421875,
+        "left": 0,
+        "right": 375.2000122070313,
+        "top": 64,
+        "width": 375.2000122070313,
+        "x": 0,
+        "y": 64
+      },
+      "scroll": 375,
+      "width": 390,
+      "surface": "vendor",
+      "locale": "ar"
+    },
+    {
+      "advancedOpen": false,
+      "dir": "rtl",
+      "form": {
+        "bottom": 960.3500366210938,
+        "height": 808.3500366210938,
+        "left": 24,
+        "right": 728.7999877929688,
+        "top": 152,
+        "width": 704.7999877929688,
+        "x": 24,
+        "y": 152
+      },
+      "heading": "إضافة مورد جديد",
+      "main": {
+        "bottom": 1144.3499755859375,
+        "height": 1080.3499755859375,
+        "left": 0,
+        "right": 752.7999877929688,
+        "top": 64,
+        "width": 752.7999877929688,
+        "x": 0,
+        "y": 64
+      },
+      "scroll": 753,
+      "width": 768,
+      "surface": "vendor",
+      "locale": "ar"
+    },
+    {
+      "advancedOpen": false,
+      "dir": "rtl",
+      "form": {
+        "bottom": 964.3500366210938,
+        "height": 808.3500366210938,
+        "left": 132.40000915527344,
+        "right": 1028.4000091552734,
+        "top": 156,
+        "width": 896,
+        "x": 132.40000915527344,
+        "y": 156
+      },
+      "heading": "إضافة مورد جديد",
+      "main": {
+        "bottom": 996.3500366210938,
+        "height": 932.3500366210938,
+        "left": 0,
+        "right": 1160.800048828125,
+        "top": 64,
+        "width": 1160.800048828125,
+        "x": 0,
+        "y": 64
+      },
+      "scroll": 1425,
+      "width": 1440,
+      "surface": "vendor",
+      "locale": "ar"
+    },
+    {
+      "dir": "rtl",
+      "expiry": "30",
+      "form": {
+        "bottom": 520.5749969482422,
+        "height": 267.6499938964844,
+        "left": 496.8000183105469,
+        "right": 1119.2000427246094,
+        "top": 252.9250030517578,
+        "width": 622.4000244140625,
+        "x": 496.8000183105469,
+        "y": 252.9250030517578
+      },
+      "main": {
+        "bottom": 577.375,
+        "height": 513.375,
+        "left": 0,
+        "right": 1176,
+        "top": 64,
+        "width": 1176,
+        "x": 0,
+        "y": 64
+      },
+      "width": 1440,
+      "surface": "settings-security",
+      "locale": "ar"
+    },
+    {
+      "dir": "rtl",
+      "expiry": "30",
+      "form": {
+        "bottom": 512.5749969482422,
+        "height": 267.6499938964844,
+        "left": 96.8000030517578,
+        "right": 719.2000274658203,
+        "top": 244.9250030517578,
+        "width": 622.4000244140625,
+        "x": 96.8000030517578,
+        "y": 244.9250030517578
+      },
+      "main": {
+        "bottom": 721.375,
+        "height": 657.375,
+        "left": 0,
+        "right": 768,
+        "top": 64,
+        "width": 768,
+        "x": 0,
+        "y": 64
+      },
+      "width": 768,
+      "surface": "settings-security",
+      "locale": "ar"
+    },
+    {
+      "dir": "rtl",
+      "expiry": "30",
+      "form": {
+        "bottom": 566.2250061035156,
+        "height": 311.9750061035156,
+        "left": 36.79999923706055,
+        "right": 353.6000175476074,
+        "top": 254.25,
+        "width": 316.8000183105469,
+        "x": 36.79999923706055,
+        "y": 254.25
+      },
+      "main": {
+        "bottom": 771.0250244140625,
+        "height": 707.0250244140625,
+        "left": 0,
+        "right": 390.3999938964844,
+        "top": 64,
+        "width": 390.3999938964844,
+        "x": 0,
+        "y": 64
+      },
+      "width": 390,
+      "surface": "settings-security",
+      "locale": "ar"
+    },
+    {
+      "dir": "ltr",
+      "expiry": "30",
+      "form": {
+        "bottom": 606.2250061035156,
+        "height": 351.9750061035156,
+        "left": 36.79999923706055,
+        "right": 353.6000175476074,
+        "top": 254.25,
+        "width": 316.8000183105469,
+        "x": 36.79999923706055,
+        "y": 254.25
+      },
+      "main": {
+        "bottom": 811.0250244140625,
+        "height": 747.0250244140625,
+        "left": 0,
+        "right": 390.3999938964844,
+        "top": 64,
+        "width": 390.3999938964844,
+        "x": 0,
+        "y": 64
+      },
+      "width": 390,
+      "surface": "settings-security",
+      "locale": "en"
+    },
+    {
+      "dir": "ltr",
+      "expiry": "30",
+      "form": {
+        "bottom": 532.5749969482422,
+        "height": 287.6499938964844,
+        "left": 48.79999923706055,
+        "right": 671.200023651123,
+        "top": 244.9250030517578,
+        "width": 622.4000244140625,
+        "x": 48.79999923706055,
+        "y": 244.9250030517578
+      },
+      "main": {
+        "bottom": 741.375,
+        "height": 677.375,
+        "left": 0,
+        "right": 768,
+        "top": 64,
+        "width": 768,
+        "x": 0,
+        "y": 64
+      },
+      "width": 768,
+      "surface": "settings-security",
+      "locale": "en"
+    },
+    {
+      "dir": "ltr",
+      "expiry": "30",
+      "form": {
+        "bottom": 540.5749969482422,
+        "height": 287.6499938964844,
+        "left": 320.8000183105469,
+        "right": 943.2000427246094,
+        "top": 252.9250030517578,
+        "width": 622.4000244140625,
+        "x": 320.8000183105469,
+        "y": 252.9250030517578
+      },
+      "main": {
+        "bottom": 597.375,
+        "height": 533.375,
+        "left": 264,
+        "right": 1440,
+        "top": 64,
+        "width": 1176,
+        "x": 264,
+        "y": 64
+      },
+      "width": 1440,
+      "surface": "settings-security",
+      "locale": "en"
+    }
+  ],
+  "status": "Affected layout/keyboard checks completed; physical-device and screen-reader testing unverified",
+  "earlier_captures": "Superseded private diagnostics; explicit viewport captures resolve scaling/clipping without source changes",
+  "keyboard": [
+    "Customer Enter/Space and SUMMARY focus; hidden invalid email opens with values preserved",
+    "Arabic vendor Enter expands with SUMMARY focus",
+    "English vendor Enter/Space expand/collapse; save keyboard reachable; English-only synthetic vendor save succeeds",
+    "Arabic empty-name errors localized and linked"
+  ],
+  "screenshots": {
+    "customer-ar-390-final.jpg": "80c87ecab5436df5cdba78ce1ea3de4741b3f84314a48cce723b400facedb44e",
+    "customer-en-390-final.jpg": "5c2924865edbeaa9a676bfe49ed966fe8efb202718dd03b9fb860e82ed1ae52f",
+    "customer-ar-1440-final.jpg": "d6018409d729f0dc19224a5d2d338cbad5921bdf00064cd6d0da7c340aa37119",
+    "customer-en-1440-final.jpg": "9d6a005a21a81c962a960af56bdb696ded5776141e744388ad430dd613b9e099",
+    "vendor-ar-768-final.jpg": "294fec02bb91c8133bfa3cdb9df1450e4a8708ca7515b34a505e72f8554b639b",
+    "vendor-en-768-final.jpg": "7988c573813d40d7e743afda622bff98e72e31354e528cebda2f000d26bfac78",
+    "vendor-ar-390-final.jpg": "a6b08018d7e4ceeb8dea960acb08fe4ad69d2e1b27867fa70340ac9ec75ca50b",
+    "vendor-en-390-final.jpg": "4251c18f9f956355f0e5269b52259eb0c8e33d215f896309fe6d5b4195d51091",
+    "settings-security-ar-390-final.jpg": "7a458be117f820c9ac9edf601ef0dc3808a4e78001f632c15affe19a4c1c0b8d",
+    "settings-security-en-390-final.jpg": "ddb8eccd131e0ded5e90c5f571825c8b3410b5d8fe3a2db00b908d06956db204"
+  },
+  "limitations": [
+    "Windows symlink downstream assertions unavailable",
+    "Actual iPhone/Android, scanner and assistive-technology testing pending Owner",
+    "No comparable performance baseline or speed improvement demonstrated",
+    "Earlier local PHP timeout during concurrent build/test; browser capture timeouts; no production inference"
+  ]
+}

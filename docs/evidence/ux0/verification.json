@@ -1,0 +1,40 @@
+{
+  "baseline": "bfac733d2c43ee99e246062a859825f42970a0c6",
+  "tested_commit": "3c466663c9434f8a170f5c19ee22d845e63b4c8d",
+  "tested_tree": "876594886bf3fc889c4aac46608b455b77541c4b",
+  "command": "composer qa via isolated disposable MariaDB harness",
+  "exit": 0,
+  "phpunit": {
+    "passed": 3549,
+    "failed": 0,
+    "warnings": 4,
+    "assertions": 42589,
+    "duration_seconds": 3785.64
+  },
+  "pint": "pass",
+  "phpstan": {
+    "files": 662,
+    "errors": 0
+  },
+  "source_unchanged": true,
+  "primary_isolation_fingerprints_preserved": true,
+  "cleanup_verified": true,
+  "six_reconciliations": "Canonical synthetic suites and populated AssistantMigrationPreservationTest passed; no production certification",
+  "limitations": [
+    "Four Windows symlink cases could not execute downstream assertions; no Linux pass claimed",
+    "Physical-device and screen-reader testing unverified; settled responsive browser captures completed"
+  ],
+  "private_log_sha256": {
+    "phpunit.stdout.log": "19b8d1f2a0ab74b5e875ee632191017e5108ae8a3598502160a808910aa82f8e",
+    "phpunit.stderr.log": "f78f62970f355fcfbf8466d8db319aa1c1599c3cd9a8448464036a9b7c8d52ee"
+  },
+  "historical_attempt": {
+    "tested_commit": "b71a9e0ae60a5bc569862e824db1912579cf40f9",
+    "exit": 1,
+    "passed": 3548,
+    "failed": 1,
+    "warnings": 4,
+    "assertions": 42588,
+    "reason": "Superseded legacy test fixture required Arabic despite valid English; corrected both-blank dataset without runtime changes"
+  }
+}
