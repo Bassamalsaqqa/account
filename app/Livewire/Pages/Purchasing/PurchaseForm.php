@@ -633,7 +633,7 @@ class PurchaseForm extends Component
                     ->orWhere('phone', 'like', "%{$vTerm}%");
             });
         }
-        $matchingVendors = $vendorsQuery->orderBy('name_ar')->limit(50)->get();
+        $matchingVendors = $vendorsQuery->orderByRaw('COALESCE(NULLIF(name_ar, ""), name_en) ASC')->limit(50)->get();
         if ($this->vendor_id) {
             $selectedVendor = Vendor::where('company_id', $company->id)
                 ->where('id', $this->vendor_id)

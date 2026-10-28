@@ -1,6 +1,7 @@
 <?php
 
 return [
+    'tax_number' => 'Tax Number',
     // General / Common
     'sales' => 'Sales',
     'invoices' => 'Invoices',
@@ -60,13 +61,19 @@ return [
     'code' => 'Customer Code',
     'name_ar' => 'Name (Arabic)',
     'name_en' => 'Name (English)',
+    'at_least_one_name_required' => 'At least one name is required (Arabic or English)',
+    'advanced_details' => 'Additional details',
+    'hide_advanced_details' => 'Hide additional details',
     'business_name_ar' => 'Business Name (Arabic)',
     'business_name_en' => 'Business Name (English)',
     'phone' => 'Phone',
+    'optional' => 'Optional',
     'whatsapp' => 'WhatsApp',
     'email' => 'Email',
     'address_ar' => 'Address (Arabic)',
     'address_en' => 'Address (English)',
+    'city_ar' => 'City (Arabic)',
+    'city_en' => 'City (English)',
     'preferred_locale' => 'Preferred Language',
     'default_currency' => 'Default Currency',
     'credit_limit' => 'Credit Limit',

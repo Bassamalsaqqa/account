@@ -23,10 +23,20 @@ final class DocumentDataBuilder
      */
     private function party(array $snapshot, string $locale): array
     {
-        $name = $snapshot['name_'.$locale] ?? $snapshot['name_ar'] ?? null;
-        if (! is_string($name) || $name === '') {
+        $primary = $snapshot['name_'.$locale] ?? null;
+        $fallback = $locale === 'ar' ? ($snapshot['name_en'] ?? null) : ($snapshot['name_ar'] ?? null);
+
+        $name = null;
+        if (is_string($primary) && trim($primary) !== '') {
+            $name = $primary;
+        } elseif (is_string($fallback) && trim($fallback) !== '') {
+            $name = $fallback;
+        }
+
+        if ($name === null) {
             throw new InvalidArgumentException('Document identity snapshot is missing.');
         }
+
         $result = ['name' => $name];
         foreach (['phone', 'email', 'tax_number', 'registration_number'] as $key) {
             $result[$key] = isset($snapshot[$key]) && is_string($snapshot[$key]) ? $snapshot[$key] : null;

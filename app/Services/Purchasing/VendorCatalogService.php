@@ -37,8 +37,11 @@ final class VendorCatalogService
                 $data['country_code'] = strtoupper($data['country_code']);
             }
 
+            $effectiveNameAr = array_key_exists('name_ar', $data) ? $data['name_ar'] : ($vendor->exists ? $vendor->name_ar : null);
+            $effectiveNameEn = array_key_exists('name_en', $data) ? $data['name_en'] : ($vendor->exists ? $vendor->name_en : null);
+
             $rules = [
-                'name_ar' => ['required', 'string', 'max:255'],
+                'name_ar' => ['nullable', 'string', 'max:255'],
                 'name_en' => ['nullable', 'string', 'max:255'],
                 'business_name_ar' => ['nullable', 'string', 'max:255'],
                 'business_name_en' => ['nullable', 'string', 'max:255'],
@@ -67,7 +70,19 @@ final class VendorCatalogService
                 'status' => ['sometimes', Rule::in(['active', 'inactive'])],
             ];
 
-            $payload = Validator::make($data, $rules)->validate();
+            $validator = Validator::make($data, $rules);
+            $validator->after(function ($validator) use ($effectiveNameAr, $effectiveNameEn): void {
+                $hasAr = is_string($effectiveNameAr) && trim($effectiveNameAr) !== '';
+                $hasEn = is_string($effectiveNameEn) && trim($effectiveNameEn) !== '';
+                if (! $hasAr && ! $hasEn) {
+                    $validator->errors()->add('name_ar', __('validation.required_without', [
+                        'attribute' => __('purchasing.vendor_name_ar'),
+                        'values' => __('purchasing.vendor_name_en'),
+                    ]));
+                }
+            });
+
+            $payload = $validator->validate();
 
             if (array_key_exists('active', $payload)) {
                 $payload['status'] = $payload['active'] ? 'active' : 'inactive';

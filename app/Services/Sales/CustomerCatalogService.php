@@ -21,8 +21,19 @@ final class CustomerCatalogService
         return DB::transaction(function () use ($company, $actor, $data, $customerId): Customer {
             $company = app(SalesActorGuard::class)->lockAndAuthorize($company->id, $actor, 'customers.manage');
             $customer = $customerId === null ? new Customer : Customer::where('company_id', $company->id)->whereKey($customerId)->lockForUpdate()->firstOrFail();
+
+            foreach (['name_ar', 'name_en'] as $nameKey) {
+                if (array_key_exists($nameKey, $data) && is_string($data[$nameKey])) {
+                    $trimmed = trim($data[$nameKey]);
+                    $data[$nameKey] = $trimmed === '' ? null : $trimmed;
+                }
+            }
+
+            $effectiveNameAr = array_key_exists('name_ar', $data) ? $data['name_ar'] : ($customer->exists ? $customer->name_ar : null);
+            $effectiveNameEn = array_key_exists('name_en', $data) ? $data['name_en'] : ($customer->exists ? $customer->name_en : null);
+
             $rules = [
-                'name_ar' => ['required', 'string', 'max:255'],
+                'name_ar' => ['nullable', 'string', 'max:255'],
                 'name_en' => ['nullable', 'string', 'max:255'],
                 'business_name_ar' => ['nullable', 'string', 'max:255'],
                 'business_name_en' => ['nullable', 'string', 'max:255'],
@@ -43,7 +54,20 @@ final class CustomerCatalogService
                 'active' => ['sometimes', 'boolean'],
                 'status' => ['sometimes', Rule::in(['active', 'inactive'])],
             ];
-            $payload = Validator::make($data, $rules)->validate();
+
+            $validator = Validator::make($data, $rules);
+            $validator->after(function ($validator) use ($effectiveNameAr, $effectiveNameEn): void {
+                $hasAr = is_string($effectiveNameAr) && trim($effectiveNameAr) !== '';
+                $hasEn = is_string($effectiveNameEn) && trim($effectiveNameEn) !== '';
+                if (! $hasAr && ! $hasEn) {
+                    $validator->errors()->add('name_ar', __('validation.required_without', [
+                        'attribute' => __('sales.name_ar'),
+                        'values' => __('sales.name_en'),
+                    ]));
+                }
+            });
+
+            $payload = $validator->validate();
             if (array_key_exists('credit_limit', $data)) {
                 $limit = $data['credit_limit'] === null ? null : MoneyAmount::from($data['credit_limit']);
                 if ($limit?->getAmount()->isNegative()) {

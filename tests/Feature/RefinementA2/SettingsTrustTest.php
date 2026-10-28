@@ -68,12 +68,34 @@ class SettingsTrustTest extends TestCase
     public function test_settings_distinguishes_company_preferences_from_personal_enrollment(): void
     {
         Livewire::actingAs($this->owner)->test(SettingsIndex::class)
-            ->assertSee(__('settings.policy_preference_only'))
+            ->assertSee(__('settings.optional_2fa'))
             ->assertSee(__('settings.personal_2fa_not_enabled'))
             ->assertDontSee('Owner 2FA ON')
             ->assertDontSee(__('settings.system_normal'))
             ->call('setSection', 'security')
-            ->assertSee(__('settings.policy_not_enforced'));
+            ->assertSee(__('settings.optional_2fa_help'))
+            ->assertDontSee('wire:model="require_2fa_for_owner"', false)
+            ->assertDontSee('wire:model="require_2fa_for_admin"', false);
+    }
+
+    public function test_saving_link_expiry_preserves_stored_legacy_mfa_preferences_even_if_client_changes_them(): void
+    {
+        $security = $this->company->securitySettings()->firstOrFail();
+        $security->forceFill(['require_2fa_for_owner' => false, 'require_2fa_for_admin' => true])->save();
+        session(['auth.password_confirmed_at' => time()]);
+        Livewire::actingAs($this->owner)->test(SettingsIndex::class)
+            ->set('require_2fa_for_owner', true)
+            ->set('require_2fa_for_admin', false)
+            ->set('public_share_default_expiry_days', 45)
+            ->call('saveSecurity')->assertHasNoErrors();
+        $security->refresh();
+        $this->assertFalse($security->require_2fa_for_owner);
+        $this->assertTrue($security->require_2fa_for_admin);
+        $this->assertSame(45, $security->public_share_default_expiry_days);
+        $this->assertNull($this->owner->fresh()->two_factor_secret);
+        $event = AuditEvent::where('company_id', $this->company->id)->where('event_key', 'company.security_updated')->latest('id')->firstOrFail();
+        $this->assertArrayNotHasKey('require_2fa_for_owner', $event->after_json);
+        $this->assertArrayNotHasKey('require_2fa_for_admin', $event->after_json);
     }
 
     public function test_audit_is_paginated_filtered_company_scoped_and_omits_private_payloads(): void

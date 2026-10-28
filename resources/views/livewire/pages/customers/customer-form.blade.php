@@ -1,3 +1,16 @@
+@php
+    $isSet = static fn ($v): bool => $v !== null && trim((string) $v) !== '';
+    $hasAdvanced = $errors->hasAny([
+        'business_name', 'business_name_en', 'tax_number', 'whatsapp', 'email',
+        'address_line_1_ar', 'address_line_1_en', 'city_ar', 'city_en', 'credit_limit', 'notes',
+    ]) || (
+        $isSet($business_name) || $isSet($business_name_en) || $isSet($tax_number) ||
+        $isSet($whatsapp) || $isSet($email) || $isSet($address_line_1_ar) ||
+        $isSet($address_line_1_en) || $isSet($city_ar) || $isSet($city_en) ||
+        $isSet($credit_limit) || $isSet($notes)
+    );
+@endphp
+
 <div class="max-w-4xl mx-auto space-y-6">
     <!-- Header -->
     <div class="flex items-center justify-between gap-4">
@@ -17,22 +30,29 @@
     </div>
 
     <!-- Form Card -->
-    <form wire:submit="save" class="bg-white rounded-card border border-border shadow-xs p-6 space-y-6">
+    <form wire:submit="save"
+          novalidate
+          class="bg-white rounded-card border border-border shadow-xs p-6 space-y-6">
+
         <!-- Basic Info Section -->
         <div>
-            <h2 class="text-sm font-bold text-text-primary pb-2 border-b border-border">
-                {{ __('sales.customer_details') }}
-            </h2>
+            <div class="pb-2 border-b border-border">
+                <h2 class="text-sm font-bold text-text-primary">
+                    {{ __('sales.customer_details') }}
+                </h2>
+                <p class="text-[11px] text-text-secondary mt-0.5">
+                    {{ __('sales.at_least_one_name_required') }}
+                </p>
+            </div>
 
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
                 <!-- Name AR -->
                 <div>
                     <label for="customer-name-ar" class="block text-xs font-bold text-text-primary mb-1">
-                        {{ __('sales.name_ar') }} <span class="text-danger">*</span>
+                        {{ __('sales.name_ar') }}
                     </label>
                     <input id="customer-name-ar" @error('name_ar') aria-invalid="true" aria-describedby="customer-name-ar-error" @enderror type="text"
                            wire:model="name_ar"
-                           required
                            class="w-full h-9 px-3 rounded-control border border-border bg-canvas text-xs text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden" />
                     @error('name_ar') <span id="customer-name-ar-error" role="alert" class="text-danger text-[11px] mt-1 block">{{ $message }}</span> @enderror
                 </div>
@@ -48,26 +68,16 @@
                     @error('name_en') <span id="customer-name-en-error" role="alert" class="text-danger text-[11px] mt-1 block">{{ $message }}</span> @enderror
                 </div>
 
-                <!-- Business Name -->
+                <!-- Phone -->
                 <div>
-                    <label for="customer-business-name" class="block text-xs font-bold text-text-primary mb-1">
-                        {{ __('sales.business_name_ar') }}
+                    <label for="customer-phone" class="block text-xs font-bold text-text-primary mb-1">
+                        {{ __('sales.phone') }} <span class="text-xs font-normal text-text-muted">({{ __('sales.optional') }})</span>
                     </label>
-                    <input id="customer-business-name" @error('business_name') aria-invalid="true" aria-describedby="customer-business-name-error" @enderror type="text"
-                           wire:model="business_name"
-                           class="w-full h-9 px-3 rounded-control border border-border bg-canvas text-xs text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden" />
-                    @error('business_name') <span id="customer-business-name-error" role="alert" class="text-danger text-[11px] mt-1 block">{{ $message }}</span> @enderror
-                </div>
-
-                <!-- Business Name EN -->
-                <div>
-                    <label for="customer-business-name-en" class="block text-xs font-bold text-text-primary mb-1">
-                        {{ __('sales.business_name_en') }}
-                    </label>
-                    <input id="customer-business-name-en" @error('business_name_en') aria-invalid="true" aria-describedby="customer-business-name-en-error" @enderror type="text"
-                           wire:model="business_name_en"
-                           class="w-full h-9 px-3 rounded-control border border-border bg-canvas text-xs text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden" />
-                    @error('business_name_en') <span id="customer-business-name-en-error" role="alert" class="text-danger text-[11px] mt-1 block">{{ $message }}</span> @enderror
+                    <input id="customer-phone" @error('phone') aria-invalid="true" aria-describedby="customer-phone-error" @enderror type="text"
+                           wire:model="phone"
+                           dir="ltr"
+                           class="w-full h-9 px-3 rounded-control border border-border bg-canvas text-xs text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden text-start" />
+                    @error('phone') <span id="customer-phone-error" role="alert" class="text-danger text-[11px] mt-1 block">{{ $message }}</span> @enderror
                 </div>
 
                 <!-- Code -->
@@ -82,8 +92,37 @@
                     @error('code') <span id="customer-code-error" role="alert" class="text-danger text-[11px] mt-1 block">{{ $message }}</span> @enderror
                 </div>
 
+                <!-- Default Currency -->
+                <div>
+                    <label for="customer-default-currency-code" class="block text-xs font-bold text-text-primary mb-1">
+                        {{ __('sales.default_currency') }} <span class="text-danger">*</span>
+                    </label>
+                    <select id="customer-default-currency-code" @error('default_currency_code') aria-invalid="true" aria-describedby="customer-default-currency-code-error" @enderror wire:model="default_currency_code"
+                            required
+                            class="w-full h-9 px-3 rounded-control border border-border bg-canvas text-xs text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden">
+                        @foreach ($currencies as $curr)
+                            <option value="{{ $curr->currency_code }}">{{ $curr->currency_code }}</option>
+                        @endforeach
+                    </select>
+                    @error('default_currency_code') <span id="customer-default-currency-code-error" role="alert" class="text-danger text-[11px] mt-1 block">{{ $message }}</span> @enderror
+                </div>
+
+                <!-- Preferred Locale -->
+                <div>
+                    <label for="customer-preferred-locale" class="block text-xs font-bold text-text-primary mb-1">
+                        {{ __('sales.preferred_locale') }} <span class="text-danger">*</span>
+                    </label>
+                    <select id="customer-preferred-locale" @error('preferred_locale') aria-invalid="true" aria-describedby="customer-preferred-locale-error" @enderror wire:model="preferred_locale"
+                            required
+                            class="w-full h-9 px-3 rounded-control border border-border bg-canvas text-xs text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden">
+                        <option value="ar">العربية (Arabic)</option>
+                        <option value="en">English (الإنجليزية)</option>
+                    </select>
+                    @error('preferred_locale') <span id="customer-preferred-locale-error" role="alert" class="text-danger text-[11px] mt-1 block">{{ $message }}</span> @enderror
+                </div>
+
                 <!-- Status -->
-                <div class="flex items-center gap-3 pt-6">
+                <div class="flex items-center gap-3 pt-2 md:col-span-2">
                     <label for="customer-active" class="relative inline-flex items-center cursor-pointer">
                         <input id="customer-active" type="checkbox" wire:model="active" class="sr-only peer">
                         <div class="w-9 h-5 bg-slate-200 peer-focus:outline-hidden rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary"></div>
@@ -93,47 +132,81 @@
             </div>
         </div>
 
-        <!-- Contact & Address Section -->
-        <div>
-            <h2 class="text-sm font-bold text-text-primary pb-2 border-b border-border">
-                {{ __('sales.phone') }} / {{ __('sales.whatsapp') }} / {{ __('sales.email') }}
-            </h2>
+        <!-- Advanced Details Collapsible Section -->
+        <details class="group space-y-6 pt-2" {{ $hasAdvanced ? 'open' : '' }}>
+            <summary class="min-h-[44px] cursor-pointer inline-flex items-center gap-2 text-xs font-bold text-primary hover:text-primary-hover py-2 focus-visible:outline-2 focus-visible:outline-primary select-none list-none [&::-webkit-details-marker]:hidden">
+                <span class="group-open:hidden">▶ {{ __('sales.advanced_details') }}</span>
+                <span class="hidden group-open:inline">▼ {{ __('sales.hide_advanced_details') }}</span>
+            </summary>
 
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
+            <div class="space-y-6 pt-4 border-t border-border">
+                <!-- Business & Tax -->
                 <div>
-                    <label for="customer-phone" class="block text-xs font-bold text-text-primary mb-1">
-                        {{ __('sales.phone') }}
-                    </label>
-                    <input id="customer-phone" @error('phone') aria-invalid="true" aria-describedby="customer-phone-error" @enderror type="text"
-                           wire:model="phone"
-                           dir="ltr"
-                           class="w-full h-9 px-3 rounded-control border border-border bg-canvas text-xs text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden text-start" />
-                    @error('phone') <span id="customer-phone-error" role="alert" class="text-danger text-[11px] mt-1 block">{{ $message }}</span> @enderror
-                </div>
+                    <h3 class="text-xs font-bold uppercase tracking-wider text-text-muted mb-3">
+                        {{ __('sales.business_name_ar') }} / {{ __('sales.tax_number') }}
+                    </h3>
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div>
+                            <label for="customer-business-name" class="block text-xs font-bold text-text-primary mb-1">
+                                {{ __('sales.business_name_ar') }}
+                            </label>
+                            <input id="customer-business-name" @error('business_name') aria-invalid="true" aria-describedby="customer-business-name-error" @enderror type="text"
+                                   wire:model="business_name"
+                                   class="w-full h-9 px-3 rounded-control border border-border bg-canvas text-xs text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden" />
+                            @error('business_name') <span id="customer-business-name-error" role="alert" class="text-danger text-[11px] mt-1 block">{{ $message }}</span> @enderror
+                        </div>
 
-                <div>
-                    <label for="customer-whatsapp" class="block text-xs font-bold text-text-primary mb-1">
-                        {{ __('sales.whatsapp') }}
-                    </label>
-                    <input id="customer-whatsapp" @error('whatsapp') aria-invalid="true" aria-describedby="customer-whatsapp-error" @enderror type="text"
-                           wire:model="whatsapp"
-                           dir="ltr"
-                           class="w-full h-9 px-3 rounded-control border border-border bg-canvas text-xs text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden text-start" />
-                    @error('whatsapp') <span id="customer-whatsapp-error" role="alert" class="text-danger text-[11px] mt-1 block">{{ $message }}</span> @enderror
-                </div>
+                        <div>
+                            <label for="customer-business-name-en" class="block text-xs font-bold text-text-primary mb-1">
+                                {{ __('sales.business_name_en') }}
+                            </label>
+                            <input id="customer-business-name-en" @error('business_name_en') aria-invalid="true" aria-describedby="customer-business-name-en-error" @enderror type="text"
+                                   wire:model="business_name_en"
+                                   class="w-full h-9 px-3 rounded-control border border-border bg-canvas text-xs text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden" />
+                            @error('business_name_en') <span id="customer-business-name-en-error" role="alert" class="text-danger text-[11px] mt-1 block">{{ $message }}</span> @enderror
+                        </div>
 
-                <div>
-                    <label for="customer-email" class="block text-xs font-bold text-text-primary mb-1">
-                        {{ __('sales.email') }}
-                    </label>
-                    <input id="customer-email" @error('email') aria-invalid="true" aria-describedby="customer-email-error" @enderror type="email"
-                           wire:model="email"
-                           dir="ltr"
-                           class="w-full h-9 px-3 rounded-control border border-border bg-canvas text-xs text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden text-start" />
-                    @error('email') <span id="customer-email-error" role="alert" class="text-danger text-[11px] mt-1 block">{{ $message }}</span> @enderror
+                    <div>
+                        <label for="customer-tax-number" class="block text-xs font-bold text-text-primary mb-1">
+                            {{ __('sales.tax_number') }}
+                        </label>
+                        <input id="customer-tax-number" @error('tax_number') aria-invalid="true" aria-describedby="customer-tax-number-error" @enderror type="text"
+                               wire:model="tax_number"
+                               dir="ltr"
+                               class="w-full h-9 px-3 rounded-control border border-border bg-canvas text-xs text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden text-start font-mono" />
+                        @error('tax_number') <span id="customer-tax-number-error" role="alert" class="text-danger text-[11px] mt-1 block">{{ $message }}</span> @enderror
+                    </div>
                 </div>
+            </div>
 
-                <div class="md:col-span-3 grid grid-cols-1 md:grid-cols-2 gap-4">
+            <!-- Additional Contact & Address -->
+            <div>
+                <h3 class="text-xs font-bold uppercase tracking-wider text-text-muted mb-3">
+                    {{ __('sales.whatsapp') }} / {{ __('sales.email') }} / {{ __('sales.address_ar') }}
+                </h3>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label for="customer-whatsapp" class="block text-xs font-bold text-text-primary mb-1">
+                            {{ __('sales.whatsapp') }}
+                        </label>
+                        <input id="customer-whatsapp" @error('whatsapp') aria-invalid="true" aria-describedby="customer-whatsapp-error" @enderror type="text"
+                               wire:model="whatsapp"
+                               dir="ltr"
+                               class="w-full h-9 px-3 rounded-control border border-border bg-canvas text-xs text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden text-start" />
+                        @error('whatsapp') <span id="customer-whatsapp-error" role="alert" class="text-danger text-[11px] mt-1 block">{{ $message }}</span> @enderror
+                    </div>
+
+                    <div>
+                        <label for="customer-email" class="block text-xs font-bold text-text-primary mb-1">
+                            {{ __('sales.email') }}
+                        </label>
+                        <input id="customer-email" @error('email') aria-invalid="true" aria-describedby="customer-email-error" @enderror type="email"
+                               wire:model="email"
+                               dir="ltr"
+                               class="w-full h-9 px-3 rounded-control border border-border bg-canvas text-xs text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden text-start" />
+                        @error('email') <span id="customer-email-error" role="alert" class="text-danger text-[11px] mt-1 block">{{ $message }}</span> @enderror
+                    </div>
+
                     <div>
                         <label for="customer-address-line-1-ar" class="block text-xs font-bold text-text-primary mb-1">
                             {{ __('sales.address_ar') }}
@@ -153,68 +226,61 @@
                                   class="w-full p-2.5 rounded-control border border-border bg-canvas text-xs text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden"></textarea>
                         @error('address_line_1_en') <span id="customer-address-line-1-en-error" role="alert" class="text-danger text-[11px] mt-1 block">{{ $message }}</span> @enderror
                     </div>
+
+                    <div>
+                        <label for="customer-city-ar" class="block text-xs font-bold text-text-primary mb-1">
+                            {{ __('sales.city_ar') }}
+                        </label>
+                        <input id="customer-city-ar" @error('city_ar') aria-invalid="true" aria-describedby="customer-city-ar-error" @enderror type="text"
+                               wire:model="city_ar"
+                               class="w-full h-9 px-3 rounded-control border border-border bg-canvas text-xs text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden" />
+                        @error('city_ar') <span id="customer-city-ar-error" role="alert" class="text-danger text-[11px] mt-1 block">{{ $message }}</span> @enderror
+                    </div>
+
+                    <div>
+                        <label for="customer-city-en" class="block text-xs font-bold text-text-primary mb-1">
+                            {{ __('sales.city_en') }}
+                        </label>
+                        <input id="customer-city-en" @error('city_en') aria-invalid="true" aria-describedby="customer-city-en-error" @enderror type="text"
+                               wire:model="city_en"
+                               class="w-full h-9 px-3 rounded-control border border-border bg-canvas text-xs text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden" />
+                        @error('city_en') <span id="customer-city-en-error" role="alert" class="text-danger text-[11px] mt-1 block">{{ $message }}</span> @enderror
+                    </div>
+                </div>
+            </div>
+
+            <!-- Financials & Notes -->
+            <div>
+                <h3 class="text-xs font-bold uppercase tracking-wider text-text-muted mb-3">
+                    {{ __('sales.credit_limit') }} / {{ __('sales.notes') }}
+                </h3>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
+                        <label for="customer-credit-limit" class="block text-xs font-bold text-text-primary mb-1">
+                            {{ __('sales.credit_limit') }} ({{ $baseCurrency }})
+                        </label>
+                        <input id="customer-credit-limit" @error('credit_limit') aria-invalid="true" aria-describedby="customer-credit-limit-error" @enderror type="number" inputmode="decimal"
+                               step="0.01"
+                               wire:model="credit_limit"
+                               dir="ltr"
+                               placeholder="0.00"
+                               class="w-full h-9 px-3 rounded-control border border-border bg-canvas text-xs text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden text-start font-mono" />
+                        @error('credit_limit') <span id="customer-credit-limit-error" role="alert" class="text-danger text-[11px] mt-1 block">{{ $message }}</span> @enderror
+                    </div>
+
+                    <div class="md:col-span-2">
+                        <label for="customer-notes" class="block text-xs font-bold text-text-primary mb-1">
+                            {{ __('sales.notes') }}
+                        </label>
+                        <textarea id="customer-notes" @error('notes') aria-invalid="true" aria-describedby="customer-notes-error" @enderror wire:model="notes"
+                                  rows="2"
+                                  class="w-full p-2.5 rounded-control border border-border bg-canvas text-xs text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden"></textarea>
+                        @error('notes') <span id="customer-notes-error" role="alert" class="text-danger text-[11px] mt-1 block">{{ $message }}</span> @enderror
+                    </div>
                 </div>
             </div>
         </div>
-
-        <!-- Preferences & Financials Section -->
-        <div>
-            <h2 class="text-sm font-bold text-text-primary pb-2 border-b border-border">
-                {{ __('sales.default_currency') }} & {{ __('sales.credit_limit') }} ({{ $baseCurrency }})
-            </h2>
-
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
-                <div>
-                    <label for="customer-default-currency-code" class="block text-xs font-bold text-text-primary mb-1">
-                        {{ __('sales.default_currency') }} <span class="text-danger">*</span>
-                    </label>
-                    <select id="customer-default-currency-code" @error('default_currency_code') aria-invalid="true" aria-describedby="customer-default-currency-code-error" @enderror wire:model="default_currency_code"
-                            required
-                            class="w-full h-9 px-3 rounded-control border border-border bg-canvas text-xs text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden">
-                        @foreach ($currencies as $curr)
-                            <option value="{{ $curr->currency_code }}">{{ $curr->currency_code }}</option>
-                        @endforeach
-                    </select>
-                    @error('default_currency_code') <span id="customer-default-currency-code-error" role="alert" class="text-danger text-[11px] mt-1 block">{{ $message }}</span> @enderror
-                </div>
-
-                <div>
-                    <label for="customer-preferred-locale" class="block text-xs font-bold text-text-primary mb-1">
-                        {{ __('sales.preferred_locale') }} <span class="text-danger">*</span>
-                    </label>
-                    <select id="customer-preferred-locale" @error('preferred_locale') aria-invalid="true" aria-describedby="customer-preferred-locale-error" @enderror wire:model="preferred_locale"
-                            required
-                            class="w-full h-9 px-3 rounded-control border border-border bg-canvas text-xs text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden">
-                        <option value="ar">العربية (Arabic)</option>
-                        <option value="en">English (الإنجليزية)</option>
-                    </select>
-                    @error('preferred_locale') <span id="customer-preferred-locale-error" role="alert" class="text-danger text-[11px] mt-1 block">{{ $message }}</span> @enderror
-                </div>
-
-                <div>
-                    <label for="customer-credit-limit" class="block text-xs font-bold text-text-primary mb-1">
-                        {{ __('sales.credit_limit') }} ({{ $baseCurrency }})
-                    </label>
-                    <input id="customer-credit-limit" @error('credit_limit') aria-invalid="true" aria-describedby="customer-credit-limit-error" @enderror type="number" inputmode="decimal"
-                           step="0.01"
-                           wire:model="credit_limit"
-                           dir="ltr"
-                           placeholder="0.00"
-                           class="w-full h-9 px-3 rounded-control border border-border bg-canvas text-xs text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden text-start font-mono" />
-                    @error('credit_limit') <span id="customer-credit-limit-error" role="alert" class="text-danger text-[11px] mt-1 block">{{ $message }}</span> @enderror
-                </div>
-
-                <div class="md:col-span-3">
-                    <label for="customer-notes" class="block text-xs font-bold text-text-primary mb-1">
-                        {{ __('sales.notes') }}
-                    </label>
-                    <textarea id="customer-notes" @error('notes') aria-invalid="true" aria-describedby="customer-notes-error" @enderror wire:model="notes"
-                              rows="3"
-                              class="w-full p-2.5 rounded-control border border-border bg-canvas text-xs text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden"></textarea>
-                    @error('notes') <span id="customer-notes-error" role="alert" class="text-danger text-[11px] mt-1 block">{{ $message }}</span> @enderror
-                </div>
-            </div>
-        </div>
+        </details>
 
         <!-- Buttons -->
         <div class="flex items-center justify-end gap-3 pt-4 border-t border-border">

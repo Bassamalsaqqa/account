@@ -21,7 +21,7 @@ class VendorForm extends Component
     #[Locked]
     public ?int $vendorId = null;
 
-    public string $name_ar = '';
+    public ?string $name_ar = null;
 
     public ?string $name_en = null;
 

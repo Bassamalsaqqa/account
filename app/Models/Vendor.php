@@ -21,7 +21,7 @@ use Illuminate\Validation\Rule;
  * @property string $public_id
  * @property int $company_id
  * @property string|null $code
- * @property string $name_ar
+ * @property string|null $name_ar
  * @property string|null $name_en
  * @property string $status
  * @property string|null $business_name_ar
@@ -130,11 +130,28 @@ class Vendor extends Model
     public function displayName(): string
     {
         $locale = app()->getLocale();
-        if ($locale === 'en' && ! empty($this->name_en)) {
-            return $this->name_en;
+        $nameAr = $this->name_ar !== null ? trim((string) $this->name_ar) : '';
+        $nameEn = $this->name_en !== null ? trim((string) $this->name_en) : '';
+
+        if ($locale === 'en') {
+            if ($nameEn !== '') {
+                return (string) $this->name_en;
+            }
+            if ($nameAr !== '') {
+                return (string) $this->name_ar;
+            }
+
+            return '';
         }
 
-        return $this->name_ar;
+        if ($nameAr !== '') {
+            return (string) $this->name_ar;
+        }
+        if ($nameEn !== '') {
+            return (string) $this->name_en;
+        }
+
+        return '';
     }
 
     /**

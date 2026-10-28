@@ -19,7 +19,7 @@ class CustomerForm extends Component
 
     public bool $isEditing = false;
 
-    public string $name_ar = '';
+    public ?string $name_ar = null;
 
     public ?string $name_en = null;
 
@@ -105,8 +105,17 @@ class CustomerForm extends Component
 
         $enabledCurrencies = $company->currencies()->where('enabled', true)->pluck('currency_code')->all();
 
+        if ($this->name_ar !== null) {
+            $trimmedAr = trim($this->name_ar);
+            $this->name_ar = $trimmedAr === '' ? null : $trimmedAr;
+        }
+        if ($this->name_en !== null) {
+            $trimmedEn = trim($this->name_en);
+            $this->name_en = $trimmedEn === '' ? null : $trimmedEn;
+        }
+
         $validated = $this->validate([
-            'name_ar' => ['required', 'string', 'max:255'],
+            'name_ar' => ['nullable', 'string', 'max:255', 'required_without:name_en'],
             'name_en' => ['nullable', 'string', 'max:255'],
             'business_name' => ['nullable', 'string', 'max:255'],
             'business_name_en' => ['nullable', 'string', 'max:255'],
@@ -134,7 +143,7 @@ class CustomerForm extends Component
         ]);
 
         $payload = [
-            'name_ar' => $validated['name_ar'],
+            'name_ar' => $validated['name_ar'] ?? null,
             'name_en' => $validated['name_en'] ?? null,
             'business_name_ar' => $validated['business_name'] ?? null,
             'business_name_en' => $validated['business_name_en'] ?? null,

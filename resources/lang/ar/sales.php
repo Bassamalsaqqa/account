@@ -1,6 +1,7 @@
 <?php
 
 return [
+    'tax_number' => 'الرقم الضريبي',
     // General / Common
     'sales' => 'المبيعات',
     'invoices' => 'الفواتير',
@@ -60,13 +61,19 @@ return [
     'code' => 'كود العميل',
     'name_ar' => 'الاسم بالعربية',
     'name_en' => 'الاسم بالإنجليزية',
+    'at_least_one_name_required' => 'أحد الاسمين مطلوب على الأقل (العربية أو الإنجليزية)',
+    'advanced_details' => 'تفاصيل إضافية',
+    'hide_advanced_details' => 'إخفاء التفاصيل الإضافية',
     'business_name_ar' => 'اسم المنشأة / النشاط (عربي)',
     'business_name_en' => 'اسم المنشأة / النشاط (إنجليزي)',
     'phone' => 'رقم الهاتف',
+    'optional' => 'اختياري',
     'whatsapp' => 'واتساب',
     'email' => 'البريد الإلكتروني',
     'address_ar' => 'العنوان بالعربية',
     'address_en' => 'العنوان بالإنجليزية',
+    'city_ar' => 'المدينة (عربي)',
+    'city_en' => 'المدينة (إنجليزي)',
     'preferred_locale' => 'اللغة المفضلة',
     'default_currency' => 'العملة الافتراضية',
     'credit_limit' => 'سقف الائتمان',
