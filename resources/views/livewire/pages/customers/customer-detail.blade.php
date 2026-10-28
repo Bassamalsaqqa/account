@@ -177,7 +177,7 @@
                         <span class="font-mono text-text-primary" dir="ltr">{{ $customer->code ?? '—' }}</span>
 
                         <span class="text-text-muted">{{ __('sales.name_ar') }}:</span>
-                        <span class="text-text-primary font-bold">{{ $customer->name_ar }}</span>
+                        <span class="text-text-primary font-bold">{{ $customer->name_ar ?? '—' }}</span>
 
                         <span class="text-text-muted">{{ __('sales.name_en') }}:</span>
                         <span class="text-text-primary">{{ $customer->name_en ?? '—' }}</span>

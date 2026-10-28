@@ -127,11 +127,16 @@ class VendorPayment extends Model
     {
         $locale = app()->getLocale();
         if (! empty($this->vendor_snapshot)) {
+            $ar = isset($this->vendor_snapshot['name_ar']) && trim((string) $this->vendor_snapshot['name_ar']) !== ''
+                ? (string) $this->vendor_snapshot['name_ar'] : null;
+            $en = isset($this->vendor_snapshot['name_en']) && trim((string) $this->vendor_snapshot['name_en']) !== ''
+                ? (string) $this->vendor_snapshot['name_en'] : null;
+
             if ($locale === 'ar') {
-                return (string) ($this->vendor_snapshot['name_ar'] ?? $this->vendor_snapshot['name_en'] ?? $this->vendor?->displayName() ?? '');
+                return $ar ?? $en ?? (string) ($this->vendor?->displayName() ?? '');
             }
 
-            return (string) ($this->vendor_snapshot['name_en'] ?? $this->vendor_snapshot['name_ar'] ?? $this->vendor?->displayName() ?? '');
+            return $en ?? $ar ?? (string) ($this->vendor?->displayName() ?? '');
         }
 
         return (string) ($this->vendor?->displayName() ?? '');

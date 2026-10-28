@@ -394,8 +394,6 @@ class SettingsIndex extends Component
         }
 
         $validated = $this->validate([
-            'require_2fa_for_owner' => ['required', 'boolean'],
-            'require_2fa_for_admin' => ['required', 'boolean'],
             'public_share_default_expiry_days' => ['nullable', 'integer', 'min:1', 'max:365'],
         ]);
 

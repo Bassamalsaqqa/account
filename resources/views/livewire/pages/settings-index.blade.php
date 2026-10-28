@@ -258,7 +258,7 @@
                             </div>
                             <div>
                                 <span class="text-[10px] text-text-muted block">{{ __('settings.status_2fa') }}</span>
-                                <span class="text-xs font-bold text-text-secondary">{{ __('settings.policy_preference_only') }}</span>
+                                <span class="text-xs font-bold text-text-secondary">{{ __('settings.optional_2fa') }}</span>
                             </div>
                         </div>
                     </div>
@@ -1136,34 +1136,14 @@
                     </div>
 
                     <form wire:submit="saveSecurity" class="space-y-4">
-                        <div class="p-3 rounded-card bg-surface-soft border border-border text-text-secondary text-[11px] leading-relaxed">
-                            <span class="font-bold text-text-primary block mb-0.5">{{ __('settings.stored_policy_only_badge') }}</span>
-                        </div>
-
                         <div class="space-y-3">
-                            <p class="text-sm text-amber-900 bg-amber-50 rounded-control p-3" role="note">{{ __('settings.policy_not_enforced') }} <a href="{{ route('profile') }}" class="underline font-semibold">{{ __('settings.personal_security') }}</a></p>
-                            <label class="flex items-start gap-3 p-3 rounded-control border border-border hover:bg-surface-soft cursor-pointer">
-                                <input type="checkbox" wire:model="require_2fa_for_owner"
-                                       class="rounded border-border text-primary focus:ring-primary w-4 h-4 mt-0.5" />
-                                <div>
-                                    <span class="text-xs font-bold text-text-primary block">{{ __('settings.require_2fa_owner_label') }}</span>
-                                    <span class="text-[11px] text-text-muted block mt-0.5">{{ __('settings.require_2fa_owner_desc') }}</span>
-                                </div>
-                            </label>
-
-                            <label class="flex items-start gap-3 p-3 rounded-control border border-border hover:bg-surface-soft cursor-pointer">
-                                <input type="checkbox" wire:model="require_2fa_for_admin"
-                                       class="rounded border-border text-primary focus:ring-primary w-4 h-4 mt-0.5" />
-                                <div>
-                                    <span class="text-xs font-bold text-text-primary block">{{ __('settings.require_2fa_admin_label') }}</span>
-                                    <span class="text-[11px] text-text-muted block mt-0.5">{{ __('settings.require_2fa_admin_desc') }}</span>
-                                </div>
-                            </label>
-
+                            <p class="text-sm text-text-secondary bg-surface-soft rounded-control p-3" role="note">{{ __('settings.optional_2fa_help') }}</p>
                             <div>
-                                <label class="block text-xs font-bold text-text-secondary mb-1">{{ __('settings.public_share_expiry_label') }}</label>
-                                <input type="number" min="1" max="365" wire:model="public_share_default_expiry_days"
+                                <label for="public-share-expiry" class="block text-xs font-bold text-text-secondary mb-1">{{ __('settings.public_share_expiry_label') }}</label>
+                                <input id="public-share-expiry" type="number" min="1" max="365" wire:model="public_share_default_expiry_days"
+                                       @error('public_share_default_expiry_days') aria-invalid="true" aria-describedby="public-share-expiry-error" @enderror
                                        class="w-full text-xs rounded-control border border-border p-2.5 focus:border-primary focus:ring-1 focus:ring-primary num" />
+                                @error('public_share_default_expiry_days')<p id="public-share-expiry-error" role="alert" class="mt-1 text-xs text-danger">{{ $message }}</p>@enderror
                             </div>
                         </div>
 

@@ -945,7 +945,7 @@ class InvoiceForm extends Component
                     ->orWhere('phone', 'like', "%{$cTerm}%");
             });
         }
-        $matchingCustomers = $customersQuery->orderBy('name_ar')->limit(50)->get();
+        $matchingCustomers = $customersQuery->orderByRaw('COALESCE(NULLIF(name_ar, ""), name_en) ASC')->limit(50)->get();
         if ($this->customer_id) {
             $selectedCustomer = Customer::where('company_id', $company->id)
                 ->where('id', $this->customer_id)

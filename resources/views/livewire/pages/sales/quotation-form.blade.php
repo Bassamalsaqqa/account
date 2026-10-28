@@ -586,9 +586,10 @@
                     <button type="button" wire:click="closeQuickCustomerModal" class="text-text-muted hover:text-text-primary text-sm font-bold cursor-pointer" wire:loading.attr="disabled" wire:target="closeQuickCustomerModal">×</button>
                 </div>
                 <div class="space-y-3">
+                    <p class="text-[11px] text-text-secondary">{{ __('workflow.at_least_one_name_required') }}</p>
                     <div>
-                        <label for="quote-quick-customer-name-ar" class="block text-xs font-bold text-text-primary mb-1">{{ __('workflow.customer_name_ar') }} <span class="text-danger">*</span></label>
-                        <input x-ref="firstInput" id="quote-quick-customer-name-ar" type="text" wire:model="quick_customer_name_ar" required maxlength="255" class="w-full h-9 px-3 rounded-control border border-border bg-canvas text-xs text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden"  :disabled="documentBusy || saving"/>
+                        <label for="quote-quick-customer-name-ar" class="block text-xs font-bold text-text-primary mb-1">{{ __('workflow.customer_name_ar') }}</label>
+                        <input x-ref="firstInput" id="quote-quick-customer-name-ar" type="text" wire:model="quick_customer_name_ar" maxlength="255" class="w-full h-9 px-3 rounded-control border border-border bg-canvas text-xs text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden"  :disabled="documentBusy || saving"/>
                         @error('quick_customer_name_ar') <span class="text-danger text-[11px] block mt-1">{{ $message }}</span> @enderror
                     </div>
                     <div>

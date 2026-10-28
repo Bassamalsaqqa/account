@@ -209,12 +209,13 @@
             <div class="bg-surface border border-border rounded-card p-6 w-full max-w-md shadow-lg space-y-4">
                 <div class="flex items-center justify-between pb-3 border-b border-border">
                     <h3 id="quick-vendor-modal-title" class="text-base font-bold text-text-primary">{{ __('workflow.quick_vendor') }}</h3>
-                    <button type="button" wire:click="closeQuickVendorModal" class="text-text-muted hover:text-text-primary text-sm font-bold cursor-pointer" wire:loading.attr="disabled" wire:target="closeQuickVendorModal">âœ•</button>
+                    <button type="button" wire:click="closeQuickVendorModal" class="text-text-muted hover:text-text-primary text-sm font-bold cursor-pointer" wire:loading.attr="disabled" wire:target="closeQuickVendorModal">×</button>
                 </div>
                 <div class="space-y-3">
+                    <p class="text-[11px] text-text-secondary">{{ __('workflow.at_least_one_name_required') }}</p>
                     <div>
-                        <label for="purchase-quick-vendor-name-ar" class="block text-xs font-bold text-text-primary mb-1">{{ __('workflow.vendor_name_ar') }} <span class="text-danger">*</span></label>
-                        <input x-ref="firstInput" id="purchase-quick-vendor-name-ar" type="text" wire:model="quick_vendor_name_ar" required maxlength="255" class="w-full h-9 px-3 rounded-control border border-border bg-canvas text-xs text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden"  :disabled="documentBusy || saving"/>
+                        <label for="purchase-quick-vendor-name-ar" class="block text-xs font-bold text-text-primary mb-1">{{ __('workflow.vendor_name_ar') }}</label>
+                        <input x-ref="firstInput" id="purchase-quick-vendor-name-ar" type="text" wire:model="quick_vendor_name_ar" maxlength="255" class="w-full h-9 px-3 rounded-control border border-border bg-canvas text-xs text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden"  :disabled="documentBusy || saving"/>
                         @error('quick_vendor_name_ar') <span class="text-danger text-[11px] block mt-1">{{ $message }}</span> @enderror
                     </div>
                     <div>

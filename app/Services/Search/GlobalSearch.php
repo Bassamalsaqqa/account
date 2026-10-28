@@ -166,20 +166,16 @@ final class GlobalSearch
                     ->orWhere('code', 'like', $likePattern);
             })
             ->select(['id', 'public_id', 'company_id', 'name_ar', 'name_en', 'code', 'status'])
-            ->orderBy('name_ar')
+            ->orderByRaw('COALESCE(name_ar, name_en) ASC')
             ->orderBy('id')
             ->limit(self::MAX_RESULTS_PER_CATEGORY)
             ->get();
 
-        return $customers->map(function (Customer $customer) use ($isArabic) {
-            $title = $isArabic
-                ? ($customer->name_ar ?: $customer->name_en)
-                : ($customer->name_en ?: $customer->name_ar);
-
+        return $customers->map(function (Customer $customer) {
             return [
                 'category' => 'customer',
                 'public_id' => $customer->public_id,
-                'title' => (string) $title,
+                'title' => $customer->displayName(),
                 'subtitle' => (string) ($customer->code ?? ''),
                 'status' => (string) ($customer->status ?? 'active'),
                 'url' => route('customers.show', $customer->public_id),
@@ -202,20 +198,16 @@ final class GlobalSearch
                     ->orWhere('code', 'like', $likePattern);
             })
             ->select(['id', 'public_id', 'company_id', 'name_ar', 'name_en', 'code', 'status'])
-            ->orderBy('name_ar')
+            ->orderByRaw('COALESCE(name_ar, name_en) ASC')
             ->orderBy('id')
             ->limit(self::MAX_RESULTS_PER_CATEGORY)
             ->get();
 
-        return $vendors->map(function (Vendor $vendor) use ($isArabic) {
-            $title = $isArabic
-                ? ($vendor->name_ar ?: $vendor->name_en)
-                : ($vendor->name_en ?: $vendor->name_ar);
-
+        return $vendors->map(function (Vendor $vendor) {
             return [
                 'category' => 'vendor',
                 'public_id' => $vendor->public_id,
-                'title' => (string) $title,
+                'title' => $vendor->displayName(),
                 'subtitle' => (string) ($vendor->code ?? ''),
                 'status' => (string) ($vendor->status ?? 'active'),
                 'url' => route('vendors.show', $vendor->public_id),
@@ -282,15 +274,14 @@ final class GlobalSearch
             ->limit(self::MAX_RESULTS_PER_CATEGORY)
             ->get();
 
-        return $invoices->map(function (SalesInvoice $invoice) use ($isArabic) {
+        return $invoices->map(function (SalesInvoice $invoice) {
             $customerName = '';
             if (($customer = $invoice->getRelation('customer')) !== null) {
-                $customerName = $isArabic
-                    ? ($customer->name_ar ?: $customer->name_en)
-                    : ($customer->name_en ?: $customer->name_ar);
+                $customerName = $customer->displayName();
             }
 
-            $subtitle = $customerName ?: (string) $invoice->getRawOriginal('issue_date');
+            $date = (string) $invoice->getRawOriginal('issue_date');
+            $subtitle = trim($customerName) !== '' ? $customerName : $date;
 
             return [
                 'category' => 'invoice',
@@ -327,15 +318,10 @@ final class GlobalSearch
             ->limit(self::MAX_RESULTS_PER_CATEGORY)
             ->get();
 
-        return $quotations->map(function (Quotation $quotation) use ($isArabic) {
-            $customerName = '';
-            if ($quotation->customer) {
-                $customerName = $isArabic
-                    ? ($quotation->customer->name_ar ?: $quotation->customer->name_en)
-                    : ($quotation->customer->name_en ?: $quotation->customer->name_ar);
-            }
-
-            $subtitle = $customerName ?: (string) $quotation->getRawOriginal('issue_date');
+        return $quotations->map(function (Quotation $quotation) {
+            $customerName = $quotation->customer ? $quotation->customer->displayName() : '';
+            $date = (string) $quotation->getRawOriginal('issue_date');
+            $subtitle = trim($customerName) !== '' ? $customerName : $date;
 
             return [
                 'category' => 'quotation',
@@ -373,16 +359,12 @@ final class GlobalSearch
             ->limit(self::MAX_RESULTS_PER_CATEGORY)
             ->get();
 
-        return $purchases->map(function (Purchase $purchase) use ($isArabic) {
-            $vendorName = '';
-            if ($purchase->vendor) {
-                $vendorName = $isArabic
-                    ? ($purchase->vendor->name_ar ?: $purchase->vendor->name_en)
-                    : ($purchase->vendor->name_en ?: $purchase->vendor->name_ar);
-            }
+        return $purchases->map(function (Purchase $purchase) {
+            $vendorName = $purchase->vendor ? $purchase->vendor->displayName() : '';
+            $date = (string) $purchase->getRawOriginal('purchase_date');
+            $subtitle = trim($vendorName) !== '' ? $vendorName : $date;
 
             $displayNumber = $purchase->purchase_number ?: ($purchase->vendor_invoice_number ?: $purchase->public_id);
-            $subtitle = $vendorName ?: (string) $purchase->getRawOriginal('purchase_date');
 
             return [
                 'category' => 'purchase',

@@ -1,6 +1,9 @@
 <?php
 
 return [
+    'optional_2fa' => 'Optional',
+    'optional_2fa_help' => 'Two-factor authentication is optional for every account. Manage your own enrollment in Profile. Company preferences do not enforce enrollment. Saving these settings changes link expiry only.',
+
     'audit_occurred_at' => 'Date and time',
     'phase0_proof_tag' => 'System Design Preview',
     'phase0_proof_notice' => 'Interface design reference — company settings are fully managed below.',

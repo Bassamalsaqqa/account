@@ -139,13 +139,34 @@ trait QuickPartyCreate
         $prefix = 'quick_'.$kind.'_';
         $rules = [];
         foreach (['name_ar' => 255, 'name_en' => 255, 'phone' => 64, 'code' => 64] as $field => $limit) {
-            $this->{$prefix.$field} = trim($this->{$prefix.$field});
-            $rules[$prefix.$field] = [$field === 'name_ar' ? 'required' : 'nullable', 'string', 'max:'.$limit];
+            $val = trim((string) $this->{$prefix.$field});
+            $this->{$prefix.$field} = $val;
+            $rules[$prefix.$field] = ['nullable', 'string', 'max:'.$limit];
         }
         $this->validate($rules);
-        $data = ['name_ar' => $this->{$prefix.'name_ar'}, 'name_en' => $this->{$prefix.'name_en'} !== '' ? $this->{$prefix.'name_en'} : null,
-            'phone' => $this->{$prefix.'phone'} !== '' ? $this->{$prefix.'phone'} : null, 'code' => $this->{$prefix.'code'} !== '' ? $this->{$prefix.'code'} : null,
-            'preferred_locale' => $this->document_locale, 'default_currency_code' => $this->currency_code, 'status' => 'active'];
+
+        $hasNameAr = $this->{$prefix.'name_ar'} !== '';
+        $hasNameEn = $this->{$prefix.'name_en'} !== '';
+        if (! $hasNameAr && ! $hasNameEn) {
+            $attribute = $kind === 'customer' ? __('workflow.customer_name_ar') : __('workflow.vendor_name_ar');
+            $values = $kind === 'customer' ? __('workflow.customer_name_en') : __('workflow.vendor_name_en');
+            $this->addError($prefix.'name_ar', __('validation.required_without', [
+                'attribute' => $attribute,
+                'values' => $values,
+            ]));
+
+            return;
+        }
+
+        $data = [
+            'name_ar' => $this->{$prefix.'name_ar'} !== '' ? $this->{$prefix.'name_ar'} : null,
+            'name_en' => $this->{$prefix.'name_en'} !== '' ? $this->{$prefix.'name_en'} : null,
+            'phone' => $this->{$prefix.'phone'} !== '' ? $this->{$prefix.'phone'} : null,
+            'code' => $this->{$prefix.'code'} !== '' ? $this->{$prefix.'code'} : null,
+            'preferred_locale' => $this->document_locale,
+            'default_currency_code' => $this->currency_code,
+            'status' => 'active',
+        ];
         try {
             $party = app(QuickPartyCreation::class)->execute($company, auth()->user(), $kind,
                 $this->quickPartyToken, $data, $this->quickPartyPermission($kind));

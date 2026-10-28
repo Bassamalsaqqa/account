@@ -35,9 +35,11 @@ final class PurchaseReturnReadModel
 
         if (! $return->isDraft()) {
             $snapshot = $return->vendor_snapshot ?? [];
+            $ar = isset($snapshot['name_ar']) && trim((string) $snapshot['name_ar']) !== '' ? (string) $snapshot['name_ar'] : null;
+            $en = isset($snapshot['name_en']) && trim((string) $snapshot['name_en']) !== '' ? (string) $snapshot['name_en'] : null;
             $data['vendor_name'] = app()->getLocale() === 'en'
-                ? ($snapshot['name_en'] ?? $snapshot['name_ar'] ?? '')
-                : ($snapshot['name_ar'] ?? '');
+                ? ($en ?? $ar ?? '')
+                : ($ar ?? $en ?? '');
         }
 
         $data['warehouse_name'] = $return->warehouse->displayName();

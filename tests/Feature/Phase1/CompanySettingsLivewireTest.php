@@ -138,7 +138,7 @@ class CompanySettingsLivewireTest extends TestCase
         $security = $this->company->securitySettings()->first();
         $this->assertNotNull($security);
         $this->assertTrue($security->require_2fa_for_owner);
-        $this->assertTrue($security->require_2fa_for_admin);
+        $this->assertFalse($security->require_2fa_for_admin);
         $this->assertSame(60, $security->public_share_default_expiry_days);
     }
 
@@ -436,7 +436,7 @@ class CompanySettingsLivewireTest extends TestCase
         $arResponse->assertOk();
         $arResponse->assertSee('dir="rtl"', false);
         $arResponse->assertSee(__('settings.title', [], 'ar'));
-        $arResponse->assertSee(__('settings.policy_preference_only', [], 'ar'));
+        $arResponse->assertSee(__('settings.optional_2fa', [], 'ar'));
         $arResponse->assertSee(__('settings.aside_activity_title', [], 'ar'));
 
         // 2. English LTR/RTL check
@@ -447,7 +447,7 @@ class CompanySettingsLivewireTest extends TestCase
         $enResponse->assertOk();
         $enResponse->assertSee('dir="ltr"', false);
         $enResponse->assertSee('System Settings');
-        $enResponse->assertSee(__('settings.policy_preference_only', [], 'en'));
+        $enResponse->assertSee(__('settings.optional_2fa', [], 'en'));
         $enResponse->assertSee('Recent Activity');
 
         // Reset locale back
@@ -587,7 +587,7 @@ class CompanySettingsLivewireTest extends TestCase
         // Verify DB settings unchanged
         $this->assertDatabaseMissing('company_security_settings', [
             'company_id' => $this->company->id,
-            'require_2fa_for_admin' => true,
+            'public_share_default_expiry_days' => 60,
         ]);
         $this->assertSame($initialAuditCount, AuditEvent::where('company_id', $this->company->id)->count());
 
@@ -613,7 +613,6 @@ class CompanySettingsLivewireTest extends TestCase
         $validComponent->assertHasNoErrors();
         $this->assertDatabaseHas('company_security_settings', [
             'company_id' => $this->company->id,
-            'require_2fa_for_admin' => true,
             'public_share_default_expiry_days' => 60,
         ]);
         $this->assertDatabaseHas('audit_events', [
@@ -819,10 +818,10 @@ class CompanySettingsLivewireTest extends TestCase
         $snapshot = json_decode($node->getAttribute('wire:snapshot'), true);
         $this->assertIsArray($snapshot);
 
-        // Ensure initially require_2fa_for_admin is false in DB
+        // Ensure the target link expiry is not already stored
         $this->assertDatabaseMissing('company_security_settings', [
             'company_id' => $this->company->id,
-            'require_2fa_for_admin' => true,
+            'public_share_default_expiry_days' => 60,
         ]);
 
         // 2. Clear in-memory CompanyContext
@@ -840,7 +839,7 @@ class CompanySettingsLivewireTest extends TestCase
                     [
                         'snapshot' => json_encode($snapshot),
                         'updates' => [
-                            'require_2fa_for_admin' => true,
+                            'public_share_default_expiry_days' => 60,
                         ],
                         'calls' => [
                             [
@@ -865,7 +864,7 @@ class CompanySettingsLivewireTest extends TestCase
         // Proves DB was NOT mutated
         $this->assertDatabaseMissing('company_security_settings', [
             'company_id' => $this->company->id,
-            'require_2fa_for_admin' => true,
+            'public_share_default_expiry_days' => 60,
         ]);
 
         // 4. Real HTTP Livewire update request calling saveSecurity WITH valid auth.password_confirmed_at
@@ -885,7 +884,7 @@ class CompanySettingsLivewireTest extends TestCase
                     [
                         'snapshot' => json_encode($snapshot),
                         'updates' => [
-                            'require_2fa_for_admin' => true,
+                            'public_share_default_expiry_days' => 60,
                         ],
                         'calls' => [
                             [
@@ -907,7 +906,7 @@ class CompanySettingsLivewireTest extends TestCase
         // Proves DB was mutated atomically
         $this->assertDatabaseHas('company_security_settings', [
             'company_id' => $this->company->id,
-            'require_2fa_for_admin' => true,
+            'public_share_default_expiry_days' => 60,
         ]);
         $this->assertDatabaseHas('audit_events', [
             'company_id' => $this->company->id,

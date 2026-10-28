@@ -34,7 +34,11 @@ final class PurchaseReadModel
         $data['vendor_name'] = $purchase->vendor->displayName();
         if (! $purchase->isDraft()) {
             $snapshot = $purchase->vendor_snapshot ?? [];
-            $data['vendor_name'] = app()->getLocale() === 'en' ? ($snapshot['name_en'] ?? $snapshot['name_ar'] ?? '') : ($snapshot['name_ar'] ?? '');
+            $ar = isset($snapshot['name_ar']) && trim((string) $snapshot['name_ar']) !== '' ? (string) $snapshot['name_ar'] : null;
+            $en = isset($snapshot['name_en']) && trim((string) $snapshot['name_en']) !== '' ? (string) $snapshot['name_en'] : null;
+            $data['vendor_name'] = app()->getLocale() === 'en'
+                ? ($en ?? $ar ?? '')
+                : ($ar ?? $en ?? '');
         }
         $data['warehouse_name'] = $purchase->warehouse->displayName();
         if ($withCost) {
