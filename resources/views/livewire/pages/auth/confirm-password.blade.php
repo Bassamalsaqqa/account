@@ -18,10 +18,7 @@ new #[Layout('layouts.guest')] class extends Component
             'password' => ['required', 'string'],
         ]);
 
-        if (! Auth::guard('web')->validate([
-            'email' => Auth::user()->email,
-            'password' => $this->password,
-        ])) {
+        if (! app(\App\Application\Platform\PlatformSessionProof::class)->confirmPassword(Auth::user(), $this->password)) {
             throw ValidationException::withMessages([
                 'password' => __('auth.password'),
             ]);

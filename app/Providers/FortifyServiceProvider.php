@@ -6,7 +6,7 @@ use App\Actions\Fortify\CreateNewUser;
 use App\Actions\Fortify\ResetUserPassword;
 use App\Actions\Fortify\UpdateUserPassword;
 use App\Actions\Fortify\UpdateUserProfileInformation;
-use App\Application\Platform\PlatformMfaProof;
+use App\Application\Platform\PlatformSessionProof;
 use Illuminate\Auth\Events\Login;
 use Illuminate\Auth\Events\Logout;
 use Illuminate\Cache\RateLimiting\Limit;
@@ -16,7 +16,6 @@ use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Support\Str;
 use Laravel\Fortify\Actions\RedirectIfTwoFactorAuthenticatable;
-use Laravel\Fortify\Events\ValidTwoFactorAuthenticationCodeProvided;
 use Laravel\Fortify\Fortify;
 
 class FortifyServiceProvider extends ServiceProvider
@@ -34,9 +33,10 @@ class FortifyServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
-        Event::listen(ValidTwoFactorAuthenticationCodeProvided::class, [PlatformMfaProof::class, 'challengeSucceeded']);
-        Event::listen(Login::class, [PlatformMfaProof::class, 'loggedIn']);
-        Event::listen(Logout::class, [PlatformMfaProof::class, 'loggedOut']);
+        Event::listen(Login::class, [PlatformSessionProof::class, 'loggedIn']);
+        Event::listen(Logout::class, [PlatformSessionProof::class, 'loggedOut']);
+
+        Fortify::confirmPasswordsUsing(fn ($user, ?string $password) => app(PlatformSessionProof::class)->confirmPassword($user, $password));
 
         Fortify::createUsersUsing(CreateNewUser::class);
         Fortify::updateUserProfileInformationUsing(UpdateUserProfileInformation::class);

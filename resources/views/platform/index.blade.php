@@ -1,35 +1,163 @@
 @extends('layouts.platform')
+
 @section('content')
-<div class="mb-5 flex flex-wrap gap-3">
-    @if(in_array('company.provision', request()->attributes->get('platform_permissions', []), true))
-        <a class="inline-flex min-h-11 items-center rounded-lg bg-blue-700 px-4 font-semibold text-white" href="{{ route('platform.companies.create') }}">{{ __('platform.create') }}</a>
-    @endif
+<div class="space-y-6">
+    <!-- Header Actions & Search -->
+    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+            <h1 class="text-xl sm:text-2xl font-extrabold text-text-primary">{{ __('platform.companies') }}</h1>
+            <p class="text-xs sm:text-sm text-text-muted mt-0.5">{{ __('platform.scope') }}</p>
+        </div>
+
+        @if(in_array('company.provision', request()->attributes->get('platform_permissions', []), true))
+            <div>
+                <a href="{{ route('platform.companies.create') }}"
+                   class="inline-flex min-h-11 items-center justify-center gap-2 rounded-control bg-primary px-4 text-sm font-semibold text-white hover:bg-primary-hover shadow-xs transition-colors">
+                    <x-icon name="plus" class="w-4 h-4" />
+                    <span>{{ __('platform.create') }}</span>
+                </a>
+            </div>
+        @endif
+    </div>
+
+    <!-- Search Form -->
+    <form method="GET" class="bg-white border border-border rounded-card shadow-panel p-4 flex flex-col sm:flex-row items-stretch sm:items-end gap-3">
+        <div class="min-w-0 flex-1">
+            <label class="mb-1.5 block text-xs font-bold text-text-secondary uppercase tracking-wider" for="platform-search">
+                {{ __('platform.search') }}
+            </label>
+            <div class="relative">
+                <input class="min-h-11 w-full rounded-control border border-border-strong bg-white px-3.5 text-sm text-text-primary focus:border-primary focus:ring-primary/20"
+                       id="platform-search"
+                       name="q"
+                       value="{{ $search }}"
+                       maxlength="100"
+                       placeholder="{{ __('platform.search') }}">
+            </div>
+        </div>
+        <button type="submit"
+                class="inline-flex min-h-11 items-center justify-center gap-2 rounded-control border border-border-strong bg-white px-5 text-sm font-semibold text-text-secondary hover:bg-surface-soft hover:text-text-primary transition-colors cursor-pointer shrink-0">
+            <x-icon name="search" class="w-4 h-4 text-text-muted" />
+            <span>{{ __('platform.find') }}</span>
+        </button>
+    </form>
+
+    <!-- Desktop Companies Table -->
+    <div class="hidden lg:block bg-white border border-border rounded-card shadow-panel overflow-hidden">
+        <table class="w-full text-start">
+            <caption class="sr-only">{{ __('platform.companies') }}</caption>
+            <thead class="bg-surface-soft border-b border-border">
+                <tr>
+                    @foreach(['name', 'status', 'ai', 'health', 'view'] as $label)
+                        <th scope="col" class="px-5 py-3.5 text-start text-xs font-bold text-text-muted uppercase tracking-wider">
+                            {{ __('platform.'.$label) }}
+                        </th>
+                    @endforeach
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-border">
+                @forelse($companies as $company)
+                    <tr class="hover:bg-surface-soft/40 transition-colors">
+                        <th scope="row" class="px-5 py-4 text-start font-semibold max-w-xs">
+                            <span class="text-sm font-extrabold text-text-primary block break-words">
+                                {{ app()->getLocale() === 'en' ? ($company->name_en ?: $company->name_ar) : $company->name_ar }}
+                            </span>
+                            <span class="block break-all font-mono text-xs font-normal text-text-muted mt-0.5" dir="ltr">
+                                {{ $company->public_id }}
+                            </span>
+                        </th>
+                        <td class="px-5 py-4 text-sm">
+                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold {{ $company->status === 'active' ? 'bg-success-bg text-success' : 'bg-surface-soft text-text-muted' }}">
+                                {{ $company->status }}
+                            </span>
+                        </td>
+                        <td class="px-5 py-4 text-sm">
+                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold {{ $company->ai_enabled ? 'bg-primary-50 text-primary' : 'bg-[#eef1f6] text-[#58667a]' }}">
+                                {{ __('platform.'.($company->ai_enabled ? 'on' : 'off')) }}
+                            </span>
+                        </td>
+                        <td class="px-5 py-4 text-sm">
+                            @include('platform.health', ['checkedAt' => $company->checked_at, 'domains' => $company->domains])
+                        </td>
+                        <td class="px-5 py-4 text-sm">
+                            <a href="{{ route('platform.companies.show', $company->public_id) }}"
+                               class="inline-flex min-h-11 items-center justify-center rounded-control border border-border-strong bg-white px-3.5 text-xs font-semibold text-text-secondary hover:bg-surface-soft hover:text-text-primary transition-colors">
+                                {{ __('platform.view') }}
+                            </a>
+                        </td>
+                    </tr>
+                @empty
+                    <tr>
+                        <td colspan="5" class="px-5 py-12 text-center text-sm text-text-muted">
+                            <x-icon name="store" class="w-8 h-8 mx-auto mb-2 text-text-muted/60" />
+                            <p>{{ __('platform.empty') }}</p>
+                        </td>
+                    </tr>
+                @endforelse
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Mobile Companies Cards -->
+    <div class="grid gap-4 sm:grid-cols-2 lg:hidden">
+        @forelse($companies as $company)
+            <article class="bg-white border border-border rounded-card shadow-panel p-5 flex flex-col justify-between">
+                <div>
+                    <h3 class="break-words text-base font-bold text-text-primary">
+                        {{ app()->getLocale() === 'en' ? ($company->name_en ?: $company->name_ar) : $company->name_ar }}
+                    </h3>
+                    <p class="break-all font-mono text-xs text-text-muted mt-0.5" dir="ltr">
+                        {{ $company->public_id }}
+                    </p>
+
+                    <dl class="my-4 space-y-2.5 text-xs">
+                        <div class="flex items-center justify-between gap-2 py-1 border-b border-border/50">
+                            <dt class="text-text-muted">{{ __('platform.status') }}</dt>
+                            <dd>
+                                <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold {{ $company->status === 'active' ? 'bg-success-bg text-success' : 'bg-surface-soft text-text-muted' }}">
+                                    {{ $company->status }}
+                                </span>
+                            </dd>
+                        </div>
+                        <div class="flex items-center justify-between gap-2 py-1 border-b border-border/50">
+                            <dt class="text-text-muted">{{ __('platform.currency') }}</dt>
+                            <dd class="font-mono font-bold text-text-primary" dir="ltr">{{ $company->base_currency_code }}</dd>
+                        </div>
+                        <div class="flex items-center justify-between gap-2 py-1 border-b border-border/50">
+                            <dt class="text-text-muted">{{ __('platform.ai') }}</dt>
+                            <dd>
+                                <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold {{ $company->ai_enabled ? 'bg-primary-50 text-primary' : 'bg-[#eef1f6] text-[#58667a]' }}">
+                                    {{ __('platform.'.($company->ai_enabled ? 'on' : 'off')) }}
+                                </span>
+                            </dd>
+                        </div>
+                        <div class="py-1">
+                            <dt class="text-text-muted mb-1">{{ __('platform.health') }}</dt>
+                            <dd>
+                                @include('platform.health', ['checkedAt' => $company->checked_at, 'domains' => $company->domains])
+                            </dd>
+                        </div>
+                    </dl>
+                </div>
+
+                <div class="pt-3 border-t border-border mt-2">
+                    <a href="{{ route('platform.companies.show', $company->public_id) }}"
+                       class="inline-flex min-h-11 w-full items-center justify-center rounded-control border border-border-strong bg-white px-4 text-xs font-semibold text-text-secondary hover:bg-surface-soft hover:text-text-primary transition-colors">
+                        {{ __('platform.view') }}
+                    </a>
+                </div>
+            </article>
+        @empty
+            <div class="sm:col-span-2 bg-white border border-border rounded-card shadow-panel p-8 text-center text-sm text-text-muted">
+                <x-icon name="store" class="w-8 h-8 mx-auto mb-2 text-text-muted/60" />
+                <p>{{ __('platform.empty') }}</p>
+            </div>
+        @endforelse
+    </div>
+
+    <!-- Pagination -->
+    <div class="mt-6">
+        {{ $companies->links('platform.pagination') }}
+    </div>
 </div>
-<form method="GET" class="mb-6 flex flex-wrap items-end gap-3">
-    <div class="min-w-0 flex-1"><label class="mb-1 block text-sm font-semibold" for="platform-search">{{ __('platform.search') }}</label><input class="min-h-11 w-full rounded-lg border border-slate-300 bg-white px-3" id="platform-search" name="q" value="{{ $search }}" maxlength="100"></div>
-    <button class="min-h-11 rounded-lg border bg-white px-4">{{ __('platform.find') }}</button>
-</form>
-<div class="hidden overflow-x-auto rounded-xl border bg-white lg:block">
-<table class="w-full text-start"><caption class="sr-only">{{ __('platform.companies') }}</caption><thead><tr class="border-b text-start">
-@foreach(['name','status','ai','health','view'] as $label)<th scope="col" class="p-4 text-start text-sm">{{ __('platform.'.$label) }}</th>@endforeach
-</tr></thead><tbody>
-@forelse($companies as $company)
-<tr class="border-b last:border-0"><th scope="row" class="max-w-xs break-words p-4 text-start font-semibold">{{ app()->getLocale() === 'en' ? ($company->name_en ?: $company->name_ar) : $company->name_ar }}<span class="block break-all font-mono text-xs font-normal text-slate-600" dir="ltr">{{ $company->public_id }}</span></th><td class="p-4">{{ $company->status }}</td><td class="p-4">{{ __('platform.'.($company->ai_enabled ? 'on' : 'off')) }}</td><td class="p-4">@include('platform.health', ['checkedAt'=>$company->checked_at, 'domains'=>$company->domains])</td><td class="p-4"><a class="inline-flex min-h-11 items-center rounded-lg border px-4" href="{{ route('platform.companies.show', $company->public_id) }}">{{ __('platform.view') }}</a></td></tr>
-@empty
-<tr><td colspan="5" class="p-5">{{ __('platform.empty') }}</td></tr>
-@endforelse
-</tbody></table></div>
-<div class="grid gap-4 sm:grid-cols-2 lg:hidden">
-@forelse($companies as $company)
-    <article class="min-w-0 rounded-xl border border-slate-200 bg-white p-5">
-        <h2 class="break-words text-lg font-semibold">{{ app()->getLocale() === 'en' ? ($company->name_en ?: $company->name_ar) : $company->name_ar }}</h2>
-        <p class="break-all font-mono text-xs text-slate-600" dir="ltr">{{ $company->public_id }}</p>
-        <dl class="my-4 space-y-2 text-sm"><div><dt class="text-slate-600">{{ __('platform.status') }}</dt><dd>{{ $company->status }}</dd></div><div><dt class="text-slate-600">{{ __('platform.currency') }}</dt><dd dir="ltr">{{ $company->base_currency_code }}</dd></div><div><dt class="text-slate-600">{{ __('platform.ai') }}</dt><dd>{{ __('platform.'.($company->ai_enabled ? 'on' : 'off')) }}</dd></div><div><dt class="text-slate-600">{{ __('platform.health') }}</dt><dd>@include('platform.health', ['checkedAt' => $company->checked_at, 'domains' => $company->domains])</dd></div></dl>
-        <a class="inline-flex min-h-11 items-center rounded-lg border px-4" href="{{ route('platform.companies.show', $company->public_id) }}">{{ __('platform.view') }}</a>
-    </article>
-@empty
-    <p>{{ __('platform.empty') }}</p>
-@endforelse
-</div>
-<div class="mt-5">{{ $companies->links('platform.pagination') }}</div>
 @endsection

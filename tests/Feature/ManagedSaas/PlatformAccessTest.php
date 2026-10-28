@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Tests\Feature\ManagedSaas;
 
 use App\Application\Platform\PlatformAccess;
-use App\Application\Platform\PlatformMfaProof;
+use App\Application\Platform\PlatformSessionProof;
 use App\Models\PlatformOperatorGrant;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -51,11 +51,11 @@ class PlatformAccessTest extends TestCase
         $this->assertAuthenticatedAs($user);
     }
 
-    public function test_plain_login_and_mfa_enrollment_do_not_grant_platform_access(): void
+    public function test_authenticated_identity_alone_does_not_create_password_session_proof(): void
     {
         [$user] = $this->operator();
         $this->actingAs($user)->get('/__test/platform-read')->assertForbidden();
-        $this->assertFalse(session()->has(PlatformMfaProof::KEY));
+        $this->assertFalse(session()->has(PlatformSessionProof::KEY));
     }
 
     public function test_actual_fortify_challenge_produces_session_proof_after_session_regeneration(): void
@@ -63,7 +63,7 @@ class PlatformAccessTest extends TestCase
         [$user] = $this->operator();
         $this->challenge($user);
         $this->get('/__test/platform-read')->assertOk();
-        $this->assertTrue(session()->has(PlatformMfaProof::KEY));
+        $this->assertTrue(session()->has(PlatformSessionProof::KEY));
         $this->assertNotContains('synthetic-recovery-code', $user->fresh()->recoveryCodes());
     }
 
@@ -73,7 +73,7 @@ class PlatformAccessTest extends TestCase
         $grant->forceFill(['active' => false])->save();
         $this->challenge($user);
         $this->get('/__test/platform-read')->assertForbidden();
-        $this->assertFalse(session()->has(PlatformMfaProof::KEY));
+        $this->assertFalse(session()->has(PlatformSessionProof::KEY));
     }
 
     public function test_revocation_is_checked_again_without_reusing_a_stale_grant(): void
@@ -113,14 +113,14 @@ class PlatformAccessTest extends TestCase
         $this->get('/__test/platform-read')->assertForbidden();
     }
 
-    public function test_logout_and_remember_login_cannot_retain_challenge_proof(): void
+    public function test_logout_clears_proof_and_password_login_can_remember_the_account(): void
     {
         [$user] = $this->operator();
         $this->challenge($user);
         auth()->guard('web')->logout();
-        $this->assertFalse(session()->has(PlatformMfaProof::KEY));
+        $this->assertFalse(session()->has(PlatformSessionProof::KEY));
         auth()->guard('web')->login($user, true);
-        $this->get('/__test/platform-read')->assertForbidden();
+        $this->get('/__test/platform-read')->assertOk();
     }
 
     public function test_permission_is_checked_in_addition_to_mfa(): void
@@ -135,12 +135,12 @@ class PlatformAccessTest extends TestCase
     {
         [$user] = $this->operator();
         $this->challenge($user);
-        $proof = session(PlatformMfaProof::KEY);
+        $proof = session(PlatformSessionProof::KEY);
         $proof['at'] = now()->addMinutes(5)->timestamp;
-        $this->withSession([PlatformMfaProof::KEY => $proof])->get('/__test/platform-read')->assertForbidden();
+        $this->withSession([PlatformSessionProof::KEY => $proof])->get('/__test/platform-read')->assertForbidden();
         $proof['at'] = now()->timestamp;
         $proof['user_id']++;
-        $this->withSession([PlatformMfaProof::KEY => $proof])->get('/__test/platform-read')->assertForbidden();
+        $this->withSession([PlatformSessionProof::KEY => $proof])->get('/__test/platform-read')->assertForbidden();
     }
 
     public function test_recovery_code_regeneration_invalidates_existing_operator_session(): void

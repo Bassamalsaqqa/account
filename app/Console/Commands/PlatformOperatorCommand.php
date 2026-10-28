@@ -20,8 +20,8 @@ final class PlatformOperatorCommand extends Command
     public function handle(): int
     {
         $user = User::query()->where('email', mb_strtolower(trim((string) $this->argument('email'))))->first();
-        if ($user === null || (! $this->option('revoke') && ($user->two_factor_secret === null || $user->two_factor_confirmed_at === null))) {
-            $this->error('An existing account with confirmed 2FA enrollment is required for a grant.');
+        if ($user === null) {
+            $this->error('An existing account is required for a grant.');
 
             return self::FAILURE;
         }
@@ -33,10 +33,7 @@ final class PlatformOperatorCommand extends Command
         $revoke = (bool) $this->option('revoke');
         DB::transaction(function () use ($user, $revoke): void {
             $grant = PlatformOperatorGrant::query()->where('user_id', $user->id)->lockForUpdate()->first() ?? new PlatformOperatorGrant;
-            $fresh = User::query()->whereKey($user->id)->lockForUpdate()->firstOrFail();
-            if (! $revoke && ($fresh->two_factor_secret === null || $fresh->two_factor_confirmed_at === null)) {
-                throw new \RuntimeException('Operator 2FA enrollment changed; no grant was issued.');
-            }
+            User::query()->whereKey($user->id)->lockForUpdate()->firstOrFail();
             $grant->forceFill([
                 'user_id' => $user->id, 'active' => ! $revoke,
                 'permissions' => $revoke ? [] : PlatformAccess::PERMISSIONS,
@@ -47,7 +44,7 @@ final class PlatformOperatorCommand extends Command
                 'operator_user_id' => (int) $user->id, 'grant_revision' => (int) $grant->revision,
             ]);
         });
-        $this->info('Platform authority updated. A fresh MFA login is required for access.');
+        $this->info('Platform authority updated. Sign in again or confirm your account password for access.');
 
         return self::SUCCESS;
     }
