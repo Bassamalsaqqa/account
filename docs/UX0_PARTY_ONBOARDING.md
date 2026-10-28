@@ -18,7 +18,9 @@ Advanced details use native keyboard-operable disclosures. Server validation reo
 - Production build: **310 modules, exit 0**.
 - npm audit and Composer locked audit: **zero reported vulnerabilities/advisories**, exit 0; dependencies unchanged.
 - Historical failed focused attempts are retained privately: stale advanced-email assertion and reused cross-kind race key were fixture defects, corrected before the successful integrated gate.
-- Full `composer qa` and final six-domain synthetic reconciliation receipt: **pending**, not certified by the focused results.
+- First full `composer qa` on `b71a9e0`: **exit 1**, 3,548 passed, one failed, four Windows symlink warnings, 42,588 assertions. Pint and PHPStan passed. The sole failure was a legacy fixture requiring Arabic despite a valid English name. The corrected dataset blanks both names and retains rejection and zero-write assertions; application code is unchanged.
+- Corrected focused gate: **72 tests, 409 assertions, exit 0**, including Purchasing Foundation, single-name onboarding and actual contention. Scoped Pint passed. Final complete QA rerun remains **pending**.
+- All six reconciliation domains passed canonical synthetic suites in the first full run, including a posted-data migration-preservation fixture with unchanged economic fingerprints. This is synthetic evidence, not live-company certification. Four Windows symlink cases could not execute downstream assertions; no Linux pass is claimed.
 
 ## Browser evidence and limitations
 

@@ -156,17 +156,17 @@ class PurchasingFoundationTest extends TestCase
             'email' => ['email', 'not-an-email'],
             'status' => ['status', 'closed'],
             'country' => ['country_code', 'USA'],
-            'missing name' => ['name_ar', ' '],
+            'both names blank' => ['name_ar', ' ', ['name_en' => ' ']],
         ];
     }
 
     #[DataProvider('invalidVendorData')]
-    public function test_vendor_authoritative_validation(string $field, string $value): void
+    public function test_vendor_authoritative_validation(string $field, string $value, array $overrides = []): void
     {
         $this->company->currencies()->where('currency_code', 'USD')->update(['enabled' => false]);
         $this->company->languages()->where('locale', 'en')->update(['enabled' => false]);
         try {
-            $this->vendor([$field => $value]);
+            $this->vendor(array_replace($overrides, [$field => $value]));
             $this->fail('Invalid Vendor data accepted.');
         } catch (ValidationException $exception) {
             $this->assertArrayHasKey($field, $exception->errors());
