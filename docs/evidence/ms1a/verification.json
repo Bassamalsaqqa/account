@@ -124,5 +124,43 @@
     "stdout_sha256": "84058d956e526ddc3c0010d9c7f574ecc3a924bd7565819ffb0811226a7ead13",
     "receipt_sha256": "5b18e71297ccd3a7ce7a22be49f45f1aa1091294a66d7c2e5996dc6ed1d836b5",
     "superseded_attempt": "Initial isolated harness failed: tmpfs prevented executing test stub and public .htaccess was not mounted. Corrected harness only; no application/test assertion changes."
+  },
+  "owner_access_correction": {
+    "tested_head": "1066b54e173022f729923a10eee6fd85da0972b6",
+    "tested_tree": "17fe141697bba203f1c8efa5ad1b699e751b770b",
+    "tracked_files_sha256": "611b56dbc5bfee6ae6d28bb84526ea841b7f524aa6409b1c3e7aec2587deb006",
+    "command": "composer qa (isolated disposable MariaDB harness)",
+    "exit": 0,
+    "phpunit": {
+      "passed": 3521,
+      "assertions": 42310,
+      "warnings": 4,
+      "duration_seconds": 3739.06
+    },
+    "pint": "passed",
+    "phpstan": {
+      "files": 662,
+      "errors": 0
+    },
+    "javascript": {
+      "passed": 44,
+      "exit": 0
+    },
+    "build": {
+      "modules": 310,
+      "exit": 0
+    },
+    "dependency_audits": {
+      "composer_advisories": 0,
+      "npm_vulnerabilities": 0
+    },
+    "primary_fingerprints_preserved": true,
+    "source_unchanged": true,
+    "schema_cleanup_verified": true,
+    "server_stopped": true,
+    "owned_env_removed": true,
+    "windows_warnings": "Four symlink fixtures could not be created; downstream assertions skipped, not claimed as Linux passes. Deployment scripts unchanged.",
+    "historical_failed_attempt": "Pint stopped before PHPStan/PHPUnit: CRLF in two working files. Committed blobs already LF; normalized working files matched source before complete rerun.",
+    "production_verification": "pending"
   }
 }
