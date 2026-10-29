@@ -29,6 +29,12 @@ Exact authorized retries return the original outcome even after token expiry; di
 
 Historical attempts remain traceable: the initial foundation stale-draft error was safely rejected but used the wrong exception category, corrected to HTTP 409. A later 31-test/196-assertion run had passing assertions but failed source-stability because Codex formatted a tracked file after launch; diagnostic only, superseded by unchanged-source integrated gates. A sandbox-denied PHP launch executed no tests. None is final PASS.
 
+## First full gate and accessibility correction
+
+The first complete FIN-1 `composer qa` at `3efd058a7fb7890163a726492df3f5899ad61970` **failed (exit 1)**: 3,668 passed, four failed, four Windows symlink warnings, 43,320 assertions. All four failures were the existing AR/EN form accessibility contract rejecting missing IDs on the three settlement radio inputs. The warnings represent unexecuted downstream symlink assertions, not Linux proof. The isolated schema was removed and source/custody remained stable; the failed logs remain historical evidence.
+
+The correction adds unique `settlement-mode-{unpaid,full,partial}` IDs and matching label `for` attributes in two Blade lines. No business behavior or test assertion changes. The existing accessibility suite plus FIN-1 Livewire regressions then passed **9 tests / 1,400 assertions / exit 0**, with source stability and disposable cleanup verified. This focused pass does not replace a complete QA pass on the corrected frozen candidate. **Acceptance remains HOLD pending that retry and independent financial-source review.**
+
 ## Remaining acceptance
 
 One frozen-source full `composer qa` and independent strict financial/security review are required. Review combined authority, lock order, incoming-check lifecycle/routing, outer-commit admission, permission/session revocation and Livewire hydration/replay. Broader browser offline/retry, keyboard-only complete submission, restricted-role UI and physical-device/scanner checks remain unverified. Desktop responsive emulation is not device acceptance; Windows symlink skips are not Linux proof.

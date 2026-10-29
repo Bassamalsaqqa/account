@@ -9,7 +9,7 @@
     "resources/views/components/sales-command-preview.blade.php": "03ff4f4f8eb84a701c83e3bb98b9a35e7e65b8080eb03c14d584d256e2ef5be2",
     "resources/views/livewire/pages/sales/invoice-form.blade.php": "cf79723b2a05c8c44eb22aa436417603ee8e9a0a50a7f955426fa9532e41cfd2",
     "resources/views/livewire/pages/sales/payment-detail.blade.php": "f4efd8eb60d0cd8771d975f5aff452b911224aa43c9eea4fb726366d845db477",
-    "resources/views/livewire/partials/immediate-sale-settlement.blade.php": "92fbce9625dcc9ad65feb498e6cdcc578ef3f37d7a762fd38f11eaf6fe0f4745",
+    "resources/views/livewire/partials/immediate-sale-settlement.blade.php": "92b6357e98a1a882ca1c51f76cde956730456c94a5632fb81d3c43c6e22dcbae",
     "resources/views/livewire/partials/immediate-sale-review.blade.php": "03f2bd0d7ec80e20d77480b2bd4aae0db1460b880ec34558b460265ae386f993",
     "resources/lang/ar/fin1.php": "5d93b19a6143de9a7d3c6ff2473c700cb0a77d22edf12249afd672d12da5a70a",
     "resources/lang/en/fin1.php": "7dbc34c343d3cb1a964f3fb5de472b0eb41fc7375580ceec6b4bc6efee3be7a3",
@@ -184,5 +184,31 @@
   "protected_work": {
     "private_file_hashes_matched": 40,
     "translation_stash": "94356f52987499e9e43d8d50453e459b3f0d627e"
+  },
+  "full_qa_history": [
+    {
+      "head": "3efd058a7fb7890163a726492df3f5899ad61970",
+      "run": "run-20261029T212248",
+      "exit": 1,
+      "passed": 3668,
+      "failed": 4,
+      "warnings": 4,
+      "assertions": 43320,
+      "classification": "Four existing AR/EN accessibility assertions rejected missing radio IDs/explicit labels. Assertions unchanged; correction adds IDs/for attributes only.",
+      "source_stable": true
+    }
+  ],
+  "accessibility_correction": {
+    "runtime_diff": "Two Blade lines: unique settlement-mode-{unpaid,full,partial} IDs and matching label for bindings.",
+    "focused_run": "run-20261029T224723",
+    "command": "python .release-b1-local/ms1a/run-verified-qa.py tests/Feature/Phase10/FormAccessibilityTest.php tests/Feature/Fin1/ImmediateSaleLivewireTest.php",
+    "exit": 0,
+    "tests": 9,
+    "assertions": 1400,
+    "source_stable": true,
+    "schema_cleanup_verified": true,
+    "server_stopped": true,
+    "owned_env_removed": true,
+    "complete_corrected_source_qa": "Pending; HOLD"
   }
 }

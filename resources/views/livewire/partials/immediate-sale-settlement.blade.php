@@ -4,8 +4,8 @@
         <p id="settlement-help" class="text-sm text-text-secondary">{{ __('fin1.help') }}</p>
         <div class="grid gap-2 sm:grid-cols-3">
             @foreach (['unpaid', 'full', 'partial'] as $mode)
-                <label class="flex min-h-11 cursor-pointer items-center gap-2 rounded-control border border-border bg-surface px-3 py-2 text-sm focus-within:ring-2 focus-within:ring-primary">
-                    <input type="radio" wire:model.live="settlement.mode" value="{{ $mode }}" name="settlement-mode" class="accent-primary" />
+                <label for="settlement-mode-{{ $mode }}" class="flex min-h-11 cursor-pointer items-center gap-2 rounded-control border border-border bg-surface px-3 py-2 text-sm focus-within:ring-2 focus-within:ring-primary">
+                    <input id="settlement-mode-{{ $mode }}" type="radio" wire:model.live="settlement.mode" value="{{ $mode }}" name="settlement-mode" class="accent-primary" />
                     <span>{{ __('fin1.mode_'.$mode) }}</span>
                 </label>
             @endforeach
