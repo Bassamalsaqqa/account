@@ -1,0 +1,79 @@
+{
+  "candidate": {
+    "pr": 67,
+    "branch": "fix/symfony-mime-security-20261028",
+    "head": "240e7bc688948bb04d510c47336800fb23a2ca38",
+    "tree": "d43f6d1de0367dda974f37cbf77cc5f8ae7d81f5",
+    "base": "380e82fb7b6bcc422f5da21f758c5155b108aa75"
+  },
+  "dependency_resolution": {
+    "package": "symfony/mime",
+    "version_from": "v8.1.7",
+    "version_to": "v8.1.10",
+    "dist_reference": "8d1232052c9cdef170ed9608b3147bca4f61ff69",
+    "cve_mitigated": "CVE-2026-45070",
+    "composer_validate_exit": 0,
+    "composer_check_platform_reqs_exit": 0,
+    "composer_audit_vulnerabilities": 0,
+    "npm_audit_vulnerabilities": 0
+  },
+  "test_results": {
+    "mime_header_security_unit": {
+      "tests": 20,
+      "assertions": 27,
+      "exit": 0
+    },
+    "javascript_unit": {
+      "tests": 44,
+      "exit": 0
+    },
+    "frontend_production_build": {
+      "exit": 0,
+      "manifest_sha256": "FB44F63B43387639384B229952BF1D799F3154276A91EDD9FF8A636D69D2FCFB",
+      "assets": {
+        "app_css": {
+          "path": "public/build/assets/app-DlDYu-3w.css",
+          "sha256": "16769C6A8B1ED76AC08C5940BC158F5AB4EA59696E8F12CC122CC0B8153F3C2B"
+        },
+        "app_js": {
+          "path": "public/build/assets/app-0Q18tg7G.js",
+          "sha256": "2E444C0FD5D95B393AAD0855C5C4E02FC130DA601612BD65B24E0BF88445334A"
+        },
+        "index_js": {
+          "path": "public/build/assets/index-B2ZkNDM-.js",
+          "sha256": "2CB64C36FCB8CB89411B6B0E6D1DCE4B048D5776F2097E54C8EC24C22A6003F0"
+        }
+      }
+    },
+    "composer_qa_authoritative": {
+      "exit": 0,
+      "tests_passed": 3569,
+      "assertions": 42616,
+      "warnings": 4,
+      "warnings_classification": "Four Windows symlink cases could not execute downstream assertions; no Linux pass claimed for this run.",
+      "duration_seconds": 3052.66,
+      "run_identifier": "run-20261028T214236",
+      "pint_exit": 0,
+      "phpstan_exit": 0,
+      "reconciliations_verified": [
+        "accounting:reconcile",
+        "inventory:reconcile",
+        "sales:reconcile",
+        "money:reconcile",
+        "phase7:reconcile",
+        "PayablesReconciliationService"
+      ],
+      "assistant_migration_preservation": "PASSED (all 5 commands + Payables verified with populated economic data; fingerprints identical)"
+    }
+  },
+  "isolation_and_teardown": {
+    "server_stopped": true,
+    "schema_cleanup_verified": true,
+    "listener_3342_closed": true,
+    "owned_env_removed": true,
+    "source_unchanged_during_run": true,
+    "working_tree_clean": true,
+    "owner_custody_verified": true
+  },
+  "independent_codex_inspection": "Exact source/receipts, complete lock scope and actual build hashes verified; no runtime application changes."
+}
