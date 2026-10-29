@@ -84,7 +84,7 @@
         "locale": "ar",
         "form": 0,
         "reviewFocus": {
-          "name": "Ù…Ø±Ø§Ø¬Ø¹Ø© Ø§Ù„Ø¨ÙŠØ§Ù†Ø§Øª Ù‚Ø¨Ù„ Ø§Ù„Ø¥Ø±Ø³Ø§Ù„",
+          "name": "Ã™â€¦Ã˜Â±Ã˜Â§Ã˜Â¬Ã˜Â¹Ã˜Â© Ã˜Â§Ã™â€žÃ˜Â¨Ã™Å Ã˜Â§Ã™â€ Ã˜Â§Ã˜Âª Ã™â€šÃ˜Â¨Ã™â€ž Ã˜Â§Ã™â€žÃ˜Â¥Ã˜Â±Ã˜Â³Ã˜Â§Ã™â€ž",
           "role": "group"
         },
         "restored": "term_plan"
@@ -93,7 +93,7 @@
         "locale": "ar",
         "form": 1,
         "reviewFocus": {
-          "name": "Ù…Ø±Ø§Ø¬Ø¹Ø© Ø§Ù„Ø¨ÙŠØ§Ù†Ø§Øª Ù‚Ø¨Ù„ Ø§Ù„Ø¥Ø±Ø³Ø§Ù„",
+          "name": "Ã™â€¦Ã˜Â±Ã˜Â§Ã˜Â¬Ã˜Â¹Ã˜Â© Ã˜Â§Ã™â€žÃ˜Â¨Ã™Å Ã˜Â§Ã™â€ Ã˜Â§Ã˜Âª Ã™â€šÃ˜Â¨Ã™â€ž Ã˜Â§Ã™â€žÃ˜Â¥Ã˜Â±Ã˜Â³Ã˜Â§Ã™â€ž",
           "role": "group"
         },
         "restored": "renew_new_date"
@@ -102,7 +102,7 @@
         "locale": "ar",
         "form": 2,
         "reviewFocus": {
-          "name": "Ù…Ø±Ø§Ø¬Ø¹Ø© Ø§Ù„Ø¨ÙŠØ§Ù†Ø§Øª Ù‚Ø¨Ù„ Ø§Ù„Ø¥Ø±Ø³Ø§Ù„",
+          "name": "Ã™â€¦Ã˜Â±Ã˜Â§Ã˜Â¬Ã˜Â¹Ã˜Â© Ã˜Â§Ã™â€žÃ˜Â¨Ã™Å Ã˜Â§Ã™â€ Ã˜Â§Ã˜Âª Ã™â€šÃ˜Â¨Ã™â€ž Ã˜Â§Ã™â€žÃ˜Â¥Ã˜Â±Ã˜Â³Ã˜Â§Ã™â€ž",
           "role": "group"
         },
         "restored": "pay_charge_id"
@@ -113,5 +113,33 @@
   "limitations": [
     "No browser billing submissions",
     "No physical device or screen-reader speech certification"
+  ],
+  "ui_reference_commit": "7f7641cd5946ad77ee36adfe25adf163e65a295e",
+  "capture_provenance": "Previously captured synthetic UI observations, independently inspected by Codex. Captures predate source freeze; later pagination helper copy applies only to multi-page history absent in the shown fixture. No current-sha screenshot recapture or browser submission is claimed.",
+  "screenshots": [
+    {
+      "file": "billing-desktop-ar.jpg",
+      "sha256": "01a79860c88de44db55c78a45a0455ae7b1cd88cedcad34827632866c8bb2782"
+    },
+    {
+      "file": "billing-desktop-en.jpg",
+      "sha256": "d15da890093b1a407d9fcfc721f3d1890300f1d724f7b928e9c4e06d22c8f03f"
+    },
+    {
+      "file": "billing-mobile-ar.jpg",
+      "sha256": "9dab3286df71175040d788819a7fccae330b2e8b5fa96ec1c0a34d774a3b55aa"
+    },
+    {
+      "file": "billing-mobile-en.jpg",
+      "sha256": "1b25ced3fee9d0a5f21ca9e5715ee5d41266a406a83773f991b4a5ae662ca98c"
+    },
+    {
+      "file": "billing-tablet-ar.jpg",
+      "sha256": "6b54080465a54d9780b561fda7f8f028746378980f5372fc7017a11de08aaa56"
+    },
+    {
+      "file": "billing-tablet-en.jpg",
+      "sha256": "bccdd2a4991c73cc9458ef4e481cadd9e67ea51851e82c3c8d051a9dee16b7eb"
+    }
   ]
 }
