@@ -1,0 +1,30 @@
+{
+  "status": "source foundation only; FIN-1 feature incomplete; not accepted for merge/deployment",
+  "baseline": "12d32484fbbbdba4df1280e94b4e1891f9e4c44e",
+  "gate": "focused disposable MariaDB: ImmediateSaleCommandsTest, CustomerPaymentAndFxTest, SalesCommandWorkflowTest, AssistantMigrationPreservationTest",
+  "exit": 0,
+  "tests": 50,
+  "assertions": 255,
+  "source_fingerprint": "a8b1c0a505390376cc1480d93ea2256631befefb4e6b99ed6418820730341d8c",
+  "runtime_and_test_sha256": {
+    "app/Application/Commands/ImmediateSaleCommands.php": "50aa99582834a954c7006343da5719717953d923ade0c5e0475904a8f8a9726d",
+    "tests/Feature/Fin1/ImmediateSaleCommandsTest.php": "40a3e32033ebcb28ed6a474b53510bbeb095645ae68c5618eeb63e2fa6f62324"
+  },
+  "pint_exit": 0,
+  "phpstan_exit": 0,
+  "six_reconciliations_after_new_full_settlement": "healthy on synthetic fixtures",
+  "cleanup": {
+    "schema_cleanup_verified": true,
+    "server_stopped": true,
+    "owned_env_removed": true
+  },
+  "historical_expanded_run": {
+    "tests": 50,
+    "assertions": 245,
+    "errors": 1,
+    "classification": "Changed draft safely rejected with wrong exception type; corrected to re-preview conflict. Failed logs retained."
+  },
+  "full_qa": "not run for unfinished FIN-1 phase",
+  "production_changes": false,
+  "routes_ui_migrations_dependencies_changed": false
+}
