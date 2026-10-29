@@ -12,8 +12,8 @@ final class PlatformAudit
     /** @param array<string, int|string|bool|null> $metadata */
     public function record(string $event, ?int $actorId, ?int $companyId = null, array $metadata = []): void
     {
-        if (! in_array($event, ['access.denied', 'company.provisioned', 'company.provision_failed', 'operator.granted', 'operator.revoked'], true)
-            || array_diff(array_keys($metadata), ['owner_user_id', 'operator_user_id', 'correlation_id', 'grant_revision']) !== []) {
+        if (! in_array($event, ['access.denied', 'company.provisioned', 'company.provision_failed', 'operator.granted', 'operator.revoked', 'subscription.configured', 'subscription.renewed', 'subscription.payment_recorded'], true)
+            || array_diff(array_keys($metadata), ['owner_user_id', 'operator_user_id', 'correlation_id', 'grant_revision', 'billing_request_id']) !== []) {
             throw new InvalidArgumentException('Unsupported platform audit payload.');
         }
 

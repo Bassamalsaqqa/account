@@ -11,7 +11,7 @@ use Illuminate\Support\Facades\DB;
 
 final class PlatformAccess
 {
-    public const array PERMISSIONS = ['company.read', 'company.provision', 'audit.read'];
+    public const array PERMISSIONS = ['company.read', 'company.provision', 'audit.read', 'subscription.manage'];
 
     /** Re-read grant and identity on every action; callers lock grants inside write transactions. */
     public function authorize(string $permission, bool $lock = false): PlatformOperatorGrant
