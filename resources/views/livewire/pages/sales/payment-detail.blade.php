@@ -61,11 +61,11 @@
             </div>
             <div>
                 <span class="text-text-muted block text-[11px]">{{ __('sales.money_account') }}</span>
-                <span class="font-bold text-text-primary">{{ $payment->check_id !== null ? __('money.check').' #'.$payment->checkInstrument?->check_number : ($payment->moneyAccount?->displayName() ?? '—') }}</span>
+                <span class="font-bold text-text-primary">{{ $payment->check_id !== null ? __('money.check_number').' #'.$payment->checkInstrument?->check_number : ($payment->moneyAccount?->displayName() ?? '—') }}</span>
             </div>
             <div>
                 <span class="text-text-muted block text-[11px]">{{ __('sales.payment_method') }}</span>
-                <span class="font-bold text-text-primary">{{ __('sales.' . $payment->payment_method) }}</span>
+                <span class="font-bold text-text-primary">{{ $payment->payment_method === 'check' ? __('fin1.check') : __('sales.' . $payment->payment_method) }}</span>
             </div>
             <div>
                 <span class="text-text-muted block text-[11px]">{{ __('sales.payment_amount') }}</span>

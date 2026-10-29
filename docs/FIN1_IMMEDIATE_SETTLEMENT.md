@@ -1,32 +1,36 @@
-# FIN-1 — source development checkpoint
+# FIN-1 - invoice and immediate settlement
 
-Baseline and production: `12d32484fbbbdba4df1280e94b4e1891f9e4c44e` (MS-2 deployed with subscription enforcement OFF).
+Production/baseline remains `12d32484fbbbdba4df1280e94b4e1891f9e4c44e` (MS-2, enforcement OFF). Development: `feature/fin1-immediate-sales-settlement-20261029`, [draft PR #69](https://github.com/Bassamalsaqqa/account/pull/69).
 
-**IN DEVELOPMENT. Not approved for merge, deployment or financial acceptance.** The new command is not called by any route, API, Livewire component or UI. Existing invoice posting and separate receipts remain unchanged. No migration, dependency, financial formula or production setting changes are included.
+**HOLD for release acceptance. Source development only. Full FIN-1 QA and independent strict financial-source review are required. No FIN-1 merge or deployment is authorized.**
 
-## Initial canonical composition
+## Behavior and authority
 
-`ImmediateSaleCommands` accepts an explicit unpaid/full/partial choice for an existing saved draft. It reuses the mature `SalesInvoiceCommands` confirmation and canonical invoice posting, then `PostCustomerPaymentAction` for cash/bank receipt and allocation. One outer company-first transaction holds both business legs and durable command receipts; a receipt failure rolls back invoice state, numbering, ledger/stock effects and receipts. Commercial write admission and current permissions/session checks remain mandatory.
+The existing invoice workspace defaults to Unpaid and preserves draft saving and separate receipts. Authorized users explicitly choose full/partial settlement and an existing cash/bank account or incoming check. The existing focused posting-confirmation panel reviews invoice totals, receipt/account/currency/date/rate, allocations, outstanding balance, excess credit and check metadata before confirmation. Validation preserves the saved draft and manual values. The invoice detail already provides receipt links, balance, new invoice and document actions; receipt navigation returns to its invoice. Two untranslated check labels discovered in that receipt journey were corrected.
 
-Preview performs no economic writes. Its encrypted five-minute token binds the company, actor, invoice, original invoice confirmation, exact normalized receipt instructions and payment-account/ledger context. Execute rechecks permissions before replay, rejects stale payment context, and delegates draft/stock/tax/pricing revalidation to the existing invoice command. Actor/company/action-scoped request keys and payload hashes prevent changed-request replay; derived receipt keys link the existing durable invoice/receipt records without a new schema.
+`ImmediateSaleCommands` composes mature `SalesInvoiceCommands` with `PostCustomerPaymentAction` or `ReceiveCheckAction` in one company-first `TenantWriteAccess` transaction. Numbering, stock, ledger, receipt, allocation and durable command receipts commit together or roll back together. Exact decimal strings, currency precision, authoritative stock/pricing/tax and existing credit-limit blockers remain intact. No new migration, dependency, operator grant, licensing or production-setting change.
 
-Money uses exact decimal strings and existing currency/FX/account-routing primitives. Cross-currency allocations require both explicit currency amounts. Full settlement covers the complete invoice; partial settlement leaves an explicitly previewed remainder. Any explicitly entered excess is previewed as unallocated receipt credit, not silently discarded. A zero invoice uses unpaid rather than a fabricated zero receipt. Existing credit-limit blockers and financial safeguards are preserved.
+The encrypted five-minute confirmation binds actor/company/invoice, canonical invoice confirmation, exact receipt instructions and account/control-ledger context. Fresh invoice view/post and receipt create/allocate permissions, membership, tenant context, API proof where applicable and commercial commit admission remain mandatory. Checks additionally require `money.check.incoming.manage`; they route through the executing canonical receive action to checks in hand and remain received, not cleared. Even a received check cannot use direct payment reversal: the existing `TransitionCheckAction` must own cancellation/return. This corrects the initial secondary audit's contrary suggestion.
 
-This initial foundation supports cash and bank transfer only. **Checks are deliberately rejected here**: the existing `MoneyEventScope::checkForPayment` requires its executing canonical `ReceiveCheckAction`. FIN-1 must integrate that event boundary rather than attach a check ID to an ordinary receipt or invent a second check writer.
+Exact authorized retries return the original outcome even after token expiry; different requests cannot reuse that key. Competing actors/keys on one stocked draft leave one sale deduction and one receipt. Zero invoices use Unpaid; explicit excess remains unapplied credit. Payment edits invalidate review. The default unpaid UI retains the existing invoice command.
 
-## Verification and current limits
+## Verification actually executed
 
-Initial focused checks passed six tests/31 assertions. An expanded 50-test gate found one new-flow recovery error: a changed draft was safely rejected with a validation exception instead of a re-preview conflict. The command now maps invalidated signed payment context to HTTP 409; assertions were preserved. Its corrected 12-test focused run passed 48 assertions. These attempts and their complete private logs are retained; they are not full-phase acceptance.
+- AGY secondary package: 26 tests / 141 assertions / exit 0, independently inspected against hashes, receipt and source. Its original service-line races did not establish stock concurrency.
+- Integrated check/UI gate: 65 tests / 357 assertions / exit 0. Strengthened stocked two-process, two-authorized-actor gate: **65 tests / 361 assertions / exit 0**.
+- Final receipt localization plus mature check lifecycle/security regressions: **19 tests / 131 assertions / exit 0**. Counts overlap; do not add these totals.
+- Focused synthetic coverage includes FEFO, stock/receipt failure rollback, partial/mixed-FX settlement, canonical returns/reversals, stale accounts/tokens, permissions and tenant boundaries. All six reconciliation domains passed in the composed financial scenarios.
+- Pint and PHPStan pass without suppression; JavaScript 44/44; production build 310 modules, exit 0. Locked Composer/npm audits report zero advisories/vulnerabilities. Dependencies unchanged.
+- Actual synthetic browser: AR RTL and EN LTR at 390/768/1440px, no page overflow; payment inputs/selects and radio labels provide 44px targets. Error summary announcement/focus, field descriptors, manual amount preservation and cancel-to-post-trigger focus were verified. Browser review found and corrected focus ordering by moving payment review inside the focused confirmation panel.
+- A synthetic Arabic incoming-check sale completed through normal UI, invoice/receipt links and corrected AR/EN receipt labels. A separate read-only probe verified exactly one posted invoice, receipt/allocation and received check; all six reconciliations returned healthy. No production transaction or provider call.
+- Disposable schemas removed, owned MariaDB/web processes stopped, browser viewport reset/test tab closed. Forty private files and the translation stash remain protected.
 
-The final focused foundation gate passed **50 tests / 255 assertions / exit 0**, including actual reconciliation after the composed sale and mature invoice/receipt/migration regressions. All six canonical domains were healthy after the new full-settlement flow. The failed expanded gate remains historical evidence. [Source-file-pinned receipt](evidence/fin1/foundation.json) records the tested runtime/test hashes and cleanup. Pint and PHPStan pass for the command. No complete `composer qa` certification is claimed for FIN-1; run the final full gate once the complete phase is frozen rather than testing an unfinished phase repeatedly. MS-2 QA does not certify this source.
+[Compact source-pinned evidence](evidence/fin1/integration.json). [Original foundation evidence](evidence/fin1/foundation.json) remains historical. Raw logs remain private. Browser screenshots were inspected in-session; no durable screenshot archive is claimed.
 
-Remaining before FIN-1 acceptance:
+Historical attempts remain traceable: the initial foundation stale-draft error was safely rejected but used the wrong exception category, corrected to HTTP 409. A later 31-test/196-assertion run had passing assertions but failed source-stability because Codex formatted a tracked file after launch; diagnostic only, superseded by unchanged-source integrated gates. A sandbox-denied PHP launch executed no tests. None is final PASS.
 
-- Canonical incoming-check composition, instrument lifecycle, immutable history and failure rollback.
-- Real stock/FEFO/lots/tax rollback scenarios and six reconciliations across partial, mixed-FX and check outcomes; returns/reversals remain canonical.
-- Two-process competing users, duplicate/disconnected retries, permission/session revocation and subscription-expiry boundaries around the composed event.
-- Broader actor/company/foreign-account negative tests, confirmation tampering, precision and changed routing/context cases; independent inspection of lock order and every alternate entrypoint.
-- Existing invoice preview/confirmation integration and AR/EN UI: optional Unpaid / Pay in full / Pay part, exact account/currency/amount review, recovery and receipt/invoice/balance links. Use existing Blade/Livewire/Tailwind components with shadcn-inspired hierarchy, 44px controls and desktop/tablet/mobile RTL/LTR behavior. No React stack, new modal architecture or implicit incoming money.
-- Fresh browser acceptance, focused financial/security regression, full QA and independent strict financial-source review before any merge/deployment.
+## Remaining acceptance
 
-Deployment of MS-2 does not authorize FIN-1 production changes or subscription restriction activation. Owner physical-device and privileged billing-access checks remain separate from this source checkpoint.
+One frozen-source full `composer qa` and independent strict financial/security review are required. Review combined authority, lock order, incoming-check lifecycle/routing, outer-commit admission, permission/session revocation and Livewire hydration/replay. Broader browser offline/retry, keyboard-only complete submission, restricted-role UI and physical-device/scanner checks remain unverified. Desktop responsive emulation is not device acceptance; Windows symlink skips are not Linux proof.
+
+The browser did not establish the transient success notification; posted invoice/receipt identifiers, allocation and balance were visibly verified instead. No paid provider or subscription enforcement was activated. Keep PR #69 draft; no later roadmap phase, FIN-1 merge or FIN-1 deployment has occurred.

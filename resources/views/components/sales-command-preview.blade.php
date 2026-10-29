@@ -320,13 +320,17 @@
         </div>
     </div>
 
+    @if (isset($preview['settlement']))
+        @include('livewire.partials.immediate-sale-review', ['review' => $preview['settlement']])
+    @endif
+
     <!-- Action Buttons with Live Status and Focus Restoration -->
     <div class="flex items-center justify-end gap-3 pt-3 border-t border-border">
         <button type="button"
                 wire:click="{{ $cancelAction }}"
                 @click="if (returnFocusId) { setTimeout(() => document.getElementById(returnFocusId)?.focus(), 50); }"
                 wire:loading.attr="disabled"
-                class="px-4 py-2 rounded-control border border-border text-xs font-bold text-text-secondary hover:bg-surface-soft transition-colors cursor-pointer">
+                class="min-h-11 px-4 py-2 rounded-control border border-border text-xs font-bold text-text-secondary hover:bg-surface-soft transition-colors cursor-pointer">
             {{ __('commands.cancel_preview') }}
         </button>
 
@@ -334,7 +338,7 @@
             <button type="button"
                     wire:click="{{ $confirmAction }}"
                     wire:loading.attr="disabled"
-                    class="px-5 py-2 rounded-control bg-primary text-white text-xs font-bold hover:bg-primary-hover transition-colors shadow-sm cursor-pointer flex items-center gap-2">
+                    class="min-h-11 px-5 py-2 rounded-control bg-primary text-white text-xs font-bold hover:bg-primary-hover transition-colors shadow-sm cursor-pointer flex items-center gap-2">
                 <span wire:loading wire:target="{{ $confirmAction }}" class="inline-block w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" aria-hidden="true"></span>
                 <span>⚡ {{ __('commands.confirm_post') }}</span>
             </button>
@@ -343,7 +347,7 @@
                     disabled
                     aria-disabled="true"
                     title="{{ __('commands.cannot_confirm_blockers') }}"
-                    class="px-5 py-2 rounded-control bg-slate-200 text-slate-500 text-xs font-bold cursor-not-allowed">
+                    class="min-h-11 px-5 py-2 rounded-control bg-slate-200 text-slate-500 text-xs font-bold cursor-not-allowed">
                 ⚡ {{ __('commands.confirm_post') }}
             </button>
         @endif
