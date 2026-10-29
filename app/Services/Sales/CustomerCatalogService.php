@@ -4,11 +4,11 @@ declare(strict_types=1);
 
 namespace App\Services\Sales;
 
+use App\Application\Platform\TenantWriteAccess;
 use App\Domain\Money\ValueObjects\MoneyAmount;
 use App\Models\Company;
 use App\Models\Customer;
 use App\Models\User;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
@@ -18,7 +18,7 @@ final class CustomerCatalogService
     /** @param array<string, mixed> $data */
     public function save(Company $company, User $actor, array $data, ?int $customerId = null): Customer
     {
-        return DB::transaction(function () use ($company, $actor, $data, $customerId): Customer {
+        return app(TenantWriteAccess::class)->transaction((int) $company->id, function () use ($company, $actor, $data, $customerId): Customer {
             $company = app(SalesActorGuard::class)->lockAndAuthorize($company->id, $actor, 'customers.manage');
             $customer = $customerId === null ? new Customer : Customer::where('company_id', $company->id)->whereKey($customerId)->lockForUpdate()->firstOrFail();
 

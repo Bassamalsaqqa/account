@@ -2,13 +2,13 @@
 
 namespace App\Actions\Company;
 
+use App\Application\Platform\TenantWriteAccess;
 use App\Models\Company;
 use App\Models\User;
 use App\Services\Audit\AuditService;
 use App\Services\Tenancy\CompanyRoleService;
 use App\Services\Tenancy\ProtectedDocumentDelegation;
 use Illuminate\Auth\Access\AuthorizationException;
-use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
@@ -36,7 +36,7 @@ class UpdateRolePermissionsAction
             throw new InvalidArgumentException("Permission '{$permissionName}' is not defined in the static catalog.");
         }
 
-        DB::transaction(function () use ($company, $role, $permissionName, $enable, $actor) {
+        app(TenantWriteAccess::class)->transaction((int) $company->id, function () use ($company, $role, $permissionName, $enable, $actor) {
             app(ProtectedDocumentDelegation::class)->authorize(
                 (int) $company->id, $actor, 'settings.roles.manage',
                 in_array($permissionName, CompanyRoleService::PROTECTED_PERMISSIONS, true)

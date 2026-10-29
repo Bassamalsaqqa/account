@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Purchasing;
 
+use App\Application\Platform\TenantWriteAccess;
 use App\Models\Expense;
 use App\Models\LandedCostAllocation;
 use App\Models\Purchase;
@@ -12,14 +13,13 @@ use App\Services\Audit\AuditService;
 use App\Services\Purchasing\PurchaseDraftBuilder;
 use App\Services\Purchasing\PurchaseDraftWriter;
 use App\Services\Sales\SalesActorGuard;
-use Illuminate\Support\Facades\DB;
 
 final class UpdatePurchaseDraftAction
 {
     /** @param array<string, mixed> $data */
     public function execute(Purchase $purchase, User $actor, array $data): Purchase
     {
-        return DB::transaction(function () use ($purchase, $actor, $data): Purchase {
+        return app(TenantWriteAccess::class)->transaction((int) $purchase->company_id, function () use ($purchase, $actor, $data): Purchase {
             $guard = app(SalesActorGuard::class);
             $company = $guard->lockAndAuthorize((int) $purchase->company_id, $actor, 'purchasing.purchase.edit_draft');
             $guard->lockAndAuthorize((int) $company->id, $actor, 'purchasing.cost.view');

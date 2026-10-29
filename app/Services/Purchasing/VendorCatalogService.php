@@ -4,12 +4,12 @@ declare(strict_types=1);
 
 namespace App\Services\Purchasing;
 
+use App\Application\Platform\TenantWriteAccess;
 use App\Models\Company;
 use App\Models\User;
 use App\Models\Vendor;
 use App\Services\Audit\AuditService;
 use App\Services\Sales\SalesActorGuard;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
 
@@ -18,7 +18,7 @@ final class VendorCatalogService
     /** @param array<string, mixed> $data */
     public function save(Company $company, User $actor, array $data, ?int $vendorId = null): Vendor
     {
-        return DB::transaction(function () use ($company, $actor, $data, $vendorId): Vendor {
+        return app(TenantWriteAccess::class)->transaction((int) $company->id, function () use ($company, $actor, $data, $vendorId): Vendor {
             $company = app(SalesActorGuard::class)->lockAndAuthorize($company->id, $actor, 'vendors.manage');
 
             $vendor = $vendorId === null

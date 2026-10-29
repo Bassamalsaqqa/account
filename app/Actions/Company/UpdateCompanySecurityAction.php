@@ -2,11 +2,11 @@
 
 namespace App\Actions\Company;
 
+use App\Application\Platform\TenantWriteAccess;
 use App\Models\Company;
 use App\Models\CompanySecuritySettings;
 use App\Models\User;
 use App\Services\Audit\AuditService;
-use Illuminate\Support\Facades\DB;
 
 class UpdateCompanySecurityAction
 {
@@ -19,7 +19,7 @@ class UpdateCompanySecurityAction
      */
     public function execute(Company $company, array $validated, User $actor): CompanySecuritySettings
     {
-        return DB::transaction(function () use ($company, $validated, $actor) {
+        return app(TenantWriteAccess::class)->transaction((int) $company->id, function () use ($company, $validated, $actor) {
             $security = $company->securitySettings;
             $before = $security ? $security->only(array_keys($validated)) : null;
 

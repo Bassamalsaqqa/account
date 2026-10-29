@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Application\AI;
 
+use App\Application\Platform\TenantWriteAccess;
 use App\Models\AiCompanyPolicy;
 use App\Models\AiProviderConnection;
 use App\Models\AiUserPreference;
@@ -188,6 +189,7 @@ final class AiGovernance
         }
 
         return DB::transaction(function () use ($company, $actor, $values, $expectedRevision): AiCompanyPolicy {
+            app(TenantWriteAccess::class)->assertWritable((int) $company->id);
             $this->authorizeCapability($company, $actor, 'ai.settings.manage');
             $policy = AiCompanyPolicy::where('company_id', $company->id)->lockForUpdate()->first()
                 ?? new AiCompanyPolicy(['company_id' => $company->id, 'revision' => 0]);
@@ -250,6 +252,7 @@ final class AiGovernance
         }
 
         return DB::transaction(function () use ($company, $actor, $route, $source, $secret, $password, $replaceId): AiProviderConnection {
+            app(TenantWriteAccess::class)->assertWritable((int) $company->id);
             $this->authorizeCredential($company, $actor, $source);
             $this->requireOwner($company, $actor);
             $this->reauthenticate($actor, $password);

@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace App\Actions\Sales;
 
+use App\Application\Platform\TenantWriteAccess;
 use App\Models\Company;
 use App\Models\MoneyAccount;
 use App\Models\User;
-use Illuminate\Support\Facades\DB;
 
 class EnsureDefaultMoneyAccountAction
 {
@@ -20,7 +20,7 @@ class EnsureDefaultMoneyAccountAction
      */
     public function execute(Company $company, ?User $user = null): MoneyAccount
     {
-        return DB::transaction(function () use ($company, $user): MoneyAccount {
+        return app(TenantWriteAccess::class)->transaction((int) $company->id, function () use ($company, $user): MoneyAccount {
             Company::whereKey($company->id)->lockForUpdate()->firstOrFail();
             $existing = MoneyAccount::where('company_id', $company->id)
                 ->where('account_type', MoneyAccount::TYPE_CASH)

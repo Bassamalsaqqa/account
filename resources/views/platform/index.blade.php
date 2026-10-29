@@ -2,6 +2,19 @@
 
 @section('content')
 <div class="space-y-6">
+    @if($billingSummary !== null)
+        <section aria-label="{{ __('subscriptions.summary_title') }}" class="rounded-card border border-border bg-surface p-4 sm:p-5">
+            <h2 class="font-semibold text-text-primary">{{ __('subscriptions.summary_title') }}</h2>
+            <dl class="mt-4 grid grid-cols-2 gap-4 lg:grid-cols-4">
+                @foreach($billingSummary as $state => $count)
+                    <div>
+                        <dt class="text-sm text-text-secondary">{{ __('subscriptions.summary_'.$state) }}</dt>
+                        <dd class="mt-1 text-xl font-semibold tabular-nums text-text-primary">{{ $count }}</dd>
+                    </div>
+                @endforeach
+            </dl>
+        </section>
+    @endif
     <!-- Header Actions & Search -->
     <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Purchasing;
 
+use App\Application\Platform\TenantWriteAccess;
 use App\Domain\Inventory\DTO\StockMovementCommand;
 use App\Domain\Inventory\DTO\StockMovementLineCommand;
 use App\Domain\Inventory\Exceptions\InvalidInventoryMovementException;
@@ -29,7 +30,6 @@ use App\Services\Purchasing\PurchaseReceiptCapability;
 use App\Services\Sales\DocumentSequenceService;
 use App\Services\Sales\SalesActorGuard;
 use Brick\Math\BigDecimal;
-use Illuminate\Support\Facades\DB;
 
 final class PostPurchaseAction
 {
@@ -49,7 +49,7 @@ final class PostPurchaseAction
             throw new InvalidInventoryMovementException('Canonical Purchase posting cannot be reentered.');
         }
 
-        return DB::transaction(function () use ($purchase, $actor): Purchase {
+        return app(TenantWriteAccess::class)->transaction((int) $purchase->company_id, function () use ($purchase, $actor): Purchase {
             $guard = app(SalesActorGuard::class);
             $company = $guard->lockAndAuthorize((int) $purchase->company_id, $actor, 'purchasing.purchase.post');
             $guard->lockAndAuthorize((int) $company->id, $actor, 'purchasing.cost.view');

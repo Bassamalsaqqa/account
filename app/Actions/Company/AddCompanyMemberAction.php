@@ -2,12 +2,12 @@
 
 namespace App\Actions\Company;
 
+use App\Application\Platform\TenantWriteAccess;
 use App\Models\Company;
 use App\Models\CompanyUser;
 use App\Models\User;
 use App\Services\Audit\AuditService;
 use App\Services\Tenancy\ProtectedDocumentDelegation;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use InvalidArgumentException;
 use Spatie\Permission\Models\Role;
@@ -30,7 +30,7 @@ class AddCompanyMemberAction
             throw new InvalidArgumentException("Cannot assign role '{$roleName}'. Allowed roles: ".implode(', ', $allowedRoles));
         }
 
-        return DB::transaction(function () use ($company, $userData, $roleName, $actor) {
+        return app(TenantWriteAccess::class)->transaction((int) $company->id, function () use ($company, $userData, $roleName, $actor) {
             $delegation = app(ProtectedDocumentDelegation::class);
             $delegation->authorize((int) $company->id, $actor, 'settings.users.manage', false);
             $role = Role::where('company_id', $company->id)->where('name', $roleName)->firstOrFail();

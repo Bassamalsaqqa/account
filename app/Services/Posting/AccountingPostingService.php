@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Posting;
 
+use App\Application\Platform\TenantWriteAccess;
 use App\Domain\Accounting\Exceptions\ImmutableRecordException;
 use App\Domain\Money\ValueObjects\ExchangeRate;
 use App\Domain\Money\ValueObjects\MoneyAmount;
@@ -76,7 +77,7 @@ class AccountingPostingService
             throw PostingValidationException::reversalOnlyAllowedViaService();
         }
 
-        return DB::transaction(function () use ($command): PostingBatch {
+        return app(TenantWriteAccess::class)->transaction((int) $command->company->id, function () use ($command): PostingBatch {
             $context = app(CompanyContext::class);
 
             // 1. Tenancy Enforcement
@@ -403,7 +404,7 @@ class AccountingPostingService
             throw new InvalidArgumentException('Reversal posting date must be a valid YYYY-MM-DD date.');
         }
 
-        return DB::transaction(function () use ($original, $actingUser, $reason, $postingDate): PostingBatch {
+        return app(TenantWriteAccess::class)->transaction((int) $original->company_id, function () use ($original, $actingUser, $reason, $postingDate): PostingBatch {
             $context = app(CompanyContext::class);
 
             // 1. Tenancy Enforcement

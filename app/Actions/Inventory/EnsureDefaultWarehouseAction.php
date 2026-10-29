@@ -4,11 +4,11 @@ declare(strict_types=1);
 
 namespace App\Actions\Inventory;
 
+use App\Application\Platform\TenantWriteAccess;
 use App\Models\Company;
 use App\Models\CompanyInventorySettings;
 use App\Models\User;
 use App\Models\Warehouse;
-use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
 
 class EnsureDefaultWarehouseAction
@@ -19,7 +19,7 @@ class EnsureDefaultWarehouseAction
      */
     public function execute(Company $company, ?int $actorUserId = null): Warehouse
     {
-        return DB::transaction(function () use ($company, $actorUserId): Warehouse {
+        return app(TenantWriteAccess::class)->transaction((int) $company->id, function () use ($company, $actorUserId): Warehouse {
             // Lock Company row FOR UPDATE for company-first concurrency safety
             /** @var Company $lockedCompany */
             $lockedCompany = Company::where('id', $company->id)->lockForUpdate()->firstOrFail();

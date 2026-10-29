@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Expenses;
 
+use App\Application\Platform\TenantWriteAccess;
 use App\Exceptions\NoActiveCompanyException;
 use App\Models\Company;
 use App\Models\ExpenseCategory;
@@ -15,7 +16,6 @@ use App\Services\Phase7\Phase7FinancialRead;
 use App\Services\Sales\ReceiptRequestValues;
 use App\Support\Tenancy\CompanyContext;
 use Illuminate\Auth\Access\AuthorizationException;
-use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
 
 final class UpdateExpenseCategoryAction
@@ -41,7 +41,7 @@ final class UpdateExpenseCategoryAction
             throw new AuthorizationException('User does not have permission to manage expense categories.');
         }
 
-        return DB::transaction(function () use ($category, $actor, $data): ExpenseCategory {
+        return app(TenantWriteAccess::class)->transaction((int) $category->company_id, function () use ($category, $actor, $data): ExpenseCategory {
             $lockedCompany = Company::where('id', $category->company_id)->lockForUpdate()->firstOrFail();
             app(Phase7FinancialRead::class)->actor((int) $lockedCompany->id, $actor, 'money.expense.manage');
             $lockedCategory = ExpenseCategory::where('company_id', $lockedCompany->id)->lockForUpdate()->findOrFail($category->id);

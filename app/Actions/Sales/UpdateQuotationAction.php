@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Sales;
 
+use App\Application\Platform\TenantWriteAccess;
 use App\Domain\Money\ValueObjects\ExchangeRate;
 use App\Domain\Money\ValueObjects\MoneyAmount;
 use App\Domain\Sales\Calculators\SalesDocumentTotalsCalculator;
@@ -22,7 +23,6 @@ use App\Services\Sales\SalesDocumentRules;
 use App\Support\Tenancy\CompanyContext;
 use Brick\Math\BigDecimal;
 use Illuminate\Auth\Access\AuthorizationException;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
 
@@ -59,7 +59,7 @@ class UpdateQuotationAction
      */
     public function execute(Quotation $quotation, User $user, array $data): Quotation
     {
-        return DB::transaction(function () use ($quotation, $user, $data): Quotation {
+        return app(TenantWriteAccess::class)->transaction((int) $quotation->company_id, function () use ($quotation, $user, $data): Quotation {
             $context = app(CompanyContext::class);
             if (! $context->hasCompany() || (int) $context->companyId() !== (int) $quotation->company_id) {
                 throw new NoActiveCompanyException("Active company context does not match quotation company [{$quotation->company_id}].");

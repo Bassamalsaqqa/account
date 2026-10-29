@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Sales;
 
+use App\Application\Platform\TenantWriteAccess;
 use App\Exceptions\NoActiveCompanyException;
 use App\Models\Company;
 use App\Models\CompanyInventorySettings;
@@ -19,7 +20,6 @@ use Brick\Math\BigDecimal;
 use Brick\Math\RoundingMode;
 use Carbon\Carbon;
 use Illuminate\Auth\Access\AuthorizationException;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
 
@@ -30,7 +30,7 @@ class ConvertQuotationToInvoiceAction
      */
     public function execute(Quotation $quotation, User $user, ?int $warehouseId = null): SalesInvoice
     {
-        return DB::transaction(function () use ($quotation, $user, $warehouseId): SalesInvoice {
+        return app(TenantWriteAccess::class)->transaction((int) $quotation->company_id, function () use ($quotation, $user, $warehouseId): SalesInvoice {
             $context = app(CompanyContext::class);
             if (! $context->hasCompany() || (int) $context->companyId() !== (int) $quotation->company_id) {
                 throw new NoActiveCompanyException("Active company context does not match quotation company [{$quotation->company_id}].");

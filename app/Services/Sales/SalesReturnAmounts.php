@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Sales;
 
+use App\Application\Platform\TenantWriteAccess;
 use App\Models\SalesInvoiceLine;
 use App\Models\SalesReturn;
 use App\Models\SalesReturnLine;
@@ -16,6 +17,7 @@ final class SalesReturnAmounts
     /** Cumulative rounded entitlement minus actual prior credits assigns the final residual explicitly. */
     public function refresh(SalesReturn $return): void
     {
+        app(TenantWriteAccess::class)->assertWritable((int) $return->company_id);
         $totals = ['subtotal' => BigDecimal::zero(), 'discount' => BigDecimal::zero(), 'tax' => BigDecimal::zero(), 'total' => BigDecimal::zero()];
         $scale = $return->currency_code === 'JOD' ? 3 : 2;
         $seen = [];

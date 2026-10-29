@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Company;
 
+use App\Application\Platform\TenantWriteAccess;
 use App\Domain\Accounting\Exceptions\BaseCurrencyLockedException;
 use App\Exceptions\CompanyReassignmentException;
 use App\Exceptions\NoActiveCompanyException;
@@ -14,7 +15,6 @@ use App\Models\PostingBatch;
 use App\Models\User;
 use App\Services\Audit\AuditService;
 use App\Support\Tenancy\CompanyContext;
-use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
 
 class UpdateCompanyCurrenciesAction
@@ -52,7 +52,7 @@ class UpdateCompanyCurrenciesAction
         // Base currency is unconditionally enabled
         $currenciesEnabled[$baseCurrencyCode] = true;
 
-        return DB::transaction(function () use ($company, $baseCurrencyCode, $currenciesEnabled, $actor): Company {
+        return app(TenantWriteAccess::class)->transaction((int) $company->id, function () use ($company, $baseCurrencyCode, $currenciesEnabled, $actor): Company {
             // Lock and reload company first
             /** @var Company $lockedCompany */
             $lockedCompany = Company::where('id', $company->id)

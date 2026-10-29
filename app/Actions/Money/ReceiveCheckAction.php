@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Money;
 
+use App\Application\Platform\TenantWriteAccess;
 use App\Models\Check;
 use App\Models\Company;
 use App\Models\User;
@@ -13,7 +14,6 @@ use App\Services\Money\MoneyEventOwner;
 use App\Services\Money\MoneyEventScope;
 use App\Services\Sales\ReceiptRequestValues;
 use Illuminate\Auth\Access\AuthorizationException;
-use Illuminate\Support\Facades\DB;
 
 final class ReceiveCheckAction implements MoneyEventOwner
 {
@@ -30,7 +30,7 @@ final class ReceiveCheckAction implements MoneyEventOwner
         $key = ReceiptRequestValues::key($data['idempotency_key']);
         $intent = app(CheckCreation::class)->intent($company, $actor, $data, 'incoming');
 
-        return DB::transaction(function () use ($company, $actor, $intent, $key): Check {
+        return app(TenantWriteAccess::class)->transaction((int) $company->id, function () use ($company, $actor, $intent, $key): Check {
             $company = Company::lockForUpdate()->findOrFail($company->id);
             if ((int) auth()->id() !== (int) $actor->id) {
                 throw new AuthorizationException('Actor mismatch.');

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Sales;
 
+use App\Application\Platform\TenantWriteAccess;
 use App\Domain\Inventory\ValueObjects\Quantity;
 use App\Domain\Sales\Calculators\SalesDocumentTotalsCalculator;
 use App\Domain\Sales\Calculators\SalesLineCalculationInput;
@@ -21,7 +22,6 @@ use App\Support\Tenancy\CompanyContext;
 use Brick\Math\BigDecimal;
 use Brick\Math\RoundingMode;
 use Illuminate\Auth\Access\AuthorizationException;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
 
@@ -46,7 +46,7 @@ class CreateSalesReturnDraftAction
      */
     public function execute(Company $company, User $user, array $data): SalesReturn
     {
-        return DB::transaction(function () use ($company, $user, $data): SalesReturn {
+        return app(TenantWriteAccess::class)->transaction((int) $company->id, function () use ($company, $user, $data): SalesReturn {
             // Lock company FOR UPDATE
             Company::where('id', $company->id)->lockForUpdate()->firstOrFail();
             app(SalesActorGuard::class)->lockAndAuthorize((int) $company->id, $user, 'sales.return.create');

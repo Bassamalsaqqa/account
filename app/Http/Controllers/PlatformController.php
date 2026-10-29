@@ -6,6 +6,7 @@ namespace App\Http\Controllers;
 
 use App\Application\Platform\PlatformAccess;
 use App\Application\Platform\ProvisionCompany;
+use App\Application\Platform\SubscriptionTimeline;
 use App\Models\User;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\RedirectResponse;
@@ -27,7 +28,28 @@ final class PlatformController extends Controller
                 $q->where('name_ar', 'like', '%'.$search.'%')->orWhere('name_en', 'like', '%'.$search.'%')->orWhere('public_id', $search);
             }))->orderBy('companies.id')->paginate(20)->withQueryString();
 
-        return view('platform.index', compact('companies', 'search'));
+        $billingSummary = null;
+        if (in_array('subscription.manage', $request->attributes->get('platform_permissions', []), true)) {
+            app(PlatformAccess::class)->authorize('subscription.manage');
+            $billingSummary = ['approaching' => 0, 'grace' => 0, 'read_only' => 0, 'enforced_read_only' => 0];
+            $instant = now()->toDateTimeImmutable();
+            foreach (DB::table('platform_subscriptions as subscription')->join('companies', 'companies.id', '=', 'subscription.company_id')
+                ->select(['subscription.renews_on', 'subscription.grace_days', 'subscription.reminder_days', 'subscription.enforcement_enabled', 'companies.timezone'])->cursor() as $row) {
+                $state = app(SubscriptionTimeline::class)->evaluate($row->renews_on, $row->timezone, (int) $row->grace_days,
+                    json_decode($row->reminder_days, true, 512, JSON_THROW_ON_ERROR), $instant)['state'];
+                match ($state) {
+                    'approaching_renewal' => $billingSummary['approaching']++,
+                    'expired_in_grace' => $billingSummary['grace']++,
+                    'read_only' => $billingSummary['read_only']++,
+                    default => null,
+                };
+                if ($state === 'read_only' && $row->enforcement_enabled && config('subscriptions.enforcement_enabled', false)) {
+                    $billingSummary['enforced_read_only']++;
+                }
+            }
+        }
+
+        return view('platform.index', compact('companies', 'search', 'billingSummary'));
     }
 
     public function show(string $publicId): View

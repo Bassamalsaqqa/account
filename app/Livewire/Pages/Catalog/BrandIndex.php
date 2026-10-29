@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Livewire\Pages\Catalog;
 
+use App\Application\Platform\TenantWriteAccess;
 use App\Models\Brand;
 use App\Models\Company;
 use App\Models\User;
@@ -12,7 +13,6 @@ use App\Support\Tenancy\CompanyContext;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Contracts\View\View;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Support\Facades\DB;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Locked;
 use Livewire\Attributes\Url;
@@ -119,7 +119,7 @@ class BrandIndex extends Component
         $active = (bool) $validated['active'];
 
         try {
-            DB::transaction(function () use ($editingId, $nameAr, $nameEn, $active) {
+            app(TenantWriteAccess::class)->transaction((int) $this->lockedCompanyId, function () use ($editingId, $nameAr, $nameEn, $active) {
                 /** @var User $actor */
                 $actor = auth()->user();
                 app(SalesActorGuard::class)->lockAndAuthorize(
@@ -161,7 +161,7 @@ class BrandIndex extends Component
     public function toggleActive(int $id): void
     {
         try {
-            $newActive = DB::transaction(function () use ($id) {
+            $newActive = app(TenantWriteAccess::class)->transaction((int) $this->lockedCompanyId, function () use ($id) {
                 /** @var User $actor */
                 $actor = auth()->user();
                 app(SalesActorGuard::class)->lockAndAuthorize(
@@ -225,7 +225,7 @@ class BrandIndex extends Component
         }
 
         try {
-            return DB::transaction(function () {
+            return app(TenantWriteAccess::class)->transaction((int) $this->lockedCompanyId, function () {
                 /** @var User $actor */
                 $actor = auth()->user();
 

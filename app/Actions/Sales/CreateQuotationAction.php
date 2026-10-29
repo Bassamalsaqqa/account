@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Sales;
 
+use App\Application\Platform\TenantWriteAccess;
 use App\Domain\Money\ValueObjects\ExchangeRate;
 use App\Domain\Money\ValueObjects\MoneyAmount;
 use App\Domain\Sales\Calculators\SalesDocumentTotalsCalculator;
@@ -25,7 +26,6 @@ use App\Services\Sales\SalesDocumentRules;
 use App\Support\Tenancy\CompanyContext;
 use Brick\Math\BigDecimal;
 use Illuminate\Auth\Access\AuthorizationException;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
 
@@ -63,7 +63,7 @@ class CreateQuotationAction
      */
     public function execute(Company $company, User $user, array $data): Quotation
     {
-        return DB::transaction(function () use ($company, $user, $data): Quotation {
+        return app(TenantWriteAccess::class)->transaction((int) $company->id, function () use ($company, $user, $data): Quotation {
             if (array_key_exists('include_product_images', $data) && ! is_bool($data['include_product_images'])) {
                 throw new InvalidArgumentException('The quotation product-image option must be a boolean.');
             }

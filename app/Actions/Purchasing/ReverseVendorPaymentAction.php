@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Purchasing;
 
+use App\Application\Platform\TenantWriteAccess;
 use App\Domain\Accounting\Exceptions\ImmutableRecordException;
 use App\Exceptions\NoActiveCompanyException;
 use App\Models\Company;
@@ -22,7 +23,6 @@ use App\Services\Sales\SalesDocumentRules;
 use App\Support\Tenancy\CompanyContext;
 use Carbon\Carbon;
 use Illuminate\Auth\Access\AuthorizationException;
-use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
 
 class ReverseVendorPaymentAction
@@ -60,7 +60,7 @@ class ReverseVendorPaymentAction
             throw new AuthorizationException('User does not have permission to reverse vendor payments.');
         }
 
-        return DB::transaction(function () use ($payment, $user, $reason, $businessDate): VendorPayment {
+        return app(TenantWriteAccess::class)->transaction((int) $payment->company_id, function () use ($payment, $user, $reason, $businessDate): VendorPayment {
             $lockedCompany = Company::where('id', $payment->company_id)->lockForUpdate()->firstOrFail();
             app(SalesActorGuard::class)->lockAndAuthorize((int) $payment->company_id, $user, 'money.vendor_payment.reverse');
             app(SalesActorGuard::class)->lockAndAuthorize((int) $payment->company_id, $user, 'purchasing.cost.view');

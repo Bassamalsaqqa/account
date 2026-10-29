@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Purchasing;
 
+use App\Application\Platform\TenantWriteAccess;
 use App\Domain\Inventory\ValueObjects\Quantity;
 use App\Exceptions\NoActiveCompanyException;
 use App\Models\Company;
@@ -27,7 +28,6 @@ use App\Support\Tenancy\CompanyContext;
 use Brick\Math\BigDecimal;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Carbon;
-use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
 
 final class CreatePurchaseReturnDraftAction
@@ -52,7 +52,7 @@ final class CreatePurchaseReturnDraftAction
      */
     public function execute(Company $company, User $actor, array $data): PurchaseReturn
     {
-        return DB::transaction(function () use ($company, $actor, $data): PurchaseReturn {
+        return app(TenantWriteAccess::class)->transaction((int) $company->id, function () use ($company, $actor, $data): PurchaseReturn {
             Company::where('id', $company->id)->lockForUpdate()->firstOrFail();
             $guard = app(SalesActorGuard::class);
             $guard->lockAndAuthorize((int) $company->id, $actor, 'purchasing.return.manage');

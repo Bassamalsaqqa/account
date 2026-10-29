@@ -352,15 +352,29 @@ class PurchasingFoundationTest extends TestCase
         $this->assertDatabaseHas('company_purchase_settings', ['company_id' => $this->company->id, 'default_payment_terms_days' => 14]);
     }
 
-    public function test_purchase_settings_lazy_creation_and_unauthorized_service(): void
+    public function test_purchase_settings_defaults_are_read_only_until_authorized_save(): void
     {
         CompanyPurchaseSetting::where('company_id', $this->company->id)->delete();
-        Livewire::test(PurchaseSettingsForm::class)->assertSet('warn_duplicate_vendor_invoice', true);
-        $this->assertDatabaseCount('company_purchase_settings', 1);
+        $form = Livewire::test(PurchaseSettingsForm::class)
+            ->assertSet('warn_duplicate_vendor_invoice', true)
+            ->assertSet('default_payment_terms_days', null)
+            ->assertSet('default_receiving_warehouse_id', null);
+        $this->assertDatabaseMissing('company_purchase_settings', ['company_id' => $this->company->id]);
+        $form->set('default_payment_terms_days', 14)->call('save')->assertHasNoErrors();
+        $this->assertDatabaseHas('company_purchase_settings', [
+            'company_id' => $this->company->id,
+            'default_payment_terms_days' => 14,
+            'warn_duplicate_vendor_invoice' => true,
+        ]);
         $actor = $this->customActor([]);
         $this->get('/settings/purchases')->assertForbidden();
-        $this->expectException(AuthorizationException::class);
-        app(PurchaseSettingsService::class)->save($this->company, $actor, ['warn_duplicate_vendor_invoice' => false]);
+        $before = DB::table('company_purchase_settings')->orderBy('company_id')->get()->toJson();
+        try {
+            app(PurchaseSettingsService::class)->save($this->company, $actor, ['warn_duplicate_vendor_invoice' => false]);
+            $this->fail('Unauthorized actor changed purchase settings.');
+        } catch (AuthorizationException) {
+            $this->assertSame($before, DB::table('company_purchase_settings')->orderBy('company_id')->get()->toJson());
+        }
     }
 
     public function test_input_tax_configuration_preserves_sales_percentage_semantics_and_can_clear(): void

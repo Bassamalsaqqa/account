@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Sales;
 
+use App\Application\Platform\TenantWriteAccess;
 use App\Models\Company;
 use App\Models\CompanyCurrency;
 use App\Models\CompanyUser;
@@ -11,7 +12,6 @@ use App\Models\LedgerAccount;
 use App\Models\MoneyAccount;
 use App\Models\User;
 use App\Services\Sales\SalesActorGuard;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
 
@@ -34,7 +34,7 @@ class CreateMoneyAccountAction
      */
     public function execute(Company $company, User $user, array $data): MoneyAccount
     {
-        return DB::transaction(function () use ($company, $user, $data): MoneyAccount {
+        return app(TenantWriteAccess::class)->transaction((int) $company->id, function () use ($company, $user, $data): MoneyAccount {
             app(SalesActorGuard::class)->lockAndAuthorize((int) $company->id, $user, 'settings.money_accounts.manage');
 
             return $this->create($company, $user, $data);
@@ -44,7 +44,7 @@ class CreateMoneyAccountAction
     /** Narrow configuration-only provisioning; no arbitrary financial input and an actual active owner is required. */
     public function provisionDefault(Company $company, User $owner): MoneyAccount
     {
-        return DB::transaction(function () use ($company, $owner): MoneyAccount {
+        return app(TenantWriteAccess::class)->transaction((int) $company->id, function () use ($company, $owner): MoneyAccount {
             Company::whereKey($company->id)->lockForUpdate()->firstOrFail();
             if (! CompanyUser::where('company_id', $company->id)->where('user_id', $owner->id)->where('is_owner', true)->where('status', 'active')->exists()) {
                 throw new InvalidArgumentException('Default cash provisioning requires the company active owner.');

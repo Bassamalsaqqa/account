@@ -39,7 +39,10 @@ class PurchaseSettingsForm extends Component
         $settings = DB::transaction(function () use ($company): CompanyPurchaseSetting {
             app(SalesActorGuard::class)->lockAndAuthorize($company->id, auth()->user(), 'settings.purchases.manage');
 
-            return CompanyPurchaseSetting::firstOrCreate(['company_id' => $company->id])->refresh();
+            // Viewing settings remains read-only, including for older companies whose
+            // optional default row has not yet been provisioned.
+            return CompanyPurchaseSetting::where('company_id', $company->id)->first()
+                ?? new CompanyPurchaseSetting(['company_id' => $company->id, 'warn_duplicate_vendor_invoice' => true]);
         });
 
         $this->default_payment_terms_days = $settings->default_payment_terms_days;

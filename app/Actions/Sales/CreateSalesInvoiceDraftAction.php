@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Sales;
 
+use App\Application\Platform\TenantWriteAccess;
 use App\Domain\Money\ValueObjects\ExchangeRate;
 use App\Domain\Money\ValueObjects\MoneyAmount;
 use App\Domain\Sales\Calculators\SalesDocumentTotalsCalculator;
@@ -24,7 +25,6 @@ use App\Services\Sales\SalesDocumentRules;
 use App\Support\Tenancy\CompanyContext;
 use Brick\Math\BigDecimal;
 use Illuminate\Auth\Access\AuthorizationException;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
 
@@ -65,7 +65,7 @@ class CreateSalesInvoiceDraftAction
             throw new InvalidArgumentException('Only canonical quotation conversion may link an invoice.');
         }
 
-        return DB::transaction(function () use ($company, $user, $data): SalesInvoice {
+        return app(TenantWriteAccess::class)->transaction((int) $company->id, function () use ($company, $user, $data): SalesInvoice {
             // Lock company FOR UPDATE
             Company::where('id', $company->id)->lockForUpdate()->firstOrFail();
             app(SalesActorGuard::class)->lockAndAuthorize((int) $company->id, $user, 'sales.invoice.create');

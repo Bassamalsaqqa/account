@@ -1,0 +1,80 @@
+# MS-2 — manual subscriptions and tenant write admission
+
+Status: **GO for independent review; release acceptance remains HOLD**. PR #68 stays draft; no merge, deployment or production enforcement is approved.
+Baseline: `6453f2845ea4bd0dcf60009274d27d5fee48df50` (accepted security + UX-0 production release).
+Full QA source: `d631cfa53f45ba746278a26ace845b469315be77`, tree `013b97d9f747ae1b707096347f8d744c014bff49`. Self-contained packaging: `7f7641cd5946ad77ee36adfe25adf163e65a295e`, tree `5a2bf6a43e7da5f5d1d979f8771256560db52317`. Later evidence-only commits do not alter that runtime. See [source-qualified gate results](evidence/ms2/verification.json); earlier MS-1A/UX-0 totals do not certify MS-2.
+
+## Product contract
+
+An explicitly authorized platform operator records a plan, exact fee/currency, period dates, immutable charges and received payment receipts. There is no payment gateway, tenant billing access, impersonation or tenant-ledger posting. A partial or complete receipt settles its selected charge; **it never renews access**. Renewal explicitly extends the current date and creates a new immutable charge. Term edits affect future charges without rewriting previous periods. All operations retain durable request keys, payload comparison, revision checks and transactional platform auditing.
+
+`subscription.manage` is a separate platform grant permission. Existing grants are not automatically expanded. Tenant Owner roles and administrator-set email verification timestamps do not authorize billing. Platform access remains password-based with optional personal MFA; sensitive billing submissions require password confirmation within 15 minutes, checked again inside the transaction. Reconfirmation returns to a company-bound reviewable draft and never replays a POST automatically. Passwords are never retained in that draft.
+
+Defaults: reminders 14/7/1 days before renewal, seven **company-local calendar days** of grace. Renewal is the first unpaid date: a renewal on October 29 with seven grace days allows writes through November 4; read-only admission starts November 5. UTC calendar arithmetic follows conversion of the instant into the company's timezone, avoiding daylight-saving duration errors. Reminders are in-app indications, not delivered emails or scheduled jobs.
+
+Enforcement requires **both** global `SUBSCRIPTION_ENFORCEMENT_ENABLED=true` and that company's policy flag. Both default OFF. Unmanaged companies retain existing workflows. Administrative company suspension remains a separate existing security boundary. Preview calendar states are labelled separately from effective write restrictions. Tenant notices expose dates/status/contact guidance without operator fees, receipts or internal notes.
+
+## Server enforcement matrix
+
+The existing permission, company-context, canonical event and immutable-history checks remain mandatory. `TenantWriteAccess` adds commercial admission; it grants no accounting authority.
+
+| Surface | After grace with both switches ON | Boundary |
+|---|---|---|
+| Invoice/quotation/return drafts, conversion, posting and reversal | Deny writes | Canonical Sales actions and `OwnsStockEvent` |
+| Purchases/returns, receiving, landed costs, vendor payments and reversals | Deny writes | Canonical Purchasing actions; purchase draft-line writer |
+| Customer receipts/allocations, transfers and check transitions | Deny writes | Canonical Sales/Money/Purchasing actions |
+| Stock movements, transfers and accounting postings/reversals | Deny writes | `InventoryMovementService`, `AccountingPostingService`, stock-event scope |
+| Expenses, payroll, advances and reversals | Deny writes | `OwnsPhase7Event` and master-data actions |
+| Products, parties, units, barcodes, images, brands, categories, warehouses | Deny writes | Catalog/image/quick-create services and existing direct Livewire transactions |
+| Company identity, staff/roles, financial configuration, FX and numbering | Deny writes | Company/configuration actions, sequence writer, foundation services and sales bootstrap |
+| New financial shares and catalog mutations | Deny writes | Issued-share/catalog services; existing share resolution remains readable |
+| AI-generated economic writes | Deny writes | Same canonical business actions; no alternate economic writer |
+| AI setup/policy expansion | Deny writes | Governance/quick-connect settings transactions |
+| AI OFF/revocation, canceled proposals and retention/budget metadata | Preserve safety/operational behavior | Existing authorization and AI-OFF contract; these are not tenant economic history |
+| Login, profile/security, company selection and authorized read/search | Allow | Existing authentication, membership and read permissions |
+| Reports, existing documents, PDF/print/export, public-link resolution | Allow | Existing fresh read authorization/redaction; shared actor guards are not blanket-blocked |
+| Reconciliation and derived-cache rebuilding | Preserve existing authorized maintenance | No new posting, stock history or editable economic authority |
+| Platform provisioning, subscription receipts/renewals and platform audits | Allow authorized operator | Separate platform grants/password proof and commercial transaction |
+
+Future mutation entrypoints must join the same canonical admission boundary. Static call-site inspection is supporting evidence, not proof that an arbitrary SQL writer is safe.
+
+## Atomicity, concurrency and safety
+
+Admission runs inside the canonical transaction before business effects, after the callback, and immediately before the framework's outermost PDO commit. Company then subscription row locks serialize policy/renewal changes with admitted writers. Checks use fresh locking reads, not a session entitlement cache or a potentially old repeatable-read snapshot. Wall-clock expiry is re-evaluated at final admission; a row lock does not freeze time. A denied final admission explicitly rolls back the transaction and leaves no open PDO transaction.
+
+The guarantee is admission **immediately before PDO commit**, not an atomic lock on the wall clock. A tiny interval between checking time and the database finishing commit necessarily remains. No database lock is held across an AI provider call by this integration. Previously authorized external calls may still finish or incur costs; any later economic mutation must pass current canonical admission and existing AI policy checks.
+
+Billing lock order is operator grant/identity, company, subscription, selected charge and receipts. The company lock serializes competing operators. Exact current receipt reads prevent overpayment even if a caller previously opened an older repeatable-read snapshot. Identical retries converge to one receipt; changed payloads and stale revisions fail. Audit failure rolls back all commercial records. Cross-company charge ownership and currency matching are enforced server-side.
+
+Existing product-image deletion is deferred until commit when enforcement is enabled, so late admission rejection cannot remove an existing upload. Filesystem writes are not database transactions: existing nested-upload rollback/orphan-cleanup limitations are not claimed to be solved by commercial admission. No financial calculation, posting formula, immutable snapshot policy, dependency version or project licensing policy is changed.
+
+## Verification record
+
+- Codex focused MariaDB gate before the last read-side/default-row correction: **35 tests, 263 assertions, exit 0**, including real concurrent worker processes, stale-snapshot overpayment rejection, expired writes and an actual delayed outer commit.
+- Final focused migration/default-row checks: **12 tests, 82 assertions, exit 0**. They verify all four populated-table downgrade refusals, empty downgrade/reapply, company isolation, sequence admission, readable settings/export/profile and unchanged economic rows.
+- Historical full gate at `780c7cb57f5402341f16401405af7f882e5c49cf`: **exit 2**, 3,634 passed, two failures, 43,064 assertions and four Windows symlink warnings. One purchasing test retained the superseded lazy-write-on-view expectation; it now checks non-persisted defaults, explicit authorized saving and unchanged records after denied saving. The other failure was a 120-second disposable migration setup timeout, before its assertions; Windows fixture setup now has a finite 300-second bound (other platforms retain 120). The I/O cause is not independently established. Existing failed receipts remain preserved. The corrected candidate requires a successful complete rerun; this failed attempt is not acceptance.
+- Codex correction gate: **63 tests, 506 assertions, exit 0**, comprising the complete Purchasing foundation, AI request-budget concurrency and MS-2 tenant-admission suites on disposable MariaDB. The run verified unchanged tracked source, schema cleanup, stopped server and removal of its owned test environment. The timeout scenario's assertions passed in this focused run; the subsequent full run below supplied the remaining full-suite verification. Runtime application code and browser assets were not changed by these test/documentation corrections.
+- Corrected complete `composer qa`: **exit 0; 3,636 passed, 43,086 assertions, four Windows symlink warnings; 3,599.55 seconds**. Pint and PHPStan passed. Codex inspected the actual receipts and log, including all three billing concurrency scenarios, late outer-commit refusal, migration guards and populated six-domain reconciliation fixtures. The prior report's count of two billing concurrency tests was incorrect; the raw log has three passing scenarios. Disposable core-table fingerprints were preserved; fixture schemas, server and owned environment were cleaned up.
+- **Packaging correction and qualification:** the complete run's tracked HEAD omitted the required `tenant-notice.blade.php`, although that untracked template existed in the tested filesystem. Codex committed the identical template in `7f7641c`; its SHA-256 matched the value recorded during the full run, and every previously tracked file matched the run's fingerprint. This was an omitted-file correction, not new runtime logic. The complete run must not be described as a clean-install full test of that later commit. Codex then ran the self-contained packaged source: **33 tests, 250 assertions, exit 0**, covering tenant rendering/admission and all billing HTTP regressions. The evidence JSON was briefly edited and restored during that focused run; application, test and template bytes stayed unchanged. No duplicate full suite was justified by committing already-tested template bytes and documentation.
+- Fresh Codex checks after handback: Composer validation/platform checks/audit **exit 0** (PHP 8.4.25, zero advisories); npm audit **exit 0**, zero vulnerabilities; JavaScript **44/44 passed**; production build **exit 0**, 310 modules. Full private command outputs and hashes are retained; the public receipt excludes workstation paths and secrets. Dependencies and licensing remain unchanged from baseline.
+- Browser checks used one isolated synthetic application/database with AI disabled. Arabic RTL and English LTR at 390/768/1440px had no document-level horizontal overflow or untranslated subscription keys. All three review/edit forms moved focus into review and restored the correct field using keyboard Enter in both languages. No browser billing submission or production transaction was made.
+- Evidence: [responsive and keyboard observations](evidence/ms2/browser-checks.json), [Arabic mobile](evidence/ms2/billing-mobile-ar.jpg), [Arabic tablet](evidence/ms2/billing-tablet-ar.jpg), [Arabic desktop](evidence/ms2/billing-desktop-ar.jpg), [English mobile](evidence/ms2/billing-mobile-en.jpg), [English tablet](evidence/ms2/billing-tablet-en.jpg), [English desktop billing/history](evidence/ms2/billing-desktop-en.jpg). Codex inspected these fictional fixture captures. They predate source freeze and show representative viewports, not every form state or a final-SHA recapture. The later pagination helper applies only to multi-page history absent from these captures and is covered by HTTP regression.
+- The owned browser database/schema and web server were stopped and removed from service. Protected private-file hashes and preserved translation stash were verified.
+- Windows symlink limitations, physical-device/scanner testing, assistive-technology speech and production activation remain separate checks. No Linux pass or Owner UAT is inferred from browser automation.
+- No performance improvement is claimed. Global enforcement OFF skips subscription-policy queries in commercial admission and tenant notices; enabled-mode lock/query cost requires measurement before broad activation.
+
+## Independent review boundary
+
+The existing reviewer HOLD is preserved. Full QA and source packaging now have evidence; no reviewer approval is inferred from those results. The [114-site source admission index](evidence/ms2/write-admission-inventory.csv) links actual file/method/line boundaries and supplements the domain matrix. It is static evidence, not an exhaustive runtime proof. Existing delayed outer-commit tests use a disposable named connection and verify rollback/PDO recovery; arbitrary alternate SQL connections, future writers and changing connection identity still require explicit review. There is no visible GitHub CI certification to substitute for the retained local receipts. Final independent source/visual review and separately authorized production activation remain outstanding. The recommendation is to review this packaged candidate, **not merge or enable enforcement**.
+
+## Migration and deployment boundary
+
+`2026_10_29_100000_create_platform_subscription_records.php` adds four platform-only tables. It does not alter tenant financial tables or existing history. MariaDB DDL implicitly commits: an interrupted migration may leave partial tables, so inspect and repair the exact allowlisted schema state before retrying; never use destructive reseeding or blind migration rollback.
+
+Before a separately authorized deployment: pin reviewed SHA/locked packages/build; confirm actual host compatibility, no unexpected migrations and both enforcement defaults OFF; capture a fresh database/files/config/key snapshot with verified off-host custody and isolated restore; compare financial/security/upload fingerprints and all six reconciliation domains. Run only the accepted forward migration under controlled maintenance, warm caches, verify AR/EN authorized reads, billing separation and application errors, compare preservation fingerprints and reopen only when gates pass. Do not create real trial receipts, enable enforcement or call a provider for verification.
+
+Rollback retains populated commercial tables/history. `down()` refuses before its first drop if **any** commercial table is populated; an empty-schema downgrade/reapply is tested separately. Never delete receipts or overwrite later business transactions to force rollback. Keep enforcement OFF while resolving a compatibility problem through the accepted source rollback or a reviewed forward fix. Activation for real companies requires independent source review, final policy acceptance and the verified enforcement matrix.
+
+## Owner pilot checklist after separate release approval
+
+Review the company subscription and preview status in AR/EN on desktop and a phone. Check configure/review/edit, explicit renewal versus receipt behavior, validation/reconfirmation recovery and exact outstanding values using synthetic fixtures first. With separately authorized pilot enforcement, confirm grace/calendar boundaries, denied stale writes, readable historical reports/exports, personal security access, company isolation and AI OFF behavior. Physical-device results remain Owner testing until actually recorded.

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Purchasing;
 
+use App\Application\Platform\TenantWriteAccess;
 use App\Models\Purchase;
 use App\Models\PurchaseLine;
 use App\Models\PurchaseReturn;
@@ -24,6 +25,7 @@ final class PurchaseReturnAmounts
 
     public function refresh(PurchaseReturn $return): void
     {
+        app(TenantWriteAccess::class)->assertWritable((int) $return->company_id);
         $totalsCurrency = [
             'subtotal' => BigDecimal::zero(),
             'discount' => BigDecimal::zero(),

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Purchasing;
 
+use App\Application\Platform\TenantWriteAccess;
 use App\Exceptions\IdempotencyConflictException;
 use App\Exceptions\NoActiveCompanyException;
 use App\Models\Company;
@@ -38,7 +39,6 @@ use Brick\Math\BigDecimal;
 use Brick\Math\Exception\RoundingNecessaryException;
 use Brick\Math\RoundingMode;
 use Illuminate\Auth\Access\AuthorizationException;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
 
@@ -152,7 +152,7 @@ class PostVendorPaymentAction
         }
         $requestHash = hash('sha256', json_encode($canonicalData, JSON_THROW_ON_ERROR));
 
-        return DB::transaction(function () use ($company, $user, $data, $method, $idempotencyKey, $requestHash, $allocationVersion): VendorPayment {
+        return app(TenantWriteAccess::class)->transaction((int) $company->id, function () use ($company, $user, $data, $method, $idempotencyKey, $requestHash, $allocationVersion): VendorPayment {
             // 1. Lock Company FOR UPDATE
             /** @var Company $lockedCompany */
             $lockedCompany = Company::where('id', $company->id)->lockForUpdate()->firstOrFail();

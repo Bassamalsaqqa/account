@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Phase7;
 
+use App\Application\Platform\TenantWriteAccess;
 use App\Domain\Posting\DTO\PostingCommand;
 use App\Models\PostingBatch;
 use App\Models\User;
@@ -11,7 +12,6 @@ use App\Services\Posting\AccountingPostingService;
 use App\Services\Posting\AccountingReversalService;
 use Closure;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Support\Facades\DB;
 
 trait OwnsPhase7Event
 {
@@ -24,7 +24,7 @@ trait OwnsPhase7Event
 
     private function canonicalTransaction(int $companyId, User $actor, Closure $callback): mixed
     {
-        return DB::transaction(function () use ($companyId, $actor, $callback) {
+        return app(TenantWriteAccess::class)->transaction($companyId, function () use ($companyId, $actor, $callback) {
             $this->executingPhase7 = true;
             try {
                 return app(Phase7EventScope::class)->within($this, $companyId, $actor, $callback);

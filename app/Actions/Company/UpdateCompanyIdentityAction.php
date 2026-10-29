@@ -2,10 +2,10 @@
 
 namespace App\Actions\Company;
 
+use App\Application\Platform\TenantWriteAccess;
 use App\Models\Company;
 use App\Models\User;
 use App\Services\Audit\AuditService;
-use Illuminate\Support\Facades\DB;
 
 class UpdateCompanyIdentityAction
 {
@@ -18,7 +18,7 @@ class UpdateCompanyIdentityAction
      */
     public function execute(Company $company, array $validated, User $actor): Company
     {
-        return DB::transaction(function () use ($company, $validated, $actor) {
+        return app(TenantWriteAccess::class)->transaction((int) $company->id, function () use ($company, $validated, $actor) {
             $before = $company->only(array_keys($validated));
             $company->update($validated);
 

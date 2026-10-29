@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Sales;
 
+use App\Application\Platform\TenantWriteAccess;
 use App\Exceptions\NoActiveCompanyException;
 use App\Models\Company;
 use App\Models\CustomerPayment;
@@ -19,7 +20,6 @@ use App\Services\Sales\SalesDocumentRules;
 use App\Support\Tenancy\CompanyContext;
 use Carbon\Carbon;
 use Illuminate\Auth\Access\AuthorizationException;
-use Illuminate\Support\Facades\DB;
 
 class ReverseCustomerPaymentAction
 {
@@ -48,7 +48,7 @@ class ReverseCustomerPaymentAction
             throw new AuthorizationException('User does not have permission to reverse customer receipts.');
         }
 
-        return DB::transaction(function () use ($payment, $user, $reason, $businessDate): CustomerPayment {
+        return app(TenantWriteAccess::class)->transaction((int) $payment->company_id, function () use ($payment, $user, $reason, $businessDate): CustomerPayment {
             $company = Company::where('id', $payment->company_id)->lockForUpdate()->firstOrFail();
             app(SalesActorGuard::class)->lockAndAuthorize((int) $payment->company_id, $user, 'money.receipt.reverse');
 

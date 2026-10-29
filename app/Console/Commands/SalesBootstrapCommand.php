@@ -5,13 +5,13 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use App\Actions\Sales\EnsureDefaultMoneyAccountAction;
+use App\Application\Platform\TenantWriteAccess;
 use App\Models\Company;
 use App\Services\Sales\DocumentSequenceService;
 use App\Services\Tenancy\CompanyRoleService;
 use App\Support\Tenancy\CompanyContext;
 use App\Support\Tenancy\CompanyScope;
 use Illuminate\Console\Command;
-use Illuminate\Support\Facades\DB;
 
 class SalesBootstrapCommand extends Command
 {
@@ -72,7 +72,7 @@ class SalesBootstrapCommand extends Command
 
             foreach ($companies as $company) {
                 $this->info("Bootstrapping sales defaults for company: {$company->displayName()} ({$company->public_id})...");
-                DB::transaction(function () use ($company, $roleService, $sequenceService, $moneyAccountAction): void {
+                app(TenantWriteAccess::class)->transaction((int) $company->id, function () use ($company, $roleService, $sequenceService, $moneyAccountAction): void {
                     Company::whereKey($company->id)->lockForUpdate()->firstOrFail();
                     $roleService->upgradeSalesCatalog($company);
                     $sequenceService->ensureDefaultSequences($company->id);

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Money;
 
+use App\Application\Platform\TenantWriteAccess;
 use App\Exceptions\IdempotencyConflictException;
 use App\Models\Company;
 use App\Models\DocumentSequence;
@@ -22,7 +23,6 @@ use App\Services\Sales\DocumentSequenceService;
 use App\Services\Sales\ReceiptRequestValues;
 use App\Services\Sales\SalesActorGuard;
 use App\Services\Sales\SalesDocumentRules;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
 
@@ -53,7 +53,7 @@ final class PostMoneyTransferAction implements MoneyEventOwner
         $key = ReceiptRequestValues::key($data['idempotency_key'] ?? null);
         $hash = hash('sha256', json_encode($intent, JSON_THROW_ON_ERROR));
 
-        return DB::transaction(function () use ($company, $actor, $intent, $key, $hash): MoneyTransfer {
+        return app(TenantWriteAccess::class)->transaction((int) $company->id, function () use ($company, $actor, $intent, $key, $hash): MoneyTransfer {
             $company = app(SalesActorGuard::class)->lockAndAuthorize((int) $company->id, $actor, 'money.transfer.create');
             $existing = MoneyTransfer::where('company_id', $company->id)->where('idempotency_key', $key)->lockForUpdate()->first();
             if ($existing !== null) {

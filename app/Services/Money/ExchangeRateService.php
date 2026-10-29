@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Money;
 
+use App\Application\Platform\TenantWriteAccess;
 use App\Domain\Money\Exceptions\UnresolvedExchangeRateException;
 use App\Domain\Money\ValueObjects\ExchangeRate as ExchangeRateValueObject;
 use App\Exceptions\CompanyReassignmentException;
@@ -43,7 +44,7 @@ class ExchangeRateService
         // Validate rate VO early to fail fast on invalid decimal strings
         $rateVo = ExchangeRateValueObject::from($rate);
 
-        return DB::transaction(function () use ($company, $currencyCode, $rateVo, $effectiveAt, $createdBy, $source): ExchangeRate {
+        return app(TenantWriteAccess::class)->transaction((int) $company->id, function () use ($company, $currencyCode, $rateVo, $effectiveAt, $createdBy, $source): ExchangeRate {
             $context = app(CompanyContext::class);
 
             if (! $context->hasCompany()) {

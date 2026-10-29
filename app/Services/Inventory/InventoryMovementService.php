@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Inventory;
 
+use App\Application\Platform\TenantWriteAccess;
 use App\Domain\Inventory\DTO\StockMovementCommand;
 use App\Domain\Inventory\DTO\StockMovementLineCommand;
 use App\Domain\Inventory\DTO\StockTransferCommand;
@@ -152,12 +153,12 @@ class InventoryMovementService
                 throw new AuthorizationException('User does not have permission to post opening stock.');
             }
         } elseif ($command->movementType === StockMovement::TYPE_PURCHASE) {
-            DB::transaction(function () use ($command, $authUser): void {
+            app(TenantWriteAccess::class)->transaction((int) $command->companyId, function () use ($command, $authUser): void {
                 app(SalesActorGuard::class)->lockAndAuthorize($command->companyId, $authUser, 'purchasing.purchase.post');
                 app(SalesActorGuard::class)->lockAndAuthorize($command->companyId, $authUser, 'purchasing.cost.view');
             });
         } elseif ($command->movementType === StockMovement::TYPE_PURCHASE_RETURN) {
-            DB::transaction(function () use ($command, $authUser): void {
+            app(TenantWriteAccess::class)->transaction((int) $command->companyId, function () use ($command, $authUser): void {
                 app(SalesActorGuard::class)->lockAndAuthorize($command->companyId, $authUser, 'purchasing.return.manage');
                 app(SalesActorGuard::class)->lockAndAuthorize($command->companyId, $authUser, 'purchasing.cost.view');
             });
@@ -202,7 +203,7 @@ class InventoryMovementService
             }
         }
 
-        return DB::transaction(function () use ($command): array {
+        return app(TenantWriteAccess::class)->transaction((int) $command->companyId, function () use ($command): array {
             // 1. Lock Company row FOR UPDATE and verify active lifecycle
             /** @var Company $company */
             $company = Company::where('id', $command->companyId)->lockForUpdate()->firstOrFail();
@@ -890,7 +891,7 @@ class InventoryMovementService
             throw new AuthorizationException('User does not have permission to transfer stock.');
         }
 
-        return DB::transaction(function () use ($command): array {
+        return app(TenantWriteAccess::class)->transaction((int) $command->companyId, function () use ($command): array {
             // 1. Lock Company row FOR UPDATE and verify active lifecycle
             /** @var Company $company */
             $company = Company::where('id', $command->companyId)->lockForUpdate()->firstOrFail();

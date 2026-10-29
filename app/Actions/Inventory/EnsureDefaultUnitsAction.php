@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Inventory;
 
+use App\Application\Platform\TenantWriteAccess;
 use App\Models\Company;
 use App\Models\Unit;
 
@@ -108,26 +109,28 @@ class EnsureDefaultUnitsAction
      */
     public function execute(Company $company): array
     {
-        $created = [];
+        return app(TenantWriteAccess::class)->transaction((int) $company->id, function () use ($company): array {
+            $created = [];
 
-        foreach (self::defaultCatalog() as $def) {
-            $created[] = Unit::firstOrCreate(
-                [
-                    'company_id' => $company->id,
-                    'code' => $def['code'],
-                ],
-                [
-                    'name_ar' => $def['name_ar'],
-                    'name_en' => $def['name_en'],
-                    'symbol_ar' => $def['symbol_ar'],
-                    'symbol_en' => $def['symbol_en'],
-                    'allows_fraction' => $def['allows_fraction'],
-                    'decimal_places' => $def['decimal_places'],
-                    'active' => true,
-                ]
-            );
-        }
+            foreach (self::defaultCatalog() as $def) {
+                $created[] = Unit::firstOrCreate(
+                    [
+                        'company_id' => $company->id,
+                        'code' => $def['code'],
+                    ],
+                    [
+                        'name_ar' => $def['name_ar'],
+                        'name_en' => $def['name_en'],
+                        'symbol_ar' => $def['symbol_ar'],
+                        'symbol_en' => $def['symbol_en'],
+                        'allows_fraction' => $def['allows_fraction'],
+                        'decimal_places' => $def['decimal_places'],
+                        'active' => true,
+                    ]
+                );
+            }
 
-        return $created;
+            return $created;
+        });
     }
 }

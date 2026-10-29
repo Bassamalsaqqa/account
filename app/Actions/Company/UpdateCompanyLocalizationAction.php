@@ -2,12 +2,12 @@
 
 namespace App\Actions\Company;
 
+use App\Application\Platform\TenantWriteAccess;
 use App\Models\Company;
 use App\Models\CompanyDocumentSettings;
 use App\Models\CompanyLanguage;
 use App\Models\User;
 use App\Services\Audit\AuditService;
-use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
 
 class UpdateCompanyLocalizationAction
@@ -27,7 +27,7 @@ class UpdateCompanyLocalizationAction
             throw new InvalidArgumentException("Default locale must be 'ar' or 'en'.");
         }
 
-        return DB::transaction(function () use ($company, $defaultLocale, $timezone, $englishEnabled, $actor) {
+        return app(TenantWriteAccess::class)->transaction((int) $company->id, function () use ($company, $defaultLocale, $timezone, $englishEnabled, $actor) {
             $before = [
                 'default_locale' => $company->default_locale,
                 'timezone' => $company->timezone,

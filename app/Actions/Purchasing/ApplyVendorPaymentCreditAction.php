@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Purchasing;
 
+use App\Application\Platform\TenantWriteAccess;
 use App\Domain\Money\ValueObjects\ExchangeRate;
 use App\Domain\Money\ValueObjects\MoneyAmount;
 use App\Domain\Posting\DTO\PostingCommand;
@@ -31,7 +32,6 @@ use App\Services\Sales\SalesPostingLines;
 use Brick\Math\BigDecimal;
 use Brick\Math\RoundingMode;
 use Carbon\Carbon;
-use Illuminate\Support\Facades\DB;
 
 final class ApplyVendorPaymentCreditAction
 {
@@ -66,7 +66,7 @@ final class ApplyVendorPaymentCreditAction
         }
         $hash = self::requestHash((int) $payment->company_id, (int) $payment->id, (int) $actor->id, (string) $data['application_date'], $intent);
 
-        return DB::transaction(function () use ($payment, $actor, $data, $key, $hash, $intent, $version): VendorPaymentApplicationEvent {
+        return app(TenantWriteAccess::class)->transaction((int) $payment->company_id, function () use ($payment, $actor, $data, $key, $hash, $intent, $version): VendorPaymentApplicationEvent {
             $company = app(SalesActorGuard::class)->lockAndAuthorize((int) $payment->company_id, $actor, 'money.vendor_payment.allocate');
             app(SalesActorGuard::class)->lockAndAuthorize((int) $payment->company_id, $actor, 'purchasing.cost.view');
 

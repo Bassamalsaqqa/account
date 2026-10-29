@@ -1,0 +1,141 @@
+{
+  "status": "QA verified; returned for independent review; no merge/deployment/activation approval",
+  "baseline": "6453f2845ea4bd0dcf60009274d27d5fee48df50",
+  "full_qa": {
+    "head": "d631cfa53f45ba746278a26ace845b469315be77",
+    "tree": "013b97d9f747ae1b707096347f8d744c014bff49",
+    "command": "composer qa",
+    "exit": 0,
+    "passed": 3636,
+    "assertions": 43086,
+    "warnings": 4,
+    "duration_seconds": 3599.55,
+    "pint_exit": 0,
+    "phpstan_exit": 0,
+    "tracked_source_unchanged": true,
+    "primary_fingerprints_preserved": true,
+    "stdout_sha256": "1030c5d085cbd309f3a9c21428740b4242a438042413754398e07d5e4eaed4a2"
+  },
+  "packaging": {
+    "commit": "7f7641cd5946ad77ee36adfe25adf163e65a295e",
+    "tree": "5a2bf6a43e7da5f5d1d979f8771256560db52317",
+    "change": "Track previously omitted tenant-notice template; no runtime byte edit",
+    "template": "resources/views/platform/subscriptions/tenant-notice.blade.php",
+    "observed_during_full_run_sha256": "29bfb4916d644f93fc491073632ec04f93294585cd677614d6975b6e8ec1c483",
+    "git_blob_sha256": "29bfb4916d644f93fc491073632ec04f93294585cd677614d6975b6e8ec1c483",
+    "qualification": "Full run used this then-untracked template. All previously tracked bytes matched its fingerprint before packaging. This is not an exact-commit clean-install full run."
+  },
+  "packaged_source_regression": {
+    "head": "7f7641cd5946ad77ee36adfe25adf163e65a295e",
+    "command": "focused disposable MariaDB: TenantWriteAdmissionTest + PlatformSubscriptionHttpTest",
+    "exit": 0,
+    "tests": 33,
+    "assertions": 250,
+    "runtime_unchanged": true,
+    "note": "Evidence JSON was briefly expanded then restored while this run executed; application/test/template bytes stayed unchanged. Endpoint fingerprint matches are not continuous source monitoring."
+  },
+  "fresh_secondary_gates": {
+    "composer-validate": {
+      "arguments": [
+        "validate",
+        "--strict"
+      ],
+      "exit": 0,
+      "stdout_sha256": "617d39e3b4752168f63039991b7e1efaca11e54a1f5a9153d93b0d4efe91fe05",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "composer-platform": {
+      "arguments": [
+        "check-platform-reqs"
+      ],
+      "exit": 0,
+      "stdout_sha256": "7c7805b1161bac51ee82913a2fad5130dcbbeb606c53897a1b89a3a1d6502769",
+      "stderr_sha256": "be04e108216123c9d3ebf463bd5e3e1da49ff124629a0147601a98926ad93b55",
+      "php": "8.4.25"
+    },
+    "composer-audit": {
+      "arguments": [
+        "audit",
+        "--locked",
+        "--format=json"
+      ],
+      "exit": 0,
+      "stdout_sha256": "da0388a7d3f7c633e1e211de7777244aacd958f7637bf7089ce1b98f1042ef72",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "advisories": 0
+    },
+    "npm-audit": {
+      "arguments": [
+        "audit",
+        "--json"
+      ],
+      "exit": 0,
+      "stdout_sha256": "994eddf9eee396b974eb9e959d454530240bde0afaac6d46b9769a6d920da19a",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "vulnerabilities": 0
+    },
+    "javascript": {
+      "arguments": [
+        "--test",
+        "tests\\JavaScript\\company-data-download.test.mjs",
+        "tests\\JavaScript\\omnibox-lifecycle.test.mjs",
+        "tests\\JavaScript\\pr56-security-failures.test.mjs",
+        "tests\\JavaScript\\profile-two-factor.test.mjs"
+      ],
+      "exit": 0,
+      "stdout_sha256": "ea20918acb74ef5782b008abbb175ce8047cbd7cab3f6ef5e48014dd13474ca6",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "tests": 44,
+      "passed": 44,
+      "failed": 0
+    },
+    "build": {
+      "arguments": [
+        "run",
+        "build"
+      ],
+      "exit": 0,
+      "stdout_sha256": "30c4668635b2a0b3f993fe950384e27abc7070a6e83cd476471e81d28e7c6663",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "modules": 310,
+      "manifest_sha256": "d77351e90a4e5ac552dd1df4016671e75829c65b498bcff226b30db783e1984b"
+    }
+  },
+  "reconciliations": {
+    "classification": "populated synthetic fixtures, not production",
+    "domains": {
+      "accounting": "healthy",
+      "inventory": "healthy",
+      "sales": "healthy",
+      "money": "healthy",
+      "payables": "healthy",
+      "phase7": "healthy"
+    },
+    "passing_tests": [
+      "AssistantMigrationPreservationTest",
+      "FinalAssistantEconomicJourneyTest"
+    ],
+    "economic_fingerprints": "preserved"
+  },
+  "migration": "PlatformSubscriptionMigrationTest passed all four populated-table refusals plus empty downgrade/reapply",
+  "cleanup": {
+    "schema_cleanup_verified": true,
+    "server_stopped": true,
+    "owned_env_removed": true
+  },
+  "limitations": [
+    "Four Windows symlink warnings skip downstream assertions; no Linux certification",
+    "No physical device, scanner or speech UAT",
+    "Prior screenshots are representative synthetic observations, not a final-SHA recapture or browser receipt/renewal submission",
+    "Static writer inventory supports review; arbitrary SQL and future entrypoints are not automatically covered",
+    "Independent reviewer acceptance still required; enforcement remains OFF and production unchanged"
+  ],
+  "historical_failed_gate": {
+    "head": "780c7cb57f5402341f16401405af7f882e5c49cf",
+    "exit": 2,
+    "passed": 3634,
+    "assertions": 43064,
+    "failures": 2,
+    "preserved": true
+  }
+}

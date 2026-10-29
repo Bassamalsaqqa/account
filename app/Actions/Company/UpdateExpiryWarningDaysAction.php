@@ -4,12 +4,12 @@ declare(strict_types=1);
 
 namespace App\Actions\Company;
 
+use App\Application\Platform\TenantWriteAccess;
 use App\Models\Company;
 use App\Models\CompanyInventorySettings;
 use App\Models\User;
 use App\Services\Audit\AuditService;
 use App\Services\Sales\SalesActorGuard;
-use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
 
 final class UpdateExpiryWarningDaysAction
@@ -20,7 +20,7 @@ final class UpdateExpiryWarningDaysAction
             throw new InvalidArgumentException('Expiry warning days must be between 1 and 365.');
         }
 
-        DB::transaction(function () use ($company, $days, $actor): void {
+        app(TenantWriteAccess::class)->transaction((int) $company->id, function () use ($company, $days, $actor): void {
             $company = app(SalesActorGuard::class)->lockAndAuthorize($company->id, $actor, 'settings.company.manage');
             $settings = CompanyInventorySettings::where('company_id', $company->id)->lockForUpdate()->firstOrFail();
             $before = $settings->default_expiry_warning_days;

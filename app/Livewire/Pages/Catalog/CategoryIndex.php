@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Livewire\Pages\Catalog;
 
+use App\Application\Platform\TenantWriteAccess;
 use App\Models\Product;
 use App\Models\ProductCategory;
 use App\Models\User;
@@ -99,16 +100,18 @@ class CategoryIndex extends Component
             'active' => (bool) $validated['active'],
         ];
 
-        if ($this->editingId !== null) {
-            ProductCategory::where('company_id', $company->id)
-                ->where('id', $this->editingId)
-                ->update($data);
-            $this->successMessage = __('inventory.category_saved_success');
-        } else {
-            $data['company_id'] = $company->id;
-            ProductCategory::create($data);
-            $this->successMessage = __('inventory.category_saved_success');
-        }
+        app(TenantWriteAccess::class)->transaction((int) $company->id, function () use ($company, $data): void {
+            if ($this->editingId !== null) {
+                ProductCategory::where('company_id', $company->id)
+                    ->where('id', $this->editingId)
+                    ->update($data);
+                $this->successMessage = __('inventory.category_saved_success');
+            } else {
+                $data['company_id'] = $company->id;
+                ProductCategory::create($data);
+                $this->successMessage = __('inventory.category_saved_success');
+            }
+        });
 
         $this->showModal = false;
     }
@@ -134,7 +137,8 @@ class CategoryIndex extends Component
             return;
         }
 
-        ProductCategory::where('company_id', $company->id)->where('id', $id)->delete();
+        app(TenantWriteAccess::class)->transaction((int) $company->id,
+            fn () => ProductCategory::where('company_id', $company->id)->where('id', $id)->delete());
         $this->successMessage = __('inventory.category_deleted_success');
     }
 

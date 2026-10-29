@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Livewire\Pages\Catalog;
 
+use App\Application\Platform\TenantWriteAccess;
 use App\Models\Unit;
 use App\Models\User;
 use App\Services\Inventory\ProductCatalogService;
@@ -121,7 +122,8 @@ class UnitIndex extends Component
                 $catalogService->updateUnit($company, $this->editingId, $data);
             } else {
                 $data['company_id'] = $company->id;
-                Unit::create($data);
+                app(TenantWriteAccess::class)->transaction((int) $company->id,
+                    fn () => Unit::create($data));
             }
 
             $this->successMessage = __('inventory.unit_saved_success');

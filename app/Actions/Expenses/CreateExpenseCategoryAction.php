@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Expenses;
 
+use App\Application\Platform\TenantWriteAccess;
 use App\Exceptions\NoActiveCompanyException;
 use App\Models\Company;
 use App\Models\ExpenseCategory;
@@ -15,7 +16,6 @@ use App\Services\Phase7\Phase7FinancialRead;
 use App\Services\Sales\ReceiptRequestValues;
 use App\Support\Tenancy\CompanyContext;
 use Illuminate\Auth\Access\AuthorizationException;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
 
@@ -59,7 +59,7 @@ final class CreateExpenseCategoryAction
             throw new InvalidArgumentException('Expense category English name must not exceed 255 characters.');
         }
 
-        return DB::transaction(function () use ($company, $actor, $code, $nameAr, $nameEn, $ledgerAccountId, $data): ExpenseCategory {
+        return app(TenantWriteAccess::class)->transaction((int) $company->id, function () use ($company, $actor, $code, $nameAr, $nameEn, $ledgerAccountId, $data): ExpenseCategory {
             $lockedCompany = Company::where('id', $company->id)->lockForUpdate()->firstOrFail();
             app(Phase7FinancialRead::class)->actor((int) $lockedCompany->id, $actor, 'money.expense.manage');
 

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Livewire\Pages\Products;
 
+use App\Application\Platform\TenantWriteAccess;
 use App\Models\Brand;
 use App\Models\Company;
 use App\Models\Product;
@@ -554,7 +555,7 @@ class ProductForm extends Component
         $normEn = $validated['new_brand_name_en'] !== null && $validated['new_brand_name_en'] !== '' ? $validated['new_brand_name_en'] : null;
 
         try {
-            $brand = DB::transaction(function () use ($normAr, $normEn) {
+            $brand = app(TenantWriteAccess::class)->transaction((int) $this->lockedCompanyId, function () use ($normAr, $normEn) {
                 /** @var User $actor */
                 $actor = auth()->user();
                 app(SalesActorGuard::class)->lockAndAuthorize(

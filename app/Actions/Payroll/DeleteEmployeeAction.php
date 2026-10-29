@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Payroll;
 
+use App\Application\Platform\TenantWriteAccess;
 use App\Exceptions\NoActiveCompanyException;
 use App\Models\Company;
 use App\Models\Employee;
@@ -15,7 +16,6 @@ use App\Services\Audit\AuditService;
 use App\Services\Phase7\Phase7FinancialRead;
 use App\Support\Tenancy\CompanyContext;
 use Illuminate\Auth\Access\AuthorizationException;
-use Illuminate\Support\Facades\DB;
 
 final class DeleteEmployeeAction
 {
@@ -39,7 +39,7 @@ final class DeleteEmployeeAction
             throw new AuthorizationException('User does not have permission to manage employees.');
         }
 
-        DB::transaction(function () use ($employee, $actor): void {
+        app(TenantWriteAccess::class)->transaction((int) $employee->company_id, function () use ($employee, $actor): void {
             $lockedCompany = Company::where('id', $employee->company_id)->lockForUpdate()->firstOrFail();
             app(Phase7FinancialRead::class)->actor((int) $lockedCompany->id, $actor, 'employees.manage');
             $lockedEmployee = Employee::where('company_id', $lockedCompany->id)->lockForUpdate()->findOrFail($employee->id);

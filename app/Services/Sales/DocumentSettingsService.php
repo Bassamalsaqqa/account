@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Sales;
 
+use App\Application\Platform\TenantWriteAccess;
 use App\Models\Company;
 use App\Models\CompanyDocumentSettings;
 use App\Models\User;
@@ -20,7 +21,7 @@ final class DocumentSettingsService
     {
         $path = null;
         try {
-            DB::transaction(function () use ($company, $actor, $file, &$path): void {
+            app(TenantWriteAccess::class)->transaction((int) $company->id, function () use ($company, $actor, $file, &$path): void {
                 app(SalesActorGuard::class)->lockAndAuthorize($company->id, $actor, 'settings.company.view');
                 app(SalesActorGuard::class)->lockAndAuthorize($company->id, $actor, 'settings.documents.manage');
                 Validator::make(['logo' => $file], ['logo' => ['required', 'image', 'mimes:png,jpg,jpeg,webp', 'max:512', 'dimensions:max_width=2048,max_height=2048']])->validate();
@@ -84,7 +85,7 @@ final class DocumentSettingsService
      */
     public function save(Company $company, User $actor, array $data): CompanyDocumentSettings
     {
-        return DB::transaction(function () use ($company, $actor, $data): CompanyDocumentSettings {
+        return app(TenantWriteAccess::class)->transaction((int) $company->id, function () use ($company, $actor, $data): CompanyDocumentSettings {
             app(SalesActorGuard::class)->lockAndAuthorize($company->id, $actor, 'settings.company.view');
             app(SalesActorGuard::class)->lockAndAuthorize($company->id, $actor, 'settings.documents.manage');
 

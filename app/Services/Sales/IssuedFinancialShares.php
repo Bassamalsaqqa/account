@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Sales;
 
+use App\Application\Platform\TenantWriteAccess;
 use App\Domain\Sales\Documents\DocumentData;
 use App\Domain\Sales\Queries\CustomerStatementQuery;
 use App\Models\Company;
@@ -60,7 +61,7 @@ final class IssuedFinancialShares
         }
         $intentHash = hash('sha256', app(IssuedDocumentContent::class)->canonical($intent));
 
-        return DB::transaction(function () use ($company, $actor, $type, $id, $expires, $password, $requestKey, $options, $intentHash, $statement, $lifetimeDays, $expiryPolicy): array {
+        return app(TenantWriteAccess::class)->transaction((int) $company->id, function () use ($company, $actor, $type, $id, $expires, $password, $requestKey, $options, $intentHash, $statement, $lifetimeDays, $expiryPolicy): array {
             $policy = app(FinancialSharePolicy::class);
             $policy->authorize((int) $company->id, $actor, $type); // Company-first lock serializes retries/issuance/lifecycle.
             $company = Company::findOrFail($company->id);
