@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Accounting;
 
+use App\Application\Platform\TenantWriteAccess;
 use App\Exceptions\CompanyReassignmentException;
 use App\Models\Company;
 use App\Models\ExpenseCategory;
@@ -12,7 +13,6 @@ use App\Services\Sales\DocumentSequenceService;
 use App\Services\Tenancy\CompanyRoleService;
 use App\Support\Tenancy\CompanyContext;
 use App\Support\Tenancy\CompanyScope;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
 final class EnsurePhase7FoundationAction
@@ -115,7 +115,7 @@ final class EnsurePhase7FoundationAction
         }
 
         CompanyScope::executeWithoutScope(function () use ($company, $isSystem): void {
-            DB::transaction(function () use ($company, $isSystem): void {
+            app(TenantWriteAccess::class)->transaction((int) $company->id, function () use ($company, $isSystem): void {
                 $lockedCompany = Company::whereKey($company->id)->lockForUpdate()->firstOrFail();
 
                 // 1. Ensure system accounts exist

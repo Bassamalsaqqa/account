@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Payroll;
 
+use App\Application\Platform\TenantWriteAccess;
 use App\Exceptions\NoActiveCompanyException;
 use App\Models\Company;
 use App\Models\CompanyCurrency;
@@ -17,7 +18,6 @@ use App\Support\Tenancy\CompanyContext;
 use Brick\Math\BigDecimal;
 use Carbon\Carbon;
 use Illuminate\Auth\Access\AuthorizationException;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
 
@@ -72,7 +72,7 @@ final class CreateEmployeeAction
         $notes = MoneyValues::text($data['notes'] ?? null, 2000);
         $active = isset($data['active']) ? (bool) $data['active'] : true;
 
-        return DB::transaction(function () use ($company, $actor, $code, $name, $phone, $jobTitle, $hireDate, $defaultSalary, $currencyCode, $active, $notes, $data): Employee {
+        return app(TenantWriteAccess::class)->transaction((int) $company->id, function () use ($company, $actor, $code, $name, $phone, $jobTitle, $hireDate, $defaultSalary, $currencyCode, $active, $notes, $data): Employee {
             $lockedCompany = Company::where('id', $company->id)->lockForUpdate()->firstOrFail();
             app(Phase7FinancialRead::class)->actor((int) $lockedCompany->id, $actor, 'employees.manage');
             if (array_key_exists('default_salary', $data) || array_key_exists('salary_currency_code', $data)) {

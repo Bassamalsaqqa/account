@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Purchasing;
 
+use App\Application\Platform\TenantWriteAccess;
 use App\Domain\Purchasing\PreparedPurchaseDraft;
 use App\Models\Purchase;
 use App\Models\PurchaseLine;
@@ -14,6 +15,7 @@ final class PurchaseDraftWriter
     /** Caller owns the Company-first transaction and authorization. */
     public function replaceLines(Purchase $purchase, PreparedPurchaseDraft $draft): void
     {
+        app(TenantWriteAccess::class)->assertWritable((int) $purchase->company_id);
         $purchase->assertMutableDraft();
         foreach ($purchase->lines()->where('company_id', $purchase->company_id)->get() as $line) {
             foreach ($line->lots()->where('company_id', $purchase->company_id)->get() as $lot) {

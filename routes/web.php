@@ -5,11 +5,13 @@ use App\Http\Controllers\CompanyDataExportController;
 use App\Http\Controllers\ExpenseAttachmentController;
 use App\Http\Controllers\PdfDocumentController;
 use App\Http\Controllers\PlatformController;
+use App\Http\Controllers\PlatformSubscriptionController;
 use App\Http\Controllers\PublicCatalogController;
 use App\Http\Controllers\PublicShareController;
 use App\Http\Controllers\PurchasingDocumentController;
 use App\Http\Controllers\ReportCsvController;
 use App\Http\Middleware\PrivateDocumentResponse;
+use App\Http\Middleware\RequirePlatformBillingPassword;
 use App\Livewire\AI\AiSettings;
 use App\Livewire\Pages\Catalog\BrandIndex;
 use App\Livewire\Pages\Catalog\CategoryIndex;
@@ -97,6 +99,8 @@ Route::prefix('platform')->name('platform.')->middleware(['auth', 'throttle:plat
     Route::get('/companies/create', [PlatformController::class, 'create'])->middleware(['platform:company.provision', 'password.confirm'])->name('companies.create');
     Route::post('/companies', [PlatformController::class, 'store'])->middleware(['platform:company.provision', 'password.confirm', 'throttle:platform-provision'])->name('companies.store');
     Route::get('/companies/{publicId}', [PlatformController::class, 'show'])->middleware('platform:company.read')->name('companies.show');
+    Route::get('/companies/{publicId}/subscription', [PlatformSubscriptionController::class, 'show'])->middleware('platform:subscription.manage')->name('companies.subscription.show');
+    Route::post('/companies/{publicId}/subscription/{operation}', [PlatformSubscriptionController::class, 'update'])->middleware([RequirePlatformBillingPassword::class, 'platform:subscription.manage'])->whereIn('operation', ['configure', 'renew', 'payment'])->name('companies.subscription.update');
     Route::get('/audit', [PlatformController::class, 'audit'])->middleware('platform:audit.read')->name('audit');
 });
 

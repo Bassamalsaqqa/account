@@ -2,12 +2,12 @@
 
 namespace App\Actions\Company;
 
+use App\Application\Platform\TenantWriteAccess;
 use App\Models\Company;
 use App\Models\CompanyUser;
 use App\Models\User;
 use App\Services\Audit\AuditService;
 use Illuminate\Auth\Access\AuthorizationException;
-use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
 
 class ToggleCompanyMemberStatusAction
@@ -22,7 +22,7 @@ class ToggleCompanyMemberStatusAction
             throw new AuthorizationException('Membership does not belong to active company.');
         }
 
-        return DB::transaction(function () use ($company, $membership, $actor) {
+        return app(TenantWriteAccess::class)->transaction((int) $company->id, function () use ($company, $membership, $actor) {
             // Lock the company row to serialize all member invariant changes for this company
             Company::where('id', $company->id)->lockForUpdate()->firstOrFail();
 

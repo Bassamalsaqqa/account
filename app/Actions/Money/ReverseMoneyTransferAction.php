@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Money;
 
+use App\Application\Platform\TenantWriteAccess;
 use App\Models\MoneyTransfer;
 use App\Models\User;
 use App\Services\Audit\AuditService;
@@ -16,7 +17,6 @@ use App\Services\Posting\AccountingReversalService;
 use App\Services\Sales\SalesActorGuard;
 use App\Services\Sales\SalesDocumentRules;
 use Carbon\Carbon;
-use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
 
 final class ReverseMoneyTransferAction implements MoneyEventOwner
@@ -32,7 +32,7 @@ final class ReverseMoneyTransferAction implements MoneyEventOwner
     {
         $reason = MoneyValues::text($reason, 500);
 
-        return DB::transaction(function () use ($transfer, $actor, $date, $reason): MoneyTransfer {
+        return app(TenantWriteAccess::class)->transaction((int) $transfer->company_id, function () use ($transfer, $actor, $date, $reason): MoneyTransfer {
             $company = app(SalesActorGuard::class)->lockAndAuthorize((int) $transfer->company_id, $actor, 'money.transfer.reverse');
             $transfer = MoneyTransfer::where('company_id', $company->id)->whereKey($transfer->id)->lockForUpdate()->firstOrFail();
             app(MoneyTransferHistory::class)->validate($transfer);

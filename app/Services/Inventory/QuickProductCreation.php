@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Inventory;
 
+use App\Application\Platform\TenantWriteAccess;
 use App\Exceptions\IdempotencyConflictException;
 use App\Models\Company;
 use App\Models\Product;
@@ -130,7 +131,7 @@ final class QuickProductCreation
 
         $requestHash = hash('sha256', (string) json_encode($payloadToHash, JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE));
 
-        return DB::transaction(function () use ($company, $actor, $requestKey, $requestHash, $normalized, $formPermission): Product {
+        return app(TenantWriteAccess::class)->transaction((int) $company->id, function () use ($company, $actor, $requestKey, $requestHash, $normalized, $formPermission): Product {
             $guard = app(SalesActorGuard::class);
             $company = $guard->lockAndAuthorize((int) $company->id, $actor, $formPermission);
             $guard->lockAndAuthorize((int) $company->id, $actor, 'inventory.product.manage');

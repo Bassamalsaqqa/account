@@ -1,0 +1,117 @@
+{
+  "environment": "isolated synthetic local application; no production or provider access",
+  "responsive": [
+    {
+      "locale": "ar",
+      "client": 375,
+      "dir": "rtl",
+      "missingTranslations": false,
+      "scroll": 375,
+      "width": 390
+    },
+    {
+      "locale": "ar",
+      "client": 753,
+      "dir": "rtl",
+      "missingTranslations": false,
+      "scroll": 753,
+      "width": 768
+    },
+    {
+      "locale": "ar",
+      "client": 1425,
+      "dir": "rtl",
+      "missingTranslations": false,
+      "scroll": 1425,
+      "width": 1440
+    },
+    {
+      "locale": "en",
+      "client": 375,
+      "dir": "ltr",
+      "missingTranslations": false,
+      "scroll": 375,
+      "width": 390
+    },
+    {
+      "locale": "en",
+      "client": 753,
+      "dir": "ltr",
+      "missingTranslations": false,
+      "scroll": 753,
+      "width": 768
+    },
+    {
+      "locale": "en",
+      "client": 1425,
+      "dir": "ltr",
+      "missingTranslations": false,
+      "scroll": 1425,
+      "width": 1440
+    }
+  ],
+  "keyboard": {
+    "fixture": "synthetic-local-only",
+    "checks": [
+      {
+        "locale": "en",
+        "form": 0,
+        "reviewFocus": {
+          "name": "Review details before submission",
+          "role": "group"
+        },
+        "restored": "term_plan"
+      },
+      {
+        "locale": "en",
+        "form": 1,
+        "reviewFocus": {
+          "name": "Review details before submission",
+          "role": "group"
+        },
+        "restored": "renew_new_date"
+      },
+      {
+        "locale": "en",
+        "form": 2,
+        "reviewFocus": {
+          "name": "Review details before submission",
+          "role": "group"
+        },
+        "restored": "pay_charge_id"
+      },
+      {
+        "locale": "ar",
+        "form": 0,
+        "reviewFocus": {
+          "name": "Ù…Ø±Ø§Ø¬Ø¹Ø© Ø§Ù„Ø¨ÙŠØ§Ù†Ø§Øª Ù‚Ø¨Ù„ Ø§Ù„Ø¥Ø±Ø³Ø§Ù„",
+          "role": "group"
+        },
+        "restored": "term_plan"
+      },
+      {
+        "locale": "ar",
+        "form": 1,
+        "reviewFocus": {
+          "name": "Ù…Ø±Ø§Ø¬Ø¹Ø© Ø§Ù„Ø¨ÙŠØ§Ù†Ø§Øª Ù‚Ø¨Ù„ Ø§Ù„Ø¥Ø±Ø³Ø§Ù„",
+          "role": "group"
+        },
+        "restored": "renew_new_date"
+      },
+      {
+        "locale": "ar",
+        "form": 2,
+        "reviewFocus": {
+          "name": "Ù…Ø±Ø§Ø¬Ø¹Ø© Ø§Ù„Ø¨ÙŠØ§Ù†Ø§Øª Ù‚Ø¨Ù„ Ø§Ù„Ø¥Ø±Ø³Ø§Ù„",
+          "role": "group"
+        },
+        "restored": "pay_charge_id"
+      }
+    ],
+    "submissions": 0
+  },
+  "limitations": [
+    "No browser billing submissions",
+    "No physical device or screen-reader speech certification"
+  ]
+}

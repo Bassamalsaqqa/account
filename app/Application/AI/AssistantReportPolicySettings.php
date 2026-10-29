@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Application\AI;
 
+use App\Application\Platform\TenantWriteAccess;
 use App\Models\AiCompanyPolicy;
 use App\Models\Company;
 use App\Models\CompanyUser;
@@ -40,6 +41,7 @@ final class AssistantReportPolicySettings
         $this->validateReports($reports);
 
         return DB::transaction(function () use ($company, $actor, $reports, $expectedRevision, $password): AiCompanyPolicy {
+            app(TenantWriteAccess::class)->assertWritable((int) $company->id);
             $this->authorizeOwner($company, $actor);
             $policy = AiCompanyPolicy::where('company_id', $company->id)->lockForUpdate()->first();
             if ($policy === null) {

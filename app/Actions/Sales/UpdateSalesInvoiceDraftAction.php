@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Sales;
 
+use App\Application\Platform\TenantWriteAccess;
 use App\Domain\Money\ValueObjects\ExchangeRate;
 use App\Domain\Money\ValueObjects\MoneyAmount;
 use App\Domain\Sales\Calculators\SalesDocumentTotalsCalculator;
@@ -23,7 +24,6 @@ use App\Services\Sales\SalesDocumentRules;
 use App\Support\Tenancy\CompanyContext;
 use Brick\Math\BigDecimal;
 use Illuminate\Auth\Access\AuthorizationException;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
 
@@ -59,7 +59,7 @@ class UpdateSalesInvoiceDraftAction
      */
     public function execute(SalesInvoice $invoice, User $user, array $data): SalesInvoice
     {
-        return DB::transaction(function () use ($invoice, $user, $data): SalesInvoice {
+        return app(TenantWriteAccess::class)->transaction((int) $invoice->company_id, function () use ($invoice, $user, $data): SalesInvoice {
             // Lock company FOR UPDATE
             Company::where('id', $invoice->company_id)->lockForUpdate()->firstOrFail();
             app(SalesActorGuard::class)->lockAndAuthorize((int) $invoice->company_id, $user, 'sales.invoice.edit_draft');

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Livewire\Pages\Catalog;
 
+use App\Application\Platform\TenantWriteAccess;
 use App\Models\Company;
 use App\Models\CompanyInventorySettings;
 use App\Models\StockMovement;
@@ -12,7 +13,6 @@ use App\Models\Warehouse;
 use App\Services\Inventory\ProductCatalogService;
 use App\Support\Tenancy\CompanyContext;
 use Illuminate\Contracts\View\View;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Livewire\Attributes\Layout;
 use Livewire\Component;
@@ -125,7 +125,7 @@ class WarehouseIndex extends Component
             if ($this->editingId !== null) {
                 $catalogService->updateWarehouse($company, $this->editingId, $data);
             } else {
-                DB::transaction(function () use ($company, $data, $user) {
+                app(TenantWriteAccess::class)->transaction((int) $company->id, function () use ($company, $data, $user) {
                     Company::where('id', $company->id)->lockForUpdate()->firstOrFail();
                     if ($data['is_default']) {
                         Warehouse::where('company_id', $company->id)->update(['is_default' => false]);
@@ -158,7 +158,7 @@ class WarehouseIndex extends Component
 
         $company = $context->company();
 
-        DB::transaction(function () use ($company, $id) {
+        app(TenantWriteAccess::class)->transaction((int) $company->id, function () use ($company, $id) {
             Company::where('id', $company->id)->lockForUpdate()->firstOrFail();
 
             /** @var Warehouse $warehouse */

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Accounting;
 
+use App\Application\Platform\TenantWriteAccess;
 use App\Domain\Accounting\Catalog\SystemAccountsCatalog;
 use App\Domain\Accounting\Exceptions\SystemAccountConflictException;
 use App\Exceptions\CompanyReassignmentException;
@@ -13,7 +14,6 @@ use App\Models\LedgerAccount;
 use App\Support\Tenancy\CompanyContext;
 use App\Support\Tenancy\CompanyScope;
 use Illuminate\Database\Eloquent\Collection;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
 
@@ -41,7 +41,7 @@ class EnsureSystemLedgerAccountsAction
         }
 
         $provision = function () use ($company): void {
-            DB::transaction(function () use ($company): void {
+            app(TenantWriteAccess::class)->transaction((int) $company->id, function () use ($company): void {
                 // Lock the company row first to serialize concurrent provisioning even when no accounts exist yet
                 Company::where('id', $company->id)->lockForUpdate()->firstOrFail();
 

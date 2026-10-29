@@ -2,13 +2,13 @@
 
 namespace App\Actions\Company;
 
+use App\Application\Platform\TenantWriteAccess;
 use App\Models\Company;
 use App\Models\CompanyUser;
 use App\Models\User;
 use App\Services\Audit\AuditService;
 use App\Services\Tenancy\ProtectedDocumentDelegation;
 use Illuminate\Auth\Access\AuthorizationException;
-use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
@@ -25,7 +25,7 @@ class UpdateCompanyMemberRoleAction
             throw new AuthorizationException('Membership does not belong to active company.');
         }
 
-        DB::transaction(function () use ($company, $membership, $newRoleName, $actor) {
+        app(TenantWriteAccess::class)->transaction((int) $company->id, function () use ($company, $membership, $newRoleName, $actor) {
             // Lock the company row to serialize all member/role invariant operations
             Company::where('id', $company->id)->lockForUpdate()->firstOrFail();
 

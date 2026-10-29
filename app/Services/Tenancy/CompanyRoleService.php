@@ -2,6 +2,7 @@
 
 namespace App\Services\Tenancy;
 
+use App\Application\Platform\TenantWriteAccess;
 use App\Models\Company;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
@@ -171,6 +172,7 @@ class CompanyRoleService
     /** Existing-company upgrade preserves customized role grants; Owner retains the static catalog. */
     public function upgradeSalesCatalog(Company $company): void
     {
+        app(TenantWriteAccess::class)->assertWritable((int) $company->id);
         $this->ensurePermissionsExist();
         $previousTeam = getPermissionsTeamId();
         try {
@@ -186,6 +188,7 @@ class CompanyRoleService
     /** Existing-company upgrade preserves customized role grants; Owner retains the static catalog. */
     public function upgradeReportingCatalog(Company $company): void
     {
+        app(TenantWriteAccess::class)->assertWritable((int) $company->id);
         $this->ensurePermissionsExist();
         $previousTeam = getPermissionsTeamId();
         try {
@@ -203,6 +206,7 @@ class CompanyRoleService
      */
     public function seedCompanyRoles(Company $company): void
     {
+        app(TenantWriteAccess::class)->assertWritable((int) $company->id);
         $this->ensurePermissionsExist();
 
         // Switch Spatie team context

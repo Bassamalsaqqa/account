@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Purchasing;
 
+use App\Application\Platform\TenantWriteAccess;
 use App\Exceptions\NoActiveCompanyException;
 use App\Models\Expense;
 use App\Models\LandedCostAllocation;
@@ -13,7 +14,6 @@ use App\Services\Audit\AuditService;
 use App\Services\Sales\SalesActorGuard;
 use App\Support\Tenancy\CompanyContext;
 use Illuminate\Auth\Access\AuthorizationException;
-use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
 
 final class RemoveLandedCostAllocationAction
@@ -37,7 +37,7 @@ final class RemoveLandedCostAllocationAction
             throw new AuthorizationException("User does not belong to company [{$purchase->company_id}].");
         }
 
-        DB::transaction(function () use ($purchase, $expense, $actor): void {
+        app(TenantWriteAccess::class)->transaction((int) $purchase->company_id, function () use ($purchase, $expense, $actor): void {
             $guard = app(SalesActorGuard::class);
             $company = $guard->lockAndAuthorize((int) $purchase->company_id, $actor, 'purchasing.landed_cost.manage');
             $guard->lockAndAuthorize((int) $company->id, $actor, 'purchasing.cost.view');

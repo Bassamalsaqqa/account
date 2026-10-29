@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Sales;
 
+use App\Application\Platform\TenantWriteAccess;
 use App\Domain\Sales\Calculators\TaxPercentage;
 use App\Models\Company;
 use App\Models\LedgerAccount;
@@ -12,7 +13,6 @@ use App\Models\User;
 use App\Services\Audit\AuditService;
 use App\Services\Purchasing\PurchaseInputTaxAccount;
 use App\Services\Sales\SalesActorGuard;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
 use InvalidArgumentException;
@@ -22,7 +22,7 @@ final class SaveTaxRateAction
     /** @param array<string, mixed> $data */
     public function execute(Company $company, User $actor, array $data, ?int $id = null): TaxRate
     {
-        return DB::transaction(function () use ($company, $actor, $data, $id): TaxRate {
+        return app(TenantWriteAccess::class)->transaction((int) $company->id, function () use ($company, $actor, $data, $id): TaxRate {
             app(SalesActorGuard::class)->lockAndAuthorize((int) $company->id, $actor, 'settings.taxes.manage');
             $rate = TaxPercentage::parse($data['rate'] ?? null);
             $values = Validator::make($data, [

@@ -67,6 +67,33 @@
                 </p>
             </div>
         </dl>
+
+        @php
+            $platformPermissions = request()->attributes->get('platform_permissions', []);
+            $canManageSubscription = in_array('subscription.manage', $platformPermissions, true);
+        @endphp
+
+        @if($canManageSubscription)
+            <div class="my-6 border-t border-border"></div>
+            <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 p-4 rounded-control bg-surface-soft border border-border">
+                <div class="flex items-center gap-3 min-w-0">
+                    <div class="w-10 h-10 rounded-card bg-primary-50 text-primary grid place-items-center shrink-0 border border-primary/20">
+                        <x-icon name="receipt" class="w-5 h-5" />
+                    </div>
+                    <div class="min-w-0">
+                        <span class="text-xs font-bold text-text-muted uppercase tracking-wider block leading-none mb-1">{{ __('subscriptions.subscription_details') }}</span>
+                        <span class="text-sm font-extrabold text-text-primary block truncate">{{ __('subscriptions.subtitle') }}</span>
+                    </div>
+                </div>
+                <div class="shrink-0">
+                    <a href="{{ route('platform.companies.subscription.show', $company->public_id) }}"
+                       class="inline-flex min-h-11 items-center justify-center gap-2 rounded-control bg-primary px-4 text-xs sm:text-sm font-semibold text-white hover:bg-primary-hover shadow-xs transition-colors">
+                        <span>{{ __('subscriptions.manage') }}</span>
+                        <x-icon name="chevron" class="w-4 h-4 rtl:rotate-180" />
+                    </a>
+                </div>
+            </div>
+        @endif
     </div>
 
     <!-- Company Members -->

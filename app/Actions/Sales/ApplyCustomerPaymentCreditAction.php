@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Sales;
 
+use App\Application\Platform\TenantWriteAccess;
 use App\Domain\Money\ValueObjects\ExchangeRate;
 use App\Domain\Money\ValueObjects\MoneyAmount;
 use App\Domain\Posting\DTO\PostingCommand;
@@ -26,7 +27,6 @@ use App\Services\Sales\SalesPostingLines;
 use Brick\Math\BigDecimal;
 use Brick\Math\RoundingMode;
 use Carbon\Carbon;
-use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
 
 final class ApplyCustomerPaymentCreditAction
@@ -43,7 +43,7 @@ final class ApplyCustomerPaymentCreditAction
         }
         $hash = self::requestHash((int) $payment->company_id, (int) $payment->id, (int) $actor->id, $data['application_date'], $intent);
 
-        return DB::transaction(function () use ($payment, $actor, $data, $key, $hash, $intent, $version): CustomerPaymentApplicationEvent {
+        return app(TenantWriteAccess::class)->transaction((int) $payment->company_id, function () use ($payment, $actor, $data, $key, $hash, $intent, $version): CustomerPaymentApplicationEvent {
             $company = app(SalesActorGuard::class)->lockAndAuthorize((int) $payment->company_id, $actor, 'money.receipt.allocate');
             $locked = CustomerPayment::where('company_id', $company->id)->lockForUpdate()->findOrFail($payment->id);
             $existing = CustomerPaymentApplicationEvent::where('company_id', $company->id)->where('idempotency_key', $key)->lockForUpdate()->first();

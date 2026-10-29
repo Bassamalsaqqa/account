@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Inventory;
 
+use App\Application\Platform\TenantWriteAccess;
 use App\Domain\Inventory\Exceptions\HistoricalConversionLockedException;
 use App\Domain\Inventory\Exceptions\InvalidInventoryMovementException;
 use App\Domain\Inventory\Exceptions\InvalidUnitConversionException;
@@ -20,7 +21,6 @@ use App\Models\StockMovement;
 use App\Models\Unit;
 use App\Models\Warehouse;
 use Brick\Math\BigDecimal;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 use InvalidArgumentException;
 
@@ -39,7 +39,7 @@ class ProductCatalogService
     {
         $data = $this->normalizeNames($data);
 
-        return DB::transaction(function () use ($company, $data, $actorId): Product {
+        return app(TenantWriteAccess::class)->transaction((int) $company->id, function () use ($company, $data, $actorId): Product {
             /** @var Company $lockedCompany */
             $lockedCompany = Company::where('id', $company->id)->lockForUpdate()->firstOrFail();
             if ($lockedCompany->status !== 'active') {
@@ -77,7 +77,7 @@ class ProductCatalogService
      */
     public function updateProduct(Product $product, array $data, int $actorId): Product
     {
-        return DB::transaction(function () use ($product, $data, $actorId): Product {
+        return app(TenantWriteAccess::class)->transaction((int) $product->company_id, function () use ($product, $data, $actorId): Product {
             /** @var Product $lockedProduct */
             $lockedProduct = Product::where('id', $product->id)->lockForUpdate()->firstOrFail();
 
@@ -271,7 +271,7 @@ class ProductCatalogService
      */
     public function updateWarehouse(Company $company, Warehouse|int $warehouse, array $data): Warehouse
     {
-        return DB::transaction(function () use ($company, $warehouse, $data): Warehouse {
+        return app(TenantWriteAccess::class)->transaction((int) $company->id, function () use ($company, $warehouse, $data): Warehouse {
             Company::where('id', $company->id)->lockForUpdate()->firstOrFail();
             $warehouseId = $warehouse instanceof Warehouse ? $warehouse->id : $warehouse;
             /** @var Warehouse $lockedWarehouse */
@@ -340,7 +340,7 @@ class ProductCatalogService
      */
     public function updateUnit(Company $company, Unit|int $unit, array $data): Unit
     {
-        return DB::transaction(function () use ($company, $unit, $data): Unit {
+        return app(TenantWriteAccess::class)->transaction((int) $company->id, function () use ($company, $unit, $data): Unit {
             Company::where('id', $company->id)->lockForUpdate()->firstOrFail();
             $unitId = $unit instanceof Unit ? $unit->id : $unit;
             /** @var Unit $lockedUnit */
@@ -396,7 +396,7 @@ class ProductCatalogService
         bool $isDefaultSale,
         bool $isDefaultPurchase
     ): ProductUnit {
-        return DB::transaction(function () use (
+        return app(TenantWriteAccess::class)->transaction((int) $product->company_id, function () use (
             $product,
             $unitId,
             $conversionToBase,
@@ -598,7 +598,7 @@ class ProductCatalogService
      */
     public function removeAlternateUnit(Product $product, int $productUnitId): void
     {
-        DB::transaction(function () use ($product, $productUnitId): void {
+        app(TenantWriteAccess::class)->transaction((int) $product->company_id, function () use ($product, $productUnitId): void {
             Company::where('id', $product->company_id)->lockForUpdate()->firstOrFail();
             /** @var Product $lockedProduct */
             $lockedProduct = Product::where('id', $product->id)->lockForUpdate()->firstOrFail();
@@ -663,7 +663,7 @@ class ProductCatalogService
      */
     public function addBarcode(Product $product, string $barcode, ?int $unitId, bool $isPrimary): ProductBarcode
     {
-        return DB::transaction(function () use ($product, $barcode, $unitId, $isPrimary): ProductBarcode {
+        return app(TenantWriteAccess::class)->transaction((int) $product->company_id, function () use ($product, $barcode, $unitId, $isPrimary): ProductBarcode {
             /** @var Product $lockedProduct */
             $lockedProduct = Product::where('id', $product->id)->lockForUpdate()->firstOrFail();
 
@@ -700,7 +700,7 @@ class ProductCatalogService
      */
     public function removeBarcode(Product $product, int $barcodeId): void
     {
-        DB::transaction(function () use ($product, $barcodeId): void {
+        app(TenantWriteAccess::class)->transaction((int) $product->company_id, function () use ($product, $barcodeId): void {
             /** @var Product $lockedProduct */
             $lockedProduct = Product::where('id', $product->id)->lockForUpdate()->firstOrFail();
 

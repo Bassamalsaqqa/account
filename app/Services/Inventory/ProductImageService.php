@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Inventory;
 
+use App\Application\Platform\TenantWriteAccess;
 use App\Domain\Inventory\Exceptions\InventorySecurityException;
 use App\Models\CompanyUser;
 use App\Models\Product;
@@ -121,7 +122,7 @@ class ProductImageService
 
         // 5. Metadata creation under Product lock
         try {
-            return DB::transaction(function () use ($productId, $companyId, $displayPath, $thumbPath, $display, $encodedDisplay, $isPrimary, $altAr, $altEn, $actor) {
+            return app(TenantWriteAccess::class)->transaction($companyId, function () use ($productId, $companyId, $displayPath, $thumbPath, $display, $encodedDisplay, $isPrimary, $altAr, $altEn, $actor) {
                 // Lock product
                 Product::where('id', $productId)->lockForUpdate()->firstOrFail();
 
@@ -190,12 +191,20 @@ class ProductImageService
             $this->validateManagedPath($image->thumbnail_path, $image->company_id, $image->product_id);
         }
 
-        DB::transaction(function () use ($image) {
+        app(TenantWriteAccess::class)->transaction((int) $image->company_id, function () use ($image) {
             Product::where('id', $image->product_id)->lockForUpdate()->firstOrFail();
 
-            Storage::disk($image->disk)->delete($image->path);
-            if (! empty($image->thumbnail_path)) {
-                Storage::disk($image->disk)->delete($image->thumbnail_path);
+            $deleteFiles = static function () use ($image): void {
+                Storage::disk($image->disk)->delete($image->path);
+                if (! empty($image->thumbnail_path)) {
+                    Storage::disk($image->disk)->delete($image->thumbnail_path);
+                }
+            };
+            if (config('subscriptions.enforcement_enabled', false)) {
+                // A later outer-commit admission failure must not delete existing uploads.
+                DB::afterCommit($deleteFiles);
+            } else {
+                $deleteFiles();
             }
 
             $wasPrimary = $image->is_primary;
@@ -229,7 +238,7 @@ class ProductImageService
 
         $this->authorizeActorForCompany($image->company_id, $actor);
 
-        DB::transaction(function () use ($image) {
+        app(TenantWriteAccess::class)->transaction((int) $image->company_id, function () use ($image) {
             Product::where('id', $image->product_id)->lockForUpdate()->firstOrFail();
 
             ProductImage::where('company_id', $image->company_id)

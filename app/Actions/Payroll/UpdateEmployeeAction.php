@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Payroll;
 
+use App\Application\Platform\TenantWriteAccess;
 use App\Exceptions\NoActiveCompanyException;
 use App\Models\Company;
 use App\Models\CompanyCurrency;
@@ -17,7 +18,6 @@ use App\Support\Tenancy\CompanyContext;
 use Brick\Math\BigDecimal;
 use Carbon\Carbon;
 use Illuminate\Auth\Access\AuthorizationException;
-use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
 
 final class UpdateEmployeeAction
@@ -43,7 +43,7 @@ final class UpdateEmployeeAction
             throw new AuthorizationException('User does not have permission to manage employees.');
         }
 
-        return DB::transaction(function () use ($employee, $actor, $data): Employee {
+        return app(TenantWriteAccess::class)->transaction((int) $employee->company_id, function () use ($employee, $actor, $data): Employee {
             $lockedCompany = Company::where('id', $employee->company_id)->lockForUpdate()->firstOrFail();
             app(Phase7FinancialRead::class)->actor((int) $lockedCompany->id, $actor, 'employees.manage');
             if (array_key_exists('default_salary', $data) || array_key_exists('salary_currency_code', $data)) {

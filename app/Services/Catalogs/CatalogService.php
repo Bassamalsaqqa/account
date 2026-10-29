@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Catalogs;
 
+use App\Application\Platform\TenantWriteAccess;
 use App\Models\Catalog;
 use App\Models\CatalogItem;
 use App\Models\Company;
@@ -63,6 +64,7 @@ final class CatalogService
 
         return DB::transaction(function () use ($id, $fields, $items, $expectedRevision): Catalog {
             $company = $this->authorize('catalogs.manage');
+            app(TenantWriteAccess::class)->assertWritable((int) $company->id);
             abort_unless(auth()->user()->hasAnyPermission(['inventory.stock.view', 'inventory.product.manage']), 403);
             $catalog = $id === null ? null : Catalog::where('company_id', $company->id)->lockForUpdate()->findOrFail($id);
             if ($catalog !== null && $catalog->draft_revision !== $expectedRevision) {
@@ -217,6 +219,7 @@ final class CatalogService
 
         return DB::transaction(function () use ($id, $revision, $previewHash, $requestKey): Catalog {
             $company = $this->authorize('catalogs.publish');
+            app(TenantWriteAccess::class)->assertWritable((int) $company->id);
             $catalog = Catalog::where('company_id', $company->id)->lockForUpdate()->findOrFail($id);
             $intent = hash('sha256', $id.'|'.$revision.'|'.$previewHash);
             $receipt = DB::table('catalog_publications')->where('company_id', $company->id)->where('request_key', $requestKey)->first();
@@ -264,6 +267,7 @@ final class CatalogService
 
         return DB::transaction(function () use ($id, $password, $expires): array {
             $company = $this->authorize('catalogs.share');
+            app(TenantWriteAccess::class)->assertWritable((int) $company->id);
             $catalog = Catalog::where('company_id', $company->id)->lockForUpdate()->findOrFail($id);
             if ($catalog->status !== 'active' || $catalog->published_payload === null) {
                 throw new InvalidArgumentException('Publish and activate before creating a link.');
@@ -303,6 +307,7 @@ final class CatalogService
 
         return DB::transaction(function () use ($id, $requestKey, $password, $expires): array {
             $company = $this->authorize('catalogs.share');
+            app(TenantWriteAccess::class)->assertWritable((int) $company->id);
             $this->authorize('catalogs.publish');
             $catalog = Catalog::where('company_id', $company->id)->lockForUpdate()->findOrFail($id);
             if (! in_array($catalog->status, ['active', 'revoked'], true) || $catalog->published_payload === null) {
@@ -397,6 +402,7 @@ final class CatalogService
 
         return DB::transaction(function () use ($id, $expectedState, $expires, $password): string {
             $company = $this->authorize('catalogs.share');
+            app(TenantWriteAccess::class)->assertWritable((int) $company->id);
             $catalog = Catalog::where('company_id', $company->id)->lockForUpdate()->findOrFail($id);
             if ($catalog->status !== 'active' || $catalog->published_payload === null) {
                 throw new InvalidArgumentException('An active published catalog is required.');
@@ -447,6 +453,7 @@ final class CatalogService
         }
         DB::transaction(function () use ($id, $state): void {
             $company = $this->authorize($state === 'active' ? 'catalogs.publish' : 'catalogs.revoke');
+            app(TenantWriteAccess::class)->assertWritable((int) $company->id);
             $catalog = Catalog::where('company_id', $company->id)->lockForUpdate()->findOrFail($id);
             if ($state === 'active' && $catalog->published_payload === null) {
                 throw new InvalidArgumentException('Publish before resuming.');

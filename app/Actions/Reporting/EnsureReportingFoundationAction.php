@@ -4,12 +4,12 @@ declare(strict_types=1);
 
 namespace App\Actions\Reporting;
 
+use App\Application\Platform\TenantWriteAccess;
 use App\Exceptions\CompanyReassignmentException;
 use App\Models\Company;
 use App\Services\Tenancy\CompanyRoleService;
 use App\Support\Tenancy\CompanyContext;
 use App\Support\Tenancy\CompanyScope;
-use Illuminate\Support\Facades\DB;
 
 final class EnsureReportingFoundationAction
 {
@@ -28,7 +28,7 @@ final class EnsureReportingFoundationAction
         }
 
         CompanyScope::executeWithoutScope(function () use ($company): void {
-            DB::transaction(function () use ($company): void {
+            app(TenantWriteAccess::class)->transaction((int) $company->id, function () use ($company): void {
                 $lockedCompany = Company::whereKey($company->id)->lockForUpdate()->firstOrFail();
 
                 // Upgrade catalog permissions for Owner only (preserves customized non-owner roles)

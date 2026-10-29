@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Sales;
 
+use App\Application\Platform\TenantWriteAccess;
 use App\Domain\Sales\Queries\CustomerStatementQuery;
 use App\Models\Company;
 use App\Models\Customer;
@@ -130,7 +131,7 @@ class PublicShareService
      */
     public function revokeShare(PublicShare $share, User $user): void
     {
-        DB::transaction(function () use ($share, $user): void {
+        app(TenantWriteAccess::class)->transaction((int) $share->company_id, function () use ($share, $user): void {
             app(FinancialSharePolicy::class)->authorize((int) $share->company_id, $user, $share->subject_type);
             $locked = PublicShare::where('company_id', $share->company_id)->whereKey($share->id)->lockForUpdate()->firstOrFail();
             $locked->is_active = false;

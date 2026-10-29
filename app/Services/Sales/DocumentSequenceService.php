@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Sales;
 
+use App\Application\Platform\TenantWriteAccess;
 use App\Models\DocumentSequence;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -35,6 +36,8 @@ class DocumentSequenceService
         if (DB::transactionLevel() <= 0) {
             throw new RuntimeException('generateNextNumber must be called within an active database transaction.');
         }
+
+        app(TenantWriteAccess::class)->assertWritable($companyId);
 
         $effectiveYear = $year ?? (int) Carbon::now()->year;
 
@@ -159,6 +162,7 @@ class DocumentSequenceService
      */
     public function ensureDefaultSequences(int $companyId, ?int $year = null): void
     {
+        app(TenantWriteAccess::class)->assertWritable($companyId);
         $effectiveYear = $year ?? (int) Carbon::now()->year;
 
         $salesTypes = [
@@ -188,6 +192,7 @@ class DocumentSequenceService
     /** Ensure configuration only; never advance numbers or replace customized sequences. */
     public function ensurePurchaseSequences(int $companyId, ?int $year = null): void
     {
+        app(TenantWriteAccess::class)->assertWritable($companyId);
         $effectiveYear = $year ?? (int) Carbon::now()->year;
         foreach ([DocumentSequence::TYPE_PURCHASE, DocumentSequence::TYPE_PURCHASE_RETURN, DocumentSequence::TYPE_VENDOR_PAYMENT] as $type) {
             if (DocumentSequence::where('company_id', $companyId)->where('document_type', $type)->exists()) {
@@ -204,6 +209,7 @@ class DocumentSequenceService
     /** Ensure Phase 7 configuration only; never advance numbers or replace customized sequences. */
     public function ensurePhase7Sequences(int $companyId, ?int $year = null): void
     {
+        app(TenantWriteAccess::class)->assertWritable($companyId);
         $effectiveYear = $year ?? (int) Carbon::now()->year;
         foreach ([
             DocumentSequence::TYPE_EXPENSE,

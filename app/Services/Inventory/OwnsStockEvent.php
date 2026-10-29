@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Inventory;
 
+use App\Application\Platform\TenantWriteAccess;
 use App\Domain\Inventory\DTO\StockMovementCommand;
 use App\Domain\Inventory\Exceptions\InvalidInventoryMovementException;
 use App\Domain\Posting\DTO\PostingCommand;
@@ -13,7 +14,6 @@ use App\Models\User;
 use App\Services\Posting\AccountingPostingService;
 use App\Services\Posting\AccountingReversalService;
 use Closure;
-use Illuminate\Support\Facades\DB;
 
 trait OwnsStockEvent
 {
@@ -33,7 +33,7 @@ trait OwnsStockEvent
             throw new InvalidInventoryMovementException('Canonical stock events cannot be reentered.');
         }
 
-        return DB::transaction(function () use ($companyId, $sourceId, $actor, $callback) {
+        return app(TenantWriteAccess::class)->transaction($companyId, function () use ($companyId, $sourceId, $actor, $callback) {
             $scope = app(StockEventScope::class);
             $this->executingStockEvent = $scope;
             try {

@@ -4,13 +4,13 @@ declare(strict_types=1);
 
 namespace App\Actions\Purchasing;
 
+use App\Application\Platform\TenantWriteAccess;
 use App\Models\Company;
 use App\Models\CompanyPurchaseSetting;
 use App\Services\Sales\DocumentSequenceService;
 use App\Services\Tenancy\CompanyRoleService;
 use App\Support\Tenancy\CompanyContext;
 use App\Support\Tenancy\CompanyScope;
-use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
 
 final class EnsurePurchasingFoundationAction
@@ -22,7 +22,7 @@ final class EnsurePurchasingFoundationAction
             throw new InvalidArgumentException('System purchasing provisioning requires no active company context.');
         }
         CompanyScope::executeWithoutScope(function () use ($company): void {
-            DB::transaction(function () use ($company): void {
+            app(TenantWriteAccess::class)->transaction((int) $company->id, function () use ($company): void {
                 $company = Company::whereKey($company->id)->lockForUpdate()->firstOrFail();
                 CompanyPurchaseSetting::firstOrCreate(['company_id' => $company->id]);
                 app(DocumentSequenceService::class)->ensurePurchaseSequences($company->id);

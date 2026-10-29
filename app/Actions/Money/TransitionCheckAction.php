@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Money;
 
+use App\Application\Platform\TenantWriteAccess;
 use App\Exceptions\IdempotencyConflictException;
 use App\Models\Check;
 use App\Models\CheckEvent;
@@ -25,7 +26,6 @@ use App\Services\Sales\ReceiptRequestValues;
 use App\Services\Sales\SalesDocumentRules;
 use Brick\Math\BigDecimal;
 use Illuminate\Auth\Access\AuthorizationException;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
 
@@ -58,7 +58,7 @@ final class TransitionCheckAction implements MoneyEventOwner
         }
         $hash = hash('sha256', json_encode($intent, JSON_THROW_ON_ERROR));
 
-        return DB::transaction(function () use ($check, $actor, $key, $type, $date, $intent, $hash): CheckEvent {
+        return app(TenantWriteAccess::class)->transaction((int) $check->company_id, function () use ($check, $actor, $key, $type, $date, $intent, $hash): CheckEvent {
             $company = Company::lockForUpdate()->findOrFail($check->company_id);
             if ((int) auth()->id() !== (int) $actor->id) {
                 throw new AuthorizationException('Actor mismatch.');

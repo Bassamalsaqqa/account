@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Expenses;
 
+use App\Application\Platform\TenantWriteAccess;
 use App\Exceptions\NoActiveCompanyException;
 use App\Models\Company;
 use App\Models\Expense;
@@ -12,7 +13,6 @@ use App\Models\User;
 use App\Services\Audit\AuditService;
 use App\Support\Tenancy\CompanyContext;
 use Illuminate\Auth\Access\AuthorizationException;
-use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
 
 final class DeleteExpenseCategoryAction
@@ -37,7 +37,7 @@ final class DeleteExpenseCategoryAction
             throw new AuthorizationException('User does not have permission to manage expense categories.');
         }
 
-        DB::transaction(function () use ($category, $actor): void {
+        app(TenantWriteAccess::class)->transaction((int) $category->company_id, function () use ($category, $actor): void {
             $lockedCompany = Company::where('id', $category->company_id)->lockForUpdate()->firstOrFail();
             $lockedCategory = ExpenseCategory::where('company_id', $lockedCompany->id)->lockForUpdate()->findOrFail($category->id);
 

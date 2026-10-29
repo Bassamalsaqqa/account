@@ -62,7 +62,15 @@ final class ManageSubscription
                 $input[$key] = trim($input[$key]);
             }
         }
-        $data = Validator::make($input, $rules)->validate();
+        $attributes = [];
+        foreach (['plan', 'fee', 'currency', 'starts_on', 'renews_on', 'grace_days', 'reminder_days', 'enforcement_enabled', 'notes', 'received_on', 'reference'] as $field) {
+            $attributes[$field] = __('subscriptions.'.$field);
+        }
+        $attributes['reminder_days.*'] = __('subscriptions.reminder_days');
+        $attributes['amount'] = __('subscriptions.payment_amount');
+        $attributes['charge_id'] = __('subscriptions.select_charge');
+        $attributes['expected_revision'] = __('subscriptions.revision');
+        $data = Validator::make($input, $rules, [], $attributes)->validate();
         $data['expected_revision'] = (int) $data['expected_revision'];
         foreach (['amount', 'fee'] as $field) {
             if (isset($data[$field])) {
@@ -150,13 +158,18 @@ final class ManageSubscription
             throw ValidationException::withMessages(['renews_on' => __('subscriptions.use_renewal')]);
         }
         $revision = (int) ($subscription->revision ?? 0) + 1;
-        DB::table('platform_subscriptions')->updateOrInsert(['company_id' => $companyId], [
+        $terms = [
             'plan' => $data['plan'], 'fee' => $data['fee'], 'currency' => $data['currency'],
             'starts_on' => $data['starts_on'], 'renews_on' => $data['renews_on'],
             'grace_days' => $data['grace_days'], 'reminder_days' => json_encode($data['reminder_days'], JSON_THROW_ON_ERROR),
             'enforcement_enabled' => $data['enforcement_enabled'], 'notes' => $data['notes'] ?? null,
             'revision' => $revision, 'created_at' => $subscription->created_at ?? now(), 'updated_at' => now(),
-        ]);
+        ];
+        if ($subscription === null) {
+            DB::table('platform_subscriptions')->insert(['company_id' => $companyId] + $terms);
+        } else {
+            DB::table('platform_subscriptions')->where('company_id', $companyId)->update($terms);
+        }
         $chargeId = $subscription === null ? $this->charge($companyId, $revision, $data['plan'], $data['fee'], $data['currency'], $data['starts_on'], $data['renews_on']) : null;
 
         return ['company_id' => $companyId, 'revision' => $revision, 'charge_id' => $chargeId];
@@ -191,8 +204,12 @@ final class ManageSubscription
         if ($charge === null || $charge->currency !== $data['currency']) {
             throw ValidationException::withMessages(['charge_id' => __('subscriptions.charge_unavailable')]);
         }
-        $received = DB::table('platform_subscription_payments')->where('company_id', $companyId)->where('charge_id', $charge->id)->sum('amount');
-        $outstanding = MoneyAmount::from($charge->amount)->getAmount()->minus(MoneyAmount::from((string) $received)->getAmount());
+        // A caller may already own an older REPEATABLE READ snapshot. Locking reads,
+        // unlike a plain SUM, see receipts committed before our company lock was acquired.
+        $outstanding = MoneyAmount::from($charge->amount)->getAmount();
+        foreach (DB::table('platform_subscription_payments')->where('company_id', $companyId)->where('charge_id', $charge->id)->lockForUpdate()->pluck('amount') as $received) {
+            $outstanding = $outstanding->minus(MoneyAmount::from((string) $received)->getAmount());
+        }
         if (MoneyAmount::from($data['amount'])->getAmount()->isGreaterThan($outstanding)) {
             throw ValidationException::withMessages(['amount' => __('subscriptions.overpayment')]);
         }

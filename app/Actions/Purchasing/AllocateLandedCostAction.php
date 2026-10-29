@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Purchasing;
 
+use App\Application\Platform\TenantWriteAccess;
 use App\Exceptions\NoActiveCompanyException;
 use App\Models\Expense;
 use App\Models\LandedCostAllocation;
@@ -20,7 +21,6 @@ use Brick\Math\BigDecimal;
 use Brick\Math\RoundingMode;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\Eloquent\Collection;
-use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
 
 final class AllocateLandedCostAction
@@ -53,7 +53,7 @@ final class AllocateLandedCostAction
             throw new AuthorizationException("User does not belong to company [{$purchase->company_id}].");
         }
 
-        return DB::transaction(function () use ($purchase, $expense, $method, $actor, $manualAllocations): Collection {
+        return app(TenantWriteAccess::class)->transaction((int) $purchase->company_id, function () use ($purchase, $expense, $method, $actor, $manualAllocations): Collection {
             $guard = app(SalesActorGuard::class);
             $company = $guard->lockAndAuthorize((int) $purchase->company_id, $actor, 'purchasing.landed_cost.manage');
             $guard->lockAndAuthorize((int) $company->id, $actor, 'purchasing.cost.view');

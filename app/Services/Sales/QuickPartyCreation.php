@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Sales;
 
+use App\Application\Platform\TenantWriteAccess;
 use App\Exceptions\IdempotencyConflictException;
 use App\Models\Company;
 use App\Models\Customer;
@@ -31,7 +32,7 @@ final class QuickPartyCreation
         ksort($data);
         $hash = hash('sha256', json_encode(['kind' => $kind, 'data' => $data], JSON_THROW_ON_ERROR));
 
-        return DB::transaction(function () use ($company, $actor, $kind, $requestKey, $data, $formPermission, $hash): Customer|Vendor {
+        return app(TenantWriteAccess::class)->transaction((int) $company->id, function () use ($company, $actor, $kind, $requestKey, $data, $formPermission, $hash): Customer|Vendor {
             $guard = app(SalesActorGuard::class);
             $company = $guard->lockAndAuthorize((int) $company->id, $actor, $formPermission);
             $guard->lockAndAuthorize((int) $company->id, $actor, $kind === 'customer' ? 'customers.manage' : 'vendors.manage');

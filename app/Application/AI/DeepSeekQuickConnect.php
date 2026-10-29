@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Application\AI;
 
+use App\Application\Platform\TenantWriteAccess;
 use App\Infrastructure\AI\DeepSeekBalanceHealth;
 use App\Models\AiCompanyPolicy;
 use App\Models\AiProviderConnection;
@@ -86,6 +87,7 @@ final class DeepSeekQuickConnect
         int $expectedPolicyRevision, int $expectedConnectionRevision): void
     {
         DB::transaction(function () use ($company, $actor, $password, $expectedPolicyRevision, $expectedConnectionRevision): void {
+            app(TenantWriteAccess::class)->assertWritable((int) $company->id);
             $this->authorize($company, $actor);
             $policy = AiCompanyPolicy::where('company_id', $company->id)->lockForUpdate()->first();
             $connection = $this->findExistingConnection($company);
@@ -111,6 +113,7 @@ final class DeepSeekQuickConnect
     public function enableCompany(Company $company, User $actor, #[SensitiveParameter] string $password, int $expectedPolicyRevision): void
     {
         DB::transaction(function () use ($company, $actor, $password, $expectedPolicyRevision): void {
+            app(TenantWriteAccess::class)->assertWritable((int) $company->id);
             $this->authorize($company, $actor);
             app(AiGovernance::class)->confirmOwner($company, $actor, $password);
             $policy = AiCompanyPolicy::where('company_id', $company->id)->lockForUpdate()->first();
@@ -253,6 +256,7 @@ final class DeepSeekQuickConnect
                 throw new AssistantUnavailable('input_invalid');
             }
             [$connection, $credential, $establishedPolicyRevision, $establishedConnectionRevision] = DB::transaction(function () use ($company, $actor, $key, $password, $requestKey, $expectedPolicyRevision, $expectedConnectionRevision, $refresh): array {
+                app(TenantWriteAccess::class)->assertWritable((int) $company->id);
                 $this->authorize($company, $actor);
                 if (! $refresh) {
                     app(AiGovernance::class)->confirmOwner($company, $actor, $password);

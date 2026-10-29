@@ -4,12 +4,12 @@ declare(strict_types=1);
 
 namespace App\Actions\Sales;
 
+use App\Application\Platform\TenantWriteAccess;
 use App\Models\Company;
 use App\Models\DocumentSequence;
 use App\Models\User;
 use App\Services\Audit\AuditService;
 use App\Services\Sales\SalesActorGuard;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
 
@@ -18,7 +18,7 @@ final class UpdateDocumentSequenceAction
     /** @param array<string, mixed> $data */
     public function execute(Company $company, User $actor, int $id, array $data): DocumentSequence
     {
-        return DB::transaction(function () use ($company, $actor, $id, $data): DocumentSequence {
+        return app(TenantWriteAccess::class)->transaction((int) $company->id, function () use ($company, $actor, $id, $data): DocumentSequence {
             app(SalesActorGuard::class)->lockAndAuthorize((int) $company->id, $actor, 'settings.sequences.manage');
             $values = Validator::make($data, [
                 'prefix' => ['required', 'string', 'max:32'],
