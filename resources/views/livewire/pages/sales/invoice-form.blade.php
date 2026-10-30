@@ -510,6 +510,8 @@
             </div>
         </div>
 
+        @include('livewire.partials.immediate-sale-settlement')
+
         <!-- Phase 11 Command Preview Panel -->
         @if ($showPreview && $previewData)
             <div class="pt-4 border-t border-border">

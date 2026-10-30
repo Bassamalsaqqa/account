@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Livewire\Pages\Sales;
 
 use App\Application\AI\AiDraftProvenance;
+use App\Application\Commands\ImmediateSaleCommands;
 use App\Application\Commands\SalesInvoiceCommands;
 use App\Application\Reporting\Security\ReportingGuard;
 use App\Domain\Inventory\Exceptions\InvalidQuantityException;
@@ -23,6 +24,7 @@ use App\Livewire\Concerns\QuickPartyCreate;
 use App\Livewire\Concerns\QuickProductCreate;
 use App\Models\Company;
 use App\Models\Customer;
+use App\Models\MoneyAccount;
 use App\Models\Product;
 use App\Models\ProductBarcode;
 use App\Models\ProductUnit;
@@ -177,6 +179,14 @@ class InvoiceForm extends Component
     public ?array $previewData = null;
 
     public ?string $previewError = null;
+
+    /** @var array<string, mixed> */
+    public array $settlement = ['mode' => 'unpaid', 'payment_method' => 'cash', 'money_account_id' => '',
+        'amount' => '', 'exchange_rate' => '', 'invoice_amount' => '', 'payment_currency_amount' => '',
+        'payment_date' => '', 'currency_code' => '', 'check_number' => '', 'bank_name' => '', 'drawer' => '', 'due_date' => ''];
+
+    #[Locked]
+    public bool $settlementPreview = false;
 
     public function mount(CompanyContext $context, ?string $publicId = null, ?int $customer_id = null): void
     {
@@ -780,13 +790,17 @@ class InvoiceForm extends Component
 
         // save(true) creates authenticated server preview, displays reviewed panel, posts NO history.
         $this->previewError = null;
+        $choice = $this->settlementChoice();
 
         try {
-            $preview = $commands->preview($this->invoice, $user);
+            $this->settlementPreview = $choice['mode'] !== 'unpaid';
+            $preview = $this->settlementPreview
+                ? app(ImmediateSaleCommands::class)->preview($this->invoice, $user, $choice)
+                : $commands->preview($this->invoice, $user);
             $this->previewData = $preview;
             $this->confirmationToken = $preview['confirmation_token'] ?? null;
             $this->executeKey = (string) Str::uuid();
-            $this->previewDigest = $this->computePayloadDigest();
+            $this->previewDigest = $this->settlementDigest();
             $this->showPreview = true;
         } catch (\Throwable $e) {
             if ($e instanceof AuthorizationException || $e instanceof NoActiveCompanyException || ($e instanceof HttpException && $e->getStatusCode() === 403)) {
@@ -813,7 +827,7 @@ class InvoiceForm extends Component
         }
 
         // Reject stale/edited form
-        if ($this->previewDigest === null || $this->previewDigest !== $this->computePayloadDigest()) {
+        if ($this->previewDigest === null || $this->previewDigest !== $this->settlementDigest()) {
             $this->cancelPreview();
             $this->previewError = __('commands.form_changed_repreview_required');
 
@@ -828,9 +842,12 @@ class InvoiceForm extends Component
         }
 
         try {
-            $invoice = $commands->execute($this->invoice, $user, $this->confirmationToken, $this->executeKey);
+            $paid = $this->settlementPreview;
+            $invoice = $paid
+                ? app(ImmediateSaleCommands::class)->execute($this->invoice, $user, $this->confirmationToken, $this->executeKey)['invoice']
+                : $commands->execute($this->invoice, $user, $this->confirmationToken, $this->executeKey);
             $this->cancelPreview();
-            session()->flash('success', __('sales.posted_successfully'));
+            session()->flash('success', __($paid ? 'fin1.posted_with_payment' : 'sales.posted_successfully'));
 
             return redirect()->route('invoices.show', $invoice->public_id);
         } catch (\Throwable $e) {
@@ -851,6 +868,55 @@ class InvoiceForm extends Component
         $this->confirmationToken = null;
         $this->executeKey = null;
         $this->previewDigest = null;
+        $this->settlementPreview = false;
+    }
+
+    private function settlementDigest(): string
+    {
+        return hash('sha256', $this->computePayloadDigest().'|'.json_encode($this->settlement, JSON_THROW_ON_ERROR));
+    }
+
+    /** Normalize UI references only; monetary strings are validated by the canonical command.
+     * @return array<string, mixed>
+     */
+    private function settlementChoice(): array
+    {
+        $this->validate(['settlement.mode' => ['required', 'in:unpaid,full,partial']]);
+        if ($this->settlement['mode'] === 'unpaid') {
+            return ['mode' => 'unpaid'];
+        }
+        $check = ($this->settlement['payment_method'] ?? null) === 'check';
+        $rules = ['settlement.payment_method' => ['required', 'in:cash,bank_transfer,check'],
+            'settlement.payment_date' => ['nullable', 'string', 'date'],
+            'settlement.amount' => ['required', 'string', 'regex:/^\d+(\.\d{1,6})?$/'],
+            'settlement.exchange_rate' => ['required', 'string', 'regex:/^\d+(\.\d{1,10})?$/'],
+            'settlement.payment_currency_amount' => ['nullable', 'string', 'regex:/^\d+(\.\d{1,6})?$/']];
+        if ($this->settlement['mode'] === 'partial') {
+            $rules['settlement.invoice_amount'] = ['required', 'string', 'regex:/^\d+(\.\d{1,6})?$/'];
+        }
+        if ($check) {
+            $rules += ['settlement.currency_code' => ['required', 'string', 'size:3'],
+                'settlement.check_number' => ['required', 'string', 'max:100'], 'settlement.bank_name' => ['required', 'string', 'max:200'],
+                'settlement.drawer' => ['nullable', 'string', 'max:200'], 'settlement.due_date' => ['required', 'date']];
+        } else {
+            $rules['settlement.money_account_id'] = ['required', 'integer', 'min:1'];
+        }
+        $this->validate($rules, [], collect(array_keys($rules))->mapWithKeys(fn ($key) => [$key => __('fin1.'.str_replace('settlement.', '', $key))])->all());
+        $choice = array_intersect_key($this->settlement, array_flip(['mode', 'payment_method', 'amount', 'exchange_rate']));
+        $choice['payment_date'] = ($this->settlement['payment_date'] ?? '') ?: $this->issue_date;
+        if ($this->settlement['mode'] === 'partial') {
+            $choice['invoice_amount'] = $this->settlement['invoice_amount'];
+        }
+        if (($this->settlement['payment_currency_amount'] ?? '') !== '') {
+            $choice['payment_currency_amount'] = $this->settlement['payment_currency_amount'];
+        }
+        if ($check) {
+            $choice += array_intersect_key($this->settlement, array_flip(['currency_code', 'check_number', 'bank_name', 'drawer', 'due_date']));
+        } else {
+            $choice['money_account_id'] = (int) $this->settlement['money_account_id'];
+        }
+
+        return $choice;
     }
 
     public function computePayloadDigest(): string
@@ -935,6 +1001,11 @@ class InvoiceForm extends Component
         $canChangePrice = $user->hasPermissionTo('sales.invoice.change_price');
         $canChangeDiscount = $user->hasPermissionTo('sales.invoice.change_discount');
         $canPost = $user->hasPermissionTo('sales.invoice.post');
+        $canReceive = $canPost && $user->hasPermissionTo('money.receipt.create') && $user->hasPermissionTo('money.receipt.allocate');
+        $settlementAccounts = $canReceive && ($this->settlement['mode'] ?? 'unpaid') !== 'unpaid'
+            ? MoneyAccount::where('company_id', $company->id)->where('is_active', true)
+                ->where('account_type', ($this->settlement['payment_method'] ?? null) === 'bank_transfer' ? 'bank' : 'cash')->get()
+            : collect();
         $cTerm = mb_substr(trim($this->customerSearch), 0, 100);
         $customersQuery = Customer::where('company_id', $company->id)->where('status', 'active');
         if ($cTerm !== '') {
@@ -992,6 +1063,9 @@ class InvoiceForm extends Component
             'canChangePrice' => $canChangePrice,
             'canChangeDiscount' => $canChangeDiscount,
             'canPost' => $canPost,
+            'canReceive' => $canReceive,
+            'canReceiveCheck' => $canReceive && $user->hasPermissionTo('money.check.incoming.manage'),
+            'settlementAccounts' => $settlementAccounts,
             'canManageCustomers' => $user->hasPermissionTo('customers.manage'),
             'lastCustomerPrices' => $lastCustomerPrices,
             'creditLimitWarning' => $creditLimitWarning,

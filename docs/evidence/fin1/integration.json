@@ -1,0 +1,215 @@
+{
+  "phase": "FIN-1",
+  "status": "HISTORICAL_FOCUSED_CHECKPOINT_SUPERSEDED_BY_FINAL_QA",
+  "baseline": "12d32484fbbbdba4df1280e94b4e1891f9e4c44e",
+  "foundation": "24651f970a0b08bd75ab6572df99c65e042fe0ac",
+  "candidate_file_sha256": {
+    "app/Application/Commands/ImmediateSaleCommands.php": "9a9e0b7b5dfef24670750dabd2fdc2f8ccf5d4603285821aa2e712e6654be72f",
+    "app/Livewire/Pages/Sales/InvoiceForm.php": "1df062fb110f3ecc403a27d7c01503f7bf167dcee43509095057906952053f8b",
+    "resources/views/components/sales-command-preview.blade.php": "03ff4f4f8eb84a701c83e3bb98b9a35e7e65b8080eb03c14d584d256e2ef5be2",
+    "resources/views/livewire/pages/sales/invoice-form.blade.php": "cf79723b2a05c8c44eb22aa436417603ee8e9a0a50a7f955426fa9532e41cfd2",
+    "resources/views/livewire/pages/sales/payment-detail.blade.php": "f4efd8eb60d0cd8771d975f5aff452b911224aa43c9eea4fb726366d845db477",
+    "resources/views/livewire/partials/immediate-sale-settlement.blade.php": "92b6357e98a1a882ca1c51f76cde956730456c94a5632fb81d3c43c6e22dcbae",
+    "resources/views/livewire/partials/immediate-sale-review.blade.php": "03f2bd0d7ec80e20d77480b2bd4aae0db1460b880ec34558b460265ae386f993",
+    "resources/lang/ar/fin1.php": "5d93b19a6143de9a7d3c6ff2473c700cb0a77d22edf12249afd672d12da5a70a",
+    "resources/lang/en/fin1.php": "7dbc34c343d3cb1a964f3fb5de472b0eb41fc7375580ceec6b4bc6efee3be7a3",
+    "tests/Support/fin1-sale-worker.php": "8142f2684f1b479862b865aaff93967b595154356ca6b8e4c7abc94fd9bb43fc",
+    "tests/Feature/Fin1/ImmediateSaleCheckTest.php": "a93eb1940866270a4a4a9d9a191d731b34076d40f33cc090e19a290c707cd24c",
+    "tests/Feature/Fin1/ImmediateSaleCommandsTest.php": "40a3e32033ebcb28ed6a474b53510bbeb095645ae68c5618eeb63e2fa6f62324",
+    "tests/Feature/Fin1/ImmediateSaleConcurrencyTest.php": "e3082d2daf8bf5162a79fffce2362113a84cdf674c0ed3ac9ca5b441c4ff4ab9",
+    "tests/Feature/Fin1/ImmediateSaleLivewireTest.php": "dd6fd8b0f6afff6235d41eb2d6a55fac7c6cea165c50344a73141293d13d05d1",
+    "tests/Feature/Fin1/ImmediateSaleSecurityAndTenancyTest.php": "75d1f1fbbf34f65385e3d7e2a8b1ad6a85f917e6c9743a9124e4f440f23ef470",
+    "tests/Feature/Fin1/ImmediateSaleStockAndFefoTest.php": "630975eab21f3b9149c6c8f4ebed7398300207f90c049165002ac473927bed0e"
+  },
+  "focused_gates": [
+    {
+      "run": "run-20261029T210825",
+      "targets": [
+        "tests/Feature/Fin1/ImmediateSaleCommandsTest.php",
+        "tests/Feature/Fin1/ImmediateSaleCheckTest.php",
+        "tests/Feature/Fin1/ImmediateSaleLivewireTest.php",
+        "tests/Feature/Fin1/ImmediateSaleStockAndFefoTest.php",
+        "tests/Feature/Fin1/ImmediateSaleSecurityAndTenancyTest.php",
+        "tests/Feature/Fin1/ImmediateSaleConcurrencyTest.php",
+        "tests/Feature/Phase11/SalesCommandWorkflowTest.php"
+      ],
+      "exit": 0,
+      "tests": 65,
+      "assertions": 361,
+      "source_stable": true,
+      "owned_schema_cleanup": true,
+      "owned_server_stopped": true,
+      "owned_environment_removed": true,
+      "tested_file_sha256": {
+        "tests/Feature/Fin1/ImmediateSaleCommandsTest.php": "40a3e32033ebcb28ed6a474b53510bbeb095645ae68c5618eeb63e2fa6f62324",
+        "tests/Feature/Fin1/ImmediateSaleCheckTest.php": "a93eb1940866270a4a4a9d9a191d731b34076d40f33cc090e19a290c707cd24c",
+        "tests/Feature/Fin1/ImmediateSaleLivewireTest.php": "be07c69caba34e9be4828643b5faff9cca6191abed5628274b5ceada3bfdf2fd",
+        "tests/Feature/Fin1/ImmediateSaleStockAndFefoTest.php": "630975eab21f3b9149c6c8f4ebed7398300207f90c049165002ac473927bed0e",
+        "tests/Feature/Fin1/ImmediateSaleSecurityAndTenancyTest.php": "75d1f1fbbf34f65385e3d7e2a8b1ad6a85f917e6c9743a9124e4f440f23ef470",
+        "tests/Feature/Fin1/ImmediateSaleConcurrencyTest.php": "e3082d2daf8bf5162a79fffce2362113a84cdf674c0ed3ac9ca5b441c4ff4ab9",
+        "tests/Feature/Phase11/SalesCommandWorkflowTest.php": "c89227dc518b4fe897323eadcbb9720ac082e28f139cdba303ea65c568410bdc"
+      }
+    },
+    {
+      "run": "run-20261029T211242",
+      "targets": [
+        "tests/Feature/Fin1/ImmediateSaleLivewireTest.php",
+        "tests/Feature/Phase6/CheckLifecycleTest.php",
+        "tests/Feature/Phase6/CheckEconomicsAndSecurityTest.php"
+      ],
+      "exit": 0,
+      "tests": 19,
+      "assertions": 131,
+      "source_stable": true,
+      "owned_schema_cleanup": true,
+      "owned_server_stopped": true,
+      "owned_environment_removed": true,
+      "tested_file_sha256": {
+        "tests/Feature/Fin1/ImmediateSaleLivewireTest.php": "dd6fd8b0f6afff6235d41eb2d6a55fac7c6cea165c50344a73141293d13d05d1",
+        "tests/Feature/Phase6/CheckLifecycleTest.php": "2bbf8f97a88ba9027fb14df3e2e39448fe2e72b837981b303cb0f61c7588f734",
+        "tests/Feature/Phase6/CheckEconomicsAndSecurityTest.php": "fa47091dfe593af312928c73b2c5059b360cfaa9062b76da0d5cde429cbfb65d"
+      }
+    }
+  ],
+  "source_delta_after_focused_gates": "Only command summary PHPDoc, trailing whitespace and acceptance documentation/evidence; full candidate QA not yet claimed.",
+  "pint_exit": 0,
+  "phpstan_exit": 0,
+  "javascript": {
+    "exit": 0,
+    "passed": 44,
+    "failed": 0
+  },
+  "build": {
+    "exit": 0,
+    "modules": 310,
+    "manifest_sha256": "89e9e1b7cbf95474808d2335436127cb967b7cb6a298c66b369fee2e826dc58b"
+  },
+  "composer_audit": {
+    "exit": 0,
+    "advisories": 0,
+    "abandoned": 0
+  },
+  "npm_audit": {
+    "exit": 0,
+    "vulnerabilities": 0
+  },
+  "browser": {
+    "synthetic_only": true,
+    "matrix": [
+      {
+        "locale": "en",
+        "direction": "ltr",
+        "viewport": 390,
+        "client_width": 375,
+        "document_width": 375,
+        "page_overflow": false
+      },
+      {
+        "locale": "en",
+        "direction": "ltr",
+        "viewport": 768,
+        "client_width": 753,
+        "document_width": 753,
+        "page_overflow": false
+      },
+      {
+        "locale": "en",
+        "direction": "ltr",
+        "viewport": 1440,
+        "client_width": 1425,
+        "document_width": 1425,
+        "page_overflow": false
+      },
+      {
+        "locale": "ar",
+        "direction": "rtl",
+        "viewport": 390,
+        "client_width": 375,
+        "document_width": 375,
+        "page_overflow": false
+      },
+      {
+        "locale": "ar",
+        "direction": "rtl",
+        "viewport": 768,
+        "client_width": 753,
+        "document_width": 753,
+        "page_overflow": false
+      },
+      {
+        "locale": "ar",
+        "direction": "rtl",
+        "viewport": 1440,
+        "client_width": 1425,
+        "document_width": 1425,
+        "page_overflow": false
+      }
+    ],
+    "validation_error_summary_focus": true,
+    "field_aria_descriptors": true,
+    "manual_amounts_preserved": true,
+    "cancel_focus_id": "invoice-post-button",
+    "payment_review_inside_focused_confirmation": true,
+    "synthetic_incoming_check_posted_through_ui": true,
+    "invoice_receipt_links_verified": true,
+    "receipt_labels_verified": [
+      "ar",
+      "en"
+    ],
+    "screenshots": "In-session inspection, not a committed screenshot archive",
+    "success_toast": "Not established by browser locator",
+    "real_browser_offline_retry": "Not executed",
+    "physical_devices": "Not executed"
+  },
+  "synthetic_browser_reconciliations": {
+    "synthetic_only": true,
+    "reconciliations": {
+      "accounting": 0,
+      "inventory": 0,
+      "sales": 0,
+      "money": 0,
+      "phase7": 0,
+      "payables": 0
+    },
+    "posted_invoices": 1,
+    "payments": 1,
+    "received_checks": 1,
+    "unreversed_receipt_allocations": 1
+  },
+  "privacy": {
+    "production_access": false,
+    "paid_provider_calls": false,
+    "real_transactions": false
+  },
+  "protected_work": {
+    "private_file_hashes_matched": 40,
+    "translation_stash": "94356f52987499e9e43d8d50453e459b3f0d627e"
+  },
+  "full_qa_history": [
+    {
+      "head": "3efd058a7fb7890163a726492df3f5899ad61970",
+      "run": "run-20261029T212248",
+      "exit": 1,
+      "passed": 3668,
+      "failed": 4,
+      "warnings": 4,
+      "assertions": 43320,
+      "classification": "Four existing AR/EN accessibility assertions rejected missing radio IDs/explicit labels. Assertions unchanged; correction adds IDs/for attributes only.",
+      "source_stable": true
+    }
+  ],
+  "accessibility_correction": {
+    "runtime_diff": "Two Blade lines: unique settlement-mode-{unpaid,full,partial} IDs and matching label for bindings.",
+    "focused_run": "run-20261029T224723",
+    "command": "python .release-b1-local/ms1a/run-verified-qa.py tests/Feature/Phase10/FormAccessibilityTest.php tests/Feature/Fin1/ImmediateSaleLivewireTest.php",
+    "exit": 0,
+    "tests": 9,
+    "assertions": 1400,
+    "source_stable": true,
+    "schema_cleanup_verified": true,
+    "server_stopped": true,
+    "owned_env_removed": true,
+    "complete_corrected_source_qa": "Pending; HOLD"
+  },
+  "authoritative_final_record": "final-qa.json"
+}
