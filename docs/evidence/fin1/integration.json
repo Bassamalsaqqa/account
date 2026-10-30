@@ -1,6 +1,6 @@
 {
   "phase": "FIN-1",
-  "status": "HOLD_FULL_QA_AND_INDEPENDENT_REVIEW",
+  "status": "HISTORICAL_FOCUSED_CHECKPOINT_SUPERSEDED_BY_FINAL_QA",
   "baseline": "12d32484fbbbdba4df1280e94b4e1891f9e4c44e",
   "foundation": "24651f970a0b08bd75ab6572df99c65e042fe0ac",
   "candidate_file_sha256": {
@@ -210,5 +210,6 @@
     "server_stopped": true,
     "owned_env_removed": true,
     "complete_corrected_source_qa": "Pending; HOLD"
-  }
+  },
+  "authoritative_final_record": "final-qa.json"
 }

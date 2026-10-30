@@ -1,0 +1,174 @@
+{
+  "phase": "FIN-1",
+  "decision": "GO_FOR_INDEPENDENT_SOURCE_REVIEW",
+  "tested_head": "2cada1e165dfca968ee79e1b79ebce747df5b46d",
+  "tested_tree": "a3c260448fbb925d0674cf9705e3d4b661f161b0",
+  "baseline": "12d32484fbbbdba4df1280e94b4e1891f9e4c44e",
+  "full_qa": {
+    "command": "python .release-b1-local/ms1a/run-verified-qa.py --full-qa (unfiltered composer qa)",
+    "run": "run-20261029T225254",
+    "exit": 0,
+    "passed": 3672,
+    "assertions": 43398,
+    "warnings": 4,
+    "warning_classification": "Windows symlink permission warnings; downstream assertions skipped. No Linux PASS claimed.",
+    "duration_seconds": 3286.47,
+    "pint_exit": 0,
+    "phpstan_exit": 0,
+    "independently_checked_suite_markers": [
+      "ImmediateSaleCheckTest",
+      "ImmediateSaleCommandsTest",
+      "ImmediateSaleConcurrencyTest",
+      "ImmediateSaleLivewireTest",
+      "ImmediateSaleSecurityAndTenancyTest",
+      "ImmediateSaleStockAndFefoTest",
+      "FormAccessibilityTest",
+      "TenantWriteCommitBoundaryTest",
+      "AssistantMigrationPreservationTest"
+    ],
+    "source_manifest_sha256": "22a8309ec05daba46b9e9df2a976eb0e6d7f504c1691a517a18e20734739b6f5",
+    "source_stable": true,
+    "raw_private_artifact_sha256": {
+      "full-qa.json": "e78b67bba9af9fd37f155cf1b4e1f44baf527f23af24915ba89b098519531ff0",
+      "phpunit.stderr.log": "d4ff257bd6e196918a2ea93b4174fc75a88bdd27745b2a0912fac81950777340",
+      "phpunit.stdout.log": "64b0264819233bc0b302e5fa99ebd0954f7ff575cde62ce7b2a265f6f6a847a8",
+      "receipt.json": "46d30671ca6c589c72d4b6104a56c0056249f8ce0ccb45bb52b59183327b03ab"
+    }
+  },
+  "historical_failed_gate": {
+    "head": "3efd058a7fb7890163a726492df3f5899ad61970",
+    "run": "run-20261029T212248",
+    "exit": 1,
+    "passed": 3668,
+    "failed": 4,
+    "assertions": 43320,
+    "status": "Superseded by passing corrected-source run; evidence retained"
+  },
+  "six_reconciliations": {
+    "domains": [
+      "accounting",
+      "inventory",
+      "sales",
+      "money",
+      "phase7",
+      "payables"
+    ],
+    "result": "Healthy populated canonical fixtures in full suite and FIN-1 scenarios",
+    "primary_empty_schema_preservation_is_distinct": true
+  },
+  "supporting_gates": {
+    "composer_validate": {
+      "command": "composer validate --strict",
+      "exit": 0,
+      "status": "valid"
+    },
+    "composer_check_platform_reqs": {
+      "command": "composer check-platform-reqs",
+      "exit": 0,
+      "status": "success"
+    },
+    "composer_audit": {
+      "command": "composer audit --locked --format=json",
+      "exit": 0,
+      "advisories": 0,
+      "abandoned": 0
+    },
+    "npm_ci": {
+      "command": "npm ci",
+      "exit": 0,
+      "packages_audited": 94,
+      "vulnerabilities": 0
+    },
+    "javascript_tests": {
+      "command": "node --test tests/JavaScript/*.test.mjs",
+      "exit": 0,
+      "tests_total": 44,
+      "tests_passed": 44,
+      "tests_failed": 0
+    },
+    "npm_audit": {
+      "command": "npm audit --json",
+      "exit": 0,
+      "vulnerabilities": 0
+    },
+    "npm_build": {
+      "command": "npm run build",
+      "exit": 0,
+      "modules_transformed": 310,
+      "manifest_sha256": "89e9e1b7cbf95474808d2335436127cb967b7cb6a298c66b369fee2e826dc58b"
+    }
+  },
+  "isolation": {
+    "schema_cleanup_verified": true,
+    "server_stopped": true,
+    "owned_env_removed": true
+  },
+  "codex_source_review": {
+    "blocking_defects_found": [],
+    "inspected": [
+      "Exact decimal amounts and FX and allocation boundaries",
+      "Single outer canonical transaction and company-first serialization",
+      "Canonical invoice posting and receive-check executing capability",
+      "Fresh tenant membership/permissions/session proof before replay",
+      "Signed confirmation binding and stale draft/payment revalidation",
+      "Idempotent retries and competing stocked-draft actors",
+      "Immutable history and canonical check reversal",
+      "Livewire locked token/mode and invoice/payment digest",
+      "No migration/dependency/licensing/operator-grant/production change"
+    ],
+    "scope": "Review of final diff and surrounding canonical implementations; not exhaustive formal verification"
+  },
+  "limitations": [
+    "Physical-device/scanner acceptance pending",
+    "Broader real browser offline/retry, restricted-role and keyboard-only completion not established",
+    "Durable screenshot archive not packaged",
+    "Transient browser success-toast not established",
+    "Linux symlink contract tests not executed on this Windows host"
+  ],
+  "authorization": {
+    "keep_pr_draft": true,
+    "merge": false,
+    "deployment": false,
+    "subscription_enforcement": false,
+    "paid_provider_calls": false
+  },
+  "codex_independent_supporting_gates": {
+    "composer-validate": {
+      "command": [
+        "validate",
+        "--strict"
+      ],
+      "exit": 0,
+      "stdout_sha256": "617d39e3b4752168f63039991b7e1efaca11e54a1f5a9153d93b0d4efe91fe05",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "composer-platform": {
+      "command": [
+        "check-platform-reqs"
+      ],
+      "exit": 0,
+      "stdout_sha256": "7c7805b1161bac51ee82913a2fad5130dcbbeb606c53897a1b89a3a1d6502769",
+      "stderr_sha256": "be04e108216123c9d3ebf463bd5e3e1da49ff124629a0147601a98926ad93b55"
+    },
+    "composer-audit": {
+      "command": [
+        "audit",
+        "--locked",
+        "--format=json"
+      ],
+      "exit": 0,
+      "stdout_sha256": "da0388a7d3f7c633e1e211de7777244aacd958f7637bf7089ce1b98f1042ef72",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "npm-audit": {
+      "command": [
+        "audit",
+        "--json"
+      ],
+      "exit": 0,
+      "stdout_sha256": "994eddf9eee396b974eb9e959d454530240bde0afaac6d46b9769a6d920da19a",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "codex_independent_supporting_gates_result": "Composer strict validation, platform requirements and locked Composer/npm audits independently re-executed: exit 0, no advisories/vulnerabilities."
+}

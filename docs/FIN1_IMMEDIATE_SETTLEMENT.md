@@ -2,7 +2,7 @@
 
 Production/baseline remains `12d32484fbbbdba4df1280e94b4e1891f9e4c44e` (MS-2, enforcement OFF). Development: `feature/fin1-immediate-sales-settlement-20261029`, [draft PR #69](https://github.com/Bassamalsaqqa/account/pull/69).
 
-**HOLD for release acceptance. Source development only. Full FIN-1 QA and independent strict financial-source review are required. No FIN-1 merge or deployment is authorized.**
+**GO FOR INDEPENDENT SOURCE REVIEW.** Complete QA and Codex financial-source inspection are finished on `2cada1e165dfca968ee79e1b79ebce747df5b46d`. Keep PR #69 draft for independent acceptance. No FIN-1 merge or deployment is authorized; production is unchanged.
 
 ## Behavior and authority
 
@@ -33,10 +33,16 @@ Historical attempts remain traceable: the initial foundation stale-draft error w
 
 The first complete FIN-1 `composer qa` at `3efd058a7fb7890163a726492df3f5899ad61970` **failed (exit 1)**: 3,668 passed, four failed, four Windows symlink warnings, 43,320 assertions. All four failures were the existing AR/EN form accessibility contract rejecting missing IDs on the three settlement radio inputs. The warnings represent unexecuted downstream symlink assertions, not Linux proof. The isolated schema was removed and source/custody remained stable; the failed logs remain historical evidence.
 
-The correction adds unique `settlement-mode-{unpaid,full,partial}` IDs and matching label `for` attributes in two Blade lines. No business behavior or test assertion changes. The existing accessibility suite plus FIN-1 Livewire regressions then passed **9 tests / 1,400 assertions / exit 0**, with source stability and disposable cleanup verified. This focused pass does not replace a complete QA pass on the corrected frozen candidate. **Acceptance remains HOLD pending that retry and independent financial-source review.**
+The correction adds unique `settlement-mode-{unpaid,full,partial}` IDs and matching label `for` attributes in two Blade lines. No business behavior or test assertion changes. The existing accessibility suite plus FIN-1 Livewire regressions then passed **9 tests / 1,400 assertions / exit 0**, with source stability and disposable cleanup verified. This focused pass does not replace a complete QA pass on the corrected frozen candidate. This was the historical pre-retry HOLD checkpoint. The following final record supersedes it.
+
+## Final verified QA and Codex source verdict
+
+The complete corrected-source retry at `2cada1e165dfca968ee79e1b79ebce747df5b46d` (tree `a3c260448fbb925d0674cf9705e3d4b661f161b0`) passed: **3,672 tests / 43,398 assertions / exit 0**, 3,286.47 seconds, Pint and PHPStan clean. Four Windows symlink warnings remain downstream skips, not Linux proof. Codex independently matched HEAD/tree and the complete current tracked-source manifest to the receipt, inspected the full output and populated FIN-1/reconciliation suite markers, and verified schema cleanup and custody. The failed prior full gate remains traceable. [Authoritative final QA record](evidence/fin1/final-qa.json) pins the tested source and private complete-log hashes.
+
+Codex inspected the final diff and surrounding invoice, receipt, check, account-routing, tenant admission and session implementations. No new blocking financial/security defect was found. Company-first serialization, exact amounts, both canonical legs in one transaction, fresh permissions before replay, encrypted confirmation binding, immutable history and instrument lifecycle boundaries remain intact. The verdict is **GO for independent source review**, not approval to merge/deploy or a claim of exhaustive formal verification. The next documentation/evidence commit does not change runtime or tests; no repeat full suite is required for that documentation-only change.
 
 ## Remaining acceptance
 
-One frozen-source full `composer qa` and independent strict financial/security review are required. Review combined authority, lock order, incoming-check lifecycle/routing, outer-commit admission, permission/session revocation and Livewire hydration/replay. Broader browser offline/retry, keyboard-only complete submission, restricted-role UI and physical-device/scanner checks remain unverified. Desktop responsive emulation is not device acceptance; Windows symlink skips are not Linux proof.
+Independent final acceptance of the exact reviewed PR HEAD is still required. Codex financial/security inspection and the complete frozen-source QA are finished; no new development is proposed. Broader browser offline/retry, keyboard-only complete submission, restricted-role UI and physical-device/scanner checks remain unverified. Desktop responsive emulation is not device acceptance; Windows symlink skips are not Linux proof.
 
 The browser did not establish the transient success notification; posted invoice/receipt identifiers, allocation and balance were visibly verified instead. No paid provider or subscription enforcement was activated. Keep PR #69 draft; no later roadmap phase, FIN-1 merge or FIN-1 deployment has occurred.
