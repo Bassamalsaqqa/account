@@ -30,6 +30,7 @@ final class TenantWriteAccess
      */
     public function assertWritable(int $companyId): void
     {
+        app(SupportViewContext::class)->assertWritable();
         if (! config('subscriptions.enforcement_enabled', false)) {
             return;
         }

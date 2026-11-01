@@ -37,7 +37,7 @@ return [
     'members' => 'Members',
     'owner' => 'Owner',
     'member' => 'Staff member',
-    'member_help' => 'Membership status is shown. This page does not grant access to business records or impersonation.',
+    'member_help' => 'Member status only. Support access requires its own explicit permission and an audited support session.',
     'name_ar' => 'Business name in Arabic',
     'name_en' => 'Business name in English (optional)',
     'owner_name' => 'Initial Owner name',

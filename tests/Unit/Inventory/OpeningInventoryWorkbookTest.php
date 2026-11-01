@@ -102,6 +102,7 @@ final class OpeningInventoryWorkbookTest extends TestCase
             'extra row' => ['</sheetData>', '<row r="3"><c r="G3"><v>1</v></c></row></sheetData>'],
             'gap' => ['<row r="2">', '<row r="3">'],
             'hidden row' => ['<row r="2">', '<row r="2" hidden="1">'],
+            'hidden row boolean text' => ['<row r="2">', '<row r="2" hidden="true">'],
             'wrong headers' => ['Cost price', 'Cost'],
             'wrong sheet' => ['name="Sheet1"', 'name="Other"'],
             '1904 dates' => ['<workbookPr/>', '<workbookPr date1904="1"/>'],

@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Application\Platform\SupportViewContext;
 use App\Models\User;
 use App\Support\Tenancy\CompanyContext;
 use Closure;
@@ -21,6 +22,9 @@ class SetCompanyContext
      */
     public function handle(Request $request, Closure $next): Response
     {
+        if (app(SupportViewContext::class)->active()) {
+            return $next($request);
+        }
         if (auth()->check()) {
             /** @var User $user */
             $user = auth()->user();

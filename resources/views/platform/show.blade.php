@@ -96,6 +96,35 @@
         @endif
     </div>
 
+    <section class="rounded-card border border-border bg-surface p-5 sm:p-6" aria-labelledby="support-view-title">
+        <h2 id="support-view-title" class="text-base font-bold text-text-primary">{{ __('support.title') }}</h2>
+        <p class="mt-2 max-w-3xl text-sm leading-relaxed text-text-secondary">{{ __('support.help') }}</p>
+        @if(in_array('company.support', $platformPermissions, true) && $company->status === 'active')
+            @if($errors->has('reason') || $errors->has('current_password'))
+                <div role="alert" tabindex="-1" autofocus class="mt-4 rounded-control border border-danger/30 bg-danger-bg p-3 text-sm text-danger">
+                    {{ $errors->first('reason') ?: $errors->first('current_password') }}
+                </div>
+            @endif
+            <form class="mt-4 grid gap-4 sm:grid-cols-2" method="POST" action="{{ route('platform.support.start', $company->public_id) }}">
+                @csrf
+                <div>
+                    <label class="mb-1 block text-sm font-semibold" for="support-reason">{{ __('support.reason') }}</label>
+                    <input id="support-reason" name="reason" required minlength="5" maxlength="200" value="{{ old('reason') }}" aria-describedby="support-reason-help @error('reason') support-reason-error @enderror" @error('reason') aria-invalid="true" @enderror class="min-h-11 w-full rounded-control border border-border bg-surface px-3 text-sm focus:border-primary focus:ring-primary">
+                    <p id="support-reason-help" class="mt-1 text-xs leading-relaxed text-text-muted">{{ __('support.reason_help') }}</p>
+                    @error('reason')<p id="support-reason-error" role="alert" class="mt-1 text-sm text-danger">{{ $message }}</p>@enderror
+                </div>
+                <div>
+                    <label class="mb-1 block text-sm font-semibold" for="support-password">{{ __('support.password') }}</label>
+                    <input id="support-password" name="current_password" type="password" required autocomplete="current-password" @error('current_password') aria-invalid="true" aria-describedby="support-password-error" @enderror class="min-h-11 w-full rounded-control border border-border bg-surface px-3 text-sm focus:border-primary focus:ring-primary">
+                    @error('current_password')<p id="support-password-error" role="alert" class="mt-1 text-sm text-danger">{{ $message }}</p>@enderror
+                </div>
+                <div class="sm:col-span-2"><button class="min-h-11 w-full rounded-control bg-primary px-4 text-sm font-semibold text-white hover:bg-primary-hover sm:w-auto" type="submit">{{ __('support.start') }}</button></div>
+            </form>
+        @else
+            <p class="mt-3 text-sm text-text-muted">{{ __('support.permission') }}</p>
+        @endif
+    </section>
+
     <!-- Company Members -->
     <div class="space-y-3">
         <div>

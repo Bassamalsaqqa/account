@@ -37,6 +37,7 @@
         $companyContext = app(\App\Support\Tenancy\CompanyContext::class);
         $activeCompany = $activeCompany ?? ($companyContext->hasCompany() ? $companyContext->company() : null);
         $englishEnabled = $englishEnabled ?? ($activeCompany ? $activeCompany->isLanguageEnabled('en') : true);
+        $isSupportView = app(\App\Application\Platform\SupportViewContext::class)->active();
     @endphp
 
     <!-- Mobile Drawer Overlay -->
@@ -89,7 +90,7 @@
                         <span class="truncate text-text-muted">{{ __('settings.no_active_company') }}</span>
                     @endif
                 </div>
-                @if ($userActiveCompanies->count() > 1)
+                @if (! $isSupportView && $userActiveCompanies->count() > 1)
                     <a href="{{ route('companies.select') }}" class="text-[10px] text-primary hover:underline font-bold shrink-0">
                         {{ __('settings.activate') }}
                     </a>
@@ -357,6 +358,10 @@
         <!-- Right / End Area (Actions + User Profile) -->
         <div class="flex items-center gap-2 sm:gap-3 shrink-0">
 
+            @if($isSupportView)
+                <span class="rounded-control border border-primary/20 bg-primary-50 px-3 py-2 text-xs font-bold text-primary">{{ __('support.title') }}</span>
+            @else
+
             @if(auth()->user()->can('sales.invoice.create') || auth()->user()->can('purchasing.purchase.create'))
                 <details class="relative app-quick-add">
                     <summary aria-label="{{ __('app.quick_add') }}" class="flex min-h-11 cursor-pointer items-center gap-1.5 rounded-control bg-primary px-3 text-sm font-bold text-white hover:bg-primary-hover">
@@ -443,6 +448,7 @@
                     </form>
                 </div>
             </div>
+            @endif
         </div>
     </header>
 
@@ -451,10 +457,20 @@
         <a href="#app-main" class="app-skip-link">{{ __('app.skip_content') }}</a>
         <main id="app-main" tabindex="-1" class="max-w-[1440px] mx-auto p-4 sm:p-6 lg:p-8">
             @include('platform.subscriptions.tenant-notice')
-            @if (\App\Application\AI\AiGovernance::isPresentationEligible($activeCompany))
+            @if($isSupportView)
+                @include('platform.support-banner')
+            @endif
+            @if (! $isSupportView && \App\Application\AI\AiGovernance::isPresentationEligible($activeCompany))
                 <livewire:ai.assistant-launcher :context="request()->routeIs('invoices.create') ? 'sales' : (request()->routeIs('purchases.create') ? 'purchase' : 'auto')" />
             @endif
-            {{ $slot }}
+            @if($isSupportView && ! request()->routeIs('products.index'))
+                <fieldset disabled class="min-w-0">
+                    <legend class="sr-only">{{ __('support.disabled_controls') }}</legend>
+                    {{ $slot }}
+                </fieldset>
+            @else
+                {{ $slot }}
+            @endif
         </main>
     </div>
 

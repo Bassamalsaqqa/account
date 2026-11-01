@@ -8,6 +8,7 @@ use App\Actions\Sales\CreateSalesInvoiceDraftAction;
 use App\Actions\Sales\PostSalesInvoiceAction;
 use App\Models\Customer;
 use App\Models\SalesInvoice;
+use Carbon\Carbon;
 
 abstract class TradeTestCase extends Phase8TestCase
 {
@@ -16,6 +17,10 @@ abstract class TradeTestCase extends Phase8TestCase
     protected function setUp(): void
     {
         parent::setUp();
+
+        // Trade fixtures are dated October 2026; relative report periods must use that month.
+        // Laravel's test teardown clears the clock, and individual boundary tests may advance it.
+        Carbon::setTestNow(Carbon::parse('2026-10-15 12:00:00', $this->company->timezone));
 
         $this->defaultCustomer = Customer::create([
             'company_id' => $this->company->id,

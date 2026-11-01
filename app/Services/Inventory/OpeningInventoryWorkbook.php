@@ -91,7 +91,7 @@ final class OpeningInventoryWorkbook
             $last = 0;
             foreach ($sheet->sheetData->row as $row) {
                 $number = (int) $row['r'];
-                if ($number !== $last + 1 || $number > 1001 || (string) $row['hidden'] === '1') {
+                if ($number !== $last + 1 || $number > 1001 || in_array((string) $row['hidden'], ['1', 'true'], true)) {
                     throw new InvalidArgumentException('Noncontiguous, hidden or oversized stocktake rows.');
                 }
                 $last = $number;
