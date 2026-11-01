@@ -44,17 +44,18 @@ final class ApplySupportView
         $support = app(SupportViewContext::class);
         // Warm the normal permission catalogue before enabling the no-business-write backstop.
         app(PermissionRegistrar::class)->getPermissions();
-        Auth::setUser($resolved['target']);
-        $context->setCompany($resolved['company'], $resolved['target']);
-        $support->activate($resolved['details']);
         $previousAiEnabled = config('ai_assistant.enabled');
-        config(['ai_assistant.enabled' => false]);
-        DB::connection()->beforeExecuting(static function (string $sql) use ($support): void {
-            if ($support->active() && (! preg_match('/^\s*\(*\s*(SELECT|SHOW|DESCRIBE)\b/i', $sql) || preg_match('/\bINTO\s+(OUTFILE|DUMPFILE)\b/i', $sql))) {
-                throw new AuthorizationException(__('support.read_only'));
-            }
-        });
         try {
+            Auth::setUser($resolved['target']);
+            $context->setCompany($resolved['company'], $resolved['target']);
+            $support->activate($resolved['details']);
+            config(['ai_assistant.enabled' => false]);
+            DB::connection()->beforeExecuting(static function (string $sql) use ($support): void {
+                if ($support->active() && (! preg_match('/^\s*\(*\s*(SELECT|SHOW|DESCRIBE)\b/i', $sql) || preg_match('/\bINTO\s+(OUTFILE|DUMPFILE)\b/i', $sql))) {
+                    throw new AuthorizationException(__('support.read_only'));
+                }
+            });
+
             return $next($request)->header('Cache-Control', 'no-store, private')->header('Referrer-Policy', 'same-origin');
         } catch (AuthorizationException) {
             return response()->view('platform.support-denied', [], 403)->header('Cache-Control', 'no-store, private');

@@ -19,6 +19,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Route;
 use Livewire\Mechanisms\HandleRequests\HandleRequests;
+use Mockery\MockInterface;
 use Tests\TestCase;
 
 final class PlatformSupportViewTest extends TestCase
@@ -230,5 +231,16 @@ final class PlatformSupportViewTest extends TestCase
         $this->assertFalse(session()->has(SupportViewSession::KEY));
         $this->assertSame($before, $this->owner->fresh()->locale);
         $this->assertSame($this->operator->id, auth()->id());
+    }
+
+    public function test_context_setup_failure_still_restores_real_operator_identity(): void
+    {
+        $this->start();
+        $this->partialMock(CompanyContext::class, function (MockInterface $mock): void {
+            $mock->shouldReceive('setCompany')->once()->andThrow(new AuthorizationException('Synthetic context failure'));
+        });
+        $this->get('/products')->assertForbidden();
+        $this->assertSame($this->operator->id, auth()->id());
+        $this->assertFalse(app(SupportViewContext::class)->active());
     }
 }
