@@ -5,7 +5,11 @@ declare(strict_types=1);
 namespace Tests\Feature\OpeningInventory;
 
 use App\Actions\Company\CreateCompanyAction;
+use App\Application\Platform\SupportViewContext;
+use App\Application\Platform\SupportViewSession;
 use App\Models\Company;
+use App\Models\PlatformAuditEvent;
+use App\Models\PlatformOperatorGrant;
 use App\Models\Product;
 use App\Models\Unit;
 use App\Models\User;
@@ -18,6 +22,7 @@ use App\Services\Posting\AccountingPostingService;
 use App\Support\Tenancy\CompanyContext;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use InvalidArgumentException;
@@ -405,6 +410,163 @@ final class OpeningInventoryImportTest extends TestCase
                 unlink($file);
             }
             rmdir($directory);
+        }
+    }
+
+    /** @return array{0: User, 1: PlatformOperatorGrant} */
+    private function platformOperator(): array
+    {
+        $operator = User::factory()->create(['name' => 'Synthetic System Administrator']);
+        $grant = new PlatformOperatorGrant;
+        $grant->forceFill(['user_id' => $operator->id, 'active' => true, 'permissions' => ['company.impersonate'], 'revision' => 1])->save();
+        $this->plan['actor_id'] = $operator->id;
+        $this->plan['effective_actor_id'] = $this->owner->id;
+
+        return [$operator, $grant];
+    }
+
+    /** @return array<string, mixed> */
+    private function delegatedImport(User $operator, bool $apply = true): array
+    {
+        app(CompanyContext::class)->clear();
+        Auth::forgetUser();
+        try {
+            return app(SupportViewSession::class)->runFromHost($operator, $this->company,
+                'Synthetic authorized opening stock', $apply,
+                fn (User $owner): array => app(OpeningInventoryImport::class)->run($this->workbook, hash_file('sha256', $this->workbook),
+                    $this->plan, app(OpeningInventoryImport::class)->hash($this->plan), $this->company, $owner, $apply));
+        } finally {
+            $this->assertFalse(app(SupportViewContext::class)->active());
+            $this->assertFalse(auth()->check());
+            $this->actingAs($this->owner);
+            app(CompanyContext::class)->setCompany($this->company, $this->owner);
+        }
+    }
+
+    public function test_trusted_admin_dry_run_is_zero_write_without_customer_credentials_or_membership_changes(): void
+    {
+        [$operator] = $this->platformOperator();
+        $baseline = app(OpeningInventoryImport::class)->baseline($this->company);
+        $users = DB::table('users')->orderBy('id')->get()->toJson();
+        $members = DB::table('company_user')->orderBy('id')->get()->toJson();
+        $audits = DB::table('audit_events')->count();
+        $result = $this->delegatedImport($operator, false);
+        $this->assertSame('DRY_RUN', $result['status']);
+        $this->assertSame($baseline, app(OpeningInventoryImport::class)->baseline($this->company));
+        $this->assertSame($users, DB::table('users')->orderBy('id')->get()->toJson());
+        $this->assertSame($members, DB::table('company_user')->orderBy('id')->get()->toJson());
+        $this->assertSame($audits, DB::table('audit_events')->count());
+        $this->assertDatabaseCount('platform_audit_events', 0);
+    }
+
+    public function test_trusted_admin_posts_all_canonical_legs_with_actual_operator_provenance_and_safe_retry(): void
+    {
+        [$operator] = $this->platformOperator();
+        $ownerCredentials = DB::table('users')->where('id', $this->owner->id)->first();
+        $result = $this->delegatedImport($operator);
+        $this->assertSame('APPLIED', $result['status']);
+        $this->assertSame('57.000000', $result['result']['value_base']);
+        $this->assertDatabaseCount('products', 2);
+        $this->assertDatabaseCount('stock_movements', 3);
+        $this->assertDatabaseCount('posting_batches', 3);
+        $this->assertDatabaseHas('stock_movements', ['created_by' => $this->owner->id]);
+        $receipt = DB::table('audit_events')->where('event_key', 'inventory.opening_import.completed')->sole();
+        $this->assertSame($operator->id, (int) $receipt->actor_user_id);
+        $meta = json_decode($receipt->meta_json, true, 32, JSON_THROW_ON_ERROR);
+        $this->assertSame($this->owner->id, $meta['impersonation']['effective_user_id']);
+        $this->assertSame('trusted_host', $meta['impersonation']['authority']);
+        $this->assertSame(8, DB::table('platform_audit_events')->where('event_key', 'impersonation.action')->where('actor_user_id', $operator->id)->count());
+        $economic = app(OpeningInventoryImport::class)->baseline($this->company);
+        $retry = $this->delegatedImport($operator);
+        $this->assertSame('ALREADY_APPLIED', $retry['status']);
+        $this->assertSame($economic, app(OpeningInventoryImport::class)->baseline($this->company));
+        $this->assertEquals($ownerCredentials, DB::table('users')->where('id', $this->owner->id)->first());
+        $this->assertSame(0, DB::table('company_user')->where('company_id', $this->company->id)->where('user_id', $operator->id)->count());
+    }
+
+    public function test_host_admin_without_explicit_impersonation_permission_cannot_import(): void
+    {
+        [$operator, $grant] = $this->platformOperator();
+        $grant->forceFill(['permissions' => ['company.support', 'company.read']])->save();
+        $this->expectException(AuthorizationException::class);
+        try {
+            $this->delegatedImport($operator);
+        } finally {
+            $this->assertDatabaseCount('products', 0);
+            $this->assertDatabaseCount('stock_movements', 0);
+            $this->assertDatabaseCount('platform_audit_events', 0);
+        }
+    }
+
+    public function test_delegated_stock_and_accounting_roll_back_if_actual_operator_audit_fails(): void
+    {
+        [$operator] = $this->platformOperator();
+        PlatformAuditEvent::creating(static function (PlatformAuditEvent $event): void {
+            if ($event->event_key === 'impersonation.action' && ($event->metadata['action'] ?? null) === 'accounting.posted') {
+                throw new RuntimeException('Synthetic administrator audit storage failure');
+            }
+        });
+        $this->expectException(RuntimeException::class);
+        try {
+            $this->delegatedImport($operator);
+        } finally {
+            $this->assertDatabaseCount('products', 0);
+            $this->assertDatabaseCount('stock_movements', 0);
+            $this->assertDatabaseCount('posting_batches', 0);
+            $this->assertDatabaseCount('platform_audit_events', 0);
+        }
+    }
+
+    public function test_changed_effective_owner_in_reviewed_plan_is_rejected_without_partial_effects(): void
+    {
+        [$operator] = $this->platformOperator();
+        $this->plan['effective_actor_id'] = $operator->id;
+        $this->expectException(ValidationException::class);
+        try {
+            $this->delegatedImport($operator);
+        } finally {
+            $this->assertDatabaseCount('products', 0);
+            $this->assertDatabaseCount('stock_movements', 0);
+            $this->assertDatabaseCount('platform_audit_events', 0);
+        }
+    }
+
+    public function test_revoke_after_delegated_write_rolls_back_at_outer_commit_even_with_enforcement_off(): void
+    {
+        [$operator, $grant] = $this->platformOperator();
+        app(CompanyContext::class)->clear();
+        Auth::forgetUser();
+        config(['subscriptions.enforcement_enabled' => false]);
+        $this->expectException(AuthorizationException::class);
+        try {
+            app(SupportViewSession::class)->runFromHost($operator, $this->company, 'Synthetic revocation at commit', true,
+                function (User $owner) use ($grant): void {
+                    app(ProductCatalogService::class)->createProduct($this->company, ['name_en' => 'Must roll back', 'base_unit_id' => Unit::where('code', 'piece')->value('id')], (int) $owner->id);
+                    $grant->forceFill(['active' => false])->save();
+                });
+        } finally {
+            $this->assertDatabaseCount('products', 0);
+            $this->assertDatabaseCount('platform_audit_events', 0);
+            $this->assertTrue($grant->fresh()->active);
+        }
+    }
+
+    public function test_expiry_after_delegated_write_rolls_back_at_outer_commit(): void
+    {
+        [$operator] = $this->platformOperator();
+        app(CompanyContext::class)->clear();
+        Auth::forgetUser();
+        $this->expectException(AuthorizationException::class);
+        try {
+            app(SupportViewSession::class)->runFromHost($operator, $this->company, 'Synthetic expiry at commit', true,
+                function (User $owner): void {
+                    app(ProductCatalogService::class)->createProduct($this->company, ['name_en' => 'Must expire', 'base_unit_id' => Unit::where('code', 'piece')->value('id')], (int) $owner->id);
+                    $this->travel(16)->minutes();
+                });
+        } finally {
+            $this->travelBack();
+            $this->assertDatabaseCount('products', 0);
+            $this->assertDatabaseCount('platform_audit_events', 0);
         }
     }
 }

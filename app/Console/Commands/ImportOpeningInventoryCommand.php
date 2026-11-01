@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\Application\Platform\SupportViewSession;
 use App\Models\Company;
 use App\Models\User;
 use App\Services\Inventory\OpeningInventoryImport;
@@ -19,7 +20,8 @@ final class ImportOpeningInventoryCommand extends Command
         {--company= : Exact existing company public ID}
         {--source-sha= : Exact original XLSX SHA-256}
         {--plan-sha= : Exact reviewed structured plan SHA-256}
-        {--operator= : Actual authorized tenant member email}
+        {--operator= : Actual authorized tenant member or explicitly granted system administrator email}
+        {--as-owner : Explicit trusted-host system-admin delegation; no customer password}
         {--dry-run : Explicit read-only mode (the default)}
         {--apply : Separately approved production operation; requires interactive confirmation}';
 
@@ -52,6 +54,25 @@ final class ImportOpeningInventoryCommand extends Command
                 $this->error('Interactive authentication by the actual authorized tenant operator is required.');
 
                 return self::FAILURE;
+            }
+            if ($this->option('as-owner')) {
+                $operator = User::where('email', (string) $this->option('operator'))->sole();
+                $sourceSha = (string) $this->option('source-sha');
+                $planSha = (string) $this->option('plan-sha');
+                app(OpeningInventoryWorkbook::class)->read((string) $this->argument('workbook'), $sourceSha);
+                if (! hash_equals($import->hash($plan), $planSha)) {
+                    throw new \InvalidArgumentException('Reviewed plan checksum mismatch.');
+                }
+                $this->line('Trusted host operator: '.$operator->email.'; target company: '.$company->public_id.'; source: '.$sourceSha);
+                if ($this->ask('Type the exact approved plan SHA-256 to authorize system-admin execution') !== $planSha) {
+                    return self::FAILURE;
+                }
+                $result = app(SupportViewSession::class)->runFromHost($operator, $company,
+                    'Owner-authorized opening inventory; exact source and plan confirmed by trusted host operator', (bool) $this->option('apply'),
+                    fn (User $effective): array => $import->run((string) $this->argument('workbook'), $sourceSha, $plan, $planSha, $company, $effective, (bool) $this->option('apply')));
+                $this->line(json_encode($result, JSON_THROW_ON_ERROR));
+
+                return self::SUCCESS;
             }
             $credentials = ['email' => (string) $this->option('operator'), 'password' => (string) $this->secret('Actual operator password')];
             $provider = Auth::getProvider();

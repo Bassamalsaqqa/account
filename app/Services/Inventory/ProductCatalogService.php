@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Inventory;
 
+use App\Application\Platform\SupportViewContext;
 use App\Application\Platform\TenantWriteAccess;
 use App\Domain\Inventory\Exceptions\HistoricalConversionLockedException;
 use App\Domain\Inventory\Exceptions\InvalidInventoryMovementException;
@@ -63,6 +64,8 @@ class ProductCatalogService
                 'is_default_purchase' => true,
                 'active' => true,
             ]);
+
+            app(SupportViewContext::class)->recordEffect($product, 'product.created');
 
             return $product;
         });
@@ -231,6 +234,8 @@ class ProductCatalogService
 
             $data['updated_by'] = $actorId;
             $lockedProduct->update($data);
+
+            app(SupportViewContext::class)->recordEffect($lockedProduct, 'product.updated');
 
             return $lockedProduct;
         });

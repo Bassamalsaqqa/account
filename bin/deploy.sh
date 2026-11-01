@@ -387,10 +387,28 @@ if [ -f "$APP_DIR/public/favicon.ico" ]; then
     chmod 0644 "$PUBLIC_DIR/favicon.ico"
 fi
 
-mkdir -p "$PUBLIC_DIR/build"
-chmod 0755 "$PUBLIC_DIR/build"
-cp -rp "$APP_DIR/public/build/"* "$PUBLIC_DIR/build/"
-normalize_static_build_permissions "$PUBLIC_DIR/build"
+# Publish a complete release directory, never overlay old hashed chunks.
+# Maintenance remains held throughout the two same-filesystem renames.
+BUILD_STAGE=$(mktemp -d "$PUBLIC_DIR/.build-release-XXXXXXXX")
+mkdir "$BUILD_STAGE/next"
+cp -rp "$APP_DIR/public/build/." "$BUILD_STAGE/next/"
+normalize_static_build_permissions "$BUILD_STAGE/next"
+cmp -s "$APP_DIR/public/build/manifest.json" "$BUILD_STAGE/next/manifest.json"
+if [ -d "$PUBLIC_DIR/build" ]; then
+    mv -- "$PUBLIC_DIR/build" "$BUILD_STAGE/previous"
+fi
+if ! mv -- "$BUILD_STAGE/next" "$PUBLIC_DIR/build"; then
+    if [ -d "$BUILD_STAGE/previous" ]; then
+        mv -- "$BUILD_STAGE/previous" "$PUBLIC_DIR/build"
+    fi
+    echo "ERROR: Build publication failed; application remains in maintenance." >&2
+    exit 1
+fi
+# Only the verified, freshly allocated staging directory is disposable.
+if [ -d "$BUILD_STAGE/previous" ]; then
+    rm -r -- "$BUILD_STAGE/previous"
+fi
+rmdir -- "$BUILD_STAGE"
 
 if [ -n "${LIVE_HASH:-}" ]; then
     AFTER_HASH=$(sha256sum "$PUBLIC_DIR/.htaccess" | awk '{print $1}')

@@ -37,7 +37,7 @@ return [
     'members' => 'الأعضاء',
     'owner' => 'المالك',
     'member' => 'موظف',
-    'member_help' => 'حالة الأعضاء فقط. يتطلب عرض الدعم صلاحية مستقلة وجلسة دعم مسجلة في التدقيق.',
+    'member_help' => 'حالة الأعضاء فقط. يتطلب التقمّص تفويضاً إدارياً صريحاً وجلسة مسجلة في سجل التدقيق.',
     'name_ar' => 'اسم المنشأة بالعربية',
     'name_en' => 'اسم المنشأة بالإنجليزية (اختياري)',
     'owner_name' => 'اسم المالك الأول',
@@ -59,4 +59,48 @@ return [
     'previous' => 'السابق',
     'next' => 'التالي',
     'page' => 'الصفحة :current من :last',
+
+    // Shadcn Navigation & Shell Elements
+    'nav_core' => 'الرئيسية',
+    'nav_governance' => 'الرقابة والامتثال',
+    'nav_future' => 'الوحدات المخططة',
+    'nav_system_health' => 'صحة النظام',
+    'nav_global_policies' => 'السياسات العامة',
+    'coming_soon' => 'قريباً',
+    'operator_badge' => 'مشغّل المنصة',
+    'operator_console' => 'لوحة التحكم',
+    'tenant_portal' => 'مساحة المنشأة',
+    'breadcrumb_platform' => 'المنصة',
+    'breadcrumb_companies' => 'الشركات',
+    'breadcrumb_create' => 'إنشاء منشأة',
+    'breadcrumb_audit' => 'سجل التدقيق',
+    'breadcrumb_subscription' => 'الاشتراك',
+
+    // Summary Metrics Cards
+    'summary_heading' => 'ملخص الدليل',
+    'summary_companies' => 'إجمالي الشركات',
+    'summary_active' => 'نشطة',
+    'summary_inactive' => 'غير نشطة',
+    'summary_health_unmeasured' => 'صحة غير مقاسة',
+
+    // Directory & Layout Labels
+    'search_heading' => 'البحث في الدليل',
+    'table_heading' => 'المنشآت المُدارة',
+    'actions' => 'الإجراءات',
+    'open_menu' => 'فتح قائمة التنقل',
+    'close_menu' => 'إغلاق قائمة التنقل',
+    'skip_to_main' => 'الانتقال إلى المحتوى الرئيسي',
+
+    // Impersonation Labels
+    'impersonation_title' => 'تقمّص دور مالك المنشأة',
+    'impersonation_badge' => 'تفويض تشغيلي',
+    'impersonation_desc' => 'يتيح تقمّص دور مالك المنشأة تفويض الصلاحية لتنفيذ العمليات التشغيلية والترحيل المالي. تُسجَّل كافة الإجراءات باسم مشغّل المنصة ضمن سجل تدقيق غير قابل للتعديل.',
+    'impersonate_target' => 'التقمّص بصفة',
+    'impersonate_owner_available' => 'المالك النشط',
+    'impersonate_owner_missing' => 'لا يتوفر مالك نشط وحيد للتقمّص في هذه المنشأة.',
+    'impersonation_session_active' => 'جلسة التقمّص نشطة حالياً.',
+    'breadcrumb_label' => 'مسار التنقل',
+    'status_active' => 'نشطة',
+    'status_inactive' => 'غير نشطة',
+    'status_suspended' => 'موقوفة',
 ];

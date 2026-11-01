@@ -21,6 +21,14 @@ final class PlatformController extends Controller
         app(PlatformAccess::class)->authorize('company.read');
         $validated = $request->validate(['q' => ['nullable', 'string', 'max:100']]);
         $search = trim($validated['q'] ?? '');
+        $counts = DB::table('companies')->selectRaw('COUNT(*) AS total, SUM(CASE WHEN status = ? THEN 1 ELSE 0 END) AS active', ['active'])->first();
+        $platformSummary = [
+            'companies' => (int) $counts->total,
+            'active' => (int) $counts->active,
+            'inactive' => (int) $counts->total - (int) $counts->active,
+            'health_unmeasured' => DB::table('companies')->leftJoin('platform_company_health as health', 'health.company_id', '=', 'companies.id')
+                ->whereNull('health.checked_at')->count(),
+        ];
         $companies = DB::table('companies')->leftJoin('platform_company_health as health', 'health.company_id', '=', 'companies.id')
             ->select(['companies.id', 'public_id', 'name_ar', 'name_en', 'status', 'default_locale', 'base_currency_code', 'health.domains', 'health.checked_at'])
             ->selectSub(DB::table('ai_company_policies')->select('enabled')->whereColumn('ai_company_policies.company_id', 'companies.id')->limit(1), 'ai_enabled')
@@ -49,7 +57,7 @@ final class PlatformController extends Controller
             }
         }
 
-        return view('platform.index', compact('companies', 'search', 'billingSummary'));
+        return view('platform.index', compact('companies', 'search', 'billingSummary', 'platformSummary'));
     }
 
     public function show(string $publicId): View
@@ -58,6 +66,10 @@ final class PlatformController extends Controller
         $company = DB::table('companies')->select(['id', 'public_id', 'name_ar', 'name_en', 'status', 'base_currency_code', 'default_locale', 'timezone'])
             ->where('public_id', $publicId)->first();
         abort_if($company === null, 404);
+        $owners = DB::table('company_user')->join('users', 'users.id', '=', 'company_user.user_id')
+            ->where('company_user.company_id', $company->id)->where('company_user.status', 'active')->where('company_user.is_owner', true)
+            ->get(['users.id', 'users.name']);
+        $companyOwner = $owners->count() === 1 ? $owners->first() : null;
         $members = DB::table('company_user')->join('users', 'users.id', '=', 'company_user.user_id')
             ->where('company_user.company_id', $company->id)
             ->select(['users.id', 'users.name', 'company_user.status', 'company_user.is_owner'])->orderBy('company_user.id')->paginate(20);
@@ -71,7 +83,7 @@ final class PlatformController extends Controller
         $aiEnabled = (bool) DB::table('ai_company_policies')->where('company_id', $company->id)->value('enabled');
         $health = DB::table('platform_company_health')->where('company_id', $company->id)->first();
 
-        return view('platform.show', compact('company', 'members', 'aiEnabled', 'health'));
+        return view('platform.show', compact('company', 'members', 'aiEnabled', 'health', 'companyOwner'));
     }
 
     public function create(): View

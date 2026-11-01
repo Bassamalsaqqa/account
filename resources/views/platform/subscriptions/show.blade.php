@@ -1,5 +1,14 @@
 @extends('layouts.platform')
 
+@section('breadcrumb')
+    <span class="text-slate-300 shrink-0">/</span>
+    <a href="{{ route('platform.index') }}" class="hover:text-primary transition-colors text-slate-600 font-semibold shrink-0 hidden sm:inline">{{ __('platform.companies') }}</a>
+    <span class="text-slate-300 shrink-0 hidden sm:inline">/</span>
+    <a href="{{ route('platform.companies.show', $company->public_id) }}" class="hover:text-primary transition-colors text-slate-600 font-semibold truncate max-w-[90px] sm:max-w-xs shrink-0">{{ app()->getLocale() === 'en' ? ($company->name_en ?: $company->name_ar) : $company->name_ar }}</a>
+    <span class="text-slate-300 shrink-0">/</span>
+    <span class="text-slate-900 font-semibold truncate max-w-[120px] sm:max-w-none">{{ __('subscriptions.subscription_details') }}</span>
+@endsection
+
 @section('content')
 @php
     $submittedOperation = old('form_company_public_id') === $company->public_id ? old('form_operation') : null;
@@ -154,9 +163,9 @@
     @endif
 
     <!-- Operational Action Cards -->
-    <div class="grid items-start gap-6 {{ $subscription !== null ? 'lg:grid-cols-2' : '' }}">
+    <div class="grid items-start gap-6 min-w-0 {{ $subscription !== null ? 'lg:grid-cols-2' : '' }}">
         <!-- Form 1: Configure / Save Terms -->
-        <div class="bg-white border border-border rounded-card shadow-panel p-5 sm:p-6"
+        <div class="bg-white border border-border rounded-card shadow-panel p-5 sm:p-6 min-w-0"
              x-data="{ review: false, saving: false, summary: {} }"
              x-init="$watch('review', shown => $nextTick(() => (shown ? $refs.reviewPanel : $refs.plan).focus()))"
              @submit="if (!review || saving) { $event.preventDefault(); } else { saving = true; }">
@@ -423,7 +432,7 @@
 
         @if($subscription !== null)
             <!-- Form 2: Renew Subscription Period -->
-            <div class="bg-white border border-border rounded-card shadow-panel p-5 sm:p-6"
+            <div class="bg-white border border-border rounded-card shadow-panel p-5 sm:p-6 min-w-0"
                  x-data="{ review: false, saving: false, newDate: @js($oldFor('renew', 'renews_on', now()->parse($subscription->renews_on)->addMonthNoOverflow()->toDateString())) }"
                  x-init="$watch('review', shown => $nextTick(() => (shown ? $refs.reviewPanel : $refs.newDateInput).focus()))"
                  @submit="if (!review || saving) { $event.preventDefault(); } else { saving = true; }">
@@ -535,7 +544,7 @@
 
     <!-- Form 3: Record Payment Receipt (if configured and has outstanding charges) -->
     @if($subscription !== null)
-        <div class="bg-white border border-border rounded-card shadow-panel p-5 sm:p-6"
+        <div class="bg-white border border-border rounded-card shadow-panel p-5 sm:p-6 min-w-0"
              x-data="{
                 review: false,
                 saving: false,

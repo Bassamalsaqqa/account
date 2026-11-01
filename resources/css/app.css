@@ -138,3 +138,33 @@ summary:focus-visible {
     .business-app #app-main :is(th, td) { overflow-wrap: anywhere; }
     .business-app #app-main .touch-action { max-width: 100%; }
 }
+
+/* Scoped Platform Admin Panel rules (shadcn-inspired composition) */
+.platform-admin dialog#platform-mobile-drawer {
+    border: none;
+    padding: 0;
+    margin: 0;
+    max-width: none;
+    max-height: none;
+    width: 100vw;
+    height: 100vh;
+}
+.platform-admin dialog#platform-mobile-drawer:not([open]) {
+    display: none !important;
+    pointer-events: none !important;
+}
+.platform-admin dialog#platform-mobile-drawer[open] {
+    display: flex !important;
+}
+.platform-admin dialog#platform-mobile-drawer::backdrop {
+    background-color: rgba(15, 23, 42, 0.45);
+    backdrop-filter: blur(2px);
+}
+.platform-admin #platform-main input:focus,
+.platform-admin #platform-main select:focus,
+.platform-admin #platform-main textarea:focus {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 1px;
+    border-color: #255fd6;
+    box-shadow: 0 0 0 3px rgba(37, 95, 214, 0.12);
+}

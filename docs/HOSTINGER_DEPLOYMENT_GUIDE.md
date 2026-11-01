@@ -176,14 +176,18 @@ Compile the production assets on your development/CI machine and transfer them t
 # On your local machine:
 npm run build
 
-# Transfer public/build to Hostinger accounting/public/build via scp:
-scp -r public/build u556956644@account.palsync.net:/home/u556956644/domains/palsync.net/accounting/public/
+# Transfer into a NEW, private release staging directory, never over an old build:
+scp -r public/build <ssh-host>:<new-private-release-staging>/
 ```
-*(Alternatively, upload a zip of `public/build` via hPanel File Manager into `/home/u556956644/domains/palsync.net/accounting/public/` and extract it)*.
+Verify the staged manifest, every referenced file and asset hashes. The build must contain only its manifest and the files referenced by its entries (including imported chunks, CSS and other assets). Under controlled maintenance, replace the private application's whole `public/build` directory with the verified staged directory. Do not merge directories. Temporary archives must stay outside the public root and be removed after verification.
 
 Verify that `/home/u556956644/domains/palsync.net/accounting/public/build/manifest.json` exists before proceeding.
 
-During deployment, `bin/deploy.sh` normalizes compiled build directories to `0755` and regular static files to `0644`, both in `accounting/public/build` and in the separated public root after copying. This prevents restrictive SCP/ZIP permissions from blocking public asset access. For a public-root symlink, normalizing the source build is sufficient. Application-private files and user uploads are not affected.
+During deployment, `bin/deploy.sh` stages a complete build beside the serving directory, verifies the copied manifest, and replaces the public build using same-filesystem renames while maintenance remains held. It restores the previous build if publication fails, then removes the obsolete build after successful publication. Directories use `0755` and files `0644`. Public-root symlinks are refused; uploads are not affected.
+
+Keep `.git`, `node_modules`, `tests`, `docs`, development configuration, backups, database dumps and archives out of `public_html/account`. The established private Git checkout remains outside the public document root; do not delete its history during an in-place deployment. Inventory private recovery copies as well: retain verified off-host recovery custody before pruning obsolete on-host copies, rather than accumulating unpacked vendor/source trees for every release. Never prune business uploads, credentials, unique files or the only recoverable backup. Record before/after file counts and verify no stale build chunks or temporary deployment files remain publicly served.
+
+For this subdomain, the reviewed rewrite configuration uses `RewriteBase /`. Preserve the live PHP handler and other site-specific directives. If the live file lacks this directive, review and back it up before the explicit configuration update; the deployment script otherwise preserves live `.htaccess` byte-for-byte.
 
 ### Step 3.8: Bootstrap Initial Login User
 Because public self-registration is strictly disabled by default, run the interactive user creation command:
