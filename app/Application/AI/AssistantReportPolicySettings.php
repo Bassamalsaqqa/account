@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Application\AI;
 
+use App\Application\Platform\SupportViewContext;
 use App\Application\Platform\TenantWriteAccess;
 use App\Models\AiCompanyPolicy;
 use App\Models\Company;
@@ -65,7 +66,8 @@ final class AssistantReportPolicySettings
                 return $policy;
             }
             if (array_diff($reports, $previous) !== []) {
-                $freshActor = User::whereKey($actor->id)->lockForUpdate()->firstOrFail();
+                $passwordActor = app(SupportViewContext::class)->sessionActor($actor);
+                $freshActor = User::whereKey($passwordActor->id)->lockForUpdate()->firstOrFail();
                 if (! Hash::check($password, $freshActor->password)) {
                     throw new AuthorizationException('Fresh Owner password confirmation is required to expand report access.');
                 }

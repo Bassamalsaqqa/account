@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Security;
 
+use App\Application\Platform\SupportViewContext;
 use App\Models\User;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Auth\AuthenticationException;
@@ -48,12 +49,16 @@ final class CommandSessionGuard
             throw new AuthenticationException('API session identifier is missing.');
         }
 
+        $sessionActor = app(SupportViewContext::class)->sessionActor($actor);
+        if ((int) ($proof['session_actor_id'] ?? $actor->id) !== (int) $sessionActor->id) {
+            throw new AuthorizationException('API real session actor mismatch.');
+        }
         $table = (string) config('session.table', 'sessions');
 
         // 4. Verify + lock actual owned DB session row FOR UPDATE on active connection
         $sessionRow = $transactionConn->table($table)
             ->where('id', $sessionId)
-            ->where('user_id', $actor->id)
+            ->where('user_id', $sessionActor->id)
             ->lockForUpdate()
             ->first();
 
@@ -77,11 +82,11 @@ final class CommandSessionGuard
 
         // 6. Freshly query user password from database vs authenticated actor, locking users row FOR UPDATE
         $freshUser = $transactionConn->table('users')
-            ->where('id', $actor->id)
+            ->where('id', $sessionActor->id)
             ->lockForUpdate()
             ->first(['password']);
 
-        if ($freshUser === null || ! hash_equals((string) $freshUser->password, (string) $actor->getAuthPassword())) {
+        if ($freshUser === null || ! hash_equals((string) $freshUser->password, (string) $sessionActor->getAuthPassword())) {
             throw new AuthenticationException('User credentials have changed since session establishment.');
         }
     }

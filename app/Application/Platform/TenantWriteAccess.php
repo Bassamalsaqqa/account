@@ -30,7 +30,10 @@ final class TenantWriteAccess
      */
     public function assertWritable(int $companyId): void
     {
-        app(SupportViewContext::class)->assertWritable();
+        app(SupportViewContext::class)->assertWritable($companyId);
+        if (app(SupportViewContext::class)->active()) {
+            $this->trackTransaction($companyId);
+        }
         if (! config('subscriptions.enforcement_enabled', false)) {
             return;
         }
@@ -50,6 +53,11 @@ final class TenantWriteAccess
             throw new AuthorizationException(__('subscriptions.tenant_read_only'));
         }
 
+        $this->trackTransaction($companyId);
+    }
+
+    private function trackTransaction(int $companyId): void
+    {
         // Keep the root transaction identity, not a session/request-wide entitlement cache.
         $connection = DB::connection();
         $root = app('db.transactions')->getPendingTransactions()->first(
@@ -96,6 +104,14 @@ final class TenantWriteAccess
             }
             foreach (array_keys($this->transactions[$root]) as $companyId) {
                 $this->assertWritable($companyId);
+                $support = app(SupportViewContext::class);
+                if ($support->active()) {
+                    $details = $support->details();
+                    app(PlatformAudit::class)->record('impersonation.write', (int) $details['operator_id'], $companyId, [
+                        'owner_user_id' => (int) $details['target_user_id'], 'correlation_id' => $details['correlation_id'],
+                        'action' => $details['authority'] ?? (request()->route()?->getName() ?? 'tenant_operation'),
+                    ]);
+                }
             }
         } catch (\Throwable $exception) {
             // Laravel's commit-exception path does not roll back arbitrary admission failures.

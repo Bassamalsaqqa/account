@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Inventory;
 
 use App\Actions\Inventory\PostOpeningStockAction;
+use App\Application\Platform\SupportViewContext;
 use App\Application\Platform\TenantWriteAccess;
 use App\Domain\Inventory\ValueObjects\Quantity;
 use App\Models\AuditEvent;
@@ -27,6 +28,7 @@ use Brick\Math\BigDecimal;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Validation\Rule;
 use InvalidArgumentException;
 use RuntimeException;
 
@@ -61,7 +63,7 @@ final class OpeningInventoryImport
                 ->where('meta_json->source_sha256', $source['source_sha256'])->first();
             if ($receipt !== null) {
                 $meta = $receipt->getAttribute('meta_json');
-                if (! is_array($meta) || ($meta['plan_sha256'] ?? null) !== $planSha || (int) $receipt->actor_user_id !== (int) $actor->id) {
+                if (! is_array($meta) || ($meta['plan_sha256'] ?? null) !== $planSha || (int) $receipt->actor_user_id !== app(SupportViewContext::class)->actualActorId((int) $actor->id)) {
                     throw new InvalidArgumentException('This source was already applied with a different plan or actor.');
                 }
 
@@ -136,7 +138,7 @@ final class OpeningInventoryImport
                 }
                 $result = null;
                 if ($apply) {
-                    $reason = 'Stocktake source '.$source['source_sha256'].'; row '.$row['source_row'].'; provided by '.$plan['source_provider'].'; imported by operator '.$actor->id;
+                    $reason = 'Stocktake source '.$source['source_sha256'].'; row '.$row['source_row'].'; provided by '.$plan['source_provider'].'; imported by operator '.app(SupportViewContext::class)->actualActorId((int) $actor->id).'; effective tenant actor '.$actor->id;
                     $result = app(PostOpeningStockAction::class)->execute($company, $product, $warehouse, Quantity::of($row['quantity']), $row['unit_cost'], $actor,
                         'oi:'.substr($source['source_sha256'], 0, 40).':'.$row['source_row'], (int) $unit->id, null, $choice['expiry_date'], $plan['movement_date'], $reason);
                 }
@@ -214,7 +216,8 @@ final class OpeningInventoryImport
     {
         Validator::make($plan, [
             'version' => ['required', 'in:1'], 'source_sha256' => ['required', 'in:'.$source['source_sha256']], 'rows_sha256' => ['required', 'in:'.$source['rows_sha256']],
-            'company_public_id' => ['required', 'in:'.$company->public_id], 'actor_id' => ['required', 'integer', 'in:'.$actor->id],
+            'company_public_id' => ['required', 'in:'.$company->public_id], 'actor_id' => ['required', 'integer', 'in:'.app(SupportViewContext::class)->actualActorId((int) $actor->id)],
+            'effective_actor_id' => [Rule::requiredIf(app(SupportViewContext::class)->active()), 'nullable', 'integer', 'in:'.$actor->id],
             'owner_id' => ['required', 'integer'], 'owner_name' => ['required', 'string', 'max:255'], 'source_provider' => ['required', 'string', 'max:100'],
             'baseline_sha256' => ['required', 'regex:/^[a-f0-9]{64}$/D'], 'currency' => ['required', 'in:'.$company->base_currency],
             'stock_count_date' => ['required', 'date_format:Y-m-d'], 'movement_date' => ['required', 'date_format:Y-m-d', 'after_or_equal:stock_count_date'],

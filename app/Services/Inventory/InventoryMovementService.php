@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Inventory;
 
+use App\Application\Platform\SupportViewContext;
 use App\Application\Platform\TenantWriteAccess;
 use App\Domain\Inventory\DTO\StockMovementCommand;
 use App\Domain\Inventory\DTO\StockMovementLineCommand;
@@ -627,6 +628,7 @@ class InventoryMovementService
                     'created_by' => $command->createdBy,
                     'created_at' => now(),
                 ]);
+                app(SupportViewContext::class)->recordEffect($movement, 'inventory.movement');
 
                 $createdMovements[] = $movement;
             }
@@ -1237,6 +1239,7 @@ class InventoryMovementService
                     'created_by' => $command->createdBy,
                     'created_at' => now(),
                 ]);
+                app(SupportViewContext::class)->recordEffect($movementOut, 'inventory.movement');
 
                 // 2. Transfer In
                 $movementIn = StockMovement::create([
@@ -1263,6 +1266,7 @@ class InventoryMovementService
                     'created_by' => $command->createdBy,
                     'created_at' => now(),
                 ]);
+                app(SupportViewContext::class)->recordEffect($movementIn, 'inventory.movement');
 
                 $createdMovements[] = $movementOut;
                 $createdMovements[] = $movementIn;

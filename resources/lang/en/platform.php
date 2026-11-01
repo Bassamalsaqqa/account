@@ -37,7 +37,7 @@ return [
     'members' => 'Members',
     'owner' => 'Owner',
     'member' => 'Staff member',
-    'member_help' => 'Member status only. Support access requires its own explicit permission and an audited support session.',
+    'member_help' => 'Member status only. Impersonation requires explicit operator permission and audited delegation.',
     'name_ar' => 'Business name in Arabic',
     'name_en' => 'Business name in English (optional)',
     'owner_name' => 'Initial Owner name',
@@ -59,4 +59,48 @@ return [
     'previous' => 'Previous',
     'next' => 'Next',
     'page' => 'Page :current of :last',
+
+    // Shadcn Navigation & Shell Elements
+    'nav_core' => 'Core',
+    'nav_governance' => 'Governance',
+    'nav_future' => 'Planned Modules',
+    'nav_system_health' => 'System Health',
+    'nav_global_policies' => 'Global Policies',
+    'coming_soon' => 'Coming later',
+    'operator_badge' => 'Platform Operator',
+    'operator_console' => 'Control Plane',
+    'tenant_portal' => 'Tenant Workspace',
+    'breadcrumb_platform' => 'Platform',
+    'breadcrumb_companies' => 'Companies',
+    'breadcrumb_create' => 'Create Business',
+    'breadcrumb_audit' => 'Audit Log',
+    'breadcrumb_subscription' => 'Subscription',
+
+    // Summary Metrics Cards
+    'summary_heading' => 'Directory Overview',
+    'summary_companies' => 'Total Companies',
+    'summary_active' => 'Active',
+    'summary_inactive' => 'Inactive',
+    'summary_health_unmeasured' => 'Unmeasured Health',
+
+    // Directory & Layout Labels
+    'search_heading' => 'Directory Search',
+    'table_heading' => 'Managed Businesses',
+    'actions' => 'Actions',
+    'open_menu' => 'Open navigation menu',
+    'close_menu' => 'Close navigation menu',
+    'skip_to_main' => 'Skip to main content',
+
+    // Impersonation Labels
+    'impersonation_title' => 'Tenant Owner Impersonation',
+    'impersonation_badge' => 'Operational Delegation',
+    'impersonation_desc' => 'Impersonating the company Owner delegates authority to perform operational transactions and financial posting. All actions are attributed to the platform operator under full audit provenance.',
+    'impersonate_target' => 'Impersonate as',
+    'impersonate_owner_available' => 'Active Owner',
+    'impersonate_owner_missing' => 'No single active Owner is available for impersonation in this business.',
+    'impersonation_session_active' => 'Impersonation session is active.',
+    'breadcrumb_label' => 'Breadcrumb',
+    'status_active' => 'Active',
+    'status_inactive' => 'Inactive',
+    'status_suspended' => 'Suspended',
 ];

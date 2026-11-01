@@ -19,7 +19,6 @@ use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Route;
 use Livewire\Mechanisms\HandleRequests\HandleRequests;
 use Mockery\MockInterface;
 use Tests\TestCase;
@@ -53,7 +52,7 @@ final class PlatformSupportViewTest extends TestCase
         $this->post(route('platform.support.start', $this->company->public_id), ['reason' => 'Synthetic troubleshooting ticket', 'current_password' => 'password'])->assertRedirect(route('dashboard'));
     }
 
-    public function test_real_operator_password_starts_read_only_owner_view_and_restores_identity(): void
+    public function test_real_operator_password_starts_owner_impersonation_and_restores_identity(): void
     {
         $ownerBefore = DB::table('users')->where('id', $this->owner->id)->first();
         $this->start();
@@ -98,15 +97,17 @@ final class PlatformSupportViewTest extends TestCase
         $this->assertFalse(session()->has(SupportViewSession::KEY));
     }
 
-    public function test_all_mutating_livewire_ai_switch_download_and_profile_paths_are_blocked(): void
+    public function test_personal_credentials_platform_and_company_switching_remain_outside_tenant_impersonation(): void
     {
         $this->start();
         $before = DB::table('users')->where('id', $this->owner->id)->first();
-        foreach ([app(HandleRequests::class)->getUpdateUri(), '/assistant/memory/discard', '/company/switch', '/locale', '/settings/company-data/download'] as $url) {
+        foreach (['/company/switch', '/locale', '/user/two-factor-authentication'] as $url) {
             $this->post($url, ['locale' => 'en', 'public_id' => $this->company->public_id])->assertForbidden();
         }
+        $this->put('/user/password', ['password' => 'must-not-change'])->assertForbidden();
         $this->get('/profile')->assertForbidden();
         $this->get('/companies/select')->assertForbidden();
+        $this->get('/platform')->assertForbidden();
         $this->assertEquals($before, DB::table('users')->where('id', $this->owner->id)->first());
         $this->assertDatabaseCount('stock_movements', 0);
         $this->assertDatabaseCount('posting_batches', 0);
@@ -135,7 +136,7 @@ final class PlatformSupportViewTest extends TestCase
         $this->assertFalse(session()->has(SupportViewSession::KEY));
     }
 
-    public function test_read_only_guard_is_effective_even_when_subscription_enforcement_is_off(): void
+    public function test_forged_incomplete_delegation_is_denied_even_when_subscription_enforcement_is_off(): void
     {
         config(['subscriptions.enforcement_enabled' => false]);
         app(SupportViewContext::class)->activate(['operator_id' => $this->operator->id]);
@@ -149,30 +150,19 @@ final class PlatformSupportViewTest extends TestCase
         }
     }
 
-    public function test_only_signed_product_search_and_pagination_updates_are_allowed(): void
+    public function test_signed_livewire_search_and_pagination_preserve_the_effective_owner_and_company(): void
     {
         $this->start();
         $page = $this->get('/products')->assertOk();
-        $this->assertSame(1, preg_match('/wire:snapshot="([^"]+)"/', $page->getContent(), $match));
-        $snapshot = html_entity_decode($match[1], ENT_QUOTES | ENT_HTML5, 'UTF-8');
-        $uri = app(HandleRequests::class)->getUpdateUri();
+        $snapshot = $this->componentSnapshot($page->getContent(), 'pages.products.product-index');
         $component = ['snapshot' => $snapshot, 'updates' => ['search' => 'Synthetic'], 'calls' => [['path' => '', 'method' => '$commit', 'params' => []]]];
+        $uri = app(HandleRequests::class)->getUpdateUri();
         $this->postJson($uri, ['components' => [$component]], ['X-Livewire' => 'true'])->assertOk();
-        $component['updates'] = ['pageCompanyId' => 999];
-        $this->postJson($uri, ['components' => [$component]], ['X-Livewire' => 'true'])->assertForbidden();
-        $component['updates'] = [];
-        $component['calls'] = [['path' => '', 'method' => 'save', 'params' => []]];
-        $this->postJson($uri, ['components' => [$component]], ['X-Livewire' => 'true'])->assertForbidden();
         $component['calls'] = [['path' => '', 'method' => 'gotoPage', 'params' => [1, 'page']]];
         $this->postJson($uri, ['components' => [$component]], ['X-Livewire' => 'true'])->assertOk();
-        $decoded = json_decode($snapshot, true, 32, JSON_THROW_ON_ERROR);
-        $decoded['checksum'] = str_repeat('0', 64);
-        $component['snapshot'] = json_encode($decoded, JSON_THROW_ON_ERROR);
-        $component['calls'] = [];
-        $this->postJson($uri, ['components' => [$component]], ['X-Livewire' => 'true'])->assertForbidden();
+        $this->assertSame($this->operator->id, auth()->id());
+        $this->assertFalse(app(SupportViewContext::class)->active());
         $this->assertDatabaseCount('products', 0);
-        $this->assertDatabaseCount('stock_movements', 0);
-        $this->assertDatabaseCount('posting_batches', 0);
     }
 
     public function test_start_audit_failure_creates_no_support_authority_and_nested_start_is_denied(): void
@@ -193,16 +183,29 @@ final class PlatformSupportViewTest extends TestCase
         $this->assertDatabaseCount('stock_movements', 0);
     }
 
-    public function test_get_writer_backstop_rejects_raw_business_updates_and_restores_root_actor(): void
+    private function componentSnapshot(string $html, string $name): string
     {
-        Route::middleware('web')->get('/support-test-write', function () {
-            DB::table('companies')->where('id', $this->company->id)->update(['name_en' => 'Unwanted write']);
+        preg_match_all('/wire:snapshot="([^"]+)"/', $html, $matches);
+        foreach ($matches[1] as $encoded) {
+            $snapshot = html_entity_decode($encoded, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+            if (json_decode($snapshot, true, 64, JSON_THROW_ON_ERROR)['memo']['name'] === $name) {
+                return $snapshot;
+            }
+        }
+        $this->fail('The expected tenant component was not rendered: '.$name);
+    }
 
-            return response('bad');
-        })->name('products.support-probe');
+    public function test_canonical_product_write_uses_owner_permissions_and_audits_the_real_operator(): void
+    {
         $this->start();
-        $this->get('/support-test-write')->assertForbidden();
-        $this->assertSame('Synthetic Support Company', $this->company->fresh()->name_en);
+        $page = $this->get('/products/create')->assertOk();
+        $snapshot = $this->componentSnapshot($page->getContent(), 'pages.products.product-form');
+        $component = ['snapshot' => $snapshot, 'updates' => ['name_en' => 'Synthetic delegated product'],
+            'calls' => [['path' => '', 'method' => 'save', 'params' => []]]];
+        $this->postJson(app(HandleRequests::class)->getUpdateUri(), ['components' => [$component]], ['X-Livewire' => 'true'])->assertOk();
+        $this->assertDatabaseHas('products', ['company_id' => $this->company->id, 'name_en' => 'Synthetic delegated product', 'created_by' => $this->owner->id]);
+        $this->assertDatabaseHas('platform_audit_events', ['company_id' => $this->company->id, 'actor_user_id' => $this->operator->id, 'event_key' => 'impersonation.action']);
+        $this->assertSame(0, DB::table('company_user')->where('company_id', $this->company->id)->where('user_id', $this->operator->id)->count());
         $this->assertFalse(app(SupportViewContext::class)->active());
         $this->assertSame($this->operator->id, auth()->id());
     }
@@ -294,5 +297,31 @@ final class PlatformSupportViewTest extends TestCase
         $this->assertFalse(session()->has(SupportViewSession::KEY));
         $this->assertFalse(session()->has(PlatformSessionProof::KEY));
         $this->assertSame($this->operator->id, auth()->id());
+    }
+
+    public function test_prior_company_livewire_form_cannot_write_after_switching_impersonation_target(): void
+    {
+        $this->start();
+        $snapshot = $this->componentSnapshot($this->get('/products/create')->assertOk()->getContent(), 'pages.products.product-form');
+        $this->post(route('platform.support.end'))->assertRedirect();
+        app(CompanyContext::class)->clear();
+        $otherOwner = User::factory()->create();
+        $otherCompany = app(CreateCompanyAction::class)->execute($otherOwner, ['name_en' => 'Synthetic Other Company', 'name_ar' => 'Synthetic fixture', 'base_currency_code' => 'ILS']);
+        app(CompanyContext::class)->clear();
+        $this->post(route('platform.support.start', $otherCompany->public_id), ['reason' => 'Synthetic second company', 'current_password' => 'password'])->assertRedirect(route('dashboard'));
+        $component = ['snapshot' => $snapshot, 'updates' => ['name_en' => 'Must never cross companies'], 'calls' => [['path' => '', 'method' => 'save', 'params' => []]]];
+        $this->postJson(app(HandleRequests::class)->getUpdateUri(), ['components' => [$component]], ['X-Livewire' => 'true'])->assertForbidden();
+        $this->assertDatabaseCount('products', 0);
+        $this->assertDatabaseCount('stock_movements', 0);
+        $this->assertSame($this->operator->id, auth()->id());
+    }
+
+    public function test_legacy_support_permission_does_not_display_or_authorize_full_impersonation(): void
+    {
+        $this->grant->forceFill(['permissions' => ['company.read', 'company.support']])->save();
+        $this->post(route('password.confirm.store'), ['password' => 'password'])->assertRedirect();
+        $this->get(route('platform.companies.show', $this->company->public_id))->assertOk()->assertDontSee('id="support-reason"', false);
+        $this->post(route('platform.support.start', $this->company->public_id), ['reason' => 'Synthetic legacy permission', 'current_password' => 'password'])->assertForbidden();
+        $this->assertFalse(session()->has(SupportViewSession::KEY));
     }
 }

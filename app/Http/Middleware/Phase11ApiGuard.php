@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Middleware;
 
+use App\Application\Platform\SupportViewContext;
 use App\Models\CompanyUser;
 use App\Models\User;
 use App\Support\Tenancy\CompanyContext;
@@ -72,6 +73,8 @@ final class Phase11ApiGuard
 
         /** @var User $actor */
         $actor = auth()->user();
+        $delegation = app(SupportViewContext::class);
+        $sessionActor = $delegation->sessionActor($actor);
         $session = $request->session();
         $sessionId = (string) $session->getId();
         $now = now()->timestamp;
@@ -98,7 +101,7 @@ final class Phase11ApiGuard
 
         $sessionRow = DB::connection($sessionConnName)->table($table)
             ->where('id', $sessionId)
-            ->where('user_id', $actor->id)
+            ->where('user_id', $sessionActor->id)
             ->first();
 
         if ($sessionRow === null) {
@@ -134,7 +137,7 @@ final class Phase11ApiGuard
 
         if ($routeCompanyId !== null) {
             // Must match EXPLICIT selected session active_company_id, no default fallback
-            $sessionCompanyId = session('active_company_id');
+            $sessionCompanyId = $delegation->active() ? $delegation->details()['company_id'] : session('active_company_id');
             if ($sessionCompanyId === null) {
                 return $this->problem(
                     title: 'Forbidden',
@@ -220,6 +223,7 @@ final class Phase11ApiGuard
         $request->attributes->set('phase11_api_session', [
             'session_id' => $sessionId,
             'actor_id' => $actor->id,
+            'session_actor_id' => $sessionActor->id,
             'authentication_origin' => 'api_v1_session',
             'verified_at' => $now,
         ]);

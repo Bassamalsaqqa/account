@@ -360,7 +360,7 @@
 
             @if($isSupportView)
                 <span class="rounded-control border border-primary/20 bg-primary-50 px-3 py-2 text-xs font-bold text-primary">{{ __('support.title') }}</span>
-            @else
+            @endif
 
             @if(auth()->user()->can('sales.invoice.create') || auth()->user()->can('purchasing.purchase.create'))
                 <details class="relative app-quick-add">
@@ -381,6 +381,7 @@
 
             <livewire:global-search />
 
+            @if (! $isSupportView)
             <!-- Language Switcher -->
             @if ($isRtl)
                 @if ($englishEnabled)
@@ -460,17 +461,10 @@
             @if($isSupportView)
                 @include('platform.support-banner')
             @endif
-            @if (! $isSupportView && \App\Application\AI\AiGovernance::isPresentationEligible($activeCompany))
+            @if (\App\Application\AI\AiGovernance::isPresentationEligible($activeCompany))
                 <livewire:ai.assistant-launcher :context="request()->routeIs('invoices.create') ? 'sales' : (request()->routeIs('purchases.create') ? 'purchase' : 'auto')" />
             @endif
-            @if($isSupportView && ! request()->routeIs('products.index'))
-                <fieldset disabled class="min-w-0">
-                    <legend class="sr-only">{{ __('support.disabled_controls') }}</legend>
-                    {{ $slot }}
-                </fieldset>
-            @else
-                {{ $slot }}
-            @endif
+            {{ $slot }}
         </main>
     </div>
 

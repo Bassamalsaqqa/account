@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Application\AI;
 
+use App\Application\Platform\SupportViewContext;
 use App\Application\Platform\TenantWriteAccess;
 use App\Models\AiCompanyPolicy;
 use App\Models\AiProviderConnection;
@@ -634,7 +635,8 @@ final class AiGovernance
 
     private function reauthenticate(User $actor, #[SensitiveParameter] string $password): void
     {
-        $fresh = User::whereKey($actor->id)->firstOrFail();
+        $passwordActor = app(SupportViewContext::class)->sessionActor($actor);
+        $fresh = User::whereKey($passwordActor->id)->firstOrFail();
         if (! Hash::check($password, $fresh->password)) {
             throw new AuthorizationException('Fresh password confirmation is required.');
         }

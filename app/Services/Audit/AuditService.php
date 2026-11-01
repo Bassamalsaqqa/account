@@ -2,6 +2,7 @@
 
 namespace App\Services\Audit;
 
+use App\Application\Platform\SupportViewContext;
 use App\Exceptions\CompanyReassignmentException;
 use App\Models\AuditEvent;
 use App\Support\Tenancy\CompanyContext;
@@ -56,6 +57,15 @@ class AuditService
         }
 
         $actorId = $actorUserId ?? auth()->id();
+        $support = app(SupportViewContext::class);
+        if ($support->active()) {
+            $details = $support->details();
+            $actorId = (int) $details['operator_id'];
+            $meta = array_merge($meta ?? [], ['impersonation' => [
+                'operator_user_id' => $actorId, 'effective_user_id' => (int) $details['target_user_id'],
+                'correlation_id' => $details['correlation_id'], 'authority' => $details['authority'] ?? 'operator_session',
+            ]]);
+        }
 
         $ip = request()->ip();
         $userAgent = Str::limit(request()->userAgent() ?? '', 500);

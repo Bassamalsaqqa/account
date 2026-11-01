@@ -103,7 +103,7 @@ Route::prefix('platform')->name('platform.')->middleware(['auth', 'throttle:plat
     Route::get('/companies/{publicId}/subscription', [PlatformSubscriptionController::class, 'show'])->middleware('platform:subscription.manage')->name('companies.subscription.show');
     Route::post('/companies/{publicId}/subscription/{operation}', [PlatformSubscriptionController::class, 'update'])->middleware([RequirePlatformBillingPassword::class, 'platform:subscription.manage'])->whereIn('operation', ['configure', 'renew', 'payment'])->name('companies.subscription.update');
     Route::get('/audit', [PlatformController::class, 'audit'])->middleware('platform:audit.read')->name('audit');
-    Route::post('/companies/{publicId}/support', [PlatformSupportController::class, 'start'])->middleware('platform:company.support')->name('support.start');
+    Route::post('/companies/{publicId}/support', [PlatformSupportController::class, 'start'])->middleware('platform:company.impersonate')->name('support.start');
     Route::post('/support/end', [PlatformSupportController::class, 'end'])->name('support.end');
     Route::post('/support/locale', [PlatformSupportController::class, 'locale'])->name('support.locale');
 });

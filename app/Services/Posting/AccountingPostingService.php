@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Posting;
 
+use App\Application\Platform\SupportViewContext;
 use App\Application\Platform\TenantWriteAccess;
 use App\Domain\Accounting\Exceptions\ImmutableRecordException;
 use App\Domain\Money\ValueObjects\ExchangeRate;
@@ -288,6 +289,7 @@ class AccountingPostingService
                     'posted_at' => now(),
                     'reversal_of_id' => null,
                 ]);
+                app(SupportViewContext::class)->recordEffect($batch, 'accounting.posted');
 
                 foreach ($command->lines as $line) {
                     PostingLine::create([
@@ -534,6 +536,7 @@ class AccountingPostingService
                 'reversal_of_id' => $lockedOriginal->id,
                 'reversed_by_batch_id' => null,
             ]);
+            app(SupportViewContext::class)->recordEffect($reversalBatch, 'accounting.posted');
 
             // Build and persist opposite lines (Debit becomes Credit, Credit becomes Debit)
             // Reversal of historical lines is valid even if account was subsequently deactivated.
