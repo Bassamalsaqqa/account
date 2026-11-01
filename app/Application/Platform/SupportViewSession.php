@@ -6,10 +6,12 @@ namespace App\Application\Platform;
 
 use App\Models\Company;
 use App\Models\CompanyUser;
+use App\Models\PlatformAuditEvent;
 use App\Models\PlatformOperatorGrant;
 use App\Models\User;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
@@ -31,7 +33,7 @@ final class SupportViewSession
         }
         $state = DB::transaction(fn (): array => $this->createState($operator, $companyPublicId, $reason, $password));
         // No target login, remember token, membership, password or user preference is modified.
-        $request->session()->regenerate();
+        $request->session()->regenerate(true);
         $request->session()->put(self::KEY, $state);
     }
 
@@ -68,7 +70,14 @@ final class SupportViewSession
         $operator = $request->user();
         if (! is_array($state) || ! $operator instanceof User || ($state['operator_id'] ?? null) !== (int) $operator->id
             || ! is_int($state['expires_at'] ?? null) || $state['expires_at'] <= now()->timestamp || ! is_int($state['started_at'] ?? null) || $state['started_at'] > now()->timestamp
-            || ($state['expires_at'] - $state['started_at']) !== 900) {
+            || ($state['expires_at'] - $state['started_at']) !== 900 || ! is_string($state['correlation_id'] ?? null) || ! Str::isUuid($state['correlation_id'])) {
+            throw new AuthorizationException;
+        }
+        // Denials only: never cache a grant. A late session response cannot revive an ended view.
+        if (Cache::get('platform-support-revoked:'.$state['correlation_id']) === true
+            || PlatformAuditEvent::where('actor_user_id', $operator->id)->where('company_id', $state['company_id'] ?? 0)
+                ->where('event_key', 'support.ended')->where('created_at', '>=', now()->subMinutes(16))
+                ->where('metadata->correlation_id', $state['correlation_id'])->exists()) {
             throw new AuthorizationException;
         }
         $grant = app(PlatformAccess::class)->authorize('company.support');
@@ -94,15 +103,34 @@ final class SupportViewSession
         if (! is_array($state)) {
             return;
         }
-        $request->session()->regenerate();
-        // Exiting must always remove authority even if audit storage is unavailable.
+        $request->session()->regenerate(true);
+        $revoked = false;
         try {
-            app(PlatformAudit::class)->record('support.ended', $request->user()?->id,
-                is_int($state['company_id'] ?? null) ? $state['company_id'] : null,
-                ['owner_user_id' => is_int($state['target_user_id'] ?? null) ? $state['target_user_id'] : null,
-                    'correlation_id' => is_string($state['correlation_id'] ?? null) ? $state['correlation_id'] : null, 'exit_reason' => $exitReason]);
+            if (is_string($state['correlation_id'] ?? null) && Str::isUuid($state['correlation_id'])) {
+                $revoked = Cache::put('platform-support-revoked:'.$state['correlation_id'], true, 1200);
+            }
+        } catch (\Throwable $e) {
+            Log::warning('Support revocation cache unavailable.', ['exception_class' => get_class($e)]);
+        }
+        // Current authority is already removed. Do not duplicate durable revocations on replay.
+        try {
+            $ended = PlatformAuditEvent::where('actor_user_id', $request->user()?->id)->where('company_id', $state['company_id'] ?? 0)
+                ->where('event_key', 'support.ended')->where('created_at', '>=', now()->subMinutes(16))
+                ->where('metadata->correlation_id', $state['correlation_id'] ?? null)->exists();
+            if (! $ended) {
+                app(PlatformAudit::class)->record('support.ended', $request->user()?->id,
+                    is_int($state['company_id'] ?? null) ? $state['company_id'] : null,
+                    ['owner_user_id' => is_int($state['target_user_id'] ?? null) ? $state['target_user_id'] : null,
+                        'correlation_id' => is_string($state['correlation_id'] ?? null) ? $state['correlation_id'] : null, 'exit_reason' => $exitReason]);
+            }
+            $revoked = true;
         } catch (\Throwable $e) {
             Log::warning('Support view ended; audit persistence failed.', ['exception_class' => get_class($e)]);
+        }
+        if (! $revoked) {
+            // No storage success is fabricated. Current authority is cleared and reauthentication required.
+            $request->session()->forget(PlatformSessionProof::KEY);
+            Log::error('Support revocation storage failed; current platform proof removed.');
         }
     }
 }

@@ -6,6 +6,7 @@ namespace Tests\Feature\ManagedSaas;
 
 use App\Actions\Company\CreateCompanyAction;
 use App\Application\Platform\PlatformAccess;
+use App\Application\Platform\PlatformSessionProof;
 use App\Application\Platform\SupportViewContext;
 use App\Application\Platform\SupportViewSession;
 use App\Application\Platform\TenantWriteAccess;
@@ -16,6 +17,7 @@ use App\Models\User;
 use App\Support\Tenancy\CompanyContext;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Route;
 use Livewire\Mechanisms\HandleRequests\HandleRequests;
@@ -242,5 +244,55 @@ final class PlatformSupportViewTest extends TestCase
         $this->get('/products')->assertForbidden();
         $this->assertSame($this->operator->id, auth()->id());
         $this->assertFalse(app(SupportViewContext::class)->active());
+    }
+
+    public function test_exited_support_proof_cannot_be_revived_by_a_late_session_response(): void
+    {
+        $this->start();
+        $stale = session(SupportViewSession::KEY);
+        $this->post(route('platform.support.end'))->assertRedirect(route('platform.index'));
+        Cache::flush(); // Durable audit revocation must survive cache eviction.
+        $this->withSession([SupportViewSession::KEY => $stale])->get('/products')->assertRedirect(route('platform.index'));
+        $this->assertSame(1, PlatformAuditEvent::where('event_key', 'support.ended')->count());
+        $this->assertFalse(session()->has(SupportViewSession::KEY));
+        $this->assertSame($this->operator->id, auth()->id());
+    }
+
+    public function test_exit_revocation_survives_audit_failure_and_stale_session_replay(): void
+    {
+        $this->start();
+        $stale = session(SupportViewSession::KEY);
+        PlatformAuditEvent::creating(static function (PlatformAuditEvent $event): void {
+            if ($event->event_key === 'support.ended') {
+                throw new \RuntimeException('Synthetic exit audit failure');
+            }
+        });
+        $this->post(route('platform.support.end'))->assertRedirect(route('platform.index'));
+        $this->withSession([SupportViewSession::KEY => $stale])->get('/products')->assertRedirect(route('platform.index'));
+        $this->assertFalse(session()->has(SupportViewSession::KEY));
+        $this->assertSame($this->operator->id, auth()->id());
+    }
+
+    public function test_cache_revocation_failure_uses_durable_audit_and_double_failure_requires_reauthentication(): void
+    {
+        $this->start();
+        $stale = session(SupportViewSession::KEY);
+        $cache = Cache::getFacadeRoot();
+        Cache::shouldReceive('put')->once()->andReturn(false);
+        $this->post(route('platform.support.end'))->assertRedirect(route('platform.index'));
+        Cache::swap($cache);
+        $this->withSession([SupportViewSession::KEY => $stale])->get('/products')->assertRedirect(route('platform.index'));
+        $this->start();
+        PlatformAuditEvent::creating(static function (PlatformAuditEvent $event): void {
+            if ($event->event_key === 'support.ended') {
+                throw new \RuntimeException('Synthetic combined storage failure');
+            }
+        });
+        Cache::shouldReceive('put')->once()->andReturn(false);
+        $this->post(route('platform.support.end'))->assertRedirect(route('platform.index'));
+        Cache::swap($cache);
+        $this->assertFalse(session()->has(SupportViewSession::KEY));
+        $this->assertFalse(session()->has(PlatformSessionProof::KEY));
+        $this->assertSame($this->operator->id, auth()->id());
     }
 }
