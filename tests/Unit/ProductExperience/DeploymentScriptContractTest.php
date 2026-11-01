@@ -527,6 +527,36 @@ class DeploymentScriptContractTest extends TestCase
         $source = file_get_contents(dirname(__DIR__, 3).'/public/.htaccess');
         $this->assertIsString($source);
         $this->assertMatchesRegularExpression('/^\s*AddType\s+application\/manifest\+json\s+\.webmanifest\s*$/m', $source);
+        $this->assertMatchesRegularExpression('/^\s*RewriteBase\s+\/\s*$/m', $source);
+    }
+
+    public function test_build_replacement_removes_obsolete_chunks_and_retains_uploads(): void
+    {
+        $bash = $this->resolveBashBinary();
+        if ($bash === null) {
+            $this->markTestSkipped('Bash binary is not available in this environment.');
+        }
+        $fixtureDir = $this->createSyntheticDeploymentFixture();
+        try {
+            mkdir($fixtureDir.'/app/public/build/assets');
+            file_put_contents($fixtureDir.'/app/public/build/assets/current.js', 'current-release');
+            file_put_contents($fixtureDir.'/app/public/build/manifest.json', '{"app":{"file":"assets/current.js"}}');
+            mkdir($fixtureDir.'/web/build/assets', 0755, true);
+            file_put_contents($fixtureDir.'/web/build/assets/obsolete.js', 'obsolete-release');
+            file_put_contents($fixtureDir.'/web/build/manifest.json', '{"old":{"file":"assets/obsolete.js"}}');
+            mkdir($fixtureDir.'/web/uploads');
+            file_put_contents($fixtureDir.'/web/uploads/customer.txt', 'preserved-upload');
+            $this->writeStubPhp($fixtureDir);
+            $result = $this->runDeploymentScript($bash, $fixtureDir);
+            $this->assertSame(0, $result['exit_code'], $result['output']);
+            $this->assertSame('current-release', file_get_contents($fixtureDir.'/web/build/assets/current.js'));
+            $this->assertSame('{"app":{"file":"assets/current.js"}}', file_get_contents($fixtureDir.'/web/build/manifest.json'));
+            $this->assertFileDoesNotExist($fixtureDir.'/web/build/assets/obsolete.js');
+            $this->assertSame('preserved-upload', file_get_contents($fixtureDir.'/web/uploads/customer.txt'));
+            $this->assertSame([], glob($fixtureDir.'/web/.build-release-*'));
+        } finally {
+            $this->removeDirectory($fixtureDir);
+        }
     }
 
     public function test_static_pwa_assets_are_published_without_touching_uploaded_business_files(): void
