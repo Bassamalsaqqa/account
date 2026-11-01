@@ -6,6 +6,7 @@ use App\Http\Controllers\ExpenseAttachmentController;
 use App\Http\Controllers\PdfDocumentController;
 use App\Http\Controllers\PlatformController;
 use App\Http\Controllers\PlatformSubscriptionController;
+use App\Http\Controllers\PlatformSupportController;
 use App\Http\Controllers\PublicCatalogController;
 use App\Http\Controllers\PublicShareController;
 use App\Http\Controllers\PurchasingDocumentController;
@@ -93,7 +94,7 @@ Route::get('/', function () {
     return redirect()->route('dashboard');
 });
 
-// Separate control plane: no company Owner inheritance, impersonation or Livewire mutators.
+// Separate control plane: company Owner roles do not confer platform authority.
 Route::prefix('platform')->name('platform.')->middleware(['auth', 'throttle:platform'])->group(function () {
     Route::get('/', [PlatformController::class, 'index'])->middleware('platform:company.read')->name('index');
     Route::get('/companies/create', [PlatformController::class, 'create'])->middleware(['platform:company.provision', 'password.confirm'])->name('companies.create');
@@ -102,6 +103,9 @@ Route::prefix('platform')->name('platform.')->middleware(['auth', 'throttle:plat
     Route::get('/companies/{publicId}/subscription', [PlatformSubscriptionController::class, 'show'])->middleware('platform:subscription.manage')->name('companies.subscription.show');
     Route::post('/companies/{publicId}/subscription/{operation}', [PlatformSubscriptionController::class, 'update'])->middleware([RequirePlatformBillingPassword::class, 'platform:subscription.manage'])->whereIn('operation', ['configure', 'renew', 'payment'])->name('companies.subscription.update');
     Route::get('/audit', [PlatformController::class, 'audit'])->middleware('platform:audit.read')->name('audit');
+    Route::post('/companies/{publicId}/support', [PlatformSupportController::class, 'start'])->middleware('platform:company.support')->name('support.start');
+    Route::post('/support/end', [PlatformSupportController::class, 'end'])->name('support.end');
+    Route::post('/support/locale', [PlatformSupportController::class, 'locale'])->name('support.locale');
 });
 
 Route::post('locale', function (Request $request, CompanyContext $context) {

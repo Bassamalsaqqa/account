@@ -3,6 +3,7 @@
 namespace App\Providers;
 
 use App\Application\AI\AiProviderDeadline;
+use App\Application\Platform\SupportViewContext;
 use App\Application\Platform\TenantWriteAccess;
 use App\Http\Middleware\SetCompanyContext;
 use App\Models\Company;
@@ -37,6 +38,7 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
+        $this->app->scoped(SupportViewContext::class);
         $this->app->scoped(TenantWriteAccess::class, fn () => new TenantWriteAccess);
         $this->app->scoped(AiProviderDeadline::class, fn () => new AiProviderDeadline);
         $this->app->singleton(CompanyContext::class, fn () => new CompanyContext);

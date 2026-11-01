@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Middleware\ApplicationSecurityHeaders;
+use App\Http\Middleware\ApplySupportView;
 use App\Http\Middleware\EnsureCompanyContext;
 use App\Http\Middleware\EnsurePlatformAccess;
 use App\Http\Middleware\Phase11ApiBoundary;
@@ -24,6 +25,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->prepend(ApplicationSecurityHeaders::class);
         $middleware->web(prepend: [PublicDocumentHeaders::class]);
         $middleware->web(append: [
+            ApplySupportView::class,
             SetCompanyContext::class,
             SetLocale::class,
         ]);

@@ -34,6 +34,7 @@
                             <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-mono font-bold {{ $badgeClass }}" dir="ltr">
                                 {{ $event->event_key }}
                             </span>
+                        @include('platform.support-audit')
                         </td>
                         <td class="px-5 py-3.5 text-sm text-text-secondary">
                             @if($event->actor_user_id)
@@ -77,6 +78,7 @@
                     <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-mono font-bold {{ $badgeClass }}" dir="ltr">
                         {{ $event->event_key }}
                     </span>
+                        @include('platform.support-audit')
                     <time class="text-[11px] font-mono text-text-muted shrink-0" dir="ltr">{{ $event->created_at }} UTC</time>
                 </div>
                 <div class="text-xs text-text-secondary flex flex-wrap gap-x-4 gap-y-1 pt-1 border-t border-border/60">

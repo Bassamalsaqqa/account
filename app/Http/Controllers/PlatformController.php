@@ -91,7 +91,7 @@ final class PlatformController extends Controller
     public function audit(): View
     {
         app(PlatformAccess::class)->authorize('audit.read');
-        $events = DB::table('platform_audit_events')->select(['event_key', 'actor_user_id', 'company_id', 'created_at'])
+        $events = DB::table('platform_audit_events')->select(['event_key', 'actor_user_id', 'company_id', 'created_at', 'metadata'])
             ->orderByDesc('id')->paginate(30);
 
         return view('platform.audit', compact('events'));
