@@ -214,6 +214,7 @@
                             @endphp
                             <tr wire:key="inv-line-{{ $index }}">
                                 <td class="py-2 px-2 align-top space-y-1">
+<div class="entry-product-fields">
                                     <select id="invoice-desktop-line-{{ $index }}-product-id" aria-label="{{ __('sales.product') }} {{ $index + 1 }}" @error('lines.'.$index.'.product_id') aria-invalid="true" aria-describedby="invoice-desktop-line-{{ $index }}-product-id-error" @enderror wire:change="selectProduct({{ $index }}, $event.target.value)"
                                             class="w-full h-8 px-2 rounded-control border border-border bg-canvas text-xs" :disabled="documentBusy || saving">
                                         <option value="">-- {{ __('sales.product') }} --</option>
@@ -228,7 +229,9 @@
                                            placeholder="{{ __('sales.description') }}..."
                                            required
                                            class="w-full h-8 px-2 rounded-control border border-border bg-canvas text-xs text-text-primary"  :disabled="documentBusy || saving"/> @error('lines.'.$index.'.item_description') <span id="invoice-desktop-line-{{ $index }}-item-description-error" role="alert" class="text-danger text-[11px] block">{{ $message }}</span> @enderror
-                                </td>
+
+</div>
+</td>
 
                                 <td class="py-2 px-2 align-top">
                                     @if ($selectedProduct && $selectedProduct->productUnits->isNotEmpty())
