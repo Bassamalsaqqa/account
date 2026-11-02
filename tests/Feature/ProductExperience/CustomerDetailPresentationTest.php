@@ -34,7 +34,7 @@ class CustomerDetailPresentationTest extends TestCase
             ->assertSee('12.34 ILS')->assertSee('ILS');
     }
 
-    public function test_null_customer_currency_uses_three_decimal_jod_company_currency(): void
+    public function test_null_customer_currency_keeps_exact_jod_balance_with_two_decimal_display(): void
     {
         app(CompanyContext::class)->clear();
         $this->company = app(CreateCompanyAction::class)->execute($this->owner, ['name_ar' => 'شركة الدينار', 'base_currency_code' => 'JOD']);
@@ -46,7 +46,7 @@ class CustomerDetailPresentationTest extends TestCase
 
         Livewire::test(CustomerDetail::class, ['publicId' => $this->customer->public_id])
             ->assertViewHas('defaultCurr', 'JOD')->assertViewHas('totalOutstanding', '12.345000')
-            ->assertSee('12.345 JOD');
+            ->assertSee('12.35 JOD')->assertDontSee('12.345 JOD');
     }
 
     public function test_credit_limit_is_labelled_in_company_base_currency_even_when_customer_uses_jod(): void

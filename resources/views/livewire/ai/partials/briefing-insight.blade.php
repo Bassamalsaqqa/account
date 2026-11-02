@@ -21,7 +21,7 @@
         <dl class="flex flex-wrap gap-x-4 gap-y-2 text-sm">
             @foreach ($insight['values'] as $key => $value)
                 @if (! in_array($key, ['valid_count', 'unknown_count', 'total_active_lots'], true))
-                    <div><dt class="inline text-text-secondary">{{ __('assistant_briefing.insights.'.$key) }}:</dt> <dd class="inline font-semibold"><bdi>{{ $value }}</bdi></dd></div>
+                    <div><dt class="inline text-text-secondary">{{ __('assistant_briefing.insights.'.$key) }}:</dt> <dd class="inline font-semibold"><bdi>{{ app(\App\Application\Reporting\Presentation\ReportPresenter::class)->displayMetric((string) $key, $value) }}</bdi></dd></div>
                 @endif
             @endforeach
         </dl>

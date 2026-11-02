@@ -10,7 +10,7 @@
     padding: 0.625rem 0.75rem;
 }
 
-.data-table tbody td {
+.data-table tbody :is(td, th) {
     white-space: nowrap;
 }
 
@@ -62,11 +62,11 @@
     }
 }
 
-.data-table tbody td:not(:has(input, textarea, select)) > .block {
+.data-table tbody :is(td, th):not(:has(input, textarea, select)) > .block {
     display: inline;
     margin-inline-end: 0.375rem;
 }
-.data-table tbody td:not(:has(input, textarea, select)) > .flex-col {
+.data-table tbody :is(td, th):not(:has(input, textarea, select)) > .flex-col {
     flex-direction: row;
     align-items: center;
     gap: 0.5rem;

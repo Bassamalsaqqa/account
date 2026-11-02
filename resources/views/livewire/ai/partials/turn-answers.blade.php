@@ -57,7 +57,7 @@
                                 <tr class="border-t border-border">
                                     @foreach ($row as $column => $value)
                                         @php
-                                            $displayValue = $value ?? __('assistant_v2.value_unavailable');
+                                            $displayValue = app(\App\Application\Reporting\Presentation\ReportPresenter::class)->displayMetric((string) $column, $value) ?? __('assistant_v2.value_unavailable');
                                             if (is_bool($value)) {
                                                 $displayValue = __('assistant_v2.value_'.($value ? 'yes' : 'no'));
                                             } elseif (in_array($column, ['stock_status', 'expiry_status', 'account_type'], true)

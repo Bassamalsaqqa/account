@@ -348,7 +348,7 @@ final class RemainingSalesIntegrityTest extends SalesInvoicePostingAndFefoTest
             expiresAt: now()->addDays(7), password: 'statement-confirmation');
         app(CompanyContext::class)->clear();
         auth()->logout();
-        $this->get($share['url'])->assertOk()->assertDontSee('0.001');
+        $this->get($share['url'])->assertOk()->assertDontSee('0.00 JOD');
         $this->app->instance('env', 'phase9-csrf-test');
         try {
             $this->withSession(['_token' => 'phase4-statement-confirmation'])->post($share['url'], [
@@ -363,7 +363,7 @@ final class RemainingSalesIntegrityTest extends SalesInvoicePostingAndFefoTest
         $this->assertStringNotContainsString('cogs', $json);
         $this->assertStringNotContainsString('App\\Models', $json);
         $this->assertSame('0.001', $result['data']['statement']['currencies']['JOD']['closing_balance']);
-        $this->get('/share/'.$share['raw_token'])->assertOk()->assertSee('0.001');
+        $this->get('/share/'.$share['raw_token'])->assertOk()->assertSee('0.00 JOD')->assertDontSee('0.001');
     }
 
     public function test_draft_quantity_and_financial_total_tampering_is_rejected_atomically(): void

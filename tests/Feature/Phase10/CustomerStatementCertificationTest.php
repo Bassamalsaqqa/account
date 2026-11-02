@@ -81,7 +81,7 @@ final class CustomerStatementCertificationTest extends TestCase
 
         if ($format === 'print') {
             $response->assertSee('dir="'.($locale === 'ar' ? 'rtl' : 'ltr').'"', false);
-            foreach (['100.00 ILS', '140.00 ILS', '20.00 USD', '3.125 JOD', '4.250 JOD'] as $figure) {
+            foreach (['100.00 ILS', '140.00 ILS', '20.00 USD', '3.13 JOD', '4.25 JOD'] as $figure) {
                 $response->assertSee($figure, false);
             }
             $response->assertDontSee('999.00', false);

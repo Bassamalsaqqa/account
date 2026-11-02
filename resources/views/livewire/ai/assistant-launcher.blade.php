@@ -121,7 +121,7 @@
                                                     @if ($totalItem['value'] === null)
                                                         <span class="text-text-secondary">—</span>
                                                     @else
-                                                        {{ $totalItem['value'] }}@if (!empty($totalItem['currency'])) <span class="text-xs font-normal text-text-secondary">{{ $totalItem['currency'] }}</span>@endif
+                                                        {{ !empty($totalItem['currency']) ? \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($totalItem['value']) : \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($totalItem['value']) }}@if (!empty($totalItem['currency'])) <span class="text-xs font-normal text-text-secondary">{{ $totalItem['currency'] }}</span>@endif
                                                     @endif
                                                 </span>
                                             </div>
@@ -155,18 +155,18 @@
                                             <tbody class="divide-y divide-border/60 bg-surface">
                                                 @foreach ($reportResult['rows'] as $row)
                                                     <tr class="hover:bg-primary-50/30">
-                                                        @foreach ($row as $val)
+                                                        @foreach ($row as $valueKey => $val)
                                                             <td class="px-2.5 py-1.5 text-text-primary {{ is_numeric($val) ? 'num' : '' }}" {{ is_numeric($val) ? 'dir=ltr' : '' }}>
                                                                 @if (is_array($val))
                                                                     @foreach ($val as $subKey => $subVal)
-                                                                        <span class="inline-block num mr-1" dir="ltr">{{ is_scalar($subVal) ? (string) $subVal : '' }} {{ is_string($subKey) ? $subKey : '' }}</span>
+                                                                        <span class="inline-block num mr-1" dir="ltr">{{ is_scalar($subVal) ? app(\App\Application\Reporting\Presentation\ReportPresenter::class)->displayMetric((string) $subKey, $subVal) : '' }} {{ is_string($subKey) ? $subKey : '' }}</span>
                                                                     @endforeach
                                                                 @elseif ($val === null)
                                                                     <span class="text-text-secondary">{{ __('assistant_v2.value_unavailable') }}</span>
                                                                 @elseif (is_bool($val))
                                                                     {{ __($val ? 'assistant_v2.value_yes' : 'assistant_v2.value_no') }}
                                                                 @else
-                                                                    {{ (string) $val }}
+                                                                    {{ app(\App\Application\Reporting\Presentation\ReportPresenter::class)->displayMetric((string) $valueKey, $val) }}
                                                                 @endif
                                                             </td>
                                                         @endforeach

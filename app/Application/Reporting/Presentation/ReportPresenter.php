@@ -26,6 +26,26 @@ final class ReportPresenter
             : SalesMoneyFormatter::displayMoney($value);
     }
 
+    /** Format known report metrics only; numeric identifiers and raw DTO/export values remain untouched. */
+    public function displayMetric(string $key, mixed $value): ?string
+    {
+        $text = $this->value([$key => $value], $key);
+        if ($text === null || ! preg_match('/^-?\d+(?:\.\d+)?$/D', $text)) {
+            return $text;
+        }
+        if (preg_match('/(?:^|_)(?:id|code|number|sku|barcode|date|name|year)$/D', $key)) {
+            return $text;
+        }
+        $quantity = preg_match('/quantity|(?:^|_)(?:count|rows|days|units|lots|checks)(?:_|$)|percent|margin|rate|ratio|conversion/', $key) === 1;
+        if ($quantity) {
+            return SalesMoneyFormatter::displayQuantity($text);
+        }
+        $money = preg_match('/^[A-Z]{3}$/D', $key) === 1
+            || preg_match('/(?:^|_)(?:amount|total|subtotal|cost|price|value|balance|salary|payable|receivable|debit|credit|discounts?|tax|revenue|profit|valuation|fee|paid|outstanding|earned|applied|sales|purchases|cogs|expenses?|loss|gain)(?:_|$)/', $key) === 1;
+
+        return $money ? SalesMoneyFormatter::displayMoney($text) : $text;
+    }
+
     /** @param array<string, mixed> $row */
     public function value(array $row, string $key): ?string
     {
@@ -95,7 +115,7 @@ final class ReportPresenter
     private function baseAmount(string $key): bool
     {
         return ! str_contains($key, 'quantity')
-            && ! str_contains($key, 'count')
+            && preg_match('/(?:^|_)count(?:_|$)/', $key) !== 1
             && ! str_contains($key, 'margin')
             && ! str_contains($key, 'percent')
             && (str_contains($key, '_base') || str_starts_with($key, 'base_'));
@@ -120,7 +140,7 @@ final class ReportPresenter
                     $label = __('reports.summary');
                 }
 
-                $isCountOrQty = str_contains((string) $key, 'count')
+                $isCountOrQty = preg_match('/(?:^|_)count(?:_|$)/', (string) $key) === 1
                     || str_contains((string) $key, 'quantity')
                     || str_contains((string) $key, 'margin')
                     || str_contains((string) $key, 'percent')

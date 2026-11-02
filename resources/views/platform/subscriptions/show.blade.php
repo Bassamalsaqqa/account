@@ -401,7 +401,7 @@
                         <p class="font-bold text-sm text-text-primary">{{ __('subscriptions.review_title') }}</p>
                         <div class="grid grid-cols-2 gap-2 text-xs">
                             <div><span class="text-text-muted">{{ __('subscriptions.plan') }}:</span> <strong x-text="summary.plan"></strong></div>
-                            <div><span class="text-text-muted">{{ __('subscriptions.fee') }}:</span> <strong dir="ltr" x-text="summary.fee + ' ' + summary.currency"></strong></div>
+                            <div><span class="text-text-muted">{{ __('subscriptions.fee') }}:</span> <strong dir="ltr" x-text="window.accountingDisplayMoney(summary.fee) + ' ' + summary.currency"></strong></div>
                             <div><span class="text-text-muted">{{ __('subscriptions.grace_days') }}:</span> <strong x-text="summary.grace_days"></strong></div>
                             <div><span class="text-text-muted">{{ __('subscriptions.reminder_days') }}:</span> <strong dir="ltr" x-text="summary.reminder_days"></strong></div>
                             <div><span class="text-text-muted">{{ __('subscriptions.starts_on') }}:</span> <strong dir="ltr" x-text="summary.starts_on"></strong></div>
@@ -706,7 +706,7 @@
                                 {{ app()->getLocale() === 'ar'
                                     ? 'تسجيل دفعة مستلمة بمبلغ '
                                     : 'Recording a received payment of ' }}
-                                <strong dir="ltr" x-text="amount + ' ' + currency"></strong>
+                                <strong dir="ltr" x-text="window.accountingDisplayMoney(amount) + ' ' + currency"></strong>
                                 {{ app()->getLocale() === 'ar'
                                     ? ' للرسم رقم '
                                     : ' for Charge #' }}
