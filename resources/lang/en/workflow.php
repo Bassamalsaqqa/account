@@ -3,6 +3,12 @@
 declare(strict_types=1);
 
 return [
+    'open' => 'Open',
+    'edit' => 'Edit',
+    'delete' => 'Delete',
+    'more_options' => 'More options (optional)',
+    'document_options' => 'Warehouse, currency and due date',
+    'create_steps' => 'Choose the customer, add items, then save or confirm.',
     'add_scanned_product' => 'Add item',
     'scan_entry_help' => 'Scan or enter an exact barcode or SKU, then press Enter or Add item.',
     'scan_added' => 'Item added. Ready for the next scan.',

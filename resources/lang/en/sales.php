@@ -2,8 +2,8 @@
 
 return [
     'delete_draft' => 'Delete draft',
-    'delete_draft_confirm' => 'Delete this unposted draft and its lines? This cannot be undone. No stock, payment or accounting entry will be changed.',
-    'delete_draft_blocked' => 'This draft has linked history or is no longer an ordinary unposted draft. It cannot be deleted.',
+    'delete_draft_confirm' => 'Delete this draft and its items? This cannot be undone. Stock and payments will stay unchanged.',
+    'delete_draft_blocked' => 'This draft is already linked to another record or has been confirmed. It cannot be deleted.',
     'draft_deleted' => 'Draft invoice deleted.',
     'optional_details' => 'Notes and terms (optional)',
     'tax_number' => 'Tax Number',
@@ -12,7 +12,7 @@ return [
     'invoices' => 'Invoices',
     'quotations' => 'Quotations',
     'returns' => 'Returns',
-    'payments' => 'Receipts',
+    'payments' => 'Payments received',
     'customer' => 'Customer',
     'customers' => 'Customers',
     'status' => 'Status',
@@ -23,7 +23,7 @@ return [
     'subtotal' => 'Subtotal',
     'discount' => 'Discount',
     'tax' => 'Tax',
-    'grand_total' => 'Grand Total',
+    'grand_total' => 'Total',
     'currency' => 'Currency',
     'exchange_rate' => 'Exchange Rate',
     'notes' => 'Notes',
@@ -45,7 +45,7 @@ return [
     'active' => 'Active',
     'inactive' => 'Inactive',
     'draft' => 'Draft',
-    'posted' => 'Posted',
+    'posted' => 'Confirmed',
     'voided' => 'Voided',
     'unpaid' => 'Unpaid',
     'partially_paid' => 'Partially Paid',
@@ -53,10 +53,10 @@ return [
     'credit' => 'Credit',
     'created_successfully' => 'Created successfully',
     'updated_successfully' => 'Updated successfully',
-    'posted_successfully' => 'Posted successfully',
+    'posted_successfully' => 'Confirmed successfully',
     'voided_successfully' => 'Voided successfully',
     'reversed_successfully' => 'Reversed successfully',
-    'cannot_modify_posted' => 'Cannot modify document once posted',
+    'cannot_modify_posted' => 'Confirmed documents cannot be edited. Use the cancellation or return options instead.',
 
     // Customers
     'customer_directory' => 'Customer Directory',
@@ -119,7 +119,7 @@ return [
     'edit_invoice_draft' => 'Edit Invoice Draft',
     'invoice_details' => 'Invoice Details',
     'invoice_number' => 'Invoice Number',
-    'payment_status' => 'Payment Status',
+    'payment_status' => 'Payment',
     'warehouse' => 'Warehouse',
     'select_warehouse' => 'Select Warehouse',
     'select_customer' => 'Select Customer',
@@ -172,7 +172,7 @@ return [
     'no_returns_found' => 'No sales returns found',
 
     // Customer Payments / Receipts
-    'customer_payments' => 'Customer Receipts',
+    'customer_payments' => 'Customer payments',
     'customer_payment' => 'Customer Receipt',
     'new_payment' => 'New Customer Receipt',
     'payment_details' => 'Customer Receipt Details',

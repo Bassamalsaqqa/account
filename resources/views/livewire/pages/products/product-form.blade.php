@@ -86,13 +86,14 @@
     @endif
 
     <!-- Main Catalog Details Card -->
-    <x-card padding="p-6">
+    <x-card padding="p-4 sm:p-6">
         <h2 class="text-sm font-extrabold text-text-primary border-b border-border pb-3 mb-5 flex items-center gap-2">
             <x-icon name="box" class="w-4 h-4 text-primary" />
             <span>{{ __('inventory.basic_info') }}</span>
         </h2>
 
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <p class="text-sm text-text-secondary mb-4">{{ __('inventory.product_name_required') }}</p>
+        <div class="entry-grid grid grid-cols-1 sm:grid-cols-2 gap-4">
             <!-- Arabic Name -->
             <div class="space-y-1">
                 <label for="product-name-ar" class="block text-xs font-bold text-text-secondary">
@@ -142,47 +143,6 @@
                     <option value="{{ \App\Models\Product::TYPE_SERVICE }}">{{ __('inventory.type_service') }}</option>
                 </select>
                 @error('product_type') <span id="product-product-type-error" role="alert" class="text-[11px] text-danger">{{ $message }}</span> @enderror
-            </div>
-
-            <!-- Category -->
-            <div class="space-y-1">
-                <label for="product-category-id" class="block text-xs font-bold text-text-secondary">
-                    {{ __('inventory.category') }}
-                </label>
-                <select id="product-category-id" @error('category_id') aria-invalid="true" aria-describedby="product-category-id-error" @enderror wire:model="category_id"
-                        class="w-full min-h-11 px-3 rounded-control border border-border bg-white text-xs text-text-primary focus:outline-none focus:border-primary focus:ring-2 focus:ring-focus-ring">
-                    <option value="">{{ __('inventory.select_category') }}</option>
-                    @foreach ($categories as $c)
-                        <option value="{{ $c->id }}">{{ $c->name_ar }}</option>
-                    @endforeach
-                </select>
-                @error('category_id') <span id="product-category-id-error" role="alert" class="text-[11px] text-danger">{{ $message }}</span> @enderror
-            </div>
-
-            <!-- Brand -->
-            <div class="space-y-1">
-                <div class="flex items-center justify-between">
-                    <label for="product-brand-id" class="block text-xs font-bold text-text-secondary">
-                        {{ __('inventory.brand') }}
-                    </label>
-                    @if ($canManageProduct)
-                        <button type="button" wire:click="openCreateBrandModal"
-                                class="min-h-11 inline-flex items-center justify-center gap-2 px-3 active:bg-surface-soft focus-visible:ring-2 focus-visible:ring-primary text-[11px] text-primary hover:underline font-bold flex gap-1" wire:loading.attr="disabled">
-                            <x-icon name="plus" class="w-3 h-3" />
-                            <span>{{ __('inventory.add_brand') }}</span>
-                        </button>
-                    @endif
-                </div>
-                <select id="product-brand-id" @error('brand_id') aria-invalid="true" aria-describedby="product-brand-id-error" @enderror wire:model="brand_id"
-                        class="w-full min-h-11 px-3 rounded-control border border-border bg-white text-xs text-text-primary focus:outline-none focus:border-primary focus:ring-2 focus:ring-focus-ring">
-                    <option value="">{{ __('inventory.select_brand') }}</option>
-                    @foreach ($brands as $b)
-                        <option value="{{ $b->id }}">
-                            {{ $b->name_ar }}@if(! $b->active) ({{ __('inventory.inactive') }})@endif
-                        </option>
-                    @endforeach
-                </select>
-                @error('brand_id') <span id="product-brand-id-error" role="alert" class="text-[11px] text-danger">{{ $message }}</span> @enderror
             </div>
 
             <!-- Base Unit -->
@@ -284,6 +244,51 @@
                 </div>
             @endif
         </div>
+        <details class="entry-options mt-4" @if($errors->hasAny(['category_id','brand_id']) || $category_id || $brand_id) open @endif>
+            <summary>{{ __('workflow.more_options') }}</summary>
+            <div class="entry-grid grid grid-cols-1 sm:grid-cols-2 gap-4 pt-3">            <!-- Category -->
+            <div class="space-y-1">
+                <label for="product-category-id" class="block text-xs font-bold text-text-secondary">
+                    {{ __('inventory.category') }}
+                </label>
+                <select id="product-category-id" @error('category_id') aria-invalid="true" aria-describedby="product-category-id-error" @enderror wire:model="category_id"
+                        class="w-full min-h-11 px-3 rounded-control border border-border bg-white text-xs text-text-primary focus:outline-none focus:border-primary focus:ring-2 focus:ring-focus-ring">
+                    <option value="">{{ __('inventory.select_category') }}</option>
+                    @foreach ($categories as $c)
+                        <option value="{{ $c->id }}">{{ $c->name_ar }}</option>
+                    @endforeach
+                </select>
+                @error('category_id') <span id="product-category-id-error" role="alert" class="text-[11px] text-danger">{{ $message }}</span> @enderror
+            </div>
+
+            <!-- Brand -->
+            <div class="space-y-1">
+                <div class="flex items-center justify-between">
+                    <label for="product-brand-id" class="block text-xs font-bold text-text-secondary">
+                        {{ __('inventory.brand') }}
+                    </label>
+                    @if ($canManageProduct)
+                        <button type="button" wire:click="openCreateBrandModal"
+                                class="min-h-11 inline-flex items-center justify-center gap-2 px-3 active:bg-surface-soft focus-visible:ring-2 focus-visible:ring-primary text-[11px] text-primary hover:underline font-bold flex gap-1" wire:loading.attr="disabled">
+                            <x-icon name="plus" class="w-3 h-3" />
+                            <span>{{ __('inventory.add_brand') }}</span>
+                        </button>
+                    @endif
+                </div>
+                <select id="product-brand-id" @error('brand_id') aria-invalid="true" aria-describedby="product-brand-id-error" @enderror wire:model="brand_id"
+                        class="w-full min-h-11 px-3 rounded-control border border-border bg-white text-xs text-text-primary focus:outline-none focus:border-primary focus:ring-2 focus:ring-focus-ring">
+                    <option value="">{{ __('inventory.select_brand') }}</option>
+                    @foreach ($brands as $b)
+                        <option value="{{ $b->id }}">
+                            {{ $b->name_ar }}@if(! $b->active) ({{ __('inventory.inactive') }})@endif
+                        </option>
+                    @endforeach
+                </select>
+                @error('brand_id') <span id="product-brand-id-error" role="alert" class="text-[11px] text-danger">{{ $message }}</span> @enderror
+            </div>
+
+</div>
+        </details>
     </x-card>
 
     @if (! $isEditing)
@@ -298,7 +303,7 @@
 
     @if ($isEditing && $product)
         <!-- Alternate Units Management -->
-        <x-card padding="p-6">
+        <x-card padding="p-4 sm:p-6">
             <h2 class="text-sm font-extrabold text-text-primary border-b border-border pb-3 mb-4 flex items-center justify-between">
                 <div class="flex items-center gap-2">
                     <x-icon name="dashboard" class="w-4 h-4 text-primary" />
@@ -411,7 +416,7 @@
         </x-card>
 
         <!-- Barcodes Management -->
-        <x-card padding="p-6">
+        <x-card padding="p-4 sm:p-6">
             <h2 class="text-sm font-extrabold text-text-primary border-b border-border pb-3 mb-4 flex items-center justify-between">
                 <div class="flex items-center gap-2">
                     <x-icon name="receipt" class="w-4 h-4 text-primary" />
@@ -492,7 +497,7 @@
         </x-card>
 
         <!-- Images Gallery & Upload -->
-        <x-card padding="p-6">
+        <x-card padding="p-4 sm:p-6">
             <h2 class="text-sm font-extrabold text-text-primary border-b border-border pb-3 mb-4 flex items-center justify-between">
                 <div class="flex items-center gap-2">
                     <x-icon name="camera" class="w-4 h-4 text-primary" />

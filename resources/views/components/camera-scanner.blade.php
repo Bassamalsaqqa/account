@@ -1,6 +1,7 @@
 @props([
     'buttonClass' => null,
     'buttonLabel' => null,
+    'compact' => false,
 ])
 
 <div x-data="cameraScanner($wire, {
@@ -17,13 +18,16 @@
             @click="open()"
             class="{{ $buttonClass ?? 'min-h-[44px] min-w-[44px] px-3.5 py-2 inline-flex items-center justify-center gap-2 rounded-control border border-border bg-white text-text-primary text-xs font-semibold hover:bg-surface-soft hover:border-primary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 transition-colors' }}"
             title="{{ $buttonLabel ?? __('camera.scan_camera') }}"
+            aria-label="{{ $buttonLabel ?? __('camera.scan_camera') }}"
             aria-haspopup="dialog"
             :aria-expanded="isOpen.toString()">
         <svg class="w-5 h-5 shrink-0 text-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/>
             <circle cx="12" cy="13" r="3"/>
         </svg>
-        <span>{{ $buttonLabel ?? __('camera.scan_camera') }}</span>
+        @unless($compact)
+            <span>{{ $buttonLabel ?? __('camera.scan_camera') }}</span>
+        @endunless
     </button>
     <p x-cloak x-show="!isOpen && status === 'offline'" role="status" class="mt-2 text-sm text-text-secondary">{{ __('camera.offline') }}</p>
     <p x-cloak x-show="!isOpen && status === 'unsupported'" role="status" class="mt-2 text-sm text-text-secondary">{{ __('camera.unsupported') }}</p>

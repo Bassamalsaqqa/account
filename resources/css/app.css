@@ -171,6 +171,18 @@ summary:focus-visible {
 }
 
 /* Common entry forms: readable controls, comfortable taps, no mobile input zoom. */
+@media (min-width: 1024px) and (pointer: fine) {
+    :is(.business-app #app-main, .platform-admin #platform-main) .touch-action {
+        min-height: 36px; min-width: 36px; padding: 0.375rem 0.625rem; box-shadow: none;
+    }
+    :is(.business-app #app-main, .platform-admin #platform-main) button:not(.assistant-icon-button) { min-height: 36px; }
+}
+.entry-grid { align-items: start; }
+.entry-grid > * { min-width: 0; }
+[data-entry-form] label:not(:has(input)) { font-size: 0.875rem; line-height: 1.5; }
+[data-entry-form] :is(input,select,textarea) { max-width: 100%; }
+.entry-options { border-block: 1px solid var(--color-border); padding-block: 0.5rem; }
+.entry-options > summary { min-height: 44px; padding-block: 0.625rem; cursor: pointer; color: var(--color-text-secondary); font-size: 0.875rem; font-weight: 600; }
 [data-entry-form] :is(input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]), select) {
     min-height: 44px;
 }

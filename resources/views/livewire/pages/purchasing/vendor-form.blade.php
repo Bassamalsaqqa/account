@@ -1,7 +1,7 @@
 @php
     $isSet = static fn ($v): bool => $v !== null && trim((string) $v) !== '';
     $hasAdvanced = $errors->hasAny([
-        'business_name_ar', 'business_name_en', 'tax_number',
+        'code', 'email', 'whatsapp', 'preferred_locale', 'default_currency_code', 'active', 'business_name_ar', 'business_name_en', 'tax_number',
         'address_ar', 'address_en', 'city_ar', 'city_en', 'postal_code', 'country_code', 'notes',
     ]) || (
         $isSet($business_name_ar) || $isSet($business_name_en) || $isSet($tax_number) ||
@@ -22,16 +22,24 @@
         <fieldset class="p-4 sm:p-5 bg-white border border-border rounded-card">
             <legend class="px-2 text-sm font-bold">{{ __('purchasing.identity_section') }}</legend>
             <p class="text-xs text-text-secondary mb-3">{{ __('purchasing.at_least_one_name_required') }}</p>
-            <div class="grid sm:grid-cols-2 gap-4">
+            <div class="entry-grid grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 <x-purchasing.field name="name_ar" :label="__('purchasing.vendor_name_ar')" direction="rtl" />
                 <x-purchasing.field name="name_en" :label="__('purchasing.vendor_name_en')" direction="ltr" />
-                <x-purchasing.field name="code" :label="__('purchasing.vendor_code')" direction="ltr" :maxlength="64" />
+                <x-purchasing.field name="phone" :label="__('purchasing.phone')" type="tel" direction="ltr" :maxlength="64" />
             </div>
         </fieldset>
+        <!-- Advanced Details Collapsible Section -->
+        <details class="group space-y-4 pt-1" {{ $hasAdvanced ? 'open' : '' }}>
+            <summary class="min-h-[44px] cursor-pointer inline-flex items-center gap-2 text-xs font-bold text-primary hover:text-primary-hover py-2 focus-visible:outline-2 focus-visible:outline-primary select-none list-none [&::-webkit-details-marker]:hidden">
+                <span class="group-open:hidden">▶ {{ __('workflow.more_options') }}</span>
+                <span class="hidden group-open:inline">▼ {{ __('purchasing.hide_advanced_details') }}</span>
+            </summary>
+
+            <div class="space-y-4">
+                <div class="entry-grid grid sm:grid-cols-2 lg:grid-cols-3 gap-4">                <x-purchasing.field name="code" :label="__('purchasing.vendor_code')" direction="ltr" :maxlength="64" /></div>
         <fieldset class="p-4 sm:p-5 bg-white border border-border rounded-card">
             <legend class="px-2 text-sm font-bold">{{ __('purchasing.contact_section') }}</legend>
             <div class="grid sm:grid-cols-2 gap-4">
-                <x-purchasing.field name="phone" :label="__('purchasing.phone')" type="tel" direction="ltr" :maxlength="64" />
                 <x-purchasing.field name="whatsapp" :label="__('purchasing.whatsapp')" type="tel" direction="ltr" :maxlength="64" />
                 <x-purchasing.field name="email" :label="__('purchasing.email')" type="email" direction="ltr" />
             </div>
@@ -60,14 +68,7 @@
             @error('active')<p class="text-xs text-danger">{{ $message }}</p>@enderror
         </fieldset>
 
-        <!-- Advanced Details Collapsible Section -->
-        <details class="group space-y-4 pt-1" {{ $hasAdvanced ? 'open' : '' }}>
-            <summary class="min-h-[44px] cursor-pointer inline-flex items-center gap-2 text-xs font-bold text-primary hover:text-primary-hover py-2 focus-visible:outline-2 focus-visible:outline-primary select-none list-none [&::-webkit-details-marker]:hidden">
-                <span class="group-open:hidden">▶ {{ __('purchasing.advanced_details') }}</span>
-                <span class="hidden group-open:inline">▼ {{ __('purchasing.hide_advanced_details') }}</span>
-            </summary>
 
-            <div class="space-y-4">
                 <fieldset class="p-4 sm:p-5 bg-white border border-border rounded-card">
                     <legend class="px-2 text-sm font-bold">{{ __('purchasing.business_name_ar') }} / {{ __('purchasing.tax_number') }}</legend>
                     <div class="grid sm:grid-cols-2 gap-4">

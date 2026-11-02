@@ -1,7 +1,7 @@
 @php
     $isSet = static fn ($v): bool => $v !== null && trim((string) $v) !== '';
     $hasAdvanced = $errors->hasAny([
-        'business_name', 'business_name_en', 'tax_number', 'whatsapp', 'email',
+        'code', 'default_currency_code', 'preferred_locale', 'active', 'business_name', 'business_name_en', 'tax_number', 'whatsapp', 'email',
         'address_line_1_ar', 'address_line_1_en', 'city_ar', 'city_en', 'credit_limit', 'notes',
     ]) || (
         $isSet($business_name) || $isSet($business_name_en) || $isSet($tax_number) ||
@@ -32,7 +32,7 @@
     <!-- Form Card -->
     <form wire:submit="save"
           novalidate
-          class="bg-white rounded-card border border-border shadow-xs p-6 space-y-6">
+          class="bg-white rounded-card border border-border shadow-xs p-4 sm:p-6 space-y-6">
 
         <!-- Basic Info Section -->
         <div>
@@ -45,7 +45,7 @@
                 </p>
             </div>
 
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+            <div class="entry-grid grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mt-4">
                 <!-- Name AR -->
                 <div>
                     <label for="customer-name-ar" class="block text-xs font-bold text-text-primary mb-1">
@@ -73,13 +73,25 @@
                     <label for="customer-phone" class="block text-xs font-bold text-text-primary mb-1">
                         {{ __('sales.phone') }} <span class="text-xs font-normal text-text-muted">({{ __('sales.optional') }})</span>
                     </label>
-                    <input id="customer-phone" @error('phone') aria-invalid="true" aria-describedby="customer-phone-error" @enderror type="text"
+                    <input id="customer-phone" inputmode="tel" autocomplete="tel" @error('phone') aria-invalid="true" aria-describedby="customer-phone-error" @enderror type="text"
                            wire:model="phone"
                            dir="ltr"
                            class="w-full h-9 px-3 rounded-control border border-border bg-canvas text-xs text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden text-start" />
                     @error('phone') <span id="customer-phone-error" role="alert" class="text-danger text-[11px] mt-1 block">{{ $message }}</span> @enderror
                 </div>
 
+            </div>
+        </div>
+
+        <!-- Advanced Details Collapsible Section -->
+        <details class="group space-y-6 pt-2" {{ $hasAdvanced ? 'open' : '' }}>
+            <summary class="min-h-[44px] cursor-pointer inline-flex items-center gap-2 text-xs font-bold text-primary hover:text-primary-hover py-2 focus-visible:outline-2 focus-visible:outline-primary select-none list-none [&::-webkit-details-marker]:hidden">
+                <span class="group-open:hidden">▶ {{ __('workflow.more_options') }}</span>
+                <span class="hidden group-open:inline">▼ {{ __('sales.hide_advanced_details') }}</span>
+            </summary>
+
+            <div class="space-y-6 pt-4 border-t border-border">
+                <div class="entry-grid grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 <!-- Code -->
                 <div>
                     <label for="customer-code" class="block text-xs font-bold text-text-primary mb-1">
@@ -129,17 +141,8 @@
                         <span class="mr-3 ml-3 text-xs font-bold text-text-primary">{{ __('sales.active') }}</span>
                     </label>
                 </div>
-            </div>
-        </div>
 
-        <!-- Advanced Details Collapsible Section -->
-        <details class="group space-y-6 pt-2" {{ $hasAdvanced ? 'open' : '' }}>
-            <summary class="min-h-[44px] cursor-pointer inline-flex items-center gap-2 text-xs font-bold text-primary hover:text-primary-hover py-2 focus-visible:outline-2 focus-visible:outline-primary select-none list-none [&::-webkit-details-marker]:hidden">
-                <span class="group-open:hidden">▶ {{ __('sales.advanced_details') }}</span>
-                <span class="hidden group-open:inline">▼ {{ __('sales.hide_advanced_details') }}</span>
-            </summary>
-
-            <div class="space-y-6 pt-4 border-t border-border">
+                </div>
                 <!-- Business & Tax -->
                 <div>
                     <h3 class="text-xs font-bold uppercase tracking-wider text-text-muted mb-3">
@@ -290,7 +293,7 @@
             </a>
             <button type="submit"
                     class="px-5 py-2 rounded-control bg-primary text-white text-xs font-bold hover:bg-primary-hover transition-colors shadow-sm cursor-pointer">
-                {{ __('sales.confirm') }}
+                {{ __('workflow.save_customer') }}
             </button>
         </div>
     </form>

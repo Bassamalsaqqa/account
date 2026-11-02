@@ -2,7 +2,7 @@
 
 return [
     'title' => 'Payment with this invoice',
-    'help' => 'Leave unpaid to record a receipt later. A payment is recorded only after you review and confirm posting.',
+    'help' => 'Record a payment now, or leave unpaid to collect it later.',
     'mode' => 'Payment choice', 'mode_unpaid' => 'Unpaid', 'mode_full' => 'Pay in full', 'mode_partial' => 'Pay part',
     'payment_method' => 'Payment method', 'cash' => 'Cash', 'bank_transfer' => 'Bank transfer', 'check' => 'Incoming check',
     'money_account_id' => 'Payment account', 'currency_code' => 'Check currency', 'choose' => 'Choose…',

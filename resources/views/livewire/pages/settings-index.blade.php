@@ -1392,7 +1392,7 @@
                         <label class="text-xs font-semibold">{{ __('settings.audit_event_prefix') }}<input type="text" wire:model="auditEvent" maxlength="80" dir="ltr" class="mt-1 w-full min-h-11 rounded-control border-border" />@error('auditEvent') <span role="alert" class="text-rose-700">{{ $message }}</span> @enderror</label>
                         <button type="submit" wire:loading.attr="disabled" class="min-h-11 self-end rounded-control border border-primary px-3 py-2 font-bold text-primary">{{ __('settings.audit_apply') }}</button>
                     </form>
-                    <div class="md:hidden space-y-3">
+                    <div class="lg:hidden space-y-3">
                         @forelse ($auditEvents as $event)
                             <article class="rounded-control border border-border p-3 space-y-2 text-sm" wire:key="audit-card-{{ $event->id }}">
                                 <div class="flex flex-wrap items-center justify-between gap-2">
@@ -1406,7 +1406,7 @@
                             <p class="py-6 text-center text-text-muted">{{ __('settings.no_audit_events') }}</p>
                         @endforelse
                     </div>
-                    <div class="hidden md:block overflow-x-auto">
+                    <div class="hidden lg:block overflow-x-auto">
                         <table class="data-table w-full text-xs text-start">
                             <thead>
                                 <tr class="border-b border-border text-text-muted text-[11px]">

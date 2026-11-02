@@ -16,3 +16,4 @@ import './profile-two-factor';
 import './company-data-download';
 
 import './money-display';
+import './table-navigation';

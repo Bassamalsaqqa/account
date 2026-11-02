@@ -2,6 +2,9 @@
 
 @php
 $icons = [
+    'eye' => '<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/>',
+    'edit' => '<path d="m16 3 5 5-12 12H4v-5L16 3ZM13 6l5 5"/>',
+    'trash' => '<path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7"/>',
     'barcode' => '<path d="M4 4H2v4m18-4h2v4M2 16v4h4m16-4v4h-4M6 7v10M9 7v10M12 7v10M15 7v10M18 7v10"/>',
     'store' => '<path d="M4 9h16M5 9v11h14V9M3 9l2-5h14l2 5M9 13v7M15 13v7"/>',
     'branch' => '<path d="M4 20h16M6 20V8h12v12M9 8V4h6v4M9 12h2M13 12h2M9 16h2M13 16h2"/>',

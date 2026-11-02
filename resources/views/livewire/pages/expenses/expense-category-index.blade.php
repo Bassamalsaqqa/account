@@ -64,7 +64,7 @@
 
     <!-- Categories List -->
     <div class="rounded-card border border-border bg-white overflow-hidden shadow-sm">
-        <div class="hidden md:block overflow-x-auto">
+        <div class="hidden lg:block overflow-x-auto">
             <table class="data-table w-full text-sm text-start">
                 <thead class="bg-surface-soft border-b border-border text-xs uppercase text-text-muted">
                     <tr>
@@ -107,7 +107,7 @@
             </table>
         </div>
     <div class="p-4"><x-table-pagination :paginator="$categories" /></div>
-<div class="md:hidden divide-y divide-border">
+<div class="lg:hidden divide-y divide-border">
                     @forelse($categories as $cat)
                         <article class="p-4">
                             <dl class="grid grid-cols-2 gap-x-3 gap-y-4">

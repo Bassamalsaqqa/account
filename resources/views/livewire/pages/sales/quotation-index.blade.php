@@ -49,7 +49,7 @@
 
     <!-- Quotations Table / Cards -->
     <div class="bg-white rounded-card border border-border shadow-xs overflow-hidden">
-        <div class="hidden md:block overflow-x-auto">
+        <div class="hidden lg:block overflow-x-auto">
             <table class="data-table w-full text-start text-xs border-collapse">
                 <thead>
                     <tr class="border-b border-border bg-surface-soft text-text-muted font-bold text-[11px] uppercase tracking-wider">
@@ -90,12 +90,7 @@
                                 </span>
                             </td>
                             <td class="table-actions py-3 px-4 text-end">
-                                <div class="flex items-center justify-end gap-2">
-                                    <a href="{{ route('quotations.show', $quote->public_id) }}"
-                                       class="touch-action bg-surface-soft hover:bg-primary-50 text-text-secondary hover:text-primary font-bold text-[11px] transition-colors">
-                                        {{ __('sales.quotation_details') }}
-                                    </a>
-                                </div>
+                                @include('livewire.partials.quotation-row-actions')
                             </td>
                         </tr>
                     @empty
@@ -111,7 +106,7 @@
         </div>
 
         <!-- Mobile View -->
-        <div class="md:hidden divide-y divide-border">
+        <div class="lg:hidden divide-y divide-border">
             @forelse ($quotations as $quote)
                 <div class="p-4 space-y-3">
                     <div class="flex items-start justify-between gap-2">
@@ -139,12 +134,7 @@
                         </div>
                     </div>
 
-                    <div class="pt-2 border-t border-border flex justify-end">
-                        <a href="{{ route('quotations.show', $quote->public_id) }}"
-                           class="touch-action bg-surface-soft text-text-primary text-xs font-bold">
-                            {{ __('sales.quotation_details') }}
-                        </a>
-                    </div>
+                    <div class="pt-3 border-t border-border">@include('livewire.partials.quotation-row-actions')</div>
                 </div>
             @empty
                 <div class="py-8 text-center text-text-muted">

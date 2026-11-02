@@ -51,7 +51,7 @@
                             wire:click="postInvoice"
                             wire:loading.attr="disabled"
                             class="px-3.5 py-1.5 rounded-control bg-primary text-white text-xs font-bold hover:bg-primary-hover transition-colors shadow-xs cursor-pointer">
-                        ⚡ {{ __('commands.review_post') }}
+                        {{ __('commands.review_post') }}
                     </button>
                 @endif
 
