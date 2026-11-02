@@ -69,7 +69,8 @@
                            class="w-full h-8 px-2.5 rounded-control border border-border bg-canvas text-xs text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden"  :disabled="documentBusy || saving"/>
                 </div>
                 @endif
-                <select id="invoice-customer-id" @error('customer_id') aria-invalid="true" aria-describedby="invoice-customer-id-error" @enderror wire:model.live="customer_id"
+                <div class="party-picker">
+<select id="invoice-customer-id" @error('customer_id') aria-invalid="true" aria-describedby="invoice-customer-id-error" @enderror wire:model.live="customer_id"
                         required
                         class="w-full h-9 px-3 rounded-control border border-border bg-canvas text-xs text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden" :disabled="documentBusy || saving">
                     <option value="">{{ __('sales.select_customer') }}</option>
@@ -77,12 +78,14 @@
                         <option value="{{ $c->id }}">{{ $c->displayName() }} ({{ $c->default_currency_code ?? $baseCurrencyCode }})</option>
                     @endforeach
                 </select>
-                @error('customer_id') <span id="invoice-customer-id-error" role="alert" class="text-danger text-[11px] mt-1 block">{{ $message }}</span> @enderror
-                <div class="mt-1">@if ($canManageCustomers)
-                        <button type="button" wire:click="openQuickCustomerModal" class="text-xs text-primary font-bold hover:underline cursor-pointer" aria-haspopup="dialog" wire:loading.attr="disabled" wire:target="openQuickCustomerModal" :disabled="documentBusy || saving">
+@if ($canManageCustomers)
+                        <button type="button" wire:click="openQuickCustomerModal" class="party-create-button" aria-haspopup="dialog" wire:loading.attr="disabled" wire:target="openQuickCustomerModal" :disabled="documentBusy || saving">
                             + {{ __('workflow.quick_customer') }}
                         </button>
-                    @endif</div>
+                    @endif
+</div>
+                @error('customer_id') <span id="invoice-customer-id-error" role="alert" class="text-danger text-[11px] mt-1 block">{{ $message }}</span> @enderror
+
             </div>
 
             <!-- Issue Date -->
@@ -98,8 +101,7 @@
             </div>
 
         </div>
-        <details class="entry-options" @if($errors->hasAny(['warehouse_id','due_date','currency_code','exchange_rate']) || $currency_code !== $baseCurrencyCode) open @endif>
-            <summary>{{ __('workflow.document_options') }}</summary>
+        <div class="border-t border-border pt-3">
             <div class="entry-grid grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 pt-3">
             <!-- Warehouse -->
             <div class="">
@@ -155,7 +157,7 @@
                 @error('exchange_rate') <span id="invoice-exchange-rate-error" role="alert" class="text-danger text-[11px] mt-1 block">{{ $message }}</span> @enderror
             </div>
             </div>
-        </details>
+        </div>
     <div class="grid gap-4 md:grid-cols-2 pb-4 border-b border-border">
         @include('livewire.partials.barcode-entry', ['prefix' => 'invoice'])
         <div>

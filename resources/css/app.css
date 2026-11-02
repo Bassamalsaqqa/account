@@ -179,6 +179,12 @@ summary:focus-visible {
 }
 .entry-grid { align-items: start; }
 .entry-grid > * { min-width: 0; }
+.party-picker { display: flex; align-items: stretch; gap: 0.5rem; min-width: 0; }
+.party-picker > select { flex: 1; min-width: 0; width: 0; }
+.party-create-button { flex: none; min-height: 44px; padding: 0.5rem 0.75rem; border: 1px solid var(--color-border); border-radius: var(--radius-control); background: var(--color-surface); color: var(--color-primary); font-size: 0.8125rem; font-weight: 600; white-space: nowrap; cursor: pointer; }
+.party-create-button:hover { background: var(--color-surface-soft); }
+.party-create-button:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
+.party-create-button:disabled { opacity: 0.5; cursor: wait; }
 [data-entry-form] label:not(:has(input)) { font-size: 0.875rem; line-height: 1.5; }
 [data-entry-form] :is(input,select,textarea) { max-width: 100%; }
 .entry-options { border-block: 1px solid var(--color-border); padding-block: 0.5rem; }
