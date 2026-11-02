@@ -75,3 +75,12 @@
 .data-table th:last-child { white-space: nowrap; }
 
 :is(.business-app #app-main, .platform-admin #platform-main) .data-table .touch-action { min-height: 44px; min-width: 44px; }
+
+/* Keep the pinned action header aligned with the pinned row actions. */
+.data-table:has(tbody .table-actions) thead th:last-child {
+    position: sticky;
+    inset-inline-end: 0;
+    z-index: 2;
+    width: 1%;
+    background: var(--color-surface-soft);
+}

@@ -9,6 +9,23 @@ use Tests\TestCase;
 
 final class HumanMetricDisplayTest extends TestCase
 {
+    public function test_aging_buckets_are_money_while_stock_thresholds_and_elapsed_days_are_quantities(): void
+    {
+        $presenter = new ReportPresenter;
+        foreach (['current', 'days_1_30', 'days_31_60', 'days_61_90', 'days_90_plus', 'unspecified', 'gross_open'] as $key) {
+            $this->assertSame('100.00', $presenter->displayValue([$key => '100.000000'], ['key' => $key, 'type' => 'decimal']), $key);
+            $this->assertSame('100.00', $presenter->displayMetric($key, '100.000000'), $key);
+        }
+        foreach (['minimum_stock', 'on_hand', 'days_overdue', 'rank', 'quantity_on_hand', 'transaction_count', 'grace_days'] as $key) {
+            $this->assertSame('2', $presenter->displayValue([$key => '2.000000'], ['key' => $key, 'type' => 'decimal']), $key);
+            $this->assertSame('2', $presenter->displayMetric($key, '2.000000'), $key);
+        }
+        $this->assertSame('0.123456', $presenter->displayMetric('minimum_stock', '0.123456'));
+        $totals = $presenter->totals(['ILS' => ['days_1_30' => '100.000000', 'days_overdue' => '2']], 'ILS');
+        $this->assertSame(['ILS', ''], array_column($totals, 'currency'));
+        $this->assertSame(['100.000000', '2'], array_column($totals, 'value'));
+    }
+
     public function test_discount_totals_remain_money_and_export_values_remain_exact(): void
     {
         $presenter = new ReportPresenter;

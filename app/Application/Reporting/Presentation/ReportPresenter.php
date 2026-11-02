@@ -19,7 +19,7 @@ final class ReportPresenter
             return $value;
         }
 
-        $isQuantityOrRatio = preg_match('/quantity|(?:^|_)count(?:_|$)|percent|margin|rate|conversion|units|days/', $column['key']) === 1;
+        $isQuantityOrRatio = $this->quantityOrRatio($column['key']);
 
         return $isQuantityOrRatio
             ? SalesMoneyFormatter::displayQuantity($value)
@@ -36,12 +36,13 @@ final class ReportPresenter
         if (preg_match('/(?:^|_)(?:id|code|number|sku|barcode|date|name|year)$/D', $key)) {
             return $text;
         }
-        $quantity = preg_match('/quantity|(?:^|_)(?:count|rows|days|units|lots|checks)(?:_|$)|percent|margin|rate|ratio|conversion/', $key) === 1;
+        $quantity = $this->quantityOrRatio($key);
         if ($quantity) {
             return SalesMoneyFormatter::displayQuantity($text);
         }
         $money = preg_match('/^[A-Z]{3}$/D', $key) === 1
-            || preg_match('/(?:^|_)(?:amount|total|subtotal|cost|price|value|balance|salary|payable|receivable|debit|credit|discounts?|tax|revenue|profit|valuation|fee|paid|outstanding|earned|applied|sales|purchases|cogs|expenses?|loss|gain)(?:_|$)/', $key) === 1;
+            || in_array($key, ['current', 'days_1_30', 'days_31_60', 'days_61_90', 'days_90_plus', 'unspecified', 'gross_open'], true)
+            || preg_match('/(?:^|_)(?:amount|total|subtotal|cost|price|value|balance|salary|payable|receivable|debit|credit|discounts?|tax|revenue|profit|valuation|fee|paid|outstanding|earned|applied|sales|purchases|returns|remaining|running|spend|spent|cogs|expenses?|loss|gain)(?:_|$)/', $key) === 1;
 
         return $money ? SalesMoneyFormatter::displayMoney($text) : $text;
     }
@@ -112,12 +113,16 @@ final class ReportPresenter
         return false;
     }
 
+    private function quantityOrRatio(string $key): bool
+    {
+        // Aging buckets such as days_1_30 are money, not elapsed-day counts.
+        return preg_match('/quantity|(?:^|_)(?:count|rows|units|lots|checks|percent|percentage|margin|rate|ratio|conversion)(?:_|$)|(?:^|_)days$/', $key) === 1
+            || in_array($key, ['minimum_stock', 'on_hand', 'days_overdue', 'rank'], true);
+    }
+
     private function baseAmount(string $key): bool
     {
-        return ! str_contains($key, 'quantity')
-            && preg_match('/(?:^|_)count(?:_|$)/', $key) !== 1
-            && ! str_contains($key, 'margin')
-            && ! str_contains($key, 'percent')
+        return ! $this->quantityOrRatio($key)
             && (str_contains($key, '_base') || str_starts_with($key, 'base_'));
     }
 
@@ -140,11 +145,7 @@ final class ReportPresenter
                     $label = __('reports.summary');
                 }
 
-                $isCountOrQty = preg_match('/(?:^|_)count(?:_|$)/', (string) $key) === 1
-                    || str_contains((string) $key, 'quantity')
-                    || str_contains((string) $key, 'margin')
-                    || str_contains((string) $key, 'percent')
-                    || in_array($key, ['total_checks'], true);
+                $isCountOrQty = $this->quantityOrRatio((string) $key);
 
                 if ($isCountOrQty) {
                     $currency = '';
