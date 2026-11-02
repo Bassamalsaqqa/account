@@ -197,6 +197,7 @@
                             @endphp
                             <tr wire:key="line-{{ $index }}">
                                 <td class="py-2 px-2 align-top space-y-1">
+<div class="entry-product-fields">
                                     <select wire:change="selectProduct({{ $index }}, $event.target.value)"
                                             class="w-full h-8 px-2 rounded-control border border-border bg-canvas text-xs" :disabled="documentBusy || saving">
                                         <option value="">-- {{ __('sales.product') }} --</option>
@@ -211,7 +212,9 @@
                                            placeholder="{{ __('sales.description') }}..."
                                            required
                                            class="w-full h-8 px-2 rounded-control border border-border bg-canvas text-xs text-text-primary"  :disabled="documentBusy || saving"/>
-                                </td>
+
+</div>
+</td>
 
                                 <td class="py-2 px-2 align-top">
                                     @if ($selectedProduct && $selectedProduct->productUnits->isNotEmpty())
