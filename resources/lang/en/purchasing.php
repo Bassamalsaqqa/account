@@ -2,10 +2,10 @@
 
 return [
     'purchase_summary' => 'Purchase summary',
-    'post_purchase' => 'Post Purchase',
-    'post_confirmation' => 'Posting receives inventory, records the amount owed to the vendor, and locks this purchase. Continue?',
-    'purchase_posted' => 'Purchase posted successfully.',
-    'posted_notice' => 'Posted purchase. Its details are locked. Posted at:',
+    'post_purchase' => 'Confirm purchase',
+    'post_confirmation' => 'Confirm this purchase? Stock and the amount owed to the supplier will be updated. You cannot edit it afterward.',
+    'purchase_posted' => 'Purchase confirmed.',
+    'posted_notice' => 'This purchase is confirmed and cannot be edited. Confirmed on:',
     'purchase_number' => 'Purchase number',
     'received_lots' => 'Received lots',
     'lots_must_be_complete' => 'Allocate the full line quantity to receiving lots before posting.',
@@ -17,12 +17,12 @@ return [
     'new_purchase' => 'New Purchase Draft',
     'edit_purchase' => 'Edit Purchase Draft',
     'draft' => 'Draft',
-    'posted' => 'Posted',
+    'posted' => 'Confirmed',
     'void' => 'Void',
-    'draft_notice' => 'A draft has no stock or accounting effect. Its final number is assigned when posted.',
+    'draft_notice' => 'Save a draft while you work. Stock and the supplier balance change only after you confirm.',
     'search_purchases' => 'Search vendor or supplier invoice number',
     'all_statuses' => 'All statuses',
-    'no_purchases' => 'No purchase drafts found.',
+    'no_purchases' => 'No purchases found.',
     'purchase_date' => 'Purchase Date',
     'due_date' => 'Due Date',
     'no_due_date' => 'No due date',
@@ -91,7 +91,7 @@ return [
     'invalid_draft' => 'Check the Purchase draft fields and line configuration before saving.',
     // General
     'purchasing' => 'Purchasing',
-    'vendors' => 'Vendors',
+    'vendors' => 'Suppliers',
     'vendor' => 'Vendor',
     'purchase_invoices' => 'Purchase Invoices',
     'purchase_settings' => 'Purchase Settings',
@@ -231,7 +231,7 @@ return [
     'draft_save_failed' => 'Could not save purchase return draft. Please verify details and try again.',
 
     // Phase 5E Vendor Payments & AP
-    'vendor_payments' => 'Vendor Payments',
+    'vendor_payments' => 'Supplier payments',
     'vendor_payment' => 'Vendor Payment',
     'new_vendor_payment' => 'New Vendor Payment',
     'payment_number' => 'Payment Number',

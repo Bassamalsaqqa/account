@@ -49,7 +49,7 @@
 
     <!-- Customers Table / Cards -->
     <div class="bg-white rounded-card border border-border shadow-xs overflow-hidden">
-        <div class="hidden md:block overflow-x-auto">
+        <div class="hidden lg:block overflow-x-auto">
             <table class="data-table w-full text-start text-xs border-collapse">
                 <thead>
                     <tr class="border-b border-border bg-surface-soft text-text-muted font-bold text-[11px] uppercase tracking-wider">
@@ -134,7 +134,7 @@
         </div>
 
         <!-- Mobile Card List -->
-        <div class="md:hidden divide-y divide-border">
+        <div class="lg:hidden divide-y divide-border">
             @forelse ($customers as $customer)
                 <div class="p-4 space-y-3">
                     <div class="flex items-start justify-between gap-2">

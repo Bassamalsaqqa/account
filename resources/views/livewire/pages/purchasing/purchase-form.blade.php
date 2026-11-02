@@ -1,5 +1,5 @@
 <div data-entry-form>
-<form @submit.prevent="handleSaveDraft()"
+<form novalidate @submit.prevent="handleSaveDraft()"
       class="space-y-5 pb-28 md:pb-6"
       x-data="{
           saving: false, documentBusy: false, operationFailed: false,
@@ -30,35 +30,46 @@
     @if ($receivingStock)
         <p role="status" class="text-sm text-text-secondary">{{ __('quick_product.receive_help') }}</p>
     @endif
-    <section class="bg-surface border border-border rounded-card p-4 grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div class="sm:col-span-2">
+    <section class="bg-surface border border-border rounded-card p-4 space-y-4">
+        <div class="entry-grid grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div class="lg:col-span-2">
             <div class="flex items-center justify-between mb-1.5">
                 <label for="purchase-vendor" class="block text-xs font-bold">{{ __('purchasing.vendor') }}</label>
-                @if ($canManageVendors)
-                    <button type="button" wire:click="openQuickVendorModal" class="text-xs text-primary font-bold hover:underline cursor-pointer" aria-haspopup="dialog" wire:loading.attr="disabled" wire:target="openQuickVendorModal" :disabled="documentBusy || saving">
-                        + {{ __('workflow.quick_vendor') }}
-                    </button>
-                @endif
+
             </div>
-            <div class="flex gap-2 mb-1.5">
+            @if($vendors->count() >= 50 || trim($vendorSearch) !== '')
+<div class="flex gap-2 mb-1.5">
                 <input id="purchase-vendor-search" aria-label="{{ __('workflow.search_vendors') }}" type="text"
                        wire:model.live.debounce.300ms="vendorSearch"
                        placeholder="{{ __('workflow.search_vendors') }}"
                        class="w-full h-8 px-2.5 rounded-control border border-border bg-canvas text-xs text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden"  :disabled="documentBusy || saving"/>
             </div>
+                @endif
             <select id="purchase-vendor" wire:model.live="vendor_id" required class="w-full h-11 px-3 border border-border rounded-control text-sm" :disabled="documentBusy || saving">
                 <option value="">{{ __('purchasing.select_vendor') }}</option>
                 @foreach($vendors as $vendor)
                     <option value="{{ $vendor->id }}">{{ $vendor->displayName() }}</option>
                 @endforeach
             </select>
+                <div class="mt-1">@if ($canManageVendors)
+                    <button type="button" wire:click="openQuickVendorModal" class="text-xs text-primary font-bold hover:underline cursor-pointer" aria-haspopup="dialog" wire:loading.attr="disabled" wire:target="openQuickVendorModal" :disabled="documentBusy || saving">
+                        + {{ __('workflow.quick_vendor') }}
+                    </button>
+                @endif</div>
         </div>
+        @foreach(['purchase_date' => 'purchase_date'] as $field => $label)<div><label for="purchase-{{ $field }}" class="block text-xs font-bold mb-1.5">{{ __('purchasing.'.$label) }}</label><input id="purchase-{{ $field }}" type="date" wire:model="{{ $field }}" class="w-full min-w-0 h-11 px-3 border border-border rounded-control text-sm" @if($field === 'purchase_date') required @endif  :disabled="documentBusy || saving"/></div>@endforeach
+        </div>
+        <details class="entry-options" @if($errors->hasAny(['vendor_invoice_number','due_date','currency_code','exchange_rate','warehouse_id','document_locale']) || $warehouse_id === null || $currency_code !== $baseCurrencyCode) open @endif>
+            <summary>{{ __('workflow.document_options') }}</summary>
+            <div class="entry-grid grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 pt-3">
         <div class="sm:col-span-2"><label for="supplier-number" class="block text-xs font-bold mb-1.5">{{ __('purchasing.vendor_invoice_number') }}</label><input id="supplier-number" wire:model.blur="vendor_invoice_number" maxlength="128" dir="ltr" class="w-full h-11 px-3 border border-border rounded-control text-sm"  :disabled="documentBusy || saving"/></div>
-        @foreach(['purchase_date' => 'purchase_date', 'due_date' => 'due_date'] as $field => $label)<div><label for="purchase-{{ $field }}" class="block text-xs font-bold mb-1.5">{{ __('purchasing.'.$label) }}</label><input id="purchase-{{ $field }}" type="date" wire:model="{{ $field }}" class="w-full min-w-0 h-11 px-3 border border-border rounded-control text-sm" @if($field === 'purchase_date') required @endif  :disabled="documentBusy || saving"/></div>@endforeach
+        @foreach(['due_date' => 'due_date'] as $field => $label)<div><label for="purchase-{{ $field }}" class="block text-xs font-bold mb-1.5">{{ __('purchasing.'.$label) }}</label><input id="purchase-{{ $field }}" type="date" wire:model="{{ $field }}" class="w-full min-w-0 h-11 px-3 border border-border rounded-control text-sm" @if($field === 'purchase_date') required @endif  :disabled="documentBusy || saving"/></div>@endforeach
         <div><label for="purchase-currency" class="block text-xs font-bold mb-1.5">{{ __('purchasing.currency') }}</label><select id="purchase-currency" wire:model.live="currency_code" class="w-full h-11 px-3 border border-border rounded-control text-sm" :disabled="documentBusy || saving">@foreach($currencies as $currency)<option value="{{ $currency->currency_code }}">{{ $currency->currency_code }}</option>@endforeach</select></div>
         <div><label for="purchase-rate" class="block text-xs font-bold mb-1.5">{{ __('purchasing.exchange_rate') }}</label><input id="purchase-rate" wire:model.blur="exchange_rate" wire:change="updatedExchangeRate" inputmode="decimal" dir="ltr" class="w-full h-11 px-3 border border-border rounded-control text-sm font-mono"  :disabled="documentBusy || saving"/></div>
-        <div class="sm:col-span-2"><label for="purchase-warehouse" class="block text-xs font-bold mb-1.5">{{ __('purchasing.receiving_warehouse') }}</label><select id="purchase-warehouse" wire:model="warehouse_id" required class="w-full h-11 px-3 border border-border rounded-control text-sm" :disabled="documentBusy || saving"><option value="">{{ __('purchasing.select_warehouse') }}</option>@foreach($warehouses as $warehouse)<option value="{{ $warehouse->id }}">{{ $warehouse->displayName() }}</option>@endforeach</select></div>
-        <div class="sm:col-span-2"><label for="purchase-locale" class="block text-xs font-bold mb-1.5">{{ __('purchasing.document_language') }}</label><select id="purchase-locale" wire:model="document_locale" class="w-full h-11 px-3 border border-border rounded-control text-sm" :disabled="documentBusy || saving">@foreach($languages as $language)<option value="{{ $language->locale }}">{{ __('purchasing.locale_'.$language->locale) }}</option>@endforeach</select></div>
+        <div class=""><label for="purchase-warehouse" class="block text-xs font-bold mb-1.5">{{ __('purchasing.receiving_warehouse') }}</label><select id="purchase-warehouse" wire:model="warehouse_id" required class="w-full h-11 px-3 border border-border rounded-control text-sm" :disabled="documentBusy || saving"><option value="">{{ __('purchasing.select_warehouse') }}</option>@foreach($warehouses as $warehouse)<option value="{{ $warehouse->id }}">{{ $warehouse->displayName() }}</option>@endforeach</select></div>
+        <div class=""><label for="purchase-locale" class="block text-xs font-bold mb-1.5">{{ __('purchasing.document_language') }}</label><select id="purchase-locale" wire:model="document_locale" class="w-full h-11 px-3 border border-border rounded-control text-sm" :disabled="documentBusy || saving">@foreach($languages as $language)<option value="{{ $language->locale }}">{{ __('purchasing.locale_'.$language->locale) }}</option>@endforeach</select></div>
+            </div>
+        </details>
     </section>
 
     <!-- Quick Barcode Scanner & Product Search -->
@@ -66,13 +77,12 @@
         @include('livewire.partials.barcode-entry', ['prefix' => 'purchase'])
         <div>
             <label for="purchase-product-search" class="block text-sm font-bold mb-1">{{ __('purchasing.search_products') }}</label>
-            <input id="purchase-product-search" type="search" maxlength="160" wire:model.live.debounce.300ms="productSearch" x-on:keydown.enter.prevent placeholder="{{ __('purchasing.search_products') }}" aria-describedby="purchase-product-search-help" class="w-full h-11 px-3 border border-border bg-canvas rounded-control text-sm"  :disabled="documentBusy || saving"/>
+            <input id="purchase-product-search" type="search" maxlength="160" wire:model.live.debounce.300ms="productSearch" x-on:keydown.enter.prevent placeholder="{{ __('purchasing.search_products') }}" class="w-full h-11 px-3 border border-border bg-canvas rounded-control text-sm"  :disabled="documentBusy || saving"/>
             @if (auth()->user()->hasPermissionTo('inventory.product.manage'))
                 <button type="button" wire:click="openQuickProductModal" aria-haspopup="dialog" class="mt-2 min-h-11 px-3 py-2 rounded-control border border-border text-sm font-bold text-primary hover:bg-surface-soft focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary" wire:loading.attr="disabled" wire:target="openQuickProductModal" :disabled="documentBusy || saving">
                     {{ __('quick_product.create') }}
                 </button>
             @endif
-            <p id="purchase-product-search-help" class="mt-1 text-xs text-text-secondary">{{ __('purchasing.product_search_help') }}</p>
             <p wire:loading wire:target="productSearch" role="status" class="mt-1 text-xs text-text-secondary">{{ __('purchasing.products_searching') }}</p>
             @if($products->isEmpty())<p role="status" class="mt-1 text-sm text-text-secondary">{{ __('purchasing.no_matching_products') }}</p>@endif
         </div>

@@ -645,6 +645,7 @@ class PurchaseForm extends Component
         }
 
         return view('livewire.pages.purchasing.purchase-form', [
+            'baseCurrencyCode' => $company->base_currency_code,
             'products' => $products->orderByRaw('COALESCE(name_ar, name_en) ASC')->orderBy('id')->limit(50)->get(['id', 'name_ar', 'name_en', 'sku']),
             'vendors' => $vendors,
             'warehouses' => Warehouse::where('company_id', $company->id)->where('active', true)->get(),

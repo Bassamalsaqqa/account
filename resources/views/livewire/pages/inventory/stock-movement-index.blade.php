@@ -38,7 +38,7 @@
 
     <!-- Ledger Table -->
     <x-card padding="p-0">
-        <div class="hidden md:block overflow-x-auto">
+        <div class="hidden lg:block overflow-x-auto">
             <table class="data-table w-full text-xs text-right rtl:text-right ltr:text-left">
                 <thead class="bg-surface-soft border-b border-border text-text-secondary font-bold select-none">
                     <tr>
@@ -114,7 +114,7 @@
                 </tbody>
             </table>
         </div>
-<div class="md:hidden divide-y divide-border">
+<div class="lg:hidden divide-y divide-border">
                     @forelse ($movements as $m)
                         <article class="p-4">
                             <dl class="grid grid-cols-2 gap-x-3 gap-y-4">

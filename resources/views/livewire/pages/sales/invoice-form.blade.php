@@ -23,7 +23,7 @@
                 {{ $isEditing ? __('sales.edit_invoice_draft') : __('sales.new_invoice') }}
             </h1>
             <p class="text-xs text-text-secondary mt-1">
-                {{ $isEditing ? ($invoice->invoice_number ?? __('sales.draft')) : __('sales.invoice_details') }}
+                {{ $isEditing ? ($invoice->invoice_number ?? __('sales.draft')) : __('workflow.create_steps') }}
             </p>
         </div>
 
@@ -50,46 +50,25 @@
     @include('livewire.ai.unsaved-notice')
     @if($taxes->isNotEmpty())<p class="rounded-control border border-border bg-surface-soft p-3 text-sm text-text-secondary">{{ __('refinement.tax_help') }}</p>@endif
 
-    <div class="bg-white p-4 rounded-card border border-border shadow-xs grid gap-4 md:grid-cols-2">
-        @include('livewire.partials.barcode-entry', ['prefix' => 'invoice'])
-        <div>
-            <label for="invoice-product-search" class="block text-sm font-bold text-text-primary mb-1">{{ __('sales.search_products') }}</label>
-            <input id="invoice-product-search" type="search" maxlength="160" wire:model.live.debounce.300ms="productSearch" x-on:keydown.enter.prevent
-                   placeholder="{{ __('sales.search_products_hint') }}" aria-describedby="invoice-product-search-help"
-                   class="w-full h-11 px-3 rounded-control border border-border bg-canvas text-sm text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden"  :disabled="documentBusy || saving"/>
-            @if (auth()->user()->hasPermissionTo('inventory.product.manage'))
-                <button type="button" wire:click="openQuickProductModal" aria-haspopup="dialog" class="mt-2 min-h-11 px-3 py-2 rounded-control border border-border text-sm font-bold text-primary hover:bg-surface-soft focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary" wire:loading.attr="disabled" wire:target="openQuickProductModal" :disabled="documentBusy || saving">
-                    {{ __('quick_product.create') }}
-                </button>
-            @endif
-            <p id="invoice-product-search-help" class="mt-1 text-xs text-text-secondary">{{ __('sales.product_search_help') }}</p>
-            <p wire:loading wire:target="productSearch" role="status" class="mt-1 text-xs text-text-secondary">{{ __('sales.products_searching') }}</p>
-            @if($productMatchCount === 0)<p role="status" class="mt-1 text-sm text-text-secondary">{{ __('sales.no_matching_products') }}</p>@endif
-        </div>
-    </div>
-
     <!-- Main Form -->
-    <div class="bg-white rounded-card border border-border shadow-xs p-6 space-y-6">
-        <!-- Document Meta Section -->
-        <div class="grid grid-cols-1 md:grid-cols-4 gap-4 pb-4 border-b border-border">
+    <div class="bg-white rounded-card border border-border shadow-xs p-4 sm:p-6 space-y-6">
+        <div class="entry-grid grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             <!-- Customer -->
-            <div class="md:col-span-2">
+            <div class="lg:col-span-2">
                 <div class="flex items-center justify-between mb-1">
                     <label for="invoice-customer-id" class="block text-xs font-bold text-text-primary">
                         {{ __('sales.customer') }} <span class="text-danger">*</span>
                     </label>
-                    @if ($canManageCustomers)
-                        <button type="button" wire:click="openQuickCustomerModal" class="text-xs text-primary font-bold hover:underline cursor-pointer" aria-haspopup="dialog" wire:loading.attr="disabled" wire:target="openQuickCustomerModal" :disabled="documentBusy || saving">
-                            + {{ __('workflow.quick_customer') }}
-                        </button>
-                    @endif
+
                 </div>
+                @if($customers->count() >= 50 || trim($customerSearch) !== '')
                 <div class="flex gap-2 mb-1.5">
                     <input id="invoice-customer-search" aria-label="{{ __('workflow.search_customers') }}" type="text"
                            wire:model.live.debounce.300ms="customerSearch"
                            placeholder="{{ __('workflow.search_customers') }}"
                            class="w-full h-8 px-2.5 rounded-control border border-border bg-canvas text-xs text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden"  :disabled="documentBusy || saving"/>
                 </div>
+                @endif
                 <select id="invoice-customer-id" @error('customer_id') aria-invalid="true" aria-describedby="invoice-customer-id-error" @enderror wire:model.live="customer_id"
                         required
                         class="w-full h-9 px-3 rounded-control border border-border bg-canvas text-xs text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden" :disabled="documentBusy || saving">
@@ -99,21 +78,11 @@
                     @endforeach
                 </select>
                 @error('customer_id') <span id="invoice-customer-id-error" role="alert" class="text-danger text-[11px] mt-1 block">{{ $message }}</span> @enderror
-            </div>
-
-            <!-- Warehouse -->
-            <div class="md:col-span-2">
-                <label for="invoice-warehouse-id" class="block text-xs font-bold text-text-primary mb-1">
-                    {{ __('sales.warehouse') }}
-                </label>
-                <select id="invoice-warehouse-id" @error('warehouse_id') aria-invalid="true" aria-describedby="invoice-warehouse-id-error" @enderror wire:model.live="warehouse_id"
-                        class="w-full h-9 px-3 rounded-control border border-border bg-canvas text-xs text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden" :disabled="documentBusy || saving">
-                    <option value="">{{ __('sales.select_warehouse') }}</option>
-                    @foreach ($warehouses as $w)
-                        <option value="{{ $w->id }}">{{ $w->displayName() }}</option>
-                    @endforeach
-                </select>
-                @error('warehouse_id') <span id="invoice-warehouse-id-error" role="alert" class="text-danger text-[11px] mt-1 block">{{ $message }}</span> @enderror
+                <div class="mt-1">@if ($canManageCustomers)
+                        <button type="button" wire:click="openQuickCustomerModal" class="text-xs text-primary font-bold hover:underline cursor-pointer" aria-haspopup="dialog" wire:loading.attr="disabled" wire:target="openQuickCustomerModal" :disabled="documentBusy || saving">
+                            + {{ __('workflow.quick_customer') }}
+                        </button>
+                    @endif</div>
             </div>
 
             <!-- Issue Date -->
@@ -126,6 +95,25 @@
                        required
                        class="w-full h-9 px-3 rounded-control border border-border bg-canvas text-xs text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden"  :disabled="documentBusy || saving"/>
                 @error('issue_date') <span id="invoice-issue-date-error" role="alert" class="text-danger text-[11px] mt-1 block">{{ $message }}</span> @enderror
+            </div>
+
+        </div>
+        <details class="entry-options" @if($errors->hasAny(['warehouse_id','due_date','currency_code','exchange_rate']) || $currency_code !== $baseCurrencyCode) open @endif>
+            <summary>{{ __('workflow.document_options') }}</summary>
+            <div class="entry-grid grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 pt-3">
+            <!-- Warehouse -->
+            <div class="">
+                <label for="invoice-warehouse-id" class="block text-xs font-bold text-text-primary mb-1">
+                    {{ __('sales.warehouse') }}
+                </label>
+                <select id="invoice-warehouse-id" @error('warehouse_id') aria-invalid="true" aria-describedby="invoice-warehouse-id-error" @enderror wire:model.live="warehouse_id"
+                        class="w-full h-9 px-3 rounded-control border border-border bg-canvas text-xs text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden" :disabled="documentBusy || saving">
+                    <option value="">{{ __('sales.select_warehouse') }}</option>
+                    @foreach ($warehouses as $w)
+                        <option value="{{ $w->id }}">{{ $w->displayName() }}</option>
+                    @endforeach
+                </select>
+                @error('warehouse_id') <span id="invoice-warehouse-id-error" role="alert" class="text-danger text-[11px] mt-1 block">{{ $message }}</span> @enderror
             </div>
 
             <!-- Due Date -->
@@ -166,7 +154,25 @@
                        class="w-full h-9 px-3 rounded-control border border-border bg-canvas text-xs text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden font-mono"  :disabled="documentBusy || saving"/>
                 @error('exchange_rate') <span id="invoice-exchange-rate-error" role="alert" class="text-danger text-[11px] mt-1 block">{{ $message }}</span> @enderror
             </div>
+            </div>
+        </details>
+    <div class="grid gap-4 md:grid-cols-2 pb-4 border-b border-border">
+        @include('livewire.partials.barcode-entry', ['prefix' => 'invoice'])
+        <div>
+            <label for="invoice-product-search" class="block text-sm font-bold text-text-primary mb-1">{{ __('sales.search_products') }}</label>
+            <input id="invoice-product-search" type="search" maxlength="160" wire:model.live.debounce.300ms="productSearch" x-on:keydown.enter.prevent
+                   placeholder="{{ __('sales.search_products_hint') }}"
+                   class="w-full h-11 px-3 rounded-control border border-border bg-canvas text-sm text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden"  :disabled="documentBusy || saving"/>
+            @if (auth()->user()->hasPermissionTo('inventory.product.manage'))
+                <button type="button" wire:click="openQuickProductModal" aria-haspopup="dialog" class="mt-2 min-h-11 px-3 py-2 rounded-control border border-border text-sm font-bold text-primary hover:bg-surface-soft focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary" wire:loading.attr="disabled" wire:target="openQuickProductModal" :disabled="documentBusy || saving">
+                    {{ __('quick_product.create') }}
+                </button>
+            @endif
+            <p wire:loading wire:target="productSearch" role="status" class="mt-1 text-xs text-text-secondary">{{ __('sales.products_searching') }}</p>
+            @if($productMatchCount === 0)<p role="status" class="mt-1 text-sm text-text-secondary">{{ __('sales.no_matching_products') }}</p>@endif
         </div>
+    </div>
+
 
         <!-- Lines Section -->
         <div>
@@ -540,7 +546,7 @@
                             @click="if (!saving && !window.isDocumentBlocked($wire)) { saving = true; window.enqueueDocumentOperation($wire, 'save', [true]).catch(() => { this.operationFailed = true; }).finally(() => saving = false); }"
                             wire:loading.attr="disabled"
                             class="px-5 py-2 rounded-control bg-primary text-white text-xs font-bold hover:bg-primary-hover transition-colors shadow-sm cursor-pointer">
-                        ⚡ {{ __('commands.review_post') }}
+                        {{ __('commands.review_post') }}
                     </button>
                 @endif
             </div>

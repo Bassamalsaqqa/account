@@ -18,10 +18,11 @@
         <select wire:model.live="statusFilter" aria-label="{{ __('purchasing.status') }}" class="min-h-11 h-11 px-3 rounded-control border border-border text-sm"><option value="all">{{ __('purchasing.all_statuses') }}</option><option value="draft">{{ __('purchasing.draft') }}</option><option value="posted">{{ __('purchasing.posted') }}</option></select>
     </x-refinement-filters>
     <section class="bg-surface border border-border rounded-card overflow-hidden">
-        <div class="hidden md:block">
+        <div class="hidden lg:block">
             <table class="data-table w-full text-xs"><thead class="bg-surface-soft text-text-secondary"><tr>
                 @foreach(['purchase_date', 'vendor', 'vendor_invoice_number', 'status', 'currency'] as $label)<th class="px-4 py-3 text-start">{{ __('purchasing.'.$label) }}</th>@endforeach
                 @if($withCost)<th class="px-4 py-3 text-start">{{ __('purchasing.total') }}</th>@endif
+                <th class="px-4 py-3 text-end">{{ __('sales.actions') }}</th>
             </tr></thead><tbody class="divide-y divide-border">
             @forelse($purchases as $purchase)
                 <tr wire:key="purchase-{{ $purchase->public_id }}"><td class="px-4 py-4"><bdi>{{ $purchase->purchase_date->format('Y-m-d') }}</bdi></td>
@@ -37,11 +38,12 @@
                     </td>
                     <td class="px-4 py-4"><bdi>{{ $purchase->currency_code }}</bdi></td>
                     @if($withCost)<td class="px-4 py-4"><bdi>{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($purchase->grand_total_currency, $purchase->currency_code) }}</bdi></td>@endif
+                    <td class="table-actions">@include('livewire.partials.purchase-row-actions')</td>
                 </tr>
-            @empty<tr><td colspan="6" class="p-8 text-center text-text-secondary">{{ __('purchasing.no_purchases') }}</td></tr>@endforelse
+            @empty<tr><td colspan="{{ $withCost ? 7 : 6 }}" class="p-8 text-center text-text-secondary">{{ __('purchasing.no_purchases') }}</td></tr>@endforelse
             </tbody></table>
         </div>
-        <div class="md:hidden divide-y divide-border">
+        <div class="lg:hidden divide-y divide-border">
             @forelse($purchases as $purchase)
                 <article class="p-4 space-y-3" wire:key="purchase-mobile-{{ $purchase->public_id }}">
                     <div class="flex justify-between gap-3">
@@ -81,6 +83,7 @@
                             <a href="{{ route('pdf.purchase', ['publicId' => $purchase->public_id, 'locale' => app()->getLocale()]) }}" target="_blank" rel="noopener noreferrer" class="touch-action bg-white text-primary text-sm font-semibold">{{ __('refinement_lists.pdf') }}</a>
                         @endcan
                     </div>
+                    @include('livewire.partials.purchase-row-actions')
                 </article>
             @empty<p class="p-8 text-center text-text-secondary">{{ __('purchasing.no_purchases') }}</p>@endforelse
         </div>

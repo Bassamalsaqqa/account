@@ -49,9 +49,11 @@
             </select>
     </x-refinement-filters>
 
+    @error('deleteDraft') <p role="alert" class="text-sm text-danger">{{ $message }}</p> @enderror
+    @if(session()->has('success'))<p role="status" class="text-sm text-success">{{ session('success') }}</p>@endif
     <!-- Invoices Table / Cards -->
     <div class="bg-white rounded-card border border-border shadow-xs overflow-hidden">
-        <div class="hidden md:block overflow-x-auto">
+        <div class="hidden lg:block overflow-x-auto">
             <table class="data-table w-full text-start text-xs border-collapse">
                 <thead>
                     <tr class="border-b border-border bg-surface-soft text-text-muted font-bold text-[11px] uppercase tracking-wider">
@@ -107,12 +109,7 @@
                                 </span>
                             </td>
                             <td class="table-actions py-3 px-4 text-end">
-                                <div class="flex items-center justify-end gap-2">
-                                    <a href="{{ route('invoices.show', $inv->public_id) }}"
-                                       class="touch-action bg-surface-soft hover:bg-primary-50 text-text-secondary hover:text-primary font-bold text-[11px] transition-colors">
-                                        {{ __('sales.invoice_details') }}
-                                    </a>
-                                </div>
+                                @include('livewire.partials.invoice-row-actions')
                             </td>
                         </tr>
                     @empty
@@ -128,7 +125,7 @@
         </div>
 
         <!-- Mobile View -->
-        <div class="md:hidden divide-y divide-border">
+        <div class="lg:hidden divide-y divide-border">
             @forelse ($invoices as $inv)
                 <div class="p-4 space-y-3">
                     <div class="flex items-start justify-between gap-2">
@@ -164,20 +161,7 @@
                         </div>
                     </div>
 
-                    <div class="pt-2 border-t border-border flex flex-wrap justify-end gap-2">
-                        @can('sales.document.pdf')
-                            <a href="{{ route('pdf.invoice', ['publicId' => $inv->public_id, 'locale' => app()->getLocale()]) }}" target="_blank" rel="noopener noreferrer" class="touch-action bg-white text-primary text-sm font-semibold"><x-icon name="receipt" class="h-4 w-4" />{{ __('refinement_lists.pdf') }}</a>
-                        @endcan
-                        @if($inv->isDraft() && auth()->user()->can('sales.invoice.edit_draft'))
-                            <a href="{{ route('invoices.edit', $inv->public_id) }}" class="touch-action bg-primary-50 text-primary text-xs font-bold">{{ __('mobile.edit_draft') }}</a>
-                        @elseif($inv->status === 'posted' && \App\Domain\Sales\Formatters\SalesMoneyFormatter::isPositive($summaries[$inv->id]['outstanding']) && auth()->user()->can('money.receipt.create'))
-                            <a href="{{ route('payments.create', ['invoice_id' => $inv->id]) }}" class="touch-action bg-primary-50 text-primary text-xs font-bold">{{ __('mobile.record_payment') }}</a>
-                        @endif
-                        <a href="{{ route('invoices.show', $inv->public_id) }}"
-                           class="touch-action bg-surface-soft text-text-primary text-xs font-bold">
-                            {{ __('sales.invoice_details') }}
-                        </a>
-                    </div>
+                    <div class="pt-3 border-t border-border">@include('livewire.partials.invoice-row-actions')</div>
                 </div>
             @empty
                 <div class="py-8 text-center text-text-muted">

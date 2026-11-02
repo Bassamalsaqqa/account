@@ -39,7 +39,7 @@
     </div>
 
     <!-- Main Form -->
-    <form @submit.prevent="handleSaveDraft()" class="bg-white rounded-card border border-border shadow-xs p-6 space-y-6">
+    <form @submit.prevent="handleSaveDraft()" class="bg-white rounded-card border border-border shadow-xs p-4 sm:p-6 space-y-6">
         <!-- Document Meta Section -->
         <div class="grid grid-cols-1 md:grid-cols-4 gap-4 pb-4 border-b border-border">
             <!-- Customer -->
@@ -48,20 +48,16 @@
                     <label class="block text-xs font-bold text-text-primary">
                         {{ __('sales.customer') }} <span class="text-danger">*</span>
                     </label>
-                    @if ($canManageCustomers)
-                        <button type="button"
-                                wire:click="openQuickCustomerModal"
-                                class="text-xs text-primary hover:underline font-medium cursor-pointer" wire:loading.attr="disabled" wire:target="openQuickCustomerModal" :disabled="documentBusy || saving">
-                            + {{ __('workflow.quick_customer') }}
-                        </button>
-                    @endif
+
                 </div>
-                <div class="flex gap-2 mb-1.5">
+                @if($customers->count() >= 50 || trim($customerSearch) !== '')
+<div class="flex gap-2 mb-1.5">
                     <input id="quotation-customer-search" aria-label="{{ __('workflow.search_customers') }}" type="text"
                            wire:model.live.debounce.300ms="customerSearch"
                            placeholder="{{ __('workflow.search_customers') }}"
                            class="w-full h-8 px-2.5 rounded-control border border-border bg-canvas text-xs text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden"  :disabled="documentBusy || saving"/>
                 </div>
+                @endif
                 <select wire:model.live="customer_id"
                         required
                         class="w-full h-9 px-3 rounded-control border border-border bg-canvas text-xs text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden" :disabled="documentBusy || saving">
@@ -71,6 +67,13 @@
                     @endforeach
                 </select>
                 @error('customer_id') <span class="text-danger text-[11px] mt-1 block">{{ $message }}</span> @enderror
+                <div class="mt-1">@if ($canManageCustomers)
+                        <button type="button"
+                                wire:click="openQuickCustomerModal"
+                                class="text-xs text-primary hover:underline font-medium cursor-pointer" wire:loading.attr="disabled" wire:target="openQuickCustomerModal" :disabled="documentBusy || saving">
+                            + {{ __('workflow.quick_customer') }}
+                        </button>
+                    @endif</div>
             </div>
 
             <!-- Issue Date -->

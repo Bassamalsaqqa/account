@@ -34,7 +34,7 @@
 
     <!-- Table -->
     <div class="rounded-card border border-border bg-white overflow-hidden shadow-sm">
-        <div class="hidden md:block overflow-x-auto">
+        <div class="hidden lg:block overflow-x-auto">
             <table class="data-table w-full text-sm text-start">
                 <thead class="bg-surface-soft border-b border-border text-xs uppercase text-text-muted">
                     <tr>
@@ -98,7 +98,7 @@
                 </tbody>
             </table>
         </div>
-<div class="md:hidden divide-y divide-border">
+<div class="lg:hidden divide-y divide-border">
                     @forelse($employees as $emp)
                         <article class="p-4">
                             <dl class="grid grid-cols-2 gap-x-3 gap-y-4">

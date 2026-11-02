@@ -26,7 +26,7 @@
         </select>
     </x-refinement-filters>
     <section class="bg-white border border-border rounded-card overflow-hidden">
-        <div class="hidden md:block overflow-x-auto">
+        <div class="hidden lg:block overflow-x-auto">
             <table class="data-table w-full text-xs text-start">
                 <thead class="bg-surface-soft text-text-secondary border-b border-border">
                     <tr>
@@ -53,7 +53,7 @@
                 </tbody>
             </table>
         </div>
-        <div class="md:hidden divide-y divide-border">
+        <div class="lg:hidden divide-y divide-border">
             @forelse ($vendors as $vendor)
                 <article wire:key="vendor-card-{{ $vendor->public_id }}" class="p-4 space-y-3">
                     <div class="flex justify-between items-start gap-3">

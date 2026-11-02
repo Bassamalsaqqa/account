@@ -1,4 +1,31 @@
 /* Compact operational tables. Mobile card layouts and editable form errors keep their own flow. */
+tbody tr:has(a[href]:not([target="_blank"])) { cursor: pointer; }
+[data-entry-form] tbody tr { cursor: auto; }
+tbody tr:has(a[href]):hover { background-color: var(--color-surface-soft); }
+.row-action-group { display: flex; flex-wrap: wrap; align-items: center; gap: 0.375rem; }
+.data-table .row-action-group { flex-wrap: nowrap; }
+.row-action {
+    display: inline-flex; align-items: center; justify-content: center; gap: 0.375rem;
+    min-height: 44px; min-width: 44px; padding: 0.5rem 0.625rem;
+    border: 1px solid var(--color-border); border-radius: var(--radius-control, 0.5rem);
+    background: var(--color-surface); font-size: 0.8125rem; font-weight: 600;
+    white-space: nowrap; cursor: pointer;
+}
+.row-action:hover { background: var(--color-surface-soft); border-color: var(--color-border-strong); }
+.row-action:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
+.row-action:disabled { cursor: wait; opacity: 0.55; }
+@media (min-width: 1024px) and (pointer: fine) {
+    :is(.business-app #app-main, .platform-admin #platform-main) .row-action,
+    :is(.business-app #app-main, .platform-admin #platform-main) button.row-action:not(.assistant-icon-button) {
+        min-height: 32px; min-width: 32px; height: 32px; padding: 0.375rem;
+        border-color: transparent; background: transparent; box-shadow: none;
+    }
+    :is(.business-app #app-main, .platform-admin #platform-main) .row-action:hover { background: var(--color-surface-soft); }
+    .row-action-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+    :is(.business-app #app-main, .platform-admin #platform-main) .data-table td:not(.table-actions) .touch-action {
+        display: inline; min-height: 0; min-width: 0; padding: 0; border: 0; background: transparent;
+    }
+}
 .data-table {
     width: 100%;
     border-collapse: collapse;

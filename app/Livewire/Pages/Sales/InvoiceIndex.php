@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Livewire\Pages\Sales;
 
+use App\Actions\Sales\DeleteSalesInvoiceDraftAction;
 use App\Livewire\Concerns\HasTablePageSize;
 use App\Models\Customer;
 use App\Models\SalesInvoice;
@@ -30,6 +31,20 @@ class InvoiceIndex extends Component
 
     #[Url(as: 'customer')]
     public ?int $customerFilter = null;
+
+    public function deleteDraft(string $publicId, CompanyContext $context, DeleteSalesInvoiceDraftAction $action): void
+    {
+        $invoice = SalesInvoice::where('company_id', $context->companyId())->where('public_id', $publicId)->firstOrFail();
+        try {
+            $action->execute($invoice, auth()->user());
+        } catch (\InvalidArgumentException $exception) {
+            $this->addError('deleteDraft', $exception->getMessage());
+
+            return;
+        }
+        $this->resetPage();
+        session()->flash('success', __('sales.draft_deleted'));
+    }
 
     public function updatedSearch(): void
     {

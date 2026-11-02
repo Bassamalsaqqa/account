@@ -24,7 +24,7 @@
         </select>
     </x-refinement-filters>
     <section class="bg-surface border border-border rounded-card overflow-hidden">
-        <div class="hidden md:block">
+        <div class="hidden lg:block">
             <table class="data-table w-full text-xs">
                 <thead class="bg-surface-soft text-text-secondary">
                     <tr>
@@ -71,7 +71,7 @@
                 </tbody>
             </table>
         </div>
-        <div class="md:hidden divide-y divide-border">
+        <div class="lg:hidden divide-y divide-border">
             @forelse($returns as $return)
                 <article class="p-4 space-y-3" wire:key="return-mobile-{{ $return->public_id }}">
                     <div class="flex justify-between gap-3">

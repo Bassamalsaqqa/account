@@ -2,8 +2,8 @@
 
 return [
     'delete_draft' => 'حذف المسودة',
-    'delete_draft_confirm' => 'حذف هذه المسودة غير المرحلة وبنودها؟ لا يمكن التراجع عن الحذف. لن يتغير أي مخزون أو دفعة أو قيد محاسبي.',
-    'delete_draft_blocked' => 'المسودة مرتبطة بسجل سابق أو لم تعد مسودة عادية غير مرحلة، لذلك لا يمكن حذفها.',
+    'delete_draft_confirm' => 'حذف المسودة وأصنافها؟ لا يمكن التراجع عن الحذف. لن يتغير المخزون أو الدفعات.',
+    'delete_draft_blocked' => 'هذه المسودة مرتبطة بسجل آخر أو تم اعتمادها، لذلك لا يمكن حذفها.',
     'draft_deleted' => 'تم حذف مسودة الفاتورة.',
     'optional_details' => 'ملاحظات وشروط (اختياري)',
     'tax_number' => 'الرقم الضريبي',
@@ -12,7 +12,7 @@ return [
     'invoices' => 'الفواتير',
     'quotations' => 'عروض الأسعار',
     'returns' => 'المردودات',
-    'payments' => 'سندات القبض',
+    'payments' => 'الدفعات المستلمة',
     'customer' => 'العميل',
     'customers' => 'العملاء',
     'status' => 'الحالة',
@@ -23,7 +23,7 @@ return [
     'subtotal' => 'المجموع الفرعي',
     'discount' => 'الخصم',
     'tax' => 'الضريبة',
-    'grand_total' => 'الإجمالي الكلي',
+    'grand_total' => 'الإجمالي',
     'currency' => 'العملة',
     'exchange_rate' => 'سعر الصرف',
     'notes' => 'ملاحظات',
@@ -45,7 +45,7 @@ return [
     'active' => 'نشط',
     'inactive' => 'غير نشط',
     'draft' => 'مسودة',
-    'posted' => 'مرحل',
+    'posted' => 'معتمدة',
     'voided' => 'ملغي',
     'unpaid' => 'غير مدفوع',
     'partially_paid' => 'مدفوع جزئياً',
@@ -53,10 +53,10 @@ return [
     'credit' => 'دائن',
     'created_successfully' => 'تم الإنشاء بنجاح',
     'updated_successfully' => 'تم التحديث بنجاح',
-    'posted_successfully' => 'تم الترحيل بنجاح',
+    'posted_successfully' => 'تم الاعتماد بنجاح',
     'voided_successfully' => 'تم الإلغاء بنجاح',
     'reversed_successfully' => 'تم العكس بنجاح',
-    'cannot_modify_posted' => 'لا يمكن تعديل المستند بعد ترحيله',
+    'cannot_modify_posted' => 'لا يمكن تعديل المستند بعد اعتماده. استخدم خيارات الإلغاء أو الإرجاع.',
 
     // Customers
     'customer_directory' => 'دليل العملاء',
@@ -119,7 +119,7 @@ return [
     'edit_invoice_draft' => 'تعديل مسودة الفاتورة',
     'invoice_details' => 'تفاصيل الفاتورة',
     'invoice_number' => 'رقم الفاتورة',
-    'payment_status' => 'حالة السداد',
+    'payment_status' => 'الدفع',
     'warehouse' => 'المستودع',
     'select_warehouse' => 'اختر المستودع',
     'select_customer' => 'اختر العميل',
@@ -172,7 +172,7 @@ return [
     'no_returns_found' => 'لم يتم العثور على مردودات',
 
     // Customer Payments / Receipts
-    'customer_payments' => 'سندات القبض',
+    'customer_payments' => 'دفعات العملاء',
     'customer_payment' => 'سند قبض',
     'new_payment' => 'سند قبض جديد',
     'payment_details' => 'تفاصيل سند القبض',
