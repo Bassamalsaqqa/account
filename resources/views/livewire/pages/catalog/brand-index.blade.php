@@ -157,7 +157,7 @@
                 </div>
 
 
-        @if ($brands->count() > 0)
+        @if ($brands->count() > 0 || $brands->currentPage() > 1)
             <div class="p-3.5 border-t border-border">
                 <x-table-pagination :paginator="$brands" />
             </div>

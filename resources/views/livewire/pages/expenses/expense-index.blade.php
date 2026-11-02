@@ -199,7 +199,7 @@
                     @endforelse
                 </div>
 
-        @if ($expenses->count() > 0)
+        @if ($expenses->count() > 0 || $expenses->currentPage() > 1)
             <div class="p-4 border-t border-border">
                 <x-table-pagination :paginator="$expenses" />
             </div>

@@ -239,7 +239,7 @@
                     @endforelse
                 </div>
 
-                @if ($sidebarCatalogs->count() > 0)
+                @if ($sidebarCatalogs->count() > 0 || $sidebarCatalogs->currentPage() > 1)
                     <div class="mt-4 pt-3 border-t border-slate-100">
                         <x-table-pagination :paginator="$sidebarCatalogs" />
                     </div>
@@ -645,7 +645,7 @@
                     </table>
                 </div>
 
-                @if ($availableProducts->count() > 0)
+                @if ($availableProducts->count() > 0 || $availableProducts->currentPage() > 1)
                     <div class="mt-4 pt-3 border-t border-slate-100">
                         <x-table-pagination :paginator="$availableProducts" />
                     </div>

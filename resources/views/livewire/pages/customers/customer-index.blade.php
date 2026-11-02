@@ -208,7 +208,7 @@
             @endforelse
         </div>
 
-        @if ($customers->count() > 0)
+        @if ($customers->count() > 0 || $customers->currentPage() > 1)
             <div class="p-4 border-t border-border">
                 <x-table-pagination :paginator="$customers" />
             </div>

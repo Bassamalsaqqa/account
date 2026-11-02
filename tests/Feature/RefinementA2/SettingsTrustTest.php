@@ -105,7 +105,7 @@ class SettingsTrustTest extends TestCase
         app(CompanyContext::class)->setCompany($foreignCompany, $foreignOwner);
         AuditEvent::create(['event_key' => 'a2.sample', 'summary' => 'Foreign company event']);
         app(CompanyContext::class)->setCompany($this->company, $this->owner);
-        for ($i = 0; $i < 25; $i++) {
+        for ($i = 0; $i < 55; $i++) {
             AuditEvent::create([
                 'event_key' => 'a2.sample', 'summary' => 'Local A2 event '.$i,
                 'before_json' => ['secret' => 'A2_PRIVATE_PAYLOAD'],
@@ -118,11 +118,13 @@ class SettingsTrustTest extends TestCase
             ->set('auditEvent', 'a2.')
             ->set('auditFrom', '2026-10-19')->set('auditUntil', '2026-10-19')
             ->call('applyAuditFilters')
-            ->assertViewHas('auditEvents', fn ($events) => $events->count() === 20 && $events->hasMorePages())
+            ->assertViewHas('auditEvents', fn ($events) => $events->perPage() === 50 && $events->count() === 50 && $events->hasMorePages())
             ->assertDontSee('Foreign company event')
             ->assertDontSee('A2_PRIVATE_PAYLOAD')->assertDontSee('A2_PRIVATE_METADATA');
         $component->call('nextPage', 'auditPage')
             ->assertViewHas('auditEvents', fn ($events) => $events->count() === 5 && ! $events->hasMorePages());
+        $component->set('perPage', 100)->assertSet('paginators.auditPage', 1)
+            ->assertViewHas('auditEvents', fn ($events) => $events->count() === 55 && ! $events->hasMorePages());
         $component->set('auditFrom', '2026-10-20')->set('auditUntil', '2026-10-20')->call('applyAuditFilters')
             ->assertViewHas('auditEvents', fn ($events) => $events->count() === 0);
     }

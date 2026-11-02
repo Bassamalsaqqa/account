@@ -188,7 +188,7 @@
                 </div>
 
 
-        @if ($movements->count() > 0)
+        @if ($movements->count() > 0 || $movements->currentPage() > 1)
             <div class="p-4 border-t border-border">
                 <x-table-pagination :paginator="$movements" />
             </div>

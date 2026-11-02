@@ -74,4 +74,4 @@
 .data-table .table-actions { z-index: 1; }
 .data-table th:last-child { white-space: nowrap; }
 
-.business-app #app-main .data-table .touch-action { min-height: 44px; min-width: 44px; }
+:is(.business-app #app-main, .platform-admin #platform-main) .data-table .touch-action { min-height: 44px; min-width: 44px; }

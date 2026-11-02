@@ -24,6 +24,16 @@ use Tests\Feature\Phase5E\Phase5ETestCase;
 
 final class TableDisplayTest extends Phase5ETestCase
 {
+    public function test_stale_empty_pages_keep_accessible_recovery_controls(): void
+    {
+        Livewire::withQueryParams(['page' => 2, 'per_page' => 200])->test(ProductIndex::class)
+            ->assertViewHas('products', fn ($p) => $p->count() === 0 && $p->currentPage() === 2)
+            ->assertSee(__('pagination.rows_per_page'))
+            ->assertSee(__('pagination.previous'))
+            ->call('previousPage')
+            ->assertViewHas('products', fn ($p) => $p->count() === 1 && $p->currentPage() === 1 && $p->perPage() === 200);
+    }
+
     public function test_display_preserves_exact_large_values_and_meaningful_quantity_fractions(): void
     {
         $this->assertSame('280.00', Display::displayMoney('280.000000', 'ILS'));

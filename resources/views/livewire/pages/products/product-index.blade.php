@@ -303,7 +303,7 @@
             @endforelse
         </div>
 
-        @if ($products->count() > 0)
+        @if ($products->count() > 0 || $products->currentPage() > 1)
             <div class="p-4 border-t border-border">
                 <x-table-pagination :paginator="$products" />
             </div>

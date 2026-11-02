@@ -205,7 +205,7 @@
                     </tbody>
                 </table>
             </div>
-            @if ($tabPurchases->count() > 0)
+            @if ($tabPurchases->count() > 0 || $tabPurchases->currentPage() > 1)
                 <div class="p-3 border-t border-border"><x-table-pagination :paginator="$tabPurchases" /></div>
             @endif
         </div>
@@ -241,7 +241,7 @@
                     </tbody>
                 </table>
             </div>
-            @if ($tabReturns->count() > 0)
+            @if ($tabReturns->count() > 0 || $tabReturns->currentPage() > 1)
                 <div class="p-3 border-t border-border"><x-table-pagination :paginator="$tabReturns" /></div>
             @endif
         </div>
@@ -289,7 +289,7 @@
                     </tbody>
                 </table>
             </div>
-            @if ($tabPayments->count() > 0)
+            @if ($tabPayments->count() > 0 || $tabPayments->currentPage() > 1)
                 <div class="p-3 border-t border-border"><x-table-pagination :paginator="$tabPayments" /></div>
             @endif
         </div>

@@ -181,8 +181,8 @@ class BrandManagementTest extends Phase5ETestCase
                 return $brands->isEmpty();
             });
 
-        // Test pagination at 15 items
-        for ($i = 1; $i <= 16; $i++) {
+        // Exercise the 50-row boundary and all supported larger page sizes.
+        for ($i = 1; $i <= 51; $i++) {
             Brand::create([
                 'company_id' => $this->company->id,
                 'name_ar' => sprintf('علامة %02d', $i),
@@ -193,8 +193,11 @@ class BrandManagementTest extends Phase5ETestCase
 
         Livewire::test(BrandIndex::class)
             ->assertViewHas('brands', function ($brands) {
-                return $brands->count() === 15 && $brands->total() === 18;
-            });
+                return $brands->perPage() === 50 && $brands->count() === 50 && $brands->total() === 53;
+            })->call('nextPage')->assertViewHas('brands', fn ($brands) => $brands->count() === 3)
+            ->set('perPage', 100)->assertSet('paginators.page', 1)
+            ->assertViewHas('brands', fn ($brands) => $brands->count() === 53 && $brands->perPage() === 100)
+            ->set('perPage', 200)->assertViewHas('brands', fn ($brands) => $brands->count() === 53 && $brands->perPage() === 200);
     }
 
     public function test_creation_edit_and_active_toggle(): void

@@ -1,12 +1,12 @@
 @extends('layouts.platform')
 
 @section('breadcrumb')
-    <span class="text-slate-300 shrink-0">/</span>
-    <a href="{{ route('platform.index') }}" class="hover:text-primary transition-colors text-slate-600 font-semibold shrink-0 hidden sm:inline">{{ __('platform.companies') }}</a>
-    <span class="text-slate-300 shrink-0 hidden sm:inline">/</span>
-    <a href="{{ route('platform.companies.show', $company->public_id) }}" class="hover:text-primary transition-colors text-slate-600 font-semibold truncate max-w-[90px] sm:max-w-xs shrink-0">{{ app()->getLocale() === 'en' ? ($company->name_en ?: $company->name_ar) : $company->name_ar }}</a>
-    <span class="text-slate-300 shrink-0">/</span>
-    <span class="text-slate-900 font-semibold truncate max-w-[120px] sm:max-w-none">{{ __('subscriptions.subscription_details') }}</span>
+    <span class="text-border-strong shrink-0">/</span>
+    <a href="{{ route('platform.index') }}" class="hover:text-primary transition-colors text-text-secondary font-semibold shrink-0 hidden sm:inline">{{ __('platform.companies') }}</a>
+    <span class="text-border-strong shrink-0 hidden sm:inline">/</span>
+    <a href="{{ route('platform.companies.show', $company->public_id) }}" class="hover:text-primary transition-colors text-text-secondary font-semibold truncate max-w-[90px] sm:max-w-xs shrink-0">{{ app()->getLocale() === 'en' ? ($company->name_en ?: $company->name_ar) : $company->name_ar }}</a>
+    <span class="text-border-strong shrink-0">/</span>
+    <span class="text-text-primary font-semibold truncate max-w-[120px] sm:max-w-none">{{ __('subscriptions.subscription_details') }}</span>
 @endsection
 
 @section('content')
@@ -50,8 +50,8 @@
                     @php
                         $state = $timeline['state'] ?? 'active';
                         $stateClasses = match($state) {
-                            'active' => 'bg-success-bg text-success border border-emerald-200',
-                            'approaching_renewal' => 'bg-amber-50 text-amber-800 border border-amber-200',
+                            'active' => 'bg-success-bg text-success border border-success/20',
+                            'approaching_renewal' => 'bg-warning-bg text-warning border border-warning/20',
                             'expired_in_grace' => 'bg-orange-50 text-orange-800 border border-orange-200',
                             'read_only' => 'bg-danger-bg text-danger border border-danger/20',
                             default => 'bg-surface-soft text-text-muted',
@@ -68,7 +68,7 @@
                         {{ $stateLabel }}
                     </span>
 
-                    <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold {{ $effectiveEnforcement ? 'bg-danger-bg text-danger border border-danger/20' : 'bg-slate-100 text-slate-700 border border-slate-200' }}">
+                    <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold {{ $effectiveEnforcement ? 'bg-danger-bg text-danger border border-danger/20' : 'bg-surface-soft text-text-secondary border border-border' }}">
                         {{ $effectiveEnforcement ? __('subscriptions.enforcement_active') : __('subscriptions.enforcement_preview') }}
                     </span>
                 @endif
@@ -76,8 +76,8 @@
         </div>
 
         @if($timeline['reminder_due'] ?? false)
-            <div role="status" class="mt-4 flex items-center gap-2.5 rounded-control border border-amber-300 bg-amber-50 p-3 text-xs sm:text-sm font-bold text-amber-900">
-                <x-icon name="bell" class="w-4 h-4 text-amber-700 shrink-0" />
+            <div role="status" class="mt-4 flex items-center gap-2.5 rounded-control border border-warning/30 bg-warning-bg p-3 text-xs sm:text-sm font-bold text-warning">
+                <x-icon name="bell" class="w-4 h-4 text-warning shrink-0" />
                 <span>{{ __('subscriptions.reminder_due_alert', ['days' => $timeline['days_until_renewal'] ?? 0]) }}</span>
             </div>
         @endif
@@ -85,7 +85,7 @@
 
     <!-- Validation Error Summary -->
     @if($errors->any() && $submittedOperation !== null)
-        <div role="alert" tabindex="-1" autofocus class="rounded-card border border-danger/30 bg-danger-bg p-4 sm:p-5 text-sm text-danger shadow-xs">
+        <div role="alert" tabindex="-1" autofocus class="rounded-card border border-danger/30 bg-danger-bg p-4 sm:p-5 text-sm text-danger shadow-panel">
             <div class="flex items-start gap-3">
                 <x-icon name="shield" class="w-5 h-5 text-danger shrink-0 mt-0.5" />
                 <div class="space-y-1.5">
@@ -373,7 +373,7 @@
 
                     <div class="pt-3 border-t border-border flex justify-end">
                         <button type="button"
-                                class="inline-flex min-h-11 items-center justify-center gap-2 rounded-control bg-primary px-5 text-sm font-semibold text-white hover:bg-primary-hover shadow-xs transition-colors cursor-pointer"
+                                class="inline-flex min-h-11 items-center justify-center gap-2 rounded-control bg-primary px-5 text-sm font-semibold text-white hover:bg-primary-hover shadow-panel transition-colors cursor-pointer"
                                 @keydown.enter.prevent
                                 @keyup.enter.prevent="$el.click()"
                                 @click="if ($el.form.reportValidity()) {
@@ -420,7 +420,7 @@
                             {{ __('subscriptions.review_edit') }}
                         </button>
                         <button type="submit"
-                                class="inline-flex min-h-11 items-center justify-center gap-2 rounded-control bg-primary px-5 text-sm font-semibold text-white hover:bg-primary-hover shadow-xs transition-colors cursor-pointer disabled:opacity-50"
+                                class="inline-flex min-h-11 items-center justify-center gap-2 rounded-control bg-primary px-5 text-sm font-semibold text-white hover:bg-primary-hover shadow-panel transition-colors cursor-pointer disabled:opacity-50"
                                 :disabled="saving">
                             <x-icon name="check" class="w-4 h-4" />
                             <span>{{ __('subscriptions.save_terms') }}</span>
@@ -494,7 +494,7 @@
 
                         <div class="pt-3 border-t border-border flex justify-end">
                             <button type="button"
-                                    class="inline-flex min-h-11 items-center justify-center gap-2 rounded-control bg-primary px-5 text-sm font-semibold text-white hover:bg-primary-hover shadow-xs transition-colors cursor-pointer"
+                                    class="inline-flex min-h-11 items-center justify-center gap-2 rounded-control bg-primary px-5 text-sm font-semibold text-white hover:bg-primary-hover shadow-panel transition-colors cursor-pointer"
                                     @keydown.enter.prevent
                                 @keyup.enter.prevent="$el.click()"
                                 @click="if ($el.form.reportValidity()) { review = true; }">
@@ -530,7 +530,7 @@
                                 {{ __('subscriptions.review_edit') }}
                             </button>
                             <button type="submit"
-                                    class="inline-flex min-h-11 items-center justify-center gap-2 rounded-control bg-primary px-5 text-sm font-semibold text-white hover:bg-primary-hover shadow-xs transition-colors cursor-pointer disabled:opacity-50"
+                                    class="inline-flex min-h-11 items-center justify-center gap-2 rounded-control bg-primary px-5 text-sm font-semibold text-white hover:bg-primary-hover shadow-panel transition-colors cursor-pointer disabled:opacity-50"
                                     :disabled="saving">
                                 <x-icon name="check" class="w-4 h-4" />
                                 <span>{{ __('subscriptions.renew_button') }}</span>
@@ -579,7 +579,7 @@
             <p class="text-xs text-text-muted mb-4 leading-relaxed">
                 {{ __('subscriptions.payment_desc') }}
             </p>
-            @if ($charges->count() > 0)
+            @if ($charges->hasPages())
                 <p class="mb-4 text-xs leading-relaxed text-text-muted">{{ __('subscriptions.charges_page_help') }}</p>
             @endif
 
@@ -688,7 +688,7 @@
 
                         <div class="pt-3 border-t border-border flex justify-end">
                             <button type="button"
-                                    class="inline-flex min-h-11 items-center justify-center gap-2 rounded-control bg-primary px-5 text-sm font-semibold text-white hover:bg-primary-hover shadow-xs transition-colors cursor-pointer"
+                                    class="inline-flex min-h-11 items-center justify-center gap-2 rounded-control bg-primary px-5 text-sm font-semibold text-white hover:bg-primary-hover shadow-panel transition-colors cursor-pointer"
                                     @keydown.enter.prevent
                                 @keyup.enter.prevent="$el.click()"
                                 @click="if ($el.form.reportValidity()) { review = true; }">
@@ -726,7 +726,7 @@
                                 {{ __('subscriptions.review_edit') }}
                             </button>
                             <button type="submit"
-                                    class="inline-flex min-h-11 items-center justify-center gap-2 rounded-control bg-primary px-5 text-sm font-semibold text-white hover:bg-primary-hover shadow-xs transition-colors cursor-pointer disabled:opacity-50"
+                                    class="inline-flex min-h-11 items-center justify-center gap-2 rounded-control bg-primary px-5 text-sm font-semibold text-white hover:bg-primary-hover shadow-panel transition-colors cursor-pointer disabled:opacity-50"
                                     :disabled="saving">
                                 <x-icon name="check" class="w-4 h-4" />
                                 <span>{{ __('subscriptions.record_payment_button') }}</span>

@@ -153,7 +153,7 @@
             @endforelse
         </div>
 
-        @if ($quotations->count() > 0)
+        @if ($quotations->count() > 0 || $quotations->currentPage() > 1)
             <div class="p-4 border-t border-border">
                 <x-table-pagination :paginator="$quotations" />
             </div>

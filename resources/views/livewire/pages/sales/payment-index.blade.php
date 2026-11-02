@@ -166,7 +166,7 @@
             @endforelse
         </div>
 
-        @if ($payments->count() > 0)
+        @if ($payments->count() > 0 || $payments->currentPage() > 1)
             <div class="p-4 border-t border-border">
                 <x-table-pagination :paginator="$payments" />
             </div>
