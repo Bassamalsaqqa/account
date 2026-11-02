@@ -19,7 +19,7 @@ final class PlatformController extends Controller
 {
     public function index(Request $request): View
     {
-        app(PlatformAccess::class)->authorize('company.read');
+        app(PlatformAccess::class)->authorizeRead('company.read');
         $validated = $request->validate(['q' => ['nullable', 'string', 'max:100']]);
         $search = trim($validated['q'] ?? '');
         $counts = DB::table('companies')->selectRaw('COUNT(*) AS total, SUM(CASE WHEN status = ? THEN 1 ELSE 0 END) AS active', ['active'])->first();
@@ -39,7 +39,7 @@ final class PlatformController extends Controller
 
         $billingSummary = null;
         if (in_array('subscription.manage', $request->attributes->get('platform_permissions', []), true)) {
-            app(PlatformAccess::class)->authorize('subscription.manage');
+            app(PlatformAccess::class)->authorizeRead('subscription.manage');
             $billingSummary = ['approaching' => 0, 'grace' => 0, 'read_only' => 0, 'enforced_read_only' => 0];
             $instant = now()->toDateTimeImmutable();
             foreach (DB::table('platform_subscriptions as subscription')->join('companies', 'companies.id', '=', 'subscription.company_id')
@@ -63,7 +63,7 @@ final class PlatformController extends Controller
 
     public function show(string $publicId): View
     {
-        app(PlatformAccess::class)->authorize('company.read');
+        app(PlatformAccess::class)->authorizeRead('company.read');
         $company = DB::table('companies')->select(['id', 'public_id', 'name_ar', 'name_en', 'status', 'base_currency_code', 'default_locale', 'timezone'])
             ->where('public_id', $publicId)->first();
         abort_if($company === null, 404);
@@ -89,7 +89,7 @@ final class PlatformController extends Controller
 
     public function create(): View
     {
-        app(PlatformAccess::class)->authorize('company.provision');
+        app(PlatformAccess::class)->authorizeRead('company.provision');
 
         return view('platform.create', ['requestKey' => (string) Str::uuid()]);
     }
@@ -103,7 +103,7 @@ final class PlatformController extends Controller
 
     public function audit(): View
     {
-        app(PlatformAccess::class)->authorize('audit.read');
+        app(PlatformAccess::class)->authorizeRead('audit.read');
         $events = DB::table('platform_audit_events')->select(['event_key', 'actor_user_id', 'company_id', 'created_at', 'metadata'])
             ->orderByDesc('id')->paginate(TablePageSize::fromRequest());
 

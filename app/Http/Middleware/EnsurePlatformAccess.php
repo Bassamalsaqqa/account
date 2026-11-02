@@ -17,7 +17,10 @@ final class EnsurePlatformAccess
     public function handle(Request $request, Closure $next, string $permission): Response
     {
         try {
-            $grant = app(PlatformAccess::class)->authorize($permission);
+            $access = app(PlatformAccess::class);
+            $grant = $request->isMethodSafe()
+                ? $access->authorizeRead($permission)
+                : $access->authorize($permission);
             $request->attributes->set('platform_permissions', $grant->permissions);
         } catch (PlatformReauthenticationRequired $e) {
             if ($request->expectsJson()) {
