@@ -530,13 +530,13 @@ class PurchasePriceHistorySecurityAndUiTest extends TestCase
         $response = Livewire::actingAs($actor)
             ->test(ProductDetail::class, ['publicId' => $this->product->public_id]);
 
-        $response->assertDontSee('77.770000');
+        $response->assertDontSee('77.770000')->assertDontSee('77.77');
         $response->assertDontSee('تاريخ أسعار الشراء');
 
         // Verify call setTab with unauthorized tab does not activate or reveal data
         $response->call('setTab', 'purchase_history')
             ->assertSet('activeTab', 'overview')
-            ->assertDontSee('77.770000');
+            ->assertDontSee('77.770000')->assertDontSee('77.77');
     }
 
     public function test_regression_r5_fractional_quantity_and_saved_precision_formatting(): void

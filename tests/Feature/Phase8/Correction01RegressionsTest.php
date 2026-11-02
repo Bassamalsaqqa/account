@@ -659,8 +659,8 @@ final class Correction01RegressionsTest extends TradeTestCase
             ->test(ReportView::class, ['reportKey' => 'inventory.transfers']);
         $comp->assertStatus(200)
             ->assertSee('2026-10-08')
-            ->assertSee('15.000000')
-            ->assertSee('25.000000')
+            ->assertSeeHtml('>15</td>')
+            ->assertSeeHtml('>25.00</td>')
             ->assertSee($this->warehouse->name_ar)
             ->assertSee($destWarehouse->name_ar);
 
@@ -745,8 +745,8 @@ final class Correction01RegressionsTest extends TradeTestCase
         $comp->assertStatus(200)
             ->assertSee($this->warehouse->name_ar)
             ->assertSee($warehouse2->name_ar)
-            ->assertSee('40.000000')
-            ->assertSee('60.000000');
+            ->assertSeeHtml('>40</td>')
+            ->assertSeeHtml('>60</td>');
 
         // CSV export retains warehouse names and quantities
         $response = $this->get(route('reports.export', ['reportKey' => 'inventory.by-warehouse']));

@@ -136,15 +136,15 @@
             <div class="grid gap-4 sm:grid-cols-3 pt-1">
                 <div>
                     <span class="block text-xs text-text-secondary">{{ __('payroll.earned_salary') }}:</span>
-                    <span class="text-base font-bold text-text-primary" dir="ltr">{{ $previewEarned }} {{ $currencyCode }}</span>
+                    <span class="text-base font-bold text-text-primary" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($previewEarned) }} {{ $currencyCode }}</span>
                 </div>
                 <div>
                     <span class="block text-xs text-text-secondary">{{ __('payroll.advances_applied') }}:</span>
-                    <span class="text-base font-bold text-amber-700" dir="ltr">{{ $previewApplied }} {{ $currencyCode }}</span>
+                    <span class="text-base font-bold text-amber-700" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($previewApplied) }} {{ $currencyCode }}</span>
                 </div>
                 <div>
                     <span class="block text-xs text-text-secondary">{{ __('payroll.net_payable') }}:</span>
-                    <span class="text-xl font-bold text-primary" dir="ltr">{{ $previewNetPayable }} {{ $currencyCode }}</span>
+                    <span class="text-xl font-bold text-primary" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($previewNetPayable) }} {{ $currencyCode }}</span>
                 </div>
             </div>
         </div>

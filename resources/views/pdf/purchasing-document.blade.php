@@ -568,7 +568,7 @@
                         <tr class="base-amount-row">
                             <td>{{ __('purchasing_documents.total_landed_cost_base') }}</td>
                             <td class="number" dir="ltr">
-                                {{ $data['document']['total_landed_cost_base'] }} {{ $data['document']['base_currency_code'] ?? '' }}
+                                {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($data['document']['total_landed_cost_base']) }} {{ $data['document']['base_currency_code'] ?? '' }}
                             </td>
                         </tr>
                     @endif

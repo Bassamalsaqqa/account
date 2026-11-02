@@ -27,7 +27,7 @@ final class InventoryPresentationTest extends Phase5ETestCase
         $this->activate($reader);
         foreach (['ar' => 'كرتونة', 'en' => 'Carton'] as $locale => $label) {
             app()->setLocale($locale);
-            Livewire::test(ProductDetail::class, ['publicId' => $this->product->public_id])->assertSee('53.000000')->assertSee($label)->assertDontSee('13.57')
+            Livewire::test(ProductDetail::class, ['publicId' => $this->product->public_id])->assertViewHas('stockTotal', '53.000000')->assertSee('53')->assertDontSee('53.000000')->assertSee($label)->assertDontSee('13.57')
                 ->call('setTab', 'warehouses')->assertSee($label);
             Livewire::test(InventoryOverview::class)->assertSee($label)->assertDontSee('13.57');
         }

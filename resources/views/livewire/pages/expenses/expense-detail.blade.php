@@ -161,7 +161,7 @@
                                         {{ app()->getLocale()==='en' ? ($alloc->purchaseLine->product_name_en ?: $alloc->purchaseLine->product_name_ar ?: $alloc->purchaseLine->item_description) : ($alloc->purchaseLine->product_name_ar ?: $alloc->purchaseLine->product_name_en ?: $alloc->purchaseLine->item_description) }}
                                     </td>
                                     <td class="px-3 py-2 font-semibold" dir="ltr">
-                                        {{ $alloc->allocated_base }} {{ $baseCurrencyCode }}
+                                        {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($alloc->allocated_base) }} {{ $baseCurrencyCode }}
                                     </td>
                                     <td class="px-3 py-2">
                                         <span class="text-xs font-semibold px-2 py-0.5 rounded {{ $alloc->status === 'locked' ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-700' }}">

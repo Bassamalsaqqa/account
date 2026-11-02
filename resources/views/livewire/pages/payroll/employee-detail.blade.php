@@ -242,10 +242,10 @@
                                     {{ $ent->period_start->toDateString() }} – {{ $ent->period_end->toDateString() }}
                                 </td>
                                 <td class="px-4 py-3 font-medium" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($ent->earned_salary) }} {{ $ent->currency_code }}</td>
-                                <td class="px-4 py-3 text-amber-700 font-medium" dir="ltr">{{ $ent->advance_applied }} {{ $ent->currency_code }}</td>
+                                <td class="px-4 py-3 text-amber-700 font-medium" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($ent->advance_applied) }} {{ $ent->currency_code }}</td>
                                 <td class="px-4 py-3 font-bold" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($pos['net_payable']) }} {{ $pos['currency_code'] }}</td>
                                 <td class="px-4 py-3 font-bold {{ $pos['is_unpaid'] ? 'text-primary' : 'text-emerald-700' }}" dir="ltr">
-                                    {{ $pos['remaining_payable'] }} {{ $pos['currency_code'] }}
+                                    {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($pos['remaining_payable']) }} {{ $pos['currency_code'] }}
                                 </td>
                                 <td class="px-4 py-3">
                                     <span class="inline-flex px-2 py-0.5 rounded text-xs font-semibold {{ $ent->status === 'posted' ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800' }}">
@@ -334,7 +334,7 @@
                                     <td class="px-4 py-3 font-medium">{{ $evt['number'] }}</td>
                                     <td class="px-4 py-3 text-text-secondary text-xs">
                                         @if($evt['type'] === 'salary_entry')
-                                            {{ $evt['period'] }} ({{ __('payroll.advance_settlement') }}: {{ $evt['advance_applied'] }})
+                                            {{ $evt['period'] }} ({{ __('payroll.advance_settlement') }}: {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($evt['advance_applied']) }})
                                         @elseif(isset($evt['method']))
                                             {{ __('payroll.'.$evt['method']) }}
                                         @endif

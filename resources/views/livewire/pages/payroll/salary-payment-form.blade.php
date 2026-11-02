@@ -147,7 +147,7 @@
                                         {{ $ent->period_start->toDateString() }} – {{ $ent->period_end->toDateString() }}
                                     </td>
                                     <td class="px-3 py-2 font-medium" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($pos['net_payable']) }}</td>
-                                    <td class="px-3 py-2 font-bold text-primary" dir="ltr">{{ $pos['remaining_payable'] }}</td>
+                                    <td class="px-3 py-2 font-bold text-primary" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($pos['remaining_payable']) }}</td>
                                     <td class="px-3 py-2">
                                         <input type="text" inputmode="decimal" wire:model.live="entryAllocations.{{ $ent->id }}" placeholder="0.00" class="w-full rounded-control border border-border bg-white px-2 py-1 text-sm focus:border-primary focus:ring-primary text-end">
                                     </td>
@@ -167,7 +167,7 @@
         <div class="rounded-control border border-border bg-surface-soft p-4 flex justify-between items-center">
             <span class="font-bold text-sm text-text-primary">{{ __('payroll.amount_paid') }}:</span>
             <span class="text-2xl font-bold text-emerald-700" dir="ltr">
-                {{ $totalAllocated }} {{ $currencyCode }}
+                {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($totalAllocated) }} {{ $currencyCode }}
             </span>
         </div>
 

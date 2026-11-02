@@ -114,9 +114,9 @@ final class ExpiryLotUsabilityTest extends PositionTestCase
                 app()->setLocale($locale);
                 Livewire::test(StockTransferForm::class)->set('source_warehouse_id', $this->warehouseA->id)->set('product_id', $this->stockProduct->id)
                     ->assertSee(__('inventory.base_available'))->assertSee($this->baseUnit->name())->assertSee(__('inventory.lot_expired_status'))
-                    ->assertSee(__('inventory.lot_today_status'))->assertSee(__('inventory.lot_unknown_expiry'))->assertDontSee('17.123456');
+                    ->assertSee(__('inventory.lot_today_status'))->assertSee(__('inventory.lot_unknown_expiry'))->assertDontSee('17.123456')->assertDontSee('17.12');
                 Livewire::test(StockAdjustmentForm::class)->set('warehouse_id', $this->warehouseA->id)->set('product_id', $this->stockProduct->id)
-                    ->set('type', StockMovement::TYPE_ADJUSTMENT_DECREASE)->assertSee(__('inventory.base_available'))->assertDontSee('17.123456');
+                    ->set('type', StockMovement::TYPE_ADJUSTMENT_DECREASE)->assertSee(__('inventory.base_available'))->assertDontSee('17.123456')->assertDontSee('17.12');
             }
         });
     }
