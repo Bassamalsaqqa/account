@@ -6,7 +6,7 @@
                 {{ __('sales.customer_directory') }}
             </h1>
             <p class="text-xs text-text-secondary mt-1">
-                {{ __('sales.customers') }} ({{ $customers->total() }})
+                {{ __('sales.customers') }} ({{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($customers->total()) }})
             </p>
         </div>
 
@@ -50,7 +50,7 @@
     <!-- Customers Table / Cards -->
     <div class="bg-white rounded-card border border-border shadow-xs overflow-hidden">
         <div class="hidden md:block overflow-x-auto">
-            <table class="w-full text-start text-xs border-collapse">
+            <table class="data-table w-full text-start text-xs border-collapse">
                 <thead>
                     <tr class="border-b border-border bg-surface-soft text-text-muted font-bold text-[11px] uppercase tracking-wider">
                         <th class="py-3 px-4 text-start">{{ __('sales.code') }}</th>
@@ -86,11 +86,11 @@
                             </td>
                             <td class="py-3 px-4 font-bold" dir="ltr">
                                 <span class="{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::isPositive((string) ($balances[$customer->id] ?? '0')) ? 'text-danger' : 'text-text-primary' }}">
-                                    {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency((string) ($balances[$customer->id] ?? '0'), $customer->default_currency_code ?? $company->base_currency_code) }}
+                                    {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney((string) ($balances[$customer->id] ?? '0'), $customer->default_currency_code ?? $company->base_currency_code) }}
                                     <span class="text-text-muted">{{ $customer->default_currency_code ?? $company->base_currency_code }}</span>
                                     @foreach ($currencyBalances[$customer->id] ?? [] as $currency => $balance)
                                         @if ($currency !== ($customer->default_currency_code ?? $company->base_currency_code))
-                                            <span class="block text-xs" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($balance['outstanding'], $currency) }} <span class="text-text-muted">{{ $currency }}</span></span>
+                                            <span class="block text-xs" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($balance['outstanding'], $currency) }} <span class="text-text-muted">{{ $currency }}</span></span>
                                         @endif
                                     @endforeach
                                 </span>
@@ -106,7 +106,7 @@
                                     </span>
                                 @endif
                             </td>
-                            <td class="py-3 px-4 text-end">
+                            <td class="table-actions py-3 px-4 text-end">
                                 <div class="flex items-center justify-end gap-2">
                                     <a href="{{ route('customers.show', $customer->public_id) }}"
                                        class="touch-action bg-surface-soft hover:bg-primary-50 text-text-secondary hover:text-primary font-bold text-[11px] transition-colors">
@@ -171,11 +171,11 @@
                         <div class="col-span-2">
                             <span class="text-text-muted block text-[10px]">{{ __('sales.outstanding_balance') }}</span>
                             <span class="font-bold text-sm {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::isPositive((string) ($balances[$customer->id] ?? '0')) ? 'text-danger' : 'text-text-primary' }}" dir="ltr">
-                                {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency((string) ($balances[$customer->id] ?? '0'), $customer->default_currency_code ?? $company->base_currency_code) }}
+                                {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney((string) ($balances[$customer->id] ?? '0'), $customer->default_currency_code ?? $company->base_currency_code) }}
                                 <span class="text-text-muted">{{ $customer->default_currency_code ?? $company->base_currency_code }}</span>
                                     @foreach ($currencyBalances[$customer->id] ?? [] as $currency => $balance)
                                         @if ($currency !== ($customer->default_currency_code ?? $company->base_currency_code))
-                                            <span class="block text-xs" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($balance['outstanding'], $currency) }} <span class="text-text-muted">{{ $currency }}</span></span>
+                                            <span class="block text-xs" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($balance['outstanding'], $currency) }} <span class="text-text-muted">{{ $currency }}</span></span>
                                         @endif
                                     @endforeach
                             </span>
@@ -208,9 +208,9 @@
             @endforelse
         </div>
 
-        @if ($customers->hasPages())
+        @if ($customers->count() > 0 || $customers->currentPage() > 1)
             <div class="p-4 border-t border-border">
-                {{ $customers->links() }}
+                <x-table-pagination :paginator="$customers" />
             </div>
         @endif
     </div>

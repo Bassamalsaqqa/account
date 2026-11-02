@@ -180,7 +180,7 @@
                 <div class="space-y-3 mt-4">
                     @foreach ($allocations as $idx => $alloc)
                     <section class="rounded-control border border-border p-3 space-y-2" wire:key="allocation-{{ $alloc['purchase_id'] }}">
-                        <div class="flex flex-wrap justify-between gap-2"><span dir="ltr" class="font-mono text-sm">{{ $alloc['purchase_number'] }}</span><span dir="ltr" class="text-sm">{{ $alloc['outstanding'] }} {{ $alloc['document_currency_code'] }}</span></div>
+                        <div class="flex flex-wrap justify-between gap-2"><span dir="ltr" class="font-mono text-sm">{{ $alloc['purchase_number'] }}</span><span dir="ltr" class="text-sm">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($alloc['outstanding']) }} {{ $alloc['document_currency_code'] }}</span></div>
                         <div class="grid sm:grid-cols-2 gap-3">
                             <label class="block text-sm">{{ __('money.document_amount') }} ({{ $alloc['document_currency_code'] }})<input type="text" inputmode="decimal" wire:model.blur="allocations.{{ $idx }}.allocated_amount" wire:change="recalculateAllocations" dir="ltr" class="w-full min-h-11 px-3 rounded-control border border-border font-mono tabular-nums"  :disabled="documentBusy || saving"/></label>
                             @error('allocations.'.$idx.'.allocated_amount') <p class="text-danger text-xs">{{ $message }}</p> @enderror
@@ -203,13 +203,13 @@
                 <div>
                     <span class="text-text-muted">{{ __('purchasing.allocated') }}:</span>
                     <span class="font-mono font-bold text-primary mr-1 ml-1" dir="ltr">
-                        {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($allocatedTotal, $currency_code) }} {{ $currency_code }}
+                        {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($allocatedTotal, $currency_code) }} {{ $currency_code }}
                     </span>
                 </div>
                 <div>
                     <span class="text-text-muted">{{ __('purchasing.unallocated_advance') }}:</span>
                     <span class="font-mono font-bold mr-1 ml-1 {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::isPositive($unallocatedAmount) ? 'text-info' : 'text-text-primary' }}" dir="ltr">
-                        {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($unallocatedAmount, $currency_code) }} {{ $currency_code }}
+                        {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($unallocatedAmount, $currency_code) }} {{ $currency_code }}
                     </span>
                 </div>
             </div>

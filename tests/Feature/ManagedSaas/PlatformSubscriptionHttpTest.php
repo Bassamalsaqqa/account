@@ -480,7 +480,7 @@ final class PlatformSubscriptionHttpTest extends TestCase
     {
         $this->post($this->actionEndpoint('configure'), $this->configPayload())->assertRedirect();
         $oldest = DB::table('platform_subscription_charges')->first();
-        for ($period = 2; $period <= 16; $period++) {
+        for ($period = 2; $period <= 51; $period++) {
             // Later zero-fee periods are settled; the oldest period still has a balance.
             DB::table('platform_subscription_charges')->insert([
                 'company_id' => $this->company->id, 'subscription_revision' => $period, 'plan' => 'Synthetic later period',
@@ -489,9 +489,14 @@ final class PlatformSubscriptionHttpTest extends TestCase
         }
         foreach (['en', 'ar'] as $locale) {
             $this->withSession(['locale' => $locale])->get($this->showEndpoint())->assertOk()
+                ->assertViewHas('charges', fn ($charges) => $charges->perPage() === 50 && $charges->count() === 50 && $charges->total() === 51)
                 ->assertSee(__('subscriptions.no_outstanding_charges', [], $locale))
                 ->assertSee(__('subscriptions.charges_page_help', [], $locale));
             $this->get($this->showEndpoint().'?page=2')->assertOk()
+                ->assertSee('value="'.$oldest->id.'"', false)
+                ->assertDontSee(__('subscriptions.no_outstanding_charges', [], $locale));
+            $this->get($this->showEndpoint().'?per_page=100')->assertOk()
+                ->assertViewHas('charges', fn ($charges) => $charges->perPage() === 100 && $charges->count() === 51)
                 ->assertSee('value="'.$oldest->id.'"', false)
                 ->assertDontSee(__('subscriptions.no_outstanding_charges', [], $locale));
         }

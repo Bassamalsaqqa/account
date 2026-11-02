@@ -79,6 +79,9 @@ A worker report or automated review is evidence, not acceptance. Verify claims a
 - Never edit an already-applied migration to change production history; add a forward migration.
 - Shared-hosting compatibility is mandatory: no required Redis, Docker, permanent Node server, WebSockets, or Supervisor.
 - Preserve deployment file-permission policy: directories 0755, files 0644, never 777.
+- Keep Hostinger inode usage bounded: stage and replace complete manifest-verified build directories; never overlay hashed chunks. Production builds must contain no source maps.
+- Keep development files, source repositories, archives and backups outside the public document root. Preserve verified off-host recovery before pruning old on-host copies; remove owned temporary deployment staging after verification.
+- Preserve the currently configured and deployed subdomain/document root. Do not move directories, change DNS/hosting configuration, or introduce a symlinked public root as incidental cleanup. Use this project's reviewed Hostinger release procedure, not generic dist/public_html examples.
 
 ## UI implementation
 

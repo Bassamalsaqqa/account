@@ -55,7 +55,7 @@
     <!-- Table -->
     <div class="rounded-card border border-border bg-white overflow-hidden shadow-sm">
         <div class="hidden md:block overflow-x-auto">
-            <table class="w-full text-sm text-start">
+            <table class="data-table w-full text-sm text-start">
                 <thead class="bg-surface-soft border-b border-border text-xs uppercase text-text-muted">
                     <tr>
                         <th class="px-4 py-3 text-start">{{ __('expenses.expense_number') }}</th>
@@ -103,7 +103,7 @@
                                 @if($exp->amount === null)
                                     <span class="text-text-muted italic">{{ __('expenses.cost_redacted') }}</span>
                                 @else
-                                    {{ $exp->amount }} {{ $exp->currency_code }}
+                                    {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($exp->amount) }} {{ $exp->currency_code }}
                                 @endif
                             </td>
                             <td class="px-4 py-3 whitespace-nowrap">
@@ -171,7 +171,7 @@
                                 <dd dir="ltr" class="break-words text-sm tabular-nums text-text-primary">@if($exp->amount === null)
                                     <span class="text-text-muted italic">{{ __('expenses.cost_redacted') }}</span>
                                 @else
-                                    {{ $exp->amount }} {{ $exp->currency_code }}
+                                    {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($exp->amount) }} {{ $exp->currency_code }}
                                 @endif</dd>
                             </div>
                             <div class="min-w-0 space-y-1 col-span-2">
@@ -199,9 +199,9 @@
                     @endforelse
                 </div>
 
-        @if($expenses->hasPages())
+        @if ($expenses->count() > 0 || $expenses->currentPage() > 1)
             <div class="p-4 border-t border-border">
-                {{ $expenses->links() }}
+                <x-table-pagination :paginator="$expenses" />
             </div>
         @endif
     </div>

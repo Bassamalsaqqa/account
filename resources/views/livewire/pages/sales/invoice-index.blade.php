@@ -6,7 +6,7 @@
                 {{ __('sales.sales_invoices') }}
             </h1>
             <p class="text-xs text-text-secondary mt-1">
-                {{ __('sales.sales_invoices') }} ({{ $invoices->total() }})
+                {{ __('sales.sales_invoices') }} ({{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($invoices->total()) }})
             </p>
         </div>
 
@@ -52,7 +52,7 @@
     <!-- Invoices Table / Cards -->
     <div class="bg-white rounded-card border border-border shadow-xs overflow-hidden">
         <div class="hidden md:block overflow-x-auto">
-            <table class="w-full text-start text-xs border-collapse">
+            <table class="data-table w-full text-start text-xs border-collapse">
                 <thead>
                     <tr class="border-b border-border bg-surface-soft text-text-muted font-bold text-[11px] uppercase tracking-wider">
                         <th class="py-3 px-4 text-start">{{ __('sales.invoice_number') }}</th>
@@ -95,7 +95,7 @@
                                 </span>
                             </td>
                             <td class="py-3 px-4 font-bold" dir="ltr">
-                                {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($inv->grand_total_currency ?? $inv->grand_total, $inv->currency_code) }} {{ $inv->currency_code }}
+                                {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($inv->grand_total_currency ?? $inv->grand_total, $inv->currency_code) }} {{ $inv->currency_code }}
                             </td>
                             <td class="py-3 px-4 font-bold" dir="ltr">
                                 @php
@@ -103,10 +103,10 @@
                                     $isPos = \App\Domain\Sales\Formatters\SalesMoneyFormatter::isPositive($outstanding);
                                 @endphp
                                 <span class="{{ $isPos ? 'text-danger' : 'text-text-primary' }}">
-                                    {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($outstanding, $inv->currency_code) }} {{ $inv->currency_code }}
+                                    {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($outstanding, $inv->currency_code) }} {{ $inv->currency_code }}
                                 </span>
                             </td>
-                            <td class="py-3 px-4 text-end">
+                            <td class="table-actions py-3 px-4 text-end">
                                 <div class="flex items-center justify-end gap-2">
                                     <a href="{{ route('invoices.show', $inv->public_id) }}"
                                        class="touch-action bg-surface-soft hover:bg-primary-50 text-text-secondary hover:text-primary font-bold text-[11px] transition-colors">
@@ -156,11 +156,11 @@
                         </div>
                         <div>
                             <span class="text-text-muted block text-[10px]">{{ __('sales.grand_total') }}</span>
-                            <span class="font-bold text-text-primary" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($inv->grand_total_currency ?? $inv->grand_total, $inv->currency_code) }} {{ $inv->currency_code }}</span>
+                            <span class="font-bold text-text-primary" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($inv->grand_total_currency ?? $inv->grand_total, $inv->currency_code) }} {{ $inv->currency_code }}</span>
                         </div>
                         <div>
                             <span class="text-text-muted block text-[10px]">{{ __('sales.outstanding_amount') }}</span>
-                            <span class="font-bold text-danger" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($inv->calculateOutstanding(), $inv->currency_code) }} {{ $inv->currency_code }}</span>
+                            <span class="font-bold text-danger" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($inv->calculateOutstanding(), $inv->currency_code) }} {{ $inv->currency_code }}</span>
                         </div>
                     </div>
 
@@ -186,9 +186,9 @@
             @endforelse
         </div>
 
-        @if ($invoices->hasPages())
+        @if ($invoices->count() > 0 || $invoices->currentPage() > 1)
             <div class="p-4 border-t border-border">
-                {{ $invoices->links() }}
+                <x-table-pagination :paginator="$invoices" />
             </div>
         @endif
     </div>

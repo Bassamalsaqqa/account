@@ -3,7 +3,7 @@
     <span class="block text-xs text-text-secondary mt-1">
         @foreach($parts as $part)
             @if(!$loop->first)<span aria-hidden="true"> + </span>@endif
-            <bdi dir="ltr" class="tabular-nums">{{ $part['quantity'] }}</bdi> {{ $part['name'] }}
+            <bdi dir="ltr" class="tabular-nums">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($part['quantity']) }}</bdi> {{ $part['name'] }}
         @endforeach
     </span>
 @endif

@@ -1,0 +1,86 @@
+/* Compact operational tables. Mobile card layouts and editable form errors keep their own flow. */
+.data-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.data-table th,
+.data-table td {
+    vertical-align: middle;
+    padding: 0.625rem 0.75rem;
+}
+
+.data-table tbody :is(td, th) {
+    white-space: nowrap;
+}
+
+.data-table .table-primary {
+    min-width: 11rem;
+    max-width: 24rem;
+}
+
+.data-table .table-actions {
+    position: sticky;
+    inset-inline-end: 0;
+    width: 1%;
+    background: var(--color-surface);
+    white-space: nowrap;
+}
+
+.data-table .table-actions > .flex,
+.data-table .table-actions > .inline-flex {
+    flex-wrap: nowrap;
+}
+
+.data-table tbody tr:hover .table-actions {
+    background: var(--color-surface-soft);
+}
+
+.data-table .table-status {
+    display: inline-flex;
+    flex-direction: row;
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: 0.25rem;
+}
+
+.data-table .table-cell-secondary {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    margin-block-start: 0;
+}
+
+.table-pagination nav {
+    border: 0;
+    padding-block-start: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .data-table tr {
+        transition: none;
+    }
+}
+
+.data-table tbody :is(td, th):not(:has(input, textarea, select)) > .block {
+    display: inline;
+    margin-inline-end: 0.375rem;
+}
+.data-table tbody :is(td, th):not(:has(input, textarea, select)) > .flex-col {
+    flex-direction: row;
+    align-items: center;
+    gap: 0.5rem;
+}
+.data-table .table-actions { z-index: 1; }
+.data-table th:last-child { white-space: nowrap; }
+
+:is(.business-app #app-main, .platform-admin #platform-main) .data-table .touch-action { min-height: 44px; min-width: 44px; }
+
+/* Keep the pinned action header aligned with the pinned row actions. */
+.data-table:has(tbody .table-actions) thead th:last-child {
+    position: sticky;
+    inset-inline-end: 0;
+    z-index: 2;
+    width: 1%;
+    background: var(--color-surface-soft);
+}

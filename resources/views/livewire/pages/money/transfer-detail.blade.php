@@ -9,8 +9,8 @@
 <div class="grid gap-4 sm:grid-cols-2">@foreach(['from', 'to'] as $side)<div>
 <h2 class="font-bold">{{ __('money.'.$side.'_account') }}</h2>
 <p>{{ $transfer->getAttribute($side.'_account_snapshot')['name_'.app()->getLocale()] ?? $transfer->getAttribute($side.'_account_snapshot')['name_ar'] ?? '' }}</p>
-<bdi class="text-xl">{{ $transfer->getAttribute($side.'_amount') }} {{ $transfer->getAttribute($side.'_currency_code') }}</bdi>
-<p class="text-xs">{{ __('money.rate') }}: <bdi>{{ $transfer->getAttribute($side.'_exchange_rate') }}</bdi>
+<bdi class="text-xl">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($transfer->getAttribute($side.'_amount')) }} {{ $transfer->getAttribute($side.'_currency_code') }}</bdi>
+<p class="text-xs">{{ __('money.rate') }}: <bdi>{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($transfer->getAttribute($side.'_exchange_rate')) }}</bdi>
 </p>
 </div>@endforeach</div>
 <p>{{ __('money.realized_fx') }}: <bdi>{{ $transfer->fx_gain_loss_base }} {{ $transfer->base_currency_code }}</bdi>

@@ -239,9 +239,9 @@
                     @endforelse
                 </div>
 
-                @if($sidebarCatalogs->hasPages())
+                @if ($sidebarCatalogs->count() > 0 || $sidebarCatalogs->currentPage() > 1)
                     <div class="mt-4 pt-3 border-t border-slate-100">
-                        {{ $sidebarCatalogs->links() }}
+                        <x-table-pagination :paginator="$sidebarCatalogs" />
                     </div>
                 @endif
             </div>
@@ -598,7 +598,7 @@
 
                 <!-- Products Table / List -->
                 <div class="overflow-x-auto">
-                    <table class="w-full text-xs text-start">
+                    <table class="data-table w-full text-xs text-start">
                         <thead class="bg-slate-50 text-slate-600 uppercase font-semibold border-y border-slate-200">
                             <tr>
                                 <th class="py-2.5 px-3 text-start">SKU</th>
@@ -623,7 +623,7 @@
                                             <span class="text-slate-400 font-normal">({{ $prod->name_en }})</span>
                                         @endif
                                     </td>
-                                    <td class="py-2.5 px-3 text-end">
+                                    <td class="table-actions py-2.5 px-3 text-end">
                                         <button
                                             type="button"
                                             wire:click="addProduct({{ $prod->id }})"
@@ -645,9 +645,9 @@
                     </table>
                 </div>
 
-                @if($availableProducts->hasPages())
+                @if ($availableProducts->count() > 0 || $availableProducts->currentPage() > 1)
                     <div class="mt-4 pt-3 border-t border-slate-100">
-                        {{ $availableProducts->links() }}
+                        <x-table-pagination :paginator="$availableProducts" />
                     </div>
                 @endif
             </div>
@@ -1080,7 +1080,7 @@
                     </div>
 
                     <div class="border border-slate-200 rounded-lg overflow-hidden">
-                        <table class="w-full text-xs text-start">
+                        <table class="data-table w-full text-xs text-start">
                             <thead class="bg-slate-100 text-slate-700 font-semibold border-b border-slate-200">
                                 <tr>
                                     <th class="py-2 px-3 text-start">#</th>
@@ -1110,7 +1110,7 @@
                                         <td class="py-2 px-3 text-slate-600">{{ $pItem['unit_ar'] }}</td>
                                         @if(isset($previewPayload['currency_code']))
                                             <td class="py-2 px-3 text-end font-bold text-slate-900">
-                                                {{ $pItem['price'] ?? __('catalogs.price_on_request_short') }}
+                                                {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($pItem['price'] ?? __('catalogs.price_on_request_short')) }}
                                             </td>
                                         @endif
                                     </tr>

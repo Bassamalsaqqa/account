@@ -216,7 +216,7 @@
                         <td style="text-align: {{ $isRtl ? 'left' : 'right' }};">
                             @if(array_key_exists('price', $item))
                                 @if($item['price'] !== null)
-                                    <span class="price-val">{{ $item['price'] }}</span>
+                                    <span class="price-val">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($item['price']) }}</span>
                                 @else
                                     <span class="price-on-req">{{ $isRtl ? 'عند الطلب' : 'On request' }}</span>
                                 @endif

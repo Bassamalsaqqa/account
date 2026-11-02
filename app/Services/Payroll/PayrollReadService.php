@@ -24,7 +24,7 @@ final class PayrollReadService
      * } $filters
      * @return LengthAwarePaginator<int, Employee>
      */
-    public function employeeDirectory(int $companyId, User $actor, array $filters = [], int $perPage = 15): LengthAwarePaginator
+    public function employeeDirectory(int $companyId, User $actor, array $filters = [], int $perPage = 50): LengthAwarePaginator
     {
         app(Phase7FinancialRead::class)->actor($companyId, $actor, 'employees.view');
         setPermissionsTeamId($companyId);
@@ -51,7 +51,7 @@ final class PayrollReadService
 
         $paginator = $query->orderBy('name')
             ->orderBy('id')
-            ->paginate($perPage);
+            ->paginate(max(1, min(200, $perPage)));
 
         if (! $hasSalaryView) {
             $paginator->getCollection()->transform(function (Employee $emp) {
@@ -164,7 +164,7 @@ final class PayrollReadService
     }
 
     /**
-     * @return array<string, mixed>
+     * @return array{events: list<array<string, mixed>>, balances_by_currency: array<string, array{currency_code: string, outstanding_advance: string, outstanding_payable: string}>}
      */
     public function employeeStatement(Employee $employee, User $actor, ?string $currency = null): array
     {

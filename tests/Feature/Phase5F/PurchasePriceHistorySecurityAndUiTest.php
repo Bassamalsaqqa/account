@@ -530,13 +530,13 @@ class PurchasePriceHistorySecurityAndUiTest extends TestCase
         $response = Livewire::actingAs($actor)
             ->test(ProductDetail::class, ['publicId' => $this->product->public_id]);
 
-        $response->assertDontSee('77.770000');
+        $response->assertDontSee('77.770000')->assertDontSee('77.77');
         $response->assertDontSee('تاريخ أسعار الشراء');
 
         // Verify call setTab with unauthorized tab does not activate or reveal data
         $response->call('setTab', 'purchase_history')
             ->assertSet('activeTab', 'overview')
-            ->assertDontSee('77.770000');
+            ->assertDontSee('77.770000')->assertDontSee('77.77');
     }
 
     public function test_regression_r5_fractional_quantity_and_saved_precision_formatting(): void
@@ -557,8 +557,9 @@ class PurchasePriceHistorySecurityAndUiTest extends TestCase
         $this->assertNotNull($quantity);
         $this->assertSame('1.234', trim($quantity->textContent));
 
-        // Exact 6-decimal raw unit cost and comparative price must be present
-        $component->assertSee('12.345678');
+        // The display is compact; the authoritative saved unit cost remains exact.
+        $component->assertSee('12.35');
+        $this->assertSame('12.345678', DB::table('purchase_lines')->where('product_id', $this->product->id)->value('unit_cost'));
     }
 
     public function test_regression_purchase_form_hint_shows_currency_and_unit_context(): void

@@ -12,9 +12,9 @@
 <p class="text-xs">{{ $transfer->transfer_date->toDateString() }}</p>
 </div>
 <p class="text-sm">
-<bdi>{{ $transfer->from_amount }} {{ $transfer->from_currency_code }}</bdi> → <bdi>{{ $transfer->to_amount }} {{ $transfer->to_currency_code }}</bdi>
+<bdi>{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($transfer->from_amount) }} {{ $transfer->from_currency_code }}</bdi> → <bdi>{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($transfer->to_amount) }} {{ $transfer->to_currency_code }}</bdi>
 </p>
 <div class="space-y-2"><span class="block text-sm">{{ __('money.'.($transfer->is_reversed ? 'reversed' : 'posted')) }}</span><span class="touch-action bg-surface-soft text-sm font-semibold">{{ __('refinement_lists.open') }}</span></div>
 </a>@empty<p>{{ __('money.empty') }}</p>
-@endforelse{{ $transfers->links() }}</div>
+@endforelse<x-table-pagination :paginator="$transfers" /></div>
 </div>

@@ -89,8 +89,8 @@
     <!-- Products Table / Cards -->
     <x-card padding="p-0">
         <!-- Desktop Table View -->
-        <div class="hidden md:block overflow-x-auto">
-            <table class="w-full text-xs text-right rtl:text-right ltr:text-left">
+        <div class="hidden lg:block overflow-x-auto">
+            <table class="data-table table-products w-full text-xs text-right rtl:text-right ltr:text-left">
                 <thead class="bg-surface-soft border-b border-border text-text-secondary font-bold select-none">
                     <tr>
                         <th class="p-3.5">{{ __('inventory.product') }}</th>
@@ -98,8 +98,8 @@
                         <th class="p-3.5">{{ __('inventory.base_unit') }}</th>
                         <th class="p-3.5 text-center">{{ __('inventory.total_stock') }}</th>
                         @if ($canViewCost)
-                            <th class="p-3.5 text-center">{{ __('inventory.moving_average_cost') }}</th>
-                            <th class="p-3.5 text-center">{{ __('inventory.inventory_value') }}</th>
+                            <th class="p-3.5 text-center"><abbr title="{{ __('inventory.moving_average_cost') }}" class="no-underline">{{ __('inventory.average_cost_short') }}</abbr></th>
+                            <th class="p-3.5 text-center">{{ __('inventory.stock_value_short') }}</th>
                         @endif
                         <th class="p-3.5 text-center">{{ __('inventory.filter_status') }}</th>
                         <th class="p-3.5 text-center w-24"></th>
@@ -109,7 +109,7 @@
                     @forelse ($products as $product)
                         <tr class="hover:bg-surface-soft/60 transition-colors">
                             <!-- Product Name & Thumbnail -->
-                            <td class="p-3.5">
+                            <td class="table-primary p-3.5">
                                 <div class="flex items-center gap-3">
                                     <div class="w-10 h-10 rounded-control border border-border bg-surface-soft grid place-items-center shrink-0 overflow-hidden">
                                         @if ($product->primaryImage)
@@ -120,12 +120,12 @@
                                             <x-icon name="box" class="w-5 h-5 text-text-muted" />
                                         @endif
                                     </div>
-                                    <div class="min-w-0">
+                                    <div class="min-w-0 flex items-center gap-2">
                                         <a href="{{ route('products.show', $product->public_id) }}"
-                                           class="touch-action font-bold text-text-primary hover:text-primary transition-colors block truncate">
+                                           title="{{ $product->name() }}" class="touch-action min-w-0 font-bold text-text-primary hover:text-primary transition-colors truncate">
                                             {{ $product->name() }}
                                         </a>
-                                        <div class="flex items-center gap-2 mt-0.5 text-[11px] text-text-muted">
+                                        <div class="table-cell-secondary text-[11px] text-text-muted">
                                             @if ($product->sku)
                                                 <span class="font-mono dir-ltr">{{ $product->sku }}</span>
                                             @endif
@@ -139,19 +139,19 @@
 
                             <!-- Category -->
                             <td class="p-3.5 text-text-secondary">
-                                {{ $product->category?->name_ar ?? '—' }}
+                                {{ $product->category?->name() ?? '—' }}
                             </td>
 
                             <!-- Base Unit -->
                             <td class="p-3.5 text-text-secondary">
-                                {{ $product->baseUnit?->name_ar ?? '—' }}
+                                {{ $product->baseUnit?->name() ?? '—' }}
                             </td>
 
                             <!-- Stock -->
                             <td class="p-3.5 text-center">
                                 @if ($product->track_stock)
                                     <span class="font-mono font-bold text-sm tabular-nums dir-ltr {{ $product->minimum_stock_base !== null && \Brick\Math\BigDecimal::of((string) $product->stock_quantity)->isLessThanOrEqualTo(\Brick\Math\BigDecimal::of((string) $product->minimum_stock_base)) ? 'text-danger' : 'text-text-primary' }}">
-                                        {{ $product->stock_quantity }}
+                                        {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($product->stock_quantity) }}
                                     </span>
                                 @else
                                     <span class="text-text-muted">—</span>
@@ -161,18 +161,18 @@
                             <!-- Cost & Valuation (Gated server-side) -->
                             @if ($canViewCost)
                                 <td class="p-3.5 text-center font-mono tabular-nums dir-ltr text-text-secondary">
-                                    {{ $product->costState?->average_cost_base ?? '0.000000' }}
+                                    {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($product->costState?->average_cost_base ?? '0.000000') }}
                                     <span class="text-[10px] text-text-muted">{{ $company->base_currency_code }}</span>
                                 </td>
                                 <td class="p-3.5 text-center font-mono font-bold tabular-nums dir-ltr text-text-primary">
-                                    {{ $product->costState?->inventory_value_base ?? '0.000000' }}
+                                    {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($product->costState?->inventory_value_base ?? '0.000000') }}
                                     <span class="text-[10px] text-text-muted">{{ $company->base_currency_code }}</span>
                                 </td>
                             @endif
 
                             <!-- Status & Badges -->
                             <td class="p-3.5 text-center">
-                                <div class="inline-flex flex-col items-center gap-1">
+                                <div class="table-status">
                                     @if ($product->active)
                                         <x-badge variant="success">{{ __('inventory.active') }}</x-badge>
                                     @else
@@ -185,8 +185,8 @@
                             </td>
 
                             <!-- Actions -->
-                            <td class="p-3.5 text-center">
-                                <div class="flex flex-wrap items-center justify-center gap-2">
+                            <td class="table-actions p-3.5 text-center">
+                                <div class="flex flex-nowrap items-center justify-center gap-2">
                                     <a href="{{ route('products.show', $product->public_id) }}"
                                        title="{{ __('inventory.product_details') }}"
                                        class="touch-action p-1.5 text-text-secondary hover:bg-surface-soft hover:text-primary transition-colors">
@@ -215,7 +215,7 @@
         </div>
 
         <!-- Mobile Cards View -->
-        <div class="md:hidden divide-y divide-border">
+        <div class="lg:hidden divide-y divide-border">
             @forelse ($products as $product)
                 <div class="p-4 space-y-3">
                     <div class="flex items-start justify-between gap-3">
@@ -254,26 +254,26 @@
                     <div class="grid grid-cols-2 gap-2 text-xs pt-1 border-t border-border/40">
                         <div>
                             <span class="text-text-muted">{{ __('inventory.category') }}:</span>
-                            <span class="font-semibold text-text-secondary">{{ $product->category?->name_ar ?? '—' }}</span>
+                            <span class="font-semibold text-text-secondary">{{ $product->category?->name() ?? '—' }}</span>
                         </div>
                         <div>
                             <span class="text-text-muted">{{ __('inventory.total_stock') }}:</span>
                             <span class="font-mono font-bold tabular-nums dir-ltr text-text-primary">
-                                {{ $product->stock_quantity }}
-                                {{ $product->baseUnit?->name_ar }}
+                                {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($product->stock_quantity) }}
+                                {{ $product->baseUnit?->name() }}
                             </span>
                         </div>
                         @if ($canViewCost)
                             <div>
                                 <span class="text-text-muted">{{ __('inventory.moving_average_cost') }}:</span>
                                 <span class="font-mono tabular-nums dir-ltr text-text-secondary">
-                                    {{ $product->costState?->average_cost_base ?? '0.000000' }}
+                                    {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($product->costState?->average_cost_base ?? '0.000000') }}
                                 </span>
                             </div>
                             <div>
                                 <span class="text-text-muted">{{ __('inventory.inventory_value') }}:</span>
                                 <span class="font-mono font-bold tabular-nums dir-ltr text-text-primary">
-                                    {{ $product->costState?->inventory_value_base ?? '0.000000' }}
+                                    {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($product->costState?->inventory_value_base ?? '0.000000') }}
                                 </span>
                             </div>
                         @endif
@@ -303,9 +303,9 @@
             @endforelse
         </div>
 
-        @if ($products->hasPages())
+        @if ($products->count() > 0 || $products->currentPage() > 1)
             <div class="p-4 border-t border-border">
-                {{ $products->links() }}
+                <x-table-pagination :paginator="$products" />
             </div>
         @endif
     </x-card>

@@ -6,7 +6,7 @@
                 {{ __('sales.customer_payments') }}
             </h1>
             <p class="text-xs text-text-secondary mt-1">
-                {{ __('sales.customer_payments') }} ({{ $payments->total() }})
+                {{ __('sales.customer_payments') }} ({{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($payments->total()) }})
             </p>
         </div>
 
@@ -47,7 +47,7 @@
     <!-- Payments Table -->
     <div class="bg-white rounded-card border border-border shadow-xs overflow-hidden">
         <div class="hidden md:block overflow-x-auto">
-            <table class="w-full text-start text-xs border-collapse">
+            <table class="data-table w-full text-start text-xs border-collapse">
                 <thead>
                     <tr class="border-b border-border bg-surface-soft text-text-muted font-bold text-[11px] uppercase tracking-wider">
                         <th class="py-3 px-4 text-start">{{ __('sales.payment_number') }}</th>
@@ -85,7 +85,7 @@
                                 {{ $pmt->payment_date->toDateString() }}
                             </td>
                             <td class="py-3 px-4 font-bold" dir="ltr">
-                                {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($pmt->amount, $pmt->currency_code) }} {{ $pmt->currency_code }}
+                                {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($pmt->amount, $pmt->currency_code) }} {{ $pmt->currency_code }}
                             </td>
                             <td class="py-3 px-4">
                                 @if ($pmt->is_reversed)
@@ -98,7 +98,7 @@
                                     </span>
                                 @endif
                             </td>
-                            <td class="py-3 px-4 text-end">
+                            <td class="table-actions py-3 px-4 text-end">
                                 <a href="{{ route('payments.show', $pmt->public_id) }}"
                                    class="touch-action bg-surface-soft hover:bg-primary-50 text-text-secondary hover:text-primary font-bold text-[11px] transition-colors">
                                     {{ __('sales.payment_details') }}
@@ -148,7 +148,7 @@
                         </div>
                         <div>
                             <span class="text-text-muted block text-[10px]">{{ __('sales.payment_amount') }}</span>
-                            <span class="font-bold text-text-primary" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($pmt->amount, $pmt->currency_code) }} {{ $pmt->currency_code }}</span>
+                            <span class="font-bold text-text-primary" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($pmt->amount, $pmt->currency_code) }} {{ $pmt->currency_code }}</span>
                         </div>
                     </div>
 
@@ -166,9 +166,9 @@
             @endforelse
         </div>
 
-        @if ($payments->hasPages())
+        @if ($payments->count() > 0 || $payments->currentPage() > 1)
             <div class="p-4 border-t border-border">
-                {{ $payments->links() }}
+                <x-table-pagination :paginator="$payments" />
             </div>
         @endif
     </div>

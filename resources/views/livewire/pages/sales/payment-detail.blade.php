@@ -69,13 +69,13 @@
             </div>
             <div>
                 <span class="text-text-muted block text-[11px]">{{ __('sales.payment_amount') }}</span>
-                <span class="font-mono font-bold text-success text-sm" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($payment->amount, $payment->currency_code) }} {{ $payment->currency_code }}</span>
+                <span class="font-mono font-bold text-success text-sm" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($payment->amount, $payment->currency_code) }} {{ $payment->currency_code }}</span>
             </div>
         </div>
     </div>
 
     <!-- Allocations Table -->
-    <div class="bg-white p-4 rounded-card text-sm">{{ __('sales.credit_available') }}: <span dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($payment->unallocated_amount, $payment->currency_code) }} {{ $payment->currency_code }}</span></div>
+    <div class="bg-white p-4 rounded-card text-sm">{{ __('sales.credit_available') }}: <span dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($payment->unallocated_amount, $payment->currency_code) }} {{ $payment->currency_code }}</span></div>
     @if($showCreditForm)
         <form wire:submit="applyCredit" class="bg-white p-4 rounded-card space-y-4">
             <h2 class="font-bold">{{ __('sales.allocate_customer_credit') }}</h2>
@@ -84,7 +84,7 @@
             @foreach($openInvoices as $invoice)
                 <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 border-b border-border pb-3">
                     <span dir="ltr">{{ $invoice['number'] }}</span>
-                    <span>{{ __('sales.invoice_outstanding') }}: <span dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($invoice['outstanding'], $invoice['currency']) }} {{ $invoice['currency'] }}</span></span>
+                    <span>{{ __('sales.invoice_outstanding') }}: <span dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($invoice['outstanding'], $invoice['currency']) }} {{ $invoice['currency'] }}</span></span>
                     <label>{{ __('sales.allocated') }}<input type="text" inputmode="decimal" wire:model="creditAmounts.{{ $invoice['id'] }}" class="block w-full border border-border rounded-control p-2" dir="ltr"></label>
                             <span class="text-xs" dir="ltr">{{ $invoice['currency'] }}</span>
                             @if($invoice['currency'] !== $payment->currency_code)
@@ -104,7 +104,7 @@
             {{ __('sales.invoice_allocations') }}
         </div>
         <div class="overflow-x-auto">
-            <table class="w-full text-start text-xs border-collapse">
+            <table class="data-table w-full text-start text-xs border-collapse">
                 <thead>
                     <tr class="border-b border-border bg-surface-soft text-text-muted font-bold text-[11px] uppercase">
                         <th class="py-2.5 px-4 text-start">{{ __('sales.invoice_number') }}</th>
@@ -127,7 +127,7 @@
                             </td>
                             <td class="py-2.5 px-4" dir="ltr">{{ $alloc->salesInvoice->issue_date ? $alloc->salesInvoice->issue_date->toDateString() : '—' }}</td>
                             <td class="py-2.5 px-4 font-bold" dir="ltr">
-                                {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($alloc->allocated_amount, $alloc->salesInvoice->currency_code) }} {{ $alloc->salesInvoice->currency_code }}<span class="block text-xs text-text-muted">{{ __('money.payment_consumed') }}: {{ $alloc->payment_currency_amount }} {{ $payment->currency_code }}</span>
+                                {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($alloc->allocated_amount, $alloc->salesInvoice->currency_code) }} {{ $alloc->salesInvoice->currency_code }}<span class="block text-xs text-text-muted">{{ __('money.payment_consumed') }}: {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($alloc->payment_currency_amount) }} {{ $payment->currency_code }}</span>
                             </td>
                             @if($canViewFx)<td class="py-2.5 px-4 font-mono" dir="ltr">
                                 @php
@@ -136,14 +136,14 @@
                                     $isNeg = \App\Domain\Sales\Formatters\SalesMoneyFormatter::isNegative($fxVal);
                                 @endphp
                                 <span class="{{ $isPos ? 'text-success font-bold' : ($isNeg ? 'text-danger font-bold' : 'text-text-muted') }}">
-                                    {{ ! \App\Domain\Sales\Formatters\SalesMoneyFormatter::isZero($fxVal) ? ($isPos ? '+' : '') . \App\Domain\Sales\Formatters\SalesMoneyFormatter::format($fxVal) : '—' }}
+                                    {{ ! \App\Domain\Sales\Formatters\SalesMoneyFormatter::isZero($fxVal) ? ($isPos ? '+' : '') . \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($fxVal) : '—' }}
                                 </span>
                             </td>@endif
                         </tr>
                     @empty
                         <tr>
                             <td colspan="4" class="py-6 text-center text-text-muted">
-                                {{ __('sales.unallocated_amount') }}: {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($payment->amount, $payment->currency_code) }} {{ $payment->currency_code }}
+                                {{ __('sales.unallocated_amount') }}: {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($payment->amount, $payment->currency_code) }} {{ $payment->currency_code }}
                             </td>
                         </tr>
                     @endforelse
@@ -176,7 +176,7 @@
             <div class="w-full md:w-64 space-y-2">
                 <div class="flex justify-between py-1 border-b border-border/50">
                     <span class="text-text-muted">{{ __('sales.total') }}:</span>
-                    <span class="font-mono font-bold text-success" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($payment->amount, $payment->currency_code) }} {{ $payment->currency_code }}</span>
+                    <span class="font-mono font-bold text-success" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($payment->amount, $payment->currency_code) }} {{ $payment->currency_code }}</span>
                 </div>
             </div>
         </div>

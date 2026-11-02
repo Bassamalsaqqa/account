@@ -61,7 +61,7 @@
                     @if($detail['redact_cost'])
                         <span class="text-text-muted italic">{{ __('expenses.cost_redacted') }}</span>
                     @else
-                        {{ $expense->amount }} {{ $expense->currency_code }}
+                        {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($expense->amount) }} {{ $expense->currency_code }}
                     @endif
                 </span>
             </div>
@@ -140,7 +140,7 @@
 
             @if($detail['allocations']->isNotEmpty())
                 <div class="overflow-x-auto">
-                    <table class="w-full text-sm text-start">
+                    <table class="data-table w-full text-sm text-start">
                         <thead class="bg-surface-soft border-b border-border text-xs text-text-muted">
                             <tr>
                                 <th class="px-3 py-2 text-start">{{ __('expenses.purchase') }}</th>
@@ -161,7 +161,7 @@
                                         {{ app()->getLocale()==='en' ? ($alloc->purchaseLine->product_name_en ?: $alloc->purchaseLine->product_name_ar ?: $alloc->purchaseLine->item_description) : ($alloc->purchaseLine->product_name_ar ?: $alloc->purchaseLine->product_name_en ?: $alloc->purchaseLine->item_description) }}
                                     </td>
                                     <td class="px-3 py-2 font-semibold" dir="ltr">
-                                        {{ $alloc->allocated_base }} {{ $baseCurrencyCode }}
+                                        {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($alloc->allocated_base) }} {{ $baseCurrencyCode }}
                                     </td>
                                     <td class="px-3 py-2">
                                         <span class="text-xs font-semibold px-2 py-0.5 rounded {{ $alloc->status === 'locked' ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-700' }}">

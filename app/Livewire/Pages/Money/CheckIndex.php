@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Livewire\Pages\Money;
 
+use App\Livewire\Concerns\HasTablePageSize;
 use App\Livewire\Pages\Money\Concerns\AuthorizesMoneyPages;
 use App\Models\Check;
 use App\Services\Phase7\Phase7FinancialRead;
@@ -19,6 +20,7 @@ use Livewire\WithPagination;
 class CheckIndex extends Component
 {
     use AuthorizesMoneyPages, WithPagination;
+    use HasTablePageSize;
 
     public string $direction = '';
 
@@ -119,7 +121,7 @@ class CheckIndex extends Component
             $query->where('due_date', '<=', $this->dateTo);
         }
 
-        $checks = $query->orderByDesc('received_issued_date')->orderByDesc('id')->paginate(15);
+        $checks = $query->orderByDesc('received_issued_date')->orderByDesc('id')->paginate($this->tablePageSize());
 
         return view('livewire.pages.money.check-index', [
             'checks' => $checks,

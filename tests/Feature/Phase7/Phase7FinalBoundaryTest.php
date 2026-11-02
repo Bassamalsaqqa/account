@@ -279,7 +279,7 @@ class Phase7FinalBoundaryTest extends Phase7TestCase
         DB::table('expense_categories')->where('id', $e->category_id)->update(['name_ar' => 'MUTATED_CATEGORY']);
         foreach (['ar', 'en'] as $locale) {
             app()->setLocale($locale);
-            Livewire::test(ExpenseDetail::class, ['publicId' => $e->public_id])->assertSee('5.000000 ILS')->assertSee(__('expenses.allocation_locked'))->assertDontSee('purchasing.item')->assertDontSee('MUTATED_CATEGORY');
+            Livewire::test(ExpenseDetail::class, ['publicId' => $e->public_id])->assertSee('5.00 ILS')->assertSee(__('expenses.allocation_locked'))->assertDontSee('purchasing.item')->assertDontSee('MUTATED_CATEGORY');
         }
         app()->setLocale('ar');
         $this->assertNotEmpty($name);

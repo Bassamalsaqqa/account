@@ -86,19 +86,19 @@
                     @if($withCost)
                         <div>
                             <dt class="text-xs text-text-secondary">{{ __('purchasing.unit_cost') }}</dt>
-                            <dd><bdi>{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::format($line['unit_cost'], $document['currency_code']) }}</bdi></dd>
+                            <dd><bdi>{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($line['unit_cost'], $document['currency_code']) }}</bdi></dd>
                         </div>
                         <div>
                             <dt class="text-xs text-text-secondary">{{ __('purchasing.line_discount') }}</dt>
-                            <dd><bdi>{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::format($line['line_discount'], $document['currency_code']) }}</bdi></dd>
+                            <dd><bdi>{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($line['line_discount'], $document['currency_code']) }}</bdi></dd>
                         </div>
                         <div>
                             <dt class="text-xs text-text-secondary">{{ __('purchasing.line_tax') }}</dt>
-                            <dd><bdi>{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::format($line['line_tax'], $document['currency_code']) }}</bdi></dd>
+                            <dd><bdi>{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($line['line_tax'], $document['currency_code']) }}</bdi></dd>
                         </div>
                         <div>
                             <dt class="text-xs text-text-secondary">{{ __('purchasing.line_total') }}</dt>
-                            <dd><bdi>{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::format($line['line_total'], $document['currency_code']) }}</bdi></dd>
+                            <dd><bdi>{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($line['line_total'], $document['currency_code']) }}</bdi></dd>
                         </div>
                     @endif
                 </dl>
@@ -120,19 +120,19 @@
         <section class="bg-surface border border-border rounded-card p-4 grid grid-cols-2 md:grid-cols-4 gap-4">
             <div>
                 <span class="text-xs text-text-secondary">{{ __('purchasing.subtotal') }}</span>
-                <p class="font-bold mt-1"><bdi>{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::format($document['subtotal_currency'], $document['currency_code']) }} {{ $document['currency_code'] }}</bdi></p>
+                <p class="font-bold mt-1"><bdi>{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($document['subtotal_currency'], $document['currency_code']) }} {{ $document['currency_code'] }}</bdi></p>
             </div>
             <div>
                 <span class="text-xs text-text-secondary">{{ __('purchasing.discount') }}</span>
-                <p class="font-bold mt-1"><bdi>{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::format($document['discount_total_currency'], $document['currency_code']) }} {{ $document['currency_code'] }}</bdi></p>
+                <p class="font-bold mt-1"><bdi>{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($document['discount_total_currency'], $document['currency_code']) }} {{ $document['currency_code'] }}</bdi></p>
             </div>
             <div>
                 <span class="text-xs text-text-secondary">{{ __('purchasing.tax') }}</span>
-                <p class="font-bold mt-1"><bdi>{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::format($document['tax_total_currency'], $document['currency_code']) }} {{ $document['currency_code'] }}</bdi></p>
+                <p class="font-bold mt-1"><bdi>{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($document['tax_total_currency'], $document['currency_code']) }} {{ $document['currency_code'] }}</bdi></p>
             </div>
             <div>
                 <span class="text-xs text-text-secondary">{{ __('purchasing.total') }}</span>
-                <p class="font-bold mt-1"><bdi>{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::format($document['grand_total_currency'], $document['currency_code']) }} {{ $document['currency_code'] }}</bdi></p>
+                <p class="font-bold mt-1"><bdi>{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($document['grand_total_currency'], $document['currency_code']) }} {{ $document['currency_code'] }}</bdi></p>
             </div>
         </section>
     @else

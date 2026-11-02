@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Livewire\Pages\Sales;
 
+use App\Livewire\Concerns\HasTablePageSize;
 use App\Models\Customer;
 use App\Models\SalesReturn;
 use App\Support\Tenancy\CompanyContext;
@@ -17,6 +18,7 @@ use Livewire\WithPagination;
 #[Layout('layouts.app')]
 class ReturnIndex extends Component
 {
+    use HasTablePageSize;
     use WithPagination;
 
     #[Url(as: 'q')]
@@ -80,7 +82,7 @@ class ReturnIndex extends Component
             $query->where('customer_id', $this->customerFilter);
         }
 
-        $returns = $query->orderByDesc('return_date')->orderByDesc('id')->paginate(15);
+        $returns = $query->orderByDesc('return_date')->orderByDesc('id')->paginate($this->tablePageSize());
         $customers = Customer::where('company_id', $company->id)->orderBy('name_ar')->get();
 
         return view('livewire.pages.sales.return-index', [

@@ -8,6 +8,7 @@ use App\Application\Reporting\Security\ReportingGuard;
 use App\Domain\Sales\Queries\CustomerBalanceQuery;
 use App\Domain\Sales\Queries\CustomerCreditLimitQuery;
 use App\Domain\Sales\Queries\CustomerStatementQuery;
+use App\Livewire\Concerns\HasTablePageSize;
 use App\Models\Customer;
 use App\Models\CustomerPayment;
 use App\Models\Quotation;
@@ -21,10 +22,14 @@ use Livewire\Attributes\Layout;
 use Livewire\Attributes\Locked;
 use Livewire\Attributes\Url;
 use Livewire\Component;
+use Livewire\WithPagination;
 
 #[Layout('layouts.app')]
 class CustomerDetail extends Component
 {
+    use HasTablePageSize;
+    use WithPagination;
+
     public Customer $customer;
 
     #[Locked]
@@ -40,6 +45,11 @@ class CustomerDetail extends Component
     public ?string $statementFrom = null;
 
     public ?string $statementTo = null;
+
+    public function updatedActiveTab(): void
+    {
+        $this->resetPage();
+    }
 
     public function mount(string $publicId, CompanyContext $context): void
     {
@@ -104,26 +114,26 @@ class CustomerDetail extends Component
                 ->where('customer_id', $this->customer->id)
                 ->orderByDesc('issue_date')
                 ->orderByDesc('id')
-                ->paginate(15);
+                ->paginate($this->tablePageSize());
         } elseif ($this->activeTab === 'quotations') {
             $tabQuotations = Quotation::where('company_id', $company->id)
                 ->where('customer_id', $this->customer->id)
                 ->orderByDesc('issue_date')
                 ->orderByDesc('id')
-                ->paginate(15);
+                ->paginate($this->tablePageSize());
         } elseif ($this->activeTab === 'payments') {
             $tabPayments = CustomerPayment::with('moneyAccount')
                 ->where('company_id', $company->id)
                 ->where('customer_id', $this->customer->id)
                 ->orderByDesc('payment_date')
                 ->orderByDesc('id')
-                ->paginate(15);
+                ->paginate($this->tablePageSize());
         } elseif ($this->activeTab === 'returns') {
             $tabReturns = SalesReturn::where('company_id', $company->id)
                 ->where('customer_id', $this->customer->id)
                 ->orderByDesc('issue_date')
                 ->orderByDesc('id')
-                ->paginate(15);
+                ->paginate($this->tablePageSize());
         } elseif ($this->activeTab === 'statement' && $canStatement) {
             $statementData = $statementQuery->execute($this->customer, $this->statementFrom ?: null, $this->statementTo ?: null);
         }

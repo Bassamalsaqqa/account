@@ -25,7 +25,7 @@
     </x-refinement-filters>
     <section class="bg-surface border border-border rounded-card overflow-hidden">
         <div class="hidden md:block">
-            <table class="w-full text-xs">
+            <table class="data-table w-full text-xs">
                 <thead class="bg-surface-soft text-text-secondary">
                     <tr>
                         @foreach(['return_date', 'vendor', 'purchase_number', 'status', 'currency'] as $label)
@@ -59,7 +59,7 @@
                             <td class="px-4 py-4"><bdi>{{ $return->currency_code }}</bdi></td>
                             @if($withCost)
                                 <td class="px-4 py-4">
-                                    <bdi>{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::format($return->grand_total_currency, $return->currency_code) }}</bdi>
+                                    <bdi>{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($return->grand_total_currency, $return->currency_code) }}</bdi>
                                 </td>
                             @endif
                         </tr>
@@ -108,7 +108,7 @@
                         @if($withCost)
                             <div>
                                 <dt class="text-text-secondary">{{ __('purchasing.total') }}</dt>
-                                <dd><bdi>{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::format($return->grand_total_currency, $return->currency_code) }}</bdi></dd>
+                                <dd><bdi>{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($return->grand_total_currency, $return->currency_code) }}</bdi></dd>
                             </div>
                         @endif
                     </dl>
@@ -118,5 +118,5 @@
             @endforelse
         </div>
     </section>
-    {{ $returns->links() }}
+    <x-table-pagination :paginator="$returns" />
 </div>

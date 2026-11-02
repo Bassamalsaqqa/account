@@ -99,7 +99,7 @@ class MoneyMovementVisibilityTest extends Phase6TestCase
                 $page->assertSee(__('money.unavailable'));
             }
         }
-        $overview->assertSee('PUBLIC_CHECK_4361')->assertSee('Customer Receipt')->assertSee('17.430000');
+        $overview->assertSee('PUBLIC_CHECK_4361')->assertSee('Customer Receipt')->assertSee('17.43');
     }
 
     public function test_running_balances_are_truthful_for_full_reader_and_unavailable_when_intervening_rows_are_hidden(): void

@@ -133,7 +133,7 @@ class AuditInventoryCompanyDateTest extends TestCase
         Livewire::test(InventoryOverview::class)->assertViewHas('totalValuation', '0.12');
     }
 
-    public function test_inventory_valuation_uses_jod_three_minor_units_without_changing_history(): void
+    public function test_inventory_valuation_displays_two_decimals_without_changing_exact_jod_history(): void
     {
         $this->company = app(UpdateCompanyCurrenciesAction::class)->execute(
             $this->company, 'JOD', ['ILS' => true, 'JOD' => true], $this->owner,
@@ -141,8 +141,8 @@ class AuditInventoryCompanyDateTest extends TestCase
         app(CompanyContext::class)->setCompany($this->company, $this->owner);
         $opening = $this->opening('2026-12-30', cost: '0.123456');
         $this->assertSame('0.123456', $opening['movement']->value_delta_base);
-        Livewire::test(InventoryOverview::class)->assertViewHas('totalValuation', '0.123');
-        Livewire::test(ExpiryCenter::class)->assertViewHas('lotValuations', fn ($values) => array_values($values) === ['0.123']);
+        Livewire::test(InventoryOverview::class)->assertViewHas('totalValuation', '0.12');
+        Livewire::test(ExpiryCenter::class)->assertViewHas('lotValuations', fn ($values) => array_values($values) === ['0.12']);
         $this->assertSame('0.123456', $opening['movement']->fresh()->value_delta_base);
     }
 

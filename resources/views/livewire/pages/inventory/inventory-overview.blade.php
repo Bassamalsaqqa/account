@@ -43,7 +43,7 @@
         <x-card padding="p-4" class="space-y-1">
             <div class="text-[11px] font-bold text-text-muted uppercase tracking-wider">{{ __('inventory.active_products_metric') }}</div>
             <div class="text-2xl font-extrabold font-mono tabular-nums text-text-primary">
-                {{ $productsCount }}
+                {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($productsCount) }}
             </div>
             <a href="{{ route('products.index') }}" class="touch-action text-[11px] text-primary hover:underline font-bold block pt-1">
                 {{ __('inventory.view_catalog_link') }} &larr;
@@ -54,7 +54,7 @@
         <x-card padding="p-4" class="space-y-1">
             <div class="text-[11px] font-bold text-text-muted uppercase tracking-wider">{{ __('inventory.warehouses') }}</div>
             <div class="text-2xl font-extrabold font-mono tabular-nums text-text-primary">
-                {{ $warehousesCount }}
+                {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($warehousesCount) }}
             </div>
             <a href="{{ route('warehouses.index') }}" class="touch-action text-[11px] text-primary hover:underline font-bold block pt-1">
                 {{ __('inventory.manage_warehouses_link') }} &larr;
@@ -65,7 +65,7 @@
         <x-card padding="p-4" class="space-y-1">
             <div class="text-[11px] font-bold text-text-muted uppercase tracking-wider">{{ __('inventory.expiring_lots_metric') }}</div>
             <div class="text-2xl font-extrabold font-mono tabular-nums {{ $expiringLotsCount > 0 ? 'text-danger' : 'text-text-primary' }}">
-                {{ $expiringLotsCount }}
+                {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($expiringLotsCount) }}
             </div>
             <a href="{{ route('inventory.expiry') }}" class="touch-action text-[11px] text-primary hover:underline font-bold block pt-1">
                 {{ __('inventory.expiry_center_link') }} &larr;
@@ -77,7 +77,7 @@
             <x-card padding="p-4" class="space-y-1">
                 <div class="text-[11px] font-bold text-text-muted uppercase tracking-wider">{{ __('inventory.inventory_value') }}</div>
                 <div class="text-2xl font-extrabold font-mono tabular-nums dir-ltr text-primary">
-                    {{ $totalValuation }}
+                    {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($totalValuation) }}
                     <span class="text-xs font-normal text-text-secondary font-arabic">{{ $company->base_currency_code }}</span>
                 </div>
                 <div class="text-[11px] text-text-muted pt-1">{{ __('inventory.total_inventory_valuation') }}</div>
@@ -86,7 +86,7 @@
             <x-card padding="p-4" class="space-y-1">
                 <div class="text-[11px] font-bold text-text-muted uppercase tracking-wider">{{ __('inventory.low_stock_metric') }}</div>
                 <div class="text-2xl font-extrabold font-mono tabular-nums {{ $lowStockProducts->count() > 0 ? 'text-warning' : 'text-text-primary' }}">
-                    {{ $lowStockProducts->count() }}
+                    {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($lowStockProducts->count()) }}
                 </div>
                 <div class="text-[11px] text-text-muted pt-1">{{ __('inventory.exceeded_reorder_point') }}</div>
             </x-card>
@@ -102,7 +102,7 @@
                     <x-icon name="alert" class="w-4 h-4 text-warning" />
                     <h2 class="text-xs font-bold text-text-primary uppercase tracking-wider">{{ __('inventory.low_stock_alerts') }}</h2>
                 </div>
-                <span class="text-[11px] font-mono text-text-muted">{{ $lowStockProducts->count() }} {{ __('inventory.items_count_suffix') }}</span>
+                <span class="text-[11px] font-mono text-text-muted">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($lowStockProducts->count()) }} {{ __('inventory.items_count_suffix') }}</span>
             </div>
 
             <div class="divide-y divide-border">
@@ -118,7 +118,7 @@
                         </div>
                         <div class="text-left rtl:text-left ltr:text-right">
                             <div class="font-mono font-bold text-danger text-sm tabular-nums dir-ltr">
-                                {{ $prod->stock_quantity }} / {{ $prod->minimum_stock }}
+                                {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($prod->stock_quantity) }} / {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($prod->minimum_stock) }}
                             </div>
                             <div class="text-xs text-text-secondary">{{ $prod->baseUnit?->name() }}</div>
                             <x-stock-breakdown :parts="$stockBreakdowns[$prod->id]" />
@@ -162,7 +162,7 @@
                         </div>
                         <div class="text-left rtl:text-left ltr:text-right">
                             <span class="font-mono font-bold text-sm tabular-nums dir-ltr {{ $mov->isInbound() ? 'text-success' : 'text-danger' }}">
-                                {{ $mov->quantity_delta_base }}
+                                {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($mov->quantity_delta_base) }}
                             </span>
                         </div>
                     </div>

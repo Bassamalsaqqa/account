@@ -32,7 +32,7 @@
 
     <x-card padding="p-0">
         <div class="hidden md:block overflow-x-auto">
-            <table class="w-full text-xs text-right rtl:text-right ltr:text-left">
+            <table class="data-table w-full text-xs text-right rtl:text-right ltr:text-left">
                 <thead class="bg-surface-soft border-b border-border text-text-secondary font-bold">
                     <tr>
                         <th class="p-3.5">{{ __('inventory.warehouse_code') }}</th>
@@ -75,7 +75,7 @@
                                 @endif
                             </td>
                             @if ($canManage)
-                                <td class="p-3.5 text-center">
+                                <td class="table-actions p-3.5 text-center">
                                     <div class="flex items-center justify-center gap-2">
                                         <button wire:loading.attr="disabled" type="button" wire:click="openEditModal({{ $wh->id }})"
                                                 class="touch-action text-primary hover:underline font-bold text-xs">
@@ -168,6 +168,7 @@
                     @endforelse
                 </div>
 
+    <div class="p-4"><x-table-pagination :paginator="$warehouses" /></div>
     </x-card>
 
     <!-- Create/Edit Modal -->

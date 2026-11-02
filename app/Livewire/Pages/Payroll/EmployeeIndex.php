@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Livewire\Pages\Payroll;
 
+use App\Livewire\Concerns\HasTablePageSize;
 use App\Livewire\Pages\Money\Concerns\AuthorizesMoneyPages;
 use App\Services\Payroll\PayrollReadService;
 use Illuminate\Contracts\View\View;
@@ -16,6 +17,7 @@ use Livewire\WithPagination;
 class EmployeeIndex extends Component
 {
     use AuthorizesMoneyPages, WithPagination;
+    use HasTablePageSize;
 
     #[Url(as: 'q')]
     public string $search = '';
@@ -44,7 +46,7 @@ class EmployeeIndex extends Component
         $employees = $readService->employeeDirectory($this->pageCompanyId, auth()->user(), [
             'search' => $this->search,
             'active' => $activeFilter,
-        ]);
+        ], $this->tablePageSize());
 
         return view('livewire.pages.payroll.employee-index', [
             'employees' => $employees,

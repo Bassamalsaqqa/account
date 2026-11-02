@@ -612,7 +612,7 @@
                                     <div class="card-footer-row">
                                         @if($item['price'] !== null)
                                             <div>
-                                                <span class="price-badge"><bdi class="tabular-nums" dir="ltr">{{ $item['price'] }}</bdi></span>
+                                                <span class="price-badge"><bdi class="tabular-nums" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($item['price']) }}</bdi></span>
                                                 <span class="price-currency">{{ $data['currency_code'] ?? '' }}</span>
                                             </div>
                                         @else

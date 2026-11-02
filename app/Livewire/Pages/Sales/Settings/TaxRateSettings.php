@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Livewire\Pages\Sales\Settings;
 
 use App\Actions\Sales\SaveTaxRateAction;
+use App\Livewire\Concerns\HasTablePageSize;
 use App\Models\LedgerAccount;
 use App\Models\TaxRate;
 use App\Services\Sales\SalesActorGuard;
@@ -16,10 +17,14 @@ use Illuminate\Validation\Rule;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Locked;
 use Livewire\Component;
+use Livewire\WithPagination;
 
 #[Layout('layouts.app')]
 class TaxRateSettings extends Component
 {
+    use HasTablePageSize;
+    use WithPagination;
+
     #[Locked]
     public int $settingsCompanyId;
 
@@ -170,7 +175,7 @@ class TaxRateSettings extends Component
         $company = $context->company();
         $taxRates = TaxRate::with(['salesTaxAccount', 'purchaseTaxAccount'])
             ->where('company_id', $company->id)
-            ->get();
+            ->orderBy('id')->paginate($this->tablePageSize());
 
         $accounts = LedgerAccount::where('company_id', $company->id)
             ->where('active', true)->where('is_control', false)->where('account_type', 'liability')->where('normal_balance', 'credit')

@@ -593,7 +593,8 @@ final class Phase7Correction01Test extends Phase7TestCase
         $stale->assertViewHas('salaryPositions', fn ($positions) => count($positions) === 1);
         $financialReader->roles()->firstOrFail()->revokePermissionTo('payroll.salary.view');
         $stale->call('$refresh')->assertStatus(200)
-            ->assertViewHas('salaryPositions', fn ($positions) => $positions === []);
+            ->assertViewHas('salaryPositions', fn ($positions) => count($positions) === 0 && $positions->total() === 0)
+            ->assertViewHas('salaryCount', 0);
         $this->assertStringNotContainsString('500.00', json_encode($stale->snapshot));
         $this->activate($reader);
 

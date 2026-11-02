@@ -119,7 +119,7 @@
                                         $hintTrimmed = strpos($hintPrice, '.') !== false ? rtrim(rtrim($hintPrice, '0'), '.') : $hintPrice;
                                         $hintParts = explode('.', $hintTrimmed);
                                         $hintDecimals = isset($hintParts[1]) ? strlen($hintParts[1]) : 0;
-                                        $formattedHintPrice = $hintDecimals > 2 ? $hintTrimmed : \App\Domain\Sales\Formatters\SalesMoneyFormatter::format($hintPrice, $lastPriceHints[$index]['currency_code']);
+                                        $formattedHintPrice = $hintDecimals > 2 ? $hintTrimmed : \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($hintPrice, $lastPriceHints[$index]['currency_code']);
                                     @endphp
                                     {{ __('purchasing.last_purchased_hint', [
                                         'price' => $formattedHintPrice,
@@ -130,13 +130,13 @@
                                 </p>
                             @endif
                         </div>
-                    <div class="col-span-2 lg:col-span-2"><span class="block text-xs text-text-secondary mb-1">{{ __('purchasing.line_total') }} <span class="text-[10px] font-normal text-text-muted">({{ __('workflow.preview') }})</span></span><output class="block h-11 px-2 py-3 text-sm font-bold bg-surface-soft rounded-control"><bdi>{{ isset($line['preview_total']) ? \App\Domain\Sales\Formatters\SalesMoneyFormatter::format($line['preview_total'], $currency_code) : 'â€”' }} {{ $currency_code }}</bdi></output></div>
+                    <div class="col-span-2 lg:col-span-2"><span class="block text-xs text-text-secondary mb-1">{{ __('purchasing.line_total') }} <span class="text-[10px] font-normal text-text-muted">({{ __('workflow.preview') }})</span></span><output class="block h-11 px-2 py-3 text-sm font-bold bg-surface-soft rounded-control"><bdi>{{ isset($line['preview_total']) ? \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($line['preview_total'], $currency_code) : 'â€”' }} {{ $currency_code }}</bdi></output></div>
                 </div>
                 <div class="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
                     <div><label for="line-description-{{ $index }}" class="block text-xs text-text-secondary mb-1">{{ __('purchasing.description') }}</label><input id="line-description-{{ $index }}" wire:model="lines.{{ $index }}.item_description" maxlength="500" class="w-full h-11 px-2 border border-border rounded-control text-sm"  :disabled="documentBusy || saving"/></div>
                     <div><label for="line-discount-type-{{ $index }}" class="block text-xs text-text-secondary mb-1">{{ __('purchasing.discount') }}</label><select id="line-discount-type-{{ $index }}" wire:model.live="lines.{{ $index }}.discount_type" class="w-full h-11 px-2 border border-border rounded-control text-sm" :disabled="documentBusy || saving">@foreach(['none', 'percent', 'fixed'] as $type)<option value="{{ $type }}">{{ __('purchasing.discount_'.$type) }}</option>@endforeach</select></div>
                     <div><label for="line-discount-value-{{ $index }}" class="block text-xs text-text-secondary mb-1">{{ __('purchasing.discount_value') }}</label><input id="line-discount-value-{{ $index }}" wire:model.blur="lines.{{ $index }}.discount_value" wire:change="recalculate" dir="ltr" inputmode="decimal" class="w-full h-11 px-2 border border-border rounded-control text-sm font-mono"  :disabled="documentBusy || saving"/></div>
-                    @if($taxes->isNotEmpty())<div><label for="line-tax-{{ $index }}" class="block text-xs text-text-secondary mb-1">{{ __('purchasing.tax') }}</label><select id="line-tax-{{ $index }}" wire:model.live="lines.{{ $index }}.tax_rate_id" class="w-full h-11 px-2 border border-border rounded-control text-sm" :disabled="documentBusy || saving"><option value="">{{ __('purchasing.no_tax') }}</option>@foreach($taxes as $tax)<option value="{{ $tax->id }}">{{ $tax->displayName() }} ({{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::format($tax->rate, 'ILS') }}%) — {{ __('refinement.tax_'.$tax->calculation) }}</option>@endforeach</select></div>@endif
+                    @if($taxes->isNotEmpty())<div><label for="line-tax-{{ $index }}" class="block text-xs text-text-secondary mb-1">{{ __('purchasing.tax') }}</label><select id="line-tax-{{ $index }}" wire:model.live="lines.{{ $index }}.tax_rate_id" class="w-full h-11 px-2 border border-border rounded-control text-sm" :disabled="documentBusy || saving"><option value="">{{ __('purchasing.no_tax') }}</option>@foreach($taxes as $tax)<option value="{{ $tax->id }}">{{ $tax->displayName() }} ({{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($tax->rate, 'ILS') }}%) — {{ __('refinement.tax_'.$tax->calculation) }}</option>@endforeach</select></div>@endif
                 </div>
                 @if($expiryLines[$index] ?? false)
                     <div class="border-t border-border pt-3 space-y-3">
@@ -161,7 +161,7 @@
             @foreach(['subtotal', 'discount', 'tax', 'total'] as $field)
                 <div>
                     <span class="text-xs text-text-secondary">{{ __('purchasing.'.$field) }}</span>
-                    <p class="font-bold mt-1"><bdi @if($documentTotalsValid && $field === 'total') data-document-total @endif>{{ $documentTotalsValid && isset($totals[$field]) ? \App\Domain\Sales\Formatters\SalesMoneyFormatter::format($totals[$field], $currency_code) : 'â€”' }} {{ $currency_code }}</bdi></p>
+                    <p class="font-bold mt-1"><bdi @if($documentTotalsValid && $field === 'total') data-document-total @endif>{{ $documentTotalsValid && isset($totals[$field]) ? \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($totals[$field], $currency_code) : 'â€”' }} {{ $currency_code }}</bdi></p>
                 </div>
             @endforeach
         </div>
@@ -176,7 +176,7 @@
     </footer>
     <div class="mobile-document-actions md:hidden fixed inset-x-0 z-30 bg-white border-t border-border px-3 py-2" style="bottom: var(--mobile-nav-height)">
         <div class="flex items-center justify-between gap-2 max-w-lg mx-auto">
-            <div class="min-w-0"><span class="text-xs text-text-secondary block">{{ __('mobile.grand_total') }}</span><bdi @if($documentTotalsValid) data-document-total @endif class="text-sm font-bold text-primary">{{ ! $documentTotalsValid ? __('camera.totals_unavailable') : (isset($totals['total']) ? \App\Domain\Sales\Formatters\SalesMoneyFormatter::format($totals['total'], $currency_code) : 'â€”') }} @if($documentTotalsValid) {{ $currency_code }} @endif</bdi></div>
+            <div class="min-w-0"><span class="text-xs text-text-secondary block">{{ __('mobile.grand_total') }}</span><bdi @if($documentTotalsValid) data-document-total @endif class="text-sm font-bold text-primary">{{ ! $documentTotalsValid ? __('camera.totals_unavailable') : (isset($totals['total']) ? \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($totals['total'], $currency_code) : 'â€”') }} @if($documentTotalsValid) {{ $currency_code }} @endif</bdi></div>
             <div class="flex gap-1">
                 <button type="button" @click="$dispatch('mobile-camera-open')" :disabled="saving || window.isDocumentBlocked($wire)" class="min-h-11 min-w-11 rounded-control bg-surface-soft px-2" aria-label="{{ __('mobile.scan') }}"><x-icon name="barcode" /></button>
                 <button type="button" @click="handleAddLine()" :disabled="saving || window.isDocumentBlocked($wire)" class="min-h-11 min-w-11 rounded-control bg-surface-soft px-2" aria-label="{{ __('mobile.add_item') }}"><x-icon name="plus" /></button>

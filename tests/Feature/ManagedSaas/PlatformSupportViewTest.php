@@ -91,6 +91,22 @@ final class PlatformSupportViewTest extends TestCase
         $this->get('/dashboard')->assertOk()->assertSee(__('support.title'));
     }
 
+    public function test_impersonation_exposes_normal_owner_workspaces_without_changing_login_identity(): void
+    {
+        $this->start();
+        foreach (['en', 'ar'] as $locale) {
+            foreach (['products.index', 'customers.index', 'vendors.index', 'quotations.index', 'invoices.index', 'returns.index', 'payments.index', 'purchases.index', 'purchase-returns.index', 'vendor-payments.index', 'money.overview', 'money.checks.index', 'money.transfers.index', 'catalogs.index', 'settings.index'] as $name) {
+                $response = $this->withSession(['locale' => $locale])->get(route($name));
+                $response->assertOk()->assertSee(__('support.title'));
+                $this->assertSame($this->operator->id, auth()->id(), $name);
+                $this->assertFalse(app(SupportViewContext::class)->active(), $name);
+            }
+        }
+        $this->assertSame(1, $this->company->users()->count());
+        $this->post(route('platform.support.end'))->assertRedirect(route('platform.index'));
+        $this->assertFalse(session()->has(SupportViewSession::KEY));
+    }
+
     public function test_tenant_owner_is_not_a_platform_support_operator(): void
     {
         $this->actingAs($this->owner)->post(route('platform.support.start', $this->company->public_id), ['reason' => 'Synthetic issue', 'current_password' => 'password'])->assertForbidden();

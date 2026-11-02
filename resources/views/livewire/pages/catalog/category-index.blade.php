@@ -32,7 +32,7 @@
 
     <x-card padding="p-0">
         <div class="hidden md:block overflow-x-auto">
-            <table class="w-full text-xs text-right rtl:text-right ltr:text-left">
+            <table class="data-table w-full text-xs text-right rtl:text-right ltr:text-left">
                 <thead class="bg-surface-soft border-b border-border text-text-secondary font-bold">
                     <tr>
                         <th class="p-3.5">{{ __('inventory.category_name') }}</th>
@@ -61,7 +61,7 @@
                                 {{ $cat->sort_order }}
                             </td>
                             <td class="p-3.5 text-center font-mono font-bold text-text-primary">
-                                {{ $cat->products->count() }}
+                                {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($cat->products->count()) }}
                             </td>
                             <td class="p-3.5 text-center">
                                 @if ($cat->active)
@@ -71,7 +71,7 @@
                                 @endif
                             </td>
                             @if ($canManage)
-                                <td class="p-3.5 text-center">
+                                <td class="table-actions p-3.5 text-center">
                                     <div class="flex items-center justify-center gap-2">
                                         <button wire:loading.attr="disabled" type="button" wire:click="openEditModal({{ $cat->id }})"
                                                 class="touch-action text-primary hover:underline font-bold text-xs">
@@ -117,7 +117,7 @@
                             </div>
                             <div class="min-w-0 space-y-1">
                                 <dt class="text-xs font-medium text-text-secondary">{{ __('inventory.products_count') }}</dt>
-                                <dd class="break-words text-sm tabular-nums text-text-primary">{{ $cat->products->count() }}</dd>
+                                <dd class="break-words text-sm tabular-nums text-text-primary">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($cat->products->count()) }}</dd>
                             </div>
                             <div class="min-w-0 space-y-1">
                                 <dt class="text-xs font-medium text-text-secondary">{{ __('inventory.status') }}</dt>
@@ -156,6 +156,7 @@
                     @endforelse
                 </div>
 
+    <div class="p-4"><x-table-pagination :paginator="$categories" /></div>
     </x-card>
 
     <!-- Create/Edit Modal -->
@@ -184,7 +185,7 @@
                         <label class="block font-bold text-text-secondary mb-1">{{ __('inventory.parent_category') }}</label>
                         <select wire:model="parent_id" class="min-h-11 w-full h-11 px-2.5 rounded-control border border-border text-xs">
                             <option value="">{{ __('inventory.none_root') }}</option>
-                            @foreach ($categories as $c)
+                            @foreach ($parentOptions as $c)
                                 @if ($editingId !== $c->id)
                                     <option value="{{ $c->id }}">{{ $c->name_ar }}</option>
                                 @endif

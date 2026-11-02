@@ -250,7 +250,7 @@
                             </div>
                             <div>
                                 <span class="text-[10px] text-text-muted block">{{ __('settings.usage_users') }}</span>
-                                <span class="text-sm font-extrabold text-text-primary num">{{ $memberCount }}</span>
+                                <span class="text-sm font-extrabold text-text-primary num">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($memberCount) }}</span>
                             </div>
                             <div>
                                 <span class="text-[10px] text-text-muted block">{{ __('settings.card_localization_title') }}</span>
@@ -509,7 +509,7 @@
                                             {{ __('settings.card_users_desc') }}
                                         </p>
                                         <span class="inline-block mt-2 px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 text-[9px] font-bold num">
-                                            {{ $memberCount }} {{ __('settings.usage_users') }}
+                                            {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($memberCount) }} {{ __('settings.usage_users') }}
                                         </span>
                                     </div>
                                 </div>
@@ -551,7 +551,7 @@
                                             {{ __('settings.card_roles_desc') }}
                                         </p>
                                         <span class="inline-block mt-2 px-2 py-0.5 rounded-md bg-success-bg text-success text-[9px] font-bold">
-                                            {{ $roleCount }} {{ __('settings.card_roles_title') }}
+                                            {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($roleCount) }} {{ __('settings.card_roles_title') }}
                                         </span>
                                     </div>
                                 </div>
@@ -850,7 +850,7 @@
                         </div>
                         <div class="py-2 flex items-center justify-between last:pb-0">
                             <span class="text-text-muted">{{ __('settings.usage_users') }}</span>
-                            <span class="font-bold text-text-primary num">{{ $memberCount }}</span>
+                            <span class="font-bold text-text-primary num">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($memberCount) }}</span>
                         </div>
                     </div>
                 </div>
@@ -1175,12 +1175,12 @@
                                 <p class="text-xs text-text-muted mt-0.5">{{ __('settings.card_users_desc') }}</p>
                             </div>
                             <span class="text-xs font-bold text-text-secondary num">
-                                {{ $memberships->count() }} {{ __('settings.usage_users') }}
+                                {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($memberships->count()) }} {{ __('settings.usage_users') }}
                             </span>
                         </div>
 
                         <div class="overflow-x-auto">
-                            <table class="w-full text-xs text-start">
+                            <table class="data-table w-full text-xs text-start">
                                 <thead>
                                     <tr class="border-b border-border text-text-muted text-[11px]">
                                         <th class="py-2.5 px-3 font-bold text-start">{{ __('settings.user_name') }}</th>
@@ -1233,7 +1233,7 @@
                                             <td class="py-3 px-3 text-[11px] text-text-muted num">
                                                 {{ $m->joined_at ? $m->joined_at->format('Y-m-d') : '-' }}
                                             </td>
-                                            <td class="py-3 px-3 text-end">
+                                            <td class="table-actions py-3 px-3 text-end">
                                                 @can('settings.users.manage')
                                                     @if (! $m->is_owner || $memberships->where('is_owner', true)->count() > 1)
                                                         <button type="button" wire:loading.attr="disabled" wire:target="toggleUserStatus" wire:click="toggleUserStatus({{ $m->id }})"
@@ -1407,7 +1407,7 @@
                         @endforelse
                     </div>
                     <div class="hidden md:block overflow-x-auto">
-                        <table class="w-full text-xs text-start">
+                        <table class="data-table w-full text-xs text-start">
                             <thead>
                                 <tr class="border-b border-border text-text-muted text-[11px]">
                                     <th class="py-2.5 px-3 font-bold text-start">{{ __('settings.audit_occurred_at') }}</th>
@@ -1444,7 +1444,7 @@
                             </tbody>
                         </table>
                     </div>
-                    {{ $auditEvents->links() }}
+                    <x-table-pagination :paginator="$auditEvents" />
                 </div>
             @endif
         </div>

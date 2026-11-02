@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Livewire\Pages\Expenses;
 
 use App\Actions\Expenses\CreateExpenseCategoryAction;
+use App\Livewire\Concerns\HasTablePageSize;
 use App\Livewire\Pages\Money\Concerns\AuthorizesMoneyPages;
 use App\Models\ExpenseCategory;
 use App\Models\LedgerAccount;
@@ -14,11 +15,14 @@ use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Validation\Rule;
 use Livewire\Attributes\Layout;
 use Livewire\Component;
+use Livewire\WithPagination;
 
 #[Layout('layouts.app')]
 class ExpenseCategoryIndex extends Component
 {
     use AuthorizesMoneyPages;
+    use HasTablePageSize;
+    use WithPagination;
 
     public string $nameAr = '';
 
@@ -86,7 +90,7 @@ class ExpenseCategoryIndex extends Component
         $categories = ExpenseCategory::where('company_id', $this->pageCompanyId)
             ->with('ledgerAccount')
             ->orderBy('id')
-            ->get();
+            ->paginate($this->tablePageSize());
 
         $accounts = LedgerAccount::where('company_id', $this->pageCompanyId)
             ->where('account_type', 'expense')

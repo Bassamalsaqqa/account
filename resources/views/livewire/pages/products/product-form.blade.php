@@ -349,7 +349,7 @@
                 <!-- Existing Alternate Units Table -->
                 @if ($productUnits->isNotEmpty())
                     <div class="overflow-x-auto">
-                        <table class="w-full text-xs text-right rtl:text-right ltr:text-left">
+                        <table class="data-table w-full text-xs text-right rtl:text-right ltr:text-left">
                             <thead class="bg-surface-soft border-b border-border text-text-secondary font-bold">
                                 <tr>
                                     <th class="p-2.5">{{ __('inventory.unit') }}</th>
@@ -374,7 +374,7 @@
                                             @if ($pu->is_base)
                                                 1.000000 ({{ __('inventory.base_unit_badge') }})
                                             @else
-                                                1 {{ app()->getLocale() === 'en' ? ($pu->unit?->name_en ?: $pu->unit?->name_ar) : $pu->unit?->name_ar }} = {{ $pu->conversion_to_base }} {{ app()->getLocale() === 'en' ? ($product->baseUnit?->name_en ?: $product->baseUnit?->name_ar) : $product->baseUnit?->name_ar }}
+                                                1 {{ app()->getLocale() === 'en' ? ($pu->unit?->name_en ?: $pu->unit?->name_ar) : $pu->unit?->name_ar }} = {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($pu->conversion_to_base) }} {{ app()->getLocale() === 'en' ? ($product->baseUnit?->name_en ?: $product->baseUnit?->name_ar) : $product->baseUnit?->name_ar }}
                                             @endif
                                         </td>
                                         <td class="p-2.5 text-center">
@@ -391,7 +391,7 @@
                                                 <span class="text-text-muted">&times;</span>
                                             @endif
                                         </td>
-                                        <td class="p-2.5 text-center">
+                                        <td class="table-actions p-2.5 text-center">
                                             @if ($pu->is_base)
                                                 <span class="text-text-muted">-</span>
                                             @else
@@ -457,7 +457,7 @@
                 <!-- Existing Barcodes Table -->
                 @if ($productBarcodes->isNotEmpty())
                     <div class="overflow-x-auto">
-                        <table class="w-full text-xs text-right rtl:text-right ltr:text-left">
+                        <table class="data-table w-full text-xs text-right rtl:text-right ltr:text-left">
                             <thead class="bg-surface-soft border-b border-border text-text-secondary font-bold">
                                 <tr>
                                     <th class="p-2.5">{{ __('inventory.barcode') }}</th>
@@ -476,7 +476,7 @@
                                                 <x-badge variant="success">{{ __('inventory.primary') }}</x-badge>
                                             @endif
                                         </td>
-                                        <td class="p-2.5 text-center">
+                                        <td class="table-actions p-2.5 text-center">
                                             <button type="button" wire:click="removeBarcode({{ $pb->id }})" wire:loading.attr="disabled"
                                                     class="min-h-11 inline-flex items-center justify-center rounded-control border border-danger/30 px-3 py-2 text-danger hover:bg-danger-bg text-xs">
                                                 {{ __('inventory.delete') }}

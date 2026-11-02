@@ -92,7 +92,7 @@
             <div>
                 <span class="text-text-muted block text-[11px]">{{ __('purchasing.payment_amount') }}</span>
                 <span class="font-mono font-bold text-primary text-sm" dir="ltr">
-                    {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($payment->amount, $payment->currency_code) }} {{ $payment->currency_code }}
+                    {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($payment->amount, $payment->currency_code) }} {{ $payment->currency_code }}
                 </span>
             </div>
         </div>
@@ -100,18 +100,18 @@
         <div class="grid grid-cols-2 md:grid-cols-4 gap-4 pt-3 border-t border-border text-xs">
             <div>
                 <span class="text-text-muted block text-[11px]">{{ __('purchasing.exchange_rate') }}</span>
-                <span class="font-mono font-semibold text-text-primary" dir="ltr">{{ $payment->exchange_rate }}</span>
+                <span class="font-mono font-semibold text-text-primary" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($payment->exchange_rate) }}</span>
             </div>
             <div>
                 <span class="text-text-muted block text-[11px]">{{ __('purchasing.allocated') }}</span>
                 <span class="font-mono font-bold text-text-primary" dir="ltr">
-                    {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($payment->allocated_amount, $payment->currency_code) }} {{ $payment->currency_code }}
+                    {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($payment->allocated_amount, $payment->currency_code) }} {{ $payment->currency_code }}
                 </span>
             </div>
             <div>
                 <span class="text-text-muted block text-[11px]">{{ __('purchasing.unallocated_advance') }}</span>
                 <span class="font-mono font-bold text-info" dir="ltr">
-                    {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($payment->unallocated_amount, $payment->currency_code) }} {{ $payment->currency_code }}
+                    {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($payment->unallocated_amount, $payment->currency_code) }} {{ $payment->currency_code }}
                 </span>
             </div>
             <div>
@@ -131,7 +131,7 @@
                 <div class="text-xs text-text-secondary">
                     {{ __('purchasing.unallocated_advance') }}:
                     <span class="font-bold text-info" dir="ltr">
-                        {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($payment->unallocated_amount, $payment->currency_code) }} {{ $payment->currency_code }}
+                        {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($payment->unallocated_amount, $payment->currency_code) }} {{ $payment->currency_code }}
                     </span>
                 </div>
             </div>
@@ -157,11 +157,11 @@
                         </div>
                         <div>
                             <span class="text-text-muted block text-[10px] uppercase">{{ __('purchasing.total') }}</span>
-                            <span class="font-mono" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($purchase['outstanding'], $purchase['currency']) }} {{ $purchase['currency'] }}</span>
+                            <span class="font-mono" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($purchase['outstanding'], $purchase['currency']) }} {{ $purchase['currency'] }}</span>
                         </div>
                         <div>
                             <span class="text-text-muted block text-[10px] uppercase">{{ __('purchasing.outstanding_balance') }}</span>
-                            <span class="font-mono font-bold text-danger" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($purchase['outstanding'], $purchase['currency']) }} {{ $purchase['currency'] }}</span>
+                            <span class="font-mono font-bold text-danger" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($purchase['outstanding'], $purchase['currency']) }} {{ $purchase['currency'] }}</span>
                         </div>
                         <div>
                             <label class="block text-[10px] text-text-muted uppercase mb-1">{{ __('purchasing.allocated') }}</label>
@@ -203,7 +203,7 @@
             {{ __('purchasing.purchase_lines') }} ({{ __('purchasing.allocated') }})
         </div>
         <div class="overflow-x-auto">
-            <table class="w-full text-start text-xs border-collapse">
+            <table class="data-table w-full text-start text-xs border-collapse">
                 <thead>
                     <tr class="border-b border-border bg-surface-soft text-text-muted font-bold text-[11px] uppercase">
                         <th class="py-2.5 px-4 text-start">{{ __('purchasing.purchase_number') }}</th>
@@ -229,7 +229,7 @@
                                 {{ $alloc->purchase?->purchase_date ? $alloc->purchase->purchase_date->toDateString() : '—' }}
                             </td>
                             <td class="py-2.5 px-4 font-bold" dir="ltr">
-                                {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($alloc->allocated_amount, $alloc->purchase->currency_code) }} {{ $alloc->purchase->currency_code }}<span class="block text-xs text-text-muted">{{ __('money.payment_consumed') }}: {{ $alloc->payment_currency_amount }} {{ $payment->currency_code }}</span>
+                                {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($alloc->allocated_amount, $alloc->purchase->currency_code) }} {{ $alloc->purchase->currency_code }}<span class="block text-xs text-text-muted">{{ __('money.payment_consumed') }}: {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($alloc->payment_currency_amount) }} {{ $payment->currency_code }}</span>
                             </td>
                             <td class="py-2.5 px-4 font-mono" dir="ltr">
                                 @php
@@ -239,7 +239,7 @@
                                 @endphp
                                 <span class="{{ $isPos ? 'text-danger font-bold' : ($isNeg ? 'text-success font-bold' : 'text-text-muted') }}">
                                     @if (! \App\Domain\Sales\Formatters\SalesMoneyFormatter::isZero($fxVal))
-                                        {{ $isPos ? '+' . \App\Domain\Sales\Formatters\SalesMoneyFormatter::format($fxVal) . ' (' . __('purchasing.realized_fx_loss') . ')' : \App\Domain\Sales\Formatters\SalesMoneyFormatter::format($fxVal) . ' (' . __('purchasing.realized_fx_gain') . ')' }}
+                                        {{ $isPos ? '+' . \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($fxVal) . ' (' . __('purchasing.realized_fx_loss') . ')' : \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($fxVal) . ' (' . __('purchasing.realized_fx_gain') . ')' }}
                                     @else
                                         —
                                     @endif
@@ -264,7 +264,7 @@
                     @empty
                         <tr>
                             <td colspan="5" class="py-6 text-center text-text-muted">
-                                {{ __('purchasing.unallocated_advance') }}: {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($payment->amount, $payment->currency_code) }} {{ $payment->currency_code }}
+                                {{ __('purchasing.unallocated_advance') }}: {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($payment->amount, $payment->currency_code) }} {{ $payment->currency_code }}
                             </td>
                         </tr>
                     @endforelse

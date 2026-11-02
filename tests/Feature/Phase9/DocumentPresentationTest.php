@@ -94,7 +94,9 @@ class DocumentPresentationTest extends Phase5ETestCase
             $this->assertStringNotContainsString('Renamed customer', $html);
             $this->assertStringNotContainsString('Renamed company', $html);
             $this->assertStringContainsString('JOD', $html);
-            $this->assertStringContainsString('3.123', $html);
+            $this->assertSame('3.123000', $data->lines[0]['unit_price']);
+            $this->assertStringContainsString('3.12', $html);
+            $this->assertStringNotContainsString('3.123', $html);
             $bytes = app(PdfRendererService::class)->renderDocument($data);
             $this->assertStringStartsWith('%PDF-', $bytes);
             File::put($directory.'/invoice-'.$locale.'.pdf', $bytes);

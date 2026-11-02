@@ -46,7 +46,7 @@
     <!-- Brands Table -->
     <x-card padding="p-0">
         <div class="hidden md:block overflow-x-auto">
-            <table class="w-full text-xs text-right rtl:text-right ltr:text-left">
+            <table class="data-table w-full text-xs text-right rtl:text-right ltr:text-left">
                 <thead class="bg-surface-soft border-b border-border text-text-secondary font-bold select-none">
                     <tr>
                         <th class="p-3.5">{{ __('inventory.brand_name') }}</th>
@@ -66,7 +66,7 @@
                                 @endif
                             </td>
                             <td class="p-3.5 text-center font-mono font-bold text-text-primary">
-                                {{ $brand->products_count }}
+                                {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($brand->products_count) }}
                             </td>
                             <td class="p-3.5 text-center">
                                 @if ($brand->active)
@@ -85,7 +85,7 @@
                                     @endif
                                 </button>
                             </td>
-                            <td class="p-3.5 text-center">
+                            <td class="table-actions p-3.5 text-center">
                                 <button wire:loading.attr="disabled" type="button" wire:click="openEditModal({{ $brand->id }})"
                                         class="touch-action text-primary hover:underline font-bold text-xs">
                                     {{ __('inventory.edit') }}
@@ -115,7 +115,7 @@
                             </div>
                             <div class="min-w-0 space-y-1">
                                 <dt class="text-xs font-medium text-text-secondary">{{ __('inventory.products_count') }}</dt>
-                                <dd class="break-words text-sm tabular-nums text-text-primary">{{ $brand->products_count }}</dd>
+                                <dd class="break-words text-sm tabular-nums text-text-primary">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($brand->products_count) }}</dd>
                             </div>
                             <div class="min-w-0 space-y-1">
                                 <dt class="text-xs font-medium text-text-secondary">{{ __('inventory.status') }}</dt>
@@ -157,9 +157,9 @@
                 </div>
 
 
-        @if ($brands->hasPages())
+        @if ($brands->count() > 0 || $brands->currentPage() > 1)
             <div class="p-3.5 border-t border-border">
-                {{ $brands->links() }}
+                <x-table-pagination :paginator="$brands" />
             </div>
         @endif
     </x-card>

@@ -48,14 +48,14 @@ class InventoryOverview extends Component
             ->count();
 
         // Total inventory valuation (gated)
-        $totalValuation = SalesMoneyFormatter::format('0', $company->base_currency_code);
+        $totalValuation = SalesMoneyFormatter::displayMoney('0', $company->base_currency_code);
         if ($canViewCost) {
             $costStates = InventoryCostState::where('company_id', $company->id)->get();
             $sum = BigDecimal::zero();
             foreach ($costStates as $cs) {
                 $sum = $sum->plus(BigDecimal::of((string) $cs->inventory_value_base));
             }
-            $totalValuation = SalesMoneyFormatter::format($sum, $company->base_currency_code);
+            $totalValuation = SalesMoneyFormatter::displayMoney($sum, $company->base_currency_code);
         }
 
         // Low stock products

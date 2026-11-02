@@ -380,7 +380,7 @@ class MoneyDailySummaryTest extends Phase7TestCase
             ->assertStatus(200)
             ->assertSee(__('money.current_balance'))
             ->assertSee(__('money.daily_summary'))
-            ->assertSee('250.000000');
+            ->assertSee('250.00');
 
         // Change date to past date where balance was zero
         $overview->set('date', '2026-10-01')
@@ -392,7 +392,7 @@ class MoneyDailySummaryTest extends Phase7TestCase
             ->assertStatus(200)
             ->assertSee(__('money.current_balance'))
             ->assertSee(__('money.daily_summary'))
-            ->assertSee('250.000000');
+            ->assertSee('250.00');
 
         $detail->set('date', '2026-10-01')
             ->assertStatus(200)

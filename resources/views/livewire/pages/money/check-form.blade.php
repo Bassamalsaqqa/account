@@ -48,7 +48,7 @@
 <p class="text-xs text-text-secondary">{{ __('money.allocation_help') }}</p>@foreach($targets as $target)<div class="grid items-end gap-3 border-b border-border py-3 sm:grid-cols-3" wire:key="target-{{ $target['id'] }}">
 <div>
 <bdi>{{ $target['number'] }}</bdi>
-<p class="text-xs">{{ __('money.outstanding') }}: <bdi>{{ $target['outstanding'] }} {{ $target['currency'] }}</bdi>
+<p class="text-xs">{{ __('money.outstanding') }}: <bdi>{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($target['outstanding']) }} {{ $target['currency'] }}</bdi>
 </p>
 </div>
 <label class="text-xs space-y-1">

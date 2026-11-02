@@ -97,7 +97,7 @@
 
             @if(count($availableAdvances) > 0)
                 <div class="rounded-control border border-border overflow-hidden">
-                    <table class="w-full text-sm text-start">
+                    <table class="data-table w-full text-sm text-start">
                         <thead class="bg-surface-soft border-b border-border text-xs text-text-muted">
                             <tr>
                                 <th class="px-3 py-2 text-start">{{ __('payroll.advance_number') }}</th>
@@ -113,8 +113,8 @@
                                 <tr>
                                     <td class="px-3 py-2 font-semibold">{{ $adv->advance_number }}</td>
                                     <td class="px-3 py-2 text-text-secondary">{{ $adv->advance_date->toDateString() }}</td>
-                                    <td class="px-3 py-2 text-text-secondary" dir="ltr">{{ $pos['original_amount'] }}</td>
-                                    <td class="px-3 py-2 font-bold text-emerald-700" dir="ltr">{{ $pos['remaining_amount'] }}</td>
+                                    <td class="px-3 py-2 text-text-secondary" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($pos['original_amount']) }}</td>
+                                    <td class="px-3 py-2 font-bold text-emerald-700" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($pos['remaining_amount']) }}</td>
                                     <td class="px-3 py-2">
                                         <input type="text" inputmode="decimal" wire:model.live="advanceAllocations.{{ $adv->id }}" placeholder="0.00" class="w-full rounded-control border border-border bg-white px-2 py-1 text-sm focus:border-primary focus:ring-primary text-end">
                                     </td>
@@ -136,15 +136,15 @@
             <div class="grid gap-4 sm:grid-cols-3 pt-1">
                 <div>
                     <span class="block text-xs text-text-secondary">{{ __('payroll.earned_salary') }}:</span>
-                    <span class="text-base font-bold text-text-primary" dir="ltr">{{ $previewEarned }} {{ $currencyCode }}</span>
+                    <span class="text-base font-bold text-text-primary" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($previewEarned) }} {{ $currencyCode }}</span>
                 </div>
                 <div>
                     <span class="block text-xs text-text-secondary">{{ __('payroll.advances_applied') }}:</span>
-                    <span class="text-base font-bold text-amber-700" dir="ltr">{{ $previewApplied }} {{ $currencyCode }}</span>
+                    <span class="text-base font-bold text-amber-700" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($previewApplied) }} {{ $currencyCode }}</span>
                 </div>
                 <div>
                     <span class="block text-xs text-text-secondary">{{ __('payroll.net_payable') }}:</span>
-                    <span class="text-xl font-bold text-primary" dir="ltr">{{ $previewNetPayable }} {{ $currencyCode }}</span>
+                    <span class="text-xl font-bold text-primary" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($previewNetPayable) }} {{ $currencyCode }}</span>
                 </div>
             </div>
         </div>

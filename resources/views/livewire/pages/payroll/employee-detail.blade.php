@@ -61,12 +61,12 @@
             </button>
             @if($detail['has_advance_manage'] || $detail['has_salary_view'])
                 <button wire:click="$set('tab', 'advances')" class="pb-3 text-sm font-semibold border-b-2 {{ $tab === 'advances' ? 'border-primary text-primary' : 'border-transparent text-text-muted hover:text-text-secondary' }}">
-                    {{ __('payroll.advances') }} ({{ count($advancePositions) }})
+                    {{ __('payroll.advances') }} ({{ $advanceCount }})
                 </button>
             @endif
             @if($detail['has_salary_view'])
                 <button wire:click="$set('tab', 'salaries')" class="pb-3 text-sm font-semibold border-b-2 {{ $tab === 'salaries' ? 'border-primary text-primary' : 'border-transparent text-text-muted hover:text-text-secondary' }}">
-                    {{ __('payroll.salary_entries') }} ({{ count($salaryPositions) }})
+                    {{ __('payroll.salary_entries') }} ({{ $salaryCount }})
                 </button>
                 <button wire:click="$set('tab', 'statement')" class="pb-3 text-sm font-semibold border-b-2 {{ $tab === 'statement' ? 'border-primary text-primary' : 'border-transparent text-text-muted hover:text-text-secondary' }}">
                     {{ __('payroll.statement') }}
@@ -115,7 +115,7 @@
                     <div>
                         <span class="block text-xs font-semibold text-text-muted uppercase">{{ __('payroll.salary') }}</span>
                         <span class="text-base font-bold text-text-primary" dir="ltr">
-                            {{ $detail['employee']->default_salary ?: '-' }} {{ $detail['employee']->salary_currency_code }}
+                            {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($detail['employee']->default_salary ?: '-') }} {{ $detail['employee']->salary_currency_code }}
                         </span>
                     </div>
                 @endif
@@ -144,7 +144,7 @@
                 @endif
             </div>
             <div class="overflow-x-auto">
-                <table class="w-full text-sm text-start">
+                <table class="data-table w-full text-sm text-start">
                     <thead class="bg-surface-soft border-b border-border text-xs uppercase text-text-muted">
                         <tr>
                             <th class="px-4 py-3 text-start">{{ __('payroll.advance_number') }}</th>
@@ -165,9 +165,9 @@
                                 <td class="px-4 py-3 font-semibold">{{ $adv->advance_number }}</td>
                                 <td class="px-4 py-3 text-text-secondary">{{ $adv->advance_date->toDateString() }}</td>
                                 <td class="px-4 py-3 text-text-secondary">{{ __('payroll.'.$adv->payment_method) }}</td>
-                                <td class="px-4 py-3 font-medium" dir="ltr">{{ $pos['original_amount'] }} {{ $pos['currency_code'] }}</td>
+                                <td class="px-4 py-3 font-medium" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($pos['original_amount']) }} {{ $pos['currency_code'] }}</td>
                                 <td class="px-4 py-3 font-bold {{ $pos['is_available'] ? 'text-emerald-700' : 'text-text-muted' }}" dir="ltr">
-                                    {{ $pos['remaining_amount'] }} {{ $pos['currency_code'] }}
+                                    {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($pos['remaining_amount']) }} {{ $pos['currency_code'] }}
                                 </td>
                                 <td class="px-4 py-3">
                                     <span class="inline-flex px-2 py-0.5 rounded text-xs font-semibold {{ $adv->status === 'posted' ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800' }}">
@@ -175,7 +175,7 @@
                                     </span>
                                 </td>
                                 @if($detail['has_advance_manage'])
-                                    <td class="px-4 py-3 text-end">
+                                    <td class="table-actions px-4 py-3 text-end">
                                         @if($adv->status === 'posted' && $pos['is_available'] && $adv->payment_method !== 'check')
                                             <button type="button" wire:click="reverseAdvance({{ $adv->id }})" wire:confirm="{{ __('payroll.reverse_advance_confirm') }}" class="text-xs font-semibold text-rose-600 hover:text-rose-800" wire:loading.attr="disabled" wire:target="reverseAdvance">
                                                 {{ __('payroll.reverse_advance') }}
@@ -198,6 +198,7 @@
                     </tbody>
                 </table>
             </div>
+                <div class="p-4"><x-table-pagination :paginator="$advancePositions" /></div>
         </div>
     @endif
 
@@ -215,7 +216,7 @@
                 </div>
             </div>
             <div class="overflow-x-auto">
-                <table class="w-full text-sm text-start">
+                <table class="data-table w-full text-sm text-start">
                     <thead class="bg-surface-soft border-b border-border text-xs uppercase text-text-muted">
                         <tr>
                             <th class="px-4 py-3 text-start">{{ __('payroll.entry_number') }}</th>
@@ -240,11 +241,11 @@
                                 <td class="px-4 py-3 text-text-secondary text-xs">
                                     {{ $ent->period_start->toDateString() }} – {{ $ent->period_end->toDateString() }}
                                 </td>
-                                <td class="px-4 py-3 font-medium" dir="ltr">{{ $ent->earned_salary }} {{ $ent->currency_code }}</td>
-                                <td class="px-4 py-3 text-amber-700 font-medium" dir="ltr">{{ $ent->advance_applied }} {{ $ent->currency_code }}</td>
-                                <td class="px-4 py-3 font-bold" dir="ltr">{{ $pos['net_payable'] }} {{ $pos['currency_code'] }}</td>
+                                <td class="px-4 py-3 font-medium" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($ent->earned_salary) }} {{ $ent->currency_code }}</td>
+                                <td class="px-4 py-3 text-amber-700 font-medium" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($ent->advance_applied) }} {{ $ent->currency_code }}</td>
+                                <td class="px-4 py-3 font-bold" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($pos['net_payable']) }} {{ $pos['currency_code'] }}</td>
                                 <td class="px-4 py-3 font-bold {{ $pos['is_unpaid'] ? 'text-primary' : 'text-emerald-700' }}" dir="ltr">
-                                    {{ $pos['remaining_payable'] }} {{ $pos['currency_code'] }}
+                                    {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($pos['remaining_payable']) }} {{ $pos['currency_code'] }}
                                 </td>
                                 <td class="px-4 py-3">
                                     <span class="inline-flex px-2 py-0.5 rounded text-xs font-semibold {{ $ent->status === 'posted' ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800' }}">
@@ -252,7 +253,7 @@
                                     </span>
                                 </td>
                                 @if($canReverseSalary)
-                                    <td class="px-4 py-3 text-end">
+                                    <td class="table-actions px-4 py-3 text-end">
                                         @if($ent->status === 'posted')
                                             <button type="button" wire:click="reverseSalaryEntry({{ $ent->id }})" wire:confirm="{{ __('payroll.reverse_salary_entry_confirm') }}" class="text-xs font-semibold text-rose-600 hover:text-rose-800" wire:loading.attr="disabled" wire:target="reverseSalaryEntry">
                                                 {{ __('payroll.reverse_salary_entry') }}
@@ -271,6 +272,7 @@
                     </tbody>
                 </table>
             </div>
+                <div class="p-4"><x-table-pagination :paginator="$salaryPositions" /></div>
         </div>
     @endif
 
@@ -288,11 +290,11 @@
                         <div class="border-t border-border pt-2 space-y-1 text-sm">
                             <div class="flex justify-between">
                                 <span class="text-text-secondary">{{ __('payroll.outstanding_advance') }}:</span>
-                                <span class="font-semibold text-amber-700" dir="ltr">{{ $bal['outstanding_advance'] }}</span>
+                                <span class="font-semibold text-amber-700" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($bal['outstanding_advance']) }}</span>
                             </div>
                             <div class="flex justify-between">
                                 <span class="text-text-secondary">{{ __('payroll.outstanding_payable') }}:</span>
-                                <span class="font-semibold text-primary" dir="ltr">{{ $bal['outstanding_payable'] }}</span>
+                                <span class="font-semibold text-primary" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($bal['outstanding_payable']) }}</span>
                             </div>
                         </div>
                     </div>
@@ -305,7 +307,7 @@
                     <h2 class="font-bold text-sm text-text-primary">{{ __('payroll.statement') }}</h2>
                 </div>
                 <div class="overflow-x-auto">
-                    <table class="w-full text-sm text-start">
+                    <table class="data-table w-full text-sm text-start">
                         <thead class="bg-surface-soft border-b border-border text-xs uppercase text-text-muted">
                             <tr>
                                 <th class="px-4 py-3 text-start">{{ __('payroll.statement_date') }}</th>
@@ -317,7 +319,7 @@
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-border">
-                            @forelse($statement['events'] as $evt)
+                            @forelse($statementEvents as $evt)
                                 <tr class="hover:bg-surface-soft/60">
                                     <td class="px-4 py-3 whitespace-nowrap text-text-secondary">{{ $evt['date'] }}</td>
                                     <td class="px-4 py-3 font-semibold">
@@ -332,15 +334,15 @@
                                     <td class="px-4 py-3 font-medium">{{ $evt['number'] }}</td>
                                     <td class="px-4 py-3 text-text-secondary text-xs">
                                         @if($evt['type'] === 'salary_entry')
-                                            {{ $evt['period'] }} ({{ __('payroll.advance_settlement') }}: {{ $evt['advance_applied'] }})
+                                            {{ $evt['period'] }} ({{ __('payroll.advance_settlement') }}: {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($evt['advance_applied']) }})
                                         @elseif(isset($evt['method']))
                                             {{ __('payroll.'.$evt['method']) }}
                                         @endif
                                     </td>
                                     <td class="px-4 py-3 font-bold whitespace-nowrap" dir="ltr">
-                                        {{ $evt['type'] === 'salary_entry' ? $evt['net_payable'] : ($evt['amount'] ?? '') }} {{ $evt['currency_code'] }}
+                                        {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($evt['type'] === 'salary_entry' ? $evt['net_payable'] : ($evt['amount'] ?? '')) }} {{ $evt['currency_code'] }}
                                     </td>
-                                    <td class="px-4 py-3">
+                                    <td class="table-actions px-4 py-3">
                                         <span class="inline-flex px-2 py-0.5 rounded text-xs font-semibold {{ $evt['status'] === 'posted' ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800' }}">
                                             {{ __('expenses.'.$evt['status']) }}
                                         </span>
@@ -359,6 +361,7 @@
                         </tbody>
                     </table>
                 </div>
+                <div class="p-4"><x-table-pagination :paginator="$statementEvents" /></div>
             </div>
         </div>
     @endif

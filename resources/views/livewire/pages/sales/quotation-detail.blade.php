@@ -165,7 +165,7 @@
             {{ __('sales.quotation_details') }}
         </div>
         <div class="overflow-x-auto">
-            <table class="w-full text-start text-xs border-collapse">
+            <table class="data-table w-full text-start text-xs border-collapse">
                 <thead>
                     <tr class="border-b border-border bg-surface-soft text-text-muted font-bold text-[11px] uppercase">
                         <th class="py-2.5 px-4 text-start">#</th>
@@ -191,16 +191,16 @@
                                 {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatQuantity($line->quantity) }} {{ $line->unit_name_ar ?? '' }}
                             </td>
                             <td class="py-2.5 px-4 font-mono" dir="ltr">
-                                {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($line->unit_price, $quotation->currency_code) }}
+                                {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($line->unit_price, $quotation->currency_code) }}
                             </td>
                             <td class="py-2.5 px-4 font-mono text-danger" dir="ltr">
-                                {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::isPositive($line->discount_amount) ? \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($line->discount_amount, $quotation->currency_code) : '—' }}
+                                {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::isPositive($line->discount_amount) ? \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($line->discount_amount, $quotation->currency_code) : '—' }}
                             </td>
                             <td class="py-2.5 px-4 font-mono" dir="ltr">
-                                {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::isPositive($line->tax_amount) ? \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($line->tax_amount, $quotation->currency_code) : '—' }}
+                                {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::isPositive($line->tax_amount) ? \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($line->tax_amount, $quotation->currency_code) : '—' }}
                             </td>
                             <td class="py-2.5 px-4 font-mono font-bold text-end" dir="ltr">
-                                {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($line->line_total, $quotation->currency_code) }}
+                                {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($line->line_total, $quotation->currency_code) }}
                             </td>
                         </tr>
                     @endforeach
@@ -228,19 +228,19 @@
             <div class="w-full md:w-64 space-y-2">
                 <div class="flex justify-between py-1 border-b border-border/50">
                     <span class="text-text-muted">{{ __('sales.subtotal') }}:</span>
-                    <span class="font-mono font-bold" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($quotation->subtotal, $quotation->currency_code) }} {{ $quotation->currency_code }}</span>
+                    <span class="font-mono font-bold" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($quotation->subtotal, $quotation->currency_code) }} {{ $quotation->currency_code }}</span>
                 </div>
                 <div class="flex justify-between py-1 border-b border-border/50">
                     <span class="text-text-muted">{{ __('sales.discount') }}:</span>
-                    <span class="font-mono text-danger font-bold" dir="ltr">-{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($quotation->discount_total, $quotation->currency_code) }} {{ $quotation->currency_code }}</span>
+                    <span class="font-mono text-danger font-bold" dir="ltr">-{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($quotation->discount_total, $quotation->currency_code) }} {{ $quotation->currency_code }}</span>
                 </div>
                 <div class="flex justify-between py-1 border-b border-border/50">
                     <span class="text-text-muted">{{ __('sales.tax') }}:</span>
-                    <span class="font-mono font-bold" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($quotation->tax_total, $quotation->currency_code) }} {{ $quotation->currency_code }}</span>
+                    <span class="font-mono font-bold" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($quotation->tax_total, $quotation->currency_code) }} {{ $quotation->currency_code }}</span>
                 </div>
                 <div class="flex justify-between py-2 border-t border-border text-base font-extrabold text-text-primary">
                     <span>{{ __('sales.grand_total') }}:</span>
-                    <span class="font-mono text-primary" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($quotation->grand_total, $quotation->currency_code) }} {{ $quotation->currency_code }}</span>
+                    <span class="font-mono text-primary" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($quotation->grand_total, $quotation->currency_code) }} {{ $quotation->currency_code }}</span>
                 </div>
             </div>
         </div>

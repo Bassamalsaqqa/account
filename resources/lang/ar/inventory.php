@@ -359,4 +359,6 @@ return [
     'lot_today_status' => 'تنتهي اليوم',
     'base_available' => 'المتاح (الوحدة الأساسية)',
     'lot_status_reference' => 'حالة الصلاحية بتاريخ اليوم (:date). الكمية المتاحة هي الكمية الحالية.',
+    'average_cost_short' => 'متوسط التكلفة',
+    'stock_value_short' => 'قيمة المخزون',
 ];

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Livewire\Pages\Sales;
 
+use App\Livewire\Concerns\HasTablePageSize;
 use App\Models\Customer;
 use App\Models\Quotation;
 use App\Support\Tenancy\CompanyContext;
@@ -17,6 +18,7 @@ use Livewire\WithPagination;
 #[Layout('layouts.app')]
 class QuotationIndex extends Component
 {
+    use HasTablePageSize;
     use WithPagination;
 
     #[Url(as: 'q')]
@@ -77,7 +79,7 @@ class QuotationIndex extends Component
             $query->where('customer_id', $this->customerFilter);
         }
 
-        $quotations = $query->orderByDesc('quotation_date')->orderByDesc('id')->paginate(15);
+        $quotations = $query->orderByDesc('quotation_date')->orderByDesc('id')->paginate($this->tablePageSize());
         $customers = Customer::where('company_id', $company->id)->orderBy('name_ar')->get();
 
         return view('livewire.pages.sales.quotation-index', [

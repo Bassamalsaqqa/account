@@ -8,6 +8,7 @@ use App\Application\Platform\PlatformAccess;
 use App\Application\Platform\ProvisionCompany;
 use App\Application\Platform\SubscriptionTimeline;
 use App\Models\User;
+use App\Support\TablePageSize;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -34,7 +35,7 @@ final class PlatformController extends Controller
             ->selectSub(DB::table('ai_company_policies')->select('enabled')->whereColumn('ai_company_policies.company_id', 'companies.id')->limit(1), 'ai_enabled')
             ->when($search !== '', fn ($query) => $query->where(function ($q) use ($search): void {
                 $q->where('name_ar', 'like', '%'.$search.'%')->orWhere('name_en', 'like', '%'.$search.'%')->orWhere('public_id', $search);
-            }))->orderBy('companies.id')->paginate(20)->withQueryString();
+            }))->orderBy('companies.id')->paginate(TablePageSize::fromRequest())->withQueryString();
 
         $billingSummary = null;
         if (in_array('subscription.manage', $request->attributes->get('platform_permissions', []), true)) {
@@ -72,7 +73,7 @@ final class PlatformController extends Controller
         $companyOwner = $owners->count() === 1 ? $owners->first() : null;
         $members = DB::table('company_user')->join('users', 'users.id', '=', 'company_user.user_id')
             ->where('company_user.company_id', $company->id)
-            ->select(['users.id', 'users.name', 'company_user.status', 'company_user.is_owner'])->orderBy('company_user.id')->paginate(20);
+            ->select(['users.id', 'users.name', 'company_user.status', 'company_user.is_owner'])->orderBy('company_user.id')->paginate(TablePageSize::fromRequest());
         $roles = DB::table('model_has_roles')->join('roles', 'roles.id', '=', 'model_has_roles.role_id')
             ->where('roles.company_id', $company->id)->where('model_has_roles.company_id', $company->id)
             ->where('model_has_roles.model_type', User::class)->whereIn('model_has_roles.model_id', $members->pluck('id'))
@@ -104,7 +105,7 @@ final class PlatformController extends Controller
     {
         app(PlatformAccess::class)->authorize('audit.read');
         $events = DB::table('platform_audit_events')->select(['event_key', 'actor_user_id', 'company_id', 'created_at', 'metadata'])
-            ->orderByDesc('id')->paginate(30);
+            ->orderByDesc('id')->paginate(TablePageSize::fromRequest());
 
         return view('platform.audit', compact('events'));
     }

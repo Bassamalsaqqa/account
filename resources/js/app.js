@@ -14,3 +14,5 @@ import './global-search';
 import './barcode-entry';
 import './profile-two-factor';
 import './company-data-download';
+
+import './money-display';

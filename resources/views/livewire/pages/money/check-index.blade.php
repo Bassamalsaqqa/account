@@ -54,10 +54,10 @@
 </div>
 <p class="text-sm">{{ $check->partyDisplayName() }}</p>
 <div>
-<bdi>{{ $check->amount }} {{ $check->currency_code }}</bdi>
+<bdi>{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($check->amount) }} {{ $check->currency_code }}</bdi>
 <p class="text-xs">{{ __('money.due_date') }}: {{ $check->due_date->toDateString() }}</p>
 </div>
 <div class="space-y-2"><span class="block text-sm">{{ __('money.'.$check->status) }}</span><span class="touch-action bg-surface-soft text-sm font-semibold">{{ __('refinement_lists.open') }}</span></div>
 </a>@empty<p>{{ __('money.empty') }}</p>
-@endforelse{{ $checks->links() }}</div>
+@endforelse<x-table-pagination :paginator="$checks" /></div>
 </div>

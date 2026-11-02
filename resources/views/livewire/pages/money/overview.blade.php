@@ -12,8 +12,8 @@
             <h2 class="font-semibold break-words">{{ $account['name'] }}</h2>
             <span class="text-xs text-text-secondary">{{ __('money.'.$account['account_type']) }}</span>
         </div>
-        <p class="text-2xl font-semibold tabular-nums" dir="ltr">{{ $account['balance_currency'] ?? __('money.unavailable') }} {{ $account['currency_code'] }}</p>
-        <p class="text-xs text-text-secondary">{{ __('money.base_value') }}: <bdi>{{ $account['balance_base'] }} {{ $account['base_currency_code'] }}</bdi></p>
+        <p class="text-2xl font-semibold tabular-nums" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($account['balance_currency'] ?? __('money.unavailable')) }} {{ $account['currency_code'] }}</p>
+        <p class="text-xs text-text-secondary">{{ __('money.base_value') }}: <bdi>{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($account['balance_base']) }} {{ $account['base_currency_code'] }}</bdi></p>
         @if(!$account['currency_balance_available'])<p class="text-xs text-amber-800">{{ __('money.native_unavailable') }}</p>@endif
         @if(!$account['is_active'])<span class="text-xs text-text-muted">{{ __('money.inactive') }}</span>@endif
     </a>
@@ -28,14 +28,14 @@
 
 @if($checkSummary !== [])<section class="rounded-card border border-border bg-white p-4 sm:p-6 space-y-3">
 <h2 class="font-bold">{{ __('money.outstanding_checks') }}</h2>
-@foreach($checkSummary as $summary)<p>{{ __('money.'.$summary['direction']) }} · {{ $summary['count'] }} · <bdi>{{ $summary['total'] }} {{ $summary['currency_code'] }}</bdi>
+@foreach($checkSummary as $summary)<p>{{ __('money.'.$summary['direction']) }} · {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($summary['count']) }} · <bdi>{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($summary['total']) }} {{ $summary['currency_code'] }}</bdi>
 </p>@endforeach</section>@endif
 @if($dueSoon->isNotEmpty())<section class="rounded-card border border-border bg-white p-4 sm:p-6 space-y-3">
 <h2 class="font-bold">{{ __('money.due_soon') }}</h2>
 @foreach($dueSoon as $check)<a href="{{ route('money.checks.show', $check->public_id) }}" class="touch-action flex flex-wrap justify-between gap-3 border-b border-border py-2">
 <bdi>{{ $check->check_number }}</bdi>
 <span>{{ $check->due_date->toDateString() }}</span>
-<bdi>{{ $check->amount }} {{ $check->currency_code }}</bdi>
+<bdi>{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($check->amount) }} {{ $check->currency_code }}</bdi>
 </a>@endforeach</section>@endif
 <section class="rounded-card border border-border bg-white p-4 sm:p-6 space-y-3">
 <h2 class="font-bold">{{ __('money.recent_activity') }}</h2>
@@ -43,7 +43,7 @@
 <article class="grid sm:grid-cols-3 gap-2 border-b border-border py-2 text-sm">
 <div><a class="touch-action text-primary" href="{{ route('money.accounts.show', $movement->account_public_id) }}">{{ app()->getLocale() === 'en' ? ($movement->name_en ?: $movement->name_ar) : $movement->name_ar }}</a><p class="text-xs text-text-muted">{{ $movement->posting_date }}</p></div>
 <p class="break-words">{{ $movement->description }} @if(isset($sourceLinks[$movement->id]))<a class="touch-action text-primary" href="{{ $sourceLinks[$movement->id] }}">{{ __('money.source') }}</a>@endif</p>
-<p dir="ltr">{{ $movement->transaction_amount ?? '—' }} {{ $movement->transaction_currency_code }}<span class="block text-xs">{{ __('money.base_value') }}: {{ $movement->debit_base }} / {{ $movement->credit_base }} {{ $company->base_currency_code }}</span></p>
+<p dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($movement->transaction_amount ?? '—') }} {{ $movement->transaction_currency_code }}<span class="block text-xs">{{ __('money.base_value') }}: {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($movement->debit_base) }} / {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($movement->credit_base) }} {{ $company->base_currency_code }}</span></p>
 </article>
 @empty<p class="text-sm text-text-muted">{{ __('money.empty') }}</p>@endforelse
 </section>

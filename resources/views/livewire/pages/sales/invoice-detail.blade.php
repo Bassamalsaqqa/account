@@ -126,7 +126,7 @@
             <div>
                 <span class="text-text-muted block text-[11px]">{{ __('sales.outstanding_amount') }}</span>
                 <span class="font-mono font-bold {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::isPositive($outstanding) ? 'text-danger' : 'text-text-primary' }}" dir="ltr">
-                    {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($outstanding, $invoice->currency_code) }} {{ $invoice->currency_code }}
+                    {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($outstanding, $invoice->currency_code) }} {{ $invoice->currency_code }}
                 </span>
             </div>
         </div>
@@ -150,7 +150,7 @@
             {{ __('sales.invoice_details') }}
         </div>
         <div class="overflow-x-auto">
-            <table class="w-full text-start text-xs border-collapse">
+            <table class="data-table w-full text-start text-xs border-collapse">
                 <thead>
                     <tr class="border-b border-border bg-surface-soft text-text-muted font-bold text-[11px] uppercase">
                         <th class="py-2.5 px-4 text-start">#</th>
@@ -179,20 +179,20 @@
                                 {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatQuantity($line->quantity) }} {{ $line->unit_name_ar ?? '' }}
                             </td>
                             <td class="py-2.5 px-4 font-mono" dir="ltr">
-                                {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($line->unit_price, $invoice->currency_code) }}
+                                {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($line->unit_price, $invoice->currency_code) }}
                             </td>
                             <td class="py-2.5 px-4 font-mono text-danger" dir="ltr">
-                                {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::isPositive($line->discount_amount) ? \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($line->discount_amount, $invoice->currency_code) : '—' }}
+                                {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::isPositive($line->discount_amount) ? \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($line->discount_amount, $invoice->currency_code) : '—' }}
                             </td>
                             <td class="py-2.5 px-4 font-mono" dir="ltr">
-                                {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::isPositive($line->tax_amount) ? \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($line->tax_amount, $invoice->currency_code) : '—' }}
+                                {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::isPositive($line->tax_amount) ? \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($line->tax_amount, $invoice->currency_code) : '—' }}
                             </td>
                             <td class="py-2.5 px-4 font-mono font-bold text-end" dir="ltr">
-                                {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($line->line_total, $invoice->currency_code) }}
+                                {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($line->line_total, $invoice->currency_code) }}
                             </td>
                             @if ($canViewCost)
                                 <td class="py-2.5 px-4 font-mono text-end text-text-muted" dir="ltr">
-                                    {{ $line->cogs_total_base !== null ? \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($line->cogs_total_base, $invoice->company->base_currency_code) : '—' }}
+                                    {{ $line->cogs_total_base !== null ? \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($line->cogs_total_base, $invoice->company->base_currency_code) : '—' }}
                                 </td>
                             @endif
                         </tr>
@@ -227,24 +227,24 @@
             <div class="w-full md:w-64 space-y-2">
                 <div class="flex justify-between py-1 border-b border-border/50">
                     <span class="text-text-muted">{{ __('sales.subtotal') }}:</span>
-                    <span class="font-mono font-bold" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($invoice->subtotal, $invoice->currency_code) }} {{ $invoice->currency_code }}</span>
+                    <span class="font-mono font-bold" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($invoice->subtotal, $invoice->currency_code) }} {{ $invoice->currency_code }}</span>
                 </div>
                 <div class="flex justify-between py-1 border-b border-border/50">
                     <span class="text-text-muted">{{ __('sales.discount') }}:</span>
-                    <span class="font-mono text-danger font-bold" dir="ltr">-{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($invoice->discount_total, $invoice->currency_code) }} {{ $invoice->currency_code }}</span>
+                    <span class="font-mono text-danger font-bold" dir="ltr">-{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($invoice->discount_total, $invoice->currency_code) }} {{ $invoice->currency_code }}</span>
                 </div>
                 <div class="flex justify-between py-1 border-b border-border/50">
                     <span class="text-text-muted">{{ __('sales.tax') }}:</span>
-                    <span class="font-mono font-bold" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($invoice->tax_total, $invoice->currency_code) }} {{ $invoice->currency_code }}</span>
+                    <span class="font-mono font-bold" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($invoice->tax_total, $invoice->currency_code) }} {{ $invoice->currency_code }}</span>
                 </div>
                 <div class="flex justify-between py-2 border-t border-border text-base font-extrabold text-text-primary">
                     <span>{{ __('sales.grand_total') }}:</span>
-                    <span class="font-mono text-primary" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($invoice->grand_total, $invoice->currency_code) }} {{ $invoice->currency_code }}</span>
+                    <span class="font-mono text-primary" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($invoice->grand_total, $invoice->currency_code) }} {{ $invoice->currency_code }}</span>
                 </div>
                 @if ($invoice->currency_code !== $invoice->company->base_currency_code)
                     <div class="flex justify-between text-[11px] text-text-muted">
                         <span>Base ({{ $invoice->company->base_currency_code }}):</span>
-                        <span class="font-mono" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($invoice->base_grand_total, $invoice->company->base_currency_code) }}</span>
+                        <span class="font-mono" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($invoice->base_grand_total, $invoice->company->base_currency_code) }}</span>
                     </div>
                 @endif
             </div>
@@ -258,7 +258,7 @@
                 {{ __('sales.tab_payments') }}
             </div>
             <div class="overflow-x-auto">
-                <table class="w-full text-start text-xs border-collapse">
+                <table class="data-table w-full text-start text-xs border-collapse">
                     <thead>
                         <tr class="border-b border-border bg-surface-soft text-text-muted font-bold text-[11px] uppercase">
                             <th class="py-2.5 px-4 text-start">{{ __('sales.payment_number') }}</th>
@@ -278,12 +278,12 @@
                                 </td>
                                 <td class="py-2.5 px-4" dir="ltr">{{ $alloc->payment?->payment_date ? $alloc->payment->payment_date->toDateString() : '—' }}</td>
                                 <td class="py-2.5 px-4 font-bold" dir="ltr">
-                                    {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($alloc->payment_currency_amount, $alloc->payment->currency_code) }} {{ $alloc->payment->currency_code }}
+                                    {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($alloc->payment_currency_amount, $alloc->payment->currency_code) }} {{ $alloc->payment->currency_code }}
                                 </td>
                                 <td class="py-2.5 px-4 font-mono" dir="ltr">
-                                    {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::format($alloc->realized_fx_gain_loss_base) }}
+                                    {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($alloc->realized_fx_gain_loss_base) }}
                                 </td>
-                                <td class="py-2.5 px-4 text-end">
+                                <td class="table-actions py-2.5 px-4 text-end">
                                     <a href="{{ route('payments.show', $alloc->payment->public_id) }}" class="touch-action text-primary hover:underline font-bold text-[11px]">
                                          {{ __('sales.payment_details') }}
                                      </a>
@@ -303,7 +303,7 @@
                 {{ __('sales.tab_returns') }}
             </div>
             <div class="overflow-x-auto">
-                <table class="w-full text-start text-xs border-collapse">
+                <table class="data-table w-full text-start text-xs border-collapse">
                     <thead>
                         <tr class="border-b border-border bg-surface-soft text-text-muted font-bold text-[11px] uppercase">
                             <th class="py-2.5 px-4 text-start">{{ __('sales.return_number') }}</th>
@@ -323,14 +323,14 @@
                                 </td>
                                 <td class="py-2.5 px-4" dir="ltr">{{ $ret->issue_date ? $ret->issue_date->toDateString() : '—' }}</td>
                                 <td class="py-2.5 px-4 font-bold" dir="ltr">
-                                    {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($ret->grand_total, $ret->currency_code) }} {{ $ret->currency_code }}
+                                    {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($ret->grand_total, $ret->currency_code) }} {{ $ret->currency_code }}
                                 </td>
                                 <td class="py-2.5 px-4">
                                     <span class="px-2 py-0.5 rounded-full text-[10px] font-bold {{ $ret->status === 'posted' ? 'bg-success-bg text-success' : 'bg-slate-100 text-slate-600' }}">
                                         {{ __('sales.' . $ret->status) }}
                                     </span>
                                 </td>
-                                <td class="py-2.5 px-4 text-end">
+                                <td class="table-actions py-2.5 px-4 text-end">
                                     <a href="{{ route('returns.show', $ret->public_id) }}" class="touch-action text-primary hover:underline font-bold text-[11px]">
                                         {{ __('sales.return_details') }}
                                     </a>

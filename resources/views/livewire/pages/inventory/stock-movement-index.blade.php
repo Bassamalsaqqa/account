@@ -39,7 +39,7 @@
     <!-- Ledger Table -->
     <x-card padding="p-0">
         <div class="hidden md:block overflow-x-auto">
-            <table class="w-full text-xs text-right rtl:text-right ltr:text-left">
+            <table class="data-table w-full text-xs text-right rtl:text-right ltr:text-left">
                 <thead class="bg-surface-soft border-b border-border text-text-secondary font-bold select-none">
                     <tr>
                         <th class="p-3.5">{{ __('inventory.movement_date') }}</th>
@@ -84,17 +84,17 @@
                                 {{ $m->lot?->lot_number ?? ($m->lot_id ? '#' . $m->lot_id : '—') }}
                             </td>
                             <td class="p-3.5 text-center font-mono font-bold tabular-nums dir-ltr {{ $m->isInbound() ? 'text-success' : 'text-danger' }}">
-                                {{ $m->isInbound() ? '+' : '' }}{{ $m->quantity_delta_base }}
+                                {{ $m->isInbound() ? '+' : '' }}{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($m->quantity_delta_base) }}
                             </td>
                             @if ($canViewCost)
                                 <td class="p-3.5 text-center font-mono tabular-nums dir-ltr text-text-secondary">
-                                    {{ $m->unit_cost_base }}
+                                    {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($m->unit_cost_base) }}
                                 </td>
                                 <td class="p-3.5 text-center font-mono font-bold tabular-nums dir-ltr text-text-primary">
                                     {{ $m->value_delta_base }}
                                 </td>
                                 <td class="p-3.5 text-center font-mono tabular-nums dir-ltr text-text-muted">
-                                    {{ $m->average_cost_after }}
+                                    {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($m->average_cost_after) }}
                                 </td>
                             @endif
                             <td class="p-3.5 text-text-secondary max-w-xs truncate">
@@ -150,12 +150,12 @@
                             </div>
                             <div class="min-w-0 space-y-1">
                                 <dt class="text-xs font-medium text-text-secondary">{{ __('inventory.quantity_delta') }}</dt>
-                                <dd dir="ltr" class="break-words text-sm tabular-nums text-text-primary">{{ $m->isInbound() ? '+' : '' }}{{ $m->quantity_delta_base }}</dd>
+                                <dd dir="ltr" class="break-words text-sm tabular-nums text-text-primary">{{ $m->isInbound() ? '+' : '' }}{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($m->quantity_delta_base) }}</dd>
                             </div>
                             @if ($canViewCost)
                                 <div class="min-w-0 space-y-1">
                                 <dt class="text-xs font-medium text-text-secondary">{{ __('inventory.unit_cost') }}</dt>
-                                <dd dir="ltr" class="break-words text-sm tabular-nums text-text-primary">{{ $m->unit_cost_base }}</dd>
+                                <dd dir="ltr" class="break-words text-sm tabular-nums text-text-primary">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($m->unit_cost_base) }}</dd>
                             </div>
                                 <div class="min-w-0 space-y-1">
                                 <dt class="text-xs font-medium text-text-secondary">{{ __('inventory.value_delta') }}</dt>
@@ -163,7 +163,7 @@
                             </div>
                                 <div class="min-w-0 space-y-1">
                                 <dt class="text-xs font-medium text-text-secondary">{{ __('inventory.average_cost_after') }}</dt>
-                                <dd dir="ltr" class="break-words text-sm tabular-nums text-text-primary">{{ $m->average_cost_after }}</dd>
+                                <dd dir="ltr" class="break-words text-sm tabular-nums text-text-primary">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($m->average_cost_after) }}</dd>
                             </div>
                             @endif
                             <div class="min-w-0 space-y-1">
@@ -188,9 +188,9 @@
                 </div>
 
 
-        @if ($movements->hasPages())
+        @if ($movements->count() > 0 || $movements->currentPage() > 1)
             <div class="p-4 border-t border-border">
-                {{ $movements->links() }}
+                <x-table-pagination :paginator="$movements" />
             </div>
         @endif
     </x-card>

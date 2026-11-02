@@ -5,10 +5,48 @@ declare(strict_types=1);
 namespace App\Application\Reporting\Presentation;
 
 use App\Application\Reporting\DTO\ReportResult;
+use App\Domain\Sales\Formatters\SalesMoneyFormatter;
 use App\Support\Tenancy\CompanyContext;
 
 final class ReportPresenter
 {
+    /** @param array<string, mixed> $row
+     * @param array{key:string,type:string} $column */
+    public function displayValue(array $row, array $column): ?string
+    {
+        $value = $this->value($row, $column['key']);
+        if ($value === null || $column['type'] !== 'decimal') {
+            return $value;
+        }
+
+        $isQuantityOrRatio = $this->quantityOrRatio($column['key']);
+
+        return $isQuantityOrRatio
+            ? SalesMoneyFormatter::displayQuantity($value)
+            : SalesMoneyFormatter::displayMoney($value);
+    }
+
+    /** Format known report metrics only; numeric identifiers and raw DTO/export values remain untouched. */
+    public function displayMetric(string $key, mixed $value): ?string
+    {
+        $text = $this->value([$key => $value], $key);
+        if ($text === null || ! preg_match('/^-?\d+(?:\.\d+)?$/D', $text)) {
+            return $text;
+        }
+        if (preg_match('/(?:^|_)(?:id|code|number|sku|barcode|date|name|year)$/D', $key)) {
+            return $text;
+        }
+        $quantity = $this->quantityOrRatio($key);
+        if ($quantity) {
+            return SalesMoneyFormatter::displayQuantity($text);
+        }
+        $money = preg_match('/^[A-Z]{3}$/D', $key) === 1
+            || in_array($key, ['current', 'days_1_30', 'days_31_60', 'days_61_90', 'days_90_plus', 'unspecified', 'gross_open'], true)
+            || preg_match('/(?:^|_)(?:amount|total|subtotal|cost|price|value|balance|salary|payable|receivable|debit|credit|discounts?|tax|revenue|profit|valuation|fee|paid|outstanding|earned|applied|sales|purchases|returns|remaining|running|spend|spent|cogs|expenses?|loss|gain)(?:_|$)/', $key) === 1;
+
+        return $money ? SalesMoneyFormatter::displayMoney($text) : $text;
+    }
+
     /** @param array<string, mixed> $row */
     public function value(array $row, string $key): ?string
     {
@@ -75,12 +113,16 @@ final class ReportPresenter
         return false;
     }
 
+    private function quantityOrRatio(string $key): bool
+    {
+        // Aging buckets such as days_1_30 are money, not elapsed-day counts.
+        return preg_match('/quantity|(?:^|_)(?:count|rows|units|lots|checks|percent|percentage|margin|rate|ratio|conversion)(?:_|$)|(?:^|_)days$/', $key) === 1
+            || in_array($key, ['minimum_stock', 'on_hand', 'days_overdue', 'rank'], true);
+    }
+
     private function baseAmount(string $key): bool
     {
-        return ! str_contains($key, 'quantity')
-            && ! str_contains($key, 'count')
-            && ! str_contains($key, 'margin')
-            && ! str_contains($key, 'percent')
+        return ! $this->quantityOrRatio($key)
             && (str_contains($key, '_base') || str_starts_with($key, 'base_'));
     }
 
@@ -103,11 +145,7 @@ final class ReportPresenter
                     $label = __('reports.summary');
                 }
 
-                $isCountOrQty = str_contains((string) $key, 'count')
-                    || str_contains((string) $key, 'quantity')
-                    || str_contains((string) $key, 'margin')
-                    || str_contains((string) $key, 'percent')
-                    || in_array($key, ['total_checks'], true);
+                $isCountOrQty = $this->quantityOrRatio((string) $key);
 
                 if ($isCountOrQty) {
                     $currency = '';
