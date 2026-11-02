@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Livewire\Pages\Sales;
 
+use App\Actions\Sales\DeleteSalesInvoiceDraftAction;
 use App\Actions\Sales\VoidSalesInvoiceAction;
 use App\Application\Commands\SalesInvoiceCommands;
 use App\Exceptions\NoActiveCompanyException;
@@ -143,6 +144,20 @@ class InvoiceDetail extends Component
         $this->previewData = null;
         $this->confirmationToken = null;
         $this->executeKey = null;
+    }
+
+    public function deleteDraft(DeleteSalesInvoiceDraftAction $action): mixed
+    {
+        try {
+            $action->execute($this->invoice, auth()->user());
+        } catch (\InvalidArgumentException $exception) {
+            $this->addError('deleteDraft', $exception->getMessage());
+
+            return null;
+        }
+        session()->flash('success', __('sales.draft_deleted'));
+
+        return redirect()->route('invoices.index');
     }
 
     public function voidInvoice(VoidSalesInvoiceAction $voidAction): void

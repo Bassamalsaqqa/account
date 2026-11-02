@@ -1,4 +1,4 @@
-<div>
+<div data-entry-form>
 <form @submit.prevent="handleSaveDraft()"
       class="space-y-5 pb-28 md:pb-6"
       x-data="{

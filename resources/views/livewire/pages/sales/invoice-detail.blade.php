@@ -62,6 +62,14 @@
                     </a>
                 @endif
 
+                @if ($canEditDraft && auth()->user()->hasRole('Owner') && $invoice->quotation_id === null)
+                    <button type="button" wire:click="deleteDraft" wire:confirm="{{ __('sales.delete_draft_confirm') }}" wire:loading.attr="disabled"
+                            class="min-h-11 px-3 py-2 rounded-control border border-border text-sm font-semibold text-danger hover:bg-danger-bg focus-visible:ring-2 focus-visible:ring-primary">
+                        {{ __('sales.delete_draft') }}
+                    </button>
+                @endif
+                @error('deleteDraft') <p role="alert" class="text-sm text-danger">{{ $message }}</p> @enderror
+
                 @if ($canPay && \App\Domain\Sales\Formatters\SalesMoneyFormatter::isPositive($outstanding))
                     <a href="{{ route('payments.create', ['customer_id' => $invoice->customer_id, 'invoice_id' => $invoice->id]) }}"
                        class="touch-action px-3 py-1.5 rounded-control bg-success text-white text-xs font-bold hover:opacity-90 transition-opacity shadow-xs">

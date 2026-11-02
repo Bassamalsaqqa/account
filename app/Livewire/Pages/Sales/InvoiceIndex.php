@@ -8,6 +8,7 @@ use App\Livewire\Concerns\HasTablePageSize;
 use App\Models\Customer;
 use App\Models\SalesInvoice;
 use App\Support\Tenancy\CompanyContext;
+use Brick\Math\BigDecimal;
 use Illuminate\Contracts\View\View;
 use Illuminate\Database\Eloquent\Builder;
 use Livewire\Attributes\Layout;
@@ -56,7 +57,8 @@ class InvoiceIndex extends Component
 
         $canCreate = $user->hasPermissionTo('sales.invoice.create');
 
-        $query = SalesInvoice::with(['customer', 'allocations'])
+        $query = SalesInvoice::with(['customer', 'allocations' => fn ($q) => $q->active(),
+            'returns' => fn ($q) => $q->where('status', 'posted')])
             ->where('company_id', $company->id);
 
         if (trim($this->search) !== '') {
@@ -80,6 +82,28 @@ class InvoiceIndex extends Component
         }
 
         $invoices = $query->orderByDesc('issue_date')->orderByDesc('id')->paginate($this->tablePageSize());
+        // Request-local list projection only. Canonical posting/payment checks still read fresh state.
+        $summaries = [];
+        foreach ($invoices as $invoice) {
+            $total = BigDecimal::of($invoice->grand_total_currency);
+            $outstanding = BigDecimal::zero();
+            if ($invoice->isPosted()) {
+                $outstanding = $total;
+                foreach ($invoice->allocations as $allocation) {
+                    $outstanding = $outstanding->minus($allocation->allocated_amount);
+                }
+                foreach ($invoice->returns as $return) {
+                    $outstanding = $outstanding->minus($return->grand_total_currency);
+                }
+            }
+            $summaries[$invoice->id] = ['outstanding' => $outstanding, 'status' => match (true) {
+                ! $invoice->isPosted() => SalesInvoice::PAYMENT_STATUS_UNPAID,
+                $outstanding->isNegative() => SalesInvoice::PAYMENT_STATUS_CREDIT,
+                $outstanding->isZero() => SalesInvoice::PAYMENT_STATUS_PAID,
+                $outstanding->isEqualTo($total) => SalesInvoice::PAYMENT_STATUS_UNPAID,
+                default => SalesInvoice::PAYMENT_STATUS_PARTIALLY_PAID,
+            }];
+        }
         $customers = Customer::where('company_id', $company->id)->orderBy('name_ar')->get();
 
         return view('livewire.pages.sales.invoice-index', [
@@ -87,6 +111,7 @@ class InvoiceIndex extends Component
             'customers' => $customers,
             'canCreate' => $canCreate,
             'company' => $company,
+            'summaries' => $summaries,
         ]);
     }
 }

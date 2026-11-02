@@ -169,3 +169,12 @@ summary:focus-visible {
     border-color: #255fd6;
     box-shadow: 0 0 0 3px rgba(37, 95, 214, 0.12);
 }
+
+/* Common entry forms: readable controls, comfortable taps, no mobile input zoom. */
+[data-entry-form] :is(input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]), select) {
+    min-height: 44px;
+}
+@media (max-width: 767px) {
+    [data-entry-form] :is(input, select, textarea) { font-size: 16px; }
+    [data-entry-form] :is(button, summary) { min-height: 44px; }
+}

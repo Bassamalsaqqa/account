@@ -10,7 +10,7 @@
     );
 @endphp
 
-<div class="max-w-4xl mx-auto space-y-5">
+<div data-entry-form class="max-w-4xl mx-auto space-y-5">
     <header class="flex items-center justify-between gap-3">
         <h1 class="text-xl sm:text-2xl font-bold text-text-primary">{{ __($vendorId ? 'purchasing.edit_vendor' : 'purchasing.create_vendor') }}</h1>
         @if ($canView)<a href="{{ route('vendors.index') }}" class="touch-action text-sm text-primary px-3 py-3">{{ __('purchasing.back') }}</a>@endif

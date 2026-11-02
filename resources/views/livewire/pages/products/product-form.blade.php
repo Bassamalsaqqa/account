@@ -1,4 +1,4 @@
-<div class="space-y-6 max-w-5xl mx-auto" x-data="{
+<div data-entry-form class="space-y-6 max-w-5xl mx-auto" x-data="{
         saving: false, operationFailed: false, savingMode: null,
         run(method, args = [], terminal = false) {
             if (this.saving) return;

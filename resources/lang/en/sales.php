@@ -1,6 +1,11 @@
 <?php
 
 return [
+    'delete_draft' => 'Delete draft',
+    'delete_draft_confirm' => 'Delete this unposted draft and its lines? This cannot be undone. No stock, payment or accounting entry will be changed.',
+    'delete_draft_blocked' => 'This draft has linked history or is no longer an ordinary unposted draft. It cannot be deleted.',
+    'draft_deleted' => 'Draft invoice deleted.',
+    'optional_details' => 'Notes and terms (optional)',
     'tax_number' => 'Tax Number',
     // General / Common
     'sales' => 'Sales',
