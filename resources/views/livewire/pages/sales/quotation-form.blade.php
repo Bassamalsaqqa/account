@@ -1,4 +1,4 @@
-<div class="max-w-5xl mx-auto space-y-6 pb-28 md:pb-6"
+<div data-entry-form class="max-w-5xl mx-auto space-y-6 pb-28 md:pb-6"
      x-data="{
          saving: false, documentBusy: false, operationFailed: false,
          handleSaveDraft() {

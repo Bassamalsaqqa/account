@@ -113,7 +113,7 @@
                                 <div class="flex items-center gap-3">
                                     <div class="w-10 h-10 rounded-control border border-border bg-surface-soft grid place-items-center shrink-0 overflow-hidden">
                                         @if ($product->primaryImage)
-                                            <img src="{{ asset('storage/' . $product->primaryImage->thumbnail_path) }}"
+                                            <img loading="lazy" decoding="async" width="40" height="40" src="{{ asset('storage/' . $product->primaryImage->thumbnail_path) }}"
                                                  alt="{{ $product->name() }}"
                                                  class="w-full h-full object-cover" />
                                         @else
@@ -222,7 +222,7 @@
                         <div class="flex items-center gap-3">
                             <div class="w-12 h-12 rounded-control border border-border bg-surface-soft grid place-items-center shrink-0 overflow-hidden">
                                 @if ($product->primaryImage)
-                                    <img src="{{ asset('storage/' . $product->primaryImage->thumbnail_path) }}"
+                                    <img loading="lazy" decoding="async" width="40" height="40" src="{{ asset('storage/' . $product->primaryImage->thumbnail_path) }}"
                                          alt="{{ $product->name() }}"
                                          class="w-full h-full object-cover" />
                                 @else

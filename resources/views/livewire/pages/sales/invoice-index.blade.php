@@ -88,7 +88,7 @@
                             </td>
                             <td class="py-3 px-4">
                                 @php
-                                    $paymentStatus = $inv->derivedPaymentStatus();
+                                    $paymentStatus = $summaries[$inv->id]['status'];
                                 @endphp
                                 <span class="px-2 py-0.5 rounded-full text-[10px] font-bold @if ($paymentStatus === 'paid') bg-success-bg text-success @elseif ($paymentStatus === 'partially_paid') bg-warning-bg text-warning @elseif ($paymentStatus === 'credit') bg-primary-50 text-primary @else bg-slate-100 text-slate-600 @endif">
                                     {{ __('sales.' . $paymentStatus) }}
@@ -99,7 +99,7 @@
                             </td>
                             <td class="py-3 px-4 font-bold" dir="ltr">
                                 @php
-                                    $outstanding = $inv->calculateOutstanding();
+                                    $outstanding = $summaries[$inv->id]['outstanding'];
                                     $isPos = \App\Domain\Sales\Formatters\SalesMoneyFormatter::isPositive($outstanding);
                                 @endphp
                                 <span class="{{ $isPos ? 'text-danger' : 'text-text-primary' }}">
@@ -152,7 +152,7 @@
                         </div>
                         <div>
                             <span class="text-text-muted block text-[10px]">{{ __('sales.payment_status') }}</span>
-                            <span class="font-bold">{{ __('sales.' . $inv->derivedPaymentStatus()) }}</span>
+                            <span class="font-bold">{{ __('sales.' . $summaries[$inv->id]['status']) }}</span>
                         </div>
                         <div>
                             <span class="text-text-muted block text-[10px]">{{ __('sales.grand_total') }}</span>
@@ -160,7 +160,7 @@
                         </div>
                         <div>
                             <span class="text-text-muted block text-[10px]">{{ __('sales.outstanding_amount') }}</span>
-                            <span class="font-bold text-danger" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($inv->calculateOutstanding(), $inv->currency_code) }} {{ $inv->currency_code }}</span>
+                            <span class="font-bold text-danger" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($summaries[$inv->id]['outstanding'], $inv->currency_code) }} {{ $inv->currency_code }}</span>
                         </div>
                     </div>
 
@@ -170,7 +170,7 @@
                         @endcan
                         @if($inv->isDraft() && auth()->user()->can('sales.invoice.edit_draft'))
                             <a href="{{ route('invoices.edit', $inv->public_id) }}" class="touch-action bg-primary-50 text-primary text-xs font-bold">{{ __('mobile.edit_draft') }}</a>
-                        @elseif($inv->status === 'posted' && \App\Domain\Sales\Formatters\SalesMoneyFormatter::isPositive($inv->calculateOutstanding()) && auth()->user()->can('money.receipt.create'))
+                        @elseif($inv->status === 'posted' && \App\Domain\Sales\Formatters\SalesMoneyFormatter::isPositive($summaries[$inv->id]['outstanding']) && auth()->user()->can('money.receipt.create'))
                             <a href="{{ route('payments.create', ['invoice_id' => $inv->id]) }}" class="touch-action bg-primary-50 text-primary text-xs font-bold">{{ __('mobile.record_payment') }}</a>
                         @endif
                         <a href="{{ route('invoices.show', $inv->public_id) }}"

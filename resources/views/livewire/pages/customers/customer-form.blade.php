@@ -11,7 +11,7 @@
     );
 @endphp
 
-<div class="max-w-4xl mx-auto space-y-6">
+<div data-entry-form class="max-w-4xl mx-auto space-y-6">
     <!-- Header -->
     <div class="flex items-center justify-between gap-4">
         <div>

@@ -1,4 +1,4 @@
-<div class="max-w-5xl mx-auto space-y-6 pb-28 md:pb-6"
+<div data-entry-form class="max-w-5xl mx-auto space-y-6 pb-28 md:pb-6"
      x-data="{
          saving: false, documentBusy: false, operationFailed: false,
          handleSaveDraft() {
@@ -466,7 +466,8 @@
 
         <!-- Totals & Notes Section -->
         <div class="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4 border-t border-border">
-            <div class="space-y-4">
+            <details class="space-y-4" @if (filled($notes) || filled($terms) || $errors->has('notes') || $errors->has('terms')) open @endif>
+                <summary class="min-h-11 flex items-center cursor-pointer text-sm font-semibold text-text-secondary">{{ __('sales.optional_details') }}</summary>
                 <div>
                     <label for="invoice-terms" class="block text-xs font-bold text-text-primary mb-1">
                         {{ __('sales.terms') }}
@@ -483,7 +484,7 @@
                               rows="2"
                               class="w-full p-2.5 rounded-control border border-border bg-canvas text-xs text-text-primary outline-hidden" :disabled="documentBusy || saving"></textarea>
                 </div>
-            </div>
+            </details>
 
             <!-- Preview Calculation Card -->
             <div class="bg-surface-soft p-4 rounded-control border border-border space-y-2 text-xs">
