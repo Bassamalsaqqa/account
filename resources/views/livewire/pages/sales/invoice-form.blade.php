@@ -101,8 +101,7 @@
             </div>
 
         </div>
-        <details class="entry-options" @if($errors->hasAny(['warehouse_id','due_date','currency_code','exchange_rate']) || $currency_code !== $baseCurrencyCode) open @endif>
-            <summary>{{ __('workflow.document_options') }}</summary>
+        <div class="border-t border-border pt-3">
             <div class="entry-grid grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 pt-3">
             <!-- Warehouse -->
             <div class="">
@@ -158,7 +157,7 @@
                 @error('exchange_rate') <span id="invoice-exchange-rate-error" role="alert" class="text-danger text-[11px] mt-1 block">{{ $message }}</span> @enderror
             </div>
             </div>
-        </details>
+        </div>
     <div class="grid gap-4 md:grid-cols-2 pb-4 border-b border-border">
         @include('livewire.partials.barcode-entry', ['prefix' => 'invoice'])
         <div>

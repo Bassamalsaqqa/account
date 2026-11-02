@@ -62,8 +62,7 @@
         </div>
         @foreach(['purchase_date' => 'purchase_date'] as $field => $label)<div><label for="purchase-{{ $field }}" class="block text-xs font-bold mb-1.5">{{ __('purchasing.'.$label) }}</label><input id="purchase-{{ $field }}" type="date" wire:model="{{ $field }}" class="w-full min-w-0 h-11 px-3 border border-border rounded-control text-sm" @if($field === 'purchase_date') required @endif  :disabled="documentBusy || saving"/></div>@endforeach
         </div>
-        <details class="entry-options" @if($errors->hasAny(['vendor_invoice_number','due_date','currency_code','exchange_rate','warehouse_id','document_locale']) || $warehouse_id === null || $currency_code !== $baseCurrencyCode) open @endif>
-            <summary>{{ __('workflow.document_options') }}</summary>
+        <div class="border-t border-border pt-3">
             <div class="entry-grid grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 pt-3">
         <div class="sm:col-span-2"><label for="supplier-number" class="block text-xs font-bold mb-1.5">{{ __('purchasing.vendor_invoice_number') }}</label><input id="supplier-number" wire:model.blur="vendor_invoice_number" maxlength="128" dir="ltr" class="w-full h-11 px-3 border border-border rounded-control text-sm"  :disabled="documentBusy || saving"/></div>
         @foreach(['due_date' => 'due_date'] as $field => $label)<div><label for="purchase-{{ $field }}" class="block text-xs font-bold mb-1.5">{{ __('purchasing.'.$label) }}</label><input id="purchase-{{ $field }}" type="date" wire:model="{{ $field }}" class="w-full min-w-0 h-11 px-3 border border-border rounded-control text-sm" @if($field === 'purchase_date') required @endif  :disabled="documentBusy || saving"/></div>@endforeach
@@ -72,7 +71,7 @@
         <div class=""><label for="purchase-warehouse" class="block text-xs font-bold mb-1.5">{{ __('purchasing.receiving_warehouse') }}</label><select id="purchase-warehouse" wire:model="warehouse_id" required class="w-full h-11 px-3 border border-border rounded-control text-sm" :disabled="documentBusy || saving"><option value="">{{ __('purchasing.select_warehouse') }}</option>@foreach($warehouses as $warehouse)<option value="{{ $warehouse->id }}">{{ $warehouse->displayName() }}</option>@endforeach</select></div>
         <div class=""><label for="purchase-locale" class="block text-xs font-bold mb-1.5">{{ __('purchasing.document_language') }}</label><select id="purchase-locale" wire:model="document_locale" class="w-full h-11 px-3 border border-border rounded-control text-sm" :disabled="documentBusy || saving">@foreach($languages as $language)<option value="{{ $language->locale }}">{{ __('purchasing.locale_'.$language->locale) }}</option>@endforeach</select></div>
             </div>
-        </details>
+        </div>
     </section>
 
     <!-- Quick Barcode Scanner & Product Search -->
