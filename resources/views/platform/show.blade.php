@@ -258,7 +258,7 @@
         </div>
 
         <div class="mt-4">
-            {{ $members->links('platform.pagination') }}
+            <x-table-pagination :paginator="$members" :livewire="false" />
         </div>
     </div>
 </div>

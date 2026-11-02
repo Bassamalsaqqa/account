@@ -89,9 +89,9 @@
                             <span class="text-xs font-bold uppercase tracking-wider text-text-primary">{{ $curr }}</span>
                             <div class="text-sm font-extrabold" dir="ltr">
                                 @if ($isPayable)
-                                    <span class="text-danger">{{ __('purchasing.net_payable') }}: {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::format($b['balance'], $curr) }} {{ $curr }}</span>
+                                    <span class="text-danger">{{ __('purchasing.net_payable') }}: {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($b['balance'], $curr) }} {{ $curr }}</span>
                                 @elseif ($isCredit)
-                                    <span class="text-success">{{ __('purchasing.net_credit') }}: {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::format((string) $bal->abs(), $curr) }} {{ $curr }}</span>
+                                    <span class="text-success">{{ __('purchasing.net_credit') }}: {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney((string) $bal->abs(), $curr) }} {{ $curr }}</span>
                                 @else
                                     <span class="text-text-muted">{{ __('purchasing.settled') }}: 0.00 {{ $curr }}</span>
                                 @endif
@@ -100,15 +100,15 @@
                         <div class="grid grid-cols-3 gap-2 pt-2 text-xs">
                             <div>
                                 <span class="text-text-muted block text-[10px] uppercase">{{ __('purchasing.purchases') }}</span>
-                                <span class="font-mono font-bold" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($b['purchased'], $curr) }}</span>
+                                <span class="font-mono font-bold" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($b['purchased'], $curr) }}</span>
                             </div>
                             <div>
                                 <span class="text-text-muted block text-[10px] uppercase">{{ __('purchasing.purchase_returns') }}</span>
-                                <span class="font-mono font-bold" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($b['returned'], $curr) }}</span>
+                                <span class="font-mono font-bold" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($b['returned'], $curr) }}</span>
                             </div>
                             <div>
                                 <span class="text-text-muted block text-[10px] uppercase">{{ __('purchasing.vendor_payments') }}</span>
-                                <span class="font-mono font-bold" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($b['paid'], $curr) }}</span>
+                                <span class="font-mono font-bold" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($b['paid'], $curr) }}</span>
                             </div>
                         </div>
                     </div>
@@ -176,7 +176,7 @@
     @elseif ($activeTab === 'purchases' && $withCost)
         <div class="bg-white rounded-card border border-border overflow-hidden">
             <div class="overflow-x-auto">
-                <table class="w-full text-xs">
+                <table class="data-table w-full text-xs">
                     <thead class="bg-surface-soft text-text-muted font-bold text-[11px] uppercase">
                         <tr>
                             <th class="py-2.5 px-4 text-start">{{ __('purchasing.purchase_number') }}</th>
@@ -196,7 +196,7 @@
                                 <td class="py-2.5 px-4" dir="ltr">{{ $purchase->purchase_date->toDateString() }}</td>
                                 <td class="py-2.5 px-4">{{ __('purchasing.' . $purchase->status) }}</td>
                                 <td class="py-2.5 px-4 font-mono text-end font-bold" dir="ltr">
-                                    {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($purchase->grand_total_currency, $purchase->currency_code) }} {{ $purchase->currency_code }}
+                                    {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($purchase->grand_total_currency, $purchase->currency_code) }} {{ $purchase->currency_code }}
                                 </td>
                             </tr>
                         @empty
@@ -205,14 +205,14 @@
                     </tbody>
                 </table>
             </div>
-            @if ($tabPurchases->hasPages())
-                <div class="p-3 border-t border-border">{{ $tabPurchases->links() }}</div>
+            @if ($tabPurchases->count() > 0)
+                <div class="p-3 border-t border-border"><x-table-pagination :paginator="$tabPurchases" /></div>
             @endif
         </div>
     @elseif ($activeTab === 'returns' && $withCost)
         <div class="bg-white rounded-card border border-border overflow-hidden">
             <div class="overflow-x-auto">
-                <table class="w-full text-xs">
+                <table class="data-table w-full text-xs">
                     <thead class="bg-surface-soft text-text-muted font-bold text-[11px] uppercase">
                         <tr>
                             <th class="py-2.5 px-4 text-start">{{ __('purchasing.purchase_return_number') }}</th>
@@ -232,7 +232,7 @@
                                 <td class="py-2.5 px-4" dir="ltr">{{ $ret->return_date->toDateString() }}</td>
                                 <td class="py-2.5 px-4">{{ __('purchasing.' . $ret->status) }}</td>
                                 <td class="py-2.5 px-4 font-mono text-end font-bold" dir="ltr">
-                                    {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($ret->grand_total_currency, $ret->currency_code) }} {{ $ret->currency_code }}
+                                    {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($ret->grand_total_currency, $ret->currency_code) }} {{ $ret->currency_code }}
                                 </td>
                             </tr>
                         @empty
@@ -241,14 +241,14 @@
                     </tbody>
                 </table>
             </div>
-            @if ($tabReturns->hasPages())
-                <div class="p-3 border-t border-border">{{ $tabReturns->links() }}</div>
+            @if ($tabReturns->count() > 0)
+                <div class="p-3 border-t border-border"><x-table-pagination :paginator="$tabReturns" /></div>
             @endif
         </div>
     @elseif ($activeTab === 'payments' && $withCost)
         <div class="bg-white rounded-card border border-border overflow-hidden">
             <div class="overflow-x-auto">
-                <table class="w-full text-xs">
+                <table class="data-table w-full text-xs">
                     <thead class="bg-surface-soft text-text-muted font-bold text-[11px] uppercase">
                         <tr>
                             <th class="py-2.5 px-4 text-start">{{ __('purchasing.payment_number') }}</th>
@@ -269,7 +269,7 @@
                                 <td class="py-2.5 px-4" dir="ltr">{{ $pmt->payment_date->toDateString() }}</td>
                                 <td class="py-2.5 px-4">{{ $pmt->moneyAccount?->displayName() ?? '—' }}</td>
                                 <td class="py-2.5 px-4 font-mono font-bold" dir="ltr">
-                                    {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($pmt->amount, $pmt->currency_code) }} {{ $pmt->currency_code }}
+                                    {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($pmt->amount, $pmt->currency_code) }} {{ $pmt->currency_code }}
                                 </td>
                                 <td class="py-2.5 px-4">
                                     @if ($pmt->is_reversed)
@@ -289,8 +289,8 @@
                     </tbody>
                 </table>
             </div>
-            @if ($tabPayments->hasPages())
-                <div class="p-3 border-t border-border">{{ $tabPayments->links() }}</div>
+            @if ($tabPayments->count() > 0)
+                <div class="p-3 border-t border-border"><x-table-pagination :paginator="$tabPayments" /></div>
             @endif
         </div>
     @elseif ($activeTab === 'statement' && $canStatement)
@@ -315,13 +315,13 @@
                         <h2 class="text-lg font-bold text-text-primary">{{ __('purchasing.statement') }} ({{ $currKey }})</h2>
                         <div class="text-xs text-text-secondary">
                             {{ __('purchasing.outstanding_balance') }}:
-                            <span class="font-mono font-bold" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($s['closing_balance'], $currKey) }} {{ $currKey }}</span>
+                            <span class="font-mono font-bold" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($s['closing_balance'], $currKey) }} {{ $currKey }}</span>
                         </div>
                     </div>
 
                     <!-- Entries Table -->
                     <div class="overflow-x-auto">
-                        <table class="w-full text-xs">
+                        <table class="data-table w-full text-xs">
                             <thead class="bg-surface-soft text-text-muted font-bold text-[11px] uppercase">
                                 <tr>
                                     <th class="py-2 px-3 text-start">{{ __('purchasing.statement_date') }}</th>
@@ -336,7 +336,7 @@
                             <tbody class="divide-y divide-border">
                                 <tr class="bg-surface-soft/40 font-semibold">
                                     <td colspan="6" class="py-2 px-3">{{ __('purchasing.opening_balance') }}</td>
-                                    <td class="py-2 px-3 text-end font-mono" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($s['opening_balance'], $currKey) }}</td>
+                                    <td class="py-2 px-3 text-end font-mono" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($s['opening_balance'], $currKey) }}</td>
                                 </tr>
                                 @foreach ($s['entries'] as $entry)
                                     <tr>
@@ -344,16 +344,16 @@
                                         <td class="py-2 px-3">{{ __('purchasing.'.($entry['type'] === 'payment_reversal' ? 'vendor_payment_reversal' : $entry['type'])) }}</td>
                                         <td class="py-2 px-3 font-mono" dir="ltr">{{ $entry['number'] }}</td>
                                         <td class="py-2 px-3">{{ $entry['description'] }}</td>
-                                        <td class="py-2 px-3 text-end font-mono" dir="ltr">{{ $entry['credit'] !== '0.00' ? \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($entry['credit'], $currKey) : '—' }}</td>
-                                        <td class="py-2 px-3 text-end font-mono" dir="ltr">{{ $entry['debit'] !== '0.00' ? \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($entry['debit'], $currKey) : '—' }}</td>
-                                        <td class="py-2 px-3 text-end font-mono font-bold" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($entry['balance'], $currKey) }}</td>
+                                        <td class="py-2 px-3 text-end font-mono" dir="ltr">{{ $entry['credit'] !== '0.00' ? \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($entry['credit'], $currKey) : '—' }}</td>
+                                        <td class="py-2 px-3 text-end font-mono" dir="ltr">{{ $entry['debit'] !== '0.00' ? \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($entry['debit'], $currKey) : '—' }}</td>
+                                        <td class="py-2 px-3 text-end font-mono font-bold" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($entry['balance'], $currKey) }}</td>
                                     </tr>
                                 @endforeach
                                 <tr class="bg-surface-soft/60 font-bold border-t-2 border-border">
                                     <td colspan="4" class="py-2 px-3">{{ __('purchasing.total') }}</td>
-                                    <td class="py-2 px-3 text-end font-mono" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($s['total_credits'], $currKey) }}</td>
-                                    <td class="py-2 px-3 text-end font-mono" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($s['total_debits'], $currKey) }}</td>
-                                    <td class="py-2 px-3 text-end font-mono" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($s['closing_balance'], $currKey) }}</td>
+                                    <td class="py-2 px-3 text-end font-mono" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($s['total_credits'], $currKey) }}</td>
+                                    <td class="py-2 px-3 text-end font-mono" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($s['total_debits'], $currKey) }}</td>
+                                    <td class="py-2 px-3 text-end font-mono" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($s['closing_balance'], $currKey) }}</td>
                                 </tr>
                             </tbody>
                         </table>
@@ -367,46 +367,46 @@
                         <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 text-xs">
                             <div class="p-3 rounded-control bg-canvas border border-border">
                                 <span class="text-text-muted block text-[10px] uppercase">{{ __('purchasing.current') }}</span>
-                                <span class="font-mono font-bold text-text-primary mt-1 block" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($s['aging']['current'], $currKey) }}</span>
+                                <span class="font-mono font-bold text-text-primary mt-1 block" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($s['aging']['current'], $currKey) }}</span>
                             </div>
                             <div class="p-3 rounded-control bg-canvas border border-border">
                                 <span class="text-text-muted block text-[10px] uppercase">{{ __('purchasing.days_1_30') }}</span>
-                                <span class="font-mono font-bold text-text-primary mt-1 block" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($s['aging']['days_1_30'], $currKey) }}</span>
+                                <span class="font-mono font-bold text-text-primary mt-1 block" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($s['aging']['days_1_30'], $currKey) }}</span>
                             </div>
                             <div class="p-3 rounded-control bg-canvas border border-border">
                                 <span class="text-text-muted block text-[10px] uppercase">{{ __('purchasing.days_31_60') }}</span>
-                                <span class="font-mono font-bold text-text-primary mt-1 block" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($s['aging']['days_31_60'], $currKey) }}</span>
+                                <span class="font-mono font-bold text-text-primary mt-1 block" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($s['aging']['days_31_60'], $currKey) }}</span>
                             </div>
                             <div class="p-3 rounded-control bg-canvas border border-border">
                                 <span class="text-text-muted block text-[10px] uppercase">{{ __('purchasing.days_61_90') }}</span>
-                                <span class="font-mono font-bold text-text-primary mt-1 block" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($s['aging']['days_61_90'], $currKey) }}</span>
+                                <span class="font-mono font-bold text-text-primary mt-1 block" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($s['aging']['days_61_90'], $currKey) }}</span>
                             </div>
                             <div class="p-3 rounded-control bg-canvas border border-border">
                                 <span class="text-text-muted block text-[10px] uppercase">{{ __('purchasing.days_90_plus') }}</span>
-                                <span class="font-mono font-bold text-danger mt-1 block" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($s['aging']['days_90_plus'], $currKey) }}</span>
+                                <span class="font-mono font-bold text-danger mt-1 block" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($s['aging']['days_90_plus'], $currKey) }}</span>
                             </div>
                             <div class="p-3 rounded-control bg-canvas border border-border">
                                 <span class="text-text-muted block text-[10px] uppercase">{{ __('purchasing.unspecified') }}</span>
-                                <span class="font-mono font-bold text-text-primary mt-1 block" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($s['aging']['unspecified'], $currKey) }}</span>
+                                <span class="font-mono font-bold text-text-primary mt-1 block" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($s['aging']['unspecified'], $currKey) }}</span>
                             </div>
                         </div>
 
                         <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs mt-3 pt-3 border-t border-border">
                             <div>
                                 <span class="text-text-muted block text-[10px] uppercase">{{ __('purchasing.gross_open_purchases') }}</span>
-                                <span class="font-mono font-bold" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($s['aging']['gross_open_purchases'], $currKey) }}</span>
+                                <span class="font-mono font-bold" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($s['aging']['gross_open_purchases'], $currKey) }}</span>
                             </div>
                             <div>
                                 <span class="text-text-muted block text-[10px] uppercase">{{ __('purchasing.unapplied_credit') }}</span>
-                                <span class="font-mono font-bold text-info" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($s['aging']['unapplied_credit_position'], $currKey) }}</span>
+                                <span class="font-mono font-bold text-info" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($s['aging']['unapplied_credit_position'], $currKey) }}</span>
                             </div>
                             <div>
                                 <span class="text-text-muted block text-[10px] uppercase">{{ __('purchasing.net_payable') }}</span>
-                                <span class="font-mono font-bold text-danger" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($s['aging']['net_payable'], $currKey) }}</span>
+                                <span class="font-mono font-bold text-danger" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($s['aging']['net_payable'], $currKey) }}</span>
                             </div>
                             <div>
                                 <span class="text-text-muted block text-[10px] uppercase">{{ __('purchasing.net_credit') }}</span>
-                                <span class="font-mono font-bold text-success" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($s['aging']['net_vendor_credit'], $currKey) }}</span>
+                                <span class="font-mono font-bold text-success" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($s['aging']['net_vendor_credit'], $currKey) }}</span>
                             </div>
                         </div>
                     </div>
@@ -441,7 +441,7 @@
 
                 @if ($vendorProducts->isNotEmpty())
                     <div class="overflow-x-auto">
-                        <table class="w-full text-xs">
+                        <table class="data-table w-full text-xs">
                             <thead class="bg-surface-soft text-text-muted font-bold text-[11px] uppercase">
                                 <tr>
                                     <th class="py-2.5 px-4 text-start">{{ __('purchasing.product') }}</th>
@@ -472,24 +472,24 @@
                                             {{ $p['latest_purchase_date'] }}
                                         </td>
                                         <td class="py-3 px-4 text-end font-mono font-bold whitespace-nowrap" dir="ltr">
-                                            {{ strpos($p['latest_unit_cost'], '.') !== false ? rtrim(rtrim($p['latest_unit_cost'], '0'), '.') : $p['latest_unit_cost'] }}
+                                            {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney(strpos($p['latest_unit_cost'], '.') !== false ? rtrim(rtrim($p['latest_unit_cost'], '0'), '.') : $p['latest_unit_cost']) }}
                                             <span class="text-[10px] font-normal text-text-muted">{{ $p['latest_currency_code'] }} / {{ $p['latest_unit_name'] }}</span>
                                         </td>
                                         <td class="py-3 px-4 text-end font-mono font-bold text-primary whitespace-nowrap" dir="ltr">
                                             @if ($p['latest_net_commercial_price_per_base_unit'] !== null)
-                                                {{ $p['latest_net_commercial_price_per_base_unit'] }}
+                                                {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($p['latest_net_commercial_price_per_base_unit']) }}
                                                 <span class="text-[10px] font-normal text-text-muted">{{ $p['base_currency_code'] }}</span>
                                             @else
                                                 —
                                             @endif
                                         </td>
                                         <td class="py-3 px-4 text-center font-mono">
-                                            {{ $p['purchases_count'] }}
+                                            {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($p['purchases_count']) }}
                                         </td>
                                         <td class="py-3 px-4 text-end font-mono" dir="ltr">
-                                            {{ strpos($p['total_quantity_base'], '.') !== false ? rtrim(rtrim($p['total_quantity_base'], '0'), '.') : $p['total_quantity_base'] }}
+                                            {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity(strpos($p['total_quantity_base'], '.') !== false ? rtrim(rtrim($p['total_quantity_base'], '0'), '.') : $p['total_quantity_base']) }}
                                         </td>
-                                        <td class="py-3 px-4 text-center whitespace-nowrap">
+                                        <td class="table-actions py-3 px-4 text-center whitespace-nowrap">
                                             @if ($selectedProductId === $p['product_id'])
                                                 <button type="button" wire:click="selectProductFilter(null)" class="px-2.5 py-1 bg-surface-soft border border-border rounded text-[11px] font-bold text-text-secondary hover:text-text-primary" wire:loading.attr="disabled" wire:target="selectProductFilter">
                                                     {{ __('purchasing.all_products') }}
@@ -523,7 +523,7 @@
 
                 @if ($vendorPriceLines->isNotEmpty())
                     <div class="overflow-x-auto">
-                        <table class="w-full text-xs">
+                        <table class="data-table w-full text-xs">
                             <thead class="bg-surface-soft text-text-muted font-bold text-[11px] uppercase">
                                 <tr>
                                     <th class="py-2.5 px-4 text-start">{{ __('purchasing.purchase_number') }}</th>
@@ -567,16 +567,16 @@
                                             {{ $line->unit_name }}
                                         </td>
                                         <td class="py-3 px-4 text-end font-mono" dir="ltr">
-                                            {{ strpos($line->quantity, '.') !== false ? rtrim(rtrim($line->quantity, '0'), '.') : $line->quantity }}
+                                            {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity(strpos($line->quantity, '.') !== false ? rtrim(rtrim($line->quantity, '0'), '.') : $line->quantity) }}
                                         </td>
                                         <td class="py-3 px-4 text-end font-mono font-bold whitespace-nowrap" dir="ltr">
-                                            {{ strpos($line->unit_cost, '.') !== false ? rtrim(rtrim($line->unit_cost, '0'), '.') : $line->unit_cost }}
+                                            {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney(strpos($line->unit_cost, '.') !== false ? rtrim(rtrim($line->unit_cost, '0'), '.') : $line->unit_cost) }}
                                             <span class="text-[10px] font-normal text-text-muted">{{ $line->currency_code }}</span>
                                         </td>
                                         <td class="py-3 px-4 text-end font-mono whitespace-nowrap" dir="ltr">
                                             @if ($line->discount_type && $line->discount_type !== 'none')
                                                 <span class="text-danger">
-                                                    {{ strpos($line->discount_value, '.') !== false ? rtrim(rtrim($line->discount_value, '0'), '.') : $line->discount_value }}
+                                                    {{ $line->discount_type === 'percent' ? \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($line->discount_value) : \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($line->discount_value) }}
                                                     {{ $line->discount_type === 'percent' ? '%' : $line->currency_code }}
                                                 </span>
                                             @else
@@ -585,7 +585,7 @@
                                         </td>
                                         <td class="py-3 px-4 text-end font-mono font-bold text-primary whitespace-nowrap" dir="ltr">
                                             @if ($line->net_commercial_price_per_base_unit !== null)
-                                                {{ $line->net_commercial_price_per_base_unit }}
+                                                {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($line->net_commercial_price_per_base_unit) }}
                                                 <span class="text-[10px] font-normal text-text-muted">{{ $line->base_currency_code }}</span>
                                             @else
                                                 —

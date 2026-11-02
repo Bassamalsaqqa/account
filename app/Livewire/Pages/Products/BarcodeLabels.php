@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Livewire\Pages\Products;
 
+use App\Livewire\Concerns\HasTablePageSize;
 use App\Models\ProductBarcode;
 use App\Models\User;
 use App\Services\Inventory\BarcodeLabelService;
@@ -21,6 +22,7 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 #[Layout('layouts.app')]
 class BarcodeLabels extends Component
 {
+    use HasTablePageSize;
     use WithPagination;
 
     #[Locked]
@@ -266,7 +268,7 @@ class BarcodeLabels extends Component
             });
         }
 
-        $availableBarcodes = $query->paginate(24);
+        $availableBarcodes = $query->paginate($this->tablePageSize());
 
         $selectedBarcodes = [];
         if (! empty($this->quantities)) {

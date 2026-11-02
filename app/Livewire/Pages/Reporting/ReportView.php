@@ -13,6 +13,7 @@ use App\Application\Reporting\Presentation\ReportPresenter;
 use App\Application\Reporting\Presentation\ReportRegistry;
 use App\Application\Reporting\Presentation\ReportSourceNavigation;
 use App\Application\Reporting\Security\ReportingGuard;
+use App\Support\TablePageSize;
 use App\Support\Tenancy\CompanyContext;
 use Illuminate\Contracts\View\View;
 use InvalidArgumentException;
@@ -42,6 +43,7 @@ final class ReportView extends Component
             $this->filters = $definition['current'] ? [] : ['preset' => 'this_month'];
         }
         $this->filters = array_replace($definition['defaults'], $this->filters);
+        $this->filters['per_page'] = TablePageSize::resolve($this->filters['per_page'] ?? 50);
         $this->normalizePeriodState();
     }
 
@@ -55,6 +57,7 @@ final class ReportView extends Component
     public function applyFilters(): void
     {
         $this->resetErrorBag();
+        $this->filters['per_page'] = TablePageSize::resolve($this->filters['per_page'] ?? 50);
         $this->normalizePeriodState();
         $this->filters['page'] = 1;
     }
@@ -65,6 +68,7 @@ final class ReportView extends Component
         $this->selectorSearch = [];
         $definition = app(ReportRegistry::class)->definition($this->reportKey);
         $this->filters = array_replace($definition['current'] ? [] : ['preset' => 'this_month'], $definition['defaults']);
+        $this->filters['per_page'] = TablePageSize::resolve($this->filters['per_page'] ?? 50);
         $this->normalizePeriodState();
     }
 

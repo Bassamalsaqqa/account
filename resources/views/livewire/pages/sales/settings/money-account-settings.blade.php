@@ -31,7 +31,7 @@
 
     <div class="bg-white rounded-card border border-border shadow-xs overflow-hidden">
         <div class="overflow-x-auto">
-            <table class="w-full text-start text-xs border-collapse">
+            <table class="data-table w-full text-start text-xs border-collapse">
                 <thead>
                     <tr class="border-b border-border bg-surface-soft text-text-muted font-bold text-[11px] uppercase">
                         <th class="py-3 px-4 text-start">{{ __('sales.type') }}</th>
@@ -68,7 +68,7 @@
                                     <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600">{{ __('sales.inactive') }}</span>
                                 @endif
                             </td>
-                            <td class="py-3 px-4 text-end">
+                            <td class="table-actions py-3 px-4 text-end">
                                 <button type="button"
                                         wire:click="editAccount({{ $acc->id }})"
                                         class="px-2.5 py-1 rounded-control bg-surface-soft hover:bg-slate-200 text-text-primary text-xs font-bold transition-colors" wire:loading.attr="disabled" wire:target="editAccount">
@@ -86,6 +86,7 @@
                 </tbody>
             </table>
         </div>
+    <div class="p-4"><x-table-pagination :paginator="$accounts" /></div>
     </div>
 
     <!-- Modal Form -->

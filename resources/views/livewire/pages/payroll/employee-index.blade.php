@@ -35,7 +35,7 @@
     <!-- Table -->
     <div class="rounded-card border border-border bg-white overflow-hidden shadow-sm">
         <div class="hidden md:block overflow-x-auto">
-            <table class="w-full text-sm text-start">
+            <table class="data-table w-full text-sm text-start">
                 <thead class="bg-surface-soft border-b border-border text-xs uppercase text-text-muted">
                     <tr>
                         <th class="px-4 py-3 text-start">{{ __('payroll.code') }}</th>
@@ -70,7 +70,7 @@
                             @if($canSalary)
                                 <td class="px-4 py-3 whitespace-nowrap font-medium" dir="ltr">
                                     @if($emp->default_salary !== null)
-                                        {{ $emp->default_salary }} {{ $emp->salary_currency_code }}
+                                        {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($emp->default_salary) }} {{ $emp->salary_currency_code }}
                                     @else
                                         -
                                     @endif
@@ -126,7 +126,7 @@
                                 <div class="min-w-0 space-y-1">
                                 <dt class="text-xs font-medium text-text-secondary">{{ __('payroll.salary') }}</dt>
                                 <dd dir="ltr" class="break-words text-sm tabular-nums text-text-primary">@if($emp->default_salary !== null)
-                                        {{ $emp->default_salary }} {{ $emp->salary_currency_code }}
+                                        {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($emp->default_salary) }} {{ $emp->salary_currency_code }}
                                     @else
                                         -
                                     @endif</dd>
@@ -157,9 +157,9 @@
                     @endforelse
                 </div>
 
-        @if($employees->hasPages())
+        @if ($employees->count() > 0)
             <div class="p-4 border-t border-border">
-                {{ $employees->links() }}
+                <x-table-pagination :paginator="$employees" />
             </div>
         @endif
     </div>

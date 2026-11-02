@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Livewire\Pages\Purchasing;
 
+use App\Livewire\Concerns\HasTablePageSize;
 use App\Livewire\Pages\Purchasing\Concerns\AuthorizesPurchasingPages;
 use App\Models\MoneyAccount;
 use App\Models\Vendor;
@@ -20,6 +21,7 @@ use Livewire\WithPagination;
 class PaymentIndex extends Component
 {
     use AuthorizesPurchasingPages;
+    use HasTablePageSize;
     use WithPagination;
 
     #[Url(as: 'q')]
@@ -94,7 +96,7 @@ class PaymentIndex extends Component
             $query->where('money_account_id', $this->accountFilter);
         }
 
-        $payments = $query->orderByDesc('payment_date')->orderByDesc('id')->paginate(15);
+        $payments = $query->orderByDesc('payment_date')->orderByDesc('id')->paginate($this->tablePageSize());
         $vendors = Vendor::where('company_id', $companyId)->orderBy('name_ar')->get();
         $accounts = MoneyAccount::where('company_id', $companyId)->where('is_active', true)->get();
 

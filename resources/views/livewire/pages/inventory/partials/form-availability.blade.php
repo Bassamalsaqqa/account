@@ -7,7 +7,7 @@
         @if ($stockAvailability['packages'] !== [])
             <p class="text-sm text-text-secondary">
                 @foreach ($stockAvailability['packages'] as $part)
-                    <bdi class="tabular-nums">{{ $part['quantity'] }}</bdi> {{ $part['name'] }}{{ $loop->last ? '' : ' + ' }}
+                    <bdi class="tabular-nums">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($part['quantity']) }}</bdi> {{ $part['name'] }}{{ $loop->last ? '' : ' + ' }}
                 @endforeach
             </p>
         @endif

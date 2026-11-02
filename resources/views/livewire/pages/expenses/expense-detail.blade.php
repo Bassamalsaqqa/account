@@ -61,7 +61,7 @@
                     @if($detail['redact_cost'])
                         <span class="text-text-muted italic">{{ __('expenses.cost_redacted') }}</span>
                     @else
-                        {{ $expense->amount }} {{ $expense->currency_code }}
+                        {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($expense->amount) }} {{ $expense->currency_code }}
                     @endif
                 </span>
             </div>
@@ -140,7 +140,7 @@
 
             @if($detail['allocations']->isNotEmpty())
                 <div class="overflow-x-auto">
-                    <table class="w-full text-sm text-start">
+                    <table class="data-table w-full text-sm text-start">
                         <thead class="bg-surface-soft border-b border-border text-xs text-text-muted">
                             <tr>
                                 <th class="px-3 py-2 text-start">{{ __('expenses.purchase') }}</th>

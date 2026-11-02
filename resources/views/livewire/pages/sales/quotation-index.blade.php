@@ -6,7 +6,7 @@
                 {{ __('sales.quotations') }}
             </h1>
             <p class="text-xs text-text-secondary mt-1">
-                {{ __('sales.quotations') }} ({{ $quotations->total() }})
+                {{ __('sales.quotations') }} ({{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($quotations->total()) }})
             </p>
         </div>
 
@@ -50,7 +50,7 @@
     <!-- Quotations Table / Cards -->
     <div class="bg-white rounded-card border border-border shadow-xs overflow-hidden">
         <div class="hidden md:block overflow-x-auto">
-            <table class="w-full text-start text-xs border-collapse">
+            <table class="data-table w-full text-start text-xs border-collapse">
                 <thead>
                     <tr class="border-b border-border bg-surface-soft text-text-muted font-bold text-[11px] uppercase tracking-wider">
                         <th class="py-3 px-4 text-start">{{ __('sales.quote_number') }}</th>
@@ -82,14 +82,14 @@
                                 {{ $quote->expiry_date ? $quote->expiry_date->toDateString() : '—' }}
                             </td>
                             <td class="py-3 px-4 font-bold" dir="ltr">
-                                {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($quote->grand_total, $quote->currency_code) }} {{ $quote->currency_code }}
+                                {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($quote->grand_total, $quote->currency_code) }} {{ $quote->currency_code }}
                             </td>
                             <td class="py-3 px-4">
                                 <span class="px-2 py-0.5 rounded-full text-[10px] font-bold @if ($quote->status === 'accepted' || $quote->status === 'converted') bg-success-bg text-success @elseif ($quote->status === 'sent') bg-primary-50 text-primary @elseif ($quote->status === 'rejected') bg-danger-bg text-danger @else bg-slate-100 text-slate-600 @endif">
                                     {{ __('sales.status_' . $quote->status) }}
                                 </span>
                             </td>
-                            <td class="py-3 px-4 text-end">
+                            <td class="table-actions py-3 px-4 text-end">
                                 <div class="flex items-center justify-end gap-2">
                                     <a href="{{ route('quotations.show', $quote->public_id) }}"
                                        class="touch-action bg-surface-soft hover:bg-primary-50 text-text-secondary hover:text-primary font-bold text-[11px] transition-colors">
@@ -135,7 +135,7 @@
                         </div>
                         <div>
                             <span class="text-text-muted block text-[10px]">{{ __('sales.grand_total') }}</span>
-                            <span class="font-bold text-text-primary" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($quote->grand_total, $quote->currency_code) }} {{ $quote->currency_code }}</span>
+                            <span class="font-bold text-text-primary" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($quote->grand_total, $quote->currency_code) }} {{ $quote->currency_code }}</span>
                         </div>
                     </div>
 
@@ -153,9 +153,9 @@
             @endforelse
         </div>
 
-        @if ($quotations->hasPages())
+        @if ($quotations->count() > 0)
             <div class="p-4 border-t border-border">
-                {{ $quotations->links() }}
+                <x-table-pagination :paginator="$quotations" />
             </div>
         @endif
     </div>

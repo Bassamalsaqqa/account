@@ -16,7 +16,7 @@
             <x-icon name="settings" class="h-4 w-4" />
             {{ __('refinement_lists.filters') }}
             @if($activeCount > 0)
-                <span class="rounded-full bg-primary px-2 py-0.5 text-xs tabular-nums text-white" aria-label="{{ __('refinement_lists.active_filters') }}">{{ $activeCount }}</span>
+                <span class="rounded-full bg-primary px-2 py-0.5 text-xs tabular-nums text-white" aria-label="{{ __('refinement_lists.active_filters') }}">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($activeCount) }}</span>
             @endif
         </button>
         @endif

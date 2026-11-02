@@ -13,7 +13,7 @@
             <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
                 <div class="rounded-xl border border-slate-200 bg-white p-4 sm:p-5 shadow-xs">
                     <p class="text-xs font-medium text-slate-500">{{ __('platform.summary_companies') }}</p>
-                    <p class="mt-2 text-2xl font-bold tracking-tight text-slate-900 tabular-nums">{{ $platformSummary['companies'] ?? $companies->total() }}</p>
+                    <p class="mt-2 text-2xl font-bold tracking-tight text-slate-900 tabular-nums">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($platformSummary['companies'] ?? $companies->total()) }}</p>
                 </div>
                 <div class="rounded-xl border border-slate-200 bg-white p-4 sm:p-5 shadow-xs">
                     <p class="text-xs font-medium text-slate-500">{{ __('platform.summary_active') }}</p>
@@ -39,7 +39,7 @@
                 @foreach($billingSummary as $state => $count)
                     <div>
                         <dt class="text-xs text-slate-500">{{ __('subscriptions.summary_'.$state) }}</dt>
-                        <dd class="mt-1 text-xl font-bold tabular-nums text-slate-900">{{ $count }}</dd>
+                        <dd class="mt-1 text-xl font-bold tabular-nums text-slate-900">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($count) }}</dd>
                     </div>
                 @endforeach
             </dl>
@@ -86,7 +86,7 @@
 
     <!-- Desktop Companies Table -->
     <div class="hidden lg:block rounded-xl border border-slate-200 bg-white shadow-xs overflow-hidden">
-        <table class="w-full text-start">
+        <table class="data-table w-full text-start">
             <caption class="sr-only">{{ __('platform.companies') }}</caption>
             <thead class="bg-slate-50/75 border-b border-slate-200 text-slate-600">
                 <tr>
@@ -137,7 +137,7 @@
                         <td class="px-5 py-4 text-sm font-mono font-semibold text-slate-700" dir="ltr">
                             {{ $company->base_currency_code }}
                         </td>
-                        <td class="px-5 py-4 text-sm text-end">
+                        <td class="table-actions px-5 py-4 text-sm text-end">
                             <a href="{{ route('platform.companies.show', $company->public_id) }}"
                                class="inline-flex min-h-9 items-center justify-center rounded-lg border border-slate-200 bg-white px-3.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 hover:text-slate-900 transition-colors">
                                 {{ __('platform.view') }}
@@ -215,7 +215,7 @@
 
     <!-- Pagination -->
     <div class="mt-6">
-        {{ $companies->links('platform.pagination') }}
+        <x-table-pagination :paginator="$companies" :livewire="false" />
     </div>
 </div>
 @endsection

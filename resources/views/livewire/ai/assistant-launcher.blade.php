@@ -131,7 +131,7 @@
 
                                 @if (!empty($reportResult['rows']))
                                     <div class="mt-3 max-h-56 overflow-auto rounded border border-border">
-                                        <table class="w-full text-start text-xs">
+                                        <table class="data-table w-full text-start text-xs">
                                             <thead class="sticky top-0 bg-surface border-b border-border text-text-secondary">
                                                 <tr>
                                                     @foreach (array_keys($reportResult['rows'][0]) as $col)

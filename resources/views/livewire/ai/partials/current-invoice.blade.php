@@ -8,7 +8,7 @@
     @foreach (['subtotal_currency' => 'subtotal', 'discount_total_currency' => 'discount', 'tax_total_currency' => 'tax', 'grand_total_currency' => 'grand_total', 'outstanding_balance' => 'outstanding_balance'] as $field => $label)
         <div class="rounded-control bg-surface p-2">
             <dt class="text-xs text-text-secondary">{{ __('assistant_invoice.'.$label) }}</dt>
-            <dd class="font-semibold mt-1"><bdi>{{ $answer['totals'][$field] === null ? __('assistant_v2.value_unavailable') : \App\Domain\Sales\Formatters\SalesMoneyFormatter::format($answer['totals'][$field], $answer['currency']['filter_currency_code']) }} {{ $answer['currency']['filter_currency_code'] }}</bdi></dd>
+            <dd class="font-semibold mt-1"><bdi>{{ $answer['totals'][$field] === null ? __('assistant_v2.value_unavailable') : \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($answer['totals'][$field], $answer['currency']['filter_currency_code']) }} {{ $answer['currency']['filter_currency_code'] }}</bdi></dd>
         </div>
     @endforeach
 </dl>
@@ -22,8 +22,8 @@
             <p class="font-semibold break-words">{{ $line['item_description'] }}</p>
             <p><bdi>{{ $line['sku'] }}</bdi></p>
             <p>{{ __('assistant_invoice.quantity') }}: <bdi>{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatQuantity($line['quantity']) }} {{ $line['unit_name'] }}</bdi>
-                · {{ __('assistant_invoice.unit_price') }}: <bdi>{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::format($line['unit_price'], $answer['currency']['filter_currency_code']) }} {{ $answer['currency']['filter_currency_code'] }}</bdi></p>
-            <p class="font-semibold">{{ __('assistant_invoice.line_total') }}: <bdi>{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::format($line['total'], $answer['currency']['filter_currency_code']) }} {{ $answer['currency']['filter_currency_code'] }}</bdi></p>
+                · {{ __('assistant_invoice.unit_price') }}: <bdi>{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($line['unit_price'], $answer['currency']['filter_currency_code']) }} {{ $answer['currency']['filter_currency_code'] }}</bdi></p>
+            <p class="font-semibold">{{ __('assistant_invoice.line_total') }}: <bdi>{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($line['total'], $answer['currency']['filter_currency_code']) }} {{ $answer['currency']['filter_currency_code'] }}</bdi></p>
         </div>
     @endforeach
     <p class="text-xs text-text-secondary">{{ __('assistant_invoice.line_sample', ['shown' => count($answer['scope']['lines']), 'total' => $answer['scope']['total_lines']]) }}</p>

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Livewire\Pages\Catalog;
 
 use App\Application\Platform\TenantWriteAccess;
+use App\Livewire\Concerns\HasTablePageSize;
 use App\Models\Product;
 use App\Models\ProductCategory;
 use App\Models\User;
@@ -13,10 +14,14 @@ use Illuminate\Contracts\View\View;
 use Illuminate\Validation\Rule;
 use Livewire\Attributes\Layout;
 use Livewire\Component;
+use Livewire\WithPagination;
 
 #[Layout('layouts.app')]
 class CategoryIndex extends Component
 {
+    use HasTablePageSize;
+    use WithPagination;
+
     public ?int $editingId = null;
 
     public string $name_ar = '';
@@ -154,10 +159,11 @@ class CategoryIndex extends Component
             ->with(['parent', 'products'])
             ->orderBy('sort_order')
             ->orderBy('name_ar')
-            ->get();
+            ->orderBy('id')->paginate($this->tablePageSize());
 
         return view('livewire.pages.catalog.category-index', [
             'categories' => $categories,
+            'parentOptions' => ProductCategory::where('company_id', $company->id)->orderBy('name_ar')->get(['id', 'name_ar']),
             'canManage' => $canManage,
             'company' => $company,
         ]);

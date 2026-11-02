@@ -27,7 +27,7 @@
     </x-refinement-filters>
     <section class="bg-white border border-border rounded-card overflow-hidden">
         <div class="hidden md:block overflow-x-auto">
-            <table class="w-full text-xs text-start">
+            <table class="data-table w-full text-xs text-start">
                 <thead class="bg-surface-soft text-text-secondary border-b border-border">
                     <tr>
                         @foreach (['vendor_code', 'vendor', 'phone', 'default_currency', 'status'] as $label)
@@ -86,5 +86,5 @@
             @endforelse
         </div>
     </section>
-    {{ $vendors->links() }}
+    <x-table-pagination :paginator="$vendors" />
 </div>

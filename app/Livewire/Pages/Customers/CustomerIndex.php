@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Livewire\Pages\Customers;
 
 use App\Domain\Sales\Queries\CustomerBalanceQuery;
+use App\Livewire\Concerns\HasTablePageSize;
 use App\Models\Customer;
 use App\Support\Tenancy\CompanyContext;
 use Illuminate\Contracts\View\View;
@@ -17,6 +18,7 @@ use Livewire\WithPagination;
 #[Layout('layouts.app')]
 class CustomerIndex extends Component
 {
+    use HasTablePageSize;
     use WithPagination;
 
     #[Url(as: 'q')]
@@ -68,7 +70,7 @@ class CustomerIndex extends Component
             $query->where('status', 'inactive');
         }
 
-        $customers = $query->orderBy('name_ar')->paginate(15);
+        $customers = $query->orderBy('name_ar')->paginate($this->tablePageSize());
 
         $currencyBalances = app(CustomerBalanceQuery::class)->execute($customers->pluck('id')->all());
         $balances = [];

@@ -24,7 +24,7 @@ final class ExpenseReadService
      * } $filters
      * @return LengthAwarePaginator<int, Expense>
      */
-    public function paginate(int $companyId, User $actor, array $filters = [], int $perPage = 15): LengthAwarePaginator
+    public function paginate(int $companyId, User $actor, array $filters = [], int $perPage = 50): LengthAwarePaginator
     {
         app(Phase7FinancialRead::class)->actor($companyId, $actor, 'money.expense.view');
         setPermissionsTeamId($companyId);
@@ -68,7 +68,7 @@ final class ExpenseReadService
 
         $paginator = $query->orderByDesc('expense_date')
             ->orderByDesc('id')
-            ->paginate($perPage);
+            ->paginate(max(1, min(200, $perPage)));
 
         if (! $hasCostView) {
             $paginator->getCollection()->transform(function (Expense $expense) {

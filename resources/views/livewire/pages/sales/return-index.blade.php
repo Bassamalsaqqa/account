@@ -6,7 +6,7 @@
                 {{ __('sales.sales_returns') }}
             </h1>
             <p class="text-xs text-text-secondary mt-1">
-                {{ __('sales.sales_returns') }} ({{ $returns->total() }})
+                {{ __('sales.sales_returns') }} ({{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($returns->total()) }})
             </p>
         </div>
 
@@ -52,7 +52,7 @@
     <!-- Returns Table -->
     <div class="bg-white rounded-card border border-border shadow-xs overflow-hidden">
         <div class="hidden md:block overflow-x-auto">
-            <table class="w-full text-start text-xs border-collapse">
+            <table class="data-table w-full text-start text-xs border-collapse">
                 <thead>
                     <tr class="border-b border-border bg-surface-soft text-text-muted font-bold text-[11px] uppercase tracking-wider">
                         <th class="py-3 px-4 text-start">{{ __('sales.return_number') }}</th>
@@ -90,14 +90,14 @@
                                 {{ $ret->issue_date ? $ret->issue_date->toDateString() : '—' }}
                             </td>
                             <td class="py-3 px-4 font-bold" dir="ltr">
-                                {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($ret->grand_total_currency ?? $ret->grand_total, $ret->currency_code) }} {{ $ret->currency_code }}
+                                {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($ret->grand_total_currency ?? $ret->grand_total, $ret->currency_code) }} {{ $ret->currency_code }}
                             </td>
                             <td class="py-3 px-4">
                                 <span class="px-2 py-0.5 rounded-full text-[10px] font-bold @if ($ret->status === 'posted') bg-success-bg text-success @elseif ($ret->status === 'void') bg-danger-bg text-danger @else bg-slate-100 text-slate-600 @endif">
                                     {{ __('sales.' . $ret->status) }}
                                 </span>
                             </td>
-                            <td class="py-3 px-4 text-end">
+                            <td class="table-actions py-3 px-4 text-end">
                                 <a href="{{ route('returns.show', $ret->public_id) }}"
                                    class="touch-action bg-surface-soft hover:bg-primary-50 text-text-secondary hover:text-primary font-bold text-[11px] transition-colors">
                                     {{ __('sales.return_details') }}
@@ -141,7 +141,7 @@
                         </div>
                         <div>
                             <span class="text-text-muted block text-[10px]">{{ __('sales.grand_total') }}</span>
-                            <span class="font-bold text-text-primary" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($ret->grand_total_currency ?? $ret->grand_total, $ret->currency_code) }} {{ $ret->currency_code }}</span>
+                            <span class="font-bold text-text-primary" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($ret->grand_total_currency ?? $ret->grand_total, $ret->currency_code) }} {{ $ret->currency_code }}</span>
                         </div>
                     </div>
 
@@ -159,9 +159,9 @@
             @endforelse
         </div>
 
-        @if ($returns->hasPages())
+        @if ($returns->count() > 0)
             <div class="p-4 border-t border-border">
-                {{ $returns->links() }}
+                <x-table-pagination :paginator="$returns" />
             </div>
         @endif
     </div>

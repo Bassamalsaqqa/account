@@ -126,7 +126,7 @@
 
             @if(count($unpaidEntries) > 0)
                 <div class="rounded-control border border-border overflow-hidden">
-                    <table class="w-full text-sm text-start">
+                    <table class="data-table w-full text-sm text-start">
                         <thead class="bg-surface-soft border-b border-border text-xs text-text-muted">
                             <tr>
                                 <th class="px-3 py-2 text-start">{{ __('payroll.entry_number') }}</th>
@@ -146,7 +146,7 @@
                                     <td class="px-3 py-2 text-text-secondary text-xs">
                                         {{ $ent->period_start->toDateString() }} – {{ $ent->period_end->toDateString() }}
                                     </td>
-                                    <td class="px-3 py-2 font-medium" dir="ltr">{{ $pos['net_payable'] }}</td>
+                                    <td class="px-3 py-2 font-medium" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($pos['net_payable']) }}</td>
                                     <td class="px-3 py-2 font-bold text-primary" dir="ltr">{{ $pos['remaining_payable'] }}</td>
                                     <td class="px-3 py-2">
                                         <input type="text" inputmode="decimal" wire:model.live="entryAllocations.{{ $ent->id }}" placeholder="0.00" class="w-full rounded-control border border-border bg-white px-2 py-1 text-sm focus:border-primary focus:ring-primary text-end">

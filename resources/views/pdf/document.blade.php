@@ -263,7 +263,7 @@
                 @if(!empty($data->document['base_currency_code']) && $data->document['base_currency_code'] !== ($data->document['currency_code'] ?? null))
                     <p>{{ $transDoc('base_currency') }}: <span dir="ltr">{{ $data->document['base_currency_code'] }}</span>
                     @if(!empty($data->document['exchange_rate']))
-                        | {{ $transDoc('exchange_rate') }}: <span dir="ltr">{{ $data->document['exchange_rate'] }}</span>
+                        | {{ $transDoc('exchange_rate') }}: <span dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($data->document['exchange_rate']) }}</span>
                     @endif
                     </p>
                 @endif
@@ -298,7 +298,7 @@
         @foreach($data->statement['currencies'] as $currency => $group)
             <h3>{{ $currency }}</h3>
             @if(isset($group['opening_balance']))
-                <p><strong>{{ $transDoc('opening_balance') }}:</strong> <span class="number" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($group['opening_balance'], $currency) }} {{ $currency }}</span></p>
+                <p><strong>{{ $transDoc('opening_balance') }}:</strong> <span class="number" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($group['opening_balance'], $currency) }} {{ $currency }}</span></p>
             @endif
             <table class="data-table">
                 <thead>
@@ -315,19 +315,19 @@
                         <tr>
                             <td class="date" dir="ltr">{{ $entry['date'] }}</td>
                             <td class="code" dir="ltr">{{ $entry['number'] }}<br>{{ $transDoc($entry['type'] ?? '') }}</td>
-                            <td class="number" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($entry['debit'], $currency) }}</td>
-                            <td class="number" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($entry['credit'], $currency) }}</td>
-                            <td class="number" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($entry['balance'], $currency) }}</td>
+                            <td class="number" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($entry['debit'], $currency) }}</td>
+                            <td class="number" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($entry['credit'], $currency) }}</td>
+                            <td class="number" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($entry['balance'], $currency) }}</td>
                         </tr>
                     @endforeach
                 </tbody>
             </table>
-            <p><strong>{{ $transDoc('closing_balance') }}:</strong> <span class="number" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($group['closing_balance'], $currency) }} {{ $currency }}</span></p>
+            <p><strong>{{ $transDoc('closing_balance') }}:</strong> <span class="number" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($group['closing_balance'], $currency) }} {{ $currency }}</span></p>
             @if(isset($group['aging']))
                 <h4>{{ $transDoc('aging') }}</h4>
                 <table class="data-table"><tbody>
                 @foreach($group['aging'] as $bucket => $amount)
-                    <tr><td>{{ $transDoc($bucket) }}</td><td class="number" dir="ltr">{{ $amount }} {{ $currency }}</td></tr>
+                    <tr><td>{{ $transDoc($bucket) }}</td><td class="number" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($amount) }} {{ $currency }}</td></tr>
                 @endforeach
                 </tbody></table>
             @endif
@@ -381,16 +381,16 @@
                         </td>
                         @if($hasDualCurrency)
                             <td class="number">
-                                {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::format($principalAmt, $principalCurr) }}
+                                {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($principalAmt, $principalCurr) }}
                                 <span dir="ltr">{{ $principalCurr }}</span>
                             </td>
                             <td class="number">
-                                {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::format($paymentAmt, $paymentCurr) }}
+                                {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($paymentAmt, $paymentCurr) }}
                                 <span dir="ltr">{{ $paymentCurr }}</span>
                             </td>
                             <td class="number">
                                 @if(isset($line['settlement_base_value']))
-                                    {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::format($line['settlement_base_value'], $baseCurr) }}
+                                    {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($line['settlement_base_value'], $baseCurr) }}
                                     @if($baseCurr)<span dir="ltr">{{ $baseCurr }}</span>@endif
                                 @else
                                     —
@@ -398,7 +398,7 @@
                             </td>
                         @else
                             <td class="number">
-                                {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::format($paymentAmt, $paymentCurr) }}
+                                {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($paymentAmt, $paymentCurr) }}
                                 <span dir="ltr">{{ $paymentCurr }}</span>
                             </td>
                         @endif
@@ -414,7 +414,7 @@
                     <td><strong>{{ $transDoc('payment_amount') }}</strong></td>
                     <td class="number">
                         <strong>
-                            {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::format($data->document['grand_total'] ?? '0', $data->document['currency_code']) }}
+                            {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($data->document['grand_total'] ?? '0', $data->document['currency_code']) }}
                             {{ $data->document['currency_code'] }}
                         </strong>
                     </td>
@@ -423,7 +423,7 @@
                     <tr class="base-amount-row">
                         <td>{{ $transDoc('amount_in_base_currency') }} ({{ $data->document['base_currency_code'] }})</td>
                         <td class="number">
-                            {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::format($data->document['amount_base'], $data->document['base_currency_code']) }}
+                            {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($data->document['amount_base'], $data->document['base_currency_code']) }}
                             {{ $data->document['base_currency_code'] }}
                         </td>
                     </tr>
@@ -457,11 +457,11 @@
                                     @if(isset($lLine['status']))<br>{{ $transDoc($lLine['status']) }}@endif
                                 </td>
                                 <td class="number">
-                                    {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::format($lPrincipalAmt, $lPrincipalCurr) }}
+                                    {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($lPrincipalAmt, $lPrincipalCurr) }}
                                     <span dir="ltr">{{ $lPrincipalCurr }}</span>
                                 </td>
                                 <td class="number">
-                                    {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::format($lPaymentAmt, $lPaymentCurr) }}
+                                    {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($lPaymentAmt, $lPaymentCurr) }}
                                     <span dir="ltr">{{ $lPaymentCurr }}</span>
                                 </td>
                             </tr>
@@ -500,10 +500,10 @@
                             @endif
                         </td>
                         <td class="number">
-                            {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::format($line['unit_price'], $data->document['currency_code']) }}
+                            {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($line['unit_price'], $data->document['currency_code']) }}
                         </td>
                         <td class="number">
-                            {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::format($line['total'], $data->document['currency_code']) }}
+                            {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($line['total'], $data->document['currency_code']) }}
                         </td>
                     </tr>
                 @endforeach
@@ -517,7 +517,7 @@
                     <tr>
                         <td style="width: 60%;">{{ $transDoc('subtotal') }}</td>
                         <td class="number" style="width: 40%;">
-                            {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::format($data->document['subtotal'], $data->document['currency_code']) }}
+                            {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($data->document['subtotal'], $data->document['currency_code']) }}
                             {{ $data->document['currency_code'] }}
                         </td>
                     </tr>
@@ -526,7 +526,7 @@
                     <tr>
                         <td>{{ $transDoc('discount') }}</td>
                         <td class="number">
-                            {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::format($data->document['discount_total'], $data->document['currency_code']) }}
+                            {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($data->document['discount_total'], $data->document['currency_code']) }}
                             {{ $data->document['currency_code'] }}
                         </td>
                     </tr>
@@ -535,7 +535,7 @@
                     <tr>
                         <td>{{ $transDoc('tax') }}</td>
                         <td class="number">
-                            {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::format($data->document['tax_total'], $data->document['currency_code']) }}
+                            {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($data->document['tax_total'], $data->document['currency_code']) }}
                             {{ $data->document['currency_code'] }}
                         </td>
                     </tr>
@@ -545,7 +545,7 @@
                         <td><strong>{{ $transDoc('grand_total') }}</strong></td>
                         <td class="number">
                             <strong>
-                                {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::format($data->document['grand_total'], $data->document['currency_code']) }}
+                                {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($data->document['grand_total'], $data->document['currency_code']) }}
                                 {{ $data->document['currency_code'] }}
                             </strong>
                         </td>
@@ -555,7 +555,7 @@
                     <tr class="base-amount-row">
                         <td>{{ $transDoc('amount_in_base_currency') }} ({{ $data->document['base_currency_code'] }})</td>
                         <td class="number">
-                            {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::format($data->document['amount_base'], $data->document['base_currency_code']) }}
+                            {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($data->document['amount_base'], $data->document['base_currency_code']) }}
                             {{ $data->document['base_currency_code'] }}
                         </td>
                     </tr>

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Livewire\Pages\Products;
 
 use App\Livewire\Concerns\CameraBarcodeScan;
+use App\Livewire\Concerns\HasTablePageSize;
 use App\Models\Brand;
 use App\Models\Product;
 use App\Models\ProductCategory;
@@ -21,6 +22,7 @@ use Livewire\WithPagination;
 class ProductIndex extends Component
 {
     use CameraBarcodeScan;
+    use HasTablePageSize;
     use WithPagination;
 
     #[Url(as: 'barcode')]
@@ -203,7 +205,7 @@ class ProductIndex extends Component
                 });
         }
 
-        $products = $query->orderByRaw('COALESCE(name_ar, name_en) ASC')->orderBy('id')->paginate(15);
+        $products = $query->orderByRaw('COALESCE(name_ar, name_en) ASC')->orderBy('id')->paginate($this->tablePageSize());
 
         $categories = ProductCategory::where('company_id', $company->id)->where('active', true)->orderBy('sort_order')->get();
         $brands = Brand::where('company_id', $company->id)

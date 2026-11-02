@@ -359,4 +359,6 @@ return [
     'lot_today_status' => 'Expires today',
     'base_available' => 'Available (base unit)',
     'lot_status_reference' => 'Expiry status as of today (:date). Stock availability is current.',
+    'average_cost_short' => 'Avg. cost',
+    'stock_value_short' => 'Stock value',
 ];

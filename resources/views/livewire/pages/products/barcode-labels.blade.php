@@ -100,7 +100,7 @@
 
             <!-- Table of Available Barcodes -->
             <div class="overflow-x-auto flex-1">
-                <table class="min-w-full divide-y divide-gray-200 text-sm">
+                <table class="data-table min-w-full divide-y divide-gray-200 text-sm">
                     <thead>
                         <tr class="bg-gray-50 text-gray-600 text-xs uppercase font-medium">
                             <th scope="col" class="py-3 px-3 text-start">@lang('labels.sku')</th>
@@ -128,7 +128,7 @@
                                 <td class="py-3 px-3 text-gray-600">
                                     {{ $u ? ($locale === 'ar' ? ($u->name_ar ?: $u->name_en) : ($u->name_en ?: $u->name_ar)) : ($locale === 'ar' ? 'الأساسية' : 'Base') }}
                                 </td>
-                                <td class="py-3 px-3 text-end">
+                                <td class="table-actions py-3 px-3 text-end">
                                     @if($isSelected)
                                         <button
                                             type="button"
@@ -164,7 +164,7 @@
             </div>
 
             <div class="mt-4 pt-3 border-t border-gray-100">
-                {{ $availableBarcodes->links() }}
+                <x-table-pagination :paginator="$availableBarcodes" />
             </div>
         </div>
 
@@ -173,7 +173,7 @@
             <h2 class="text-lg font-semibold text-gray-900 mb-4">@lang('labels.selected_barcodes')</h2>
 
             <div class="overflow-y-auto max-h-[550px] flex-1">
-                <table class="min-w-full divide-y divide-gray-200 text-sm">
+                <table class="data-table min-w-full divide-y divide-gray-200 text-sm">
                     <thead>
                         <tr class="bg-gray-50 text-gray-600 text-xs uppercase font-medium">
                             <th scope="col" class="py-3 px-3 text-start">@lang('labels.barcode')</th>
@@ -210,7 +210,7 @@
                                         class="w-20 h-11 min-h-[44px] text-center rounded-md border-gray-300 shadow-sm text-sm focus:border-blue-500 focus:ring-blue-500 px-2 py-1 mx-auto"
                                     />
                                 </td>
-                                <td class="py-3 px-3 text-end">
+                                <td class="table-actions py-3 px-3 text-end">
                                     <button
                                         type="button"
                                         wire:click="removeBarcode({{ $sb->id }})"

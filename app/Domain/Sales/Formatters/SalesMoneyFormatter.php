@@ -10,6 +10,31 @@ use Brick\Math\RoundingMode;
 
 final class SalesMoneyFormatter
 {
+    /** Human-facing amounts only. Stored values, calculations and exports retain their precision. */
+    public static function displayMoney(string|int|BigDecimal|null $amount, ?string $currencyCode = null): string
+    {
+        if ($amount === null || $amount === '') {
+            return '—';
+        }
+        if (! preg_match('/^-?\d+(?:\.\d+)?$/D', (string) $amount)) {
+            return (string) $amount;
+        }
+
+        return self::format($amount, scale: 2);
+    }
+
+    public static function displayQuantity(string|int|BigDecimal|null $quantity): string
+    {
+        if ($quantity === null || $quantity === '') {
+            return '—';
+        }
+        if (! preg_match('/^-?\d+(?:\.\d+)?$/D', (string) $quantity)) {
+            return (string) $quantity;
+        }
+
+        return self::formatQuantity($quantity);
+    }
+
     /**
      * @var array<string, int>
      */

@@ -6,6 +6,7 @@ namespace App\Livewire\Pages\Sales\Settings;
 
 use App\Actions\Sales\CreateMoneyAccountAction;
 use App\Actions\Sales\UpdateMoneyAccountAction;
+use App\Livewire\Concerns\HasTablePageSize;
 use App\Models\MoneyAccount;
 use App\Services\Sales\SalesActorGuard;
 use App\Support\Tenancy\CompanyContext;
@@ -16,10 +17,14 @@ use Illuminate\Validation\Rule;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Locked;
 use Livewire\Component;
+use Livewire\WithPagination;
 
 #[Layout('layouts.app')]
 class MoneyAccountSettings extends Component
 {
+    use HasTablePageSize;
+    use WithPagination;
+
     #[Locked]
     public int $settingsCompanyId;
 
@@ -165,7 +170,7 @@ class MoneyAccountSettings extends Component
         $accounts = MoneyAccount::with('ledgerAccount')
             ->where('company_id', $company->id)
             ->orderBy('sort_order')
-            ->get();
+            ->orderBy('id')->paginate($this->tablePageSize());
 
         $currencies = $company->currencies()->where('enabled', true)->get();
 

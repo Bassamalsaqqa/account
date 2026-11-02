@@ -14,7 +14,7 @@ use Illuminate\Support\Facades\DB;
 final class MoneyMovementQuery
 {
     /** @return LengthAwarePaginator<int, \stdClass> */
-    public function forAccount(MoneyAccount $account, int $page = 1, int $perPage = 30): LengthAwarePaginator
+    public function forAccount(MoneyAccount $account, int $page = 1, int $perPage = 50): LengthAwarePaginator
     {
         app(MoneyActorGuard::class)->account($account);
         app(MoneyAccountLedger::class)->validate($account);
@@ -37,6 +37,6 @@ final class MoneyMovementQuery
             ->selectRaw('CASE WHEN has_hidden_history = 0 THEN known_running_currency ELSE NULL END AS known_running_currency')
             ->selectRaw('CASE WHEN has_hidden_history = 0 THEN unknown_currency_lines ELSE NULL END AS unknown_currency_lines')
             ->orderByDesc('posting_date')->orderByDesc('id')
-            ->paginate(max(1, min(100, $perPage)), ['*'], 'page', max(1, $page));
+            ->paginate(max(1, min(200, $perPage)), ['*'], 'page', max(1, $page));
     }
 }

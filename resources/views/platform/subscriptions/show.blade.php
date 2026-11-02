@@ -118,7 +118,7 @@
                 <div class="min-w-0">
                     <dt class="text-xs font-bold text-text-muted uppercase tracking-wider mb-1">{{ __('subscriptions.fee') }}</dt>
                     <dd class="font-mono font-bold text-text-primary text-base" dir="ltr">
-                        {{ $subscription->fee }} <span class="text-xs font-normal text-text-muted">{{ $subscription->currency }}</span>
+                        {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($subscription->fee) }} <span class="text-xs font-normal text-text-muted">{{ $subscription->currency }}</span>
                     </dd>
                 </div>
                 <div class="min-w-0">
@@ -516,7 +516,7 @@
                                 {{ app()->getLocale() === 'ar'
                                     ? ' سيُنشأ رسم جديد غير قابل للتعديل بمبلغ '
                                     : ' A new immutable charge will be created for ' }}
-                                <strong dir="ltr">{{ $subscription->fee }} {{ $subscription->currency }}</strong>.
+                                <strong dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($subscription->fee) }} {{ $subscription->currency }}</strong>.
                             </p>
                         </div>
 
@@ -579,7 +579,7 @@
             <p class="text-xs text-text-muted mb-4 leading-relaxed">
                 {{ __('subscriptions.payment_desc') }}
             </p>
-            @if($charges->hasPages())
+            @if ($charges->count() > 0)
                 <p class="mb-4 text-xs leading-relaxed text-text-muted">{{ __('subscriptions.charges_page_help') }}</p>
             @endif
 
@@ -613,7 +613,7 @@
                                         required>
                                     @foreach($outstandingCharges as $oc)
                                         <option value="{{ $oc->id }}">
-                                            #{{ $oc->id }} ({{ $oc->starts_on }} → {{ $oc->ends_before }}) — {{ __('subscriptions.outstanding_amount') }}: {{ $oc->outstanding }} {{ $oc->currency }}
+                                            #{{ $oc->id }} ({{ $oc->starts_on }} → {{ $oc->ends_before }}) — {{ __('subscriptions.outstanding_amount') }}: {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($oc->outstanding) }} {{ $oc->currency }}
                                         </option>
                                     @endforeach
                                 </select>
@@ -753,7 +753,7 @@
                 </div>
             @else
                 <div class="overflow-x-auto">
-                    <table class="w-full text-start border-collapse text-xs sm:text-sm">
+                    <table class="data-table w-full text-start border-collapse text-xs sm:text-sm">
                         <thead class="bg-surface-soft border-b border-border">
                             <tr>
                                 <th scope="col" class="px-4 py-3 text-start font-bold text-text-muted uppercase tracking-wider">
@@ -792,13 +792,13 @@
                                         {{ $charge->starts_on }} → {{ $charge->ends_before }}
                                     </td>
                                     <td class="px-4 py-3.5 font-mono font-bold text-text-primary" dir="ltr">
-                                        {{ $charge->amount }} <span class="text-xs text-text-muted">{{ $charge->currency }}</span>
+                                        {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($charge->amount) }} <span class="text-xs text-text-muted">{{ $charge->currency }}</span>
                                     </td>
                                     <td class="px-4 py-3.5 font-mono text-success font-semibold" dir="ltr">
-                                        {{ $charge->paid }} <span class="text-xs text-text-muted">{{ $charge->currency }}</span>
+                                        {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($charge->paid) }} <span class="text-xs text-text-muted">{{ $charge->currency }}</span>
                                     </td>
                                     <td class="px-4 py-3.5 font-mono font-bold {{ $charge->is_settled ? 'text-text-muted' : 'text-danger' }}" dir="ltr">
-                                        {{ $charge->outstanding }} <span class="text-xs text-text-muted">{{ $charge->currency }}</span>
+                                        {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($charge->outstanding) }} <span class="text-xs text-text-muted">{{ $charge->currency }}</span>
                                     </td>
                                     <td class="px-4 py-3.5">
                                         <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold {{ $charge->is_settled ? 'bg-success-bg text-success' : 'bg-danger-bg text-danger' }}">
@@ -820,7 +820,7 @@
                                                         <div class="bg-white border border-border/80 rounded-control p-2.5 text-xs shadow-2xs">
                                                             <div class="flex items-center justify-between gap-2">
                                                                 <span class="font-mono font-bold text-text-primary" dir="ltr">
-                                                                    {{ $payment->amount }} {{ $payment->currency }}
+                                                                    {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($payment->amount) }} {{ $payment->currency }}
                                                                 </span>
                                                                 <span class="font-mono text-text-muted text-[11px]" dir="ltr">
                                                                     {{ $payment->received_on }}
@@ -849,8 +849,8 @@
                 </div>
 
                 <div class="p-4 border-t border-border">
-                    {{ $charges->withQueryString()->links('platform.pagination') }}
-                    {{ $payments->links('platform.pagination') }}
+                    <x-table-pagination :paginator="$charges" :livewire="false" />
+                    <x-table-pagination :paginator="$payments" :livewire="false" />
                 </div>
             @endif
         </div>

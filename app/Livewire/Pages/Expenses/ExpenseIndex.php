@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Livewire\Pages\Expenses;
 
+use App\Livewire\Concerns\HasTablePageSize;
 use App\Livewire\Pages\Money\Concerns\AuthorizesMoneyPages;
 use App\Models\ExpenseCategory;
 use App\Services\Expenses\ExpenseReadService;
@@ -17,6 +18,7 @@ use Livewire\WithPagination;
 class ExpenseIndex extends Component
 {
     use AuthorizesMoneyPages, WithPagination;
+    use HasTablePageSize;
 
     #[Url(as: 'q')]
     public string $search = '';
@@ -58,7 +60,7 @@ class ExpenseIndex extends Component
             'status' => $this->status,
             'from_date' => $this->fromDate,
             'to_date' => $this->toDate,
-        ]);
+        ], $this->tablePageSize());
 
         $categories = ExpenseCategory::where('company_id', $this->pageCompanyId)
             ->where('active', true)

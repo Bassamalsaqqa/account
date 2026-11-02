@@ -272,9 +272,9 @@ final class UiReportPresentationTest extends Phase8TestCase
                 'errors' => new ViewErrorBag,
             ])->render();
 
-            $this->assertStringContainsString('100.000000 USD', $rendered);
-            $this->assertStringContainsString('50.000000 JOD', $rendered);
-            $this->assertStringContainsString('1000.000000 ILS', $rendered);
+            $this->assertStringContainsString('100.00 USD', $rendered);
+            $this->assertStringContainsString('50.00 JOD', $rendered);
+            $this->assertStringContainsString('1,000.00 ILS', $rendered);
         }
     }
 

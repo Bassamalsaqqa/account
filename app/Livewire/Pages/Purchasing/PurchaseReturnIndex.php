@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Livewire\Pages\Purchasing;
 
+use App\Livewire\Concerns\HasTablePageSize;
 use App\Livewire\Pages\Purchasing\Concerns\AuthorizesPurchasingPages;
 use App\Models\PurchaseReturn;
 use App\Models\Vendor;
@@ -18,6 +19,7 @@ use Livewire\WithPagination;
 class PurchaseReturnIndex extends Component
 {
     use AuthorizesPurchasingPages;
+    use HasTablePageSize;
     use WithPagination;
 
     #[Url(as: 'q')]
@@ -98,7 +100,7 @@ class PurchaseReturnIndex extends Component
         }
 
         return view('livewire.pages.purchasing.purchase-return-index', [
-            'returns' => $query->orderByDesc('return_date')->orderByDesc('id')->paginate(15),
+            'returns' => $query->orderByDesc('return_date')->orderByDesc('id')->paginate($this->tablePageSize()),
             'vendors' => Vendor::withTrashed()->where('company_id', $company->id)->orderBy('name_ar')->get(['id', 'name_ar', 'name_en']),
             'withCost' => $withCost,
             'canCreate' => $canCreate,

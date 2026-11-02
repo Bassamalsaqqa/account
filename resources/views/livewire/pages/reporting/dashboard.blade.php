@@ -187,13 +187,13 @@
                                     <x-icon name="arrow-up" class="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
                                     <bdi class="num">+{{ $data['comparison']['difference_display'] }} {{ $data['currency'] }}</bdi>
                                     @if ($data['comparison']['percent'] !== null)
-                                        <span class="num">(+{{ $data['comparison']['percent'] }}%)</span>
+                                        <span class="num">(+{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($data['comparison']['percent']) }}%)</span>
                                     @endif
                                 @elseif ($data['comparison']['direction'] < 0)
                                     <x-icon name="arrow-up" class="w-3.5 h-3.5 shrink-0 rotate-180" aria-hidden="true" />
                                     <bdi class="num">-{{ $data['comparison']['difference_display'] }} {{ $data['currency'] }}</bdi>
                                     @if ($data['comparison']['percent'] !== null)
-                                        <span class="num">({{ $data['comparison']['percent'] }}%)</span>
+                                        <span class="num">({{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($data['comparison']['percent']) }}%)</span>
                                     @endif
                                 @else
                                     <span><bdi class="num">{{ $data['comparison']['difference_display'] }}</bdi></span>
@@ -327,7 +327,7 @@
                                     </div>
                                 </div>
                                 <div class="dashboard-attention-item-badge {{ $isAlertDanger ? 'is-danger' : '' }}">
-                                    <bdi class="num">{{ $alertItem['count'] }}</bdi>
+                                    <bdi class="num">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($alertItem['count']) }}</bdi>
                                 </div>
                             </a></li>
                         @endforeach

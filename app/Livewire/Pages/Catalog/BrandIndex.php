@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Livewire\Pages\Catalog;
 
 use App\Application\Platform\TenantWriteAccess;
+use App\Livewire\Concerns\HasTablePageSize;
 use App\Models\Brand;
 use App\Models\Company;
 use App\Models\User;
@@ -22,6 +23,7 @@ use Livewire\WithPagination;
 #[Layout('layouts.app')]
 class BrandIndex extends Component
 {
+    use HasTablePageSize;
     use WithPagination;
 
     #[Locked]
@@ -205,7 +207,7 @@ class BrandIndex extends Component
             });
         }
 
-        $brands = $query->orderBy('name_ar')->orderBy('id')->paginate(15);
+        $brands = $query->orderBy('name_ar')->orderBy('id')->paginate($this->tablePageSize());
 
         return view('livewire.pages.catalog.brand-index', [
             'brands' => $brands,

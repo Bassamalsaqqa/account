@@ -126,9 +126,9 @@
                     @foreach ($data['statement']['currencies'] as $currency => $group)
                         <h2 class="font-bold">{{ $currency }}</h2>
                         <div class="overflow-x-auto"><table class="w-full text-xs text-start"><thead><tr><th>{{ __('sales.date') }}</th><th>{{ __('sales.number') }}</th><th>{{ __('sales.debit') }}</th><th>{{ __('sales.credit') }}</th><th>{{ __('sales.running_balance') }}</th></tr></thead><tbody>
-                        @foreach ($group['entries'] as $entry)<tr class="border-b border-slate-200"><td class="p-2">{{ $entry['date'] }}</td><td class="p-2">{{ $entry['number'] }}</td><td class="p-2" dir="ltr">{{ $entry['debit'] }}</td><td class="p-2" dir="ltr">{{ $entry['credit'] }}</td><td class="p-2" dir="ltr">{{ $entry['balance'] }}</td></tr>@endforeach
+                        @foreach ($group['entries'] as $entry)<tr class="border-b border-slate-200"><td class="p-2">{{ $entry['date'] }}</td><td class="p-2">{{ $entry['number'] }}</td><td class="p-2" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($entry['debit']) }}</td><td class="p-2" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($entry['credit']) }}</td><td class="p-2" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($entry['balance']) }}</td></tr>@endforeach
                         </tbody></table></div>
-                        <p>{{ __('sales.closing_balance') }}: <span dir="ltr">{{ $group['closing_balance'] }} {{ $currency }}</span></p>
+                        <p>{{ __('sales.closing_balance') }}: <span dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($group['closing_balance']) }} {{ $currency }}</span></p>
                     @endforeach
                 @else
                 <!-- Lines Table -->
@@ -159,22 +159,22 @@
                                         {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatQuantity($line['quantity']) }}
                                     </td>
                                     <td class="py-2.5 px-3 font-mono" dir="ltr">
-                                        {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($line['unit_price'], $doc['currency_code'] ?? null) }}
+                                        {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($line['unit_price'], $doc['currency_code'] ?? null) }}
                                     </td>
                                     <td class="py-2.5 px-3 font-mono text-red-600" dir="ltr">
                                         @php
                                             $disc = $line['discount'] ?? ($line['discount_amount'] ?? '0');
                                         @endphp
-                                        {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::isPositive($disc) ? \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($disc, $doc['currency_code'] ?? null) : '—' }}
+                                        {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::isPositive($disc) ? \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($disc, $doc['currency_code'] ?? null) : '—' }}
                                     </td>
                                     <td class="py-2.5 px-3 font-mono" dir="ltr">
                                         @php
                                             $tax = $line['tax'] ?? ($line['tax_amount'] ?? '0');
                                         @endphp
-                                        {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::isPositive($tax) ? \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($tax, $doc['currency_code'] ?? null) : '—' }}
+                                        {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::isPositive($tax) ? \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($tax, $doc['currency_code'] ?? null) : '—' }}
                                     </td>
                                     <td class="py-2.5 px-3 font-mono font-bold text-end" dir="ltr">
-                                        {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($line['total'] ?? ($line['line_total'] ?? '0'), $doc['currency_code'] ?? null) }}
+                                        {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($line['total'] ?? ($line['line_total'] ?? '0'), $doc['currency_code'] ?? null) }}
                                     </td>
                                 </tr>
                             @endforeach
@@ -187,19 +187,19 @@
                     <div class="w-full sm:w-64 space-y-2 text-xs">
                         <div class="flex justify-between py-1 border-b border-slate-100">
                             <span class="text-slate-500">{{ __('sales.subtotal') }}:</span>
-                            <span class="font-mono font-bold" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($doc['subtotal'], $doc['currency_code']) }} {{ $doc['currency_code'] }}</span>
+                            <span class="font-mono font-bold" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($doc['subtotal'], $doc['currency_code']) }} {{ $doc['currency_code'] }}</span>
                         </div>
                         <div class="flex justify-between py-1 border-b border-slate-100">
                             <span class="text-slate-500">{{ __('sales.discount') }}:</span>
-                            <span class="font-mono text-red-600 font-bold" dir="ltr">-{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($doc['discount_total'], $doc['currency_code']) }} {{ $doc['currency_code'] }}</span>
+                            <span class="font-mono text-red-600 font-bold" dir="ltr">-{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($doc['discount_total'], $doc['currency_code']) }} {{ $doc['currency_code'] }}</span>
                         </div>
                         <div class="flex justify-between py-1 border-b border-slate-100">
                             <span class="text-slate-500">{{ __('sales.tax') }}:</span>
-                            <span class="font-mono font-bold" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($doc['tax_total'], $doc['currency_code']) }} {{ $doc['currency_code'] }}</span>
+                            <span class="font-mono font-bold" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($doc['tax_total'], $doc['currency_code']) }} {{ $doc['currency_code'] }}</span>
                         </div>
                         <div class="flex justify-between py-2 border-t border-slate-200 text-base font-extrabold text-slate-900">
                             <span>{{ __('sales.grand_total') }}:</span>
-                            <span class="font-mono text-blue-600" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($doc['grand_total'], $doc['currency_code']) }} {{ $doc['currency_code'] }}</span>
+                            <span class="font-mono text-blue-600" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($doc['grand_total'], $doc['currency_code']) }} {{ $doc['currency_code'] }}</span>
                         </div>
                     </div>
                 </div>

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Livewire\Pages\Purchasing;
 
+use App\Livewire\Concerns\HasTablePageSize;
 use App\Livewire\Pages\Purchasing\Concerns\AuthorizesPurchasingPages;
 use App\Models\Vendor;
 use App\Support\Tenancy\CompanyContext;
@@ -18,6 +19,7 @@ use Livewire\WithPagination;
 class VendorIndex extends Component
 {
     use AuthorizesPurchasingPages;
+    use HasTablePageSize;
     use WithPagination;
 
     public function mount(CompanyContext $context): void
@@ -71,7 +73,7 @@ class VendorIndex extends Component
             $query->where('status', 'inactive');
         }
 
-        $vendors = $query->orderBy('name_ar')->paginate(15);
+        $vendors = $query->orderBy('name_ar')->paginate($this->tablePageSize());
 
         return view('livewire.pages.purchasing.vendor-index', [
             'vendors' => $vendors,

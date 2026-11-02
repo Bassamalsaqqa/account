@@ -50,7 +50,7 @@
             @include('livewire.ai.partials.turn-values', ['values' => $answer['totals']])
             @if ($answer['rows'] !== [])
                 <div class="overflow-x-auto" tabindex="0" role="region" aria-label="{{ $answer['title'] }}">
-                    <table class="w-full text-sm text-start">
+                    <table class="data-table w-full text-sm text-start">
                         <thead><tr>@foreach (array_keys($answer['rows'][0]) as $column)<th scope="col" class="p-2 text-start">{{ \Illuminate\Support\Facades\Lang::has('assistant_briefing.columns.'.$column) ? __('assistant_briefing.columns.'.$column) : (\Illuminate\Support\Facades\Lang::has('assistant_v22.fields.'.$column) ? __('assistant_v22.fields.'.$column) : (\Illuminate\Support\Facades\Lang::has('reports.columns.'.$column) ? __('reports.columns.'.$column) : str_replace('_', ' ', $column))) }}</th>@endforeach</tr></thead>
                         <tbody>
                             @foreach ($answer['rows'] as $row)

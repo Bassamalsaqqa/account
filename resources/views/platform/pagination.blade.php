@@ -1,4 +1,4 @@
-@if ($paginator->hasPages())
+@if ($paginator->count() > 0)
 <nav aria-label="{{ __('platform.pagination') }}" class="flex flex-wrap items-center justify-between gap-3 pt-4 border-t border-slate-200">
     @if ($paginator->previousPageUrl())
         <a class="inline-flex min-h-11 items-center justify-center rounded-lg border border-slate-200 bg-white px-4 text-xs sm:text-sm font-semibold text-slate-700 hover:bg-slate-50 hover:text-slate-900 transition-colors" href="{{ $paginator->previousPageUrl() }}" rel="prev">{{ __('platform.previous') }}</a>

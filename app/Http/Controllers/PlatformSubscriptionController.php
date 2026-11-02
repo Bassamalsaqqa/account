@@ -9,6 +9,7 @@ use App\Application\Platform\PlatformAccess;
 use App\Application\Platform\SubscriptionTimeline;
 use App\Domain\Money\ValueObjects\MoneyAmount;
 use App\Http\Middleware\RequirePlatformBillingPassword;
+use App\Support\TablePageSize;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -66,13 +67,13 @@ final class PlatformSubscriptionController extends Controller
         $charges = DB::table('platform_subscription_charges')
             ->where('company_id', $company->id)
             ->orderByDesc('id')
-            ->paginate(15);
+            ->paginate(TablePageSize::fromRequest());
 
         $payments = DB::table('platform_subscription_payments')
             ->where('company_id', $company->id)
             ->whereIn('charge_id', $charges->pluck('id'))
             ->orderByDesc('id')
-            ->paginate(30, ['*'], 'receipts_page')->withQueryString();
+            ->paginate(TablePageSize::fromRequest(), ['*'], 'receipts_page')->withQueryString();
         $paymentsByCharge = $payments->getCollection()->groupBy('charge_id');
         $paidByCharge = DB::table('platform_subscription_payments')
             ->where('company_id', $company->id)->whereIn('charge_id', $charges->pluck('id'))

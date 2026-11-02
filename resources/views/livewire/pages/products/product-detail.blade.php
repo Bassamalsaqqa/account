@@ -48,7 +48,7 @@
         <x-card padding="p-4" class="space-y-1">
             <div class="text-[11px] font-bold text-text-muted uppercase tracking-wider">{{ __('inventory.total_stock') }}</div>
             <div class="text-xl font-extrabold font-mono tabular-nums dir-ltr text-text-primary">
-                {{ $stockTotal }}
+                {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($stockTotal) }}
                 <span class="text-xs font-normal text-text-secondary font-arabic">{{ (app()->getLocale() === 'en' && $product->baseUnit?->name_en) ? $product->baseUnit->name_en : $product->baseUnit?->name_ar }}</span>
             </div>
             <x-stock-breakdown :parts="$stockBreakdown" />
@@ -58,7 +58,7 @@
         <x-card padding="p-4" class="space-y-1">
             <div class="text-[11px] font-bold text-text-muted uppercase tracking-wider">{{ __('inventory.suggested_sale_price') }}</div>
             <div class="text-xl font-extrabold font-mono tabular-nums dir-ltr text-text-primary">
-                {{ $product->default_sale_price_base ?? '—' }}
+                {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($product->default_sale_price_base ?? '—') }}
                 <span class="text-xs font-normal text-text-secondary font-arabic">{{ $company->base_currency_code }}</span>
             </div>
         </x-card>
@@ -68,7 +68,7 @@
             <x-card padding="p-4" class="space-y-1">
                 <div class="text-[11px] font-bold text-text-muted uppercase tracking-wider">{{ __('inventory.moving_average_cost') }}</div>
                 <div class="text-xl font-extrabold font-mono tabular-nums dir-ltr text-primary">
-                    {{ $costState?->average_cost_base ?? '0.000000' }}
+                    {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($costState?->average_cost_base ?? '0.000000') }}
                     <span class="text-xs font-normal text-text-secondary font-arabic">{{ $company->base_currency_code }}</span>
                 </div>
             </x-card>
@@ -77,7 +77,7 @@
             <x-card padding="p-4" class="space-y-1">
                 <div class="text-[11px] font-bold text-text-muted uppercase tracking-wider">{{ __('inventory.inventory_value') }}</div>
                 <div class="text-xl font-extrabold font-mono tabular-nums dir-ltr text-text-primary">
-                    {{ $costState?->inventory_value_base ?? '0.000000' }}
+                    {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($costState?->inventory_value_base ?? '0.000000') }}
                     <span class="text-xs font-normal text-text-secondary font-arabic">{{ $company->base_currency_code }}</span>
                 </div>
             </x-card>
@@ -92,12 +92,12 @@
         </button>
         <button type="button" wire:click="setTab('warehouses')"
                 class="pb-3 border-b-2 transition-colors {{ $activeTab === 'warehouses' ? 'border-primary text-primary' : 'border-transparent text-text-secondary hover:text-text-primary' }}" wire:loading.attr="disabled" wire:target="setTab">
-            {{ __('inventory.stock_by_warehouse') }} ({{ $warehouseBalances->count() }})
+            {{ __('inventory.stock_by_warehouse') }} ({{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($warehouseBalances->count()) }})
         </button>
         @if ($product->track_expiry)
             <button type="button" wire:click="setTab('lots')"
                     class="pb-3 border-b-2 transition-colors {{ $activeTab === 'lots' ? 'border-primary text-primary' : 'border-transparent text-text-secondary hover:text-text-primary' }}" wire:loading.attr="disabled" wire:target="setTab">
-                {{ __('inventory.lots_and_expiry') }} ({{ $lots->count() }})
+                {{ __('inventory.lots_and_expiry') }} ({{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity(($lots instanceof \Illuminate\Pagination\LengthAwarePaginator ? $lots->total() : $lots->count())) }})
             </button>
         @endif
         <button type="button" wire:click="setTab('movements')"
@@ -106,15 +106,15 @@
         </button>
         <button type="button" wire:click="setTab('units')"
                 class="pb-3 border-b-2 transition-colors {{ $activeTab === 'units' ? 'border-primary text-primary' : 'border-transparent text-text-secondary hover:text-text-primary' }}" wire:loading.attr="disabled" wire:target="setTab">
-            {{ __('inventory.units') }} ({{ $product->productUnits->count() }})
+            {{ __('inventory.units') }} ({{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($product->productUnits->count()) }})
         </button>
         <button type="button" wire:click="setTab('barcodes')"
                 class="pb-3 border-b-2 transition-colors {{ $activeTab === 'barcodes' ? 'border-primary text-primary' : 'border-transparent text-text-secondary hover:text-text-primary' }}" wire:loading.attr="disabled" wire:target="setTab">
-            {{ __('inventory.barcodes') }} ({{ $product->barcodes->count() }})
+            {{ __('inventory.barcodes') }} ({{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($product->barcodes->count()) }})
         </button>
         <button type="button" wire:click="setTab('images')"
                 class="pb-3 border-b-2 transition-colors {{ $activeTab === 'images' ? 'border-primary text-primary' : 'border-transparent text-text-secondary hover:text-text-primary' }}" wire:loading.attr="disabled" wire:target="setTab">
-            {{ __('inventory.images') }} ({{ $product->images->count() }})
+            {{ __('inventory.images') }} ({{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($product->images->count()) }})
         </button>
         @if ($canViewPurchasingCost)
             <button type="button" wire:click="setTab('purchase_history')"
@@ -153,7 +153,7 @@
                     </div>
                     <div>
                         <dt class="text-text-muted">{{ __('inventory.minimum_stock') }}</dt>
-                        <dd class="font-bold font-mono dir-ltr mt-0.5">{{ $product->minimum_stock_base ?? '0' }}</dd>
+                        <dd class="font-bold font-mono dir-ltr mt-0.5">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($product->minimum_stock_base ?? '0') }}</dd>
                     </div>
                 </dl>
 
@@ -193,7 +193,7 @@
         <!-- Stock by Warehouse Table -->
         <x-card padding="p-0">
             <div class="overflow-x-auto">
-                <table class="w-full text-xs text-right rtl:text-right ltr:text-left">
+                <table class="data-table w-full text-xs text-right rtl:text-right ltr:text-left">
                     <thead class="bg-surface-soft border-b border-border text-text-secondary font-bold">
                         <tr>
                             <th class="p-3.5">{{ __('inventory.warehouse') }}</th>
@@ -211,7 +211,7 @@
                                     @endif
                                 </td>
                                 <td class="p-3.5 text-center font-mono font-bold text-sm tabular-nums dir-ltr text-text-primary">
-                                    {{ $bal->quantity_base }}
+                                    {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($bal->quantity_base) }}
                                     <x-stock-breakdown :parts="$warehouseBreakdowns[$bal->id]" />
                                 </td>
                                 <td class="p-3.5 text-center text-text-secondary">
@@ -228,12 +228,13 @@
                     </tbody>
                 </table>
             </div>
+                <div class="p-4"><x-table-pagination :paginator="$warehouseBalances" /></div>
         </x-card>
     @elseif ($activeTab === 'lots')
         <!-- Lots Table -->
         <x-card padding="p-0">
             <div class="overflow-x-auto">
-                <table class="w-full text-xs text-right rtl:text-right ltr:text-left">
+                <table class="data-table w-full text-xs text-right rtl:text-right ltr:text-left">
                     <thead class="bg-surface-soft border-b border-border text-text-secondary font-bold">
                         <tr>
                             <th class="p-3.5">{{ __('inventory.lot_number') }}</th>
@@ -271,7 +272,7 @@
                                     @endif
                                 </td>
                                 <td class="p-3.5 text-center font-mono font-bold tabular-nums dir-ltr text-text-primary">
-                                    {{ $lb->quantity_base }}
+                                    {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($lb->quantity_base) }}
                                 </td>
                             </tr>
                         @empty
@@ -284,12 +285,13 @@
                     </tbody>
                 </table>
             </div>
+                <div class="p-4"><x-table-pagination :paginator="$lots" /></div>
         </x-card>
     @elseif ($activeTab === 'movements')
         <!-- Movements History Table -->
         <x-card padding="p-0">
             <div class="overflow-x-auto">
-                <table class="w-full text-xs text-right rtl:text-right ltr:text-left">
+                <table class="data-table w-full text-xs text-right rtl:text-right ltr:text-left">
                     <thead class="bg-surface-soft border-b border-border text-text-secondary font-bold">
                         <tr>
                             <th class="p-3.5">{{ __('inventory.movement_date') }}</th>
@@ -318,11 +320,11 @@
                                     {{ app()->getLocale() === 'en' ? ($m->warehouse?->name_en ?: $m->warehouse?->name_ar) : $m->warehouse?->name_ar }}
                                 </td>
                                 <td class="p-3.5 text-center font-mono font-bold tabular-nums dir-ltr {{ $m->isInbound() ? 'text-success' : 'text-danger' }}">
-                                    {{ $m->isInbound() ? '+' : '' }}{{ $m->quantity_delta_base }}
+                                    {{ $m->isInbound() ? '+' : '' }}{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($m->quantity_delta_base) }}
                                 </td>
                                 @if ($canViewCost)
                                     <td class="p-3.5 text-center font-mono tabular-nums dir-ltr text-text-secondary">
-                                        {{ $m->unit_cost_base }}
+                                        {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($m->unit_cost_base) }}
                                     </td>
                                     <td class="p-3.5 text-center font-mono font-bold tabular-nums dir-ltr text-text-primary">
                                         {{ $m->value_delta_base }}
@@ -342,12 +344,13 @@
                     </tbody>
                 </table>
             </div>
+                <div class="p-4"><x-table-pagination :paginator="$movements" /></div>
         </x-card>
     @elseif ($activeTab === 'units')
         <!-- Units Tab -->
         <x-card padding="p-0">
             <div class="overflow-x-auto">
-                <table class="w-full text-xs text-right rtl:text-right ltr:text-left">
+                <table class="data-table w-full text-xs text-right rtl:text-right ltr:text-left">
                     <thead class="bg-surface-soft border-b border-border text-text-secondary font-bold">
                         <tr>
                             <th class="p-3.5">{{ __('inventory.unit') }}</th>
@@ -365,7 +368,7 @@
                                     {{ app()->getLocale() === 'en' ? ($pu->unit?->name_en ?: $pu->unit?->name_ar) : $pu->unit?->name_ar }} ({{ $pu->unit?->code }})
                                 </td>
                                 <td class="p-3.5 text-center font-mono font-bold dir-ltr">
-                                    {{ $pu->conversion_to_base }}
+                                    {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($pu->conversion_to_base) }}
                                 </td>
                                 <td class="p-3.5 text-center">
                                     @if ($pu->is_base)
@@ -421,7 +424,7 @@
                 </div>
             @endif
             <div class="overflow-x-auto">
-                <table class="w-full text-xs text-right rtl:text-right ltr:text-left">
+                <table class="data-table w-full text-xs text-right rtl:text-right ltr:text-left">
                     <thead class="bg-surface-soft border-b border-border text-text-secondary font-bold">
                         <tr>
                             <th class="p-3.5">{{ __('inventory.barcode') }}</th>
@@ -508,7 +511,7 @@
 
                 @if ($purchaseHistory->isNotEmpty())
                     <div class="overflow-x-auto">
-                        <table class="w-full text-xs">
+                        <table class="data-table w-full text-xs">
                             <thead class="bg-surface-soft text-text-muted font-bold text-[11px] uppercase">
                                 <tr>
                                     <th class="py-2.5 px-4 text-start">{{ __('purchasing.purchase_number') }}</th>
@@ -552,16 +555,16 @@
                                             {{ $item->unit_name }}
                                         </td>
                                         <td class="py-3 px-4 text-end font-mono" dir="ltr">
-                                            {{ strpos($item->quantity, '.') !== false ? rtrim(rtrim($item->quantity, '0'), '.') : $item->quantity }}
+                                            {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity(strpos($item->quantity, '.') !== false ? rtrim(rtrim($item->quantity, '0'), '.') : $item->quantity) }}
                                         </td>
                                         <td class="py-3 px-4 text-end font-mono font-bold whitespace-nowrap" dir="ltr">
-                                            {{ strpos($item->unit_cost, '.') !== false ? rtrim(rtrim($item->unit_cost, '0'), '.') : $item->unit_cost }}
+                                            {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney(strpos($item->unit_cost, '.') !== false ? rtrim(rtrim($item->unit_cost, '0'), '.') : $item->unit_cost) }}
                                             <span class="text-[10px] font-normal text-text-muted">{{ $item->currency_code }}</span>
                                         </td>
                                         <td class="py-3 px-4 text-end font-mono whitespace-nowrap" dir="ltr">
                                             @if ($item->discount_type && $item->discount_type !== 'none')
                                                 <span class="text-danger">
-                                                    {{ strpos($item->discount_value, '.') !== false ? rtrim(rtrim($item->discount_value, '0'), '.') : $item->discount_value }}
+                                                    {{ $item->discount_type === 'percent' ? \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($item->discount_value) : \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($item->discount_value) }}
                                                     {{ $item->discount_type === 'percent' ? '%' : $item->currency_code }}
                                                 </span>
                                             @else
@@ -570,7 +573,7 @@
                                         </td>
                                         <td class="py-3 px-4 text-end font-mono font-bold text-primary whitespace-nowrap" dir="ltr">
                                             @if ($item->net_commercial_price_per_base_unit !== null)
-                                                {{ $item->net_commercial_price_per_base_unit }}
+                                                {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($item->net_commercial_price_per_base_unit) }}
                                                 <span class="text-[10px] font-normal text-text-muted">{{ $item->base_currency_code }}</span>
                                             @else
                                                 —
@@ -581,6 +584,7 @@
                             </tbody>
                         </table>
                     </div>
+                    <div class="p-4"><x-table-pagination :paginator="$purchaseHistory" /></div>
                 @else
                     <div class="p-8 text-center text-text-muted">
                         <p class="text-xs">{{ __('purchasing.no_price_history') }}</p>

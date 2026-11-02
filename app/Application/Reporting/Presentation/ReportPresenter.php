@@ -5,10 +5,27 @@ declare(strict_types=1);
 namespace App\Application\Reporting\Presentation;
 
 use App\Application\Reporting\DTO\ReportResult;
+use App\Domain\Sales\Formatters\SalesMoneyFormatter;
 use App\Support\Tenancy\CompanyContext;
 
 final class ReportPresenter
 {
+    /** @param array<string, mixed> $row
+     * @param array{key:string,type:string} $column */
+    public function displayValue(array $row, array $column): ?string
+    {
+        $value = $this->value($row, $column['key']);
+        if ($value === null || $column['type'] !== 'decimal') {
+            return $value;
+        }
+
+        $isQuantityOrRatio = preg_match('/quantity|(?:^|_)count(?:_|$)|percent|margin|rate|conversion|units|days/', $column['key']) === 1;
+
+        return $isQuantityOrRatio
+            ? SalesMoneyFormatter::displayQuantity($value)
+            : SalesMoneyFormatter::displayMoney($value);
+    }
+
     /** @param array<string, mixed> $row */
     public function value(array $row, string $key): ?string
     {

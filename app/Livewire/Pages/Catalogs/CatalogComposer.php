@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Livewire\Pages\Catalogs;
 
+use App\Livewire\Concerns\HasTablePageSize;
 use App\Models\Catalog;
 use App\Models\Company;
 use App\Models\CompanyCurrency;
@@ -30,6 +31,7 @@ use Livewire\WithPagination;
 #[Layout('layouts.app')]
 class CatalogComposer extends Component
 {
+    use HasTablePageSize;
     use WithPagination;
 
     #[Locked]
@@ -1128,12 +1130,12 @@ class CatalogComposer extends Component
             });
         }
 
-        $availableProducts = $availableQuery->orderByDesc('id')->paginate(24, ['*'], 'productPage');
+        $availableProducts = $availableQuery->orderByDesc('id')->paginate($this->tablePageSize(), ['*'], 'productPage');
 
         $sidebarCatalogs = Catalog::where('company_id', $this->companyId)
             ->select(['id', 'public_id', 'name_ar', 'name_en', 'status', 'draft_revision', 'published_revision', 'published_at'])
             ->orderByDesc('id')
-            ->paginate(24, ['*'], 'catalogPage');
+            ->paginate($this->tablePageSize(), ['*'], 'catalogPage');
 
         $currencies = CompanyCurrency::where('company_id', $this->companyId)
             ->where('enabled', true)

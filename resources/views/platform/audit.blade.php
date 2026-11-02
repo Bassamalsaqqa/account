@@ -17,7 +17,7 @@
 
     <!-- Desktop Audit Log Table -->
     <div class="hidden lg:block rounded-xl border border-slate-200 bg-white shadow-xs overflow-hidden">
-        <table class="w-full text-start">
+        <table class="data-table w-full text-start">
             <caption class="sr-only">{{ __('platform.audit') }}</caption>
             <thead class="bg-slate-50/75 border-b border-slate-200 text-slate-600">
                 <tr>
@@ -108,7 +108,7 @@
 
     <!-- Pagination -->
     <div class="mt-6">
-        {{ $events->links('platform.pagination') }}
+        <x-table-pagination :paginator="$events" :livewire="false" />
     </div>
 </div>
 @endsection

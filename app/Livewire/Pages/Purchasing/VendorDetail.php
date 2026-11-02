@@ -8,6 +8,7 @@ use App\Domain\Purchasing\Queries\VendorBalanceQuery;
 use App\Domain\Purchasing\Queries\VendorProductHistoryQuery;
 use App\Domain\Purchasing\Queries\VendorProductPriceHistoryQuery;
 use App\Domain\Purchasing\Queries\VendorStatementQuery;
+use App\Livewire\Concerns\HasTablePageSize;
 use App\Livewire\Pages\Purchasing\Concerns\AuthorizesPurchasingPages;
 use App\Models\Purchase;
 use App\Models\PurchaseReturn;
@@ -27,6 +28,7 @@ use Livewire\WithPagination;
 class VendorDetail extends Component
 {
     use AuthorizesPurchasingPages;
+    use HasTablePageSize;
     use WithPagination;
 
     #[Locked]
@@ -124,20 +126,20 @@ class VendorDetail extends Component
                     ->where('vendor_id', $this->vendor->id)
                     ->orderByDesc('purchase_date')
                     ->orderByDesc('id')
-                    ->paginate(15);
+                    ->paginate($this->tablePageSize());
             } elseif ($this->activeTab === 'returns') {
                 $tabReturns = PurchaseReturn::where('company_id', $company->id)
                     ->where('vendor_id', $this->vendor->id)
                     ->orderByDesc('return_date')
                     ->orderByDesc('id')
-                    ->paginate(15);
+                    ->paginate($this->tablePageSize());
             } elseif ($this->activeTab === 'payments') {
                 $tabPayments = VendorPayment::with('moneyAccount')
                     ->where('company_id', $company->id)
                     ->where('vendor_id', $this->vendor->id)
                     ->orderByDesc('payment_date')
                     ->orderByDesc('id')
-                    ->paginate(15);
+                    ->paginate($this->tablePageSize());
             } elseif ($this->activeTab === 'statement' && $canStatement) {
                 $this->resetErrorBag('statementDates');
                 try {

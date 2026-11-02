@@ -13,6 +13,7 @@ use App\Actions\Company\UpdateRolePermissionsAction;
 use App\Application\AI\AssistantUnavailable;
 use App\Application\AI\DeepSeekQuickConnect;
 use App\Domain\Accounting\Exceptions\BaseCurrencyLockedException;
+use App\Livewire\Concerns\HasTablePageSize;
 use App\Models\AiCompanyPolicy;
 use App\Models\AuditEvent;
 use App\Models\Company;
@@ -36,6 +37,7 @@ use Spatie\Permission\PermissionRegistrar;
 #[Layout('layouts.app')]
 class SettingsIndex extends Component
 {
+    use HasTablePageSize;
     use WithPagination;
 
     #[Locked]
@@ -724,7 +726,7 @@ class SettingsIndex extends Component
                     } else {
                         $auditQuery->whereRaw('1 = 0');
                     }
-                    $auditEvents = $auditQuery->simplePaginate(20, ['*'], 'auditPage', max(1, min(10000, $this->getPage('auditPage'))));
+                    $auditEvents = $auditQuery->simplePaginate($this->tablePageSize(), ['*'], 'auditPage', max(1, min(10000, $this->getPage('auditPage'))));
                 } else {
                     $auditEvents = $auditQuery->limit(4)->get();
                 }

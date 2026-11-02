@@ -7,6 +7,7 @@ namespace App\Livewire\Pages\Payroll;
 use App\Actions\Payroll\ReverseEmployeeAdvanceAction;
 use App\Actions\Payroll\ReverseSalaryEntryAction;
 use App\Actions\Payroll\ReverseSalaryPaymentAction;
+use App\Livewire\Concerns\HasTablePageSize;
 use App\Livewire\Pages\Money\Concerns\AuthorizesMoneyPages;
 use App\Models\Employee;
 use App\Models\EmployeeAdvance;
@@ -19,11 +20,14 @@ use Illuminate\Contracts\View\View;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Locked;
 use Livewire\Component;
+use Livewire\WithPagination;
 
 #[Layout('layouts.app')]
 class EmployeeDetail extends Component
 {
     use AuthorizesMoneyPages;
+    use HasTablePageSize;
+    use WithPagination;
 
     #[Locked]
     public string $publicId;
@@ -33,6 +37,13 @@ class EmployeeDetail extends Component
     public string $reversalReason = '';
 
     public string $reversalDate = '';
+
+    public function updatedTab(): void
+    {
+        foreach (['advancesPage', 'salariesPage', 'statementPage'] as $pageName) {
+            $this->resetPage($pageName);
+        }
+    }
 
     public function mount(string $publicId): void
     {
@@ -186,9 +197,12 @@ class EmployeeDetail extends Component
         return view('livewire.pages.payroll.employee-detail', [
             'employee' => $detail['employee'],
             'detail' => $detail,
-            'advancePositions' => $advancePositions,
-            'salaryPositions' => $salaryPositions,
+            'advancePositions' => $this->paginateTableRows($advancePositions, 'advancesPage'),
+            'advanceCount' => count($advancePositions),
+            'salaryPositions' => $this->paginateTableRows($salaryPositions, 'salariesPage'),
+            'salaryCount' => count($salaryPositions),
             'statement' => $statement,
+            'statementEvents' => $this->paginateTableRows($statement['events'], 'statementPage'),
             'canPostSalary' => $this->canMoney('payroll.salary.post'),
             'canPaySalary' => $this->canMoney('payroll.salary.pay'),
             'canReverseSalary' => $this->canMoney('payroll.salary.reverse'),

@@ -8,6 +8,7 @@ use App\Actions\Company\UpdateExpiryWarningDaysAction;
 use App\Actions\Inventory\DisposeExpiredStockAction;
 use App\Domain\Inventory\ValueObjects\Quantity;
 use App\Domain\Sales\Formatters\SalesMoneyFormatter;
+use App\Livewire\Concerns\HasTablePageSize;
 use App\Livewire\Pages\Inventory\Concerns\AuthorizesInventoryPages;
 use App\Models\Company;
 use App\Models\InventoryCostState;
@@ -23,11 +24,14 @@ use Illuminate\Support\Str;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Url;
 use Livewire\Component;
+use Livewire\WithPagination;
 
 #[Layout('layouts.app')]
 class ExpiryCenter extends Component
 {
     use AuthorizesInventoryPages;
+    use HasTablePageSize;
+    use WithPagination;
 
     public string $warningDays = '30';
 
@@ -163,6 +167,13 @@ class ExpiryCenter extends Component
         }
     }
 
+    public function updated(string $property): void
+    {
+        if (in_array($property, ['timeframeFilter', 'customFromDate', 'customToDate', 'productFilter', 'warehouseFilter'], true)) {
+            $this->resetPage();
+        }
+    }
+
     public function render(CompanyContext $context): View
     {
         $company = $this->authorizeExpiry();
@@ -224,7 +235,7 @@ class ExpiryCenter extends Component
             }
         }
 
-        $lotBalances = $query->orderBy('inventory_lots.expiry_date', 'asc')->get();
+        $lotBalances = $query->orderBy('inventory_lots.expiry_date', 'asc')->orderBy('inventory_lot_balances.id')->paginate($this->tablePageSize());
 
         // Exact decimal valuation computation in PHP service layer (strictly gated, no Blade float math)
         $lotValuations = [];
@@ -235,9 +246,9 @@ class ExpiryCenter extends Component
                 if ($costState !== null) {
                     $qty = BigDecimal::of((string) $lb->quantity_base);
                     $avgCost = BigDecimal::of((string) $costState->average_cost_base);
-                    $lotValuations[$lb->id] = SalesMoneyFormatter::format($qty->multipliedBy($avgCost), $company->base_currency_code);
+                    $lotValuations[$lb->id] = SalesMoneyFormatter::displayMoney($qty->multipliedBy($avgCost), $company->base_currency_code);
                 } else {
-                    $lotValuations[$lb->id] = SalesMoneyFormatter::format('0', $company->base_currency_code);
+                    $lotValuations[$lb->id] = SalesMoneyFormatter::displayMoney('0', $company->base_currency_code);
                 }
             }
         }

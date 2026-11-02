@@ -43,7 +43,7 @@
                     <option value="">-- {{ __('sales.original_invoice') }} --</option>
                     @foreach ($invoices as $inv)
                         <option value="{{ $inv->id }}">
-                            {{ $inv->invoice_number }} - {{ $inv->customer->displayName() }} ({{ $inv->issue_date ? $inv->issue_date->toDateString() : '—' }} / {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($inv->grand_total_currency ?? $inv->grand_total, $inv->currency_code) }} {{ $inv->currency_code }})
+                            {{ $inv->invoice_number }} - {{ $inv->customer->displayName() }} ({{ $inv->issue_date ? $inv->issue_date->toDateString() : '—' }} / {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($inv->grand_total_currency ?? $inv->grand_total, $inv->currency_code) }} {{ $inv->currency_code }})
                         </option>
                     @endforeach
                 </select>
@@ -91,8 +91,8 @@
                             <h3 class="font-bold text-sm">{{ $line['item_description'] }}</h3>
                             <p class="text-xs text-text-secondary">{{ $line['unit_name'] }}</p>
                             <dl class="grid grid-cols-3 gap-2 rounded-control bg-surface-soft p-3 text-xs">
-                                <div><dt>{{ __('refinement.original_quantity') }}</dt><dd dir="ltr" class="mt-1 font-mono tabular-nums">{{ $line['original_quantity'] }}</dd></div>
-                                <div><dt>{{ __('refinement.previously_returned') }}</dt><dd dir="ltr" class="mt-1 font-mono tabular-nums">{{ $line['already_returned_quantity'] }}</dd></div>
+                                <div><dt>{{ __('refinement.original_quantity') }}</dt><dd dir="ltr" class="mt-1 font-mono tabular-nums">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($line['original_quantity']) }}</dd></div>
+                                <div><dt>{{ __('refinement.previously_returned') }}</dt><dd dir="ltr" class="mt-1 font-mono tabular-nums">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($line['already_returned_quantity']) }}</dd></div>
                                 <div><dt>{{ __('refinement.remaining_quantity') }}</dt><dd dir="ltr" class="mt-1 font-mono tabular-nums font-bold text-primary">{{ $line['max_returnable'] }}</dd></div>
                             </dl>
                             <div class="flex items-center gap-2" dir="ltr">
@@ -106,7 +106,7 @@
                     @endforeach
                 </div>
                 <div class="hidden md:block overflow-x-auto mt-4">
-                    <table class="w-full text-start text-xs border-collapse">
+                    <table class="data-table w-full text-start text-xs border-collapse">
                         <thead>
                             <tr class="border-b border-border bg-surface-soft text-text-muted font-bold text-[11px] uppercase">
                                 <th class="py-2.5 px-3 text-start">{{ __('sales.product') }}</th>
@@ -129,9 +129,9 @@
                                         {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatQuantity($line['max_returnable']) }}
                                     </td>
                                     <td class="py-2.5 px-3 font-mono" dir="ltr">
-                                        {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::format($line['unit_price']) }}
+                                        {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($line['unit_price']) }}
                                     </td>
-                                    <td class="py-2.5 px-3 text-end">
+                                    <td class="table-actions py-2.5 px-3 text-end">
                                         <div class="flex items-center gap-2" dir="ltr">
     <button type="button" @click="run('stepReturnQuantity', [{{ $idx }}, 'down'])" :disabled="saving || window.isDocumentBlocked($wire)" wire:loading.attr="disabled" class="min-h-11 min-w-11 rounded-control border border-border bg-white px-3 font-semibold disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-primary" aria-label="{{ __('refinement.decrease_quantity') }}">-</button>
     <input type="text" inputmode="decimal" wire:model="lines.{{ $idx }}.return_quantity" dir="ltr" aria-label="{{ __('refinement.return_quantity') }}" class="min-h-11 min-w-0 w-full px-2 rounded-control border border-border text-center font-mono tabular-nums"  :disabled="documentBusy || saving"/>

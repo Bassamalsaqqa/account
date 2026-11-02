@@ -43,8 +43,8 @@ final readonly class ReportFilters
         public int $perPage = 50,
         public bool $isExplicitPeriod = true,
     ) {
-        if ($page < 1 || $perPage < 1 || $perPage > 100) {
-            throw new InvalidReportFilterException('Pagination requires a positive page and per_page between 1 and 100.');
+        if ($page < 1 || $perPage < 1 || $perPage > 200) {
+            throw new InvalidReportFilterException('Pagination requires a positive page and per_page between 1 and 200.');
         }
         self::assertSafePage($page, $perPage);
         foreach ([$customerId, $vendorId, $productId, $categoryId, $warehouseId, $employeeId, $moneyAccountId] as $id) {
@@ -248,7 +248,7 @@ final readonly class ReportFilters
     public static function assertSafePage(int $page, int $perPage): void
     {
         // Divide before multiplying: even PHP_INT_MAX cannot overflow this boundary.
-        if ($page < 1 || $perPage < 1 || $perPage > 100 || $page > intdiv(self::MAX_PAGE_WINDOW, $perPage)) {
+        if ($page < 1 || $perPage < 1 || $perPage > 200 || $page > intdiv(self::MAX_PAGE_WINDOW, $perPage)) {
             throw new InvalidReportFilterException('Report page exceeds the safe 50,000-row paging window. Narrow the filters.');
         }
     }

@@ -6,6 +6,7 @@ namespace App\Livewire\Pages\Products;
 
 use App\Domain\Inventory\Services\StockQuantityBreakdown;
 use App\Domain\Purchasing\Queries\ProductPurchaseHistoryQuery;
+use App\Livewire\Concerns\HasTablePageSize;
 use App\Models\InventoryBalance;
 use App\Models\InventoryCostState;
 use App\Models\InventoryLotBalance;
@@ -18,10 +19,14 @@ use Brick\Math\BigDecimal;
 use Illuminate\Contracts\View\View;
 use Livewire\Attributes\Layout;
 use Livewire\Component;
+use Livewire\WithPagination;
 
 #[Layout('layouts.app')]
 class ProductDetail extends Component
 {
+    use HasTablePageSize;
+    use WithPagination;
+
     public Product $product;
 
     public string $activeTab = 'overview'; // overview, warehouses, lots, movements
@@ -51,6 +56,10 @@ class ProductDetail extends Component
         }
 
         if (in_array($tab, ['overview', 'warehouses', 'lots', 'movements', 'units', 'barcodes', 'images', 'purchase_history'], true)) {
+            $this->resetPage('warehousePage');
+            $this->resetPage('lotsPage');
+            $this->resetPage('movementsPage');
+            $this->resetPage('purchaseHistoryPage');
             $this->activeTab = $tab;
         }
     }
@@ -94,8 +103,7 @@ class ProductDetail extends Component
             $lots = InventoryLotBalance::where('company_id', $company->id)
                 ->where('product_id', $this->product->id)
                 ->with(['lot', 'warehouse'])
-                ->get()
-                ->filter(fn ($lb) => BigDecimal::of((string) $lb->quantity_base)->isPositive());
+                ->where('quantity_base', '>', 0)->orderBy('id')->paginate($this->tablePageSize(), ['*'], 'lotsPage');
         }
 
         // Movements history
@@ -103,8 +111,7 @@ class ProductDetail extends Component
             ->where('product_id', $this->product->id)
             ->with(['warehouse', 'lot', 'user'])
             ->orderByDesc('id')
-            ->limit(50)
-            ->get();
+            ->paginate($this->tablePageSize(), ['*'], 'movementsPage');
 
         // Cost state (strictly gated)
         $costState = null;
@@ -116,13 +123,13 @@ class ProductDetail extends Component
 
         $purchaseHistory = collect();
         if ($canViewPurchasingCost && $this->activeTab === 'purchase_history') {
-            $purchaseHistory = app(ProductPurchaseHistoryQuery::class)->execute($this->product, $company->id, limit: 20);
+            $purchaseHistory = app(ProductPurchaseHistoryQuery::class)->paginate($this->product, $company->id, $this->tablePageSize());
         }
 
         return view('livewire.pages.products.product-detail', [
             'canReceiveStock' => $this->product->active && $this->product->track_stock && $user->hasPermissionTo('purchasing.purchase.create') && $canViewPurchasingCost,
             'product' => $this->product,
-            'warehouseBalances' => $warehouseBalances,
+            'warehouseBalances' => $this->paginateTableRows($warehouseBalances, 'warehousePage'),
             'stockTotal' => (string) $stockTotal->toScale(6),
             'stockBreakdown' => $stockBreakdown,
             'warehouseBreakdowns' => $warehouseBreakdowns,

@@ -19,7 +19,7 @@
     </x-refinement-filters>
     <section class="bg-surface border border-border rounded-card overflow-hidden">
         <div class="hidden md:block">
-            <table class="w-full text-xs"><thead class="bg-surface-soft text-text-secondary"><tr>
+            <table class="data-table w-full text-xs"><thead class="bg-surface-soft text-text-secondary"><tr>
                 @foreach(['purchase_date', 'vendor', 'vendor_invoice_number', 'status', 'currency'] as $label)<th class="px-4 py-3 text-start">{{ __('purchasing.'.$label) }}</th>@endforeach
                 @if($withCost)<th class="px-4 py-3 text-start">{{ __('purchasing.total') }}</th>@endif
             </tr></thead><tbody class="divide-y divide-border">
@@ -36,7 +36,7 @@
                         @endif
                     </td>
                     <td class="px-4 py-4"><bdi>{{ $purchase->currency_code }}</bdi></td>
-                    @if($withCost)<td class="px-4 py-4"><bdi>{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::format($purchase->grand_total_currency, $purchase->currency_code) }}</bdi></td>@endif
+                    @if($withCost)<td class="px-4 py-4"><bdi>{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($purchase->grand_total_currency, $purchase->currency_code) }}</bdi></td>@endif
                 </tr>
             @empty<tr><td colspan="6" class="p-8 text-center text-text-secondary">{{ __('purchasing.no_purchases') }}</td></tr>@endforelse
             </tbody></table>
@@ -69,7 +69,7 @@
                                 <dd><bdi>{{ $purchase->currency_code }}</bdi></dd>
                             </div>
                         @if($withCost)<div><dt class="text-text-secondary">{{ __('purchasing.total') }}</dt>
-                                <dd><bdi>{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::format($purchase->grand_total_currency, $purchase->currency_code) }}</bdi></dd>
+                                <dd><bdi>{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($purchase->grand_total_currency, $purchase->currency_code) }}</bdi></dd>
                             </div>@endif
                     </dl>
                     <div class="flex flex-wrap items-center gap-2 border-t border-border pt-3">
@@ -85,5 +85,5 @@
             @empty<p class="p-8 text-center text-text-secondary">{{ __('purchasing.no_purchases') }}</p>@endforelse
         </div>
     </section>
-    {{ $purchases->links() }}
+    <x-table-pagination :paginator="$purchases" />
 </div>

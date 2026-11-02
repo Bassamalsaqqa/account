@@ -13,7 +13,7 @@
                         <p class="font-semibold"><bdi>{{ $code }}</bdi></p>
                         @include('livewire.ai.partials.turn-values', ['values' => $amount])
                     @elseif (is_scalar($amount) || $amount === null)
-                        <p><bdi>{{ $code }} {{ $amount ?? __('assistant_v2.value_unavailable') }}</bdi></p>
+                        <p><bdi>{{ $code }} {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($amount ?? __('assistant_v2.value_unavailable')) }}</bdi></p>
                     @endif
                 @endforeach
             </div>

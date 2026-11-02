@@ -24,7 +24,7 @@
 
     <div class="bg-white rounded-card border border-border shadow-xs overflow-hidden">
         <div class="overflow-x-auto">
-            <table class="w-full text-start text-xs border-collapse">
+            <table class="data-table w-full text-start text-xs border-collapse">
                 <thead>
                     <tr class="border-b border-border bg-surface-soft text-text-muted font-bold text-[11px] uppercase">
                         <th class="py-3 px-4 text-start">{{ __('sales.document_type') }}</th>
@@ -67,7 +67,7 @@
                                     <option value="never">{{ __('sales.never') }}</option>
                                 </select>
                             </td>
-                            <td class="py-3 px-4 text-end">
+                            <td class="table-actions py-3 px-4 text-end">
                                 <button type="button"
                                         wire:click="updateSequence({{ $idx }})"
                                         class="px-3 py-1 rounded-control bg-primary text-white text-xs font-bold hover:bg-primary-hover transition-colors" wire:loading.attr="disabled" wire:target="updateSequence">

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Livewire\Pages\Inventory;
 
+use App\Livewire\Concerns\HasTablePageSize;
 use App\Models\Product;
 use App\Models\StockMovement;
 use App\Models\User;
@@ -18,6 +19,7 @@ use Livewire\WithPagination;
 #[Layout('layouts.app')]
 class StockMovementIndex extends Component
 {
+    use HasTablePageSize;
     use WithPagination;
 
     #[Url(as: 'product')]
@@ -101,7 +103,7 @@ class StockMovementIndex extends Component
             $query->where('movement_date', '<=', $this->toDate);
         }
 
-        $movements = $query->orderByDesc('movement_date')->orderByDesc('id')->paginate(20);
+        $movements = $query->orderByDesc('movement_date')->orderByDesc('id')->paginate($this->tablePageSize());
 
         $products = Product::where('company_id', $company->id)->orderBy('name_ar')->get(['id', 'name_ar', 'name_en', 'sku']);
         $warehouses = Warehouse::where('company_id', $company->id)->orderBy('name_ar')->get(['id', 'name_ar']);

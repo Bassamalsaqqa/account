@@ -204,19 +204,19 @@
             </div>
             <div>
                 <span class="text-text-muted block text-[11px]">{{ __('commands.subtotal') }}</span>
-                <span class="font-bold font-mono text-text-primary break-all" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($subtotal, $currencyCode) }}</span>
+                <span class="font-bold font-mono text-text-primary break-all" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($subtotal, $currencyCode) }}</span>
             </div>
             <div>
                 <span class="text-text-muted block text-[11px]">{{ __('commands.discount_total') }} / {{ __('commands.tax_total') }}</span>
                 <span class="font-bold font-mono text-text-primary break-all" dir="ltr">
-                    <span class="text-danger">-{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($discountTotal, $currencyCode) }}</span> /
-                    <span>+{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($taxTotal, $currencyCode) }}</span>
+                    <span class="text-danger">-{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($discountTotal, $currencyCode) }}</span> /
+                    <span>+{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($taxTotal, $currencyCode) }}</span>
                 </span>
             </div>
             <div>
                 <span class="text-text-muted block text-[11px]">{{ __('commands.grand_total') }}</span>
                 <span class="font-bold font-mono text-primary text-sm break-all" dir="ltr">
-                    {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($grandTotal, $currencyCode) }} {{ $currencyCode }}
+                    {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($grandTotal, $currencyCode) }} {{ $currencyCode }}
                 </span>
             </div>
         </div>
@@ -235,8 +235,8 @@
                         <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
                             <span class="font-bold text-text-primary">{{ $productStock['product_name'] }}</span>
                             <div class="flex items-center gap-3 text-[11px] font-mono break-all" dir="ltr">
-                                <span>{{ __('commands.quantity_needed') }}: <strong class="text-text-primary">{{ $productStock['quantity_needed_base'] }}</strong></span>
-                                <span>| {{ __('commands.quantity_available') }}: <strong class="text-text-primary">{{ $productStock['quantity_available_base'] }}</strong></span>
+                                <span>{{ __('commands.quantity_needed') }}: <strong class="text-text-primary">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($productStock['quantity_needed_base']) }}</strong></span>
+                                <span>| {{ __('commands.quantity_available') }}: <strong class="text-text-primary">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($productStock['quantity_available_base']) }}</strong></span>
                                 <span class="px-2 py-0.5 rounded-full text-[10px] font-bold {{ $productStock['is_sufficient'] ? 'bg-success-bg text-success' : 'bg-danger-bg text-danger' }}">
                                     {{ $productStock['is_sufficient'] ? __('commands.sufficient_stock') : __('commands.insufficient_stock') }}
                                 </span>
@@ -253,7 +253,7 @@
                                             @if (!empty($alloc['expiry_date']))
                                                 <div class="text-text-muted">{{ __('commands.expiry') }}: {{ $alloc['expiry_date'] }}</div>
                                             @endif
-                                            <div class="text-primary font-bold">{{ __('commands.qty') }}: {{ $alloc['quantity'] }}</div>
+                                            <div class="text-primary font-bold">{{ __('commands.qty') }}: {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($alloc['quantity']) }}</div>
                                         </div>
                                     @endforeach
                                 </div>
@@ -306,9 +306,9 @@
                                 @endif
                             </td>
                             <td class="py-2 px-3 text-text-muted">{{ $unitName ?: '—' }}</td>
-                            <td class="py-2 px-3 font-mono break-all" dir="ltr">{{ $quantity }}</td>
-                            <td class="py-2 px-3 font-mono break-all" dir="ltr">{{ $unitPrice !== '' ? \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($unitPrice, $currencyCode) : '—' }}</td>
-                            <td class="py-2 px-3 font-mono font-bold text-end break-all" dir="ltr">{{ $lineTotal !== '' ? \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($lineTotal, $currencyCode) : '—' }}</td>
+                            <td class="py-2 px-3 font-mono break-all" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($quantity) }}</td>
+                            <td class="py-2 px-3 font-mono break-all" dir="ltr">{{ $unitPrice !== '' ? \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($unitPrice, $currencyCode) : '—' }}</td>
+                            <td class="py-2 px-3 font-mono font-bold text-end break-all" dir="ltr">{{ $lineTotal !== '' ? \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($lineTotal, $currencyCode) : '—' }}</td>
                         </tr>
                     @empty
                         <tr>

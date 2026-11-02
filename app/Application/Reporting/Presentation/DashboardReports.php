@@ -79,9 +79,9 @@ final class DashboardReports
                         $difference = $currentAmount->minus($priorAmount);
                         $maximum = BigDecimal::max($currentAmount->abs(), $priorAmount->abs());
                         $output['comparison'] = ['current' => (string) $currentAmount, 'previous' => (string) $priorAmount,
-                            'current_display' => SalesMoneyFormatter::format($currentAmount, $currency),
-                            'previous_display' => SalesMoneyFormatter::format($priorAmount, $currency),
-                            'difference_display' => SalesMoneyFormatter::format($difference->abs(), $currency),
+                            'current_display' => SalesMoneyFormatter::displayMoney($currentAmount, $currency),
+                            'previous_display' => SalesMoneyFormatter::displayMoney($priorAmount, $currency),
+                            'difference_display' => SalesMoneyFormatter::displayMoney($difference->abs(), $currency),
                             'direction' => $difference->getSign(), 'previous_period' => $previous->toArray(),
                             'month_to_date' => $monthToDate !== null, 'unequal_days' => $monthToDate['unequal_days'] ?? false,
                             'percent' => ! ($monthToDate['unequal_days'] ?? false) && $priorAmount->isPositive() ? (string) $difference->multipliedBy(100)->dividedBy($priorAmount, 2, RoundingMode::HALF_UP) : null,
@@ -128,13 +128,13 @@ final class DashboardReports
             if (is_array($value)) {
                 foreach ($value as $code => $amount) {
                     if (preg_match('/^[A-Z]{3}$/D', (string) $code) && (is_string($amount) || is_int($amount))) {
-                        $out[] = ['key' => $field, 'value' => (string) $amount, 'display' => SalesMoneyFormatter::format($amount, (string) $code), 'currency' => (string) $code];
+                        $out[] = ['key' => $field, 'value' => (string) $amount, 'display' => SalesMoneyFormatter::displayMoney($amount, (string) $code), 'currency' => (string) $code];
                     }
                 }
             } elseif (is_string($value) || is_int($value)) {
                 $isCount = str_contains($field, 'count');
                 $out[] = ['key' => $field, 'value' => (string) $value,
-                    'display' => $isCount ? (string) $value : SalesMoneyFormatter::format($value, $currency), 'currency' => $isCount ? '' : $currency];
+                    'display' => $isCount ? (string) $value : SalesMoneyFormatter::displayMoney($value, $currency), 'currency' => $isCount ? '' : $currency];
             }
         }
 

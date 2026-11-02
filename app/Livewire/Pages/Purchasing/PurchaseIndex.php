@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Livewire\Pages\Purchasing;
 
+use App\Livewire\Concerns\HasTablePageSize;
 use App\Livewire\Pages\Purchasing\Concerns\AuthorizesPurchasingPages;
 use App\Models\Purchase;
 use App\Models\Vendor;
@@ -19,6 +20,7 @@ use Livewire\WithPagination;
 class PurchaseIndex extends Component
 {
     use AuthorizesPurchasingPages;
+    use HasTablePageSize;
     use WithPagination;
 
     #[Url(as: 'q')]
@@ -76,7 +78,7 @@ class PurchaseIndex extends Component
             $query->where('vendor_id', $this->vendorFilter);
         }
 
-        $purchases = $query->orderByDesc('purchase_date')->orderByDesc('id')->paginate(15);
+        $purchases = $query->orderByDesc('purchase_date')->orderByDesc('id')->paginate($this->tablePageSize());
         $payablePositions = [];
         if ($this->canReadVendorFinancials()) {
             $postedPurchases = $purchases->getCollection()->filter(fn ($p) => $p->status === Purchase::STATUS_POSTED);

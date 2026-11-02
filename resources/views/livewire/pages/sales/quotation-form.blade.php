@@ -166,7 +166,7 @@
 
             <!-- Desktop Lines Table -->
             <div class="hidden md:block overflow-x-auto mt-4">
-                <table class="w-full text-start text-xs border-collapse">
+                <table class="data-table w-full text-start text-xs border-collapse">
                     <thead>
                         <tr class="border-b border-border bg-surface-soft text-text-muted font-bold text-[11px]">
                             <th class="py-2 px-2 text-start w-1/4">{{ __('sales.product') }}</th>
@@ -233,7 +233,7 @@
                                            class="w-full h-8 px-2 rounded-control border border-border bg-canvas text-xs font-mono"  :disabled="documentBusy || saving"/>
                                     @if (!empty($line['available_quantity']))
                                         <div class="text-[10px] text-text-secondary whitespace-nowrap" dir="ltr">
-                                            {{ __('sales.available') }}: <span class="font-bold">{{ $line['available_quantity'] }}</span>
+                                            {{ __('sales.available') }}: <span class="font-bold">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($line['available_quantity']) }}</span>
                                         </div>
                                     @endif
                                 </td>
@@ -287,11 +287,11 @@
 
                                 <td class="py-2 px-2 align-top text-end font-mono font-bold" dir="ltr">
                                     <div class="pt-1.5">
-                                        {{ $documentTotalsValid ? \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($line['line_total'] ?? '0', $currency_code) : '—' }}
+                                        {{ $documentTotalsValid ? \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($line['line_total'] ?? '0', $currency_code) : '—' }}
                                     </div>
                                 </td>
 
-                                <td class="py-2 px-1 align-top text-center">
+                                <td class="table-actions py-2 px-1 align-top text-center">
                                     @if (count($lines) > 1)
                                         <button type="button"
                                                 wire:click="removeLine({{ $index }})"
@@ -374,7 +374,7 @@
                                 @error('lines.'.$index.'.quantity') <span id="quote-mobile-line-{{ $index }}-quantity-error" role="alert" class="text-danger text-[11px] block mt-1">{{ $message }}</span> @enderror
                                 @if (!empty($line['available_quantity']))
                                     <div class="text-[10px] text-text-secondary mt-0.5" dir="ltr">
-                                        {{ __('sales.available') }}: <span class="font-bold">{{ $line['available_quantity'] }}</span>
+                                        {{ __('sales.available') }}: <span class="font-bold">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($line['available_quantity']) }}</span>
                                     </div>
                                 @endif
                             </div>
@@ -435,7 +435,7 @@
                         <div class="flex justify-between items-center pt-2 border-t border-border text-xs">
                             <span class="text-text-muted font-bold">{{ __('sales.line_total') }}:</span>
                             <span class="font-mono font-bold text-text-primary" dir="ltr">
-                                {{ $documentTotalsValid ? \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($line['line_total'] ?? '0', $currency_code) : '—' }}
+                                {{ $documentTotalsValid ? \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($line['line_total'] ?? '0', $currency_code) : '—' }}
                             </span>
                         </div>
                     </div>
@@ -471,19 +471,19 @@
                 @else
                 <div class="flex justify-between py-1 border-b border-border/50">
                     <span class="text-text-muted">{{ __('sales.subtotal') }}:</span>
-                    <span class="font-mono font-bold" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($previewSubtotal, $currency_code) }} {{ $currency_code }}</span>
+                    <span class="font-mono font-bold" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($previewSubtotal, $currency_code) }} {{ $currency_code }}</span>
                 </div>
                 <div class="flex justify-between py-1 border-b border-border/50">
                     <span class="text-text-muted">{{ __('sales.discount') }}:</span>
-                    <span class="font-mono text-danger font-bold" dir="ltr">-{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($previewDiscountTotal, $currency_code) }} {{ $currency_code }}</span>
+                    <span class="font-mono text-danger font-bold" dir="ltr">-{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($previewDiscountTotal, $currency_code) }} {{ $currency_code }}</span>
                 </div>
                 <div class="flex justify-between py-1 border-b border-border/50">
                     <span class="text-text-muted">{{ __('sales.tax') }}:</span>
-                    <span class="font-mono font-bold" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($previewTaxTotal, $currency_code) }} {{ $currency_code }}</span>
+                    <span class="font-mono font-bold" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($previewTaxTotal, $currency_code) }} {{ $currency_code }}</span>
                 </div>
                 <div class="flex justify-between py-2 border-t border-border text-sm font-extrabold text-text-primary">
                     <span>{{ __('sales.grand_total') }}:</span>
-                    <span data-document-total class="font-mono text-primary" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($previewGrandTotal, $currency_code) }} {{ $currency_code }}</span>
+                    <span data-document-total class="font-mono text-primary" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($previewGrandTotal, $currency_code) }} {{ $currency_code }}</span>
                 </div>
                 @endif
             </div>
@@ -512,7 +512,7 @@
                     <span class="text-[10px] text-text-muted block leading-none truncate">{{ __('mobile.grand_total') }}</span>
                     @if ($documentTotalsValid)
 <span data-document-total class="text-xs font-mono font-extrabold text-primary block leading-tight truncate" dir="ltr">
-                        {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($previewGrandTotal, $currency_code) }} {{ $currency_code }}
+                        {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($previewGrandTotal, $currency_code) }} {{ $currency_code }}
                     </span>
                     @else
                         <span role="status" class="text-xs text-amber-800">{{ __('camera.totals_unavailable') }}</span>

@@ -75,7 +75,7 @@
     <!-- Lots Table -->
     <x-card padding="p-0">
         <div class="hidden md:block overflow-x-auto">
-            <table class="w-full text-xs text-right rtl:text-right ltr:text-left">
+            <table class="data-table w-full text-xs text-right rtl:text-right ltr:text-left">
                 <thead class="bg-surface-soft border-b border-border text-text-secondary font-bold select-none">
                     <tr>
                         <th class="p-3.5">{{ __('inventory.product') }}</th>
@@ -129,7 +129,7 @@
                                 @endif
                             </td>
                             <td class="p-3.5 text-center font-mono font-bold tabular-nums dir-ltr text-text-primary">
-                                {{ $lb->quantity_base }}
+                                {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($lb->quantity_base) }}
                                 <span class="text-[10px] text-text-muted font-arabic">{{ app()->getLocale() === 'en' && $lb->product?->baseUnit?->name_en ? $lb->product->baseUnit->name_en : $lb->product?->baseUnit?->name_ar }}</span>
                             </td>
                             @if ($canViewCost)
@@ -139,7 +139,7 @@
                                 </td>
                             @endif
                             @if ($canAdjust)
-                                <td class="p-3.5 text-center">
+                                <td class="table-actions p-3.5 text-center">
                                     @if ($isExpired)
                                     <button wire:loading.attr="disabled" type="button" wire:click="openDisposalModal({{ $lb->id }})"
                                             class="touch-action bg-danger-bg hover:bg-danger/20 text-danger font-bold text-xs transition-colors">
@@ -205,7 +205,7 @@
                             </div>
                             <div class="min-w-0 space-y-1">
                                 <dt class="text-xs font-medium text-text-secondary">{{ __('inventory.current_stock') }}</dt>
-                                <dd dir="ltr" class="break-words text-sm tabular-nums text-text-primary">{{ $lb->quantity_base }}
+                                <dd dir="ltr" class="break-words text-sm tabular-nums text-text-primary">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($lb->quantity_base) }}
                                 <span class="text-[10px] text-text-muted font-arabic">{{ app()->getLocale() === 'en' && $lb->product?->baseUnit?->name_en ? $lb->product->baseUnit->name_en : $lb->product?->baseUnit?->name_ar }}</span></dd>
                             </div>
                             @if ($canViewCost)
@@ -241,6 +241,7 @@
                     @endforelse
                 </div>
 
+        <div class="p-4"><x-table-pagination :paginator="$lotBalances" /></div>
     </x-card>
 
     <!-- Quick Disposal Modal -->
@@ -260,7 +261,7 @@
                         <div><span class="text-text-muted">{{ __('inventory.product') }}:</span> <span class="font-bold text-text-primary">{{ $disposingLotBalance->product?->name() }}</span></div>
                         <div><span class="text-text-muted">{{ __('inventory.warehouse') }}:</span> <span class="text-text-secondary">{{ app()->getLocale() === 'en' && $disposingLotBalance->warehouse?->name_en ? $disposingLotBalance->warehouse->name_en : $disposingLotBalance->warehouse?->name_ar }}</span></div>
                         <div><span class="text-text-muted">{{ __('inventory.lot_number') }}:</span> <span class="font-mono dir-ltr">{{ $disposingLotBalance->lot?->lot_number }}</span></div>
-                        <div><span class="text-text-muted">{{ __('inventory.current_stock') }}:</span> <span class="font-mono font-bold">{{ $disposingLotBalance->quantity_base }} {{ app()->getLocale() === 'en' && $disposingLotBalance->product?->baseUnit?->name_en ? $disposingLotBalance->product->baseUnit->name_en : $disposingLotBalance->product?->baseUnit?->name_ar }}</span></div>
+                        <div><span class="text-text-muted">{{ __('inventory.current_stock') }}:</span> <span class="font-mono font-bold">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($disposingLotBalance->quantity_base) }} {{ app()->getLocale() === 'en' && $disposingLotBalance->product?->baseUnit?->name_en ? $disposingLotBalance->product->baseUnit->name_en : $disposingLotBalance->product?->baseUnit?->name_ar }}</span></div>
                     </div>
 
                     <div>

@@ -6,10 +6,10 @@
             <div><strong>{{ __('documents.'.$preview->type) }} {{ $preview->document['number'] ?? '' }}</strong></div>
             <div><span>{{ $preview->customer['name'] }}</span></div>
             @if(isset($preview->document['grand_total']))
-                <p><bdi dir="ltr" class="tabular-nums font-semibold">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($preview->document['grand_total'], $preview->document['currency_code']) }} {{ $preview->document['currency_code'] }}</bdi></p>
+                <p><bdi dir="ltr" class="tabular-nums font-semibold">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($preview->document['grand_total'], $preview->document['currency_code']) }} {{ $preview->document['currency_code'] }}</bdi></p>
             @endif
             @foreach($preview->statement['currencies'] ?? [] as $currency => $group)
-                <p><bdi dir="ltr" class="tabular-nums font-semibold">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($group['closing_balance'], $currency) }} {{ $currency }}</bdi> — {{ __('documents.closing_balance') }}</p>
+                <p><bdi dir="ltr" class="tabular-nums font-semibold">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($group['closing_balance'], $currency) }} {{ $currency }}</bdi> — {{ __('documents.closing_balance') }}</p>
             @endforeach
             <p class="text-xs text-text-secondary mt-1">{{ __('sharing.preview_scope') }}</p>
         @else

@@ -8,6 +8,7 @@ use App\Domain\Money\Queries\MoneyBalanceQuery;
 use App\Domain\Money\Queries\MoneyDailySummaryQuery;
 use App\Domain\Money\Queries\MoneyMovementQuery;
 use App\Domain\Money\Queries\MoneySourceLinksQuery;
+use App\Livewire\Concerns\HasTablePageSize;
 use App\Livewire\Pages\Money\Concerns\AuthorizesMoneyPages;
 use App\Models\MoneyAccount;
 use App\Services\Sales\SalesDocumentRules;
@@ -23,6 +24,7 @@ use Livewire\WithPagination;
 class AccountDetail extends Component
 {
     use AuthorizesMoneyPages, WithPagination;
+    use HasTablePageSize;
 
     #[Locked]
     public string $publicId;
@@ -66,7 +68,7 @@ class AccountDetail extends Component
         $balances = app(MoneyBalanceQuery::class)->forType($company, $account->account_type);
         $balance = collect($balances)->firstWhere('public_id', $account->public_id);
         $dailySummary = app(MoneyDailySummaryQuery::class)->forAccount($account, $selectedDate);
-        $movements = app(MoneyMovementQuery::class)->forAccount($account, $this->getPage());
+        $movements = app(MoneyMovementQuery::class)->forAccount($account, $this->getPage(), $this->tablePageSize());
         $sourceLinks = app(MoneySourceLinksQuery::class)->forRows((int) $company->id, $movements->items());
 
         return view('livewire.pages.money.account-detail', compact('account', 'balance', 'dailySummary', 'selectedDate', 'today', 'movements', 'sourceLinks'));

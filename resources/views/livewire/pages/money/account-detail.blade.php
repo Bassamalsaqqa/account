@@ -5,11 +5,11 @@
 <section class="rounded-card border border-border bg-white p-4 sm:p-6 flex flex-wrap justify-between gap-4">
 <div>
 <p class="text-xs text-text-secondary">{{ __('money.current_balance') }}</p>
-<p class="text-xl font-bold" dir="ltr">{{ $balance['balance_currency'] ?? __('money.unavailable') }} {{ $account->currency_code }}</p>
+<p class="text-xl font-bold" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($balance['balance_currency'] ?? __('money.unavailable')) }} {{ $account->currency_code }}</p>
 </div>
 <div>
 <p class="text-xs text-text-secondary">{{ __('money.base_value') }}</p>
-<bdi>{{ $balance['balance_base'] }} {{ $balance['base_currency_code'] }}</bdi>
+<bdi>{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($balance['balance_base']) }} {{ $balance['base_currency_code'] }}</bdi>
 </div>
 </section>
 
@@ -22,20 +22,20 @@
 <p class="text-sm font-semibold break-words">{{ $movement->description ?: __('money.movement') }}</p>
 <p class="text-xs text-text-secondary">{{ $movement->posting_date }}</p>@if(isset($sourceLinks[$movement->id]))<a class="touch-action text-sm text-primary" href="{{ $sourceLinks[$movement->id] }}">{{ __('money.source') }}</a>@endif</div>
 <div class="text-sm">
-<p>{{ __('money.in') }}: <bdi>{{ $movement->debit_base }}</bdi>
+<p>{{ __('money.in') }}: <bdi>{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($movement->debit_base) }}</bdi>
 </p>
-<p>{{ __('money.out') }}: <bdi>{{ $movement->credit_base }}</bdi>
+<p>{{ __('money.out') }}: <bdi>{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($movement->credit_base) }}</bdi>
 </p>
 </div>
 <div class="text-sm">
 <p>{{ __('money.running_base') }}: <bdi>{{ $movement->running_base ?? __('money.unavailable') }} {{ $balance['base_currency_code'] }}</bdi>
 </p>
-<p>{{ __('money.transaction') }}: <bdi>{{ $movement->transaction_amount ?? '—' }} {{ $movement->transaction_currency_code }}</bdi>
+<p>{{ __('money.transaction') }}: <bdi>{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($movement->transaction_amount ?? '—') }} {{ $movement->transaction_currency_code }}</bdi>
 </p>
 </div>
 <p class="text-xs">{{ __('money.running_currency') }}: <bdi>{{ $movement->running_base === null ? __('money.unavailable') : ($account->currency_code === $balance['base_currency_code'] ? $movement->running_base : ($movement->unknown_currency_lines == 0 ? $movement->known_running_currency : __('money.unavailable'))) }} {{ $account->currency_code }}</bdi>
 </p>
 </article>@empty<p class="text-text-secondary">{{ __('money.empty') }}</p>
 @endforelse
-{{ $movements->links() }}</section>
+<x-table-pagination :paginator="$movements" /></section>
 </div>

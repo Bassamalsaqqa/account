@@ -2,6 +2,7 @@
 @import './assistant-product.css';
 @import './business-dashboard.css';
 @import './mobile-release.css';
+@import './data-tables.css';
 
 @source '../views';
 @source '../../app';

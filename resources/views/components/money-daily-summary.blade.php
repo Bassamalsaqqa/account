@@ -28,9 +28,9 @@
                             <div class="min-w-0">
                                 <dt class="text-xs text-text-secondary">{{ __('money.'.$label) }}</dt>
                                 <dd class="mt-1 tabular-nums {{ $field === 'closing' ? 'font-bold text-lg' : 'font-semibold' }}">
-                                    <bdi dir="ltr">{{ $summary[$field.'_currency'] === null ? __('money.unavailable') : \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($summary[$field.'_currency'], $summary['currency_code']) }}</bdi>
+                                    <bdi dir="ltr">{{ $summary[$field.'_currency'] === null ? __('money.unavailable') : \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($summary[$field.'_currency'], $summary['currency_code']) }}</bdi>
                                     @if($summary['currency_code'] !== $summary['base_currency_code'])
-                                        <span class="block mt-1 text-xs text-text-secondary font-normal"><bdi dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($summary[$field.'_base'], $summary['base_currency_code']) }} {{ $summary['base_currency_code'] }}</bdi></span>
+                                        <span class="block mt-1 text-xs text-text-secondary font-normal"><bdi dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($summary[$field.'_base'], $summary['base_currency_code']) }} {{ $summary['base_currency_code'] }}</bdi></span>
                                     @endif
                                 </dd>
                             </div>
@@ -63,9 +63,9 @@
                         @else
                             @foreach(['opening', 'inflow', 'outflow', 'closing'] as $field)
                                 <td class="px-4 py-4 text-end tabular-nums {{ $field === 'closing' ? 'font-bold' : '' }}">
-                                    <bdi dir="ltr">{{ $summary[$field.'_currency'] === null ? __('money.unavailable') : \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($summary[$field.'_currency'], $summary['currency_code']) }}</bdi>
+                                    <bdi dir="ltr">{{ $summary[$field.'_currency'] === null ? __('money.unavailable') : \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($summary[$field.'_currency'], $summary['currency_code']) }}</bdi>
                                     @if($summary['currency_code'] !== $summary['base_currency_code'])
-                                        <span class="block mt-1 text-xs text-text-secondary"><bdi dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency($summary[$field.'_base'], $summary['base_currency_code']) }} {{ $summary['base_currency_code'] }}</bdi></span>
+                                        <span class="block mt-1 text-xs text-text-secondary"><bdi dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($summary[$field.'_base'], $summary['base_currency_code']) }} {{ $summary['base_currency_code'] }}</bdi></span>
                                     @endif
                                 </td>
                             @endforeach

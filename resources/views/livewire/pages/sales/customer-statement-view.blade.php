@@ -55,7 +55,7 @@
                 <div class="text-xs" dir="ltr">
                     <span class="text-text-muted">{{ __('sales.closing_balance') }}:</span>
                     <span class="font-bold text-base {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::isPositive((string) $currencyStatement['closing_balance']) ? 'text-danger' : 'text-text-primary' }}">
-                        {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatCurrency((string) $currencyStatement['closing_balance'], $curr) }}
+                        {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney((string) $currencyStatement['closing_balance'], $curr) }}
                     </span>
                 </div>
             </div>
@@ -68,30 +68,30 @@
                 <div class="grid grid-cols-2 sm:grid-cols-5 gap-3 text-center text-xs">
                     <div class="p-3 rounded-control bg-canvas border border-border">
                         <div class="text-[10px] text-text-muted font-bold">{{ __('sales.aging_current') }}</div>
-                        <div class="font-bold text-text-primary mt-1" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::format((string) $currencyStatement['aging']['current'], $curr) }}</div>
+                        <div class="font-bold text-text-primary mt-1" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney((string) $currencyStatement['aging']['current'], $curr) }}</div>
                     </div>
                     <div class="p-3 rounded-control bg-canvas border border-border">
                         <div class="text-[10px] text-text-muted font-bold">{{ __('sales.aging_1_30') }}</div>
-                        <div class="font-bold text-text-primary mt-1" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::format((string) $currencyStatement['aging']['days_1_30'], $curr) }}</div>
+                        <div class="font-bold text-text-primary mt-1" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney((string) $currencyStatement['aging']['days_1_30'], $curr) }}</div>
                     </div>
                     <div class="p-3 rounded-control bg-canvas border border-border">
                         <div class="text-[10px] text-text-muted font-bold">{{ __('sales.aging_31_60') }}</div>
-                        <div class="font-bold text-text-primary mt-1" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::format((string) $currencyStatement['aging']['days_31_60'], $curr) }}</div>
+                        <div class="font-bold text-text-primary mt-1" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney((string) $currencyStatement['aging']['days_31_60'], $curr) }}</div>
                     </div>
                     <div class="p-3 rounded-control bg-canvas border border-border">
                         <div class="text-[10px] text-text-muted font-bold">{{ __('sales.aging_61_90') }}</div>
-                        <div class="font-bold text-text-primary mt-1" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::format((string) $currencyStatement['aging']['days_61_90'], $curr) }}</div>
+                        <div class="font-bold text-text-primary mt-1" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney((string) $currencyStatement['aging']['days_61_90'], $curr) }}</div>
                     </div>
                     <div class="p-3 rounded-control bg-canvas border border-border">
                         <div class="text-[10px] text-text-muted font-bold">{{ __('sales.aging_90_plus') }}</div>
-                        <div class="font-bold text-danger mt-1" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::format((string) $currencyStatement['aging']['days_90_plus'], $curr) }}</div>
+                        <div class="font-bold text-danger mt-1" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney((string) $currencyStatement['aging']['days_90_plus'], $curr) }}</div>
                     </div>
                 </div>
             </div>
 
             <!-- Ledger Entries Table -->
             <div class="overflow-x-auto border border-border rounded-control">
-                <table class="w-full text-start text-xs border-collapse">
+                <table class="data-table w-full text-start text-xs border-collapse">
                     <thead>
                         <tr class="border-b border-border bg-surface-soft text-text-muted font-bold text-[11px] uppercase">
                             <th class="py-2.5 px-3 text-start">{{ __('sales.date') }}</th>
@@ -105,7 +105,7 @@
                         <tr class="bg-surface-soft/40 italic font-bold">
                             <td class="py-2.5 px-3" colspan="4">{{ __('sales.opening_balance') }}</td>
                             <td class="py-2.5 px-3 font-mono font-bold" dir="ltr">
-                                {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::format((string) $currencyStatement['opening_balance'], $curr) }}
+                                {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney((string) $currencyStatement['opening_balance'], $curr) }}
                             </td>
                         </tr>
                         @forelse ($currencyStatement['entries'] as $entry)
@@ -116,13 +116,13 @@
                                     <span class="text-text-muted text-[11px]">({{ __('sales.statement_type_'.$entry['type']) }})</span>
                                 </td>
                                 <td class="py-2.5 px-3 font-mono" dir="ltr">
-                                    {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::isPositive((string) $entry['debit']) ? \App\Domain\Sales\Formatters\SalesMoneyFormatter::format((string) $entry['debit'], $curr) : '—' }}
+                                    {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::isPositive((string) $entry['debit']) ? \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney((string) $entry['debit'], $curr) : '—' }}
                                 </td>
                                 <td class="py-2.5 px-3 font-mono" dir="ltr">
-                                    {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::isPositive((string) $entry['credit']) ? \App\Domain\Sales\Formatters\SalesMoneyFormatter::format((string) $entry['credit'], $curr) : '—' }}
+                                    {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::isPositive((string) $entry['credit']) ? \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney((string) $entry['credit'], $curr) : '—' }}
                                 </td>
                                 <td class="py-2.5 px-3 font-mono font-bold" dir="ltr">
-                                    {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::format((string) $entry['balance'], $curr) }}
+                                    {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney((string) $entry['balance'], $curr) }}
                                 </td>
                             </tr>
                         @empty
