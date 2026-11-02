@@ -45,17 +45,20 @@
                        class="w-full h-8 px-2.5 rounded-control border border-border bg-canvas text-xs text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden"  :disabled="documentBusy || saving"/>
             </div>
                 @endif
-            <select id="purchase-vendor" wire:model.live="vendor_id" required class="w-full h-11 px-3 border border-border rounded-control text-sm" :disabled="documentBusy || saving">
+            <div class="party-picker">
+<select id="purchase-vendor" wire:model.live="vendor_id" required class="w-full h-11 px-3 border border-border rounded-control text-sm" :disabled="documentBusy || saving">
                 <option value="">{{ __('purchasing.select_vendor') }}</option>
                 @foreach($vendors as $vendor)
                     <option value="{{ $vendor->id }}">{{ $vendor->displayName() }}</option>
                 @endforeach
             </select>
-                <div class="mt-1">@if ($canManageVendors)
-                    <button type="button" wire:click="openQuickVendorModal" class="text-xs text-primary font-bold hover:underline cursor-pointer" aria-haspopup="dialog" wire:loading.attr="disabled" wire:target="openQuickVendorModal" :disabled="documentBusy || saving">
+@if ($canManageVendors)
+                    <button type="button" wire:click="openQuickVendorModal" class="party-create-button" aria-haspopup="dialog" wire:loading.attr="disabled" wire:target="openQuickVendorModal" :disabled="documentBusy || saving">
                         + {{ __('workflow.quick_vendor') }}
                     </button>
-                @endif</div>
+                @endif
+</div>
+
         </div>
         @foreach(['purchase_date' => 'purchase_date'] as $field => $label)<div><label for="purchase-{{ $field }}" class="block text-xs font-bold mb-1.5">{{ __('purchasing.'.$label) }}</label><input id="purchase-{{ $field }}" type="date" wire:model="{{ $field }}" class="w-full min-w-0 h-11 px-3 border border-border rounded-control text-sm" @if($field === 'purchase_date') required @endif  :disabled="documentBusy || saving"/></div>@endforeach
         </div>
