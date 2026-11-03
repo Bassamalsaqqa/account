@@ -119,27 +119,24 @@ class SettingsNavigationTruthTest extends TestCase
         $response = $this->actingAs($this->owner)->get(route('settings.index'));
 
         $response->assertOk();
-        $response->assertSee(route('settings.documents'));
+        $response->assertSee(route('settings.index', ['section' => 'documents']));
         $response->assertSee(route('catalogs.index'));
-        $response->assertSee(__('settings.card_print_title'));
-        $response->assertSee(__('settings.card_print_desc'));
-        $response->assertSee(__('settings.card_print_future_note'));
+        $response->assertSee(__('documents.title'));
         $response->assertSee(__('settings.card_share_title'));
-        $response->assertSee(__('settings.card_share_desc'));
-        $response->assertSee(__('settings.card_share_future_note'));
 
         Livewire::actingAs($this->owner)
             ->test(SettingsIndex::class)
-            ->assertSeeHtml(route('settings.documents'))
-            ->assertSeeHtml(route('catalogs.index'))
-            ->assertSee(__('settings.card_print_future_note'))
-            ->assertSee(__('settings.card_share_future_note'));
+            ->assertSeeHtml(route('settings.index', ['section' => 'documents']))
+            ->assertSeeHtml(route('catalogs.index'));
     }
 
     public function test_owner_can_navigate_to_document_settings_and_catalogs(): void
     {
         $docResponse = $this->actingAs($this->owner)->get(route('settings.documents'));
-        $docResponse->assertOk();
+        $docResponse->assertRedirect(route('settings.index', ['section' => 'documents']));
+
+        $canonicalResponse = $this->actingAs($this->owner)->get(route('settings.index', ['section' => 'documents']));
+        $canonicalResponse->assertOk();
 
         Livewire::actingAs($this->owner)
             ->test(DocumentSettingsForm::class)
@@ -161,9 +158,8 @@ class SettingsNavigationTruthTest extends TestCase
         $response = $this->actingAs($viewer)->get(route('settings.index'));
 
         $response->assertOk();
-        $response->assertDontSee(route('settings.documents'));
+        $response->assertDontSee(route('settings.index', ['section' => 'documents']));
         $response->assertDontSee(route('catalogs.index'));
-        $response->assertSee(__('settings.restricted_card_notice'));
 
         $this->actingAs($viewer)->get(route('settings.documents'))->assertForbidden();
         $this->actingAs($viewer)->get(route('catalogs.index'))->assertForbidden();
@@ -188,10 +184,11 @@ class SettingsNavigationTruthTest extends TestCase
         $response = $this->actingAs($docAdmin)->get(route('settings.index'));
 
         $response->assertOk();
-        $response->assertSee(route('settings.documents'));
+        $response->assertSee(route('settings.index', ['section' => 'documents']));
         $response->assertDontSee(route('catalogs.index'));
 
-        $this->actingAs($docAdmin)->get(route('settings.documents'))->assertOk();
+        $this->actingAs($docAdmin)->get(route('settings.documents'))->assertRedirect(route('settings.index', ['section' => 'documents']));
+        $this->actingAs($docAdmin)->get(route('settings.index', ['section' => 'documents']))->assertOk();
         $this->actingAs($docAdmin)->get(route('catalogs.index'))->assertForbidden();
     }
 
@@ -208,7 +205,7 @@ class SettingsNavigationTruthTest extends TestCase
 
         $response->assertOk();
         $response->assertSee(route('catalogs.index'));
-        $response->assertDontSee(route('settings.documents'));
+        $response->assertDontSee(route('settings.index', ['section' => 'documents']));
 
         $this->actingAs($catalogManager)->get(route('catalogs.index'))->assertOk();
         $this->actingAs($catalogManager)->get(route('settings.documents'))->assertForbidden();
@@ -253,23 +250,15 @@ class SettingsNavigationTruthTest extends TestCase
         session(['locale' => 'ar']);
         $arResponse = $this->actingAs($this->owner)->get(route('settings.index'));
         $arResponse->assertOk();
-        $arResponse->assertSee(__('settings.card_print_title', [], 'ar'));
-        $arResponse->assertSee(__('settings.card_print_desc', [], 'ar'));
-        $arResponse->assertSee(__('settings.card_print_future_note', [], 'ar'));
+        $arResponse->assertSee(__('documents.title', [], 'ar'));
         $arResponse->assertSee(__('settings.card_share_title', [], 'ar'));
-        $arResponse->assertSee(__('settings.card_share_desc', [], 'ar'));
-        $arResponse->assertSee(__('settings.card_share_future_note', [], 'ar'));
 
         // English locale
         app()->setLocale('en');
         session(['locale' => 'en']);
         $enResponse = $this->actingAs($this->owner)->get(route('settings.index'));
         $enResponse->assertOk();
-        $enResponse->assertSee(__('settings.card_print_title', [], 'en'));
-        $enResponse->assertSee(__('settings.card_print_desc', [], 'en'));
-        $enResponse->assertSee(__('settings.card_print_future_note', [], 'en'));
+        $enResponse->assertSee(__('documents.title', [], 'en'));
         $enResponse->assertSee(__('settings.card_share_title', [], 'en'));
-        $enResponse->assertSee(__('settings.card_share_desc', [], 'en'));
-        $enResponse->assertSee(__('settings.card_share_future_note', [], 'en'));
     }
 }

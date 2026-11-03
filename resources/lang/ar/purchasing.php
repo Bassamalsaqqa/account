@@ -341,4 +341,7 @@ return [
     'landed_cost_attached' => 'تم ربط التكلفة الإضافية وتوزيعها على بنود الفاتورة بنجاح.',
     'landed_cost_removed' => 'تم إلغاء ربط التكلفة الإضافية بنجاح.',
     'landed_cost_failed' => 'فشلت عملية توزيع التكلفة الإضافية: ',
+    'paid_amount' => 'المبلغ المدفوع',
+    'allocated_amount' => 'المبلغ المخصص',
+    'unallocated_amount' => 'الرصيد المتاح',
 ];

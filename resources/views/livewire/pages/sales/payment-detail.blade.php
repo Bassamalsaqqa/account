@@ -54,6 +54,7 @@
             </div>
         </div>
 
+        <!-- Metadata Row -->
         <div class="grid grid-cols-2 md:grid-cols-4 gap-4 pt-4 border-t border-border text-xs">
             <div>
                 <span class="text-text-muted block text-[11px]">{{ __('sales.date') }}</span>
@@ -68,14 +69,45 @@
                 <span class="font-bold text-text-primary">{{ $payment->payment_method === 'check' ? __('fin1.check') : __('sales.' . $payment->payment_method) }}</span>
             </div>
             <div>
-                <span class="text-text-muted block text-[11px]">{{ __('sales.payment_amount') }}</span>
-                <span class="font-mono font-bold text-success text-sm" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($payment->amount, $payment->currency_code) }} {{ $payment->currency_code }}</span>
+                <span class="text-text-muted block text-[11px]">{{ __('sales.currency') }}</span>
+                <span class="font-bold text-text-primary">{{ $payment->currency_code }}</span>
             </div>
         </div>
-    </div>
 
-    <!-- Allocations Table -->
-    <div class="bg-white p-4 rounded-card text-sm">{{ __('sales.credit_available') }}: <span dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($payment->unallocated_amount, $payment->currency_code) }} {{ $payment->currency_code }}</span></div>
+        <!-- Shared Summary Cards -->
+        @php
+            $allocatedAmount = bcsub((string) $payment->amount, (string) $payment->unallocated_amount, 4);
+            $receiptCards = [
+                [
+                    'label' => __('sales.received_amount'),
+                    'value' => $payment->amount,
+                    'currency' => $payment->currency_code,
+                    'variant' => 'success',
+                ],
+                [
+                    'label' => __('sales.allocated_amount'),
+                    'value' => $allocatedAmount,
+                    'currency' => $payment->currency_code,
+                    'variant' => 'primary',
+                ],
+                [
+                    'label' => __('sales.credit_available'),
+                    'value' => $payment->unallocated_amount,
+                    'currency' => $payment->currency_code,
+                    'variant' => \Brick\Math\BigDecimal::of((string) $payment->unallocated_amount)->isPositive() ? 'default' : 'muted',
+                ],
+                [
+                    'label' => __('sales.date'),
+                    'raw_value' => $payment->payment_date->toDateString(),
+                    'is_date' => true,
+                    'variant' => 'default',
+                ],
+            ];
+        @endphp
+        <div class="pt-4 border-t border-border">
+            <x-document-summary-cards :cards="$receiptCards" :currency="$payment->currency_code" />
+        </div>
+    </div>
     @if($showCreditForm)
         <form wire:submit="applyCredit" class="bg-white p-4 rounded-card space-y-4">
             <h2 class="font-bold">{{ __('sales.allocate_customer_credit') }}</h2>

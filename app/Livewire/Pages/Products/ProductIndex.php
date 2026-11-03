@@ -205,7 +205,10 @@ class ProductIndex extends Component
                 });
         }
 
-        $products = $query->orderByRaw('COALESCE(name_ar, name_en) ASC')->orderBy('id')->paginate($this->tablePageSize());
+        $products = $query->with(['category', 'baseUnit', 'costState', 'primaryImage'])
+            ->orderByRaw('COALESCE(name_ar, name_en) ASC')
+            ->orderBy('id')
+            ->paginate($this->tablePageSize());
 
         $categories = ProductCategory::where('company_id', $company->id)->where('active', true)->orderBy('sort_order')->get();
         $brands = Brand::where('company_id', $company->id)

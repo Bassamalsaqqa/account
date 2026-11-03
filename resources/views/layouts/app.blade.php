@@ -4,8 +4,28 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <meta name="csrf-token" content="{{ csrf_token() }}">
+    <script>
+        try {
+            document.documentElement.dataset.sidebarCollapsed = localStorage.getItem('accounting.sidebar.collapsed') === 'true' ? 'true' : 'false';
+        } catch { document.documentElement.dataset.sidebarCollapsed = 'false'; }
+    </script>
 
     <title>{{ $title ?? __('app.app_name') }} — {{ __('app.app_subtitle') }}</title>
+
+    <!-- Favicons -->
+    <link rel="icon" type="image/svg+xml" href="{{ asset('favicon.svg') }}">
+    <link rel="icon" type="image/x-icon" href="{{ asset('favicon.ico') }}">
+    <link rel="apple-touch-icon" sizes="180x180" href="{{ asset('icons/apple-touch-icon.png') }}">
+
+    <!-- Open Graph & Social Cards -->
+    <meta property="og:title" content="{{ $title ?? __('app.app_name') }} — {{ __('app.app_subtitle') }}">
+    <meta property="og:description" content="{{ __('app.app_subtitle') }}">
+    <meta property="og:type" content="website">
+    <meta property="og:image" content="{{ asset('og-image.png') }}">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:image" content="{{ asset('og-image.png') }}">
 
     <!-- Styles & Scripts -->
     @vite(['resources/css/app.css', 'resources/js/app.js'])
@@ -48,23 +68,27 @@
          style="display: none;"></div>
 
     <!-- Sidebar Navigation -->
-    <aside id="app-sidebar" class="fixed top-0 bottom-0 z-50 w-[264px] bg-white transition-transform duration-200 ease-in-out flex flex-col
+    <aside id="app-sidebar" class="app-sidebar-shell fixed top-0 bottom-0 z-50 bg-white flex flex-col
                   {{ $isRtl ? 'right-0 border-l border-border' : 'left-0 border-r border-border' }}
                   {{ $isRtl ? 'max-lg:translate-x-full' : 'max-lg:-translate-x-full' }}"
-           :class="mobileMenuOpen ? 'translate-x-0!' : ''"
+           :class="[
+               mobileMenuOpen ? 'translate-x-0!' : '',
+               'w-[264px]'
+           ]"
            :inert="mobileLayout && !mobileMenuOpen" x-trap.inert.noscroll="mobileLayout && mobileMenuOpen">
 
         <!-- Sidebar Header / Brand -->
-        <div class="p-4 pb-3 border-b border-border">
-            <div class="flex items-center gap-3">
-                <div class="w-[42px] h-[42px] rounded-card bg-primary text-white grid place-items-center shadow-[0_6px_16px_rgba(37,95,214,.18)] shrink-0">
+        <div class="p-4 pb-3 border-b border-border transition-all">
+            <div class="flex items-center gap-3" :class="sidebarCollapsed ? 'lg:justify-center' : ''">
+                <div class="w-[42px] h-[42px] rounded-card bg-primary text-white grid place-items-center shadow-[0_6px_16px_rgba(37,95,214,.18)] shrink-0"
+                     :title="sidebarCollapsed ? '{{ __('app.app_name') }}' : ''">
                     <x-icon name="store" class="w-6 h-6" />
                 </div>
-                <div class="min-w-0 flex-1">
+                <div class="min-w-0 flex-1" :class="sidebarCollapsed ? 'lg:hidden' : ''">
                     <div class="text-[15px] font-extrabold leading-tight truncate text-text-primary">
                         {{ __('app.app_name') }}
                     </div>
-                    <div class="text-[11px] text-text-muted mt-0.5 truncate">
+                    <div class="text-xs text-text-muted mt-0.5 truncate">
                         {{ __('app.app_subtitle') }}
                     </div>
                 </div>
@@ -76,7 +100,8 @@
                 $sidebarCompany = $sidebarContext->hasCompany() ? $sidebarContext->company() : null;
                 $userActiveCompanies = auth()->check() ? auth()->user()->activeCompanies : collect();
             @endphp
-            <div class="mt-3 px-3 py-2 rounded-control bg-surface-soft flex items-center justify-between gap-2 text-xs text-text-secondary border border-border/50">
+            <div class="mt-3 px-3 py-2 rounded-control bg-surface-soft flex items-center justify-between gap-2 text-xs text-text-secondary border border-border/50"
+                 :class="sidebarCollapsed ? 'lg:hidden' : ''">
                 <div class="flex items-center gap-2 min-w-0">
                     <x-icon name="store" class="w-4 h-4 text-primary shrink-0" />
                     @if($sidebarCompany)
@@ -86,98 +111,148 @@
                     @endif
                 </div>
                 @if (! $isSupportView && $userActiveCompanies->count() > 1)
-                    <a href="{{ route('companies.select') }}" class="text-[10px] text-primary hover:underline font-bold shrink-0">
+                    <a href="{{ route('companies.select') }}" class="text-xs text-primary hover:underline font-bold shrink-0">
                         {{ __('settings.activate') }}
                     </a>
                 @endif
             </div>
         </div>
 
-        <!-- Sidebar Navigation Items -->
-        <div class="flex-1 overflow-y-auto px-3 py-3 space-y-4 text-sm">
+        <!-- Sidebar Navigation Items with Group Collapse & Scroll Persistence -->
+        <div id="app-sidebar-nav"
+             x-data="accountingSidebarNavigation"
+             x-init="$nextTick(() => restoreScroll())"
+             @scroll.debounce.150ms="saveScroll()"
+             @click.capture="saveScroll()"
+             class="flex-1 overflow-y-auto px-3 py-3 space-y-3 text-sm"
+             :class="sidebarCollapsed ? 'lg:px-2' : ''">
 
-            <!-- Dashboard -->
+            <!-- Overview & Reports -->
             <div class="space-y-0.5">
                 <a href="{{ route('dashboard') }}"
+                   :class="sidebarCollapsed ? 'lg:justify-center lg:px-0' : ''"
+                   title="{{ __('app.nav_dashboard') }}"
                    class="flex items-center justify-between min-h-11 px-3 rounded-control text-text-secondary hover:bg-surface-soft hover:text-text-primary font-semibold transition-colors
                           {{ request()->routeIs('dashboard') ? 'bg-primary-50 text-primary! font-bold shadow-[inset_3px_0_0_#255fd6] rtl:shadow-[inset_-3px_0_0_#255fd6]' : '' }}">
                     <div class="flex items-center gap-2.5">
-                        <x-icon name="dashboard" class="w-4.5 h-4.5" />
-                        <span>{{ __('app.nav_dashboard') }}</span>
+                        <x-icon name="dashboard" class="w-4.5 h-4.5 shrink-0" />
+                        <span :class="sidebarCollapsed ? 'lg:hidden' : ''">{{ __('app.nav_dashboard') }}</span>
                     </div>
                 </a>
+                @if($sidebarCompany && app(\App\Application\Reporting\Presentation\ReportRegistry::class)->hasVisible($sidebarCompany))
+                    <a href="{{ route('reports.index') }}"
+                       :class="sidebarCollapsed ? 'lg:justify-center lg:px-0' : ''"
+                       title="{{ __('reports.title') }}"
+                       class="flex items-center justify-between min-h-11 px-3 rounded-control text-sm font-semibold text-text-secondary hover:bg-surface-soft transition-colors
+                              {{ request()->routeIs('reports.*') ? 'bg-primary-50 text-primary! font-bold shadow-[inset_3px_0_0_#255fd6] rtl:shadow-[inset_-3px_0_0_#255fd6]' : '' }}">
+                        <div class="flex items-center gap-2.5">
+                            <x-icon name="chart" class="w-4.5 h-4.5 shrink-0" />
+                            <span :class="sidebarCollapsed ? 'lg:hidden' : ''">{{ __('reports.title') }}</span>
+                        </div>
+                    </a>
+                @endif
             </div>
 
-            @if($sidebarCompany && app(\App\Application\Reporting\Presentation\ReportRegistry::class)->hasVisible($sidebarCompany))
-            <a href="{{ route('reports.index') }}" class="flex items-center gap-2.5 min-h-11 px-3 rounded-control text-sm font-semibold text-text-secondary hover:bg-surface-soft {{ request()->routeIs('reports.*') ? 'bg-primary-50 text-primary' : '' }}"><x-icon name="chart" class="w-4.5 h-4.5" /><span>{{ __('reports.title') }}</span></a>
-            @endif
-
             <!-- Sales & Customers -->
+            @php
+                $salesActive = request()->routeIs('invoices.*', 'quotations.*', 'returns.*', 'payments.*', 'customers.*');
+            @endphp
             <div class="space-y-1">
-                <div class="px-3 text-[10px] font-bold tracking-wider text-text-muted uppercase">
-                    {{ __('app.nav_group_sales_customers') }}
-                </div>
-                <div class="space-y-0.5">
+                <button type="button" @click="toggleGroup('sales', {{ $salesActive ? 'true' : 'false' }})"
+                        :class="sidebarCollapsed ? 'lg:hidden' : ''"
+                        class="w-full flex items-center justify-between px-3 py-1 text-xs font-bold tracking-wider text-text-muted uppercase hover:text-text-primary transition-colors cursor-pointer select-none">
+                    <span>{{ __('app.nav_group_sales_customers') }}</span>
+                    <x-icon name="chevron" class="w-3.5 h-3.5 transition-transform duration-150"
+                            ::class="isGroupOpen('sales', {{ $salesActive ? 'true' : 'false' }}) ? 'rotate-90 rtl:-rotate-90' : ''" />
+                </button>
+                <div x-show="isGroupOpen('sales', {{ $salesActive ? 'true' : 'false' }})"
+                     class="space-y-0.5">
                     <a href="{{ route('invoices.index') }}"
+                       :class="sidebarCollapsed ? 'lg:justify-center lg:px-0' : ''"
+                       title="{{ __('app.nav_sales_invoices') }}"
                        class="flex items-center justify-between min-h-11 px-3 rounded-control text-text-secondary hover:bg-surface-soft hover:text-text-primary font-semibold transition-colors
                               {{ request()->routeIs('invoices.*') ? 'bg-primary-50 text-primary! font-bold shadow-[inset_3px_0_0_#255fd6] rtl:shadow-[inset_-3px_0_0_#255fd6]' : '' }}">
                         <div class="flex items-center gap-2.5">
-                            <x-icon name="receipt" class="w-4.5 h-4.5" />
-                            <span>{{ __('app.nav_sales_invoices') }}</span>
+                            <x-icon name="receipt" class="w-4.5 h-4.5 shrink-0" />
+                            <span :class="sidebarCollapsed ? 'lg:hidden' : ''">{{ __('app.nav_sales_invoices') }}</span>
                         </div>
                     </a>
                     <a href="{{ route('quotations.index') }}"
+                       :class="sidebarCollapsed ? 'lg:justify-center lg:px-0' : ''"
+                       title="{{ __('app.nav_quotes') }}"
                        class="flex items-center justify-between min-h-11 px-3 rounded-control text-text-secondary hover:bg-surface-soft hover:text-text-primary font-semibold transition-colors
                               {{ request()->routeIs('quotations.*') ? 'bg-primary-50 text-primary! font-bold shadow-[inset_3px_0_0_#255fd6] rtl:shadow-[inset_-3px_0_0_#255fd6]' : '' }}">
                         <div class="flex items-center gap-2.5">
-                            <x-icon name="quote" class="w-4.5 h-4.5" />
-                            <span>{{ __('app.nav_quotes') }}</span>
+                            <x-icon name="quote" class="w-4.5 h-4.5 shrink-0" />
+                            <span :class="sidebarCollapsed ? 'lg:hidden' : ''">{{ __('app.nav_quotes') }}</span>
                         </div>
                     </a>
                     <a href="{{ route('returns.index') }}"
+                       :class="sidebarCollapsed ? 'lg:justify-center lg:px-0' : ''"
+                       title="{{ __('app.nav_sales_returns') }}"
                        class="flex items-center justify-between min-h-11 px-3 rounded-control text-text-secondary hover:bg-surface-soft hover:text-text-primary font-semibold transition-colors
                               {{ request()->routeIs('returns.*') ? 'bg-primary-50 text-primary! font-bold shadow-[inset_3px_0_0_#255fd6] rtl:shadow-[inset_-3px_0_0_#255fd6]' : '' }}">
                         <div class="flex items-center gap-2.5">
-                            <x-icon name="history" class="w-4.5 h-4.5" />
-                            <span>{{ __('app.nav_sales_returns') }}</span>
+                            <x-icon name="history" class="w-4.5 h-4.5 shrink-0" />
+                            <span :class="sidebarCollapsed ? 'lg:hidden' : ''">{{ __('app.nav_sales_returns') }}</span>
                         </div>
                     </a>
                     <a href="{{ route('payments.index') }}"
+                       :class="sidebarCollapsed ? 'lg:justify-center lg:px-0' : ''"
+                       title="{{ __('app.nav_customer_payments') }}"
                        class="flex items-center justify-between min-h-11 px-3 rounded-control text-text-secondary hover:bg-surface-soft hover:text-text-primary font-semibold transition-colors
                               {{ request()->routeIs('payments.*') ? 'bg-primary-50 text-primary! font-bold shadow-[inset_3px_0_0_#255fd6] rtl:shadow-[inset_-3px_0_0_#255fd6]' : '' }}">
                         <div class="flex items-center gap-2.5">
-                            <x-icon name="money" class="w-4.5 h-4.5" />
-                            <span>{{ __('app.nav_customer_payments') }}</span>
+                            <x-icon name="money" class="w-4.5 h-4.5 shrink-0" />
+                            <span :class="sidebarCollapsed ? 'lg:hidden' : ''">{{ __('app.nav_customer_payments') }}</span>
                         </div>
                     </a>
                     <a href="{{ route('customers.index') }}"
+                       :class="sidebarCollapsed ? 'lg:justify-center lg:px-0' : ''"
+                       title="{{ __('app.nav_customers') }}"
                        class="flex items-center justify-between min-h-11 px-3 rounded-control text-text-secondary hover:bg-surface-soft hover:text-text-primary font-semibold transition-colors
                               {{ request()->routeIs('customers.*') ? 'bg-primary-50 text-primary! font-bold shadow-[inset_3px_0_0_#255fd6] rtl:shadow-[inset_-3px_0_0_#255fd6]' : '' }}">
                         <div class="flex items-center gap-2.5">
-                            <x-icon name="users" class="w-4.5 h-4.5" />
-                            <span>{{ __('app.nav_customers') }}</span>
+                            <x-icon name="users" class="w-4.5 h-4.5 shrink-0" />
+                            <span :class="sidebarCollapsed ? 'lg:hidden' : ''">{{ __('app.nav_customers') }}</span>
                         </div>
                     </a>
                 </div>
             </div>
 
             <!-- Purchases & Inventory -->
+            @php
+                $purchasingActive = request()->routeIs('purchases.*', 'purchase-returns.*', 'vendor-payments.*', 'vendors.*', 'products.*', 'brands.*', 'catalogs.*', 'labels.*', 'inventory.*');
+            @endphp
             <div class="space-y-1">
-                <div class="px-3 text-[10px] font-bold tracking-wider text-text-muted uppercase">
-                    {{ __('app.nav_group_purchasing_inventory') }}
-                </div>
-                <div class="space-y-0.5">
+                <button type="button" @click="toggleGroup('purchasing', {{ $purchasingActive ? 'true' : 'false' }})"
+                        :class="sidebarCollapsed ? 'lg:hidden' : ''"
+                        class="w-full flex items-center justify-between px-3 py-1 text-xs font-bold tracking-wider text-text-muted uppercase hover:text-text-primary transition-colors cursor-pointer select-none">
+                    <span>{{ __('app.nav_group_purchasing_inventory') }}</span>
+                    <x-icon name="chevron" class="w-3.5 h-3.5 transition-transform duration-150"
+                            ::class="isGroupOpen('purchasing', {{ $purchasingActive ? 'true' : 'false' }}) ? 'rotate-90 rtl:-rotate-90' : ''" />
+                </button>
+                <div x-show="isGroupOpen('purchasing', {{ $purchasingActive ? 'true' : 'false' }})"
+                     class="space-y-0.5">
                     @can('purchasing.purchase.view')
-                    <a href="{{ route('purchases.index') }}" class="flex items-center justify-between min-h-11 px-3 rounded-control text-text-secondary hover:bg-surface-soft hover:text-text-primary font-semibold {{ request()->routeIs('purchases.*') ? 'bg-primary-50 text-primary!' : '' }}">
+                    <a href="{{ route('purchases.index') }}"
+                       :class="sidebarCollapsed ? 'lg:justify-center lg:px-0' : ''"
+                       title="{{ __('app.nav_purchase_invoices') }}"
+                       class="flex items-center justify-between min-h-11 px-3 rounded-control text-text-secondary hover:bg-surface-soft hover:text-text-primary font-semibold transition-colors
+                              {{ request()->routeIs('purchases.*') ? 'bg-primary-50 text-primary! font-bold shadow-[inset_3px_0_0_#255fd6] rtl:shadow-[inset_-3px_0_0_#255fd6]' : '' }}">
                         <div class="flex items-center gap-2.5">
-                            <x-icon name="cart" class="w-4.5 h-4.5" />
-                            <span>{{ __('app.nav_purchase_invoices') }}</span>
+                            <x-icon name="cart" class="w-4.5 h-4.5 shrink-0" />
+                            <span :class="sidebarCollapsed ? 'lg:hidden' : ''">{{ __('app.nav_purchase_invoices') }}</span>
                         </div>
                     </a>
-                    <a href="{{ route('purchase-returns.index') }}" class="flex items-center justify-between min-h-11 px-3 rounded-control text-text-secondary hover:bg-surface-soft hover:text-text-primary font-semibold {{ request()->routeIs('purchase-returns.*') ? 'bg-primary-50 text-primary!' : '' }}">
+                    <a href="{{ route('purchase-returns.index') }}"
+                       :class="sidebarCollapsed ? 'lg:justify-center lg:px-0' : ''"
+                       title="{{ __('app.nav_purchase_returns') }}"
+                       class="flex items-center justify-between min-h-11 px-3 rounded-control text-text-secondary hover:bg-surface-soft hover:text-text-primary font-semibold transition-colors
+                              {{ request()->routeIs('purchase-returns.*') ? 'bg-primary-50 text-primary! font-bold shadow-[inset_3px_0_0_#255fd6] rtl:shadow-[inset_-3px_0_0_#255fd6]' : '' }}">
                         <div class="flex items-center gap-2.5">
-                            <x-icon name="history" class="w-4.5 h-4.5" />
-                            <span>{{ __('app.nav_purchase_returns') }}</span>
+                            <x-icon name="history" class="w-4.5 h-4.5 shrink-0" />
+                            <span :class="sidebarCollapsed ? 'lg:hidden' : ''">{{ __('app.nav_purchase_returns') }}</span>
                         </div>
                     </a>
                     @endcan
@@ -188,115 +263,161 @@
                         auth()->user()->can('vendors.statement.view')
                     ))
                     <a href="{{ route('vendor-payments.index') }}"
+                       :class="sidebarCollapsed ? 'lg:justify-center lg:px-0' : ''"
+                       title="{{ __('app.nav_vendor_payments') }}"
                        class="flex items-center justify-between min-h-11 px-3 rounded-control text-text-secondary hover:bg-surface-soft hover:text-text-primary font-semibold transition-colors
                               {{ request()->routeIs('vendor-payments.*') ? 'bg-primary-50 text-primary! font-bold shadow-[inset_3px_0_0_#255fd6] rtl:shadow-[inset_-3px_0_0_#255fd6]' : '' }}">
                         <div class="flex items-center gap-2.5">
-                            <x-icon name="money" class="w-4.5 h-4.5" />
-                            <span>{{ __('app.nav_vendor_payments') }}</span>
+                            <x-icon name="money" class="w-4.5 h-4.5 shrink-0" />
+                            <span :class="sidebarCollapsed ? 'lg:hidden' : ''">{{ __('app.nav_vendor_payments') }}</span>
                         </div>
                     </a>
                     @endif
                     @can('vendors.view')
                     <a href="{{ route('vendors.index') }}"
+                       :class="sidebarCollapsed ? 'lg:justify-center lg:px-0' : ''"
+                       title="{{ __('app.nav_vendors') }}"
                        class="flex items-center justify-between min-h-11 px-3 rounded-control text-text-secondary hover:bg-surface-soft hover:text-text-primary font-semibold transition-colors
                               {{ request()->routeIs('vendors.*') ? 'bg-primary-50 text-primary! font-bold shadow-[inset_3px_0_0_#255fd6] rtl:shadow-[inset_-3px_0_0_#255fd6]' : '' }}">
                         <div class="flex items-center gap-2.5">
-                            <x-icon name="truck" class="w-4.5 h-4.5" />
-                            <span>{{ __('app.nav_vendors') }}</span>
+                            <x-icon name="truck" class="w-4.5 h-4.5 shrink-0" />
+                            <span :class="sidebarCollapsed ? 'lg:hidden' : ''">{{ __('app.nav_vendors') }}</span>
                         </div>
                     </a>
                     @endcan
                     <a href="{{ route('products.index') }}"
+                       :class="sidebarCollapsed ? 'lg:justify-center lg:px-0' : ''"
+                       title="{{ __('app.nav_products') }}"
                        class="flex items-center justify-between min-h-11 px-3 rounded-control text-text-secondary hover:bg-surface-soft hover:text-text-primary font-semibold transition-colors
                               {{ request()->routeIs('products.*') ? 'bg-primary-50 text-primary! font-bold shadow-[inset_3px_0_0_#255fd6] rtl:shadow-[inset_-3px_0_0_#255fd6]' : '' }}">
                         <div class="flex items-center gap-2.5">
-                            <x-icon name="box" class="w-4.5 h-4.5" />
-                            <span>{{ __('app.nav_products') }}</span>
+                            <x-icon name="box" class="w-4.5 h-4.5 shrink-0" />
+                            <span :class="sidebarCollapsed ? 'lg:hidden' : ''">{{ __('app.nav_products') }}</span>
                         </div>
                     </a>
                     @if(auth()->user()->can('inventory.product.manage'))
                     <a href="{{ route('brands.index') }}"
+                       :class="sidebarCollapsed ? 'lg:justify-center lg:px-0' : ''"
+                       title="{{ __('inventory.brands') }}"
                        class="flex items-center justify-between min-h-11 px-3 rounded-control text-text-secondary hover:bg-surface-soft hover:text-text-primary font-semibold transition-colors
                               {{ request()->routeIs('brands.*') ? 'bg-primary-50 text-primary! font-bold shadow-[inset_3px_0_0_#255fd6] rtl:shadow-[inset_-3px_0_0_#255fd6]' : '' }}">
                         <div class="flex items-center gap-2.5">
-                            <x-icon name="box" class="w-4.5 h-4.5" />
-                            <span>{{ __('inventory.brands') }}</span>
+                            <x-icon name="box" class="w-4.5 h-4.5 shrink-0" />
+                            <span :class="sidebarCollapsed ? 'lg:hidden' : ''">{{ __('inventory.brands') }}</span>
                         </div>
                     </a>
                     @endif
                     @if(auth()->user()->can('catalogs.view') && auth()->user()->hasAnyPermission(['inventory.stock.view','inventory.product.manage']))
-                    <a href="{{ route('catalogs.index') }}" class="flex min-h-11 items-center gap-3 px-3 text-sm rounded-control hover:bg-primary-50 text-text-secondary">{{ __('catalogs.catalogs') }}</a>
+                    <a href="{{ route('catalogs.index') }}"
+                       :class="sidebarCollapsed ? 'lg:justify-center lg:px-0' : ''"
+                       title="{{ __('catalogs.catalogs') }}"
+                       class="flex min-h-11 items-center gap-2.5 px-3 text-sm rounded-control hover:bg-surface-soft hover:text-text-primary text-text-secondary font-semibold transition-colors">
+                        <x-icon name="file" class="w-4.5 h-4.5 shrink-0" />
+                        <span :class="sidebarCollapsed ? 'lg:hidden' : ''">{{ __('catalogs.catalogs') }}</span>
+                    </a>
                     @endif
                     @if(auth()->user()->can('inventory.barcode_labels.print') && auth()->user()->hasAnyPermission(['inventory.stock.view','inventory.product.manage']))
-                    <a href="{{ route('labels.index') }}" class="flex min-h-11 items-center gap-3 px-3 text-sm rounded-control hover:bg-primary-50 text-text-secondary">{{ __('labels.title') }}</a>
-                    @endif
-                    @if(auth()->user()->can('money.cash.view') || auth()->user()->can('money.bank.view') || auth()->user()->can('money.transfer.view') || auth()->user()->can('money.check.view'))
-                    <a href="{{ route('money.overview') }}" class="flex items-center gap-3 px-3 py-2 text-sm rounded-control hover:bg-primary-50 text-text-secondary">{{ __('money.title') }}</a>
+                    <a href="{{ route('labels.index') }}"
+                       :class="sidebarCollapsed ? 'lg:justify-center lg:px-0' : ''"
+                       title="{{ __('labels.title') }}"
+                       class="flex min-h-11 items-center gap-2.5 px-3 text-sm rounded-control hover:bg-surface-soft hover:text-text-primary text-text-secondary font-semibold transition-colors">
+                        <x-icon name="barcode" class="w-4.5 h-4.5 shrink-0" />
+                        <span :class="sidebarCollapsed ? 'lg:hidden' : ''">{{ __('labels.title') }}</span>
+                    </a>
                     @endif
                     <a href="{{ route('inventory.overview') }}"
+                       :class="sidebarCollapsed ? 'lg:justify-center lg:px-0' : ''"
+                       title="{{ __('app.nav_inventory_overview') }}"
                        class="flex items-center justify-between min-h-11 px-3 rounded-control text-text-secondary hover:bg-surface-soft hover:text-text-primary font-semibold transition-colors
                               {{ request()->routeIs('inventory.overview', 'inventory.movements', 'inventory.adjustments.*', 'inventory.transfers.*') ? 'bg-primary-50 text-primary! font-bold shadow-[inset_3px_0_0_#255fd6] rtl:shadow-[inset_-3px_0_0_#255fd6]' : '' }}">
                         <div class="flex items-center gap-2.5">
-                            <x-icon name="store" class="w-4.5 h-4.5" />
-                            <span>{{ __('app.nav_inventory_overview') }}</span>
+                            <x-icon name="store" class="w-4.5 h-4.5 shrink-0" />
+                            <span :class="sidebarCollapsed ? 'lg:hidden' : ''">{{ __('app.nav_inventory_overview') }}</span>
                         </div>
                     </a>
                     <a href="{{ route('inventory.expiry') }}"
+                       :class="sidebarCollapsed ? 'lg:justify-center lg:px-0' : ''"
+                       title="{{ __('app.nav_expiry_center') }}"
                        class="flex items-center justify-between min-h-11 px-3 rounded-control text-text-secondary hover:bg-surface-soft hover:text-text-primary font-semibold transition-colors
                               {{ request()->routeIs('inventory.expiry') ? 'bg-primary-50 text-primary! font-bold shadow-[inset_3px_0_0_#255fd6] rtl:shadow-[inset_-3px_0_0_#255fd6]' : '' }}">
                         <div class="flex items-center gap-2.5">
-                            <x-icon name="expiry" class="w-4.5 h-4.5" />
-                            <span>{{ __('app.nav_expiry_center') }}</span>
+                            <x-icon name="expiry" class="w-4.5 h-4.5 shrink-0" />
+                            <span :class="sidebarCollapsed ? 'lg:hidden' : ''">{{ __('app.nav_expiry_center') }}</span>
                         </div>
                     </a>
                 </div>
             </div>
 
-            <!-- Treasury & Reports -->
+            <!-- Treasury & Banking -->
+            @php
+                $treasuryActive = request()->routeIs('money.*', 'expenses.*');
+            @endphp
             <div class="space-y-1">
-                <div class="px-3 text-[10px] font-bold tracking-wider text-text-muted uppercase">
-                    {{ __('app.nav_group_treasury_reports') }}
-                </div>
-                <div class="space-y-0.5">
+                <button type="button" @click="toggleGroup('treasury', {{ $treasuryActive ? 'true' : 'false' }})"
+                        :class="sidebarCollapsed ? 'lg:hidden' : ''"
+                        class="w-full flex items-center justify-between px-3 py-1 text-xs font-bold tracking-wider text-text-muted uppercase hover:text-text-primary transition-colors cursor-pointer select-none">
+                    <span>{{ __('app.nav_group_treasury_reports') }}</span>
+                    <x-icon name="chevron" class="w-3.5 h-3.5 transition-transform duration-150"
+                            ::class="isGroupOpen('treasury', {{ $treasuryActive ? 'true' : 'false' }}) ? 'rotate-90 rtl:-rotate-90' : ''" />
+                </button>
+                <div x-show="isGroupOpen('treasury', {{ $treasuryActive ? 'true' : 'false' }})"
+                     class="space-y-0.5">
                     @if(auth()->user()->can('money.cash.view') || auth()->user()->can('money.bank.view'))
-                    <a href="{{ route('money.overview') }}" class="flex items-center gap-2.5 min-h-11 px-3 rounded-control text-text-secondary hover:bg-primary-50">
-                        <x-icon name="bank" class="w-4.5 h-4.5" />
-                        <span>{{ __('app.nav_treasury_banks') }}</span>
+                    <a href="{{ route('money.overview') }}"
+                       :class="sidebarCollapsed ? 'lg:justify-center lg:px-0' : ''"
+                       title="{{ __('app.nav_treasury_banks') }}"
+                       class="flex items-center gap-2.5 min-h-11 px-3 rounded-control text-text-secondary hover:bg-surface-soft hover:text-text-primary font-semibold transition-colors">
+                        <x-icon name="bank" class="w-4.5 h-4.5 shrink-0" />
+                        <span :class="sidebarCollapsed ? 'lg:hidden' : ''">{{ __('app.nav_treasury_banks') }}</span>
                     </a>
                     @endif
                     @can('money.check.view')
-                    <a href="{{ route('money.checks.index') }}" class="flex items-center gap-2.5 min-h-11 px-3 rounded-control text-text-secondary hover:bg-primary-50">
-                        <x-icon name="check" class="w-4.5 h-4.5" />
-                        <span>{{ __('app.nav_checkbook') }}</span>
+                    <a href="{{ route('money.checks.index') }}"
+                       :class="sidebarCollapsed ? 'lg:justify-center lg:px-0' : ''"
+                       title="{{ __('app.nav_checkbook') }}"
+                       class="flex items-center gap-2.5 min-h-11 px-3 rounded-control text-text-secondary hover:bg-surface-soft hover:text-text-primary font-semibold transition-colors">
+                        <x-icon name="check" class="w-4.5 h-4.5 shrink-0" />
+                        <span :class="sidebarCollapsed ? 'lg:hidden' : ''">{{ __('app.nav_checkbook') }}</span>
                     </a>
                     @endcan
                     @can('money.expense.view')
                     <a href="{{ route('expenses.index') }}"
+                       :class="sidebarCollapsed ? 'lg:justify-center lg:px-0' : ''"
+                       title="{{ __('app.nav_expenses') }}"
                        class="flex items-center justify-between min-h-11 px-3 rounded-control text-text-secondary hover:bg-surface-soft hover:text-text-primary font-semibold transition-colors
                               {{ request()->routeIs('expenses.*') ? 'bg-primary-50 text-primary! font-bold shadow-[inset_3px_0_0_#255fd6] rtl:shadow-[inset_-3px_0_0_#255fd6]' : '' }}">
                         <div class="flex items-center gap-2.5">
-                            <x-icon name="receipt" class="w-4.5 h-4.5" />
-                            <span>{{ __('app.nav_expenses') }}</span>
+                            <x-icon name="receipt" class="w-4.5 h-4.5 shrink-0" />
+                            <span :class="sidebarCollapsed ? 'lg:hidden' : ''">{{ __('app.nav_expenses') }}</span>
                         </div>
                     </a>
                     @endcan
-
                 </div>
             </div>
 
             <!-- HR & Payroll -->
             @can('employees.view')
+            @php
+                $hrActive = request()->routeIs('employees.*', 'payroll.*');
+            @endphp
             <div class="space-y-1">
-                <div class="px-3 text-[10px] font-bold tracking-wider text-text-muted uppercase">
-                    {{ __('app.nav_group_hr_payroll') }}
-                </div>
-                <div class="space-y-0.5">
+                <button type="button" @click="toggleGroup('hr', {{ $hrActive ? 'true' : 'false' }})"
+                        :class="sidebarCollapsed ? 'lg:hidden' : ''"
+                        class="w-full flex items-center justify-between px-3 py-1 text-xs font-bold tracking-wider text-text-muted uppercase hover:text-text-primary transition-colors cursor-pointer select-none">
+                    <span>{{ __('app.nav_group_hr_payroll') }}</span>
+                    <x-icon name="chevron" class="w-3.5 h-3.5 transition-transform duration-150"
+                            ::class="isGroupOpen('hr', {{ $hrActive ? 'true' : 'false' }}) ? 'rotate-90 rtl:-rotate-90' : ''" />
+                </button>
+                <div x-show="isGroupOpen('hr', {{ $hrActive ? 'true' : 'false' }})"
+                     class="space-y-0.5">
                     <a href="{{ route('employees.index') }}"
+                       :class="sidebarCollapsed ? 'lg:justify-center lg:px-0' : ''"
+                       title="{{ __('app.nav_employees') }}"
                        class="flex items-center justify-between min-h-11 px-3 rounded-control text-text-secondary hover:bg-surface-soft hover:text-text-primary font-semibold transition-colors
                               {{ request()->routeIs('employees.*', 'payroll.*') ? 'bg-primary-50 text-primary! font-bold shadow-[inset_3px_0_0_#255fd6] rtl:shadow-[inset_-3px_0_0_#255fd6]' : '' }}">
                         <div class="flex items-center gap-2.5">
-                            <x-icon name="users" class="w-4.5 h-4.5" />
-                            <span>{{ __('app.nav_employees') }}</span>
+                            <x-icon name="users" class="w-4.5 h-4.5 shrink-0" />
+                            <span :class="sidebarCollapsed ? 'lg:hidden' : ''">{{ __('app.nav_employees') }}</span>
                         </div>
                     </a>
                 </div>
@@ -304,38 +425,57 @@
             @endcan
 
             <!-- System -->
+            @php
+                $systemActive = request()->routeIs('settings.*', 'profile', 'platform.*');
+            @endphp
             <div class="space-y-1 pt-1">
-                <div class="px-3 text-[10px] font-bold tracking-wider text-text-muted uppercase">
-                    {{ __('app.nav_group_system') }}
-                </div>
-                <div class="space-y-0.5">
+                <button type="button" @click="toggleGroup('system', {{ $systemActive ? 'true' : 'false' }})"
+                        :class="sidebarCollapsed ? 'lg:hidden' : ''"
+                        class="w-full flex items-center justify-between px-3 py-1 text-xs font-bold tracking-wider text-text-muted uppercase hover:text-text-primary transition-colors cursor-pointer select-none">
+                    <span>{{ __('app.nav_group_system') }}</span>
+                    <x-icon name="chevron" class="w-3.5 h-3.5 transition-transform duration-150"
+                            ::class="isGroupOpen('system', {{ $systemActive ? 'true' : 'false' }}) ? 'rotate-90 rtl:-rotate-90' : ''" />
+                </button>
+                <div x-show="isGroupOpen('system', {{ $systemActive ? 'true' : 'false' }})"
+                     class="space-y-0.5">
                     @if(\App\Models\PlatformOperatorGrant::query()->where('user_id', auth()->id())->where('active', true)->whereJsonContains('permissions', 'company.read')->exists())
-                        <a href="{{ route('platform.index') }}" class="flex min-h-11 items-center gap-2.5 px-3 rounded-control text-text-secondary hover:bg-surface-soft hover:text-primary font-semibold">
-                            <x-icon name="shield" class="w-4.5 h-4.5" />
-                            <span>{{ __('platform.title') }}</span>
+                        <a href="{{ route('platform.index') }}"
+                           :class="sidebarCollapsed ? 'lg:justify-center lg:px-0' : ''"
+                           title="{{ __('platform.title') }}"
+                           class="flex min-h-11 items-center gap-2.5 px-3 rounded-control text-text-secondary hover:bg-surface-soft hover:text-primary font-semibold transition-colors">
+                            <x-icon name="shield" class="w-4.5 h-4.5 shrink-0" />
+                            <span :class="sidebarCollapsed ? 'lg:hidden' : ''">{{ __('platform.title') }}</span>
                         </a>
                     @endif
                     <a href="{{ route('settings.index') }}"
+                       :class="sidebarCollapsed ? 'lg:justify-center lg:px-0' : ''"
+                       title="{{ __('app.nav_settings') }}"
                        class="flex items-center justify-between min-h-11 px-3 rounded-control font-semibold transition-colors
-                              {{ request()->routeIs('settings.*') ? 'bg-primary-50 text-primary font-bold shadow-[inset_3px_0_0_#255fd6] rtl:shadow-[inset_-3px_0_0_#255fd6]' : 'text-text-secondary hover:bg-surface-soft hover:text-text-primary' }}">
+                              {{ request()->routeIs('settings.*', 'profile') ? 'bg-primary-50 text-primary font-bold shadow-[inset_3px_0_0_#255fd6] rtl:shadow-[inset_-3px_0_0_#255fd6]' : 'text-text-secondary hover:bg-surface-soft hover:text-text-primary' }}">
                         <div class="flex items-center gap-2.5">
-                            <x-icon name="settings" class="w-4.5 h-4.5 text-primary" />
-                            <span>{{ __('app.nav_settings') }}</span>
+                            <x-icon name="settings" class="w-4.5 h-4.5 text-primary shrink-0" />
+                            <span :class="sidebarCollapsed ? 'lg:hidden' : ''">{{ __('app.nav_settings') }}</span>
                         </div>
                     </a>
                 </div>
             </div>
         </div>
 
-        <div class="p-3 px-4 border-t border-border text-[11px] text-text-muted bg-surface-soft/40">
-            {{ __('app.workspace') }}
+        <div class="p-3 px-4 border-t border-border text-xs text-text-muted bg-surface-soft/40 flex items-center justify-between">
+            <span :class="sidebarCollapsed ? 'lg:hidden' : ''">{{ __('app.workspace') }}</span>
+            <button @click="toggleSidebarCollapse"
+                    type="button"
+                    class="hidden lg:flex items-center justify-center w-7 h-7 rounded hover:bg-surface text-text-secondary hover:text-text-primary transition-colors cursor-pointer"
+                    :title="sidebarCollapsed ? '{{ __('app.expand_sidebar') }}' : '{{ __('app.collapse_sidebar') }}'"
+                    aria-label="{{ __('app.toggle_sidebar') }}">
+                <x-icon name="chevron" class="w-4 h-4 transition-transform duration-200"
+                        ::class="sidebarCollapsed ? '{{ $isRtl ? 'rotate-180' : '' }}' : '{{ $isRtl ? '' : 'rotate-180' }}'" />
+            </button>
         </div>
     </aside>
 
     <!-- Top Bar -->
-    <header class="fixed top-0 z-30 h-[64px] bg-white/95 backdrop-blur-md border-b border-border flex items-center justify-between px-4 sm:px-6 gap-4
-                   {{ $isRtl ? 'right-[264px] left-0' : 'left-[264px] right-0' }}
-                   max-lg:right-0! max-lg:left-0!">
+    <header class="app-topbar fixed top-0 z-30 h-[64px] bg-white border-b border-border flex items-center justify-between px-4 sm:px-6 gap-4">
 
         <!-- Left / Start Area (Mobile button + Search) -->
         <div class="flex items-center gap-3 flex-1 min-w-0">
@@ -343,6 +483,16 @@
                     type="button"
                     class="lg:hidden w-11 h-11 rounded-control border border-border flex items-center justify-center text-text-secondary hover:bg-surface-soft">
                 <x-icon name="menu" class="w-5 h-5" />
+            </button>
+
+            <!-- Desktop Collapse Toggle -->
+            <button @click="toggleSidebarCollapse"
+                    type="button"
+                    class="hidden lg:flex w-10 h-10 rounded-control border border-border items-center justify-center text-text-secondary hover:bg-surface-soft hover:text-text-primary transition-colors cursor-pointer shrink-0"
+                    :aria-expanded="(!sidebarCollapsed).toString()"
+                    :title="sidebarCollapsed ? '{{ __('app.expand_sidebar') }}' : '{{ __('app.collapse_sidebar') }}'"
+                    aria-label="{{ __('app.toggle_sidebar') }}">
+                <x-icon name="menu" class="w-4.5 h-4.5" />
             </button>
 
             <a href="{{ route('dashboard') }}" class="min-w-0 truncate text-sm font-bold text-text-primary hover:text-primary">
@@ -416,7 +566,7 @@
                         <div class="text-xs font-extrabold text-text-primary truncate max-w-[120px]">
                             {{ auth()->user()->name ?? __('app.user_default_name') }}
                         </div>
-                        <div class="text-[10px] text-text-muted">
+                        <div class="text-xs text-text-muted">
                             {{ auth()->user()->email }}
                         </div>
                     </div>
@@ -449,7 +599,7 @@
     </header>
 
     <!-- Main Content Wrapper -->
-    <div class="min-h-screen pt-[64px] {{ $isRtl ? 'lg:mr-[264px]' : 'lg:ml-[264px]' }}">
+    <div class="app-content-shell min-h-screen pt-[64px]">
         <a href="#app-main" class="app-skip-link">{{ __('app.skip_content') }}</a>
         <main id="app-main" tabindex="-1" class="max-w-[1440px] mx-auto p-4 sm:p-6 lg:p-8">
             @include('platform.subscriptions.tenant-notice')

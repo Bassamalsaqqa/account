@@ -1,35 +1,30 @@
-<div class="max-w-4xl mx-auto space-y-6">
-    <!-- Header -->
-    <div class="flex items-center justify-between gap-4">
-        <div>
-            <h1 class="text-2xl font-bold tracking-tight text-text-primary">
-                {{ __('sales.settings_taxes') }}
-            </h1>
-            <p class="text-xs text-text-secondary mt-1">
-                {{ __('sales.settings_taxes_desc') }}
-            </p>
-        </div>
+<x-settings-shell active-section="taxes">
+    <div class="space-y-6">
+        <!-- Sub-Header / Action Bar -->
+        <div class="flex items-center justify-between gap-4 pb-3 border-b border-border">
+            <div>
+                <h2 class="text-base font-extrabold text-text-primary">
+                    {{ __('sales.settings_taxes') }}
+                </h2>
+                <p class="text-xs text-text-secondary mt-0.5">
+                    {{ __('sales.settings_taxes_desc') }}
+                </p>
+            </div>
 
-        <div class="flex items-center gap-2">
             <button type="button"
                     wire:click="newTaxRate"
-                    class="px-3.5 py-1.5 rounded-control bg-primary text-white text-xs font-bold hover:bg-primary-hover transition-colors shadow-xs" wire:loading.attr="disabled" wire:target="newTaxRate">
+                    class="h-10 min-h-[40px] px-4 rounded-control bg-primary text-white text-xs sm:text-sm font-bold hover:bg-primary-hover transition-colors shadow-xs cursor-pointer inline-flex items-center justify-center" wire:loading.attr="disabled" wire:target="newTaxRate">
                 {{ __('sales.add_tax_rate') }}
             </button>
-            <a href="{{ route('settings.index') }}"
-               class="touch-action px-3 py-1.5 rounded-control bg-surface-soft text-text-secondary hover:text-text-primary text-xs font-bold transition-colors">
-                {{ __('sales.back') }}
-            </a>
         </div>
-    </div>
 
-    @if (session()->has('success'))
-        <div class="p-3 bg-success-bg border border-success/30 rounded-control text-success text-xs font-bold">
-            {{ session('success') }}
-        </div>
-    @endif
+        @if (session()->has('success'))
+            <div class="p-3 bg-success-bg border border-success/30 rounded-control text-success text-xs font-bold">
+                {{ session('success') }}
+            </div>
+        @endif
 
-    <div class="bg-white rounded-card border border-border shadow-xs overflow-hidden">
+        <div class="bg-white rounded-card border border-border shadow-xs overflow-hidden">
         <div class="overflow-x-auto">
             <table class="data-table w-full text-start text-xs border-collapse">
                 <thead>
@@ -143,7 +138,7 @@
                                 <option value="{{ $acc->id }}">{{ $acc->code }} - {{ $acc->displayName() }}</option>
                             @endforeach
                         </select>
-                        @error('sales_tax_account_id') <span class="text-danger text-[11px] block mt-0.5">{{ $message }}</span> @enderror
+                        @error('sales_tax_account_id') <span class="text-danger text-xs block mt-0.5">{{ $message }}</span> @enderror
                     </div>
 
                     <div>
@@ -154,8 +149,8 @@
                                 <option value="{{ $account->id }}">{{ $account->code }} — {{ $account->displayName() }}</option>
                             @endforeach
                         </select>
-                        <p class="text-text-secondary text-[11px] mt-1">{{ __('purchasing.purchase_tax_account_hint') }}</p>
-                        @error('purchase_tax_account_id') <span class="text-danger text-[11px]">{{ $message }}</span> @enderror
+                        <p class="text-text-secondary text-xs mt-1">{{ __('purchasing.purchase_tax_account_hint') }}</p>
+                        @error('purchase_tax_account_id') <span class="text-danger text-xs">{{ $message }}</span> @enderror
                     </div>
 
                     <div class="flex items-center gap-2 pt-2">
@@ -175,4 +170,5 @@
             </div>
         </div>
     @endif
-</div>
+    </div>
+</x-settings-shell>

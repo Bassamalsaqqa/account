@@ -7,6 +7,7 @@ return [
     'draft_deleted' => 'Draft invoice deleted.',
     'optional_details' => 'Notes and terms (optional)',
     'tax_number' => 'Tax Number',
+    'posted_commercial_summary' => 'Net sales after deducting returns',
     // General / Common
     'sales' => 'Sales',
     'invoices' => 'Invoices',
@@ -313,4 +314,6 @@ return [
     'price_permission_required' => 'Price changes require permission',
     'discount_permission_required' => 'Discount changes require permission',
     'return_to_draft' => 'Return to Draft',
+    'received_amount' => 'Received Amount',
+    'allocated_amount' => 'Allocated Amount',
 ];

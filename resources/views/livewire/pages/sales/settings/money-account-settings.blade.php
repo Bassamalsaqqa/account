@@ -1,27 +1,22 @@
-<div class="max-w-4xl mx-auto space-y-6">
-    <!-- Header -->
-    <div class="flex items-center justify-between gap-4">
-        <div>
-            <h1 class="text-2xl font-bold tracking-tight text-text-primary">
-                {{ __('sales.settings_money_accounts') }}
-            </h1>
-            <p class="text-xs text-text-secondary mt-1">
-                {{ __('sales.settings_money_accounts_desc') }}
-            </p>
-        </div>
+<x-settings-shell active-section="money_accounts">
+    <div class="space-y-6">
+        <!-- Sub-Header / Action Bar -->
+        <div class="flex items-center justify-between gap-4 pb-3 border-b border-border">
+            <div>
+                <h2 class="text-base font-extrabold text-text-primary">
+                    {{ __('sales.settings_money_accounts') }}
+                </h2>
+                <p class="text-xs text-text-secondary mt-0.5">
+                    {{ __('sales.settings_money_accounts_desc') }}
+                </p>
+            </div>
 
-        <div class="flex items-center gap-2">
             <button type="button"
                     wire:click="newAccount"
-                    class="px-3.5 py-1.5 rounded-control bg-primary text-white text-xs font-bold hover:bg-primary-hover transition-colors shadow-xs" wire:loading.attr="disabled" wire:target="newAccount">
+                    class="h-10 min-h-[40px] px-4 rounded-control bg-primary text-white text-xs sm:text-sm font-bold hover:bg-primary-hover transition-colors shadow-xs cursor-pointer inline-flex items-center justify-center" wire:loading.attr="disabled" wire:target="newAccount">
                 {{ __('sales.add_account') }}
             </button>
-            <a href="{{ route('settings.index') }}"
-               class="touch-action px-3 py-1.5 rounded-control bg-surface-soft text-text-secondary hover:text-text-primary text-xs font-bold transition-colors">
-                {{ __('sales.back') }}
-            </a>
         </div>
-    </div>
 
     @if (session()->has('success'))
         <div class="p-3 bg-success-bg border border-success/30 rounded-control text-success text-xs font-bold">
@@ -160,4 +155,5 @@
             </div>
         </div>
     @endif
-</div>
+    </div>
+</x-settings-shell>

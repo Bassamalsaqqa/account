@@ -98,10 +98,9 @@
                                 </span>
                             </td>
                             <td class="table-actions py-3 px-4 text-end">
-                                <a href="{{ route('returns.show', $ret->public_id) }}"
-                                   class="touch-action bg-surface-soft hover:bg-primary-50 text-text-secondary hover:text-primary font-bold text-[11px] transition-colors">
-                                    {{ __('sales.return_details') }}
-                                </a>
+                                <div class="row-action-group justify-end" role="group" aria-label="{{ __('sales.actions') }}">
+                                    <x-row-action data-row-link :href="route('returns.show', $ret->public_id)" :label="__('sales.return_details')" icon="eye" />
+                                </div>
                             </td>
                         </tr>
                     @empty

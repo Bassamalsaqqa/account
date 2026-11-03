@@ -5,7 +5,22 @@ export function mobileShell(browser = window, page = document) {
     return {
         mobileMenuOpen: false,
         mobileLayout: browser.innerWidth < 1024,
+        sidebarCollapsed: (() => {
+            try {
+                return browser.localStorage?.getItem('accounting.sidebar.collapsed') === 'true';
+            } catch {
+                return false;
+            }
+        })(),
+        toggleSidebarCollapse() {
+            this.sidebarCollapsed = !this.sidebarCollapsed;
+            page.documentElement.setAttribute?.('data-sidebar-collapsed', String(this.sidebarCollapsed));
+            try {
+                browser.localStorage?.setItem('accounting.sidebar.collapsed', JSON.stringify(this.sidebarCollapsed));
+            } catch {}
+        },
         init() {
+            page.documentElement.setAttribute?.('data-sidebar-collapsed', String(this.sidebarCollapsed));
             viewportChanged = () => {
                 this.mobileLayout = browser.innerWidth < 1024;
                 const editing = page.activeElement?.matches('input, textarea, select, [contenteditable="true"]');
@@ -31,8 +46,55 @@ export function mobileShell(browser = window, page = document) {
     };
 }
 
+export function navigationScrollMemory(key, browser = window) {
+    return {
+        restoreScroll() {
+            try {
+                const saved = Number(browser.sessionStorage?.getItem(key) ?? '0');
+                if (this.$el && Number.isFinite(saved) && saved >= 0) this.$el.scrollTop = saved;
+            } catch {}
+        },
+        saveScroll() {
+            try {
+                if (this.$el) browser.sessionStorage?.setItem(key, String(this.$el.scrollTop));
+            } catch {}
+        },
+    };
+}
+
+export function sidebarNavigation(browser = window) {
+    const read = (key, fallback) => {
+        try { return browser.sessionStorage?.getItem(key) ?? fallback; }
+        catch { return fallback; }
+    };
+    const write = (key, value) => {
+        try { browser.sessionStorage?.setItem(key, value); } catch {}
+    };
+    let openGroups = {};
+    try {
+        const parsed = JSON.parse(read('accounting.sidebar.open', '{}'));
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) openGroups = parsed;
+    } catch {}
+    return {
+        ...navigationScrollMemory('accounting.sidebar.scroll', browser),
+        openGroups,
+        isGroupOpen(key, isRouteActive) {
+            if (!this.mobileLayout && this.sidebarCollapsed) return true;
+            return isRouteActive || this.openGroups[key] !== false;
+        },
+        toggleGroup(key, isRouteActive) {
+            this.openGroups[key] = !this.isGroupOpen(key, isRouteActive);
+            write('accounting.sidebar.open', JSON.stringify(this.openGroups));
+        },
+    };
+}
+
 if (typeof window !== 'undefined') {
-    const register = () => window.Alpine.data('accountingMobileShell', mobileShell);
+    const register = () => {
+        window.Alpine.data('accountingMobileShell', mobileShell);
+        window.Alpine.data('accountingSidebarNavigation', sidebarNavigation);
+        window.Alpine.data('accountingSettingsNavigation', () => navigationScrollMemory('accounting.settings.scroll'));
+    };
     if (window.Alpine) register();
     else document.addEventListener('alpine:init', register, { once: true });
 }

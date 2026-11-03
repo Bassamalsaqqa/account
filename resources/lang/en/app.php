@@ -14,6 +14,10 @@ return [
     'dashboard_phase0_desc' => 'The workspace is ready. Business modules will become available soon.',
     'dashboard_phase0_notice' => 'The settings page allows managing your company profile, localization, currencies, and members.',
     'version' => 'v1.0',
+    'optional' => 'Optional',
+    'collapse_sidebar' => 'Collapse sidebar',
+    'expand_sidebar' => 'Expand sidebar',
+    'toggle_sidebar' => 'Toggle sidebar',
 
     // Navigation groups & items
     'nav_dashboard' => 'Dashboard',

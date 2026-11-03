@@ -76,6 +76,7 @@
             </div>
         @endif
 
+        <!-- Metadata Row -->
         <div class="grid grid-cols-2 md:grid-cols-4 gap-4 pt-4 border-t border-border text-xs">
             <div>
                 <span class="text-text-muted block text-[11px]">{{ __('purchasing.payment_date') }}</span>
@@ -90,34 +91,42 @@
                 <span class="font-bold text-text-primary">{{ __('purchasing.' . $payment->payment_method) }}</span>
             </div>
             <div>
-                <span class="text-text-muted block text-[11px]">{{ __('purchasing.payment_amount') }}</span>
-                <span class="font-mono font-bold text-primary text-sm" dir="ltr">
-                    {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($payment->amount, $payment->currency_code) }} {{ $payment->currency_code }}
-                </span>
+                <span class="text-text-muted block text-[11px]">{{ __('purchasing.currency') ?? __('sales.currency') }}</span>
+                <span class="font-bold text-text-primary">{{ $payment->currency_code }} ({{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($payment->exchange_rate) }})</span>
             </div>
         </div>
 
-        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 pt-3 border-t border-border text-xs">
-            <div>
-                <span class="text-text-muted block text-[11px]">{{ __('purchasing.exchange_rate') }}</span>
-                <span class="font-mono font-semibold text-text-primary" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($payment->exchange_rate) }}</span>
-            </div>
-            <div>
-                <span class="text-text-muted block text-[11px]">{{ __('purchasing.allocated') }}</span>
-                <span class="font-mono font-bold text-text-primary" dir="ltr">
-                    {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($payment->allocated_amount, $payment->currency_code) }} {{ $payment->currency_code }}
-                </span>
-            </div>
-            <div>
-                <span class="text-text-muted block text-[11px]">{{ __('purchasing.unallocated_advance') }}</span>
-                <span class="font-mono font-bold text-info" dir="ltr">
-                    {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($payment->unallocated_amount, $payment->currency_code) }} {{ $payment->currency_code }}
-                </span>
-            </div>
-            <div>
-                <span class="text-text-muted block text-[11px]">{{ __('purchasing.vendor_invoice_number') }}</span>
-                <span class="font-medium text-text-secondary" dir="ltr">{{ $payment->reference_number ?? '—' }}</span>
-            </div>
+        <!-- Shared Summary Cards -->
+        @php
+            $vendorPaymentCards = [
+                [
+                    'label' => __('purchasing.paid_amount'),
+                    'value' => $payment->amount,
+                    'currency' => $payment->currency_code,
+                    'variant' => 'primary',
+                ],
+                [
+                    'label' => __('purchasing.allocated_amount'),
+                    'value' => $payment->allocated_amount,
+                    'currency' => $payment->currency_code,
+                    'variant' => 'success',
+                ],
+                [
+                    'label' => __('purchasing.unallocated_amount'),
+                    'value' => $payment->unallocated_amount,
+                    'currency' => $payment->currency_code,
+                    'variant' => \Brick\Math\BigDecimal::of((string) $payment->unallocated_amount)->isPositive() ? 'default' : 'muted',
+                ],
+                [
+                    'label' => __('purchasing.payment_date'),
+                    'raw_value' => $payment->payment_date->toDateString(),
+                    'is_date' => true,
+                    'variant' => 'default',
+                ],
+            ];
+        @endphp
+        <div class="pt-4 border-t border-border">
+            <x-document-summary-cards :cards="$vendorPaymentCards" :currency="$payment->currency_code" />
         </div>
     </div>
 

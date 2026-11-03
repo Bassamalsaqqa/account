@@ -110,11 +110,17 @@ final class IssuedDocumentContent
             $this->textMap($line, ['line_number', 'item_description', 'unit_name', 'sku', 'quantity', 'unit_price', 'discount', 'tax', 'total', 'image', 'currency_code', 'payment_currency_code', 'payment_currency_amount', 'base_currency_code', 'settlement_base_value']);
         }
         $presentation = $data['presentation'] ?? [];
-        $this->keys($presentation, ['logo', 'footer', 'show_qr']);
+        $this->keys($presentation, ['logo', 'footer', 'show_qr', 'template', 'accent_color']);
         foreach ($presentation as $key => $value) {
             if ($key === 'show_qr' ? ! is_bool($value) : (! is_string($value) && $value !== null)) {
                 throw new InvalidArgumentException('Invalid issued presentation.');
             }
+        }
+        if (isset($presentation['template']) && ! in_array($presentation['template'], ['classic', 'modern', 'compact'], true)) {
+            throw new InvalidArgumentException('Invalid issued presentation template.');
+        }
+        if (isset($presentation['accent_color']) && (! is_string($presentation['accent_color']) || ! preg_match('/^#[0-9a-fA-F]{6}$/', $presentation['accent_color']))) {
+            throw new InvalidArgumentException('Invalid issued presentation accent color.');
         }
         $statement = $data['statement'] ?? null;
         if ($statement !== null) {

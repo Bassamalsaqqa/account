@@ -163,9 +163,9 @@ if [ -f "$APP_DIR/storage/framework/down" ] || [ -f "$APP_DIR/storage/framework/
     echo "===> Notice: Pre-existing maintenance mode detected."
 fi
 
-echo "===> [2/7] Entering maintenance mode..."
+echo "===> [2/7] Entering maintenance mode with upgrade status banner..."
 if [ "$PREEXISTING_MAINTENANCE" -eq 0 ]; then
-    "$PHP_BIN" artisan down --retry=60
+    "$PHP_BIN" artisan down --retry=60 --render="errors.503"
 else
     echo "Existing maintenance guard retained without replacing its bypass configuration."
 fi
@@ -288,7 +288,7 @@ else
 fi
 
 # cp follows destination file links; reject them before any release mutation.
-STATIC_ASSETS=(index.php manifest.webmanifest sw.js offline.html icons/icon-192.png icons/icon-512.png icons/icon-maskable.png icons/icon-maskable.svg icons/icon.svg)
+STATIC_ASSETS=(index.php manifest.webmanifest sw.js offline.html favicon.svg og-image.png icons/apple-touch-icon.png icons/favicon-16x16.png icons/favicon-32x32.png icons/icon-192.png icons/icon-512.png icons/icon-maskable.png icons/icon-maskable.svg icons/icon.svg)
 for destination in "$PUBLIC_DIR/robots.txt" "$PUBLIC_DIR/favicon.ico" "$PUBLIC_DIR/default.php" "$PUBLIC_DIR/build" "$PUBLIC_DIR/icons"; do
     if [ -L "$destination" ]; then
         echo "ERROR: Symlinked public asset destination is refused." >&2

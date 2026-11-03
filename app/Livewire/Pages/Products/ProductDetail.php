@@ -17,6 +17,7 @@ use App\Models\Warehouse;
 use App\Support\Tenancy\CompanyContext;
 use Brick\Math\BigDecimal;
 use Illuminate\Contracts\View\View;
+use Illuminate\Pagination\LengthAwarePaginator;
 use Livewire\Attributes\Layout;
 use Livewire\Component;
 use Livewire\WithPagination;
@@ -97,21 +98,31 @@ class ProductDetail extends Component
         }
         $stockBreakdown = app(StockQuantityBreakdown::class)->forProduct($this->product, (string) $stockTotal);
 
-        // Lots if expiry tracked
+        // Lots if expiry tracked (deferred query when tab is active)
         $lots = collect();
         if ($this->product->track_expiry) {
-            $lots = InventoryLotBalance::where('company_id', $company->id)
-                ->where('product_id', $this->product->id)
-                ->with(['lot', 'warehouse'])
-                ->where('quantity_base', '>', 0)->orderBy('id')->paginate($this->tablePageSize(), ['*'], 'lotsPage');
+            if ($this->activeTab === 'lots') {
+                $lots = InventoryLotBalance::where('company_id', $company->id)
+                    ->where('product_id', $this->product->id)
+                    ->with(['lot', 'warehouse'])
+                    ->where('quantity_base', '>', 0)->orderBy('id')->paginate($this->tablePageSize(), ['*'], 'lotsPage');
+            } else {
+                $lotsCount = InventoryLotBalance::where('company_id', $company->id)
+                    ->where('product_id', $this->product->id)
+                    ->where('quantity_base', '>', 0)
+                    ->count();
+                $lots = new LengthAwarePaginator([], $lotsCount, $this->tablePageSize(), 1);
+            }
         }
 
-        // Movements history
-        $movements = StockMovement::where('company_id', $company->id)
-            ->where('product_id', $this->product->id)
-            ->with(['warehouse', 'lot', 'user'])
-            ->orderByDesc('id')
-            ->paginate($this->tablePageSize(), ['*'], 'movementsPage');
+        // Movements history (deferred query when tab is active)
+        $movements = ($this->activeTab === 'movements')
+            ? StockMovement::where('company_id', $company->id)
+                ->where('product_id', $this->product->id)
+                ->with(['warehouse', 'lot', 'user'])
+                ->orderByDesc('id')
+                ->paginate($this->tablePageSize(), ['*'], 'movementsPage')
+            : new LengthAwarePaginator([], 0, $this->tablePageSize(), 1);
 
         // Cost state (strictly gated)
         $costState = null;

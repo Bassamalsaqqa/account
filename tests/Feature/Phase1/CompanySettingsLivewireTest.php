@@ -365,7 +365,7 @@ class CompanySettingsLivewireTest extends TestCase
         ]);
     }
 
-    public function test_owner_can_navigate_every_settings_section_and_back_to_overview(): void
+    public function test_owner_can_navigate_every_settings_section_and_legacy_overview_opens_identity(): void
     {
         $component = Livewire::actingAs($this->owner)
             ->test(SettingsIndex::class);
@@ -375,11 +375,11 @@ class CompanySettingsLivewireTest extends TestCase
 
         foreach ($sections as $section) {
             $component->call('setSection', $section)
-                ->assertSet('activeSection', $section);
+                ->assertSet('activeSection', $section === 'overview' ? 'identity' : $section);
         }
     }
 
-    public function test_unauthorized_user_cannot_navigate_to_restricted_sections_and_sees_disabled_cards(): void
+    public function test_unauthorized_user_cannot_navigate_to_restricted_sections_and_has_no_dead_links(): void
     {
         $limitedUser = User::factory()->create();
         CompanyUser::create([
@@ -404,10 +404,10 @@ class CompanySettingsLivewireTest extends TestCase
 
         // Limited user can access general sections
         $component->call('setSection', 'identity')->assertSet('activeSection', 'identity');
-        $component->call('setSection', 'overview')->assertSet('activeSection', 'overview');
+        $component->call('setSection', 'overview')->assertSet('activeSection', 'identity');
 
-        // Limited user sees restricted card notice in rendered view
-        $component->assertSee(__('settings.restricted_card_notice'));
+        // Restricted destinations are omitted, while direct calls still fail closed.
+        $component->assertDontSee(route('settings.index', ['section' => 'users']), false);
 
         // Calling restricted sections is forbidden (HTTP 403)
         Livewire::actingAs($limitedUser)
@@ -436,8 +436,8 @@ class CompanySettingsLivewireTest extends TestCase
         $arResponse->assertOk();
         $arResponse->assertSee('dir="rtl"', false);
         $arResponse->assertSee(__('settings.title', [], 'ar'));
-        $arResponse->assertSee(__('settings.optional_2fa', [], 'ar'));
-        $arResponse->assertSee(__('settings.aside_activity_title', [], 'ar'));
+        $arResponse->assertSee(__('settings.card_company_title', [], 'ar'));
+        $arResponse->assertSee(__('settings.card_security_title', [], 'ar'));
 
         // 2. English LTR/RTL check
         $this->owner->update(['locale' => 'en']);
@@ -447,8 +447,8 @@ class CompanySettingsLivewireTest extends TestCase
         $enResponse->assertOk();
         $enResponse->assertSee('dir="ltr"', false);
         $enResponse->assertSee('System Settings');
-        $enResponse->assertSee(__('settings.optional_2fa', [], 'en'));
-        $enResponse->assertSee('Recent Activity');
+        $enResponse->assertSee(__('settings.card_company_title', [], 'en'));
+        $enResponse->assertSee(__('settings.card_security_title', [], 'en'));
 
         // Reset locale back
         $this->owner->update(['locale' => 'ar']);

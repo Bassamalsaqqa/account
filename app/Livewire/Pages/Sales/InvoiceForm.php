@@ -14,6 +14,7 @@ use App\Domain\Money\Exceptions\InvalidMoneyException;
 use App\Domain\Sales\Calculators\SalesDocumentTotalsCalculator;
 use App\Domain\Sales\Calculators\SalesLineCalculationInput;
 use App\Domain\Sales\Calculators\SalesLineCalculator;
+use App\Domain\Sales\Formatters\SalesMoneyFormatter;
 use App\Domain\Sales\Queries\CustomerCreditLimitQuery;
 use App\Domain\Sales\Queries\CustomerLastPriceQuery;
 use App\Exceptions\NoActiveCompanyException;
@@ -638,7 +639,7 @@ class InvoiceForm extends Component
         $this->previewSubtotal = (string) $totals->subtotalCurrency;
         $this->previewDiscountTotal = (string) $totals->discountTotalCurrency;
         $this->previewTaxTotal = (string) $totals->taxTotalCurrency;
-        $this->previewGrandTotal = (string) $totals->grandTotalCurrency;
+        $this->previewGrandTotal = SalesMoneyFormatter::formatMoneyInput($totals->grandTotalCurrency);
         $this->documentTotalsValid = true;
     }
 

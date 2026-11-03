@@ -124,40 +124,73 @@
     </div>
 
     <!-- Navigation Tabs -->
-    <div class="border-b border-border flex items-center gap-2 overflow-x-auto text-xs font-bold">
-        <button type="button"
+    <div role="tablist"
+         aria-label="{{ __('sales.customer_tabs') ?? 'تبويبات العميل' }}"
+         x-data="{
+             navigate(e) {
+                 const tabs = Array.from($el.querySelectorAll('[role=tab]'));
+                 const idx = tabs.indexOf(document.activeElement);
+                 if (idx === -1) return;
+                 let nextIdx = idx;
+                 const isRtl = document.documentElement.dir === 'rtl';
+                 if (e.key === 'ArrowRight') {
+                     nextIdx = isRtl ? (idx - 1 + tabs.length) % tabs.length : (idx + 1) % tabs.length;
+                 } else if (e.key === 'ArrowLeft') {
+                     nextIdx = isRtl ? (idx + 1) % tabs.length : (idx - 1 + tabs.length) % tabs.length;
+                 } else if (e.key === 'Home') {
+                     nextIdx = 0;
+                 } else if (e.key === 'End') {
+                     nextIdx = tabs.length - 1;
+                 } else {
+                     return;
+                 }
+                 e.preventDefault();
+                 tabs[nextIdx].focus();
+                 tabs[nextIdx].click();
+             }
+         }"
+         @keydown="navigate($event)"
+         class="border-b border-border flex items-center gap-2 overflow-x-auto text-xs font-bold">
+        <button type="button" role="tab" id="tab-customer-overview" aria-controls="panel-customer-overview"
+                aria-selected="{{ $activeTab === 'overview' ? 'true' : 'false' }}" tabindex="{{ $activeTab === 'overview' ? '0' : '-1' }}"
                 wire:click="$set('activeTab', 'overview')"
                 class="pb-2.5 px-3 border-b-2 transition-colors cursor-pointer {{ $activeTab === 'overview' ? 'border-primary text-primary' : 'border-transparent text-text-muted hover:text-text-primary' }}">
             {{ __('sales.tab_overview') }}
         </button>
-        <button type="button"
+        <button type="button" role="tab" id="tab-customer-invoices" aria-controls="panel-customer-invoices"
+                aria-selected="{{ $activeTab === 'invoices' ? 'true' : 'false' }}" tabindex="{{ $activeTab === 'invoices' ? '0' : '-1' }}"
                 wire:click="$set('activeTab', 'invoices')"
                 class="pb-2.5 px-3 border-b-2 transition-colors cursor-pointer {{ $activeTab === 'invoices' ? 'border-primary text-primary' : 'border-transparent text-text-muted hover:text-text-primary' }}">
             {{ __('sales.tab_invoices') }}
         </button>
-        <button type="button"
+        <button type="button" role="tab" id="tab-customer-quotations" aria-controls="panel-customer-quotations"
+                aria-selected="{{ $activeTab === 'quotations' ? 'true' : 'false' }}" tabindex="{{ $activeTab === 'quotations' ? '0' : '-1' }}"
                 wire:click="$set('activeTab', 'quotations')"
                 class="pb-2.5 px-3 border-b-2 transition-colors cursor-pointer {{ $activeTab === 'quotations' ? 'border-primary text-primary' : 'border-transparent text-text-muted hover:text-text-primary' }}">
             {{ __('sales.tab_quotations') }}
         </button>
-        <button type="button"
+        <button type="button" role="tab" id="tab-customer-payments" aria-controls="panel-customer-payments"
+                aria-selected="{{ $activeTab === 'payments' ? 'true' : 'false' }}" tabindex="{{ $activeTab === 'payments' ? '0' : '-1' }}"
                 wire:click="$set('activeTab', 'payments')"
                 class="pb-2.5 px-3 border-b-2 transition-colors cursor-pointer {{ $activeTab === 'payments' ? 'border-primary text-primary' : 'border-transparent text-text-muted hover:text-text-primary' }}">
             {{ __('sales.tab_payments') }}
         </button>
-        <button type="button"
+        <button type="button" role="tab" id="tab-customer-returns" aria-controls="panel-customer-returns"
+                aria-selected="{{ $activeTab === 'returns' ? 'true' : 'false' }}" tabindex="{{ $activeTab === 'returns' ? '0' : '-1' }}"
                 wire:click="$set('activeTab', 'returns')"
                 class="pb-2.5 px-3 border-b-2 transition-colors cursor-pointer {{ $activeTab === 'returns' ? 'border-primary text-primary' : 'border-transparent text-text-muted hover:text-text-primary' }}">
             {{ __('sales.tab_returns') }}
         </button>
         @if ($canStatement)
-            <button type="button"
+            <button type="button" role="tab" id="tab-customer-statement" aria-controls="panel-customer-statement"
+                    aria-selected="{{ $activeTab === 'statement' ? 'true' : 'false' }}" tabindex="{{ $activeTab === 'statement' ? '0' : '-1' }}"
                     wire:click="$set('activeTab', 'statement')"
                     class="pb-2.5 px-3 border-b-2 transition-colors cursor-pointer {{ $activeTab === 'statement' ? 'border-primary text-primary' : 'border-transparent text-text-muted hover:text-text-primary' }}">
                 {{ __('sales.tab_statement') }}
             </button>
         @endif
-        <button type="button"
+        <button type="button" role="tab" id="tab-customer-notes" aria-controls="panel-customer-notes"
+                aria-selected="{{ $activeTab === 'notes' ? 'true' : 'false' }}" tabindex="{{ $activeTab === 'notes' ? '0' : '-1' }}"
                 wire:click="$set('activeTab', 'notes')"
                 class="pb-2.5 px-3 border-b-2 transition-colors cursor-pointer {{ $activeTab === 'notes' ? 'border-primary text-primary' : 'border-transparent text-text-muted hover:text-text-primary' }}">
             {{ __('sales.tab_notes') }}
@@ -165,7 +198,7 @@
     </div>
 
     <!-- Tab Contents -->
-    <div class="bg-white rounded-card border border-border shadow-xs p-6">
+    <div role="tabpanel" id="panel-customer-{{ $activeTab }}" aria-labelledby="tab-customer-{{ $activeTab }}" tabindex="0" wire:key="customer-panel-{{ $activeTab }}" wire:loading.class="opacity-70" class="bg-white rounded-card border border-border shadow-xs p-6">
         @if ($activeTab === 'overview')
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6 text-xs">
                 <div class="space-y-3">

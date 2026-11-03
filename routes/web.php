@@ -13,7 +13,6 @@ use App\Http\Controllers\PurchasingDocumentController;
 use App\Http\Controllers\ReportCsvController;
 use App\Http\Middleware\PrivateDocumentResponse;
 use App\Http\Middleware\RequirePlatformBillingPassword;
-use App\Livewire\AI\AiSettings;
 use App\Livewire\Pages\Catalog\BrandIndex;
 use App\Livewire\Pages\Catalog\CategoryIndex;
 use App\Livewire\Pages\Catalog\UnitIndex;
@@ -80,7 +79,6 @@ use App\Livewire\Pages\Sales\ReturnDetail;
 use App\Livewire\Pages\Sales\ReturnForm;
 use App\Livewire\Pages\Sales\ReturnIndex;
 use App\Livewire\Pages\Sales\Settings\DocumentSequenceSettings;
-use App\Livewire\Pages\Sales\Settings\DocumentSettingsForm;
 use App\Livewire\Pages\Sales\Settings\MoneyAccountSettings;
 use App\Livewire\Pages\Sales\Settings\TaxRateSettings;
 use App\Livewire\Pages\SettingsIndex;
@@ -162,7 +160,10 @@ Route::middleware(['auth'])->group(function () {
 
     // Company-protected routes
     Route::middleware(['company.ensure'])->group(function () {
-        Route::get('settings/ai', AiSettings::class)->name('settings.ai');
+        // Canonical Settings Redirect Shims (Phase 10/Round 6 retirement)
+        Route::get('settings/ai', function () {
+            return redirect()->route('settings.index', array_merge(['section' => 'ai'], request()->query()), 301);
+        })->name('settings.ai');
         Route::get('dashboard', Dashboard::class)->name('dashboard');
         Route::get('reports', ReportHub::class)->name('reports.index');
         Route::get('reports/{reportKey}/csv', ReportCsvController::class)->where('reportKey', '[a-z][a-z0-9.\-]*')->name('reports.export');
@@ -229,7 +230,14 @@ Route::middleware(['auth'])->group(function () {
 
         // Phase 5A Purchasing Settings
         Route::get('settings/purchases', PurchaseSettingsForm::class)->name('settings.purchases');
-        Route::get('settings/documents', DocumentSettingsForm::class)->name('settings.documents');
+        Route::get('settings/documents', function () {
+            $user = auth()->user();
+            if (! $user || ! $user->hasPermissionTo('settings.company.view') || ! $user->hasPermissionTo('settings.documents.manage')) {
+                abort(403);
+            }
+
+            return redirect()->route('settings.index', array_merge(['section' => 'documents'], request()->query()), 301);
+        })->name('settings.documents');
 
         // Phase 5A Vendors
         Route::get('barcode-labels', BarcodeLabels::class)->name('labels.index');

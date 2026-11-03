@@ -67,7 +67,7 @@ class PurchaseReturnIndex extends Component
 
         $fields = [
             'id', 'public_id', 'company_id', 'purchase_id', 'vendor_id',
-            'return_date', 'return_number', 'status', 'currency_code',
+            'return_date', 'return_number', 'status', 'currency_code', 'created_at',
         ];
 
         if ($withCost) {

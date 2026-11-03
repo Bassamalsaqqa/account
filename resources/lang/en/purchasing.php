@@ -341,4 +341,7 @@ return [
     'landed_cost_attached' => 'Landed cost successfully attached and allocated to purchase lines.',
     'landed_cost_removed' => 'Landed cost successfully removed.',
     'landed_cost_failed' => 'Landed cost allocation failed: ',
+    'paid_amount' => 'Paid Amount',
+    'allocated_amount' => 'Allocated Amount',
+    'unallocated_amount' => 'Unallocated Balance',
 ];

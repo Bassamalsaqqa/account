@@ -4,12 +4,15 @@ declare(strict_types=1);
 
 namespace Tests\Feature\Phase9;
 
+use App\Actions\Sales\CreateQuotationAction;
 use App\Actions\Sales\CreateSalesInvoiceDraftAction;
 use App\Actions\Sales\PostSalesInvoiceAction;
+use App\Actions\Sales\UpdateQuotationAction;
 use App\Actions\Sales\VoidSalesInvoiceAction;
 use App\Livewire\FinancialShareManager;
 use App\Models\Customer;
 use App\Models\PublicShare;
+use App\Models\Quotation;
 use App\Models\SalesInvoice;
 use App\Services\Sales\DocumentDataBuilder;
 use App\Services\Sales\DocumentRenderLimits;
@@ -105,11 +108,11 @@ class FinancialSharesTest extends Phase5ETestCase
         $limits = \Mockery::mock(new DocumentRenderLimits);
         $limits->shouldReceive('assertStatementSource')->andThrow(new InvalidArgumentException('Supported history bound exceeded.'));
         $this->app->instance(DocumentRenderLimits::class, $limits);
-        Livewire::test(FinancialShareManager::class, ['subjectType' => PublicShare::SUBJECT_CUSTOMER_STATEMENT, 'subjectId' => $invoice->customer_id])
-            ->assertViewHas('preview', null)
-            ->assertViewHas('previewError', __('sharing.issuance_unavailable'))
-            ->set('password', 'statement-password')->call('create')->assertHasErrors('share')
-            ->assertSet('url', null);
+        $component = Livewire::test(FinancialShareManager::class, ['subjectType' => PublicShare::SUBJECT_CUSTOMER_STATEMENT, 'subjectId' => $invoice->customer_id]);
+        $component->assertViewHas('preview', null);
+        $component->assertViewHas('previewError', __('sharing.issuance_unavailable'));
+        $component->set('password', 'statement-password')->call('create')->assertHasErrors('share');
+        $component->assertSet('url', null);
         $this->assertSame(0, PublicShare::count());
 
         $this->app->forgetInstance(DocumentRenderLimits::class);
@@ -129,6 +132,8 @@ class FinancialSharesTest extends Phase5ETestCase
             $component = Livewire::test(FinancialShareManager::class, ['subjectType' => PublicShare::SUBJECT_SALES_INVOICE, 'subjectId' => $invoice->id])
                 ->assertSet('expiryDays', 30)->set('expiryDays', 1)->call('create')->assertHasNoErrors();
             $share = PublicShare::where('subject_type', PublicShare::SUBJECT_SALES_INVOICE)->where('subject_id', $invoice->id)->firstOrFail();
+            $this->assertInstanceOf(Carbon::class, $share->expires_at);
+            $this->assertInstanceOf(Carbon::class, $share->issued_at);
             $this->assertSame(86400, $share->expires_at->timestamp - $share->issued_at->timestamp);
             $this->assertSame(now('UTC')->timestamp, $share->issued_at->timestamp);
             $component->assertSee($share->expires_at->copy()->setTimezone('Asia/Hebron')->toIso8601String());
@@ -298,5 +303,44 @@ class FinancialSharesTest extends Phase5ETestCase
         $this->get('/share/'.$token)->assertOk()->assertSee($invoice->invoice_number)->assertDontSee('fonts.googleapis');
         $share->update(['is_active' => false]);
         $this->get('/share/'.$token)->assertDontSee($invoice->invoice_number);
+    }
+
+    public function test_share_manager_clears_link_and_rejects_recovery_when_quotation_revision_changes_or_source_is_voided(): void
+    {
+        $customer = Customer::create(['company_id' => $this->company->id, 'name_ar' => 'عميل عرض أسعار', 'name_en' => 'Quote customer', 'active' => true, 'created_by' => $this->owner->id]);
+        $quote = app(CreateQuotationAction::class)->execute($this->company, $this->owner, [
+            'customer_id' => $customer->id,
+            'currency_code' => 'USD',
+            'exchange_rate' => '3.5',
+            'issue_date' => '2026-10-01',
+            'lines' => [['item_description' => 'First quotation revision', 'quantity' => '1', 'unit_price' => '100']],
+        ]);
+        $quote->transition(Quotation::STATUS_SENT, $this->owner);
+
+        // Issue share for quotation
+        $page = Livewire::test(FinancialShareManager::class, ['subjectType' => PublicShare::SUBJECT_QUOTATION, 'subjectId' => $quote->id])
+            ->call('create')
+            ->assertHasNoErrors();
+
+        $shareId = $page->get('selectedShareId');
+        $this->assertNotNull($shareId);
+        $this->assertNotNull($page->get('url'));
+
+        // Transition quotation to draft and update lines (new revision)
+        $quote->transition(Quotation::STATUS_DRAFT, $this->owner);
+        app(UpdateQuotationAction::class)->execute($quote, $this->owner, [
+            'lines' => [['item_description' => 'Second revised revision', 'quantity' => '2', 'unit_price' => '200']],
+        ]);
+        $quote->transition(Quotation::STATUS_SENT, $this->owner);
+
+        // Refreshing share manager clears the active URL because revision is stale!
+        $page->call('$refresh')
+            ->assertSet('url', null)
+            ->assertSet('selectedShareId', null);
+
+        // Recovering stale share publicId fails with issuance_unavailable error!
+        $page->call('recover', $shareId)
+            ->assertHasErrors('share')
+            ->assertSet('url', null);
     }
 }

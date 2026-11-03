@@ -111,6 +111,8 @@
              }
          }"
          @keydown="navigate($event)"
+         role="tablist"
+         aria-label="{{ __('inventory.product_tabs') ?? 'تبويبات الصنف' }}"
          class="border-b border-border flex flex-wrap items-center gap-6 text-xs font-bold select-none">
         <button type="button" role="tab" id="tab-overview" aria-controls="panel-overview" aria-selected="{{ $activeTab === 'overview' ? 'true' : 'false' }}" tabindex="{{ $activeTab === 'overview' ? '0' : '-1' }}" wire:click="setTab('overview')"
                 class="pb-3 border-b-2 transition-colors {{ $activeTab === 'overview' ? 'border-primary text-primary' : 'border-transparent text-text-secondary hover:text-text-primary' }}" wire:loading.attr="disabled" wire:target="setTab">

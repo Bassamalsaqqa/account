@@ -3,7 +3,8 @@
     $isRtl = $locale === 'ar';
 @endphp
 
-<div class="py-6 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto" dir="{{ $isRtl ? 'rtl' : 'ltr' }}">
+<x-settings-shell active-section="catalogs">
+<div class="space-y-6">
     <!-- Session Messages -->
     @if(session('success'))
         <div class="mb-4 p-4 rounded-md bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm flex items-center justify-between">
@@ -52,9 +53,9 @@
         <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
             <div>
                 <div class="flex items-center gap-3 flex-wrap">
-                    <h1 class="text-xl sm:text-2xl font-bold text-slate-900">
+                    <h2 class="text-xl sm:text-2xl font-bold text-text-primary">
                         {{ $headers['name_ar'] ?: ($headers['name_en'] ?: __('catalogs.new_catalog')) }}
-                    </h1>
+                    </h2>
 
                     @php
                         $statusClasses = [
@@ -1149,4 +1150,5 @@
             </div>
         </div>
     @endif
-</div>
+    </div>
+</x-settings-shell>

@@ -58,8 +58,8 @@
                         <th class="py-3 px-4 text-start">{{ __('purchasing.payment_amount') }}</th>
                         <th class="py-3 px-4 text-start">{{ __('purchasing.allocated') }}</th>
                         <th class="py-3 px-4 text-start">{{ __('purchasing.unallocated') }}</th>
-                        <th class="py-3 px-4 text-start">{{ __('purchasing.all_statuses') }}</th>
-                        <th class="py-3 px-4 text-end">{{ __('purchasing.vendor_details') }}</th>
+                        <th class="py-3 px-4 text-start">{{ __('purchasing.status') }}</th>
+                        <th class="py-3 px-4 text-end">{{ __('sales.actions') }}</th>
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-border">

@@ -107,16 +107,10 @@
                                 @endif
                             </td>
                             <td class="table-actions py-3 px-4 text-end">
-                                <div class="flex items-center justify-end gap-2">
-                                    <a href="{{ route('customers.show', $customer->public_id) }}"
-                                       class="touch-action bg-surface-soft hover:bg-primary-50 text-text-secondary hover:text-primary font-bold text-[11px] transition-colors">
-                                        {{ __('sales.customer_details') }}
-                                    </a>
+                                <div class="row-action-group justify-end" role="group" aria-label="{{ __('sales.actions') }}">
+                                    <x-row-action data-row-link :href="route('customers.show', $customer->public_id)" :label="__('sales.customer_details')" icon="eye" />
                                     @if ($canManage)
-                                        <a href="{{ route('customers.edit', $customer->public_id) }}"
-                                           class="touch-action bg-surface-soft hover:bg-slate-200 text-text-secondary font-bold text-[11px] transition-colors">
-                                            {{ __('sales.edit_customer') }}
-                                        </a>
+                                        <x-row-action :href="route('customers.edit', $customer->public_id)" :label="__('sales.edit_customer')" icon="edit" tone="primary" />
                                     @endif
                                 </div>
                             </td>

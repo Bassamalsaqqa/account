@@ -264,7 +264,7 @@
             </section>
         @endif
     @elseif ($setupAvailable ?? false)
-        <a href="{{ route('settings.ai') }}" class="ai-launcher">
+        <a href="{{ route('settings.index', ['section' => 'ai']) }}" class="ai-launcher">
             <x-icon name="sparkles" aria-hidden="true" /><span>{{ __('ai_product.setup') }}</span><x-icon name="microphone" class="ai-launcher-mic" aria-hidden="true" />
         </a>
     @endif

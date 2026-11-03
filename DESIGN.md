@@ -1,27 +1,53 @@
-# Accounting — everyday business workflows
+# Small Trader Accounting — Design System & Workflow Architecture
 
-Operate mode. The product is used repeatedly throughout a working day to understand the business and complete real transactions. Its visual authority is the Owner's 14 October redesign brief and the existing bilingual IBM Plex Sans Arabic identity, not the discarded Dashboard's density.
+Inspired by BoardUI and shadcn principles, adapted to Laravel 13, Livewire 4, Tailwind CSS 4, and Alpine.js.
 
-## Direction
+## Design Philosophy
 
-The Owner's 2 November correction replaces the previous dashboard concept. Home is a compact working page: sales and purchases after returns for the selected dates, followed by current cash/bank balances per account and checks in hand per currency. Preserve the recognizable blue identity, IBM Plex Sans Arabic, quiet canvas, readable text and restrained borders. Use shadcn's compact controls and clear grouping through existing Blade components, without another frontend framework.
+The application is built for everyday high-frequency business operations. It prioritizes clarity, informational density, rapid keyboard entry, and touch-first usability without superfluous decorative ornamentation.
 
-The first viewport must answer: how much did I sell/buy in these dates, and what money do I have now? Period controls change activity only; dated balances remain current. No comparison chart, alert wall, assistant promotion, explanatory paragraphs or decorative hero. Numbers come from authorized canonical reports, include actual returns/reversals and never mix currencies, treat invoices as money collected or expose restricted values.
+1. **Semantic Color & Token System**:
+   - Canvas / Ground: `bg-canvas` (`#f8fafc` / light calm slate).
+   - Surfaces: `bg-surface` (`#ffffff`), `bg-surface-soft` (`#f1f5f9` for subtle trays/wells).
+   - Borders: `border-border` (`#e2e8f0` hairlines), `border-border-strong` (`#cbd5e1` controls).
+   - Accent & Primary: `--color-primary: #255fd6`, hover `#1f52bd`, light tints `#eef4ff`.
+   - **Rich Subtle Colored Surfaces (BoardUI-Inspired)**:
+     - Sales Metric Card: Subtle emerald surface (`#f0fdf4`, border `#bbf7d0`, text `#166534`).
+     - Purchases Metric Card: Subtle blue surface (`#eff6ff`, border `#bfdbfe`, text `#1e40af`).
+     - Cash Register Card: Subtle amber surface (`#fffbeb`, border `#fde68a`, text `#92400e`).
+     - Bank Account Card: Subtle sky surface (`#f0f9ff`, border `#bae6fd`, text `#0369a1`).
+     - Checks Held Card: Subtle purple surface (`#faf5ff`, border `#e9d5ff`, text `#6b21a8`).
+   - Semantic Status Tokens:
+     - Success / Posted / Paid: `--color-success: #14804a`, background `#eaf8f0`.
+     - Warning / Pending: `--color-warning: #a15c00`, background `#fff5df`.
+     - Danger / Void / Alert: `--color-danger: #b42318`, background `#fff0ee`.
+     - Draft / Neutral: slate soft surface with subtle border.
 
-The Owner's subsequent visual correction requires appealing, distinct card backgrounds rather than a flat white layout: muted mint for sales, blue for purchases, warm cash and cool bank/check surfaces. Keep deep readable foregrounds, restrained depth and compact single-line actions with fixed 16px icons. Color identifies the figure's nature, never an invented financial status.
+2. **Bilingual Arabic RTL & English LTR Typography**:
+   - Primary Arabic Font: `IBM Plex Sans Arabic` with system fallback (`Tahoma, Arial, sans-serif`).
+   - Monospace & Numbers: All money amounts, quantities, SKUs, barcode values, document numbers, and timestamps use `font-mono tabular-nums` with explicit `dir="ltr"` and `unicode-bidi: isolate`.
+   - Clear Visual Hierarchy:
+     - Page Title: `text-xl md:text-2xl font-bold text-text-primary tracking-tight`
+     - Section Heading: `text-base md:text-lg font-semibold text-text-primary`
+     - Table Column Headers: `text-xs font-semibold uppercase tracking-wider text-text-secondary`
+     - Body / Table Cell: `text-sm text-text-primary`
+     - Caption / Helper Text: `text-xs text-text-muted`
 
-## Shared rules
+3. **Desktop Working Density & 44px Mobile Targets**:
+   - Desktop: Compact 36px–38px buttons and inputs, tight one-line table rows with sticky action column.
+   - Mobile: 44px minimum touch targets on all interactive controls (`.touch-action`, `min-h-[44px]`).
+   - iOS Zoom Prevention: Form inputs use `16px` font size on screens `< 768px` to prevent browser auto-zoom.
 
-- IBM Plex Sans Arabic throughout, readable 14–16px working text and a distinct 28–32px page heading. Small metadata supports rather than competes with primary values.
-- Blue denotes action and selected state; green/amber/red describe evidence-backed status with text, not color alone. Ink and white preserve comfortable contrast.
-- Existing icon component only. No new frameworks, chart dependency, hero illustration, glass, animated counters or decorative gradients.
-- Logical spacing and alignment; currency and exact decimal displays isolated LTR in Arabic. Current balances remain visibly distinct from period activity.
-- Compact grouped navigation, truthful available destinations, no preview placeholders or disabled pretend actions in the everyday app shell.
-- Forms expose labels, helpful validation, visible loading/disabled feedback and stable actions. Desktop tables retain a contained horizontal scroll on narrow screens; inputs and touch actions remain comfortably sized.
-- Responsive comparison/attention columns stack on phones, with the period choice and primary action still immediately available. No essential content clipped behind the assistant launcher or mobile navigation.
-- Assistant keeps its existing responsive drawer and native microphone interaction. Recognized text stays visible/editable during a cancellable pre-dispatch countdown; no new microphone consent popup or recording on opening.
-- Focus rings, error/empty/restricted states and reduced motion are mandatory. Finite calm transitions support orientation, not spectacle.
+4. **Shared Component Architecture**:
+   - **App Shell**: 264px fixed sidebar with persistent state in `sessionStorage` (`accounting.sidebar.open` and `accounting.sidebar.scroll`), sticky topbar with search, tenant switcher, and language toggle.
+   - **Settings Hub**: Two-column layout with persistent discoverable Section Index sidebar on desktop, horizontal pill scroller on mobile, and URL deep-linking (`#[Url(as: 'section')]`). Compact 2-column form grids with isolated saves.
+   - **Document Sharing**: One-click Quick Share action card (30-day default expiry, interface locale auto-inherited, instant copy & feedback), with deferred history/QR computation.
+   - **Data Tables**: Striped hover rows, server-side pagination with 50/100/200 choices, sticky header, and end-anchored row actions.
+   - **Dialogs & Overlays**: Accessible `dialog-shell` with focus trap, backdrop click, Escape key dismiss (gated during in-flight submission), and Alpine v3 `$cleanup` hook.
+   - **Stat Cards**: Clean KPI cards with subtle colored surfaces, distinct icon circles, and bold tabular amounts.
+   - **Feedback**: Inline actionable alert banners for errors, non-intrusive action toasts for temporary confirmations.
 
-## Verification
-
-Capture current and improved synthetic-data UI in Arabic/English, desktop/mobile. Verify exact totals/periods, permissions and no financial writes separately from appearance. Real model intelligence, accent transcription, hosting capacity and independent recovery are not established by mocked/local screenshots.
+5. **Motion & Transitions**:
+   - Targeted, finite micro-interactions (color, opacity, border-color) avoiding generic `transition: all`.
+   - Full support for `prefers-reduced-motion: reduce` (`transition: none !important`).
+   - Zero artificial waits, spinners, or simulated delays. Loading states preserve preceding context (`opacity-70`).
