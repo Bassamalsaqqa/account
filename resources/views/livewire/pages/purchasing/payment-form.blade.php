@@ -47,9 +47,7 @@
 
     <!-- Main Form -->
     <form novalidate @submit.prevent="run('save', [], true)" class="{{ $isModal ? 'space-y-5' : 'bg-white rounded-card border border-border shadow-xs p-6 space-y-6' }}">
-        @if ($errors->any())
-            <ul role="alert" class="text-sm text-danger space-y-1">@foreach ($errors->all() as $message)<li>{{ $message }}</li>@endforeach</ul>
-        @endif
+
         <!-- Payment Details Header -->
         <div class="grid grid-cols-1 {{ $sourcePurchaseId !== null ? 'md:grid-cols-2' : 'md:grid-cols-3' }} gap-4 pb-4 border-b border-border">
             <!-- Vendor -->
