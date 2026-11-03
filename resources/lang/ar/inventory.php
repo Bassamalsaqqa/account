@@ -1,6 +1,12 @@
 <?php
 
 return [
+    'stock_by_location' => 'المخزون حسب الموقع',
+    'search_stock_placeholder' => 'البحث عن صنف أو رمز…',
+    'all_warehouses' => 'جميع المستودعات',
+    'in_stock' => 'متوفر بالمخزون',
+    'out_of_stock' => 'غير متوفر',
+    'no_stock_found' => 'لا توجد سجلات مخزون مطابقة.',
     'product_name_required' => 'أدخل اسم الصنف بالعربية أو الإنجليزية أو بكلتيهما.',
     // Catalog & Products
     'products' => 'دليل الأصناف',
@@ -53,7 +59,7 @@ return [
     'type_non_stock' => 'غير مخزني',
     'type_service' => 'خدمي',
     'track_stock' => 'تتبع المخزون والكميات',
-    'track_expiry' => 'تتبع تاريخ الصلاحية والدفعات (FEFO)',
+    'track_expiry' => 'تتبع تاريخ الصلاحية والدفعات',
     'active' => 'نشط',
     'inactive' => 'معطل',
     'description_ar' => 'الوصف بالعربية',
@@ -246,7 +252,7 @@ return [
     'base_currency' => 'العملة الأساسية',
     'opening_stock_date' => 'تاريخ الرصيد الافتتاحي',
     'save_opening_stock_generate_entry' => 'حفظ الرصيد الافتتاحي وتوليد القيد',
-    'expiry_subtitle' => 'مراقبة تواريخ انتهاء الصلاحية، توجيه الصرف (FEFO)، وإتلاف التالف',
+    'expiry_subtitle' => 'مراقبة تواريخ انتهاء الصلاحية، توجيه الصرف حسب الأقدمية، وإتلاف التالف',
     'active' => 'نشط',
     'inactive' => 'معطل',
     'primary' => 'رئيسي',

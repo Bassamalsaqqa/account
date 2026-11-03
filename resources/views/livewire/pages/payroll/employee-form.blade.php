@@ -53,7 +53,7 @@
             <div class="border-t border-border pt-6 grid gap-4 sm:grid-cols-2">
                 <div>
                     <label for="employee-default-salary" class="block text-xs font-semibold text-text-secondary mb-1">{{ __('payroll.salary') }}</label>
-                    <input aria-invalid="{{ $errors->has('defaultSalary') ? 'true' : 'false' }}" @if ($errors->has('defaultSalary')) aria-describedby="employee-default-salary-error" @endif id="employee-default-salary" type="text" inputmode="decimal" wire:model="defaultSalary" placeholder="0.00" class="w-full rounded-control border border-border bg-white px-3 py-2 text-sm focus:border-primary focus:ring-primary">
+                    <input aria-invalid="{{ $errors->has('defaultSalary') ? 'true' : 'false' }}" @if ($errors->has('defaultSalary')) aria-describedby="employee-default-salary-error" @endif id="employee-default-salary" type="text" inputmode="decimal" dir="ltr" wire:model="defaultSalary" placeholder="0.00" class="w-full rounded-control border border-border bg-white px-3 py-2 text-sm font-mono focus:border-primary focus:ring-primary">
                     @error('defaultSalary') <span role="alert" id="employee-default-salary-error" class="text-xs text-rose-600">{{ $message }}</span> @enderror
                 </div>
                 <div>

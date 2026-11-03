@@ -17,6 +17,10 @@
         <select wire:model.live="vendorFilter" aria-label="{{ __('purchasing.vendor') }}" class="min-h-11 h-11 min-w-0 px-3 rounded-control border border-border text-sm"><option value="">{{ __('purchasing.all_vendors') }}</option>@foreach($vendors as $vendor)<option value="{{ $vendor->id }}">{{ $vendor->displayName() }}</option>@endforeach</select>
         <select wire:model.live="statusFilter" aria-label="{{ __('purchasing.status') }}" class="min-h-11 h-11 px-3 rounded-control border border-border text-sm"><option value="all">{{ __('purchasing.all_statuses') }}</option><option value="draft">{{ __('purchasing.draft') }}</option><option value="posted">{{ __('purchasing.posted') }}</option></select>
     </x-refinement-filters>
+    @if(session()->has('success'))<p role="status" class="text-sm text-success font-semibold bg-emerald-50 p-3 rounded-control border border-emerald-200">{{ session('success') }}</p>@endif
+    @if(session()->has('error'))<p role="alert" class="text-sm text-danger font-semibold bg-rose-50 p-3 rounded-control border border-rose-200">{{ session('error') }}</p>@endif
+    @error('postPurchase') <p role="alert" class="text-sm text-danger font-semibold bg-rose-50 p-3 rounded-control border border-rose-200">{{ $message }}</p> @enderror
+
     <section class="bg-surface border border-border rounded-card overflow-hidden">
         <div class="hidden lg:block">
             <table class="data-table w-full text-xs"><thead class="bg-surface-soft text-text-secondary"><tr>
@@ -74,19 +78,22 @@
                                 <dd><bdi>{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($purchase->grand_total_currency, $purchase->currency_code) }}</bdi></dd>
                             </div>@endif
                     </dl>
-                    <div class="flex flex-wrap items-center gap-2 border-t border-border pt-3">
-                        <a href="{{ route('purchases.show', $purchase->public_id) }}" class="touch-action bg-surface-soft text-sm font-semibold"><x-icon name="receipt" class="h-4 w-4" />{{ __('refinement_lists.open') }}</a>
-                        @if($withCost && $purchase->isPosted() && isset($payablePositions[$purchase->id]) && \Brick\Math\BigDecimal::of($payablePositions[$purchase->id]->outstanding)->isPositive() && auth()->user()->can('money.vendor_payment.create'))
-                            <a href="{{ route('vendor-payments.create', ['purchase_id' => $purchase->id]) }}" class="touch-action bg-primary-50 text-primary text-sm font-semibold">{{ __('purchasing.pay_vendor') }}</a>
-                        @endif
-                        @can('purchasing.document.pdf')
-                            <a href="{{ route('pdf.purchase', ['publicId' => $purchase->public_id, 'locale' => app()->getLocale()]) }}" target="_blank" rel="noopener noreferrer" class="touch-action bg-white text-primary text-sm font-semibold">{{ __('refinement_lists.pdf') }}</a>
-                        @endcan
+                    <div class="pt-3 border-t border-border">
+                        @include('livewire.partials.purchase-row-actions')
                     </div>
-                    @include('livewire.partials.purchase-row-actions')
                 </article>
             @empty<p class="p-8 text-center text-text-secondary">{{ __('purchasing.no_purchases') }}</p>@endforelse
         </div>
     </section>
     <x-table-pagination :paginator="$purchases" />
+
+    @if($payingPurchaseId)
+        <x-dialog-shell
+            :title="__('purchasing.new_vendor_payment')"
+            title-id="modal-vendor-payment-title"
+            max-width="max-w-2xl"
+            close-action="closePaymentModal" save-target="save">
+            <livewire:pages.purchasing.payment-form :purchase_id="$payingPurchaseId" :is-modal="true" :key="'modal-vendor-payment-'.$payingPurchaseId" />
+        </x-dialog-shell>
+    @endif
 </div>

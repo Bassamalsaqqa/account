@@ -18,6 +18,21 @@ use Tests\Feature\Phase8\Phase8TestCase;
 
 final class DashboardReviewTest extends Phase8TestCase
 {
+    public function test_date_inputs_are_visible_and_presets_keep_their_values_in_sync(): void
+    {
+        $this->travelTo(CarbonImmutable::parse('2026-10-15 10:00:00', 'Asia/Hebron'));
+        Livewire::test(Dashboard::class)
+            ->assertSet('from', '2026-10-01')->assertSet('to', '2026-10-15')
+            ->assertSeeHtml('id="home-from"')->assertSeeHtml('id="home-to"')
+            ->assertDontSeeHtml('<details')
+            ->call('choosePeriod', 'today')
+            ->assertSet('from', '2026-10-15')->assertSet('to', '2026-10-15')
+            ->set('from', '2026-09-01')->set('to', '2026-09-30')
+            ->call('applyPeriod')->assertSet('preset', 'custom')
+            ->assertViewHas('data', fn ($data) => $data['period']['start_date'] === '2026-09-01'
+                && $data['period']['end_date'] === '2026-09-30');
+    }
+
     public function test_dashboard_comparison_uses_posted_values_and_preserves_history(): void
     {
         $this->travelTo(CarbonImmutable::parse('2026-10-15 10:00:00'));
@@ -44,9 +59,16 @@ final class DashboardReviewTest extends Phase8TestCase
         $this->assertSame($before, PostingLine::where('company_id', $this->company->id)->orderBy('id')->get()->toJson());
         foreach (['ar', 'en'] as $locale) {
             app()->setLocale($locale);
-            Livewire::test(Dashboard::class)->assertSee(__('dashboard.title'))->assertSee('800.00 ILS')
-                ->assertSee(__('dashboard.month_to_date_notice'));
+            Livewire::test(Dashboard::class)->assertSee(__('dashboard.home'))->assertSee('800.00')
+                ->assertSee(__('dashboard.sales_total'))
+                ->assertDontSee(__('dashboard.month_to_date_notice'));
         }
+        $home = app(DashboardReports::class)->readHome($this->company, 'this_month');
+        $this->assertSame(['sales.summary', 'purchases.summary'], array_keys($home['activity']));
+        $this->assertSame('800.00', $home['activity']['sales.summary']['display']);
+        $this->assertArrayNotHasKey('comparison', $home);
+        $this->assertArrayNotHasKey('attention', $home);
+        $this->assertSame($before, PostingLine::where('company_id', $this->company->id)->orderBy('id')->get()->toJson());
         // Selecting a completed month still means the entire canonical calendar month.
         $lastMonth = app(DashboardReports::class)->read($this->company, 'last_month');
         $this->assertSame('2026-09-30', $lastMonth['period']['end_date']);
@@ -70,7 +92,7 @@ final class DashboardReviewTest extends Phase8TestCase
         $this->assertSame('2024-03-31', $data['period']['end_date']);
         $this->assertTrue($data['comparison']['unequal_days']);
         $this->assertNull($data['comparison']['percent']);
-        Livewire::test(Dashboard::class)->assertSee(__('dashboard.unequal_month_days'));
+        Livewire::test(Dashboard::class)->assertSee('2024-03-31')->assertDontSee(__('dashboard.unequal_month_days'));
     }
 
     public function test_no_percent_is_invented_for_zero_previous_sales_and_denied_profit_is_omitted(): void

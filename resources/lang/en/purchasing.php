@@ -1,6 +1,7 @@
 <?php
 
 return [
+    'pay' => 'Pay supplier',
     'purchase_summary' => 'Purchase summary',
     'post_purchase' => 'Confirm purchase',
     'post_confirmation' => 'Confirm this purchase? Stock and the amount owed to the supplier will be updated. You cannot edit it afterward.',

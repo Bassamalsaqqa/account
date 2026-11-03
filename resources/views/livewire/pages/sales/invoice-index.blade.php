@@ -49,8 +49,10 @@
             </select>
     </x-refinement-filters>
 
-    @error('deleteDraft') <p role="alert" class="text-sm text-danger">{{ $message }}</p> @enderror
-    @if(session()->has('success'))<p role="status" class="text-sm text-success">{{ session('success') }}</p>@endif
+    @if(session()->has('error'))<p role="alert" class="text-sm text-danger font-semibold bg-rose-50 p-3 rounded-control border border-rose-200">{{ session('error') }}</p>@endif
+    @error('postInvoice') <p role="alert" class="text-sm text-danger font-semibold bg-rose-50 p-3 rounded-control border border-rose-200">{{ $message }}</p> @enderror
+    @error('deleteDraft') <p role="alert" class="text-sm text-danger font-semibold bg-rose-50 p-3 rounded-control border border-rose-200">{{ $message }}</p> @enderror
+    @if(session()->has('success'))<p role="status" class="text-sm text-success font-semibold bg-emerald-50 p-3 rounded-control border border-emerald-200">{{ session('success') }}</p>@endif
     <!-- Invoices Table / Cards -->
     <div class="bg-white rounded-card border border-border shadow-xs overflow-hidden">
         <div class="hidden lg:block overflow-x-auto">
@@ -176,4 +178,14 @@
             </div>
         @endif
     </div>
+
+    @if($payingInvoiceId)
+        <x-dialog-shell
+            :title="__('sales.new_payment')"
+            title-id="modal-payment-title"
+            max-width="max-w-2xl"
+            close-action="closePaymentModal" save-target="save">
+            <livewire:pages.sales.payment-form :invoice_id="$payingInvoiceId" :is-modal="true" :key="'modal-payment-'.$payingInvoiceId" />
+        </x-dialog-shell>
+    @endif
 </div>

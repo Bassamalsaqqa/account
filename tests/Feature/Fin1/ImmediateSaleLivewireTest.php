@@ -50,6 +50,29 @@ final class ImmediateSaleLivewireTest extends TestCase
         $this->assertDatabaseCount('customer_payments', 0);
     }
 
+    public function test_explicit_confirm_button_posts_without_a_second_review_for_an_optional_due_date(): void
+    {
+        $invoice = $this->draft();
+        $this->form($invoice)->call('saveAndConfirm')
+            ->assertHasNoErrors()->assertSet('showPreview', false)
+            ->assertRedirect(route('invoices.show', $invoice->public_id));
+        $this->assertTrue($invoice->fresh()->isPosted());
+        $this->assertDatabaseCount('customer_payments', 0);
+    }
+
+    public function test_explicit_confirm_preserves_atomic_partial_payment_and_allocation(): void
+    {
+        $invoice = $this->draft();
+        $this->form($invoice)->set('settlement.mode', 'partial')
+            ->set('settlement.money_account_id', (string) $this->cash->id)
+            ->set('settlement.amount', '40')->set('settlement.invoice_amount', '40')
+            ->set('settlement.exchange_rate', '3.5')->call('saveAndConfirm')
+            ->assertHasNoErrors()->assertRedirect(route('invoices.show', $invoice->public_id));
+        $this->assertTrue($invoice->fresh()->isPosted());
+        $this->assertSame('60.000000', (string) $invoice->fresh()->calculateOutstanding());
+        $this->assertDatabaseCount('customer_payments', 1);
+    }
+
     public function test_paid_preview_and_explicit_confirmation_render_and_post_in_both_locales(): void
     {
         foreach (['ar', 'en'] as $locale) {

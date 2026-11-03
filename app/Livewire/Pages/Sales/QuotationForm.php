@@ -200,7 +200,8 @@ class QuotationForm extends Component
 
             $this->currency_code = $company->base_currency_code;
             $this->issue_date = Carbon::now($company->timezone)->toDateString();
-            $this->document_locale = $company->documentSettings->default_document_locale ?? $company->default_locale ?? 'ar';
+            $currentLocale = app()->getLocale();
+            $this->document_locale = $company->isLanguageEnabled($currentLocale) ? $currentLocale : ($company->documentSettings->default_document_locale ?? $company->default_locale ?? 'ar');
             $this->terms = $company->documentSettings?->getAttribute('quotation_terms_'.$this->document_locale);
             $this->include_product_images = (bool) $company->documentSettings?->show_product_images_on_quotes;
 
@@ -253,7 +254,10 @@ class QuotationForm extends Component
                 ->find($this->customer_id);
             if ($customer !== null) {
                 $this->currency_code = $customer->default_currency_code ?? app(CompanyContext::class)->company()->base_currency_code;
-                $this->document_locale = $customer->preferred_locale ?? app(CompanyContext::class)->company()->default_locale;
+                $company = app(CompanyContext::class)->company();
+                if ($this->currency_code === $company->base_currency_code) {
+                    $this->exchange_rate = '1.0000000000';
+                }
                 $this->recalculate();
             } else {
                 $this->customer_id = null;
@@ -552,6 +556,10 @@ class QuotationForm extends Component
         $company = app(CompanyContext::class)->company();
         $user = auth()->user();
 
+        if ($this->currency_code === $company->base_currency_code) {
+            $this->exchange_rate = '1.0000000000';
+        }
+
         $this->validate([
             'customer_id' => ['required', 'integer', Rule::exists('customers', 'id')->where('company_id', $company->id)],
             'currency_code' => ['required', 'string', 'size:3'],
@@ -669,6 +677,7 @@ class QuotationForm extends Component
             'taxes' => $taxes,
             'canManageCustomers' => $user->hasPermissionTo('customers.manage'),
             'lastCustomerPrices' => $lastCustomerPrices,
+            'baseCurrencyCode' => $company->base_currency_code,
         ]);
     }
 }

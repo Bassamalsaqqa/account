@@ -1,8 +1,12 @@
+@php
+    $sourceAllocation = $sourcePurchaseId !== null ? collect($allocations)->firstWhere('purchase_id', $sourcePurchaseId) : null;
+    $simplePayment = $sourceAllocation !== null && ($sourceAllocation['document_currency_code'] ?? null) === $currency_code;
+@endphp
 <div class="max-w-4xl mx-auto space-y-6" x-data="{
-        saving: false, documentBusy: false, operationFailed: false,
+        saving: false, documentBusy: false, operationFailed: false, more: false,
         run(method, args = [], terminal = false) {
             if (this.saving || window.isDocumentBlocked($wire)) return;
-            if (terminal &amp;&amp; [...document.querySelectorAll('[role=dialog]')].some(el => el.getClientRects().length > 0)) return;
+            if (terminal &amp;&amp; [...this.$el.querySelectorAll('[role=dialog]')].some(el => el.getClientRects().length > 0)) return;
             if (terminal) this.saving = true;
             this.operationFailed = false;
             window.enqueueDocumentOperation($wire, method, args)
@@ -13,6 +17,7 @@
     <x-draft-operation-feedback />
     <p x-cloak x-show="operationFailed" role="alert" class="text-sm text-danger">{{ __('camera.network_error') }}</p>
     <!-- Header -->
+    @if(! $isModal)
     <div class="flex items-center justify-between gap-4">
         <div>
             <h1 class="text-2xl font-bold tracking-tight text-text-primary">
@@ -37,17 +42,21 @@
             </a>
         </div>
     </div>
+    @endif
 
     <!-- Main Form -->
-    <form @submit.prevent="run('save', [], true)" class="bg-white rounded-card border border-border shadow-xs p-6 space-y-6">
+    <form novalidate @submit.prevent="run('save', [], true)" class="{{ $isModal ? 'space-y-5' : 'bg-white rounded-card border border-border shadow-xs p-6 space-y-6' }}">
+        @if ($errors->any())
+            <ul role="alert" class="text-sm text-danger space-y-1">@foreach ($errors->all() as $message)<li>{{ $message }}</li>@endforeach</ul>
+        @endif
         <!-- Payment Details Header -->
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 pb-4 border-b border-border">
+        <div class="grid grid-cols-1 {{ $sourcePurchaseId !== null ? 'md:grid-cols-2' : 'md:grid-cols-3' }} gap-4 pb-4 border-b border-border">
             <!-- Vendor -->
-            <div>
-                <label class="block text-xs font-bold text-text-primary mb-1">
+            <div @if($sourcePurchaseId !== null) hidden @endif>
+                <label for="purchasing-payment-{{ $this->getId() }}-vendor_id" class="block text-xs font-bold text-text-primary mb-1">
                     {{ __('purchasing.vendor') }} <span class="text-danger">*</span>
                 </label>
-                <select wire:model.live="vendor_id"
+                <select id="purchasing-payment-{{ $this->getId() }}-vendor_id" wire:model.live="vendor_id"
                         required
                         class="w-full min-h-11 px-3 rounded-control border border-border bg-canvas text-xs text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden" :disabled="documentBusy || saving">
                     <option value="">{{ __('purchasing.select_vendor') }}</option>
@@ -60,10 +69,10 @@
 
             <!-- Money Account -->
             <div>
-                <label class="block text-xs font-bold text-text-primary mb-1">
+                <label for="purchasing-payment-{{ $this->getId() }}-money_account_id" class="block text-xs font-bold text-text-primary mb-1">
                     {{ __('purchasing.money_account') }} <span class="text-danger">*</span>
                 </label>
-                <select wire:model.live="money_account_id"
+                <select id="purchasing-payment-{{ $this->getId() }}-money_account_id" wire:model.live="money_account_id"
                         required
                         class="w-full min-h-11 px-3 rounded-control border border-border bg-canvas text-xs text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden" :disabled="documentBusy || saving">
                     <option value="">{{ __('purchasing.select_money_account') }}</option>
@@ -75,11 +84,11 @@
             </div>
 
             <!-- Payment Method -->
-            <div>
-                <label class="block text-xs font-bold text-text-primary mb-1">
+            <div @if($sourcePurchaseId !== null) hidden @endif>
+                <label for="purchasing-payment-{{ $this->getId() }}-payment_method" class="block text-xs font-bold text-text-primary mb-1">
                     {{ __('purchasing.payment_method') }} <span class="text-danger">*</span>
                 </label>
-                <select wire:model="payment_method"
+                <select id="purchasing-payment-{{ $this->getId() }}-payment_method" wire:model="payment_method"
                         required
                         class="w-full min-h-11 px-3 rounded-control border border-border bg-canvas text-xs text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden" :disabled="documentBusy || saving">
                     <option value="cash">{{ __('purchasing.cash') }}</option>
@@ -90,10 +99,10 @@
 
             <!-- Payment Date -->
             <div>
-                <label class="block text-xs font-bold text-text-primary mb-1">
+                <label for="purchasing-payment-{{ $this->getId() }}-payment_date" class="block text-xs font-bold text-text-primary mb-1">
                     {{ __('purchasing.payment_date') }} <span class="text-danger">*</span>
                 </label>
-                <input type="date"
+                <input id="purchasing-payment-{{ $this->getId() }}-payment_date" type="date"
                        wire:model="payment_date"
                        required
                        class="w-full min-h-11 px-3 rounded-control border border-border bg-canvas text-xs text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden"  :disabled="documentBusy || saving"/>
@@ -101,9 +110,9 @@
             </div>
 
             <!-- Document Language -->
-            <div>
-                <label class="block text-xs font-bold text-text-primary mb-1">{{ __('purchasing.document_language') }}</label>
-                <select wire:model="document_locale" class="w-full min-h-11 px-3 rounded-control border border-border bg-canvas text-xs" :disabled="documentBusy || saving">
+            <div x-show="more || {{ $errors->has('document_locale') ? 'true' : 'false' }}" x-cloak>
+                <label for="purchasing-payment-{{ $this->getId() }}-document_locale" class="block text-xs font-bold text-text-primary mb-1">{{ __('purchasing.document_language') }}</label>
+                <select id="purchasing-payment-{{ $this->getId() }}-document_locale" wire:model="document_locale" class="w-full min-h-11 px-3 rounded-control border border-border bg-canvas text-xs" :disabled="documentBusy || saving">
                     @foreach ($company->languages()->where('enabled', true)->get() as $language)
                         <option value="{{ $language->locale }}">{{ __('purchasing.locale_'.$language->locale) }}</option>
                     @endforeach
@@ -112,29 +121,31 @@
             </div>
 
             <!-- Amount -->
-            <div>
-                <label class="block text-xs font-bold text-text-primary mb-1">
+            <div @class(['md:col-span-2' => $sourcePurchaseId !== null])>
+                <label for="purchasing-payment-{{ $this->getId() }}-amount" class="block text-xs font-bold text-text-primary mb-1">
                     {{ __('purchasing.payment_amount') }} ({{ $currency_code }}) <span class="text-danger">*</span>
                 </label>
-                <input type="number"
-                       step="any"
-                       wire:model.blur="amount"
-                       wire:change="recalculateAllocations"
-                       required
-                       min="{{ $paymentAmountMinimum }}"
-                       dir="ltr"
-                       class="w-full min-h-11 px-3 rounded-control border border-border bg-canvas text-xs font-mono font-bold text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden text-start" inputmode="decimal"  :disabled="documentBusy || saving"/>
-                <button type="button" @click="run('useFullBalance')" :disabled="saving || window.isDocumentBlocked($wire)" wire:loading.attr="disabled" class="min-h-11 mt-2 inline-flex items-center justify-center rounded-control border border-primary px-3 py-2 text-sm font-semibold text-primary disabled:opacity-50">{{ __('refinement.full_balance') }}</button>
-                <p class="text-xs text-text-secondary mt-1">{{ __('refinement.same_currency_shortcuts') }}</p>
+                <div class="relative flex items-center" dir="ltr">
+                    <input id="purchasing-payment-{{ $this->getId() }}-amount" type="number"
+                           step="any"
+                           wire:model.blur="amount"
+                           wire:change="recalculateAllocations"
+                           required
+                           min="{{ $paymentAmountMinimum }}"
+                           dir="ltr"
+                           class="w-full min-h-11 px-3 pe-28 rounded-control border border-border bg-canvas text-xs font-mono font-bold text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden text-start" inputmode="decimal"  :disabled="documentBusy || saving"/>
+                    <button type="button" @click="run('useFullBalance')" :disabled="saving || window.isDocumentBlocked($wire)" wire:loading.attr="disabled" class="absolute end-1 top-1 bottom-1 px-3 inline-flex items-center justify-center rounded-control bg-surface-soft hover:bg-primary-50 text-xs font-bold text-primary border border-border disabled:opacity-50 transition-colors">{{ __('refinement.full_balance') }}</button>
+                </div>
                 @error('amount') <span class="text-danger text-[11px] mt-1 block">{{ $message }}</span> @enderror
             </div>
 
             <!-- Exchange Rate -->
+            @if ($currency_code !== $company->base_currency_code)
             <div>
-                <label class="block text-xs font-bold text-text-primary mb-1">
+                <label for="purchasing-payment-{{ $this->getId() }}-exchange_rate" class="block text-xs font-bold text-text-primary mb-1">
                     {{ __('purchasing.exchange_rate') }} <span class="text-danger">*</span>
                 </label>
-                <input type="number"
+                <input id="purchasing-payment-{{ $this->getId() }}-exchange_rate" type="number"
                        step="0.0000000001"
                        wire:model.blur="exchange_rate"
                        wire:change="recalculateAllocations"
@@ -143,18 +154,24 @@
                        class="w-full min-h-11 px-3 rounded-control border border-border bg-canvas text-xs text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden font-mono text-start" inputmode="decimal"  :disabled="documentBusy || saving"/>
                 @error('exchange_rate') <span class="text-danger text-[11px] mt-1 block">{{ $message }}</span> @enderror
             </div>
+            @endif
 
             <!-- Reference Number -->
-            <div class="md:col-span-2">
-                <label class="block text-xs font-bold text-text-primary mb-1">
+            <div class="md:col-span-2" x-show="more || {{ $errors->has('reference_number') ? 'true' : 'false' }}" x-cloak>
+                <label for="purchasing-payment-{{ $this->getId() }}-reference_number" class="block text-xs font-bold text-text-primary mb-1">
                     {{ __('purchasing.vendor_invoice_number') }} / {{ __('purchasing.payment_number') }}
                 </label>
-                <input type="text"
+                <input id="purchasing-payment-{{ $this->getId() }}-reference_number" type="text"
                        wire:model="reference_number"
                        class="w-full min-h-11 px-3 rounded-control border border-border bg-canvas text-xs text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden"  :disabled="documentBusy || saving"/>
             </div>
         </div>
 
+        <button type="button" @click="more = !more" :aria-expanded="more" class="min-h-11 text-sm font-medium text-primary">{{ __('refinement.more_details') }}</button>
+        @if ($sourceAllocation !== null)
+            <x-payment-source-summary :allocation="$sourceAllocation" :number="$sourcePurchaseNumber" :currency="$sourceAllocation['document_currency_code']" :unallocated="$unallocatedAmount" :payment-currency="$currency_code" />
+        @endif
+        @if (! $simplePayment)
         <!-- Purchase Allocations Section -->
         <div>
             <div class="flex items-center justify-between pb-2 border-b border-border">
@@ -165,7 +182,7 @@
                     <button type="button"
                             wire:click="autoAllocate"
                             class="min-h-11 inline-flex items-center justify-center gap-2 px-3 active:bg-surface-soft focus-visible:ring-2 focus-visible:ring-primary px-2.5 py-1 rounded-control bg-surface-soft hover:bg-primary-50 text-text-secondary hover:text-primary text-xs font-bold transition-colors cursor-pointer" wire:loading.attr="disabled" :disabled="documentBusy || saving">
-                        ⚡ {{ __('purchasing.auto_allocate') }}
+                        {{ __('purchasing.auto_allocate') }}
                     </button>
                 @endif
             </div>
@@ -182,17 +199,17 @@
                     <section class="rounded-control border border-border p-3 space-y-2" wire:key="allocation-{{ $alloc['purchase_id'] }}">
                         <div class="flex flex-wrap justify-between gap-2"><span dir="ltr" class="font-mono text-sm">{{ $alloc['purchase_number'] }}</span><span dir="ltr" class="text-sm">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($alloc['outstanding']) }} {{ $alloc['document_currency_code'] }}</span></div>
                         <div class="grid sm:grid-cols-2 gap-3">
-                            <label class="block text-sm">{{ __('money.document_amount') }} ({{ $alloc['document_currency_code'] }})<input type="text" inputmode="decimal" wire:model.blur="allocations.{{ $idx }}.allocated_amount" wire:change="recalculateAllocations" dir="ltr" class="w-full min-h-11 px-3 rounded-control border border-border font-mono tabular-nums"  :disabled="documentBusy || saving"/></label>
+                            <label for="purchasing-payment-{{ $this->getId() }}-allocations-{{ $idx }}-allocated_amount" class="block text-sm">{{ __('money.document_amount') }} ({{ $alloc['document_currency_code'] }})<input id="purchasing-payment-{{ $this->getId() }}-allocations-{{ $idx }}-allocated_amount" type="text" inputmode="decimal" wire:model.blur="allocations.{{ $idx }}.allocated_amount" wire:change="recalculateAllocations" dir="ltr" class="w-full min-h-11 px-3 rounded-control border border-border font-mono tabular-nums"  :disabled="documentBusy || saving"/></label>
                             @error('allocations.'.$idx.'.allocated_amount') <p class="text-danger text-xs">{{ $message }}</p> @enderror
                             @if($alloc['document_currency_code'] !== $currency_code)
-                            <label class="block text-sm">{{ __('money.payment_consumed') }} ({{ $currency_code }})<input type="text" inputmode="decimal" wire:model.blur="allocations.{{ $idx }}.payment_currency_amount" wire:change="recalculateAllocations" dir="ltr" class="w-full min-h-11 px-3 rounded-control border border-border font-mono tabular-nums"  :disabled="documentBusy || saving"/></label>
+                            <label for="purchasing-payment-{{ $this->getId() }}-allocations-{{ $idx }}-payment_currency_amount" class="block text-sm">{{ __('money.payment_consumed') }} ({{ $currency_code }})<input id="purchasing-payment-{{ $this->getId() }}-allocations-{{ $idx }}-payment_currency_amount" type="text" inputmode="decimal" wire:model.blur="allocations.{{ $idx }}.payment_currency_amount" wire:change="recalculateAllocations" dir="ltr" class="w-full min-h-11 px-3 rounded-control border border-border font-mono tabular-nums"  :disabled="documentBusy || saving"/></label>
                             @error('allocations.'.$idx.'.payment_currency_amount') <p class="text-danger text-xs">{{ $message }}</p> @enderror
                             @endif
                         </div>
                         @if ($alloc['document_currency_code'] === $currency_code)
                             <button type="button" @click="run('payRemaining', [{{ $idx }}])" :disabled="saving || window.isDocumentBlocked($wire)" wire:loading.attr="disabled" class="min-h-11 inline-flex items-center justify-center rounded-control border border-primary px-3 py-2 text-sm font-semibold text-primary disabled:opacity-50">{{ __('refinement.pay_remaining') }}</button>
                         @endif
-                        <p class="text-xs text-text-muted">{{ __('money.fx_preview') }}: <span dir="ltr">{{ $alloc['preview_fx'] ?? '—' }} {{ $company->base_currency_code }}</span></p>
+                        <p class="text-xs text-text-muted">{{ __('money.fx_preview') }}: <span dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($alloc['preview_fx'] ?? null, $company->base_currency_code) }} {{ $company->base_currency_code }}</span></p>
                     </section>
                     @endforeach
                 </div>
@@ -215,23 +232,28 @@
             </div>
         </div>
 
-        <div>
-            <label class="block text-xs font-bold text-text-primary mb-1">
+        @endif
+        <div x-show="more || {{ $errors->has('notes') ? 'true' : 'false' }}" x-cloak>
+            <label for="purchasing-payment-{{ $this->getId() }}-notes" class="block text-xs font-bold text-text-primary mb-1">
                 {{ __('purchasing.notes') }}
             </label>
-            <textarea wire:model="notes" rows="2" class="w-full p-2.5 rounded-control border border-border bg-canvas text-xs text-text-primary outline-hidden" :disabled="documentBusy || saving"></textarea>
+            <textarea id="purchasing-payment-{{ $this->getId() }}-notes" wire:model="notes" rows="2" class="w-full p-2.5 rounded-control border border-border bg-canvas text-xs text-text-primary outline-hidden" :disabled="documentBusy || saving"></textarea>
         </div>
 
         <!-- Buttons -->
         <p wire:loading role="status" class="text-sm font-semibold text-primary">{{ __('refinement.working') }}</p>
             <div class="sticky bottom-[calc(5rem+env(safe-area-inset-bottom))] z-20 flex flex-wrap items-center justify-end gap-3 border-t border-border bg-white p-3 shadow-sm md:static md:shadow-none">
+            @if ($isModal)
+                <button type="button" @click="$dispatch('dialog-close')" class="min-h-11 rounded-control border border-border px-3 text-sm">{{ __('workflow.close') }}</button>
+            @else
             <a href="{{ route('vendor-payments.index') }}"
                class="min-h-11 inline-flex items-center justify-center gap-2 px-3 active:bg-surface-soft focus-visible:ring-2 focus-visible:ring-primary px-4 py-2 rounded-control border border-border text-xs font-bold text-text-secondary hover:bg-surface-soft transition-colors">
                 {{ __('purchasing.cancel') }}
             </a>
+            @endif
             <button type="submit" :disabled="saving || window.isDocumentBlocked($wire)"
                     class="min-h-11 inline-flex items-center justify-center gap-2 px-3 active:bg-surface-soft focus-visible:ring-2 focus-visible:ring-primary px-5 py-2 rounded-control bg-primary text-white text-xs font-bold hover:bg-primary-hover transition-colors shadow-sm cursor-pointer" wire:loading.attr="disabled" wire:target="save">
-                ⚡ {{ __('purchasing.post_payment') }}
+                {{ __('purchasing.post_payment') }}
             </button>
         </div>
     </form>

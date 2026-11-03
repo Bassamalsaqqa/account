@@ -11,7 +11,7 @@
     );
 @endphp
 
-<div data-entry-form class="max-w-4xl mx-auto space-y-6">
+<div data-entry-form class="max-w-7xl mx-auto space-y-6" x-data="{ showAdvanced: {{ ($isEditing || $hasAdvanced) ? 'true' : 'false' }} }">
     <!-- Header -->
     <div class="flex items-center justify-between gap-4">
         <div>
@@ -83,14 +83,26 @@
             </div>
         </div>
 
-        <!-- Advanced Details Collapsible Section -->
-        <details class="group space-y-6 pt-2" {{ $hasAdvanced ? 'open' : '' }}>
-            <summary class="min-h-[44px] cursor-pointer inline-flex items-center gap-2 text-xs font-bold text-primary hover:text-primary-hover py-2 focus-visible:outline-2 focus-visible:outline-primary select-none list-none [&::-webkit-details-marker]:hidden">
-                <span class="group-open:hidden">▶ {{ __('workflow.more_options') }}</span>
-                <span class="hidden group-open:inline">▼ {{ __('sales.hide_advanced_details') }}</span>
-            </summary>
+        <!-- Advanced Details Section -->
+        @if(!$isEditing)
+        <div class="pt-2">
+            <button type="button"
+                    @click="showAdvanced = !showAdvanced"
+                    :aria-expanded="showAdvanced ? 'true' : 'false'"
+                    class="min-h-11 cursor-pointer inline-flex items-center gap-2 text-xs font-bold text-primary hover:text-primary-hover py-2 focus-visible:outline-2 focus-visible:outline-primary select-none rounded-control">
+                <span x-show="!showAdvanced" class="inline-flex items-center gap-1.5">
+                    <x-icon name="plus" class="w-3.5 h-3.5" />
+                    <span>{{ __('workflow.more_options') }}</span>
+                </span>
+                <span x-show="showAdvanced" class="inline-flex items-center gap-1.5" x-cloak>
+                    <x-icon name="chevron" class="w-3.5 h-3.5 rotate-90" />
+                    <span>{{ __('sales.hide_advanced_details') }}</span>
+                </span>
+            </button>
+        </div>
+        @endif
 
-            <div class="space-y-6 pt-4 border-t border-border">
+        <div x-show="showAdvanced" @if(!$isEditing) x-cloak @endif class="space-y-6 pt-4 border-t border-border">
                 <div class="entry-grid grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 <!-- Code -->
                 <div>
@@ -283,7 +295,6 @@
                 </div>
             </div>
         </div>
-        </details>
 
         <!-- Buttons -->
         <div class="flex items-center justify-end gap-3 pt-4 border-t border-border">

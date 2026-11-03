@@ -109,19 +109,26 @@ class PdfDocumentController extends Controller
     {
         $data = DB::transaction(fn () => app(DocumentDataBuilder::class)->build($source, forPdf: true, locale: $this->locale(), includeApplications: $source instanceof CustomerPayment));
 
-        return $this->renderData($data, $pdf);
+        return $this->renderData($data, $pdf, $source->public_id);
     }
 
-    private function renderData(DocumentData $data, PdfRendererService $pdf): Response
+    private function renderData(DocumentData $data, PdfRendererService $pdf, ?string $publicId = null): Response
     {
         if (request()->query('format') === 'print') {
             return response(app(PrintRenderer::class)->render($data));
         }
-        $name = preg_replace('/[^A-Za-z0-9_.-]/', '_', $data->type.'-'.($data->document['number'] ?? 'document'));
+        $rawNumber = trim((string) ($data->document['number'] ?? ''));
+        if ($rawNumber !== '') {
+            $docPart = $rawNumber;
+        } else {
+            $suffix = $publicId ? '-'.$publicId : '';
+            $docPart = 'draft'.$suffix;
+        }
+        $name = substr((string) preg_replace('/[^A-Za-z0-9_.-]/', '_', $data->type.'-'.$docPart), 0, 150);
 
         return response($pdf->renderDocument($data), 200, [
             'Content-Type' => 'application/pdf',
-            'Content-Disposition' => 'inline; filename="'.substr($name, 0, 150).'.pdf"',
+            'Content-Disposition' => 'inline; filename="'.$name.'.pdf"',
         ]);
     }
 

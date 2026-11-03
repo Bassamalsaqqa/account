@@ -67,7 +67,7 @@
             </div>
             <div>
                 <label class="block text-xs font-semibold text-text-secondary mb-1">{{ __('payroll.rate') }} *</label>
-                <input type="text" inputmode="decimal" wire:model="exchangeRate" placeholder="1.0000000000" class="w-full rounded-control border border-border bg-white px-3 py-2 text-sm focus:border-primary focus:ring-primary" required>
+                <input type="text" inputmode="decimal" dir="ltr" wire:model="exchangeRate" placeholder="1.0000000000" class="w-full rounded-control border border-border bg-white px-3 py-2 text-sm font-mono focus:border-primary focus:ring-primary" required>
                 @error('exchangeRate') <span class="text-xs text-rose-600">{{ $message }}</span> @enderror
             </div>
         </div>
@@ -75,17 +75,17 @@
         <div class="grid gap-4 sm:grid-cols-3">
             <div>
                 <label class="block text-xs font-semibold text-text-secondary mb-1">{{ __('payroll.base_salary') }} *</label>
-                <input type="text" inputmode="decimal" wire:model.live="baseSalary" placeholder="0.00" class="w-full rounded-control border border-border bg-white px-3 py-2 text-sm focus:border-primary focus:ring-primary" required>
+                <input type="text" inputmode="decimal" dir="ltr" wire:model.live="baseSalary" placeholder="0.00" class="w-full rounded-control border border-border bg-white px-3 py-2 text-sm font-mono focus:border-primary focus:ring-primary" required>
                 @error('baseSalary') <span class="text-xs text-rose-600">{{ $message }}</span> @enderror
             </div>
             <div>
                 <label class="block text-xs font-semibold text-text-secondary mb-1">{{ __('payroll.bonus') }}</label>
-                <input type="text" inputmode="decimal" wire:model.live="bonus" placeholder="0.00" class="w-full rounded-control border border-border bg-white px-3 py-2 text-sm focus:border-primary focus:ring-primary">
+                <input type="text" inputmode="decimal" dir="ltr" wire:model.live="bonus" placeholder="0.00" class="w-full rounded-control border border-border bg-white px-3 py-2 text-sm font-mono focus:border-primary focus:ring-primary">
                 @error('bonus') <span class="text-xs text-rose-600">{{ $message }}</span> @enderror
             </div>
             <div>
                 <label class="block text-xs font-semibold text-text-secondary mb-1">{{ __('payroll.deduction') }}</label>
-                <input type="text" inputmode="decimal" wire:model.live="deduction" placeholder="0.00" class="w-full rounded-control border border-border bg-white px-3 py-2 text-sm focus:border-primary focus:ring-primary">
+                <input type="text" inputmode="decimal" dir="ltr" wire:model.live="deduction" placeholder="0.00" class="w-full rounded-control border border-border bg-white px-3 py-2 text-sm font-mono focus:border-primary focus:ring-primary">
                 @error('deduction') <span class="text-xs text-rose-600">{{ $message }}</span> @enderror
             </div>
         </div>
@@ -116,7 +116,7 @@
                                     <td class="px-3 py-2 text-text-secondary" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($pos['original_amount']) }}</td>
                                     <td class="px-3 py-2 font-bold text-emerald-700" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($pos['remaining_amount']) }}</td>
                                     <td class="px-3 py-2">
-                                        <input type="text" inputmode="decimal" wire:model.live="advanceAllocations.{{ $adv->id }}" placeholder="0.00" class="w-full rounded-control border border-border bg-white px-2 py-1 text-sm focus:border-primary focus:ring-primary text-end">
+                                        <input type="text" inputmode="decimal" dir="ltr" wire:model.live="advanceAllocations.{{ $adv->id }}" placeholder="0.00" class="w-full rounded-control border border-border bg-white px-2 py-1 text-sm font-mono focus:border-primary focus:ring-primary text-end">
                                     </td>
                                 </tr>
                             @endforeach

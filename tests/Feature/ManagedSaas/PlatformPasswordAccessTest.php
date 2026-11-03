@@ -42,8 +42,9 @@ final class PlatformPasswordAccessTest extends TestCase
     public function test_existing_session_after_grant_uses_real_password_confirmation(): void
     {
         [$user] = $this->operator();
-        $this->actingAs($user)->get('/platform')->assertRedirect(route('password.confirm'));
-        $this->assertSame(url('/platform'), session('url.intended'));
+        $this->actingAs($user)->get('/platform')->assertOk();
+        $this->actingAs($user)->post('/platform/companies', [])->assertRedirect(route('password.confirm'));
+        $this->assertSame(route('platform.index'), session('url.intended'));
         Volt::test('pages.auth.confirm-password')->set('password', 'wrong-password')->call('confirmPassword')->assertHasErrors('password');
         $this->assertFalse(session()->has(PlatformSessionProof::KEY));
         Volt::test('pages.auth.confirm-password')->set('password', 'password')->call('confirmPassword')->assertHasNoErrors()->assertRedirect('/platform');
@@ -57,9 +58,11 @@ final class PlatformPasswordAccessTest extends TestCase
         $grant->forceFill(['active' => false])->save();
         $this->get('/platform')->assertForbidden();
         $grant->forceFill(['active' => true])->save();
-        $this->withSession(['auth.password_confirmed_at' => now()->timestamp])->get('/platform')->assertRedirect(route('password.confirm'));
+        $this->withSession(['auth.password_confirmed_at' => now()->timestamp])->get('/platform')->assertOk();
+        $this->postJson('/platform/companies', [])->assertStatus(423);
+        $this->post('/platform/companies', [])->assertRedirect(route('password.confirm'));
         $this->postJson('/confirm-password', ['password' => 'wrong-password'])->assertStatus(422);
-        $this->get('/platform')->assertRedirect(route('password.confirm'));
+        $this->post('/platform/companies', [])->assertRedirect(route('password.confirm'));
         $this->postJson('/confirm-password', ['password' => 'password'])->assertStatus(201);
         $this->get('/platform')->assertOk();
         $this->assertSame(3, session(PlatformSessionProof::KEY)['grant_revision']);
@@ -103,9 +106,10 @@ final class PlatformPasswordAccessTest extends TestCase
         $user->forceFill(['remember_token' => 'synthetic-remember-token'])->save();
         $guard = Auth::guard('web');
         $cookie = $user->id.'|'.$user->remember_token.'|'.$user->getAuthPassword();
-        $this->withCookie($guard->getRecallerName(), $cookie)->get('/platform')->assertRedirect(route('password.confirm'));
+        $this->withCookie($guard->getRecallerName(), $cookie)->get('/platform')->assertOk();
         $this->assertAuthenticatedAs($user);
         $this->assertFalse(session()->has(PlatformSessionProof::KEY));
+        $this->withCookie($guard->getRecallerName(), $cookie)->postJson('/platform/companies', [])->assertStatus(423);
     }
 
     public function test_platform_entry_is_available_on_setup_only_with_an_explicit_read_grant(): void

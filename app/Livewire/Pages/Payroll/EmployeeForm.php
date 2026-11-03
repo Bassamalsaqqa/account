@@ -6,6 +6,7 @@ namespace App\Livewire\Pages\Payroll;
 
 use App\Actions\Payroll\CreateEmployeeAction;
 use App\Actions\Payroll\UpdateEmployeeAction;
+use App\Domain\Sales\Formatters\SalesMoneyFormatter;
 use App\Livewire\Pages\Money\Concerns\AuthorizesMoneyPages;
 use App\Models\CompanyCurrency;
 use App\Models\Employee;
@@ -67,7 +68,7 @@ class EmployeeForm extends Component
             $this->notes = (string) ($employee->notes ?? '');
 
             if ($this->canMoney('payroll.salary.view')) {
-                $this->defaultSalary = (string) ($employee->default_salary ?? '');
+                $this->defaultSalary = SalesMoneyFormatter::formatMoneyInput((string) ($employee->default_salary ?? ''));
                 $this->salaryCurrencyCode = (string) ($employee->salary_currency_code ?? $company->base_currency_code);
             }
         }

@@ -19,7 +19,7 @@ use InvalidArgumentException;
 
 final class PurchasePostingCommandBuilder
 {
-    public function build(Company $company, Purchase $purchase, string $number, User $actor, bool $requirePosted = false): PostingCommand
+    public function build(Company $company, Purchase $purchase, string $number, User $actor, bool $requirePosted = false): ?PostingCommand
     {
         $commercialInventoryBase = BigDecimal::zero();
         $totalLandedBase = BigDecimal::zero();
@@ -82,6 +82,14 @@ final class PurchasePostingCommandBuilder
         if (! $commercialTotalBase->isEqualTo($purchase->grand_total_base) || ! $commercialTotalCurrency->isEqualTo($purchase->grand_total_currency)
             || StockMovement::where('company_id', $purchase->company_id)->where('source_type', 'purchase')->where('source_id', $purchase->id)->count() !== $movementCount) {
             throw new InvalidArgumentException(__('purchasing.post_integrity_failed'));
+        }
+        // Like zero-value purchase returns, a free receipt has stock provenance
+        // but no fabricated payable or zero-amount journal legs. Freight still
+        // capitalizes normally even when the supplier's commercial total is zero.
+        if ($commercialTotalBase->isZero() && $commercialTotalCurrency->isZero()
+            && $commercialInventoryBase->isZero() && $inventoryCurrency->isZero() && $totalLandedBase->isZero()
+            && collect($taxes)->every(fn (array $tax): bool => $tax['base']->isZero() && $tax['currency']->isZero())) {
+            return null;
         }
         $inventory = LedgerAccount::where('company_id', $company->id)->where('system_key', 'inventory')->firstOrFail();
         $payable = LedgerAccount::where('company_id', $company->id)->where('system_key', 'accounts_payable')->firstOrFail();
@@ -148,17 +156,25 @@ final class PurchasePostingCommandBuilder
 
     public function validatePosted(Purchase $purchase): void
     {
-        $batch = $purchase->postingBatch;
         if ($purchase->status !== Purchase::STATUS_POSTED || ! $purchase->purchase_number || $purchase->posted_at === null
-            || $purchase->posted_by === null || $batch === null || $batch->status !== 'posted'
-            || (int) $batch->company_id !== (int) $purchase->company_id || (int) $batch->posted_by !== (int) $purchase->posted_by
-            || $batch->idempotency_key !== 'purchase_'.$purchase->id.'_posting') {
+            || $purchase->posted_by === null) {
             throw new InvalidArgumentException(__('purchasing.post_integrity_failed'));
         }
         app(LandedCostIntegrity::class)->validate($purchase, true);
         $company = Company::findOrFail($purchase->company_id);
         $actor = User::findOrFail($purchase->posted_by);
-        if (! $this->build($company, $purchase, $purchase->purchase_number, $actor, true)->matchesBatch($batch)) {
+        $command = $this->build($company, $purchase, $purchase->purchase_number, $actor, true);
+        if ($command === null) {
+            if ($purchase->posting_batch_id !== null) {
+                throw new InvalidArgumentException(__('purchasing.post_integrity_failed'));
+            }
+
+            return;
+        }
+        $batch = $purchase->postingBatch;
+        if ($batch === null || $batch->status !== 'posted'
+            || (int) $batch->company_id !== (int) $purchase->company_id || (int) $batch->posted_by !== (int) $purchase->posted_by
+            || $batch->idempotency_key !== 'purchase_'.$purchase->id.'_posting' || ! $command->matchesBatch($batch)) {
             throw new InvalidArgumentException(__('purchasing.post_integrity_failed'));
         }
     }

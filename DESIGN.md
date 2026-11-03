@@ -1,12 +1,14 @@
-# Accounting — a merchant's daily review
+# Accounting — everyday business workflows
 
 Operate mode. The product is used repeatedly throughout a working day to understand the business and complete real transactions. Its visual authority is the Owner's 14 October redesign brief and the existing bilingual IBM Plex Sans Arabic identity, not the discarded Dashboard's density.
 
 ## Direction
 
-The chosen grounded direction is a merchant's morning review: a clear business performance spread beside an actionable attention list, followed by current balances and convenient report/workflow links. Preserve the recognizable blue identity with deep ink headings, a quiet warm-white canvas, stronger readable secondary text and generous separation between meaningful sections. Choose this direction under the Owner's explicit creative freedom; no decorative metaphor or image assets are needed for this operational surface.
+The Owner's 2 November correction replaces the previous dashboard concept. Home is a compact working page: sales and purchases after returns for the selected dates, followed by current cash/bank balances per account and checks in hand per currency. Preserve the recognizable blue identity, IBM Plex Sans Arabic, quiet canvas, readable text and restrained borders. Use shadcn's compact controls and clear grouping through existing Blade components, without another frontend framework.
 
-The first viewport must answer: how are sales going, compared with which dates, and what needs my attention? A side-by-side actual-period comparison and a priority list form the signature interaction. Numbers always come from authorized canonical reports. No fabricated trend, forecast, aggregated mixed-currency balance or redacted zero.
+The first viewport must answer: how much did I sell/buy in these dates, and what money do I have now? Period controls change activity only; dated balances remain current. No comparison chart, alert wall, assistant promotion, explanatory paragraphs or decorative hero. Numbers come from authorized canonical reports, include actual returns/reversals and never mix currencies, treat invoices as money collected or expose restricted values.
+
+The Owner's subsequent visual correction requires appealing, distinct card backgrounds rather than a flat white layout: muted mint for sales, blue for purchases, warm cash and cool bank/check surfaces. Keep deep readable foregrounds, restrained depth and compact single-line actions with fixed 16px icons. Color identifies the figure's nature, never an invented financial status.
 
 ## Shared rules
 

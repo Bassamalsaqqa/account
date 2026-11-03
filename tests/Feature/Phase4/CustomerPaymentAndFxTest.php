@@ -142,7 +142,7 @@ class CustomerPaymentAndFxTest extends TestCase
             ->assertSeeHtml('placeholder="'.$referencePlaceholder.'"')
             ->assertSee($autoAllocationLabel)
             ->assertDontSee('Reference / Cheque / Transfer Slip #')
-            ->assertSet('document_locale', $this->company->default_locale);
+            ->assertSet('document_locale', $this->company->isLanguageEnabled($locale) ? $locale : $this->company->default_locale);
 
         if ($locale === 'ar') {
             $component

@@ -100,7 +100,7 @@ class PurchaseReturnIndex extends Component
         }
 
         return view('livewire.pages.purchasing.purchase-return-index', [
-            'returns' => $query->orderByDesc('return_date')->orderByDesc('id')->paginate($this->tablePageSize()),
+            'returns' => $query->orderByDesc('created_at')->orderByDesc('id')->paginate($this->tablePageSize()),
             'vendors' => Vendor::withTrashed()->where('company_id', $company->id)->orderBy('name_ar')->get(['id', 'name_ar', 'name_en']),
             'withCost' => $withCost,
             'canCreate' => $canCreate,

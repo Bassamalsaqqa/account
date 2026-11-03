@@ -81,7 +81,7 @@ class PaymentIndex extends Component
             $query->where('money_account_id', $this->accountFilter);
         }
 
-        $payments = $query->orderByDesc('payment_date')->orderByDesc('id')->paginate($this->tablePageSize());
+        $payments = $query->orderByDesc('created_at')->orderByDesc('id')->paginate($this->tablePageSize());
         $customers = Customer::where('company_id', $company->id)->orderBy('name_ar')->get();
         $accounts = MoneyAccount::where('company_id', $company->id)->where('is_active', true)->get();
 

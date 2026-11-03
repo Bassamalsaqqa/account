@@ -7,6 +7,7 @@ namespace App\Models;
 use App\Domain\Accounting\Exceptions\ImmutableRecordException;
 use App\Domain\Money\ValueObjects\MoneyAmount;
 use App\Services\Purchasing\PurchaseDocumentRules;
+use App\Services\Purchasing\PurchasePostingCommandBuilder;
 use App\Services\Purchasing\PurchaseReturnIssueCapability;
 use App\Services\Purchasing\PurchaseReturnPostingCommandBuilder;
 use App\Services\Purchasing\PurchaseReturnPostingScope;
@@ -225,8 +226,11 @@ class PurchaseReturn extends Model
                 $return->setAttribute($field, (string) $amount);
             }
             $purchase = Purchase::where('company_id', $return->company_id)->findOrFail($return->purchase_id);
-            if (! $purchase->isPosted() || $purchase->posting_batch_id === null) {
+            if (! $purchase->isPosted()) {
                 throw new \InvalidArgumentException('Purchase return requires a posted purchase.');
+            }
+            if ($purchase->posting_batch_id === null) {
+                app(PurchasePostingCommandBuilder::class)->validatePosted($purchase);
             }
             if ($return->return_date->lt($purchase->purchase_date)) {
                 throw new \InvalidArgumentException('Return date cannot be earlier than original purchase date.');

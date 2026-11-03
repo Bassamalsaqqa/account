@@ -33,6 +33,7 @@ use App\Models\TaxRate;
 use App\Models\Warehouse;
 use App\Services\Sales\SalesActorGuard;
 use App\Services\Sales\SalesProductSelection;
+use App\Support\InvoiceConfirmation;
 use App\Support\Tenancy\CompanyContext;
 use Brick\Math\BigDecimal;
 use Carbon\Carbon;
@@ -255,7 +256,8 @@ class InvoiceForm extends Component
             $this->currency_code = $company->base_currency_code;
             $this->issue_date = Carbon::now($company->timezone)->toDateString();
             $this->due_date = Carbon::now($company->timezone)->addDays(30)->toDateString();
-            $this->document_locale = $company->default_locale ?? 'ar';
+            $currentLocale = app()->getLocale();
+            $this->document_locale = $company->isLanguageEnabled($currentLocale) ? $currentLocale : ($company->default_locale ?? 'ar');
             $this->warehouse_id = $company->inventorySettings?->default_warehouse_id;
 
             $this->lines = [
@@ -299,7 +301,10 @@ class InvoiceForm extends Component
             $customer = Customer::find($this->customer_id);
             if ($customer !== null) {
                 $this->currency_code = $customer->default_currency_code ?? app(CompanyContext::class)->company()->base_currency_code;
-                $this->document_locale = $customer->preferred_locale ?? app(CompanyContext::class)->company()->default_locale;
+                $company = app(CompanyContext::class)->company();
+                if ($this->currency_code === $company->base_currency_code) {
+                    $this->exchange_rate = '1.0000000000';
+                }
                 $this->recalculate();
             }
         }
@@ -636,6 +641,17 @@ class InvoiceForm extends Component
         $this->documentTotalsValid = true;
     }
 
+    public function saveAndConfirm(SalesInvoiceCommands $commands): mixed
+    {
+        $this->cancelPreview();
+        $response = $this->save(true, $commands);
+        if ($this->showPreview && InvoiceConfirmation::canConfirmDirectly($this->previewData ?? [])) {
+            return $this->confirmPost($commands);
+        }
+
+        return $response;
+    }
+
     public function save(bool $andPost, SalesInvoiceCommands $commands): mixed
     {
         $company = app(CompanyContext::class)->company();
@@ -672,6 +688,10 @@ class InvoiceForm extends Component
 
                 return null;
             }
+        }
+
+        if ($this->currency_code === $company->base_currency_code) {
+            $this->exchange_rate = '1.0000000000';
         }
 
         $this->validate([

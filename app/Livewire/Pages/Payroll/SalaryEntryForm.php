@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Livewire\Pages\Payroll;
 
 use App\Actions\Payroll\PostSalaryEntryAction;
+use App\Domain\Sales\Formatters\SalesMoneyFormatter;
 use App\Livewire\Pages\Money\Concerns\AuthorizesMoneyPages;
 use App\Models\CompanyCurrency;
 use App\Models\Employee;
@@ -50,9 +51,9 @@ class SalaryEntryForm extends Component
 
     public string $baseSalary = '';
 
-    public string $bonus = '0';
+    public string $bonus = '0.00';
 
-    public string $deduction = '0';
+    public string $deduction = '0.00';
 
     public string $notes = '';
 
@@ -85,7 +86,7 @@ class SalaryEntryForm extends Component
                     $this->currencyCode = $emp->salary_currency_code;
                 }
                 if ($this->canMoney('payroll.salary.view') && $emp->default_salary) {
-                    $this->baseSalary = (string) $emp->default_salary;
+                    $this->baseSalary = SalesMoneyFormatter::formatMoneyInput((string) $emp->default_salary);
                     $this->loadedSalaryDefaults = true;
                 }
             }
@@ -100,7 +101,7 @@ class SalaryEntryForm extends Component
                 $this->currencyCode = $emp->salary_currency_code;
             }
             if ($this->canMoney('payroll.salary.view') && $emp->default_salary) {
-                $this->baseSalary = (string) $emp->default_salary;
+                $this->baseSalary = SalesMoneyFormatter::formatMoneyInput((string) $emp->default_salary);
                 $this->loadedSalaryDefaults = true;
             }
         }

@@ -22,7 +22,7 @@
     @if($canPost)
         <section class="border border-border bg-surface rounded-card p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <p class="text-sm max-w-prose">{{ __('purchasing.post_confirmation') }}</p>
-            <button type="button" wire:click="post" wire:confirm="{{ __('purchasing.post_confirmation') }}" wire:loading.attr="disabled" wire:target="post" class="shrink-0 h-11 px-4 rounded-control bg-primary text-white text-sm font-bold disabled:opacity-50">{{ __('purchasing.post_purchase') }}</button>
+            <button type="button" wire:click="post" wire:loading.attr="disabled" wire:target="post" class="shrink-0 h-11 px-4 rounded-control bg-primary text-white text-sm font-bold disabled:opacity-50 cursor-pointer">{{ __('purchasing.post_purchase') }}</button>
         </section>
     @endif
     @if($duplicateWarning)<p role="status" class="p-3 rounded-control bg-warning-bg text-warning text-sm">{{ __('purchasing.duplicate_vendor_invoice') }}</p>@endif
@@ -33,6 +33,18 @@
             @endforeach
         </dl>
     </section>
+    @if($payablePosition && $withCost)
+        <section>
+            <x-document-summary-cards
+                :total="$document['grand_total_currency'] ?? (string) $payablePosition->purchase->grand_total"
+                :paid="(string) $payablePosition->activeAllocatedAmount"
+                :remaining="(string) $payablePosition->outstanding"
+                :currency="$document['currency_code']"
+                :due-date="$document['due_date'] ?? null"
+                :returned="(string) $payablePosition->postedReturnedAmount"
+            />
+        </section>
+    @endif
     <section class="space-y-3">
         @foreach($document['lines'] as $line)
             <article class="bg-surface border border-border rounded-card p-4 space-y-3" wire:key="detail-line-{{ $line['public_id'] }}">

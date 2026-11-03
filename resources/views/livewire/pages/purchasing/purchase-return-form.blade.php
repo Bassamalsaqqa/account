@@ -121,11 +121,9 @@
                     <div class="col-span-2 sm:col-span-3">
                         <label class="text-text-secondary font-semibold">{{ __('purchasing.return_quantity') }}</label>
                         <div class="flex items-center gap-2" dir="ltr">
-    <button type="button" @click="run('stepReturnQuantity', [{{ $idx }}, 'down'])" :disabled="saving || window.isDocumentBlocked($wire)" wire:loading.attr="disabled" class="min-h-11 min-w-11 rounded-control border border-border bg-white px-3 font-semibold disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-primary" aria-label="{{ __('refinement.decrease_quantity') }}">-</button>
-    <input type="text" inputmode="decimal" wire:model="lines.{{ $idx }}.return_quantity" dir="ltr" aria-label="{{ __('refinement.return_quantity') }}" class="min-h-11 min-w-0 w-full px-2 rounded-control border border-border text-center font-mono tabular-nums"  :disabled="documentBusy || saving"/>
-    <button type="button" @click="run('stepReturnQuantity', [{{ $idx }}, 'up'])" :disabled="saving || window.isDocumentBlocked($wire)" wire:loading.attr="disabled" class="min-h-11 min-w-11 rounded-control border border-border bg-white px-3 font-semibold disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-primary" aria-label="{{ __('refinement.increase_quantity') }}">+</button>
-</div>
-<button type="button" @click="run('returnFullRemaining', [{{ $idx }}])" :disabled="saving || window.isDocumentBlocked($wire)" wire:loading.attr="disabled" class="min-h-11 w-full mt-2 rounded-control border border-primary px-3 py-2 text-primary font-semibold disabled:opacity-50">{{ __('refinement.return_remaining') }}</button>
+                            <x-touch-quantity-stepper :index="$idx" field="return_quantity" :step="$line['quantity_step'] ?? '1'" :allows-fraction="($line['quantity_step'] ?? '1') !== '1'" :max="$line['remaining_quantity']" aria-label="{{ __('refinement.return_quantity') }}" />
+                        </div>
+                        <button type="button" @click="run('returnFullRemaining', [{{ $idx }}])" :disabled="saving || window.isDocumentBlocked($wire)" wire:loading.attr="disabled" class="min-h-11 w-full mt-2 rounded-control border border-primary px-3 py-2 text-primary font-semibold disabled:opacity-50">{{ __('refinement.return_remaining') }}</button>
                     </div>
                 </div>
 

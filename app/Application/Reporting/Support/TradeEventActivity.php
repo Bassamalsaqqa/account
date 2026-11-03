@@ -458,13 +458,15 @@ final class TradeEventActivity
 
         // 1. Original Purchases: canonical same-company posted batch
         $purchases = DB::table('purchases as p')
-            ->join('posting_batches as ob', function ($join) use ($company): void {
+            ->leftJoin('posting_batches as ob', function ($join) use ($company): void {
                 $join->on('ob.id', '=', 'p.posting_batch_id')
                     ->where('ob.company_id', '=', $company->id)
                     ->whereIn('ob.status', [PostingBatch::STATUS_POSTED, PostingBatch::STATUS_REVERSED])
                     ->where('ob.source_type', '=', 'purchase')
                     ->whereColumn('ob.source_id', '=', 'p.id');
             })
+            ->where(fn ($q) => $q->whereNotNull('ob.id')->orWhere(fn ($q) => $q
+                ->whereNull('p.posting_batch_id')->where('p.grand_total_base', '0')->where('p.grand_total_currency', '0')))
             ->where('p.company_id', $company->id)
             ->where('p.status', '=', 'posted')
             ->whereBetween('p.purchase_date', [$startDate, $endDate])
@@ -551,13 +553,15 @@ final class TradeEventActivity
         // 1. Original Purchase Lines
         $lines = DB::table('purchase_lines as pl')
             ->join('purchases as p', 'p.id', '=', 'pl.purchase_id')
-            ->join('posting_batches as ob', function ($join) use ($company): void {
+            ->leftJoin('posting_batches as ob', function ($join) use ($company): void {
                 $join->on('ob.id', '=', 'p.posting_batch_id')
                     ->where('ob.company_id', '=', $company->id)
                     ->whereIn('ob.status', [PostingBatch::STATUS_POSTED, PostingBatch::STATUS_REVERSED])
                     ->where('ob.source_type', '=', 'purchase')
                     ->whereColumn('ob.source_id', '=', 'p.id');
             })
+            ->where(fn ($q) => $q->whereNotNull('ob.id')->orWhere(fn ($q) => $q
+                ->whereNull('p.posting_batch_id')->where('p.grand_total_base', '0')->where('p.grand_total_currency', '0')))
             ->where('pl.company_id', $company->id)
             ->where('p.company_id', $company->id)
             ->where('p.status', '=', 'posted')

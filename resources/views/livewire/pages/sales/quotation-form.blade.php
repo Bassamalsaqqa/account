@@ -15,7 +15,6 @@
      @keydown.window.prevent.ctrl.s="if (!$event.repeat) handleSaveDraft()"
      @keydown.window.prevent.meta.s="if (!$event.repeat) handleSaveDraft()"
      @keydown.window.prevent.alt.n="if (!$event.repeat) handleAddLine()">
-    <label class="flex items-center gap-2 text-sm"><input type="checkbox" wire:model="include_product_images" :disabled="documentBusy || saving">{{ __('sales.include_product_images') }}</label>
     <p x-cloak x-show="operationFailed" role="alert" class="text-sm text-danger">{{ __('camera.network_error') }}</p>
     <!-- Header -->
     <div class="flex items-center justify-between gap-4">
@@ -115,6 +114,7 @@
                 </select>
             </div>
 
+            @if ($currency_code !== $baseCurrencyCode)
             <!-- Exchange Rate -->
             <div>
                 <label class="block text-xs font-bold text-text-primary mb-1">
@@ -129,6 +129,7 @@
                        class="w-full h-9 px-3 rounded-control border border-border bg-canvas text-xs text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden font-mono"  :disabled="documentBusy || saving"/>
                 @error('exchange_rate') <span class="text-danger text-[11px] mt-1 block">{{ $message }}</span> @enderror
             </div>
+            @endif
 
             <!-- Document Locale -->
             <div>
@@ -141,6 +142,14 @@
                     <option value="en">{{ __('sales.language_en') }}</option>
                 </select>
             </div>
+
+            <!-- Include Product Images Toggle -->
+            <div class="flex items-center pt-5">
+                <label class="flex items-center gap-2 text-xs font-bold text-text-primary cursor-pointer select-none">
+                    <input type="checkbox" wire:model="include_product_images" :disabled="documentBusy || saving" class="h-4 w-4 rounded border-border text-primary focus:ring-primary">
+                    <span>{{ __('sales.include_product_images') }}</span>
+                </label>
+            </div>
         </div>
 
         <!-- Lines Section -->
@@ -150,16 +159,16 @@
                     <h2 class="text-sm font-bold text-text-primary">
                         {{ __('sales.quotation_details') }}
                     </h2>
-                    <div class="w-full sm:w-64">
+                    <div class="flex items-center gap-2 flex-1 max-w-md">
                         <input type="text"
                                wire:model.live.debounce.300ms="productSearch"
                                placeholder="{{ __('workflow.search_products') }}"
-                               class="w-full min-w-0 h-11 px-2.5 rounded-control border border-border bg-canvas text-sm text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden"  :disabled="documentBusy || saving"/>
-            @if (auth()->user()->hasPermissionTo('inventory.product.manage'))
-                <button type="button" wire:click="openQuickProductModal" aria-haspopup="dialog" class="mt-2 min-h-11 px-3 py-2 rounded-control border border-border text-sm font-bold text-primary hover:bg-surface-soft focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary" wire:loading.attr="disabled" wire:target="openQuickProductModal" :disabled="documentBusy || saving">
-                    {{ __('quick_product.create') }}
-                </button>
-            @endif
+                               class="flex-1 min-w-0 h-11 px-2.5 rounded-control border border-border bg-canvas text-sm text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden"  :disabled="documentBusy || saving"/>
+                        @if (auth()->user()->hasPermissionTo('inventory.product.manage'))
+                            <button type="button" wire:click="openQuickProductModal" aria-haspopup="dialog" class="shrink-0 min-h-11 px-3 py-2 rounded-control border border-border text-sm font-bold text-primary hover:bg-surface-soft focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary cursor-pointer" wire:loading.attr="disabled" wire:target="openQuickProductModal" :disabled="documentBusy || saving">
+                                + {{ __('quick_product.create') }}
+                            </button>
+                        @endif
                     </div>
                 </div>
                 <button type="button"
@@ -177,7 +186,7 @@
                         <tr class="border-b border-border bg-surface-soft text-text-muted font-bold text-[11px]">
                             <th class="py-2 px-2 text-start w-1/4">{{ __('sales.product') }}</th>
                             <th class="py-2 px-2 text-start w-24">{{ __('sales.unit') }}</th>
-                            <th class="py-2 px-2 text-start w-20">{{ __('sales.quantity') }}</th>
+                            <th class="py-2 px-2 text-start w-36">{{ __('sales.quantity') }}</th>
                             <th class="py-2 px-2 text-start w-24">{{ __('sales.unit_price') }}</th>
                             <th class="py-2 px-2 text-start w-32">{{ __('sales.discount') }}</th>
                             @if ($taxes->isNotEmpty())
@@ -232,14 +241,18 @@
                                 </td>
 
                                 <td class="py-2 px-2 align-top space-y-1">
-                                    <input type="number" inputmode="decimal"
-                                           step="any"
-                                           wire:model.blur="lines.{{ $index }}.quantity"
-                                           wire:change="recalculate"
-                                           required
-                                           min="0.000001"
-                                           dir="ltr"
-                                           class="w-full h-8 px-2 rounded-control border border-border bg-canvas text-xs font-mono"  :disabled="documentBusy || saving"/>
+                                    @php
+                                        $selectedProductUnit = $selectedProduct && !empty($line['product_unit_id']) ? $selectedProduct->productUnits->firstWhere('id', $line['product_unit_id']) : null;
+                                        $lineAllowsFraction = $selectedProductUnit?->unit?->allows_fraction ?? false;
+                                    @endphp
+                                    <x-touch-quantity-stepper
+                                        :index="$index"
+                                        :allows-fraction="$lineAllowsFraction"
+                                        :step="\App\Support\QuantityStep::forUnit($selectedProductUnit?->unit)"
+                                        id="quote-desktop-line-{{ $index }}-quantity"
+                                        :aria-label="__('sales.quantity') . ' ' . ($index + 1)"
+                                    />
+                                    @error('lines.'.$index.'.quantity') <span id="quote-desktop-line-{{ $index }}-quantity-error" role="alert" class="text-danger text-[11px] block mt-1">{{ $message }}</span> @enderror
                                     @if (!empty($line['available_quantity']))
                                         <div class="text-[10px] text-text-secondary whitespace-nowrap" dir="ltr">
                                             {{ __('sales.available') }}: <span class="font-bold">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($line['available_quantity']) }}</span>
@@ -304,8 +317,10 @@
                                     @if (count($lines) > 1)
                                         <button type="button"
                                                 wire:click="removeLine({{ $index }})"
-                                                class="text-danger hover:opacity-80 p-1 text-sm font-bold" wire:loading.attr="disabled" wire:target="removeLine" :disabled="documentBusy || saving">
-                                            ×
+                                                title="{{ __('sales.remove_line') }}"
+                                                aria-label="{{ __('sales.remove_line') }} {{ $index + 1 }}"
+                                                class="min-h-10 min-w-10 inline-flex items-center justify-center rounded-control text-danger hover:bg-danger/10 hover:text-danger-hover transition-colors p-1 cursor-pointer" wire:loading.attr="disabled" wire:target="removeLine" :disabled="documentBusy || saving">
+                                            <x-icon name="trash" class="w-5 h-5" />
                                         </button>
                                     @endif
                                 </td>
@@ -325,7 +340,7 @@
                         <div class="flex items-center justify-between">
                             <span class="text-xs font-bold text-text-primary">#{{ $index + 1 }}</span>
                             @if (count($lines) > 1)
-                                <button type="button" wire:click="removeLine({{ $index }})" class="text-danger text-xs font-bold px-2 py-1 rounded-control hover:bg-danger/10" wire:loading.attr="disabled" wire:target="removeLine" :disabled="documentBusy || saving">
+                                <button type="button" wire:click="removeLine({{ $index }})" class="min-h-[44px] px-3 text-danger text-xs font-bold cursor-pointer hover:bg-danger/10 rounded-control inline-flex items-center" wire:loading.attr="disabled" wire:target="removeLine" :disabled="documentBusy || saving">
                                     {{ __('sales.remove_line') }}
                                 </button>
                             @endif
@@ -377,6 +392,7 @@
                                 <x-touch-quantity-stepper
                                     :index="$index"
                                     :allows-fraction="$lineAllowsFraction"
+                                    :step="\App\Support\QuantityStep::forUnit($selectedProductUnit?->unit)"
                                     id="quote-mobile-line-{{ $index }}-quantity"
                                     :aria-label="__('sales.quantity') . ' ' . ($index + 1)"
                                 />
@@ -569,65 +585,6 @@
         </style>
     </form>
 
-    @if ($showQuickCustomerModal)
-        <div x-data="{
-                triggerEl: null,
-                init() {
-                    this.triggerEl = document.activeElement;
-                    this.$nextTick(() => { this.$refs.firstInput?.focus(); });
-                },
-                destroy() {
-                    if (this.triggerEl && typeof this.triggerEl.focus === 'function') {
-                        this.triggerEl.focus();
-                    }
-                }
-             }"
-             x-trap.inert.noscroll="true"
-             @keydown.escape.window.stop.prevent="$wire.closeQuickCustomerModal()"
-             @keydown.enter.stop.prevent="saveQuickCustomer"
-             class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-xs"
-             role="dialog"
-             aria-modal="true"
-             aria-labelledby="quick-customer-modal-title">
-            <div class="bg-surface border border-border rounded-card p-6 w-full max-w-md shadow-lg space-y-4">
-                <div class="flex items-center justify-between pb-3 border-b border-border">
-                    <h3 id="quick-customer-modal-title" class="text-base font-bold text-text-primary">{{ __('workflow.quick_customer') }}</h3>
-                    <button type="button" wire:click="closeQuickCustomerModal" class="text-text-muted hover:text-text-primary text-sm font-bold cursor-pointer" wire:loading.attr="disabled" wire:target="closeQuickCustomerModal">×</button>
-                </div>
-                <div class="space-y-3">
-                    <p class="text-[11px] text-text-secondary">{{ __('workflow.at_least_one_name_required') }}</p>
-                    <div>
-                        <label for="quote-quick-customer-name-ar" class="block text-xs font-bold text-text-primary mb-1">{{ __('workflow.customer_name_ar') }}</label>
-                        <input x-ref="firstInput" id="quote-quick-customer-name-ar" type="text" wire:model="quick_customer_name_ar" maxlength="255" class="w-full h-9 px-3 rounded-control border border-border bg-canvas text-xs text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden"  :disabled="documentBusy || saving"/>
-                        @error('quick_customer_name_ar') <span class="text-danger text-[11px] block mt-1">{{ $message }}</span> @enderror
-                    </div>
-                    <div>
-                        <label for="quote-quick-customer-name-en" class="block text-xs font-bold text-text-primary mb-1">{{ __('workflow.customer_name_en') }}</label>
-                        <input id="quote-quick-customer-name-en" type="text" wire:model="quick_customer_name_en" maxlength="255" dir="ltr" class="w-full h-9 px-3 rounded-control border border-border bg-canvas text-xs text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden"  :disabled="documentBusy || saving"/>
-                        @error('quick_customer_name_en') <span class="text-danger text-[11px] block mt-1">{{ $message }}</span> @enderror
-                    </div>
-                    <div class="grid grid-cols-2 gap-3">
-                        <div>
-                            <label for="quote-quick-customer-phone" class="block text-xs font-bold text-text-primary mb-1">{{ __('workflow.phone') }}</label>
-                            <input id="quote-quick-customer-phone" type="text" wire:model="quick_customer_phone" maxlength="64" dir="ltr" class="w-full h-9 px-3 rounded-control border border-border bg-canvas text-xs text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden"  :disabled="documentBusy || saving"/>
-                            @error('quick_customer_phone') <span class="text-danger text-[11px] block mt-1">{{ $message }}</span> @enderror
-                        </div>
-                        <div>
-                            <label for="quote-quick-customer-code" class="block text-xs font-bold text-text-primary mb-1">{{ __('workflow.code') }}</label>
-                            <input id="quote-quick-customer-code" type="text" wire:model="quick_customer_code" maxlength="64" dir="ltr" class="w-full h-9 px-3 rounded-control border border-border bg-canvas text-xs text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden"  :disabled="documentBusy || saving"/>
-                            @error('quick_customer_code') <span class="text-danger text-[11px] block mt-1">{{ $message }}</span> @enderror
-                        </div>
-                    </div>
-                </div>
-                <div class="flex items-center justify-end gap-2 pt-3 border-t border-border">
-                    <button type="button" wire:click="closeQuickCustomerModal" class="px-3 py-1.5 rounded-control border border-border text-xs font-bold text-text-secondary hover:bg-surface-soft cursor-pointer" wire:loading.attr="disabled" wire:target="closeQuickCustomerModal">{{ __('workflow.cancel') }}</button>
-                    <button type="button" wire:click="saveQuickCustomer" wire:loading.attr="disabled" class="px-4 py-1.5 rounded-control bg-primary text-white text-xs font-bold hover:bg-primary-hover shadow-xs cursor-pointer">
-                        <span wire:loading.remove wire:target="saveQuickCustomer">{{ __('workflow.save_customer') }}</span>
-                        <span wire:loading wire:target="saveQuickCustomer">...</span>
-                    </button>
-                </div>
-            </div>
-        </div>
-    @endif
+    @include('livewire.partials.quick-customer-modal')
     @include('livewire.partials.quick-product-modal')
 </div>

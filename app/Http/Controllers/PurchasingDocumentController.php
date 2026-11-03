@@ -73,7 +73,15 @@ final class PurchasingDocumentController extends Controller
                 }
             }
         });
-        $name = substr((string) preg_replace('/[^A-Za-z0-9_.-]/', '_', $data['type'].'-'.($data['document']['number'] ?? 'document')), 0, 150);
+        $rawNumber = trim((string) ($data['document']['number'] ?? ''));
+        if ($rawNumber !== '') {
+            $docPart = $rawNumber;
+        } else {
+            $publicId = $source instanceof Purchase ? $source->public_id : null;
+            $suffix = $publicId ? '-'.$publicId : '';
+            $docPart = 'draft'.$suffix;
+        }
+        $name = substr((string) preg_replace('/[^A-Za-z0-9_.-]/', '_', $data['type'].'-'.$docPart), 0, 150);
         $headers = ['Cache-Control' => 'private, no-store', 'X-Robots-Tag' => 'noindex, nofollow', 'Referrer-Policy' => 'no-referrer', 'X-Content-Type-Options' => 'nosniff'];
         if (! $print) {
             $headers += ['Content-Type' => 'application/pdf', 'Content-Disposition' => ($request->boolean('download') ? 'attachment' : 'inline').'; filename="'.$name.'.pdf"'];

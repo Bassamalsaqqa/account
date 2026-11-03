@@ -11,6 +11,8 @@ use App\Models\SalesInvoice;
 use App\Models\SalesInvoiceLine;
 use App\Models\SalesReturn;
 use App\Services\Sales\SalesActorGuard;
+use App\Support\DocumentIdentity;
+use App\Support\QuantityStep;
 use App\Support\Tenancy\CompanyContext;
 use Brick\Math\BigDecimal;
 use Carbon\Carbon;
@@ -90,7 +92,7 @@ class ReturnForm extends Component
         }
 
         $company = app(CompanyContext::class)->company();
-        $invoice = SalesInvoice::with('lines.productUnit')
+        $invoice = SalesInvoice::with('lines.productUnit.unit')
             ->where('company_id', $company->id)
             ->where('id', $this->sales_invoice_id)
             ->first();
@@ -122,6 +124,7 @@ class ReturnForm extends Component
                     'already_returned_quantity' => (string) $priorQty,
                     'max_returnable' => (string) $maxReturnable,
                     'return_quantity' => '0',
+                    'quantity_step' => QuantityStep::forUnit($line->productUnit?->unit, [(string) $lineQty, (string) $maxReturnable]),
                     'unit_price' => (string) $line->unit_price,
                     'unit_name' => app()->getLocale() === 'en' ? ($line->unit_name_en ?? $line->unit_name_ar) : $line->unit_name_ar,
                 ];
@@ -146,25 +149,77 @@ class ReturnForm extends Component
     }
 
     /**
-     * Step return quantity for a line within 0..currentremaining DB cap.
+     * Batch step return quantity for a line within 0..currentremaining DB cap.
+     *
+     * @param  array<string, mixed>  $expectedIdentity
+     * @param  array<int, string>  $directions
+     * @return array{ok: bool, quantity?: string, minimumReached?: bool, message?: string}
      */
-    public function stepReturnQuantity(int|string $index, string $direction): void
+    public function batchStepQuantity(int $index, mixed $expectedQuantity, array $expectedIdentity, array $directions, string $field = 'return_quantity'): array
     {
         $company = $this->authorizeReturnAction();
 
-        if (! array_key_exists($index, $this->lines)) {
-            return;
+        $refuse = function (string $message) use ($index): array {
+            $this->addError("lines.{$index}.return_quantity", $message);
+
+            return ['ok' => false, 'message' => $message];
+        };
+
+        if ($field !== 'return_quantity') {
+            return $refuse(__('mobile.quantity_stale'));
         }
 
-        $validDirections = ['up', '+', 'increment', 'down', '-', 'decrement'];
-        $dir = strtolower(trim($direction));
-        if (! in_array($dir, $validDirections, true)) {
-            $this->addError("lines.{$index}.return_quantity", __('refinement.invalid_direction'));
+        if ($directions === [] || count($directions) > 100 || ! array_is_list($directions)) {
+            return $refuse(__('refinement.invalid_direction'));
+        }
 
-            return;
+        foreach ($directions as $direction) {
+            if (! in_array($direction, ['up', 'down', '+', '-', 'increment', 'decrement'], true)) {
+                return $refuse(__('refinement.invalid_direction'));
+            }
+        }
+
+        if ($index < 0 || ! isset($this->lines[$index])) {
+            return $refuse(__('mobile.line_not_found'));
         }
 
         $lineData = $this->lines[$index];
+
+        $identity = [];
+        foreach (DocumentIdentity::FIELDS as $idField) {
+            $identity[$idField] = $lineData[$idField] ?? null;
+        }
+        if (count($expectedIdentity) !== count($identity)) {
+            return $refuse(__('mobile.quantity_stale'));
+        }
+        foreach ($identity as $idField => $val) {
+            if (! array_key_exists($idField, $expectedIdentity) || $expectedIdentity[$idField] !== $val) {
+                return $refuse(__('mobile.quantity_stale'));
+            }
+        }
+
+        if (! is_string($expectedQuantity) || preg_match('/^\d{1,12}(?:\.\d{1,6})?$/D', trim($expectedQuantity)) !== 1) {
+            return $refuse(__('mobile.quantity_stale'));
+        }
+
+        $currentQtyStr = trim((string) $lineData['return_quantity']);
+        $expectedQtyStr = trim($expectedQuantity);
+        if (str_contains($currentQtyStr, '.')) {
+            $currentQtyStr = rtrim(rtrim($currentQtyStr, '0'), '.');
+        }
+        if (str_contains($expectedQtyStr, '.')) {
+            $expectedQtyStr = rtrim(rtrim($expectedQtyStr, '0'), '.');
+        }
+        if ($currentQtyStr === '') {
+            $currentQtyStr = '0';
+        }
+        if ($expectedQtyStr === '') {
+            $expectedQtyStr = '0';
+        }
+        if ($currentQtyStr !== $expectedQtyStr) {
+            return $refuse(__('mobile.quantity_stale'));
+        }
+
         $salesInvoiceLineId = (int) $lineData['sales_invoice_line_id'];
 
         /** @var SalesInvoiceLine|null $sourceLine */
@@ -179,9 +234,7 @@ class ReturnForm extends Component
             ->first();
 
         if ($sourceLine === null) {
-            $this->addError("lines.{$index}.return_quantity", __('refinement.source_line_not_found'));
-
-            return;
+            return $refuse(__('refinement.source_line_not_found'));
         }
 
         // Recalculate fresh authorized returnable DB cap - do not trust client max_returnable
@@ -210,11 +263,11 @@ class ReturnForm extends Component
             $decPart = explode('.', $historicalQuantity)[1] ?? '';
             $maxDecimals = max($maxDecimals, min(strlen(rtrim($decPart, '0')), 6));
         }
-        $allowsFraction = $maxDecimals > 0;
 
         $stepValue = $maxDecimals > 0
             ? '0.'.str_repeat('0', $maxDecimals - 1).'1'
             : '1';
+        $stepBd = BigDecimal::of($stepValue);
 
         $rawCurrent = trim((string) $lineData['return_quantity']);
         if ($rawCurrent === '') {
@@ -222,49 +275,59 @@ class ReturnForm extends Component
         }
 
         if (preg_match('/^\d{1,12}(?:\.\d{1,6})?$/D', $rawCurrent) !== 1) {
-            $this->addError("lines.{$index}.return_quantity", __('refinement.exact_string_required'));
-
-            return;
+            return $refuse(__('refinement.exact_string_required'));
         }
-        $normalizedCurrent = str_contains($rawCurrent, '.') ? rtrim(rtrim($rawCurrent, '0'), '.') : $rawCurrent;
-        if (str_contains($normalizedCurrent, '.') && strlen(explode('.', $normalizedCurrent)[1]) > $maxDecimals) {
-            $this->addError("lines.{$index}.return_quantity", __('refinement.exact_string_required'));
 
-            return;
-        }
         try {
             $currentBd = BigDecimal::of($rawCurrent);
         } catch (\Throwable) {
-            $this->addError("lines.{$index}.return_quantity", __('refinement.exact_string_required'));
-
-            return;
+            return $refuse(__('refinement.exact_string_required'));
         }
 
         if ($currentBd->isNegative()) {
             $currentBd = BigDecimal::zero();
         }
 
-        $isIncrement = in_array($dir, ['up', '+', 'increment'], true);
-        $stepBd = BigDecimal::of($stepValue);
-
-        if ($isIncrement) {
-            $newBd = $currentBd->plus($stepBd);
-            if ($newBd->isGreaterThan($freshMaxReturnable)) {
-                $newBd = $freshMaxReturnable;
-            }
-        } else {
-            $newBd = $currentBd->minus($stepBd);
-            if ($newBd->isNegative()) {
-                $newBd = BigDecimal::zero();
-            }
-            if ($newBd->isGreaterThan($freshMaxReturnable)) {
-                $newBd = $freshMaxReturnable;
+        foreach ($directions as $dir) {
+            $isIncrement = in_array(strtolower(trim($dir)), ['up', '+', 'increment'], true);
+            if ($isIncrement) {
+                $currentBd = $currentBd->plus($stepBd);
+                if ($currentBd->isGreaterThan($freshMaxReturnable)) {
+                    $currentBd = $freshMaxReturnable;
+                }
+            } else {
+                $currentBd = $currentBd->minus($stepBd);
+                if ($currentBd->isNegative()) {
+                    $currentBd = BigDecimal::zero();
+                }
+                if ($currentBd->isGreaterThan($freshMaxReturnable)) {
+                    $currentBd = $freshMaxReturnable;
+                }
             }
         }
 
-        $formatted = $maxDecimals > 0 ? (string) $newBd : (string) $newBd->toBigInteger();
+        $formatted = $maxDecimals > 0 ? (string) $currentBd : (string) $currentBd->toBigInteger();
         $this->lines[$index]['return_quantity'] = $formatted;
         $this->resetErrorBag("lines.{$index}.return_quantity");
+
+        return ['ok' => true, 'quantity' => $formatted, 'minimumReached' => $currentBd->isZero()];
+    }
+
+    /**
+     * Step return quantity for a line within 0..currentremaining DB cap.
+     */
+    public function stepReturnQuantity(int|string $index, string $direction): void
+    {
+        $idx = (int) $index;
+        $line = $this->lines[$idx] ?? null;
+        if ($line === null) {
+            return;
+        }
+        $identity = [];
+        foreach (DocumentIdentity::FIELDS as $idField) {
+            $identity[$idField] = $line[$idField] ?? null;
+        }
+        $this->batchStepQuantity($idx, $line['return_quantity'], $identity, [$direction], 'return_quantity');
     }
 
     /**

@@ -62,6 +62,8 @@ final class PurchasePostingScope
 
     private bool $batchVerified = false;
 
+    private ?string $allocatedNumber = null;
+
     /**
      * @template T
      *
@@ -92,11 +94,12 @@ final class PurchasePostingScope
         $this->preparedPostingCommand = null;
         $this->postingAsserted = false;
         $this->batchVerified = false;
+        $this->allocatedNumber = null;
 
         try {
             $result = $callback($capability);
-            if ($this->preparedPostingCommand !== null && ! $this->batchVerified) {
-                throw new InvalidArgumentException('Prepared purchase posting command requires verified persisted canonical batch.');
+            if (! $this->batchVerified) {
+                throw new InvalidArgumentException('Purchase posting requires verified canonical completion.');
             }
 
             return $result;
@@ -110,6 +113,7 @@ final class PurchasePostingScope
             $this->preparedPostingCommand = null;
             $this->postingAsserted = false;
             $this->batchVerified = false;
+            $this->allocatedNumber = null;
         }
     }
 
@@ -125,6 +129,41 @@ final class PurchasePostingScope
             && $this->pdo === $this->connection->getPdo() && $this->pdo->inTransaction()
             && $this->transactions()->getPendingTransactions()->contains(
                 fn (DatabaseTransactionRecord $record) => $record === $this->transaction);
+    }
+
+    public function recordAllocatedNumber(PostPurchaseAction $owner, string $number): void
+    {
+        if ($this->owner !== $owner || ! $owner->ownsPostingScope($this) || ! $this->isActive($this->active)
+            || trim($number) === '' || $this->allocatedNumber !== null) {
+            throw new InvalidArgumentException('Only the active canonical purchase action may bind its allocated number.');
+        }
+        $this->allocatedNumber = $number;
+    }
+
+    public function assertCompletion(Purchase $purchase, User $actor, ?PurchaseReceiptCapability $capability, string $number): void
+    {
+        $context = app(CompanyContext::class);
+        if (! $this->isActive($capability) || (int) $purchase->company_id !== $this->companyId
+            || (int) $purchase->id !== $this->purchaseId || (int) $actor->id !== $this->actorId
+            || (int) auth()->id() !== $this->actorId || ! $context->hasCompany()
+            || (int) $context->companyId() !== $this->companyId || $this->allocatedNumber !== $number) {
+            throw new InvalidArgumentException('Purchase completion requires its matching active scope, actor and allocated number.');
+        }
+    }
+
+    public function assertZeroValuePosting(PostPurchaseAction $owner, Purchase $purchase): void
+    {
+        if ($this->owner !== $owner || ! $owner->ownsPostingScope($this) || ! $this->isActive($this->active)
+            || $this->preparedPostingCommand !== null) {
+            throw new InvalidArgumentException('Only the active canonical purchase action may verify a nonmonetary receipt.');
+        }
+        $persisted = Purchase::withoutGlobalScopes()->where('company_id', $this->companyId)->findOrFail($this->purchaseId);
+        if ((int) $purchase->id !== $this->purchaseId || $persisted->purchase_number !== $this->allocatedNumber
+            || $persisted->posting_batch_id !== null || $persisted->status !== Purchase::STATUS_POSTED) {
+            throw new InvalidArgumentException('Nonmonetary receipt lifecycle does not match its canonical posting scope.');
+        }
+        app(PurchasePostingCommandBuilder::class)->validatePosted($persisted);
+        $this->batchVerified = true;
     }
 
     public function preparePosting(PostPurchaseAction $owner, PostingCommand $command): void

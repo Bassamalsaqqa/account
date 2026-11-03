@@ -52,7 +52,6 @@
         $canExecute = false;
     }
 
-    $expiresAt = $preview['expires_at'] ?? null;
     $customer = $invoiceData['customer'] ?? ($invoice?->customer ? [
         'name_ar' => $invoice->customer->name_ar,
         'name_en' => $invoice->customer->name_en,
@@ -80,10 +79,6 @@
             : ($warehouse['name_ar'] ?: $warehouse['name_en']);
     }
 
-    // Stock disclaimer fully translated in AR
-    $stockDisclaimer = (app()->getLocale() === 'ar' || empty($stockData['disclaimer']))
-        ? __('commands.stock_disclaimer')
-        : (string) $stockData['disclaimer'];
 @endphp
 
 <div id="sales-command-preview-panel"
@@ -106,17 +101,8 @@
                     {{ __('commands.preview_title') }}
                 </h2>
             </div>
-            <p class="text-xs text-text-secondary mt-0.5">
-                {{ __('commands.preview_subtitle') }}
-            </p>
         </div>
 
-        @if ($expiresAt)
-            <div class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-control bg-surface-soft border border-border text-[11px] text-text-muted">
-                <span>⏱ {{ __('commands.token_expires_at') }}:</span>
-                <span class="font-mono font-bold text-text-primary break-all" dir="ltr">{{ $expiresAt }}</span>
-            </div>
-        @endif
     </div>
 
     <!-- Missing / Malformed Preview Alert (Fail-Closed) -->
@@ -138,14 +124,6 @@
         </div>
     </div>
 
-    <!-- Prominent Stock Advisory Notice -->
-    <div role="status" class="flex items-start gap-2.5 p-3 rounded-control bg-amber-50 border border-amber-200/80 text-amber-900 text-xs">
-        <span class="text-amber-700 font-bold text-sm leading-none mt-0.5" aria-hidden="true">ℹ</span>
-        <div class="space-y-0.5">
-            <span class="font-bold block">{{ __('commands.advisory_stock_notice') }}</span>
-            <p class="text-amber-800 text-[11px] leading-relaxed">{{ $stockDisclaimer }}</p>
-        </div>
-    </div>
 
     <!-- Blockers (if any) - Strict localized code or generic, never raw message leak -->
     @if ($hasBlockers)

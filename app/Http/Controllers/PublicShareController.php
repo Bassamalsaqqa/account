@@ -67,7 +67,14 @@ class PublicShareController extends Controller
                     return response()->view('sales.share-landing', ['unavailable' => true], 429);
                 }
                 RateLimiter::hit($renderKey, 60);
-                $response = response(app(PdfRendererService::class)->renderDocument($data, guest: true), 200, ['Content-Type' => 'application/pdf', 'Content-Disposition' => ($request->boolean('download') ? 'attachment' : 'inline').'; filename="document.pdf"']);
+                $rawNumber = trim((string) ($data->document['number'] ?? ''));
+                if ($rawNumber !== '') {
+                    $docPart = $rawNumber;
+                } else {
+                    $docPart = 'draft-'.$share->public_id;
+                }
+                $name = substr((string) preg_replace('/[^A-Za-z0-9_.-]/', '_', $data->type.'-'.$docPart), 0, 150);
+                $response = response(app(PdfRendererService::class)->renderDocument($data, guest: true), 200, ['Content-Type' => 'application/pdf', 'Content-Disposition' => ($request->boolean('download') ? 'attachment' : 'inline').'; filename="'.$name.'.pdf"']);
             } elseif ($format === 'json') {
                 $response = response()->json($data->toArray());
             } elseif ($format === 'print') {
