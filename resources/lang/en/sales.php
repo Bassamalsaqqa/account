@@ -187,7 +187,7 @@ return [
     'payment_reference_placeholder' => 'e.g. TR-998822',
     'auto_allocate' => 'Auto Allocate',
     'allocated_total' => 'Allocated to Invoices',
-    'unallocated_amount' => 'Unallocated Amount (Customer Credit)',
+    'unallocated_amount' => 'Unallocated Amount (Already-received money available)',
     'invoice_allocations' => 'Allocate to Open Invoices',
     'invoice_date' => 'Invoice Date',
     'invoice_total' => 'Invoice Total',

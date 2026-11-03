@@ -14,6 +14,68 @@ use Illuminate\Auth\Access\AuthorizationException;
 
 final class DashboardReports
 {
+    /** The daily home reads only what it displays. Canonical reports retain all
+     * source permissions, posted-event provenance and exact currency arithmetic.
+     *
+     * @return array<string, mixed>
+     */
+    public function readHome(Company $company, string $preset, ?string $from = null, ?string $to = null): array
+    {
+        $guard = app(ReportingGuard::class);
+        $company = $guard->company($company);
+        $authority = $guard->permissionNames(auth()->user());
+        $period = $preset === 'this_month'
+            ? ReportPeriod::monthToDateComparison($company)['current']
+            : ($preset === 'custom' ? ReportPeriod::custom($from ?? '', $to ?? '', $company) : ReportPeriod::fromPreset($preset, $company));
+        $today = ReportPeriod::fromPreset('today', $company);
+        $registry = app(ReportRegistry::class);
+        $currency = (string) $company->base_currency_code;
+        $output = ['activity' => [], 'accounts' => [], 'checks' => null, 'accounts_url' => null,
+            'period' => $period->toArray(), 'today' => $today->endDate, 'currency' => $currency];
+
+        foreach (['sales.summary' => 'commercial_net_sales_base', 'purchases.summary' => 'net_purchases_base'] as $key => $field) {
+            $filters = ['period' => $period->toArray(), 'per_page' => 1];
+            try {
+                $result = $registry->execute($company, $key, $filters);
+            } catch (AuthorizationException) {
+                continue;
+            }
+            $output['activity'][$key] = ['display' => SalesMoneyFormatter::displayMoney((string) $result->totals[$field], $currency),
+                'currency' => $currency, 'url' => route('reports.show', ['reportKey' => $key, 'filters' => $filters])];
+        }
+
+        $filters = ['period' => $today->toArray(), 'per_page' => 50];
+        try {
+            $balances = $registry->execute($company, 'money.balances', $filters);
+            foreach ($balances->rows as $row) {
+                $output['accounts'][] = ['name' => $row['name'], 'type' => $row['account_type'],
+                    'currency' => $row['currency_code'], 'display' => $row['balance_currency'] === null ? null
+                        : SalesMoneyFormatter::displayMoney((string) $row['balance_currency'], (string) $row['currency_code'])];
+            }
+            $output['accounts_url'] = route('reports.show', ['reportKey' => 'money.balances', 'filters' => $filters]);
+        } catch (AuthorizationException) {
+            // Restricted balances are absent, never serialized as hidden values.
+        }
+
+        $filters = ['period' => $today->toArray(), 'per_page' => 1, 'status' => 'received', 'grouping' => 'incoming'];
+        try {
+            $checks = $registry->execute($company, 'money.checks', $filters);
+            $output['checks'] = ['amounts' => [], 'url' => route('reports.show', ['reportKey' => 'money.checks', 'filters' => $filters])];
+            foreach ($checks->totals['currency_totals'] as $code => $amount) {
+                $output['checks']['amounts'][] = ['currency' => $code, 'display' => SalesMoneyFormatter::displayMoney((string) $amount, (string) $code)];
+            }
+        } catch (AuthorizationException) {
+            // A tenant's check permission is independent of cash/bank visibility.
+        }
+
+        $guard->company($company);
+        if ($authority !== $guard->permissionNames(auth()->user())) {
+            throw new AuthorizationException('Dashboard authority changed during report retrieval.');
+        }
+
+        return $output;
+    }
+
     /** @return array<string, mixed> */
     public function read(Company $company, string $preset, ?string $from = null, ?string $to = null, bool $includeAdditionalPositions = true): array
     {

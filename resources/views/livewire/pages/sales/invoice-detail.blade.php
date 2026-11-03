@@ -114,7 +114,7 @@
 
 
         <!-- Metadata Summary -->
-        <div class="grid grid-cols-2 md:grid-cols-5 gap-4 pt-4 border-t border-border text-xs">
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 pt-4 border-t border-border text-xs">
             <div>
                 <span class="text-text-muted block text-[11px]">{{ __('sales.date') }}</span>
                 <span class="font-bold text-text-primary" dir="ltr">{{ $invoice->issue_date ? $invoice->issue_date->toDateString() : '—' }}</span>
@@ -131,13 +131,20 @@
                 <span class="text-text-muted block text-[11px]">{{ __('sales.currency') }}</span>
                 <span class="font-bold text-text-primary">{{ $invoice->currency_code }} ({{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatQuantity($invoice->exchange_rate, 4) }})</span>
             </div>
-            <div>
-                <span class="text-text-muted block text-[11px]">{{ __('sales.outstanding_amount') }}</span>
-                <span class="font-mono font-bold {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::isPositive($outstanding) ? 'text-danger' : 'text-text-primary' }}" dir="ltr">
-                    {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($outstanding, $invoice->currency_code) }} {{ $invoice->currency_code }}
-                </span>
-            </div>
         </div>
+
+        @if ($invoice->isPosted())
+            <div class="pt-4 border-t border-border">
+                <x-document-summary-cards
+                    :total="$invoice->grand_total_currency"
+                    :paid="$paidAmount"
+                    :remaining="$outstanding"
+                    :currency="$invoice->currency_code"
+                    :due-date="$invoice->due_date ? $invoice->due_date->toDateString() : null"
+                    :returned="$returnedTotal"
+                />
+            </div>
+        @endif
     </div>
 
     <!-- Phase 11 Command Preview & Errors -->

@@ -38,7 +38,7 @@ class VendorProductHistoryQuery
             ->where('purchases.status', Purchase::STATUS_POSTED)
             ->whereNotNull('purchases.purchase_number')
             ->whereNotNull('purchases.posted_at')
-            ->whereNotNull('purchases.posting_batch_id');
+            ->where(PurchaseHistoryProvenance::receiptRecognitionFilter());
 
         if ($productId !== null) {
             $query->where('purchase_lines.product_id', $productId);

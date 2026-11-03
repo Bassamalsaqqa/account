@@ -4,21 +4,31 @@ declare(strict_types=1);
 
 namespace Tests\Feature\Refinement;
 
+use App\Actions\Sales\CreateSalesInvoiceDraftAction;
+use App\Actions\Sales\PostSalesInvoiceAction;
 use App\Livewire\Pages\Purchasing\PurchaseForm;
 use App\Livewire\Pages\Sales\InvoiceForm;
 use App\Livewire\Pages\Sales\QuotationForm;
+use App\Livewire\Pages\Sales\ReturnForm;
+use App\Models\Customer;
 use App\Models\Unit;
+use App\Support\DocumentIdentity;
+use App\Support\QuantityStep;
 use Illuminate\Support\Facades\DB;
 use Livewire\Livewire;
 use Tests\Feature\Phase5E\Phase5ETestCase;
 
 class QuantityBatchTest extends Phase5ETestCase
 {
-    private const IDENTITY = ['id', 'product_id', 'product_unit_id', 'item_description', 'unit_price', 'unit_cost', 'discount_type', 'discount_value', 'tax_rate_id', 'tax_inclusive', 'lot_id', 'lots', 'lot_allocations', 'warehouse_id'];
+    private const IDENTITY = DocumentIdentity::FIELDS;
 
-    /** @param array<string,mixed> $line @return array<string,mixed> */
+    /**
+     * @param  array<string, mixed>  $line
+     * @return array<string, mixed>
+     */
     private function identity(array $line): array
     {
+        /** @var array<string, mixed> */
         return array_combine(self::IDENTITY, array_map(fn (string $field) => $line[$field] ?? null, self::IDENTITY));
     }
 
@@ -45,9 +55,11 @@ class QuantityBatchTest extends Phase5ETestCase
     public function test_fractional_quantum_and_directional_minimum_are_exact(): void
     {
         Unit::findOrFail($this->unit->unit_id)->update(['allows_fraction' => true, 'decimal_places' => 6]);
+        $this->assertSame('0.000001', QuantityStep::forUnit(Unit::findOrFail($this->unit->unit_id)));
         foreach ([InvoiceForm::class, QuotationForm::class, PurchaseForm::class] as $type) {
             $form = Livewire::test($type)->call('selectProduct', 0, $this->product->id)
                 ->set('lines.0.quantity', '0.000001');
+            $form->assertSeeHtml("'0.000001'");
             $form->call('batchStepQuantity', 0, '0.000001', $this->identity($form->get('lines.0')), ['down', 'down', 'up', 'up'])
                 ->assertReturned(['ok' => true, 'quantity' => '0.000003', 'minimumReached' => true])
                 ->assertSet('lines.0.quantity', '0.000003')->assertHasErrors('lines.0.quantity');
@@ -102,6 +114,88 @@ class QuantityBatchTest extends Phase5ETestCase
                 ->assertSet('lines.0.quantity', '3')->assertSet('documentTotalsValid', false)
                 ->assertSee(__('camera.totals_unavailable'));
         }
+    }
+
+    public function test_actual_js_shaped_16_key_identity_batch_step(): void
+    {
+        $form = Livewire::test(InvoiceForm::class)->call('selectProduct', 0, $this->product->id);
+        $rawLine = $form->get('lines.0');
+
+        // The actual JS client builds identity using:
+        // const identityFields = ['id', 'product_id', 'product_unit_id', 'item_description', 'unit_price', 'unit_cost', 'discount_type', 'discount_value', 'tax_rate_id', 'tax_inclusive', 'lot_id', 'lots', 'lot_allocations', 'warehouse_id', 'purchase_line_id', 'sales_invoice_line_id'];
+        // const identityFor = line => Object.fromEntries(identityFields.map(key => [key, line?.[key] ?? null]));
+        $jsShapedIdentity = [];
+        foreach (DocumentIdentity::FIELDS as $field) {
+            $jsShapedIdentity[$field] = $rawLine[$field] ?? null;
+        }
+
+        $this->assertCount(16, $jsShapedIdentity);
+        $this->assertArrayHasKey('purchase_line_id', $jsShapedIdentity);
+        $this->assertArrayHasKey('sales_invoice_line_id', $jsShapedIdentity);
+
+        $form->call('batchStepQuantity', 0, '1', $jsShapedIdentity, ['up', 'up'])
+            ->assertReturned(['ok' => true, 'quantity' => '3', 'minimumReached' => false])
+            ->assertSet('lines.0.quantity', '3');
+    }
+
+    public function test_return_batch_step_quantity_stale_row_and_field_rejection(): void
+    {
+        $this->createAndPostPurchase();
+
+        $customer = Customer::create([
+            'company_id' => $this->company->id,
+            'name_ar' => 'عميل مرتجع',
+            'preferred_locale' => 'ar',
+            'default_currency_code' => 'ILS',
+            'created_by' => $this->owner->id,
+            'status' => 'active',
+        ]);
+
+        $draft = app(CreateSalesInvoiceDraftAction::class)->execute($this->company, $this->owner, [
+            'customer_id' => $customer->id,
+            'currency_code' => 'ILS',
+            'exchange_rate' => '1.0000000000',
+            'issue_date' => now()->toDateString(),
+            'lines' => [[
+                'product_id' => $this->product->id,
+                'item_description' => 'Food Item',
+                'quantity' => '10',
+                'unit_price' => '50.00',
+            ]],
+        ]);
+        $invoice = app(PostSalesInvoiceAction::class)->execute($draft, $this->owner);
+
+        $returnForm = Livewire::test(ReturnForm::class, ['invoice_id' => $invoice->id]);
+        $returnLine = $returnForm->get('lines.0');
+        $identity = $this->identity($returnLine);
+
+        // 1. Wrong field is rejected
+        $returnForm->call('batchStepQuantity', 0, '0', $identity, ['up'], 'quantity')
+            ->assertReturned(['ok' => false, 'message' => __('mobile.quantity_stale')])
+            ->assertSet('lines.0.return_quantity', '0');
+
+        // 2. Swapped/stale expected quantity is rejected (including floats/scientific notation)
+        $returnForm->call('batchStepQuantity', 0, '5', $identity, ['up'], 'return_quantity')
+            ->assertReturned(['ok' => false, 'message' => __('mobile.quantity_stale')])
+            ->assertSet('lines.0.return_quantity', '0');
+        $returnForm->call('batchStepQuantity', 0, '1e1', $identity, ['up'], 'return_quantity')
+            ->assertReturned(['ok' => false, 'message' => __('mobile.quantity_stale')])
+            ->assertSet('lines.0.return_quantity', '0');
+        $returnForm->call('batchStepQuantity', 0, 10, $identity, ['up'], 'return_quantity')
+            ->assertReturned(['ok' => false, 'message' => __('mobile.quantity_stale')])
+            ->assertSet('lines.0.return_quantity', '0');
+
+        // 3. Tampered identity (e.g. wrong product_id or sales_invoice_line_id) is rejected
+        $tamperedIdentity = $identity;
+        $tamperedIdentity['product_id'] = 999999;
+        $returnForm->call('batchStepQuantity', 0, '0', $tamperedIdentity, ['up'], 'return_quantity')
+            ->assertReturned(['ok' => false, 'message' => __('mobile.quantity_stale')])
+            ->assertSet('lines.0.return_quantity', '0');
+
+        // 4. Valid batch step succeeds and clamps to returnable cap
+        $returnForm->call('batchStepQuantity', 0, '0', $identity, ['up', 'up'], 'return_quantity')
+            ->assertReturned(['ok' => true, 'quantity' => '2', 'minimumReached' => false])
+            ->assertSet('lines.0.return_quantity', '2');
     }
 
     /** @return array<string,int> */

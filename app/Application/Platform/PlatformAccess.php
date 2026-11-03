@@ -26,8 +26,28 @@ final class PlatformAccess
         return $this->authorizeOperator($request, $actor, $permission, $lock);
     }
 
+    /** Browsing requires the active operator grant, without repeating sign-in. */
+    public function authorizeRead(string $permission): PlatformOperatorGrant
+    {
+        if (! in_array($permission, ['company.read', 'audit.read', 'company.provision', 'subscription.manage'], true)) {
+            throw new AuthorizationException;
+        }
+        $request = request();
+        $actor = $request->user();
+        if (! $actor instanceof User) {
+            throw new AuthorizationException;
+        }
+
+        return $this->resolveGrant($request, $actor, $permission, false, false);
+    }
+
     /** The explicit operator remains bound to the real authenticated session proof. */
     public function authorizeOperator(Request $request, User $actor, string $permission, bool $lock = false): PlatformOperatorGrant
+    {
+        return $this->resolveGrant($request, $actor, $permission, $lock, true);
+    }
+
+    private function resolveGrant(Request $request, User $actor, string $permission, bool $lock, bool $requireRecentPassword): PlatformOperatorGrant
     {
         if (! in_array($permission, self::PERMISSIONS, true)
             || ($lock && DB::transactionLevel() < 1)) {
@@ -49,7 +69,10 @@ final class PlatformAccess
             throw new AuthorizationException;
         }
 
-        if (! app(PlatformSessionProof::class)->valid($request, $fresh, $grant)) {
+        if ($requireRecentPassword === false && $lock) {
+            throw new AuthorizationException;
+        }
+        if ($requireRecentPassword && ! app(PlatformSessionProof::class)->valid($request, $fresh, $grant)) {
             throw new PlatformReauthenticationRequired;
         }
 

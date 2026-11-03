@@ -1,59 +1,55 @@
-<section class="rounded-card border border-border bg-white p-4 sm:p-6 space-y-4" x-data="financialShareControls($wire)">
-    <h2 class="text-lg font-bold text-text-primary">{{ __('sharing.manage') }}</h2>
-    <p class="text-sm text-text-secondary">{{ __('sharing.issuer_notice') }}</p>
-    <div class="rounded-control bg-surface-soft p-3 text-sm space-y-1">
-        @if($preview)
-            <div><strong>{{ __('documents.'.$preview->type) }} {{ $preview->document['number'] ?? '' }}</strong></div>
-            <div><span>{{ $preview->customer['name'] }}</span></div>
+<section class="rounded-card border border-border bg-white p-4 sm:p-5 space-y-4" x-data="financialShareControls($wire)">
+    <div class="flex items-center justify-between pb-2 border-b border-border">
+        <h2 class="text-base font-bold text-text-primary">{{ __('sharing.manage') }}</h2>
+    </div>
+    @if($preview)
+        <div class="rounded-control bg-surface-soft p-3 text-xs space-y-1">
+            <div class="font-bold text-text-primary">{{ __('documents.'.$preview->type) }} {{ $preview->document['number'] ?? '' }}</div>
+            <div class="text-text-secondary">{{ $preview->customer['name'] }}</div>
             @if(isset($preview->document['grand_total']))
                 <p><bdi dir="ltr" class="tabular-nums font-semibold">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($preview->document['grand_total'], $preview->document['currency_code']) }} {{ $preview->document['currency_code'] }}</bdi></p>
             @endif
             @foreach($preview->statement['currencies'] ?? [] as $currency => $group)
                 <p><bdi dir="ltr" class="tabular-nums font-semibold">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($group['closing_balance'], $currency) }} {{ $currency }}</bdi> — {{ __('documents.closing_balance') }}</p>
             @endforeach
-            <p class="text-xs text-text-secondary mt-1">{{ __('sharing.preview_scope') }}</p>
-        @else
-            <p role="alert" aria-live="assertive" class="text-red-700">{{ $previewError ?? __('sharing.invalid_dates') }}</p>
-        @endif
-    </div>
-    <form wire:submit="create" class="grid gap-4 sm:grid-cols-2">
+        </div>
+    @else
+        <p role="alert" aria-live="assertive" class="text-xs text-danger">{{ $previewError ?? __('sharing.invalid_dates') }}</p>
+    @endif
+    <form wire:submit="create" class="grid gap-3 sm:grid-cols-2">
         <div>
-            <label for="share-locale" class="block text-sm font-medium text-text-primary">{{ __('sharing.language') }}</label>
-            <select id="share-locale" wire:model.live="locale" class="mt-1 min-h-11 w-full rounded-control border border-border px-3 py-2 bg-white text-sm focus:border-primary focus:ring-1 focus:ring-primary">
+            <label for="share-locale" class="block text-xs font-bold text-text-primary mb-1">{{ __('sharing.language') }}</label>
+            <select id="share-locale" wire:model.live="locale" class="min-h-11 w-full rounded-control border border-border px-3 py-2 bg-white text-xs focus:border-primary focus:ring-1 focus:ring-primary">
                 <option value="ar">العربية</option>
                 <option value="en">English</option>
             </select>
-            @error('locale')<p role="alert" aria-live="assertive" class="text-xs text-red-600 mt-1 font-medium">{{ $message }}</p>@enderror
+            @error('locale')<p role="alert" aria-live="assertive" class="text-xs text-danger mt-1">{{ $message }}</p>@enderror
         </div>
         <div>
-            <label for="share-expiry-days" class="block text-sm font-medium text-text-primary">{{ __('sharing.expiry_days') }}</label>
-            <input id="share-expiry-days" type="number" min="1" max="{{ $subjectType === \App\Models\PublicShare::SUBJECT_CUSTOMER_STATEMENT ? 30 : 365 }}" inputmode="numeric" dir="ltr" wire:model.live="expiryDays" class="mt-1 min-h-11 w-full rounded-control border border-border px-3 py-2 bg-white text-sm focus:border-primary focus:ring-1 focus:ring-primary">
-            <p class="text-xs text-text-secondary mt-1">
-                {{ __('sharing.expiry_duration_exact', ['days' => (int) $expiryDays, 'hours' => (int) $expiryDays * 24]) }}
-            </p>
-            @error('expiryDays')<p role="alert" aria-live="assertive" class="text-xs text-red-600 mt-1 font-medium">{{ $message }}</p>@enderror
+            <label for="share-expiry-days" class="block text-xs font-bold text-text-primary mb-1">{{ __('sharing.expiry_days') }}</label>
+            <input id="share-expiry-days" type="number" min="1" max="{{ $subjectType === \App\Models\PublicShare::SUBJECT_CUSTOMER_STATEMENT ? 30 : 365 }}" inputmode="numeric" dir="ltr" wire:model.live="expiryDays" class="min-h-11 w-full rounded-control border border-border px-3 py-2 bg-white text-xs font-mono focus:border-primary focus:ring-1 focus:ring-primary">
+            @error('expiryDays')<p role="alert" aria-live="assertive" class="text-xs text-danger mt-1">{{ $message }}</p>@enderror
         </div>
         <div class="sm:col-span-2">
-            <label for="share-password" class="block text-sm font-medium text-text-primary">{{ __('sharing.password') }}</label>
-            <input id="share-password" type="password" wire:model="password" autocomplete="new-password" minlength="8" maxlength="128" class="mt-1 min-h-11 w-full rounded-control border border-border px-3 py-2 bg-white text-sm focus:border-primary focus:ring-1 focus:ring-primary">
-            @error('password')<p role="alert" aria-live="assertive" class="text-xs text-red-600 mt-1 font-medium">{{ $message }}</p>@enderror
+            <label for="share-password" class="block text-xs font-bold text-text-primary mb-1">{{ __('sharing.password') }}</label>
+            <input id="share-password" type="password" wire:model="password" autocomplete="new-password" minlength="8" maxlength="128" placeholder="••••••••" class="min-h-11 w-full rounded-control border border-border px-3 py-2 bg-white text-xs focus:border-primary focus:ring-1 focus:ring-primary">
+            @error('password')<p role="alert" aria-live="assertive" class="text-xs text-danger mt-1">{{ $message }}</p>@enderror
         </div>
         @if($subjectType === 'customer_statement')
-            <p class="sm:col-span-2 text-xs sm:text-sm text-text-secondary">{{ __('sharing.statement_notice') }}</p>
             <div>
-                <label for="share-from-date" class="block text-sm font-medium text-text-primary">{{ __('documents.from_date') }}</label>
-                <input id="share-from-date" type="date" wire:model="from" class="mt-1 min-h-11 w-full rounded-control border border-border px-3 py-2 bg-white text-sm focus:border-primary focus:ring-1 focus:ring-primary">
-                @error('from')<p role="alert" aria-live="assertive" class="text-xs text-red-600 mt-1 font-medium">{{ $message }}</p>@enderror
+                <label for="share-from-date" class="block text-xs font-bold text-text-primary mb-1">{{ __('documents.from_date') }}</label>
+                <input id="share-from-date" type="date" wire:model="from" class="min-h-11 w-full rounded-control border border-border px-3 py-2 bg-white text-xs focus:border-primary focus:ring-1 focus:ring-primary">
+                @error('from')<p role="alert" aria-live="assertive" class="text-xs text-danger mt-1">{{ $message }}</p>@enderror
             </div>
             <div>
-                <label for="share-to-date" class="block text-sm font-medium text-text-primary">{{ __('documents.to_date') }}</label>
-                <input id="share-to-date" type="date" wire:model="to" class="mt-1 min-h-11 w-full rounded-control border border-border px-3 py-2 bg-white text-sm focus:border-primary focus:ring-1 focus:ring-primary">
-                @error('to')<p role="alert" aria-live="assertive" class="text-xs text-red-600 mt-1 font-medium">{{ $message }}</p>@enderror
+                <label for="share-to-date" class="block text-xs font-bold text-text-primary mb-1">{{ __('documents.to_date') }}</label>
+                <input id="share-to-date" type="date" wire:model="to" class="min-h-11 w-full rounded-control border border-border px-3 py-2 bg-white text-xs focus:border-primary focus:ring-1 focus:ring-primary">
+                @error('to')<p role="alert" aria-live="assertive" class="text-xs text-danger mt-1">{{ $message }}</p>@enderror
             </div>
         @endif
-        @foreach($errors->all() as $error)<p role="alert" aria-live="assertive" class="sm:col-span-2 text-xs sm:text-sm text-red-700 font-medium">{{ $error }}</p>@endforeach
+        @foreach($errors->all() as $error)<p role="alert" aria-live="assertive" class="sm:col-span-2 text-xs text-danger">{{ $error }}</p>@endforeach
         <div class="sm:col-span-2 flex items-center gap-3 pt-1">
-            <button type="submit" wire:loading.attr="disabled" class="min-h-11 px-5 rounded-control bg-primary hover:bg-primary-hover font-bold text-white text-sm shadow-xs transition disabled:opacity-50">
+            <button type="submit" wire:loading.attr="disabled" class="min-h-11 px-5 rounded-control bg-primary hover:bg-primary-hover font-bold text-white text-xs shadow-xs transition disabled:opacity-50 cursor-pointer">
                 {{ __('sharing.create') }}
             </button>
             <span role="status" aria-live="polite" wire:loading wire:target="create" class="text-xs text-text-secondary font-medium flex items-center gap-1.5">

@@ -9,6 +9,7 @@ use App\Actions\Purchasing\PostPurchaseAction;
 use App\Actions\Purchasing\RemoveLandedCostAllocationAction;
 use App\Domain\Inventory\Exceptions\InvalidQuantityException;
 use App\Domain\Inventory\Exceptions\InvalidUnitConversionException;
+use App\Exceptions\NoActiveCompanyException;
 use App\Livewire\Pages\Purchasing\Concerns\AuthorizesPurchasingPages;
 use App\Models\Expense;
 use App\Models\LandedCostAllocation;
@@ -16,11 +17,12 @@ use App\Models\Purchase;
 use App\Services\Purchasing\DuplicateVendorInvoice;
 use App\Services\Purchasing\PurchaseReadModel;
 use App\Support\Tenancy\CompanyContext;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Contracts\View\View;
-use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Locked;
 use Livewire\Component;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 
 #[Layout('layouts.app')]
 class PurchaseDetail extends Component
@@ -171,11 +173,36 @@ class PurchaseDetail extends Component
         $purchase = Purchase::where('company_id', $company->id)->where('public_id', $this->publicId)->firstOrFail();
         try {
             app(PostPurchaseAction::class)->execute($purchase, auth()->user());
-        } catch (\InvalidArgumentException|ModelNotFoundException|InvalidUnitConversionException|InvalidQuantityException $exception) {
-            $this->addError('post', __('purchasing.post_integrity_failed'));
-
-            return;
+            session()->flash('success', __('purchasing.purchase_posted'));
+        } catch (\Throwable $exception) {
+            $this->addError('post', $this->resolveUserErrorMessage($exception));
         }
-        session()->flash('success', __('purchasing.purchase_posted'));
+    }
+
+    protected function resolveUserErrorMessage(\Throwable $e): string
+    {
+        if ($e instanceof AuthorizationException
+            || $e instanceof NoActiveCompanyException
+            || ($e instanceof HttpException && $e->getStatusCode() === 403)) {
+            throw $e;
+        }
+
+        if ($e instanceof \InvalidArgumentException) {
+            $msg = strtolower($e->getMessage());
+            if (str_contains($msg, 'positive_post_total_required') || str_contains($msg, 'positive')) {
+                return __('purchasing.positive_post_total_required');
+            }
+            if (str_contains($msg, 'lots') || str_contains($msg, 'lot') || str_contains($msg, 'expiry')) {
+                return __('purchasing.lots_must_be_complete');
+            }
+        }
+
+        if ($e instanceof InvalidUnitConversionException || $e instanceof InvalidQuantityException) {
+            return __('mobile.invalid_unit');
+        }
+
+        report($e);
+
+        return __('purchasing.post_integrity_failed');
     }
 }

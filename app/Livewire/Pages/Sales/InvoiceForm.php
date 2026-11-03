@@ -33,6 +33,7 @@ use App\Models\TaxRate;
 use App\Models\Warehouse;
 use App\Services\Sales\SalesActorGuard;
 use App\Services\Sales\SalesProductSelection;
+use App\Support\InvoiceConfirmation;
 use App\Support\Tenancy\CompanyContext;
 use Brick\Math\BigDecimal;
 use Carbon\Carbon;
@@ -40,6 +41,7 @@ use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Contracts\View\View;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Lang;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Livewire\Attributes\Layout;
@@ -255,7 +257,8 @@ class InvoiceForm extends Component
             $this->currency_code = $company->base_currency_code;
             $this->issue_date = Carbon::now($company->timezone)->toDateString();
             $this->due_date = Carbon::now($company->timezone)->addDays(30)->toDateString();
-            $this->document_locale = $company->default_locale ?? 'ar';
+            $currentLocale = app()->getLocale();
+            $this->document_locale = $company->isLanguageEnabled($currentLocale) ? $currentLocale : ($company->default_locale ?? 'ar');
             $this->warehouse_id = $company->inventorySettings?->default_warehouse_id;
 
             $this->lines = [
@@ -299,7 +302,10 @@ class InvoiceForm extends Component
             $customer = Customer::find($this->customer_id);
             if ($customer !== null) {
                 $this->currency_code = $customer->default_currency_code ?? app(CompanyContext::class)->company()->base_currency_code;
-                $this->document_locale = $customer->preferred_locale ?? app(CompanyContext::class)->company()->default_locale;
+                $company = app(CompanyContext::class)->company();
+                if ($this->currency_code === $company->base_currency_code) {
+                    $this->exchange_rate = '1.0000000000';
+                }
                 $this->recalculate();
             }
         }
@@ -636,6 +642,47 @@ class InvoiceForm extends Component
         $this->documentTotalsValid = true;
     }
 
+    public function saveAndConfirm(SalesInvoiceCommands $commands): mixed
+    {
+        if ($this->showQuickCustomerModal || $this->showQuickProductModal) {
+            return null;
+        }
+        $this->cancelPreview();
+        $this->resetValidation();
+        $response = $this->save(true, $commands);
+        if (! empty($this->previewData['blockers'])) {
+            $blockers = $this->previewData['blockers'];
+            foreach ($blockers as $blocker) {
+                $code = $blocker['code'] ?? 'generic';
+                $key = 'commands.code_'.$code;
+                $message = Lang::has($key) ? __($key) : __('commands.code_generic');
+                $field = match ($code) {
+                    'customer_inactive' => 'customer_id',
+                    'warehouse_required', 'warehouse_inactive' => 'warehouse_id',
+                    default => 'lines',
+                };
+                if (in_array($code, ['insufficient_stock', 'insufficient_fefo_stock', 'product_inactive'], true)
+                    && isset($blocker['product_id'])) {
+                    foreach ($this->lines as $index => $line) {
+                        if ((int) ($line['product_id'] ?? 0) === (int) $blocker['product_id']) {
+                            $this->addError('lines.'.$index.'.'.($code === 'product_inactive' ? 'product_id' : 'quantity'), $message);
+                        }
+                    }
+                } else {
+                    $this->addError($field, $message);
+                }
+            }
+            $this->cancelPreview();
+
+            return null;
+        }
+        if ($this->showPreview && InvoiceConfirmation::canConfirmDirectly($this->previewData ?? [])) {
+            return $this->confirmPost($commands);
+        }
+
+        return $response;
+    }
+
     public function save(bool $andPost, SalesInvoiceCommands $commands): mixed
     {
         $company = app(CompanyContext::class)->company();
@@ -672,6 +719,10 @@ class InvoiceForm extends Component
 
                 return null;
             }
+        }
+
+        if ($this->currency_code === $company->base_currency_code) {
+            $this->exchange_rate = '1.0000000000';
         }
 
         $this->validate([
@@ -790,6 +841,7 @@ class InvoiceForm extends Component
 
         // save(true) creates authenticated server preview, displays reviewed panel, posts NO history.
         $this->previewError = null;
+        $this->recalculate();
         $choice = $this->settlementChoice();
 
         try {

@@ -54,7 +54,7 @@ final class VendorPaymentFinalInputChronologyRegressionTest extends Phase5ETestC
         $purchase = $this->createAndPostPurchase(['currency_code' => $currency, 'exchange_rate' => '3.50']);
         Livewire::test(PaymentForm::class, ['purchase_id' => $purchase->id])
             ->assertSet('currency_code', $currency)->assertSet('exchange_rate', '')
-            ->assertSet('amount', '100.000000')
+            ->assertSet('amount', '100.00')
             ->assertSet('allocations.0.preview_fx', null);
     }
 

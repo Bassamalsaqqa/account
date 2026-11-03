@@ -97,7 +97,7 @@ Route::get('/', function () {
 // Separate control plane: company Owner roles do not confer platform authority.
 Route::prefix('platform')->name('platform.')->middleware(['auth', 'throttle:platform'])->group(function () {
     Route::get('/', [PlatformController::class, 'index'])->middleware('platform:company.read')->name('index');
-    Route::get('/companies/create', [PlatformController::class, 'create'])->middleware(['platform:company.provision', 'password.confirm'])->name('companies.create');
+    Route::get('/companies/create', [PlatformController::class, 'create'])->middleware('platform:company.provision')->name('companies.create');
     Route::post('/companies', [PlatformController::class, 'store'])->middleware(['platform:company.provision', 'password.confirm', 'throttle:platform-provision'])->name('companies.store');
     Route::get('/companies/{publicId}', [PlatformController::class, 'show'])->middleware('platform:company.read')->name('companies.show');
     Route::get('/companies/{publicId}/subscription', [PlatformSubscriptionController::class, 'show'])->middleware('platform:subscription.manage')->name('companies.subscription.show');

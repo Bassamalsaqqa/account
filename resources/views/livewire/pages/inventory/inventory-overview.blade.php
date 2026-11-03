@@ -6,7 +6,6 @@
                 <x-icon name="box" class="w-6 h-6 text-primary" />
                 <span>{{ __('inventory.inventory_overview') }}</span>
             </h1>
-            <p class="text-xs text-text-secondary mt-1">{{ __('inventory.inventory_overview_subtitle') }}</p>
         </div>
 
         <div class="flex flex-wrap items-center gap-2">
@@ -37,141 +36,94 @@
         </div>
     </div>
 
-    <!-- KPIs Row -->
-    <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <!-- Products Count -->
-        <x-card padding="p-4" class="space-y-1">
-            <div class="text-[11px] font-bold text-text-muted uppercase tracking-wider">{{ __('inventory.active_products_metric') }}</div>
-            <div class="text-2xl font-extrabold font-mono tabular-nums text-text-primary">
-                {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($productsCount) }}
-            </div>
-            <a href="{{ route('products.index') }}" class="touch-action text-[11px] text-primary hover:underline font-bold block pt-1">
-                {{ __('inventory.view_catalog_link') }} &larr;
-            </a>
-        </x-card>
+    @if ($canViewCost)
+        <p class="text-sm text-text-secondary">{{ __('inventory.inventory_value') }}
+            <bdi dir="ltr" class="ms-2 font-semibold text-text-primary">{{ $totalValuation }} {{ $company->base_currency_code }}</bdi>
+        </p>
+    @endif
 
-        <!-- Warehouses Count -->
-        <x-card padding="p-4" class="space-y-1">
-            <div class="text-[11px] font-bold text-text-muted uppercase tracking-wider">{{ __('inventory.warehouses') }}</div>
-            <div class="text-2xl font-extrabold font-mono tabular-nums text-text-primary">
-                {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($warehousesCount) }}
-            </div>
-            <a href="{{ route('warehouses.index') }}" class="touch-action text-[11px] text-primary hover:underline font-bold block pt-1">
-                {{ __('inventory.manage_warehouses_link') }} &larr;
-            </a>
-        </x-card>
-
-        <!-- Expiring Soon Lots -->
-        <x-card padding="p-4" class="space-y-1">
-            <div class="text-[11px] font-bold text-text-muted uppercase tracking-wider">{{ __('inventory.expiring_lots_metric') }}</div>
-            <div class="text-2xl font-extrabold font-mono tabular-nums {{ $expiringLotsCount > 0 ? 'text-danger' : 'text-text-primary' }}">
-                {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($expiringLotsCount) }}
-            </div>
-            <a href="{{ route('inventory.expiry') }}" class="touch-action text-[11px] text-primary hover:underline font-bold block pt-1">
-                {{ __('inventory.expiry_center_link') }} &larr;
-            </a>
-        </x-card>
-
-        <!-- Valuation KPI (Gated) -->
-        @if ($canViewCost)
-            <x-card padding="p-4" class="space-y-1">
-                <div class="text-[11px] font-bold text-text-muted uppercase tracking-wider">{{ __('inventory.inventory_value') }}</div>
-                <div class="text-2xl font-extrabold font-mono tabular-nums dir-ltr text-primary">
-                    {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($totalValuation) }}
-                    <span class="text-xs font-normal text-text-secondary font-arabic">{{ $company->base_currency_code }}</span>
-                </div>
-                <div class="text-[11px] text-text-muted pt-1">{{ __('inventory.total_inventory_valuation') }}</div>
-            </x-card>
-        @else
-            <x-card padding="p-4" class="space-y-1">
-                <div class="text-[11px] font-bold text-text-muted uppercase tracking-wider">{{ __('inventory.low_stock_metric') }}</div>
-                <div class="text-2xl font-extrabold font-mono tabular-nums {{ $lowStockProducts->count() > 0 ? 'text-warning' : 'text-text-primary' }}">
-                    {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($lowStockProducts->count()) }}
-                </div>
-                <div class="text-[11px] text-text-muted pt-1">{{ __('inventory.exceeded_reorder_point') }}</div>
-            </x-card>
-        @endif
-    </div>
-
-    <!-- Low Stock Alerts & Recent Movements Grid -->
-    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <!-- Low Stock Items Panel -->
-        <x-card padding="p-0" class="overflow-hidden">
-            <div class="p-4 border-b border-border bg-surface-soft flex items-center justify-between">
-                <div class="flex items-center gap-2">
-                    <x-icon name="alert" class="w-4 h-4 text-warning" />
-                    <h2 class="text-xs font-bold text-text-primary uppercase tracking-wider">{{ __('inventory.low_stock_alerts') }}</h2>
-                </div>
-                <span class="text-[11px] font-mono text-text-muted">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($lowStockProducts->count()) }} {{ __('inventory.items_count_suffix') }}</span>
+    <!-- Stock by Location (Searchable & Filterable Table) -->
+    <x-card padding="p-0" class="overflow-hidden">
+        <div class="p-4 border-b border-border bg-surface-soft flex flex-col md:flex-row md:items-center justify-between gap-3">
+            <div class="flex items-center gap-2">
+                <x-icon name="box" class="w-4 h-4 text-primary" />
+                <h2 class="text-xs font-bold text-text-primary uppercase tracking-wider">{{ __('inventory.stock_by_location') }}</h2>
             </div>
 
-            <div class="divide-y divide-border">
-                @forelse ($lowStockProducts as $prod)
-                    <div class="p-3.5 flex items-center justify-between text-xs hover:bg-surface-soft/50 transition-colors">
-                        <div>
-                            <a href="{{ route('products.show', $prod->public_id) }}" class="touch-action font-bold text-text-primary hover:text-primary">
-                                {{ $prod->displayName() }}
-                            </a>
-                            <div class="text-[11px] text-text-muted font-mono dir-ltr mt-0.5">
-                                {{ $prod->sku ?? '—' }}
-                            </div>
-                        </div>
-                        <div class="text-left rtl:text-left ltr:text-right">
-                            <div class="font-mono font-bold text-danger text-sm tabular-nums dir-ltr">
-                                {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($prod->stock_quantity) }} / {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($prod->minimum_stock) }}
-                            </div>
-                            <div class="text-xs text-text-secondary">{{ $prod->baseUnit?->name() }}</div>
-                            <x-stock-breakdown :parts="$stockBreakdowns[$prod->id]" />
-                        </div>
-                    </div>
-                @empty
-                    <div class="p-8 text-center text-text-muted text-xs">
-                        {{ __('inventory.no_low_stock_items') }}
-                    </div>
-                @endforelse
-            </div>
-        </x-card>
+            <div class="flex flex-wrap items-center gap-2">
+                <input type="search"
+                       id="inventory-stock-search"
+                       aria-label="{{ __('inventory.search_stock_placeholder') }}"
+                       wire:model.live.debounce.300ms="search"
+                       placeholder="{{ __('inventory.search_stock_placeholder') }}"
+                       class="min-h-9 px-3 rounded-control border border-border bg-white text-xs text-text-primary focus:border-primary focus:ring-primary w-48" />
 
-        <!-- Recent Stock Movements Panel -->
-        <x-card padding="p-0" class="overflow-hidden">
-            <div class="p-4 border-b border-border bg-surface-soft flex items-center justify-between">
-                <div class="flex items-center gap-2">
-                    <x-icon name="receipt" class="w-4 h-4 text-primary" />
-                    <h2 class="text-xs font-bold text-text-primary uppercase tracking-wider">{{ __('inventory.latest_stock_movements') }}</h2>
-                </div>
-                <a href="{{ route('inventory.movements') }}" class="touch-action text-[11px] text-primary hover:underline font-bold">
-                    {{ __('inventory.view_full_ledger') }} &larr;
-                </a>
-            </div>
+                <select wire:model.live="selectedWarehouseId"
+                        id="inventory-stock-warehouse" aria-label="{{ __('inventory.warehouse') }}"
+                        class="min-h-9 px-2 rounded-control border border-border bg-white text-xs text-text-primary focus:border-primary focus:ring-primary">
+                    <option value="">{{ __('inventory.all_warehouses') }}</option>
+                    @foreach($warehouses as $wh)
+                        <option value="{{ $wh->id }}">{{ $wh->displayName() }}</option>
+                    @endforeach
+                </select>
 
-            <div class="divide-y divide-border">
-                @forelse ($recentMovements as $mov)
-                    <div class="p-3.5 flex items-center justify-between text-xs hover:bg-surface-soft/50 transition-colors">
-                        <div class="space-y-0.5">
-                            <div class="flex items-center gap-2">
-                                <span class="font-bold text-text-primary">{{ $mov->product?->name() }}</span>
-                                <x-badge variant="{{ $mov->isInbound() ? 'success' : 'alert' }}">
-                                    {{ __('inventory.type_' . $mov->movement_type) }}
-                                </x-badge>
-                            </div>
-                            <div class="text-[11px] text-text-muted flex items-center gap-2">
-                                <span>{{ $mov->warehouse?->name_ar }}</span>
-                                <span>•</span>
-                                <span class="font-mono dir-ltr">{{ $mov->movement_date }}</span>
-                            </div>
-                        </div>
-                        <div class="text-left rtl:text-left ltr:text-right">
-                            <span class="font-mono font-bold text-sm tabular-nums dir-ltr {{ $mov->isInbound() ? 'text-success' : 'text-danger' }}">
-                                {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($mov->quantity_delta_base) }}
-                            </span>
-                        </div>
-                    </div>
-                @empty
-                    <div class="p-8 text-center text-text-muted text-xs">
-                        {{ __('inventory.no_movements_yet') }}
-                    </div>
-                @endforelse
+                <select wire:model.live="stockFilter"
+                        id="inventory-stock-status" aria-label="{{ __('inventory.stock_quantity') }}"
+                        class="min-h-9 px-2 rounded-control border border-border bg-white text-xs text-text-primary focus:border-primary focus:ring-primary">
+                    <option value="all">{{ __('sales.all') }}</option>
+                    <option value="in_stock">{{ __('inventory.in_stock') }}</option>
+                    <option value="low_stock">{{ __('inventory.low_stock_metric') }}</option>
+                    <option value="out_of_stock">{{ __('inventory.out_of_stock') }}</option>
+                </select>
             </div>
-        </x-card>
-    </div>
+        </div>
+
+        <div class="overflow-x-auto">
+            <table class="data-table w-full text-xs">
+                <thead class="bg-surface-soft text-text-secondary border-b border-border">
+                    <tr>
+                        <th class="px-4 py-2.5 text-start">{{ __('inventory.product') }}</th>
+                        <th class="px-4 py-2.5 text-start">{{ __('inventory.warehouse') }}</th>
+                        <th class="px-4 py-2.5 text-end">{{ __('inventory.stock_quantity') }}</th>
+                        <th class="px-4 py-2.5 text-start">{{ __('inventory.unit') }}</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-border">
+                    @forelse($stockBalances as $balance)
+                        <tr class="hover:bg-surface-soft/40 transition-colors">
+                            <td class="px-4 py-3 font-medium text-text-primary">
+                                <a href="{{ route('products.show', $balance->product->public_id) }}" class="touch-action hover:text-primary">
+                                    {{ $balance->product->displayName() }}
+                                </a>
+                                @if($balance->product->sku)
+                                    <span class="ms-2 text-[11px] text-text-muted font-mono" dir="ltr">{{ $balance->product->sku }}</span>
+                                @endif
+                            </td>
+                            <td class="px-4 py-3 text-text-secondary">
+                                {{ $balance->warehouse->displayName() }}
+                            </td>
+                            <td class="px-4 py-3 text-end font-mono font-bold" dir="ltr">
+                                <bdi dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatQuantity($balance->quantity_base) }}</bdi>
+                                <x-stock-breakdown :parts="$stockBreakdowns[$balance->id] ?? []" :inline="true" />
+                            </td>
+                            <td class="px-4 py-3 text-text-secondary">
+                                {{ $balance->product->baseUnit?->name() ?? '—' }}
+                            </td>
+                        </tr>
+                    @empty
+                        <tr>
+                            <td colspan="4" class="px-4 py-8 text-center text-text-muted">
+                                {{ __('inventory.no_stock_found') }}
+                            </td>
+                        </tr>
+                    @endforelse
+                </tbody>
+            </table>
+        </div>
+
+            <div class="p-3 border-t border-border">
+                <x-table-pagination :paginator="$stockBalances" />
+            </div>
+    </x-card>
+
 </div>

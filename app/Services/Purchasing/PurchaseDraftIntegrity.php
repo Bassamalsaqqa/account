@@ -85,7 +85,7 @@ final class PurchaseDraftIntegrity
                 $this->fail();
             }
         }
-        if (! BigDecimal::of($purchase->grand_total_base)->isPositive()) {
+        if (BigDecimal::of($purchase->grand_total_base)->isNegative()) {
             throw new InvalidArgumentException(__('purchasing.positive_post_total_required'));
         }
     }

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Livewire\Pages\Purchasing;
 
 use App\Actions\Purchasing\PostVendorPaymentAction;
+use App\Domain\Sales\Formatters\SalesMoneyFormatter;
 use App\Livewire\Pages\Purchasing\Concerns\AuthorizesPurchasingPages;
 use App\Models\Company;
 use App\Models\CompanyCurrency;
@@ -75,10 +76,15 @@ class PaymentForm extends Component
     public string $idempotency_key = '';
 
     #[Locked]
+    public ?int $sourcePurchaseId = null;
+
+    #[Locked]
     public ?string $sourcePurchasePublicId = null;
 
     #[Locked]
     public ?string $sourcePurchaseNumber = null;
+
+    public bool $isModal = false;
 
     public function boot(CompanyContext $context): void
     {
@@ -126,6 +132,7 @@ class PaymentForm extends Component
                 ->find($purchase_id);
 
             if ($purchase !== null) {
+                $this->sourcePurchaseId = (int) $purchase->id;
                 if (auth()->user()->hasPermissionTo('purchasing.purchase.view')) {
                     $this->sourcePurchasePublicId = $purchase->public_id;
                     $this->sourcePurchaseNumber = $purchase->purchase_number ?? __('purchasing.purchase_draft');
@@ -147,7 +154,7 @@ class PaymentForm extends Component
                             $this->exchange_rate = '1.0000000000';
                         }
                     }
-                    $this->amount = (string) $position->outstanding;
+                    $this->amount = SalesMoneyFormatter::formatMoneyInput($position->outstanding);
                 }
             }
         }
@@ -171,6 +178,9 @@ class PaymentForm extends Component
 
     public function updatedVendorId(): void
     {
+        $this->sourcePurchaseId = null;
+        $this->sourcePurchasePublicId = null;
+        $this->sourcePurchaseNumber = null;
         $this->refreshDocumentLocale();
         $this->loadOpenPurchases();
     }
@@ -178,9 +188,7 @@ class PaymentForm extends Component
     private function refreshDocumentLocale(): void
     {
         $company = app(CompanyContext::class)->company();
-        $vendor = Vendor::withTrashed()->where('company_id', $company->id)->find($this->vendor_id);
-        $this->document_locale = $vendor?->preferred_locale !== null && $company->isLanguageEnabled($vendor->preferred_locale)
-            ? $vendor->preferred_locale : $company->default_locale;
+        $this->document_locale = $company->isLanguageEnabled(app()->getLocale()) ? app()->getLocale() : $company->default_locale;
     }
 
     public function updatedMoneyAccountId(): void
@@ -201,7 +209,33 @@ class PaymentForm extends Component
 
     public function updatedAmount(): void
     {
+        $this->reapplySourceAllocation();
         $this->recalculateAllocations();
+    }
+
+    private function reapplySourceAllocation(): void
+    {
+        if ($this->sourcePurchaseId === null) {
+            return;
+        }
+
+        $cleanAmount = trim((string) $this->amount);
+        $isValidAmount = preg_match('/^\d+(?:\.\d{1,6})?$/D', $cleanAmount) === 1 && BigDecimal::of($cleanAmount)->isPositive();
+        $currentAmount = $isValidAmount ? BigDecimal::of($cleanAmount) : BigDecimal::zero();
+
+        foreach ($this->allocations as $idx => $alloc) {
+            if ($alloc['purchase_id'] === $this->sourcePurchaseId) {
+                if ($alloc['document_currency_code'] === $this->currency_code && $isValidAmount) {
+                    $due = BigDecimal::of($alloc['outstanding']);
+                    $allocAmount = $currentAmount->isGreaterThan($due) ? $due : $currentAmount;
+                    $this->allocations[$idx]['allocated_amount'] = (string) $allocAmount;
+                } else {
+                    $this->allocations[$idx]['allocated_amount'] = '0.00';
+                }
+            } else {
+                $this->allocations[$idx]['allocated_amount'] = '0.00';
+            }
+        }
     }
 
     public function updatedExchangeRate(): void
@@ -249,11 +283,22 @@ class PaymentForm extends Component
             }
         }
 
+        if ($this->sourcePurchaseId !== null) {
+            $this->reapplySourceAllocation();
+        }
+
         $this->recalculateAllocations();
     }
 
     public function autoAllocate(): void
     {
+        if ($this->sourcePurchaseId !== null) {
+            $this->reapplySourceAllocation();
+            $this->recalculateAllocations();
+
+            return;
+        }
+
         $remaining = BigDecimal::of($this->amount !== '' ? $this->amount : '0');
 
         foreach ($this->allocations as $idx => $alloc) {
@@ -286,7 +331,7 @@ class PaymentForm extends Component
     /** Copy a fresh same-currency document balance into one draft allocation. */
     public function payRemaining(int $index): void
     {
-        $this->authorizeVendorPaymentAction();
+        $company = $this->authorizeVendorPaymentAction();
         if (! isset($this->allocations[$index])) {
             return;
         }
@@ -297,6 +342,10 @@ class PaymentForm extends Component
             return;
         }
         $this->rejectWhitespaceShortcutRate();
+        if ($this->currency_code === $company->base_currency_code) {
+            $this->exchange_rate = '1.0000000000';
+        }
+
         $this->validate(['amount' => ['required', 'string', 'regex:/^\d{1,12}(?:\.\d{1,6})?$/D'],
             'exchange_rate' => ['nullable', 'string', 'regex:/^(?:\s*|\d{1,12}(?:\.\d{1,10})?)$/D'], ...$this->allocationRules()]);
         $remaining = $document->payablePosition()->outstanding;
@@ -320,9 +369,34 @@ class PaymentForm extends Component
     /** Fill payment amount only; allocation edits remain deliberate operator choices. */
     public function useFullBalance(): void
     {
-        $this->authorizeVendorPaymentAction();
+        $company = $this->authorizeVendorPaymentAction();
         $this->rejectWhitespaceShortcutRate();
+        if ($this->currency_code === $company->base_currency_code) {
+            $this->exchange_rate = '1.0000000000';
+        }
+
         $this->validate(['exchange_rate' => ['nullable', 'string', 'regex:/^(?:\s*|\d{1,12}(?:\.\d{1,10})?)$/D'], ...$this->allocationRules()]);
+
+        if ($this->sourcePurchaseId !== null) {
+            $document = $this->quickBalanceDocuments()->whereKey($this->sourcePurchaseId)->first();
+            if ($document !== null) {
+                $remaining = $document->payablePosition()->outstanding;
+                if ($remaining->isPositive()) {
+                    $this->amount = SalesMoneyFormatter::formatMoneyInput($remaining);
+                    foreach ($this->allocations as $idx => $alloc) {
+                        if ($alloc['purchase_id'] === $this->sourcePurchaseId) {
+                            $this->allocations[$idx]['allocated_amount'] = (string) $remaining;
+                        } else {
+                            $this->allocations[$idx]['allocated_amount'] = '0.00';
+                        }
+                    }
+                    $this->recalculateAllocations();
+
+                    return;
+                }
+            }
+        }
+
         $total = BigDecimal::zero();
         foreach ($this->quickBalanceDocuments()->get() as $document) {
             $remaining = $document->payablePosition()->outstanding;
@@ -330,7 +404,7 @@ class PaymentForm extends Component
                 $total = $total->plus($remaining);
             }
         }
-        $this->amount = (string) $total;
+        $this->amount = SalesMoneyFormatter::formatMoneyInput($total);
         $this->recalculateAllocations();
     }
 
@@ -360,8 +434,11 @@ class PaymentForm extends Component
     public function recalculateAllocations(): void
     {
         $this->validate($this->allocationRules());
+        $cleanAmount = trim((string) $this->amount);
+        $isValidAmount = preg_match('/^\d+(?:\.\d{1,6})?$/D', $cleanAmount) === 1 && BigDecimal::of($cleanAmount)->isPositive();
+        $safeAmount = $isValidAmount ? $cleanAmount : '0.00';
         $preview = app(VendorPaymentPreview::class)->calculate(
-            $this->amount,
+            $safeAmount,
             $this->exchange_rate,
             $this->allocations,
             $this->currency_code
@@ -390,6 +467,10 @@ class PaymentForm extends Component
         $company = $this->authorizePurchasing('purchasing.cost.view');
         $this->authorizePurchasing('money.vendor_payment.create');
         $user = auth()->user();
+
+        if ($this->currency_code === $company->base_currency_code) {
+            $this->exchange_rate = '1.0000000000';
+        }
 
         $this->validate([
             'vendor_id' => ['required', 'integer', Rule::exists('vendors', 'id')->where('company_id', $company->id)],
@@ -474,6 +555,13 @@ class PaymentForm extends Component
         }
 
         session()->flash('success', __('purchasing.payment_posted_successfully'));
+
+        if ($this->isModal) {
+            $this->dispatch('vendor-payment-recorded');
+            $this->dispatch('close-payment-modal');
+
+            return null;
+        }
 
         return redirect()->route('vendor-payments.show', $payment->public_id);
     }

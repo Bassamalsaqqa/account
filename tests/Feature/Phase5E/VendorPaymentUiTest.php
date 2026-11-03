@@ -100,7 +100,7 @@ class VendorPaymentUiTest extends Phase5ETestCase
             ->assertOk()
             ->assertSet('vendor_id', $this->vendor->id)
             ->assertSet('currency_code', 'ILS')
-            ->assertSet('amount', '150.000000')
+            ->assertSet('amount', '150.00')
             ->assertSet('allocatedTotal', '150.00')
             ->assertSet('unallocatedAmount', '0.00');
 
@@ -384,12 +384,16 @@ class VendorPaymentUiTest extends Phase5ETestCase
         $this->assertSame('0.000000', (string) $purchase->fresh()->payablePosition()->outstanding);
     }
 
-    public function test_vendor_preselection_uses_enabled_preferred_document_locale(): void
+    public function test_vendor_preselection_inherits_enabled_interface_locale(): void
     {
         $this->vendor->update(['preferred_locale' => 'en']);
+        app()->setLocale('ar');
         Livewire::test(PaymentForm::class, ['vendor_id' => $this->vendor->id])
-            ->assertSet('document_locale', 'en');
+            ->assertSet('document_locale', 'ar');
         $purchase = $this->createAndPostPurchase(['currency_code' => 'ILS']);
+        Livewire::test(PaymentForm::class, ['purchase_id' => $purchase->id])
+            ->assertSet('document_locale', 'ar');
+        app()->setLocale('en');
         Livewire::test(PaymentForm::class, ['purchase_id' => $purchase->id])
             ->assertSet('document_locale', 'en');
     }

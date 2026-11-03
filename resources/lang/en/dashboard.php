@@ -3,6 +3,16 @@
 declare(strict_types=1);
 
 return [
+    'home' => 'Dashboard',
+    'sales_total' => 'Sales after returns',
+    'purchases_total' => 'Purchases after returns',
+    'money_now' => 'Current balances',
+    'account_cash' => 'Cash',
+    'account_bank' => 'Bank',
+    'checks_held' => 'Checks in hand',
+    'no_checks' => 'No checks in hand',
+    'all_accounts' => 'View all accounts',
+    'custom_dates' => 'Choose dates',
     'month_to_date_notice' => 'Month-to-date through today, compared with the same dates last month. Today is still in progress; this is not a full-month forecast.',
     'unequal_month_days' => 'The previous month has fewer days. Compare the displayed date ranges; no percentage growth is shown.',
     'briefing_details' => 'See supporting accounting details',

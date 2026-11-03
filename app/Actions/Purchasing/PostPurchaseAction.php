@@ -81,6 +81,7 @@ final class PostPurchaseAction
             try {
                 return $scope->withinCanonicalPosting($this, $locked, $actor, function (PurchaseReceiptCapability $capability) use ($company, $locked, $actor, $taxAccounts, $builder, $scope): Purchase {
                     $number = app(DocumentSequenceService::class)->generateNextNumber((int) $company->id, DocumentSequence::TYPE_PURCHASE, (int) $locked->purchase_date->format('Y'));
+                    $scope->recordAllocatedNumber($this, $number);
 
                     $draftAllocations = LandedCostAllocation::where('company_id', $company->id)
                         ->where('purchase_id', $locked->id)
@@ -155,10 +156,17 @@ final class PostPurchaseAction
                     }
 
                     $postingCommand = $builder->build($company, $locked, $number, $actor);
-                    $scope->preparePosting($this, $postingCommand);
-                    $batch = app(AccountingPostingService::class)->post($postingCommand);
-                    $locked->completeCanonicalPost($batch, $number, $actor);
-                    $scope->assertPersistedBatch($this, $batch, $locked);
+                    $batch = null;
+                    if ($postingCommand !== null) {
+                        $scope->preparePosting($this, $postingCommand);
+                        $batch = app(AccountingPostingService::class)->post($postingCommand);
+                    }
+                    $locked->completeCanonicalPost($batch, $number, $actor, $capability);
+                    if ($batch !== null) {
+                        $scope->assertPersistedBatch($this, $batch, $locked);
+                    } else {
+                        $scope->assertZeroValuePosting($this, $locked);
+                    }
                     app(AuditService::class)->log((int) $company->id, 'purchase.posted', 'Purchase posted', $actor->id, $locked,
                         ['status' => Purchase::STATUS_DRAFT], $locked->only(['status', 'purchase_number', 'posting_batch_id']));
 

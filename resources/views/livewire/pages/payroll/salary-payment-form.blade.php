@@ -58,7 +58,7 @@
             </div>
             <div>
                 <label class="block text-xs font-semibold text-text-secondary mb-1">{{ __('payroll.rate') }} *</label>
-                <input type="text" inputmode="decimal" wire:model="exchangeRate" placeholder="1.0000000000" class="w-full rounded-control border border-border bg-white px-3 py-2 text-sm focus:border-primary focus:ring-primary" required>
+                <input type="text" inputmode="decimal" dir="ltr" wire:model="exchangeRate" placeholder="1.0000000000" class="w-full rounded-control border border-border bg-white px-3 py-2 text-sm font-mono focus:border-primary focus:ring-primary" required>
                 @error('exchangeRate') <span class="text-xs text-rose-600">{{ $message }}</span> @enderror
             </div>
         </div>
@@ -149,7 +149,7 @@
                                     <td class="px-3 py-2 font-medium" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($pos['net_payable']) }}</td>
                                     <td class="px-3 py-2 font-bold text-primary" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($pos['remaining_payable']) }}</td>
                                     <td class="px-3 py-2">
-                                        <input type="text" inputmode="decimal" wire:model.live="entryAllocations.{{ $ent->id }}" placeholder="0.00" class="w-full rounded-control border border-border bg-white px-2 py-1 text-sm focus:border-primary focus:ring-primary text-end">
+                                        <input type="text" inputmode="decimal" dir="ltr" wire:model.live="entryAllocations.{{ $ent->id }}" placeholder="0.00" class="w-full rounded-control border border-border bg-white px-2 py-1 text-sm font-mono focus:border-primary focus:ring-primary text-end">
                                     </td>
                                 </tr>
                             @endforeach

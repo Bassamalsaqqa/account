@@ -151,7 +151,7 @@ class CustomerManagementTest extends TestCase
             ->set('activeTab', 'quotations')
             ->assertSee(__('sales.quotations'))
             ->set('activeTab', 'payments')
-            ->assertSee(__('sales.payments'))
+            ->assertSee(__('sales.tab_payments'))
             ->set('activeTab', 'returns')
             ->assertSee(__('sales.returns'));
     }

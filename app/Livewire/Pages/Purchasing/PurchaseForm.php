@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Livewire\Pages\Purchasing;
 
 use App\Actions\Purchasing\CreatePurchaseDraftAction;
+use App\Actions\Purchasing\PostPurchaseAction;
 use App\Actions\Purchasing\UpdatePurchaseDraftAction;
 use App\Application\AI\AiDraftProvenance;
 use App\Application\AI\PurchaseDraftCommands;
@@ -161,7 +162,8 @@ class PurchaseForm extends Component
             $this->purchase_date = now($company->timezone)->format('Y-m-d');
             $this->due_date = app(PurchaseDocumentRules::class)->defaultDueDate($company, $this->purchase_date);
             $this->currency_code = $company->base_currency_code;
-            $this->document_locale = $company->default_locale;
+            $currentLocale = app()->getLocale();
+            $this->document_locale = $company->isLanguageEnabled($currentLocale) ? $currentLocale : $company->default_locale;
             try {
                 $this->warehouse_id = app(PurchaseDocumentRules::class)->warehouse($company, null)->id;
             } catch (\InvalidArgumentException) {
@@ -192,7 +194,6 @@ class PurchaseForm extends Component
         $company = $this->authorizeForm();
         if ($this->vendor_id !== null) {
             $vendor = app(PurchaseDocumentRules::class)->vendor($company, $this->vendor_id);
-            $this->document_locale = app(PurchaseDocumentRules::class)->defaultLocale($company, $vendor);
             if (! $this->currencyManuallySelected) {
                 $this->initializeCurrency($company, app(PurchaseDocumentRules::class)->defaultCurrency($company, $vendor));
             }
@@ -239,6 +240,34 @@ class PurchaseForm extends Component
     public function updatedLines(): void
     {
         $this->recalculate();
+    }
+
+    public function saveAndConfirm(): mixed
+    {
+        $company = $this->authorizeForm();
+        $this->authorizePurchasing('purchasing.purchase.post');
+        if ($this->showQuickVendorModal || $this->showQuickProductModal) {
+            return null;
+        }
+        $this->resetErrorBag('draft');
+        $response = $this->saveDraft();
+        if ($this->getErrorBag()->isNotEmpty() || $this->savedDraftPublicId === null) {
+            return $response;
+        }
+
+        $purchase = Purchase::where('company_id', $company->id)->where('public_id', $this->savedDraftPublicId)->firstOrFail();
+        try {
+            app(PostPurchaseAction::class)->execute($purchase, auth()->user());
+        } catch (\InvalidArgumentException|InvalidQuantityException|InvalidUnitConversionException $exception) {
+            report($exception);
+            session()->flash('error', $exception->getMessage() === __('purchasing.positive_post_total_required')
+                ? __('purchasing.positive_post_total_required') : __('purchasing.post_integrity_failed'));
+
+            return redirect()->route('purchases.show', $purchase->public_id);
+        }
+        session()->flash('success', __('purchasing.purchase_posted'));
+
+        return redirect()->route('purchases.show', $purchase->public_id);
     }
 
     public function saveDraft(): mixed
@@ -560,6 +589,11 @@ class PurchaseForm extends Component
     /** @return array<string, mixed> */
     private function draftData(): array
     {
+        $company = app(CompanyContext::class)->company();
+        if ($this->currency_code === $company->base_currency_code) {
+            $this->exchange_rate = '1.0000000000';
+        }
+
         $data = [];
         foreach (['vendor_id', 'vendor_invoice_number', 'warehouse_id', 'purchase_date', 'due_date', 'currency_code', 'exchange_rate', 'document_locale', 'notes', 'lines'] as $field) {
             $data[$field] = $this->{$field};

@@ -51,9 +51,6 @@
                 <h1 class="text-2xl sm:text-[26px] font-extrabold text-text-primary tracking-tight leading-tight">
                     {{ __('settings.title') }}
                 </h1>
-                <p class="text-xs text-text-secondary mt-1.5 max-w-2xl leading-relaxed">
-                    {{ __('settings.subtitle') }}
-                </p>
             </div>
         </div>
 

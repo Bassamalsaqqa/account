@@ -5,11 +5,11 @@ declare(strict_types=1);
 namespace App\Livewire\Pages\Inventory;
 
 use App\Domain\Inventory\Services\StockQuantityBreakdown;
+use App\Domain\Inventory\ValueObjects\Quantity;
 use App\Domain\Sales\Formatters\SalesMoneyFormatter;
+use App\Livewire\Concerns\HasTablePageSize;
+use App\Models\InventoryBalance;
 use App\Models\InventoryCostState;
-use App\Models\InventoryLot;
-use App\Models\Product;
-use App\Models\StockMovement;
 use App\Models\User;
 use App\Models\Warehouse;
 use App\Support\Tenancy\CompanyContext;
@@ -17,10 +17,35 @@ use Brick\Math\BigDecimal;
 use Illuminate\Contracts\View\View;
 use Livewire\Attributes\Layout;
 use Livewire\Component;
+use Livewire\WithPagination;
 
 #[Layout('layouts.app')]
 class InventoryOverview extends Component
 {
+    use HasTablePageSize;
+    use WithPagination;
+
+    public string $search = '';
+
+    public ?int $selectedWarehouseId = null;
+
+    public string $stockFilter = 'all';
+
+    public function updatedSearch(): void
+    {
+        $this->resetPage();
+    }
+
+    public function updatedSelectedWarehouseId(): void
+    {
+        $this->resetPage();
+    }
+
+    public function updatedStockFilter(): void
+    {
+        $this->resetPage();
+    }
+
     public function render(CompanyContext $context): View
     {
         $company = $context->company();
@@ -35,17 +60,7 @@ class InventoryOverview extends Component
         $canAdjust = $user->hasPermissionTo('inventory.stock.adjust');
         $canTransfer = $user->hasPermissionTo('inventory.stock.transfer');
 
-        $productsCount = Product::where('company_id', $company->id)->where('active', true)->count();
-        $warehousesCount = Warehouse::where('company_id', $company->id)->where('active', true)->count();
-
-        // Expiring soon lots (next 30 days)
-        $expiringLotsCount = InventoryLot::where('company_id', $company->id)
-            ->whereNotNull('expiry_date')
-            ->where('expiry_date', '<=', now($company->timezone)->addDays(30)->toDateString())
-            ->whereHas('balances', function ($q) {
-                $q->where('quantity_base', '>', 0);
-            })
-            ->count();
+        $warehouses = Warehouse::where('company_id', $company->id)->where('active', true)->get();
 
         // Total inventory valuation (gated)
         $totalValuation = SalesMoneyFormatter::displayMoney('0', $company->base_currency_code);
@@ -58,45 +73,48 @@ class InventoryOverview extends Component
             $totalValuation = SalesMoneyFormatter::displayMoney($sum, $company->base_currency_code);
         }
 
-        // Low stock products
-        $allTrackedProducts = Product::where('company_id', $company->id)
-            ->where('active', true)
-            ->where('track_stock', true)
-            ->whereNotNull('minimum_stock_base')
-            ->with(['baseUnit', 'costState:id,company_id,product_id,quantity_base'])
-            ->get();
+        // Searchable and filterable stock/location query
+        $stockQuery = InventoryBalance::where('company_id', $company->id)
+            ->with(['product.baseUnit', 'product.productUnits.unit', 'warehouse'])
+            ->whereHas('product', function ($q) {
+                $q->where('active', true)->where('track_stock', true);
+                if (trim($this->search) !== '') {
+                    $term = '%'.trim($this->search).'%';
+                    $q->where(function ($sub) use ($term) {
+                        $sub->where('name_ar', 'like', $term)
+                            ->orWhere('name_en', 'like', $term)
+                            ->orWhere('sku', 'like', $term)
+                            ->orWhereHas('barcodes', fn ($barcodes) => $barcodes->where('barcode', 'like', $term));
+                    });
+                }
+            });
 
-        $lowStockProducts = $allTrackedProducts->filter(function ($p) {
-            if ($p->minimum_stock_base === null) {
-                return false;
-            }
-            $stock = BigDecimal::of((string) $p->stock_quantity);
-            $min = BigDecimal::of((string) $p->minimum_stock_base);
-
-            return $stock->isLessThanOrEqualTo($min);
-        })->take(10);
-        $lowStockProducts->load('productUnits.unit');
-
-        $stockBreakdowns = [];
-        foreach ($lowStockProducts as $product) {
-            $stockBreakdowns[$product->id] = app(StockQuantityBreakdown::class)->forProduct($product, $product->stock_quantity);
+        if ($this->selectedWarehouseId !== null && $this->selectedWarehouseId > 0) {
+            $stockQuery->where('warehouse_id', $this->selectedWarehouseId);
         }
 
-        // Recent stock movements
-        $recentMovements = StockMovement::where('company_id', $company->id)
-            ->with(['product', 'warehouse', 'user'])
-            ->orderByDesc('id')
-            ->limit(10)
-            ->get();
+        if ($this->stockFilter === 'in_stock') {
+            $stockQuery->where('quantity_base', '>', 0);
+        } elseif ($this->stockFilter === 'out_of_stock') {
+            $stockQuery->where('quantity_base', '<=', 0);
+        } elseif ($this->stockFilter === 'low_stock') {
+            $stockQuery->whereHas('product', fn ($products) => $products
+                ->whereNotNull('minimum_stock_base')
+                ->whereColumn('inventory_balances.quantity_base', '<=', 'products.minimum_stock_base'));
+        }
+
+        $stockBalances = $stockQuery->orderByDesc('updated_at')->orderByDesc('id')->paginate($this->tablePageSize());
+        $stockBreakdowns = [];
+        foreach ($stockBalances as $balance) {
+            $quantity = Quantity::of($balance->getRawOriginal('quantity_base'));
+            $stockBreakdowns[$balance->id] = app(StockQuantityBreakdown::class)->forProduct($balance->product, $quantity->__toString());
+        }
 
         return view('livewire.pages.inventory.inventory-overview', [
-            'productsCount' => $productsCount,
-            'warehousesCount' => $warehousesCount,
-            'expiringLotsCount' => $expiringLotsCount,
-            'totalValuation' => $totalValuation,
-            'lowStockProducts' => $lowStockProducts,
+            'warehouses' => $warehouses,
+            'stockBalances' => $stockBalances,
             'stockBreakdowns' => $stockBreakdowns,
-            'recentMovements' => $recentMovements,
+            'totalValuation' => $totalValuation,
             'canViewCost' => $canViewCost,
             'canAdjust' => $canAdjust,
             'canTransfer' => $canTransfer,

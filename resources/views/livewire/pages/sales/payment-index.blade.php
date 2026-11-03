@@ -99,10 +99,12 @@
                                 @endif
                             </td>
                             <td class="table-actions py-3 px-4 text-end">
-                                <a href="{{ route('payments.show', $pmt->public_id) }}"
-                                   class="touch-action bg-surface-soft hover:bg-primary-50 text-text-secondary hover:text-primary font-bold text-[11px] transition-colors">
-                                    {{ __('sales.payment_details') }}
-                                </a>
+                                <div class="row-action-group justify-end" role="group" aria-label="{{ __('sales.actions') }}">
+                                    <x-row-action data-row-link :href="route('payments.show', $pmt->public_id)" :label="__('workflow.open')" icon="eye" />
+                                    @if(auth()->user()->can('sales.document.pdf') && auth()->user()->can('money.receipt.view'))
+                                        <x-row-action :href="route('pdf.payment', ['publicId' => $pmt->public_id, 'locale' => app()->getLocale()])" :label="__('refinement_lists.pdf')" icon="pdf" :new-tab="true" />
+                                    @endif
+                                </div>
                             </td>
                         </tr>
                     @empty
@@ -153,10 +155,12 @@
                     </div>
 
                     <div class="pt-2 border-t border-border flex justify-end">
-                        <a href="{{ route('payments.show', $pmt->public_id) }}"
-                           class="touch-action bg-surface-soft text-text-primary text-xs font-bold">
-                            {{ __('sales.payment_details') }}
-                        </a>
+                        <div class="row-action-group justify-end" role="group" aria-label="{{ __('sales.actions') }}">
+                            <x-row-action data-row-link :href="route('payments.show', $pmt->public_id)" :label="__('workflow.open')" icon="eye" />
+                            @if(auth()->user()->can('sales.document.pdf') && auth()->user()->can('money.receipt.view'))
+                                <x-row-action :href="route('pdf.payment', ['publicId' => $pmt->public_id, 'locale' => app()->getLocale()])" :label="__('refinement_lists.pdf')" icon="pdf" :new-tab="true" />
+                            @endif
+                        </div>
                     </div>
                 </div>
             @empty

@@ -855,13 +855,13 @@ final class AssistantLauncher extends Component
             $setupAvailable = app(DeepSeekQuickConnect::class)->isOwner($context->company(), auth()->user());
             try {
                 $disclosure = DeepSeekDefaults::disclosure();
-                $recordContext = $this->resolveCurrentRecord();
+                $recordContext = $this->open ? $this->resolveCurrentRecord() : null;
                 $recordLabel = $recordContext?->name;
                 $policy = app(AiGovernance::class)->authorizeLauncher($context->company(), auth()->user(), $this->context);
                 $available = true;
                 $privacy = $policy->settings['privacy'] ?? [];
-                $transactionsAvailable = app(AiGovernance::class)->allowedIntents($context->company(), auth()->user()) !== [];
-                $questionKeys = $this->context === 'auto' ? app(AssistantReportCatalog::class)->permittedKeys($context->company(), auth()->user()) : [];
+                $transactionsAvailable = $this->open && app(AiGovernance::class)->allowedIntents($context->company(), auth()->user()) !== [];
+                $questionKeys = $this->open && $this->context === 'auto' ? app(AssistantReportCatalog::class)->permittedKeys($context->company(), auth()->user()) : [];
                 $questionsAvailable = $questionKeys !== [];
                 $briefingAvailable = config('ai_assistant.daily_briefing_enabled') === true
                     && array_intersect(AssistantDailyBriefing::CARD_KEYS, $questionKeys) !== [];

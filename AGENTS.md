@@ -85,6 +85,8 @@ A worker report or automated review is evidence, not acceptance. Verify claims a
 
 ## UI implementation
 
+- Follow `docs/UI_WORKFLOW_RULES.md` for every tenant/control-plane screen and shared workflow. Owner UX decisions apply to analogous pages, not only the example URL. Update shared components first; do not fork duplicate implementations.
+
 Stitch/Figma/screenshots are design references, not implementation architecture.
 
 Translate approved patterns into the Laravel + Livewire + Tailwind system and preserve:

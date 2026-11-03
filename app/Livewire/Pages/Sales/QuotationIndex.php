@@ -79,7 +79,7 @@ class QuotationIndex extends Component
             $query->where('customer_id', $this->customerFilter);
         }
 
-        $quotations = $query->orderByDesc('quotation_date')->orderByDesc('id')->paginate($this->tablePageSize());
+        $quotations = $query->orderByDesc('created_at')->orderByDesc('id')->paginate($this->tablePageSize());
         $customers = Customer::where('company_id', $company->id)->orderBy('name_ar')->get();
 
         return view('livewire.pages.sales.quotation-index', [

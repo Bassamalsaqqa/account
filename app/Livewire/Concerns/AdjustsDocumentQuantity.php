@@ -7,6 +7,7 @@ namespace App\Livewire\Concerns;
 use App\Models\Product;
 use App\Models\ProductUnit;
 use App\Models\Unit;
+use App\Support\DocumentIdentity;
 use Brick\Math\BigDecimal;
 use Brick\Math\Exception\MathException;
 
@@ -197,6 +198,8 @@ trait AdjustsDocumentQuantity
         $this->stepQuantity($index, 'down', $step);
     }
 
+    public const array DOCUMENT_IDENTITY_FIELDS = DocumentIdentity::FIELDS;
+
     /**
      * One exact, bounded draft edit. The complete economic row identity prevents
      * a delayed tap from changing a different same-product row after reordering.
@@ -227,7 +230,7 @@ trait AdjustsDocumentQuantity
         }
         $line = $this->lines[$index];
         $identity = [];
-        foreach (['id', 'product_id', 'product_unit_id', 'item_description', 'unit_price', 'unit_cost', 'discount_type', 'discount_value', 'tax_rate_id', 'tax_inclusive', 'lot_id', 'lots', 'lot_allocations', 'warehouse_id'] as $field) {
+        foreach (self::DOCUMENT_IDENTITY_FIELDS as $field) {
             $identity[$field] = $line[$field] ?? null;
         }
         // JSON object key order is irrelevant; values, types and nested allocations are exact.

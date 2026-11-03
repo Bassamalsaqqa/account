@@ -20,7 +20,7 @@ final class PlatformSubscriptionController extends Controller
 {
     public function show(Request $request, string $publicId): View
     {
-        app(PlatformAccess::class)->authorize('subscription.manage');
+        app(PlatformAccess::class)->authorizeRead('subscription.manage');
         $pending = $request->session()->get(RequirePlatformBillingPassword::PENDING);
         if (is_array($pending) && ($pending['actor'] ?? null) === (int) $request->user()->getAuthIdentifier()
             && ($pending['company'] ?? null) === $publicId) {

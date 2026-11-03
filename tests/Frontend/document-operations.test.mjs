@@ -1,6 +1,6 @@
-﻿import test from 'node:test';
+import test from 'node:test';
 import assert from 'node:assert/strict';
-import {enqueueDocumentOperation, enqueueQuantityStep, isDocumentBusy, isDocumentBlocked, resyncDocumentQueue} from '../../resources/js/document-operations.js';
+import {enqueueDocumentOperation, enqueueQuantityStep, isDocumentBusy, isDocumentBlocked, resyncDocumentQueue, stepExactString} from '../../resources/js/document-operations.js';
 import {barcodeEntry} from '../../resources/js/barcode-entry.js';
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -72,6 +72,17 @@ test('Save Scan and Add flush a pending batch and wait behind it',async()=>{
         assert.deepEqual(calls.map(call=>call.method),['quantity',method==='saveDraft'?'save':method==='addLine'?'add':'scan']);
         if(method!=='addLine') assert.equal(calls[1].quantity,'21');
     }
+});
+
+test('one-step Confirm reaches the server after pending quantity changes', async () => {
+    const {wire, calls} = fixture('confirm-after-quantity', 5);
+    wire.saveAndConfirm = async () => calls.push({method: 'confirm', quantity: wire.lines[0].quantity});
+    const tap = enqueueQuantityStep(wire, 0, 'up');
+    const confirm = enqueueDocumentOperation(wire, 'saveAndConfirm');
+    await Promise.all([tap, confirm]);
+    assert.deepEqual(calls.map(call => call.method), ['quantity', 'confirm']);
+    assert.equal(calls[1].quantity, '2');
+    assert.equal(isDocumentBlocked(wire), false);
 });
 test('taps during an in-flight batch reserve FIFO before immediate Save and Scan',async()=>{
     const {wire,calls}=fixture('inflight',40);
@@ -145,4 +156,60 @@ test('hardware strings remain intact and review-required scan never restores alr
     await Promise.all([a,b]);assert.deepEqual(received,['A','B']);assert.equal(entry.entry,'typing');
     wire.scanCameraBarcode=async()=>({ok:true,requiresReview:true,message:'Review other lines'});entry.entry='ALREADY-ADDED';await entry.submit();
     assert.equal(entry.entry,'');assert.equal(entry.scanned,false);assert.equal(entry.feedback,'Review other lines');
+});
+test('custom quantity field like return_quantity steps properly with coalesced batch', async () => {
+    const calls = [];
+    const wire = {
+        $id: 'return-qty',
+        lines: [{return_quantity: '0', sales_invoice_line_id: 101, unit_price: '5.00'}],
+        async batchStepQuantity(index, expected, identity, directions, field) {
+            calls.push({index, expected, identity, directions: [...directions], field});
+            let qty = BigInt(expected);
+            for (const dir of directions) {
+                if (dir === 'up') qty += 1n;
+                else if (dir === 'down' && qty > 0n) qty -= 1n;
+            }
+            wire.lines[index].return_quantity = String(qty);
+            return {ok: true, quantity: String(qty)};
+        },
+    };
+    const taps = Array.from({length: 5}, () => enqueueQuantityStep(wire, 0, 'up', {field: 'return_quantity', debounceMs: 10}));
+    await Promise.all(taps);
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].field, 'return_quantity');
+    assert.equal(calls[0].expected, '0');
+    assert.deepEqual(calls[0].directions, Array(5).fill('up'));
+    assert.equal(wire.lines[0].return_quantity, '5');
+});
+test('stepExactString performs exact arithmetic with no floating point errors', () => {
+    // Integer mode
+    assert.equal(stepExactString('0', 'up', '1'), '1');
+    assert.equal(stepExactString('1', 'up', '1'), '2');
+    assert.equal(stepExactString('2', 'down', '1'), '1');
+    assert.equal(stepExactString('1', 'down', '1'), '0');
+    assert.equal(stepExactString('0', 'down', '1'), '0');
+    assert.equal(stepExactString('999999999999999999', 'up', '1'), '1000000000000000000');
+
+    // Fractional quantum mode (matching PHP unit decimal quantum)
+    assert.equal(stepExactString('1.50', 'up', '0.01'), '1.51');
+    assert.equal(stepExactString('1.51', 'down', '0.01'), '1.50');
+    assert.equal(stepExactString('1.5', 'up', '0.1'), '1.6');
+    assert.equal(stepExactString('1.5', 'down', '0.1'), '1.4');
+    assert.equal(stepExactString('1.000000', 'up', '0.000001'), '1.000001');
+    assert.equal(stepExactString('1.000001', 'down', '0.000001'), '1.000000');
+    assert.equal(stepExactString('0.005', 'down', '0.01', '0'), '0.000');
+
+    // Clamping min and max
+    assert.equal(stepExactString('0', 'down', '1', '0'), '0');
+    assert.equal(stepExactString('10', 'up', '1', '0', '10'), '10');
+    assert.equal(stepExactString('5.5', 'up', '1', '0', '6'), '6.0');
+
+    // Backward-compatibility boolean flags
+    assert.equal(stepExactString('1.50', 'up', true), '1.51');
+    assert.equal(stepExactString('2', 'up', false), '3');
+
+    // Malformed/empty edge cases
+    assert.equal(stepExactString('', 'up', '1'), '1');
+    assert.equal(stepExactString(null, 'up', '1'), '1');
+    assert.equal(stepExactString(undefined, 'up', '1'), '1');
 });

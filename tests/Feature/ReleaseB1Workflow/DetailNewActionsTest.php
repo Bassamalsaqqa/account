@@ -153,7 +153,7 @@ class DetailNewActionsTest extends Phase5ETestCase
             ->assertDontSee(__('release_b1_workflow.new_purchase'));
     }
 
-    public function test_purchase_detail_retains_document_after_posting_and_preserves_wire_confirm(): void
+    public function test_purchase_detail_confirms_once_and_retains_document_after_posting(): void
     {
         $this->activate($this->owner);
 
@@ -169,10 +169,10 @@ class DetailNewActionsTest extends Phase5ETestCase
             ],
         ]);
 
-        // Verify wire:confirm on post button before posting
+        // One explicit action; no redundant browser confirmation.
         $component = Livewire::test(PurchaseDetail::class, ['publicId' => $purchase->public_id])
             ->assertOk()
-            ->assertSee('wire:confirm="'.__('purchasing.post_confirmation').'"', false)
+            ->assertDontSee('wire:confirm="'.__('purchasing.post_confirmation').'"', false)
             ->assertSee(__('purchasing.post_purchase'));
 
         // Execute post action on component

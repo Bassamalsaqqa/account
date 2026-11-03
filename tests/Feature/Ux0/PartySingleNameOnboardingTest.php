@@ -982,7 +982,7 @@ final class PartySingleNameOnboardingTest extends Phase5ETestCase
             ->assertHasErrors(['email', 'business_name_en']);
 
         $customerHtml = $customerComponent->html();
-        $this->assertStringContainsString('<details class="group space-y-6 pt-2" open', $customerHtml);
+        $this->assertStringContainsString('showAdvanced: true', $customerHtml);
         $this->assertStringContainsString('id="customer-email-error"', $customerHtml);
         $this->assertStringContainsString('aria-describedby="customer-business-name-en-error"', $customerHtml);
         $this->assertStringContainsString('id="customer-business-name-en-error"', $customerHtml);
@@ -990,7 +990,7 @@ final class PartySingleNameOnboardingTest extends Phase5ETestCase
         // CustomerForm with "0" in advanced field notes renders details as open
         $zeroNotesComponent = Livewire::test(CustomerForm::class)
             ->set('notes', '0');
-        $this->assertStringContainsString('<details class="group space-y-6 pt-2" open', $zeroNotesComponent->html());
+        $this->assertStringContainsString('showAdvanced: true', $zeroNotesComponent->html());
 
         // An invalid advanced vendor field must reopen its disclosure.
         $vendorComponent = Livewire::test(VendorForm::class)
@@ -1000,7 +1000,7 @@ final class PartySingleNameOnboardingTest extends Phase5ETestCase
             ->assertHasErrors(['business_name_en']);
 
         $vendorHtml = $vendorComponent->html();
-        $this->assertStringContainsString('<details class="group space-y-4 pt-1" open', $vendorHtml);
+        $this->assertStringContainsString('showAdvanced: true', $vendorHtml);
     }
 
     public function test_migration_both_tables_roundtrip_and_vendor_null_rollback_refusal(): void
@@ -1057,8 +1057,9 @@ final class PartySingleNameOnboardingTest extends Phase5ETestCase
     {
         foreach ([CustomerForm::class, VendorForm::class] as $form) {
             $html = Livewire::test($form)->html();
-            $this->assertMatchesRegularExpression('/<details[^>]*>/', $html);
-            $this->assertDoesNotMatchRegularExpression('/<details[^>]*\sopen(?:\s|>)/', $html);
+            $this->assertStringContainsString('showAdvanced: false', $html);
+            $this->assertStringContainsString('x-show="showAdvanced"', $html);
+            $this->assertStringContainsString('x-cloak', $html);
         }
     }
 }

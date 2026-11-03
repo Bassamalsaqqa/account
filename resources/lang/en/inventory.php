@@ -1,6 +1,12 @@
 <?php
 
 return [
+    'stock_by_location' => 'Stock by Location',
+    'search_stock_placeholder' => 'Search product or SKU…',
+    'all_warehouses' => 'All Warehouses',
+    'in_stock' => 'In Stock',
+    'out_of_stock' => 'Out of Stock',
+    'no_stock_found' => 'No matching stock records found.',
     'product_name_required' => 'Enter a product name in Arabic, English, or both.',
     // Catalog & Products
     'products' => 'Product Catalog',
@@ -13,7 +19,7 @@ return [
     'basic_info' => 'Basic Product Information',
     'pricing_and_policies' => 'Tracking Policies & Suggested Pricing',
     'track_stock_hint' => 'Track stock quantities and inbound/outbound movements.',
-    'track_expiry_hint' => 'Enforce lots and First-Expired-First-Out (FEFO) dispensing.',
+    'track_expiry_hint' => 'Track batches and dispense earliest expiring items first.',
     'cannot_change_base_unit_notice' => 'Cannot change base unit because stock movements exist.',
     'delete' => 'Delete',
     'actions' => 'Actions',
@@ -53,7 +59,7 @@ return [
     'type_non_stock' => 'Non-Stock',
     'type_service' => 'Service',
     'track_stock' => 'Track stock and quantities',
-    'track_expiry' => 'Track expiration date and lots (FEFO)',
+    'track_expiry' => 'Track expiration date and batches',
     'active' => 'Active',
     'inactive' => 'Inactive',
     'description_ar' => 'Description (Arabic)',
@@ -246,7 +252,7 @@ return [
     'base_currency' => 'Base Currency',
     'opening_stock_date' => 'Opening Balance Date',
     'save_opening_stock_generate_entry' => 'Save Opening Stock & Generate Ledger Entry',
-    'expiry_subtitle' => 'Monitor expiry dates, guide FEFO dispatch, and record damaged lots disposal',
+    'expiry_subtitle' => 'Monitor expiry dates, guide dispatch by earliest expiry, and record disposal',
     'active' => 'Active',
     'inactive' => 'Inactive',
     'primary' => 'Primary',

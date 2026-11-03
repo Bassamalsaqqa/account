@@ -4,17 +4,23 @@ declare(strict_types=1);
 
 namespace App\Livewire\Pages\Purchasing;
 
+use App\Actions\Purchasing\PostPurchaseAction;
+use App\Exceptions\NoActiveCompanyException;
 use App\Livewire\Concerns\HasTablePageSize;
 use App\Livewire\Pages\Purchasing\Concerns\AuthorizesPurchasingPages;
 use App\Models\Purchase;
 use App\Models\Vendor;
 use App\Services\Purchasing\PurchasePayablePosition;
 use App\Support\Tenancy\CompanyContext;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Contracts\View\View;
 use Livewire\Attributes\Layout;
+use Livewire\Attributes\Locked;
+use Livewire\Attributes\On;
 use Livewire\Attributes\Url;
 use Livewire\Component;
 use Livewire\WithPagination;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 
 #[Layout('layouts.app')]
 class PurchaseIndex extends Component
@@ -31,6 +37,64 @@ class PurchaseIndex extends Component
 
     #[Url(as: 'vendor')]
     public ?int $vendorFilter = null;
+
+    #[Locked]
+    public ?int $payingPurchaseId = null;
+
+    #[On('close-payment-modal')]
+    #[On('vendor-payment-recorded')]
+    public function closePaymentModal(): void
+    {
+        $this->payingPurchaseId = null;
+    }
+
+    public function openPaymentModal(int $purchaseId): void
+    {
+        $company = $this->authorizePurchasing('money.vendor_payment.create');
+        Purchase::where('company_id', $company->id)
+            ->where('status', Purchase::STATUS_POSTED)->findOrFail($purchaseId);
+        $this->payingPurchaseId = $purchaseId;
+    }
+
+    public function postPurchase(string $publicId): void
+    {
+        $company = $this->authorizePurchasing('purchasing.purchase.post');
+        $this->authorizePurchasing('purchasing.cost.view');
+
+        $purchase = Purchase::where('company_id', $company->id)->where('public_id', $publicId)->firstOrFail();
+        if (! $purchase->isDraft()) {
+            return;
+        }
+
+        try {
+            app(PostPurchaseAction::class)->execute($purchase, auth()->user());
+            session()->flash('success', __('purchasing.purchase_posted'));
+        } catch (AuthorizationException|NoActiveCompanyException $exception) {
+            throw $exception;
+        } catch (\Throwable $exception) {
+            if ($exception instanceof HttpException && $exception->getStatusCode() === 403) {
+                throw $exception;
+            }
+            report($exception);
+            $msg = $this->resolvePurchaseErrorMessage($exception);
+            session()->flash('error', $msg);
+        }
+    }
+
+    private function resolvePurchaseErrorMessage(\Throwable $e): string
+    {
+        if ($e instanceof \InvalidArgumentException) {
+            $msg = strtolower($e->getMessage());
+            if (str_contains($msg, 'positive_post_total_required') || str_contains($msg, 'positive')) {
+                return __('purchasing.positive_post_total_required');
+            }
+            if (str_contains($msg, 'lots') || str_contains($msg, 'lot') || str_contains($msg, 'expiry')) {
+                return __('purchasing.lots_must_be_complete');
+            }
+        }
+
+        return __('purchasing.post_integrity_failed');
+    }
 
     public function mount(CompanyContext $context): void
     {
@@ -78,7 +142,7 @@ class PurchaseIndex extends Component
             $query->where('vendor_id', $this->vendorFilter);
         }
 
-        $purchases = $query->orderByDesc('purchase_date')->orderByDesc('id')->paginate($this->tablePageSize());
+        $purchases = $query->orderByDesc('created_at')->orderByDesc('id')->paginate($this->tablePageSize());
         $payablePositions = [];
         if ($this->canReadVendorFinancials()) {
             $postedPurchases = $purchases->getCollection()->filter(fn ($p) => $p->status === Purchase::STATUS_POSTED);

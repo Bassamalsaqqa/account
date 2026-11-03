@@ -35,7 +35,7 @@ class VendorProductPriceHistoryQuery
             ->where('purchases.status', Purchase::STATUS_POSTED)
             ->whereNotNull('purchases.purchase_number')
             ->whereNotNull('purchases.posted_at')
-            ->whereNotNull('purchases.posting_batch_id')
+            ->where(PurchaseHistoryProvenance::receiptRecognitionFilter())
             ->with([
                 'purchase.vendor' => fn ($q) => $q->withTrashed(),
                 'product' => fn ($q) => $q->withTrashed(),
@@ -87,7 +87,7 @@ class VendorProductPriceHistoryQuery
             ->where('purchases.status', Purchase::STATUS_POSTED)
             ->whereNotNull('purchases.purchase_number')
             ->whereNotNull('purchases.posted_at')
-            ->whereNotNull('purchases.posting_batch_id')
+            ->where(PurchaseHistoryProvenance::receiptRecognitionFilter())
             ->toBase();
 
         $lineIds = PurchaseLine::withoutGlobalScopes()

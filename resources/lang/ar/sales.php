@@ -187,7 +187,7 @@ return [
     'payment_reference_placeholder' => 'مثال: TR-998822',
     'auto_allocate' => 'توزيع تلقائي',
     'allocated_total' => 'المبلغ الموزع على الفواتير',
-    'unallocated_amount' => 'المبلغ غير الموزع (رصيد دائن للعميل)',
+    'unallocated_amount' => 'المبلغ غير الموزع (مبالغ مستلمة مسبقاً ومتاحة للعميل)',
     'invoice_allocations' => 'توزيع الدفعة على الفواتير المفتوحة',
     'invoice_date' => 'تاريخ الفاتورة',
     'invoice_total' => 'إجمالي الفاتورة',

@@ -111,10 +111,12 @@
                                 @endif
                             </td>
                             <td class="table-actions py-3 px-4 text-end">
-                                <a href="{{ route('vendor-payments.show', $pmt->public_id) }}"
-                                   class="touch-action bg-surface-soft hover:bg-primary-50 text-text-secondary hover:text-primary font-bold text-[11px] transition-colors">
-                                    {{ __('purchasing.vendor_details') }}
-                                </a>
+                                <div class="row-action-group justify-end" role="group" aria-label="{{ __('purchasing.actions') }}">
+                                    <x-row-action data-row-link :href="route('vendor-payments.show', $pmt->public_id)" :label="__('workflow.open')" icon="eye" />
+                                    @can('purchasing.document.pdf')
+                                        <x-row-action :href="route('pdf.vendor-payment', ['publicId' => $pmt->public_id, 'locale' => app()->getLocale()])" :label="__('refinement_lists.pdf')" icon="pdf" :new-tab="true" />
+                                    @endcan
+                                </div>
                             </td>
                         </tr>
                     @empty
@@ -179,9 +181,12 @@
                     </div>
 
                     <div class="pt-2 border-t border-border flex justify-end">
-                        <a href="{{ route('vendor-payments.show', $pmt->public_id) }}" class="touch-action text-xs font-bold text-primary hover:underline">
-                            {{ __('purchasing.vendor_details') }} &rarr;
-                        </a>
+                        <div class="row-action-group justify-end" role="group" aria-label="{{ __('purchasing.actions') }}">
+                            <x-row-action data-row-link :href="route('vendor-payments.show', $pmt->public_id)" :label="__('workflow.open')" icon="eye" />
+                            @can('purchasing.document.pdf')
+                                <x-row-action :href="route('pdf.vendor-payment', ['publicId' => $pmt->public_id, 'locale' => app()->getLocale()])" :label="__('refinement_lists.pdf')" icon="pdf" :new-tab="true" />
+                            @endcan
+                        </div>
                     </div>
                 </div>
             @empty

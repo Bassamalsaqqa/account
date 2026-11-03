@@ -55,7 +55,7 @@ final class StockAccountingAudit
                 if (! in_array($document->status, ['posted', 'void'], true)) {
                     continue;
                 }
-                $allZeroReturn = $source === 'purchase_return'
+                $allZeroReturn = in_array($source, ['purchase', 'purchase_return'], true)
                     && BigDecimal::of($document->grand_total_currency)->isZero()
                     && BigDecimal::of($document->grand_total_base)->isZero();
                 $batch = $batches->get($document->posting_batch_id);
@@ -157,7 +157,7 @@ final class StockAccountingAudit
             }
             $value = BigDecimal::of((string) $movement->value_delta_base);
             if ($batch === null) {
-                $requiresBatch = $document !== null && ($baseSource !== 'purchase_return'
+                $requiresBatch = $document !== null && (! in_array($baseSource, ['purchase', 'purchase_return'], true)
                     || ! BigDecimal::of($document->grand_total_currency)->isZero()
                     || ! BigDecimal::of($document->grand_total_base)->isZero());
                 if (! $value->isZero() || $requiresBatch) {

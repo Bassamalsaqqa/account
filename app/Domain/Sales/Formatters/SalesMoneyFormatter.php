@@ -36,6 +36,24 @@ final class SalesMoneyFormatter
     }
 
     /**
+     * Format money for input fields: 2 decimal places contract for integer/1dp inputs,
+     * while preserving genuine existing fractional precision intact without silent rounding.
+     */
+    public static function formatMoneyInput(string|int|BigDecimal|null $amount): string
+    {
+        if ($amount === null || trim((string) $amount) === '') {
+            return '';
+        }
+        $str = trim((string) $amount);
+        if (! preg_match('/^-?\d+(?:\.\d+)?$/D', $str)) {
+            return $str;
+        }
+        $decimal = BigDecimal::of($str)->strippedOfTrailingZeros();
+
+        return (string) $decimal->toScale(max(2, $decimal->getScale()));
+    }
+
+    /**
      * @var array<string, int>
      */
     private static array $minorUnitsMap = [

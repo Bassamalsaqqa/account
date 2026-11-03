@@ -25,6 +25,24 @@ final class Dashboard extends Component
     #[Url]
     public ?string $to = null;
 
+    public function mount(): void
+    {
+        if ($this->preset !== 'custom' && $this->from === null && $this->to === null
+            && in_array($this->preset, ReportPeriod::ALLOWED_PRESETS, true)) {
+            $this->syncPeriodDates();
+        }
+    }
+
+    private function syncPeriodDates(): void
+    {
+        $company = app(CompanyContext::class)->company();
+        $period = $this->preset === 'this_month'
+            ? ReportPeriod::monthToDateComparison($company)['current']
+            : ReportPeriod::fromPreset($this->preset, $company);
+        $this->from = $period->startDate;
+        $this->to = $period->endDate;
+    }
+
     public function choosePeriod(string $preset): void
     {
         if (! in_array($preset, [
@@ -37,13 +55,13 @@ final class Dashboard extends Component
         }
 
         $this->preset = $preset;
-        $this->from = null;
-        $this->to = null;
+        $this->syncPeriodDates();
         $this->resetErrorBag();
     }
 
     public function applyPeriod(): void
     {
+        $this->preset = 'custom';
         $this->resetErrorBag();
     }
 
@@ -56,8 +74,9 @@ final class Dashboard extends Component
     {
         $data = [
             'activity' => [],
-            'positions' => [],
-            'alerts' => [],
+            'accounts' => [],
+            'accounts_url' => null,
+            'checks' => null,
             'today' => '',
             'period' => [
                 'preset' => $this->preset,
@@ -73,7 +92,7 @@ final class Dashboard extends Component
 
         try {
             $company = app(CompanyContext::class)->company();
-            $data = app(DashboardReports::class)->read($company, $this->preset, $this->from, $this->to, includeAdditionalPositions: false);
+            $data = app(DashboardReports::class)->readHome($company, $this->preset, $this->from, $this->to);
         } catch (InvalidArgumentException $exception) {
             $this->addError('preset', __('reports.error'));
         }

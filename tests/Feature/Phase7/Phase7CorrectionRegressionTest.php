@@ -350,10 +350,10 @@ class Phase7CorrectionRegressionTest extends Phase7TestCase
     {
         $reader = $this->customActor(['employees.manage', 'payroll.salary.view']);
         $this->activate($reader);
-        $component = Livewire::test(EmployeeForm::class, ['publicId' => $this->employee->public_id])->assertSet('defaultSalary', '1000.000000');
+        $component = Livewire::test(EmployeeForm::class, ['publicId' => $this->employee->public_id])->assertSet('defaultSalary', '1000.00');
         $reader->roles()->first()->revokePermissionTo('payroll.salary.view');
         $component->call('$refresh')->assertSet('defaultSalary', '');
-        $this->assertStringNotContainsString('1000.000000', json_encode($component->snapshot));
+        $this->assertStringNotContainsString('1000.00', json_encode($component->snapshot));
     }
 
     public function test_post_only_user_does_not_receive_default_salary(): void

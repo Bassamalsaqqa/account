@@ -3,6 +3,12 @@
 declare(strict_types=1);
 
 return [
+    'payment_summary' => 'Payment summary',
+    'due_now' => 'Due',
+    'paying_now' => 'This payment',
+    'remaining_after' => 'Remaining',
+    'extra_payment' => 'Extra amount kept for later:',
+    'more_details' => 'More details',
     'tax_inclusive' => 'Tax included in price',
     'tax_exclusive' => 'Tax added to price',
     'tax_help' => 'The selected tax defines whether the entered price already includes tax. The summary shows the net amount, tax and final total.',
@@ -22,7 +28,7 @@ return [
     'working' => 'Working…',
     'cancel_check_confirm' => 'Cancel this check? Review the date and reason before confirming.',
     'available_stock' => 'Available stock',
-    'availability_hint' => 'Current warehouse balance in base units. Stock and lot availability are checked again when saving.',
+    'availability_hint' => 'Current warehouse balance in base units. Stock is checked again when you confirm.',
     'camera_scan_success' => 'Barcode scanned successfully.',
     'barcode_too_long' => 'Barcode exceeds maximum allowed length of 128 characters.',
     'invalid_barcode_format' => 'Invalid barcode format or unsupported characters.',

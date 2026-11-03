@@ -128,19 +128,57 @@ class PurchasePostingTest extends TestCase
 
     protected function withinTestPostingScope(Purchase $purchase, \Closure $callback): mixed
     {
-        return DB::transaction(function () use ($purchase, $callback) {
-            $scope = app(PurchasePostingScope::class);
-            $owner = new PostPurchaseAction;
-            // Test-only authority setup: production cannot set this private owner
-            // state, and must enter it through PostPurchaseAction.execute().
-            $ownership = new \ReflectionProperty($owner, 'activePostingScope');
-            $ownership->setValue($owner, $scope);
-            try {
-                return $scope->withinCanonicalPosting($owner, $purchase, $this->owner, $callback);
-            } finally {
-                $ownership->setValue($owner, null);
+        $completed = false;
+        $result = null;
+        try {
+            return DB::transaction(function () use ($purchase, $callback, &$completed, &$result) {
+                $scope = app(PurchasePostingScope::class);
+                $owner = new PostPurchaseAction;
+                // Test-only authority setup: production cannot set this private owner
+                // state, and must enter it through PostPurchaseAction.execute().
+                $ownership = new \ReflectionProperty($owner, 'activePostingScope');
+                $ownership->setValue($owner, $scope);
+                try {
+                    return $scope->withinCanonicalPosting($owner, $purchase, $this->owner, function ($capability) use ($callback, &$completed, &$result) {
+                        $result = $callback($capability);
+                        $completed = true;
+
+                        return $result;
+                    });
+                } finally {
+                    $ownership->setValue($owner, null);
+                }
+            });
+        } catch (\InvalidArgumentException $exception) {
+            // This fixture exercises a receipt capability, not a complete business
+            // post. The production terminal guard must reject it and roll back.
+            // Preserve callback failures; return only after that expected refusal.
+            if (! $completed || $exception->getMessage() !== 'Purchase posting requires verified canonical completion.') {
+                throw $exception;
             }
-        });
+
+            return $result;
+        }
+    }
+
+    public function test_an_incomplete_capability_scope_cannot_commit_a_receipt_without_its_document(): void
+    {
+        $draft = $this->expiryDraft();
+        $before = $this->state();
+        $scope = app(PurchasePostingScope::class);
+        $owner = new PostPurchaseAction;
+        $ownership = new \ReflectionProperty($owner, 'activePostingScope');
+        $ownership->setValue($owner, $scope);
+        try {
+            DB::transaction(fn () => $scope->withinCanonicalPosting($owner, $draft, $this->owner,
+                fn ($capability) => app(InventoryMovementService::class)->recordPurchaseReceipt($this->exactExpiryReceipt($draft), $capability)));
+            $this->fail('Partial stock receipt committed.');
+        } catch (\InvalidArgumentException $exception) {
+            $this->assertSame('Purchase posting requires verified canonical completion.', $exception->getMessage());
+            $this->assertSame($before, $this->state());
+        } finally {
+            $ownership->setValue($owner, null);
+        }
     }
 
     protected function exactExpiryReceipt(Purchase $draft): StockMovementCommand
@@ -1096,15 +1134,15 @@ class PurchasePostingTest extends TestCase
         $this->assertSame('5.000000', InventoryCostState::sole()->average_cost_base);
     }
 
-    public function test_entirely_zero_value_supplier_document_fails_without_fake_gl_or_partial_receipt(): void
+    public function test_entirely_zero_value_supplier_document_receives_stock_without_fake_gl(): void
     {
         $draft = $this->create(['lines' => [['product_id' => $this->product->id, 'quantity' => '1', 'unit_cost' => '0']]]);
-        $before = $this->state();
-        try {
-            $this->postPurchase($draft);
-            $this->fail('Fake zero-value PostingBatch created.');
-        } catch (\InvalidArgumentException) {
-            $this->assertSame($before, $this->state());
-        }
+        $posted = $this->postPurchase($draft);
+        $this->assertTrue($posted->isPosted());
+        $this->assertNull($posted->posting_batch_id);
+        $this->assertDatabaseCount('posting_batches', 0);
+        $this->assertDatabaseCount('posting_lines', 0);
+        $this->assertSame('1.000000', StockMovement::sole()->quantity_delta_base);
+        $this->assertSame('0.000000', StockMovement::sole()->value_delta_base);
     }
 }

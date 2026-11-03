@@ -10,7 +10,7 @@
     );
 @endphp
 
-<div data-entry-form class="max-w-4xl mx-auto space-y-5">
+<div data-entry-form class="max-w-7xl mx-auto space-y-5" x-data="{ showAdvanced: {{ ($vendorId || $hasAdvanced) ? 'true' : 'false' }} }">
     <header class="flex items-center justify-between gap-3">
         <h1 class="text-xl sm:text-2xl font-bold text-text-primary">{{ __($vendorId ? 'purchasing.edit_vendor' : 'purchasing.create_vendor') }}</h1>
         @if ($canView)<a href="{{ route('vendors.index') }}" class="touch-action text-sm text-primary px-3 py-3">{{ __('purchasing.back') }}</a>@endif
@@ -28,14 +28,26 @@
                 <x-purchasing.field name="phone" :label="__('purchasing.phone')" type="tel" direction="ltr" :maxlength="64" />
             </div>
         </fieldset>
-        <!-- Advanced Details Collapsible Section -->
-        <details class="group space-y-4 pt-1" {{ $hasAdvanced ? 'open' : '' }}>
-            <summary class="min-h-[44px] cursor-pointer inline-flex items-center gap-2 text-xs font-bold text-primary hover:text-primary-hover py-2 focus-visible:outline-2 focus-visible:outline-primary select-none list-none [&::-webkit-details-marker]:hidden">
-                <span class="group-open:hidden">▶ {{ __('workflow.more_options') }}</span>
-                <span class="hidden group-open:inline">▼ {{ __('purchasing.hide_advanced_details') }}</span>
-            </summary>
+        <!-- Advanced Details Section -->
+        @if(!$vendorId)
+        <div class="pt-1">
+            <button type="button"
+                    @click="showAdvanced = !showAdvanced"
+                    :aria-expanded="showAdvanced ? 'true' : 'false'"
+                    class="min-h-11 cursor-pointer inline-flex items-center gap-2 text-xs font-bold text-primary hover:text-primary-hover py-2 focus-visible:outline-2 focus-visible:outline-primary select-none rounded-control">
+                <span x-show="!showAdvanced" class="inline-flex items-center gap-1.5">
+                    <x-icon name="plus" class="w-3.5 h-3.5" />
+                    <span>{{ __('workflow.more_options') }}</span>
+                </span>
+                <span x-show="showAdvanced" class="inline-flex items-center gap-1.5" x-cloak>
+                    <x-icon name="chevron" class="w-3.5 h-3.5 rotate-90" />
+                    <span>{{ __('purchasing.hide_advanced_details') }}</span>
+                </span>
+            </button>
+        </div>
+        @endif
 
-            <div class="space-y-4">
+        <div x-show="showAdvanced" @if(!$vendorId) x-cloak @endif class="space-y-4">
                 <div class="entry-grid grid sm:grid-cols-2 lg:grid-cols-3 gap-4">                <x-purchasing.field name="code" :label="__('purchasing.vendor_code')" direction="ltr" :maxlength="64" /></div>
         <fieldset class="p-4 sm:p-5 bg-white border border-border rounded-card">
             <legend class="px-2 text-sm font-bold">{{ __('purchasing.contact_section') }}</legend>
@@ -93,7 +105,7 @@
                     <x-purchasing.field name="notes" :label="__('purchasing.notes')" type="textarea" :maxlength="4000" />
                 </fieldset>
             </div>
-        </details>
+        </div>
         <div class="flex justify-end">
             <button type="submit" wire:loading.attr="disabled" class="h-11 px-5 rounded-control bg-primary text-white text-sm font-bold hover:bg-primary-hover disabled:opacity-50">{{ __('purchasing.save_vendor') }}</button>
         </div>

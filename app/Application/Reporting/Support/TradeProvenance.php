@@ -25,7 +25,7 @@ final class TradeProvenance
             || DB::table('purchases')->where('company_id', $company->id)->whereNotNull('void_posting_batch_id')->exists()) {
             throw new ReportingException('Unsupported Purchase void lifecycle.');
         }
-        self::document($company, 'purchases', 'purchase', 'purchase_number', false);
+        self::document($company, 'purchases', 'purchase', 'purchase_number', false, true);
         self::document($company, 'purchase_returns', 'purchase_return', 'return_number', false, true);
         self::lines($company, 'purchase_lines', 'purchases', 'purchase_id');
         self::lines($company, 'purchase_return_lines', 'purchase_returns', 'purchase_return_id');
@@ -38,7 +38,7 @@ final class TradeProvenance
         $q = DB::table("$table as d")->leftJoin('posting_batches as b', 'b.id', '=', 'd.posting_batch_id')
             ->leftJoin($partyTable.' as party', 'party.id', '=', 'd.'.$party.'_id')
             ->where('d.company_id', $company->id)->whereIn('d.status', $voidable ? ['posted', 'void'] : ['posted']);
-        $bad = (clone $q)->where(function ($q) use ($company, $source, $number, $zeroAllowed): void {
+        $bad = (clone $q)->where(function ($q) use ($company, $source, $number, $zeroAllowed, $table): void {
             $q->whereNull('party.id')->orWhere('party.company_id', '!=', $company->id)
                 ->orWhereNull("d.$number")->orWhere("d.$number", '')->orWhereNull('d.posted_at')->orWhereNull('d.posted_by')
                 ->orWhere(function ($q) use ($company, $source, $zeroAllowed): void {
@@ -54,12 +54,27 @@ final class TradeProvenance
                     });
                 });
             if ($zeroAllowed) {
-                $q->orWhere(function ($q): void {
-                    $q->whereNull('d.posting_batch_id')->where(function ($q): void {
-                        $q->where('d.grand_total_base', '!=', '0')->orWhereExists(function ($q): void {
-                            $q->selectRaw('1')->from('purchase_return_lines as l')->whereColumn('l.purchase_return_id', 'd.id')
-                                ->where('l.inventory_value_removed_base', '!=', '0');
-                        });
+                $q->orWhere(function ($q) use ($table): void {
+                    $q->whereNull('d.posting_batch_id')->where(function ($q) use ($table): void {
+                        $q->where('d.grand_total_base', '!=', '0')->orWhere('d.grand_total_currency', '!=', '0')
+                            ->orWhereExists(function ($q) use ($table): void {
+                                if ($table === 'purchases') {
+                                    $q->selectRaw('1')->from('purchase_lines as l')->whereColumn('l.purchase_id', 'd.id')
+                                        ->where(function ($q): void {
+                                            $q->whereNull('l.stock_movement_id')->orWhereNull('l.inventory_unit_cost_base')
+                                                ->orWhere('l.inventory_unit_cost_base', '!=', '0')
+                                                ->orWhere('l.line_total_base', '!=', '0')
+                                                ->orWhere('l.landed_cost_allocated_base', '!=', '0');
+                                        });
+                                } else {
+                                    $q->selectRaw('1')->from('purchase_return_lines as l')->whereColumn('l.purchase_return_id', 'd.id')
+                                        ->where('l.inventory_value_removed_base', '!=', '0');
+                                }
+                            });
+                        if ($table === 'purchases') {
+                            $q->orWhereNotExists(fn ($q) => $q->selectRaw('1')->from('stock_movements as m')
+                                ->whereColumn('m.company_id', 'd.company_id')->where('m.source_type', 'purchase')->whereColumn('m.source_id', 'd.id'));
+                        }
                     });
                 });
             }

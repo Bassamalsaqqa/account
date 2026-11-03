@@ -11,6 +11,7 @@ $icons = [
     'expand' => '<path d="m8 10 4-4 4 4M8 14l4 4 4-4"/>',
     'dashboard' => '<path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z"/>',
     'receipt' => '<path d="M6 3h12v18l-2-1.5L14 21l-2-1.5L10 21l-2-1.5L6 21V3Z"/><path d="M9 8h6M9 12h6M9 16h4"/>',
+    'pdf' => '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M8 17v-4h1.5a1.5 1.5 0 0 1 0 3H8m5-3v4m0-2h1.5a1.5 1.5 0 0 0 0-3H13"/>',
     'quote' => '<path d="M6 3h12v18H6zM9 8h6M9 12h6M9 16h3"/><path d="M15 16h.01"/>',
     'users' => '<circle cx="9" cy="8" r="3"/><path d="M3 20c.6-4 2.6-6 6-6s5.4 2 6 6"/><circle cx="17" cy="9" r="2"/><path d="M15 15c3 0 5 2 5.5 5"/>',
     'cart' => '<path d="M3 4h2l2 11h10l2-7H6"/><circle cx="9" cy="19" r="1.5"/><circle cx="17" cy="19" r="1.5"/>',

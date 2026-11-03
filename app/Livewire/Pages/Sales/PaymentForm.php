@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Livewire\Pages\Sales;
 
 use App\Actions\Sales\PostCustomerPaymentAction;
+use App\Domain\Sales\Formatters\SalesMoneyFormatter;
 use App\Models\Company;
 use App\Models\CompanyCurrency;
 use App\Models\Customer;
@@ -70,10 +71,15 @@ class PaymentForm extends Component
     public string $idempotency_key = '';
 
     #[Locked]
+    public ?int $sourceInvoiceId = null;
+
+    #[Locked]
     public ?string $sourceInvoicePublicId = null;
 
     #[Locked]
     public ?string $sourceInvoiceNumber = null;
+
+    public bool $isModal = false;
 
     #[Locked]
     public int $pageCompanyId;
@@ -99,7 +105,7 @@ class PaymentForm extends Component
         }
 
         $this->customer_id = $customer_id;
-        $this->document_locale = $company->default_locale;
+        $this->document_locale = $company->isLanguageEnabled(app()->getLocale()) ? app()->getLocale() : $company->default_locale;
         $this->payment_date = Carbon::now($company->timezone)->toDateString();
 
         $defaultAccount = app(EligibleMoneyAccounts::class)->query((int) $company->id)
@@ -115,6 +121,7 @@ class PaymentForm extends Component
         if ($invoice_id !== null) {
             $inv = SalesInvoice::where('company_id', $company->id)->find($invoice_id);
             if ($inv !== null) {
+                $this->sourceInvoiceId = (int) $inv->id;
                 if ($user->hasPermissionTo('sales.invoice.view')) {
                     $this->sourceInvoicePublicId = $inv->public_id;
                     $this->sourceInvoiceNumber = $inv->invoice_number ?? __('sales.draft');
@@ -129,15 +136,31 @@ class PaymentForm extends Component
                     $this->currency_code = $accWithCurr->currency_code;
                     $this->payment_method = $accWithCurr->account_type === 'bank' ? 'bank_transfer' : 'cash';
                 }
-                $this->amount = (string) $inv->calculateOutstanding();
+                $this->amount = SalesMoneyFormatter::formatMoneyInput($inv->calculateOutstanding());
             }
         }
 
         $this->loadOpenInvoices();
+
+        if ($this->sourceInvoiceId !== null) {
+            foreach ($this->allocations as $idx => $alloc) {
+                if ($alloc['sales_invoice_id'] === $this->sourceInvoiceId && $alloc['document_currency_code'] === $this->currency_code) {
+                    $due = BigDecimal::of($alloc['outstanding']);
+                    $currentAmount = BigDecimal::of($this->amount ?: '0');
+                    $allocAmount = $currentAmount->isGreaterThan($due) ? $due : $currentAmount;
+                    $this->allocations[$idx]['allocated_amount'] = (string) $allocAmount;
+                    break;
+                }
+            }
+            $this->recalculateAllocations();
+        }
     }
 
     public function updatedCustomerId(): void
     {
+        $this->sourceInvoiceId = null;
+        $this->sourceInvoicePublicId = null;
+        $this->sourceInvoiceNumber = null;
         $this->loadOpenInvoices();
     }
 
@@ -157,7 +180,33 @@ class PaymentForm extends Component
 
     public function updatedAmount(): void
     {
+        $this->reapplySourceAllocation();
         $this->recalculateAllocations();
+    }
+
+    private function reapplySourceAllocation(): void
+    {
+        if ($this->sourceInvoiceId === null) {
+            return;
+        }
+
+        $cleanAmount = trim((string) $this->amount);
+        $isValidAmount = preg_match('/^\d+(?:\.\d{1,6})?$/D', $cleanAmount) === 1 && BigDecimal::of($cleanAmount)->isPositive();
+        $currentAmount = $isValidAmount ? BigDecimal::of($cleanAmount) : BigDecimal::zero();
+
+        foreach ($this->allocations as $idx => $alloc) {
+            if ($alloc['sales_invoice_id'] === $this->sourceInvoiceId) {
+                if ($alloc['document_currency_code'] === $this->currency_code && $isValidAmount) {
+                    $due = BigDecimal::of($alloc['outstanding']);
+                    $allocAmount = $currentAmount->isGreaterThan($due) ? $due : $currentAmount;
+                    $this->allocations[$idx]['allocated_amount'] = (string) $allocAmount;
+                } else {
+                    $this->allocations[$idx]['allocated_amount'] = '0.00';
+                }
+            } else {
+                $this->allocations[$idx]['allocated_amount'] = '0.00';
+            }
+        }
     }
 
     public function loadOpenInvoices(): void
@@ -198,11 +247,22 @@ class PaymentForm extends Component
             }
         }
 
+        if ($this->sourceInvoiceId !== null) {
+            $this->reapplySourceAllocation();
+        }
+
         $this->recalculateAllocations();
     }
 
     public function autoAllocate(): void
     {
+        if ($this->sourceInvoiceId !== null) {
+            $this->reapplySourceAllocation();
+            $this->recalculateAllocations();
+
+            return;
+        }
+
         $remaining = BigDecimal::of($this->amount ?: '0');
 
         foreach ($this->allocations as $idx => $alloc) {
@@ -246,7 +306,7 @@ class PaymentForm extends Component
     /** Copy a fresh same-currency document balance into one draft allocation. */
     public function payRemaining(int $index): void
     {
-        $this->authorizePaymentAction();
+        $company = $this->authorizePaymentAction();
         if (! isset($this->allocations[$index])) {
             return;
         }
@@ -256,6 +316,10 @@ class PaymentForm extends Component
 
             return;
         }
+        if ($this->currency_code === $company->base_currency_code) {
+            $this->exchange_rate = '1.0000000000';
+        }
+
         $this->validate(['amount' => ['required', 'string', 'regex:/^\d{1,12}(?:\.\d{1,6})?$/D'],
             'exchange_rate' => ['nullable', 'string', 'regex:/^(?:\s*|\d{1,12}(?:\.\d{1,10})?)$/D'], ...$this->allocationRules()]);
         $remaining = $document->calculateOutstanding();
@@ -279,8 +343,33 @@ class PaymentForm extends Component
     /** Fill payment amount only; allocation edits remain deliberate operator choices. */
     public function useFullBalance(): void
     {
-        $this->authorizePaymentAction();
+        $company = $this->authorizePaymentAction();
+        if ($this->currency_code === $company->base_currency_code) {
+            $this->exchange_rate = '1.0000000000';
+        }
+
         $this->validate(['exchange_rate' => ['nullable', 'string', 'regex:/^(?:\s*|\d{1,12}(?:\.\d{1,10})?)$/D'], ...$this->allocationRules()]);
+
+        if ($this->sourceInvoiceId !== null) {
+            $document = $this->quickBalanceDocuments()->whereKey($this->sourceInvoiceId)->first();
+            if ($document !== null) {
+                $remaining = $document->calculateOutstanding();
+                if ($remaining->isPositive()) {
+                    $this->amount = SalesMoneyFormatter::formatMoneyInput($remaining);
+                    foreach ($this->allocations as $idx => $alloc) {
+                        if ($alloc['sales_invoice_id'] === $this->sourceInvoiceId) {
+                            $this->allocations[$idx]['allocated_amount'] = (string) $remaining;
+                        } else {
+                            $this->allocations[$idx]['allocated_amount'] = '0.00';
+                        }
+                    }
+                    $this->recalculateAllocations();
+
+                    return;
+                }
+            }
+        }
+
         $total = BigDecimal::zero();
         foreach ($this->quickBalanceDocuments()->get() as $document) {
             $remaining = $document->calculateOutstanding();
@@ -288,14 +377,14 @@ class PaymentForm extends Component
                 $total = $total->plus($remaining);
             }
         }
-        $this->amount = (string) $total;
+        $this->amount = SalesMoneyFormatter::formatMoneyInput($total);
         $this->recalculateAllocations();
     }
 
     /** @return Builder<SalesInvoice> */
     private function quickBalanceDocuments(): Builder
     {
-        $this->authorizePaymentAction();
+        $company = $this->authorizePaymentAction();
         $account = app(EligibleMoneyAccounts::class)->query($this->pageCompanyId)->find($this->money_account_id);
         abort_unless($account !== null && $account->currency_code === $this->currency_code, 403);
         abort_unless(Customer::where('company_id', $this->pageCompanyId)->where('status', 'active')->whereKey($this->customer_id)->exists(), 403);
@@ -309,7 +398,10 @@ class PaymentForm extends Component
     public function recalculateAllocations(): void
     {
         $this->validate($this->allocationRules());
-        $preview = app(ReceiptPreview::class)->calculate($this->amount, $this->exchange_rate, $this->allocations, $this->currency_code);
+        $cleanAmount = trim((string) $this->amount);
+        $isValidAmount = preg_match('/^\d+(?:\.\d{1,6})?$/D', $cleanAmount) === 1 && BigDecimal::of($cleanAmount)->isPositive();
+        $safeAmount = $isValidAmount ? $cleanAmount : '0.00';
+        $preview = app(ReceiptPreview::class)->calculate($safeAmount, $this->exchange_rate, $this->allocations, $this->currency_code);
         $this->allocations = $preview['allocations'];
         $this->allocatedTotal = $preview['allocated'];
         $this->unallocatedAmount = $preview['unallocated'];
@@ -334,6 +426,10 @@ class PaymentForm extends Component
 
         if (! $user->hasPermissionTo('money.receipt.create')) {
             abort(403, 'Unauthorized.');
+        }
+
+        if ($this->currency_code === $company->base_currency_code) {
+            $this->exchange_rate = '1.0000000000';
         }
 
         $this->validate([
@@ -405,8 +501,19 @@ class PaymentForm extends Component
             'allocations' => $allocList,
         ];
 
+        if (! empty($allocList) && ! $user->hasPermissionTo('money.receipt.allocate')) {
+            abort(403, 'Unauthorized to allocate receipts.');
+        }
+
         $payment = $postAction->execute($company, $user, $payload);
         session()->flash('success', __('sales.posted_successfully'));
+
+        if ($this->isModal) {
+            $this->dispatch('payment-recorded');
+            $this->dispatch('close-payment-modal');
+
+            return null;
+        }
 
         return redirect()->route('payments.show', $payment->public_id);
     }

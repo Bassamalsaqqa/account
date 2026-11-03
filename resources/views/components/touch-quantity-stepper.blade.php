@@ -1,24 +1,81 @@
 @props([
     'index',
     'allowsFraction' => false,
+    'step' => null,
+    'min' => '0',
+    'max' => null,
     'id' => null,
     'ariaLabel' => null,
     'disabled' => false,
+    'field' => 'quantity',
 ])
 
 @php
-    $inputId = $id ?? 'line-qty-' . $index;
+    $field = $field ?? 'quantity';
+    $inputId = $id ?? 'line-' . $field . '-' . $index;
     $label = $ariaLabel ?? __('mobile.quantity') . ' ' . ($index + 1);
+    $quantum = $step ?? ($allowsFraction ? '0.01' : '1');
+    $minVal = $min ?? '0';
+    $maxVal = $max !== null ? (string) $max : null;
 @endphp
 
 <div class="inline-flex flex-col items-start gap-1 touch-manipulation"
      x-data="{
          pending: 0, failed: false, recovering: false,
+         optimisticQty: null, confirmedQty: null,
+         batchEpoch: 0,
          tap(direction) {
+             const input = this.$refs.qtyInput;
+             this.batchEpoch = (this.batchEpoch || 0) + 1;
+             const currentEpoch = this.batchEpoch;
+             if (!this.optimisticQty) {
+                 this.optimisticQty = input.value;
+                 this.confirmedQty = input.value;
+             }
+             if (window.stepExactString) {
+                 this.optimisticQty = window.stepExactString(
+                     this.optimisticQty,
+                     direction,
+                     '{{ $quantum }}',
+                     '{{ $minVal }}',
+                     @if($maxVal !== null) '{{ $maxVal }}' @else null @endif
+                 );
+                 input.value = this.optimisticQty;
+             }
              this.pending++;
-             window.enqueueQuantityStep($wire, {{ $index }}, direction)
-                 .catch(() => { this.failed = true; })
-                 .finally(() => { this.pending--; });
+             window.enqueueQuantityStep($wire, {{ $index }}, direction, {field: '{{ $field }}'})
+                 .then(result => {
+                     if (this.batchEpoch !== currentEpoch) return;
+                     if (result && typeof result.quantity === 'string') {
+                         this.confirmedQty = result.quantity;
+                     }
+                 })
+                 .catch(() => {
+                     if (this.batchEpoch !== currentEpoch) return;
+                     this.failed = true;
+                     if (this.confirmedQty !== null) {
+                         input.value = this.confirmedQty;
+                     }
+                 })
+                 .finally(() => {
+                     this.pending--;
+                     if (this.pending === 0 && this.batchEpoch === currentEpoch) {
+                         if (!this.failed && this.confirmedQty !== null) {
+                             input.value = this.confirmedQty;
+                         }
+                         this.optimisticQty = null;
+                     }
+                 });
+         },
+         onInputFocus() {
+             if (this.pending > 0 && window.flushQuantityBatch) {
+                 window.flushQuantityBatch($wire);
+             }
+         },
+         onInputTyped() {
+             this.batchEpoch = (this.batchEpoch || 0) + 1;
+             this.optimisticQty = null;
+             this.confirmedQty = null;
          },
          async resync() {
              this.recovering = true;
@@ -29,38 +86,42 @@
      }"
      @document-operation-state.window="if ($event.detail.id === $wire.$id) { if ($event.detail.blocked) failed = true; else if (!$event.detail.busy) failed = false; }">
     <div class="inline-flex items-stretch border border-border rounded-control bg-white shadow-xs overflow-hidden">
-        <!-- Decrement Button (>=44px touch target) -->
+        <!-- Decrement Button (>=44px touch target, clear contrast) -->
         <button type="button"
                 wire:loading.attr="disabled"
                 wire:target="save,saveDraft,selectProduct,changeUnit,scanCameraBarcode,addLine,removeLine"
                 :disabled="failed || recovering || (typeof saving !== 'undefined' && saving) || {{ $disabled ? 'true' : 'false' }}"
                 @click="tap('down')"
-                class="min-h-[44px] min-w-[44px] px-3 flex items-center justify-center bg-surface-soft hover:bg-slate-200 active:bg-slate-300 text-text-primary border-e border-border text-base font-bold transition-colors select-none cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                class="min-h-[44px] min-w-[44px] px-3 flex items-center justify-center bg-rose-50 hover:bg-rose-100 active:bg-rose-200 text-rose-700 border-e border-border text-lg font-bold transition-colors select-none cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                 aria-label="{{ __('mobile.decrement') }} {{ $index + 1 }}">
             <span aria-hidden="true">−</span>
         </button>
 
-        <!-- Quantity Input -->
+        <!-- Quantity Input (stays enabled during batch steps for stable display/typing, readonly during tap batch) -->
         <input id="{{ $inputId }}"
+               x-ref="qtyInput"
+               @focus="onInputFocus()"
+               @input="onInputTyped()"
                aria-label="{{ $label }}"
-               @error('lines.'.$index.'.quantity') aria-invalid="true" aria-describedby="{{ $inputId }}-error" @enderror
+               @error('lines.'.$index.'.'.$field) aria-invalid="true" aria-describedby="{{ $inputId }}-error" @enderror
                type="text"
                inputmode="{{ $allowsFraction ? 'decimal' : 'numeric' }}"
-               wire:model.blur="lines.{{ $index }}.quantity"
+               wire:model.blur="lines.{{ $index }}.{{ $field }}"
                wire:change="recalculate"
                dir="ltr"
                required
-               :disabled="pending > 0 || (typeof documentBusy !== 'undefined' && documentBusy) || failed || recovering || (typeof saving !== 'undefined' && saving) || {{ $disabled ? 'true' : 'false' }}"
+               :readonly="pending > 0"
+               :disabled="(typeof documentBusy !== 'undefined' && documentBusy) || failed || recovering || (typeof saving !== 'undefined' && saving) || {{ $disabled ? 'true' : 'false' }}"
                @disabled($disabled)
                class="min-h-[44px] w-16 text-center border-0 bg-white text-xs font-mono font-bold text-text-primary focus:ring-1 focus:ring-primary focus:outline-hidden disabled:opacity-60" />
 
-        <!-- Increment Button (>=44px touch target) -->
+        <!-- Increment Button (>=44px touch target, clear contrast) -->
         <button type="button"
                 wire:loading.attr="disabled"
                 wire:target="save,saveDraft,selectProduct,changeUnit,scanCameraBarcode,addLine,removeLine"
                 :disabled="failed || recovering || (typeof saving !== 'undefined' && saving) || {{ $disabled ? 'true' : 'false' }}"
                 @click="tap('up')"
-                class="min-h-[44px] min-w-[44px] px-3 flex items-center justify-center bg-surface-soft hover:bg-slate-200 active:bg-slate-300 text-text-primary border-s border-border text-base font-bold transition-colors select-none cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                class="min-h-[44px] min-w-[44px] px-3 flex items-center justify-center bg-emerald-50 hover:bg-emerald-100 active:bg-emerald-200 text-emerald-700 border-s border-border text-lg font-bold transition-colors select-none cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                 aria-label="{{ __('mobile.increment') }} {{ $index + 1 }}">
             <span aria-hidden="true">+</span>
         </button>

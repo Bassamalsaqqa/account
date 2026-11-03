@@ -9,6 +9,8 @@ use App\Domain\Money\ValueObjects\MoneyAmount;
 use App\Services\Purchasing\PurchaseDocumentRules;
 use App\Services\Purchasing\PurchasePayablePosition;
 use App\Services\Purchasing\PurchasePostingCommandBuilder;
+use App\Services\Purchasing\PurchasePostingScope;
+use App\Services\Purchasing\PurchaseReceiptCapability;
 use App\Services\Sales\SalesActorGuard;
 use App\Support\Tenancy\BelongsToCompany;
 use Brick\Math\BigDecimal;
@@ -79,26 +81,34 @@ class Purchase extends Model
 
     private bool $completingPost = false;
 
-    public function completeCanonicalPost(PostingBatch $batch, string $number, User $actor): void
+    public function completeCanonicalPost(?PostingBatch $batch, string $number, User $actor, ?PurchaseReceiptCapability $capability = null): void
     {
         if (DB::transactionLevel() === 0) {
             throw new ImmutableRecordException('Purchase completion requires an existing outer posting transaction.');
+        }
+        try {
+            app(PurchasePostingScope::class)->assertCompletion($this, $actor, $capability, $number);
+        } catch (\InvalidArgumentException $exception) {
+            throw new ImmutableRecordException($exception->getMessage(), previous: $exception);
         }
         DB::transaction(function () use ($batch, $number, $actor): void {
             $company = app(SalesActorGuard::class)->lockAndAuthorize((int) $this->company_id, $actor, 'purchasing.purchase.post');
             app(SalesActorGuard::class)->lockAndAuthorize((int) $this->company_id, $actor, 'purchasing.cost.view');
             $this->assertMutableDraft();
-            $persisted = PostingBatch::where('company_id', $this->company_id)->findOrFail($batch->id);
-            if ($this->isDirty() || trim($number) === '' || (int) $persisted->posted_by !== (int) $actor->id
-                || $persisted->idempotency_key !== 'purchase_'.$this->id.'_posting' || $persisted->status !== 'posted'
-                || ! app(PurchasePostingCommandBuilder::class)->build($company, $this, $number, $actor)->matchesBatch($persisted)) {
+            $command = app(PurchasePostingCommandBuilder::class)->build($company, $this, $number, $actor);
+            $persisted = $batch === null ? null : PostingBatch::where('company_id', $this->company_id)->findOrFail($batch->id);
+            if ($this->isDirty() || trim($number) === ''
+                || ($command === null && $persisted !== null)
+                || ($command !== null && ($persisted === null || (int) $persisted->posted_by !== (int) $actor->id
+                    || $persisted->idempotency_key !== 'purchase_'.$this->id.'_posting' || $persisted->status !== 'posted'
+                    || ! $command->matchesBatch($persisted)))) {
                 throw new ImmutableRecordException('Coherent canonical Purchase posting is required.');
             }
             $this->completingPost = true;
             try {
                 $this->status = self::STATUS_POSTED;
                 $this->purchase_number = $number;
-                $this->posting_batch_id = $persisted->id;
+                $this->posting_batch_id = $persisted?->id;
                 $this->posted_at = now();
                 $this->posted_by = $actor->id;
                 $this->save();

@@ -30,11 +30,13 @@
     <!-- Filters & Search Toolbar -->
     <x-refinement-filters :active-count="(int) filled($categoryFilter) + (int) filled($brandFilter) + (int) ($statusFilter !== 'all') + (int) $lowStockOnly + (int) $expiryOnly + (int) filled($cameraBarcode)">
         <x-slot:search>
-            <div class="flex min-w-0 items-center gap-2"><input id="products-search" aria-label="{{ __('inventory.search_products_placeholder') }}" type="text"
-                           wire:model.live.debounce.300ms="search"
-                           placeholder="{{ __('inventory.search_products_placeholder') }}"
-                           class="min-h-11 w-full min-w-0 rounded-control border border-border bg-white px-3 py-2 text-sm focus:border-primary focus:ring-primary" />
-<x-camera-scanner /></div>
+            <div class="flex min-w-0 items-center rounded-control border border-border bg-white focus-within:border-primary focus-within:ring-1 focus-within:ring-primary">
+                <input id="products-search" aria-label="{{ __('inventory.search_products_placeholder') }}" type="text"
+                       wire:model.live.debounce.300ms="search"
+                       placeholder="{{ __('inventory.search_products_placeholder') }}"
+                       class="min-h-11 w-full min-w-0 rounded-control border-0 bg-transparent px-3 py-2 text-sm text-text-primary focus:ring-0 outline-hidden" />
+                <x-camera-scanner :compact="true" button-class="min-h-11 min-w-11 inline-flex items-center justify-center rounded-control text-primary hover:bg-surface-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary" />
+            </div>
         </x-slot:search>
         <x-slot:statuses>
         <button type="button" wire:click="$set('statusFilter', 'all')" wire:loading.attr="disabled" wire:target="statusFilter" aria-pressed="{{ $statusFilter === 'all' ? 'true' : 'false' }}" class="touch-action shrink-0 border text-sm font-semibold {{ $statusFilter === 'all' ? 'border-primary bg-primary text-white' : 'border-border bg-white text-text-secondary' }}">{{ __('inventory.filter_all_status') }}</button>
@@ -179,7 +181,7 @@
                                         <x-badge>{{ __('inventory.inactive') }}</x-badge>
                                     @endif
                                     @if ($product->track_expiry)
-                                        <x-badge variant="warn">FEFO</x-badge>
+                                        <x-badge variant="muted">{{ __('inventory.expiry_date') }}</x-badge>
                                     @endif
                                 </div>
                             </td>
