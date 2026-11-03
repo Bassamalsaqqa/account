@@ -6,6 +6,8 @@ namespace App\Application\AI;
 
 use App\Application\Platform\SupportViewContext;
 use App\Application\Platform\TenantWriteAccess;
+use App\Application\Reporting\Security\ReportingGuard;
+use App\Exceptions\NoActiveCompanyException;
 use App\Models\AiCompanyPolicy;
 use App\Models\AiProviderConnection;
 use App\Models\AiUserPreference;
@@ -149,23 +151,24 @@ final class AiGovernance
             return [];
         }
         $enabledIntents = $policy->settings['allowed_intents'] ?? ['sales', 'purchase'];
+        try {
+            // Enumeration is presentation, not a business event. Take one fresh
+            // team-aware snapshot instead of locking company/membership per label.
+            // authorizeUse and canonical execution still authorize independently.
+            $permissions = app(ReportingGuard::class)->readPermissions($company, $actor, 'ai.assistant.use');
+        } catch (AuthorizationException|NoActiveCompanyException) {
+            return [];
+        }
         $allowed = [];
         foreach ([
             'sales' => ['ai.assistant.use', 'ai.sales.use', 'sales.invoice.create', 'sales.invoice.view'],
             'purchase' => ['ai.assistant.use', 'ai.purchases.use', 'purchasing.purchase.create', 'purchasing.purchase.view', 'purchasing.cost.view'],
-        ] as $intent => $permissions) {
+        ] as $intent => $required) {
             if (! in_array($intent, $enabledIntents, true)) {
                 continue;
             }
-            try {
-                DB::transaction(function () use ($company, $actor, $permissions): void {
-                    foreach ($permissions as $permission) {
-                        $this->authorizeCapability($company, $actor, $permission);
-                    }
-                });
+            if (array_diff($required, $permissions) === []) {
                 $allowed[] = $intent;
-            } catch (AuthorizationException) {
-                // No candidate, cost or credential data accompanies a denied capability.
             }
         }
 

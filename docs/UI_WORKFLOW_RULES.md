@@ -42,3 +42,11 @@ The workflow correction is being finalized from baseline `574746f`; production r
 - Browser inspection covered responsive layouts, Arabic/English, modal validation and dismissal without production transactions. Final complete QA, dependency audits, source-pinned release evidence and fresh production recovery/reconciliation checks remain mandatory before deployment acceptance.
 
 The ordinary dashboard must stay concise: visible dates, useful colored cards, compact actions and no explanatory wall. Never mark a worker report as acceptance without inspecting the actual source and evidence.
+
+## Navigation workload rule
+
+- Treat ordinary page navigation as a small authorized read. Do not lock company rows repeatedly to enumerate UI options. Use a finite fresh permission snapshot for presentation; reauthorize independently at canonical execution and delivery. Do not cache grants or tenant data across requests.
+- Closed assistant/dialog controls must not resolve record details or enumerate panel/report choices until opened. Keep the launcher's permission and policy visibility checks. No provider request may result from ordinary navigation.
+- Serve the established IBM Plex webfonts from the versioned first-party build, with their full original license. Avoid an external render-blocking font stylesheet on tenant, platform and sign-in pages. Keep swap rendering, hashed caching, atomic manifest replacement and no source maps.
+- Distinguish cold template/bytecode work from warm rendering and SQL. Blade precompilation and web bytecode warming are separate; verify the important entry routes in the web runtime before release. Do not declare all slowness solved from a warm list request or introduce SPA caching that can replay stale tenant/permission state without an independent design review.
+- The 3 November follow-up reproduced 37 queries and row locks in intent enumeration; the corrected disposable regression records 3 read queries, with fresh membership/policy/permission revocation checks. Granular local render observations measured invoice and Settings cold views at roughly 1.2/1.8 seconds, versus 6/12 ms for the same cached templates. These are bounded observations, not a universal latency guarantee.

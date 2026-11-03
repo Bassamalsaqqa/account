@@ -164,9 +164,9 @@ final class PlatformFinalSecurityContractTest extends TestCase
     }
 
     /**
-     * Contract 3: Revoke then regrant changes revision and invalidates earlier Fortify MFA session proof.
+     * Contract 3: Regrant invalidates sensitive-action proof; grant-authorized browsing stays available.
      */
-    public function test_operator_revoke_then_regrant_cycle_invalidates_prior_fortify_mfa_proof(): void
+    public function test_operator_revoke_then_regrant_cycle_invalidates_sensitive_action_proof(): void
     {
         [$operator, $grant] = $this->createOperator(['recovery-step-1', 'recovery-step-2']);
 
@@ -192,8 +192,12 @@ final class PlatformFinalSecurityContractTest extends TestCase
 
         $this->assertSame(3, $grant->fresh()->revision);
 
-        // Step 4: Earlier proof cannot authorize the regrant; require real reauthentication.
-        $this->get('/platform')->assertRedirect(route('password.confirm'));
+        // Browsing uses the new active grant; a mutation cannot reuse revision-1 proof.
+        $this->get('/platform')->assertOk();
+        $before = PlatformAuditEvent::query()->where('event_key', 'company.provisioned')->count();
+        $this->post('/platform/companies', [])->assertRedirect(route('password.confirm'));
+        $this->assertSame($before, PlatformAuditEvent::query()->where('event_key', 'company.provisioned')->count());
+        $this->assertSame(1, session(PlatformSessionProof::KEY)['grant_revision'] ?? null);
 
         // Step 5: Operator logs out of old session and completes a fresh Fortify MFA challenge
         auth()->logout();

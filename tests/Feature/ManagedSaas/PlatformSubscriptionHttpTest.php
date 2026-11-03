@@ -115,11 +115,13 @@ final class PlatformSubscriptionHttpTest extends TestCase
         $this->get($this->showEndpoint())->assertForbidden();
     }
 
-    public function test_expired_session_proof_redirects_to_password_confirm(): void
+    public function test_expired_sensitive_proof_allows_browsing_but_requires_password_for_billing(): void
     {
         $this->travel(61)->minutes();
 
-        $this->get($this->showEndpoint())->assertRedirect(route('password.confirm'));
+        $this->get($this->showEndpoint())->assertOk();
+        $this->postJson($this->actionEndpoint('configure'), $this->configPayload())->assertStatus(423);
+        $this->assertDatabaseCount('platform_subscriptions', 0);
 
         $this->travelBack();
     }
