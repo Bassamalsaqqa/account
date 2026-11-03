@@ -36,6 +36,15 @@ tbody tr:has(a[href]):hover { background-color: var(--color-surface-soft); }
     border-collapse: collapse;
 }
 
+/* LTR identifiers keep their reading order without moving Arabic cells away
+   from their headings. Explicit end/center alignment remains intentional. */
+:is(.business-app, .platform-admin):dir(rtl) table :is(th, td)[dir="ltr"]:not(.text-end):not(.text-center):not(.text-right) {
+    text-align: right;
+}
+:is(.business-app, .platform-admin):dir(ltr) table :is(th, td)[dir="ltr"]:not(.text-end):not(.text-center):not(.text-right) {
+    text-align: left;
+}
+
 .data-table th,
 .data-table td {
     vertical-align: middle;

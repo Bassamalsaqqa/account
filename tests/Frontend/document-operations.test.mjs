@@ -73,6 +73,17 @@ test('Save Scan and Add flush a pending batch and wait behind it',async()=>{
         if(method!=='addLine') assert.equal(calls[1].quantity,'21');
     }
 });
+
+test('one-step Confirm reaches the server after pending quantity changes', async () => {
+    const {wire, calls} = fixture('confirm-after-quantity', 5);
+    wire.saveAndConfirm = async () => calls.push({method: 'confirm', quantity: wire.lines[0].quantity});
+    const tap = enqueueQuantityStep(wire, 0, 'up');
+    const confirm = enqueueDocumentOperation(wire, 'saveAndConfirm');
+    await Promise.all([tap, confirm]);
+    assert.deepEqual(calls.map(call => call.method), ['quantity', 'confirm']);
+    assert.equal(calls[1].quantity, '2');
+    assert.equal(isDocumentBlocked(wire), false);
+});
 test('taps during an in-flight batch reserve FIFO before immediate Save and Scan',async()=>{
     const {wire,calls}=fixture('inflight',40);
     const first=enqueueQuantityStep(wire,0,'up',{debounceMs:0});await wait(5);

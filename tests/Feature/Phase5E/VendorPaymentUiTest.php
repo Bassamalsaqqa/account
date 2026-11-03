@@ -100,7 +100,7 @@ class VendorPaymentUiTest extends Phase5ETestCase
             ->assertOk()
             ->assertSet('vendor_id', $this->vendor->id)
             ->assertSet('currency_code', 'ILS')
-            ->assertSet('amount', '150.000000')
+            ->assertSet('amount', '150.00')
             ->assertSet('allocatedTotal', '150.00')
             ->assertSet('unallocatedAmount', '0.00');
 

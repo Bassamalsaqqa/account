@@ -25,7 +25,7 @@
     <p class="p-3 bg-info-bg text-info text-sm rounded-control">{{ __('purchasing.draft_notice') }}</p>
     @include('livewire.ai.unsaved-notice')
     @if($taxes->isNotEmpty())<p class="rounded-control border border-border bg-surface-soft p-3 text-sm text-text-secondary">{{ __('refinement.tax_help') }}</p>@endif
-    @if($errors->any())<div role="alert" class="p-3 bg-danger-bg text-danger text-sm rounded-control"><ul class="list-disc ps-4">@foreach($errors->all() as $error)<li>{{ $error }}</li>@endforeach</ul></div>@endif
+    <x-form-attention />
     @if($duplicateWarning)<p role="status" class="p-3 bg-warning-bg text-warning text-sm rounded-control">{{ __('purchasing.duplicate_vendor_invoice') }}</p>@endif
     @if ($receivingStock)
         <p role="status" class="text-sm text-text-secondary">{{ __('quick_product.receive_help') }}</p>

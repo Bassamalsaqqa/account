@@ -1,5 +1,5 @@
 const queues = new Map();
-const allowed = new Set(['scanCameraBarcode', 'incrementQuantity', 'decrementQuantity', 'stepQuantity', 'addLine', 'saveDraft', 'save', 'stepInventoryQuantity', 'stepReturnQuantity', 'returnFullRemaining', 'payRemaining', 'useFullBalance']);
+const allowed = new Set(['scanCameraBarcode', 'incrementQuantity', 'decrementQuantity', 'stepQuantity', 'addLine', 'saveDraft', 'saveAndConfirm', 'save', 'stepInventoryQuantity', 'stepReturnQuantity', 'returnFullRemaining', 'payRemaining', 'useFullBalance']);
 const identityFields = ['id', 'product_id', 'product_unit_id', 'item_description', 'unit_price', 'unit_cost', 'discount_type', 'discount_value', 'tax_rate_id', 'tax_inclusive', 'lot_id', 'lots', 'lot_allocations', 'warehouse_id', 'purchase_line_id', 'sales_invoice_line_id'];
 const keyFor = wire => wire.$id || wire.id || wire;
 const copy = value => JSON.parse(JSON.stringify(value));
@@ -28,6 +28,18 @@ function seal(state) {
     state.open = null;
 }
 function settle(job, method, result) { for (const deferred of job.waiters) deferred[method](result); }
+function focusSubmissionError(wire) {
+    if (typeof window === 'undefined' || !window.requestAnimationFrame) return;
+    // Livewire morphing and the caller's saving=false must finish before focus.
+    window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
+        const root = wire.$el;
+        if (!root?.querySelector('[data-form-attention]')) return;
+        const field = [...root.querySelectorAll('[aria-invalid=true]')].find(el => el.getClientRects().length && !el.disabled);
+        const target = field ?? root.querySelector('[data-form-attention]');
+        target?.focus();
+        target?.scrollIntoView({block: 'center', behavior: 'instant'});
+    }));
+}
 function quarantine(state, job, failure) {
     state.blocked = true;
     state.failed = [job];
@@ -73,6 +85,7 @@ async function drain(state) {
         clearTimeout(job.timeout);
         state.active = null;
         announce(state);
+        if (job.kind !== 'quantity' && ['save', 'saveDraft', 'saveAndConfirm'].includes(job.method)) focusSubmissionError(state.wire);
         if (!state.blocked && !state.jobs.length) queues.delete(keyFor(state.wire));
         else void drain(state);
     }

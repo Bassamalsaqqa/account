@@ -16,6 +16,7 @@
      @keydown.window.prevent.meta.s="if (!$event.repeat) handleSaveDraft()"
      @keydown.window.prevent.alt.n="if (!$event.repeat) handleAddLine()">
     <p x-cloak x-show="operationFailed" role="alert" class="text-sm text-danger">{{ __('camera.network_error') }}</p>
+    <x-form-attention />
     <!-- Header -->
     <div class="flex items-center justify-between gap-4">
         <div>

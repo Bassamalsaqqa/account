@@ -183,7 +183,7 @@ final class PurchasingAccountingBoundaryTest extends Phase5DTestCase
             });
             $this->fail('Expected rejection due to unverified persisted batch.');
         } catch (InvalidArgumentException $e) {
-            $this->assertStringContainsString('verified persisted canonical batch', $e->getMessage());
+            $this->assertSame('Purchase posting requires verified canonical completion.', $e->getMessage());
         } finally {
             $ownership->setValue($owner, null);
         }

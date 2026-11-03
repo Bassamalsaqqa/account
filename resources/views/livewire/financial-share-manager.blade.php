@@ -13,8 +13,8 @@
                 <p><bdi dir="ltr" class="tabular-nums font-semibold">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($group['closing_balance'], $currency) }} {{ $currency }}</bdi> — {{ __('documents.closing_balance') }}</p>
             @endforeach
         </div>
-    @elseif($previewError)
-        <p role="alert" aria-live="assertive" class="text-xs text-danger">{{ $previewError }}</p>
+    @else
+        <p role="alert" aria-live="assertive" class="text-xs text-danger">{{ $previewError ?? __('sharing.invalid_dates') }}</p>
     @endif
     <form wire:submit="create" class="grid gap-3 sm:grid-cols-2">
         <div>

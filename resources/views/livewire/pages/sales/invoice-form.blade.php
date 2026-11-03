@@ -46,6 +46,7 @@
         </div>
     @endif
 
+    <x-form-attention />
     <!-- Quick Barcode Scanner Bar -->
     @include('livewire.ai.unsaved-notice')
 

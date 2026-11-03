@@ -56,8 +56,8 @@ return [
     // Known Blocker & Warning Codes
     'code_warehouse_required' => 'المستودع مطلوب لهذه المعاملة.',
     'code_warehouse_inactive' => 'المستودع المحدد غير نشط.',
-    'code_insufficient_stock' => 'المخزون المتوفر غير كافٍ لتغطية بنود الفاتورة.',
-    'code_insufficient_fefo_stock' => 'المخزون المتوفر وفق أسبقية الصلاحية (FEFO) غير كافٍ.',
+    'code_insufficient_stock' => 'الكمية المطلوبة مش متوفرة. قلّل الكمية أو أضف المخزون أولاً.',
+    'code_insufficient_fefo_stock' => 'الكمية الصالحة للبيع مش كافية. قلّل الكمية أو راجع المخزون.',
     'code_customer_inactive' => 'العميل المحدد غير نشط.',
     'code_no_due_date' => 'تاريخ الاستحقاق غير محدد للفاتورة.',
     'code_credit_limit_exceeded' => 'تم تجاوز الحد الائتماني المسموح به للعميل.',

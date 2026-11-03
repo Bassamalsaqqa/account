@@ -56,8 +56,8 @@ return [
     // Known Blocker & Warning Codes
     'code_warehouse_required' => 'A warehouse is required for this transaction.',
     'code_warehouse_inactive' => 'The selected warehouse is inactive.',
-    'code_insufficient_stock' => 'Insufficient available stock for the invoice items.',
-    'code_insufficient_fefo_stock' => 'Insufficient stock matching FEFO allocation.',
+    'code_insufficient_stock' => 'Not enough stock. Reduce the quantity or add stock first.',
+    'code_insufficient_fefo_stock' => 'Not enough stock. Reduce the quantity or add stock first.',
     'code_customer_inactive' => 'The selected customer is inactive.',
     'code_no_due_date' => 'No due date specified for this invoice.',
     'code_credit_limit_exceeded' => 'Customer credit limit has been exceeded.',

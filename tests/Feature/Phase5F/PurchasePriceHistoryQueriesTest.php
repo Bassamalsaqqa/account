@@ -823,7 +823,10 @@ class PurchasePriceHistoryQueriesTest extends TestCase
         $queries = [];
         $this->assertCount(8, $query->execute($this->product, $this->company->id, limit: 8));
         $this->assertLessThanOrEqual($smallCount + 1, count($queries), 'Rendered Purchase count must not add per-document replay queries.');
-        $this->assertDoesNotMatchRegularExpression('/(stock_movements|posting_lines|purchase_line_lots|inventory_lots|inventory_cost_states)/i', implode("\n", $queries));
+        $this->assertDoesNotMatchRegularExpression('/(posting_lines|purchase_line_lots|inventory_lots|inventory_cost_states|from\s+`?stock_movements)/i', implode("\n", $queries));
+
+        $receiptChecks = array_filter($queries, fn (string $sql): bool => str_contains($sql, 'join `stock_movements`'));
+        $this->assertCount(1, $receiptChecks, 'Receipt identity is checked by one batched join, never per-document replay.');
 
         foreach (['ProductPurchaseHistoryQuery', 'VendorProductHistoryQuery', 'VendorProductPriceHistoryQuery'] as $name) {
             $source = file_get_contents(app_path('Domain/Purchasing/Queries/'.$name.'.php'));

@@ -25,6 +25,23 @@ use Tests\Feature\Phase5E\Phase5ETestCase;
 
 class HumanWorkflowRefinementTest extends Phase5ETestCase
 {
+    public function test_one_step_invoice_confirmation_marks_insufficient_stock_on_the_quantity_without_posting(): void
+    {
+        $form = Livewire::test(InvoiceForm::class)
+            ->set('customer_id', $this->customer->id)
+            ->call('selectProduct', 0, $this->product->id)
+            ->set('lines.0.quantity', '1000')->set('lines.0.unit_price', '25.00')
+            ->call('saveAndConfirm')
+            ->assertHasErrors('lines.0.quantity')
+            ->assertSee(__('commands.code_insufficient_stock'))
+            ->assertSet('showPreview', false)->assertSet('confirmationToken', null)
+            ->assertSet('previewGrandTotal', '25000.00')
+            ->assertSet('lines.0.line_total', '25000.000000');
+        $this->assertSame('draft', $form->get('invoice')->fresh()->status);
+        $this->assertDatabaseCount('posting_batches', 0);
+        $this->assertDatabaseCount('stock_movements', 0);
+    }
+
     public function test_direct_purchase_confirmation_cannot_post_an_older_saved_draft_while_quick_create_is_open(): void
     {
         foreach (['showQuickVendorModal', 'showQuickProductModal'] as $modal) {
@@ -93,7 +110,7 @@ class HumanWorkflowRefinementTest extends Phase5ETestCase
 
         $this->customer = Customer::create([
             'company_id' => $this->company->id,
-            'name_ar' => 'عميل اختبار تجربة المستخدم',
+            'name_ar' => 'Ø¹Ù…ÙŠÙ„ Ø§Ø®ØªØ¨Ø§Ø± ØªØ¬Ø±Ø¨Ø© Ø§Ù„Ù…Ø³ØªØ®Ø¯Ù…',
             'name_en' => 'UX Refinement Customer',
             'preferred_locale' => 'ar',
             'default_currency_code' => 'ILS',

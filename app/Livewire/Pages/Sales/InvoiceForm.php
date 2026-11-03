@@ -41,6 +41,7 @@ use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Contracts\View\View;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Lang;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Livewire\Attributes\Layout;
@@ -647,7 +648,34 @@ class InvoiceForm extends Component
             return null;
         }
         $this->cancelPreview();
+        $this->resetValidation();
         $response = $this->save(true, $commands);
+        if (! empty($this->previewData['blockers'])) {
+            $blockers = $this->previewData['blockers'];
+            foreach ($blockers as $blocker) {
+                $code = $blocker['code'] ?? 'generic';
+                $key = 'commands.code_'.$code;
+                $message = Lang::has($key) ? __($key) : __('commands.code_generic');
+                $field = match ($code) {
+                    'customer_inactive' => 'customer_id',
+                    'warehouse_required', 'warehouse_inactive' => 'warehouse_id',
+                    default => 'lines',
+                };
+                if (in_array($code, ['insufficient_stock', 'insufficient_fefo_stock', 'product_inactive'], true)
+                    && isset($blocker['product_id'])) {
+                    foreach ($this->lines as $index => $line) {
+                        if ((int) ($line['product_id'] ?? 0) === (int) $blocker['product_id']) {
+                            $this->addError('lines.'.$index.'.'.($code === 'product_inactive' ? 'product_id' : 'quantity'), $message);
+                        }
+                    }
+                } else {
+                    $this->addError($field, $message);
+                }
+            }
+            $this->cancelPreview();
+
+            return null;
+        }
         if ($this->showPreview && InvoiceConfirmation::canConfirmDirectly($this->previewData ?? [])) {
             return $this->confirmPost($commands);
         }
@@ -813,6 +841,7 @@ class InvoiceForm extends Component
 
         // save(true) creates authenticated server preview, displays reviewed panel, posts NO history.
         $this->previewError = null;
+        $this->recalculate();
         $choice = $this->settlementChoice();
 
         try {

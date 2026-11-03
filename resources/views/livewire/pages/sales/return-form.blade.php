@@ -12,6 +12,7 @@
     }" @document-operation-state.window="if ($event.detail.id === $wire.$id) documentBusy = $event.detail.busy">
     <x-draft-operation-feedback />
     <p x-cloak x-show="operationFailed" role="alert" class="text-sm text-danger">{{ __('camera.network_error') }}</p>
+    <x-form-attention />
     <!-- Header -->
     <div class="flex items-center justify-between gap-4">
         <div>
