@@ -4,6 +4,10 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{{ \Illuminate\Support\Facades\Lang::has('documents.' . $data->type) ? __('documents.' . $data->type) : (\Illuminate\Support\Facades\Lang::has('sales.' . $data->type) ? __('sales.' . $data->type) : $data->type) }} {{ $data->document['number'] ?? '' }}</title>
+    @php
+        $accentColor = $data->presentation['accent_color'] ?? '#255fd6';
+        $template = $data->presentation['template'] ?? 'classic';
+    @endphp
     <style>
         body {
             font-family: dejavusans, sans-serif;
@@ -15,7 +19,7 @@
             background: #ffffff;
         }
         h1 { font-size: 18pt; margin: 0 0 4px 0; color: #17253c; }
-        h2 { font-size: 14pt; margin: 0 0 6px 0; color: #255fd6; }
+        h2 { font-size: 14pt; margin: 0 0 6px 0; color: {{ $accentColor }}; }
         h3 { font-size: 12pt; margin: 12px 0 6px 0; color: #17253c; }
         h4 { font-size: 10pt; margin: 8px 0 4px 0; color: #475467; }
         p { margin: 2px 0; }
@@ -99,6 +103,51 @@
             border-bottom: none;
         }
 
+        @if ($template === 'modern')
+        /* Modern Template Enhancements */
+        .header-banner {
+            background-color: {{ $accentColor }};
+            color: #ffffff;
+            padding: 12px 14px;
+            border-radius: 6px;
+            margin-bottom: 12px;
+        }
+        table.data-table th {
+            background-color: {{ $accentColor }};
+            color: #ffffff;
+            border-bottom: none;
+        }
+        table.totals-table tr.grand-total-row td {
+            background-color: #f8fafc;
+            color: {{ $accentColor }};
+            border-top: 2px solid {{ $accentColor }};
+            border-bottom: 2px solid {{ $accentColor }};
+        }
+        .identity-box {
+            border-{{ $data->locale === 'ar' ? 'right' : 'left' }}: 4px solid {{ $accentColor }};
+        }
+        @elseif ($template === 'compact')
+        /* Compact Template Enhancements */
+        body {
+            font-size: 8pt;
+            line-height: 1.25;
+            padding: 8px;
+        }
+        h1 { font-size: 13pt; margin: 0 0 2px 0; }
+        h2 { font-size: 11pt; margin: 0 0 3px 0; }
+        h3 { font-size: 10pt; margin: 8px 0 4px 0; }
+        .header-table { margin-bottom: 6px; }
+        .identity-box { padding: 5px 8px; margin-bottom: 6px; font-size: 8pt; }
+        table.data-table { margin: 6px 0; }
+        table.data-table th { padding: 4px 4px; font-size: 7.5pt; }
+        table.data-table td { padding: 3px 4px; font-size: 8pt; }
+        table.totals-table { margin: 6px 0; }
+        table.totals-table td { padding: 3px 5px; font-size: 8pt; }
+        table.totals-table tr.grand-total-row td { font-size: 9.5pt; padding: 4px 5px; }
+        .terms-container { margin-top: 8px; padding-top: 6px; }
+        .terms-block, .notes-block { margin-bottom: 4px; font-size: 7.5pt; }
+        @endif
+
         .terms-container {
             margin-top: 16px;
             border-top: 1px solid #e2e8f0;
@@ -160,7 +209,7 @@
         }
     </style>
 </head>
-<body>
+<body class="template-{{ $template }}">
     @if($printControls ?? false)
         <div class="print-controls" style="margin-bottom:16px;">
             <button id="document-print" type="button" style="min-height:44px;padding:8px 20px;">{{ __('documents.print') }}</button>
@@ -183,6 +232,27 @@
         $status = $data->document['status'] ?? null;
         $showQr = isset($data->presentation['show_qr']) ? (bool) $data->presentation['show_qr'] : !empty($qrDataUri);
     @endphp
+
+    @if ($template === 'modern')
+        <div class="header-banner">
+            <table style="width: 100%; border-collapse: collapse;">
+                <tr>
+                    <td style="border: none; padding: 0; color: #ffffff; vertical-align: middle;">
+                        <div style="font-size: 14pt; font-weight: bold; margin-bottom: 2px;">{{ $transDoc($data->type) }}</div>
+                        <div style="font-size: 9.5pt; opacity: 0.9;" class="code" dir="ltr">{{ $data->document['number'] ?? '' }}</div>
+                    </td>
+                    <td style="border: none; padding: 0; text-align: {{ $data->locale === 'ar' ? 'left' : 'right' }}; color: #ffffff; vertical-align: middle;">
+                        @if (!empty($data->document['issue_date']))
+                            <div style="font-size: 8.5pt;">{{ $transDoc('issue_date') }}: <span class="date" dir="ltr" style="color: #ffffff;">{{ $data->document['issue_date'] }}</span></div>
+                        @endif
+                        @if (!empty($data->document['currency_code']))
+                            <div style="font-size: 8.5pt; opacity: 0.9;">{{ $transDoc('currency') }}: <span dir="ltr" style="color: #ffffff;">{{ $data->document['currency_code'] }}</span></div>
+                        @endif
+                    </td>
+                </tr>
+            </table>
+        </div>
+    @endif
 
     {{-- Header: Company & Document Info --}}
     <table class="header-table">
@@ -210,7 +280,9 @@
                 @endif
             </td>
             <td style="width: 45%; text-align: {{ $data->locale === 'ar' ? 'left' : 'right' }};">
-                <h2>{{ $transDoc($data->type) }} <span class="code" dir="ltr">{{ $data->document['number'] ?? '' }}</span></h2>
+                @if ($template !== 'modern')
+                    <h2>{{ $transDoc($data->type) }} <span class="code" dir="ltr">{{ $data->document['number'] ?? '' }}</span></h2>
+                @endif
                 @if(!empty($data->document['currency_code']))
                     <p>{{ $transDoc('currency') }}: <span dir="ltr">{{ $data->document['currency_code'] }}</span></p>
                 @endif

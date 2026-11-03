@@ -21,6 +21,8 @@ final class DocumentPresentation
             'logo' => ($settings->show_logo ?? true) ? $this->logo($companyId, $company->logo_path) : null,
             'footer' => $settings?->getAttribute('invoice_footer_'.$locale),
             'show_qr' => $settings->show_qr_by_default ?? false,
+            'template' => $settings?->getAttribute('template') ?? 'classic',
+            'accent_color' => $settings?->getAttribute('accent_color') ?? '#255fd6',
         ];
     }
 

@@ -11,6 +11,7 @@ use App\Models\User;
 use App\Services\Audit\AuditService;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
@@ -64,6 +65,8 @@ final class DocumentSettingsService
                 $settings = new CompanyDocumentSettings([
                     'company_id' => $company->id,
                     'default_document_locale' => 'ar',
+                    'template' => 'classic',
+                    'accent_color' => '#255fd6',
                     'show_logo' => true,
                     'show_qr_by_default' => false,
                     'show_product_images_on_quotes' => false,
@@ -91,6 +94,8 @@ final class DocumentSettingsService
 
             $values = Validator::make($data, [
                 'default_document_locale' => ['required', 'string', 'in:ar,en'],
+                'template' => ['nullable', 'string', 'in:classic,modern,compact'],
+                'accent_color' => ['nullable', 'string', 'in:#255fd6,#0f766e,#1e293b,#7c3aed'],
                 'show_logo' => ['required', 'boolean'],
                 'show_qr_by_default' => ['required', 'boolean'],
                 'show_product_images_on_quotes' => ['required', 'boolean'],
@@ -114,6 +119,8 @@ final class DocumentSettingsService
 
             $safeFields = [
                 'default_document_locale',
+                'template',
+                'accent_color',
                 'show_logo',
                 'show_qr_by_default',
                 'show_product_images_on_quotes',
@@ -127,6 +134,11 @@ final class DocumentSettingsService
 
             $settings->company_id = $company->id;
             $settings->default_document_locale = (string) $values['default_document_locale'];
+            if (! Schema::hasColumn('company_document_settings', 'template') || ! Schema::hasColumn('company_document_settings', 'accent_color')) {
+                throw new \RuntimeException('Database schema is missing template or accent_color columns. Please run pending database migrations.');
+            }
+            $settings->template = (string) ($values['template'] ?? 'classic');
+            $settings->accent_color = (string) ($values['accent_color'] ?? '#255fd6');
             $settings->show_logo = (bool) $values['show_logo'];
             $settings->show_qr_by_default = (bool) $values['show_qr_by_default'];
             $settings->show_product_images_on_quotes = (bool) $values['show_product_images_on_quotes'];

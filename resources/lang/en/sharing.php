@@ -34,5 +34,7 @@ return [
     'expiry_duration_exact' => 'Valid for :days day(s) (:hours hours) from issuance.',
     'neutral_title' => 'Shared document', 'unavailable' => 'This link is unavailable. Ask the sender for a new link.',
     'deliberate_notice' => 'Open this document deliberately. If no password is required, anyone holding the link can open it.',
+    'history' => 'Link history and advanced options',
+    'show_history' => 'Show history',
     'password' => 'Password', 'view_document' => 'View document', 'cookie_notice' => 'Cookies are required. Access lasts up to 15 minutes; reopen the link to continue.',
 ];

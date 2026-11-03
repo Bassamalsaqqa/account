@@ -120,3 +120,7 @@ At handoff report:
 - static analysis/build/audit/reconciliation results;
 - deviations, limitations, and unresolved risks;
 - confirmation of whether merge/deployment/production access occurred.
+
+## Reproducibility and portability invariant
+
+Every completed change must have reproducible source/setup, accurate Git/QA state, bounded owned-artifact cleanup, and explicit private-data transfer exceptions. See `docs/SETUP_AND_OPERATIONS_GUIDE.md` for the authoritative setup, build, test, and fresh-clone instructions. Never rely on untracked runtime code, machine-specific paths, or global workstation caches.

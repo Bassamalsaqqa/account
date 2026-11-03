@@ -1,7 +1,12 @@
-<div class="space-y-5">
-    <header class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div><h1 class="text-2xl font-bold">{{ __('purchasing.purchase_returns') }}</h1></div>
-    </header>
+<div class="space-y-6">
+    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+            <h1 class="text-2xl font-bold tracking-tight text-text-primary">{{ __('purchasing.purchase_returns') }}</h1>
+            <p class="text-xs text-text-secondary mt-1">
+                {{ __('purchasing.purchase_returns') }} ({{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($returns->total()) }})
+            </p>
+        </div>
+    </div>
     <x-refinement-filters :active-count="(int) ($statusFilter !== 'all') + (int) filled($vendorFilter)">
         <x-slot:search>
             <input type="search" wire:model.live.debounce.300ms="search" aria-label="{{ __('purchasing.search_purchase_returns') }}" placeholder="{{ __('purchasing.search_purchase_returns') }}" class="min-h-11 w-full min-w-0 rounded-control border border-border bg-white px-3 py-2 text-sm focus:border-primary focus:ring-primary" />
@@ -23,30 +28,37 @@
             <option value="posted">{{ __('purchasing.posted') }}</option>
         </select>
     </x-refinement-filters>
-    <section class="bg-surface border border-border rounded-card overflow-hidden">
-        <div class="hidden lg:block">
-            <table class="data-table w-full text-xs">
-                <thead class="bg-surface-soft text-text-secondary">
-                    <tr>
-                        @foreach(['return_date', 'vendor', 'purchase_number', 'status', 'currency'] as $label)
-                            <th class="px-4 py-3 text-start">{{ __('purchasing.'.$label) }}</th>
-                        @endforeach
+    <div class="bg-white rounded-card border border-border shadow-xs overflow-hidden">
+        <div class="hidden lg:block overflow-x-auto">
+            <table class="data-table w-full text-start text-xs border-collapse">
+                <thead>
+                    <tr class="border-b border-border bg-surface-soft text-text-muted font-bold text-[11px] uppercase tracking-wider">
+                        <th class="py-3 px-4 text-start">{{ __('purchasing.purchase_return_number') }}</th>
+                        <th class="py-3 px-4 text-start">{{ __('purchasing.vendor') }}</th>
+                        <th class="py-3 px-4 text-start">{{ __('purchasing.purchase_number') }}</th>
+                        <th class="py-3 px-4 text-start">{{ __('purchasing.return_date') }}</th>
+                        <th class="py-3 px-4 text-start">{{ __('purchasing.status') }}</th>
+                        <th class="py-3 px-4 text-start">{{ __('purchasing.currency') }}</th>
                         @if($withCost)
-                            <th class="px-4 py-3 text-start">{{ __('purchasing.total') }}</th>
+                            <th class="py-3 px-4 text-start">{{ __('purchasing.total') }}</th>
                         @endif
+                        <th class="py-3 px-4 text-end">{{ __('sales.actions') }}</th>
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-border">
                     @forelse($returns as $return)
-                        <tr wire:key="return-{{ $return->public_id }}">
-                            <td class="px-4 py-4"><bdi>{{ $return->return_date->format('Y-m-d') }}</bdi></td>
-                            <td class="px-4 py-4">
-                                <a class="touch-action font-bold text-primary" href="{{ route('purchase-returns.show', $return->public_id) }}">
+                        <tr wire:key="return-{{ $return->public_id }}" class="hover:bg-surface-soft/60 transition-colors">
+                            <td class="py-3 px-4 font-mono font-bold" dir="ltr">
+                                <a href="{{ route('purchase-returns.show', $return->public_id) }}" class="touch-action text-primary hover:underline">
+                                    {{ $return->return_number ?? __('purchasing.draft') }}
+                                </a>
+                            </td>
+                            <td class="py-3 px-4">
+                                <a class="touch-action font-bold text-text-primary hover:text-primary transition-colors" href="{{ route('purchase-returns.show', $return->public_id) }}">
                                     {{ $return->vendor->displayName() }}
                                 </a>
-                                <p class="mt-1"><bdi>{{ $return->return_number ?? __('purchasing.draft') }}</bdi></p>
                             </td>
-                            <td class="px-4 py-4">
+                            <td class="py-3 px-4 font-mono">
                                 @if($return->purchase)
                                     <a class="touch-action text-primary hover:underline" href="{{ route('purchases.show', $return->purchase->public_id) }}">
                                         <bdi>{{ $return->purchase->purchase_number ?? '—' }}</bdi>
@@ -55,17 +67,27 @@
                                     —
                                 @endif
                             </td>
-                            <td class="px-4 py-4">{{ __('purchasing.'.$return->status) }}</td>
-                            <td class="px-4 py-4"><bdi>{{ $return->currency_code }}</bdi></td>
+                            <td class="py-3 px-4" dir="ltr">{{ $return->return_date->format('Y-m-d') }}</td>
+                            <td class="py-3 px-4">
+                                <span class="px-2 py-0.5 rounded-full text-[10px] font-bold @if($return->status === 'posted') bg-success-bg text-success @elseif($return->status === 'void') bg-danger-bg text-danger @else bg-slate-100 text-slate-600 @endif">
+                                    {{ __('purchasing.'.$return->status) }}
+                                </span>
+                            </td>
+                            <td class="py-3 px-4 font-bold text-text-secondary"><bdi>{{ $return->currency_code }}</bdi></td>
                             @if($withCost)
-                                <td class="px-4 py-4">
+                                <td class="py-3 px-4 font-bold text-text-primary tabular-nums" dir="ltr">
                                     <bdi>{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($return->grand_total_currency, $return->currency_code) }}</bdi>
                                 </td>
                             @endif
+                            <td class="table-actions py-3 px-4 text-end">
+                                <div class="row-action-group justify-end" role="group" aria-label="{{ __('sales.actions') }}">
+                                    <x-row-action data-row-link :href="route('purchase-returns.show', $return->public_id)" :label="__('workflow.open')" icon="eye" />
+                                </div>
+                            </td>
                         </tr>
                     @empty
                         <tr>
-                            <td colspan="6" class="p-8 text-center text-text-secondary">{{ __('purchasing.no_purchase_returns') }}</td>
+                            <td colspan="{{ $withCost ? 8 : 7 }}" class="p-8 text-center text-text-secondary">{{ __('purchasing.no_purchase_returns') }}</td>
                         </tr>
                     @endforelse
                 </tbody>
@@ -117,6 +139,8 @@
                 <p class="p-8 text-center text-text-secondary">{{ __('purchasing.no_purchase_returns') }}</p>
             @endforelse
         </div>
-    </section>
-    <x-table-pagination :paginator="$returns" />
+        <div class="p-3 border-t border-border">
+            <x-table-pagination :paginator="$returns" />
+        </div>
+    </div>
 </div>

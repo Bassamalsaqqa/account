@@ -26,6 +26,8 @@ class CompanyDocumentSettings extends Model
     protected $fillable = [
         'company_id',
         'default_document_locale',
+        'template',
+        'accent_color',
         'show_logo',
         'show_qr_by_default',
         'show_product_images_on_quotes',

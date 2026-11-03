@@ -1033,7 +1033,6 @@ class CatalogComposer extends Component
 
     public function render(): View
     {
-        $this->authorizeFresh('catalogs.view');
         $this->authorizeSelectionFresh();
         $this->assertClientBounds();
         $this->assertPriceAuthority();

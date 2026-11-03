@@ -149,6 +149,7 @@ class QuotationDetail extends Component
 
     public function render(): View
     {
+        $company = app(CompanyContext::class)->company();
         $user = auth()->user();
         $canEdit = $user->hasPermissionTo('sales.quote.edit') && $this->quotation->status === Quotation::STATUS_DRAFT;
         $canReturnToDraft = $user->hasPermissionTo('sales.quote.edit') && $this->quotation->status === Quotation::STATUS_SENT;
@@ -159,6 +160,7 @@ class QuotationDetail extends Component
         $canEditInvoiceDraft = $user->hasPermissionTo('sales.invoice.edit_draft');
 
         return view('livewire.pages.sales.quotation-detail', [
+            'company' => $company,
             'canEdit' => $canEdit,
             'canReturnToDraft' => $canReturnToDraft,
             'canSend' => $canSend,

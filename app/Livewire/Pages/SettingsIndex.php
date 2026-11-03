@@ -27,6 +27,7 @@ use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Locked;
+use Livewire\Attributes\Url;
 use Livewire\Component;
 use Livewire\WithPagination;
 use SensitiveParameter;
@@ -52,7 +53,25 @@ class SettingsIndex extends Component
 
     public string $auditEvent = '';
 
-    public string $activeSection = 'overview';
+    public const VALID_SECTIONS = [
+        'identity',
+        'localization',
+        'currencies',
+        'security',
+        'users',
+        'members',
+        'roles',
+        'audit',
+        'ai',
+        'documents',
+        'taxes',
+        'catalogs',
+        'profile',
+        'overview',
+    ];
+
+    #[Url(as: 'section')]
+    public string $activeSection = 'identity';
 
     // Search query on overview
     public string $search = '';
@@ -242,10 +261,63 @@ class SettingsIndex extends Component
             $this->require_2fa_for_admin = (bool) $security->require_2fa_for_admin;
             $this->public_share_default_expiry_days = $security->public_share_default_expiry_days;
         }
+
+        if ($this->activeSection === 'taxes') {
+            $this->redirect(route('settings.taxes'));
+
+            return;
+        }
+
+        if ($this->activeSection === 'catalogs') {
+            $this->redirect(route('catalogs.index'));
+
+            return;
+        }
+
+        if ($this->activeSection === 'profile') {
+            $this->redirect(route('profile'));
+
+            return;
+        }
+
+        if ($this->activeSection === 'overview' || ! in_array($this->activeSection, self::VALID_SECTIONS, true)) {
+            $this->activeSection = 'identity';
+        }
+        $this->setSection($this->activeSection, $context);
+    }
+
+    public function updatingActiveSection(string $value): void
+    {
+        $context = app(CompanyContext::class);
+        if ($context->hasCompany()) {
+            $this->setSection($value, $context);
+        }
     }
 
     public function setSection(string $section, CompanyContext $context): void
     {
+        if ($section === 'taxes') {
+            $this->redirect(route('settings.taxes'));
+
+            return;
+        }
+
+        if ($section === 'catalogs') {
+            $this->redirect(route('catalogs.index'));
+
+            return;
+        }
+
+        if ($section === 'profile') {
+            $this->redirect(route('profile'));
+
+            return;
+        }
+
+        if ($section === 'overview') {
+            $section = 'identity';
+        }
+
         $company = $this->verifiedCompany($context);
 
         // Authorize per-section read
@@ -263,6 +335,12 @@ class SettingsIndex extends Component
             'audit' => $user->hasPermissionTo('audit.events.view')
                 ? true
                 : throw new AuthorizationException('Unauthorized to view audit log.'),
+            'ai' => $user->hasPermissionTo('ai.settings.manage')
+                ? true
+                : throw new AuthorizationException('Unauthorized to view AI settings.'),
+            'documents' => ($user->hasPermissionTo('settings.company.view') && $user->hasPermissionTo('settings.documents.manage'))
+                ? true
+                : throw new AuthorizationException('Unauthorized to view document settings.'),
             default => throw new AuthorizationException('Invalid settings section.'),
         };
 
@@ -600,12 +678,12 @@ class SettingsIndex extends Component
         abort_unless($actor instanceof User && app(DeepSeekQuickConnect::class)->isOwner($company, $actor), 403);
         $policy = AiCompanyPolicy::where('company_id', $company->id)->first();
         if ($policy === null) {
-            $this->redirect(route('settings.ai'));
+            $this->redirect(route('settings.index', ['section' => 'ai']));
 
             return;
         }
         if (app(DeepSeekQuickConnect::class)->needsTransition($company)) {
-            $this->redirect(route('settings.ai'));
+            $this->redirect(route('settings.index', ['section' => 'ai']));
 
             return;
         }

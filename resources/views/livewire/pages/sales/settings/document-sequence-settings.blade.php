@@ -1,20 +1,15 @@
-<div class="max-w-4xl mx-auto space-y-6">
-    <!-- Header -->
-    <div class="flex items-center justify-between gap-4">
-        <div>
-            <h1 class="text-2xl font-bold tracking-tight text-text-primary">
-                {{ __('sales.settings_sequences') }}
-            </h1>
-            <p class="text-xs text-text-secondary mt-1">
-                {{ __('sales.settings_sequences_desc') }}
-            </p>
+<x-settings-shell active-section="sequences">
+    <div class="space-y-6">
+        <div class="flex items-center justify-between gap-4 pb-3 border-b border-border">
+            <div>
+                <h2 class="text-base font-extrabold text-text-primary">
+                    {{ __('sales.settings_sequences') }}
+                </h2>
+                <p class="text-xs text-text-secondary mt-0.5">
+                    {{ __('sales.settings_sequences_desc') }}
+                </p>
+            </div>
         </div>
-
-        <a href="{{ route('settings.index') }}"
-           class="touch-action px-3 py-1.5 rounded-control bg-surface-soft text-text-secondary hover:text-text-primary text-xs font-bold transition-colors">
-            {{ __('sales.back') }}
-        </a>
-    </div>
 
     @if (session()->has('success'))
         <div class="p-3 bg-success-bg border border-success/30 rounded-control text-success text-xs font-bold">
@@ -86,4 +81,5 @@
             </table>
         </div>
     </div>
-</div>
+    </div>
+</x-settings-shell>

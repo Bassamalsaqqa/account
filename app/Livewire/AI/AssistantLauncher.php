@@ -149,7 +149,7 @@ final class AssistantLauncher extends Component
             $record = AssistantRecordContext::fromRoute();
             $this->recordType = $record['type'] ?? null;
             $this->recordPublicId = $record['public_id'] ?? null;
-            if (request()->routeIs('settings.ai') && request()->boolean('open_assistant')) {
+            if ((request()->routeIs('settings.ai') || (request()->routeIs('settings.index') && request()->query('section') === 'ai')) && request()->boolean('open_assistant')) {
                 try {
                     $this->showAssistant();
                 } catch (AssistantUnavailable|AuthorizationException) {

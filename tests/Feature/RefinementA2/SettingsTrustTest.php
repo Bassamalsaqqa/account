@@ -68,12 +68,12 @@ class SettingsTrustTest extends TestCase
     public function test_settings_distinguishes_company_preferences_from_personal_enrollment(): void
     {
         Livewire::actingAs($this->owner)->test(SettingsIndex::class)
-            ->assertSee(__('settings.optional_2fa'))
-            ->assertSee(__('settings.personal_2fa_not_enabled'))
             ->assertDontSee('Owner 2FA ON')
             ->assertDontSee(__('settings.system_normal'))
+            ->assertDontSee(__('settings.personal_2fa_not_enabled'))
             ->call('setSection', 'security')
             ->assertSee(__('settings.optional_2fa_help'))
+            ->assertSee('href="'.route('profile').'"', false)
             ->assertDontSee('wire:model="require_2fa_for_owner"', false)
             ->assertDontSee('wire:model="require_2fa_for_admin"', false);
     }

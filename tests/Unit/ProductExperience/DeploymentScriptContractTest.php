@@ -25,6 +25,7 @@ class DeploymentScriptContractTest extends TestCase
 
         $content = file_get_contents($this->scriptPath);
         $this->assertIsString($content);
+        $this->assertStringContainsString('--render="errors.503"', $content);
 
         // 1. Must use set -eo pipefail
         $this->assertMatchesRegularExpression('/set\s+-eo\s+pipefail/', $content);
@@ -572,7 +573,7 @@ class DeploymentScriptContractTest extends TestCase
             $this->writeStubPhp($fixtureDir);
             $result = $this->runDeploymentScript($bash, $fixtureDir);
             $this->assertSame(0, $result['exit_code'], $result['output']);
-            foreach (['manifest.webmanifest', 'sw.js', 'offline.html', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-maskable.png', 'icons/icon-maskable.svg', 'icons/icon.svg'] as $asset) {
+            foreach (['manifest.webmanifest', 'sw.js', 'offline.html', 'favicon.svg', 'og-image.png', 'icons/apple-touch-icon.png', 'icons/favicon-16x16.png', 'icons/favicon-32x32.png', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-maskable.png', 'icons/icon-maskable.svg', 'icons/icon.svg'] as $asset) {
                 $this->assertSame('synthetic-'.$asset, file_get_contents($fixtureDir.'/web/'.$asset));
             }
             $this->assertSame('preserved-private-fixture', file_get_contents($fixtureDir.'/web/uploads/business-fixture.txt'));
@@ -794,7 +795,7 @@ class DeploymentScriptContractTest extends TestCase
         ]));
         file_put_contents($dir.DIRECTORY_SEPARATOR.'app'.DIRECTORY_SEPARATOR.'public'.DIRECTORY_SEPARATOR.'build'.DIRECTORY_SEPARATOR.'manifest.json', '{}');
         mkdir($dir.'/app/public/icons');
-        foreach (['manifest.webmanifest', 'sw.js', 'offline.html', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-maskable.png', 'icons/icon-maskable.svg', 'icons/icon.svg'] as $asset) {
+        foreach (['manifest.webmanifest', 'sw.js', 'offline.html', 'favicon.svg', 'og-image.png', 'icons/apple-touch-icon.png', 'icons/favicon-16x16.png', 'icons/favicon-32x32.png', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-maskable.png', 'icons/icon-maskable.svg', 'icons/icon.svg'] as $asset) {
             file_put_contents($dir.'/app/public/'.$asset, 'synthetic-'.$asset);
         }
         $this->ownedFixtureDirectories[] = $dir;

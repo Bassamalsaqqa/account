@@ -21,6 +21,10 @@ final class CustomerBalanceQuery
      */
     public function execute(array $customerIds): array
     {
+        if ($customerIds === []) {
+            return [];
+        }
+
         $companyId = app(CompanyContext::class)->companyId();
         $result = [];
         $queries = [

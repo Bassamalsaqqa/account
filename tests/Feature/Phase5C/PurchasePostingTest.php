@@ -1100,7 +1100,8 @@ class PurchasePostingTest extends TestCase
             app()->setLocale($locale);
             $purchase = $this->create();
             Livewire::test(PurchaseDetail::class, ['publicId' => $purchase->public_id])
-                ->assertSee(__('purchasing.post_confirmation'))->assertSee(__('purchasing.post_purchase'))
+                ->assertSee(__('purchasing.post_purchase'))->assertSee('wire:click="post"', false)
+                ->assertDontSee(__('purchasing.post_confirmation'))
                 ->call('post')->assertHasNoErrors()->assertSee('PUR-2026-')->assertSee(__('purchasing.posted'))
                 ->assertDontSee(__('purchasing.edit_purchase'))->assertDontSee('wire:click="post"', false);
         }

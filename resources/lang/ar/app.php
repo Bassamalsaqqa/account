@@ -14,6 +14,10 @@ return [
     'dashboard_phase0_desc' => 'مساحة العمل جاهزة، وستتاح وحدات الأعمال قريباً.',
     'dashboard_phase0_notice' => 'تتيح لك صفحة الإعدادات إدارة بيانات المنشأة، واللغات، والعملات، وفريق العمل.',
     'version' => 'v1.0',
+    'optional' => 'اختياري',
+    'collapse_sidebar' => 'تصغير القائمة',
+    'expand_sidebar' => 'توسيع القائمة',
+    'toggle_sidebar' => 'تصغير أو توسيع القائمة الجانبية',
 
     // Navigation groups & items
     'nav_dashboard' => 'الرئيسية',

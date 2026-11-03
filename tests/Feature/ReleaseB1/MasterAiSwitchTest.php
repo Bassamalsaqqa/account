@@ -69,13 +69,15 @@ class MasterAiSwitchTest extends TestCase
         Livewire::actingAs($this->owner)
             ->test(DeepSeekSetup::class)
             ->call('disableCompany', 'synthetic-configuration-only')
-            ->assertRedirect(route('settings.ai'));
-        $this->get(route('settings.ai'))->assertDontSee('wire:name="ai.assistant-launcher"', false);
+            ->assertRedirect(route('settings.index', ['section' => 'ai']));
+        $this->get(route('settings.index', ['section' => 'ai']))->assertDontSee('wire:name="ai.assistant-launcher"', false);
+        // Verify redirect shim for bookmark compatibility
+        $this->get(route('settings.ai'))->assertRedirect(route('settings.index', ['section' => 'ai']));
         Livewire::actingAs($this->owner)
             ->test(DeepSeekSetup::class)
             ->call('enableCompany', 'synthetic-configuration-only')
-            ->assertRedirect(route('settings.ai'));
-        $this->get(route('settings.ai'))->assertSee('wire:name="ai.assistant-launcher"', false);
+            ->assertRedirect(route('settings.index', ['section' => 'ai']));
+        $this->get(route('settings.index', ['section' => 'ai']))->assertSee('wire:name="ai.assistant-launcher"', false);
         Http::assertNothingSent();
     }
 
@@ -87,7 +89,7 @@ class MasterAiSwitchTest extends TestCase
             ->assertNoRedirect()
             ->assertSet('policyRevision', (int) $this->aiPolicy->fresh()->revision);
         $this->assertTrue($this->aiPolicy->fresh()->enabled);
-        $setup->call('disableCompany', 'synthetic-configuration-only')->assertRedirect(route('settings.ai'));
+        $setup->call('disableCompany', 'synthetic-configuration-only')->assertRedirect(route('settings.index', ['section' => 'ai']));
 
         $setup = Livewire::test(DeepSeekSetup::class);
         $this->aiPolicy->increment('revision');
@@ -95,13 +97,13 @@ class MasterAiSwitchTest extends TestCase
             ->assertNoRedirect()
             ->assertSet('policyRevision', (int) $this->aiPolicy->fresh()->revision);
         $this->assertFalse($this->aiPolicy->fresh()->enabled);
-        $setup->call('enableCompany', 'synthetic-configuration-only')->assertRedirect(route('settings.ai'));
+        $setup->call('enableCompany', 'synthetic-configuration-only')->assertRedirect(route('settings.index', ['section' => 'ai']));
         Http::assertNothingSent();
     }
 
     public function test_setup_start_mounts_an_authorized_open_launcher_on_the_destination(): void
     {
-        $response = $this->actingAs($this->owner)->get(route('settings.ai', ['open_assistant' => 1]))->assertOk();
+        $response = $this->actingAs($this->owner)->get(route('settings.index', ['section' => 'ai', 'open_assistant' => 1]))->assertOk();
         $dom = new \DOMDocument;
         @$dom->loadHTML($response->getContent());
         $nodes = (new \DOMXPath($dom))->query('//*[@*[name()="wire:name"]="ai.assistant-launcher"]');
@@ -110,7 +112,7 @@ class MasterAiSwitchTest extends TestCase
         $this->assertTrue($snapshot['data']['open']);
 
         app(DeepSeekQuickConnect::class)->disableCompany($this->company, $this->owner, 'synthetic-configuration-only', (int) $this->aiPolicy->fresh()->revision);
-        $this->get(route('settings.ai', ['open_assistant' => 1]))->assertOk()->assertDontSee('wire:name="ai.assistant-launcher"', false);
+        $this->get(route('settings.index', ['section' => 'ai', 'open_assistant' => 1]))->assertOk()->assertDontSee('wire:name="ai.assistant-launcher"', false);
         Http::assertNothingSent();
     }
 
@@ -159,7 +161,8 @@ class MasterAiSwitchTest extends TestCase
 
         // But Settings and AI settings pages remain accessible to the Owner for configuration.
         $this->actingAs($this->owner)->get(route('settings.index'))->assertOk();
-        $this->actingAs($this->owner)->get(route('settings.ai'))->assertOk();
+        $this->actingAs($this->owner)->get(route('settings.index', ['section' => 'ai']))->assertOk();
+        $this->actingAs($this->owner)->get(route('settings.ai'))->assertRedirect(route('settings.index', ['section' => 'ai']));
         Http::assertNothingSent();
     }
 
@@ -428,12 +431,12 @@ class MasterAiSwitchTest extends TestCase
         // Test in English
         app()->setLocale('en');
         $overviewEn = Livewire::actingAs($this->owner)
-            ->test(SettingsIndex::class)
+            ->test(SettingsIndex::class, ['activeSection' => 'ai'])
             ->assertSee(__('settings.card_ai_title'))
             ->assertSee(__('settings.ai_status_enabled'))
             ->assertSee(__('settings.ai_switch_disable'));
 
-        // Toggle OFF from Settings Overview
+        // Toggle OFF from Settings AI
         $overviewEn->call('disableCompanyAi', 'synthetic-configuration-only')
             ->assertHasNoErrors();
 
@@ -441,13 +444,13 @@ class MasterAiSwitchTest extends TestCase
 
         // After disable, shows disabled status
         Livewire::actingAs($this->owner)
-            ->test(SettingsIndex::class)
+            ->test(SettingsIndex::class, ['activeSection' => 'ai'])
             ->assertSee(__('settings.ai_status_disabled'))
             ->assertSee(__('settings.ai_switch_enable'));
 
-        // Toggle back ON from Settings Overview without checkbox (reusing valid consent)
+        // Toggle back ON from Settings AI without checkbox (reusing valid consent)
         Livewire::actingAs($this->owner)
-            ->test(SettingsIndex::class)
+            ->test(SettingsIndex::class, ['activeSection' => 'ai'])
             ->call('enableCompanyAi', 'synthetic-configuration-only')
             ->assertHasNoErrors();
 
@@ -456,7 +459,7 @@ class MasterAiSwitchTest extends TestCase
         // Test in Arabic
         app()->setLocale('ar');
         Livewire::actingAs($this->owner)
-            ->test(SettingsIndex::class)
+            ->test(SettingsIndex::class, ['activeSection' => 'ai'])
             ->assertSee('المساعد الذكي')
             ->assertSee('مفعّل')
             ->assertSee('تعطيل الذكاء الاصطناعي للمنشأة');
@@ -464,7 +467,7 @@ class MasterAiSwitchTest extends TestCase
         // Non-owner member sees restricted notice
         $nonOwner = $this->member(['settings.company.view']);
         Livewire::actingAs($nonOwner)
-            ->test(SettingsIndex::class)
+            ->test(SettingsIndex::class, ['activeSection' => 'ai'])
             ->assertDontSee('تعطيل الذكاء الاصطناعي للمنشأة');
 
         Http::assertNothingSent();

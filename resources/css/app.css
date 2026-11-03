@@ -49,6 +49,17 @@ body {
     -webkit-font-smoothing: antialiased;
 }
 
+/* Resolve shell geometry before Alpine starts so navigation never animates
+   the page from an expanded sidebar to the saved icon rail. */
+:root { --app-sidebar-width: 264px; }
+:root[data-sidebar-collapsed='true'] { --app-sidebar-width: 76px; }
+.app-topbar { inset-inline: 0; }
+@media (min-width: 1024px) {
+    .app-sidebar-shell { width: var(--app-sidebar-width); }
+    .app-topbar { inset-inline-start: var(--app-sidebar-width); }
+    .app-content-shell { margin-inline-start: var(--app-sidebar-width); }
+}
+
 .num,
 [dir='ltr'] .num,
 [dir='rtl'] .num {

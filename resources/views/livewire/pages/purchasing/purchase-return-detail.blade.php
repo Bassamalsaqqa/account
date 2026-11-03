@@ -1,19 +1,84 @@
-<div class="space-y-5">
-    @if(auth()->user()?->can('purchasing.purchase.view'))
-        <div class="flex justify-end"><x-document-actions route-name="pdf.purchase-return" :parameters="['publicId' => $document['public_id']]" :permissions="['purchasing.document.pdf']" /></div>
-    @endif
-    <header class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div class="min-w-0">
-            <a href="{{ route('purchase-returns.index') }}" class="touch-action text-xs text-primary">{{ __('purchasing.purchase_returns') }}</a>
-            <h1 class="text-2xl font-bold mt-1 break-words">{{ $document['return_number'] ?? __('purchasing.purchase_return_draft') }}</h1>
-            <p class="text-sm mt-1">{{ __('purchasing.'.$document['status']) }}</p>
+<div class="space-y-6">
+    <!-- Header Card -->
+    <div class="bg-white rounded-card border border-border shadow-xs p-6 space-y-4">
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div>
+                <div class="flex items-center gap-3">
+                    <h1 class="text-2xl font-mono font-bold tracking-tight text-text-primary" dir="ltr">
+                        {{ $document['return_number'] ?? __('purchasing.purchase_return_draft') }}
+                    </h1>
+                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold
+                        @if ($document['status'] === 'posted') bg-success-bg text-success
+                        @else bg-slate-100 text-slate-600 @endif">
+                        {{ __('purchasing.'.$document['status']) }}
+                    </span>
+                </div>
+                <div class="text-xs text-text-secondary mt-1">
+                    {{ __('purchasing.vendor') }}:
+                    @if(!empty($document['vendor_name']))
+                        <span class="font-bold text-text-primary">{{ $document['vendor_name'] }}</span>
+                    @endif
+                </div>
+                @if(!empty($document['purchase_public_id']))
+                    <div class="text-xs text-text-secondary mt-1">
+                        {{ __('purchasing.purchase_number') }}:
+                        <a href="{{ route('purchases.show', $document['purchase_public_id']) }}" class="touch-action font-mono font-bold text-text-primary hover:text-primary" dir="ltr">
+                            {{ $document['purchase_number'] ?? '—' }}
+                        </a>
+                    </div>
+                @endif
+            </div>
+
+            <!-- Action Buttons -->
+            <div class="flex flex-wrap items-center gap-2">
+                @if($canPost)
+                    <button type="button" wire:click="post" wire:confirm="{{ __('purchasing.post_return_confirmation') }}" wire:loading.attr="disabled" wire:target="post"
+                            class="px-3.5 py-1.5 rounded-control bg-primary text-white text-xs font-bold hover:bg-primary-hover transition-colors shadow-xs cursor-pointer">
+                        {{ __('purchasing.post_return') }}
+                    </button>
+                @endif
+                @if($canEdit)
+                    <a href="{{ route('purchase-returns.edit', $document['public_id']) }}" class="touch-action px-3 py-1.5 rounded-control border border-border text-xs font-bold text-text-secondary hover:bg-surface-soft transition-colors">
+                        {{ __('purchasing.edit_purchase_return') }}
+                    </a>
+                @endif
+                @if(auth()->user()?->can('purchasing.purchase.view'))
+                    <x-document-actions route-name="pdf.purchase-return" :parameters="['publicId' => $document['public_id']]" :permissions="['purchasing.document.pdf']" />
+                @endif
+                <a href="{{ route('purchase-returns.index') }}" class="touch-action px-3 py-1.5 rounded-control bg-surface-soft text-text-secondary hover:text-text-primary text-xs font-bold transition-colors">
+                    {{ __('sales.back') }}
+                </a>
+            </div>
         </div>
-        @if($canEdit)
-            <a href="{{ route('purchase-returns.edit', $document['public_id']) }}" class="touch-action inline-flex h-11 items-center justify-center px-4 rounded-control bg-primary text-white text-sm font-bold">
-                {{ __('purchasing.edit_purchase_return') }}
-            </a>
-        @endif
-    </header>
+
+        <!-- Metadata Summary -->
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 pt-4 border-t border-border text-xs">
+            <div>
+                <span class="text-text-muted block text-[11px]">{{ __('purchasing.return_date') }}</span>
+                <span class="font-bold text-text-primary" dir="ltr">{{ $document['return_date'] }}</span>
+            </div>
+            <div>
+                <span class="text-text-muted block text-[11px]">{{ __('purchasing.purchase_number') }}</span>
+                <span class="font-bold text-text-primary" dir="ltr">
+                    @if(!empty($document['purchase_public_id']))
+                        <a href="{{ route('purchases.show', $document['purchase_public_id']) }}" class="touch-action text-primary hover:underline">
+                            {{ $document['purchase_number'] ?? '—' }}
+                        </a>
+                    @else
+                        {{ $document['purchase_number'] ?? '—' }}
+                    @endif
+                </span>
+            </div>
+            <div>
+                <span class="text-text-muted block text-[11px]">{{ __('purchasing.receiving_warehouse') }}</span>
+                <span class="font-bold text-text-primary">{{ $document['warehouse_name'] ?? '—' }}</span>
+            </div>
+            <div>
+                <span class="text-text-muted block text-[11px]">{{ __('purchasing.currency') }}</span>
+                <span class="font-bold text-text-primary">{{ $document['currency_code'] }}</span>
+            </div>
+        </div>
+    </div>
 
     @if($document['status'] === 'draft')
         <p class="p-3 rounded-control bg-info-bg text-info text-sm">{{ __('purchasing.draft_notice') }}</p>
@@ -28,48 +93,6 @@
     @if(session('success'))
         <p role="status" class="text-success text-sm">{{ session('success') }}</p>
     @endif
-
-    @if($canPost)
-        <section class="border border-border bg-surface rounded-card p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <p class="text-sm max-w-prose">{{ __('purchasing.post_return_confirmation') }}</p>
-            <button type="button" wire:click="post" wire:confirm="{{ __('purchasing.post_return_confirmation') }}" wire:loading.attr="disabled" wire:target="post" class="shrink-0 h-11 px-4 rounded-control bg-primary text-white text-sm font-bold disabled:opacity-50">
-                {{ __('purchasing.post_return') }}
-            </button>
-        </section>
-    @endif
-
-    <section class="bg-surface border border-border rounded-card p-4">
-        <dl class="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 text-sm">
-            <div>
-                <dt class="text-xs text-text-secondary">{{ __('purchasing.vendor') }}</dt>
-                <dd class="mt-1 font-semibold"><bdi>{{ $document['vendor_name'] ?? '—' }}</bdi></dd>
-            </div>
-            <div>
-                <dt class="text-xs text-text-secondary">{{ __('purchasing.purchase_number') }}</dt>
-                <dd class="mt-1 font-semibold">
-                    @if(!empty($document['purchase_public_id']))
-                        <a href="{{ route('purchases.show', $document['purchase_public_id']) }}" class="touch-action text-primary hover:underline">
-                            <bdi>{{ $document['purchase_number'] ?? '—' }}</bdi>
-                        </a>
-                    @else
-                        <bdi>{{ $document['purchase_number'] ?? '—' }}</bdi>
-                    @endif
-                </dd>
-            </div>
-            <div>
-                <dt class="text-xs text-text-secondary">{{ __('purchasing.return_date') }}</dt>
-                <dd class="mt-1 font-semibold"><bdi>{{ $document['return_date'] }}</bdi></dd>
-            </div>
-            <div>
-                <dt class="text-xs text-text-secondary">{{ __('purchasing.receiving_warehouse') }}</dt>
-                <dd class="mt-1 font-semibold"><bdi>{{ $document['warehouse_name'] ?? '—' }}</bdi></dd>
-            </div>
-            <div>
-                <dt class="text-xs text-text-secondary">{{ __('purchasing.currency') }}</dt>
-                <dd class="mt-1 font-semibold"><bdi>{{ $document['currency_code'] }}</bdi></dd>
-            </div>
-        </dl>
-    </section>
 
     <section class="space-y-3">
         @foreach($document['lines'] as $line)

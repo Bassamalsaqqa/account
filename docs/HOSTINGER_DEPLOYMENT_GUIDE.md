@@ -264,7 +264,7 @@ If a deployment needs to be rolled back to a known-good commit or tag:
 1. **Retain or Enter Verified Maintenance Mode:**
    Keep an already owned maintenance guard and bypass configuration unchanged. Otherwise enter maintenance using the current code and verify the marker and public maintenance response before any rollback source change. Stop on failure.
    ```bash
-   /opt/alt/php84/usr/bin/php artisan down
+   /opt/alt/php84/usr/bin/php artisan down --render="errors.503" --retry=60
    ```
 2. **Revert to a Known Good Git Revision / Tag:**
    Do not use `git reset --hard HEAD~1` as it can discard uncommitted configurations or misidentify the intended target commit. Instead, inspect the history and check out the known-good release tag or commit hash:

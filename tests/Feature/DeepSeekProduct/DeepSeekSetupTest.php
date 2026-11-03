@@ -115,7 +115,7 @@ class DeepSeekSetupTest extends TestCase
         Http::fake(fn () => Http::response($this->reply()));
         $component = Livewire::test(DeepSeekSetup::class)->assertSee('DeepSeek AI')->assertSee('Not connected yet')
             ->call('testConnection', 'synthetic-key-never-real', 'synthetic-owner-password', true)
-            ->assertSet('status', 'verified')->call('startUsing')->assertRedirect(route('settings.ai', ['open_assistant' => 1]));
+            ->assertSet('status', 'verified')->call('startUsing')->assertRedirect(route('settings.index', ['section' => 'ai', 'open_assistant' => 1]));
         $this->assertStringNotContainsString('synthetic-key-never-real', $component->html());
         $this->assertArrayNotHasKey('newKey', $component->snapshot['data']);
         $connection = AiProviderConnection::sole();
@@ -423,7 +423,7 @@ class DeepSeekSetupTest extends TestCase
         $this->assertSame($policy, AiCompanyPolicy::sole()->getRawOriginal());
         $this->assertSame($consents, AiUserPreference::query()->get()->map->getRawOriginal()->all());
         $this->assertSame($reason, app(DeepSeekQuickConnect::class)->latestHealth($this->company)['status']);
-        $component->call('startUsing')->assertRedirect(route('settings.ai', ['open_assistant' => 1]));
+        $component->call('startUsing')->assertRedirect(route('settings.index', ['section' => 'ai', 'open_assistant' => 1]));
         $this->assertDatabaseCount('assistant_requests', 0);
         $this->assertSame(1, $attempted);
         Http::assertSentCount($case === 'timeout' ? 0 : 1);

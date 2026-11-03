@@ -7,6 +7,21 @@
 
     <title>{{ config('app.name', 'التاجر الصغير') }} — {{ __('app.app_subtitle') }}</title>
 
+    <!-- Favicons -->
+    <link rel="icon" type="image/svg+xml" href="{{ asset('favicon.svg') }}">
+    <link rel="icon" type="image/x-icon" href="{{ asset('favicon.ico') }}">
+    <link rel="apple-touch-icon" sizes="180x180" href="{{ asset('icons/apple-touch-icon.png') }}">
+
+    <!-- Open Graph & Social Cards -->
+    <meta property="og:title" content="{{ config('app.name', 'التاجر الصغير') }} — {{ __('app.app_subtitle') }}">
+    <meta property="og:description" content="{{ __('app.app_subtitle') }}">
+    <meta property="og:type" content="website">
+    <meta property="og:image" content="{{ asset('og-image.png') }}">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:image" content="{{ asset('og-image.png') }}">
+
     <!-- Scripts & Styles -->
     @vite(['resources/css/app.css', 'resources/js/app.js'])
     @if(request()->routeIs('two-factor.login'))

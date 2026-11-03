@@ -1,50 +1,117 @@
-<div class="space-y-5">
-    @if(auth()->user()?->can('purchasing.purchase.view'))
-        <div class="flex justify-end"><x-document-actions route-name="pdf.purchase" :parameters="['publicId' => $document['public_id']]" :permissions="['purchasing.document.pdf']" /></div>
-    @endif
-    <header class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div class="min-w-0"><a href="{{ route('purchases.index') }}" class="touch-action text-xs text-primary">{{ __('purchasing.purchases') }}</a><h1 class="text-2xl font-bold mt-1 break-words">{{ $document['purchase_number'] ?? __('purchasing.purchase_draft') }}</h1><p class="text-sm mt-1">{{ __('purchasing.'.$document['status']) }}</p></div>
-        <div class="flex flex-wrap items-center gap-2 sm:gap-3">
-            @if($canCreatePurchase)
-                <a href="{{ route('purchases.create') }}" class="touch-action inline-flex h-11 items-center justify-center gap-1.5 px-4 rounded-control border border-border bg-surface text-sm font-bold text-text-secondary hover:text-text-primary hover:bg-surface-soft transition-colors focus-visible:ring-2 focus-visible:ring-primary">
-                    <x-icon name="plus" class="w-4 h-4 text-primary" />
-                    <span>{{ __('release_b1_workflow.new_purchase') }}</span>
+<div class="space-y-6">
+    <!-- Header Card -->
+    <div class="bg-white rounded-card border border-border shadow-xs p-6 space-y-4">
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div>
+                <div class="flex items-center gap-3">
+                    <h1 class="text-2xl font-mono font-bold tracking-tight text-text-primary" dir="ltr">
+                        {{ $document['purchase_number'] ?? __('purchasing.purchase_draft') }}
+                    </h1>
+                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold
+                        @if ($document['status'] === 'posted') bg-success-bg text-success
+                        @else bg-slate-100 text-slate-600 @endif">
+                        {{ __('purchasing.'.$document['status']) }}
+                    </span>
+                    @if($payablePosition && $withCost)
+                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold {{ $payablePosition->status === 'settled' ? 'bg-success-bg text-success' : ($payablePosition->status === 'partially_paid' ? 'bg-warning-bg text-warning' : ($payablePosition->status === 'credit' ? 'bg-info-bg text-info' : 'bg-slate-100 text-slate-600')) }}">
+                            {{ __('purchasing.'.$payablePosition->status) }}
+                        </span>
+                    @endif
+                </div>
+                <div class="text-xs text-text-secondary mt-1">
+                    {{ __('purchasing.vendor') }}:
+                    @if($purchase->vendor)
+                        <a href="{{ route('vendors.show', $purchase->vendor->public_id) }}" class="touch-action font-bold text-text-primary hover:text-primary">
+                            {{ $document['vendor_name'] }}
+                        </a>
+                    @else
+                        <span class="font-bold text-text-primary">{{ $document['vendor_name'] }}</span>
+                    @endif
+                    @if (filled($purchase->vendor_invoice_number))
+                        <span class="ms-3 inline-flex max-w-full items-center gap-1">
+                            {{ __('purchasing.vendor_invoice_number') }}:
+                            <bdi dir="ltr" class="min-w-0 max-w-64 truncate font-mono" title="{{ $purchase->vendor_invoice_number }}">{{ $purchase->vendor_invoice_number }}</bdi>
+                        </span>
+                    @endif
+                </div>
+            </div>
+
+            <!-- Action Buttons -->
+            <div class="flex flex-wrap items-center gap-2">
+                @if($canPost)
+                    <button type="button" wire:click="post" wire:loading.attr="disabled" wire:target="post"
+                            class="px-3.5 py-1.5 rounded-control bg-primary text-white text-xs font-bold hover:bg-primary-hover transition-colors shadow-xs cursor-pointer">
+                        {{ __('purchasing.post_purchase') }}
+                    </button>
+                @endif
+                @if($canPayVendor)
+                    <a href="{{ route('vendor-payments.create', ['purchase_id' => $purchase->id]) }}" class="touch-action px-3 py-1.5 rounded-control bg-success text-white text-xs font-bold shadow-xs hover:opacity-90">
+                        + {{ __('purchasing.pay_vendor') }}
+                    </a>
+                @endif
+                @if($canCreateReturn)
+                    <a href="{{ route('purchase-returns.create', $document['public_id']) }}" class="touch-action px-3 py-1.5 rounded-control border border-border text-xs font-bold text-text-secondary hover:bg-surface-soft transition-colors">
+                        ↩ {{ __('purchasing.create_purchase_return') }}
+                    </a>
+                @endif
+                @if($canEdit)
+                    <a href="{{ route('purchases.edit', $document['public_id']) }}" class="touch-action px-3 py-1.5 rounded-control border border-border text-xs font-bold text-text-secondary hover:bg-surface-soft transition-colors">
+                        {{ __('purchasing.edit_purchase') }}
+                    </a>
+                @endif
+                @if($canCreatePurchase)
+                    <a href="{{ route('purchases.create') }}" class="touch-action inline-flex items-center gap-1.5 px-3 py-1.5 rounded-control border border-border text-xs font-bold text-text-secondary hover:text-text-primary hover:bg-surface-soft transition-colors focus-visible:ring-2 focus-visible:ring-primary">
+                        <x-icon name="plus" class="w-3.5 h-3.5 text-primary" />
+                        <span>{{ __('release_b1_workflow.new_purchase') }}</span>
+                    </a>
+                @endif
+                @if(auth()->user()?->can('purchasing.purchase.view'))
+                    <x-document-actions route-name="pdf.purchase" :parameters="['publicId' => $document['public_id']]" :permissions="['purchasing.document.pdf']" />
+                @endif
+                <a href="{{ route('purchases.index') }}" class="touch-action px-3 py-1.5 rounded-control bg-surface-soft text-text-secondary hover:text-text-primary text-xs font-bold transition-colors">
+                    {{ __('sales.back') }}
                 </a>
-            @endif
-            @if($canPayVendor)<a href="{{ route('vendor-payments.create', ['purchase_id' => $purchase->id]) }}" class="touch-action inline-flex h-11 items-center justify-center px-4 rounded-control bg-success text-white text-sm font-bold shadow-sm hover:opacity-90">{{ __('purchasing.pay_vendor') }}</a>@endif
-            @if($canCreateReturn)<a href="{{ route('purchase-returns.create', $document['public_id']) }}" class="touch-action inline-flex h-11 items-center justify-center px-4 rounded-control border border-border bg-surface text-sm font-bold hover:bg-surface-soft">{{ __('purchasing.create_purchase_return') }}</a>@endif
-            @if($canEdit)<a href="{{ route('purchases.edit', $document['public_id']) }}" class="touch-action inline-flex h-11 items-center justify-center px-4 rounded-control bg-primary text-white text-sm font-bold">{{ __('purchasing.edit_purchase') }}</a>@endif
+            </div>
         </div>
-    </header>
+
+        <!-- Metadata Summary -->
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 pt-4 border-t border-border text-xs">
+            <div>
+                <span class="text-text-muted block text-[11px]">{{ __('purchasing.purchase_date') }}</span>
+                <span class="font-bold text-text-primary" dir="ltr">{{ $document['purchase_date'] ?? '—' }}</span>
+            </div>
+            <div>
+                <span class="text-text-muted block text-[11px]">{{ __('purchasing.due_date') }}</span>
+                <span class="font-bold text-text-primary" dir="ltr">{{ $document['due_date'] ?? __('purchasing.no_due_date') }}</span>
+            </div>
+            <div>
+                <span class="text-text-muted block text-[11px]">{{ __('purchasing.receiving_warehouse') }}</span>
+                <span class="font-bold text-text-primary">{{ $document['warehouse_name'] ?? '—' }}</span>
+            </div>
+            <div>
+                <span class="text-text-muted block text-[11px]">{{ __('purchasing.currency') }}</span>
+                <span class="font-bold text-text-primary">{{ $document['currency_code'] ?? '—' }}</span>
+            </div>
+        </div>
+
+        @if($payablePosition && $withCost)
+            <div class="pt-4 border-t border-border">
+                <x-document-summary-cards
+                    :total="$document['grand_total_currency'] ?? (string) $payablePosition->purchase->grand_total"
+                    :paid="(string) $payablePosition->activeAllocatedAmount"
+                    :remaining="(string) $payablePosition->outstanding"
+                    :currency="$document['currency_code']"
+                    :due-date="$document['due_date'] ?? null"
+                    :returned="(string) $payablePosition->postedReturnedAmount"
+                />
+            </div>
+        @endif
+    </div>
+
     @if($document['status'] === 'draft')<p class="p-3 rounded-control bg-info-bg text-info text-sm">{{ __('purchasing.draft_notice') }}</p>@else<p class="p-3 rounded-control bg-success-bg text-success text-sm">{{ __('purchasing.posted_notice') }} <bdi>{{ $document['posted_at'] }}</bdi></p>@endif
     @error('post')<p role="alert" class="p-3 bg-danger-bg text-danger rounded-control text-sm">{{ $message }}</p>@enderror
     @if(session('success'))<p role="status" class="text-success text-sm">{{ session('success') }}</p>@endif
-    @if($canPost)
-        <section class="border border-border bg-surface rounded-card p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <p class="text-sm max-w-prose">{{ __('purchasing.post_confirmation') }}</p>
-            <button type="button" wire:click="post" wire:loading.attr="disabled" wire:target="post" class="shrink-0 h-11 px-4 rounded-control bg-primary text-white text-sm font-bold disabled:opacity-50 cursor-pointer">{{ __('purchasing.post_purchase') }}</button>
-        </section>
-    @endif
     @if($duplicateWarning)<p role="status" class="p-3 rounded-control bg-warning-bg text-warning text-sm">{{ __('purchasing.duplicate_vendor_invoice') }}</p>@endif
-    <section class="bg-surface border border-border rounded-card p-4">
-        <dl class="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 text-sm">
-            @foreach(['vendor_name' => 'vendor', 'vendor_invoice_number' => 'vendor_invoice_number', 'purchase_date' => 'purchase_date', 'due_date' => 'due_date', 'warehouse_name' => 'receiving_warehouse', 'currency_code' => 'currency'] as $field => $label)
-                <div><dt class="text-xs text-text-secondary">{{ __('purchasing.'.$label) }}</dt><dd class="mt-1 font-semibold"><bdi>{{ $document[$field] ?? ($field === 'due_date' ? __('purchasing.no_due_date') : '—') }}</bdi></dd></div>
-            @endforeach
-        </dl>
-    </section>
-    @if($payablePosition && $withCost)
-        <section>
-            <x-document-summary-cards
-                :total="$document['grand_total_currency'] ?? (string) $payablePosition->purchase->grand_total"
-                :paid="(string) $payablePosition->activeAllocatedAmount"
-                :remaining="(string) $payablePosition->outstanding"
-                :currency="$document['currency_code']"
-                :due-date="$document['due_date'] ?? null"
-                :returned="(string) $payablePosition->postedReturnedAmount"
-            />
-        </section>
-    @endif
     <section class="space-y-3">
         @foreach($document['lines'] as $line)
             <article class="bg-surface border border-border rounded-card p-4 space-y-3" wire:key="detail-line-{{ $line['public_id'] }}">

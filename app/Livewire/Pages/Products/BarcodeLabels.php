@@ -306,7 +306,6 @@ class BarcodeLabels extends Component
             if (! $actor->hasAnyPermission(['inventory.stock.view', 'inventory.product.manage'])) {
                 throw new AuthorizationException('Product selection authority is required.');
             }
-            $guard->lockAndAuthorize($this->lockedCompanyId, $actor, 'inventory.barcode_labels.print');
         });
     }
 }

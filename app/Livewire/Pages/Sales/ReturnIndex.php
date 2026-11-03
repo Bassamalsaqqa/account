@@ -83,7 +83,7 @@ class ReturnIndex extends Component
         }
 
         $returns = $query->orderByDesc('created_at')->orderByDesc('id')->paginate($this->tablePageSize());
-        $customers = Customer::where('company_id', $company->id)->orderBy('name_ar')->get();
+        $customers = Customer::where('company_id', $company->id)->orderBy('name_ar')->get(['id', 'name_ar', 'name_en']);
 
         return view('livewire.pages.sales.return-index', [
             'returns' => $returns,

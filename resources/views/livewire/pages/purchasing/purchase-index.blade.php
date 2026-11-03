@@ -1,10 +1,20 @@
-<div class="space-y-5">
-    <header class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div><h1 class="text-2xl font-bold">{{ __('purchasing.purchases') }}</h1></div>
+<div class="space-y-6">
+    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+            <h1 class="text-2xl font-bold tracking-tight text-text-primary">{{ __('purchasing.purchases') }}</h1>
+            <p class="text-xs text-text-secondary mt-1">
+                {{ __('purchasing.purchases') }} ({{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($purchases->total()) }})
+            </p>
+        </div>
         @if($canCreate)
-            <a href="{{ route('purchases.create') }}" class="touch-action h-11 bg-primary text-white text-sm font-bold"><x-icon name="plus" class="w-4 h-4" />{{ __('purchasing.new_purchase') }}</a>
+            <div class="flex items-center gap-2">
+                <a href="{{ route('purchases.create') }}" class="touch-action gap-1.5 bg-primary text-white text-xs font-bold hover:bg-primary-hover transition-colors shadow-sm">
+                    <x-icon name="plus" class="w-4 h-4" />
+                    <span>{{ __('purchasing.new_purchase') }}</span>
+                </a>
+            </div>
         @endif
-    </header>
+    </div>
     <x-refinement-filters :active-count="(int) ($statusFilter !== 'all') + (int) filled($vendorFilter)">
         <x-slot:search>
             <input type="search" wire:model.live.debounce.300ms="search" aria-label="{{ __('purchasing.search_purchases') }}" placeholder="{{ __('purchasing.search_purchases') }}" class="min-h-11 w-full min-w-0 rounded-control border border-border bg-white px-3 py-2 text-sm focus:border-primary focus:ring-primary" />
@@ -21,30 +31,68 @@
     @if(session()->has('error'))<p role="alert" class="text-sm text-danger font-semibold bg-rose-50 p-3 rounded-control border border-rose-200">{{ session('error') }}</p>@endif
     @error('postPurchase') <p role="alert" class="text-sm text-danger font-semibold bg-rose-50 p-3 rounded-control border border-rose-200">{{ $message }}</p> @enderror
 
-    <section class="bg-surface border border-border rounded-card overflow-hidden">
-        <div class="hidden lg:block">
-            <table class="data-table w-full text-xs"><thead class="bg-surface-soft text-text-secondary"><tr>
-                @foreach(['purchase_date', 'vendor', 'vendor_invoice_number', 'status', 'currency'] as $label)<th class="px-4 py-3 text-start">{{ __('purchasing.'.$label) }}</th>@endforeach
-                @if($withCost)<th class="px-4 py-3 text-start">{{ __('purchasing.total') }}</th>@endif
-                <th class="px-4 py-3 text-end">{{ __('sales.actions') }}</th>
-            </tr></thead><tbody class="divide-y divide-border">
+    <div class="bg-white rounded-card border border-border shadow-xs overflow-hidden">
+        <div class="hidden lg:block overflow-x-auto">
+            <table class="data-table w-full text-start text-xs border-collapse">
+                <thead>
+                    <tr class="border-b border-border bg-surface-soft text-text-muted font-bold text-[11px] uppercase tracking-wider">
+                        <th class="py-3 px-4 text-start">{{ __('purchasing.purchase_number') }}</th>
+                        <th class="py-3 px-4 text-start">{{ __('purchasing.vendor') }}</th>
+                        <th class="py-3 px-4 text-start">{{ __('purchasing.purchase_date') }}</th>
+                        <th class="py-3 px-4 text-start">{{ __('purchasing.vendor_invoice_number') }}</th>
+                        <th class="py-3 px-4 text-start">{{ __('purchasing.status') }}</th>
+                        <th class="py-3 px-4 text-start">{{ __('sales.payment_status') }}</th>
+                        <th class="py-3 px-4 text-start">{{ __('purchasing.currency') }}</th>
+                        @if($withCost)<th class="py-3 px-4 text-start">{{ __('purchasing.total') }}</th>@endif
+                        <th class="py-3 px-4 text-end">{{ __('sales.actions') }}</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-border">
             @forelse($purchases as $purchase)
-                <tr wire:key="purchase-{{ $purchase->public_id }}"><td class="px-4 py-4"><bdi>{{ $purchase->purchase_date->format('Y-m-d') }}</bdi></td>
-                    <td class="px-4 py-4"><a class="touch-action font-bold text-primary" href="{{ route('purchases.show', $purchase->public_id) }}">{{ $purchase->vendor->displayName() }}</a><p class="mt-1"><bdi>{{ $purchase->purchase_number ?? __('purchasing.draft') }}</bdi></p></td>
-                    <td class="px-4 py-4"><bdi>{{ $purchase->vendor_invoice_number ?? '—' }}</bdi></td>
-                    <td class="px-4 py-4">
-                        <div>{{ __('purchasing.'.$purchase->status) }}</div>
+                <tr wire:key="purchase-{{ $purchase->public_id }}" class="hover:bg-surface-soft/60 transition-colors">
+                    <td class="py-3 px-4 font-mono font-bold" dir="ltr">
+                        <a href="{{ route('purchases.show', $purchase->public_id) }}" class="touch-action text-primary hover:underline">
+                            {{ $purchase->purchase_number ?? __('purchasing.draft') }}
+                        </a>
+                    </td>
+                    <td class="py-3 px-4">
+                        <a class="touch-action font-bold text-text-primary hover:text-primary transition-colors" href="{{ route('purchases.show', $purchase->public_id) }}">
+                            {{ $purchase->vendor->displayName() }}
+                        </a>
+                    </td>
+                    <td class="py-3 px-4" dir="ltr">
+                        {{ $purchase->purchase_date->format('Y-m-d') }}
+                    </td>
+                    <td class="py-3 px-4 font-mono text-text-secondary" dir="ltr">
+                        {{ $purchase->vendor_invoice_number ?? '—' }}
+                    </td>
+                    <td class="py-3 px-4">
+                        <span class="px-2 py-0.5 rounded-full text-[10px] font-bold @if($purchase->status === 'posted') bg-success-bg text-success @elseif($purchase->status === 'void') bg-danger-bg text-danger @else bg-slate-100 text-slate-600 @endif">
+                            {{ __('purchasing.'.$purchase->status) }}
+                        </span>
+                    </td>
+                    <td class="py-3 px-4">
                         @if($withCost && $purchase->isPosted() && isset($payablePositions[$purchase->id]))
-                            <span class="inline-block mt-1 px-2 py-0.5 rounded-full text-[10px] font-bold {{ $payablePositions[$purchase->id]->status === 'settled' ? 'bg-success-bg text-success' : ($payablePositions[$purchase->id]->status === 'partially_paid' ? 'bg-warning-bg text-warning' : ($payablePositions[$purchase->id]->status === 'credit' ? 'bg-info-bg text-info' : 'bg-surface-soft text-text-secondary')) }}">
+                            <span class="inline-block px-2 py-0.5 rounded-full text-[10px] font-bold {{ $payablePositions[$purchase->id]->status === 'settled' ? 'bg-success-bg text-success' : ($payablePositions[$purchase->id]->status === 'partially_paid' ? 'bg-warning-bg text-warning' : ($payablePositions[$purchase->id]->status === 'credit' ? 'bg-info-bg text-info' : 'bg-surface-soft text-text-secondary')) }}">
                                 {{ __('purchasing.'.$payablePositions[$purchase->id]->status) }}
                             </span>
+                        @else
+                            <span class="text-text-muted">—</span>
                         @endif
                     </td>
-                    <td class="px-4 py-4"><bdi>{{ $purchase->currency_code }}</bdi></td>
-                    @if($withCost)<td class="px-4 py-4"><bdi>{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($purchase->grand_total_currency, $purchase->currency_code) }}</bdi></td>@endif
-                    <td class="table-actions">@include('livewire.partials.purchase-row-actions')</td>
+                    <td class="py-3 px-4 font-bold text-text-secondary">
+                        <bdi>{{ $purchase->currency_code }}</bdi>
+                    </td>
+                    @if($withCost)
+                        <td class="py-3 px-4 font-bold text-text-primary tabular-nums" dir="ltr">
+                            <bdi>{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($purchase->grand_total_currency, $purchase->currency_code) }}</bdi>
+                        </td>
+                    @endif
+                    <td class="table-actions py-3 px-4 text-end">@include('livewire.partials.purchase-row-actions')</td>
                 </tr>
-            @empty<tr><td colspan="{{ $withCost ? 7 : 6 }}" class="p-8 text-center text-text-secondary">{{ __('purchasing.no_purchases') }}</td></tr>@endforelse
+            @empty
+                <tr><td colspan="{{ $withCost ? 9 : 8 }}" class="p-8 text-center text-text-secondary">{{ __('purchasing.no_purchases') }}</td></tr>
+            @endforelse
             </tbody></table>
         </div>
         <div class="lg:hidden divide-y divide-border">
@@ -84,8 +132,10 @@
                 </article>
             @empty<p class="p-8 text-center text-text-secondary">{{ __('purchasing.no_purchases') }}</p>@endforelse
         </div>
-    </section>
-    <x-table-pagination :paginator="$purchases" />
+        <div class="p-3 border-t border-border">
+            <x-table-pagination :paginator="$purchases" />
+        </div>
+    </div>
 
     @if($payingPurchaseId)
         <x-dialog-shell

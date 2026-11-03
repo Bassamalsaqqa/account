@@ -14,6 +14,7 @@ use App\Support\Tenancy\CompanyContext;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Contracts\View\View;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Facades\DB;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Locked;
 use Livewire\Attributes\Url;
@@ -227,17 +228,15 @@ class BrandIndex extends Component
         }
 
         try {
-            return app(TenantWriteAccess::class)->transaction((int) $this->lockedCompanyId, function () {
+            return DB::transaction(function (): Company {
                 /** @var User $actor */
                 $actor = auth()->user();
 
                 return app(SalesActorGuard::class)->lockAndAuthorize(
-                    $this->lockedCompanyId,
-                    $actor,
-                    'inventory.product.manage'
+                    $this->lockedCompanyId, $actor, 'inventory.product.manage'
                 );
             });
-        } catch (AuthorizationException $e) {
+        } catch (AuthorizationException) {
             abort(403);
         }
     }

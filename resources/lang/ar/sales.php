@@ -7,6 +7,7 @@ return [
     'draft_deleted' => 'تم حذف مسودة الفاتورة.',
     'optional_details' => 'ملاحظات وشروط (اختياري)',
     'tax_number' => 'الرقم الضريبي',
+    'posted_commercial_summary' => 'صافي المبيعات بعد خصم المردودات',
     // General / Common
     'sales' => 'المبيعات',
     'invoices' => 'الفواتير',
@@ -313,4 +314,6 @@ return [
     'price_permission_required' => 'تغيير السعر يتطلب صلاحية',
     'discount_permission_required' => 'تغيير الخصم يتطلب صلاحية',
     'return_to_draft' => 'إعادة إلى مسودة',
+    'received_amount' => 'المبلغ المقبوض',
+    'allocated_amount' => 'المبلغ المخصص',
 ];

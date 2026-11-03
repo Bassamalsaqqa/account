@@ -214,7 +214,7 @@ class Phase0FoundationTest extends TestCase
         $this->assertAuthenticatedAs($user);
     }
 
-    public function test_authenticated_user_can_view_settings_visual_proof_screen(): void
+    public function test_authenticated_user_can_view_editable_company_settings_in_arabic(): void
     {
         $user = User::factory()->create([
             'name' => 'أحمد محمد',
@@ -232,12 +232,15 @@ class Phase0FoundationTest extends TestCase
             ->get('/settings');
 
         $response->assertOk();
-        $response->assertSee('إعدادات النظام');
-        $response->assertSee('الهوية والإعدادات العامة');
-        $response->assertSee('المبيعات والمشتريات والمخزون');
-        $response->assertSee('المستخدمون والأمان');
-        $response->assertSee('المستندات والبيانات');
-        $response->assertSee('ILS');
+        $response->assertSee('dir="rtl"', false);
+        $response->assertSee(__('settings.title', [], 'ar'));
+        $response->assertSee('wire:submit="saveIdentity"', false);
+        $response->assertSee('wire:model="name_ar"', false);
+        $response->assertSee(route('settings.index', ['section' => 'currencies']), false);
+
+        $this->get(route('settings.index', ['section' => 'currencies']))
+            ->assertOk()
+            ->assertSee('ILS');
     }
 
     public function test_authenticated_user_can_view_settings_in_english_ltr(): void
@@ -260,11 +263,14 @@ class Phase0FoundationTest extends TestCase
 
         $response->assertOk();
         $response->assertSee('dir="ltr"', false);
-        $response->assertSee('System Settings');
-        $response->assertSee('Identity & General Settings');
-        $response->assertSee('Sales, Purchases & Inventory');
-        $response->assertSee('Users & Security');
-        $response->assertSee('Documents & Data');
+        $response->assertSee(__('settings.title', [], 'en'));
+        $response->assertSee('wire:submit="saveIdentity"', false);
+        $response->assertSee('wire:model="name_en"', false);
+        $response->assertSee('Modern Trade Co');
+
+        $this->get(route('settings.index', ['section' => 'currencies']))
+            ->assertOk()
+            ->assertSee('USD');
     }
 
     public function test_dev_ui_specimen_is_accessible_in_local(): void

@@ -130,7 +130,7 @@ final class DeepSeekSetup extends Component
                 $password, $this->policyRevision);
             $this->refreshRevisions();
             $this->message = __('ai_product.enabled_done');
-            $this->redirect(route('settings.ai'));
+            $this->redirect(route('settings.index', ['section' => 'ai']));
         } catch (AssistantUnavailable $e) {
             $this->message = __('ai_product.result_'.$e->diagnosticReason());
             $this->refreshRevisions();
@@ -149,7 +149,7 @@ final class DeepSeekSetup extends Component
             );
             $this->refreshRevisions();
             $this->message = __('ai_product.disabled_done');
-            $this->redirect(route('settings.ai'));
+            $this->redirect(route('settings.index', ['section' => 'ai']));
         } catch (AssistantUnavailable $e) {
             $this->message = __('ai_product.result_'.$e->diagnosticReason());
             $this->refreshRevisions();
@@ -166,7 +166,7 @@ final class DeepSeekSetup extends Component
         }
         // Preserve the existing event for an already-mounted launcher; the reload also covers first setup.
         $this->dispatch('ai:open-assistant');
-        $this->redirect(route('settings.ai', ['open_assistant' => 1]));
+        $this->redirect(route('settings.index', ['section' => 'ai', 'open_assistant' => 1]));
     }
 
     public function render(): View
