@@ -168,15 +168,15 @@
                                 <tr class="hover:bg-surface-soft/60 transition-colors">
                                     @foreach($columns as $column)
                                         <td class="py-3 px-4 {{ $column['type']==='decimal' ? 'tabular-nums whitespace-nowrap' : 'max-w-64' }}">
-                                            {{ app(\App\Application\Reporting\Presentation\ReportPresenter::class)->displayValue($row,$column) ?? __('reports.unavailable') }}
+                                            <bdi dir="{{ in_array($column['type'], ['decimal', 'integer', 'date', 'datetime'], true) ? 'ltr' : 'auto' }}">{{ app(\App\Application\Reporting\Presentation\ReportPresenter::class)->displayValue($row,$column) ?? __('reports.unavailable') }}</bdi>
                                         </td>
                                     @endforeach
                                     <td class="table-actions py-3 px-4 text-end">
-                                        @foreach($sourceLinks[$rowIndex] ?? [] as $link)
-                                            <a href="{{ $link['url'] }}" class="touch-action inline-block text-xs text-primary font-bold hover:underline">
-                                                {{ $link['label'] }}
-                                            </a>
-                                        @endforeach
+                                        <div class="inline-flex items-center gap-1">
+                                            @foreach($sourceLinks[$rowIndex] ?? [] as $link)
+                                                <x-row-action :href="$link['url']" :label="$link['label']" icon="eye" />
+                                            @endforeach
+                                        </div>
                                     </td>
                                 </tr>
                             @endforeach
@@ -191,9 +191,9 @@
                             <dl class="grid grid-cols-2 gap-x-4 gap-y-2.5 text-xs">
                                 @foreach($columns as $column)
                                     <div class="min-w-0">
-                                        <dt class="text-[11px] font-semibold text-text-muted">{{ $column['label'] }}</dt>
+                                        <dt class="text-xs font-semibold text-text-muted">{{ $column['label'] }}</dt>
                                         <dd class="mt-0.5 text-sm font-bold text-text-primary break-words {{ $column['type']==='decimal' ? 'tabular-nums' : '' }}">
-                                            {{ app(\App\Application\Reporting\Presentation\ReportPresenter::class)->displayValue($row,$column) ?? __('reports.unavailable') }}
+                                            <bdi dir="{{ in_array($column['type'], ['decimal', 'integer', 'date', 'datetime'], true) ? 'ltr' : 'auto' }}">{{ app(\App\Application\Reporting\Presentation\ReportPresenter::class)->displayValue($row,$column) ?? __('reports.unavailable') }}</bdi>
                                         </dd>
                                     </div>
                                 @endforeach
@@ -201,9 +201,7 @@
                             @if(!empty($sourceLinks[$rowIndex]))
                                 <div class="pt-2 border-t border-border flex flex-wrap gap-2">
                                     @foreach($sourceLinks[$rowIndex] as $link)
-                                        <a href="{{ $link['url'] }}" class="touch-action text-xs text-primary font-bold hover:underline">
-                                            {{ $link['label'] }}
-                                        </a>
+                                        <x-row-action :href="$link['url']" :label="$link['label']" icon="eye" />
                                     @endforeach
                                 </div>
                             @endif
@@ -218,10 +216,10 @@
                         {{ __('reports.page') }} {{ $result->pagination['current_page'] }} {{ __('reports.of') }} {{ $result->pagination['last_page'] }} &middot; {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($result->pagination['total']) }} {{ __('reports.records') }}
                     </span>
                     <div class="flex gap-2">
-                        <button type="button" wire:click="goToPage({{ max(1,$result->pagination['current_page']-1) }})" wire:loading.attr="disabled" wire:target="goToPage" @disabled($result->pagination['current_page']<=1) class="h-8 min-h-[32px] rounded-control border border-border bg-white px-3 py-0 text-xs font-bold text-text-secondary hover:text-text-primary hover:bg-surface-soft disabled:opacity-40 transition cursor-pointer">
+                        <button type="button" wire:click="goToPage({{ max(1,$result->pagination['current_page']-1) }})" wire:loading.attr="disabled" wire:target="goToPage" @disabled($result->pagination['current_page']<=1) class="touch-action h-8 min-h-[32px] rounded-control border border-border bg-white px-3 py-0 text-sm font-bold text-text-secondary hover:text-text-primary hover:bg-surface-soft disabled:opacity-40 transition cursor-pointer">
                             {{ __('reports.previous') }}
                         </button>
-                        <button type="button" wire:click="goToPage({{ $result->pagination['current_page']+1 }})" wire:loading.attr="disabled" wire:target="goToPage" @disabled($result->pagination['current_page'] >= $result->pagination['last_page']) class="h-8 min-h-[32px] rounded-control border border-border bg-white px-3 py-0 text-xs font-bold text-text-secondary hover:text-text-primary hover:bg-surface-soft disabled:opacity-40 transition cursor-pointer">
+                        <button type="button" wire:click="goToPage({{ $result->pagination['current_page']+1 }})" wire:loading.attr="disabled" wire:target="goToPage" @disabled($result->pagination['current_page'] >= $result->pagination['last_page']) class="touch-action h-8 min-h-[32px] rounded-control border border-border bg-white px-3 py-0 text-sm font-bold text-text-secondary hover:text-text-primary hover:bg-surface-soft disabled:opacity-40 transition cursor-pointer">
                             {{ __('reports.next') }}
                         </button>
                     </div>

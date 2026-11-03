@@ -659,10 +659,10 @@ final class Correction01RegressionsTest extends TradeTestCase
             ->test(ReportView::class, ['reportKey' => 'inventory.transfers']);
         $comp->assertStatus(200)
             ->assertSee('2026-10-08')
-            ->assertSeeHtml('>15</td>')
-            ->assertSeeHtml('>25.00</td>')
             ->assertSee($this->warehouse->name_ar)
             ->assertSee($destWarehouse->name_ar);
+        $this->assertReportTableCellText($comp->html(), '15');
+        $this->assertReportTableCellText($comp->html(), '25.00');
 
         // Real HTTP CSV stream test parsed properly
         $response = $this->get(route('reports.export', [
@@ -744,9 +744,9 @@ final class Correction01RegressionsTest extends TradeTestCase
         $comp = Livewire::test(ReportView::class, ['reportKey' => 'inventory.by-warehouse']);
         $comp->assertStatus(200)
             ->assertSee($this->warehouse->name_ar)
-            ->assertSee($warehouse2->name_ar)
-            ->assertSeeHtml('>40</td>')
-            ->assertSeeHtml('>60</td>');
+            ->assertSee($warehouse2->name_ar);
+        $this->assertReportTableCellText($comp->html(), '40');
+        $this->assertReportTableCellText($comp->html(), '60');
 
         // CSV export retains warehouse names and quantities
         $response = $this->get(route('reports.export', ['reportKey' => 'inventory.by-warehouse']));
@@ -758,5 +758,20 @@ final class Correction01RegressionsTest extends TradeTestCase
         $this->assertGreaterThanOrEqual(3, count($parsedRows));
         $this->assertStringContainsString('40.000000', $csv);
         $this->assertStringContainsString('60.000000', $csv);
+    }
+
+    private function assertReportTableCellText(string $html, string $expected): void
+    {
+        $previous = libxml_use_internal_errors(true);
+        try {
+            $document = new \DOMDocument;
+            $this->assertTrue($document->loadHTML($html, LIBXML_NONET));
+            $matches = (new \DOMXPath($document))->query('//td[normalize-space(.)="'.$expected.'"]');
+            $this->assertNotFalse($matches);
+            $this->assertGreaterThan(0, $matches->length);
+        } finally {
+            libxml_clear_errors();
+            libxml_use_internal_errors($previous);
+        }
     }
 }

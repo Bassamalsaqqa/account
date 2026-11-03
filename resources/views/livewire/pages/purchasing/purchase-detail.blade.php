@@ -27,6 +27,12 @@
                     @else
                         <span class="font-bold text-text-primary">{{ $document['vendor_name'] }}</span>
                     @endif
+                    @if (filled($purchase->vendor_invoice_number))
+                        <span class="ms-3 inline-flex max-w-full items-center gap-1">
+                            {{ __('purchasing.vendor_invoice_number') }}:
+                            <bdi dir="ltr" class="min-w-0 max-w-64 truncate font-mono" title="{{ $purchase->vendor_invoice_number }}">{{ $purchase->vendor_invoice_number }}</bdi>
+                        </span>
+                    @endif
                 </div>
             </div>
 
