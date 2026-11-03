@@ -109,7 +109,7 @@ class WebCommandParityTest extends TestCase
         $this->assertEquals(1, PostingBatch::where('company_id', $this->company->id)->count());
     }
 
-    public function test_detail_review_not_post_then_confirm_posts_invoice(): void
+    public function test_detail_confirms_clean_invoice_without_a_redundant_review_and_cannot_duplicate_it(): void
     {
         $invoice = app(CreateSalesInvoiceDraftAction::class)->execute($this->company, $this->owner, [
             'customer_id' => $this->customer->id,
@@ -126,19 +126,12 @@ class WebCommandParityTest extends TestCase
 
         $component->call('postInvoice')
             ->assertHasNoErrors()
-            ->assertSet('showPreview', true);
-
-        $this->assertNotEmpty($component->get('confirmationToken'));
-        $invoice->refresh();
-        $this->assertEquals(SalesInvoice::STATUS_DRAFT, $invoice->status);
-        $this->assertEquals(0, PostingBatch::where('company_id', $this->company->id)->count());
-
-        $component->call('confirmPost')
-            ->assertHasNoErrors()
             ->assertSet('showPreview', false);
 
         $invoice->refresh();
         $this->assertEquals(SalesInvoice::STATUS_POSTED, $invoice->status);
+        $this->assertEquals(1, PostingBatch::where('company_id', $this->company->id)->count());
+        $component->call('postInvoice')->assertStatus(400);
         $this->assertEquals(1, PostingBatch::where('company_id', $this->company->id)->count());
     }
 
@@ -170,6 +163,7 @@ class WebCommandParityTest extends TestCase
 
     public function test_expired_confirmation_keeps_real_invoice_draft(): void
     {
+        $this->customer->update(['credit_limit' => '1']);
         $invoice = app(CreateSalesInvoiceDraftAction::class)->execute($this->company, $this->owner, [
             'customer_id' => $this->customer->id, 'currency_code' => 'ILS',
             'exchange_rate' => '1', 'issue_date' => '2026-10-11',
@@ -177,6 +171,7 @@ class WebCommandParityTest extends TestCase
         ]);
         $component = Livewire::test(InvoiceDetail::class, ['publicId' => $invoice->public_id])
             ->call('postInvoice')->assertSet('showPreview', true);
+        $this->assertContains('credit_limit_exceeded', array_column($component->get('previewData')['warnings'], 'code'));
         $this->travel(301)->seconds();
         try {
             $component->call('confirmPost')->assertSet('showPreview', false);
@@ -457,7 +452,8 @@ class WebCommandParityTest extends TestCase
         $componentAr->assertSeeHtml('5.1234567890');
         $componentAr->assertSeeHtml(__('commands.preview_title'));
         $componentAr->assertDontSeeHtml(__('commands.stock_disclaimer'));
-        $componentAr->assertSeeHtml('تخصيص المخزون (الأقرب انتهاءً للصلاحية أولًا — FEFO)');
+        $componentAr->assertSeeHtml(__('commands.stock_allocation'));
+        $componentAr->assertSeeHtml('LOT-2026-A');
         $componentAr->assertDontSeeHtml('تخصيص المخزون (الوارد أولاً صادر أولاً)');
         $componentAr->assertSeeHtml(__('commands.lot'));
         $componentAr->assertSeeHtml(__('commands.expiry'));
@@ -480,6 +476,7 @@ class WebCommandParityTest extends TestCase
 
     public function test_real_member_post_permission_revoked_after_preview(): void
     {
+        $this->customer->update(['credit_limit' => '1']);
         $member = User::factory()->create();
         CompanyUser::create([
             'company_id' => $this->company->id, 'user_id' => $member->id,
@@ -496,6 +493,7 @@ class WebCommandParityTest extends TestCase
         app(CompanyContext::class)->setCompany($this->company, $member);
         $component = Livewire::test(InvoiceDetail::class, ['publicId' => $invoice->public_id])
             ->call('postInvoice')->assertSet('showPreview', true);
+        $this->assertContains('credit_limit_exceeded', array_column($component->get('previewData')['warnings'], 'code'));
         $member->revokePermissionTo('sales.invoice.post');
         $member->unsetRelation('permissions')->unsetRelation('roles');
         $this->assertFalse($member->hasPermissionTo('sales.invoice.post'));

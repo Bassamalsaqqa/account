@@ -25,6 +25,39 @@ use Tests\Feature\Phase5E\Phase5ETestCase;
 
 class HumanWorkflowRefinementTest extends Phase5ETestCase
 {
+    public function test_direct_purchase_confirmation_cannot_post_an_older_saved_draft_while_quick_create_is_open(): void
+    {
+        foreach (['showQuickVendorModal', 'showQuickProductModal'] as $modal) {
+            $form = Livewire::test(PurchaseForm::class)
+                ->set('vendor_id', $this->vendor->id)
+                ->call('selectProduct', 0, $this->product->id)
+                ->set('lines.0.quantity', '2')->set('lines.0.unit_cost', '25.00')
+                ->call('saveDraft')->assertHasNoErrors();
+            $draft = Purchase::where('public_id', $form->get('savedDraftPublicId'))->firstOrFail();
+            $form->set('lines.0.quantity', '3')->set($modal, true)
+                ->call('saveAndConfirm')->assertHasNoErrors()
+                ->assertSet($modal, true)->assertSet('lines.0.quantity', '3');
+            $this->assertTrue($draft->fresh()->isDraft());
+            $this->assertSame('2.000000', $draft->lines()->sole()->quantity);
+        }
+        $this->assertDatabaseCount('posting_batches', 0);
+        $this->assertDatabaseCount('stock_movements', 0);
+    }
+
+    public function test_direct_invoice_confirmation_preserves_quick_create_and_does_not_save_or_post(): void
+    {
+        foreach (['showQuickCustomerModal', 'showQuickProductModal'] as $modal) {
+            Livewire::test(InvoiceForm::class)->set('customer_id', $this->customer->id)
+                ->set('lines.0.item_description', 'Unsaved service')
+                ->set('lines.0.quantity', '1')->set('lines.0.unit_price', '25.00')
+                ->set($modal, true)->call('saveAndConfirm')->assertHasNoErrors()
+                ->assertSet($modal, true)->assertSet('lines.0.item_description', 'Unsaved service');
+        }
+        $this->assertDatabaseCount('sales_invoices', 0);
+        $this->assertDatabaseCount('posting_batches', 0);
+        $this->assertDatabaseCount('stock_movements', 0);
+    }
+
     public function test_purchase_confirm_creates_one_canonical_receipt_and_retries_do_not_duplicate_it(): void
     {
         $form = Livewire::test(PurchaseForm::class)

@@ -246,6 +246,9 @@ class PurchaseForm extends Component
     {
         $company = $this->authorizeForm();
         $this->authorizePurchasing('purchasing.purchase.post');
+        if ($this->showQuickVendorModal || $this->showQuickProductModal) {
+            return null;
+        }
         $this->resetErrorBag('draft');
         $response = $this->saveDraft();
         if ($this->getErrorBag()->isNotEmpty() || $this->savedDraftPublicId === null) {

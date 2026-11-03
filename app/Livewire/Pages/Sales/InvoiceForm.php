@@ -643,6 +643,9 @@ class InvoiceForm extends Component
 
     public function saveAndConfirm(SalesInvoiceCommands $commands): mixed
     {
+        if ($this->showQuickCustomerModal || $this->showQuickProductModal) {
+            return null;
+        }
         $this->cancelPreview();
         $response = $this->save(true, $commands);
         if ($this->showPreview && InvoiceConfirmation::canConfirmDirectly($this->previewData ?? [])) {
