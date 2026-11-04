@@ -2,15 +2,27 @@
 
 ## Sources of truth
 
-Use the repository source and the relevant project documentation together.
+Use the repository source and the relevant project documentation together:
 
-- Product/accounting scope: `docs/SMALL_TRADER_ACCOUNTING_MASTER_SPEC_v1.0.md`
-- Engineering/schema/posting boundaries: `docs/ENGINEERING_BLUEPRINT_v1.0.md`
-- Implemented-domain decisions: `docs/adr/`
-- Deployment work only: `docs/HOSTINGER_DEPLOYMENT_GUIDE.md`
-- Approved UI references only when working on the corresponding screen: `references/ui/`
+| Area | Authoritative Document |
+|---|---|
+| **Product & Business Rules** | `docs/SMALL_TRADER_ACCOUNTING_MASTER_SPEC_v1.0.md` |
+| **Architecture, Schema & Posting** | `docs/ENGINEERING_BLUEPRINT_v1.0.md` |
+| **Implemented Architectural Decisions** | `docs/adr/` (ADR 0002 through ADR 0013) |
+| **Setup, Portability & Operations** | `docs/SETUP_AND_OPERATIONS_GUIDE.md` |
+| **Interface & Everyday Workflow Rules** | `docs/UI_WORKFLOW_RULES.md` |
+| **Deployment Procedures** | `docs/HOSTINGER_DEPLOYMENT_GUIDE.md` |
+| **Controlled Release Checklist** | `docs/CONTROLLED_RELEASE_CHECKLIST.md` |
+| **Approved UI Reference Wireframes** | `references/ui/` (when working on the corresponding screen) |
 
-Read only the sections relevant to the task. Do not load both large source-of-truth documents in full for trivial or narrowly scoped work.
+Read only the sections relevant to the task. Do not load large source-of-truth documents in full for trivial or narrowly scoped work.
+
+## Durable Agent Routing & UI Implementation
+
+- **Framework Stack**: The application is built on Laravel 13, Livewire 4, Tailwind CSS 4, and Alpine.js. Do NOT introduce a second application framework (no React, Vue, or separate frontend daemons).
+- **Design Guidance**: Apply BoardUI and shadcn design principles (compact layout density, 44px mobile touch targets, semantic subtle colored surfaces, accessible dialogs, and clean tabular numbers). When agent skills (`boardui`, `shadcn`, `impeccable`) are available in the local environment, consult their patterns for component architecture and interaction design, adapting them natively into the Laravel Blade/Livewire/Tailwind shared components (`resources/views/components/`). These skills are optional portable guidance, never hard machine-specific dependencies or mandatory paths.
+- **Shared Component First**: Update existing shared components first (`x-input`, `x-button`, `x-table`, `x-dialog-shell`, etc.). Never fork duplicate implementations.
+- **AGY Opt-In**: Codex works directly by default. Delegate to AGY only upon the Owner's literal `$agy-manual` invocation, in the existing checkout with a single writer. No automatic/headless/relay/controller/retry dispatches or new worktrees. Codex pauses during AGY editing and independently reviews its actual diff on handback.
 
 ## Git and phase discipline
 
@@ -22,18 +34,21 @@ Read only the sections relevant to the task. Do not load both large source-of-tr
 
 ## Accounting and inventory invariants
 
-1. Use exact decimal primitives only. No PHP floats for money, FX, tax, discounts, quantities, valuation, costing, or allocations.
-2. `AccountingPostingService` is the canonical writer for posting batches/lines. Do not write financial history directly.
-3. Inventory quantity/value changes go through canonical inventory services and immutable stock movements. Do not mutate inventory caches as business truth.
-4. All legs of one business event must commit atomically. Stock, accounting, numbering, provenance, and lifecycle state must not be independently committable.
-5. Posted financial/stock history is immutable. Corrections use explicit return/reversal/void/cancel workflows.
-6. Derived balances are not mutable authority.
-7. Every company-owned operation requires active company context, server-side authorization, and strict same-company ownership. Never fall back to another company's configuration or records.
-8. Sensitive cost/profit data must be server-redacted. CSS hiding is never authorization.
-9. Default sale/purchase prices are suggestions copied to editable transaction lines; they are not historical truth.
-10. Historical vendor/customer price information derives from actual posted transaction lines unless an explicitly reviewed read-only cache exists.
-11. Expiry-tracked inventory uses traceable lots and FEFO where applicable.
-12. Core financial/inventory side effects do not belong in Eloquent observers, Blade, or Livewire templates.
+1. **Exact decimal arithmetic**: Use exact decimal primitives only (`Brick\Math\BigDecimal`). Zero PHP binary float arithmetic for money, FX, tax, discounts, quantities, valuation, costing, or allocations. Money amounts use 2 decimal places for human display and currency inputs; exact economic storage, FX, unit conversions, and quantities use exact arbitrary-precision decimals (`BigDecimal`), never silently rounding or truncating historical economic data. Quantities trim trailing display zeros without silently truncating fractional quantities.
+2. **Canonical posting service**: `AccountingPostingService` is the canonical writer for posting batches/lines. Do not write financial history directly.
+3. **Canonical inventory movements**: Inventory quantity/value changes go through canonical inventory services and immutable stock movements. Do not mutate inventory caches as business truth.
+4. **Atomic business events**: All legs of one business event must commit atomically. Stock, accounting, numbering, provenance, and lifecycle state must not be independently committable.
+5. **Immutable posted history**: Posted financial/stock history is immutable. Corrections use explicit return/reversal/void/cancel workflows.
+6. **Derived balances**: Derived balances are not mutable authority.
+7. **Strict tenant isolation**: Every company-owned operation requires active company context, server-side authorization, and strict same-company ownership. Never fall back to another company's configuration or records.
+8. **Server-side redaction**: Sensitive cost/profit data must be server-redacted. CSS hiding is never authorization.
+9. **Price suggestions**: Default sale/purchase prices are suggestions copied to editable transaction lines; they are not historical truth.
+10. **Historical pricing**: Historical vendor/customer price information derives from actual posted transaction lines unless an explicitly reviewed read-only cache exists.
+11. **Traceable lots & FEFO**: Expiry-tracked inventory uses traceable lots and FEFO where applicable.
+12. **No core side effects in views/observers**: Core financial/inventory side effects do not belong in Eloquent observers, Blade, or Livewire templates.
+13. **Zero-value transactions**: Legitimate zero-value items follow explicit domain policy (ADR 0013: valid zero-cost purchases create stock receipts and numbering without empty journals); no generic zero-value bypass.
+14. **Security & Impersonation**: Authenticated, audited operator impersonation requires explicit platform grant with clean expiry; no compulsory MFA; subscription enforcement remains OFF globally and per-company until separate owner authorization.
+15. **AI Assistant boundaries**: Built-in assistant answers permitted questions, executes authorized read-only reports, and drafts editable UNSAVED forms. Bounded read optimization is released; demand-mounted AI, client bundle splitting, paired latency, and 100-line virtualized draft qualification remain on HOLD.
 
 ## Canonical business-event boundaries
 
@@ -92,12 +107,12 @@ Stitch/Figma/screenshots are design references, not implementation architecture.
 Translate approved patterns into the Laravel + Livewire + Tailwind system and preserve:
 
 - Arabic RTL and English LTR;
-- mobile/tablet/desktop responsiveness;
-- keyboard/focus behavior;
+- mobile/tablet/desktop responsiveness (compact desktop density, 44px mobile touch targets);
+- keyboard/focus behavior and short field errors;
 - loading/empty/error/restricted states;
 - truthful status;
 - accessible contrast;
-- clear currency/numeric presentation.
+- clear currency/numeric presentation (`tabular-nums` with isolated LTR).
 
 Do not serialize restricted financial values into the client.
 
@@ -107,10 +122,10 @@ Run the checks relevant to the change. For substantial PHP/domain work, the norm
 
 - focused tests;
 - relevant regression suites;
-- `composer qa`;
-- production frontend build when frontend/runtime assets are affected;
+- `composer qa` (or pint, phpstan, and isolated phpunit);
+- production frontend build (`npm run build`) when frontend/runtime assets are affected;
 - migration round-trip on disposable MariaDB when schema changes;
-- Accounting, Inventory, and Sales reconciliations when economic behavior is affected.
+- Accounting, Inventory, Sales, Payables, Money, and Phase7 reconciliations when economic behavior is affected.
 
 At handoff report:
 
