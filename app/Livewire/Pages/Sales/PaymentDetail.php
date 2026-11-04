@@ -143,8 +143,9 @@ class PaymentDetail extends Component
         $user = auth()->user();
         $canReverse = $user->hasPermissionTo('money.receipt.reverse') && ! $this->payment->is_reversed && $this->payment->check_id === null;
 
+        $unallocatedAmount = $this->payment->unallocated_amount;
         $canAllocate = $user->hasPermissionTo('money.receipt.allocate') && ! $this->payment->is_reversed
-            && BigDecimal::of($this->payment->unallocated_amount)->isPositive();
+            && BigDecimal::of($unallocatedAmount)->isPositive();
         $openInvoices = [];
         if ($this->showCreditForm) {
             $this->authorizeCredit();
@@ -162,6 +163,7 @@ class PaymentDetail extends Component
         return view('livewire.pages.sales.payment-detail', [
             'canReverse' => $canReverse,
             'canAllocate' => $canAllocate,
+            'unallocatedAmount' => $unallocatedAmount,
             'openInvoices' => $openInvoices,
             'singleAllocatedInvoice' => $singleAllocatedInvoice,
             'canViewFx' => $user->hasPermissionTo('reports.financial.view'),

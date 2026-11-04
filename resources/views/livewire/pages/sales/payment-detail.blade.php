@@ -76,7 +76,8 @@
 
         <!-- Shared Summary Cards -->
         @php
-            $allocatedAmount = bcsub((string) $payment->amount, (string) $payment->unallocated_amount, 4);
+            $unallocated = $unallocatedAmount ?? $payment->unallocated_amount;
+            $allocatedAmount = bcsub((string) $payment->amount, (string) $unallocated, 4);
             $receiptCards = [
                 [
                     'label' => __('sales.received_amount'),
@@ -92,9 +93,9 @@
                 ],
                 [
                     'label' => __('sales.credit_available'),
-                    'value' => $payment->unallocated_amount,
+                    'value' => $unallocated,
                     'currency' => $payment->currency_code,
-                    'variant' => \Brick\Math\BigDecimal::of((string) $payment->unallocated_amount)->isPositive() ? 'default' : 'muted',
+                    'variant' => \Brick\Math\BigDecimal::of((string) $unallocated)->isPositive() ? 'default' : 'muted',
                 ],
                 [
                     'label' => __('sales.date'),

@@ -10,11 +10,9 @@ use App\Application\Commands\SalesInvoiceCommands;
 use App\Exceptions\NoActiveCompanyException;
 use App\Models\PublicShare;
 use App\Models\SalesInvoice;
-use App\Models\SalesReturn;
 use App\Services\Sales\PublicShareService;
 use App\Support\InvoiceConfirmation;
 use App\Support\Tenancy\CompanyContext;
-use Brick\Math\BigDecimal;
 use Carbon\Carbon;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Contracts\View\View;
@@ -269,21 +267,11 @@ class InvoiceDetail extends Component
         $canReturn = $user->hasPermissionTo('sales.return.create') && $this->invoice->isPosted();
         $canPay = $user->hasPermissionTo('money.receipt.create') && $this->invoice->isPosted();
 
-        $outstanding = $this->invoice->calculateOutstanding();
-        $paymentStatus = $this->invoice->derivedPaymentStatus();
-
-        $paidTotal = BigDecimal::zero();
-        foreach ($this->invoice->allocations as $alloc) {
-            if ($alloc->payment && ! $alloc->payment->is_reversed) {
-                $paidTotal = $paidTotal->plus(BigDecimal::of((string) $alloc->allocated_amount));
-            }
-        }
-        $returnedTotal = BigDecimal::zero();
-        foreach ($this->invoice->returns as $ret) {
-            if ($ret->status === SalesReturn::STATUS_POSTED) {
-                $returnedTotal = $returnedTotal->plus(BigDecimal::of((string) $ret->grand_total_currency));
-            }
-        }
+        $summary = $this->invoice->calculateFinancialSummary();
+        $outstanding = $summary['outstanding'];
+        $paymentStatus = $summary['payment_status'];
+        $paidTotal = $summary['paid'];
+        $returnedTotal = $summary['returned'];
 
         return view('livewire.pages.sales.invoice-detail', [
             'canPost' => $canPost,

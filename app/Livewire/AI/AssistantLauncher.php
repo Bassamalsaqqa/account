@@ -852,47 +852,51 @@ final class AssistantLauncher extends Component
         $briefingAvailable = false;
         $recordLabel = null;
         if ($context->hasCompany() && AiGovernance::isPresentationEligible($context->company())) {
-            $setupAvailable = app(DeepSeekQuickConnect::class)->isOwner($context->company(), auth()->user());
-            try {
-                $disclosure = DeepSeekDefaults::disclosure();
-                $recordContext = $this->open ? $this->resolveCurrentRecord() : null;
-                $recordLabel = $recordContext?->name;
-                $policy = app(AiGovernance::class)->authorizeLauncher($context->company(), auth()->user(), $this->context);
-                $available = true;
-                $privacy = $policy->settings['privacy'] ?? [];
-                $transactionsAvailable = $this->open && app(AiGovernance::class)->allowedIntents($context->company(), auth()->user()) !== [];
-                $questionKeys = $this->open && $this->context === 'auto' ? app(AssistantReportCatalog::class)->permittedKeys($context->company(), auth()->user()) : [];
-                $questionsAvailable = $questionKeys !== [];
-                $briefingAvailable = config('ai_assistant.daily_briefing_enabled') === true
-                    && array_intersect(AssistantDailyBriefing::CARD_KEYS, $questionKeys) !== [];
-                if ($this->isBriefing && config('ai_assistant.daily_briefing_enabled') !== true) {
+            if (! $this->open) {
+                $available = app(AiGovernance::class)->canPresentLauncher($context->company(), auth()->user(), $this->context);
+            } else {
+                $setupAvailable = app(DeepSeekQuickConnect::class)->isOwner($context->company(), auth()->user());
+                try {
+                    $disclosure = DeepSeekDefaults::disclosure();
+                    $recordContext = $this->resolveCurrentRecord();
+                    $recordLabel = $recordContext?->name;
+                    $policy = app(AiGovernance::class)->authorizeLauncher($context->company(), auth()->user(), $this->context);
+                    $available = true;
+                    $privacy = $policy->settings['privacy'] ?? [];
+                    $transactionsAvailable = app(AiGovernance::class)->allowedIntents($context->company(), auth()->user()) !== [];
+                    $questionKeys = $this->context === 'auto' ? app(AssistantReportCatalog::class)->permittedKeys($context->company(), auth()->user()) : [];
+                    $questionsAvailable = $questionKeys !== [];
+                    $briefingAvailable = config('ai_assistant.daily_briefing_enabled') === true
+                        && array_intersect(AssistantDailyBriefing::CARD_KEYS, $questionKeys) !== [];
+                    if ($this->isBriefing && config('ai_assistant.daily_briefing_enabled') !== true) {
+                        $this->turnReports = [];
+                        $this->briefingInsights = [];
+                        $this->isBriefing = false;
+                    }
+                    if (($this->turnReports !== [] || $this->briefingInsights !== []) && $this->turnScope !== app(AssistantTurnContext::class)->scope($context->company(), auth()->user(), session()->getId(), $this->isBriefing ? null : $recordContext)) {
+                        $this->turnReports = [];
+                        $this->briefingInsights = [];
+                        $this->turnContextToken = $this->turnScope = null;
+                        $this->isBriefing = false;
+                    }
+                    if ($this->reportResult !== null) {
+                        app(AssistantReportCatalog::class)->authorize($context->company(), auth()->user(), $this->reportResult['report_key']);
+                    }
+                } catch (AssistantUnavailable|AuthorizationException) {
+                    $available = false;
+                    $setupAvailable = false;
+                    $this->open = false;
+                    $briefingAvailable = false;
+                    $this->reportResult = null;
                     $this->turnReports = [];
                     $this->briefingInsights = [];
+                    $this->turnContextToken = $this->turnScope = $this->turnClarification = null;
+                    $this->clarifyPeriodReport = null;
+                    $this->clarifyPeriodFilters = [];
+                    $this->ambiguousChoice = null;
                     $this->isBriefing = false;
+                    // Hidden feature preserves the complete manual workflow.
                 }
-                if (($this->turnReports !== [] || $this->briefingInsights !== []) && $this->turnScope !== app(AssistantTurnContext::class)->scope($context->company(), auth()->user(), session()->getId(), $this->isBriefing ? null : $recordContext)) {
-                    $this->turnReports = [];
-                    $this->briefingInsights = [];
-                    $this->turnContextToken = $this->turnScope = null;
-                    $this->isBriefing = false;
-                }
-                if ($this->reportResult !== null) {
-                    app(AssistantReportCatalog::class)->authorize($context->company(), auth()->user(), $this->reportResult['report_key']);
-                }
-            } catch (AssistantUnavailable|AuthorizationException) {
-                $available = false;
-                $setupAvailable = false;
-                $this->open = false;
-                $briefingAvailable = false;
-                $this->reportResult = null;
-                $this->turnReports = [];
-                $this->briefingInsights = [];
-                $this->turnContextToken = $this->turnScope = $this->turnClarification = null;
-                $this->clarifyPeriodReport = null;
-                $this->clarifyPeriodFilters = [];
-                $this->ambiguousChoice = null;
-                $this->isBriefing = false;
-                // Hidden feature preserves the complete manual workflow.
             }
         }
 

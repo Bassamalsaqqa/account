@@ -6,6 +6,7 @@ namespace App\Application\Reporting\Presentation;
 
 use App\Application\Reporting\DTO\ReportResult;
 use App\Application\Reporting\Security\ReportingGuard;
+use App\Exceptions\NoActiveCompanyException;
 use App\Models\Company;
 use App\Services\Phase7\Phase7FinancialRead;
 use App\Services\Purchasing\VendorFinancialRead;
@@ -4373,19 +4374,69 @@ final class ReportRegistry
     /** @return array<string, array<string, mixed>> */
     public function visible(Company $company): array
     {
-        return array_filter(self::DEFINITIONS, fn (array $definition): bool => $this->allows($company, $definition['key']));
+        return $this->navigationDefinitions($company, false);
     }
 
-    /** Navigation needs existence only; each attempted definition still authorizes freshly. */
-    public function hasVisible(Company $company): bool
+    /** @return array<string, array<string, mixed>> */
+    private function navigationDefinitions(Company $company, bool $firstOnly): array
     {
-        foreach (array_keys(self::DEFINITIONS) as $key) {
-            if ($this->allows($company, $key)) {
-                return true;
+        $guard = app(ReportingGuard::class);
+        $user = auth()->user();
+        if (! $user) {
+            return [];
+        }
+
+        try {
+            // Freshly evaluates active company membership and retrieves the actor's permission set once.
+            $permissions = $guard->readPermissions($company, $user);
+        } catch (AuthorizationException|NoActiveCompanyException) {
+            return [];
+        }
+
+        $canVendor = null;
+        $canPhase7Advance = null;
+        $canMoneyCashOrBank = in_array('money.cash.view', $permissions, true) || in_array('money.bank.view', $permissions, true);
+
+        $visible = [];
+        foreach (self::DEFINITIONS as $key => $definition) {
+            $required = is_array($definition['permissions']) ? $definition['permissions'] : [$definition['permissions']];
+            if (array_diff($required, $permissions) !== []) {
+                continue;
+            }
+            if ($definition['query'] === 'App\\Application\\Reporting\\Queries\\MoneyVendorPaymentReportQuery') {
+                $canVendor ??= app(VendorFinancialRead::class)->allows((int) $company->id);
+                if (! $canVendor) {
+                    continue;
+                }
+            }
+            if (in_array($definition['key'], ['payroll.advances', 'payroll.outstanding-advances'], true)) {
+                $canPhase7Advance ??= app(Phase7FinancialRead::class)->advance((int) $company->id);
+                if (! $canPhase7Advance) {
+                    continue;
+                }
+            }
+            if (in_array($definition['key'], ['money.balances', 'money.movements'], true) && ! $canMoneyCashOrBank) {
+                continue;
+            }
+            $visible[$key] = $definition;
+            if ($firstOnly) {
+                break;
             }
         }
 
-        return false;
+        if ($permissions !== $guard->readPermissions($company, $user)) {
+            throw new AuthorizationException('Report navigation authority changed during retrieval.');
+        }
+
+        return $visible;
+    }
+
+    /** Navigation needs existence only; evaluated freshly against the active permission set. */
+    public function hasVisible(Company $company): bool
+    {
+        $visible = $this->navigationDefinitions($company, true);
+
+        return ! empty($visible);
     }
 
     public function allows(Company $company, string $key): bool

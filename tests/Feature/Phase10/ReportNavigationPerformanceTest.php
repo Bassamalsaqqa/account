@@ -29,7 +29,9 @@ final class ReportNavigationPerformanceTest extends TradeTestCase
         $existence = count(DB::getQueryLog());
         DB::disableQueryLog();
         $this->assertNotEmpty($visible);
-        $this->assertLessThan($full / 10, $existence);
+        $this->assertLessThanOrEqual(20, $full, 'Full navigation must not repeat authorization per definition.');
+        $this->assertLessThanOrEqual(6, $existence, 'Existence needs only bounded fresh authority checks.');
+        $this->assertLessThan($full, $existence, 'Owner existence must stop before enumerating special sources.');
         foreach ([[], ['reports.sales.view'], ['reports.sales.view', 'sales.invoice.view'],
             ['reports.money.view', 'money.cash.view'], ['reports.payroll.view', 'employees.view']] as $permissions) {
             $actor = $this->customActor($permissions);

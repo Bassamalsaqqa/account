@@ -68,8 +68,7 @@ final class DashboardReports
             // A tenant's check permission is independent of cash/bank visibility.
         }
 
-        $guard->company($company);
-        if ($authority !== $guard->permissionNames(auth()->user())) {
+        if ($authority !== $guard->readPermissions($company, auth()->user())) {
             throw new AuthorizationException('Dashboard authority changed during report retrieval.');
         }
 
@@ -157,8 +156,7 @@ final class DashboardReports
             }
         }
 
-        $guard->company($company);
-        if ($authority !== $guard->permissionNames(auth()->user())) {
+        if ($authority !== $guard->readPermissions($company, auth()->user())) {
             throw new AuthorizationException('Dashboard authority changed during report retrieval.');
         }
 

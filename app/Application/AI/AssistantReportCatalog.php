@@ -79,7 +79,9 @@ final class AssistantReportCatalog
         }
     }
 
-    /** @return list<string> */
+    /**
+     * @return list<string>
+     */
     public function permittedKeys(Company $company, User $actor): array
     {
         if (config('ai_assistant.enabled') !== true || config('ai_assistant.questions.enabled') !== true
@@ -88,13 +90,28 @@ final class AssistantReportCatalog
         }
         $guard = app(ReportingGuard::class);
         try {
-            // One fresh company/membership/permission snapshot for this enumeration only.
-            // Execution and delivery still authorize independently after any provider latency.
             $permissions = $guard->readPermissions($company, $actor, 'ai.assistant.use');
         } catch (AuthorizationException|NoActiveCompanyException) {
             return [];
         }
         $policy = AiCompanyPolicy::where('company_id', $company->id)->first();
+
+        return $this->presentationKeys($policy, $permissions);
+    }
+
+    /** Pure visibility calculation, never authorization for execution or delivery.
+     * @param  list<string>  $permissions
+     */
+    public function hasPresentableReport(AiCompanyPolicy $policy, array $permissions): bool
+    {
+        return $this->presentationKeys($policy, $permissions) !== [];
+    }
+
+    /** @param list<string> $permissions
+     * @return list<string>
+     */
+    private function presentationKeys(?AiCompanyPolicy $policy, array $permissions): array
+    {
         $questions = $policy?->settings['questions'] ?? [];
         if ($policy === null || ! $policy->enabled || ! is_array($questions) || ($questions['enabled'] ?? false) !== true) {
             return [];
