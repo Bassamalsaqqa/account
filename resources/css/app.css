@@ -8,6 +8,21 @@
 @source '../views';
 @source '../../app';
 
+/* Shared interaction feedback; never move controls or animate app-shell geometry. */
+@layer base {
+    button:enabled { transition: background-color 120ms ease, border-color 120ms ease, filter 120ms ease; }
+    button:enabled:hover { filter: brightness(.98); }
+    button:enabled:active { filter: brightness(.94); }
+    button:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
+    button:disabled { cursor: not-allowed; opacity: .6; }
+}
+@keyframes app-dialog-enter { from { opacity: 0; } to { opacity: 1; } }
+.app-dialog-enter { animation: app-dialog-enter 120ms ease-out; }
+@media (prefers-reduced-motion: reduce) {
+    .app-dialog-enter { animation: none; }
+    button:enabled { transition: none; }
+}
+
 @theme {
     --color-canvas: #f7f9fc;
     --color-surface: #ffffff;
