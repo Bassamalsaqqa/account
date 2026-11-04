@@ -4374,6 +4374,12 @@ final class ReportRegistry
     /** @return array<string, array<string, mixed>> */
     public function visible(Company $company): array
     {
+        return $this->navigationDefinitions($company, false);
+    }
+
+    /** @return array<string, array<string, mixed>> */
+    private function navigationDefinitions(Company $company, bool $firstOnly): array
+    {
         $guard = app(ReportingGuard::class);
         $user = auth()->user();
         if (! $user) {
@@ -4387,29 +4393,36 @@ final class ReportRegistry
             return [];
         }
 
-        $canVendor = app(VendorFinancialRead::class)->allows((int) $company->id);
-        $canPhase7Advance = app(Phase7FinancialRead::class)->advance((int) $company->id);
+        $canVendor = null;
+        $canPhase7Advance = null;
         $canMoneyCashOrBank = in_array('money.cash.view', $permissions, true) || in_array('money.bank.view', $permissions, true);
 
-        $visible = array_filter(self::DEFINITIONS, function (array $definition) use ($permissions, $canVendor, $canPhase7Advance, $canMoneyCashOrBank): bool {
+        $visible = [];
+        foreach (self::DEFINITIONS as $key => $definition) {
             $required = is_array($definition['permissions']) ? $definition['permissions'] : [$definition['permissions']];
-            foreach ($required as $perm) {
-                if (! in_array($perm, $permissions, true)) {
-                    return false;
+            if (array_diff($required, $permissions) !== []) {
+                continue;
+            }
+            if ($definition['query'] === 'App\\Application\\Reporting\\Queries\\MoneyVendorPaymentReportQuery') {
+                $canVendor ??= app(VendorFinancialRead::class)->allows((int) $company->id);
+                if (! $canVendor) {
+                    continue;
                 }
             }
-            if ($definition['query'] === 'App\\Application\\Reporting\\Queries\\MoneyVendorPaymentReportQuery' && ! $canVendor) {
-                return false;
-            }
-            if (in_array($definition['key'], ['payroll.advances', 'payroll.outstanding-advances'], true) && ! $canPhase7Advance) {
-                return false;
+            if (in_array($definition['key'], ['payroll.advances', 'payroll.outstanding-advances'], true)) {
+                $canPhase7Advance ??= app(Phase7FinancialRead::class)->advance((int) $company->id);
+                if (! $canPhase7Advance) {
+                    continue;
+                }
             }
             if (in_array($definition['key'], ['money.balances', 'money.movements'], true) && ! $canMoneyCashOrBank) {
-                return false;
+                continue;
             }
-
-            return true;
-        });
+            $visible[$key] = $definition;
+            if ($firstOnly) {
+                break;
+            }
+        }
 
         if ($permissions !== $guard->readPermissions($company, $user)) {
             throw new AuthorizationException('Report navigation authority changed during retrieval.');
@@ -4421,7 +4434,7 @@ final class ReportRegistry
     /** Navigation needs existence only; evaluated freshly against the active permission set. */
     public function hasVisible(Company $company): bool
     {
-        $visible = $this->visible($company);
+        $visible = $this->navigationDefinitions($company, true);
 
         return ! empty($visible);
     }
