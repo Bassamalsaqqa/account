@@ -4,7 +4,7 @@ Status: IMPLEMENTED / INDEPENDENT SOURCE ACCEPTANCE PENDING. No merge or deploym
 
 Baseline: `3f82b947d319d519cea6d25cecd7724bfc909672`.
 Branch: `phase/9-documents-catalog-sharing`.
-Contract: [accepted P9-0 execution lock](../PHASE_9_P0_DISCOVERY_AND_EXECUTION_LOCK.md).
+Contract: accepted P9-0 execution lock (`PHASE_9_P0_DISCOVERY_AND_EXECUTION_LOCK.md` in Git history).
 
 ## Decisions
 
@@ -31,7 +31,7 @@ integrity and authenticated encrypted issuance content. Statements require a
 password and a finite expiry. The original receipt disclosure cannot grow with
 later applications. Quotation grants retire when their commercial source revision
 changes. A failed decrypt, missing key, unsupported version or integrity mismatch
-never triggers live reconstruction. See [key recovery](../PHASE_9_ISSUANCE_KEY_RECOVERY.md).
+never triggers live reconstruction. See key recovery record (`PHASE_9_ISSUANCE_KEY_RECOVERY.md` in Git history).
 
 Publication authority is independent of Product editing. Catalog prices default
 OFF and are absent from all public DTOs, JSON, HTML and PDFs. Priced publication
@@ -64,7 +64,7 @@ Legacy expiry instants are never recomputed on reads, recovery or password-only
 edits. Access editing preserves the original instant when its displayed date is
 unchanged; explicitly selecting a different date applies the new policy. Display
 includes the Company-local instant and offset. See the
-[Correction 01 handoff](../PHASE_9_CORRECTION_01_HANDOFF.md).
+Correction 01 handoff (`PHASE_9_CORRECTION_01_HANDOFF.md` in Git history).
 
 Owner gets new capabilities. Existing non-Owner grants remain unchanged during
 the explicit upgrade. New Administrators do not automatically receive Phase 9
@@ -111,7 +111,7 @@ dependency was added. Chromium is used only for development browser verification
 
 ## Acceptance and deferred work
 
-The [implementation handoff](../PHASE_9_SOURCE_ACCEPTANCE_HANDOFF.md) records exact
+The implementation handoff (`PHASE_9_SOURCE_ACCEPTANCE_HANDOFF.md` in Git history) records exact
 source, QA counts, actual PDFs, decoded labels, responsive evidence, migration
 preservation and limitations. Worker completion is not acceptance; Codex reviews
 and verifies integrated source. Owner authorizes a future merge and deployment

@@ -1,4 +1,4 @@
-> SUPERSEDED HISTORICAL REVIEW: this report assessed the earlier source and consent contract. The Owner replaced affirmative text-consent gates on 2026-10-24. See [current source review](nonblocking-source-review.md), [current QA receipt](qa-result.json) and [current handback](../../../RELEASE_B1_HANDBACK.md). Earlier readiness wording below is not current acceptance.
+> SUPERSEDED HISTORICAL REVIEW: this report assessed the earlier source and consent contract. The Owner replaced affirmative text-consent gates on 2026-10-24. See [current source review](nonblocking-source-review.md), [current QA receipt](qa-result.json) and current handback (`docs/RELEASE_B1_HANDBACK.md` in Git history). Earlier readiness wording below is not current acceptance.
 
 # Fresh independent AGY source review
 

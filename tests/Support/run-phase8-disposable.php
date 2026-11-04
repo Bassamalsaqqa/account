@@ -12,6 +12,14 @@ $schema = null;
 $configPath = null;
 $exitCode = 1;
 try {
+    $rawTimeout = getenv('PHASE8_TEST_TIMEOUT');
+    $timeout = 900;
+    if ($rawTimeout !== false) {
+        if (! preg_match('/^[1-9][0-9]{0,4}$/D', $rawTimeout) || (int) $rawTimeout > 14400) {
+            throw new RuntimeException('PHASE8_TEST_TIMEOUT must be a strictly positive integer up to 14400 seconds.');
+        }
+        $timeout = (int) $rawTimeout;
+    }
     DisposableMariaDbSchema::testSettings();
     $args = array_slice($argv, 1);
     if (($args[0] ?? null) === '--') {
@@ -57,7 +65,7 @@ try {
     $xml->save($configPath);
     fwrite(STDOUT, 'Owned primary test schema: '.$schema->schemaName().PHP_EOL);
     $process = new Process(array_merge([PHP_BINARY, 'vendor/bin/phpunit', '-c', $configPath], $args), $root, $environment);
-    $process->setTimeout(900)->run(static function (string $type, string $buffer): void {
+    $process->setTimeout($timeout)->run(static function (string $type, string $buffer): void {
         fwrite($type === Process::ERR ? STDERR : STDOUT, $buffer);
     });
     $exitCode = $process->getExitCode() ?? 1;

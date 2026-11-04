@@ -47,4 +47,4 @@ Only after those gates pass and the Owner authorizes reopening:
 
 Then verify unauthenticated login, actual authorized AR/EN sessions, assets, fresh logs and intended API/AI feature state. Do not modify passwords, bypass permissions or dispatch paid requests as a smoke shortcut. Reopening is not performed by the preparation script.
 
-See [Hostinger deployment guide](HOSTINGER_DEPLOYMENT_GUIDE.md), [backup/restore runbook](PHASE_10_BACKUP_RESTORE_RUNBOOK.md), and [ADR-0005](adr/0005-purchasing-vendors-and-ap.md) for the accepted Payables policy.
+See [Hostinger deployment guide](HOSTINGER_DEPLOYMENT_GUIDE.md), [backup/restore runbook](PHASE_10_BACKUP_RESTORE_RUNBOOK.md), [setup & operations guide](SETUP_AND_OPERATIONS_GUIDE.md), and [ADR-0005](adr/0005-purchasing-vendors-and-ap.md) for the accepted Payables policy.
