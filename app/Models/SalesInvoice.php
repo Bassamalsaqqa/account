@@ -435,13 +435,26 @@ class SalesInvoice extends Model
     }
 
     /**
-     * Calculate outstanding balance in invoice currency.
-     * Subtracts valid linked posted returns and non-reversed payment allocations.
+     * Fresh financial summary projection for this invoice in a single pass.
+     * Computes paid total, returned total, outstanding balance, and exact payment status
+     * using exact decimal primitives without duplicating allocation/return queries.
+     *
+     * @return array{
+     *     paid: BigDecimal,
+     *     returned: BigDecimal,
+     *     outstanding: BigDecimal,
+     *     payment_status: string
+     * }
      */
-    public function calculateOutstanding(): BigDecimal
+    public function calculateFinancialSummary(): array
     {
         if (! $this->isPosted()) {
-            return BigDecimal::zero();
+            return [
+                'paid' => BigDecimal::zero(),
+                'returned' => BigDecimal::zero(),
+                'outstanding' => BigDecimal::zero(),
+                'payment_status' => self::PAYMENT_STATUS_UNPAID,
+            ];
         }
 
         $grandTotal = BigDecimal::of($this->grand_total_currency);
@@ -470,7 +483,31 @@ class SalesInvoice extends Model
 
         $outstanding = $grandTotal->minus($paidTotal)->minus($returnedTotal);
 
-        return $outstanding;
+        if ($outstanding->isLessThan(0)) {
+            $paymentStatus = self::PAYMENT_STATUS_CREDIT;
+        } elseif ($outstanding->isZero()) {
+            $paymentStatus = self::PAYMENT_STATUS_PAID;
+        } elseif ($outstanding->isEqualTo($grandTotal)) {
+            $paymentStatus = self::PAYMENT_STATUS_UNPAID;
+        } else {
+            $paymentStatus = self::PAYMENT_STATUS_PARTIALLY_PAID;
+        }
+
+        return [
+            'paid' => $paidTotal,
+            'returned' => $returnedTotal,
+            'outstanding' => $outstanding,
+            'payment_status' => $paymentStatus,
+        ];
+    }
+
+    /**
+     * Calculate outstanding balance in invoice currency.
+     * Subtracts valid linked posted returns and non-reversed payment allocations.
+     */
+    public function calculateOutstanding(): BigDecimal
+    {
+        return $this->calculateFinancialSummary()['outstanding'];
     }
 
     /**
@@ -478,26 +515,7 @@ class SalesInvoice extends Model
      */
     public function derivedPaymentStatus(): string
     {
-        if (! $this->isPosted()) {
-            return self::PAYMENT_STATUS_UNPAID;
-        }
-
-        $outstanding = $this->calculateOutstanding();
-        $grandTotal = BigDecimal::of($this->grand_total_currency);
-
-        if ($outstanding->isLessThan(0)) {
-            return self::PAYMENT_STATUS_CREDIT;
-        }
-
-        if ($outstanding->isZero()) {
-            return self::PAYMENT_STATUS_PAID;
-        }
-
-        if ($outstanding->isEqualTo($grandTotal)) {
-            return self::PAYMENT_STATUS_UNPAID;
-        }
-
-        return self::PAYMENT_STATUS_PARTIALLY_PAID;
+        return $this->calculateFinancialSummary()['payment_status'];
     }
 
     public function getSubtotalAttribute(): string

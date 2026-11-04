@@ -72,6 +72,61 @@ final class AiGovernance
         return true;
     }
 
+    /**
+     * Fresh request-local presentation capability check for rendering the launcher.
+     * Never acquires row locks or transactions, and never caches authoritative grants.
+     * Reuses locally acquired snapshots only within this presentation evaluation.
+     */
+    public function canPresentLauncher(?Company $company, ?User $actor, string $context = 'auto'): bool
+    {
+        if ($company === null || ! $actor instanceof User) {
+            return false;
+        }
+
+        if (config('ai_assistant.enabled') !== true) {
+            return false;
+        }
+
+        $disabledCompanyIds = config('ai_assistant.disabled_company_ids', []);
+        if (in_array((string) $company->id, $disabledCompanyIds, true)) {
+            return false;
+        }
+
+        $policy = AiCompanyPolicy::where('company_id', $company->id)->first();
+        if ($policy === null || ! $policy->enabled) {
+            return false;
+        }
+
+        if ($context === 'auto' && ! ($policy->settings['global_button_enabled'] ?? true)) {
+            return false;
+        }
+
+        try {
+            $permissions = app(ReportingGuard::class)->readPermissions($company, $actor, 'ai.assistant.use');
+        } catch (AuthorizationException|NoActiveCompanyException) {
+            return false;
+        }
+
+        if ($context === 'auto') {
+            if ($this->presentedIntents($policy, $permissions) !== []) {
+                return true;
+            }
+
+            $questions = $policy->settings['questions'] ?? [];
+            if (is_array($questions) && ($questions['enabled'] ?? false) === true && config('ai_assistant.questions.enabled') === true) {
+                return app(AssistantReportCatalog::class)->hasPresentableReport($policy, $permissions);
+            }
+
+            return false;
+        }
+
+        if (in_array($context, ['sales', 'purchase'], true)) {
+            return in_array($context, $this->presentedIntents($policy, $permissions), true);
+        }
+
+        return false;
+    }
+
     public function authorizeUse(Company $company, User $actor, string $intent, bool $speech = false): AiCompanyPolicy
     {
         if (config('ai_assistant.enabled') !== true
@@ -143,22 +198,30 @@ final class AiGovernance
         return $policy;
     }
 
-    /** @return list<string> */
+    /**
+     * @return list<string>
+     */
     public function allowedIntents(Company $company, User $actor): array
     {
         $policy = AiCompanyPolicy::where('company_id', $company->id)->first();
         if ($policy === null || ! $policy->enabled) {
             return [];
         }
-        $enabledIntents = $policy->settings['allowed_intents'] ?? ['sales', 'purchase'];
         try {
-            // Enumeration is presentation, not a business event. Take one fresh
-            // team-aware snapshot instead of locking company/membership per label.
-            // authorizeUse and canonical execution still authorize independently.
             $permissions = app(ReportingGuard::class)->readPermissions($company, $actor, 'ai.assistant.use');
         } catch (AuthorizationException|NoActiveCompanyException) {
             return [];
         }
+
+        return $this->presentedIntents($policy, $permissions);
+    }
+
+    /** @param list<string> $permissions
+     * @return list<string>
+     */
+    private function presentedIntents(AiCompanyPolicy $policy, array $permissions): array
+    {
+        $enabledIntents = $policy->settings['allowed_intents'] ?? ['sales', 'purchase'];
         $allowed = [];
         foreach ([
             'sales' => ['ai.assistant.use', 'ai.sales.use', 'sales.invoice.create', 'sales.invoice.view'],
