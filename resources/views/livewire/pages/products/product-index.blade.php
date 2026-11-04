@@ -221,7 +221,7 @@
             @forelse ($products as $product)
                 <div class="p-4 space-y-3">
                     <div class="flex items-start justify-between gap-3">
-                        <div class="flex items-center gap-3">
+                        <div class="flex min-w-0 flex-1 items-center gap-3">
                             <div class="w-12 h-12 rounded-control border border-border bg-surface-soft grid place-items-center shrink-0 overflow-hidden">
                                 @if ($product->primaryImage)
                                     <img loading="lazy" decoding="async" width="40" height="40" src="{{ asset('storage/' . $product->primaryImage->thumbnail_path) }}"
@@ -231,20 +231,20 @@
                                     <x-icon name="box" class="w-6 h-6 text-text-muted" />
                                 @endif
                             </div>
-                            <div>
+                            <div class="min-w-0 flex-1">
                                 <a href="{{ route('products.show', $product->public_id) }}"
-                                   class="touch-action font-bold text-text-primary text-sm hover:text-primary transition-colors block">
+                                   title="{{ $product->name() }}" class="touch-action min-w-0 truncate font-bold text-text-primary text-sm hover:text-primary transition-colors block">
                                     {{ $product->name() }}
                                 </a>
                                 @if ($product->sku)
-                                    <span class="text-xs font-mono text-text-muted dir-ltr">{{ $product->sku }}</span>
+                                    <span class="block truncate text-xs font-mono text-text-muted" title="{{ $product->sku }}"><bdi dir="ltr">{{ $product->sku }}</bdi></span>
                                 @endif
                                 @if ($product->name_ar && $product->name_en)
-                                    <span class="text-xs text-text-muted truncate">/ {{ app()->getLocale() === 'en' ? $product->name_ar : $product->name_en }}</span>
+                                    <span class="block text-xs text-text-muted truncate">/ {{ app()->getLocale() === 'en' ? $product->name_ar : $product->name_en }}</span>
                                 @endif
                             </div>
                         </div>
-                        <div class="flex items-center gap-1">
+                        <div class="flex shrink-0 items-center gap-1">
                             @if ($product->active)
                                 <x-badge variant="success">{{ __('inventory.active') }}</x-badge>
                             @else
