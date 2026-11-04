@@ -555,8 +555,10 @@
             @endif
 
             <!-- User Menu Dropdown -->
-            <div class="relative" x-data="{ openUserMenu: false }" @click.outside="openUserMenu = false">
+            <div class="relative" x-data="{ openUserMenu: false }" @click.outside="openUserMenu = false"
+                 @keydown.escape.stop.prevent="if (openUserMenu) { openUserMenu = false; $refs.userMenuTrigger.focus(); }">
                 <button @click="openUserMenu = !openUserMenu"
+                        x-ref="userMenuTrigger" :aria-expanded="openUserMenu"
                         type="button"
                         class="flex items-center gap-2.5 py-1 px-1 sm:px-2 rounded-control hover:bg-surface-soft transition-colors text-right">
                     <div class="w-[34px] h-[34px] rounded-full bg-slate-200 text-slate-700 font-extrabold text-xs grid place-items-center shrink-0 border border-slate-300">
