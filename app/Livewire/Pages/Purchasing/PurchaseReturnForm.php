@@ -5,7 +5,11 @@ declare(strict_types=1);
 namespace App\Livewire\Pages\Purchasing;
 
 use App\Actions\Purchasing\CreatePurchaseReturnDraftAction;
+use App\Actions\Purchasing\PostPurchaseReturnAction;
 use App\Actions\Purchasing\UpdatePurchaseReturnDraftAction;
+use App\Domain\Inventory\Exceptions\InvalidInventoryMovementException;
+use App\Domain\Inventory\Exceptions\InvalidQuantityException;
+use App\Domain\Inventory\Exceptions\InvalidUnitConversionException;
 use App\Livewire\Pages\Purchasing\Concerns\AuthorizesPurchasingPages;
 use App\Models\InventoryBalance;
 use App\Models\InventoryLotBalance;
@@ -22,6 +26,7 @@ use Brick\Math\BigDecimal;
 use Brick\Math\RoundingMode;
 use Carbon\Carbon;
 use Illuminate\Contracts\View\View;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
 use Livewire\Attributes\Layout;
@@ -640,7 +645,12 @@ class PurchaseReturnForm extends Component
         $this->resetErrorBag("lines.{$index}.return_quantity");
     }
 
-    public function saveDraft(): void
+    public function saveAndConfirm(): void
+    {
+        $this->saveDraft(true);
+    }
+
+    public function saveDraft(bool $confirm = false): void
     {
         $this->authorizePurchasing('purchasing.purchase.view');
         $company = $this->authorizePurchasing('purchasing.return.manage');
@@ -788,7 +798,20 @@ class PurchaseReturnForm extends Component
             return;
         }
 
-        session()->flash('success', __('purchasing.purchase_return_saved'));
+        // A failed confirmation retries this same draft rather than creating another one.
+        $this->mode = 'edit';
+        $this->returnId = (int) $return->id;
+        $this->returnPublicId = $return->public_id;
+        if ($confirm) {
+            try {
+                app(PostPurchaseReturnAction::class)->execute($return, auth()->user());
+            } catch (InvalidArgumentException|\DomainException|ModelNotFoundException|InvalidInventoryMovementException|InvalidUnitConversionException|InvalidQuantityException $exception) {
+                $this->addError('save', __('purchasing.return_integrity_failed'));
+
+                return;
+            }
+        }
+        session()->flash('success', __($confirm ? 'purchasing.purchase_return_posted' : 'purchasing.purchase_return_saved'));
         $this->redirect(route('purchase-returns.show', $return->public_id), navigate: true);
     }
 }

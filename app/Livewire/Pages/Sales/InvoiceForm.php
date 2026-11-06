@@ -25,13 +25,13 @@ use App\Livewire\Concerns\QuickPartyCreate;
 use App\Livewire\Concerns\QuickProductCreate;
 use App\Models\Company;
 use App\Models\Customer;
-use App\Models\MoneyAccount;
 use App\Models\Product;
 use App\Models\ProductBarcode;
 use App\Models\ProductUnit;
 use App\Models\SalesInvoice;
 use App\Models\TaxRate;
 use App\Models\Warehouse;
+use App\Services\Money\EligibleMoneyAccounts;
 use App\Services\Sales\SalesActorGuard;
 use App\Services\Sales\SalesProductSelection;
 use App\Support\InvoiceConfirmation;
@@ -287,6 +287,7 @@ class InvoiceForm extends Component
             }
         }
         $this->updatedWarehouseId();
+        $this->syncSettlementDefaults();
         $this->recalculate();
     }
 
@@ -295,6 +296,10 @@ class InvoiceForm extends Component
         if ($this->showPreview && ! in_array($property, ['showPreview', 'confirmationToken', 'executeKey', 'previewDigest', 'previewData', 'previewError', 'productSearch'], true)) {
             $this->cancelPreview();
         }
+
+        if ($property !== null && str_starts_with($property, 'settlement.')) {
+            $this->syncSettlementDefaults($property);
+        }
     }
 
     public function updatedCustomerId(): void
@@ -302,11 +307,15 @@ class InvoiceForm extends Component
         if ($this->customer_id !== null) {
             $customer = Customer::find($this->customer_id);
             if ($customer !== null) {
+                $previousCurrency = $this->currency_code;
                 $this->currency_code = $customer->default_currency_code ?? app(CompanyContext::class)->company()->base_currency_code;
                 $company = app(CompanyContext::class)->company();
                 if ($this->currency_code === $company->base_currency_code) {
                     $this->exchange_rate = '1.0000000000';
+                } elseif ($previousCurrency !== $this->currency_code) {
+                    $this->exchange_rate = '';
                 }
+                $this->syncSettlementDefaults('currency_code');
                 $this->recalculate();
             }
         }
@@ -317,7 +326,10 @@ class InvoiceForm extends Component
         $company = app(CompanyContext::class)->company();
         if ($this->currency_code === $company->base_currency_code) {
             $this->exchange_rate = '1.0000000000';
+        } else {
+            $this->exchange_rate = '';
         }
+        $this->syncSettlementDefaults('currency_code');
         $this->recalculate();
     }
 
@@ -636,11 +648,19 @@ class InvoiceForm extends Component
         }
 
         $totals = $totalsCalculator->calculate($calcResults);
+        $oldGrandTotal = $this->previewGrandTotal;
         $this->previewSubtotal = (string) $totals->subtotalCurrency;
         $this->previewDiscountTotal = (string) $totals->discountTotalCurrency;
         $this->previewTaxTotal = (string) $totals->taxTotalCurrency;
         $this->previewGrandTotal = SalesMoneyFormatter::formatMoneyInput($totals->grandTotalCurrency);
         $this->documentTotalsValid = true;
+
+        if (($this->settlement['mode'] ?? 'unpaid') === 'full') {
+            $paymentCurrency = $this->settlementPaymentCurrency();
+            if ($paymentCurrency === $this->currency_code && $this->settlement['amount'] === $oldGrandTotal) {
+                $this->settlement['amount'] = $this->previewGrandTotal;
+            }
+        }
     }
 
     public function saveAndConfirm(SalesInvoiceCommands $commands): mixed
@@ -924,6 +944,93 @@ class InvoiceForm extends Component
         $this->settlementPreview = false;
     }
 
+    #[Locked]
+    public ?int $defaultSettlementAccountId = null;
+
+    #[Locked]
+    public string $previousSettlementCurrency = '';
+
+    public function settlementPaymentCurrency(): string
+    {
+        $company = app(CompanyContext::class)->company();
+        if (($this->settlement['payment_method'] ?? null) === 'check') {
+            return ! empty($this->settlement['currency_code'])
+                ? $this->settlement['currency_code']
+                : ($this->currency_code ?: $company->base_currency_code);
+        }
+
+        $accountId = $this->settlement['money_account_id'] ?? null;
+        if (! empty($accountId)) {
+            $account = app(EligibleMoneyAccounts::class)->query($this->pageCompanyId)->find($accountId);
+            if ($account !== null && ! empty($account->currency_code)) {
+                return $account->currency_code;
+            }
+        }
+
+        return $this->currency_code ?: $company->base_currency_code;
+    }
+
+    private function syncSettlementDefaults(?string $changedProperty = null): void
+    {
+        foreach (['sales.invoice.post', 'money.receipt.create', 'money.receipt.allocate'] as $permission) {
+            if (! auth()->user()->hasPermissionTo($permission)) {
+                return;
+            }
+        }
+        $company = app(CompanyContext::class)->company();
+        $initial = $this->previousSettlementCurrency === '';
+        if ($initial) {
+            $this->settlement['payment_date'] = Carbon::now($company->timezone)->toDateString();
+            $this->settlement['due_date'] = $this->settlement['payment_date'];
+        }
+        $preferredCurrency = $this->currency_code ?: $company->base_currency_code;
+        $method = $this->settlement['payment_method'] ?? 'cash';
+        if ($method === 'check') {
+            $this->settlement['money_account_id'] = '';
+            if ($initial || $changedProperty === 'settlement.payment_method' || $changedProperty === 'currency_code') {
+                $this->settlement['currency_code'] = $preferredCurrency;
+            }
+        } else {
+            $automatic = (int) ($this->settlement['money_account_id'] ?? 0) === ($this->defaultSettlementAccountId ?? 0);
+            if ($initial || $changedProperty === 'settlement.payment_method' || ($changedProperty === 'currency_code' && $automatic)) {
+                $account = app(EligibleMoneyAccounts::class)->query($this->pageCompanyId, $method === 'bank_transfer' ? 'bank' : 'cash')
+                    ->reorder()->orderByRaw('currency_code = ? desc', [$preferredCurrency])
+                    ->orderByRaw('currency_code = ? desc', [$company->base_currency_code])
+                    ->orderBy('sort_order')->orderBy('id')->first();
+                $this->settlement['money_account_id'] = $account === null ? '' : (string) $account->id;
+                $this->defaultSettlementAccountId = $account?->id;
+            } elseif ($changedProperty === 'settlement.money_account_id') {
+                $this->defaultSettlementAccountId = null;
+            }
+        }
+        $currency = $this->settlementPaymentCurrency();
+        if ($changedProperty === 'currency_code') {
+            $this->settlement['invoice_amount'] = '';
+            $this->settlement['payment_currency_amount'] = '';
+        }
+        if ($changedProperty === 'settlement.mode' && ($this->settlement['mode'] ?? null) === 'partial' && $this->settlement['amount'] === $this->previewGrandTotal) {
+            $this->settlement['amount'] = '';
+        }
+        if ($currency === $company->base_currency_code) {
+            $this->settlement['exchange_rate'] = '1.0000000000';
+        } elseif ($currency !== $this->previousSettlementCurrency) {
+            $this->settlement['exchange_rate'] = '';
+        }
+        if (! $initial && $currency !== $this->previousSettlementCurrency) {
+            // Never reinterpret a previously entered amount in another currency.
+            $this->settlement['amount'] = '';
+            $this->settlement['invoice_amount'] = '';
+            $this->settlement['payment_currency_amount'] = '';
+        }
+        if ($currency === $this->currency_code) {
+            $this->settlement['payment_currency_amount'] = '';
+            if (($this->settlement['mode'] ?? 'unpaid') === 'full' && $this->settlement['amount'] === '' && ($initial || in_array($changedProperty, ['currency_code', 'settlement.mode', 'settlement.payment_method'], true) || ($changedProperty === 'settlement.money_account_id' && $this->settlement['money_account_id'] !== ''))) {
+                $this->settlement['amount'] = $this->previewGrandTotal;
+            }
+        }
+        $this->previousSettlementCurrency = $currency;
+    }
+
     private function settlementDigest(): string
     {
         return hash('sha256', $this->computePayloadDigest().'|'.json_encode($this->settlement, JSON_THROW_ON_ERROR));
@@ -938,29 +1045,55 @@ class InvoiceForm extends Component
         if ($this->settlement['mode'] === 'unpaid') {
             return ['mode' => 'unpaid'];
         }
+
+        $company = app(CompanyContext::class)->company();
+        $paymentCurrency = $this->settlementPaymentCurrency();
+        if ($paymentCurrency === $company->base_currency_code) {
+            $this->settlement['exchange_rate'] = '1.0000000000';
+        }
+
         $check = ($this->settlement['payment_method'] ?? null) === 'check';
-        $rules = ['settlement.payment_method' => ['required', 'in:cash,bank_transfer,check'],
-            'settlement.payment_date' => ['nullable', 'string', 'date'],
+        $rules = [
+            'settlement.payment_method' => ['required', 'in:cash,bank_transfer,check'],
+            'settlement.payment_date' => ['required', 'string', 'date'],
             'settlement.amount' => ['required', 'string', 'regex:/^\d+(\.\d{1,6})?$/'],
             'settlement.exchange_rate' => ['required', 'string', 'regex:/^\d+(\.\d{1,10})?$/'],
-            'settlement.payment_currency_amount' => ['nullable', 'string', 'regex:/^\d+(\.\d{1,6})?$/']];
+        ];
+
+        if ($this->settlement['mode'] === 'partial' && $paymentCurrency === $this->currency_code) {
+            $this->settlement['invoice_amount'] = $this->settlement['amount'];
+        }
         if ($this->settlement['mode'] === 'partial') {
             $rules['settlement.invoice_amount'] = ['required', 'string', 'regex:/^\d+(\.\d{1,6})?$/'];
         }
+
+        $isCrossCurrency = $paymentCurrency !== $this->currency_code;
+        if ($isCrossCurrency) {
+            $rules['settlement.payment_currency_amount'] = ['required', 'string', 'regex:/^\d+(\.\d{1,6})?$/'];
+        } else {
+            $this->settlement['payment_currency_amount'] = '';
+        }
+
         if ($check) {
-            $rules += ['settlement.currency_code' => ['required', 'string', 'size:3'],
-                'settlement.check_number' => ['required', 'string', 'max:100'], 'settlement.bank_name' => ['required', 'string', 'max:200'],
-                'settlement.drawer' => ['nullable', 'string', 'max:200'], 'settlement.due_date' => ['required', 'date']];
+            $rules += [
+                'settlement.currency_code' => ['required', 'string', 'size:3'],
+                'settlement.check_number' => ['required', 'string', 'max:100'],
+                'settlement.bank_name' => ['required', 'string', 'max:200'],
+                'settlement.drawer' => ['nullable', 'string', 'max:200'],
+                'settlement.due_date' => ['required', 'date'],
+            ];
         } else {
             $rules['settlement.money_account_id'] = ['required', 'integer', 'min:1'];
         }
+
         $this->validate($rules, [], collect(array_keys($rules))->mapWithKeys(fn ($key) => [$key => __('fin1.'.str_replace('settlement.', '', $key))])->all());
+
         $choice = array_intersect_key($this->settlement, array_flip(['mode', 'payment_method', 'amount', 'exchange_rate']));
-        $choice['payment_date'] = ($this->settlement['payment_date'] ?? '') ?: $this->issue_date;
+        $choice['payment_date'] = ($this->settlement['payment_date'] ?? '') ?: Carbon::now($company->timezone)->toDateString();
         if ($this->settlement['mode'] === 'partial') {
             $choice['invoice_amount'] = $this->settlement['invoice_amount'];
         }
-        if (($this->settlement['payment_currency_amount'] ?? '') !== '') {
+        if ($isCrossCurrency && ($this->settlement['payment_currency_amount'] ?? '') !== '') {
             $choice['payment_currency_amount'] = $this->settlement['payment_currency_amount'];
         }
         if ($check) {
@@ -1056,8 +1189,10 @@ class InvoiceForm extends Component
         $canPost = $user->hasPermissionTo('sales.invoice.post');
         $canReceive = $canPost && $user->hasPermissionTo('money.receipt.create') && $user->hasPermissionTo('money.receipt.allocate');
         $settlementAccounts = $canReceive && ($this->settlement['mode'] ?? 'unpaid') !== 'unpaid'
-            ? MoneyAccount::where('company_id', $company->id)->where('is_active', true)
-                ->where('account_type', ($this->settlement['payment_method'] ?? null) === 'bank_transfer' ? 'bank' : 'cash')->get()
+            ? app(EligibleMoneyAccounts::class)->query(
+                (int) $company->id,
+                ($this->settlement['payment_method'] ?? null) === 'bank_transfer' ? 'bank' : 'cash'
+            )->get()
             : collect();
         $cTerm = mb_substr(trim($this->customerSearch), 0, 100);
         $customersQuery = Customer::where('company_id', $company->id)->where('status', 'active');

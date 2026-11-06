@@ -33,6 +33,14 @@ class PurchaseReturnUiTest extends Phase5DTestCase
         return $actor;
     }
 
+    public function test_form_confirm_saves_and_posts_using_the_canonical_action(): void
+    {
+        $purchase = $this->createAndPostPurchase();
+        Livewire::test(PurchaseReturnForm::class, ['publicId' => $purchase->public_id])
+            ->set('lines.0.return_quantity', '1')->call('saveAndConfirm')->assertHasNoErrors();
+        $this->assertSame('posted', PurchaseReturn::where('company_id', $this->company->id)->sole()->status);
+    }
+
     public function test_purchase_return_index_renders_and_filters(): void
     {
         $purchase = $this->createAndPostPurchase([

@@ -204,6 +204,13 @@ final class ImmediateSaleCommands
         }
         app(SalesDocumentRules::class)->date($choice['payment_date'] ?? '');
 
+        $company = Company::findOrFail($invoice->company_id);
+        $paymentCurrency = $check ? ($choice['currency_code'] ?? null)
+            : MoneyAccount::where('company_id', $company->id)->whereKey((int) ($choice['money_account_id'] ?? 0))->value('currency_code');
+        if ($paymentCurrency === $company->base_currency_code && ($choice['exchange_rate'] ?? '') === '') {
+            $choice['exchange_rate'] = '1.0000000000';
+        }
+
         $instrument = [];
         if ($check) {
             $currency = $choice['currency_code'] ?? null;

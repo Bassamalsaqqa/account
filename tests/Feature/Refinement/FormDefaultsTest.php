@@ -37,6 +37,13 @@ class FormDefaultsTest extends Phase5ETestCase
         }
     }
 
+    public function test_quotation_currency_changes_require_an_explicit_foreign_rate(): void
+    {
+        Livewire::test(QuotationForm::class)->set('currency_code', 'USD')
+            ->assertSet('exchange_rate', '')->set('exchange_rate', '3.5')->set('currency_code', 'ILS')
+            ->assertSet('exchange_rate', '1.0000000000');
+    }
+
     public function test_standalone_payments_prefer_base_currency_over_foreign_account_sort_order(): void
     {
         MoneyAccount::where('company_id', $this->company->id)->update(['sort_order' => 100]);

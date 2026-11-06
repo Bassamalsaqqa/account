@@ -11,7 +11,7 @@ return [
     'payment_currency_amount' => 'Applied amount (payment currency, for different currencies)',
     'check_number' => 'Check number', 'bank_name' => 'Bank name', 'drawer' => 'Drawer (optional)', 'due_date' => 'Check due date',
     'no_accounts' => 'No active matching account. Choose another method or leave unpaid and use the existing receipt workflow.',
-    'date_help' => 'A blank receipt date uses the invoice date.',
+    'date_help' => 'Defaults to today. Change it if the payment was received on another date.',
     'fx_help' => 'Use rate 1 for base currency. For different invoice and payment currencies, enter both applied amounts explicitly. Any excess remains unapplied receipt credit.',
     'correct_fields' => 'Review the payment fields below. Your saved invoice remains a draft.',
     'review' => 'Review invoice payment', 'received_amount' => 'Total received', 'outstanding_invoice_amount' => 'Invoice balance after posting',

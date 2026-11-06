@@ -213,3 +213,24 @@ test('stepExactString performs exact arithmetic with no floating point errors', 
     assert.equal(stepExactString(null, 'up', '1'), '1');
     assert.equal(stepExactString(undefined, 'up', '1'), '1');
 });
+
+test('actual mobile Confirm handler flushes pending quantity edits and suppresses double clicks', async () => {
+    const {readFileSync} = await import('node:fs');
+    const template = readFileSync(new URL('../../resources/views/components/document-mobile-actions.blade.php', import.meta.url), 'utf8');
+    const handler = template.match(/data-mobile-confirm @click="([^"]+)"/)[1];
+    const {wire, calls} = fixture('mobile-confirm', 10);
+    wire.saveAndConfirm = async () => calls.push({method: 'confirm', quantity: wire.lines[0].quantity});
+    const state = {saving: false, operationFailed: false};
+    const click = new Function('window', '$wire', 'document', `with (this) { ${handler} }`);
+    const browser = {enqueueDocumentOperation, isDocumentBlocked};
+    const document = {querySelectorAll: () => []};
+    const pending = enqueueQuantityStep(wire, 0, 'up', {debounceMs: 50});
+    click.call(state, browser, wire, document);
+    click.call(state, browser, wire, document);
+    assert.equal(state.saving, true);
+    await pending;
+    await wait(25);
+    assert.deepEqual(calls.map(call => call.method), ['quantity', 'confirm']);
+    assert.equal(calls[1].quantity, '2');
+    assert.equal(state.saving, false);
+});

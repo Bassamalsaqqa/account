@@ -26,7 +26,8 @@
             <a href="{{ $mode === 'create' ? route('purchases.show', $purchasePublicId) : route('purchase-returns.show', $returnPublicId) }}" class="min-h-11 inline-flex items-center justify-center gap-2 px-3 active:bg-surface-soft focus-visible:ring-2 focus-visible:ring-primary h-11 px-4 rounded-control border border-border text-sm font-semibold hover:bg-surface-soft">
                 {{ __('purchasing.cancel') }}
             </a>
-            <button type="button" @click="run('saveDraft', [], true)" :disabled="saving || window.isDocumentBlocked($wire)" wire:loading.attr="disabled" class="min-h-11 inline-flex items-center justify-center gap-2 px-3 active:bg-surface-soft focus-visible:ring-2 focus-visible:ring-primary h-11 px-4 rounded-control bg-primary text-white text-sm font-bold disabled:opacity-50">
+            <button type="button" data-mobile-confirm @click="run('saveAndConfirm', [], true)" :disabled="saving || window.isDocumentBlocked($wire)" wire:loading.attr="disabled" class="min-h-11 inline-flex items-center justify-center rounded-control bg-primary px-4 text-sm font-semibold text-white hover:bg-primary-hover focus-visible:ring-2 focus-visible:ring-primary disabled:opacity-50">{{ __('purchasing.post_return') }}</button>
+        <button type="button" @click="run('saveDraft', [], true)" :disabled="saving || window.isDocumentBlocked($wire)" wire:loading.attr="disabled" class="min-h-11 inline-flex items-center justify-center gap-2 px-3 active:bg-surface-soft focus-visible:ring-2 focus-visible:ring-primary h-11 px-4 rounded-control bg-primary text-white text-sm font-bold disabled:opacity-50">
                 {{ __('purchasing.save_draft') }}
             </button>
         </div>
@@ -176,6 +177,7 @@
         <a href="{{ $mode === 'create' ? route('purchases.show', $purchasePublicId) : route('purchase-returns.show', $returnPublicId) }}" class="min-h-11 inline-flex items-center justify-center gap-2 px-3 active:bg-surface-soft focus-visible:ring-2 focus-visible:ring-primary h-11 px-4 rounded-control border border-border text-sm font-semibold hover:bg-surface-soft">
             {{ __('purchasing.cancel') }}
         </a>
+        <button type="button" data-mobile-confirm @click="run('saveAndConfirm', [], true)" :disabled="saving || window.isDocumentBlocked($wire)" wire:loading.attr="disabled" class="min-h-11 rounded-control bg-primary px-4 text-sm font-semibold text-white hover:bg-primary-hover focus-visible:ring-2 focus-visible:ring-primary disabled:opacity-50">{{ __('purchasing.post_return') }}</button>
         <button type="button" @click="run('saveDraft', [], true)" :disabled="saving || window.isDocumentBlocked($wire)" wire:loading.attr="disabled" class="min-h-11 inline-flex items-center justify-center gap-2 px-3 active:bg-surface-soft focus-visible:ring-2 focus-visible:ring-primary h-11 px-4 rounded-control bg-primary text-white text-sm font-bold disabled:opacity-50">
             {{ __('purchasing.save_draft') }}
         </button>

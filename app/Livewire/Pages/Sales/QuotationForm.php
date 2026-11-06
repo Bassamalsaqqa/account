@@ -254,10 +254,13 @@ class QuotationForm extends Component
                 ->where('status', 'active')
                 ->find($this->customer_id);
             if ($customer !== null) {
+                $previousCurrency = $this->currency_code;
                 $this->currency_code = $customer->default_currency_code ?? app(CompanyContext::class)->company()->base_currency_code;
                 $company = app(CompanyContext::class)->company();
                 if ($this->currency_code === $company->base_currency_code) {
                     $this->exchange_rate = '1.0000000000';
+                } elseif ($previousCurrency !== $this->currency_code) {
+                    $this->exchange_rate = '';
                 }
                 $this->recalculate();
             } else {
@@ -272,6 +275,8 @@ class QuotationForm extends Component
         $company = app(CompanyContext::class)->company();
         if ($this->currency_code === $company->base_currency_code) {
             $this->exchange_rate = '1.0000000000';
+        } else {
+            $this->exchange_rate = '';
         }
         $this->recalculate();
     }

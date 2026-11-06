@@ -1,6 +1,6 @@
 <div data-entry-form>
 <form novalidate @submit.prevent="handleSaveDraft()"
-      class="space-y-5 pb-28 md:pb-6"
+      class="space-y-5 pb-44 md:pb-6"
       x-data="{
           saving: false, documentBusy: false, operationFailed: false,
           handleSaveDraft() {
@@ -194,16 +194,9 @@
         </button>
         <a href="{{ route('purchases.index') }}" class="touch-action inline-flex items-center h-11 px-4 border border-border rounded-control text-sm">{{ __('purchasing.cancel') }}</a>
     </footer>
-    <div class="mobile-document-actions md:hidden fixed inset-x-0 z-30 bg-white border-t border-border px-3 py-2" style="bottom: var(--mobile-nav-height)">
-        <div class="flex items-center justify-between gap-2 max-w-lg mx-auto">
-            <div class="min-w-0"><span class="text-xs text-text-secondary block">{{ __('mobile.grand_total') }}</span><bdi @if($documentTotalsValid) data-document-total @endif class="text-sm font-bold text-primary">{{ ! $documentTotalsValid ? __('camera.totals_unavailable') : (isset($totals['total']) ? \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($totals['total'], $currency_code) : 'â€”') }} @if($documentTotalsValid) {{ $currency_code }} @endif</bdi></div>
-            <div class="flex gap-1">
-                <button type="button" @click="$dispatch('mobile-camera-open')" :disabled="saving || window.isDocumentBlocked($wire)" class="min-h-11 min-w-11 rounded-control bg-surface-soft px-2" aria-label="{{ __('mobile.scan') }}"><x-icon name="barcode" /></button>
-                <button type="button" @click="handleAddLine()" :disabled="saving || window.isDocumentBlocked($wire)" class="min-h-11 min-w-11 rounded-control bg-surface-soft px-2" aria-label="{{ __('mobile.add_item') }}"><x-icon name="plus" /></button>
-                <button type="button" @click="handleSaveDraft()" :disabled="saving || window.isDocumentBlocked($wire)" class="min-h-11 rounded-control bg-primary text-white text-xs font-bold px-3">{{ __('mobile.save_draft') }}</button>
-            </div>
-        </div>
-    </div>
+    @php($canConfirmPurchase = auth()->user()->hasPermissionTo('purchasing.purchase.post'))
+    <x-document-mobile-actions :total="$totals['total'] ?? '0'" :currency="$currency_code" :valid="$documentTotalsValid" :can-confirm="$canConfirmPurchase" :confirm-label="__('purchasing.post_purchase')" />
+
 </form>
 
     @include('livewire.partials.quick-vendor-modal')

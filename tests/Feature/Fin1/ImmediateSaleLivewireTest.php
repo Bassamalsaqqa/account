@@ -95,6 +95,7 @@ final class ImmediateSaleLivewireTest extends TestCase
     {
         $invoice = $this->draft();
         $this->form($invoice)->set('notes', 'Manual note retained')->set('settlement.mode', 'full')
+            ->set('settlement.amount', '')->set('settlement.money_account_id', '')
             ->call('save', true)->assertHasErrors(['settlement.amount', 'settlement.money_account_id'])
             ->assertSet('notes', 'Manual note retained')->assertSet('lines.0.item_description', 'Manual description preserved')
             ->assertSet('showPreview', false)->assertNoRedirect();
@@ -123,6 +124,7 @@ final class ImmediateSaleLivewireTest extends TestCase
         $this->form($invoice)->set('settlement.mode', 'full')->set('settlement.payment_method', 'check')
             ->set('settlement.amount', '100')->set('settlement.exchange_rate', '3.5')
             ->set('settlement.currency_code', 'USD')->set('settlement.check_number', 'SYNTHETIC-UI-CHECK')
+            ->set('settlement.payment_date', '2026-10-29')
             ->set('settlement.bank_name', 'Synthetic Bank')->set('settlement.due_date', '2026-11-01')
             ->call('save', true)->assertHasNoErrors()->assertSet('settlementPreview', true)
             ->assertSee('SYNTHETIC-UI-CHECK')->call('confirmPost')
