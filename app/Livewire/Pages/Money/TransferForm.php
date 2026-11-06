@@ -46,9 +46,33 @@ class TransferForm extends Component
         $this->requestKey = (string) Str::uuid();
     }
 
+    public function updatedFromId(): void
+    {
+        $this->fromRate = $this->accountRate($this->fromId);
+    }
+
+    public function updatedToId(): void
+    {
+        $this->toRate = $this->accountRate($this->toId);
+    }
+
+    private function accountRate(?int $id): string
+    {
+        $company = $this->authorizeMoney('money.transfer.create');
+        $account = app(EligibleMoneyAccounts::class)->query($this->pageCompanyId)->find($id);
+
+        return $account?->currency_code === $company->base_currency_code ? '1' : '';
+    }
+
     public function save(): mixed
     {
         $company = $this->authorizeMoney('money.transfer.create');
+        if ($this->accountRate($this->fromId) === '1') {
+            $this->fromRate = '1';
+        }
+        if ($this->accountRate($this->toId) === '1') {
+            $this->toRate = '1';
+        }
         $this->validate(['date' => 'required|date_format:Y-m-d', 'fromId' => 'required|integer', 'toId' => 'required|integer|different:fromId',
             'fromAmount' => 'required|string', 'toAmount' => 'required|string', 'fromRate' => 'required|string', 'toRate' => 'required|string', 'notes' => 'nullable|string|max:2000']);
         try {

@@ -122,6 +122,9 @@ class SalaryEntryForm extends Component
     public function save(): void
     {
         $this->authorizeMoney('payroll.salary.post');
+        if ($this->currencyCode === app(CompanyContext::class)->company()->base_currency_code) {
+            $this->exchangeRate = '1';
+        }
 
         $this->validate([
             'employeeId' => ['required', 'integer', Rule::exists('employees', 'id')->where('company_id', $this->pageCompanyId)],
@@ -229,6 +232,7 @@ class SalaryEntryForm extends Component
         }
 
         return view('livewire.pages.payroll.salary-entry-form', [
+            'baseCurrency' => app(CompanyContext::class)->company()->base_currency_code,
             'employees' => $employees,
             'currencies' => $currencies,
             'availableAdvances' => $availableAdvances,

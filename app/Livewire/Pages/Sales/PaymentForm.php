@@ -107,9 +107,12 @@ class PaymentForm extends Component
         $this->customer_id = $customer_id;
         $this->document_locale = $company->isLanguageEnabled(app()->getLocale()) ? app()->getLocale() : $company->default_locale;
         $this->payment_date = Carbon::now($company->timezone)->toDateString();
+        $this->currency_code = $company->base_currency_code;
 
         $defaultAccount = app(EligibleMoneyAccounts::class)->query((int) $company->id)
-            ->orderBy('sort_order')
+            ->reorder()
+            ->orderByRaw('currency_code = ? desc', [$company->base_currency_code])
+            ->orderBy('sort_order')->orderBy('id')
             ->first();
 
         if ($defaultAccount !== null) {
@@ -131,6 +134,8 @@ class PaymentForm extends Component
                     ->where('currency_code', $inv->currency_code)
                     ->where('is_active', true)
                     ->first();
+                $this->money_account_id = $accWithCurr?->id;
+                $this->currency_code = $inv->currency_code;
                 if ($accWithCurr !== null) {
                     $this->money_account_id = $accWithCurr->id;
                     $this->currency_code = $accWithCurr->currency_code;
@@ -140,6 +145,8 @@ class PaymentForm extends Component
             }
         }
 
+        // A foreign settlement needs today's explicit rate, not the invoice's historical rate.
+        $this->exchange_rate = $this->currency_code === $company->base_currency_code ? '1.0000000000' : '';
         $this->loadOpenInvoices();
 
         if ($this->sourceInvoiceId !== null) {

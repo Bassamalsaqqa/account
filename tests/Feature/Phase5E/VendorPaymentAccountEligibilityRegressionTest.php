@@ -74,7 +74,7 @@ final class VendorPaymentAccountEligibilityRegressionTest extends Phase5ETestCas
         $this->setCurrencyEnabled($currency, true);
         $page->call('$refresh')->assertViewHas('accounts', fn ($accounts): bool => $accounts->contains('id', $account->id))
             ->set('money_account_id', $account->id)->assertSet('currency_code', $currency)->assertSet('exchange_rate', '');
-        Livewire::test(PaymentForm::class)->assertSet('money_account_id', $account->id);
+        Livewire::test(PaymentForm::class)->assertSet('currency_code', 'ILS');
     }
 
     #[DataProvider('foreignCurrencies')]

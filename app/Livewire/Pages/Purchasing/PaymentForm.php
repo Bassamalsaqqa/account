@@ -112,9 +112,12 @@ class PaymentForm extends Component
         $this->vendor_id = $vendor_id;
         $this->document_locale = $company->default_locale;
         $this->payment_date = Carbon::now($company->timezone)->toDateString();
+        $this->currency_code = $company->base_currency_code;
 
         $defaultAccount = $this->eligibleMoneyAccounts()
-            ->orderBy('sort_order')
+            ->reorder()
+            ->orderByRaw('currency_code = ? desc', [$company->base_currency_code])
+            ->orderBy('sort_order')->orderBy('id')
             ->first();
 
         if ($defaultAccount !== null) {

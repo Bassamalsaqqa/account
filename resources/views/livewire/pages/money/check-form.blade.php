@@ -35,10 +35,12 @@
 <span>{{ __('money.amount') }}</span>
 <input type="text" wire:model="amount" class="w-full min-w-0 rounded-control border border-border bg-white px-3 py-2 text-sm focus:border-primary focus:ring-primary" inputmode="decimal">
 </label>
+@if ($currency !== $baseCurrency)
 <label class="block min-w-0 text-sm space-y-1">
 <span>{{ __('money.rate') }}</span>
 <input type="text" wire:model="rate" class="w-full min-w-0 rounded-control border border-border bg-white px-3 py-2 text-sm focus:border-primary focus:ring-primary" inputmode="decimal">
-</label>@if($direction === 'outgoing')<label class="text-sm space-y-1">
+</label>
+            @endif@if($direction === 'outgoing')<label class="text-sm space-y-1">
 <span>{{ __('money.drawn_bank') }}</span>
 <select wire:model="bankId" class="w-full min-w-0 rounded-control border border-border bg-white px-3 py-2 text-sm focus:border-primary focus:ring-primary">
 <option value="">{{ __('money.select_account') }}</option>@foreach($banks as $bank)<option value="{{ $bank->id }}">{{ $bank->displayName() }}</option>@endforeach</select>

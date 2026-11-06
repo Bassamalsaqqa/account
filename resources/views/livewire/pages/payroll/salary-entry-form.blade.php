@@ -65,11 +65,13 @@
                 </select>
                 @error('currencyCode') <span class="text-xs text-rose-600">{{ $message }}</span> @enderror
             </div>
-            <div>
+            @if ($currencyCode !== $baseCurrency)
+<div>
                 <label class="block text-xs font-semibold text-text-secondary mb-1">{{ __('payroll.rate') }} *</label>
                 <input type="text" inputmode="decimal" dir="ltr" wire:model="exchangeRate" placeholder="1.0000000000" class="w-full rounded-control border border-border bg-white px-3 py-2 text-sm font-mono focus:border-primary focus:ring-primary" required>
                 @error('exchangeRate') <span class="text-xs text-rose-600">{{ $message }}</span> @enderror
             </div>
+            @endif
         </div>
 
         <div class="grid gap-4 sm:grid-cols-3">

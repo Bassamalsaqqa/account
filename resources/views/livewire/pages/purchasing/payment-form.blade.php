@@ -3,7 +3,7 @@
     $simplePayment = $sourceAllocation !== null && ($sourceAllocation['document_currency_code'] ?? null) === $currency_code;
 @endphp
 <div class="max-w-4xl mx-auto space-y-6" x-data="{
-        saving: false, documentBusy: false, operationFailed: false, more: false,
+        saving: false, documentBusy: false, operationFailed: false,
         run(method, args = [], terminal = false) {
             if (this.saving || window.isDocumentBlocked($wire)) return;
             if (terminal &amp;&amp; [...this.$el.querySelectorAll('[role=dialog]')].some(el => el.getClientRects().length > 0)) return;
@@ -109,7 +109,7 @@
             </div>
 
             <!-- Document Language -->
-            <div x-show="more || {{ $errors->has('document_locale') ? 'true' : 'false' }}" x-cloak>
+            <div>
                 <label for="purchasing-payment-{{ $this->getId() }}-document_locale" class="block text-xs font-bold text-text-primary mb-1">{{ __('purchasing.document_language') }}</label>
                 <select id="purchasing-payment-{{ $this->getId() }}-document_locale" wire:model="document_locale" class="w-full min-h-11 px-3 rounded-control border border-border bg-canvas text-xs" :disabled="documentBusy || saving">
                     @foreach ($company->languages()->where('enabled', true)->get() as $language)
@@ -156,7 +156,7 @@
             @endif
 
             <!-- Reference Number -->
-            <div class="md:col-span-2" x-show="more || {{ $errors->has('reference_number') ? 'true' : 'false' }}" x-cloak>
+            <div class="md:col-span-2">
                 <label for="purchasing-payment-{{ $this->getId() }}-reference_number" class="block text-xs font-bold text-text-primary mb-1">
                     {{ __('purchasing.vendor_invoice_number') }} / {{ __('purchasing.payment_number') }}
                 </label>
@@ -166,7 +166,6 @@
             </div>
         </div>
 
-        <button type="button" @click="more = !more" :aria-expanded="more" class="min-h-11 text-sm font-medium text-primary">{{ __('refinement.more_details') }}</button>
         @if ($sourceAllocation !== null)
             <x-payment-source-summary :allocation="$sourceAllocation" :number="$sourcePurchaseNumber" :currency="$sourceAllocation['document_currency_code']" :unallocated="$unallocatedAmount" :payment-currency="$currency_code" />
         @endif
@@ -232,7 +231,7 @@
         </div>
 
         @endif
-        <div x-show="more || {{ $errors->has('notes') ? 'true' : 'false' }}" x-cloak>
+        <div>
             <label for="purchasing-payment-{{ $this->getId() }}-notes" class="block text-xs font-bold text-text-primary mb-1">
                 {{ __('purchasing.notes') }}
             </label>

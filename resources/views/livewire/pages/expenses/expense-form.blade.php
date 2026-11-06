@@ -88,11 +88,13 @@
                 @error('currencyCode') <span role="alert" id="expense-currency-error" class="text-xs text-rose-600">{{ $message }}</span> @enderror
             </div>
 
-            <div>
+            @if ($currencyCode !== $baseCurrency)
+<div>
                 <label for="expense-exchange-rate" class="block text-xs font-semibold text-text-secondary mb-1">{{ __('expenses.rate') }} *</label>
                 <input aria-invalid="{{ $errors->has('exchangeRate') ? 'true' : 'false' }}" @if ($errors->has('exchangeRate')) aria-describedby="expense-exchange-rate-error" @endif id="expense-exchange-rate" type="text" inputmode="decimal" wire:model="exchangeRate" placeholder="1.0000000000" class="w-full rounded-control border border-border bg-white px-3 py-2 text-sm focus:border-primary focus:ring-primary" required>
                 @error('exchangeRate') <span role="alert" id="expense-exchange-rate-error" class="text-xs text-rose-600">{{ $message }}</span> @enderror
             </div>
+            @endif
         </div>
 
         <!-- Payment method -->

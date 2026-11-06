@@ -17,10 +17,12 @@
 <span>{{ __('money.from_amount') }}</span>
 <input type="text" wire:model="fromAmount" class="w-full min-w-0 rounded-control border border-border bg-white px-3 py-2 text-sm focus:border-primary focus:ring-primary" inputmode="decimal">
 </label>
+@if ($accounts->firstWhere('id', $fromId)?->currency_code !== $baseCurrency)
 <label class="block min-w-0 text-sm space-y-1">
 <span>{{ __('money.rate') }}</span>
 <input type="text" wire:model="fromRate" class="w-full min-w-0 rounded-control border border-border bg-white px-3 py-2 text-sm focus:border-primary focus:ring-primary" inputmode="decimal">
 </label>
+@endif
 </section>
 <section class="space-y-4">
 <label class="block min-w-0 text-sm space-y-1">
@@ -32,10 +34,12 @@
 <span>{{ __('money.to_amount') }}</span>
 <input type="text" wire:model="toAmount" class="w-full min-w-0 rounded-control border border-border bg-white px-3 py-2 text-sm focus:border-primary focus:ring-primary" inputmode="decimal">
 </label>
+@if ($accounts->firstWhere('id', $toId)?->currency_code !== $baseCurrency)
 <label class="block min-w-0 text-sm space-y-1">
 <span>{{ __('money.rate') }}</span>
 <input type="text" wire:model="toRate" class="w-full min-w-0 rounded-control border border-border bg-white px-3 py-2 text-sm focus:border-primary focus:ring-primary" inputmode="decimal">
 </label>
+@endif
 </section>
 </div>
 <label class="block min-w-0 text-sm space-y-1">

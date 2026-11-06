@@ -70,7 +70,7 @@ class ReturnForm extends Component
             abort(403, 'Unauthorized.');
         }
 
-        $this->issue_date = Carbon::now()->toDateString();
+        $this->issue_date = Carbon::now($company->timezone)->toDateString();
 
         if ($invoice_id !== null) {
             $this->sales_invoice_id = $invoice_id;

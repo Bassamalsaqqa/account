@@ -53,6 +53,7 @@ class EmployeeForm extends Component
 
         $company = app(CompanyContext::class)->company();
         $this->salaryCurrencyCode = $company->base_currency_code;
+        $this->hireDate = Carbon::now($company->timezone)->toDateString();
 
         if ($this->publicId !== null) {
             $employee = Employee::where('company_id', $this->pageCompanyId)->when(! $this->canMoney('payroll.salary.view'), fn ($q) => $q->select(app(PayrollReadService::class)->identityColumns()))

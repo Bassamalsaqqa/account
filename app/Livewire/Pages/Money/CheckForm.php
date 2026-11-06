@@ -13,6 +13,7 @@ use App\Models\CompanyCurrency;
 use App\Models\Customer;
 use App\Models\Vendor;
 use App\Services\Money\EligibleMoneyAccounts;
+use App\Support\Tenancy\CompanyContext;
 use Brick\Math\Exception\MathException;
 use Carbon\Carbon;
 use Illuminate\Contracts\View\View;
@@ -95,6 +96,9 @@ class CheckForm extends Component
     public function save(): mixed
     {
         $company = $this->authorizeForm();
+        if ($this->currency === app(CompanyContext::class)->company()->base_currency_code) {
+            $this->rate = '1';
+        }
         $this->validate(['partyId' => 'required|integer', 'date' => 'required|date_format:Y-m-d', 'dueDate' => 'required|date_format:Y-m-d',
             'number' => 'required|string|max:100', 'bankName' => 'required|string|max:200', 'drawer' => 'nullable|string|max:200',
             'amount' => 'required|string', 'rate' => 'required|string', 'notes' => 'nullable|string|max:2000']);
@@ -126,7 +130,8 @@ class CheckForm extends Component
             : Vendor::withTrashed()->where('company_id', $this->pageCompanyId)->orderBy('name_ar')->get();
         $targets = $this->partyId === null ? [] : app(SettlementTargetsQuery::class)->forParty($this->pageCompanyId, $this->partyId, $this->direction === 'incoming' ? 'customer' : 'vendor');
 
-        return view('livewire.pages.money.check-form', ['parties' => $parties, 'targets' => $targets,
+        return view('livewire.pages.money.check-form', [
+            'baseCurrency' => app(CompanyContext::class)->company()->base_currency_code, 'parties' => $parties, 'targets' => $targets,
             'banks' => app(EligibleMoneyAccounts::class)->query($this->pageCompanyId, 'bank')->where('currency_code', $this->currency)->get(),
             'currencies' => CompanyCurrency::where('company_id', $this->pageCompanyId)->where('enabled', true)->pluck('currency_code')]);
     }

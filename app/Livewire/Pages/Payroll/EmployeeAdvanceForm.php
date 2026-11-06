@@ -119,6 +119,9 @@ class EmployeeAdvanceForm extends Component
     public function save(): void
     {
         $this->authorizeMoney('payroll.advance.manage');
+        if ($this->currencyCode === app(CompanyContext::class)->company()->base_currency_code) {
+            $this->exchangeRate = '1';
+        }
         if ($this->paymentMethod === 'check') {
             $this->authorizeMoney('money.check.outgoing.manage');
         }
@@ -212,6 +215,7 @@ class EmployeeAdvanceForm extends Component
         }
 
         return view('livewire.pages.payroll.employee-advance-form', [
+            'baseCurrency' => app(CompanyContext::class)->company()->base_currency_code,
             'employees' => $employees,
             'currencies' => $currencies,
             'accounts' => $accounts,

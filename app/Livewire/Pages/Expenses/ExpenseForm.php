@@ -129,6 +129,9 @@ class ExpenseForm extends Component
     public function save(): void
     {
         $this->authorizeMoney('money.expense.manage');
+        if ($this->currencyCode === app(CompanyContext::class)->company()->base_currency_code) {
+            $this->exchangeRate = '1';
+        }
         if ($this->paymentMethod === 'check') {
             $this->authorizeMoney('money.check.outgoing.manage');
         }
@@ -295,6 +298,7 @@ class ExpenseForm extends Component
         }
 
         return view('livewire.pages.expenses.expense-form', [
+            'baseCurrency' => app(CompanyContext::class)->company()->base_currency_code,
             'categories' => $categories,
             'currencies' => $currencies,
             'vendors' => $vendors,
