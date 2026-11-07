@@ -9,7 +9,7 @@
             @click="openModal()"
             aria-label="{{ __('search.open_search') }}"
             title="{{ __('search.open_search') }} ({{ __('search.shortcut') }})"
-            class="lg:hidden min-w-[44px] min-h-[44px] rounded-control border border-border bg-white text-text-secondary hover:bg-surface-soft hover:text-text-primary flex items-center justify-center transition-colors cursor-pointer focus:outline-hidden focus:ring-2 focus:ring-primary/40">
+            class="lg:hidden min-w-[44px] min-h-[44px] rounded-control border border-border bg-surface text-text-secondary hover:bg-surface-soft hover:text-text-primary flex items-center justify-center transition-colors cursor-pointer focus:outline-hidden focus:ring-2 focus:ring-primary/40">
         <x-icon name="search" class="w-5 h-5" />
     </button>
 
@@ -17,12 +17,12 @@
     <button type="button"
             @click="openModal()"
             aria-label="{{ __('search.open_search') }}"
-            class="hidden lg:flex items-center justify-between w-64 xl:w-72 max-w-[min(18rem,100%)] h-10 px-3 rounded-control border border-border bg-surface-soft/60 hover:bg-surface-soft text-text-muted hover:text-text-secondary transition-all cursor-pointer focus:outline-hidden focus:ring-2 focus:ring-primary/40">
+            class="hidden lg:flex items-center justify-between w-64 xl:w-72 max-w-[min(18rem,100%)] h-10 px-3 rounded-control border border-border bg-surface-soft/60 hover:bg-surface-soft text-text-muted hover:text-text-secondary transition-colors cursor-pointer focus:outline-hidden focus:ring-2 focus:ring-primary/40">
         <div class="flex items-center gap-2 min-w-0">
             <x-icon name="search" class="w-4 h-4 text-text-muted shrink-0" />
             <span class="text-xs truncate font-medium">{{ __('search.search_placeholder') }}</span>
         </div>
-        <kbd class="hidden sm:inline-flex shrink-0 whitespace-nowrap items-center px-1.5 py-0.5 text-[10px] font-semibold text-text-muted bg-white border border-border rounded-xs shadow-2xs font-mono">
+        <kbd class="hidden sm:inline-flex shrink-0 whitespace-nowrap items-center px-1.5 py-0.5 text-xs font-semibold text-text-muted bg-surface border border-border rounded-xs shadow-2xs font-mono">
             {{ __('search.shortcut') }}
         </kbd>
     </button>
@@ -53,13 +53,13 @@
 
             <!-- Dialog Box -->
             <div x-show="isModalVisible()"
-                 x-transition:enter="transition-all ease-out duration-200"
+                 x-transition:enter="transition-colors ease-out duration-200"
                  x-transition:enter-start="opacity-0 scale-95"
                  x-transition:enter-end="opacity-100 scale-100"
-                 x-transition:leave="transition-all ease-in duration-150"
+                 x-transition:leave="transition-colors ease-in duration-150"
                  x-transition:leave-start="opacity-100 scale-100"
                  x-transition:leave-end="opacity-0 scale-95"
-                 class="relative mx-auto max-w-2xl w-full bg-white rounded-card shadow-2xl border border-border overflow-hidden flex flex-col max-h-[85vh] mt-4 sm:mt-10">
+                 class="relative mx-auto max-w-2xl w-full bg-surface rounded-card shadow-2xl border border-border overflow-hidden flex flex-col max-h-[85vh] mt-4 sm:mt-10">
 
                 <h2 id="global-search-title" class="sr-only">{{ __('search.title') }}</h2>
 
@@ -105,7 +105,7 @@
 
                         <button type="button"
                                 @click="closeModal()"
-                                class="px-2 py-1 rounded-control text-xs font-semibold border border-border bg-white text-text-muted hover:text-text-primary hover:bg-surface-soft transition-colors cursor-pointer">
+                                class="px-2 py-1 rounded-control text-sm font-semibold border border-border bg-surface text-text-muted hover:text-text-primary hover:bg-surface-soft transition-colors cursor-pointer">
                             {{ __('search.hints.close') }}
                         </button>
                     </div>
@@ -116,13 +116,13 @@
                 @endif
 
                 <!-- Offline Notice -->
-                <div wire:offline class="px-4 py-2 bg-amber-50 border-b border-amber-200 text-amber-800 text-xs flex items-center gap-2">
+                <div wire:offline class="px-4 py-2 bg-warning-bg border-b border-warning/20 text-warning text-xs flex items-center gap-2">
                     <span class="inline-block w-2 h-2 rounded-full bg-amber-500"></span>
                     <span>{{ __('search.offline_notice') }}</span>
                 </div>
 
                 <!-- Slow loading notice -->
-                <div wire:loading.delay.longer wire:target="query" class="px-4 py-1.5 bg-blue-50 border-b border-blue-200 text-blue-700 text-xs">
+                <div wire:loading.delay.longer wire:target="query" class="px-4 py-1.5 bg-info-bg border-b border-info/20 text-info text-xs">
                     {{ __('search.slow_loading') }}
                 </div>
 
@@ -171,26 +171,26 @@
                             @if (! empty($items))
                                 <div class="pt-1">
                                     <!-- Category Header -->
-                                    <div class="px-3 py-1.5 text-[11px] font-bold tracking-wider text-text-muted uppercase flex items-center justify-between">
+                                    <div class="px-3 py-1.5 text-xs font-bold tracking-wider text-text-muted uppercase flex items-center justify-between">
                                         <span class="flex items-center gap-1.5">
                                             @if ($categoryKey === 'customer')
-                                                <x-icon name="users" class="w-3.5 h-3.5 text-blue-600" />
+                                                <x-icon name="users" class="w-3.5 h-3.5 text-info" />
                                             @elseif ($categoryKey === 'vendor')
-                                                <x-icon name="truck" class="w-3.5 h-3.5 text-indigo-600" />
+                                                <x-icon name="truck" class="w-3.5 h-3.5 text-info" />
                                             @elseif ($categoryKey === 'product')
-                                                <x-icon name="box" class="w-3.5 h-3.5 text-emerald-600" />
+                                                <x-icon name="box" class="w-3.5 h-3.5 text-success" />
                                             @elseif ($categoryKey === 'invoice')
-                                                <x-icon name="receipt" class="w-3.5 h-3.5 text-amber-600" />
+                                                <x-icon name="receipt" class="w-3.5 h-3.5 text-warning" />
                                             @elseif ($categoryKey === 'quotation')
-                                                <x-icon name="quote" class="w-3.5 h-3.5 text-purple-600" />
+                                                <x-icon name="quote" class="w-3.5 h-3.5 text-info" />
                                             @elseif ($categoryKey === 'purchase')
                                                 <x-icon name="cart" class="w-3.5 h-3.5 text-teal-600" />
                                             @elseif ($categoryKey === 'check')
-                                                <x-icon name="check" class="w-3.5 h-3.5 text-sky-600" />
+                                                <x-icon name="check" class="w-3.5 h-3.5 text-info" />
                                             @endif
                                             <span>{{ __('search.categories.'.$categoryKey) ?? $categoryKey }}</span>
                                         </span>
-                                        <span class="text-[10px] font-medium text-text-muted">{{ count($items) }}</span>
+                                        <span class="text-xs font-medium text-text-muted">{{ count($items) }}</span>
                                     </div>
 
                                     <!-- Items in Category -->
@@ -217,7 +217,7 @@
                                                             {{ $item['title'] }}
                                                         </div>
                                                         @if (! empty($item['subtitle']))
-                                                            <div class="text-[11px] text-text-muted truncate mt-0.5">
+                                                            <div class="text-xs text-text-muted truncate mt-0.5">
                                                                 {{ $item['subtitle'] }}
                                                             </div>
                                                         @endif
@@ -226,13 +226,13 @@
 
                                                 <div class="flex items-center gap-2 shrink-0 {{ $isRtl ? 'mr-3' : 'ml-3' }}">
                                                     @if (! empty($item['status']))
-                                                        <span class="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium uppercase
+                                                        <span class="inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium uppercase
                                                             @if (in_array($item['status'], ['active', 'posted', 'cleared', 'accepted'], true))
-                                                                bg-emerald-50 text-emerald-700 border border-emerald-200
+                                                                bg-success-bg text-success border border-success/20
                                                             @elseif (in_array($item['status'], ['draft', 'received', 'deposited', 'issued', 'sent'], true))
-                                                                bg-blue-50 text-blue-700 border border-blue-200
+                                                                bg-info-bg text-info border border-info/20
                                                             @elseif (in_array($item['status'], ['inactive', 'void', 'cancelled', 'returned', 'rejected', 'expired'], true))
-                                                                bg-rose-50 text-rose-700 border border-rose-200
+                                                                bg-danger-bg text-danger border border-danger/20
                                                             @else
                                                                 bg-slate-100 text-slate-700 border border-slate-200
                                                             @endif">
@@ -251,21 +251,21 @@
                 </div>
 
                 <!-- Footer Key Hints -->
-                <div class="px-4 py-2 border-t border-border bg-surface-soft/60 flex items-center justify-between text-[11px] text-text-muted">
+                <div class="px-4 py-2 border-t border-border bg-surface-soft/60 flex items-center justify-between text-xs text-text-muted">
                     <div class="flex items-center gap-3">
                         <span class="inline-flex items-center gap-1">
-                            <kbd class="px-1.5 py-0.5 text-[10px] bg-white border border-border rounded-xs shadow-2xs">↑</kbd>
-                            <kbd class="px-1.5 py-0.5 text-[10px] bg-white border border-border rounded-xs shadow-2xs">↓</kbd>
+                            <kbd class="px-1.5 py-0.5 text-xs bg-surface border border-border rounded-xs shadow-2xs">↑</kbd>
+                            <kbd class="px-1.5 py-0.5 text-xs bg-surface border border-border rounded-xs shadow-2xs">↓</kbd>
                             <span>{{ __('search.hints.navigate') }}</span>
                         </span>
                         <span class="inline-flex items-center gap-1">
-                            <kbd class="px-1.5 py-0.5 text-[10px] bg-white border border-border rounded-xs shadow-2xs">↵</kbd>
+                            <kbd class="px-1.5 py-0.5 text-xs bg-surface border border-border rounded-xs shadow-2xs">↵</kbd>
                             <span>{{ __('search.hints.select') }}</span>
                         </span>
                     </div>
                     <div>
                         <span class="inline-flex items-center gap-1">
-                            <kbd class="px-1.5 py-0.5 text-[10px] bg-white border border-border rounded-xs shadow-2xs">Esc</kbd>
+                            <kbd class="px-1.5 py-0.5 text-xs bg-surface border border-border rounded-xs shadow-2xs">Esc</kbd>
                             <span>{{ __('search.hints.close') }}</span>
                         </span>
                     </div>

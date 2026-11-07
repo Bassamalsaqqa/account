@@ -34,14 +34,14 @@
                            x-model="query"
                            placeholder="{{ __('dashboard.find_report_example') }}"
                            aria-label="{{ __('dashboard.find_report') }}"
-                           class="w-full h-10 min-h-[40px] max-h-[40px] rounded-control border border-border bg-white ps-9 pe-4 text-xs sm:text-sm focus:border-primary focus:ring-1 focus:ring-primary shadow-2xs box-border" />
+                           class="w-full h-10 min-h-[40px] max-h-[40px] rounded-control border border-border bg-surface ps-9 pe-4 text-sm sm:text-sm focus:border-primary focus:ring-1 focus:ring-primary shadow-2xs box-border" />
                 </div>
 
                 <!-- Reset filter action -->
                 <div class="flex items-center gap-2" x-cloak x-show="activeGroup !== 'all' || query.trim()">
                     <button type="button"
                             @click="activeGroup = 'all'; query = '';"
-                            class="inline-flex items-center gap-1 text-xs font-bold text-text-secondary hover:text-primary transition cursor-pointer">
+                            class="inline-flex items-center gap-1 text-sm font-bold text-text-secondary hover:text-primary transition cursor-pointer">
                         <x-icon name="close" class="w-3.5 h-3.5" />
                         <span>{{ __('reports.reset') }}</span>
                     </button>
@@ -54,7 +54,7 @@
                         role="tab"
                         :aria-selected="activeGroup === 'all' ? 'true' : 'false'"
                         @click="activeGroup = 'all'"
-                        :class="activeGroup === 'all' ? 'bg-primary text-white shadow-xs font-extrabold' : 'bg-white border border-border text-text-secondary hover:bg-surface-soft hover:text-text-primary font-bold'"
+                        :class="activeGroup === 'all' ? 'bg-primary text-white shadow-xs font-extrabold' : 'bg-surface border border-border text-text-secondary hover:bg-surface-soft hover:text-text-primary font-bold'"
                         class="h-9 min-h-[36px] max-h-[36px] px-3.5 rounded-control text-xs whitespace-nowrap transition cursor-pointer shrink-0 box-border">
                     {{ __('reports.all') }}
                     <span class="ms-1.5 opacity-75">({{ array_sum(array_map('count', $groups)) }})</span>
@@ -65,7 +65,7 @@
                             role="tab"
                             :aria-selected="activeGroup === '{{ $group }}' ? 'true' : 'false'"
                             @click="activeGroup = '{{ $group }}'"
-                            :class="activeGroup === '{{ $group }}' ? 'bg-primary text-white shadow-xs font-extrabold' : 'bg-white border border-border text-text-secondary hover:bg-surface-soft hover:text-text-primary font-bold'"
+                            :class="activeGroup === '{{ $group }}' ? 'bg-primary text-white shadow-xs font-extrabold' : 'bg-surface border border-border text-text-secondary hover:bg-surface-soft hover:text-text-primary font-bold'"
                             class="h-9 min-h-[36px] max-h-[36px] px-3.5 rounded-control text-xs whitespace-nowrap transition cursor-pointer shrink-0 box-border">
                         {{ __('reports.groups.'.$group) }}
                         <span class="ms-1.5 opacity-75">({{ count($reports) }})</span>
@@ -87,24 +87,24 @@
                 'profit' => 'chart',
             ];
             $groupColors = [
-                'sales' => 'bg-emerald-50 text-emerald-700 border-emerald-200',
-                'customers' => 'bg-indigo-50 text-indigo-700 border-indigo-200',
-                'purchases' => 'bg-blue-50 text-blue-700 border-blue-200',
-                'vendors' => 'bg-sky-50 text-sky-700 border-sky-200',
-                'inventory' => 'bg-amber-50 text-amber-700 border-amber-200',
+                'sales' => 'bg-success-bg text-success border-success/20',
+                'customers' => 'bg-info-bg text-info border-info/20',
+                'purchases' => 'bg-info-bg text-info border-info/20',
+                'vendors' => 'bg-info-bg text-info border-info/20',
+                'inventory' => 'bg-warning-bg text-warning border-warning/20',
                 'money' => 'bg-teal-50 text-teal-700 border-teal-200',
-                'expenses' => 'bg-rose-50 text-rose-700 border-rose-200',
-                'payroll' => 'bg-purple-50 text-purple-700 border-purple-200',
-                'profit' => 'bg-emerald-50 text-emerald-700 border-emerald-200',
+                'expenses' => 'bg-danger-bg text-danger border-danger/20',
+                'payroll' => 'bg-info-bg text-info border-info/20',
+                'profit' => 'bg-success-bg text-success border-success/20',
             ];
         @endphp
 
         <!-- Dense Report Workspace Table -->
-        <div class="bg-white border border-border rounded-xl shadow-xs overflow-hidden">
+        <div class="bg-surface border border-border rounded-xl shadow-xs overflow-hidden">
             <!-- Desktop Table View -->
             <div class="hidden md:block overflow-x-auto">
                 <table class="data-table w-full text-xs text-start border-collapse">
-                    <thead class="bg-surface-soft border-b border-border text-[11px] font-extrabold uppercase tracking-wider text-text-muted select-none">
+                    <thead class="bg-surface-soft border-b border-border text-xs font-extrabold uppercase tracking-wider text-text-muted select-none">
                         <tr>
                             <th scope="col" class="py-3 px-4 text-start">{{ __('reports.title') }}</th>
                             <th scope="col" class="py-3 px-4 text-start w-36">{{ __('reports.category_id') }}</th>
@@ -131,17 +131,17 @@
                                         </a>
                                     </td>
                                     <td class="py-3 px-4">
-                                        <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold border {{ $groupBadgeColor }}">
+                                        <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold border {{ $groupBadgeColor }}">
                                             {{ __('reports.groups.'.$group) }}
                                         </span>
                                     </td>
-                                    <td class="py-3 px-4 font-mono text-[11px] text-text-muted dir-ltr">
+                                    <td class="py-3 px-4 font-mono text-xs text-text-muted dir-ltr">
                                         {{ $report['key'] }}
                                     </td>
                                     <td class="py-3 px-4 text-end">
                                         <a href="{{ route('reports.show', ['reportKey' => $report['key']]) }}"
                                            title="{{ __('reports.show') ?? 'View' }}"
-                                           class="touch-action inline-flex items-center justify-center w-8 h-8 rounded-control border border-border/80 bg-white hover:bg-surface-soft text-text-secondary hover:text-primary transition shadow-2xs">
+                                           class="touch-action inline-flex items-center justify-center w-8 h-8 rounded-control border border-border/80 bg-surface hover:bg-surface-soft text-text-secondary hover:text-primary transition shadow-2xs">
                                             <x-icon name="chevron" class="w-3.5 h-3.5 rtl:rotate-180" />
                                         </a>
                                     </td>
@@ -170,10 +170,10 @@
                                     <div class="min-w-0">
                                         <div class="font-bold text-xs sm:text-sm text-text-primary truncate">{{ $report['title'] }}</div>
                                         <div class="flex items-center gap-2 mt-0.5">
-                                            <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold border {{ $groupBadgeColor }}">
+                                            <span class="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-bold border {{ $groupBadgeColor }}">
                                                 {{ __('reports.groups.'.$group) }}
                                             </span>
-                                            <span class="font-mono text-[10px] text-text-muted dir-ltr">{{ $report['key'] }}</span>
+                                            <span class="font-mono text-xs text-text-muted dir-ltr">{{ $report['key'] }}</span>
                                         </div>
                                     </div>
                                 </div>
@@ -188,17 +188,17 @@
         <!-- No Match Found Notice -->
         <div x-cloak
              x-show="@js(array_merge(...array_map(fn ($r, $g) => array_map(fn ($item) => ['group' => $g, 'title' => $item['title'], 'groupTitle' => __('reports.groups.'.$g), 'key' => $item['key']], $r), array_values($groups), array_keys($groups)))).every(rep => !matches(rep))"
-             class="rounded-xl border border-border bg-white p-8 text-center space-y-3">
+             class="rounded-xl border border-border bg-surface p-8 text-center space-y-3">
             <x-icon name="search" class="w-8 h-8 text-text-muted mx-auto opacity-50" />
             <p class="text-sm font-bold text-text-primary">{{ __('dashboard.no_report_match') }}</p>
             <button type="button"
                     @click="activeGroup = 'all'; query = '';"
-                    class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-control bg-surface-soft hover:bg-surface-muted text-xs font-bold text-text-primary border border-border transition cursor-pointer">
+                    class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-control bg-surface-soft hover:bg-surface-muted text-sm font-bold text-text-primary border border-border transition cursor-pointer">
                 <span>{{ __('reports.reset') }}</span>
             </button>
         </div>
     @else
-        <div class="rounded-xl bg-white border border-border p-8 text-center text-sm text-text-secondary">
+        <div class="rounded-xl bg-surface border border-border p-8 text-center text-sm text-text-secondary">
             {{ __('reports.restricted') }}
         </div>
     @endif

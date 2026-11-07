@@ -31,6 +31,8 @@ use App\Services\Money\MoneyEventScope;
 use App\Services\Phase7\Phase7EventScope;
 use App\Services\Purchasing\PurchasePostingScope;
 use App\Services\Purchasing\PurchaseReturnPostingScope;
+use App\Services\Purchasing\PurchaseReturnVoidScope;
+use App\Services\Purchasing\PurchaseVoidScope;
 use App\Support\Tenancy\CompanyContext;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\QueryException;
@@ -380,10 +382,11 @@ class AccountingPostingService
     {
         // Inspect persisted source identity; a dirty caller model cannot disguise a protected event.
         $stockOriginal = PostingBatch::withoutGlobalScopes()->where('company_id', $original->company_id)->find($original->id);
-        if ($stockOriginal !== null && in_array($stockOriginal->source_type, ['purchase', 'purchase_return'], true)) {
-            throw new InvalidArgumentException('Use the canonical Purchase Return workflow; raw Purchasing accounting reversal cannot leave stock unchanged.');
-        }
-        if ($stockOriginal !== null && in_array($stockOriginal->source_type, ['opening_stock', 'stock_adjustment', 'expiry_disposal', 'sales_invoice', 'sales_return'], true)) {
+        if ($stockOriginal !== null && $stockOriginal->source_type === 'purchase') {
+            app(PurchaseVoidScope::class)->assertReversal($stockOriginal, $actingUser);
+        } elseif ($stockOriginal !== null && $stockOriginal->source_type === 'purchase_return') {
+            app(PurchaseReturnVoidScope::class)->assertReversal($stockOriginal, $actingUser);
+        } elseif ($stockOriginal !== null && in_array($stockOriginal->source_type, ['opening_stock', 'stock_adjustment', 'expiry_disposal', 'sales_invoice', 'sales_return'], true)) {
             app(StockEventScope::class)->assertReversal($stockOriginal, $actingUser);
         }
         if (in_array($original->source_type, ['expense', 'employee_advance', 'salary_entry', 'salary_payment'], true)) {

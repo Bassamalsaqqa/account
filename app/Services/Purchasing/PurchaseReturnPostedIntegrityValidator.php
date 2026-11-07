@@ -27,7 +27,7 @@ final class PurchaseReturnPostedIntegrityValidator
 
     public function validate(PurchaseReturn $return): void
     {
-        if ($return->status !== PurchaseReturn::STATUS_POSTED
+        if (! in_array($return->status, [PurchaseReturn::STATUS_POSTED, PurchaseReturn::STATUS_VOID], true)
             || ! $return->return_number
             || trim($return->return_number) === ''
             || $return->posted_at === null
@@ -40,7 +40,7 @@ final class PurchaseReturnPostedIntegrityValidator
             ->where('company_id', $return->company_id)
             ->find($return->purchase_id);
 
-        if ($purchase === null || ! $purchase->isPosted()) {
+        if ($purchase === null || (! $purchase->isPosted() && ! $purchase->isVoid())) {
             throw new InvalidArgumentException(__('purchasing.post_integrity_failed'));
         }
 

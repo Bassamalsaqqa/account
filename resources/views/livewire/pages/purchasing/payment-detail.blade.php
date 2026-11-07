@@ -4,13 +4,13 @@
     @endif
     <!-- Flash Messages -->
     @if (session()->has('success'))
-        <div class="p-4 rounded-control bg-success-bg border border-success text-success text-xs font-bold">
+        <div class="p-4 rounded-control bg-success-bg border border-success text-success text-sm font-bold">
             {{ session('success') }}
         </div>
     @endif
 
     <!-- Header Card -->
-    <div class="bg-white rounded-card border border-border shadow-xs p-6 space-y-4">
+    <div class="bg-surface rounded-card border border-border shadow-xs p-6 space-y-4">
         <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div>
                 <div class="flex items-center gap-3">
@@ -18,16 +18,16 @@
                         {{ $payment->payment_number }}
                     </h1>
                     @if ($payment->is_reversed)
-                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-danger-bg text-danger">
+                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-sm font-bold bg-danger-bg text-danger">
                             {{ __('purchasing.reversed') }}
                         </span>
                     @else
-                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-success-bg text-success">
+                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-sm font-bold bg-success-bg text-success">
                             {{ __('purchasing.posted') }}
                         </span>
                     @endif
                 </div>
-                <div class="text-xs text-text-secondary mt-1">
+                <div class="text-sm text-text-secondary mt-1">
                     {{ __('purchasing.vendor') }}:
                     @if ($payment->vendor || isset($payment->vendor_snapshot['public_id']))
                         <a href="{{ route('vendors.show', $payment->vendor?->public_id ?? $payment->vendor_snapshot['public_id']) }}" class="touch-action font-bold text-text-primary hover:text-primary">
@@ -41,57 +41,57 @@
 
             <div class="flex flex-wrap items-center gap-2">
                 @if ($canAllocate)
-                    <button type="button" wire:click="openCreditForm" class="px-3 py-1.5 bg-primary text-white rounded-control text-xs font-bold hover:bg-primary-hover transition-colors shadow-sm cursor-pointer" wire:loading.attr="disabled" wire:target="openCreditForm">
+                    <button type="button" wire:click="openCreditForm" class="px-3 py-1.5 bg-primary text-white rounded-control text-sm font-bold hover:bg-primary-hover transition-colors shadow-sm cursor-pointer" wire:loading.attr="disabled" wire:target="openCreditForm">
                         ⚡ {{ __('purchasing.apply_advance') }}
                     </button>
                 @endif
                 @if ($canReverse)
                     <button type="button"
-                            wire:click="$set('showReverseModal', true)"
-                            class="px-3.5 py-1.5 rounded-control bg-danger-bg text-danger border border-danger/30 text-xs font-bold hover:bg-danger hover:text-white transition-colors cursor-pointer">
+                            wire:click="openReversalReview"
+                            class="px-3.5 py-1.5 rounded-control bg-danger-bg text-danger border border-danger/30 text-sm font-bold hover:bg-danger hover:text-white transition-colors cursor-pointer">
                         ✕ {{ __('purchasing.reverse_payment') }}
                     </button>
                 @endif
 
                 @if ($singleAllocatedPurchase)
                     <a href="{{ route('purchases.show', $singleAllocatedPurchase->public_id) }}"
-                       class="touch-action inline-flex items-center gap-1.5 px-3 py-1.5 rounded-control border border-border text-xs font-bold text-text-secondary hover:text-text-primary hover:bg-surface-soft transition-colors focus-visible:ring-2 focus-visible:ring-primary">
+                       class="touch-action inline-flex items-center gap-1.5 px-3 py-1.5 rounded-control border border-border text-sm font-bold text-text-secondary hover:text-text-primary hover:bg-surface-soft transition-colors focus-visible:ring-2 focus-visible:ring-primary">
                         <x-icon name="arrow-right" class="w-3.5 h-3.5 rtl:rotate-0 ltr:rotate-180 text-primary" />
                         <span>{{ __('release_b1_workflow.back_to_purchase') }}: {{ $singleAllocatedPurchase->purchase_number }}</span>
                     </a>
                 @endif
 
                 <a href="{{ route('vendor-payments.index') }}"
-                   class="touch-action px-3 py-1.5 rounded-control bg-surface-soft text-text-secondary hover:text-text-primary text-xs font-bold transition-colors">
+                   class="touch-action px-3 py-1.5 rounded-control bg-surface-soft text-text-secondary hover:text-text-primary text-sm font-bold transition-colors">
                     {{ __('purchasing.cancel') }}
                 </a>
             </div>
         </div>
 
         @if ($payment->is_reversed)
-            <div class="p-3 rounded-control bg-danger-bg border border-danger text-danger text-xs font-medium space-y-1">
+            <div class="p-3 rounded-control bg-danger-bg border border-danger text-danger text-sm font-medium space-y-1">
                 <div class="font-bold">{{ __('purchasing.reversed') }}</div>
                 <div>{{ __('purchasing.reversal_reason') }}: {{ $payment->reversal_reason }}</div>
-                <div class="text-[11px] text-text-secondary" dir="ltr">{{ $payment->reversed_at }}</div>
+                <div class="text-sm text-text-secondary" dir="ltr">{{ $payment->reversed_at }}</div>
             </div>
         @endif
 
         <!-- Metadata Row -->
-        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 pt-4 border-t border-border text-xs">
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 pt-4 border-t border-border text-sm">
             <div>
-                <span class="text-text-muted block text-[11px]">{{ __('purchasing.payment_date') }}</span>
+                <span class="text-text-muted block text-sm">{{ __('purchasing.payment_date') }}</span>
                 <span class="font-bold text-text-primary" dir="ltr">{{ $payment->payment_date->toDateString() }}</span>
             </div>
             <div>
-                <span class="text-text-muted block text-[11px]">{{ __('purchasing.money_account') }}</span>
+                <span class="text-text-muted block text-sm">{{ __('purchasing.money_account') }}</span>
                 <span class="font-bold text-text-primary">{{ $payment->check_id !== null ? __('money.check').' #'.$payment->checkInstrument?->check_number : ($payment->moneyAccount?->displayName() ?? '—') }}</span>
             </div>
             <div>
-                <span class="text-text-muted block text-[11px]">{{ __('purchasing.payment_method') }}</span>
+                <span class="text-text-muted block text-sm">{{ __('purchasing.payment_method') }}</span>
                 <span class="font-bold text-text-primary">{{ __('purchasing.' . $payment->payment_method) }}</span>
             </div>
             <div>
-                <span class="text-text-muted block text-[11px]">{{ __('purchasing.currency') ?? __('sales.currency') }}</span>
+                <span class="text-text-muted block text-sm">{{ __('purchasing.currency') ?? __('sales.currency') }}</span>
                 <span class="font-bold text-text-primary">{{ $payment->currency_code }} ({{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($payment->exchange_rate) }})</span>
             </div>
         </div>
@@ -132,12 +132,12 @@
 
     <!-- Apply Advance Section (Credit Form) -->
     @if ($showCreditForm)
-        <form wire:submit="applyCredit" class="bg-white p-6 rounded-card border border-border shadow-xs space-y-4">
+        <form wire:submit="applyCredit" class="bg-surface p-6 rounded-card border border-border shadow-xs space-y-4">
             <div class="flex items-center justify-between pb-2 border-b border-border">
                 <h2 class="font-bold text-sm text-text-primary">
                     {{ __('purchasing.apply_advance') }} ({{ $payment->currency_code }})
                 </h2>
-                <div class="text-xs text-text-secondary">
+                <div class="text-sm text-text-secondary">
                     {{ __('purchasing.unallocated_advance') }}:
                     <span class="font-bold text-info" dir="ltr">
                         {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($payment->unallocated_amount, $payment->currency_code) }} {{ $payment->currency_code }}
@@ -146,60 +146,60 @@
             </div>
 
             <div class="max-w-xs">
-                <label class="block text-xs font-bold text-text-primary mb-1">
+                <label class="block text-sm font-bold text-text-primary mb-1">
                     {{ __('purchasing.application_date') }} <span class="text-danger">*</span>
                 </label>
-                <input type="date" wire:model="applicationDate" class="w-full h-9 px-3 rounded-control border border-border bg-canvas text-xs" required />
-                @error('applicationDate') <span class="text-danger text-[11px] mt-1 block">{{ $message }}</span> @enderror
+                <input type="date" wire:model="applicationDate" class="w-full h-9 px-3 rounded-control border border-border bg-canvas text-sm" required />
+                @error('applicationDate') <span class="text-danger text-sm mt-1 block">{{ $message }}</span> @enderror
             </div>
 
             <div class="space-y-3 pt-2">
-                <h3 class="text-xs font-bold text-text-secondary uppercase tracking-wider">
+                <h3 class="text-sm font-bold text-text-secondary uppercase tracking-wider">
                     {{ __('purchasing.open_purchases') }}
                 </h3>
 
                 @forelse ($openPurchases as $purchase)
-                    <div class="grid grid-cols-1 sm:grid-cols-4 gap-3 p-3 rounded-control bg-canvas border border-border items-center text-xs">
+                    <div class="grid grid-cols-1 sm:grid-cols-4 gap-3 p-3 rounded-control bg-canvas border border-border items-center text-sm">
                         <div class="font-mono font-bold text-primary" dir="ltr">
                             {{ $purchase['number'] }}
-                            <span class="block text-[11px] text-text-muted font-normal">{{ $purchase['date'] }}</span>
+                            <span class="block text-sm text-text-muted font-normal">{{ $purchase['date'] }}</span>
                         </div>
                         <div>
-                            <span class="text-text-muted block text-[10px] uppercase">{{ __('purchasing.total') }}</span>
+                            <span class="text-text-muted block text-sm uppercase">{{ __('purchasing.total') }}</span>
                             <span class="font-mono" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($purchase['outstanding'], $purchase['currency']) }} {{ $purchase['currency'] }}</span>
                         </div>
                         <div>
-                            <span class="text-text-muted block text-[10px] uppercase">{{ __('purchasing.outstanding_balance') }}</span>
+                            <span class="text-text-muted block text-sm uppercase">{{ __('purchasing.outstanding_balance') }}</span>
                             <span class="font-mono font-bold text-danger" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($purchase['outstanding'], $purchase['currency']) }} {{ $purchase['currency'] }}</span>
                         </div>
                         <div>
-                            <label class="block text-[10px] text-text-muted uppercase mb-1">{{ __('purchasing.allocated') }}</label>
+                            <label class="block text-sm text-text-muted uppercase mb-1">{{ __('purchasing.allocated') }}</label>
                             <input type="text"
                                    inputmode="decimal"
                                    wire:model="creditAmounts.{{ $purchase['id'] }}"
                                    placeholder="0.00"
-                                   class="w-full h-8 px-2 rounded-control border border-border bg-white text-xs font-mono font-bold text-end"
+                                   class="w-full h-8 px-2 rounded-control border border-border bg-surface text-sm font-mono font-bold text-end"
                                    dir="ltr" />
-                            <span class="text-xs" dir="ltr">{{ $purchase['currency'] }}</span>
+                            <span class="text-sm" dir="ltr">{{ $purchase['currency'] }}</span>
                             @if($purchase['currency'] !== $payment->currency_code)
-                            <label class="block text-xs">{{ __('money.payment_consumed') }} ({{ $payment->currency_code }})<input type="text" inputmode="decimal" wire:model="creditPaymentAmounts.{{ $purchase['id'] }}" class="w-full border-border rounded-control p-2" dir="ltr" /></label>
+                            <label class="block text-sm">{{ __('money.payment_consumed') }} ({{ $payment->currency_code }})<input type="text" inputmode="decimal" wire:model="creditPaymentAmounts.{{ $purchase['id'] }}" class="w-full border-border rounded-control p-2" dir="ltr" /></label>
                             @endif
-                            @error('creditAmounts.' . $purchase['id']) <span class="text-danger text-[11px] block mt-1">{{ $message }}</span> @enderror
-                            @error('creditPaymentAmounts.' . $purchase['id']) <span class="text-danger text-[11px] block mt-1">{{ $message }}</span> @enderror
+                            @error('creditAmounts.' . $purchase['id']) <span class="text-danger text-sm block mt-1">{{ $message }}</span> @enderror
+                            @error('creditPaymentAmounts.' . $purchase['id']) <span class="text-danger text-sm block mt-1">{{ $message }}</span> @enderror
                         </div>
                     </div>
                 @empty
-                    <p class="text-xs text-text-muted py-4 text-center">{{ __('purchasing.no_purchases') }}</p>
+                    <p class="text-sm text-text-muted py-4 text-center">{{ __('purchasing.no_purchases') }}</p>
                 @endforelse
             </div>
 
-            @error('creditAmounts') <p class="text-danger text-xs font-bold">{{ $message }}</p> @enderror
+            @error('creditAmounts') <p class="text-danger text-sm font-bold">{{ $message }}</p> @enderror
 
             <div class="flex items-center justify-end gap-3 pt-3 border-t border-border">
-                <button type="button" wire:click="$set('showCreditForm', false)" class="px-3 py-1.5 rounded-control border border-border text-xs font-bold text-text-secondary hover:bg-surface-soft transition-colors cursor-pointer">
+                <button type="button" wire:click="$set('showCreditForm', false)" class="px-3 py-1.5 rounded-control border border-border text-sm font-bold text-text-secondary hover:bg-surface-soft transition-colors cursor-pointer">
                     {{ __('purchasing.cancel') }}
                 </button>
-                <button type="submit" class="px-4 py-1.5 rounded-control bg-primary text-white text-xs font-bold hover:bg-primary-hover transition-colors shadow-sm cursor-pointer">
+                <button type="submit" class="px-4 py-1.5 rounded-control bg-primary text-white text-sm font-bold hover:bg-primary-hover transition-colors shadow-sm cursor-pointer">
                     ⚡ {{ __('purchasing.apply_advance') }}
                 </button>
             </div>
@@ -207,14 +207,14 @@
     @endif
 
     <!-- Allocations Table -->
-    <div class="bg-white rounded-card border border-border shadow-xs overflow-hidden">
+    <div class="bg-surface rounded-card border border-border shadow-xs overflow-hidden">
         <div class="p-4 border-b border-border font-bold text-sm text-text-primary">
             {{ __('purchasing.purchase_lines') }} ({{ __('purchasing.allocated') }})
         </div>
         <div class="overflow-x-auto">
-            <table class="data-table w-full text-start text-xs border-collapse">
+            <table class="data-table w-full text-start text-sm border-collapse">
                 <thead>
-                    <tr class="border-b border-border bg-surface-soft text-text-muted font-bold text-[11px] uppercase">
+                    <tr class="border-b border-border bg-surface-soft text-text-muted font-bold text-sm uppercase">
                         <th class="py-2.5 px-4 text-start">{{ __('purchasing.purchase_number') }}</th>
                         <th class="py-2.5 px-4 text-start">{{ __('purchasing.purchase_date') }}</th>
                         <th class="py-2.5 px-4 text-start">{{ __('purchasing.allocated') }}</th>
@@ -238,7 +238,7 @@
                                 {{ $alloc->purchase?->purchase_date ? $alloc->purchase->purchase_date->toDateString() : '—' }}
                             </td>
                             <td class="py-2.5 px-4 font-bold" dir="ltr">
-                                {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($alloc->allocated_amount, $alloc->purchase->currency_code) }} {{ $alloc->purchase->currency_code }}<span class="block text-xs text-text-muted">{{ __('money.payment_consumed') }}: {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($alloc->payment_currency_amount) }} {{ $payment->currency_code }}</span>
+                                {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($alloc->allocated_amount, $alloc->purchase->currency_code) }} {{ $alloc->purchase->currency_code }}<span class="block text-sm text-text-muted">{{ __('money.payment_consumed') }}: {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($alloc->payment_currency_amount) }} {{ $payment->currency_code }}</span>
                             </td>
                             <td class="py-2.5 px-4 font-mono" dir="ltr">
                                 @php
@@ -256,15 +256,15 @@
                             </td>
                             <td class="py-2.5 px-4 text-text-secondary">
                                 @if ($payment->is_reversed || $alloc->applicationEvent?->reversed_at !== null)
-                                    <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-danger-bg text-danger">
+                                    <span class="px-2 py-0.5 rounded-full text-sm font-bold bg-danger-bg text-danger">
                                         {{ __('purchasing.reversed') }}
                                     </span>
                                 @elseif ($alloc->application_event_id === null)
-                                    <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-surface-soft text-text-secondary">
+                                    <span class="px-2 py-0.5 rounded-full text-sm font-bold bg-surface-soft text-text-secondary">
                                         {{ __('purchasing.posted') }}
                                     </span>
                                 @else
-                                    <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-info-bg text-info">
+                                    <span class="px-2 py-0.5 rounded-full text-sm font-bold bg-info-bg text-info">
                                         {{ __('purchasing.apply_advance') }} ({{ $alloc->applicationEvent?->application_date?->toDateString() }})
                                     </span>
                                 @endif
@@ -283,40 +283,6 @@
     </div>
 
     <!-- Reversal Modal -->
-    @if ($showReverseModal)
-        <div class="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
-            <div class="bg-white rounded-card max-w-md w-full p-6 space-y-4 shadow-xl">
-                <h2 class="text-lg font-bold text-danger">
-                    {{ __('purchasing.reverse_payment') }}
-                </h2>
-                <p class="text-xs text-text-secondary leading-relaxed">
-                    {{ __('purchasing.reverse_confirmation') }}
-                </p>
 
-                <div>
-                    <label class="block text-xs font-bold text-text-primary mb-1">
-                        {{ __('purchasing.reversal_reason') }} <span class="text-danger">*</span>
-                    </label>
-                    <input type="text"
-                           wire:model="reversalReason"
-                           placeholder="{{ __('purchasing.reversal_reason') }}"
-                           class="w-full h-9 px-3 rounded-control border border-border bg-canvas text-xs focus:border-danger focus:ring-1 focus:ring-danger outline-hidden" />
-                    @error('reversalReason') <span class="text-danger text-[11px] mt-1 block">{{ $message }}</span> @enderror
-                </div>
-
-                <div class="flex items-center justify-end gap-2 pt-2">
-                    <button type="button"
-                            wire:click="$set('showReverseModal', false)"
-                            class="px-3 py-1.5 rounded-control border border-border text-xs font-bold text-text-secondary hover:bg-surface-soft transition-colors cursor-pointer">
-                        {{ __('purchasing.cancel') }}
-                    </button>
-                    <button type="button"
-                            wire:click="reversePayment"
-                            class="px-4 py-1.5 rounded-control bg-danger text-white text-xs font-bold hover:bg-danger/90 transition-colors shadow-sm cursor-pointer" wire:loading.attr="disabled" wire:target="reversePayment">
-                        ✕ {{ __('purchasing.reverse_payment') }}
-                    </button>
-                </div>
-            </div>
-        </div>
-    @endif
+    <x-standalone-reversal-review />
 </div>

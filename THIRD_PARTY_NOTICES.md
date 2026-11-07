@@ -25,3 +25,11 @@ and the preserved [Laravel MIT notice](third-party/laravel/LICENSE.md). The noti
 is reproduced from the framework revision in the original project lockfile;
 the skeleton's own manifest declares MIT and its README links the MIT license.
 Installed framework/dependency distributions retain their own license files.
+
+## UI design references (7 November 2026)
+
+Official free BoardUI component source and shadcn registry examples were consulted
+for native Blade/CSS design adaptations. No React source distribution, npm UI
+component, or new icon set was incorporated in this batch. See the
+[source-to-component mapping](docs/UI_REDESIGN_20261107.md). Existing dependency
+licenses and notices remain unchanged; no Lucide copyright attribution is inferred.

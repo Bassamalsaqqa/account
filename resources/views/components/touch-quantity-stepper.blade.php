@@ -85,14 +85,14 @@
          }
      }"
      @document-operation-state.window="if ($event.detail.id === $wire.$id) { if ($event.detail.blocked) failed = true; else if (!$event.detail.busy) failed = false; }">
-    <div class="inline-flex items-stretch border border-border rounded-control bg-white shadow-xs overflow-hidden">
+    <div class="inline-flex items-stretch border border-border rounded-control bg-surface shadow-xs overflow-hidden">
         <!-- Decrement Button (>=44px touch target, clear contrast) -->
         <button type="button"
                 wire:loading.attr="disabled"
                 wire:target="save,saveDraft,selectProduct,changeUnit,scanCameraBarcode,addLine,removeLine"
                 :disabled="failed || recovering || (typeof saving !== 'undefined' && saving) || {{ $disabled ? 'true' : 'false' }}"
                 @click="tap('down')"
-                class="min-h-[44px] min-w-[44px] px-3 flex items-center justify-center bg-rose-50 hover:bg-rose-100 active:bg-rose-200 text-rose-700 border-e border-border text-lg font-bold transition-colors select-none cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                class="min-h-[44px] min-w-[44px] px-3 flex items-center justify-center bg-danger-bg hover:bg-danger-bg active:bg-rose-200 text-danger border-e border-border text-lg font-bold transition-colors select-none cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                 aria-label="{{ __('mobile.decrement') }} {{ $index + 1 }}">
             <span aria-hidden="true">−</span>
         </button>
@@ -113,7 +113,7 @@
                :readonly="pending > 0"
                :disabled="(typeof documentBusy !== 'undefined' && documentBusy) || failed || recovering || (typeof saving !== 'undefined' && saving) || {{ $disabled ? 'true' : 'false' }}"
                @disabled($disabled)
-               class="min-h-[44px] w-16 text-center border-0 bg-white text-xs font-mono font-bold text-text-primary focus:ring-1 focus:ring-primary focus:outline-hidden disabled:opacity-60" />
+               class="min-h-[44px] w-16 text-center border-0 bg-surface text-xs font-mono font-bold text-text-primary focus:ring-1 focus:ring-primary focus:outline-hidden disabled:opacity-60" />
 
         <!-- Increment Button (>=44px touch target, clear contrast) -->
         <button type="button"
@@ -121,14 +121,14 @@
                 wire:target="save,saveDraft,selectProduct,changeUnit,scanCameraBarcode,addLine,removeLine"
                 :disabled="failed || recovering || (typeof saving !== 'undefined' && saving) || {{ $disabled ? 'true' : 'false' }}"
                 @click="tap('up')"
-                class="min-h-[44px] min-w-[44px] px-3 flex items-center justify-center bg-emerald-50 hover:bg-emerald-100 active:bg-emerald-200 text-emerald-700 border-s border-border text-lg font-bold transition-colors select-none cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                class="min-h-[44px] min-w-[44px] px-3 flex items-center justify-center bg-success-bg hover:bg-success-bg active:bg-emerald-200 text-success border-s border-border text-lg font-bold transition-colors select-none cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                 aria-label="{{ __('mobile.increment') }} {{ $index + 1 }}">
             <span aria-hidden="true">+</span>
         </button>
     </div>
 
     <!-- Visible Pending / Failure State with Discard/Resync -->
-    <div x-cloak x-show="pending || failed" class="text-[11px] leading-tight select-none">
+    <div x-cloak x-show="pending || failed" class="text-xs leading-tight select-none">
         <span x-show="pending && !failed" class="text-text-muted inline-flex items-center gap-1">
             <span class="inline-block w-1.5 h-1.5 rounded-full bg-primary animate-pulse" aria-hidden="true"></span>
             <span>{{ __('mobile.quantity_pending') }}</span>

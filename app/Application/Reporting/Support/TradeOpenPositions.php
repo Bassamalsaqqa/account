@@ -24,11 +24,14 @@ final class TradeOpenPositions
         $cutoff = $filters->period->endDate;
         $asOf = Carbon::parse($cutoff, (string) $company->timezone)->startOfDay();
         $query = ($vendor ? Purchase::query() : SalesInvoice::query())->where('company_id', $company->id)->whereNotNull('posting_batch_id')->where($dateField, '<=', $cutoff);
-        if ($vendor) {
-            $query->where('status', 'posted');
-        } else {
-            $query->where(fn ($q) => $q->where('status', 'posted')->orWhere(fn ($q) => $q->where('status', 'void')->whereHas('voidPostingBatch', fn ($b) => $b->where('company_id', $company->id)->where('posting_date', '>', $cutoff))));
-        }
+        $query->where(fn ($q) => $q->where('status', 'posted')->orWhere(function ($q) use ($vendor, $company, $cutoff): void {
+            $q->where('status', 'void');
+            if ($vendor) {
+                $q->where('void_business_date', '>', $cutoff);
+            } else {
+                $q->whereHas('voidPostingBatch', fn ($batch) => $batch->where('company_id', $company->id)->where('posting_date', '>', $cutoff));
+            }
+        }));
         $partyId = $vendor ? $filters->vendorId : $filters->customerId;
         if ($partyId !== null) {
             $query->where($party.'_id', $partyId);

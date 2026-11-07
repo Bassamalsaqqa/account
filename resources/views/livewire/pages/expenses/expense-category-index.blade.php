@@ -1,7 +1,7 @@
 <div class="max-w-4xl mx-auto space-y-6">
     <div class="flex items-center justify-between">
         <div class="flex items-center gap-3">
-            <a href="{{ route('expenses.index') }}" aria-label="{{ __('expenses.expenses') }}" class="touch-action border border-border bg-white text-text-secondary hover:bg-surface-soft">
+            <a href="{{ route('expenses.index') }}" aria-label="{{ __('expenses.expenses') }}" class="touch-action border border-border bg-surface text-text-secondary hover:bg-surface-soft">
                 &larr;
             </a>
             <div>
@@ -12,42 +12,42 @@
     </div>
 
     @if(session()->has('success'))
-        <div class="rounded-control border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">
+        <div class="rounded-control border border-success/20 bg-success-bg p-4 text-sm text-success">
             {{ session('success') }}
         </div>
     @endif
 
     <!-- Add Category Form -->
-    <form wire:submit.prevent="createCategory" class="rounded-card border border-border bg-white p-6 space-y-4">
+    <form wire:submit.prevent="createCategory" class="rounded-card border border-border bg-surface p-6 space-y-4">
         <h2 class="font-bold text-base text-text-primary">{{ __('expenses.create_category') }}</h2>
 
         <div class="grid gap-4 sm:grid-cols-2">
             <div>
-                <label class="block text-xs font-semibold text-text-secondary mb-1">{{ __('expenses.name_ar') }} *</label>
-                <input type="text" wire:model="nameAr" class="min-h-11 w-full rounded-control border border-border bg-white px-3 py-2 text-sm focus:border-primary focus:ring-primary" required>
-                @error('nameAr') <span class="text-xs text-rose-600">{{ $message }}</span> @enderror
+                <label class="block text-sm font-semibold text-text-secondary mb-1">{{ __('expenses.name_ar') }} *</label>
+                <input type="text" wire:model="nameAr" class="min-h-11 w-full rounded-control border border-border bg-surface px-3 py-2 text-sm focus:border-primary focus:ring-primary" required>
+                @error('nameAr') <span class="text-xs text-danger">{{ $message }}</span> @enderror
             </div>
             <div>
-                <label class="block text-xs font-semibold text-text-secondary mb-1">{{ __('expenses.name_en') }}</label>
-                <input type="text" wire:model="nameEn" class="min-h-11 w-full rounded-control border border-border bg-white px-3 py-2 text-sm focus:border-primary focus:ring-primary">
-                @error('nameEn') <span class="text-xs text-rose-600">{{ $message }}</span> @enderror
+                <label class="block text-sm font-semibold text-text-secondary mb-1">{{ __('expenses.name_en') }}</label>
+                <input type="text" wire:model="nameEn" class="min-h-11 w-full rounded-control border border-border bg-surface px-3 py-2 text-sm focus:border-primary focus:ring-primary">
+                @error('nameEn') <span class="text-xs text-danger">{{ $message }}</span> @enderror
             </div>
         </div>
 
         <div class="grid gap-4 sm:grid-cols-2">
             <div>
-                <label class="block text-xs font-semibold text-text-secondary mb-1">{{ __('expenses.code') }} *</label>
-                <input type="text" wire:model="code" placeholder="utilities / maintenance" class="min-h-11 w-full rounded-control border border-border bg-white px-3 py-2 text-sm focus:border-primary focus:ring-primary" required>
-                @error('code') <span class="text-xs text-rose-600">{{ $message }}</span> @enderror
+                <label class="block text-sm font-semibold text-text-secondary mb-1">{{ __('expenses.code') }} *</label>
+                <input type="text" wire:model="code" placeholder="utilities / maintenance" class="min-h-11 w-full rounded-control border border-border bg-surface px-3 py-2 text-sm focus:border-primary focus:ring-primary" required>
+                @error('code') <span class="text-xs text-danger">{{ $message }}</span> @enderror
             </div>
             <div>
-                <label class="block text-xs font-semibold text-text-secondary mb-1">{{ __('expenses.ledger_account') }} *</label>
-                <select wire:model="ledgerAccountId" class="min-h-11 w-full rounded-control border border-border bg-white px-3 py-2 text-sm focus:border-primary focus:ring-primary" required>
+                <label class="block text-sm font-semibold text-text-secondary mb-1">{{ __('expenses.ledger_account') }} *</label>
+                <select wire:model="ledgerAccountId" class="min-h-11 w-full rounded-control border border-border bg-surface px-3 py-2 text-sm focus:border-primary focus:ring-primary" required>
                     @foreach($accounts as $acc)
                         <option value="{{ $acc->id }}">{{ $acc->code }} - {{ $acc->displayName() }}</option>
                     @endforeach
                 </select>
-                @error('ledgerAccountId') <span class="text-xs text-rose-600">{{ $message }}</span> @enderror
+                @error('ledgerAccountId') <span class="text-xs text-danger">{{ $message }}</span> @enderror
             </div>
         </div>
 
@@ -63,7 +63,7 @@
     </form>
 
     <!-- Categories List -->
-    <div class="rounded-card border border-border bg-white overflow-hidden shadow-sm">
+    <div class="rounded-card border border-border bg-surface overflow-hidden shadow-sm">
         <div class="hidden lg:block overflow-x-auto">
             <table class="data-table w-full text-sm text-start">
                 <thead class="bg-surface-soft border-b border-border text-xs uppercase text-text-muted">
@@ -86,7 +86,7 @@
                             </td>
                             <td class="px-4 py-3">
                                 @if($cat->active)
-                                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-emerald-100 text-emerald-800">
+                                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-success-bg text-success">
                                         {{ __('expenses.active') }}
                                     </span>
                                 @else
@@ -130,7 +130,7 @@
                             <div class="min-w-0 space-y-1 col-span-2">
                                 <dt class="text-xs font-medium text-text-secondary">{{ __('expenses.status') }}</dt>
                                 <dd class="break-words text-sm tabular-nums text-text-primary">@if($cat->active)
-                                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-emerald-100 text-emerald-800">
+                                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-success-bg text-success">
                                         {{ __('expenses.active') }}
                                     </span>
                                 @else

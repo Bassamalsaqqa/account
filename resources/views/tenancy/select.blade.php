@@ -17,7 +17,7 @@
                 <form method="POST" action="{{ route('company.switch') }}">
                     @csrf
                     <input type="hidden" name="public_id" value="{{ $company->public_id }}" />
-                    <button type="submit" class="w-full p-4 rounded-card border border-border bg-white hover:bg-surface-blue hover:border-primary transition-all text-start flex items-center justify-between group shadow-panel cursor-pointer">
+                    <button type="submit" class="w-full p-4 rounded-card border border-border bg-surface hover:bg-surface-blue hover:border-primary transition-colors text-start flex items-center justify-between group shadow-panel cursor-pointer">
                         <div class="flex items-center gap-3 min-w-0">
                             <div class="w-9 h-9 rounded-control bg-surface-soft group-hover:bg-primary-50 text-text-secondary group-hover:text-primary grid place-items-center shrink-0 border border-border">
                                 <x-icon name="store" class="w-4 h-4" />
@@ -26,7 +26,7 @@
                                 <h3 class="text-xs font-bold text-text-primary group-hover:text-primary truncate">
                                     {{ $company->displayName() }}
                                 </h3>
-                                <p class="text-[11px] text-text-muted mt-0.5">
+                                <p class="text-xs text-text-muted mt-0.5">
                                     {{ $company->base_currency_code }} &bull; {{ $company->timezone }}
                                 </p>
                             </div>
@@ -42,7 +42,7 @@
         <div class="pt-4 border-t border-border flex items-center justify-center">
             <form method="POST" action="{{ route('logout') }}">
                 @csrf
-                <button type="submit" class="text-xs font-bold text-text-muted hover:text-danger transition-colors">
+                <button type="submit" class="text-sm font-bold text-text-muted hover:text-danger transition-colors">
                     {{ __('settings.sign_out') }}
                 </button>
             </form>

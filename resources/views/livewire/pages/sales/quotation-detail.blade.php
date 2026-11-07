@@ -1,6 +1,6 @@
 <div class="space-y-6">
     <!-- Header -->
-    <div class="bg-white rounded-card border border-border shadow-xs p-6 space-y-4">
+    <div class="bg-surface rounded-card border border-border shadow-xs p-6 space-y-4">
         <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div>
                 <div class="flex items-center gap-3">
@@ -28,7 +28,7 @@
                 @if ($canConvert)
                     <button type="button"
                             wire:click="convertToInvoice"
-                            class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-control bg-success text-white text-xs font-bold hover:opacity-90 transition-opacity shadow-xs cursor-pointer" wire:loading.attr="disabled" wire:target="convertToInvoice">
+                            class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-control bg-success text-white text-sm font-bold hover:opacity-90 transition-opacity shadow-xs cursor-pointer" wire:loading.attr="disabled" wire:target="convertToInvoice">
                         <x-icon name="plus" class="w-3.5 h-3.5" />
                         <span>{{ __('sales.convert_to_invoice') }}</span>
                     </button>
@@ -53,7 +53,7 @@
                 @if ($canSend)
                     <button type="button"
                             wire:click="markAsSent"
-                            class="px-3 py-1.5 rounded-control bg-primary text-white text-xs font-bold hover:bg-primary-hover transition-colors shadow-xs cursor-pointer" wire:loading.attr="disabled" wire:target="markAsSent">
+                            class="px-3 py-1.5 rounded-control bg-primary text-white text-sm font-bold hover:bg-primary-hover transition-colors shadow-xs cursor-pointer" wire:loading.attr="disabled" wire:target="markAsSent">
                         {{ __('sales.mark_as_sent') }}
                     </button>
                 @endif
@@ -61,13 +61,13 @@
                 @if ($quotation->status === 'sent')
                     <button type="button"
                             wire:click="markAsAccepted"
-                            class="inline-flex items-center gap-1 px-3 py-1.5 rounded-control bg-success-bg text-success border border-success/30 text-xs font-bold hover:bg-success hover:text-white transition-colors cursor-pointer" wire:loading.attr="disabled" wire:target="markAsAccepted">
+                            class="inline-flex items-center gap-1 px-3 py-1.5 rounded-control bg-success-bg text-success border border-success/30 text-sm font-bold hover:bg-success hover:text-white transition-colors cursor-pointer" wire:loading.attr="disabled" wire:target="markAsAccepted">
                         <x-icon name="check" class="w-3.5 h-3.5" />
                         <span>{{ __('sales.mark_as_accepted') }}</span>
                     </button>
                     <button type="button"
                             wire:click="markAsRejected"
-                            class="inline-flex items-center gap-1 px-3 py-1.5 rounded-control bg-danger-bg text-danger border border-danger/30 text-xs font-bold hover:bg-danger hover:text-white transition-colors cursor-pointer" wire:loading.attr="disabled" wire:target="markAsRejected">
+                            class="inline-flex items-center gap-1 px-3 py-1.5 rounded-control bg-danger-bg text-danger border border-danger/30 text-sm font-bold hover:bg-danger hover:text-white transition-colors cursor-pointer" wire:loading.attr="disabled" wire:target="markAsRejected">
                         <x-icon name="close" class="w-3.5 h-3.5" />
                         <span>{{ __('sales.mark_as_rejected') }}</span>
                     </button>
@@ -76,7 +76,7 @@
                 @if ($canReturnToDraft)
                     <button type="button"
                             wire:click="returnToDraft"
-                            class="px-3 py-1.5 rounded-control border border-border text-xs font-bold text-text-secondary hover:bg-surface-soft transition-colors cursor-pointer" wire:loading.attr="disabled" wire:target="returnToDraft">
+                            class="px-3 py-1.5 rounded-control border border-border text-sm font-bold text-text-secondary hover:bg-surface-soft transition-colors cursor-pointer" wire:loading.attr="disabled" wire:target="returnToDraft">
                         {{ __('sales.return_to_draft') }}
                     </button>
                 @endif
@@ -91,7 +91,7 @@
                 <x-document-actions route-name="pdf.quotation" :parameters="['publicId' => $quotation->public_id]" :permissions="['sales.document.pdf', 'sales.quote.view']" />
 
                 <a href="{{ route('quotations.index') }}"
-                   class="touch-action px-3 py-1.5 rounded-control bg-surface-soft text-text-secondary hover:text-text-primary text-xs font-bold transition-colors">
+                   class="touch-action px-3 py-1.5 rounded-control bg-surface-soft text-text-secondary hover:text-text-primary text-sm font-bold transition-colors">
                     {{ __('sales.back') }}
                 </a>
             </div>
@@ -100,19 +100,19 @@
         <!-- Document Metadata Slots -->
         <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 pt-4 border-t border-border text-xs">
             <div class="p-3 rounded-xl bg-surface-soft border border-border/70">
-                <span class="text-text-muted block text-[11px] font-semibold">{{ __('sales.date') }}</span>
+                <span class="text-text-muted block text-xs font-semibold">{{ __('sales.date') }}</span>
                 <span class="font-bold text-text-primary text-sm mt-0.5 block" dir="ltr">
                     {{ $quotation->issue_date ? $quotation->issue_date->toDateString() : '—' }}
                 </span>
             </div>
             <div class="p-3 rounded-xl bg-surface-soft border border-border/70">
-                <span class="text-text-muted block text-[11px] font-semibold">{{ __('sales.valid_until') }}</span>
+                <span class="text-text-muted block text-xs font-semibold">{{ __('sales.valid_until') }}</span>
                 <div class="flex items-center gap-1.5 mt-0.5 flex-wrap">
                     <span class="font-bold text-text-primary text-sm" dir="ltr">
                         {{ $quotation->expiry_date ? $quotation->expiry_date->toDateString() : '—' }}
                     </span>
                     @if ($quotation->expiry_date && $quotation->expiry_date->isPast() && !in_array($quotation->status, ['accepted', 'converted'], true))
-                        <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-danger-bg text-danger border border-danger/20">
+                        <span class="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-bold bg-danger-bg text-danger border border-danger/20">
                             {{ __('sales.expired') }}
                         </span>
                     @endif
@@ -120,7 +120,7 @@
             </div>
             @if (isset($company) && $quotation->currency_code !== $company->base_currency_code && \Brick\Math\BigDecimal::of((string) $quotation->exchange_rate)->compareTo(1) !== 0)
                 <div class="p-3 rounded-xl bg-surface-soft border border-border/70">
-                    <span class="text-text-muted block text-[11px] font-semibold">{{ __('sales.exchange_rate') }}</span>
+                    <span class="text-text-muted block text-xs font-semibold">{{ __('sales.exchange_rate') }}</span>
                     <span class="font-mono text-text-primary text-xs mt-0.5 block" dir="ltr">
                         1 {{ $quotation->currency_code }} = {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatQuantity($quotation->exchange_rate, 4) }} {{ $company->base_currency_code }}
                     </span>
@@ -128,7 +128,7 @@
             @endif
             @if ($quotation->warehouse)
                 <div class="p-3 rounded-xl bg-surface-soft border border-border/70">
-                    <span class="text-text-muted block text-[11px] font-semibold">{{ __('sales.warehouse') }}</span>
+                    <span class="text-text-muted block text-xs font-semibold">{{ __('sales.warehouse') }}</span>
                     <span class="font-bold text-text-primary text-sm mt-0.5 block">{{ $quotation->warehouse->displayName() }}</span>
                 </div>
             @endif
@@ -142,7 +142,7 @@
                 <span class="text-primary text-lg">🔗</span>
                 <div>
                     <h3 class="text-xs font-bold text-text-primary">{{ __('workflow.converted_to_invoice') }}</h3>
-                    <p class="text-[11px] text-text-secondary">
+                    <p class="text-xs text-text-secondary">
                         {{ __('workflow.converted_invoice_provenance') }}:
                         @if ($canViewInvoice)
                             <a href="{{ route('invoices.show', $quotation->convertedInvoice->public_id) }}" class="touch-action font-mono font-bold text-primary hover:underline" dir="ltr">
@@ -168,7 +168,7 @@
                         </a>
                     @else
                         <a href="{{ route('invoices.show', $quotation->convertedInvoice->public_id) }}"
-                           class="touch-action px-3 py-1.5 rounded-control border border-border bg-white text-xs font-bold text-text-secondary hover:bg-surface-soft transition-colors">
+                           class="touch-action px-3 py-1.5 rounded-control border border-border bg-surface text-xs font-bold text-text-secondary hover:bg-surface-soft transition-colors">
                             {{ __('workflow.view_invoice_draft') }}
                         </a>
                     @endif
@@ -178,14 +178,14 @@
     @endif
 
     <!-- Items Table -->
-    <div class="bg-white rounded-card border border-border shadow-xs overflow-hidden">
+    <div class="bg-surface rounded-card border border-border shadow-xs overflow-hidden">
         <div class="p-4 border-b border-border font-bold text-sm text-text-primary">
             {{ __('sales.quotation_details') }}
         </div>
         <div class="overflow-x-auto">
             <table class="data-table w-full text-start text-xs border-collapse">
                 <thead>
-                    <tr class="border-b border-border bg-surface-soft text-text-muted font-bold text-[11px] uppercase">
+                    <tr class="border-b border-border bg-surface-soft text-text-muted font-bold text-xs uppercase">
                         <th class="py-2.5 px-4 text-start">#</th>
                         <th class="py-2.5 px-4 text-start">{{ __('sales.product') }}</th>
                         <th class="py-2.5 px-4 text-start">{{ __('sales.quantity') }}</th>
@@ -202,7 +202,7 @@
                             <td class="py-2.5 px-4">
                                 <div class="font-bold text-text-primary">{{ $line->item_description }}</div>
                                 @if ($line->product_sku)
-                                    <div class="text-[10px] font-mono text-text-muted">SKU: {{ $line->product_sku }}</div>
+                                    <div class="text-xs font-mono text-text-muted">SKU: {{ $line->product_sku }}</div>
                                 @endif
                             </td>
                             <td class="py-2.5 px-4 font-mono" dir="ltr">
@@ -232,13 +232,13 @@
                 @if ($quotation->terms)
                     <div>
                         <span class="font-bold text-text-primary block">{{ __('sales.terms') }}:</span>
-                        <p class="text-text-secondary whitespace-pre-line text-[11px]">{{ $quotation->terms }}</p>
+                        <p class="text-text-secondary whitespace-pre-line text-xs">{{ $quotation->terms }}</p>
                     </div>
                 @endif
                 @if ($quotation->notes)
                     <div>
                         <span class="font-bold text-text-primary block">{{ __('sales.notes') }}:</span>
-                        <p class="text-text-secondary whitespace-pre-line text-[11px]">{{ $quotation->notes }}</p>
+                        <p class="text-text-secondary whitespace-pre-line text-xs">{{ $quotation->notes }}</p>
                     </div>
                 @endif
             </div>

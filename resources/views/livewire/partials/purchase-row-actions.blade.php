@@ -13,4 +13,10 @@
     @can('purchasing.document.pdf')
         <x-row-action :href="route('pdf.purchase', ['publicId' => $purchase->public_id, 'locale' => app()->getLocale()])" :label="__('refinement_lists.pdf')" icon="pdf" :new-tab="true" />
     @endcan
+    @if($purchase->isPosted() && ($withCost ?? false) && auth()->user()->can('purchasing.purchase.void'))
+        @if(auth()->user()->can('purchasing.purchase.create') && auth()->user()->can('purchasing.purchase.edit_draft'))
+            <x-row-action :href="route('purchases.show', ['publicId' => $purchase->public_id, 'correction' => 'edit'])" :label="__('corrections.edit')" icon="edit" />
+        @endif
+        <x-row-action :href="route('purchases.show', ['publicId' => $purchase->public_id, 'correction' => 'delete'])" :label="__('corrections.delete')" icon="trash" />
+    @endif
 </div>

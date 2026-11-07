@@ -13,7 +13,7 @@
         @if ($canManage)
             <div class="flex items-center gap-2">
                 <a href="{{ route('customers.create') }}"
-                   class="touch-action gap-1.5 bg-primary text-white text-xs font-bold hover:bg-primary-hover transition-colors shadow-sm">
+                   class="touch-action gap-1.5 bg-primary text-white text-sm font-bold hover:bg-primary-hover transition-colors shadow-sm">
                     <x-icon name="plus" class="w-4 h-4" />
                     <span>{{ __('sales.new_customer') }}</span>
                 </a>
@@ -27,7 +27,7 @@
             <input id="customers-search" aria-label="{{ __('sales.search') }}" type="text"
                    wire:model.live.debounce.300ms="search"
                    placeholder="{{ __('sales.search') }}"
-                   class="min-h-11 w-full min-w-0 rounded-control border border-border bg-white px-3 py-2 text-sm focus:border-primary focus:ring-primary" />
+                   class="min-h-11 w-full min-w-0 rounded-control border border-border bg-surface px-3 py-2 text-sm focus:border-primary focus:ring-primary" />
         </x-slot:search>
         <x-slot:statuses><button wire:loading.attr="disabled" type="button"
                         wire:click="$set('statusFilter', 'all')" aria-pressed="{{ $statusFilter === 'all' ? 'true' : 'false' }}"
@@ -48,11 +48,11 @@
     </x-refinement-filters>
 
     <!-- Customers Table / Cards -->
-    <div class="bg-white rounded-card border border-border shadow-xs overflow-hidden">
+    <div class="bg-surface rounded-card border border-border shadow-xs overflow-hidden">
         <div class="hidden lg:block overflow-x-auto">
             <table class="data-table w-full text-start text-xs border-collapse">
                 <thead>
-                    <tr class="border-b border-border bg-surface-soft text-text-muted font-bold text-[11px] uppercase tracking-wider">
+                    <tr class="border-b border-border bg-surface-soft text-text-muted font-bold text-xs uppercase tracking-wider">
                         <th class="py-3 px-4 text-start">{{ __('sales.code') }}</th>
                         <th class="py-3 px-4 text-start">{{ __('sales.customer') }}</th>
                         <th class="py-3 px-4 text-start">{{ __('sales.phone') }}</th>
@@ -65,7 +65,7 @@
                 <tbody class="divide-y divide-border">
                     @forelse ($customers as $customer)
                         <tr class="hover:bg-surface-soft/60 transition-colors">
-                            <td class="py-3 px-4 font-mono text-[11px] text-text-muted" dir="ltr">
+                            <td class="py-3 px-4 font-mono text-xs text-text-muted" dir="ltr">
                                 {{ $customer->code ?? '—' }}
                             </td>
                             <td class="py-3 px-4">
@@ -73,7 +73,7 @@
                                     {{ $customer->displayName() }}
                                 </a>
                                 @if ($customer->business_name_ar || $customer->business_name_en)
-                                    <div class="text-[11px] text-text-muted">
+                                    <div class="text-xs text-text-muted">
                                         {{ app()->getLocale() === 'ar' ? ($customer->business_name_ar ?? $customer->business_name_en) : ($customer->business_name_en ?? $customer->business_name_ar) }}
                                     </div>
                                 @endif
@@ -97,11 +97,11 @@
                             </td>
                             <td class="py-3 px-4">
                                 @if ($customer->is_active)
-                                    <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-success-bg text-success">
+                                    <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold bg-success-bg text-success">
                                         {{ __('sales.active') }}
                                     </span>
                                 @else
-                                    <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600">
+                                    <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold bg-slate-100 text-slate-600">
                                         {{ __('sales.inactive') }}
                                     </span>
                                 @endif
@@ -137,17 +137,17 @@
                                 {{ $customer->displayName() }}
                             </a>
                             @if ($customer->business_name_ar || $customer->business_name_en)
-                                <div class="text-[11px] text-text-muted">
+                                <div class="text-xs text-text-muted">
                                     {{ app()->getLocale() === 'ar' ? ($customer->business_name_ar ?? $customer->business_name_en) : ($customer->business_name_en ?? $customer->business_name_ar) }}
                                 </div>
                             @endif
                         </div>
                         @if ($customer->is_active)
-                            <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-success-bg text-success">
+                            <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold bg-success-bg text-success">
                                 {{ __('sales.active') }}
                             </span>
                         @else
-                            <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600">
+                            <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold bg-slate-100 text-slate-600">
                                 {{ __('sales.inactive') }}
                             </span>
                         @endif
@@ -155,15 +155,15 @@
 
                     <div class="grid grid-cols-2 gap-2 text-xs">
                         <div>
-                            <span class="text-text-muted block text-[10px]">{{ __('sales.code') }}</span>
+                            <span class="text-text-muted block text-xs">{{ __('sales.code') }}</span>
                             <span class="font-mono text-text-secondary" dir="ltr">{{ $customer->code ?? '—' }}</span>
                         </div>
                         <div>
-                            <span class="text-text-muted block text-[10px]">{{ __('sales.phone') }}</span>
+                            <span class="text-text-muted block text-xs">{{ __('sales.phone') }}</span>
                             <span class="text-text-secondary" dir="ltr">{{ $customer->phone ?? $customer->whatsapp ?? '—' }}</span>
                         </div>
                         <div class="col-span-2">
-                            <span class="text-text-muted block text-[10px]">{{ __('sales.outstanding_balance') }}</span>
+                            <span class="text-text-muted block text-xs">{{ __('sales.outstanding_balance') }}</span>
                             <span class="font-bold text-sm {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::isPositive((string) ($balances[$customer->id] ?? '0')) ? 'text-danger' : 'text-text-primary' }}" dir="ltr">
                                 {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney((string) ($balances[$customer->id] ?? '0'), $customer->default_currency_code ?? $company->base_currency_code) }}
                                 <span class="text-text-muted">{{ $customer->default_currency_code ?? $company->base_currency_code }}</span>

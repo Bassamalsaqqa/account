@@ -39,13 +39,13 @@
             </div>
 
             <div class="flex items-center justify-between mt-6">
-                <button type="button" class="min-h-11 px-2 text-xs text-primary hover:underline cursor-pointer"
+                <button type="button" class="min-h-11 px-2 text-sm text-primary hover:underline cursor-pointer"
                         x-show="! recovery"
                         x-on:click="recovery = true; $nextTick(() => requestAnimationFrame(() => $refs.recovery_code.focus()))">
                     {{ __('auth.use_recovery_code', ['default' => 'استخدم رمز الاسترداد']) }}
                 </button>
 
-                <button type="button" class="min-h-11 px-2 text-xs text-primary hover:underline cursor-pointer"
+                <button type="button" class="min-h-11 px-2 text-sm text-primary hover:underline cursor-pointer"
                         x-show="recovery"
                         style="display: none;"
                         x-on:click="recovery = false; $nextTick(() => requestAnimationFrame(() => $refs.code.focus()))">

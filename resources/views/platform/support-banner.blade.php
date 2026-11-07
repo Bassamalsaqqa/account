@@ -7,7 +7,7 @@
             </div>
             <div class="min-w-0">
                 <div class="flex flex-wrap items-center gap-2">
-                    <span class="inline-flex items-center px-2 py-0.5 rounded-md bg-primary-100 text-primary-hover text-[11px] font-bold border border-primary-100">
+                    <span class="inline-flex items-center px-2 py-0.5 rounded-md bg-primary-100 text-primary-hover text-xs font-bold border border-primary-100">
                         {{ __('support.title') }}
                     </span>
                     <h2 class="break-words text-sm font-bold text-text-primary">
@@ -24,14 +24,14 @@
             <form method="POST" action="{{ route('platform.support.locale') }}">
                 @csrf
                 <input type="hidden" name="locale" value="{{ app()->getLocale() === 'ar' ? 'en' : 'ar' }}">
-                <button class="min-h-11 min-w-11 rounded-control border border-border bg-white px-3 text-xs sm:text-sm font-semibold text-text-secondary hover:bg-surface-soft transition-colors cursor-pointer" type="submit" aria-label="{{ __('app.switch_language') }}">
+                <button class="min-h-11 min-w-11 rounded-control border border-border bg-surface px-3 text-sm sm:text-sm font-semibold text-text-secondary hover:bg-surface-soft transition-colors cursor-pointer" type="submit" aria-label="{{ __('app.switch_language') }}">
                     {{ app()->getLocale() === 'ar' ? 'EN' : 'العربية' }}
                 </button>
             </form>
             @endif
             <form method="POST" action="{{ route('platform.support.end') }}">
                 @csrf
-                <button class="min-h-11 rounded-control bg-primary px-4 text-xs sm:text-sm font-semibold text-white hover:bg-primary-hover shadow-panel transition-colors cursor-pointer" type="submit">
+                <button class="min-h-11 rounded-control bg-primary px-4 text-sm sm:text-sm font-semibold text-white hover:bg-primary-hover shadow-panel transition-colors cursor-pointer" type="submit">
                     {{ __('support.exit') }}
                 </button>
             </form>

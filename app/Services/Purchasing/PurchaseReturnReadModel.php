@@ -47,6 +47,13 @@ final class PurchaseReturnReadModel
         $data['purchase_public_id'] = $return->purchase->public_id;
         $data['purchase_date'] = $return->purchase->purchase_date->format('Y-m-d');
 
+        if ($return->isVoid()) {
+            $data['void_business_date'] = $return->void_business_date?->format('Y-m-d');
+            $data['voided_at'] = $return->voided_at?->format('Y-m-d H:i');
+            $data['void_reason'] = $return->void_reason;
+            $data['voided_by'] = $return->voided_by;
+        }
+
         if ($withCost) {
             $data += $return->only([
                 'exchange_rate',

@@ -6,7 +6,7 @@
         </div>
 
         <!-- Typography & Numbers -->
-        <section class="bg-white border border-border rounded-card p-5 shadow-panel space-y-4">
+        <section class="bg-surface border border-border rounded-card p-5 shadow-panel space-y-4">
             <h2 class="text-sm font-extrabold text-text-primary border-b border-border pb-2">1. Typography & Tabular Numerals</h2>
             <div class="space-y-2">
                 <div class="text-2xl font-extrabold text-text-primary">Heading 1: نظام المحاسبة للتاجر الصغير (24px Bold)</div>
@@ -24,7 +24,7 @@
         </section>
 
         <!-- Color Tokens & Badges -->
-        <section class="bg-white border border-border rounded-card p-5 shadow-panel space-y-4">
+        <section class="bg-surface border border-border rounded-card p-5 shadow-panel space-y-4">
             <h2 class="text-sm font-extrabold text-text-primary border-b border-border pb-2">2. Semantic Badges & Statuses</h2>
             <div class="flex flex-wrap items-center gap-3">
                 <x-badge variant="default">Default: 5</x-badge>
@@ -36,19 +36,19 @@
         </section>
 
         <!-- Buttons & Controls -->
-        <section class="bg-white border border-border rounded-card p-5 shadow-panel space-y-4">
+        <section class="bg-surface border border-border rounded-card p-5 shadow-panel space-y-4">
             <h2 class="text-sm font-extrabold text-text-primary border-b border-border pb-2">3. Interactive Controls (40-44px Touch Targets)</h2>
             <div class="flex flex-wrap items-center gap-3">
-                <button type="button" class="h-10 px-4 rounded-control bg-primary hover:bg-primary-hover text-white text-xs font-bold shadow-sm transition-colors">
+                <button type="button" class="h-10 px-4 rounded-control bg-primary hover:bg-primary-hover text-white text-sm font-bold shadow-sm transition-colors">
                     Primary Button
                 </button>
-                <button type="button" class="h-10 px-4 rounded-control bg-primary-50 hover:bg-primary-100 text-primary text-xs font-bold transition-colors">
+                <button type="button" class="h-10 px-4 rounded-control bg-primary-50 hover:bg-primary-100 text-primary text-sm font-bold transition-colors">
                     Secondary Button
                 </button>
-                <button type="button" class="h-10 px-4 rounded-control border border-border hover:bg-surface-soft text-text-secondary text-xs font-bold transition-colors">
+                <button type="button" class="h-10 px-4 rounded-control border border-border hover:bg-surface-soft text-text-secondary text-sm font-bold transition-colors">
                     Outline Button
                 </button>
-                <button type="button" class="h-10 px-4 rounded-control bg-danger hover:bg-red-700 text-white text-xs font-bold transition-colors">
+                <button type="button" class="h-10 px-4 rounded-control bg-danger hover:bg-red-700 text-white text-sm font-bold transition-colors">
                     Destructive Button
                 </button>
             </div>

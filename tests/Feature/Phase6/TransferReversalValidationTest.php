@@ -29,6 +29,26 @@ class TransferReversalValidationTest extends Phase6TestCase
         ]);
     }
 
+    public function test_confirmation_without_review_is_forbidden_and_writes_nothing(): void
+    {
+        $transfer = $this->transfer();
+        $before = $this->snapshot();
+        Livewire::test(TransferDetail::class, ['publicId' => $transfer->public_id])
+            ->call('confirmReversalReview')->assertForbidden();
+        $this->assertSame($before, $this->snapshot());
+    }
+
+    public function test_changed_account_snapshot_requires_a_fresh_deliberate_confirmation(): void
+    {
+        $transfer = $this->transfer();
+        $page = Livewire::test(TransferDetail::class, ['publicId' => $transfer->public_id])->call('openReversalReview');
+        $this->usdCashAccount->update(['name_en' => 'Updated source account']);
+        $page->call('confirmReversalReview')->assertHasErrors('review');
+        $this->assertFalse($transfer->fresh()->is_reversed);
+        $page->call('closeReversalReview')->call('confirmReversalReview')->assertForbidden();
+        $this->assertFalse($transfer->fresh()->is_reversed);
+    }
+
     private function snapshot(): array
     {
         $state = [];
@@ -46,7 +66,7 @@ class TransferReversalValidationTest extends Phase6TestCase
         $batches = PostingBatch::count();
 
         Livewire::test(TransferDetail::class, ['publicId' => $transfer->public_id])->set('reason', $reason)
-            ->call('reverse')->assertStatus(200)->assertHasNoErrors();
+            ->call('openReversalReview')->call('confirmReversalReview')->assertStatus(200)->assertHasNoErrors();
 
         $transfer->refresh();
         $this->assertTrue($transfer->is_reversed);
@@ -63,7 +83,7 @@ class TransferReversalValidationTest extends Phase6TestCase
         $transfer = $this->transfer();
         $before = $this->snapshot();
         $page = Livewire::test(TransferDetail::class, ['publicId' => $transfer->public_id])->set('reason', str_repeat('x', 501))
-            ->call('reverse')->assertStatus(200)->assertHasErrors(['reason' => 'max'])->assertHasNoErrors(['transfer']);
+            ->call('openReversalReview')->call('confirmReversalReview')->assertStatus(200)->assertHasErrors(['reason' => 'max'])->assertHasNoErrors(['transfer']);
 
         $this->assertSame($before, $this->snapshot());
         $this->assertFalse($transfer->fresh()->is_reversed);
@@ -101,8 +121,8 @@ class TransferReversalValidationTest extends Phase6TestCase
         app()->setLocale($locale);
         $before = $this->snapshot();
         $page = Livewire::test(TransferDetail::class, ['publicId' => $transfer->public_id])->assertStatus(200)
-            ->assertSee('maxlength="500"', false)->assertSee(__('money.reason'))
-            ->set('reason', str_repeat('x', 501))->call('reverse')->assertStatus(200)->assertHasErrors(['reason' => 'max']);
+            ->call('openReversalReview')->assertSee('maxlength="500"', false)->assertSee(__('money.reason'))
+            ->set('reason', str_repeat('x', 501))->call('openReversalReview')->call('confirmReversalReview')->assertStatus(200)->assertHasErrors(['reason' => 'max']);
 
         $this->assertStringContainsString((string) $page->errors()->first('reason'), $page->html());
         $this->assertSame($before, $this->snapshot());

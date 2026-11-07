@@ -539,7 +539,7 @@ final class Phase7Correction01Test extends Phase7TestCase
         // 6. Authorized reversal action is reachable and succeeds
         $component->set('reversalReason', 'تصحيح خطأ إداري')
             ->set('reversalDate', '2026-10-05')
-            ->call('reverseSalaryEntry', $entry->id)
+            ->call('openReversalReview', 'salary', $entry->id)->call('confirmReversalReview')
             ->assertHasNoErrors();
         $this->assertSame('reversed', $entry->fresh()->status);
 

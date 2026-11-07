@@ -24,7 +24,7 @@
             <span wire:loading wire:target="refreshHealth" role="status" class="text-sm text-text-secondary">{{ __('ai_product.checking_health') }}</span>
         @endif
         @if ($companyDisabled)
-            <div class="mt-4 rounded-control bg-amber-50 border border-amber-200 p-3 text-sm leading-relaxed text-amber-800" role="status">
+            <div class="mt-4 rounded-control bg-warning-bg border border-warning/20 p-3 text-sm leading-relaxed text-warning" role="status">
                 <p class="font-bold">{{ __('ai_product.disabled_status_banner') }}</p>
             </div>
         @endif
@@ -68,7 +68,7 @@
                 @elseif ($companyDisabled)
                     <button type="button" @click="if (!busy) { busy = true; const pending = $wire.enableCompany(password); password = ''; pending.finally(() => busy = false); }" :disabled="busy" class="ai-send">{{ __('ai_product.enable_company') }}</button>
                 @elseif ($hasPolicy && ! $companyDisabled)
-                    <button type="button" @click="if (!busy) { busy = true; const pending = $wire.disableCompany(password); password = ''; pending.finally(() => busy = false); }" :disabled="busy" class="px-4 py-2 rounded-control border border-rose-300 bg-rose-50 text-rose-700 hover:bg-rose-100 text-sm font-bold">{{ __('ai_product.disable_company') }}</button>
+                    <button type="button" @click="if (!busy) { busy = true; const pending = $wire.disableCompany(password); password = ''; pending.finally(() => busy = false); }" :disabled="busy" class="px-4 py-2 rounded-control border border-danger/20 bg-danger-bg text-danger hover:bg-danger-bg text-sm font-bold">{{ __('ai_product.disable_company') }}</button>
                 @endif
                 <button type="submit" :disabled="busy || @js($companyDisabled) || @js($globallyDisabled)" @disabled($status !== 'idle' || $needsTransition || $companyDisabled || $globallyDisabled) wire:loading.attr="disabled" wire:target="testConnection" class="ai-send"><x-icon name="shield" class="h-4 w-4" /><span>{{ __('ai_product.test') }}</span></button>
                 <span wire:loading wire:target="testConnection" role="status" class="text-sm text-text-secondary">{{ __('ai_product.thinking') }}</span>

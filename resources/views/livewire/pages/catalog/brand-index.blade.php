@@ -10,7 +10,7 @@
         </div>
 
         <button wire:loading.attr="disabled" type="button" wire:click="openCreateModal"
-                class="touch-action bg-primary hover:bg-primary-hover text-white text-xs font-bold shadow-button transition-colors">
+                class="touch-action bg-primary hover:bg-primary-hover text-white text-sm font-bold shadow-button transition-colors">
             <x-icon name="plus" class="w-4 h-4" />
             <span>{{ __('inventory.add_brand') }}</span>
         </button>
@@ -36,7 +36,7 @@
             <input id="brands-search" aria-label="{{ __('inventory.search_brands_placeholder') }}" type="text"
                    wire:model.live.debounce.300ms="search"
                    placeholder="{{ __('inventory.search_brands_placeholder') }}"
-                   class="min-h-11 w-full h-11 pl-9 pr-3 rounded-control border border-border bg-white text-xs text-text-primary placeholder:text-text-muted focus:outline-none focus:border-primary focus:ring-2 focus:ring-focus-ring" />
+                   class="min-h-11 w-full h-11 pl-9 pr-3 rounded-control border border-border bg-surface text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-primary focus:ring-2 focus:ring-focus-ring" />
             <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-text-muted rtl:left-auto rtl:right-0 rtl:pl-0 rtl:pr-3">
                 <x-icon name="search" class="w-4 h-4" />
             </div>
@@ -62,7 +62,7 @@
                             <td class="p-3.5">
                                 <span class="font-bold text-text-primary block">{{ $brand->name_ar }}</span>
                                 @if ($brand->name_en)
-                                    <span class="text-[11px] text-text-muted dir-ltr block">{{ $brand->name_en }}</span>
+                                    <span class="text-xs text-text-muted dir-ltr block">{{ $brand->name_en }}</span>
                                 @endif
                             </td>
                             <td class="p-3.5 text-center font-mono font-bold text-text-primary">
@@ -77,7 +77,7 @@
                             </td>
                             <td class="p-3.5 text-center">
                                 <button wire:loading.attr="disabled" type="button" wire:click="toggleActive({{ $brand->id }})"
-                                        class="touch-action gap-1 border text-[11px] font-semibold transition-colors {{ $brand->active ? 'border-border text-text-secondary hover:bg-surface-soft hover:text-danger' : 'border-success/40 bg-success-bg text-success hover:bg-success/20' }}">
+                                        class="touch-action gap-1 border text-xs font-semibold transition-colors {{ $brand->active ? 'border-border text-text-secondary hover:bg-surface-soft hover:text-danger' : 'border-success/40 bg-success-bg text-success hover:bg-success/20' }}">
                                     @if ($brand->active)
                                         <span>{{ __('inventory.deactivate') }}</span>
                                     @else
@@ -110,7 +110,7 @@
                                 <dt class="text-xs font-medium text-text-secondary">{{ __('inventory.brand_name') }}</dt>
                                 <dd class="break-words text-sm tabular-nums text-text-primary"><span class="font-bold text-text-primary block">{{ $brand->name_ar }}</span>
                                 @if ($brand->name_en)
-                                    <span class="text-[11px] text-text-muted dir-ltr block">{{ $brand->name_en }}</span>
+                                    <span class="text-xs text-text-muted dir-ltr block">{{ $brand->name_en }}</span>
                                 @endif</dd>
                             </div>
                             <div class="min-w-0 space-y-1">
@@ -128,7 +128,7 @@
                             <div class="min-w-0 space-y-1">
                                 <dt class="text-xs font-medium text-text-secondary">{{ __('inventory.toggle_active') }}</dt>
                                 <dd class="break-words text-sm tabular-nums text-text-primary"><button wire:loading.attr="disabled" type="button" wire:click="toggleActive({{ $brand->id }})"
-                                        class="touch-action gap-1 border text-[11px] font-semibold transition-colors {{ $brand->active ? 'border-border text-text-secondary hover:bg-surface-soft hover:text-danger' : 'border-success/40 bg-success-bg text-success hover:bg-success/20' }}">
+                                        class="touch-action gap-1 border text-xs font-semibold transition-colors {{ $brand->active ? 'border-border text-text-secondary hover:bg-surface-soft hover:text-danger' : 'border-success/40 bg-success-bg text-success hover:bg-success/20' }}">
                                     @if ($brand->active)
                                         <span>{{ __('inventory.deactivate') }}</span>
                                     @else
@@ -169,7 +169,7 @@
         <div x-data x-trap.inert.noscroll="true" @keydown.escape.window="$wire.closeModal()"
              role="dialog" aria-modal="true" aria-labelledby="brand-modal-title"
              class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4">
-            <div class="bg-white rounded-card border border-border shadow-xl w-full max-w-md max-h-[calc(100dvh-2rem)] overflow-y-auto p-6 space-y-4">
+            <div class="bg-surface rounded-card border border-border shadow-xl w-full max-w-md max-h-[calc(100dvh-2rem)] overflow-y-auto p-6 space-y-4">
                 <div class="flex items-center justify-between border-b border-border pb-3">
                     <h3 id="brand-modal-title" class="font-extrabold text-sm text-text-primary flex items-center gap-2">
                         <x-icon name="box" class="w-4 h-4 text-primary" />
@@ -186,9 +186,9 @@
                         </label>
                         <input id="brand-name-ar" type="text" wire:model="name_ar" dir="rtl"
                                @error('name_ar') aria-invalid="true" aria-describedby="brand-name-ar-error" @enderror
-                               class="min-h-11 w-full h-11 px-2.5 rounded-control border border-border text-xs focus:outline-none focus:border-primary @error('name_ar') border-danger @enderror" />
+                               class="min-h-11 w-full h-11 px-2.5 rounded-control border border-border text-sm focus:outline-none focus:border-primary @error('name_ar') border-danger @enderror" />
                         @error('name_ar')
-                            <span role="alert" id="brand-name-ar-error" class="text-danger text-[10px]">{{ $message }}</span>
+                            <span role="alert" id="brand-name-ar-error" class="text-danger text-xs">{{ $message }}</span>
                         @enderror
                     </div>
                     <div>
@@ -197,9 +197,9 @@
                         </label>
                         <input id="brand-name-en" type="text" wire:model="name_en" dir="ltr"
                                @error('name_en') aria-invalid="true" aria-describedby="brand-name-en-error" @enderror
-                               class="min-h-11 w-full h-11 px-2.5 rounded-control border border-border text-xs focus:outline-none focus:border-primary @error('name_en') border-danger @enderror" />
+                               class="min-h-11 w-full h-11 px-2.5 rounded-control border border-border text-sm focus:outline-none focus:border-primary @error('name_en') border-danger @enderror" />
                         @error('name_en')
-                            <span role="alert" id="brand-name-en-error" class="text-danger text-[10px]">{{ $message }}</span>
+                            <span role="alert" id="brand-name-en-error" class="text-danger text-xs">{{ $message }}</span>
                         @enderror
                     </div>
                     <div class="pt-2">
@@ -212,11 +212,11 @@
 
                 <div class="flex items-center justify-end gap-2 pt-3 border-t border-border">
                     <button wire:loading.attr="disabled" type="button" wire:click="closeModal"
-                            class="touch-action border border-border text-text-secondary hover:bg-surface-soft text-xs font-semibold">
+                            class="touch-action border border-border text-text-secondary hover:bg-surface-soft text-sm font-semibold">
                         {{ __('inventory.cancel') }}
                     </button>
                     <button type="button" wire:click="save" wire:loading.attr="disabled"
-                            class="touch-action bg-primary text-white hover:bg-primary-hover text-xs font-bold shadow-button">
+                            class="touch-action bg-primary text-white hover:bg-primary-hover text-sm font-bold shadow-button">
                         {{ __('inventory.save') }}
                     </button>
                 </div>

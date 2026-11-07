@@ -19,7 +19,7 @@
     <form wire:submit="save"
           novalidate
           class="space-y-4">
-        <fieldset class="p-4 sm:p-5 bg-white border border-border rounded-card">
+        <fieldset class="p-4 sm:p-5 bg-surface border border-border rounded-card">
             <legend class="px-2 text-sm font-bold">{{ __('purchasing.identity_section') }}</legend>
             <p class="text-xs text-text-secondary mb-3">{{ __('purchasing.at_least_one_name_required') }}</p>
             <div class="entry-grid grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -37,18 +37,18 @@
 
         <div id="vendor-form-details" x-show="showAdvanced" @if(!$vendorId) x-cloak @endif class="space-y-4">
                 <div class="entry-grid grid sm:grid-cols-2 lg:grid-cols-3 gap-4">                <x-purchasing.field name="code" :label="__('purchasing.vendor_code')" direction="ltr" :maxlength="64" /></div>
-        <fieldset class="p-4 sm:p-5 bg-white border border-border rounded-card">
+        <fieldset class="p-4 sm:p-5 bg-surface border border-border rounded-card">
             <legend class="px-2 text-sm font-bold">{{ __('purchasing.contact_section') }}</legend>
             <div class="grid sm:grid-cols-2 gap-4">
                 <x-purchasing.field name="whatsapp" :label="__('purchasing.whatsapp')" type="tel" direction="ltr" :maxlength="64" />
                 <x-purchasing.field name="email" :label="__('purchasing.email')" type="email" direction="ltr" />
             </div>
         </fieldset>
-        <fieldset class="p-4 sm:p-5 bg-white border border-border rounded-card">
+        <fieldset class="p-4 sm:p-5 bg-surface border border-border rounded-card">
             <legend class="px-2 text-sm font-bold">{{ __('purchasing.preferences_section') }}</legend>
             <div class="grid sm:grid-cols-2 gap-4">
                 <div>
-                    <label for="vendorLocale" class="block text-xs font-bold mb-1.5">{{ __('purchasing.preferred_locale') }}</label>
+                    <label for="vendorLocale" class="block text-sm font-bold mb-1.5">{{ __('purchasing.preferred_locale') }}</label>
                     <select id="vendorLocale" wire:model="preferred_locale" class="w-full h-11 px-3 border border-border rounded-control text-sm">
                         <option value="">{{ __('purchasing.company_default') }}</option>
                         @foreach ($locales as $language)<option value="{{ $language->locale }}">{{ __('purchasing.language_' . $language->locale) }}</option>@endforeach
@@ -56,7 +56,7 @@
                     @error('preferred_locale')<p role="alert" class="text-xs text-danger">{{ $message }}</p>@enderror
                 </div>
                 <div>
-                    <label for="vendorCurrency" class="block text-xs font-bold mb-1.5">{{ __('purchasing.default_currency') }}</label>
+                    <label for="vendorCurrency" class="block text-sm font-bold mb-1.5">{{ __('purchasing.default_currency') }}</label>
                     <select id="vendorCurrency" wire:model="default_currency_code" class="w-full h-11 px-3 border border-border rounded-control text-sm">
                         <option value="">{{ __('purchasing.company_default') }}</option>
                         @foreach ($currencies as $currency)<option value="{{ $currency->currency_code }}">{{ $currency->currency_code }}</option>@endforeach
@@ -69,7 +69,7 @@
         </fieldset>
 
 
-                <fieldset class="p-4 sm:p-5 bg-white border border-border rounded-card">
+                <fieldset class="p-4 sm:p-5 bg-surface border border-border rounded-card">
                     <legend class="px-2 text-sm font-bold">{{ __('purchasing.business_name_ar') }} / {{ __('purchasing.tax_number') }}</legend>
                     <div class="grid sm:grid-cols-2 gap-4">
                         <x-purchasing.field name="business_name_ar" :label="__('purchasing.business_name_ar')" direction="rtl" />
@@ -77,7 +77,7 @@
                         <x-purchasing.field name="tax_number" :label="__('purchasing.tax_number')" direction="ltr" :maxlength="64" />
                     </div>
                 </fieldset>
-                <fieldset class="p-4 sm:p-5 bg-white border border-border rounded-card">
+                <fieldset class="p-4 sm:p-5 bg-surface border border-border rounded-card">
                     <legend class="px-2 text-sm font-bold">{{ __('purchasing.address_section') }}</legend>
                     <div class="grid sm:grid-cols-2 gap-4">
                         <x-purchasing.field name="address_ar" :label="__('purchasing.address_ar')" type="textarea" direction="rtl" :maxlength="4000" />
@@ -88,7 +88,7 @@
                         <x-purchasing.field name="country_code" :label="__('purchasing.country_code')" direction="ltr" :maxlength="2" />
                     </div>
                 </fieldset>
-                <fieldset class="p-4 sm:p-5 bg-white border border-border rounded-card">
+                <fieldset class="p-4 sm:p-5 bg-surface border border-border rounded-card">
                     <legend class="px-2 text-sm font-bold">{{ __('purchasing.notes') }}</legend>
                     <x-purchasing.field name="notes" :label="__('purchasing.notes')" type="textarea" :maxlength="4000" />
                 </fieldset>

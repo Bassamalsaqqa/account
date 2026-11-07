@@ -56,7 +56,7 @@ new class extends Component
     </header>
 
     @if ($hasCompanyMemberships)
-        <div class="rounded-lg border border-amber-200 bg-amber-50 p-4 text-xs font-semibold text-amber-800">
+        <div class="rounded-lg border border-warning/20 bg-warning-bg p-4 text-xs font-semibold text-warning">
             {{ __('profile.deletion_blocked_business_member') }}
         </div>
     @else

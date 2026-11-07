@@ -11,25 +11,25 @@
         <div class="flex flex-wrap items-center gap-2">
             @if ($canAdjust)
                 <a href="{{ route('inventory.opening-stock.create') }}"
-                   class="touch-action inline-flex items-center gap-1.5 px-3 py-2 bg-white border border-border hover:bg-surface-soft text-text-primary text-xs font-bold rounded-control transition-colors">
+                   class="touch-action inline-flex items-center gap-1.5 px-3 py-2 bg-surface border border-border hover:bg-surface-soft text-text-primary text-sm font-bold rounded-control transition-colors">
                     <x-icon name="plus" class="w-4 h-4 text-primary" />
                     <span>{{ __('inventory.opening_stock') }}</span>
                 </a>
                 <a href="{{ route('inventory.adjustments.create') }}"
-                   class="touch-action inline-flex items-center gap-1.5 px-3 py-2 bg-white border border-border hover:bg-surface-soft text-text-primary text-xs font-bold rounded-control transition-colors">
+                   class="touch-action inline-flex items-center gap-1.5 px-3 py-2 bg-surface border border-border hover:bg-surface-soft text-text-primary text-sm font-bold rounded-control transition-colors">
                     <x-icon name="plus" class="w-4 h-4 text-primary" />
                     <span>{{ __('inventory.adjust_stock') }}</span>
                 </a>
             @endif
             @if ($canTransfer)
                 <a href="{{ route('inventory.transfers.create') }}"
-                   class="touch-action inline-flex items-center gap-1.5 px-3 py-2 bg-white border border-border hover:bg-surface-soft text-text-primary text-xs font-bold rounded-control transition-colors">
+                   class="touch-action inline-flex items-center gap-1.5 px-3 py-2 bg-surface border border-border hover:bg-surface-soft text-text-primary text-sm font-bold rounded-control transition-colors">
                     <x-icon name="truck" class="w-4 h-4 text-primary" />
                     <span>{{ __('inventory.transfer_stock') }}</span>
                 </a>
             @endif
             <a href="{{ route('inventory.movements') }}"
-               class="touch-action inline-flex items-center gap-1.5 px-3 py-2 bg-primary hover:bg-primary-hover text-white text-xs font-bold rounded-control shadow-button transition-colors">
+               class="touch-action inline-flex items-center gap-1.5 px-3 py-2 bg-primary hover:bg-primary-hover text-white text-sm font-bold rounded-control shadow-button transition-colors">
                 <x-icon name="receipt" class="w-4 h-4" />
                 <span>{{ __('inventory.stock_movements') }}</span>
             </a>
@@ -56,11 +56,11 @@
                        aria-label="{{ __('inventory.search_stock_placeholder') }}"
                        wire:model.live.debounce.300ms="search"
                        placeholder="{{ __('inventory.search_stock_placeholder') }}"
-                       class="min-h-9 px-3 rounded-control border border-border bg-white text-xs text-text-primary focus:border-primary focus:ring-primary w-48" />
+                       class="min-h-9 px-3 rounded-control border border-border bg-surface text-sm text-text-primary focus:border-primary focus:ring-primary w-48" />
 
                 <select wire:model.live="selectedWarehouseId"
                         id="inventory-stock-warehouse" aria-label="{{ __('inventory.warehouse') }}"
-                        class="min-h-9 px-2 rounded-control border border-border bg-white text-xs text-text-primary focus:border-primary focus:ring-primary">
+                        class="min-h-9 px-2 rounded-control border border-border bg-surface text-sm text-text-primary focus:border-primary focus:ring-primary">
                     <option value="">{{ __('inventory.all_warehouses') }}</option>
                     @foreach($warehouses as $wh)
                         <option value="{{ $wh->id }}">{{ $wh->displayName() }}</option>
@@ -69,7 +69,7 @@
 
                 <select wire:model.live="stockFilter"
                         id="inventory-stock-status" aria-label="{{ __('inventory.stock_quantity') }}"
-                        class="min-h-9 px-2 rounded-control border border-border bg-white text-xs text-text-primary focus:border-primary focus:ring-primary">
+                        class="min-h-9 px-2 rounded-control border border-border bg-surface text-sm text-text-primary focus:border-primary focus:ring-primary">
                     <option value="all">{{ __('sales.all') }}</option>
                     <option value="in_stock">{{ __('inventory.in_stock') }}</option>
                     <option value="low_stock">{{ __('inventory.low_stock_metric') }}</option>
@@ -96,7 +96,7 @@
                                     {{ $balance->product->displayName() }}
                                 </a>
                                 @if($balance->product->sku)
-                                    <span class="ms-2 text-[11px] text-text-muted font-mono" dir="ltr">{{ $balance->product->sku }}</span>
+                                    <span class="ms-2 text-xs text-text-muted font-mono" dir="ltr">{{ $balance->product->sku }}</span>
                                 @endif
                             </td>
                             <td class="px-4 py-3 text-text-secondary">

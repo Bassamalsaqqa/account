@@ -7,6 +7,7 @@ namespace App\Livewire\Pages\Sales;
 use App\Actions\Sales\ApplyCustomerPaymentCreditAction;
 use App\Actions\Sales\ReverseCustomerPaymentAction;
 use App\Domain\Money\Queries\SettlementTargetsQuery;
+use App\Livewire\Concerns\ReviewsStandaloneReversal;
 use App\Models\CustomerPayment;
 use App\Services\Money\MoneyActorGuard;
 use App\Services\Sales\SalesActorGuard;
@@ -23,9 +24,9 @@ use Livewire\Component;
 #[Layout('layouts.app')]
 class PaymentDetail extends Component
 {
-    public CustomerPayment $payment;
+    use ReviewsStandaloneReversal;
 
-    public bool $showReverseModal = false;
+    public CustomerPayment $payment;
 
     public string $reversalReason = '';
 
@@ -119,7 +120,7 @@ class PaymentDetail extends Component
             ->firstOrFail();
     }
 
-    public function reversePayment(ReverseCustomerPaymentAction $reverseAction, CompanyContext $context): void
+    private function executeReviewedreversePayment(ReverseCustomerPaymentAction $reverseAction, CompanyContext $context): void
     {
         $company = $context->company();
         $user = auth()->user();
@@ -133,7 +134,6 @@ class PaymentDetail extends Component
         ]);
 
         $this->payment = $reverseAction->execute($this->payment, $user, $this->reversalReason);
-        $this->showReverseModal = false;
         session()->flash('success', __('sales.reversed_successfully'));
     }
 

@@ -1,6 +1,6 @@
 <x-guest-layout>
     <div class="space-y-6 text-center">
-        <div class="w-14 h-14 mx-auto rounded-2xl bg-amber-50 text-amber-600 border border-amber-200 grid place-items-center">
+        <div class="w-14 h-14 mx-auto rounded-2xl bg-warning-bg text-warning border border-warning/20 grid place-items-center">
             <x-icon name="store" class="w-7 h-7" />
         </div>
 
@@ -19,7 +19,7 @@
             @endif
             <form method="POST" action="{{ route('logout') }}">
                 @csrf
-                <button type="submit" class="px-4 py-2 text-xs font-bold text-text-secondary hover:text-danger rounded-control border border-border bg-white transition-colors">
+                <button type="submit" class="px-4 py-2 text-sm font-bold text-text-secondary hover:text-danger rounded-control border border-border bg-surface transition-colors">
                     {{ __('settings.sign_out') }}
                 </button>
             </form>

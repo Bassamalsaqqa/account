@@ -16,7 +16,7 @@
 <body class="bg-slate-100 min-h-screen text-slate-800 font-sans p-4 sm:p-6 lg:p-10 flex flex-col justify-between">
     <div class="max-w-4xl mx-auto w-full space-y-6">
         @if ($result['status'] === 'password_required')
-            <div class="bg-white rounded-xl shadow-md border border-slate-200 p-8 max-w-md mx-auto text-center space-y-4">
+            <div class="bg-surface rounded-xl shadow-md border border-slate-200 p-8 max-w-md mx-auto text-center space-y-4">
                 <div class="w-12 h-12 bg-primary/10 text-primary rounded-full flex items-center justify-center mx-auto text-xl">
                     🔒
                 </div>
@@ -28,7 +28,7 @@
                 </p>
 
                 @if (! empty($result['error']))
-                    <div class="p-2.5 rounded-lg bg-red-50 text-red-600 text-xs font-bold">
+                    <div class="p-2.5 rounded-lg bg-danger-bg text-danger text-xs font-bold">
                         {{ __('sales.incorrect_password') }}
                     </div>
                 @endif
@@ -40,32 +40,32 @@
                            required
                            autofocus
                            placeholder="••••••••"
-                           class="w-full h-10 px-3 rounded-lg border border-slate-300 text-xs text-center tracking-widest focus:border-primary focus:ring-1 focus:ring-primary outline-hidden" />
+                           class="w-full h-10 px-3 rounded-lg border border-slate-300 text-sm text-center tracking-widest focus:border-primary focus:ring-1 focus:ring-primary outline-hidden" />
                     <button type="submit"
-                            class="w-full h-10 rounded-lg bg-primary text-white text-xs font-bold hover:bg-primary-hover transition-colors">
+                            class="w-full h-10 rounded-lg bg-primary text-white text-sm font-bold hover:bg-primary-hover transition-colors">
                         {{ __('sales.submit_password') }}
                     </button>
                 </form>
             </div>
 
         @elseif ($result['status'] === 'expired')
-            <div class="bg-white rounded-xl shadow-md border border-slate-200 p-8 max-w-md mx-auto text-center space-y-3">
-                <div class="w-12 h-12 bg-amber-50 text-amber-600 rounded-full flex items-center justify-center mx-auto text-xl">
+            <div class="bg-surface rounded-xl shadow-md border border-slate-200 p-8 max-w-md mx-auto text-center space-y-3">
+                <div class="w-12 h-12 bg-warning-bg text-warning rounded-full flex items-center justify-center mx-auto text-xl">
                     ⏱️
                 </div>
                 <h2 class="text-base font-bold text-slate-900">{{ __('sales.link_expired') }}</h2>
             </div>
 
         @elseif ($result['status'] === 'revoked')
-            <div class="bg-white rounded-xl shadow-md border border-slate-200 p-8 max-w-md mx-auto text-center space-y-3">
-                <div class="w-12 h-12 bg-red-50 text-red-600 rounded-full flex items-center justify-center mx-auto text-xl">
+            <div class="bg-surface rounded-xl shadow-md border border-slate-200 p-8 max-w-md mx-auto text-center space-y-3">
+                <div class="w-12 h-12 bg-danger-bg text-danger rounded-full flex items-center justify-center mx-auto text-xl">
                     🚫
                 </div>
                 <h2 class="text-base font-bold text-slate-900">{{ __('sales.link_revoked') }}</h2>
             </div>
 
         @elseif ($result['status'] === 'not_found' || $result['status'] === 'invalid')
-            <div class="bg-white rounded-xl shadow-md border border-slate-200 p-8 max-w-md mx-auto text-center space-y-3">
+            <div class="bg-surface rounded-xl shadow-md border border-slate-200 p-8 max-w-md mx-auto text-center space-y-3">
                 <div class="w-12 h-12 bg-slate-100 text-slate-500 rounded-full flex items-center justify-center mx-auto text-xl">
                     🔍
                 </div>
@@ -81,7 +81,7 @@
                 $doc = $data['document'] ?? $data;
                 $lines = $data['lines'] ?? [];
             @endphp
-            <div class="bg-white rounded-2xl shadow-lg border border-slate-200 p-6 sm:p-10 space-y-8">
+            <div class="bg-surface rounded-2xl shadow-lg border border-slate-200 p-6 sm:p-10 space-y-8">
                 <!-- Top Brand & QR Code -->
                 <div class="flex flex-col sm:flex-row sm:items-start justify-between gap-6 pb-6 border-b border-slate-200">
                     <div class="space-y-1">
@@ -95,10 +95,10 @@
 
                     <div class="flex items-center gap-4">
                         @if (! empty($result['qr_code_data_uri']))
-                            <img src="{{ $result['qr_code_data_uri'] }}" alt="QR Code" class="w-20 h-20 border border-slate-200 rounded-lg p-1 bg-white" />
+                            <img src="{{ $result['qr_code_data_uri'] }}" alt="QR Code" class="w-20 h-20 border border-slate-200 rounded-lg p-1 bg-surface" />
                         @endif
                         <div class="text-end">
-                            <span class="inline-block px-3 py-1 rounded-full text-xs font-extrabold bg-blue-50 text-blue-700">
+                            <span class="inline-block px-3 py-1 rounded-full text-xs font-extrabold bg-info-bg text-info">
                                 {{ __('sales.'.$docType) }}
                             </span>
                             <div class="font-mono font-bold text-base text-slate-900 mt-1" dir="ltr">
@@ -137,7 +137,7 @@
                 <div class="overflow-x-auto">
                     <table class="w-full text-start text-xs border-collapse">
                         <thead>
-                            <tr class="border-b border-slate-200 bg-slate-50 text-slate-500 font-bold text-[11px] uppercase">
+                            <tr class="border-b border-slate-200 bg-slate-50 text-slate-500 font-bold text-xs uppercase">
                                 <th class="py-2.5 px-3 text-start">#</th>
                                 <th class="py-2.5 px-3 text-start">{{ __('sales.product') }}</th>
                                 <th class="py-2.5 px-3 text-start">{{ __('sales.quantity') }}</th>
@@ -163,7 +163,7 @@
                                     <td class="py-2.5 px-3 font-mono" dir="ltr">
                                         {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($line['unit_price'], $doc['currency_code'] ?? null) }}
                                     </td>
-                                    <td class="py-2.5 px-3 font-mono text-red-600" dir="ltr">
+                                    <td class="py-2.5 px-3 font-mono text-danger" dir="ltr">
                                         @php
                                             $disc = $line['discount'] ?? ($line['discount_amount'] ?? '0');
                                         @endphp
@@ -193,7 +193,7 @@
                         </div>
                         <div class="flex justify-between py-1 border-b border-slate-100">
                             <span class="text-slate-500">{{ __('sales.discount') }}:</span>
-                            <span class="font-mono text-red-600 font-bold" dir="ltr">-{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($doc['discount_total'], $doc['currency_code']) }} {{ $doc['currency_code'] }}</span>
+                            <span class="font-mono text-danger font-bold" dir="ltr">-{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($doc['discount_total'], $doc['currency_code']) }} {{ $doc['currency_code'] }}</span>
                         </div>
                         <div class="flex justify-between py-1 border-b border-slate-100">
                             <span class="text-slate-500">{{ __('sales.tax') }}:</span>
@@ -201,7 +201,7 @@
                         </div>
                         <div class="flex justify-between py-2 border-t border-slate-200 text-base font-extrabold text-slate-900">
                             <span>{{ __('sales.grand_total') }}:</span>
-                            <span class="font-mono text-blue-600" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($doc['grand_total'], $doc['currency_code']) }} {{ $doc['currency_code'] }}</span>
+                            <span class="font-mono text-info" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($doc['grand_total'], $doc['currency_code']) }} {{ $doc['currency_code'] }}</span>
                         </div>
                     </div>
                 </div>

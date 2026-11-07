@@ -30,6 +30,9 @@ class ReturnForm extends Component
     #[Locked]
     public int $pageCompanyId;
 
+    #[Locked]
+    public ?string $draftPublicId = null;
+
     public ?int $sales_invoice_id = null;
 
     public string $issue_date = '';
@@ -56,10 +59,17 @@ class ReturnForm extends Component
     {
         if (isset($this->pageCompanyId)) {
             $this->authorizeReturnAction();
+            if ($this->draftPublicId !== null) {
+                DB::transaction(function (): void {
+                    foreach (['sales.return.view', 'sales.return.manage', 'sales.invoice.view'] as $permission) {
+                        app(SalesActorGuard::class)->lockAndAuthorize($this->pageCompanyId, auth()->user(), $permission);
+                    }
+                });
+            }
         }
     }
 
-    public function mount(CompanyContext $context, ?int $invoice_id = null): void
+    public function mount(CompanyContext $context, ?int $invoice_id = null, ?string $publicId = null): void
     {
         $invoice_id ??= request()->integer('invoice_id') ?: null;
         $company = $context->company();
@@ -71,6 +81,24 @@ class ReturnForm extends Component
         }
 
         $this->issue_date = Carbon::now($company->timezone)->toDateString();
+        if ($publicId !== null) {
+            abort_unless($user->can('sales.return.manage') && $user->can('sales.return.view') && $user->can('sales.invoice.view'), 403);
+            $draft = SalesReturn::where('company_id', $company->id)->where('public_id', $publicId)->firstOrFail();
+            abort_unless($draft->isDraft(), 422);
+            $this->draftPublicId = $draft->public_id;
+            $this->sales_invoice_id = $draft->sales_invoice_id;
+            $this->loadInvoiceLines();
+            $this->issue_date = $draft->issue_date->format('Y-m-d');
+            $this->reason = $draft->reason;
+            $this->notes = $draft->notes;
+            $quantities = $draft->lines()->pluck('quantity', 'sales_invoice_line_id');
+            foreach ($this->lines as &$line) {
+                $line['return_quantity'] = (string) ($quantities[$line['sales_invoice_line_id']] ?? '0');
+            }
+            unset($line);
+
+            return;
+        }
 
         if ($invoice_id !== null) {
             $this->sales_invoice_id = $invoice_id;
@@ -448,7 +476,8 @@ class ReturnForm extends Component
             'lines' => $dtoLines,
         ];
 
-        $return = $createAction->execute($company, $user, $payload);
+        $existing = $this->draftPublicId === null ? null : SalesReturn::where('company_id', $company->id)->where('public_id', $this->draftPublicId)->firstOrFail();
+        $return = $createAction->execute($company, $user, $payload, $existing);
 
         if ($andPost) {
             $return = $postAction->execute($return, $user);

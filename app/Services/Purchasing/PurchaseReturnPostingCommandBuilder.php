@@ -10,6 +10,7 @@ use App\Domain\Posting\DTO\PostingCommand;
 use App\Domain\Posting\DTO\PostingLineCommand;
 use App\Models\Company;
 use App\Models\LedgerAccount;
+use App\Models\PostingBatch;
 use App\Models\PurchaseReturn;
 use App\Models\StockMovement;
 use App\Models\User;
@@ -350,7 +351,7 @@ final class PurchaseReturnPostingCommandBuilder
 
     public function validatePosted(PurchaseReturn $return): void
     {
-        if ($return->status !== PurchaseReturn::STATUS_POSTED || ! $return->return_number
+        if (! in_array($return->status, [PurchaseReturn::STATUS_POSTED, PurchaseReturn::STATUS_VOID], true) || ! $return->return_number
             || $return->posted_at === null || $return->posted_by === null) {
             throw new InvalidArgumentException(__('purchasing.post_integrity_failed'));
         }
@@ -372,7 +373,8 @@ final class PurchaseReturnPostingCommandBuilder
         }
 
         $batch = $return->postingBatch;
-        if ($batch === null || $batch->status !== 'posted'
+        $expectedBatchStatus = $return->isVoid() ? PostingBatch::STATUS_REVERSED : PostingBatch::STATUS_POSTED;
+        if ($batch === null || $batch->status !== $expectedBatchStatus
             || (int) $batch->company_id !== (int) $return->company_id
             || (int) $batch->posted_by !== (int) $return->posted_by
             || $batch->idempotency_key !== 'purchase_return_'.$return->id.'_posting'

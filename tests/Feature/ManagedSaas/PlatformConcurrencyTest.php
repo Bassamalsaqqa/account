@@ -10,6 +10,7 @@ use App\Models\User;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Symfony\Component\Process\Exception\ProcessStartFailedException;
 use Symfony\Component\Process\Process;
 use Tests\Support\DisposableMariaDbSchema;
 use Tests\TestCase;
@@ -50,7 +51,18 @@ class PlatformConcurrencyTest extends TestCase
         file_put_contents($directory.'/'.$slot.'.json', json_encode($input, JSON_THROW_ON_ERROR));
         chmod($directory.'/'.$slot.'.json', 0600);
         $process = new Process([PHP_BINARY, base_path('tests/Support/platform-provision-worker.php'), $directory, $slot], base_path(), $schema->environment());
-        $process->setTimeout(90)->start();
+        $started = false;
+        for ($attempt = 0; $attempt < 3 && ! $started; $attempt++) {
+            try {
+                $process->setTimeout(90)->start();
+                $started = true;
+            } catch (ProcessStartFailedException $e) {
+                if ($attempt === 2 || ! str_contains($e->getMessage(), 'Resource temporarily unavailable')) {
+                    throw $e;
+                }
+                usleep(20000);
+            }
+        }
         $deadline = microtime(true) + 30;
         while (! is_file($directory.'/'.$slot.'.ready')) {
             if (! $process->isRunning() || microtime(true) > $deadline) {
@@ -142,31 +154,39 @@ class PlatformConcurrencyTest extends TestCase
                     }
                     usleep(1000);
                 }
-                $revoker = $this->start($schema, $directory, 'worker-b', $identity + ['operation' => 'revoke']);
+                $revoker = $this->start($schema, $directory, 'worker-b', $identity + ['operation' => 'revoke', 'prove_lock_wait' => true]);
                 $deadline = microtime(true) + 10;
-                $waiting = false;
-                do {
-                    if (is_file($directory.'/revoker-connection')) {
-                        $connection = (int) file_get_contents($directory.'/revoker-connection');
-                        $waiting = (int) DB::selectOne('SELECT COUNT(*) AS waiting FROM information_schema.INNODB_LOCK_WAITS w JOIN information_schema.INNODB_TRX t ON t.trx_id = w.requesting_trx_id WHERE t.trx_mysql_thread_id = ?', [$connection])->waiting > 0;
+                while (! is_file($directory.'/revoker-lock-timeout')) {
+                    if (! $revoker->isRunning() || microtime(true) > $deadline) {
+                        $this->fail('Revoker did not prove a row lock timeout on the held authorization grant: '.$revoker->getErrorOutput());
                     }
-                    if (! $waiting) {
-                        usleep(1000);
-                    }
-                } while (! $waiting && $revoker->isRunning() && microtime(true) < $deadline);
-                $this->assertTrue($waiting, 'Revocation must be observed waiting on the held authorization lock');
+                    usleep(5000);
+                }
+                $this->assertSame('1205', file_get_contents($directory.'/revoker-lock-timeout'));
+                $this->assertTrue($revoker->isRunning(), 'Revoker must remain blocked while creator holds authorization lock');
+                $this->assertSame('', $revoker->getOutput(), 'Revoker must produce no output while blocked on held lock');
+
                 touch($directory.'/release-authorized');
+                $this->assertInstanceOf(Process::class, $revoker);
                 $this->assertSame(0, $creator->wait(), $creator->getErrorOutput());
                 $this->assertSame(0, $revoker->wait(), $revoker->getErrorOutput());
-                $this->assertSame('created', json_decode($creator->getOutput(), true)['outcome']);
-                $this->assertSame('revoked', json_decode($revoker->getOutput(), true)['outcome']);
+                $creatorResult = json_decode($creator->getOutput(), true, flags: JSON_THROW_ON_ERROR);
+                $this->assertIsArray($creatorResult);
+                $this->assertSame('created', $creatorResult['outcome'] ?? null);
+
+                $revokerResult = json_decode($revoker->getOutput(), true, flags: JSON_THROW_ON_ERROR);
+                $this->assertIsArray($revokerResult);
+                $this->assertSame('revoked', $revokerResult['outcome'] ?? null);
                 $this->assertSame(1, DB::table('companies')->count());
                 $this->assertFalse((bool) DB::table('platform_operator_grants')->value('active'));
+
                 unlink($directory.'/worker-a.ready');
                 $later = $this->start($schema, $directory, 'worker-a', $identity + ['payload' => array_replace($payload, ['request_key' => (string) Str::uuid(), 'owner_email' => 'later.owner@example.test'])]);
                 try {
                     $this->assertSame(0, $later->wait(), $later->getErrorOutput());
-                    $this->assertSame('denied', json_decode($later->getOutput(), true)['outcome']);
+                    $laterResult = json_decode($later->getOutput(), true, flags: JSON_THROW_ON_ERROR);
+                    $this->assertIsArray($laterResult);
+                    $this->assertSame('denied', $laterResult['outcome'] ?? null);
                     $this->assertSame(1, DB::table('companies')->count());
                 } finally {
                     $later->stop();

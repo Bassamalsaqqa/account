@@ -11,6 +11,7 @@ use App\Domain\Money\ValueObjects\MoneyAmount;
 use App\Domain\Purchasing\PreparedPurchaseDraft;
 use App\Domain\Purchasing\PurchaseCalculator;
 use App\Domain\Sales\Calculators\SalesDocumentTotalsCalculator;
+use App\Domain\Sales\Formatters\SalesMoneyFormatter;
 use App\Models\Company;
 use App\Models\Product;
 use App\Models\Purchase;
@@ -201,10 +202,16 @@ final class PurchaseDraftBuilder
         $data['purchase_date'] = $purchase->purchase_date->format('Y-m-d');
         $data['due_date'] = $purchase->due_date?->format('Y-m-d');
         $data['lines'] = $purchase->lines->map(function (PurchaseLine $line): array {
-            $data = $line->only(['public_id', 'product_id', 'product_unit_id', 'item_description', 'quantity', 'unit_cost', 'discount_type', 'discount_value', 'tax_rate_id']);
+            $data = $line->only(['public_id', 'product_id', 'product_unit_id', 'item_description', 'discount_type', 'tax_rate_id']);
+            $data['quantity'] = SalesMoneyFormatter::formatQuantity($line->quantity);
+            $data['unit_cost'] = SalesMoneyFormatter::formatMoneyInput($line->unit_cost);
+            $data['discount_value'] = $line->discount_type === 'percent'
+                ? SalesMoneyFormatter::formatQuantity($line->discount_value)
+                : SalesMoneyFormatter::formatMoneyInput($line->discount_value);
             $data['lots'] = $line->lots->map(fn ($lot) => [
                 'public_id' => $lot->public_id, 'product_unit_id' => $line->product_unit_id,
-                'lot_number' => $lot->lot_number, 'expiry_date' => $lot->expiry_date?->format('Y-m-d'), 'quantity' => $lot->quantity,
+                'lot_number' => $lot->lot_number, 'expiry_date' => $lot->expiry_date?->format('Y-m-d'),
+                'quantity' => SalesMoneyFormatter::formatQuantity($lot->quantity),
             ])->all();
 
             return $data;

@@ -44,12 +44,21 @@ class CreateSalesReturnDraftAction
      *     }>
      * }  $data
      */
-    public function execute(Company $company, User $user, array $data): SalesReturn
+    public function execute(Company $company, User $user, array $data, ?SalesReturn $existing = null): SalesReturn
     {
-        return app(TenantWriteAccess::class)->transaction((int) $company->id, function () use ($company, $user, $data): SalesReturn {
+        return app(TenantWriteAccess::class)->transaction((int) $company->id, function () use ($company, $user, $data, $existing): SalesReturn {
             // Lock company FOR UPDATE
             Company::where('id', $company->id)->lockForUpdate()->firstOrFail();
             app(SalesActorGuard::class)->lockAndAuthorize((int) $company->id, $user, 'sales.return.create');
+            if ($existing !== null) {
+                foreach (['sales.return.view', 'sales.return.manage', 'sales.invoice.view'] as $permission) {
+                    app(SalesActorGuard::class)->lockAndAuthorize((int) $company->id, $user, $permission);
+                }
+                $existing = SalesReturn::where('company_id', $company->id)->whereKey($existing->id)->lockForUpdate()->firstOrFail();
+                if (! $existing->isDraft() || (int) $existing->sales_invoice_id !== (int) $data['sales_invoice_id']) {
+                    throw new InvalidArgumentException('Only a draft return of the same invoice can be edited.');
+                }
+            }
 
             $context = app(CompanyContext::class);
             if (! $context->hasCompany() || (int) $context->companyId() !== (int) $company->id) {
@@ -104,7 +113,7 @@ class CreateSalesReturnDraftAction
             }
             foreach ($data['lines'] as $idx => $lineInput) {
                 /** @var SalesInvoiceLine $invLine */
-                $invLine = SalesInvoiceLine::where('sales_invoice_id', $invoice->id)
+                $invLine = SalesInvoiceLine::where('company_id', $company->id)->where('sales_invoice_id', $invoice->id)
                     ->where('id', $lineInput['sales_invoice_line_id'])
                     ->firstOrFail();
 
@@ -190,7 +199,7 @@ class CreateSalesReturnDraftAction
 
             $totals = $this->totalsCalculator->calculate($lineResults);
 
-            $salesReturn = SalesReturn::create([
+            $attributes = [
                 'public_id' => (string) Str::ulid(),
                 'company_id' => $company->id,
                 'return_number' => 'DRAFT-'.Str::random(8),
@@ -212,11 +221,21 @@ class CreateSalesReturnDraftAction
                 'grand_total_currency' => (string) $totals->grandTotalCurrency,
                 'reason' => $data['reason'] ?? null,
                 'notes' => $data['notes'] ?? null,
-                'document_locale' => $invoice->document_locale,
+                'document_locale' => $existing->document_locale ?? $invoice->document_locale,
                 'customer_snapshot' => $invoice->customer_snapshot,
                 'company_snapshot' => $invoice->company_snapshot,
                 'created_by' => $user->id,
-            ]);
+            ];
+            if ($existing === null) {
+                $salesReturn = SalesReturn::create($attributes);
+            } else {
+                unset($attributes['public_id'], $attributes['company_id'], $attributes['return_number'], $attributes['created_by']);
+                $existing->fill($attributes)->save();
+                foreach ($existing->lines()->get() as $line) {
+                    $line->delete();
+                }
+                $salesReturn = $existing;
+            }
 
             foreach ($preparedLines as $lineAttrs) {
                 SalesReturnLine::create(array_merge($lineAttrs, [

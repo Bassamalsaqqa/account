@@ -1,0 +1,20 @@
+{
+  "head": "06e4f6d71b8dc3202f0708dff91a21b32a5afd33",
+  "full_suite_exit": 2,
+  "tests": 4000,
+  "assertions": 44998,
+  "errors": 4,
+  "failures": 36,
+  "duration": "57:13.558",
+  "peak_memory_mb": 314.5,
+  "composer_lock_sha256": "ec35d103aa9548d2b04e0b057dbce6dd8203afa0f9b6bd32c1b74e9711d082e6",
+  "focused_payables_sha256": "520a55530ea26643109b38f4dd94c7c70625b093e86baea216cc75af3ff533c2",
+  "parent_followup_payables_sha256": "65c2d8e910abd23577e5116405873bdcc10b7f5a31b4cdbe6370e4fd267617b3",
+  "owned_server_path": "/tmp/huda-runtime-9dx5swDe",
+  "owned_server_pid_at_handoff": 3597,
+  "preserved_for_parent": true,
+  "primary_schema_cleaned": true,
+  "auxiliary_schema_cleaned": "accounting_p8_tmp_2f13bbe960c8",
+  "additional_php_tests_after_user_stop_instruction": false,
+  "sanitization": "ANSI codes and rendered HTML response bodies removed; test names, expectations, stacks and counts preserved"
+}

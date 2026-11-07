@@ -7,9 +7,9 @@
 <div class="space-y-6">
     <!-- Session Messages -->
     @if(session('success'))
-        <div class="mb-4 p-4 rounded-md bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm flex items-center justify-between">
+        <div class="mb-4 p-4 rounded-md bg-success-bg border border-success/20 text-success text-sm flex items-center justify-between">
             <div class="flex items-center gap-2">
-                <svg class="w-5 h-5 text-emerald-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg class="w-5 h-5 text-success shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
                 </svg>
                 <span>{{ session('success') }}</span>
@@ -18,9 +18,9 @@
     @endif
 
     @if($errors->any())
-        <div role="alert" class="mb-4 p-4 rounded-md bg-rose-50 border border-rose-200 text-rose-800 text-sm">
+        <div role="alert" class="mb-4 p-4 rounded-md bg-danger-bg border border-danger/20 text-danger text-sm">
             <div class="flex items-center gap-2 font-medium mb-1">
-                <svg class="w-5 h-5 text-rose-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg class="w-5 h-5 text-danger shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
                 </svg>
                 <span>{{ __('catalogs.unexpected_error') }}</span>
@@ -34,22 +34,22 @@
     @endif
 
     <!-- Option A Marketing Media Notice Banner -->
-    <div class="mb-6 p-4 rounded-lg bg-blue-50 border border-blue-200 text-blue-900 text-sm">
+    <div class="mb-6 p-4 rounded-lg bg-info-bg border border-info/20 text-info text-sm">
         <div class="flex items-start gap-3">
-            <div class="p-1 rounded bg-blue-100 text-blue-700 shrink-0 mt-0.5">
+            <div class="p-1 rounded bg-info-bg text-info shrink-0 mt-0.5">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
             </div>
             <div>
-                <h2 class="font-semibold text-blue-950">{{ __('catalogs.media_notice_title') }}</h2>
-                <p class="mt-1 text-xs sm:text-sm text-blue-800 leading-relaxed">{{ __('catalogs.media_notice_text') }}</p>
+                <h2 class="font-semibold text-info">{{ __('catalogs.media_notice_title') }}</h2>
+                <p class="mt-1 text-xs sm:text-sm text-info leading-relaxed">{{ __('catalogs.media_notice_text') }}</p>
             </div>
         </div>
     </div>
 
     <!-- Main Header & Action Bar -->
-    <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5 mb-6">
+    <div class="bg-surface rounded-xl shadow-sm border border-slate-200 p-5 mb-6">
         <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
             <div>
                 <div class="flex items-center gap-3 flex-wrap">
@@ -60,9 +60,9 @@
                     @php
                         $statusClasses = [
                             'draft' => 'bg-slate-100 text-slate-700 border-slate-200',
-                            'active' => 'bg-emerald-50 text-emerald-700 border-emerald-200',
-                            'paused' => 'bg-amber-50 text-amber-700 border-amber-200',
-                            'revoked' => 'bg-rose-50 text-rose-700 border-rose-200',
+                            'active' => 'bg-success-bg text-success border-success/20',
+                            'paused' => 'bg-warning-bg text-warning border-warning/20',
+                            'revoked' => 'bg-danger-bg text-danger border-danger/20',
                         ];
                     @endphp
                     <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold border {{ $statusClasses[$status] ?? 'bg-slate-100 text-slate-700' }}">
@@ -70,7 +70,7 @@
                     </span>
 
                     @if($hasUnsavedChanges)
-                        <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-800">
+                        <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-warning-bg text-warning">
                             {{ __('catalogs.unsaved_changes') }}
                         </span>
                     @endif
@@ -101,7 +101,7 @@
                     wire:click="saveDraft"
                     wire:loading.attr="disabled"
                     @disabled(! $canManage)
-                    class="min-h-[44px] px-4 py-2 bg-white border border-slate-300 rounded-lg text-sm font-medium text-slate-700 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm transition-colors"
+                    class="min-h-[44px] px-4 py-2 bg-surface border border-slate-300 rounded-lg text-sm font-medium text-slate-700 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm transition-colors"
                 >
                     <span wire:loading.remove wire:target="saveDraft">{{ __('catalogs.save_draft') }}</span>
                     <span wire:loading wire:target="saveDraft" class="flex items-center gap-1">
@@ -116,11 +116,11 @@
                     wire:click="previewPublication"
                     wire:loading.attr="disabled"
                     @disabled(! $canPublish || $catalogId === null || empty($items))
-                    class="min-h-[44px] px-4 py-2 bg-blue-50 border border-blue-200 rounded-lg text-sm font-medium text-blue-700 hover:bg-blue-100 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    class="min-h-[44px] px-4 py-2 bg-info-bg border border-info/20 rounded-lg text-sm font-medium text-info hover:bg-info-bg focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                 >
                     <span wire:loading.remove wire:target="previewPublication">{{ __('catalogs.preview') }}</span>
                     <span wire:loading wire:target="previewPublication" class="flex items-center gap-1">
-                        <svg class="animate-spin h-4 w-4 text-blue-600" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                        <svg class="animate-spin h-4 w-4 text-info" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
                         {{ __('catalogs.preview') }}...
                     </span>
                 </button>
@@ -147,7 +147,7 @@
                             type="button"
                             wire:click="manageState('paused')"
                             @disabled(! $canRevoke)
-                            class="min-h-[44px] px-3 py-2 bg-amber-50 text-amber-700 border border-amber-200 rounded-lg text-sm hover:bg-amber-100 disabled:opacity-50"
+                            class="min-h-[44px] px-3 py-2 bg-warning-bg text-warning border border-warning/20 rounded-lg text-sm hover:bg-warning-bg disabled:opacity-50"
                          wire:loading.attr="disabled" wire:target="manageState">
                             {{ __('catalogs.pause') }}
                         </button>
@@ -156,7 +156,7 @@
                             type="button"
                             wire:click="manageState('active')"
                             @disabled(! $canPublish)
-                            class="min-h-[44px] px-3 py-2 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-lg text-sm hover:bg-emerald-100 disabled:opacity-50"
+                            class="min-h-[44px] px-3 py-2 bg-success-bg text-success border border-success/20 rounded-lg text-sm hover:bg-success-bg disabled:opacity-50"
                          wire:loading.attr="disabled" wire:target="manageState">
                             {{ __('catalogs.resume') }}
                         </button>
@@ -168,7 +168,7 @@
                             wire:click="manageState('revoked')"
                             wire:confirm="{{ __('catalogs.revoke_confirm_warning') }}"
                             @disabled(! $canRevoke)
-                            class="min-h-[44px] px-3 py-2 bg-rose-50 text-rose-700 border border-rose-200 rounded-lg text-sm hover:bg-rose-100 disabled:opacity-50"
+                            class="min-h-[44px] px-3 py-2 bg-danger-bg text-danger border border-danger/20 rounded-lg text-sm hover:bg-danger-bg disabled:opacity-50"
                          wire:loading.attr="disabled" wire:target="manageState">
                             {{ __('catalogs.revoke') }}
                         </button>
@@ -193,7 +193,7 @@
                         type="button"
                         wire:click="createOrRecoverLink"
                         @disabled(! $canShare)
-                        class="min-h-[44px] px-4 py-2 bg-indigo-50 border border-indigo-200 text-indigo-700 rounded-lg text-sm font-medium hover:bg-indigo-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50 transition-colors"
+                        class="min-h-[44px] px-4 py-2 bg-info-bg border border-info/20 text-info rounded-lg text-sm font-medium hover:bg-info-bg focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50 transition-colors"
                      wire:loading.attr="disabled" wire:target="createOrRecoverLink">
                         {{ __('catalogs.share_link') }}
                     </button>
@@ -206,14 +206,14 @@
     <div class="grid grid-cols-1 lg:grid-cols-4 gap-6">
         <!-- Sidebar Catalogs List -->
         <div class="lg:col-span-1 order-2 lg:order-1">
-            <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
+            <div class="bg-surface rounded-xl shadow-sm border border-slate-200 p-4">
                 <div class="flex items-center justify-between pb-3 border-b border-slate-200 mb-3">
                     <h2 class="font-semibold text-slate-800 text-sm">{{ __('catalogs.catalogs') }}</h2>
                     <button
                         type="button"
                         wire:click="createCatalog"
                         @disabled(! $canManage)
-                        class="text-xs text-blue-600 hover:text-blue-800 font-medium py-1 px-2 rounded hover:bg-blue-50 disabled:opacity-50"
+                        class="text-sm text-info hover:text-info font-medium py-1 px-2 rounded hover:bg-info-bg disabled:opacity-50"
                      wire:loading.attr="disabled" wire:target="createCatalog">
                         + {{ __('catalogs.new_catalog') }}
                     </button>
@@ -223,7 +223,7 @@
                     @forelse($sidebarCatalogs as $cat)
                         <button type="button"
                             wire:click="loadCatalog('{{ $cat->public_id }}')"
-                            class="w-full text-start p-3 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary rounded-lg border text-sm cursor-pointer transition-colors {{ $publicId === $cat->public_id ? 'border-blue-500 bg-blue-50/50' : 'border-slate-200 hover:bg-slate-50' }}"
+                            class="w-full text-start p-3 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary rounded-lg border text-sm cursor-pointer transition-colors {{ $publicId === $cat->public_id ? 'border-blue-500 bg-info-bg' : 'border-slate-200 hover:bg-slate-50' }}"
                          wire:loading.attr="disabled" wire:target="loadCatalog">
                             <span class="block font-medium text-slate-900 truncate">
                                 {{ $cat->name_ar ?: ($cat->name_en ?: __('catalogs.title')) }}
@@ -251,7 +251,7 @@
         <!-- Composer Main Content Area -->
         <div class="lg:col-span-3 order-1 lg:order-2 space-y-6">
             <!-- Section 1: Catalog Details -->
-            <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
+            <div class="bg-surface rounded-xl shadow-sm border border-slate-200 p-5">
                 <h2 class="text-base font-bold text-slate-900 mb-4 pb-2 border-b border-slate-100">
                     {{ __('catalogs.details') }}
                 </h2>
@@ -259,7 +259,7 @@
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <!-- Arabic Name (Required) -->
                     <div>
-                        <label for="catalog-name-ar" class="block text-xs font-semibold text-slate-700 mb-1">
+                        <label for="catalog-name-ar" class="block text-sm font-semibold text-slate-700 mb-1">
                             {{ __('catalogs.name_ar') }} <span class="text-rose-500">*</span>
                         </label>
                         <input aria-invalid="{{ $errors->has('headers.name_ar') ? 'true' : 'false' }}" @if ($errors->has('headers.name_ar')) aria-describedby="catalog-name-ar-error" @endif
@@ -270,12 +270,12 @@
                             maxlength="160"
                             class="w-full min-h-[44px] px-3 py-2 text-sm rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-slate-100"
                         >
-                        @error('headers.name_ar') <span role="alert" id="catalog-name-ar-error" class="text-xs text-rose-600 mt-1 block">{{ $message }}</span> @enderror
+                        @error('headers.name_ar') <span role="alert" id="catalog-name-ar-error" class="text-xs text-danger mt-1 block">{{ $message }}</span> @enderror
                     </div>
 
                     <!-- English Name -->
                     <div>
-                        <label for="catalog-name-en" class="block text-xs font-semibold text-slate-700 mb-1">
+                        <label for="catalog-name-en" class="block text-sm font-semibold text-slate-700 mb-1">
                             {{ __('catalogs.name_en') }}
                         </label>
                         <input aria-invalid="{{ $errors->has('headers.name_en') ? 'true' : 'false' }}" @if ($errors->has('headers.name_en')) aria-describedby="catalog-name-en-error" @endif
@@ -286,12 +286,12 @@
                             maxlength="160"
                             class="w-full min-h-[44px] px-3 py-2 text-sm rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-slate-100"
                         >
-                        @error('headers.name_en') <span role="alert" id="catalog-name-en-error" class="text-xs text-rose-600 mt-1 block">{{ $message }}</span> @enderror
+                        @error('headers.name_en') <span role="alert" id="catalog-name-en-error" class="text-xs text-danger mt-1 block">{{ $message }}</span> @enderror
                     </div>
 
                     <!-- Arabic Description -->
                     <div>
-                        <label for="catalog-desc-ar" class="block text-xs font-semibold text-slate-700 mb-1">
+                        <label for="catalog-desc-ar" class="block text-sm font-semibold text-slate-700 mb-1">
                             {{ __('catalogs.description_ar') }}
                         </label>
                         <textarea
@@ -306,7 +306,7 @@
 
                     <!-- English Description -->
                     <div>
-                        <label for="catalog-desc-en" class="block text-xs font-semibold text-slate-700 mb-1">
+                        <label for="catalog-desc-en" class="block text-sm font-semibold text-slate-700 mb-1">
                             {{ __('catalogs.description_en') }}
                         </label>
                         <textarea
@@ -321,7 +321,7 @@
 
                     <!-- Default Locale -->
                     <div>
-                        <label for="catalog-locale" class="block text-xs font-semibold text-slate-700 mb-1">
+                        <label for="catalog-locale" class="block text-sm font-semibold text-slate-700 mb-1">
                             {{ __('catalogs.default_locale') }}
                         </label>
                         <select
@@ -340,45 +340,45 @@
                 <div class="mt-5 pt-4 border-t border-slate-100">
                     <h3 class="text-xs font-semibold text-slate-700 mb-3">{{ __('catalogs.display_options') }}</h3>
                     <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                        <label class="flex items-center gap-2 text-xs font-medium text-slate-700 cursor-pointer">
+                        <label class="flex items-center gap-2 text-sm font-medium text-slate-700 cursor-pointer">
                             <input
                                 type="checkbox"
                                 wire:model.live="headers.show_images"
                                 @disabled(! $canManage)
-                                class="w-4 h-4 text-blue-600 rounded border-slate-300 focus:ring-blue-500"
+                                class="w-4 h-4 text-info rounded border-slate-300 focus:ring-blue-500"
                             >
                             <span>{{ __('catalogs.show_images') }}</span>
                         </label>
 
-                        <label class="flex items-center gap-2 text-xs font-medium text-slate-700 cursor-pointer">
+                        <label class="flex items-center gap-2 text-sm font-medium text-slate-700 cursor-pointer">
                             <input
                                 type="checkbox"
                                 wire:model.live="headers.show_sku"
                                 @disabled(! $canManage)
-                                class="w-4 h-4 text-blue-600 rounded border-slate-300 focus:ring-blue-500"
+                                class="w-4 h-4 text-info rounded border-slate-300 focus:ring-blue-500"
                             >
                             <span>{{ __('catalogs.show_sku') }}</span>
                         </label>
 
-                        <label class="flex items-center gap-2 text-xs font-medium text-slate-700 cursor-pointer">
+                        <label class="flex items-center gap-2 text-sm font-medium text-slate-700 cursor-pointer">
                             <input
                                 type="checkbox"
                                 wire:model.live="headers.show_description"
                                 @disabled(! $canManage)
-                                class="w-4 h-4 text-blue-600 rounded border-slate-300 focus:ring-blue-500"
+                                class="w-4 h-4 text-info rounded border-slate-300 focus:ring-blue-500"
                             >
                             <span>{{ __('catalogs.show_description') }}</span>
                         </label>
 
                         @if($canShowPrices)
-                            <label class="flex items-center gap-2 text-xs font-medium text-slate-700 cursor-pointer">
+                            <label class="flex items-center gap-2 text-sm font-medium text-slate-700 cursor-pointer">
                                 <input
                                     type="checkbox"
                                     wire:model.live="headers.show_prices"
                                     @disabled(! $canManage)
-                                    class="w-4 h-4 text-blue-600 rounded border-slate-300 focus:ring-blue-500"
+                                    class="w-4 h-4 text-info rounded border-slate-300 focus:ring-blue-500"
                                 >
-                                <span class="font-semibold text-blue-900">{{ __('catalogs.show_prices') }}</span>
+                                <span class="font-semibold text-info">{{ __('catalogs.show_prices') }}</span>
                             </label>
                         @endif
                     </div>
@@ -391,7 +391,7 @@
 
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div>
-                                <label for="catalog-currency" class="block text-xs font-semibold text-slate-700 mb-1">
+                                <label for="catalog-currency" class="block text-sm font-semibold text-slate-700 mb-1">
                                     {{ __('catalogs.currency') }} <span class="text-rose-500">*</span>
                                 </label>
                                 <select
@@ -408,7 +408,7 @@
                             </div>
 
                             <div>
-                                <label for="catalog-tax-basis" class="block text-xs font-semibold text-slate-700 mb-1">
+                                <label for="catalog-tax-basis" class="block text-sm font-semibold text-slate-700 mb-1">
                                     {{ __('catalogs.tax_basis') }} <span class="text-rose-500">*</span>
                                 </label>
                                 <input
@@ -428,7 +428,7 @@
             </div>
 
             <!-- Section 2: Selected Catalog Products -->
-            <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
+            <div class="bg-surface rounded-xl shadow-sm border border-slate-200 p-5">
                 <div class="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
                     <div>
                         <h2 class="text-base font-bold text-slate-900">{{ __('catalogs.selected_products') }}</h2>
@@ -480,7 +480,7 @@
                                             wire:click="moveItemUp({{ $idx }})"
                                             @disabled($idx === 0 || ! $canManage)
                                             title="{{ __('catalogs.move_up') }}"
-                                            class="min-h-[44px] min-w-[44px] inline-flex items-center justify-center p-2 rounded-lg bg-white border border-slate-200 text-slate-600 hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                            class="min-h-[44px] min-w-[44px] inline-flex items-center justify-center p-2 rounded-lg bg-surface border border-slate-200 text-slate-600 hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-blue-500"
                                          wire:loading.attr="disabled" wire:target="moveItemUp">
                                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7" /></svg>
                                         </button>
@@ -490,7 +490,7 @@
                                             wire:click="moveItemDown({{ $idx }})"
                                             @disabled($idx === count($items) - 1 || ! $canManage)
                                             title="{{ __('catalogs.move_down') }}"
-                                            class="min-h-[44px] min-w-[44px] inline-flex items-center justify-center p-2 rounded-lg bg-white border border-slate-200 text-slate-600 hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                            class="min-h-[44px] min-w-[44px] inline-flex items-center justify-center p-2 rounded-lg bg-surface border border-slate-200 text-slate-600 hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-blue-500"
                                          wire:loading.attr="disabled" wire:target="moveItemDown">
                                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg>
                                         </button>
@@ -500,7 +500,7 @@
                                             wire:click="removeItem({{ $idx }})"
                                             @disabled(! $canManage)
                                             title="{{ __('catalogs.remove') }}"
-                                            class="min-h-[44px] min-w-[44px] inline-flex items-center justify-center p-2 rounded-lg bg-rose-50 border border-rose-200 text-rose-600 hover:bg-rose-100 disabled:opacity-30 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-rose-500"
+                                            class="min-h-[44px] min-w-[44px] inline-flex items-center justify-center p-2 rounded-lg bg-danger-bg border border-danger/20 text-danger hover:bg-danger-bg disabled:opacity-30 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-rose-500"
                                          wire:loading.attr="disabled" wire:target="removeItem">
                                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
                                         </button>
@@ -515,7 +515,7 @@
                                         <select id="catalog-item-{{ $idx }}-unit"
                                             wire:model.live="items.{{ $idx }}.unit_id"
                                             @disabled(! $canManage)
-                                            class="w-full min-h-[44px] px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                            class="w-full min-h-[44px] px-2.5 py-1.5 rounded-lg border border-slate-300 bg-surface focus:outline-none focus:ring-2 focus:ring-blue-500"
                                         >
                                             @foreach($units as $u)
                                                 <option value="{{ $u['id'] }}">
@@ -531,7 +531,7 @@
                                         <select id="catalog-item-{{ $idx }}-image"
                                             wire:model.live="items.{{ $idx }}.image_id"
                                             @disabled(! $canManage)
-                                            class="w-full min-h-[44px] px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                            class="w-full min-h-[44px] px-2.5 py-1.5 rounded-lg border border-slate-300 bg-surface focus:outline-none focus:ring-2 focus:ring-blue-500"
                                         >
                                             <option value="">{{ __('catalogs.no_image') }}</option>
                                             @foreach($images as $img)
@@ -558,7 +558,7 @@
                                                 wire:model.live.debounce.400ms="items.{{ $idx }}.custom_price"
                                                 @disabled(! $canManage)
                                                 placeholder="{{ __('catalogs.price_on_request_short') }}"
-                                                class="w-full min-h-[44px] px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-xs"
+                                                class="w-full min-h-[44px] px-2.5 py-1.5 rounded-lg border border-slate-300 bg-surface focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-sm"
                                             >
                                         </div>
                                     @endif
@@ -571,7 +571,7 @@
                                             wire:model.live.debounce.400ms="items.{{ $idx }}.name_ar"
                                             @disabled(! $canManage)
                                             placeholder="{{ __('catalogs.default_from_product') }}"
-                                            class="w-full min-h-[44px] px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                            class="w-full min-h-[44px] px-2.5 py-1.5 rounded-lg border border-slate-300 bg-surface focus:outline-none focus:ring-2 focus:ring-blue-500"
                                         >
                                     </div>
                                 </div>
@@ -582,7 +582,7 @@
             </div>
 
             <!-- Section 3: Add Products Picker (Scoped Paginated) -->
-            <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
+            <div class="bg-surface rounded-xl shadow-sm border border-slate-200 p-5">
                 <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4 pb-3 border-b border-slate-100">
                     <h2 class="text-base font-bold text-slate-900">{{ __('catalogs.products') }}</h2>
 
@@ -592,7 +592,7 @@
                             type="text"
                             wire:model.live.debounce.300ms="productSearch"
                             placeholder="{{ __('catalogs.search_products') }}"
-                            class="w-full min-h-[44px] px-3 py-2 text-xs rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            class="w-full min-h-[44px] px-3 py-2 text-sm rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
                         >
                     </div>
                 </div>
@@ -629,7 +629,7 @@
                                             type="button"
                                             wire:click="addProduct({{ $prod->id }})"
                                             wire:loading.attr="disabled" wire:target="addProduct" @disabled($isAdded || count($items) >= 250 || ! $canManage)
-                                            class="min-h-[44px] px-3 py-1.5 rounded-lg text-xs font-medium transition-colors {{ $isAdded ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'bg-blue-50 text-blue-700 hover:bg-blue-100' }}"
+                                            class="min-h-[44px] px-3 py-1.5 rounded-lg text-xs font-medium transition-colors {{ $isAdded ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'bg-info-bg text-info hover:bg-info-bg' }}"
                                         >
                                             {{ $isAdded ? __('catalogs.already_added') : __('catalogs.add_product') }}
                                         </button>
@@ -658,7 +658,7 @@
     <!-- Modal: Share Link & Distribution -->
     @if($showShareModal)
         <div x-data x-trap.inert.noscroll="true" @keydown.escape.window="$wire.set('showShareModal', false)" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="catalog-share-title">
-            <div class="bg-white rounded-xl shadow-xl border border-slate-200 max-w-lg w-full p-6 text-slate-900">
+            <div class="bg-surface rounded-xl shadow-xl border border-slate-200 max-w-lg w-full p-6 text-slate-900">
                 <div class="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
                     <h3 id="catalog-share-title" class="text-base font-bold text-slate-900">{{ __('catalogs.share_title') }}</h3>
                     <button type="button" aria-label="{{ __('catalogs.close') }}" wire:click="$set('showShareModal', false)" class="min-h-[44px] min-w-[44px] text-slate-400 hover:text-slate-600 p-1">
@@ -666,11 +666,11 @@
                     </button>
                 </div>
 
-                @error('general')<p role="alert" class="mb-3 text-sm text-rose-700">{{ $message }}</p>@enderror
-                @error('share')<p role="alert" class="mb-3 text-sm text-rose-700">{{ $message }}</p>@enderror
-                @error('linkAccess')<p role="alert" class="mb-3 text-sm text-rose-700">{{ $message }}</p>@enderror
-                @error('sharePassword')<p id="catalog-share-password-error" role="alert" class="mb-3 text-sm text-rose-700">{{ $message }}</p>@enderror
-                @error('shareExpires')<p id="catalog-share-expires-error" role="alert" class="mb-3 text-sm text-rose-700">{{ $message }}</p>@enderror
+                @error('general')<p role="alert" class="mb-3 text-sm text-danger">{{ $message }}</p>@enderror
+                @error('share')<p role="alert" class="mb-3 text-sm text-danger">{{ $message }}</p>@enderror
+                @error('linkAccess')<p role="alert" class="mb-3 text-sm text-danger">{{ $message }}</p>@enderror
+                @error('sharePassword')<p id="catalog-share-password-error" role="alert" class="mb-3 text-sm text-danger">{{ $message }}</p>@enderror
+                @error('shareExpires')<p id="catalog-share-expires-error" role="alert" class="mb-3 text-sm text-danger">{{ $message }}</p>@enderror
 
                 @if($editingLinkAccess)
                     <!-- Edit Link Access Form -->
@@ -678,7 +678,7 @@
                         <div class="flex items-center justify-between pb-2 border-b border-slate-100">
                             <h4 class="text-sm font-semibold text-slate-800">{{ __('catalogs.edit_link_access') }}</h4>
                             @if($url)
-                                <button type="button" wire:click="closeLinkAccess" class="text-xs text-indigo-600 hover:text-indigo-800 font-medium min-h-[44px] px-2 flex items-center" wire:loading.attr="disabled" wire:target="closeLinkAccess">
+                                <button type="button" wire:click="closeLinkAccess" class="text-sm text-info hover:text-info font-medium min-h-[44px] px-2 flex items-center" wire:loading.attr="disabled" wire:target="closeLinkAccess">
                                     &larr; {{ __('catalogs.back_to_link') }}
                                 </button>
                             @endif
@@ -700,27 +700,27 @@
                                 </span>
                             </div>
                             @if($legacyExpiry)
-                                <div class="p-2 rounded bg-amber-50 text-amber-800 border border-amber-200 text-[11px] leading-relaxed">
+                                <div class="p-2 rounded bg-warning-bg text-warning border border-warning/20 text-xs leading-relaxed">
                                     {{ __('catalogs.legacy_expiry_notice', ['instant' => $currentExpiresAt ?: $currentExpires, 'timezone' => $companyTimezone]) }}
                                 </div>
                             @endif
                             <div class="flex justify-between items-center">
                                 <span class="text-slate-500">{{ __('catalogs.password_protection') }}:</span>
-                                <span class="font-medium {{ $hasPassword ? 'text-emerald-700' : 'text-slate-600' }}">
+                                <span class="font-medium {{ $hasPassword ? 'text-success' : 'text-slate-600' }}">
                                     {{ $hasPassword ? __('catalogs.status_password_protected') : __('catalogs.status_no_password') }}
                                 </span>
                             </div>
                         </div>
 
                         <!-- Explanatory Notice -->
-                        <div class="p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-900 space-y-1">
+                        <div class="p-3 bg-warning-bg border border-warning/20 rounded-lg text-xs text-warning space-y-1">
                             <p>{{ __('catalogs.link_access_help_password') }}</p>
                             <p>{{ __('catalogs.link_access_help_expiry') }}</p>
                         </div>
 
                         <!-- Password input -->
                         <div>
-                            <label for="link-access-password" class="block text-xs font-semibold text-slate-700 mb-1">
+                            <label for="link-access-password" class="block text-sm font-semibold text-slate-700 mb-1">
                                 {{ __('catalogs.new_password_label') }}
                             </label>
                             <input aria-invalid="{{ $errors->has('linkAccessPassword') ? 'true' : 'false' }}" @if ($errors->has('linkAccessPassword')) aria-describedby="link-access-password-error" @endif
@@ -732,12 +732,12 @@
                                 placeholder="{{ __('catalogs.password_placeholder_keep') }}"
                                 class="w-full min-h-[44px] px-3 py-2 text-sm rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                             >
-                            @error('linkAccessPassword') <p id="link-access-password-error" role="alert" class="text-xs text-rose-600 mt-1">{{ $message }}</p> @enderror
+                            @error('linkAccessPassword') <p id="link-access-password-error" role="alert" class="text-xs text-danger mt-1">{{ $message }}</p> @enderror
                         </div>
 
                         <!-- Expiry input -->
                         <div>
-                            <label for="link-access-expires" class="block text-xs font-semibold text-slate-700 mb-1">
+                            <label for="link-access-expires" class="block text-sm font-semibold text-slate-700 mb-1">
                                 {{ __('catalogs.expiry_date') }}
                             </label>
                             <input aria-invalid="{{ $errors->has('linkAccessExpires') ? 'true' : 'false' }}" @if ($errors->has('linkAccessExpires')) aria-describedby="link-access-expires-error" @endif
@@ -746,10 +746,10 @@
                                 wire:model="linkAccessExpires"
                                 class="w-full min-h-[44px] px-3 py-2 text-sm rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                             >
-                            <p class="text-[11px] text-slate-500 mt-1">
+                            <p class="text-xs text-slate-500 mt-1">
                                 {{ __('catalogs.expiry_company_tz_hint', ['timezone' => $companyTimezone]) }}
                             </p>
-                            @error('linkAccessExpires') <p id="link-access-expires-error" role="alert" class="text-xs text-rose-600 mt-1">{{ $message }}</p> @enderror
+                            @error('linkAccessExpires') <p id="link-access-expires-error" role="alert" class="text-xs text-danger mt-1">{{ $message }}</p> @enderror
                         </div>
 
                         <!-- Action Buttons -->
@@ -796,13 +796,13 @@
                                 class="min-h-[44px] px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-medium flex items-center justify-center gap-1.5"
                             >
                                 <span x-show="!copied">{{ __('catalogs.copy_link') }}</span>
-                                <span x-show="copied" role="status" class="text-emerald-600 font-bold">{{ __('catalogs.link_copied') }}</span>
+                                <span x-show="copied" role="status" class="text-success font-bold">{{ __('catalogs.link_copied') }}</span>
                             </button>
 
                             <button
                                 type="button"
                                 wire:click="showQr"
-                                class="min-h-[44px] px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-medium flex items-center justify-center gap-1.5"
+                                class="min-h-[44px] px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-sm font-medium flex items-center justify-center gap-1.5"
                              wire:loading.attr="disabled" wire:target="showQr">
                                 {{ __('catalogs.show_qr') }}
                             </button>
@@ -812,7 +812,7 @@
                                 href="https://api.whatsapp.com/send?text={{ rawurlencode(__('catalogs.public_catalog_message') . ' ' . $browserShareUrl) }}"
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                class="touch-action min-h-[44px] px-3 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-lg text-xs font-medium flex items-center justify-center gap-1.5"
+                                class="touch-action min-h-[44px] px-3 py-2 bg-success-bg hover:bg-success-bg text-success border border-success/20 rounded-lg text-sm font-medium flex items-center justify-center gap-1.5"
                             >
                                 {{ __('catalogs.share_whatsapp') }}
                             </a>
@@ -820,11 +820,11 @@
                             <!-- Mailto Composition -->
                             <a
                                 href="mailto:?subject={{ rawurlencode(__('catalogs.public_catalog_message')) }}&body={{ rawurlencode($browserShareUrl) }}"
-                                class="touch-action min-h-[44px] px-3 py-2 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-lg text-xs font-medium flex items-center justify-center gap-1.5"
+                                class="touch-action min-h-[44px] px-3 py-2 bg-info-bg hover:bg-info-bg text-info border border-info/20 rounded-lg text-sm font-medium flex items-center justify-center gap-1.5"
                             >
                                 {{ __('catalogs.share_email') }}
                             </a>
-                            <p x-show="copyFailed" role="alert" class="col-span-2 text-sm text-rose-700">{{ __('catalogs.unexpected_error') }}</p>
+                            <p x-show="copyFailed" role="alert" class="col-span-2 text-sm text-danger">{{ __('catalogs.unexpected_error') }}</p>
                         </div>
 
                         <!-- Native Share if supported -->
@@ -832,7 +832,7 @@
                             <button
                                 type="button"
                                 @click="navigator.share({title: @js(__('catalogs.public_catalog_message')), url: @js($browserShareUrl)}).catch(() => {})"
-                                class="w-full min-h-[44px] px-3 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-lg text-xs font-medium flex items-center justify-center gap-1.5 mt-2"
+                                class="w-full min-h-[44px] px-3 py-2 bg-info-bg hover:bg-info-bg text-info border border-info/20 rounded-lg text-xs font-medium flex items-center justify-center gap-1.5 mt-2"
                             >
                                 {{ __('catalogs.native_share') }}
                             </button>
@@ -844,7 +844,7 @@
                         <button
                             type="button"
                             wire:click="openLinkAccess"
-                            class="w-full min-h-[44px] px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 rounded-lg text-xs font-medium flex items-center justify-center gap-1.5 mt-2 transition-colors"
+                            class="w-full min-h-[44px] px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 rounded-lg text-sm font-medium flex items-center justify-center gap-1.5 mt-2 transition-colors"
                          wire:loading.attr="disabled" wire:target="openLinkAccess">
                             {{ __('catalogs.edit_link_access') }}
                         </button>
@@ -853,7 +853,7 @@
                         <button
                             type="button"
                             wire:click="openNewLink"
-                            class="w-full min-h-[44px] px-3 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-lg text-xs font-medium flex items-center justify-center gap-1.5 mt-2 transition-colors"
+                            class="w-full min-h-[44px] px-3 py-2 bg-danger-bg hover:bg-danger-bg text-danger border border-danger/20 rounded-lg text-sm font-medium flex items-center justify-center gap-1.5 mt-2 transition-colors"
                          wire:loading.attr="disabled" wire:target="openNewLink">
                             {{ __('catalogs.issue_new_link') }}
                         </button>
@@ -865,7 +865,7 @@
                 @elseif($hasExistingShare)
                     <!-- Expired or Unavailable Link with Renewal Action -->
                     <div class="space-y-4">
-                        <div class="p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-900">
+                        <div class="p-3 bg-warning-bg border border-warning/20 rounded-lg text-xs text-warning">
                             {{ __('catalogs.link_expired_notice') }}
                         </div>
 
@@ -888,12 +888,12 @@
                 @else
                     <!-- Initial Link Creation Form -->
                     <div class="space-y-4">
-                        <div class="p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-900">
+                        <div class="p-3 bg-warning-bg border border-warning/20 rounded-lg text-xs text-warning">
                             {{ __('catalogs.security_settings') }}
                         </div>
 
                         <div>
-                            <label for="catalog-share-password" class="block text-xs font-semibold text-slate-700 mb-1">
+                            <label for="catalog-share-password" class="block text-sm font-semibold text-slate-700 mb-1">
                                 {{ __('catalogs.password_optional') }}
                             </label>
                             <input aria-invalid="{{ $errors->has('sharePassword') ? 'true' : 'false' }}" @if ($errors->has('sharePassword')) aria-describedby="catalog-share-password-error" @endif id="catalog-share-password"
@@ -906,7 +906,7 @@
                         </div>
 
                         <div>
-                            <label for="catalog-share-expires" class="block text-xs font-semibold text-slate-700 mb-1">
+                            <label for="catalog-share-expires" class="block text-sm font-semibold text-slate-700 mb-1">
                                 {{ __('catalogs.expiry_date') }}
                             </label>
                             <input aria-invalid="{{ $errors->has('shareExpires') ? 'true' : 'false' }}" @if ($errors->has('shareExpires')) aria-describedby="catalog-share-expires-error" @endif id="catalog-share-expires"
@@ -914,7 +914,7 @@
                                 wire:model="shareExpires"
                                 class="w-full min-h-[44px] px-3 py-2 text-sm rounded-lg border border-slate-300"
                             >
-                            <p class="text-[11px] text-slate-500 mt-1">
+                            <p class="text-xs text-slate-500 mt-1">
                                 {{ __('catalogs.expiry_company_tz_hint', ['timezone' => $companyTimezone]) }}
                             </p>
                         </div>
@@ -935,7 +935,7 @@
     <!-- Modal: Issue New Public Link (Terminal Retirement Action) -->
     @if($showNewLinkModal)
         <div x-data x-trap.inert.noscroll="true" @keydown.escape.window="$wire.closeNewLink()" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="catalog-new-link-title">
-            <div class="bg-white rounded-xl shadow-xl border border-slate-200 max-w-lg w-full p-6 text-slate-900">
+            <div class="bg-surface rounded-xl shadow-xl border border-slate-200 max-w-lg w-full p-6 text-slate-900">
                 <div class="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
                     <h3 id="catalog-new-link-title" class="text-base font-bold text-slate-900">{{ __('catalogs.new_link_title') }}</h3>
                     <button type="button" aria-label="{{ __('catalogs.close') }}" wire:click="closeNewLink" class="min-h-[44px] min-w-[44px] text-slate-400 hover:text-slate-600 p-1" wire:loading.attr="disabled" wire:target="closeNewLink">
@@ -943,19 +943,19 @@
                     </button>
                 </div>
 
-                @error('newLink')<p role="alert" class="mb-3 text-sm text-rose-700 font-medium">{{ $message }}</p>@enderror
+                @error('newLink')<p role="alert" class="mb-3 text-sm text-danger font-medium">{{ $message }}</p>@enderror
 
                 <!-- Explicit Terminal Retirement Warning -->
-                <div class="mb-4 p-4 rounded-lg bg-rose-50 border border-rose-200 text-rose-900 text-sm">
+                <div class="mb-4 p-4 rounded-lg bg-danger-bg border border-danger/20 text-danger text-sm">
                     <div class="flex items-start gap-3">
-                        <div class="p-1 rounded bg-rose-100 text-rose-700 shrink-0 mt-0.5">
+                        <div class="p-1 rounded bg-danger-bg text-danger shrink-0 mt-0.5">
                             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
                             </svg>
                         </div>
                         <div>
-                            <h4 class="font-bold text-rose-950">{{ __('catalogs.terminal_warning_title') }}</h4>
-                            <p class="mt-1 text-xs text-rose-800 leading-relaxed">{{ __('catalogs.new_link_terminal_warning') }}</p>
+                            <h4 class="font-bold text-danger">{{ __('catalogs.terminal_warning_title') }}</h4>
+                            <p class="mt-1 text-xs text-danger leading-relaxed">{{ __('catalogs.new_link_terminal_warning') }}</p>
                         </div>
                     </div>
                 </div>
@@ -963,7 +963,7 @@
                 <div class="space-y-4">
                     <!-- Password input -->
                     <div>
-                        <label for="new-link-password" class="block text-xs font-semibold text-slate-700 mb-1">
+                        <label for="new-link-password" class="block text-sm font-semibold text-slate-700 mb-1">
                             {{ __('catalogs.password_optional') }}
                         </label>
                         <input aria-invalid="{{ $errors->has('newLinkPassword') ? 'true' : 'false' }}" @if ($errors->has('newLinkPassword')) aria-describedby="new-link-password-error" @endif
@@ -975,12 +975,12 @@
                             placeholder="{{ __('catalogs.new_password_placeholder') }}"
                             class="w-full min-h-[44px] px-3 py-2 text-sm rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                         >
-                        @error('newLinkPassword') <p id="new-link-password-error" role="alert" class="text-xs text-rose-600 mt-1">{{ $message }}</p> @enderror
+                        @error('newLinkPassword') <p id="new-link-password-error" role="alert" class="text-xs text-danger mt-1">{{ $message }}</p> @enderror
                     </div>
 
                     <!-- Expiry input -->
                     <div>
-                        <label for="new-link-expires" class="block text-xs font-semibold text-slate-700 mb-1">
+                        <label for="new-link-expires" class="block text-sm font-semibold text-slate-700 mb-1">
                             {{ __('catalogs.expiry_date') }}
                         </label>
                         <input aria-invalid="{{ $errors->has('newLinkExpires') ? 'true' : 'false' }}" @if ($errors->has('newLinkExpires')) aria-describedby="new-link-expires-error" @endif
@@ -989,10 +989,10 @@
                             wire:model="newLinkExpires"
                             class="w-full min-h-[44px] px-3 py-2 text-sm rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                         >
-                        <p class="text-[11px] text-slate-500 mt-1">
+                        <p class="text-xs text-slate-500 mt-1">
                             {{ __('catalogs.expiry_company_tz_hint', ['timezone' => $companyTimezone]) }}
                         </p>
-                        @error('newLinkExpires') <p id="new-link-expires-error" role="alert" class="text-xs text-rose-600 mt-1">{{ $message }}</p> @enderror
+                        @error('newLinkExpires') <p id="new-link-expires-error" role="alert" class="text-xs text-danger mt-1">{{ $message }}</p> @enderror
                     </div>
 
                     <!-- Action Buttons -->
@@ -1023,7 +1023,7 @@
     <!-- Modal: QR Code Display -->
     @if($showQrModal && $qr)
         <div x-data x-trap.inert.noscroll="true" @keydown.escape.window="$wire.set('showQrModal', false)" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="catalog-qr-title">
-            <div class="bg-white rounded-xl shadow-xl border border-slate-200 max-w-sm w-full p-6 text-center">
+            <div class="bg-surface rounded-xl shadow-xl border border-slate-200 max-w-sm w-full p-6 text-center">
                 <div class="flex items-center justify-between pb-2 border-b border-slate-100 mb-4">
                     <h3 id="catalog-qr-title" class="text-base font-bold text-slate-900">{{ __('catalogs.qr_code') }}</h3>
                     <button type="button" aria-label="{{ __('catalogs.close') }}" wire:click="$set('showQrModal', false)" class="min-h-[44px] min-w-[44px] text-slate-400 hover:text-slate-600 p-1">
@@ -1051,7 +1051,7 @@
     <!-- Modal: Publication Preview -->
     @if($showPreviewModal && $previewPayload)
         <div x-data x-trap.inert.noscroll="true" @keydown.escape.window="$wire.set('showPreviewModal', false)" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm overflow-y-auto" role="dialog" aria-modal="true" aria-labelledby="catalog-preview-title">
-            <div class="bg-white rounded-xl shadow-xl border border-slate-200 max-w-3xl w-full p-6 my-8">
+            <div class="bg-surface rounded-xl shadow-xl border border-slate-200 max-w-3xl w-full p-6 my-8">
                 <div class="flex items-center justify-between pb-3 border-b border-slate-200 mb-4">
                     <div>
                         <h3 id="catalog-preview-title" class="text-lg font-bold text-slate-900">{{ __('catalogs.preview') }}</h3>
@@ -1074,7 +1074,7 @@
                             <p class="text-xs text-slate-600 mt-2">{{ $previewPayload['description_ar'] }}</p>
                         @endif
                         @if(!empty($previewPayload['currency_code']))
-                            <div class="mt-2 text-xs font-semibold text-blue-700">
+                            <div class="mt-2 text-xs font-semibold text-info">
                                 {{ __('catalogs.currency') }}: {{ $previewPayload['currency_code'] }} | {{ __('catalogs.tax_basis') }}: {{ $previewPayload['tax_basis'] ?? '' }}
                             </div>
                         @endif
@@ -1105,7 +1105,7 @@
                                                 <span class="text-slate-400 font-normal">({{ $pItem['name_en'] }})</span>
                                             @endif
                                             @if(!empty($pItem['sku']))
-                                                <div class="font-mono text-slate-400 text-[10px]">SKU: {{ $pItem['sku'] }}</div>
+                                                <div class="font-mono text-slate-400 text-xs">SKU: {{ $pItem['sku'] }}</div>
                                             @endif
                                         </td>
                                         <td class="py-2 px-3 text-slate-600">{{ $pItem['unit_ar'] }}</td>
@@ -1121,9 +1121,9 @@
                     </div>
                 </div>
 
-                @if($errors->has('general'))<p role="alert" class="mt-4 text-sm text-rose-700">{{ $errors->first('general') }}</p>@endif
+                @if($errors->has('general'))<p role="alert" class="mt-4 text-sm text-danger">{{ $errors->first('general') }}</p>@endif
                 @if(isset($previewPayload['currency_code']))
-                    <label class="mt-4 flex min-h-[44px] items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 p-3">
+                    <label class="mt-4 flex min-h-[44px] items-start gap-3 rounded-lg border border-warning/20 bg-warning-bg p-3">
                         <input type="checkbox" wire:model.live="priceAcknowledged" class="mt-0.5 h-5 w-5 rounded border-slate-300">
                         <span class="text-sm"><strong class="block">{{ __('catalogs.price_ack_title') }}</strong>{{ __('catalogs.price_ack_label') }}</span>
                     </label>

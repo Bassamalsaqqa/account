@@ -20,7 +20,7 @@ final class PurchaseStockProvenance
         $purchase = Purchase::withoutGlobalScopes()->where('company_id', $movement->company_id)->find($movement->source_id);
         $line = PurchaseLine::withoutGlobalScopes()->where('company_id', $movement->company_id)
             ->where('purchase_id', $movement->source_id)->find($movement->source_line_id);
-        if ($purchase === null || $line === null || ($requirePosted && $purchase->status !== Purchase::STATUS_POSTED)
+        if ($purchase === null || $line === null || ($requirePosted && ! in_array($purchase->status, [Purchase::STATUS_POSTED, Purchase::STATUS_VOID], true))
             || $movement->source_type !== 'purchase' || $movement->movement_type !== StockMovement::TYPE_PURCHASE
             || (int) $movement->warehouse_id !== (int) $purchase->warehouse_id
             || (int) $movement->product_id !== (int) $line->product_id || $movement->reversal_of_id !== null

@@ -14,11 +14,15 @@ use App\Livewire\Pages\Purchasing\Concerns\AuthorizesPurchasingPages;
 use App\Models\Expense;
 use App\Models\LandedCostAllocation;
 use App\Models\Purchase;
+use App\Services\Corrections\CorrectionPresentationAccess;
+use App\Services\Corrections\PurchaseCorrection;
 use App\Services\Purchasing\DuplicateVendorInvoice;
 use App\Services\Purchasing\PurchaseReadModel;
 use App\Support\Tenancy\CompanyContext;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Contracts\View\View;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Locked;
 use Livewire\Component;
@@ -41,12 +45,74 @@ class PurchaseDetail extends Component
 
     public ?string $landedError = null;
 
+    /** @var array<string, mixed>|null */
+    #[Locked]
+    public ?array $correctionPreview = null;
+
+    public string $correctionMode = 'delete';
+
+    public string $correctionReason = '';
+
+    public string $correctionDate = '';
+
+    public bool $correctionOpen = false;
+
+    public function openCorrection(string $mode): void
+    {
+        $this->authorizePurchasing('purchasing.purchase.void');
+        $this->authorizePurchasing('purchasing.cost.view');
+        abort_unless(in_array($mode, ['edit', 'delete'], true), 422);
+        $this->correctionMode = $mode;
+        $this->correctionDate = now($this->authorizePurchasing('purchasing.purchase.view')->timezone)->toDateString();
+        $this->correctionPreview = null;
+        $this->correctionOpen = true;
+        $this->resetValidation();
+    }
+
+    public function closeCorrection(): void
+    {
+        $this->correctionOpen = false;
+        $this->correctionPreview = null;
+    }
+
+    public function previewCorrection(): void
+    {
+        $company = $this->authorizePurchasing('purchasing.purchase.view');
+        $purchase = Purchase::where('company_id', $company->id)->where('public_id', $this->publicId)->firstOrFail();
+        $this->correctionPreview = app(PurchaseCorrection::class)->preview(
+            $purchase, auth()->user(), $this->correctionMode, $this->correctionReason, $this->correctionDate
+        );
+    }
+
+    public function executeCorrection(): void
+    {
+        $this->authorizePurchasing('purchasing.purchase.view');
+        $token = $this->correctionPreview['token'] ?? '';
+        try {
+            $result = app(PurchaseCorrection::class)->execute($token, auth()->user());
+            $this->closeCorrection();
+            $this->redirectRoute($result->isDraft() ? 'purchases.edit' : 'purchases.show', ['publicId' => $result->public_id], navigate: true);
+        } catch (ValidationException $e) {
+            $this->correctionPreview = null;
+            throw $e;
+        } catch (AuthorizationException $e) {
+            throw $e;
+        } catch (\Throwable $e) {
+            report($e);
+            $this->correctionPreview = null;
+            $this->addError('correction', __('corrections.failed'));
+        }
+    }
+
     public function mount(string $publicId, CompanyContext $context): void
     {
         $this->pageCompanyId = $context->companyId();
         $company = $this->authorizePurchasing('purchasing.purchase.view');
         Purchase::where('company_id', $company->id)->where('public_id', $publicId)->firstOrFail();
         $this->publicId = $publicId;
+        if (in_array(request()->query('correction'), ['edit', 'delete'], true)) {
+            $this->openCorrection(request()->query('correction'));
+        }
     }
 
     public function render(): View
@@ -54,6 +120,16 @@ class PurchaseDetail extends Component
         $company = $this->authorizePurchasing('purchasing.purchase.view');
         $purchase = Purchase::where('company_id', $company->id)->where('public_id', $this->publicId)->firstOrFail();
         $withCost = auth()->user()->hasPermissionTo('purchasing.cost.view');
+        if (! $withCost || (! empty($this->correctionPreview['payments']) && ! $this->canReadVendorFinancials())) {
+            $this->closeCorrection();
+        }
+        if ($this->correctionPreview !== null) {
+            try {
+                CorrectionPresentationAccess::authorize((int) $company->id, $this->correctionPreview['presentation_permissions'] ?? null);
+            } catch (AuthorizationException) {
+                $this->closeCorrection();
+            }
+        }
         $payablePosition = ($this->canReadVendorFinancials() && $purchase->isPosted()) ? $purchase->payablePosition() : null;
 
         $canReadLanded = $withCost && auth()->user()->hasPermissionTo('money.expense.view');
@@ -88,6 +164,7 @@ class PurchaseDetail extends Component
         }
 
         return view('livewire.pages.purchasing.purchase-detail', [
+            'correctionHistory' => DB::table('purchase_correction_receipts')->where('company_id', $company->id)->where(fn ($q) => $q->where('purchase_id', $purchase->id)->orWhere('replacement_id', $purchase->id))->first(),
             'document' => app(PurchaseReadModel::class)->detail($purchase, $withCost),
             'withCost' => $withCost,
             'purchase' => $purchase,

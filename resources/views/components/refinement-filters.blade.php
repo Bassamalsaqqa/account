@@ -3,7 +3,7 @@
 
 <section x-data="{ filtersOpen: @js($activeCount > 0) }"
          x-id="['filter-panel']"
-         {{ $attributes->class(['rounded-card border border-border bg-white p-3 md:p-4 space-y-3']) }}>
+         {{ $attributes->class(['rounded-card border border-border bg-surface p-3 md:p-4 space-y-3']) }}>
     <div class="grid grid-cols-[minmax(0,1fr)_auto] gap-2 lg:flex lg:items-center">
         @isset($search)
             <div class="order-1 min-w-0 flex-1">{{ $search }}</div>

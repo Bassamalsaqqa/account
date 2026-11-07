@@ -90,7 +90,7 @@
          init() { this.$nextTick(() => this.$el.focus()); },
          destroy() { document.getElementById(this.returnFocusId)?.focus(); }
      }"
-     class="bg-white rounded-card border-2 border-primary/30 shadow-md p-5 space-y-5 transition-all">
+     class="bg-surface rounded-card border-2 border-primary/30 shadow-md p-5 space-y-5 transition-colors">
 
     <!-- Header & Status (Static indicator badge avoiding pointless pulsing) -->
     <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-border">
@@ -115,11 +115,11 @@
     <!-- Customer & Warehouse Server Identity -->
     <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 bg-surface-soft/40 rounded-control border border-border text-xs">
         <div>
-            <span class="text-text-muted block text-[11px]">{{ __('commands.customer') }}</span>
+            <span class="text-text-muted block text-xs">{{ __('commands.customer') }}</span>
             <span class="font-bold text-text-primary">{{ $customerName ?: '—' }}</span>
         </div>
         <div>
-            <span class="text-text-muted block text-[11px]">{{ __('commands.warehouse') }}</span>
+            <span class="text-text-muted block text-xs">{{ __('commands.warehouse') }}</span>
             <span class="font-bold text-text-primary">{{ $warehouseName ?: '—' }}</span>
         </div>
     </div>
@@ -132,7 +132,7 @@
                 <span aria-hidden="true">🚫</span>
                 <span>{{ __('commands.blockers') }} ({{ count($blockers) }})</span>
             </div>
-            <ul class="list-disc list-inside ps-1 space-y-1 text-[11px] text-danger/90">
+            <ul class="list-disc list-inside ps-1 space-y-1 text-xs text-danger/90">
                 @foreach ($blockers as $blocker)
                     @php
                         $code = is_array($blocker) ? ($blocker['code'] ?? null) : (is_string($blocker) ? $blocker : null);
@@ -154,7 +154,7 @@
                 <span aria-hidden="true">⚠️</span>
                 <span>{{ __('commands.warnings') }} ({{ count($warnings) }})</span>
             </div>
-            <ul class="list-disc list-inside ps-1 space-y-1 text-[11px] text-text-secondary">
+            <ul class="list-disc list-inside ps-1 space-y-1 text-xs text-text-secondary">
                 @foreach ($warnings as $warning)
                     @php
                         $code = is_array($warning) ? ($warning['code'] ?? null) : (is_string($warning) ? $warning : null);
@@ -173,26 +173,26 @@
     @if ($grandTotal !== null)
         <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-3 p-3.5 bg-surface-soft/60 rounded-control border border-border text-xs">
             <div>
-                <span class="text-text-muted block text-[11px]">{{ __('commands.currency') }}</span>
+                <span class="text-text-muted block text-xs">{{ __('commands.currency') }}</span>
                 <span class="font-bold font-mono text-text-primary break-all" dir="ltr">{{ $currencyCode }}</span>
             </div>
             <div>
-                <span class="text-text-muted block text-[11px]">{{ __('commands.exchange_rate') }}</span>
+                <span class="text-text-muted block text-xs">{{ __('commands.exchange_rate') }}</span>
                 <span class="font-bold font-mono text-text-primary break-all" dir="ltr">{{ $exchangeRate }}</span>
             </div>
             <div>
-                <span class="text-text-muted block text-[11px]">{{ __('commands.subtotal') }}</span>
+                <span class="text-text-muted block text-xs">{{ __('commands.subtotal') }}</span>
                 <span class="font-bold font-mono text-text-primary break-all" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($subtotal, $currencyCode) }}</span>
             </div>
             <div>
-                <span class="text-text-muted block text-[11px]">{{ __('commands.discount_total') }} / {{ __('commands.tax_total') }}</span>
+                <span class="text-text-muted block text-xs">{{ __('commands.discount_total') }} / {{ __('commands.tax_total') }}</span>
                 <span class="font-bold font-mono text-text-primary break-all" dir="ltr">
                     <span class="text-danger">-{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($discountTotal, $currencyCode) }}</span> /
                     <span>+{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($taxTotal, $currencyCode) }}</span>
                 </span>
             </div>
             <div>
-                <span class="text-text-muted block text-[11px]">{{ __('commands.grand_total') }}</span>
+                <span class="text-text-muted block text-xs">{{ __('commands.grand_total') }}</span>
                 <span class="font-bold font-mono text-primary text-sm break-all" dir="ltr">
                     {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($grandTotal, $currencyCode) }} {{ $currencyCode }}
                 </span>
@@ -212,21 +212,21 @@
                     <div class="p-3 bg-surface-soft/60 rounded-control border border-border space-y-2 text-xs">
                         <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
                             <span class="font-bold text-text-primary">{{ $productStock['product_name'] }}</span>
-                            <div class="flex items-center gap-3 text-[11px] font-mono break-all" dir="ltr">
+                            <div class="flex items-center gap-3 text-xs font-mono break-all" dir="ltr">
                                 <span>{{ __('commands.quantity_needed') }}: <strong class="text-text-primary">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($productStock['quantity_needed_base']) }}</strong></span>
                                 <span>| {{ __('commands.quantity_available') }}: <strong class="text-text-primary">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($productStock['quantity_available_base']) }}</strong></span>
-                                <span class="px-2 py-0.5 rounded-full text-[10px] font-bold {{ $productStock['is_sufficient'] ? 'bg-success-bg text-success' : 'bg-danger-bg text-danger' }}">
+                                <span class="px-2 py-0.5 rounded-full text-xs font-bold {{ $productStock['is_sufficient'] ? 'bg-success-bg text-success' : 'bg-danger-bg text-danger' }}">
                                     {{ $productStock['is_sufficient'] ? __('commands.sufficient_stock') : __('commands.insufficient_stock') }}
                                 </span>
                             </div>
                         </div>
 
                         @if (!empty($productStock['fefo_allocations']))
-                            <div class="mt-1 pt-1.5 border-t border-border/50 text-[11px] space-y-1">
+                            <div class="mt-1 pt-1.5 border-t border-border/50 text-xs space-y-1">
                                 <span class="text-text-muted font-bold block">{{ __('commands.lot_number') }}:</span>
                                 <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
                                     @foreach ($productStock['fefo_allocations'] as $alloc)
-                                        <div class="p-1.5 bg-white rounded-control border border-border/60 text-[10px] font-mono break-all" dir="ltr">
+                                        <div class="p-1.5 bg-surface rounded-control border border-border/60 text-xs font-mono break-all" dir="ltr">
                                             <div>{{ __('commands.lot') }}: <strong class="text-text-primary">{{ $alloc['lot_number'] }}</strong></div>
                                             @if (!empty($alloc['expiry_date']))
                                                 <div class="text-text-muted">{{ __('commands.expiry') }}: {{ $alloc['expiry_date'] }}</div>
@@ -251,7 +251,7 @@
         <div class="overflow-x-auto rounded-control border border-border">
             <table class="w-full text-start text-xs border-collapse">
                 <thead>
-                    <tr class="bg-surface-soft text-text-muted font-bold text-[11px] border-b border-border">
+                    <tr class="bg-surface-soft text-text-muted font-bold text-xs border-b border-border">
                         <th class="py-2 px-3 text-start">#</th>
                         <th class="py-2 px-3 text-start">{{ __('commands.product') }}</th>
                         <th class="py-2 px-3 text-start">{{ __('commands.unit') }}</th>
@@ -280,7 +280,7 @@
                             <td class="py-2 px-3">
                                 <span class="font-bold text-text-primary">{{ $description ?: $productName }}</span>
                                 @if (!empty($line['product_sku']))
-                                    <span class="text-[10px] text-text-muted font-mono block">{{ __('commands.sku') }}: {{ $line['product_sku'] }}</span>
+                                    <span class="text-xs text-text-muted font-mono block">{{ __('commands.sku') }}: {{ $line['product_sku'] }}</span>
                                 @endif
                             </td>
                             <td class="py-2 px-3 text-text-muted">{{ $unitName ?: '—' }}</td>
@@ -316,7 +316,7 @@
             <button type="button"
                     wire:click="{{ $confirmAction }}"
                     wire:loading.attr="disabled"
-                    class="min-h-11 px-5 py-2 rounded-control bg-primary text-white text-xs font-bold hover:bg-primary-hover transition-colors shadow-sm cursor-pointer flex items-center gap-2">
+                    class="min-h-11 px-5 py-2 rounded-control bg-primary text-white text-sm font-bold hover:bg-primary-hover transition-colors shadow-sm cursor-pointer flex items-center gap-2">
                 <span wire:loading wire:target="{{ $confirmAction }}" class="inline-block w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" aria-hidden="true"></span>
                 <span>⚡ {{ __('commands.confirm_post') }}</span>
             </button>
@@ -325,7 +325,7 @@
                     disabled
                     aria-disabled="true"
                     title="{{ __('commands.cannot_confirm_blockers') }}"
-                    class="min-h-11 px-5 py-2 rounded-control bg-slate-200 text-slate-500 text-xs font-bold cursor-not-allowed">
+                    class="min-h-11 px-5 py-2 rounded-control bg-slate-200 text-slate-500 text-sm font-bold cursor-not-allowed">
                 ⚡ {{ __('commands.confirm_post') }}
             </button>
         @endif

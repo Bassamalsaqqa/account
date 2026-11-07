@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Livewire\Pages\Expenses;
 
 use App\Actions\Expenses\ReverseExpenseAction;
+use App\Livewire\Concerns\ReviewsStandaloneReversal;
 use App\Livewire\Pages\Money\Concerns\AuthorizesMoneyPages;
 use App\Models\Expense;
 use App\Services\Expenses\ExpenseReadService;
@@ -19,6 +20,7 @@ use Livewire\Component;
 class ExpenseDetail extends Component
 {
     use AuthorizesMoneyPages;
+    use ReviewsStandaloneReversal;
 
     #[Locked]
     public string $publicId;
@@ -40,7 +42,7 @@ class ExpenseDetail extends Component
         $this->reversalDate = Carbon::now($company->timezone)->toDateString();
     }
 
-    public function reverse(): void
+    private function executeReviewedreverse(): void
     {
         $this->authorizeMoney('money.expense.reverse');
 

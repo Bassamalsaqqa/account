@@ -15,7 +15,7 @@
     <x-form-attention />
     <header class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-            <a href="{{ $mode === 'create' ? route('purchases.show', $purchasePublicId) : route('purchase-returns.show', $returnPublicId) }}" class="min-h-11 inline-flex items-center justify-center gap-2 px-3 active:bg-surface-soft focus-visible:ring-2 focus-visible:ring-primary text-xs text-primary">
+            <a href="{{ $mode === 'create' ? route('purchases.show', $purchasePublicId) : route('purchase-returns.show', $returnPublicId) }}" class="min-h-11 inline-flex items-center justify-center gap-2 px-3 active:bg-surface-soft focus-visible:ring-2 focus-visible:ring-primary text-sm text-primary">
                 {{ __('purchasing.back') }}
             </a>
             <h1 class="text-2xl font-bold mt-1">
@@ -70,14 +70,14 @@
         <h2 class="text-base font-bold">{{ __('purchasing.return_details') }}</h2>
         <div class="grid sm:grid-cols-2 gap-4">
             <div>
-                <label for="return_date" class="block text-xs font-semibold text-text-secondary mb-1">
+                <label for="return_date" class="block text-sm font-semibold text-text-secondary mb-1">
                     {{ __('purchasing.return_date') }} *
                 </label>
                 <input type="date" id="return_date" wire:model="return_date" min="{{ $purchaseDate }}" class="w-full h-11 px-3 rounded-control border border-border text-sm"  :disabled="documentBusy || saving"/>
                 @error('return_date') <p class="text-danger text-xs mt-1">{{ $message }}</p> @enderror
             </div>
             <div>
-                <label for="reason" class="block text-xs font-semibold text-text-secondary mb-1">
+                <label for="reason" class="block text-sm font-semibold text-text-secondary mb-1">
                     {{ __('purchasing.return_reason') }}
                 </label>
                 <input type="text" id="reason" wire:model="reason" placeholder="{{ __('purchasing.return_reason') }}" class="w-full h-11 px-3 rounded-control border border-border text-sm"  :disabled="documentBusy || saving"/>
@@ -85,7 +85,7 @@
             </div>
         </div>
         <div>
-            <label for="notes" class="block text-xs font-semibold text-text-secondary mb-1">
+            <label for="notes" class="block text-sm font-semibold text-text-secondary mb-1">
                 {{ __('purchasing.notes') }}
             </label>
             <textarea id="notes" wire:model="notes" rows="2" class="w-full p-3 rounded-control border border-border text-sm" :disabled="documentBusy || saving"></textarea>
@@ -141,26 +141,26 @@
                             @foreach($line['allocations'] as $aIdx => $alloc)
                                 <div class="grid grid-cols-2 sm:grid-cols-5 gap-2 items-center text-xs bg-surface p-2 rounded-control border border-border" wire:key="alloc-{{ $idx }}-{{ $aIdx }}">
                                     <div>
-                                        <span class="text-text-secondary block text-[10px]">{{ __('purchasing.lot_number') }}</span>
+                                        <span class="text-text-secondary block text-xs">{{ __('purchasing.lot_number') }}</span>
                                         <bdi class="font-semibold">{{ $alloc['lot_number'] ?? '—' }}</bdi>
                                     </div>
                                     <div>
-                                        <span class="text-text-secondary block text-[10px]">{{ __('purchasing.expiry_date') }}</span>
+                                        <span class="text-text-secondary block text-xs">{{ __('purchasing.expiry_date') }}</span>
                                         <bdi>{{ $alloc['expiry_date'] ?? __('purchasing.unknown_expiry') }}</bdi>
                                     </div>
                                     <div>
-                                        <span class="text-text-secondary block text-[10px]">{{ __('purchasing.remaining_quantity') }}</span>
+                                        <span class="text-text-secondary block text-xs">{{ __('purchasing.remaining_quantity') }}</span>
                                         <bdi>{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatQuantity($alloc['remaining_quantity']) }}</bdi> {{ $line['unit_name'] }}
                                     </div>
                                     <div>
-                                        <span class="text-text-secondary block text-[10px]">{{ __('purchasing.available_quantity') }}</span>
+                                        <span class="text-text-secondary block text-xs">{{ __('purchasing.available_quantity') }}</span>
                                         <bdi>{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatQuantity($alloc['available_quantity']) }}</bdi> {{ $line['unit_name'] }}
                                     </div>
                                     <div>
-                                        <label for="alloc_qty_{{ $idx }}_{{ $aIdx }}" class="text-text-secondary block text-[10px]">{{ __('purchasing.return_quantity') }}</label>
-                                        <input type="text" id="alloc_qty_{{ $idx }}_{{ $aIdx }}" wire:model="lines.{{ $idx }}.allocations.{{ $aIdx }}.quantity" placeholder="0" class="w-full min-h-11 px-2 rounded-control border border-border text-xs text-end" dir="ltr" inputmode="decimal"  :disabled="documentBusy || saving"/>
+                                        <label for="alloc_qty_{{ $idx }}_{{ $aIdx }}" class="text-text-secondary block text-sm">{{ __('purchasing.return_quantity') }}</label>
+                                        <input type="text" id="alloc_qty_{{ $idx }}_{{ $aIdx }}" wire:model="lines.{{ $idx }}.allocations.{{ $aIdx }}.quantity" placeholder="0" class="w-full min-h-11 px-2 rounded-control border border-border text-sm text-end" dir="ltr" inputmode="decimal"  :disabled="documentBusy || saving"/>
                                         @error("lines.{$idx}.allocations.{$aIdx}.quantity")
-                                            <p class="text-danger text-[10px]">{{ $message }}</p>
+                                            <p class="text-danger text-xs">{{ $message }}</p>
                                         @enderror
                                     </div>
                                 </div>
@@ -173,7 +173,7 @@
     </section>
 
     <p wire:loading role="status" class="text-sm font-semibold text-primary">{{ __('refinement.working') }}</p>
-            <div class="sticky bottom-[calc(5rem+env(safe-area-inset-bottom))] z-20 flex flex-wrap justify-end gap-3 rounded-control border border-border bg-white p-3 shadow-sm md:static md:shadow-none">
+            <div class="sticky bottom-[calc(5rem+env(safe-area-inset-bottom))] z-20 flex flex-wrap justify-end gap-3 rounded-control border border-border bg-surface p-3 shadow-sm md:static md:shadow-none">
         <a href="{{ $mode === 'create' ? route('purchases.show', $purchasePublicId) : route('purchase-returns.show', $returnPublicId) }}" class="min-h-11 inline-flex items-center justify-center gap-2 px-3 active:bg-surface-soft focus-visible:ring-2 focus-visible:ring-primary h-11 px-4 rounded-control border border-border text-sm font-semibold hover:bg-surface-soft">
             {{ __('purchasing.cancel') }}
         </a>

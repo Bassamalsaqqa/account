@@ -5,7 +5,7 @@
             <p class="text-xs text-text-muted mt-0.5">{{ __('settings.breadcrumb_settings') }}</p>
         </div>
         @if (session()->has('success'))<p role="status" class="p-3 rounded-control bg-success-bg text-success text-sm">{{ session('success') }}</p>@endif
-        <form wire:submit="save" class="bg-white border border-border rounded-card p-4 sm:p-5 space-y-5">
+        <form wire:submit="save" class="bg-surface border border-border rounded-card p-4 sm:p-5 space-y-5">
             <div>
                 <label for="paymentTerms" class="block text-sm font-bold mb-2">{{ __('purchasing.default_payment_terms_days') }}</label>
                 <input id="paymentTerms" type="number" inputmode="decimal" min="0" max="3650" step="1" wire:model="default_payment_terms_days" dir="ltr" class="w-full h-11 px-3 border border-border rounded-control text-sm" />

@@ -22,7 +22,7 @@
         <button type="button" @click="mobileMenuOpen = true; $nextTick(() => $refs.navToggle?.focus())"><x-icon name="menu" aria-hidden="true" /><span>{{ __('app.open_navigation') }}</span></button>
     @endif
     @if($mobileCanScan)
-        <button type="button" class="mobile-scan-button" @click="{{ $mobileOnScanPage ? '$dispatch(\'mobile-camera-open\')' : 'scanChoices = true; $nextTick(() => $refs.scanClose.focus())' }}" aria-haspopup="dialog">
+        <button x-ref="scanTrigger" type="button" class="mobile-scan-button" @click="{{ $mobileOnScanPage ? '$dispatch(\'mobile-camera-open\')' : 'scanChoices = true; $nextTick(() => $refs.scanClose.focus())' }}" aria-haspopup="dialog">
             <x-icon name="barcode" aria-hidden="true" /><span>{{ __('mobile_shell.scan') }}</span>
         </button>
     @else
@@ -35,9 +35,9 @@
     @endif
     <button type="button" @click="mobileMenuOpen = !mobileMenuOpen; $nextTick(() => $refs.navToggle?.focus())" :aria-expanded="mobileMenuOpen.toString()" aria-controls="app-sidebar"><x-icon name="menu" aria-hidden="true" /><span>{{ __('mobile_shell.menu') }}</span></button>
 
-    <section x-cloak x-show="scanChoices" role="dialog" aria-modal="true" aria-labelledby="mobile-scan-destinations" x-trap.inert.noscroll="scanChoices" @keydown.escape.stop.prevent="scanChoices = false" class="mobile-scan-choices" @click.self="scanChoices = false">
-        <div class="mobile-scan-choice-sheet">
-            <div class="flex items-center justify-between gap-3"><h2 id="mobile-scan-destinations" class="text-lg font-bold">{{ __('mobile_shell.scan_choose') }}</h2><button x-ref="scanClose" type="button" @click="scanChoices = false" aria-label="{{ __('mobile_shell.close') }}" class="min-h-11 min-w-11"><x-icon name="close" /></button></div>
+    <section x-cloak x-show="scanChoices" role="dialog" aria-modal="true" aria-labelledby="mobile-scan-destinations" x-trap.inert.noscroll="scanChoices" @keydown.escape.stop.prevent="scanChoices = false; $refs.scanTrigger?.focus()" class="mobile-scan-choices" @click.self="scanChoices = false; $refs.scanTrigger?.focus()">
+        <div class="mobile-scan-choice-sheet" @click="if ($event.target.closest('a[href]')) scanChoices = false">
+            <div class="flex items-center justify-between gap-3"><h2 id="mobile-scan-destinations" class="text-lg font-bold">{{ __('mobile_shell.scan_choose') }}</h2><button x-ref="scanClose" type="button" @click="scanChoices = false; $refs.scanTrigger?.focus()" aria-label="{{ __('mobile_shell.close') }}" class="min-h-11 min-w-11"><x-icon name="close" /></button></div>
             <p class="text-sm text-text-secondary my-3">{{ __('mobile_shell.scan_help') }}</p>
             @can('sales.invoice.create')<a href="{{ route('invoices.create') }}">{{ __('mobile_shell.invoice') }}<x-icon name="receipt" /></a>@endcan
             @can('sales.quote.create')<a href="{{ route('quotations.create') }}">{{ __('mobile_shell.quotation') }}<x-icon name="quote" /></a>@endcan

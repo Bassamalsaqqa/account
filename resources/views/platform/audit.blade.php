@@ -16,7 +16,7 @@
     </div>
 
     <!-- Desktop Audit Log Table -->
-    <div class="hidden lg:block rounded-card border border-border bg-white shadow-panel overflow-hidden">
+    <div class="hidden lg:block rounded-card border border-border bg-surface shadow-panel overflow-hidden">
         <table class="data-table w-full text-start">
             <caption class="sr-only">{{ __('platform.audit') }}</caption>
             <thead class="bg-surface-soft/75 border-b border-border text-text-secondary">
@@ -80,12 +80,12 @@
                 $isImpersonation = str_starts_with($event->event_key, 'support.') || str_starts_with($event->event_key, 'impersonation.');
                 $badgeClass = $isDenied ? 'bg-danger-bg text-danger border border-danger/20' : ($isSuccess ? 'bg-success-bg text-success border border-success/20' : ($isImpersonation ? 'bg-surface-blue text-primary border border-primary-100' : 'bg-surface-soft text-text-secondary border border-border'));
             @endphp
-            <article class="rounded-card border border-border bg-white p-4 shadow-panel space-y-2.5">
+            <article class="rounded-card border border-border bg-surface p-4 shadow-panel space-y-2.5">
                 <div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2">
                     <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-mono font-bold {{ $badgeClass }}" dir="ltr">
                         {{ $event->event_key }}
                     </span>
-                    <time class="text-[11px] font-mono text-text-muted shrink-0" dir="ltr">{{ $event->created_at }} UTC</time>
+                    <time class="text-xs font-mono text-text-muted shrink-0" dir="ltr">{{ $event->created_at }} UTC</time>
                 </div>
                 @include('platform.support-audit')
                 <div class="text-xs text-text-secondary flex flex-wrap gap-x-4 gap-y-1 pt-2 border-t border-border/70">
@@ -100,7 +100,7 @@
                 </div>
             </article>
         @empty
-            <div class="rounded-card border border-border bg-white p-8 text-center text-sm text-text-muted shadow-panel">
+            <div class="rounded-card border border-border bg-surface p-8 text-center text-sm text-text-muted shadow-panel">
                 {{ __('platform.audit_empty') }}
             </div>
         @endforelse

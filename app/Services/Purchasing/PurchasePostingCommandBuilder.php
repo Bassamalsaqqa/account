@@ -10,6 +10,7 @@ use App\Domain\Posting\DTO\PostingCommand;
 use App\Domain\Posting\DTO\PostingLineCommand;
 use App\Models\Company;
 use App\Models\LedgerAccount;
+use App\Models\PostingBatch;
 use App\Models\Purchase;
 use App\Models\StockMovement;
 use App\Models\User;
@@ -156,7 +157,7 @@ final class PurchasePostingCommandBuilder
 
     public function validatePosted(Purchase $purchase): void
     {
-        if ($purchase->status !== Purchase::STATUS_POSTED || ! $purchase->purchase_number || $purchase->posted_at === null
+        if (! in_array($purchase->status, [Purchase::STATUS_POSTED, Purchase::STATUS_VOID], true) || ! $purchase->purchase_number || $purchase->posted_at === null
             || $purchase->posted_by === null) {
             throw new InvalidArgumentException(__('purchasing.post_integrity_failed'));
         }
@@ -172,7 +173,8 @@ final class PurchasePostingCommandBuilder
             return;
         }
         $batch = $purchase->postingBatch;
-        if ($batch === null || $batch->status !== 'posted'
+        $expectedBatchStatus = $purchase->isVoid() ? PostingBatch::STATUS_REVERSED : PostingBatch::STATUS_POSTED;
+        if ($batch === null || $batch->status !== $expectedBatchStatus
             || (int) $batch->company_id !== (int) $purchase->company_id || (int) $batch->posted_by !== (int) $purchase->posted_by
             || $batch->idempotency_key !== 'purchase_'.$purchase->id.'_posting' || ! $command->matchesBatch($batch)) {
             throw new InvalidArgumentException(__('purchasing.post_integrity_failed'));

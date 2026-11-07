@@ -7,7 +7,7 @@
 
 @section('content')
 <div class="max-w-xl mx-auto my-8">
-    <section class="rounded-card border border-border bg-white p-6 sm:p-8 shadow-panel" aria-labelledby="support-denied-title">
+    <section class="rounded-card border border-border bg-surface p-6 sm:p-8 shadow-panel" aria-labelledby="support-denied-title">
         <div class="w-12 h-12 rounded-card bg-warning-bg text-warning grid place-items-center mb-5 border border-warning/20">
             <x-icon name="shield" class="w-6 h-6" />
         </div>

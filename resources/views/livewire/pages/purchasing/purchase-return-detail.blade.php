@@ -1,6 +1,13 @@
 <div class="space-y-6">
+    @foreach($this->correctionHistory as $link)
+        <a href="{{ $link['url'] }}" class="touch-action text-sm underline">{{ $link['label'] }}</a>
+    @endforeach
+    @if($correctionOpen)
+        <x-correction-preview :correction-mode="$correctionMode" :correction-preview="$correctionPreview" />
+    @endif
+
     <!-- Header Card -->
-    <div class="bg-white rounded-card border border-border shadow-xs p-6 space-y-4">
+    <div class="bg-surface rounded-card border border-border shadow-xs p-6 space-y-4">
         <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div>
                 <div class="flex items-center gap-3">
@@ -31,21 +38,26 @@
 
             <!-- Action Buttons -->
             <div class="flex flex-wrap items-center gap-2">
+                <x-correction-shortcuts family="purchase_return" :public-id="$document['public_id']" :status="$document['status']" :detail="true" />
+                @if($canEdit)
+                    <x-row-action wire:click="deleteReturnDraft" wire:confirm="{{ __('sales.delete_draft_confirm') }}" wire:loading.attr="disabled" :label="__('corrections.delete')" icon="trash" tone="danger" />
+                @endif
+
                 @if($canPost)
                     <button type="button" wire:click="post" wire:confirm="{{ __('purchasing.post_return_confirmation') }}" wire:loading.attr="disabled" wire:target="post"
-                            class="px-3.5 py-1.5 rounded-control bg-primary text-white text-xs font-bold hover:bg-primary-hover transition-colors shadow-xs cursor-pointer">
+                            class="px-3.5 py-1.5 rounded-control bg-primary text-white text-sm font-bold hover:bg-primary-hover transition-colors shadow-xs cursor-pointer">
                         {{ __('purchasing.post_return') }}
                     </button>
                 @endif
                 @if($canEdit)
-                    <a href="{{ route('purchase-returns.edit', $document['public_id']) }}" class="touch-action px-3 py-1.5 rounded-control border border-border text-xs font-bold text-text-secondary hover:bg-surface-soft transition-colors">
+                    <a href="{{ route('purchase-returns.edit', $document['public_id']) }}" class="touch-action px-3 py-1.5 rounded-control border border-border text-sm font-bold text-text-secondary hover:bg-surface-soft transition-colors">
                         {{ __('purchasing.edit_purchase_return') }}
                     </a>
                 @endif
                 @if(auth()->user()?->can('purchasing.purchase.view'))
                     <x-document-actions route-name="pdf.purchase-return" :parameters="['publicId' => $document['public_id']]" :permissions="['purchasing.document.pdf']" />
                 @endif
-                <a href="{{ route('purchase-returns.index') }}" class="touch-action px-3 py-1.5 rounded-control bg-surface-soft text-text-secondary hover:text-text-primary text-xs font-bold transition-colors">
+                <a href="{{ route('purchase-returns.index') }}" class="touch-action px-3 py-1.5 rounded-control bg-surface-soft text-text-secondary hover:text-text-primary text-sm font-bold transition-colors">
                     {{ __('sales.back') }}
                 </a>
             </div>
@@ -54,11 +66,11 @@
         <!-- Metadata Summary -->
         <div class="grid grid-cols-2 md:grid-cols-4 gap-4 pt-4 border-t border-border text-xs">
             <div>
-                <span class="text-text-muted block text-[11px]">{{ __('purchasing.return_date') }}</span>
+                <span class="text-text-muted block text-xs">{{ __('purchasing.return_date') }}</span>
                 <span class="font-bold text-text-primary" dir="ltr">{{ $document['return_date'] }}</span>
             </div>
             <div>
-                <span class="text-text-muted block text-[11px]">{{ __('purchasing.purchase_number') }}</span>
+                <span class="text-text-muted block text-xs">{{ __('purchasing.purchase_number') }}</span>
                 <span class="font-bold text-text-primary" dir="ltr">
                     @if(!empty($document['purchase_public_id']))
                         <a href="{{ route('purchases.show', $document['purchase_public_id']) }}" class="touch-action text-primary hover:underline">
@@ -70,11 +82,11 @@
                 </span>
             </div>
             <div>
-                <span class="text-text-muted block text-[11px]">{{ __('purchasing.receiving_warehouse') }}</span>
+                <span class="text-text-muted block text-xs">{{ __('purchasing.receiving_warehouse') }}</span>
                 <span class="font-bold text-text-primary">{{ $document['warehouse_name'] ?? '—' }}</span>
             </div>
             <div>
-                <span class="text-text-muted block text-[11px]">{{ __('purchasing.currency') }}</span>
+                <span class="text-text-muted block text-xs">{{ __('purchasing.currency') }}</span>
                 <span class="font-bold text-text-primary">{{ $document['currency_code'] }}</span>
             </div>
         </div>

@@ -1,5 +1,5 @@
 <label for="inventory-lot" class="block font-bold text-text-secondary mb-1">{{ $lotLabel }} *</label>
-<select id="inventory-lot" wire:model="lot_id" aria-describedby="inventory-lot-hint @if ($errors->has('lot_id')) inventory-lot-error @endif" aria-invalid="{{ $errors->has('lot_id') ? 'true' : 'false' }}" class="w-full h-11 px-2.5 rounded-control border border-border bg-white text-sm text-text-primary focus-visible:outline-2 focus-visible:outline-primary">
+<select id="inventory-lot" wire:model="lot_id" aria-describedby="inventory-lot-hint @if ($errors->has('lot_id')) inventory-lot-error @endif" aria-invalid="{{ $errors->has('lot_id') ? 'true' : 'false' }}" class="w-full h-11 px-2.5 rounded-control border border-border bg-surface text-sm text-text-primary focus-visible:outline-2 focus-visible:outline-primary">
     <option value="">{{ __('inventory.select_lot') }}</option>
     @foreach ($availableLots as $lb)
         @php

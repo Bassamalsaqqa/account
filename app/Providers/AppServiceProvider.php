@@ -17,6 +17,8 @@ use App\Services\Money\MoneyEventScope;
 use App\Services\Phase7\Phase7EventScope;
 use App\Services\Purchasing\PurchasePostingScope;
 use App\Services\Purchasing\PurchaseReturnPostingScope;
+use App\Services\Purchasing\PurchaseReturnVoidScope;
+use App\Services\Purchasing\PurchaseVoidScope;
 use App\Services\Purchasing\VendorPaymentApplicationScope;
 use App\Services\Purchasing\VendorPaymentPostingScope;
 use App\Services\Purchasing\VendorPaymentReversalScope;
@@ -45,6 +47,8 @@ class AppServiceProvider extends ServiceProvider
         $this->app->singleton(AuditService::class, fn () => new AuditService);
         $this->app->scoped(PurchasePostingScope::class, fn () => new PurchasePostingScope);
         $this->app->scoped(PurchaseReturnPostingScope::class, fn () => new PurchaseReturnPostingScope);
+        $this->app->scoped(PurchaseVoidScope::class, fn () => new PurchaseVoidScope);
+        $this->app->scoped(PurchaseReturnVoidScope::class, fn () => new PurchaseReturnVoidScope);
         $this->app->scoped(VendorPaymentPostingScope::class, fn () => new VendorPaymentPostingScope);
         $this->app->scoped(VendorPaymentApplicationScope::class, fn () => new VendorPaymentApplicationScope);
         $this->app->scoped(VendorPaymentReversalScope::class, fn () => new VendorPaymentReversalScope);

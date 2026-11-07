@@ -8,6 +8,7 @@ use App\Actions\Purchasing\PostPurchaseReturnAction;
 use App\Domain\Inventory\Exceptions\InvalidInventoryMovementException;
 use App\Domain\Inventory\Exceptions\InvalidQuantityException;
 use App\Domain\Inventory\Exceptions\InvalidUnitConversionException;
+use App\Livewire\Concerns\CorrectsTradeDocument;
 use App\Livewire\Pages\Purchasing\Concerns\AuthorizesPurchasingPages;
 use App\Models\PurchaseReturn;
 use App\Services\Purchasing\PurchaseReturnReadModel;
@@ -24,6 +25,17 @@ use Livewire\Component;
 class PurchaseReturnDetail extends Component
 {
     use AuthorizesPurchasingPages;
+    use CorrectsTradeDocument;
+
+    protected function correctionPublicId(): string
+    {
+        return $this->publicId;
+    }
+
+    protected function correctionFamily(): string
+    {
+        return 'purchase_return';
+    }
 
     #[Locked]
     public string $publicId;
@@ -34,6 +46,9 @@ class PurchaseReturnDetail extends Component
         $company = $this->authorizePurchasing('purchasing.purchase.view');
         PurchaseReturn::where('company_id', $company->id)->where('public_id', $publicId)->firstOrFail();
         $this->publicId = $publicId;
+        if (in_array(request()->query('correction'), ['edit', 'delete'], true)) {
+            $this->openCorrection(request()->query('correction'));
+        }
     }
 
     public function boot(): void
@@ -51,6 +66,9 @@ class PurchaseReturnDetail extends Component
             ->firstOrFail();
 
         $withCost = auth()->user()->hasPermissionTo('purchasing.cost.view');
+        if (! $withCost) {
+            $this->closeCorrection();
+        }
         $canManage = auth()->user()->hasPermissionTo('purchasing.return.manage');
 
         return view('livewire.pages.purchasing.purchase-return-detail', [

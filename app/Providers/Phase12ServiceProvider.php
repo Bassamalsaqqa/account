@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Providers;
 
+use App\Livewire\AI\AiSettings;
 use App\Livewire\AI\AssistantLauncher;
 use App\Livewire\AI\DeepSeekSetup;
 use Illuminate\Support\ServiceProvider;
@@ -16,5 +17,7 @@ final class Phase12ServiceProvider extends ServiceProvider
         // Automatic "ai" -> "Ai" discovery does not match the AI directory on Linux.
         Livewire::component('ai.assistant-launcher', AssistantLauncher::class);
         Livewire::component('ai.deep-seek-setup', DeepSeekSetup::class);
+        Livewire::component('ai.ai-settings', AiSettings::class);
+        Livewire::component('ai.settings', AiSettings::class);
     }
 }

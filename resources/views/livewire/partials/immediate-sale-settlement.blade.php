@@ -5,7 +5,7 @@
         $isBasePayment = $paymentCurrency === $company->base_currency_code;
         $isSameCurrency = $paymentCurrency === $currency_code;
     @endphp
-    <fieldset class="space-y-4 border-t border-border pt-5" aria-describedby="settlement-help">
+    <fieldset class="app-settlement-panel space-y-4 border-t border-border pt-5" aria-describedby="settlement-help">
         <legend class="px-1 text-base font-bold text-text-primary">{{ __('fin1.title') }}</legend>
         <p id="settlement-help" class="text-sm text-text-secondary">{{ __('fin1.help') }}</p>
         <div class="grid gap-2 sm:grid-cols-3">

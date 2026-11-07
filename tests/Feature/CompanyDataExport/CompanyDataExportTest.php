@@ -32,10 +32,14 @@ use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use PHPUnit\Framework\Attributes\PreserveGlobalState;
+use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
 use Spatie\Permission\Models\Role;
 use Tests\Feature\Phase8\Phase8TestCase;
 use ZipArchive;
 
+#[RunTestsInSeparateProcesses]
+#[PreserveGlobalState(false)]
 class CompanyDataExportTest extends Phase8TestCase
 {
     protected function setUp(): void

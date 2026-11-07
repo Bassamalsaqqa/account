@@ -25,6 +25,6 @@
             @endif
             <span>{{ __('platform.'.$statusKey) }}</span>
         </span>
-        <time class="block text-[11px] font-mono text-text-muted" dir="ltr">{{ $checkedAt }} UTC</time>
+        <time class="block text-xs font-mono text-text-muted" dir="ltr">{{ $checkedAt }} UTC</time>
     </div>
 @endif

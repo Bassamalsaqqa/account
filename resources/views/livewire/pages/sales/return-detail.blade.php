@@ -1,6 +1,13 @@
 <div class="space-y-6">
+    @foreach($this->correctionHistory as $link)
+        <a href="{{ $link['url'] }}" class="touch-action text-sm underline">{{ $link['label'] }}</a>
+    @endforeach
+    @if($correctionOpen)
+        <x-correction-preview :correction-mode="$correctionMode" :correction-preview="$correctionPreview" />
+    @endif
+
     <!-- Header Card -->
-    <div class="bg-white rounded-card border border-border shadow-xs p-6 space-y-4">
+    <div class="bg-surface rounded-card border border-border shadow-xs p-6 space-y-4">
         <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div>
                 <div class="flex items-center gap-3">
@@ -30,20 +37,20 @@
 
             <!-- Action Buttons -->
             <div class="flex flex-wrap items-center gap-2">
+                <x-correction-shortcuts family="sales_return" :public-id="$return->public_id" :status="$return->status" :detail="true" />
+                @if($return->isDraft() && auth()->user()->can('sales.return.manage'))
+                    @can('sales.return.create')
+                        <x-row-action :href="route('returns.edit', $return->public_id)" :label="__('corrections.edit')" icon="edit" />
+                    @endcan
+                    <x-row-action wire:click="deleteReturnDraft" wire:confirm="{{ __('sales.delete_draft_confirm') }}" wire:loading.attr="disabled" :label="__('corrections.delete')" icon="trash" tone="danger" />
+                @endif
+
                 @if ($canPost)
                     <button type="button"
                             wire:click="postReturn"
                             wire:confirm="{{ __('sales.confirm_post_return') }}"
-                            class="px-3.5 py-1.5 rounded-control bg-primary text-white text-xs font-bold hover:bg-primary-hover transition-colors shadow-xs cursor-pointer" wire:loading.attr="disabled" wire:target="postReturn">
+                            class="px-3.5 py-1.5 rounded-control bg-primary text-white text-sm font-bold hover:bg-primary-hover transition-colors shadow-xs cursor-pointer" wire:loading.attr="disabled" wire:target="postReturn">
                         ⚡ {{ __('sales.post') }}
-                    </button>
-                @endif
-
-                @if ($canVoid)
-                    <button type="button"
-                            wire:click="$set('showVoidModal', true)"
-                            class="px-3 py-1.5 rounded-control bg-danger-bg text-danger border border-danger/30 text-xs font-bold hover:bg-danger hover:text-white transition-colors cursor-pointer">
-                        ✕ {{ __('sales.void') }}
                     </button>
                 @endif
 
@@ -52,7 +59,7 @@
 
 
                 <a href="{{ route('returns.index') }}"
-                   class="touch-action px-3 py-1.5 rounded-control bg-surface-soft text-text-secondary hover:text-text-primary text-xs font-bold transition-colors">
+                   class="touch-action px-3 py-1.5 rounded-control bg-surface-soft text-text-secondary hover:text-text-primary text-sm font-bold transition-colors">
                     {{ __('sales.back') }}
                 </a>
             </div>
@@ -62,33 +69,33 @@
 
         <div class="grid grid-cols-2 md:grid-cols-4 gap-4 pt-4 border-t border-border text-xs">
             <div>
-                <span class="text-text-muted block text-[11px]">{{ __('sales.date') }}</span>
+                <span class="text-text-muted block text-xs">{{ __('sales.date') }}</span>
                 <span class="font-bold text-text-primary" dir="ltr">{{ $return->issue_date ? $return->issue_date->toDateString() : '—' }}</span>
             </div>
             <div>
-                <span class="text-text-muted block text-[11px]">{{ __('sales.original_invoice') }}</span>
+                <span class="text-text-muted block text-xs">{{ __('sales.original_invoice') }}</span>
                 <span class="font-mono font-bold text-text-primary" dir="ltr">{{ $return->salesInvoice?->invoice_number ?? '—' }}</span>
             </div>
             <div>
-                <span class="text-text-muted block text-[11px]">{{ __('sales.currency') }}</span>
+                <span class="text-text-muted block text-xs">{{ __('sales.currency') }}</span>
                 <span class="font-bold text-text-primary">{{ $return->currency_code }}</span>
             </div>
             <div>
-                <span class="text-text-muted block text-[11px]">{{ __('sales.grand_total') }}</span>
+                <span class="text-text-muted block text-xs">{{ __('sales.grand_total') }}</span>
                 <span class="font-mono font-bold text-danger text-sm" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($return->grand_total, $return->currency_code) }} {{ $return->currency_code }}</span>
             </div>
         </div>
     </div>
 
     <!-- Lines Table -->
-    <div class="bg-white rounded-card border border-border shadow-xs overflow-hidden">
+    <div class="bg-surface rounded-card border border-border shadow-xs overflow-hidden">
         <div class="p-4 border-b border-border font-bold text-sm text-text-primary">
             {{ __('sales.return_details') }}
         </div>
         <div class="overflow-x-auto">
             <table class="data-table w-full text-start text-xs border-collapse">
                 <thead>
-                    <tr class="border-b border-border bg-surface-soft text-text-muted font-bold text-[11px] uppercase">
+                    <tr class="border-b border-border bg-surface-soft text-text-muted font-bold text-xs uppercase">
                         <th class="py-2.5 px-4 text-start">#</th>
                         <th class="py-2.5 px-4 text-start">{{ __('sales.product') }}</th>
                         <th class="py-2.5 px-4 text-start">{{ __('sales.returned_quantity') }}</th>
@@ -127,19 +134,19 @@
                 @if ($return->reason)
                     <div>
                         <span class="font-bold text-text-primary block">{{ __('sales.return_reason') }}:</span>
-                        <p class="text-text-secondary text-[11px]">{{ $return->reason }}</p>
+                        <p class="text-text-secondary text-xs">{{ $return->reason }}</p>
                     </div>
                 @endif
                 @if ($return->notes)
                     <div>
                         <span class="font-bold text-text-primary block">{{ __('sales.notes') }}:</span>
-                        <p class="text-text-secondary text-[11px]">{{ $return->notes }}</p>
+                        <p class="text-text-secondary text-xs">{{ $return->notes }}</p>
                     </div>
                 @endif
                 @if ($return->void_reason)
                     <div class="p-2.5 bg-danger-bg border border-danger/20 rounded-control text-danger">
                         <span class="font-bold block">{{ __('sales.void_reason') }}:</span>
-                        <p class="text-[11px] mt-0.5">{{ $return->void_reason }}</p>
+                        <p class="text-xs mt-0.5">{{ $return->void_reason }}</p>
                     </div>
                 @endif
             </div>
@@ -164,22 +171,22 @@
     <!-- Void Modal -->
     @if ($showVoidModal)
         <div class="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4">
-            <div class="bg-white rounded-card border border-border shadow-xl max-w-md w-full p-6 space-y-4">
+            <div class="bg-surface rounded-card border border-border shadow-xl max-w-md w-full p-6 space-y-4">
                 <h3 class="font-bold text-base text-danger">
                     {{ __('sales.confirm_void_invoice') }}
                 </h3>
                 <div class="space-y-3 text-xs">
                     <div>
                         <label class="block font-bold text-text-primary mb-1">{{ __('sales.void_reason') }} <span class="text-danger">*</span></label>
-                        <textarea wire:model="voidReason" rows="3" required class="w-full p-2.5 rounded-control border border-border text-xs"></textarea>
-                        @error('voidReason') <span class="text-danger text-[11px] block mt-1">{{ $message }}</span> @enderror
+                        <textarea wire:model="voidReason" rows="3" required class="w-full p-2.5 rounded-control border border-border text-sm"></textarea>
+                        @error('voidReason') <span class="text-danger text-xs block mt-1">{{ $message }}</span> @enderror
                     </div>
                 </div>
                 <div class="flex justify-end gap-2 pt-2 border-t border-border">
-                    <button type="button" wire:click="$set('showVoidModal', false)" class="px-3 py-1.5 rounded-control border border-border text-xs font-bold">
+                    <button type="button" wire:click="$set('showVoidModal', false)" class="px-3 py-1.5 rounded-control border border-border text-sm font-bold">
                         {{ __('sales.cancel') }}
                     </button>
-                    <button type="button" wire:click="voidReturn" class="px-4 py-1.5 rounded-control bg-danger text-white text-xs font-bold" wire:loading.attr="disabled" wire:target="voidReturn">
+                    <button type="button" wire:click="voidReturn" class="px-4 py-1.5 rounded-control bg-danger text-white text-sm font-bold" wire:loading.attr="disabled" wire:target="voidReturn">
                         {{ __('sales.void') }}
                     </button>
                 </div>

@@ -13,7 +13,7 @@
         @if ($canCreate)
             <div class="flex items-center gap-2">
                 <a href="{{ route('payments.create') }}"
-                   class="touch-action gap-1.5 bg-primary text-white text-xs font-bold hover:bg-primary-hover transition-colors shadow-sm">
+                   class="touch-action gap-1.5 bg-primary text-white text-sm font-bold hover:bg-primary-hover transition-colors shadow-sm">
                     <x-icon name="plus" class="w-4 h-4" />
                     <span>{{ __('sales.new_payment') }}</span>
                 </a>
@@ -27,16 +27,16 @@
             <input aria-label="{{ __('sales.search') }}" type="text"
                    wire:model.live.debounce.300ms="search"
                    placeholder="{{ __('sales.search') }}"
-                   class="min-h-11 w-full min-w-0 rounded-control border border-border bg-white px-3 py-2 text-sm focus:border-primary focus:ring-primary" />
+                   class="min-h-11 w-full min-w-0 rounded-control border border-border bg-surface px-3 py-2 text-sm focus:border-primary focus:ring-primary" />
         </x-slot:search>
 
-        <select aria-label="{{ __('sales.select_customer') }}" wire:model.live="customerFilter" class="min-h-11 h-11 px-3 rounded-control border border-border bg-canvas text-xs text-text-primary">
+        <select aria-label="{{ __('sales.select_customer') }}" wire:model.live="customerFilter" class="min-h-11 h-11 px-3 rounded-control border border-border bg-canvas text-sm text-text-primary">
                 <option value="">{{ __('sales.select_customer') }}</option>
                 @foreach ($customers as $c)
                     <option value="{{ $c->id }}">{{ $c->displayName() }}</option>
                 @endforeach
             </select>
-        <select aria-label="{{ __('sales.select_money_account') }}" wire:model.live="accountFilter" class="min-h-11 h-11 px-3 rounded-control border border-border bg-canvas text-xs text-text-primary">
+        <select aria-label="{{ __('sales.select_money_account') }}" wire:model.live="accountFilter" class="min-h-11 h-11 px-3 rounded-control border border-border bg-canvas text-sm text-text-primary">
                 <option value="">{{ __('sales.select_money_account') }}</option>
                 @foreach ($accounts as $acc)
                     <option value="{{ $acc->id }}">{{ $acc->displayName() }} ({{ $acc->currency_code }})</option>
@@ -45,11 +45,11 @@
     </x-refinement-filters>
 
     <!-- Payments Table -->
-    <div class="bg-white rounded-card border border-border shadow-xs overflow-hidden">
+    <div class="bg-surface rounded-card border border-border shadow-xs overflow-hidden">
         <div class="hidden lg:block overflow-x-auto">
             <table class="data-table w-full text-start text-xs border-collapse">
                 <thead>
-                    <tr class="border-b border-border bg-surface-soft text-text-muted font-bold text-[11px] uppercase tracking-wider">
+                    <tr class="border-b border-border bg-surface-soft text-text-muted font-bold text-xs uppercase tracking-wider">
                         <th class="py-3 px-4 text-start">{{ __('sales.payment_number') }}</th>
                         <th class="py-3 px-4 text-start">{{ __('sales.customer') }}</th>
                         <th class="py-3 px-4 text-start">{{ __('sales.money_account') }}</th>
@@ -77,7 +77,7 @@
                                 {{ $pmt->checkInstrument?->check_number ?? $pmt->moneyAccount?->displayName() ?? '—' }}
                             </td>
                             <td class="py-3 px-4">
-                                <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-surface-soft text-text-secondary">
+                                <span class="px-2 py-0.5 rounded-full text-xs font-bold bg-surface-soft text-text-secondary">
                                     {{ $pmt->payment_method === 'check' ? __('money.check') : __('sales.' . $pmt->payment_method) }}
                                 </span>
                             </td>
@@ -89,11 +89,11 @@
                             </td>
                             <td class="py-3 px-4">
                                 @if ($pmt->is_reversed)
-                                    <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-danger-bg text-danger">
+                                    <span class="px-2 py-0.5 rounded-full text-xs font-bold bg-danger-bg text-danger">
                                         {{ __('sales.voided') }}
                                     </span>
                                 @else
-                                    <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-success-bg text-success">
+                                    <span class="px-2 py-0.5 rounded-full text-xs font-bold bg-success-bg text-success">
                                         {{ __('sales.posted') }}
                                     </span>
                                 @endif
@@ -133,11 +133,11 @@
                             </div>
                         </div>
                         @if ($pmt->is_reversed)
-                            <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-danger-bg text-danger">
+                            <span class="px-2 py-0.5 rounded-full text-xs font-bold bg-danger-bg text-danger">
                                 {{ __('sales.voided') }}
                             </span>
                         @else
-                            <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-success-bg text-success">
+                            <span class="px-2 py-0.5 rounded-full text-xs font-bold bg-success-bg text-success">
                                 {{ __('sales.posted') }}
                             </span>
                         @endif
@@ -145,11 +145,11 @@
 
                     <div class="grid grid-cols-2 gap-2 text-xs">
                         <div>
-                            <span class="text-text-muted block text-[10px]">{{ __('sales.date') }}</span>
+                            <span class="text-text-muted block text-xs">{{ __('sales.date') }}</span>
                             <span dir="ltr">{{ $pmt->payment_date->toDateString() }}</span>
                         </div>
                         <div>
-                            <span class="text-text-muted block text-[10px]">{{ __('sales.payment_amount') }}</span>
+                            <span class="text-text-muted block text-xs">{{ __('sales.payment_amount') }}</span>
                             <span class="font-bold text-text-primary" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($pmt->amount, $pmt->currency_code) }} {{ $pmt->currency_code }}</span>
                         </div>
                     </div>

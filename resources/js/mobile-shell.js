@@ -80,11 +80,128 @@ export function sidebarNavigation(browser = window) {
         openGroups,
         isGroupOpen(key, isRouteActive) {
             if (!this.mobileLayout && this.sidebarCollapsed) return true;
-            return isRouteActive || this.openGroups[key] !== false;
+            return typeof this.openGroups[key] === 'boolean' ? this.openGroups[key] : true;
         },
         toggleGroup(key, isRouteActive) {
             this.openGroups[key] = !this.isGroupOpen(key, isRouteActive);
             write('accounting.sidebar.open', JSON.stringify(this.openGroups));
+        },
+    };
+}
+
+export function quickAddMenu(browser = window, page = document) {
+    let onNav;
+    return {
+        init() {
+            onNav = () => this.close(false);
+            page.addEventListener('livewire:navigating', onNav);
+            browser.addEventListener('popstate', onNav);
+            if (typeof this.$cleanup === 'function') {
+                this.$cleanup(() => this.destroy());
+            }
+        },
+        destroy() {
+            if (onNav) {
+                page.removeEventListener('livewire:navigating', onNav);
+                browser.removeEventListener('popstate', onNav);
+            }
+        },
+        isOpen() {
+            return this.$el ? this.$el.hasAttribute('open') : false;
+        },
+        close(returnFocus = true) {
+            if (this.isOpen()) {
+                this.$el.removeAttribute('open');
+                if (returnFocus) {
+                    this.$refs.trigger?.focus?.();
+                }
+            }
+        },
+        handleKeydown(event) {
+            if (event.key === 'Escape' && this.isOpen()) {
+                event.preventDefault();
+                event.stopPropagation();
+                this.close(true);
+            }
+        },
+    };
+}
+
+export function userMenu(browser = window, page = document) {
+    let onNav;
+    return {
+        openUserMenu: false,
+        init() {
+            onNav = () => this.close(false);
+            page.addEventListener('livewire:navigating', onNav);
+            browser.addEventListener('popstate', onNav);
+            if (typeof this.$cleanup === 'function') {
+                this.$cleanup(() => this.destroy());
+            }
+        },
+        destroy() {
+            if (onNav) {
+                page.removeEventListener('livewire:navigating', onNav);
+                browser.removeEventListener('popstate', onNav);
+            }
+        },
+        toggle() {
+            this.openUserMenu = !this.openUserMenu;
+        },
+        close(returnFocus = true) {
+            if (this.openUserMenu) {
+                this.openUserMenu = false;
+                if (returnFocus) {
+                    this.$refs.userMenuTrigger?.focus?.();
+                }
+            }
+        },
+        handleKeydown(event) {
+            if (event.key === 'Escape' && this.openUserMenu) {
+                event.preventDefault();
+                event.stopPropagation();
+                this.close(true);
+            }
+        },
+    };
+}
+
+export function dropdownMenu(browser = window, page = document) {
+    let onNav;
+    return {
+        open: false,
+        init() {
+            onNav = () => this.close(false);
+            page.addEventListener('livewire:navigating', onNav);
+            browser.addEventListener('popstate', onNav);
+            if (typeof this.$cleanup === 'function') {
+                this.$cleanup(() => this.destroy());
+            }
+        },
+        destroy() {
+            if (onNav) {
+                page.removeEventListener('livewire:navigating', onNav);
+                browser.removeEventListener('popstate', onNav);
+            }
+        },
+        toggle() {
+            this.open = !this.open;
+        },
+        close(returnFocus = true) {
+            if (this.open) {
+                this.open = false;
+                if (returnFocus) {
+                    const focusable = this.$refs.trigger?.querySelector?.('button, a, [tabindex]') || this.$refs.trigger;
+                    focusable?.focus?.();
+                }
+            }
+        },
+        handleKeydown(event) {
+            if (event.key === 'Escape' && this.open) {
+                event.preventDefault();
+                event.stopPropagation();
+                this.close(true);
+            }
         },
     };
 }
@@ -94,6 +211,9 @@ if (typeof window !== 'undefined') {
         window.Alpine.data('accountingMobileShell', mobileShell);
         window.Alpine.data('accountingSidebarNavigation', sidebarNavigation);
         window.Alpine.data('accountingSettingsNavigation', () => navigationScrollMemory('accounting.settings.scroll'));
+        window.Alpine.data('accountingQuickAdd', quickAddMenu);
+        window.Alpine.data('accountingUserMenu', userMenu);
+        window.Alpine.data('accountingDropdown', dropdownMenu);
     };
     if (window.Alpine) register();
     else document.addEventListener('alpine:init', register, { once: true });

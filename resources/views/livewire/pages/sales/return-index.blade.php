@@ -13,7 +13,7 @@
         @if ($canCreate)
             <div class="flex items-center gap-2">
                 <a href="{{ route('returns.create') }}"
-                   class="touch-action gap-1.5 bg-primary text-white text-xs font-bold hover:bg-primary-hover transition-colors shadow-sm">
+                   class="touch-action gap-1.5 bg-primary text-white text-sm font-bold hover:bg-primary-hover transition-colors shadow-sm">
                     <x-icon name="plus" class="w-4 h-4" />
                     <span>{{ __('sales.new_return') }}</span>
                 </a>
@@ -27,34 +27,35 @@
             <input aria-label="{{ __('sales.search') }}" type="text"
                    wire:model.live.debounce.300ms="search"
                    placeholder="{{ __('sales.search') }}"
-                   class="min-h-11 w-full min-w-0 rounded-control border border-border bg-white px-3 py-2 text-sm focus:border-primary focus:ring-primary" />
+                   class="min-h-11 w-full min-w-0 rounded-control border border-border bg-surface px-3 py-2 text-sm focus:border-primary focus:ring-primary" />
         </x-slot:search>
         <x-slot:statuses>
-        <button type="button" wire:click="$set('statusFilter', 'all')" wire:loading.attr="disabled" wire:target="statusFilter" aria-pressed="{{ $statusFilter === 'all' ? 'true' : 'false' }}" class="touch-action shrink-0 border text-sm font-semibold {{ $statusFilter === 'all' ? 'border-primary bg-primary text-white' : 'border-border bg-white text-text-secondary' }}">{{ __('sales.all') }}</button>
-        <button type="button" wire:click="$set('statusFilter', 'draft')" wire:loading.attr="disabled" wire:target="statusFilter" aria-pressed="{{ $statusFilter === 'draft' ? 'true' : 'false' }}" class="touch-action shrink-0 border text-sm font-semibold {{ $statusFilter === 'draft' ? 'border-primary bg-primary text-white' : 'border-border bg-white text-text-secondary' }}">{{ __('sales.draft') }}</button>
-        <button type="button" wire:click="$set('statusFilter', 'posted')" wire:loading.attr="disabled" wire:target="statusFilter" aria-pressed="{{ $statusFilter === 'posted' ? 'true' : 'false' }}" class="touch-action shrink-0 border text-sm font-semibold {{ $statusFilter === 'posted' ? 'border-primary bg-primary text-white' : 'border-border bg-white text-text-secondary' }}">{{ __('sales.posted') }}</button>
-        <button type="button" wire:click="$set('statusFilter', 'void')" wire:loading.attr="disabled" wire:target="statusFilter" aria-pressed="{{ $statusFilter === 'void' ? 'true' : 'false' }}" class="touch-action shrink-0 border text-sm font-semibold {{ $statusFilter === 'void' ? 'border-primary bg-primary text-white' : 'border-border bg-white text-text-secondary' }}">{{ __('sales.voided') }}</button>
+        <button type="button" wire:click="$set('statusFilter', 'all')" wire:loading.attr="disabled" wire:target="statusFilter" aria-pressed="{{ $statusFilter === 'all' ? 'true' : 'false' }}" class="touch-action shrink-0 border text-sm font-semibold {{ $statusFilter === 'all' ? 'border-primary bg-primary text-white' : 'border-border bg-surface text-text-secondary' }}">{{ __('sales.all') }}</button>
+        <button type="button" wire:click="$set('statusFilter', 'draft')" wire:loading.attr="disabled" wire:target="statusFilter" aria-pressed="{{ $statusFilter === 'draft' ? 'true' : 'false' }}" class="touch-action shrink-0 border text-sm font-semibold {{ $statusFilter === 'draft' ? 'border-primary bg-primary text-white' : 'border-border bg-surface text-text-secondary' }}">{{ __('sales.draft') }}</button>
+        <button type="button" wire:click="$set('statusFilter', 'posted')" wire:loading.attr="disabled" wire:target="statusFilter" aria-pressed="{{ $statusFilter === 'posted' ? 'true' : 'false' }}" class="touch-action shrink-0 border text-sm font-semibold {{ $statusFilter === 'posted' ? 'border-primary bg-primary text-white' : 'border-border bg-surface text-text-secondary' }}">{{ __('sales.posted') }}</button>
+        <button type="button" wire:click="$set('statusFilter', 'void')" wire:loading.attr="disabled" wire:target="statusFilter" aria-pressed="{{ $statusFilter === 'void' ? 'true' : 'false' }}" class="touch-action shrink-0 border text-sm font-semibold {{ $statusFilter === 'void' ? 'border-primary bg-primary text-white' : 'border-border bg-surface text-text-secondary' }}">{{ __('sales.voided') }}</button>
         </x-slot:statuses>
-        <select aria-label="{{ __('sales.all') }}" wire:model.live="statusFilter" class="min-h-11 h-11 px-3 rounded-control border border-border bg-canvas text-xs text-text-primary">
+        <select aria-label="{{ __('sales.all') }}" wire:model.live="statusFilter" class="min-h-11 h-11 px-3 rounded-control border border-border bg-canvas text-sm text-text-primary">
                 <option value="all">{{ __('sales.all') }}</option>
                 <option value="draft">{{ __('sales.draft') }}</option>
                 <option value="posted">{{ __('sales.posted') }}</option>
                 <option value="void">{{ __('sales.voided') }}</option>
             </select>
-        <select aria-label="{{ __('sales.select_customer') }}" wire:model.live="customerFilter" class="min-h-11 h-11 px-3 rounded-control border border-border bg-canvas text-xs text-text-primary">
+        <select aria-label="{{ __('sales.select_customer') }}" wire:model.live="customerFilter" class="min-h-11 h-11 px-3 rounded-control border border-border bg-canvas text-sm text-text-primary">
                 <option value="">{{ __('sales.select_customer') }}</option>
                 @foreach ($customers as $c)
                     <option value="{{ $c->id }}">{{ $c->displayName() }}</option>
-                @endforeach
+
+                    @endforeach
             </select>
     </x-refinement-filters>
 
     <!-- Returns Table -->
-    <div class="bg-white rounded-card border border-border shadow-xs overflow-hidden">
+    <div class="bg-surface rounded-card border border-border shadow-xs overflow-hidden">
         <div class="hidden lg:block overflow-x-auto">
             <table class="data-table w-full text-start text-xs border-collapse">
                 <thead>
-                    <tr class="border-b border-border bg-surface-soft text-text-muted font-bold text-[11px] uppercase tracking-wider">
+                    <tr class="border-b border-border bg-surface-soft text-text-muted font-bold text-xs uppercase tracking-wider">
                         <th class="py-3 px-4 text-start">{{ __('sales.return_number') }}</th>
                         <th class="py-3 px-4 text-start">{{ __('sales.customer') }}</th>
                         <th class="py-3 px-4 text-start">{{ __('sales.original_invoice') }}</th>
@@ -93,13 +94,14 @@
                                 {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($ret->grand_total_currency ?? $ret->grand_total, $ret->currency_code) }} {{ $ret->currency_code }}
                             </td>
                             <td class="py-3 px-4">
-                                <span class="px-2 py-0.5 rounded-full text-[10px] font-bold @if ($ret->status === 'posted') bg-success-bg text-success @elseif ($ret->status === 'void') bg-danger-bg text-danger @else bg-slate-100 text-slate-600 @endif">
+                                <span class="px-2 py-0.5 rounded-full text-xs font-bold @if ($ret->status === 'posted') bg-success-bg text-success @elseif ($ret->status === 'void') bg-danger-bg text-danger @else bg-slate-100 text-slate-600 @endif">
                                     {{ __('sales.' . $ret->status) }}
                                 </span>
                             </td>
                             <td class="table-actions py-3 px-4 text-end">
                                 <div class="row-action-group justify-end" role="group" aria-label="{{ __('sales.actions') }}">
                                     <x-row-action data-row-link :href="route('returns.show', $ret->public_id)" :label="__('sales.return_details')" icon="eye" />
+                                    <x-correction-shortcuts family="sales_return" :public-id="$ret->public_id" :status="$ret->status" />
                                 </div>
                             </td>
                         </tr>
@@ -128,22 +130,23 @@
                                 {{ $ret->customer->displayName() }}
                             </div>
                         </div>
-                        <span class="px-2 py-0.5 rounded-full text-[10px] font-bold @if ($ret->status === 'posted') bg-success-bg text-success @elseif ($ret->status === 'void') bg-danger-bg text-danger @else bg-slate-100 text-slate-600 @endif">
+                        <span class="px-2 py-0.5 rounded-full text-xs font-bold @if ($ret->status === 'posted') bg-success-bg text-success @elseif ($ret->status === 'void') bg-danger-bg text-danger @else bg-slate-100 text-slate-600 @endif">
                             {{ __('sales.' . $ret->status) }}
                         </span>
                     </div>
 
                     <div class="grid grid-cols-2 gap-2 text-xs">
                         <div>
-                            <span class="text-text-muted block text-[10px]">{{ __('sales.original_invoice') }}</span>
+                            <span class="text-text-muted block text-xs">{{ __('sales.original_invoice') }}</span>
                             <span class="font-mono" dir="ltr">{{ $ret->salesInvoice?->invoice_number ?? '—' }}</span>
                         </div>
                         <div>
-                            <span class="text-text-muted block text-[10px]">{{ __('sales.grand_total') }}</span>
+                            <span class="text-text-muted block text-xs">{{ __('sales.grand_total') }}</span>
                             <span class="font-bold text-text-primary" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($ret->grand_total_currency ?? $ret->grand_total, $ret->currency_code) }} {{ $ret->currency_code }}</span>
                         </div>
                     </div>
 
+                    <div class="row-action-group"><x-correction-shortcuts family="sales_return" :public-id="$ret->public_id" :status="$ret->status" /></div>
                     <div class="pt-2 border-t border-border flex justify-end">
                         <a href="{{ route('returns.show', $ret->public_id) }}"
                            class="touch-action bg-surface-soft text-text-primary text-xs font-bold">

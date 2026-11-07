@@ -5,16 +5,18 @@ declare(strict_types=1);
 namespace App\Livewire\Pages\Purchasing;
 
 use App\Actions\Purchasing\CreatePurchaseDraftAction;
-use App\Actions\Purchasing\PostPurchaseAction;
 use App\Actions\Purchasing\UpdatePurchaseDraftAction;
 use App\Application\AI\AiDraftProvenance;
 use App\Application\AI\PurchaseDraftCommands;
+use App\Application\Commands\ImmediatePurchaseCommands;
 use App\Domain\Inventory\Exceptions\InvalidQuantityException;
 use App\Domain\Inventory\Exceptions\InvalidUnitConversionException;
 use App\Domain\Money\Exceptions\InvalidMoneyException;
 use App\Domain\Purchasing\PurchaseCalculator;
 use App\Domain\Purchasing\Queries\VendorProductPriceHistoryQuery;
 use App\Domain\Sales\Calculators\SalesDocumentTotalsCalculator;
+use App\Domain\Sales\Formatters\SalesMoneyFormatter;
+use App\Exceptions\NoActiveCompanyException;
 use App\Livewire\Concerns\AdjustsDocumentQuantity;
 use App\Livewire\Concerns\AiUnsavedForm;
 use App\Livewire\Concerns\CameraBarcodeScan;
@@ -29,19 +31,26 @@ use App\Models\Purchase;
 use App\Models\TaxRate;
 use App\Models\Vendor;
 use App\Models\Warehouse;
+use App\Services\Money\EligibleMoneyAccounts;
 use App\Services\Purchasing\DuplicateVendorInvoice;
 use App\Services\Purchasing\PurchaseDocumentRules;
 use App\Services\Purchasing\PurchaseDraftBuilder;
+use App\Services\Purchasing\PurchaseFormConfirmation;
 use App\Services\Purchasing\PurchaseProductSelection;
 use App\Support\Tenancy\CompanyContext;
 use Brick\Math\BigDecimal;
 use Brick\Math\Exception\MathException;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Contracts\View\View;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Locked;
 use Livewire\Component;
+use Symfony\Component\HttpKernel\Exception\ConflictHttpException;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 
 #[Layout('layouts.app')]
 class PurchaseForm extends Component
@@ -93,6 +102,13 @@ class PurchaseForm extends Component
     #[Locked]
     public ?string $savedDraftPayloadHash = null;
 
+    #[Locked]
+    public string $confirmationRequestIdentity = '';
+
+    /** @var array{public_id: string, token: string, key: string, digest: string, paid: bool}|null */
+    #[Locked]
+    public ?array $completedConfirmation = null;
+
     public ?int $vendor_id = null;
 
     public ?int $warehouse_id = null;
@@ -132,11 +148,66 @@ class PurchaseForm extends Component
     /** @var array<string, string> */
     public array $totals = [];
 
+    /** @var array<string, mixed> */
+    public array $settlement = [
+        'mode' => 'unpaid',
+        'payment_method' => 'cash',
+        'money_account_id' => '',
+        'payment_date' => '',
+        'amount' => '',
+        'exchange_rate' => '1.0000000000',
+        'purchase_amount' => '',
+        'payment_currency_amount' => '',
+        'reference_number' => '',
+        'notes' => '',
+        'currency_code' => '',
+        'check_number' => '',
+        'bank_name' => '',
+        'drawer' => '',
+        'due_date' => '',
+    ];
+
+    #[Locked]
+    public ?int $defaultSettlementAccountId = null;
+
+    #[Locked]
+    public string $previousSettlementCurrency = '';
+
+    #[Locked]
+    public bool $settlementPreview = false;
+
+    #[Locked]
+    public bool $showPreview = false;
+
+    /** @var array<string, mixed>|null */
+    #[Locked]
+    public ?array $previewData = null;
+
+    #[Locked]
+    public ?string $confirmationToken = null;
+
+    #[Locked]
+    public ?string $executeKey = null;
+
+    #[Locked]
+    public ?string $previewDigest = null;
+
+    #[Locked]
+    public ?string $previewError = null;
+
+    /** @var array<int, bool> */
+    public array $expandedLotCustomization = [];
+
+    public ?string $previewGrandTotal = null;
+
     protected function authorizeForm(): Company
     {
         $company = $this->authorizePurchasing($this->publicId === null ? 'purchasing.purchase.create' : 'purchasing.purchase.edit_draft');
         $this->authorizePurchasing('purchasing.cost.view');
-        if ($this->publicId !== null) {
+        if ($this->publicId !== null && ($this->completedConfirmation['public_id'] ?? null) !== $this->publicId
+            && ($this->confirmationRequestIdentity === '' || ! app(PurchaseFormConfirmation::class)->completed(
+                (int) $company->id, auth()->user(), $this->publicId, $this->confirmationRequestIdentity
+            ))) {
             Purchase::where('company_id', $company->id)->where('public_id', $this->publicId)->firstOrFail()->assertMutableDraft();
         }
 
@@ -147,6 +218,7 @@ class PurchaseForm extends Component
     {
         $this->pageCompanyId = $context->companyId();
         $this->publicId = $publicId;
+        $this->confirmationRequestIdentity = app(PurchaseFormConfirmation::class)->identity($this->pageCompanyId, auth()->user(), $publicId);
         $receiveProduct ??= request()->query('receiveProduct');
         abort_unless($receiveProduct === null || is_string($receiveProduct), 422);
         $company = $this->authorizeForm();
@@ -158,6 +230,12 @@ class PurchaseForm extends Component
                 $this->{$key} = $value;
             }
             $this->currencyManuallySelected = true;
+            foreach ($this->lines as $index => $line) {
+                $lots = $line['lots'] ?? [];
+                if (count($lots) > 1 || (! empty($lots[0]['lot_number'])) || (! empty($lots[0]['expiry_date'])) || (isset($lots[0]['quantity']) && (string) $lots[0]['quantity'] !== (string) $line['quantity'])) {
+                    $this->expandedLotCustomization[$index] = true;
+                }
+            }
         } else {
             $this->purchase_date = now($company->timezone)->format('Y-m-d');
             $this->due_date = app(PurchaseDocumentRules::class)->defaultDueDate($company, $this->purchase_date);
@@ -181,6 +259,10 @@ class PurchaseForm extends Component
             $this->mountAiInput('purchase');
         }
         $this->previousCurrencyCode = $this->currency_code;
+        $this->settlement['payment_date'] = now($company->timezone)->format('Y-m-d');
+        $this->settlement['due_date'] = now($company->timezone)->format('Y-m-d');
+        $this->settlement['currency_code'] = $this->currency_code ?: $company->base_currency_code;
+        $this->syncSettlementDefaults('settlement.mode');
         $this->recalculate();
     }
 
@@ -232,6 +314,17 @@ class PurchaseForm extends Component
         $this->recalculate();
     }
 
+    public function updated(?string $property = null): void
+    {
+        if ($this->showPreview && ! in_array($property, ['showPreview', 'confirmationToken', 'executeKey', 'previewDigest', 'previewData', 'previewError', 'productSearch'], true)) {
+            $this->cancelPreview();
+        }
+
+        if ($property !== null && str_starts_with($property, 'settlement.')) {
+            $this->syncSettlementDefaults($property);
+        }
+    }
+
     public function updatedExchangeRate(): void
     {
         $this->recalculate();
@@ -239,35 +332,70 @@ class PurchaseForm extends Component
 
     public function updatedLines(): void
     {
+        foreach ($this->lines as $index => &$line) {
+            if (! empty($line['product_id']) && ! ($this->expandedLotCustomization[$index] ?? false)) {
+                if (count($line['lots'] ?? []) === 1 && empty($line['lots'][0]['lot_number']) && empty($line['lots'][0]['expiry_date'])) {
+                    $line['lots'][0]['quantity'] = (string) $line['quantity'];
+                }
+            }
+        }
+        unset($line);
         $this->recalculate();
     }
 
     public function saveAndConfirm(): mixed
     {
         $company = $this->authorizeForm();
+        if ($this->showQuickVendorModal || $this->showQuickProductModal) {
+            return null;
+        }
+        try {
+            $confirmation = app(PurchaseFormConfirmation::class)->execute(
+                (int) $company->id, auth()->user(), $this->publicId, $this->confirmationRequestIdentity,
+                $this->settlementDigest(), function (): ?array {
+                    $this->saveAndConfirmOnce();
+
+                    return $this->completedConfirmation;
+                }
+            );
+        } catch (HttpException $exception) {
+            if ($exception->getStatusCode() !== 409) {
+                throw $exception;
+            }
+            $this->previewError = __('commands.form_changed_repreview_required');
+
+            return null;
+        }
+        if ($confirmation === null) {
+            return null;
+        }
+        $this->completedConfirmation = $confirmation;
+
+        return redirect()->route('purchases.show', $confirmation['public_id']);
+    }
+
+    private function saveAndConfirmOnce(): mixed
+    {
+        $company = $this->authorizeForm();
         $this->authorizePurchasing('purchasing.purchase.post');
         if ($this->showQuickVendorModal || $this->showQuickProductModal) {
             return null;
         }
+        if ($this->completedConfirmation !== null) {
+            return $this->confirmPost();
+        }
         $this->resetErrorBag('draft');
-        $response = $this->saveDraft();
-        if ($this->getErrorBag()->isNotEmpty() || $this->savedDraftPublicId === null) {
-            return $response;
+        $this->cancelPreview();
+        $this->resetValidation();
+        $response = $this->save(true);
+        if ($this->getErrorBag()->isNotEmpty() || $this->previewError !== null) {
+            return null;
+        }
+        if ($this->showPreview && ($this->previewData['can_execute'] ?? false) === true) {
+            return $this->confirmPost();
         }
 
-        $purchase = Purchase::where('company_id', $company->id)->where('public_id', $this->savedDraftPublicId)->firstOrFail();
-        try {
-            app(PostPurchaseAction::class)->execute($purchase, auth()->user());
-        } catch (\InvalidArgumentException|InvalidQuantityException|InvalidUnitConversionException $exception) {
-            report($exception);
-            session()->flash('error', $exception->getMessage() === __('purchasing.positive_post_total_required')
-                ? __('purchasing.positive_post_total_required') : __('purchasing.post_integrity_failed'));
-
-            return redirect()->route('purchases.show', $purchase->public_id);
-        }
-        session()->flash('success', __('purchasing.purchase_posted'));
-
-        return redirect()->route('purchases.show', $purchase->public_id);
+        return $response;
     }
 
     public function saveDraft(): mixed
@@ -287,7 +415,7 @@ class PurchaseForm extends Component
             return redirect()->route('purchases.show', $this->savedDraftPublicId);
         }
 
-        return $this->save();
+        return $this->save(false);
     }
 
     public function scanBarcode(): void
@@ -303,6 +431,10 @@ class PurchaseForm extends Component
             $this->addError('barcodeSearch', __('workflow.barcode_too_long'));
 
             return;
+        }
+
+        if ($this->showPreview) {
+            $this->cancelPreview();
         }
 
         $term = $raw;
@@ -449,6 +581,9 @@ class PurchaseForm extends Component
 
     public function addLine(): void
     {
+        if ($this->showPreview) {
+            $this->cancelPreview();
+        }
         $this->authorizeForm();
         $this->lines[] = ['product_id' => null, 'product_unit_id' => null, 'item_description' => '',
             'quantity' => '1', 'unit_cost' => '0', 'discount_type' => 'none', 'discount_value' => '0', 'tax_rate_id' => null, 'lots' => []];
@@ -456,16 +591,33 @@ class PurchaseForm extends Component
 
     public function removeLine(int $index): void
     {
+        if ($this->showPreview) {
+            $this->cancelPreview();
+        }
         $this->authorizeForm();
         unset($this->lines[$index]);
         $this->lines = array_values($this->lines);
+
+        $newExpanded = [];
+        foreach ($this->lines as $newIdx => $line) {
+            $oldIdx = $newIdx >= $index ? $newIdx + 1 : $newIdx;
+            if (isset($this->expandedLotCustomization[$oldIdx])) {
+                $newExpanded[$newIdx] = $this->expandedLotCustomization[$oldIdx];
+            }
+        }
+        $this->expandedLotCustomization = $newExpanded;
+
         $this->recalculate();
     }
 
     public function selectProduct(int $index, mixed $productId): bool
     {
+        if ($this->showPreview) {
+            $this->cancelPreview();
+        }
         $this->authorizeForm();
         abort_unless(isset($this->lines[$index]), 422);
+        unset($this->expandedLotCustomization[$index]);
         if ($productId === '') {
             $this->lines[$index] = ['product_id' => null, 'product_unit_id' => null, 'item_description' => '',
                 'quantity' => '1', 'unit_cost' => '0', 'discount_type' => 'none', 'discount_value' => '0', 'tax_rate_id' => null, 'lots' => []];
@@ -489,8 +641,12 @@ class PurchaseForm extends Component
 
     public function changeUnit(int $index, mixed $unitId): void
     {
+        if ($this->showPreview) {
+            $this->cancelPreview();
+        }
         $this->authorizeForm();
         abort_unless(isset($this->lines[$index]['product_id']), 422);
+        unset($this->expandedLotCustomization[$index]);
         if ($unitId === '') {
             $this->lines[$index]['product_unit_id'] = null;
             $this->lines[$index]['lots'] = [];
@@ -508,13 +664,44 @@ class PurchaseForm extends Component
         $this->recalculate();
     }
 
+    public function customizeLots(int $index): void
+    {
+        $company = $this->authorizeForm();
+        $line = $this->lines[$index] ?? [];
+        $product = Product::where('company_id', $company->id)->findOrFail($line['product_id'] ?? null);
+        abort_unless($product->track_expiry, 422);
+
+        $this->expandedLotCustomization[$index] = true;
+        if (empty($this->lines[$index]['lots'])) {
+            $this->lines[$index]['lots'][] = [
+                'product_unit_id' => $line['product_unit_id'],
+                'lot_number' => '',
+                'expiry_date' => null,
+                'quantity' => SalesMoneyFormatter::formatQuantity($line['quantity'] ?: '1'),
+            ];
+        }
+    }
+
+    public function resetToAutoLot(int $index): void
+    {
+        $this->authorizeForm();
+        $this->expandedLotCustomization[$index] = false;
+        $this->lines[$index]['lots'] = [];
+    }
+
     public function addLot(int $index): void
     {
         $company = $this->authorizeForm();
         $line = $this->lines[$index] ?? [];
         $product = Product::where('company_id', $company->id)->findOrFail($line['product_id'] ?? null);
         abort_unless($product->track_expiry, 422);
-        $this->lines[$index]['lots'][] = ['product_unit_id' => $line['product_unit_id'], 'lot_number' => '', 'expiry_date' => null, 'quantity' => '1'];
+        $this->expandedLotCustomization[$index] = true;
+        $this->lines[$index]['lots'][] = [
+            'product_unit_id' => $line['product_unit_id'],
+            'lot_number' => '',
+            'expiry_date' => null,
+            'quantity' => SalesMoneyFormatter::formatQuantity($line['quantity'] ?: '1'),
+        ];
     }
 
     public function removeLot(int $index, int $lot): void
@@ -530,6 +717,9 @@ class PurchaseForm extends Component
     public function recalculate(): void
     {
         $this->documentTotalsValid = false;
+        if ($this->showPreview) {
+            $this->cancelPreview();
+        }
         $this->authorizeForm();
         $this->resetErrorBag('calculation');
         $this->resetErrorBag('exchange_rate');
@@ -543,10 +733,19 @@ class PurchaseForm extends Component
                 $results[] = $result;
             }
             $total = app(SalesDocumentTotalsCalculator::class)->calculate($results);
+            $oldGrandTotal = $this->previewGrandTotal;
             $this->totals = ['subtotal' => (string) $total->subtotalCurrency, 'discount' => (string) $total->discountTotalCurrency,
                 'tax' => (string) $total->taxTotalCurrency, 'total' => (string) $total->grandTotalCurrency];
+            $this->previewGrandTotal = SalesMoneyFormatter::formatMoneyInput($total->grandTotalCurrency);
             $this->resetErrorBag('currency');
             $this->documentTotalsValid = true;
+
+            if (($this->settlement['mode'] ?? 'unpaid') === 'full') {
+                $paymentCurrency = $this->settlementPaymentCurrency();
+                if ($paymentCurrency === $this->currency_code && ($this->settlement['amount'] === '' || $this->settlement['amount'] === $oldGrandTotal)) {
+                    $this->settlement['amount'] = $this->previewGrandTotal;
+                }
+            }
         } catch (\InvalidArgumentException|MathException|ModelNotFoundException|InvalidMoneyException|InvalidQuantityException|InvalidUnitConversionException $exception) {
             $this->totals = [];
             foreach ($this->lines as &$line) {
@@ -559,31 +758,414 @@ class PurchaseForm extends Component
         }
     }
 
-    public function save(): mixed
+    public function save(bool $andPost = false): mixed
     {
         $company = $this->authorizeForm();
+        if ($andPost) {
+            $this->authorizePurchasing('purchasing.purchase.post');
+        }
+
+        foreach ($this->lines as $idx => $line) {
+            if (! is_string($line['quantity'])) {
+                $this->addError("lines.{$idx}.quantity", __('commands.exact_string_required'));
+
+                return null;
+            }
+            if (! is_string($line['unit_cost'])) {
+                $this->addError("lines.{$idx}.unit_cost", __('commands.exact_string_required'));
+
+                return null;
+            }
+            if (! is_string($line['discount_value'] ?? '0')) {
+                $this->addError("lines.{$idx}.discount_value", __('commands.exact_string_required'));
+
+                return null;
+            }
+        }
+
         $data = $this->draftData();
         try {
             $purchase = $this->publicId === null
-                ? ($this->aiFormToken !== null && $this->aiFormKey !== null
-                    ? DB::transaction(function () use ($company): Purchase {
-                        app(AiDraftProvenance::class)->source($company, auth()->user(), $this->aiFormToken, session()->getId(), $this->aiFormKey, 'purchase', $this->aiFormRevision);
+                ? ($this->savedDraftPublicId !== null
+                    ? app(UpdatePurchaseDraftAction::class)->execute(Purchase::where('company_id', $company->id)->where('public_id', $this->savedDraftPublicId)->firstOrFail(), auth()->user(), $data)
+                    : ($this->aiFormToken !== null && $this->aiFormKey !== null
+                        ? DB::transaction(function () use ($company): Purchase {
+                            app(AiDraftProvenance::class)->source($company, auth()->user(), $this->aiFormToken, session()->getId(), $this->aiFormKey, 'purchase', $this->aiFormRevision);
 
-                        return app(PurchaseDraftCommands::class)->create($company, auth()->user(), $this->aiEditablePayload(), $this->aiFormKey, $this->aiDraftSourceId);
-                    })
-                    : app(CreatePurchaseDraftAction::class)->execute($company, auth()->user(), $data))
+                            return app(PurchaseDraftCommands::class)->create($company, auth()->user(), $this->aiEditablePayload(), $this->aiFormKey, $this->aiDraftSourceId);
+                        })
+                        : app(CreatePurchaseDraftAction::class)->execute($company, auth()->user(), $data)))
                 : app(UpdatePurchaseDraftAction::class)->execute(Purchase::where('company_id', $company->id)->where('public_id', $this->publicId)->firstOrFail(), auth()->user(), $data);
-        } catch (\InvalidArgumentException|MathException|InvalidMoneyException|InvalidQuantityException|InvalidUnitConversionException $exception) {
-            $this->addError('draft', __('purchasing.invalid_draft'));
+        } catch (\InvalidArgumentException|MathException|InvalidMoneyException|InvalidQuantityException|InvalidUnitConversionException|ValidationException $exception) {
+            if ($exception instanceof ValidationException) {
+                foreach ($exception->errors() as $key => $messages) {
+                    foreach ($messages as $msg) {
+                        $this->addError($key, $msg);
+                    }
+                }
+            } else {
+                $this->addError('draft', __('purchasing.invalid_draft'));
+            }
 
             return null;
         }
+
         $this->savedDraftPublicId = $purchase->public_id;
         $this->savedDraftPayloadHash = hash('sha256', json_encode($data, JSON_THROW_ON_ERROR));
-        $this->discardAiInput();
-        session()->flash('success', __('purchasing.draft_saved'));
 
-        return redirect()->route('purchases.show', $purchase->public_id);
+        if (! $andPost) {
+            $this->discardAiInput();
+            session()->flash('success', __('purchasing.draft_saved'));
+
+            return redirect()->route('purchases.show', $purchase->public_id);
+        }
+
+        $this->previewError = null;
+        $this->recalculate();
+        $choice = $this->settlementChoice();
+
+        try {
+            $user = auth()->user();
+            $this->settlementPreview = $choice['mode'] !== 'unpaid';
+            $preview = app(ImmediatePurchaseCommands::class)->preview($purchase, $user, $choice);
+            $this->previewData = $preview;
+            $this->confirmationToken = $preview['confirmation_token'] ?? null;
+            $this->executeKey = (string) Str::uuid();
+            $this->previewDigest = $this->settlementDigest();
+            $this->showPreview = true;
+        } catch (\Throwable $e) {
+            if ($e instanceof AuthorizationException || $e instanceof NoActiveCompanyException || ($e instanceof HttpException && $e->getStatusCode() === 403)) {
+                throw $e;
+            }
+            $this->showPreview = false;
+            $this->previewError = $this->resolveUserErrorMessage($e);
+        }
+
+        return null;
+    }
+
+    public function confirmPost(): mixed
+    {
+        $company = $this->authorizeForm();
+        $this->authorizePurchasing('purchasing.purchase.post');
+        $user = auth()->user();
+
+        $confirmation = $this->completedConfirmation ?? [
+            'public_id' => $this->savedDraftPublicId,
+            'token' => $this->confirmationToken,
+            'key' => $this->executeKey,
+            'digest' => $this->previewDigest,
+            'paid' => $this->settlementPreview,
+        ];
+
+        if (($this->completedConfirmation === null && ! $this->showPreview) || ! $confirmation['token'] || ! $confirmation['key'] || ! $confirmation['public_id']) {
+            $this->previewError = __('commands.preview_expired');
+
+            return null;
+        }
+
+        if ($confirmation['digest'] === null || $confirmation['digest'] !== $this->settlementDigest()) {
+            $this->cancelPreview();
+            $this->previewError = __('commands.form_changed_repreview_required');
+
+            return null;
+        }
+
+        if (! empty($this->previewData['blockers']) || ($this->previewData['can_execute'] ?? true) === false) {
+            $this->previewError = __('commands.cannot_confirm_blockers');
+
+            return null;
+        }
+
+        $purchase = Purchase::where('company_id', $company->id)->where('public_id', $confirmation['public_id'])->firstOrFail();
+
+        try {
+            $paid = $confirmation['paid'];
+            $result = app(ImmediatePurchaseCommands::class)->execute($purchase, $user, $confirmation['token'], $confirmation['key']);
+            $this->completedConfirmation = $confirmation;
+            $this->cancelPreview();
+            session()->flash('success', __($paid ? 'purchase_settlement.posted_with_payment' : 'purchasing.purchase_posted'));
+
+            return redirect()->route('purchases.show', $result['purchase']->public_id);
+        } catch (\Throwable $e) {
+            if ($e instanceof AuthorizationException || $e instanceof NoActiveCompanyException || ($e instanceof HttpException && $e->getStatusCode() === 403)) {
+                throw $e;
+            }
+            $this->cancelPreview();
+            $this->previewError = $this->resolveUserErrorMessage($e);
+
+            return null;
+        }
+    }
+
+    public function cancelPreview(): void
+    {
+        $this->showPreview = false;
+        $this->previewData = null;
+        $this->confirmationToken = null;
+        $this->executeKey = null;
+        $this->previewDigest = null;
+        $this->settlementPreview = false;
+    }
+
+    public function settlementPaymentCurrency(): string
+    {
+        $company = app(CompanyContext::class)->company();
+        $accountId = $this->settlement['money_account_id'] ?? null;
+        if (! empty($accountId)) {
+            $account = app(EligibleMoneyAccounts::class)->query($this->pageCompanyId)->find($accountId);
+            if ($account !== null && ! empty($account->currency_code)) {
+                return $account->currency_code;
+            }
+        }
+
+        if (($this->settlement['payment_method'] ?? null) === 'check' && ! empty($this->settlement['currency_code'])) {
+            return $this->settlement['currency_code'];
+        }
+
+        return $this->currency_code ?: $company->base_currency_code;
+    }
+
+    private function syncSettlementDefaults(?string $changedProperty = null): void
+    {
+        $user = auth()->user();
+        if (! $user || ! $user->hasPermissionTo('purchasing.purchase.post') || ! $user->hasPermissionTo('money.vendor_payment.create')) {
+            return;
+        }
+        $company = app(CompanyContext::class)->company();
+        $initial = $this->previousSettlementCurrency === '';
+        if ($initial) {
+            $this->settlement['payment_date'] = now($company->timezone)->format('Y-m-d');
+            $this->settlement['due_date'] = $this->settlement['payment_date'];
+        }
+        $preferredCurrency = $this->currency_code ?: $company->base_currency_code;
+        $method = $this->settlement['payment_method'] ?? 'cash';
+        $accountType = in_array($method, ['bank_transfer', 'check'], true) ? 'bank' : 'cash';
+        $automatic = (int) ($this->settlement['money_account_id'] ?? 0) === ($this->defaultSettlementAccountId ?? 0);
+        if ($initial || $changedProperty === 'settlement.payment_method' || ($changedProperty === 'currency_code' && $automatic)) {
+            $account = app(EligibleMoneyAccounts::class)->query($this->pageCompanyId, $accountType)
+                ->reorder()->orderByRaw('currency_code = ? desc', [$preferredCurrency])
+                ->orderByRaw('currency_code = ? desc', [$company->base_currency_code])
+                ->orderBy('sort_order')->orderBy('id')->first();
+            $this->settlement['money_account_id'] = $account === null ? '' : (string) $account->id;
+            $this->defaultSettlementAccountId = $account?->id;
+        } elseif ($changedProperty === 'settlement.money_account_id') {
+            $this->defaultSettlementAccountId = null;
+        }
+        $currency = $this->settlementPaymentCurrency();
+        if ($method === 'check') {
+            $this->settlement['currency_code'] = $currency;
+        }
+        if ($changedProperty === 'currency_code') {
+            $this->settlement['purchase_amount'] = '';
+            $this->settlement['payment_currency_amount'] = '';
+        }
+        if ($changedProperty === 'settlement.mode' && ($this->settlement['mode'] ?? null) === 'partial' && $this->settlement['amount'] === $this->previewGrandTotal) {
+            $this->settlement['amount'] = '';
+        }
+        if ($currency === $company->base_currency_code) {
+            $this->settlement['exchange_rate'] = '1.0000000000';
+        } elseif ($currency !== $this->previousSettlementCurrency) {
+            $this->settlement['exchange_rate'] = '';
+        }
+        if (! $initial && $currency !== $this->previousSettlementCurrency) {
+            // Never reinterpret a previously entered amount in another currency.
+            $this->settlement['amount'] = '';
+            $this->settlement['purchase_amount'] = '';
+            $this->settlement['payment_currency_amount'] = '';
+        }
+        if ($currency === $this->currency_code) {
+            $this->settlement['payment_currency_amount'] = '';
+            if (($this->settlement['mode'] ?? 'unpaid') === 'full' && $this->settlement['amount'] === '' && ($initial || in_array($changedProperty, ['currency_code', 'settlement.mode', 'settlement.payment_method'], true) || ($changedProperty === 'settlement.money_account_id' && $this->settlement['money_account_id'] !== ''))) {
+                $this->settlement['amount'] = $this->previewGrandTotal;
+            }
+        }
+        $this->previousSettlementCurrency = $currency;
+    }
+
+    public function settlementDigest(): string
+    {
+        return hash('sha256', $this->computePayloadDigest().'|'.json_encode($this->settlement, JSON_THROW_ON_ERROR));
+    }
+
+    public function computePayloadDigest(): string
+    {
+        $normalizedLines = [];
+        foreach ($this->lines as $line) {
+            $discountType = $line['discount_type'] ?? 'none';
+            if ($discountType === 'percentage') {
+                $discountType = 'percent';
+            }
+            $normalizedLines[] = [
+                'product_id' => ! empty($line['product_id']) ? (int) $line['product_id'] : null,
+                'product_unit_id' => ! empty($line['product_unit_id']) ? (int) $line['product_unit_id'] : null,
+                'item_description' => trim((string) ($line['item_description'] ?? '')),
+                'quantity' => trim((string) ($line['quantity'] ?? '')),
+                'unit_cost' => trim((string) ($line['unit_cost'] ?? '')),
+                'discount_type' => $discountType !== 'none' ? $discountType : null,
+                'discount_value' => trim((string) ($line['discount_value'] ?? '0')),
+                'tax_rate_id' => ! empty($line['tax_rate_id']) ? (int) $line['tax_rate_id'] : null,
+                'lots' => $line['lots'] ?? [],
+            ];
+        }
+
+        $normalized = [
+            'vendor_id' => (int) $this->vendor_id,
+            'warehouse_id' => $this->warehouse_id ? (int) $this->warehouse_id : null,
+            'vendor_invoice_number' => $this->vendor_invoice_number ? trim($this->vendor_invoice_number) : null,
+            'currency_code' => strtoupper(trim($this->currency_code)),
+            'exchange_rate' => trim($this->exchange_rate),
+            'purchase_date' => trim($this->purchase_date),
+            'due_date' => $this->due_date ? trim($this->due_date) : null,
+            'notes' => $this->notes !== null ? trim($this->notes) : null,
+            'document_locale' => $this->document_locale,
+            'lines' => $normalizedLines,
+        ];
+
+        return hash('sha256', json_encode($normalized, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+    }
+
+    /** @return array<string, mixed> */
+    private function settlementChoice(): array
+    {
+        $this->validate(['settlement.mode' => ['required', 'in:unpaid,full,partial']]);
+        if ($this->settlement['mode'] === 'unpaid') {
+            return ['mode' => 'unpaid'];
+        }
+
+        $company = app(CompanyContext::class)->company();
+        $paymentCurrency = $this->settlementPaymentCurrency();
+        if ($paymentCurrency === $company->base_currency_code) {
+            $this->settlement['exchange_rate'] = '1.0000000000';
+        }
+
+        $check = ($this->settlement['payment_method'] ?? null) === 'check';
+        $rules = [
+            'settlement.payment_method' => ['required', 'in:cash,bank_transfer,check'],
+            'settlement.money_account_id' => ['required', 'integer', 'min:1'],
+            'settlement.payment_date' => ['required', 'string', 'date'],
+            'settlement.amount' => ['required', 'string', 'regex:/^\d+(\.\d{1,6})?$/'],
+            'settlement.exchange_rate' => ['required', 'string', 'regex:/^\d+(\.\d{1,10})?$/'],
+        ];
+
+        if ($this->settlement['mode'] === 'partial' && $paymentCurrency === $this->currency_code) {
+            $this->settlement['purchase_amount'] = $this->settlement['amount'];
+        }
+        if ($this->settlement['mode'] === 'partial') {
+            $rules['settlement.purchase_amount'] = ['required', 'string', 'regex:/^\d+(\.\d{1,6})?$/'];
+        }
+
+        $isCrossCurrency = $paymentCurrency !== $this->currency_code;
+        if ($isCrossCurrency) {
+            $rules['settlement.payment_currency_amount'] = ['required', 'string', 'regex:/^\d+(\.\d{1,6})?$/'];
+        } else {
+            $this->settlement['payment_currency_amount'] = '';
+        }
+
+        if ($check) {
+            $rules += [
+                'settlement.currency_code' => ['required', 'string', 'size:3'],
+                'settlement.check_number' => ['required', 'string', 'max:100'],
+                'settlement.bank_name' => ['required', 'string', 'max:200'],
+                'settlement.drawer' => ['nullable', 'string', 'max:200'],
+                'settlement.due_date' => ['required', 'date'],
+            ];
+        }
+
+        $this->validate($rules, [], collect(array_keys($rules))->mapWithKeys(fn ($key) => [$key => __('purchase_settlement.'.str_replace('settlement.', '', $key))])->all());
+
+        $choice = array_intersect_key($this->settlement, array_flip(['mode', 'payment_method', 'amount', 'exchange_rate']));
+        $choice['money_account_id'] = (int) $this->settlement['money_account_id'];
+        $choice['payment_date'] = ($this->settlement['payment_date'] ?? '') ?: now($company->timezone)->format('Y-m-d');
+        if ($this->settlement['mode'] === 'partial') {
+            $choice['purchase_amount'] = $this->settlement['purchase_amount'];
+        }
+        if ($isCrossCurrency && ($this->settlement['payment_currency_amount'] ?? '') !== '') {
+            $choice['payment_currency_amount'] = $this->settlement['payment_currency_amount'];
+        }
+        if ($check) {
+            $choice += array_intersect_key($this->settlement, array_flip(['currency_code', 'check_number', 'bank_name', 'drawer', 'due_date']));
+        }
+
+        return $choice;
+    }
+
+    protected function resolveUserErrorMessage(\Throwable $e): string
+    {
+        if ($e instanceof AuthorizationException
+            || $e instanceof NoActiveCompanyException
+            || ($e instanceof HttpException && $e->getStatusCode() === 403)) {
+            throw $e;
+        }
+
+        report($e);
+
+        $msg = strtolower($e->getMessage());
+
+        if (str_contains($msg, 'outgoing check requires an active bank account')
+            || str_contains($msg, 'choose an active company payment account')
+            || str_contains($msg, 'choose an active matching company payment account')) {
+            $this->addError('settlement.money_account_id', __('purchase_settlement.no_accounts'));
+        }
+        if (str_contains($msg, 'check currency')) {
+            $this->addError('settlement.currency_code', __('purchase_settlement.currency_code'));
+        }
+        if (str_contains($msg, 'check due date')) {
+            $this->addError('settlement.due_date', __('purchase_settlement.due_date'));
+        }
+        if (str_contains($msg, 'cross-currency') || str_contains($msg, 'payment_currency_amount')) {
+            $this->addError('settlement.payment_currency_amount', __('purchase_settlement.payment_currency_amount'));
+        }
+        if (str_contains($msg, 'reviewed payment and allocation amounts')
+            || str_contains($msg, 'payment amount must be strictly positive')
+            || (str_contains($msg, 'allocated amount') && str_contains($msg, 'exceeds'))) {
+            $this->addError('settlement.amount', __('purchase_settlement.amount'));
+        }
+        if (str_contains($msg, 'exchange_rate') || str_contains($msg, 'exchange rate')) {
+            $this->addError('settlement.exchange_rate', __('purchase_settlement.exchange_rate'));
+        }
+
+        if ($e instanceof \InvalidArgumentException) {
+            if (str_contains($msg, 'token') || str_contains($msg, 'expired') || str_contains($msg, 'stale')) {
+                return __('commands.preview_expired');
+            }
+            if (str_contains($msg, 'warehouse')) {
+                return __('commands.code_warehouse_inactive');
+            }
+            if (str_contains($msg, 'vendor')) {
+                return __('commands.code_customer_inactive');
+            }
+            if (str_contains($msg, 'post_integrity_failed') || str_contains($msg, 'integrity')) {
+                return __('purchasing.post_integrity_failed');
+            }
+            if (str_contains($msg, 'positive_post_total_required')) {
+                return __('purchasing.positive_post_total_required');
+            }
+            if (str_contains($msg, 'lot') || str_contains($msg, 'expiry')) {
+                return __('purchasing.lots_must_be_complete');
+            }
+
+            return __('commands.code_validation_failed');
+        }
+
+        if ($e instanceof InvalidUnitConversionException || $e instanceof InvalidQuantityException) {
+            return __('mobile.invalid_unit');
+        }
+
+        if ($e instanceof ConflictHttpException
+            || $e->getCode() === 409
+            || ($e instanceof HttpException && $e->getStatusCode() === 409)) {
+            if (str_contains($msg, 'expired')) {
+                return __('commands.preview_expired');
+            }
+            if (str_contains($msg, 'changed') || str_contains($msg, 'stale')) {
+                return __('commands.form_changed_repreview_required');
+            }
+
+            return __('commands.conflict_error');
+        }
+
+        return __('commands.generic_error');
     }
 
     /** @return array<string, mixed> */
@@ -594,10 +1176,35 @@ class PurchaseForm extends Component
             $this->exchange_rate = '1.0000000000';
         }
 
+        $lines = $this->lines;
+        $selectedProductIds = collect($lines)->pluck('product_id')->filter()->unique()->values()->all();
+        $selectedProducts = ! empty($selectedProductIds)
+            ? Product::where('company_id', $company->id)->whereIn('id', $selectedProductIds)->get()->keyBy('id')
+            : collect();
+
+        foreach ($lines as $idx => &$line) {
+            $pid = ! empty($line['product_id']) ? (int) $line['product_id'] : null;
+            $product = $pid ? $selectedProducts->get($pid) : null;
+            if ($product && $product->track_expiry) {
+                if (empty($line['lots']) && ! ($this->expandedLotCustomization[$idx] ?? false)) {
+                    $line['lots'] = [[
+                        'product_unit_id' => $line['product_unit_id'],
+                        'lot_number' => null,
+                        'expiry_date' => null,
+                        'quantity' => (string) $line['quantity'],
+                    ]];
+                }
+            } elseif ($product !== null) {
+                $line['lots'] = [];
+            }
+        }
+        unset($line);
+
         $data = [];
-        foreach (['vendor_id', 'vendor_invoice_number', 'warehouse_id', 'purchase_date', 'due_date', 'currency_code', 'exchange_rate', 'document_locale', 'notes', 'lines'] as $field) {
+        foreach (['vendor_id', 'vendor_invoice_number', 'warehouse_id', 'purchase_date', 'due_date', 'currency_code', 'exchange_rate', 'document_locale', 'notes'] as $field) {
             $data[$field] = $this->{$field};
         }
+        $data['lines'] = $lines;
 
         return $data;
     }
@@ -678,6 +1285,18 @@ class PurchaseForm extends Component
             $vendors = $matchingVendors;
         }
 
+        $user = auth()->user();
+        $canPost = $user && $user->hasPermissionTo('purchasing.purchase.post');
+        $canPay = $canPost && $user->hasPermissionTo('money.vendor_payment.create');
+        $canPayCheck = $canPay && $user->hasPermissionTo('money.check.outgoing.manage');
+
+        $settlementAccounts = $canPay && ($this->settlement['mode'] ?? 'unpaid') !== 'unpaid'
+            ? app(EligibleMoneyAccounts::class)->query(
+                (int) $company->id,
+                in_array($this->settlement['payment_method'] ?? null, ['bank_transfer', 'check'], true) ? 'bank' : 'cash'
+            )->get()
+            : collect();
+
         return view('livewire.pages.purchasing.purchase-form', [
             'baseCurrencyCode' => $company->base_currency_code,
             'products' => $products->orderByRaw('COALESCE(name_ar, name_en) ASC')->orderBy('id')->limit(50)->get(['id', 'name_ar', 'name_en', 'sku']),
@@ -686,10 +1305,18 @@ class PurchaseForm extends Component
             'currencies' => $company->currencies()->where('enabled', true)->get(),
             'languages' => $company->languages()->where('enabled', true)->get(),
             'taxes' => TaxRate::where('company_id', $company->id)->where('active', true)->get(),
-            'unitOptions' => $unitOptions, 'expiryLines' => $expiryLines,
+            'unitOptions' => $unitOptions,
+            'expiryLines' => $expiryLines,
             'duplicateWarning' => app(DuplicateVendorInvoice::class)->exists($company->id, $this->vendor_id, $this->vendor_invoice_number, $except),
             'lastPriceHints' => $lastPriceHints,
             'canManageVendors' => auth()->user()->can('vendors.manage'),
+            'canPost' => $canPost,
+            'canPay' => $canPay,
+            'canPayCheck' => $canPayCheck,
+            'settlementAccounts' => $settlementAccounts,
+            'previewData' => $this->previewData,
+            'showPreview' => $this->showPreview,
+            'previewError' => $this->previewError,
         ]);
     }
 }

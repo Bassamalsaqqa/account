@@ -60,7 +60,11 @@ final class PurchasePayableAsOf
         // Do not reinterpret historical reversal instants in today's timezone.
         $result = [];
         foreach ($purchases as $purchase) {
-            if ((int) $purchase->company_id !== $companyId || ! $purchase->isPosted()
+            $isVoidAfterCutoff = $purchase->isVoid()
+                && $purchase->void_business_date !== null
+                && $purchase->void_business_date->format('Y-m-d') > $date;
+
+            if ((int) $purchase->company_id !== $companyId || (! $purchase->isPosted() && ! $isVoidAfterCutoff)
                 || $purchase->purchase_date->format('Y-m-d') > $date) {
                 throw new InvalidArgumentException('Purchase is outside the historical company/date boundary.');
             }
@@ -75,17 +79,20 @@ final class PurchasePayableAsOf
         }
         if ($deep) {
             $returns = PurchaseReturn::where('company_id', $companyId)->whereIn('purchase_id', $ids)
-                ->where('status', Purchase::STATUS_POSTED)->where('return_date', '<=', $date)->get();
+                ->where(fn ($q) => $q->where('status', PurchaseReturn::STATUS_POSTED)->orWhere(fn ($q) => $q->where('status', PurchaseReturn::STATUS_VOID)->where('void_business_date', '>', $date)))
+                ->where('return_date', '<=', $date)->get();
             foreach ($returns as $return) {
                 app(PurchaseReturnPostingCommandBuilder::class)->validatePosted($return);
                 $id = (int) $return->purchase_id;
                 $result[$id] = $result[$id]->minus($return->grand_total_currency);
             }
         } else {
-            $returns = DB::table('purchase_returns')
-                ->where('company_id', $companyId)->whereIn('purchase_id', $ids)
-                ->where('status', Purchase::STATUS_POSTED)->where('return_date', '<=', $date)
-                ->selectRaw('purchase_id, SUM(grand_total_currency) AS relief')->groupBy('purchase_id')->get();
+            $returns = DB::table('purchase_returns as r')
+                ->leftJoin('posting_batches as vb', 'vb.id', '=', 'r.void_posting_batch_id')
+                ->where('r.company_id', $companyId)->whereIn('r.purchase_id', $ids)
+                ->where(fn ($q) => $q->where('r.status', PurchaseReturn::STATUS_POSTED)->orWhere(fn ($q) => $q->where('r.status', PurchaseReturn::STATUS_VOID)->where('r.void_business_date', '>', $date)))
+                ->where('r.return_date', '<=', $date)
+                ->selectRaw('r.purchase_id, SUM(r.grand_total_currency) AS relief')->groupBy('r.purchase_id')->get();
             foreach ($returns as $return) {
                 $id = (int) $return->purchase_id;
                 $result[$id] = $result[$id]->minus((string) $return->relief);
@@ -130,26 +137,30 @@ final class PurchasePayableAsOf
     {
         $purchases = DB::table('purchases as p')
             ->join('posting_batches as b', 'b.id', '=', 'p.posting_batch_id')
+            ->leftJoin('posting_batches as vb', 'vb.id', '=', 'p.void_posting_batch_id')
             ->whereIn('p.id', $ids)->where('p.company_id', $companyId)
-            ->where('p.status', 'posted')->whereNotNull('p.purchase_number')->where('p.purchase_number', '!=', '')
+            ->where(fn ($q) => $q->where('p.status', 'posted')->orWhere(fn ($q) => $q->where('p.status', 'void')->where('p.void_business_date', '>', $date)))
+            ->whereNotNull('p.purchase_number')->where('p.purchase_number', '!=', '')
             ->whereNotNull('p.posted_at')->whereNotNull('p.posted_by')
             ->where('b.company_id', $companyId)->where('b.source_type', 'purchase')
-            ->whereColumn('b.source_id', 'p.id')->where('b.status', 'posted')
+            ->whereColumn('b.source_id', 'p.id')->whereIn('b.status', ['posted', 'reversed'])
             ->whereNull('b.reversal_of_id')->whereColumn('b.posting_date', 'p.purchase_date')->count();
         if ($purchases !== count($ids)) {
             throw new InvalidArgumentException('Incoherent historical Purchase posting provenance.');
         }
         $invalidReturn = DB::table('purchase_returns as r')
             ->leftJoin('posting_batches as b', 'b.id', '=', 'r.posting_batch_id')
+            ->leftJoin('posting_batches as vb', 'vb.id', '=', 'r.void_posting_batch_id')
             ->where('r.company_id', $companyId)->whereIn('r.purchase_id', $ids)
-            ->where('r.status', 'posted')->where('r.return_date', '<=', $date)
+            ->where(fn ($q) => $q->where('r.status', PurchaseReturn::STATUS_POSTED)->orWhere(fn ($q) => $q->where('r.status', PurchaseReturn::STATUS_VOID)->where('r.void_business_date', '>', $date)))
+            ->where('r.return_date', '<=', $date)
             ->where(function ($q) use ($companyId): void {
                 $q->whereNull('r.return_number')->orWhere('r.return_number', '')->orWhereNull('r.posted_at')->orWhereNull('r.posted_by')
                     ->orWhere(function ($q) use ($companyId): void {
                         $q->whereNotNull('r.posting_batch_id')->where(function ($q) use ($companyId): void {
                             $q->whereNull('b.id')->orWhere('b.company_id', '!=', $companyId)
                                 ->orWhere('b.source_type', '!=', 'purchase_return')->orWhereColumn('b.source_id', '!=', 'r.id')
-                                ->orWhere('b.status', '!=', 'posted')->orWhereNotNull('b.reversal_of_id')
+                                ->orWhereNotIn('b.status', ['posted', 'reversed'])->orWhereNotNull('b.reversal_of_id')
                                 ->orWhereColumn('b.posting_date', '!=', 'r.return_date');
                         });
                     })->orWhere(function ($q): void {

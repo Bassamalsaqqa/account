@@ -51,7 +51,7 @@ final class Phase7PaymentWorkflowTest extends Phase7TestCase
             Livewire::test(CheckDetail::class, ['publicId' => $check->public_id])->set('eventDate', '2026-10-03')->set('notes', 'Cancel salary check')->call('recordTransition', 'cancel')->assertHasNoErrors();
             $this->assertSame('cancelled', $check->fresh()->status);
         } else {
-            Livewire::test(EmployeeDetail::class, ['publicId' => $this->employee->public_id])->set('reversalReason', 'Correct salary payment')->set('reversalDate', '2026-10-03')->call('reverseSalaryPayment', $payment->id)->assertHasNoErrors();
+            Livewire::test(EmployeeDetail::class, ['publicId' => $this->employee->public_id])->set('reversalReason', 'Correct salary payment')->set('reversalDate', '2026-10-03')->call('openReversalReview', 'salary_payment', $payment->id)->call('confirmReversalReview')->assertHasNoErrors();
         }
         $this->assertSame('reversed', $payment->fresh()->status);
         $this->assertSame('100.000000', (string) $entry->fresh()->getRemainingPayableAmount());

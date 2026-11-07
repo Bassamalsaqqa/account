@@ -12,12 +12,12 @@
     </header>
     <x-refinement-filters :active-count="(int) ($statusFilter !== 'all')">
         <x-slot:search>
-            <input aria-label="{{ __('purchasing.search_vendors') }}" id="vendorSearch" type="search" wire:model.live.debounce.300ms="search" placeholder="{{ __('purchasing.search_vendors') }}" class="min-h-11 w-full min-w-0 rounded-control border border-border bg-white px-3 py-2 text-sm focus:border-primary focus:ring-primary" />
+            <input aria-label="{{ __('purchasing.search_vendors') }}" id="vendorSearch" type="search" wire:model.live.debounce.300ms="search" placeholder="{{ __('purchasing.search_vendors') }}" class="min-h-11 w-full min-w-0 rounded-control border border-border bg-surface px-3 py-2 text-sm focus:border-primary focus:ring-primary" />
         </x-slot:search>
         <x-slot:statuses>
-        <button type="button" wire:click="$set('statusFilter', 'all')" wire:loading.attr="disabled" wire:target="statusFilter" aria-pressed="{{ $statusFilter === 'all' ? 'true' : 'false' }}" class="touch-action shrink-0 border text-sm font-semibold {{ $statusFilter === 'all' ? 'border-primary bg-primary text-white' : 'border-border bg-white text-text-secondary' }}">{{ __('purchasing.all_vendors') }}</button>
-        <button type="button" wire:click="$set('statusFilter', 'active')" wire:loading.attr="disabled" wire:target="statusFilter" aria-pressed="{{ $statusFilter === 'active' ? 'true' : 'false' }}" class="touch-action shrink-0 border text-sm font-semibold {{ $statusFilter === 'active' ? 'border-primary bg-primary text-white' : 'border-border bg-white text-text-secondary' }}">{{ __('purchasing.active_vendors') }}</button>
-        <button type="button" wire:click="$set('statusFilter', 'inactive')" wire:loading.attr="disabled" wire:target="statusFilter" aria-pressed="{{ $statusFilter === 'inactive' ? 'true' : 'false' }}" class="touch-action shrink-0 border text-sm font-semibold {{ $statusFilter === 'inactive' ? 'border-primary bg-primary text-white' : 'border-border bg-white text-text-secondary' }}">{{ __('purchasing.inactive_vendors') }}</button>
+        <button type="button" wire:click="$set('statusFilter', 'all')" wire:loading.attr="disabled" wire:target="statusFilter" aria-pressed="{{ $statusFilter === 'all' ? 'true' : 'false' }}" class="touch-action shrink-0 border text-sm font-semibold {{ $statusFilter === 'all' ? 'border-primary bg-primary text-white' : 'border-border bg-surface text-text-secondary' }}">{{ __('purchasing.all_vendors') }}</button>
+        <button type="button" wire:click="$set('statusFilter', 'active')" wire:loading.attr="disabled" wire:target="statusFilter" aria-pressed="{{ $statusFilter === 'active' ? 'true' : 'false' }}" class="touch-action shrink-0 border text-sm font-semibold {{ $statusFilter === 'active' ? 'border-primary bg-primary text-white' : 'border-border bg-surface text-text-secondary' }}">{{ __('purchasing.active_vendors') }}</button>
+        <button type="button" wire:click="$set('statusFilter', 'inactive')" wire:loading.attr="disabled" wire:target="statusFilter" aria-pressed="{{ $statusFilter === 'inactive' ? 'true' : 'false' }}" class="touch-action shrink-0 border text-sm font-semibold {{ $statusFilter === 'inactive' ? 'border-primary bg-primary text-white' : 'border-border bg-surface text-text-secondary' }}">{{ __('purchasing.inactive_vendors') }}</button>
         </x-slot:statuses>
         <select wire:model.live="statusFilter" aria-label="{{ __('purchasing.status') }}" class="min-h-11 h-11 px-3 rounded-control border border-border text-sm">
             <option value="all">{{ __('purchasing.all_vendors') }}</option>
@@ -25,7 +25,7 @@
             <option value="inactive">{{ __('purchasing.inactive_vendors') }}</option>
         </select>
     </x-refinement-filters>
-    <section class="bg-white border border-border rounded-card overflow-hidden">
+    <section class="bg-surface border border-border rounded-card overflow-hidden">
         <div class="hidden lg:block overflow-x-auto">
             <table class="data-table w-full text-xs text-start">
                 <thead class="bg-surface-soft text-text-secondary border-b border-border">

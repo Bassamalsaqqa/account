@@ -1,5 +1,5 @@
 @props(['summaries', 'selectedDate', 'today'])
-<section class="rounded-card border border-border bg-white overflow-hidden" aria-labelledby="daily-summary-title">
+<section class="rounded-card border border-border bg-surface overflow-hidden" aria-labelledby="daily-summary-title">
     <div class="p-4 sm:p-6 flex flex-wrap items-end justify-between gap-4">
         <div>
             <h2 id="daily-summary-title" class="text-lg font-bold text-text-primary">{{ __('money.daily_summary') }}</h2>
@@ -8,7 +8,7 @@
         <div class="flex flex-wrap items-end gap-2">
             <label for="daily-summary-date" class="text-sm text-text-secondary">
                 <span class="block mb-1">{{ __('money.selected_date') }}</span>
-                <input id="daily-summary-date" type="date" value="{{ $selectedDate }}" wire:model.live="date" class="min-h-11 rounded-control border border-border bg-white px-3 py-2 text-sm focus:ring-2 focus:ring-primary">
+                <input id="daily-summary-date" type="date" value="{{ $selectedDate }}" wire:model.live="date" class="min-h-11 rounded-control border border-border bg-surface px-3 py-2 text-sm focus:ring-2 focus:ring-primary">
             </label>
             <button type="button" wire:click="$set('date', '{{ $today }}')" wire:loading.attr="disabled" class="min-h-11 px-3 border border-border rounded-control text-sm hover:bg-surface-soft focus:ring-2 focus:ring-primary disabled:opacity-50">{{ __('money.today') }}</button>
             <button type="button" wire:click="$set('date', '{{ \Carbon\CarbonImmutable::parse($today)->subDay()->format('Y-m-d') }}')" wire:loading.attr="disabled" class="min-h-11 px-3 border border-border rounded-control text-sm hover:bg-surface-soft focus:ring-2 focus:ring-primary disabled:opacity-50">{{ __('money.yesterday') }}</button>
@@ -36,7 +36,7 @@
                             </div>
                         @endforeach
                     </dl>
-                    @if(!$summary['currency_available'])<p class="mt-3 text-xs text-amber-800">{{ __('money.native_unavailable') }}</p>@endif
+                    @if(!$summary['currency_available'])<p class="mt-3 text-xs text-warning">{{ __('money.native_unavailable') }}</p>@endif
                 @endif
             </article>
         @endforeach
@@ -72,7 +72,7 @@
                         @endif
                     </tr>
                     @if($summary['is_available'] && !$summary['currency_available'])
-                        <tr><td colspan="5" class="px-4 pb-3 text-xs text-amber-800">{{ __('money.native_unavailable') }}</td></tr>
+                        <tr><td colspan="5" class="px-4 pb-3 text-xs text-warning">{{ __('money.native_unavailable') }}</td></tr>
                     @endif
                 @endforeach
             </tbody>

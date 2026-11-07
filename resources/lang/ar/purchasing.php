@@ -344,4 +344,11 @@ return [
     'paid_amount' => 'المبلغ المدفوع',
     'allocated_amount' => 'المبلغ المخصص',
     'unallocated_amount' => 'الرصيد المتاح',
+    'void_blocked_active_payments' => 'اعكس دفعات المورد المرتبطة أولاً (:count).',
+    'void_blocked_linked_returns' => 'ألغِ مرتجعات الشراء المرتبطة أولاً (:count).',
+    'void_blocked_locked_landed_costs' => 'تكاليف إضافية مقفلة بتمنع التصحيح (:count).',
+    'void_blocked_insufficient_stock' => 'المخزون ما بكفي للصنف :product_id.',
+    'void_blocked_insufficient_company_stock' => 'المخزون ما بكفي للصنف :product_id.',
+    'void_blocked_carrying_value_mismatch' => 'قيمة المخزون بتمنع تصحيح الصنف :product_id.',
+    'void_blocked_insufficient_lot_stock' => 'المخزون ما بكفي بالتشغيلة :lot_id.',
 ];

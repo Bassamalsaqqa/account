@@ -14,17 +14,17 @@
     </div>
 
     <!-- Filters -->
-    <div class="rounded-card border border-border bg-white p-4 space-y-3">
+    <div class="rounded-card border border-border bg-surface p-4 space-y-3">
         <x-refinement-filters :active-count="(int) filled($status)">
         <x-slot:search>
-            <input aria-label="{{ __('payroll.search_employees') }}" id="employee-search" type="search" wire:model.live.debounce.300ms="search" placeholder="{{ __('payroll.search_employees') }}" class="min-h-11 w-full min-w-0 rounded-control border border-border bg-white px-3 py-2 text-sm focus:border-primary focus:ring-primary">
+            <input aria-label="{{ __('payroll.search_employees') }}" id="employee-search" type="search" wire:model.live.debounce.300ms="search" placeholder="{{ __('payroll.search_employees') }}" class="min-h-11 w-full min-w-0 rounded-control border border-border bg-surface px-3 py-2 text-sm focus:border-primary focus:ring-primary">
         </x-slot:search>
         <x-slot:statuses>
-        <button type="button" wire:click="$set('status', '')" wire:loading.attr="disabled" wire:target="status" aria-pressed="{{ $status === '' ? 'true' : 'false' }}" class="touch-action shrink-0 border text-sm font-semibold {{ $status === '' ? 'border-primary bg-primary text-white' : 'border-border bg-white text-text-secondary' }}">{{ __('expenses.all_statuses') }}</button>
-        <button type="button" wire:click="$set('status', 'active')" wire:loading.attr="disabled" wire:target="status" aria-pressed="{{ $status === 'active' ? 'true' : 'false' }}" class="touch-action shrink-0 border text-sm font-semibold {{ $status === 'active' ? 'border-primary bg-primary text-white' : 'border-border bg-white text-text-secondary' }}">{{ __('payroll.active') }}</button>
-        <button type="button" wire:click="$set('status', 'inactive')" wire:loading.attr="disabled" wire:target="status" aria-pressed="{{ $status === 'inactive' ? 'true' : 'false' }}" class="touch-action shrink-0 border text-sm font-semibold {{ $status === 'inactive' ? 'border-primary bg-primary text-white' : 'border-border bg-white text-text-secondary' }}">{{ __('payroll.inactive') }}</button>
+        <button type="button" wire:click="$set('status', '')" wire:loading.attr="disabled" wire:target="status" aria-pressed="{{ $status === '' ? 'true' : 'false' }}" class="touch-action shrink-0 border text-sm font-semibold {{ $status === '' ? 'border-primary bg-primary text-white' : 'border-border bg-surface text-text-secondary' }}">{{ __('expenses.all_statuses') }}</button>
+        <button type="button" wire:click="$set('status', 'active')" wire:loading.attr="disabled" wire:target="status" aria-pressed="{{ $status === 'active' ? 'true' : 'false' }}" class="touch-action shrink-0 border text-sm font-semibold {{ $status === 'active' ? 'border-primary bg-primary text-white' : 'border-border bg-surface text-text-secondary' }}">{{ __('payroll.active') }}</button>
+        <button type="button" wire:click="$set('status', 'inactive')" wire:loading.attr="disabled" wire:target="status" aria-pressed="{{ $status === 'inactive' ? 'true' : 'false' }}" class="touch-action shrink-0 border text-sm font-semibold {{ $status === 'inactive' ? 'border-primary bg-primary text-white' : 'border-border bg-surface text-text-secondary' }}">{{ __('payroll.inactive') }}</button>
         </x-slot:statuses>
-        <select aria-label="{{ __('expenses.all_statuses') }}" id="employee-status" wire:model.live="status" class="min-h-11 w-full min-w-0 rounded-control border border-border bg-white px-3 py-2 text-sm focus:border-primary focus:ring-primary">
+        <select aria-label="{{ __('expenses.all_statuses') }}" id="employee-status" wire:model.live="status" class="min-h-11 w-full min-w-0 rounded-control border border-border bg-surface px-3 py-2 text-sm focus:border-primary focus:ring-primary">
                     <option value="">{{ __('expenses.all_statuses') }}</option>
                     <option value="active">{{ __('payroll.active') }}</option>
                     <option value="inactive">{{ __('payroll.inactive') }}</option>
@@ -33,7 +33,7 @@
     </div>
 
     <!-- Table -->
-    <div class="rounded-card border border-border bg-white overflow-hidden shadow-sm">
+    <div class="rounded-card border border-border bg-surface overflow-hidden shadow-sm">
         <div class="hidden lg:block overflow-x-auto">
             <table class="data-table w-full text-sm text-start">
                 <thead class="bg-surface-soft border-b border-border text-xs uppercase text-text-muted">
@@ -78,7 +78,7 @@
                             @endif
                             <td class="px-4 py-3 whitespace-nowrap">
                                 @if($emp->active)
-                                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-emerald-100 text-emerald-800">
+                                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-success-bg text-success">
                                         {{ __('payroll.active') }}
                                     </span>
                                 @else
@@ -135,7 +135,7 @@
                             <div class="min-w-0 space-y-1 col-span-2">
                                 <dt class="text-xs font-medium text-text-secondary">{{ __('payroll.status') }}</dt>
                                 <dd class="break-words text-sm tabular-nums text-text-primary">@if($emp->active)
-                                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-emerald-100 text-emerald-800">
+                                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-success-bg text-success">
                                         {{ __('payroll.active') }}
                                     </span>
                                 @else

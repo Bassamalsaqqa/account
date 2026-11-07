@@ -10,7 +10,7 @@
 
         @if ($canManage)
             <button wire:loading.attr="disabled" type="button" wire:click="openCreateModal"
-                    class="touch-action bg-primary hover:bg-primary-hover text-white text-xs font-bold shadow-button transition-colors">
+                    class="touch-action bg-primary hover:bg-primary-hover text-white text-sm font-bold shadow-button transition-colors">
                 <x-icon name="plus" class="w-4 h-4" />
                 <span>{{ __('inventory.add_unit') }}</span>
             </button>
@@ -55,7 +55,7 @@
                             <td class="p-3.5">
                                 <span class="font-bold text-text-primary block">{{ $unit->name_ar }}</span>
                                 @if ($unit->name_en)
-                                    <span class="text-[11px] text-text-muted dir-ltr block">{{ $unit->name_en }}</span>
+                                    <span class="text-xs text-text-muted dir-ltr block">{{ $unit->name_en }}</span>
                                 @endif
                             </td>
                             <td class="p-3.5 text-text-secondary">
@@ -109,7 +109,7 @@
                                 <dt class="text-xs font-medium text-text-secondary">{{ __('inventory.unit_name') }}</dt>
                                 <dd class="break-words text-sm tabular-nums text-text-primary"><span class="font-bold text-text-primary block">{{ $unit->name_ar }}</span>
                                 @if ($unit->name_en)
-                                    <span class="text-[11px] text-text-muted dir-ltr block">{{ $unit->name_en }}</span>
+                                    <span class="text-xs text-text-muted dir-ltr block">{{ $unit->name_en }}</span>
                                 @endif</dd>
                             </div>
                             <div class="min-w-0 space-y-1">
@@ -164,7 +164,7 @@
     <!-- Create/Edit Modal -->
     @if ($showModal)
         <div x-data x-trap.inert.noscroll="true" @keydown.escape.window="$wire.set('showModal', false)" role="dialog" aria-modal="true" aria-labelledby="unit-modal-title" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4">
-            <div class="bg-white rounded-card border border-border shadow-xl w-full max-w-md max-h-[calc(100dvh-2rem)] overflow-y-auto p-6 space-y-4">
+            <div class="bg-surface rounded-card border border-border shadow-xl w-full max-w-md max-h-[calc(100dvh-2rem)] overflow-y-auto p-6 space-y-4">
                 <div class="flex items-center justify-between border-b border-border pb-3">
                     <h3 id="unit-modal-title" class="font-extrabold text-sm text-text-primary">
                         {{ $editingId ? __('inventory.edit_unit') : __('inventory.add_unit') }}
@@ -182,27 +182,27 @@
                 <div class="space-y-3 text-xs">
                     <div>
                         <label class="block font-bold text-text-secondary mb-1">{{ __('inventory.unit_code_label') }} *</label>
-                        <input type="text" wire:model="code" dir="ltr" placeholder="{{ __('inventory.unit_code_placeholder') }}" class="min-h-11 w-full h-11 px-2.5 rounded-control border border-border text-xs font-mono" />
+                        <input type="text" wire:model="code" dir="ltr" placeholder="{{ __('inventory.unit_code_placeholder') }}" class="min-h-11 w-full h-11 px-2.5 rounded-control border border-border text-sm font-mono" />
                         @error('code') <span role="alert" class="text-danger text-xs">{{ $message }}</span> @enderror
                     </div>
                     <div>
                         <label class="block font-bold text-text-secondary mb-1">{{ __('inventory.unit_name_ar') }} *</label>
-                        <input type="text" wire:model="name_ar" dir="rtl" class="min-h-11 w-full h-11 px-2.5 rounded-control border border-border text-xs" />
+                        <input type="text" wire:model="name_ar" dir="rtl" class="min-h-11 w-full h-11 px-2.5 rounded-control border border-border text-sm" />
                         @error('name_ar') <span role="alert" class="text-danger text-xs">{{ $message }}</span> @enderror
                     </div>
                     <div>
                         <label class="block font-bold text-text-secondary mb-1">{{ __('inventory.unit_name_en') }}</label>
-                        <input type="text" wire:model="name_en" dir="ltr" class="min-h-11 w-full h-11 px-2.5 rounded-control border border-border text-xs" />
+                        <input type="text" wire:model="name_en" dir="ltr" class="min-h-11 w-full h-11 px-2.5 rounded-control border border-border text-sm" />
                         @error('name_en') <span role="alert" class="text-danger text-xs">{{ $message }}</span> @enderror
                     </div>
                     <div class="grid grid-cols-2 gap-2">
                         <div>
                             <label class="block font-bold text-text-secondary mb-1">{{ __('inventory.symbol_ar') }}</label>
-                            <input type="text" wire:model="symbol_ar" dir="rtl" placeholder="{{ __('inventory.symbol_ar_placeholder') }}" class="min-h-11 w-full h-11 px-2.5 rounded-control border border-border text-xs" />
+                            <input type="text" wire:model="symbol_ar" dir="rtl" placeholder="{{ __('inventory.symbol_ar_placeholder') }}" class="min-h-11 w-full h-11 px-2.5 rounded-control border border-border text-sm" />
                         </div>
                         <div>
                             <label class="block font-bold text-text-secondary mb-1">{{ __('inventory.symbol_en') }}</label>
-                            <input type="text" wire:model="symbol_en" dir="ltr" placeholder="{{ __('inventory.symbol_en_placeholder') }}" class="min-h-11 w-full h-11 px-2.5 rounded-control border border-border text-xs font-mono" />
+                            <input type="text" wire:model="symbol_en" dir="ltr" placeholder="{{ __('inventory.symbol_en_placeholder') }}" class="min-h-11 w-full h-11 px-2.5 rounded-control border border-border text-sm font-mono" />
                         </div>
                     </div>
                     <div class="p-3 rounded-control bg-surface-soft border border-border space-y-2">
@@ -213,7 +213,7 @@
                         @if ($allow_fractions)
                             <div>
                                 <label class="block font-bold text-text-secondary mb-1">{{ __('inventory.decimal_places') }} (0-6)</label>
-                                <input inputmode="numeric" type="number" min="0" max="6" wire:model="decimal_places" dir="ltr" class="min-h-11 w-full h-11 px-2.5 rounded-control border border-border text-xs font-mono" />
+                                <input inputmode="numeric" type="number" min="0" max="6" wire:model="decimal_places" dir="ltr" class="min-h-11 w-full h-11 px-2.5 rounded-control border border-border text-sm font-mono" />
                             </div>
                         @endif
                     </div>
@@ -227,11 +227,11 @@
 
                 <div class="flex items-center justify-end gap-2 pt-3 border-t border-border">
                     <button wire:loading.attr="disabled" type="button" wire:click="$set('showModal', false)"
-                            class="touch-action border border-border text-text-secondary hover:bg-surface-soft text-xs font-semibold">
+                            class="touch-action border border-border text-text-secondary hover:bg-surface-soft text-sm font-semibold">
                         {{ __('inventory.cancel') }}
                     </button>
                     <button wire:loading.attr="disabled" type="button" wire:click="save"
-                            class="touch-action bg-primary text-white hover:bg-primary-hover text-xs font-bold shadow-button">
+                            class="touch-action bg-primary text-white hover:bg-primary-hover text-sm font-bold shadow-button">
                         {{ __('inventory.save') }}
                     </button>
                 </div>

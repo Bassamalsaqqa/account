@@ -8,6 +8,7 @@ use App\Actions\Payroll\ReverseEmployeeAdvanceAction;
 use App\Actions\Payroll\ReverseSalaryEntryAction;
 use App\Actions\Payroll\ReverseSalaryPaymentAction;
 use App\Livewire\Concerns\HasTablePageSize;
+use App\Livewire\Concerns\ReviewsStandaloneReversal;
 use App\Livewire\Pages\Money\Concerns\AuthorizesMoneyPages;
 use App\Models\Employee;
 use App\Models\EmployeeAdvance;
@@ -27,6 +28,7 @@ class EmployeeDetail extends Component
 {
     use AuthorizesMoneyPages;
     use HasTablePageSize;
+    use ReviewsStandaloneReversal;
     use WithPagination;
 
     #[Locked]
@@ -54,7 +56,7 @@ class EmployeeDetail extends Component
         $this->reversalDate = Carbon::now($company->timezone)->toDateString();
     }
 
-    public function reverseAdvance(int $advanceId): void
+    private function executeReviewedreverseAdvance(int $advanceId): void
     {
         $this->authorizeMoney('payroll.advance.manage');
 
@@ -89,7 +91,7 @@ class EmployeeDetail extends Component
         }
     }
 
-    public function reverseSalaryEntry(int $entryId): void
+    private function executeReviewedreverseSalaryEntry(int $entryId): void
     {
         $this->authorizeMoney('payroll.salary.reverse');
 
@@ -124,7 +126,7 @@ class EmployeeDetail extends Component
         }
     }
 
-    public function reverseSalaryPayment(int $paymentId): void
+    private function executeReviewedreverseSalaryPayment(int $paymentId): void
     {
         $this->authorizeMoney('payroll.salary.reverse');
 

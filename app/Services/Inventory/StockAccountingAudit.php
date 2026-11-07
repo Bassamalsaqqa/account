@@ -68,12 +68,16 @@ final class StockAccountingAudit
                     $issues[] = "Canonical document [{$source}:{$document->id}] has inconsistent accounting source or lifecycle.";
                 }
                 if ($document->status === 'void') {
-                    $reversal = $batches->get($document->void_posting_batch_id);
-                    if ($batch === null || $reversal === null || $reversal->source_type !== 'reversal'
-                        || $reversal->status !== PostingBatch::STATUS_POSTED
-                        || (int) $reversal->reversal_of_id !== (int) $batch->id
-                        || (int) $batch->reversed_by_batch_id !== (int) $reversal->id) {
-                        $issues[] = "Canonical document [{$source}:{$document->id}] has missing or inconsistent void accounting.";
+                    if ($allZeroReturn && $document->posting_batch_id === null && $document->void_posting_batch_id === null) {
+                        // ADR0013 zero-effect void document has no GL batches
+                    } else {
+                        $reversal = $batches->get($document->void_posting_batch_id);
+                        if ($batch === null || $reversal === null || $reversal->source_type !== 'reversal'
+                            || $reversal->status !== PostingBatch::STATUS_POSTED
+                            || (int) $reversal->reversal_of_id !== (int) $batch->id
+                            || (int) $batch->reversed_by_batch_id !== (int) $reversal->id) {
+                            $issues[] = "Canonical document [{$source}:{$document->id}] has missing or inconsistent void accounting.";
+                        }
                     }
                 }
             }
@@ -101,7 +105,7 @@ final class StockAccountingAudit
             $source = (string) $movement->source_type;
             $batch = null;
             $document = null;
-            $isVoid = in_array($source, ['sales_invoice_void', 'sales_return_void'], true);
+            $isVoid = in_array($source, ['sales_invoice_void', 'sales_return_void', 'purchase_void', 'purchase_return_void'], true);
             $baseSource = $isVoid ? substr($source, 0, -5) : $source;
             if (isset($inventorySources[$source])) {
                 if ((int) $movement->source_id !== $companyId || ! in_array($movement->movement_type, $inventorySources[$source], true)) {
@@ -111,8 +115,15 @@ final class StockAccountingAudit
             } elseif (isset($models[$baseSource])) {
                 [, , $foreignKey, $type] = $models[$baseSource];
                 $document = $documents[$baseSource]->get($movement->source_id);
-                $allowedStatus = $isVoid ? ['void'] : (str_starts_with($source, 'sales_') ? ['posted', 'void'] : ['posted']);
-                $expectedType = $isVoid ? ($type === StockMovement::TYPE_SALE ? StockMovement::TYPE_SALE_RETURN : StockMovement::TYPE_SALE) : $type;
+                $allowedStatus = $isVoid ? ['void'] : ['posted', 'void'];
+                $expectedType = $isVoid
+                    ? match ($type) {
+                        StockMovement::TYPE_SALE => StockMovement::TYPE_SALE_RETURN,
+                        StockMovement::TYPE_SALE_RETURN => StockMovement::TYPE_SALE,
+                        StockMovement::TYPE_PURCHASE => StockMovement::TYPE_PURCHASE_RETURN,
+                        default => StockMovement::TYPE_PURCHASE,
+                    }
+                : $type;
                 if ($document === null || ! in_array($document->status, $allowedStatus, true) || $movement->movement_type !== $expectedType) {
                     $issues[] = "Movement [{$movement->id}] has orphan or invalid canonical document source [{$source}].";
 
@@ -167,7 +178,7 @@ final class StockAccountingAudit
                 continue; // Valid zero-cost inventory/return events need no zero-amount GL batch.
             }
             if (! in_array($batch->status, [PostingBatch::STATUS_POSTED, PostingBatch::STATUS_REVERSED], true)
-                || ($batch->status === PostingBatch::STATUS_REVERSED && ! str_starts_with($baseSource, 'sales_'))) {
+                || ($batch->status === PostingBatch::STATUS_REVERSED && ! in_array($baseSource, ['sales_invoice', 'sales_return', 'purchase', 'purchase_return'], true))) {
                 $issues[] = "Movement [{$movement->id}] accounting lifecycle is invalid.";
             }
             $id = (int) $batch->id;
@@ -189,12 +200,11 @@ final class StockAccountingAudit
             $source = (string) $batch->source_type;
             if (isset($models[$source])) {
                 $document = $documents[$source]->get($batch->source_id);
-                $sales = str_starts_with($source, 'sales_');
-                if ($document === null || ! in_array($document->status, $sales ? ['posted', 'void'] : ['posted'], true)
+                if ($document === null || ! in_array($document->status, ['posted', 'void'], true)
                     || (int) $document->posting_batch_id !== (int) $batch->id) {
                     $issues[] = "Posting batch [{$batch->id}] has orphan or inconsistent canonical document source [{$source}].";
                 } else {
-                    $void = $sales && $document->status === 'void';
+                    $void = $document->status === 'void';
                     $reversal = $void ? $batches->get($document->void_posting_batch_id) : null;
                     if ($batch->status !== ($void ? PostingBatch::STATUS_REVERSED : PostingBatch::STATUS_POSTED)
                         || ($void && ($reversal === null || $reversal->source_type !== 'reversal'
@@ -205,7 +215,7 @@ final class StockAccountingAudit
                     if (! ($gl[$batch->id] ?? BigDecimal::zero())->isEqualTo($expected[$batch->id] ?? BigDecimal::zero())) {
                         $issues[] = "Posting batch [{$batch->id}] inventory GL effect has no matching canonical stock valuation.";
                     }
-                    if (! $sales && ! isset($expected[$batch->id])) {
+                    if (str_starts_with($source, 'purchase') && ! isset($expected[$batch->id])) {
                         $issues[] = "Purchasing posting batch [{$batch->id}] has no canonical stock source.";
                     }
                 }

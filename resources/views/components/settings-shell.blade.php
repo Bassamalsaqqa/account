@@ -38,7 +38,7 @@
             <a href="{{ $sec['url'] }}"
                wire:navigate
                @if ($activeSection === $sec['key']) aria-current="page" @endif
-               class="px-3 py-1.5 rounded-control font-bold whitespace-nowrap shrink-0 transition-colors cursor-pointer {{ $activeSection === $sec['key'] ? 'bg-primary text-white shadow-xs' : 'bg-surface-soft text-text-secondary hover:bg-slate-200' }}">
+               class="touch-action min-h-11 inline-flex items-center px-3 py-1.5 rounded-control font-bold whitespace-nowrap shrink-0 transition-colors cursor-pointer {{ $activeSection === $sec['key'] ? 'bg-primary text-white shadow-xs' : 'bg-surface-soft text-text-secondary hover:bg-slate-200' }}">
                 {{ $sec['label'] }}
             </a>
         @endforeach
@@ -51,7 +51,7 @@
         <aside class="hidden md:block md:col-span-4 lg:col-span-3 sticky top-20 max-h-[calc(100dvh-208px)] overflow-y-auto space-y-4 shrink-0"
                x-data="accountingSettingsNavigation" x-init="$nextTick(() => restoreScroll())"
                @scroll.debounce.150ms="saveScroll()" @click.capture="saveScroll()">
-            <div class="bg-white border border-border rounded-card p-3 shadow-panel">
+            <div class="bg-surface border border-border rounded-card p-3 shadow-panel">
                 <div class="px-3 py-2 text-xs font-extrabold text-text-muted uppercase tracking-wider border-b border-border/60">
                     {{ __('settings.breadcrumb_settings') }}
                 </div>

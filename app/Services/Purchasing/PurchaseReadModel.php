@@ -41,6 +41,12 @@ final class PurchaseReadModel
                 : ($ar ?? $en ?? '');
         }
         $data['warehouse_name'] = $purchase->warehouse->displayName();
+        if ($purchase->isVoid()) {
+            $data['void_business_date'] = $purchase->void_business_date?->format('Y-m-d');
+            $data['voided_at'] = $purchase->voided_at?->format('Y-m-d H:i');
+            $data['void_reason'] = $purchase->void_reason;
+            $data['voided_by'] = $purchase->voided_by;
+        }
         if ($withCost) {
             $data += $purchase->only(['exchange_rate', 'subtotal_currency', 'discount_total_currency', 'tax_total_currency', 'grand_total_currency', 'base_currency_code']);
             $data['total_landed_cost_base'] = (string) $purchase->lines()->sum('landed_cost_allocated_base');

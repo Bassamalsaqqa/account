@@ -17,7 +17,7 @@
     <div class="flex items-center justify-between gap-4">
         <div>
             <h1 class="text-2xl font-bold tracking-tight text-text-primary">
-                {{ __('sales.new_return') }}
+                {{ $draftPublicId ? __('corrections.edit') : __('sales.new_return') }}
             </h1>
             <p class="text-xs text-text-secondary mt-1">
                 {{ __('sales.return_details') }}
@@ -25,22 +25,22 @@
         </div>
 
         <a href="{{ route('returns.index') }}"
-           class="min-h-11 inline-flex items-center justify-center gap-2 px-3 active:bg-surface-soft focus-visible:ring-2 focus-visible:ring-primary py-1.5 rounded-control bg-surface-soft text-text-secondary hover:text-text-primary text-xs font-bold transition-colors">
+           class="min-h-11 inline-flex items-center justify-center gap-2 px-3 active:bg-surface-soft focus-visible:ring-2 focus-visible:ring-primary py-1.5 rounded-control bg-surface-soft text-text-secondary hover:text-text-primary text-sm font-bold transition-colors">
             {{ __('sales.back') }}
         </a>
     </div>
 
     <!-- Main Form -->
-    <div class="bg-white rounded-card border border-border shadow-xs p-6 space-y-6">
+    <div class="bg-surface rounded-card border border-border shadow-xs p-6 space-y-6">
         <!-- Invoice & Date Selection -->
         <div class="grid grid-cols-1 md:grid-cols-3 gap-4 pb-4 border-b border-border">
             <div class="md:col-span-2">
-                <label class="block text-xs font-bold text-text-primary mb-1">
+                <label class="block text-sm font-bold text-text-primary mb-1">
                     {{ __('sales.original_invoice') }} <span class="text-danger">*</span>
                 </label>
-                <select wire:model.live="sales_invoice_id"
+                <select wire:model.live="sales_invoice_id" @disabled($draftPublicId !== null)
                         required
-                        class="w-full min-h-11 px-3 rounded-control border border-border bg-canvas text-xs text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden font-mono" :disabled="documentBusy || saving">
+                        class="w-full min-h-11 px-3 rounded-control border border-border bg-canvas text-sm text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden font-mono" :disabled="documentBusy || saving">
                     <option value="">-- {{ __('sales.original_invoice') }} --</option>
                     @foreach ($invoices as $inv)
                         <option value="{{ $inv->id }}">
@@ -48,28 +48,28 @@
                         </option>
                     @endforeach
                 </select>
-                @error('sales_invoice_id') <span class="text-danger text-[11px] mt-1 block">{{ $message }}</span> @enderror
+                @error('sales_invoice_id') <span class="text-danger text-xs mt-1 block">{{ $message }}</span> @enderror
             </div>
 
             <div>
-                <label class="block text-xs font-bold text-text-primary mb-1">
+                <label class="block text-sm font-bold text-text-primary mb-1">
                     {{ __('sales.date') }} <span class="text-danger">*</span>
                 </label>
                 <input type="date"
                        wire:model="issue_date"
                        required
-                       class="w-full min-h-11 px-3 rounded-control border border-border bg-canvas text-xs text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden"  :disabled="documentBusy || saving"/>
-                @error('issue_date') <span class="text-danger text-[11px] mt-1 block">{{ $message }}</span> @enderror
+                       class="w-full min-h-11 px-3 rounded-control border border-border bg-canvas text-sm text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden"  :disabled="documentBusy || saving"/>
+                @error('issue_date') <span class="text-danger text-xs mt-1 block">{{ $message }}</span> @enderror
             </div>
 
             <div class="md:col-span-3">
-                <label class="block text-xs font-bold text-text-primary mb-1">
+                <label class="block text-sm font-bold text-text-primary mb-1">
                     {{ __('sales.return_reason') }}
                 </label>
                 <input type="text"
                        wire:model="reason"
                        placeholder="{{ __('sales.return_reason_hint') }}"
-                       class="w-full min-h-11 px-3 rounded-control border border-border bg-canvas text-xs text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden"  :disabled="documentBusy || saving"/>
+                       class="w-full min-h-11 px-3 rounded-control border border-border bg-canvas text-sm text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden"  :disabled="documentBusy || saving"/>
             </div>
         </div>
 
@@ -88,7 +88,7 @@
             @else
                 <div class="md:hidden space-y-3 mt-4">
                     @foreach ($lines as $idx => $line)
-                        <article class="rounded-card border border-border bg-white p-4 space-y-3" wire:key="mobile-return-{{ $line['sales_invoice_line_id'] }}">
+                        <article class="rounded-card border border-border bg-surface p-4 space-y-3" wire:key="mobile-return-{{ $line['sales_invoice_line_id'] }}">
                             <h3 class="font-bold text-sm">{{ $line['item_description'] }}</h3>
                             <p class="text-xs text-text-secondary">{{ $line['unit_name'] }}</p>
                             <dl class="grid grid-cols-3 gap-2 rounded-control bg-surface-soft p-3 text-xs">
@@ -107,7 +107,7 @@
                 <div class="hidden md:block overflow-x-auto mt-4">
                     <table class="data-table w-full text-start text-xs border-collapse">
                         <thead>
-                            <tr class="border-b border-border bg-surface-soft text-text-muted font-bold text-[11px] uppercase">
+                            <tr class="border-b border-border bg-surface-soft text-text-muted font-bold text-xs uppercase">
                                 <th class="py-2.5 px-3 text-start">{{ __('sales.product') }}</th>
                                 <th class="py-2.5 px-3 text-start">{{ __('sales.quantity') }}</th>
                                 <th class="py-2.5 px-3 text-start">{{ __('sales.max_returnable') }}</th>
@@ -145,28 +145,28 @@
         </div>
 
         <div>
-            <label class="block text-xs font-bold text-text-primary mb-1">
+            <label class="block text-sm font-bold text-text-primary mb-1">
                 {{ __('sales.notes') }}
             </label>
-            <textarea wire:model="notes" rows="2" class="w-full p-2.5 rounded-control border border-border bg-canvas text-xs text-text-primary outline-hidden" :disabled="documentBusy || saving"></textarea>
+            <textarea wire:model="notes" rows="2" class="w-full p-2.5 rounded-control border border-border bg-canvas text-sm text-text-primary outline-hidden" :disabled="documentBusy || saving"></textarea>
         </div>
 
         <!-- Buttons -->
         <p wire:loading role="status" class="text-sm font-semibold text-primary">{{ __('refinement.working') }}</p>
-            <div class="sticky bottom-[calc(5rem+env(safe-area-inset-bottom))] z-20 flex flex-wrap items-center justify-end gap-3 border-t border-border bg-white p-3 shadow-sm md:static md:shadow-none">
+            <div class="sticky bottom-[calc(5rem+env(safe-area-inset-bottom))] z-20 flex flex-wrap items-center justify-end gap-3 border-t border-border bg-surface p-3 shadow-sm md:static md:shadow-none">
             <a href="{{ route('returns.index') }}"
-               class="min-h-11 inline-flex items-center justify-center gap-2 px-3 active:bg-surface-soft focus-visible:ring-2 focus-visible:ring-primary px-4 py-2 rounded-control border border-border text-xs font-bold text-text-secondary hover:bg-surface-soft transition-colors">
+               class="min-h-11 inline-flex items-center justify-center gap-2 px-3 active:bg-surface-soft focus-visible:ring-2 focus-visible:ring-primary px-4 py-2 rounded-control border border-border text-sm font-bold text-text-secondary hover:bg-surface-soft transition-colors">
                 {{ __('sales.cancel') }}
             </a>
             <button type="button"
                     @click="run('save', [false], true)" :disabled="saving || window.isDocumentBlocked($wire)"
-                    class="min-h-11 inline-flex items-center justify-center gap-2 px-3 active:bg-surface-soft focus-visible:ring-2 focus-visible:ring-primary px-4 py-2 rounded-control border border-primary text-primary hover:bg-primary-50 text-xs font-bold transition-colors cursor-pointer" wire:loading.attr="disabled">
+                    class="min-h-11 inline-flex items-center justify-center gap-2 px-3 active:bg-surface-soft focus-visible:ring-2 focus-visible:ring-primary px-4 py-2 rounded-control border border-primary text-primary hover:bg-primary-50 text-sm font-bold transition-colors cursor-pointer" wire:loading.attr="disabled">
                 {{ __('sales.save_draft') }}
             </button>
             @if ($canPost)
                 <button type="button"
                         @click="run('save', [true], true)" :disabled="saving || window.isDocumentBlocked($wire)"
-                        class="min-h-11 inline-flex items-center justify-center gap-2 px-3 active:bg-surface-soft focus-visible:ring-2 focus-visible:ring-primary px-5 py-2 rounded-control bg-primary text-white text-xs font-bold hover:bg-primary-hover transition-colors shadow-sm cursor-pointer" wire:loading.attr="disabled">
+                        class="min-h-11 inline-flex items-center justify-center gap-2 px-3 active:bg-surface-soft focus-visible:ring-2 focus-visible:ring-primary px-5 py-2 rounded-control bg-primary text-white text-sm font-bold hover:bg-primary-hover transition-colors shadow-sm cursor-pointer" wire:loading.attr="disabled">
                     ⚡ {{ __('sales.post') }}
                 </button>
             @endif

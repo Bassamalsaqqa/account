@@ -28,10 +28,10 @@
     </div>
 
     <!-- Page Header & Company Context -->
-    <div class="bg-white border border-border rounded-card shadow-panel p-5 sm:p-7">
+    <div class="bg-surface border border-border rounded-card shadow-panel p-5 sm:p-7">
         <div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
             <div class="min-w-0">
-                <span class="text-[11px] font-bold text-text-muted uppercase tracking-wider block mb-1">
+                <span class="text-xs font-bold text-text-muted uppercase tracking-wider block mb-1">
                     {{ __('subscriptions.title') }}
                 </span>
                 <h1 class="break-words text-xl sm:text-2xl font-extrabold text-text-primary">
@@ -52,7 +52,7 @@
                         $stateClasses = match($state) {
                             'active' => 'bg-success-bg text-success border border-success/20',
                             'approaching_renewal' => 'bg-warning-bg text-warning border border-warning/20',
-                            'expired_in_grace' => 'bg-orange-50 text-orange-800 border border-orange-200',
+                            'expired_in_grace' => 'bg-warning-bg text-warning border border-warning/20',
                             'read_only' => 'bg-danger-bg text-danger border border-danger/20',
                             default => 'bg-surface-soft text-text-muted',
                         };
@@ -104,7 +104,7 @@
 
     <!-- Active Subscription Overview (if configured) -->
     @if($subscription !== null)
-        <div class="bg-white border border-border rounded-card shadow-panel p-5 sm:p-6 space-y-4">
+        <div class="bg-surface border border-border rounded-card shadow-panel p-5 sm:p-6 space-y-4">
             <h2 class="text-xs font-bold text-text-muted uppercase tracking-wider pb-2 border-b border-border flex items-center gap-2">
                 <x-icon name="receipt" class="w-4 h-4 text-primary" />
                 <span>{{ __('subscriptions.commercial_terms') }}</span>
@@ -165,7 +165,7 @@
     <!-- Operational Action Cards -->
     <div class="grid items-start gap-6 min-w-0 {{ $subscription !== null ? 'lg:grid-cols-2' : '' }}">
         <!-- Form 1: Configure / Save Terms -->
-        <div class="bg-white border border-border rounded-card shadow-panel p-5 sm:p-6 min-w-0"
+        <div class="bg-surface border border-border rounded-card shadow-panel p-5 sm:p-6 min-w-0"
              x-data="{ review: false, saving: false, summary: {} }"
              x-init="$watch('review', shown => $nextTick(() => (shown ? $refs.reviewPanel : $refs.plan).focus()))"
              @submit="if (!review || saving) { $event.preventDefault(); } else { saving = true; }">
@@ -185,7 +185,7 @@
                 <div :hidden="review" class="space-y-4">
                     <div class="grid gap-4 sm:grid-cols-2">
                         <div class="min-w-0 sm:col-span-2">
-                            <label class="block font-bold text-xs text-text-secondary uppercase tracking-wider mb-1.5" for="term_plan">
+                            <label class="block font-bold text-sm text-text-secondary uppercase tracking-wider mb-1.5" for="term_plan">
                                 {{ __('subscriptions.plan') }}
                             </label>
                             @if($errors->has('plan') && $submittedOperation === 'configure')
@@ -197,13 +197,13 @@
                                    name="plan"
                                    type="text"
                                    value="{{ $oldFor('configure', 'plan', $subscription->plan ?? '') }}"
-                                   class="min-h-11 w-full rounded-control border border-border-strong bg-white px-3.5 text-sm text-text-primary focus:border-primary focus:ring-primary/20"
+                                   class="min-h-11 w-full rounded-control border border-border-strong bg-surface px-3.5 text-sm text-text-primary focus:border-primary focus:ring-primary/20"
                                    maxlength="100"
                                    required>
                         </div>
 
                         <div class="min-w-0">
-                            <label class="block font-bold text-xs text-text-secondary uppercase tracking-wider mb-1.5" for="term_fee">
+                            <label class="block font-bold text-sm text-text-secondary uppercase tracking-wider mb-1.5" for="term_fee">
                                 {{ __('subscriptions.fee') }}
                             </label>
                             @if($errors->has('fee') && $submittedOperation === 'configure')
@@ -218,12 +218,12 @@
                                    dir="ltr"
                                    value="{{ $oldFor('configure', 'fee', $subscription->fee ?? '') }}"
                                    pattern="^\d{1,14}(\.\d{1,6})?$"
-                                   class="min-h-11 w-full rounded-control border border-border-strong bg-white px-3.5 text-sm font-mono text-text-primary focus:border-primary focus:ring-primary/20"
+                                   class="min-h-11 w-full rounded-control border border-border-strong bg-surface px-3.5 text-sm font-mono text-text-primary focus:border-primary focus:ring-primary/20"
                                    required>
                         </div>
 
                         <div class="min-w-0">
-                            <label class="block font-bold text-xs text-text-secondary uppercase tracking-wider mb-1.5" for="term_currency">
+                            <label class="block font-bold text-sm text-text-secondary uppercase tracking-wider mb-1.5" for="term_currency">
                                 {{ __('subscriptions.currency') }}
                             </label>
                             @if($errors->has('currency') && $submittedOperation === 'configure')
@@ -233,7 +233,7 @@
                                     id="term_currency"
                                    @if($errors->has('currency') && $submittedOperation === 'configure') aria-invalid="true" aria-describedby="term_currency-error" @endif
                                     name="currency"
-                                    class="min-h-11 w-full rounded-control border border-border-strong bg-white px-3.5 text-sm text-text-primary focus:border-primary focus:ring-primary/20"
+                                    class="min-h-11 w-full rounded-control border border-border-strong bg-surface px-3.5 text-sm text-text-primary focus:border-primary focus:ring-primary/20"
                                     required>
                                 @foreach(['ILS', 'USD', 'JOD'] as $cur)
                                     <option value="{{ $cur }}" @selected($oldFor('configure', 'currency', $subscription->currency ?? $company->base_currency_code) === $cur)>
@@ -244,7 +244,7 @@
                         </div>
 
                         <div class="min-w-0">
-                            <label class="block font-bold text-xs text-text-secondary uppercase tracking-wider mb-1.5" for="term_starts_on">
+                            <label class="block font-bold text-sm text-text-secondary uppercase tracking-wider mb-1.5" for="term_starts_on">
                                 {{ __('subscriptions.starts_on') }}
                             </label>
                             @if($errors->has('starts_on') && $submittedOperation === 'configure')
@@ -263,13 +263,13 @@
                                        type="date"
                                        dir="ltr"
                                        value="{{ $oldFor('configure', 'starts_on', now()->setTimezone($company->timezone)->toDateString()) }}"
-                                       class="min-h-11 w-full rounded-control border border-border-strong bg-white px-3.5 text-sm font-mono text-text-primary focus:border-primary focus:ring-primary/20"
+                                       class="min-h-11 w-full rounded-control border border-border-strong bg-surface px-3.5 text-sm font-mono text-text-primary focus:border-primary focus:ring-primary/20"
                                        required>
                             @endif
                         </div>
 
                         <div class="min-w-0">
-                            <label class="block font-bold text-xs text-text-secondary uppercase tracking-wider mb-1.5" for="term_renews_on">
+                            <label class="block font-bold text-sm text-text-secondary uppercase tracking-wider mb-1.5" for="term_renews_on">
                                 {{ __('subscriptions.renews_on') }}
                             </label>
                             @if($errors->has('renews_on') && $submittedOperation === 'configure')
@@ -288,13 +288,13 @@
                                        type="date"
                                        dir="ltr"
                                        value="{{ $oldFor('configure', 'renews_on', now()->setTimezone($company->timezone)->addMonth()->toDateString()) }}"
-                                       class="min-h-11 w-full rounded-control border border-border-strong bg-white px-3.5 text-sm font-mono text-text-primary focus:border-primary focus:ring-primary/20"
+                                       class="min-h-11 w-full rounded-control border border-border-strong bg-surface px-3.5 text-sm font-mono text-text-primary focus:border-primary focus:ring-primary/20"
                                        required>
                             @endif
                         </div>
 
                         <div class="min-w-0">
-                            <label class="block font-bold text-xs text-text-secondary uppercase tracking-wider mb-1.5" for="term_grace_days">
+                            <label class="block font-bold text-sm text-text-secondary uppercase tracking-wider mb-1.5" for="term_grace_days">
                                 {{ __('subscriptions.grace_days') }}
                             </label>
                             @if($errors->has('grace_days') && $submittedOperation === 'configure')
@@ -308,12 +308,12 @@
                                    min="0"
                                    max="365"
                                    value="{{ $oldFor('configure', 'grace_days', $subscription->grace_days ?? config('subscriptions.grace_days', 7)) }}"
-                                   class="min-h-11 w-full rounded-control border border-border-strong bg-white px-3.5 text-sm text-text-primary focus:border-primary focus:ring-primary/20"
+                                   class="min-h-11 w-full rounded-control border border-border-strong bg-surface px-3.5 text-sm text-text-primary focus:border-primary focus:ring-primary/20"
                                    required>
                         </div>
 
                         <div class="min-w-0">
-                            <label class="block font-bold text-xs text-text-secondary uppercase tracking-wider mb-1.5" for="term_reminder_days">
+                            <label class="block font-bold text-sm text-text-secondary uppercase tracking-wider mb-1.5" for="term_reminder_days">
                                 {{ __('subscriptions.reminder_days') }}
                             </label>
                             @if($errors->hasAny(['reminder_days', 'reminder_days.*']) && $submittedOperation === 'configure')
@@ -327,13 +327,13 @@
                                    dir="ltr"
                                    value="{{ $oldFor('configure', 'reminder_days', is_array($reminderDays) ? implode(', ', $reminderDays) : '14, 7, 1') }}"
                                    placeholder="14, 7, 1"
-                                   class="min-h-11 w-full rounded-control border border-border-strong bg-white px-3.5 text-sm font-mono text-text-primary focus:border-primary focus:ring-primary/20"
+                                   class="min-h-11 w-full rounded-control border border-border-strong bg-surface px-3.5 text-sm font-mono text-text-primary focus:border-primary focus:ring-primary/20"
                                    required>
-                            <p class="text-[11px] text-text-muted mt-1">{{ __('subscriptions.reminder_days_help') }}</p>
+                            <p class="text-xs text-text-muted mt-1">{{ __('subscriptions.reminder_days_help') }}</p>
                         </div>
 
                         <div class="min-w-0 sm:col-span-2">
-                            <label class="block font-bold text-xs text-text-secondary uppercase tracking-wider mb-1.5" for="term_enforcement">
+                            <label class="block font-bold text-sm text-text-secondary uppercase tracking-wider mb-1.5" for="term_enforcement">
                                 {{ __('subscriptions.enforcement_enabled') }}
                             </label>
                             @if($errors->has('enforcement_enabled') && $submittedOperation === 'configure')
@@ -343,7 +343,7 @@
                                     id="term_enforcement"
                                    @if($errors->has('enforcement_enabled') && $submittedOperation === 'configure') aria-invalid="true" aria-describedby="term_enforcement-error" @endif
                                     name="enforcement_enabled"
-                                    class="min-h-11 w-full rounded-control border border-border-strong bg-white px-3.5 text-sm text-text-primary focus:border-primary focus:ring-primary/20">
+                                    class="min-h-11 w-full rounded-control border border-border-strong bg-surface px-3.5 text-sm text-text-primary focus:border-primary focus:ring-primary/20">
                                 <option value="0" @selected((string) $oldFor('configure', 'enforcement_enabled', $subscription->enforcement_enabled ?? 0) === '0')>
                                     {{ __('platform.off') }} — {{ __('subscriptions.enforcement_preview') }}
                                 </option>
@@ -351,11 +351,11 @@
                                     {{ __('platform.on') }} — {{ __('subscriptions.enforcement_active') }}
                                 </option>
                             </select>
-                            <p class="text-[11px] text-text-muted mt-1 leading-relaxed">{{ __('subscriptions.enforcement_enabled_help') }}</p>
+                            <p class="text-xs text-text-muted mt-1 leading-relaxed">{{ __('subscriptions.enforcement_enabled_help') }}</p>
                         </div>
 
                         <div class="min-w-0 sm:col-span-2">
-                            <label class="block font-bold text-xs text-text-secondary uppercase tracking-wider mb-1.5" for="term_notes">
+                            <label class="block font-bold text-sm text-text-secondary uppercase tracking-wider mb-1.5" for="term_notes">
                                 {{ __('subscriptions.notes') }}
                             </label>
                             @if($errors->has('notes') && $submittedOperation === 'configure')
@@ -367,7 +367,7 @@
                                       name="notes"
                                       rows="2"
                                       maxlength="2000"
-                                      class="w-full rounded-control border border-border-strong bg-white p-3 text-sm text-text-primary focus:border-primary focus:ring-primary/20">{{ $oldFor('configure', 'notes', $subscription->notes ?? '') }}</textarea>
+                                      class="w-full rounded-control border border-border-strong bg-surface p-3 text-sm text-text-primary focus:border-primary focus:ring-primary/20">{{ $oldFor('configure', 'notes', $subscription->notes ?? '') }}</textarea>
                         </div>
                     </div>
 
@@ -412,7 +412,7 @@
 
                     <div class="flex items-center justify-end gap-3 pt-2">
                         <button type="button"
-                                class="inline-flex min-h-11 items-center justify-center rounded-control border border-border-strong bg-white px-4 text-xs font-semibold text-text-secondary hover:bg-surface-soft transition-colors cursor-pointer"
+                                class="inline-flex min-h-11 items-center justify-center rounded-control border border-border-strong bg-surface px-4 text-sm font-semibold text-text-secondary hover:bg-surface-soft transition-colors cursor-pointer"
                                 @click="review = false"
                                     @keydown.enter.prevent
                                     @keyup.enter.prevent="$el.click()"
@@ -432,7 +432,7 @@
 
         @if($subscription !== null)
             <!-- Form 2: Renew Subscription Period -->
-            <div class="bg-white border border-border rounded-card shadow-panel p-5 sm:p-6 min-w-0"
+            <div class="bg-surface border border-border rounded-card shadow-panel p-5 sm:p-6 min-w-0"
                  x-data="{ review: false, saving: false, newDate: @js($oldFor('renew', 'renews_on', now()->parse($subscription->renews_on)->addMonthNoOverflow()->toDateString())) }"
                  x-init="$watch('review', shown => $nextTick(() => (shown ? $refs.reviewPanel : $refs.newDateInput).focus()))"
                  @submit="if (!review || saving) { $event.preventDefault(); } else { saving = true; }">
@@ -452,7 +452,7 @@
                     <div :hidden="review" class="space-y-4">
                         <div class="grid gap-4 sm:grid-cols-2">
                             <div class="min-w-0">
-                                <label class="block font-bold text-xs text-text-muted uppercase tracking-wider mb-1.5">
+                                <label class="block font-bold text-sm text-text-muted uppercase tracking-wider mb-1.5">
                                     {{ __('subscriptions.renews_on') }} ({{ app()->getLocale() === 'ar' ? 'الحالي' : 'Current' }})
                                 </label>
                                 <div class="min-h-11 w-full rounded-control border border-border bg-surface-soft px-3.5 flex items-center font-mono text-sm text-text-secondary" dir="ltr">
@@ -461,7 +461,7 @@
                             </div>
 
                             <div class="min-w-0">
-                                <label class="block font-bold text-xs text-text-secondary uppercase tracking-wider mb-1.5" for="renew_new_date">
+                                <label class="block font-bold text-sm text-text-secondary uppercase tracking-wider mb-1.5" for="renew_new_date">
                                     {{ __('subscriptions.new_renews_on') }}
                                 </label>
                             @if($errors->has('renews_on') && $submittedOperation === 'renew')
@@ -475,12 +475,12 @@
                                        dir="ltr"
                                        x-model="newDate"
                                        min="{{ now()->parse($subscription->renews_on)->addDay()->toDateString() }}"
-                                       class="min-h-11 w-full rounded-control border border-border-strong bg-white px-3.5 text-sm font-mono text-text-primary focus:border-primary focus:ring-primary/20"
+                                       class="min-h-11 w-full rounded-control border border-border-strong bg-surface px-3.5 text-sm font-mono text-text-primary focus:border-primary focus:ring-primary/20"
                                        required>
                             </div>
 
                             <div class="min-w-0 sm:col-span-2">
-                                <label class="block font-bold text-xs text-text-secondary uppercase tracking-wider mb-1.5" for="renew_notes">
+                                <label class="block font-bold text-sm text-text-secondary uppercase tracking-wider mb-1.5" for="renew_notes">
                                     {{ __('subscriptions.notes') }}
                                 </label>
                                 <textarea id="renew_notes"
@@ -488,7 +488,7 @@
                                           rows="2"
                                           maxlength="2000"
                                           placeholder="{{ app()->getLocale() === 'ar' ? 'ملاحظة التجديد (اختياري)...' : 'Renewal notes (optional)...' }}"
-                                          class="w-full rounded-control border border-border-strong bg-white p-3 text-sm text-text-primary focus:border-primary focus:ring-primary/20">{{ $oldFor('renew', 'notes') }}</textarea>
+                                          class="w-full rounded-control border border-border-strong bg-surface p-3 text-sm text-text-primary focus:border-primary focus:ring-primary/20">{{ $oldFor('renew', 'notes') }}</textarea>
                             </div>
                         </div>
 
@@ -522,7 +522,7 @@
 
                         <div class="flex items-center justify-end gap-3 pt-2">
                             <button type="button"
-                                    class="inline-flex min-h-11 items-center justify-center rounded-control border border-border-strong bg-white px-4 text-xs font-semibold text-text-secondary hover:bg-surface-soft transition-colors cursor-pointer"
+                                    class="inline-flex min-h-11 items-center justify-center rounded-control border border-border-strong bg-surface px-4 text-sm font-semibold text-text-secondary hover:bg-surface-soft transition-colors cursor-pointer"
                                     @click="review = false"
                                     @keydown.enter.prevent
                                     @keyup.enter.prevent="$el.click()"
@@ -544,7 +544,7 @@
 
     <!-- Form 3: Record Payment Receipt (if configured and has outstanding charges) -->
     @if($subscription !== null)
-        <div class="bg-white border border-border rounded-card shadow-panel p-5 sm:p-6 min-w-0"
+        <div class="bg-surface border border-border rounded-card shadow-panel p-5 sm:p-6 min-w-0"
              x-data="{
                 review: false,
                 saving: false,
@@ -598,7 +598,7 @@
                     <div :hidden="review" class="space-y-4">
                         <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                             <div class="min-w-0 sm:col-span-2">
-                                <label class="block font-bold text-xs text-text-secondary uppercase tracking-wider mb-1.5" for="pay_charge_id">
+                                <label class="block font-bold text-sm text-text-secondary uppercase tracking-wider mb-1.5" for="pay_charge_id">
                                     {{ __('subscriptions.select_charge') }}
                                 </label>
                             @if($errors->has('charge_id') && $submittedOperation === 'payment')
@@ -609,7 +609,7 @@
                                         name="charge_id"
                                         x-model="selectedChargeId"
                                         @change="updateCharge()"
-                                        class="min-h-11 w-full rounded-control border border-border-strong bg-white px-3.5 text-sm text-text-primary focus:border-primary focus:ring-primary/20"
+                                        class="min-h-11 w-full rounded-control border border-border-strong bg-surface px-3.5 text-sm text-text-primary focus:border-primary focus:ring-primary/20"
                                         required>
                                     @foreach($outstandingCharges as $oc)
                                         <option value="{{ $oc->id }}">
@@ -620,7 +620,7 @@
                             </div>
 
                             <div class="min-w-0">
-                                <label class="block font-bold text-xs text-text-secondary uppercase tracking-wider mb-1.5" for="pay_amount">
+                                <label class="block font-bold text-sm text-text-secondary uppercase tracking-wider mb-1.5" for="pay_amount">
                                     {{ __('subscriptions.payment_amount') }} (<span x-text="currency"></span>)
                                 </label>
                             @if($errors->has('amount') && $submittedOperation === 'payment')
@@ -634,12 +634,12 @@
                                        dir="ltr"
                                        x-model="amount"
                                        pattern="^\d{1,14}(\.\d{1,6})?$"
-                                       class="min-h-11 w-full rounded-control border border-border-strong bg-white px-3.5 text-sm font-mono text-text-primary focus:border-primary focus:ring-primary/20"
+                                       class="min-h-11 w-full rounded-control border border-border-strong bg-surface px-3.5 text-sm font-mono text-text-primary focus:border-primary focus:ring-primary/20"
                                        required>
                             </div>
 
                             <div class="min-w-0">
-                                <label class="block font-bold text-xs text-text-secondary uppercase tracking-wider mb-1.5" for="pay_received_on">
+                                <label class="block font-bold text-sm text-text-secondary uppercase tracking-wider mb-1.5" for="pay_received_on">
                                     {{ __('subscriptions.received_on') }}
                                 </label>
                             @if($errors->has('received_on') && $submittedOperation === 'payment')
@@ -652,12 +652,12 @@
                                        dir="ltr"
                                        max="{{ now()->setTimezone($company->timezone)->toDateString() }}"
                                        value="{{ $oldFor('payment', 'received_on', now()->setTimezone($company->timezone)->toDateString()) }}"
-                                       class="min-h-11 w-full rounded-control border border-border-strong bg-white px-3.5 text-sm font-mono text-text-primary focus:border-primary focus:ring-primary/20"
+                                       class="min-h-11 w-full rounded-control border border-border-strong bg-surface px-3.5 text-sm font-mono text-text-primary focus:border-primary focus:ring-primary/20"
                                        required>
                             </div>
 
                             <div class="min-w-0 sm:col-span-2">
-                                <label class="block font-bold text-xs text-text-secondary uppercase tracking-wider mb-1.5" for="pay_ref">
+                                <label class="block font-bold text-sm text-text-secondary uppercase tracking-wider mb-1.5" for="pay_ref">
                                     {{ __('subscriptions.reference') }}
                                 </label>
                             @if($errors->has('reference') && $submittedOperation === 'payment')
@@ -670,11 +670,11 @@
                                        maxlength="255"
                                        placeholder="{{ app()->getLocale() === 'ar' ? 'رقم الإيصال أو الحوالة البنكية...' : 'Bank reference, receipt #...' }}"
                                        value="{{ $oldFor('payment', 'reference') }}"
-                                       class="min-h-11 w-full rounded-control border border-border-strong bg-white px-3.5 text-sm text-text-primary focus:border-primary focus:ring-primary/20">
+                                       class="min-h-11 w-full rounded-control border border-border-strong bg-surface px-3.5 text-sm text-text-primary focus:border-primary focus:ring-primary/20">
                             </div>
 
                             <div class="min-w-0 sm:col-span-2">
-                                <label class="block font-bold text-xs text-text-secondary uppercase tracking-wider mb-1.5" for="pay_notes">
+                                <label class="block font-bold text-sm text-text-secondary uppercase tracking-wider mb-1.5" for="pay_notes">
                                     {{ __('subscriptions.notes') }}
                                 </label>
                                 <textarea id="pay_notes"
@@ -682,7 +682,7 @@
                                           rows="1"
                                           maxlength="2000"
                                           placeholder="{{ app()->getLocale() === 'ar' ? 'ملاحظة إضافية (اختياري)...' : 'Internal receipt note (optional)...' }}"
-                                          class="w-full rounded-control border border-border-strong bg-white p-3 text-sm text-text-primary focus:border-primary focus:ring-primary/20">{{ $oldFor('payment', 'notes') }}</textarea>
+                                          class="w-full rounded-control border border-border-strong bg-surface p-3 text-sm text-text-primary focus:border-primary focus:ring-primary/20">{{ $oldFor('payment', 'notes') }}</textarea>
                             </div>
                         </div>
 
@@ -718,7 +718,7 @@
 
                         <div class="flex items-center justify-end gap-3 pt-2">
                             <button type="button"
-                                    class="inline-flex min-h-11 items-center justify-center rounded-control border border-border-strong bg-white px-4 text-xs font-semibold text-text-secondary hover:bg-surface-soft transition-colors cursor-pointer"
+                                    class="inline-flex min-h-11 items-center justify-center rounded-control border border-border-strong bg-surface px-4 text-sm font-semibold text-text-secondary hover:bg-surface-soft transition-colors cursor-pointer"
                                     @click="review = false"
                                     @keydown.enter.prevent
                                     @keyup.enter.prevent="$el.click()"
@@ -745,7 +745,7 @@
             <p class="text-xs sm:text-sm text-text-muted mt-0.5">{{ __('subscriptions.charges_desc') }}</p>
         </div>
 
-        <div class="bg-white border border-border rounded-card shadow-panel overflow-hidden">
+        <div class="bg-surface border border-border rounded-card shadow-panel overflow-hidden">
             @if($charges->isEmpty())
                 <div class="p-8 text-center text-sm text-text-muted">
                     <x-icon name="receipt" class="w-8 h-8 mx-auto mb-2 text-text-muted/60" />
@@ -812,27 +812,27 @@
                                     <tr class="bg-surface-soft/40">
                                         <td colspan="7" class="px-6 py-3">
                                             <div class="space-y-1.5">
-                                                <span class="text-[11px] font-bold text-text-muted uppercase tracking-wider block">
+                                                <span class="text-xs font-bold text-text-muted uppercase tracking-wider block">
                                                     {{ __('subscriptions.payments_heading') }} (#{{ $charge->id }})
                                                 </span>
                                                 <div class="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
                                                     @foreach($chargePayments as $payment)
-                                                        <div class="bg-white border border-border/80 rounded-control p-2.5 text-xs shadow-2xs">
+                                                        <div class="bg-surface border border-border/80 rounded-control p-2.5 text-xs shadow-2xs">
                                                             <div class="flex items-center justify-between gap-2">
                                                                 <span class="font-mono font-bold text-text-primary" dir="ltr">
                                                                     {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($payment->amount) }} {{ $payment->currency }}
                                                                 </span>
-                                                                <span class="font-mono text-text-muted text-[11px]" dir="ltr">
+                                                                <span class="font-mono text-text-muted text-xs" dir="ltr">
                                                                     {{ $payment->received_on }}
                                                                 </span>
                                                             </div>
                                                             @if($payment->reference)
-                                                                <p class="text-[11px] text-text-secondary mt-1 truncate" dir="auto">
+                                                                <p class="text-xs text-text-secondary mt-1 truncate" dir="auto">
                                                                     <span class="text-text-muted">{{ __('subscriptions.reference') }}:</span> {{ $payment->reference }}
                                                                 </p>
                                                             @endif
                                                             @if($payment->notes)
-                                                                <p class="text-[11px] text-text-muted mt-0.5 truncate" dir="auto">
+                                                                <p class="text-xs text-text-muted mt-0.5 truncate" dir="auto">
                                                                     {{ $payment->notes }}
                                                                 </p>
                                                             @endif

@@ -344,4 +344,11 @@ return [
     'paid_amount' => 'Paid Amount',
     'allocated_amount' => 'Allocated Amount',
     'unallocated_amount' => 'Unallocated Balance',
+    'void_blocked_active_payments' => 'Reverse the linked vendor payments first (:count).',
+    'void_blocked_linked_returns' => 'Void the linked purchase returns first (:count).',
+    'void_blocked_locked_landed_costs' => 'Locked landed costs prevent this correction (:count).',
+    'void_blocked_insufficient_stock' => 'Not enough stock for product :product_id.',
+    'void_blocked_insufficient_company_stock' => 'Not enough stock for product :product_id.',
+    'void_blocked_carrying_value_mismatch' => 'Inventory value prevents correction for product :product_id.',
+    'void_blocked_insufficient_lot_stock' => 'Not enough stock in lot :lot_id.',
 ];

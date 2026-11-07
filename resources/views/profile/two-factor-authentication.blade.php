@@ -33,7 +33,7 @@
 })" class="space-y-6" aria-labelledby="two-factor-title">
     <div x-cloak x-show="uncertain" role="alert" class="rounded-control border border-warning bg-warning-bg p-4 text-sm space-y-3">
         <p>{{ __('profile_security.request_uncertain') }}</p>
-        <button type="button" @click="window.location.reload()" class="min-h-11 px-3 rounded-control border border-border bg-white font-semibold focus-visible:ring-2 focus-visible:ring-primary">{{ __('profile_security.reload_status') }}</button>
+        <button type="button" @click="window.location.reload()" class="min-h-11 px-3 rounded-control border border-border bg-surface font-semibold focus-visible:ring-2 focus-visible:ring-primary">{{ __('profile_security.reload_status') }}</button>
     </div>
 
     <header class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
@@ -101,7 +101,7 @@
             </p>
         </div>
 
-        <button type="button" @click="loadSetupData()" x-bind:disabled="loading || setupLoading || uncertain" class="min-h-11 px-3 rounded-control border border-border bg-white text-sm font-semibold focus-visible:ring-2 focus-visible:ring-primary">{{ __('profile_security.show_setup') }}</button>
+        <button type="button" @click="loadSetupData()" x-bind:disabled="loading || setupLoading || uncertain" class="min-h-11 px-3 rounded-control border border-border bg-surface text-sm font-semibold focus-visible:ring-2 focus-visible:ring-primary">{{ __('profile_security.show_setup') }}</button>
         <div class="grid gap-6 md:grid-cols-2 items-start">
             {{-- QR Code & Manual Key --}}
             <div class="space-y-4">
@@ -109,15 +109,15 @@
                     <h3 class="text-xs font-bold text-text-primary uppercase tracking-wider">
                         {{ __('profile_security.qr_code_title') }}
                     </h3>
-                    <div class="flex items-center justify-center p-3 bg-white rounded-lg border border-border inline-block shadow-xs max-w-[216px]" x-html="qrSvg" aria-label="{{ __('profile_security.qr_code_title') }}"></div>
+                    <div class="flex items-center justify-center p-3 bg-surface rounded-lg border border-border inline-block shadow-xs max-w-[216px]" x-html="qrSvg" aria-label="{{ __('profile_security.qr_code_title') }}"></div>
 
                     <div x-show="secretKey" class="space-y-1 pt-2">
                         <span class="text-xs font-semibold text-text-muted block">
                             {{ __('profile_security.manual_key_title') }}
                         </span>
                         <div class="flex flex-wrap items-center gap-2">
-                            <code class="px-2.5 py-1 rounded bg-white border border-border text-xs font-mono text-text-primary select-all tracking-wider" dir="ltr" x-text="secretKey"></code>
-                            <button type="button" @click="copyToClipboard(secretKey, 'key')" class="min-h-11 rounded-control border border-border text-xs font-bold text-primary hover:bg-surface-soft px-3 py-2 cursor-pointer focus-visible:ring-2 focus-visible:ring-primary">
+                            <code class="px-2.5 py-1 rounded bg-surface border border-border text-xs font-mono text-text-primary select-all tracking-wider" dir="ltr" x-text="secretKey"></code>
+                            <button type="button" @click="copyToClipboard(secretKey, 'key')" class="min-h-11 rounded-control border border-border text-sm font-bold text-primary hover:bg-surface-soft px-3 py-2 cursor-pointer focus-visible:ring-2 focus-visible:ring-primary">
                                 <span x-show="copyFeedback !== 'key'">{{ __('profile_security.copy_key') }}</span>
                                 <span x-show="copyFeedback === 'key'" class="text-success font-bold">{{ __('profile_security.key_copied') }}</span>
                             </button>
@@ -127,7 +127,7 @@
             </div>
 
             {{-- 6-digit TOTP Confirmation Code Form --}}
-            <div class="border border-border rounded-card p-4 sm:p-5 bg-white space-y-4">
+            <div class="border border-border rounded-card p-4 sm:p-5 bg-surface space-y-4">
                 <form @submit.prevent="confirmTwoFactor" class="space-y-4">
                     <div>
                         <x-input-label for="totp_confirmation_code" :value="__('profile_security.confirmation_code_label')" />
@@ -167,7 +167,7 @@
         </p>
 
         {{-- Recovery Codes Management --}}
-        <div class="border border-border rounded-card p-4 sm:p-5 bg-white space-y-4">
+        <div class="border border-border rounded-card p-4 sm:p-5 bg-surface space-y-4">
             <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                 <div>
                     <h3 class="text-sm font-bold text-text-primary">
@@ -197,17 +197,17 @@
 
                 <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 font-mono text-xs select-all" dir="ltr">
                     <template x-for="code in recoveryCodes" :key="code">
-                        <div class="p-2.5 bg-white rounded border border-border text-center text-text-primary font-bold shadow-xs tracking-wider" x-text="code"></div>
+                        <div class="p-2.5 bg-surface rounded border border-border text-center text-text-primary font-bold shadow-xs tracking-wider" x-text="code"></div>
                     </template>
                 </div>
 
                 <div class="flex flex-wrap items-center gap-3 pt-2">
-                    <button type="button" @click="copyToClipboard(recoveryCodes.join('\n'), 'codes')" class="min-h-11 px-3 rounded-control border border-border bg-white text-xs font-bold text-text-primary hover:bg-surface-soft flex items-center gap-1.5 transition-colors cursor-pointer">
+                    <button type="button" @click="copyToClipboard(recoveryCodes.join('\n'), 'codes')" class="min-h-11 px-3 rounded-control border border-border bg-surface text-sm font-bold text-text-primary hover:bg-surface-soft flex items-center gap-1.5 transition-colors cursor-pointer">
                         <span x-show="copyFeedback !== 'codes'">{{ __('profile_security.copy_codes') }}</span>
                         <span x-show="copyFeedback === 'codes'" class="text-success font-bold">{{ __('profile_security.codes_copied') }}</span>
                     </button>
 
-                    <button type="button" @click="downloadRecoveryCodes" class="min-h-11 px-3 rounded-control border border-border bg-white text-xs font-semibold text-text-secondary hover:text-text-primary hover:bg-surface-soft flex items-center gap-1.5 transition-colors cursor-pointer">
+                    <button type="button" @click="downloadRecoveryCodes" class="min-h-11 px-3 rounded-control border border-border bg-surface text-sm font-semibold text-text-secondary hover:text-text-primary hover:bg-surface-soft flex items-center gap-1.5 transition-colors cursor-pointer">
                         {{ __('profile_security.download_codes') }}
                     </button>
                 </div>
@@ -232,7 +232,7 @@
          @keydown.escape.window="if(showPasswordModal) { $event.preventDefault(); $event.stopPropagation(); cancelPasswordConfirm(); }">
         <div class="fixed inset-0 bg-slate-900/50 backdrop-blur-xs transition-opacity" @click="cancelPasswordConfirm"></div>
 
-        <div class="relative mb-6 bg-white rounded-card overflow-hidden shadow-panel border border-border max-w-md mx-auto my-8 p-6 z-10 space-y-4">
+        <div class="relative mb-6 bg-surface rounded-card overflow-hidden shadow-panel border border-border max-w-md mx-auto my-8 p-6 z-10 space-y-4">
             <div class="flex items-center gap-2">
                 <x-icon name="lock" class="w-5 h-5 text-primary shrink-0" />
                 <h3 id="confirm-password-modal-title" class="text-base font-bold text-text-primary">
@@ -284,7 +284,7 @@
          @keydown.escape.window="if(showDisableModal && !loading) { $event.preventDefault(); $event.stopPropagation(); showDisableModal = false; }">
         <div class="fixed inset-0 bg-slate-900/50 backdrop-blur-xs transition-opacity" @click="showDisableModal = false"></div>
 
-        <div class="relative mb-6 bg-white rounded-card overflow-hidden shadow-panel border border-border max-w-md mx-auto my-8 p-6 z-10 space-y-4">
+        <div class="relative mb-6 bg-surface rounded-card overflow-hidden shadow-panel border border-border max-w-md mx-auto my-8 p-6 z-10 space-y-4">
             <h3 id="confirm-disable-modal-title" class="text-base font-bold text-text-primary">
                 {{ __('profile_security.disable_modal_title') }}
             </h3>
@@ -316,7 +316,7 @@
          @keydown.escape.window="if(showRegenerateModal && !loading) { $event.preventDefault(); $event.stopPropagation(); showRegenerateModal = false; }">
         <div class="fixed inset-0 bg-slate-900/50 backdrop-blur-xs transition-opacity" @click="showRegenerateModal = false"></div>
 
-        <div class="relative mb-6 bg-white rounded-card overflow-hidden shadow-panel border border-border max-w-md mx-auto my-8 p-6 z-10 space-y-4">
+        <div class="relative mb-6 bg-surface rounded-card overflow-hidden shadow-panel border border-border max-w-md mx-auto my-8 p-6 z-10 space-y-4">
             <h3 id="confirm-regenerate-modal-title" class="text-base font-bold text-text-primary">
                 {{ __('profile_security.regenerate_modal_title') }}
             </h3>
