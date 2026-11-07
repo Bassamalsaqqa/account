@@ -730,7 +730,7 @@ class DeploymentScriptContractTest extends TestCase
 
         $extraEnv = '';
         foreach ($env as $name => $value) {
-            $extraEnv .= 'export '.$name.'="'.$value.'"'."\n";
+            $extraEnv .= "export {$name}=\"{$value}\"\n";
         }
 
         file_put_contents($runner, implode("\n", [
@@ -740,6 +740,7 @@ class DeploymentScriptContractTest extends TestCase
             'export PHP_BIN="'.$unixStubPhp.'"',
             'export COMPOSER_BIN="'.$unixFixtureDir.'/app/composer.phar"',
             'export COMMAND_TRACE="'.$unixFixtureDir.'/commands"',
+            'export PATH="'.$unixFixtureDir.'/bin:${PATH:-/usr/local/bin:/usr/bin:/bin}"',
             $extraEnv,
             ': > "$COMMAND_TRACE"',
             'bash "'.$unixScriptPath.'" '.$argString.' > "'.$unixFixtureDir.'/output.log" 2>&1',
@@ -778,6 +779,21 @@ class DeploymentScriptContractTest extends TestCase
         return null;
     }
 
+    protected function resolveAwkBinary(): ?string
+    {
+        foreach (['gawk', 'mawk', 'awk'] as $candidate) {
+            $path = trim((string) @shell_exec('command -v '.$candidate.' 2>/dev/null'));
+            if ($path !== '') {
+                $test = @shell_exec(escapeshellarg($path).' "BEGIN { print 1 }" 2>/dev/null');
+                if (trim((string) $test) === '1') {
+                    return $path;
+                }
+            }
+        }
+
+        return null;
+    }
+
     protected function createSyntheticDeploymentFixture(): string
     {
         $dir = sys_get_temp_dir().DIRECTORY_SEPARATOR.'p8_deploy_test_'.bin2hex(random_bytes(6));
@@ -785,6 +801,17 @@ class DeploymentScriptContractTest extends TestCase
         mkdir($dir.DIRECTORY_SEPARATOR.'app'.DIRECTORY_SEPARATOR.'bootstrap'.DIRECTORY_SEPARATOR.'cache', 0755, true);
         mkdir($dir.DIRECTORY_SEPARATOR.'app'.DIRECTORY_SEPARATOR.'public'.DIRECTORY_SEPARATOR.'build', 0755, true);
         mkdir($dir.DIRECTORY_SEPARATOR.'web', 0755, true);
+
+        $binDir = $dir.DIRECTORY_SEPARATOR.'bin';
+        mkdir($binDir, 0755, true);
+        $awk = $this->resolveAwkBinary();
+        if ($awk !== null) {
+            $awkTarget = $binDir.DIRECTORY_SEPARATOR.'awk';
+            if (! @symlink($awk, $awkTarget)) {
+                file_put_contents($awkTarget, "#!/usr/bin/env bash\nexec ".escapeshellarg($awk)." \"$@\"\n");
+                chmod($awkTarget, 0755);
+            }
+        }
 
         touch($dir.DIRECTORY_SEPARATOR.'app'.DIRECTORY_SEPARATOR.'.env');
         touch($dir.DIRECTORY_SEPARATOR.'app'.DIRECTORY_SEPARATOR.'composer.phar');

@@ -98,7 +98,7 @@
                                     </div>
                                     @if (!empty($reportResult['source_url']))
                                         <a href="{{ $reportResult['source_url'] }}" target="_blank" rel="noopener noreferrer"
-                                            class="inline-flex min-h-9 items-center gap-1 rounded-control border border-border bg-surface px-2.5 py-1 text-xs font-semibold text-primary hover:bg-primary-50">
+                                            class="inline-flex min-h-9 items-center gap-1 rounded-control border border-border bg-surface px-2.5 py-1 text-sm font-semibold text-primary hover:bg-primary-50">
                                             {{ __('assistant_v2.view_full_report') }}
                                             <x-icon name="share" class="h-3.5 w-3.5" aria-hidden="true" />
                                         </a>
@@ -200,12 +200,12 @@
                             <div class="mt-3 grid grid-cols-3 gap-2">
                                 @foreach (['today', 'yesterday', 'this_week', 'last_week', 'this_month', 'last_month', 'this_quarter', 'this_year', 'last_year'] as $preset)
                                     <button type="button" wire:click="selectPeriod('{{ $preset }}')" wire:loading.attr="disabled"
-                                        class="min-h-11 rounded-control border border-border bg-surface px-2 py-1.5 text-xs font-semibold text-primary hover:bg-primary-50 focus-visible:outline-2 focus-visible:outline-primary">
+                                        class="min-h-11 rounded-control border border-border bg-surface px-2 py-1.5 text-sm font-semibold text-primary hover:bg-primary-50 focus-visible:outline-2 focus-visible:outline-primary">
                                         {{ __('assistant_v2.preset_'.$preset) }}
                                     </button>
                                 @endforeach
                             </div>
-                            <button type="button" wire:click="resetQuestion" @click="clear()" class="mt-3 min-h-9 px-2 text-xs font-semibold text-text-secondary hover:text-text-primary underline">
+                            <button type="button" wire:click="resetQuestion" @click="clear()" class="mt-3 min-h-9 px-2 text-sm font-semibold text-text-secondary hover:text-text-primary underline">
                                 {{ __('assistant_v2.cancel') }}
                             </button>
                         </div>

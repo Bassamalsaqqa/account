@@ -14,7 +14,7 @@
         </div>
         @if($result)
             <div class="flex items-center gap-2">
-                <a href="{{ $exportUrl }}" class="touch-action inline-flex items-center gap-2 px-3.5 py-2 bg-white border border-border rounded-control text-xs sm:text-sm font-bold text-text-primary hover:bg-surface-soft shadow-2xs transition">
+                <a href="{{ $exportUrl }}" class="touch-action inline-flex items-center gap-2 px-3.5 py-2 bg-surface border border-border rounded-control text-sm sm:text-sm font-bold text-text-primary hover:bg-surface-soft shadow-2xs transition">
                     <x-icon name="file" class="w-4 h-4 text-primary" />
                     <span>{{ __('reports.export') }}</span>
                 </a>
@@ -23,12 +23,12 @@
     </header>
 
     <!-- Filter Form -->
-    <form wire:submit="applyFilters" class="rounded-xl bg-white border border-border p-4 sm:p-5 space-y-4 shadow-2xs" aria-label="{{ __('reports.filters') }}">
+    <form wire:submit="applyFilters" class="rounded-xl bg-surface border border-border p-4 sm:p-5 space-y-4 shadow-2xs" aria-label="{{ __('reports.filters') }}">
         <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 items-end">
             @unless($definition['current'])
                 <div class="flex flex-col">
-                    <label for="report-preset" class="block text-xs font-bold text-text-secondary mb-1.5">{{ __('reports.preset') }}</label>
-                    <select id="report-preset" wire:model="filters.preset" class="h-10 min-h-[40px] w-full rounded-control border border-border bg-surface px-3 py-0 text-xs sm:text-sm box-border focus:border-primary focus:ring-1 focus:ring-primary">
+                    <label for="report-preset" class="block text-sm font-bold text-text-secondary mb-1.5">{{ __('reports.preset') }}</label>
+                    <select id="report-preset" wire:model="filters.preset" class="h-10 min-h-[40px] w-full rounded-control border border-border bg-surface px-3 py-0 text-sm sm:text-sm box-border focus:border-primary focus:ring-1 focus:ring-primary">
                         <option value="">{{ __('reports.all') }}</option>
                         @foreach(\App\Application\Reporting\DTO\ReportPeriod::ALLOWED_PRESETS as $preset)
                             <option value="{{ $preset }}" @selected(($filters['preset'] ?? '') === $preset)>{{ __('reports.presets.'.$preset) }}</option>
@@ -37,19 +37,19 @@
                 </div>
                 @if(($filters['preset'] ?? '') === 'custom')
                     <div class="flex flex-col">
-                        <label for="report-from" class="block text-xs font-bold text-text-secondary mb-1.5">{{ __('reports.from') }}</label>
-                        <input id="report-from" type="date" wire:model="filters.from" value="{{ $filters['from'] ?? '' }}" class="h-10 min-h-[40px] w-full rounded-control border border-border bg-surface px-3 py-0 text-xs sm:text-sm font-mono box-border focus:border-primary focus:ring-1 focus:ring-primary" dir="ltr" />
+                        <label for="report-from" class="block text-sm font-bold text-text-secondary mb-1.5">{{ __('reports.from') }}</label>
+                        <input id="report-from" type="date" wire:model="filters.from" value="{{ $filters['from'] ?? '' }}" class="h-10 min-h-[40px] w-full rounded-control border border-border bg-surface px-3 py-0 text-sm sm:text-sm font-mono box-border focus:border-primary focus:ring-1 focus:ring-primary" dir="ltr" />
                     </div>
                     <div class="flex flex-col">
-                        <label for="report-to" class="block text-xs font-bold text-text-secondary mb-1.5">{{ __('reports.to') }}</label>
-                        <input id="report-to" type="date" wire:model="filters.to" value="{{ $filters['to'] ?? '' }}" class="h-10 min-h-[40px] w-full rounded-control border border-border bg-surface px-3 py-0 text-xs sm:text-sm font-mono box-border focus:border-primary focus:ring-1 focus:ring-primary" dir="ltr" />
+                        <label for="report-to" class="block text-sm font-bold text-text-secondary mb-1.5">{{ __('reports.to') }}</label>
+                        <input id="report-to" type="date" wire:model="filters.to" value="{{ $filters['to'] ?? '' }}" class="h-10 min-h-[40px] w-full rounded-control border border-border bg-surface px-3 py-0 text-sm sm:text-sm font-mono box-border focus:border-primary focus:ring-1 focus:ring-primary" dir="ltr" />
                     </div>
                 @endif
             @endunless
 
             @foreach($options as $field=>$values)
                 <div class="flex flex-col">
-                    <label for="report-{{ $field }}" class="block text-xs font-bold text-text-secondary mb-1.5">
+                    <label for="report-{{ $field }}" class="block text-sm font-bold text-text-secondary mb-1.5">
                         {{ __('reports.'.$field) }}@if(in_array($field,$definition['required'],true)) <span class="text-danger" aria-hidden="true">*</span>@endif
                     </label>
                     @if($field !== 'currency_code')
@@ -57,9 +57,9 @@
                             <input type="text"
                                    wire:model.live.debounce.300ms="selectorSearch.{{ $field }}"
                                    placeholder="{{ __('reports.search') }}"
-                                   class="h-8 min-h-[32px] w-full rounded-control border border-border text-xs px-2.5 py-0 bg-surface-soft focus:border-primary focus:ring-1 focus:ring-primary"
+                                   class="h-8 min-h-[32px] w-full rounded-control border border-border text-sm px-2.5 py-0 bg-surface-soft focus:border-primary focus:ring-1 focus:ring-primary"
                                    aria-label="{{ __('reports.search') }} {{ __('reports.'.$field) }}" />
-                            <select id="report-{{ $field }}" wire:model="filters.{{ $field }}" class="h-10 min-h-[40px] w-full rounded-control border border-border bg-surface px-3 py-0 text-xs sm:text-sm box-border focus:border-primary focus:ring-1 focus:ring-primary">
+                            <select id="report-{{ $field }}" wire:model="filters.{{ $field }}" class="h-10 min-h-[40px] w-full rounded-control border border-border bg-surface px-3 py-0 text-sm sm:text-sm box-border focus:border-primary focus:ring-1 focus:ring-primary">
                                 <option value="">{{ __('reports.all') }}</option>
                                 @foreach($values as $option)
                                     <option value="{{ $option['id'] }}">{{ $option['label'] }}</option>
@@ -67,7 +67,7 @@
                             </select>
                         </div>
                     @else
-                        <select id="report-{{ $field }}" wire:model="filters.{{ $field }}" class="h-10 min-h-[40px] w-full rounded-control border border-border bg-surface px-3 py-0 text-xs sm:text-sm box-border focus:border-primary focus:ring-1 focus:ring-primary">
+                        <select id="report-{{ $field }}" wire:model="filters.{{ $field }}" class="h-10 min-h-[40px] w-full rounded-control border border-border bg-surface px-3 py-0 text-sm sm:text-sm box-border focus:border-primary focus:ring-1 focus:ring-primary">
                             <option value="">{{ __('reports.all') }}</option>
                             @foreach($values as $option)
                                 <option value="{{ $option['id'] }}">{{ $option['label'] }}</option>
@@ -79,8 +79,8 @@
 
             @foreach($definition['options'] as $field=>$values)
                 <div class="flex flex-col">
-                    <label for="report-{{ $field }}" class="block text-xs font-bold text-text-secondary mb-1.5">{{ __('reports.'.$field) }}</label>
-                    <select id="report-{{ $field }}" wire:model="filters.{{ $field }}" class="h-10 min-h-[40px] w-full rounded-control border border-border bg-surface px-3 py-0 text-xs sm:text-sm box-border focus:border-primary focus:ring-1 focus:ring-primary">
+                    <label for="report-{{ $field }}" class="block text-sm font-bold text-text-secondary mb-1.5">{{ __('reports.'.$field) }}</label>
+                    <select id="report-{{ $field }}" wire:model="filters.{{ $field }}" class="h-10 min-h-[40px] w-full rounded-control border border-border bg-surface px-3 py-0 text-sm sm:text-sm box-border focus:border-primary focus:ring-1 focus:ring-primary">
                         <option value="">{{ __('reports.all') }}</option>
                         @foreach($values as $value)
                             <option value="{{ $value }}">{{ __('reports.options.'.$value) }}</option>
@@ -90,8 +90,8 @@
             @endforeach
 
             <div class="flex flex-col">
-                <label for="report-page-size" class="block text-xs font-bold text-text-secondary mb-1.5">{{ __('reports.page_size') }}</label>
-                <select id="report-page-size" wire:model="filters.per_page" class="h-10 min-h-[40px] w-full rounded-control border border-border bg-surface px-3 py-0 text-xs sm:text-sm box-border focus:border-primary focus:ring-1 focus:ring-primary">
+                <label for="report-page-size" class="block text-sm font-bold text-text-secondary mb-1.5">{{ __('reports.page_size') }}</label>
+                <select id="report-page-size" wire:model="filters.per_page" class="h-10 min-h-[40px] w-full rounded-control border border-border bg-surface px-3 py-0 text-sm sm:text-sm box-border focus:border-primary focus:ring-1 focus:ring-primary">
                     @foreach(\App\Support\TablePageSize::OPTIONS as $size)
                         <option value="{{ $size }}">{{ $size }}</option>
                     @endforeach
@@ -100,10 +100,10 @@
         </div>
 
         <div class="flex flex-wrap items-center gap-3 pt-2 border-t border-border/60">
-            <button type="submit" wire:loading.attr="disabled" class="h-10 min-h-[40px] px-4 rounded-control bg-primary text-white text-xs sm:text-sm font-bold hover:bg-primary-hover disabled:opacity-60 transition cursor-pointer shadow-xs inline-flex items-center justify-center">
+            <button type="submit" wire:loading.attr="disabled" class="h-10 min-h-[40px] px-4 rounded-control bg-primary text-white text-sm sm:text-sm font-bold hover:bg-primary-hover disabled:opacity-60 transition cursor-pointer shadow-xs inline-flex items-center justify-center">
                 {{ __('reports.apply') }}
             </button>
-            <button type="button" wire:click="resetFilters" class="h-10 min-h-[40px] px-3.5 rounded-control border border-border bg-white text-xs sm:text-sm font-semibold text-text-secondary hover:text-text-primary hover:bg-surface-soft transition cursor-pointer" wire:loading.attr="disabled" wire:target="resetFilters">
+            <button type="button" wire:click="resetFilters" class="h-10 min-h-[40px] px-3.5 rounded-control border border-border bg-surface text-sm sm:text-sm font-semibold text-text-secondary hover:text-text-primary hover:bg-surface-soft transition cursor-pointer" wire:loading.attr="disabled" wire:target="resetFilters">
                 {{ __('reports.reset') }}
             </button>
             <span wire:loading class="text-xs font-semibold text-text-muted flex items-center gap-1.5" role="status">
@@ -115,7 +115,7 @@
     </form>
 
     @if($missing)
-        <p class="rounded-xl bg-white border border-border p-5 text-sm text-text-secondary">{{ __('reports.select_required') }}</p>
+        <p class="rounded-xl bg-surface border border-border p-5 text-sm text-text-secondary">{{ __('reports.select_required') }}</p>
     @endif
 
     @if($definition['current'] && (!isset($result->meta['as_of_date']) || $result->meta['as_of_date'] === \App\Application\Reporting\DTO\ReportPeriod::fromPreset(\App\Application\Reporting\DTO\ReportPeriod::PRESET_TODAY, $company)->endDate))
@@ -136,9 +136,9 @@
         <!-- Restrained Summary Strip -->
         @if($totals)
             <section class="flex flex-wrap items-center gap-2.5 p-3 rounded-xl bg-surface-soft border border-border/80" aria-labelledby="report-summary-heading">
-                <span id="report-summary-heading" class="text-[11px] font-extrabold uppercase tracking-wider text-text-muted me-1">{{ __('reports.summary') }}:</span>
+                <span id="report-summary-heading" class="text-xs font-extrabold uppercase tracking-wider text-text-muted me-1">{{ __('reports.summary') }}:</span>
                 @foreach($totals as $total)
-                    <div class="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white border border-border shadow-2xs">
+                    <div class="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-surface border border-border shadow-2xs">
                         <span class="text-xs font-semibold text-text-secondary">{{ $total['label'] }}</span>
                         <span class="text-xs sm:text-sm font-extrabold text-text-primary tabular-nums">
                             <bdi>{{ $total['currency'] !== '' ? \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($total['value']) : \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($total['value']) }} {{ $total['currency'] }}</bdi>
@@ -149,13 +149,13 @@
         @endif
 
         <!-- Results Table -->
-        <section class="rounded-xl bg-white border border-border overflow-hidden shadow-xs">
+        <section class="rounded-xl bg-surface border border-border overflow-hidden shadow-xs">
             @if($result->rows === [])
                 <p class="p-8 text-center text-sm font-semibold text-text-muted">{{ __('reports.empty') }}</p>
             @else
                 <div class="hidden md:block overflow-x-auto">
                     <table class="data-table w-full text-sm text-start border-collapse">
-                        <thead class="bg-surface-soft border-b border-border text-[11px] font-bold uppercase tracking-wider text-text-muted">
+                        <thead class="bg-surface-soft border-b border-border text-xs font-bold uppercase tracking-wider text-text-muted">
                             <tr>
                                 @foreach($columns as $column)
                                     <th scope="col" class="py-3 px-4 text-start whitespace-nowrap">{{ $column['label'] }}</th>
@@ -216,10 +216,10 @@
                         {{ __('reports.page') }} {{ $result->pagination['current_page'] }} {{ __('reports.of') }} {{ $result->pagination['last_page'] }} &middot; {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($result->pagination['total']) }} {{ __('reports.records') }}
                     </span>
                     <div class="flex gap-2">
-                        <button type="button" wire:click="goToPage({{ max(1,$result->pagination['current_page']-1) }})" wire:loading.attr="disabled" wire:target="goToPage" @disabled($result->pagination['current_page']<=1) class="touch-action h-8 min-h-[32px] rounded-control border border-border bg-white px-3 py-0 text-sm font-bold text-text-secondary hover:text-text-primary hover:bg-surface-soft disabled:opacity-40 transition cursor-pointer">
+                        <button type="button" wire:click="goToPage({{ max(1,$result->pagination['current_page']-1) }})" wire:loading.attr="disabled" wire:target="goToPage" @disabled($result->pagination['current_page']<=1) class="touch-action h-8 min-h-[32px] rounded-control border border-border bg-surface px-3 py-0 text-sm font-bold text-text-secondary hover:text-text-primary hover:bg-surface-soft disabled:opacity-40 transition cursor-pointer">
                             {{ __('reports.previous') }}
                         </button>
-                        <button type="button" wire:click="goToPage({{ $result->pagination['current_page']+1 }})" wire:loading.attr="disabled" wire:target="goToPage" @disabled($result->pagination['current_page'] >= $result->pagination['last_page']) class="touch-action h-8 min-h-[32px] rounded-control border border-border bg-white px-3 py-0 text-sm font-bold text-text-secondary hover:text-text-primary hover:bg-surface-soft disabled:opacity-40 transition cursor-pointer">
+                        <button type="button" wire:click="goToPage({{ $result->pagination['current_page']+1 }})" wire:loading.attr="disabled" wire:target="goToPage" @disabled($result->pagination['current_page'] >= $result->pagination['last_page']) class="touch-action h-8 min-h-[32px] rounded-control border border-border bg-surface px-3 py-0 text-sm font-bold text-text-secondary hover:text-text-primary hover:bg-surface-soft disabled:opacity-40 transition cursor-pointer">
                             {{ __('reports.next') }}
                         </button>
                     </div>

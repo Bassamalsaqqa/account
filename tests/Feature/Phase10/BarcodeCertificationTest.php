@@ -51,7 +51,7 @@ class BarcodeCertificationTest extends Phase5ETestCase
     {
         parent::setUp();
 
-        $this->pythonPath = getenv('PHASE10_PYTHON_BINARY') ?: 'python';
+        $this->pythonPath = getenv('PHASE10_PYTHON_BINARY') ?: 'python3';
 
         $this->service = app(BarcodeLabelService::class);
         $this->evidenceDir = base_path('.ai/phase10-barcode');

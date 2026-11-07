@@ -1,25 +1,16 @@
 <div class="space-y-6">
-    <!-- Header -->
-    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-            <h1 class="text-2xl font-bold tracking-tight text-text-primary">
-                {{ __('sales.sales_invoices') }}
-            </h1>
-            <p class="text-xs text-text-secondary mt-1">
-                {{ __('sales.sales_invoices') }} ({{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($invoices->total()) }})
-            </p>
-        </div>
-
+    <x-page-heading :title="__('sales.sales_invoices')" icon="receipt">
+        <x-slot:description><bdi dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($invoices->total()) }}</bdi></x-slot:description>
         @if ($canCreate)
             <div class="flex items-center gap-2">
                 <a href="{{ route('invoices.create') }}"
-                   class="touch-action gap-1.5 bg-primary text-white text-xs font-bold hover:bg-primary-hover transition-colors shadow-sm">
+                   class="touch-action gap-1.5 bg-primary text-white text-sm font-bold hover:bg-primary-hover transition-colors shadow-sm">
                     <x-icon name="plus" class="w-4 h-4" />
                     <span>{{ __('sales.new_invoice') }}</span>
                 </a>
             </div>
         @endif
-    </div>
+    </x-page-heading>
 
     <!-- Filters & Search Bar -->
     <x-refinement-filters :active-count="(int) ($statusFilter !== 'all') + (int) filled($customerFilter)">
@@ -27,21 +18,21 @@
             <input id="invoices-search" aria-label="{{ __('sales.search') }}" type="text"
                    wire:model.live.debounce.300ms="search"
                    placeholder="{{ __('sales.search') }}"
-                   class="min-h-11 w-full min-w-0 rounded-control border border-border bg-white px-3 py-2 text-sm focus:border-primary focus:ring-primary" />
+                   class="min-h-11 w-full min-w-0 rounded-control border border-border bg-surface px-3 py-2 text-sm focus:border-primary focus:ring-primary" />
         </x-slot:search>
         <x-slot:statuses>
-        <button type="button" wire:click="$set('statusFilter', 'all')" wire:loading.attr="disabled" wire:target="statusFilter" aria-pressed="{{ $statusFilter === 'all' ? 'true' : 'false' }}" class="touch-action shrink-0 border text-sm font-semibold {{ $statusFilter === 'all' ? 'border-primary bg-primary text-white' : 'border-border bg-white text-text-secondary' }}">{{ __('sales.all') }}</button>
-        <button type="button" wire:click="$set('statusFilter', 'draft')" wire:loading.attr="disabled" wire:target="statusFilter" aria-pressed="{{ $statusFilter === 'draft' ? 'true' : 'false' }}" class="touch-action shrink-0 border text-sm font-semibold {{ $statusFilter === 'draft' ? 'border-primary bg-primary text-white' : 'border-border bg-white text-text-secondary' }}">{{ __('sales.draft') }}</button>
-        <button type="button" wire:click="$set('statusFilter', 'posted')" wire:loading.attr="disabled" wire:target="statusFilter" aria-pressed="{{ $statusFilter === 'posted' ? 'true' : 'false' }}" class="touch-action shrink-0 border text-sm font-semibold {{ $statusFilter === 'posted' ? 'border-primary bg-primary text-white' : 'border-border bg-white text-text-secondary' }}">{{ __('sales.posted') }}</button>
-        <button type="button" wire:click="$set('statusFilter', 'void')" wire:loading.attr="disabled" wire:target="statusFilter" aria-pressed="{{ $statusFilter === 'void' ? 'true' : 'false' }}" class="touch-action shrink-0 border text-sm font-semibold {{ $statusFilter === 'void' ? 'border-primary bg-primary text-white' : 'border-border bg-white text-text-secondary' }}">{{ __('sales.voided') }}</button>
+        <button type="button" wire:click="$set('statusFilter', 'all')" wire:loading.attr="disabled" wire:target="statusFilter" aria-pressed="{{ $statusFilter === 'all' ? 'true' : 'false' }}" class="touch-action shrink-0 border text-sm font-semibold {{ $statusFilter === 'all' ? 'border-primary bg-primary text-white' : 'border-border bg-surface text-text-secondary' }}">{{ __('sales.all') }}</button>
+        <button type="button" wire:click="$set('statusFilter', 'draft')" wire:loading.attr="disabled" wire:target="statusFilter" aria-pressed="{{ $statusFilter === 'draft' ? 'true' : 'false' }}" class="touch-action shrink-0 border text-sm font-semibold {{ $statusFilter === 'draft' ? 'border-primary bg-primary text-white' : 'border-border bg-surface text-text-secondary' }}">{{ __('sales.draft') }}</button>
+        <button type="button" wire:click="$set('statusFilter', 'posted')" wire:loading.attr="disabled" wire:target="statusFilter" aria-pressed="{{ $statusFilter === 'posted' ? 'true' : 'false' }}" class="touch-action shrink-0 border text-sm font-semibold {{ $statusFilter === 'posted' ? 'border-primary bg-primary text-white' : 'border-border bg-surface text-text-secondary' }}">{{ __('sales.posted') }}</button>
+        <button type="button" wire:click="$set('statusFilter', 'void')" wire:loading.attr="disabled" wire:target="statusFilter" aria-pressed="{{ $statusFilter === 'void' ? 'true' : 'false' }}" class="touch-action shrink-0 border text-sm font-semibold {{ $statusFilter === 'void' ? 'border-primary bg-primary text-white' : 'border-border bg-surface text-text-secondary' }}">{{ __('sales.voided') }}</button>
         </x-slot:statuses>
-        <select id="invoices-statusFilter" aria-label="{{ __('sales.status') }}" wire:model.live="statusFilter" class="min-h-11 h-11 px-3 rounded-control border border-border bg-canvas text-xs text-text-primary">
+        <select id="invoices-statusFilter" aria-label="{{ __('sales.status') }}" wire:model.live="statusFilter" class="min-h-11 h-11 px-3 rounded-control border border-border bg-canvas text-sm text-text-primary">
                 <option value="all">{{ __('sales.all') }}</option>
                 <option value="draft">{{ __('sales.draft') }}</option>
                 <option value="posted">{{ __('sales.posted') }}</option>
                 <option value="void">{{ __('sales.voided') }}</option>
             </select>
-        <select id="invoices-customerFilter" aria-label="{{ __('sales.customer') }}" wire:model.live="customerFilter" class="min-h-11 h-11 px-3 rounded-control border border-border bg-canvas text-xs text-text-primary">
+        <select id="invoices-customerFilter" aria-label="{{ __('sales.customer') }}" wire:model.live="customerFilter" class="min-h-11 h-11 px-3 rounded-control border border-border bg-canvas text-sm text-text-primary">
                 <option value="">{{ __('sales.select_customer') }}</option>
                 @foreach ($customers as $c)
                     <option value="{{ $c->id }}">{{ $c->displayName() }}</option>
@@ -49,16 +40,16 @@
             </select>
     </x-refinement-filters>
 
-    @if(session()->has('error'))<p role="alert" class="text-sm text-danger font-semibold bg-rose-50 p-3 rounded-control border border-rose-200">{{ session('error') }}</p>@endif
-    @error('postInvoice') <p role="alert" class="text-sm text-danger font-semibold bg-rose-50 p-3 rounded-control border border-rose-200">{{ $message }}</p> @enderror
-    @error('deleteDraft') <p role="alert" class="text-sm text-danger font-semibold bg-rose-50 p-3 rounded-control border border-rose-200">{{ $message }}</p> @enderror
-    @if(session()->has('success'))<p role="status" class="text-sm text-success font-semibold bg-emerald-50 p-3 rounded-control border border-emerald-200">{{ session('success') }}</p>@endif
+    @if(session()->has('error'))<p role="alert" class="text-sm text-danger font-semibold bg-danger-bg p-3 rounded-control border border-danger/20">{{ session('error') }}</p>@endif
+    @error('postInvoice') <p role="alert" class="text-sm text-danger font-semibold bg-danger-bg p-3 rounded-control border border-danger/20">{{ $message }}</p> @enderror
+    @error('deleteDraft') <p role="alert" class="text-sm text-danger font-semibold bg-danger-bg p-3 rounded-control border border-danger/20">{{ $message }}</p> @enderror
+    @if(session()->has('success'))<p role="status" class="text-sm text-success font-semibold bg-success-bg p-3 rounded-control border border-success/20">{{ session('success') }}</p>@endif
     <!-- Invoices Table / Cards -->
-    <div class="bg-white rounded-card border border-border shadow-xs overflow-hidden">
+    <div class="bg-surface rounded-card border border-border shadow-xs overflow-hidden">
         <div class="hidden lg:block overflow-x-auto">
             <table class="data-table w-full text-start text-xs border-collapse">
                 <thead>
-                    <tr class="border-b border-border bg-surface-soft text-text-muted font-bold text-[11px] uppercase tracking-wider">
+                    <tr class="border-b border-border bg-surface-soft text-text-muted font-bold text-xs uppercase tracking-wider">
                         <th class="py-3 px-4 text-start">{{ __('sales.invoice_number') }}</th>
                         <th class="py-3 px-4 text-start">{{ __('sales.customer') }}</th>
                         <th class="py-3 px-4 text-start">{{ __('sales.date') }}</th>
@@ -86,7 +77,7 @@
                                 {{ $inv->issue_date ? $inv->issue_date->toDateString() : '—' }}
                             </td>
                             <td class="py-3 px-4">
-                                <span class="px-2 py-0.5 rounded-full text-[10px] font-bold @if ($inv->status === 'posted') bg-success-bg text-success @elseif ($inv->status === 'void') bg-danger-bg text-danger @else bg-slate-100 text-slate-600 @endif">
+                                <span class="px-2 py-0.5 rounded-full text-xs font-bold @if ($inv->status === 'posted') bg-success-bg text-success @elseif ($inv->status === 'void') bg-danger-bg text-danger @else bg-slate-100 text-slate-600 @endif">
                                     {{ __('sales.' . $inv->status) }}
                                 </span>
                             </td>
@@ -94,7 +85,7 @@
                                 @php
                                     $paymentStatus = $summaries[$inv->id]['status'];
                                 @endphp
-                                <span class="px-2 py-0.5 rounded-full text-[10px] font-bold @if ($paymentStatus === 'paid') bg-success-bg text-success @elseif ($paymentStatus === 'partially_paid') bg-warning-bg text-warning @elseif ($paymentStatus === 'credit') bg-primary-50 text-primary @else bg-slate-100 text-slate-600 @endif">
+                                <span class="px-2 py-0.5 rounded-full text-xs font-bold @if ($paymentStatus === 'paid') bg-success-bg text-success @elseif ($paymentStatus === 'partially_paid') bg-warning-bg text-warning @elseif ($paymentStatus === 'credit') bg-primary-50 text-primary @else bg-slate-100 text-slate-600 @endif">
                                     {{ __('sales.' . $paymentStatus) }}
                                 </span>
                             </td>
@@ -139,26 +130,26 @@
                                 {{ $inv->customer->displayName() }}
                             </div>
                         </div>
-                        <span class="px-2 py-0.5 rounded-full text-[10px] font-bold @if ($inv->status === 'posted') bg-success-bg text-success @elseif ($inv->status === 'void') bg-danger-bg text-danger @else bg-slate-100 text-slate-600 @endif">
+                        <span class="px-2 py-0.5 rounded-full text-xs font-bold @if ($inv->status === 'posted') bg-success-bg text-success @elseif ($inv->status === 'void') bg-danger-bg text-danger @else bg-slate-100 text-slate-600 @endif">
                             {{ __('sales.' . $inv->status) }}
                         </span>
                     </div>
 
                     <div class="grid grid-cols-2 gap-2 text-xs">
                         <div>
-                            <span class="text-text-muted block text-[10px]">{{ __('sales.date') }}</span>
+                            <span class="text-text-muted block text-xs">{{ __('sales.date') }}</span>
                             <span dir="ltr">{{ $inv->issue_date ? $inv->issue_date->toDateString() : '—' }}</span>
                         </div>
                         <div>
-                            <span class="text-text-muted block text-[10px]">{{ __('sales.payment_status') }}</span>
+                            <span class="text-text-muted block text-xs">{{ __('sales.payment_status') }}</span>
                             <span class="font-bold">{{ __('sales.' . $summaries[$inv->id]['status']) }}</span>
                         </div>
                         <div>
-                            <span class="text-text-muted block text-[10px]">{{ __('sales.grand_total') }}</span>
+                            <span class="text-text-muted block text-xs">{{ __('sales.grand_total') }}</span>
                             <span class="font-bold text-text-primary" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($inv->grand_total_currency ?? $inv->grand_total, $inv->currency_code) }} {{ $inv->currency_code }}</span>
                         </div>
                         <div>
-                            <span class="text-text-muted block text-[10px]">{{ __('sales.outstanding_amount') }}</span>
+                            <span class="text-text-muted block text-xs">{{ __('sales.outstanding_amount') }}</span>
                             <span class="font-bold text-danger" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($summaries[$inv->id]['outstanding'], $inv->currency_code) }} {{ $inv->currency_code }}</span>
                         </div>
                     </div>

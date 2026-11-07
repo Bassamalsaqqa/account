@@ -468,7 +468,7 @@ final class TradeEventActivity
             ->where(fn ($q) => $q->whereNotNull('ob.id')->orWhere(fn ($q) => $q
                 ->whereNull('p.posting_batch_id')->where('p.grand_total_base', '0')->where('p.grand_total_currency', '0')))
             ->where('p.company_id', $company->id)
-            ->where('p.status', '=', 'posted')
+            ->whereIn('p.status', ['posted', 'void'])
             ->whereBetween('p.purchase_date', [$startDate, $endDate])
             ->select([
                 'p.id as document_id',
@@ -493,10 +493,57 @@ final class TradeEventActivity
                 DB::raw('1 as is_issued_purchase'),
             ]);
 
+        // 2. Inverse Purchases
+        $inversePurchases = DB::table('purchases as p')
+            ->leftJoin('posting_batches as vb', function ($join) use ($company): void {
+                $join->on('vb.id', '=', 'p.void_posting_batch_id')
+                    ->where('vb.company_id', '=', $company->id)
+                    ->where('vb.status', '=', PostingBatch::STATUS_POSTED)
+                    ->where('vb.source_type', '=', 'reversal')
+                    ->whereColumn('vb.reversal_of_id', '=', 'p.posting_batch_id');
+            })
+            ->where('p.company_id', $company->id)
+            ->where('p.status', '=', 'void')
+            ->where(function ($q) use ($startDate, $endDate): void {
+                $q->where(function ($q) use ($startDate, $endDate): void {
+                    $q->whereNotNull('p.void_posting_batch_id')
+                        ->whereNotNull('vb.id')
+                        ->whereBetween('p.void_business_date', [$startDate, $endDate]);
+                })->orWhere(function ($q) use ($startDate, $endDate): void {
+                    $q->whereNull('p.posting_batch_id')
+                        ->whereNull('p.void_posting_batch_id')
+                        ->where('p.grand_total_base', '0')
+                        ->where('p.grand_total_currency', '0')
+                        ->whereBetween(DB::raw('p.void_business_date'), [$startDate, $endDate]);
+                });
+            })
+            ->select([
+                'p.id as document_id',
+                DB::raw("'inverse_purchase' as event_type"),
+                DB::raw('p.void_business_date as business_date'),
+                'p.purchase_number as document_number',
+                'p.vendor_id',
+                DB::raw("COALESCE(NULLIF(JSON_UNQUOTE(JSON_EXTRACT(p.vendor_snapshot, '$.name_ar')), ''), NULLIF(JSON_UNQUOTE(JSON_EXTRACT(p.vendor_snapshot, '$.name_en')), '')) as vendor_name_ar"),
+                DB::raw("COALESCE(NULLIF(JSON_UNQUOTE(JSON_EXTRACT(p.vendor_snapshot, '$.name_en')), ''), NULLIF(JSON_UNQUOTE(JSON_EXTRACT(p.vendor_snapshot, '$.name_ar')), '')) as vendor_name_en"),
+
+                'p.warehouse_id',
+                'p.currency_code',
+                'p.exchange_rate',
+                DB::raw('(-p.grand_total_base) as commercial_purchases_base'),
+                DB::raw('(-p.discount_total_base) as discounts_base'),
+                DB::raw('0.000000 as returns_base'),
+                DB::raw('(-p.tax_total_base) as tax_base'),
+                DB::raw('(-p.grand_total_currency) as commercial_purchases_currency'),
+                DB::raw('0.000000 as returns_currency'),
+                DB::raw('(-p.discount_total_currency) as discounts_currency'),
+                DB::raw('(-p.tax_total_currency) as tax_currency'),
+                DB::raw('0 as is_issued_purchase'),
+            ]);
+
         // 3. Purchase Returns: includes zero-effect posted returns (where posting_batch_id may be null)
         $returns = DB::table('purchase_returns as pr')
             ->where('pr.company_id', $company->id)
-            ->where('pr.status', '=', 'posted')
+            ->whereIn('pr.status', ['posted', 'void'])
             ->whereBetween('pr.return_date', [$startDate, $endDate])
             ->select([
                 'pr.id as document_id',
@@ -521,22 +568,75 @@ final class TradeEventActivity
                 DB::raw('0 as is_issued_purchase'),
             ]);
 
+        // 4. Inverse Purchase Returns
+        $inverseReturns = DB::table('purchase_returns as pr')
+            ->leftJoin('posting_batches as vrb', function ($join) use ($company): void {
+                $join->on('vrb.id', '=', 'pr.void_posting_batch_id')
+                    ->where('vrb.company_id', '=', $company->id)
+                    ->where('vrb.status', '=', PostingBatch::STATUS_POSTED)
+                    ->where('vrb.source_type', '=', 'reversal')
+                    ->whereColumn('vrb.reversal_of_id', '=', 'pr.posting_batch_id');
+            })
+            ->where('pr.company_id', $company->id)
+            ->where('pr.status', '=', 'void')
+            ->where(function ($q) use ($startDate, $endDate): void {
+                $q->where(function ($q) use ($startDate, $endDate): void {
+                    $q->whereNotNull('pr.void_posting_batch_id')
+                        ->whereNotNull('vrb.id')
+                        ->whereBetween('pr.void_business_date', [$startDate, $endDate]);
+                })->orWhere(function ($q) use ($startDate, $endDate): void {
+                    $q->whereNull('pr.posting_batch_id')
+                        ->whereNull('pr.void_posting_batch_id')
+                        ->where('pr.grand_total_base', '0')
+                        ->where('pr.grand_total_currency', '0')
+                        ->whereBetween(DB::raw('pr.void_business_date'), [$startDate, $endDate]);
+                });
+            })
+            ->select([
+                'pr.id as document_id',
+                DB::raw("'inverse_purchase_return' as event_type"),
+                DB::raw('pr.void_business_date as business_date'),
+                'pr.return_number as document_number',
+                'pr.vendor_id',
+                DB::raw("COALESCE(NULLIF(JSON_UNQUOTE(JSON_EXTRACT(pr.vendor_snapshot, '$.name_ar')), ''), NULLIF(JSON_UNQUOTE(JSON_EXTRACT(pr.vendor_snapshot, '$.name_en')), '')) as vendor_name_ar"),
+                DB::raw("COALESCE(NULLIF(JSON_UNQUOTE(JSON_EXTRACT(pr.vendor_snapshot, '$.name_en')), ''), NULLIF(JSON_UNQUOTE(JSON_EXTRACT(pr.vendor_snapshot, '$.name_ar')), '')) as vendor_name_en"),
+
+                'pr.warehouse_id',
+                'pr.currency_code',
+                'pr.exchange_rate',
+                DB::raw('0.000000 as commercial_purchases_base'),
+                DB::raw('(-pr.discount_total_base) as discounts_base'),
+                DB::raw('(-pr.grand_total_base) as returns_base'),
+                DB::raw('(-pr.tax_total_base) as tax_base'),
+                DB::raw('0.000000 as commercial_purchases_currency'),
+                DB::raw('(-pr.grand_total_currency) as returns_currency'),
+                DB::raw('(-pr.discount_total_currency) as discounts_currency'),
+                DB::raw('(-pr.tax_total_currency) as tax_currency'),
+                DB::raw('0 as is_issued_purchase'),
+            ]);
+
         if ($filters->vendorId !== null) {
             $purchases->where('p.vendor_id', $filters->vendorId);
+            $inversePurchases->where('p.vendor_id', $filters->vendorId);
             $returns->where('pr.vendor_id', $filters->vendorId);
+            $inverseReturns->where('pr.vendor_id', $filters->vendorId);
         }
 
         if ($filters->warehouseId !== null) {
             $purchases->where('p.warehouse_id', $filters->warehouseId);
+            $inversePurchases->where('p.warehouse_id', $filters->warehouseId);
             $returns->where('pr.warehouse_id', $filters->warehouseId);
+            $inverseReturns->where('pr.warehouse_id', $filters->warehouseId);
         }
 
         if ($filters->currencyCode !== null) {
             $purchases->where('p.currency_code', $filters->currencyCode);
+            $inversePurchases->where('p.currency_code', $filters->currencyCode);
             $returns->where('pr.currency_code', $filters->currencyCode);
+            $inverseReturns->where('pr.currency_code', $filters->currencyCode);
         }
 
-        $union = $purchases->unionAll($returns);
+        $union = $purchases->unionAll($inversePurchases)->unionAll($returns)->unionAll($inverseReturns);
 
         return DB::query()->fromSub($union, 'events');
     }
@@ -564,7 +664,7 @@ final class TradeEventActivity
                 ->whereNull('p.posting_batch_id')->where('p.grand_total_base', '0')->where('p.grand_total_currency', '0')))
             ->where('pl.company_id', $company->id)
             ->where('p.company_id', $company->id)
-            ->where('p.status', '=', 'posted')
+            ->whereIn('p.status', ['posted', 'void'])
             ->whereBetween('p.purchase_date', [$startDate, $endDate])
             ->select([
                 'pl.id as line_id',
@@ -594,12 +694,66 @@ final class TradeEventActivity
                 DB::raw('1 as sign'),
             ]);
 
+        // 2. Inverse Purchase Lines
+        $inverseLines = DB::table('purchase_lines as pl')
+            ->join('purchases as p', 'p.id', '=', 'pl.purchase_id')
+            ->leftJoin('posting_batches as vb', function ($join) use ($company): void {
+                $join->on('vb.id', '=', 'p.void_posting_batch_id')
+                    ->where('vb.company_id', '=', $company->id)
+                    ->where('vb.status', '=', PostingBatch::STATUS_POSTED)
+                    ->where('vb.source_type', '=', 'reversal')
+                    ->whereColumn('vb.reversal_of_id', '=', 'p.posting_batch_id');
+            })
+            ->where('pl.company_id', $company->id)
+            ->where('p.company_id', $company->id)
+            ->where('p.status', '=', 'void')
+            ->where(function ($q) use ($startDate, $endDate): void {
+                $q->where(function ($q) use ($startDate, $endDate): void {
+                    $q->whereNotNull('p.void_posting_batch_id')
+                        ->whereNotNull('vb.id')
+                        ->whereBetween('p.void_business_date', [$startDate, $endDate]);
+                })->orWhere(function ($q) use ($startDate, $endDate): void {
+                    $q->whereNull('p.posting_batch_id')
+                        ->whereNull('p.void_posting_batch_id')
+                        ->where('p.grand_total_base', '0')
+                        ->where('p.grand_total_currency', '0')
+                        ->whereBetween(DB::raw('p.void_business_date'), [$startDate, $endDate]);
+                });
+            })
+            ->select([
+                'pl.id as line_id',
+                'p.id as document_id',
+                'p.purchase_number as document_number',
+                DB::raw("'inverse_purchase_line' as event_type"),
+                DB::raw('p.void_business_date as business_date'),
+                'p.vendor_id',
+                DB::raw("COALESCE(NULLIF(JSON_UNQUOTE(JSON_EXTRACT(p.vendor_snapshot, '$.name_ar')), ''), NULLIF(JSON_UNQUOTE(JSON_EXTRACT(p.vendor_snapshot, '$.name_en')), '')) as vendor_name_ar"),
+                DB::raw("COALESCE(NULLIF(JSON_UNQUOTE(JSON_EXTRACT(p.vendor_snapshot, '$.name_en')), ''), NULLIF(JSON_UNQUOTE(JSON_EXTRACT(p.vendor_snapshot, '$.name_ar')), '')) as vendor_name_en"),
+
+                'p.warehouse_id',
+                'pl.product_id',
+                'pl.item_description',
+                'pl.product_sku',
+                'pl.product_name_ar',
+                'pl.product_name_en',
+                'pl.unit_name_ar',
+                'pl.unit_name_en',
+                'pl.unit_cost',
+                'p.currency_code',
+                DB::raw('(-pl.quantity_base) as quantity_base'),
+                DB::raw('(-pl.line_total_base) as commercial_line_total_base'),
+                DB::raw('(-(pl.line_total_base - CASE WHEN pl.purchase_tax_account_id IS NULL THEN 0 ELSE pl.line_tax_base END + COALESCE(pl.landed_cost_allocated_base, 0))) as inventory_acquisition_base'),
+                DB::raw('(-COALESCE(pl.landed_cost_allocated_base, 0.000000)) as landed_cost_allocated_base'),
+                'pl.inventory_unit_cost_base',
+                DB::raw('-1 as sign'),
+            ]);
+
         // 3. Purchase Return Lines: includes zero-effect posted returns
         $returnLines = DB::table('purchase_return_lines as prl')
             ->join('purchase_returns as pr', 'pr.id', '=', 'prl.purchase_return_id')
             ->where('prl.company_id', $company->id)
             ->where('pr.company_id', $company->id)
-            ->where('pr.status', '=', 'posted')
+            ->whereIn('pr.status', ['posted', 'void'])
             ->whereBetween('pr.return_date', [$startDate, $endDate])
             ->select([
                 'prl.id as line_id',
@@ -629,27 +783,89 @@ final class TradeEventActivity
                 DB::raw('-1 as sign'),
             ]);
 
+        // 4. Inverse Purchase Return Lines
+        $inverseReturnLines = DB::table('purchase_return_lines as prl')
+            ->join('purchase_returns as pr', 'pr.id', '=', 'prl.purchase_return_id')
+            ->leftJoin('posting_batches as vrb', function ($join) use ($company): void {
+                $join->on('vrb.id', '=', 'pr.void_posting_batch_id')
+                    ->where('vrb.company_id', '=', $company->id)
+                    ->where('vrb.status', '=', PostingBatch::STATUS_POSTED)
+                    ->where('vrb.source_type', '=', 'reversal')
+                    ->whereColumn('vrb.reversal_of_id', '=', 'pr.posting_batch_id');
+            })
+            ->where('prl.company_id', $company->id)
+            ->where('pr.company_id', $company->id)
+            ->where('pr.status', '=', 'void')
+            ->where(function ($q) use ($startDate, $endDate): void {
+                $q->where(function ($q) use ($startDate, $endDate): void {
+                    $q->whereNotNull('pr.void_posting_batch_id')
+                        ->whereNotNull('vrb.id')
+                        ->whereBetween('pr.void_business_date', [$startDate, $endDate]);
+                })->orWhere(function ($q) use ($startDate, $endDate): void {
+                    $q->whereNull('pr.posting_batch_id')
+                        ->whereNull('pr.void_posting_batch_id')
+                        ->where('pr.grand_total_base', '0')
+                        ->where('pr.grand_total_currency', '0')
+                        ->whereBetween(DB::raw('pr.void_business_date'), [$startDate, $endDate]);
+                });
+            })
+            ->select([
+                'prl.id as line_id',
+                'pr.id as document_id',
+                'pr.return_number as document_number',
+                DB::raw("'inverse_return_line' as event_type"),
+                DB::raw('pr.void_business_date as business_date'),
+                'pr.vendor_id',
+                DB::raw("COALESCE(NULLIF(JSON_UNQUOTE(JSON_EXTRACT(pr.vendor_snapshot, '$.name_ar')), ''), NULLIF(JSON_UNQUOTE(JSON_EXTRACT(pr.vendor_snapshot, '$.name_en')), '')) as vendor_name_ar"),
+                DB::raw("COALESCE(NULLIF(JSON_UNQUOTE(JSON_EXTRACT(pr.vendor_snapshot, '$.name_en')), ''), NULLIF(JSON_UNQUOTE(JSON_EXTRACT(pr.vendor_snapshot, '$.name_ar')), '')) as vendor_name_en"),
+
+                'pr.warehouse_id',
+                'prl.product_id',
+                'prl.item_description',
+                'prl.product_sku',
+                'prl.product_name_ar',
+                'prl.product_name_en',
+                'prl.unit_name_ar',
+                'prl.unit_name_en',
+                'prl.unit_cost',
+                'pr.currency_code',
+                'prl.quantity_base',
+                'prl.line_total_base as commercial_line_total_base',
+                'prl.inventory_value_removed_base as inventory_acquisition_base',
+                DB::raw('0.000000 as landed_cost_allocated_base'),
+                DB::raw('NULL as inventory_unit_cost_base'),
+                DB::raw('1 as sign'),
+            ]);
+
         if ($filters->vendorId !== null) {
             $lines->where('p.vendor_id', $filters->vendorId);
+            $inverseLines->where('p.vendor_id', $filters->vendorId);
             $returnLines->where('pr.vendor_id', $filters->vendorId);
+            $inverseReturnLines->where('pr.vendor_id', $filters->vendorId);
         }
 
         if ($filters->productId !== null) {
             $lines->where('pl.product_id', $filters->productId);
+            $inverseLines->where('pl.product_id', $filters->productId);
             $returnLines->where('prl.product_id', $filters->productId);
+            $inverseReturnLines->where('prl.product_id', $filters->productId);
         }
 
         if ($filters->warehouseId !== null) {
             $lines->where('p.warehouse_id', $filters->warehouseId);
+            $inverseLines->where('p.warehouse_id', $filters->warehouseId);
             $returnLines->where('pr.warehouse_id', $filters->warehouseId);
+            $inverseReturnLines->where('pr.warehouse_id', $filters->warehouseId);
         }
 
         if ($filters->currencyCode !== null) {
             $lines->where('p.currency_code', $filters->currencyCode);
+            $inverseLines->where('p.currency_code', $filters->currencyCode);
             $returnLines->where('pr.currency_code', $filters->currencyCode);
+            $inverseReturnLines->where('pr.currency_code', $filters->currencyCode);
         }
 
-        $union = $lines->unionAll($returnLines);
+        $union = $lines->unionAll($inverseLines)->unionAll($returnLines)->unionAll($inverseReturnLines);
 
         return DB::query()->fromSub($union, 'lines');
     }

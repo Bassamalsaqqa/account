@@ -68,7 +68,7 @@
          style="display: none;"></div>
 
     <!-- Sidebar Navigation -->
-    <aside id="app-sidebar" class="app-sidebar-shell fixed top-0 bottom-0 z-50 bg-white flex flex-col
+    <aside id="app-sidebar" class="app-sidebar-shell fixed top-0 bottom-0 z-50 bg-surface flex flex-col
                   {{ $isRtl ? 'right-0 border-l border-border' : 'left-0 border-r border-border' }}
                   {{ $isRtl ? 'max-lg:translate-x-full' : 'max-lg:-translate-x-full' }}"
            :class="[
@@ -78,7 +78,7 @@
            :inert="mobileLayout && !mobileMenuOpen" x-trap.inert.noscroll="mobileLayout && mobileMenuOpen">
 
         <!-- Sidebar Header / Brand -->
-        <div class="p-4 pb-3 border-b border-border transition-all">
+        <div class="p-4 pb-3 border-b border-border transition-colors">
             <div class="flex items-center gap-3" :class="sidebarCollapsed ? 'lg:justify-center' : ''">
                 <div class="w-[42px] h-[42px] rounded-card bg-primary text-white grid place-items-center shadow-[0_6px_16px_rgba(37,95,214,.18)] shrink-0"
                      :title="sidebarCollapsed ? '{{ __('app.app_name') }}' : ''">
@@ -111,7 +111,7 @@
                     @endif
                 </div>
                 @if (! $isSupportView && $userActiveCompanies->count() > 1)
-                    <a href="{{ route('companies.select') }}" class="text-xs text-primary hover:underline font-bold shrink-0">
+                    <a href="{{ route('companies.select') }}" aria-current="{{ request()->routeIs('companies.select') ? 'page' : 'false' }}" class="text-sm text-primary hover:underline font-bold shrink-0">
                         {{ __('settings.activate') }}
                     </a>
                 @endif
@@ -129,9 +129,9 @@
 
             <!-- Overview & Reports -->
             <div class="space-y-0.5">
-                <a href="{{ route('dashboard') }}"
+                <a href="{{ route('dashboard') }}" aria-current="{{ request()->routeIs('dashboard') ? 'page' : 'false' }}"
                    :class="sidebarCollapsed ? 'lg:justify-center lg:px-0' : ''"
-                   title="{{ __('app.nav_dashboard') }}"
+                   title="{{ __('app.nav_dashboard') }}" aria-label="{{ __('app.nav_dashboard') }}"
                    class="flex items-center justify-between min-h-11 px-3 rounded-control text-text-secondary hover:bg-surface-soft hover:text-text-primary font-semibold transition-colors
                           {{ request()->routeIs('dashboard') ? 'bg-primary-50 text-primary! font-bold shadow-[inset_3px_0_0_#255fd6] rtl:shadow-[inset_-3px_0_0_#255fd6]' : '' }}">
                     <div class="flex items-center gap-2.5">
@@ -140,9 +140,9 @@
                     </div>
                 </a>
                 @if($sidebarCompany && app(\App\Application\Reporting\Presentation\ReportRegistry::class)->hasVisible($sidebarCompany))
-                    <a href="{{ route('reports.index') }}"
+                    <a href="{{ route('reports.index') }}" aria-current="{{ request()->routeIs('reports.*') ? 'page' : 'false' }}"
                        :class="sidebarCollapsed ? 'lg:justify-center lg:px-0' : ''"
-                       title="{{ __('reports.title') }}"
+                       title="{{ __('reports.title') }}" aria-label="{{ __('reports.title') }}"
                        class="flex items-center justify-between min-h-11 px-3 rounded-control text-sm font-semibold text-text-secondary hover:bg-surface-soft transition-colors
                               {{ request()->routeIs('reports.*') ? 'bg-primary-50 text-primary! font-bold shadow-[inset_3px_0_0_#255fd6] rtl:shadow-[inset_-3px_0_0_#255fd6]' : '' }}">
                         <div class="flex items-center gap-2.5">
@@ -158,18 +158,18 @@
                 $salesActive = request()->routeIs('invoices.*', 'quotations.*', 'returns.*', 'payments.*', 'customers.*');
             @endphp
             <div class="space-y-1">
-                <button type="button" @click="toggleGroup('sales', {{ $salesActive ? 'true' : 'false' }})"
+                <button type="button" @click="toggleGroup('sales', {{ $salesActive ? 'true' : 'false' }})" :aria-expanded="isGroupOpen('sales', {{ $salesActive ? 'true' : 'false' }}).toString()" aria-controls="sidebar-group-sales"
                         :class="sidebarCollapsed ? 'lg:hidden' : ''"
                         class="w-full flex items-center justify-between px-3 py-1 text-xs font-bold tracking-wider text-text-muted uppercase hover:text-text-primary transition-colors cursor-pointer select-none">
                     <span>{{ __('app.nav_group_sales_customers') }}</span>
                     <x-icon name="chevron" class="w-3.5 h-3.5 transition-transform duration-150"
                             ::class="isGroupOpen('sales', {{ $salesActive ? 'true' : 'false' }}) ? 'rotate-90 rtl:-rotate-90' : ''" />
                 </button>
-                <div x-show="isGroupOpen('sales', {{ $salesActive ? 'true' : 'false' }})"
+                <div id="sidebar-group-sales" x-show="isGroupOpen('sales', {{ $salesActive ? 'true' : 'false' }})"
                      class="space-y-0.5">
-                    <a href="{{ route('invoices.index') }}"
+                    <a href="{{ route('invoices.index') }}" aria-current="{{ request()->routeIs('invoices.*') ? 'page' : 'false' }}"
                        :class="sidebarCollapsed ? 'lg:justify-center lg:px-0' : ''"
-                       title="{{ __('app.nav_sales_invoices') }}"
+                       title="{{ __('app.nav_sales_invoices') }}" aria-label="{{ __('app.nav_sales_invoices') }}"
                        class="flex items-center justify-between min-h-11 px-3 rounded-control text-text-secondary hover:bg-surface-soft hover:text-text-primary font-semibold transition-colors
                               {{ request()->routeIs('invoices.*') ? 'bg-primary-50 text-primary! font-bold shadow-[inset_3px_0_0_#255fd6] rtl:shadow-[inset_-3px_0_0_#255fd6]' : '' }}">
                         <div class="flex items-center gap-2.5">
@@ -177,9 +177,9 @@
                             <span :class="sidebarCollapsed ? 'lg:hidden' : ''">{{ __('app.nav_sales_invoices') }}</span>
                         </div>
                     </a>
-                    <a href="{{ route('quotations.index') }}"
+                    <a href="{{ route('quotations.index') }}" aria-current="{{ request()->routeIs('quotations.*') ? 'page' : 'false' }}"
                        :class="sidebarCollapsed ? 'lg:justify-center lg:px-0' : ''"
-                       title="{{ __('app.nav_quotes') }}"
+                       title="{{ __('app.nav_quotes') }}" aria-label="{{ __('app.nav_quotes') }}"
                        class="flex items-center justify-between min-h-11 px-3 rounded-control text-text-secondary hover:bg-surface-soft hover:text-text-primary font-semibold transition-colors
                               {{ request()->routeIs('quotations.*') ? 'bg-primary-50 text-primary! font-bold shadow-[inset_3px_0_0_#255fd6] rtl:shadow-[inset_-3px_0_0_#255fd6]' : '' }}">
                         <div class="flex items-center gap-2.5">
@@ -187,9 +187,9 @@
                             <span :class="sidebarCollapsed ? 'lg:hidden' : ''">{{ __('app.nav_quotes') }}</span>
                         </div>
                     </a>
-                    <a href="{{ route('returns.index') }}"
+                    <a href="{{ route('returns.index') }}" aria-current="{{ request()->routeIs('returns.*') ? 'page' : 'false' }}"
                        :class="sidebarCollapsed ? 'lg:justify-center lg:px-0' : ''"
-                       title="{{ __('app.nav_sales_returns') }}"
+                       title="{{ __('app.nav_sales_returns') }}" aria-label="{{ __('app.nav_sales_returns') }}"
                        class="flex items-center justify-between min-h-11 px-3 rounded-control text-text-secondary hover:bg-surface-soft hover:text-text-primary font-semibold transition-colors
                               {{ request()->routeIs('returns.*') ? 'bg-primary-50 text-primary! font-bold shadow-[inset_3px_0_0_#255fd6] rtl:shadow-[inset_-3px_0_0_#255fd6]' : '' }}">
                         <div class="flex items-center gap-2.5">
@@ -197,9 +197,9 @@
                             <span :class="sidebarCollapsed ? 'lg:hidden' : ''">{{ __('app.nav_sales_returns') }}</span>
                         </div>
                     </a>
-                    <a href="{{ route('payments.index') }}"
+                    <a href="{{ route('payments.index') }}" aria-current="{{ request()->routeIs('payments.*') ? 'page' : 'false' }}"
                        :class="sidebarCollapsed ? 'lg:justify-center lg:px-0' : ''"
-                       title="{{ __('app.nav_customer_payments') }}"
+                       title="{{ __('app.nav_customer_payments') }}" aria-label="{{ __('app.nav_customer_payments') }}"
                        class="flex items-center justify-between min-h-11 px-3 rounded-control text-text-secondary hover:bg-surface-soft hover:text-text-primary font-semibold transition-colors
                               {{ request()->routeIs('payments.*') ? 'bg-primary-50 text-primary! font-bold shadow-[inset_3px_0_0_#255fd6] rtl:shadow-[inset_-3px_0_0_#255fd6]' : '' }}">
                         <div class="flex items-center gap-2.5">
@@ -207,9 +207,9 @@
                             <span :class="sidebarCollapsed ? 'lg:hidden' : ''">{{ __('app.nav_customer_payments') }}</span>
                         </div>
                     </a>
-                    <a href="{{ route('customers.index') }}"
+                    <a href="{{ route('customers.index') }}" aria-current="{{ request()->routeIs('customers.*') ? 'page' : 'false' }}"
                        :class="sidebarCollapsed ? 'lg:justify-center lg:px-0' : ''"
-                       title="{{ __('app.nav_customers') }}"
+                       title="{{ __('app.nav_customers') }}" aria-label="{{ __('app.nav_customers') }}"
                        class="flex items-center justify-between min-h-11 px-3 rounded-control text-text-secondary hover:bg-surface-soft hover:text-text-primary font-semibold transition-colors
                               {{ request()->routeIs('customers.*') ? 'bg-primary-50 text-primary! font-bold shadow-[inset_3px_0_0_#255fd6] rtl:shadow-[inset_-3px_0_0_#255fd6]' : '' }}">
                         <div class="flex items-center gap-2.5">
@@ -225,19 +225,19 @@
                 $purchasingActive = request()->routeIs('purchases.*', 'purchase-returns.*', 'vendor-payments.*', 'vendors.*', 'products.*', 'brands.*', 'catalogs.*', 'labels.*', 'inventory.*');
             @endphp
             <div class="space-y-1">
-                <button type="button" @click="toggleGroup('purchasing', {{ $purchasingActive ? 'true' : 'false' }})"
+                <button type="button" @click="toggleGroup('purchasing', {{ $purchasingActive ? 'true' : 'false' }})" :aria-expanded="isGroupOpen('purchasing', {{ $purchasingActive ? 'true' : 'false' }}).toString()" aria-controls="sidebar-group-purchasing"
                         :class="sidebarCollapsed ? 'lg:hidden' : ''"
                         class="w-full flex items-center justify-between px-3 py-1 text-xs font-bold tracking-wider text-text-muted uppercase hover:text-text-primary transition-colors cursor-pointer select-none">
                     <span>{{ __('app.nav_group_purchasing_inventory') }}</span>
                     <x-icon name="chevron" class="w-3.5 h-3.5 transition-transform duration-150"
                             ::class="isGroupOpen('purchasing', {{ $purchasingActive ? 'true' : 'false' }}) ? 'rotate-90 rtl:-rotate-90' : ''" />
                 </button>
-                <div x-show="isGroupOpen('purchasing', {{ $purchasingActive ? 'true' : 'false' }})"
+                <div id="sidebar-group-purchasing" x-show="isGroupOpen('purchasing', {{ $purchasingActive ? 'true' : 'false' }})"
                      class="space-y-0.5">
                     @can('purchasing.purchase.view')
-                    <a href="{{ route('purchases.index') }}"
+                    <a href="{{ route('purchases.index') }}" aria-current="{{ request()->routeIs('purchases.*') ? 'page' : 'false' }}"
                        :class="sidebarCollapsed ? 'lg:justify-center lg:px-0' : ''"
-                       title="{{ __('app.nav_purchase_invoices') }}"
+                       title="{{ __('app.nav_purchase_invoices') }}" aria-label="{{ __('app.nav_purchase_invoices') }}"
                        class="flex items-center justify-between min-h-11 px-3 rounded-control text-text-secondary hover:bg-surface-soft hover:text-text-primary font-semibold transition-colors
                               {{ request()->routeIs('purchases.*') ? 'bg-primary-50 text-primary! font-bold shadow-[inset_3px_0_0_#255fd6] rtl:shadow-[inset_-3px_0_0_#255fd6]' : '' }}">
                         <div class="flex items-center gap-2.5">
@@ -245,9 +245,9 @@
                             <span :class="sidebarCollapsed ? 'lg:hidden' : ''">{{ __('app.nav_purchase_invoices') }}</span>
                         </div>
                     </a>
-                    <a href="{{ route('purchase-returns.index') }}"
+                    <a href="{{ route('purchase-returns.index') }}" aria-current="{{ request()->routeIs('purchase-returns.*') ? 'page' : 'false' }}"
                        :class="sidebarCollapsed ? 'lg:justify-center lg:px-0' : ''"
-                       title="{{ __('app.nav_purchase_returns') }}"
+                       title="{{ __('app.nav_purchase_returns') }}" aria-label="{{ __('app.nav_purchase_returns') }}"
                        class="flex items-center justify-between min-h-11 px-3 rounded-control text-text-secondary hover:bg-surface-soft hover:text-text-primary font-semibold transition-colors
                               {{ request()->routeIs('purchase-returns.*') ? 'bg-primary-50 text-primary! font-bold shadow-[inset_3px_0_0_#255fd6] rtl:shadow-[inset_-3px_0_0_#255fd6]' : '' }}">
                         <div class="flex items-center gap-2.5">
@@ -262,9 +262,9 @@
                         auth()->user()->can('money.vendor_payment.reverse') ||
                         auth()->user()->can('vendors.statement.view')
                     ))
-                    <a href="{{ route('vendor-payments.index') }}"
+                    <a href="{{ route('vendor-payments.index') }}" aria-current="{{ request()->routeIs('vendor-payments.*') ? 'page' : 'false' }}"
                        :class="sidebarCollapsed ? 'lg:justify-center lg:px-0' : ''"
-                       title="{{ __('app.nav_vendor_payments') }}"
+                       title="{{ __('app.nav_vendor_payments') }}" aria-label="{{ __('app.nav_vendor_payments') }}"
                        class="flex items-center justify-between min-h-11 px-3 rounded-control text-text-secondary hover:bg-surface-soft hover:text-text-primary font-semibold transition-colors
                               {{ request()->routeIs('vendor-payments.*') ? 'bg-primary-50 text-primary! font-bold shadow-[inset_3px_0_0_#255fd6] rtl:shadow-[inset_-3px_0_0_#255fd6]' : '' }}">
                         <div class="flex items-center gap-2.5">
@@ -274,9 +274,9 @@
                     </a>
                     @endif
                     @can('vendors.view')
-                    <a href="{{ route('vendors.index') }}"
+                    <a href="{{ route('vendors.index') }}" aria-current="{{ request()->routeIs('vendors.*') ? 'page' : 'false' }}"
                        :class="sidebarCollapsed ? 'lg:justify-center lg:px-0' : ''"
-                       title="{{ __('app.nav_vendors') }}"
+                       title="{{ __('app.nav_vendors') }}" aria-label="{{ __('app.nav_vendors') }}"
                        class="flex items-center justify-between min-h-11 px-3 rounded-control text-text-secondary hover:bg-surface-soft hover:text-text-primary font-semibold transition-colors
                               {{ request()->routeIs('vendors.*') ? 'bg-primary-50 text-primary! font-bold shadow-[inset_3px_0_0_#255fd6] rtl:shadow-[inset_-3px_0_0_#255fd6]' : '' }}">
                         <div class="flex items-center gap-2.5">
@@ -285,9 +285,9 @@
                         </div>
                     </a>
                     @endcan
-                    <a href="{{ route('products.index') }}"
+                    <a href="{{ route('products.index') }}" aria-current="{{ request()->routeIs('products.*') ? 'page' : 'false' }}"
                        :class="sidebarCollapsed ? 'lg:justify-center lg:px-0' : ''"
-                       title="{{ __('app.nav_products') }}"
+                       title="{{ __('app.nav_products') }}" aria-label="{{ __('app.nav_products') }}"
                        class="flex items-center justify-between min-h-11 px-3 rounded-control text-text-secondary hover:bg-surface-soft hover:text-text-primary font-semibold transition-colors
                               {{ request()->routeIs('products.*') ? 'bg-primary-50 text-primary! font-bold shadow-[inset_3px_0_0_#255fd6] rtl:shadow-[inset_-3px_0_0_#255fd6]' : '' }}">
                         <div class="flex items-center gap-2.5">
@@ -296,9 +296,9 @@
                         </div>
                     </a>
                     @if(auth()->user()->can('inventory.product.manage'))
-                    <a href="{{ route('brands.index') }}"
+                    <a href="{{ route('brands.index') }}" aria-current="{{ request()->routeIs('brands.*') ? 'page' : 'false' }}"
                        :class="sidebarCollapsed ? 'lg:justify-center lg:px-0' : ''"
-                       title="{{ __('inventory.brands') }}"
+                       title="{{ __('inventory.brands') }}" aria-label="{{ __('inventory.brands') }}"
                        class="flex items-center justify-between min-h-11 px-3 rounded-control text-text-secondary hover:bg-surface-soft hover:text-text-primary font-semibold transition-colors
                               {{ request()->routeIs('brands.*') ? 'bg-primary-50 text-primary! font-bold shadow-[inset_3px_0_0_#255fd6] rtl:shadow-[inset_-3px_0_0_#255fd6]' : '' }}">
                         <div class="flex items-center gap-2.5">
@@ -308,26 +308,26 @@
                     </a>
                     @endif
                     @if(auth()->user()->can('catalogs.view') && auth()->user()->hasAnyPermission(['inventory.stock.view','inventory.product.manage']))
-                    <a href="{{ route('catalogs.index') }}"
+                    <a href="{{ route('catalogs.index') }}" aria-current="{{ request()->routeIs('catalogs.*') ? 'page' : 'false' }}"
                        :class="sidebarCollapsed ? 'lg:justify-center lg:px-0' : ''"
-                       title="{{ __('catalogs.catalogs') }}"
+                       title="{{ __('catalogs.catalogs') }}" aria-label="{{ __('catalogs.catalogs') }}"
                        class="flex min-h-11 items-center gap-2.5 px-3 text-sm rounded-control hover:bg-surface-soft hover:text-text-primary text-text-secondary font-semibold transition-colors">
                         <x-icon name="file" class="w-4.5 h-4.5 shrink-0" />
                         <span :class="sidebarCollapsed ? 'lg:hidden' : ''">{{ __('catalogs.catalogs') }}</span>
                     </a>
                     @endif
                     @if(auth()->user()->can('inventory.barcode_labels.print') && auth()->user()->hasAnyPermission(['inventory.stock.view','inventory.product.manage']))
-                    <a href="{{ route('labels.index') }}"
+                    <a href="{{ route('labels.index') }}" aria-current="{{ request()->routeIs('labels.*') ? 'page' : 'false' }}"
                        :class="sidebarCollapsed ? 'lg:justify-center lg:px-0' : ''"
-                       title="{{ __('labels.title') }}"
+                       title="{{ __('labels.title') }}" aria-label="{{ __('labels.title') }}"
                        class="flex min-h-11 items-center gap-2.5 px-3 text-sm rounded-control hover:bg-surface-soft hover:text-text-primary text-text-secondary font-semibold transition-colors">
                         <x-icon name="barcode" class="w-4.5 h-4.5 shrink-0" />
                         <span :class="sidebarCollapsed ? 'lg:hidden' : ''">{{ __('labels.title') }}</span>
                     </a>
                     @endif
-                    <a href="{{ route('inventory.overview') }}"
+                    <a href="{{ route('inventory.overview') }}" aria-current="{{ request()->routeIs('inventory.overview') ? 'page' : 'false' }}"
                        :class="sidebarCollapsed ? 'lg:justify-center lg:px-0' : ''"
-                       title="{{ __('app.nav_inventory_overview') }}"
+                       title="{{ __('app.nav_inventory_overview') }}" aria-label="{{ __('app.nav_inventory_overview') }}"
                        class="flex items-center justify-between min-h-11 px-3 rounded-control text-text-secondary hover:bg-surface-soft hover:text-text-primary font-semibold transition-colors
                               {{ request()->routeIs('inventory.overview', 'inventory.movements', 'inventory.adjustments.*', 'inventory.transfers.*') ? 'bg-primary-50 text-primary! font-bold shadow-[inset_3px_0_0_#255fd6] rtl:shadow-[inset_-3px_0_0_#255fd6]' : '' }}">
                         <div class="flex items-center gap-2.5">
@@ -335,9 +335,9 @@
                             <span :class="sidebarCollapsed ? 'lg:hidden' : ''">{{ __('app.nav_inventory_overview') }}</span>
                         </div>
                     </a>
-                    <a href="{{ route('inventory.expiry') }}"
+                    <a href="{{ route('inventory.expiry') }}" aria-current="{{ request()->routeIs('inventory.expiry') ? 'page' : 'false' }}"
                        :class="sidebarCollapsed ? 'lg:justify-center lg:px-0' : ''"
-                       title="{{ __('app.nav_expiry_center') }}"
+                       title="{{ __('app.nav_expiry_center') }}" aria-label="{{ __('app.nav_expiry_center') }}"
                        class="flex items-center justify-between min-h-11 px-3 rounded-control text-text-secondary hover:bg-surface-soft hover:text-text-primary font-semibold transition-colors
                               {{ request()->routeIs('inventory.expiry') ? 'bg-primary-50 text-primary! font-bold shadow-[inset_3px_0_0_#255fd6] rtl:shadow-[inset_-3px_0_0_#255fd6]' : '' }}">
                         <div class="flex items-center gap-2.5">
@@ -353,37 +353,37 @@
                 $treasuryActive = request()->routeIs('money.*', 'expenses.*');
             @endphp
             <div class="space-y-1">
-                <button type="button" @click="toggleGroup('treasury', {{ $treasuryActive ? 'true' : 'false' }})"
+                <button type="button" @click="toggleGroup('treasury', {{ $treasuryActive ? 'true' : 'false' }})" :aria-expanded="isGroupOpen('treasury', {{ $treasuryActive ? 'true' : 'false' }}).toString()" aria-controls="sidebar-group-treasury"
                         :class="sidebarCollapsed ? 'lg:hidden' : ''"
                         class="w-full flex items-center justify-between px-3 py-1 text-xs font-bold tracking-wider text-text-muted uppercase hover:text-text-primary transition-colors cursor-pointer select-none">
                     <span>{{ __('app.nav_group_treasury_reports') }}</span>
                     <x-icon name="chevron" class="w-3.5 h-3.5 transition-transform duration-150"
                             ::class="isGroupOpen('treasury', {{ $treasuryActive ? 'true' : 'false' }}) ? 'rotate-90 rtl:-rotate-90' : ''" />
                 </button>
-                <div x-show="isGroupOpen('treasury', {{ $treasuryActive ? 'true' : 'false' }})"
+                <div id="sidebar-group-treasury" x-show="isGroupOpen('treasury', {{ $treasuryActive ? 'true' : 'false' }})"
                      class="space-y-0.5">
                     @if(auth()->user()->can('money.cash.view') || auth()->user()->can('money.bank.view'))
-                    <a href="{{ route('money.overview') }}"
+                    <a href="{{ route('money.overview') }}" aria-current="{{ request()->routeIs('money.overview') ? 'page' : 'false' }}"
                        :class="sidebarCollapsed ? 'lg:justify-center lg:px-0' : ''"
-                       title="{{ __('app.nav_treasury_banks') }}"
+                       title="{{ __('app.nav_treasury_banks') }}" aria-label="{{ __('app.nav_treasury_banks') }}"
                        class="flex items-center gap-2.5 min-h-11 px-3 rounded-control text-text-secondary hover:bg-surface-soft hover:text-text-primary font-semibold transition-colors">
                         <x-icon name="bank" class="w-4.5 h-4.5 shrink-0" />
                         <span :class="sidebarCollapsed ? 'lg:hidden' : ''">{{ __('app.nav_treasury_banks') }}</span>
                     </a>
                     @endif
                     @can('money.check.view')
-                    <a href="{{ route('money.checks.index') }}"
+                    <a href="{{ route('money.checks.index') }}" aria-current="{{ request()->routeIs('money.checks.*') ? 'page' : 'false' }}"
                        :class="sidebarCollapsed ? 'lg:justify-center lg:px-0' : ''"
-                       title="{{ __('app.nav_checkbook') }}"
+                       title="{{ __('app.nav_checkbook') }}" aria-label="{{ __('app.nav_checkbook') }}"
                        class="flex items-center gap-2.5 min-h-11 px-3 rounded-control text-text-secondary hover:bg-surface-soft hover:text-text-primary font-semibold transition-colors">
                         <x-icon name="check" class="w-4.5 h-4.5 shrink-0" />
                         <span :class="sidebarCollapsed ? 'lg:hidden' : ''">{{ __('app.nav_checkbook') }}</span>
                     </a>
                     @endcan
                     @can('money.expense.view')
-                    <a href="{{ route('expenses.index') }}"
+                    <a href="{{ route('expenses.index') }}" aria-current="{{ request()->routeIs('expenses.*') ? 'page' : 'false' }}"
                        :class="sidebarCollapsed ? 'lg:justify-center lg:px-0' : ''"
-                       title="{{ __('app.nav_expenses') }}"
+                       title="{{ __('app.nav_expenses') }}" aria-label="{{ __('app.nav_expenses') }}"
                        class="flex items-center justify-between min-h-11 px-3 rounded-control text-text-secondary hover:bg-surface-soft hover:text-text-primary font-semibold transition-colors
                               {{ request()->routeIs('expenses.*') ? 'bg-primary-50 text-primary! font-bold shadow-[inset_3px_0_0_#255fd6] rtl:shadow-[inset_-3px_0_0_#255fd6]' : '' }}">
                         <div class="flex items-center gap-2.5">
@@ -401,18 +401,18 @@
                 $hrActive = request()->routeIs('employees.*', 'payroll.*');
             @endphp
             <div class="space-y-1">
-                <button type="button" @click="toggleGroup('hr', {{ $hrActive ? 'true' : 'false' }})"
+                <button type="button" @click="toggleGroup('hr', {{ $hrActive ? 'true' : 'false' }})" :aria-expanded="isGroupOpen('hr', {{ $hrActive ? 'true' : 'false' }}).toString()" aria-controls="sidebar-group-hr"
                         :class="sidebarCollapsed ? 'lg:hidden' : ''"
                         class="w-full flex items-center justify-between px-3 py-1 text-xs font-bold tracking-wider text-text-muted uppercase hover:text-text-primary transition-colors cursor-pointer select-none">
                     <span>{{ __('app.nav_group_hr_payroll') }}</span>
                     <x-icon name="chevron" class="w-3.5 h-3.5 transition-transform duration-150"
                             ::class="isGroupOpen('hr', {{ $hrActive ? 'true' : 'false' }}) ? 'rotate-90 rtl:-rotate-90' : ''" />
                 </button>
-                <div x-show="isGroupOpen('hr', {{ $hrActive ? 'true' : 'false' }})"
+                <div id="sidebar-group-hr" x-show="isGroupOpen('hr', {{ $hrActive ? 'true' : 'false' }})"
                      class="space-y-0.5">
-                    <a href="{{ route('employees.index') }}"
+                    <a href="{{ route('employees.index') }}" aria-current="{{ request()->routeIs('employees.*') ? 'page' : 'false' }}"
                        :class="sidebarCollapsed ? 'lg:justify-center lg:px-0' : ''"
-                       title="{{ __('app.nav_employees') }}"
+                       title="{{ __('app.nav_employees') }}" aria-label="{{ __('app.nav_employees') }}"
                        class="flex items-center justify-between min-h-11 px-3 rounded-control text-text-secondary hover:bg-surface-soft hover:text-text-primary font-semibold transition-colors
                               {{ request()->routeIs('employees.*', 'payroll.*') ? 'bg-primary-50 text-primary! font-bold shadow-[inset_3px_0_0_#255fd6] rtl:shadow-[inset_-3px_0_0_#255fd6]' : '' }}">
                         <div class="flex items-center gap-2.5">
@@ -429,27 +429,27 @@
                 $systemActive = request()->routeIs('settings.*', 'profile', 'platform.*');
             @endphp
             <div class="space-y-1 pt-1">
-                <button type="button" @click="toggleGroup('system', {{ $systemActive ? 'true' : 'false' }})"
+                <button type="button" @click="toggleGroup('system', {{ $systemActive ? 'true' : 'false' }})" :aria-expanded="isGroupOpen('system', {{ $systemActive ? 'true' : 'false' }}).toString()" aria-controls="sidebar-group-system"
                         :class="sidebarCollapsed ? 'lg:hidden' : ''"
                         class="w-full flex items-center justify-between px-3 py-1 text-xs font-bold tracking-wider text-text-muted uppercase hover:text-text-primary transition-colors cursor-pointer select-none">
                     <span>{{ __('app.nav_group_system') }}</span>
                     <x-icon name="chevron" class="w-3.5 h-3.5 transition-transform duration-150"
                             ::class="isGroupOpen('system', {{ $systemActive ? 'true' : 'false' }}) ? 'rotate-90 rtl:-rotate-90' : ''" />
                 </button>
-                <div x-show="isGroupOpen('system', {{ $systemActive ? 'true' : 'false' }})"
+                <div id="sidebar-group-system" x-show="isGroupOpen('system', {{ $systemActive ? 'true' : 'false' }})"
                      class="space-y-0.5">
                     @if(\App\Models\PlatformOperatorGrant::query()->where('user_id', auth()->id())->where('active', true)->whereJsonContains('permissions', 'company.read')->exists())
-                        <a href="{{ route('platform.index') }}"
+                        <a href="{{ route('platform.index') }}" aria-current="{{ request()->routeIs('platform.*') ? 'page' : 'false' }}"
                            :class="sidebarCollapsed ? 'lg:justify-center lg:px-0' : ''"
-                           title="{{ __('platform.title') }}"
+                           title="{{ __('platform.title') }}" aria-label="{{ __('platform.title') }}"
                            class="flex min-h-11 items-center gap-2.5 px-3 rounded-control text-text-secondary hover:bg-surface-soft hover:text-primary font-semibold transition-colors">
                             <x-icon name="shield" class="w-4.5 h-4.5 shrink-0" />
                             <span :class="sidebarCollapsed ? 'lg:hidden' : ''">{{ __('platform.title') }}</span>
                         </a>
                     @endif
-                    <a href="{{ route('settings.index') }}"
+                    <a href="{{ route('settings.index') }}" aria-current="{{ request()->routeIs('settings.*') ? 'page' : 'false' }}"
                        :class="sidebarCollapsed ? 'lg:justify-center lg:px-0' : ''"
-                       title="{{ __('app.nav_settings') }}"
+                       title="{{ __('app.nav_settings') }}" aria-label="{{ __('app.nav_settings') }}"
                        class="flex items-center justify-between min-h-11 px-3 rounded-control font-semibold transition-colors
                               {{ request()->routeIs('settings.*', 'profile') ? 'bg-primary-50 text-primary font-bold shadow-[inset_3px_0_0_#255fd6] rtl:shadow-[inset_-3px_0_0_#255fd6]' : 'text-text-secondary hover:bg-surface-soft hover:text-text-primary' }}">
                         <div class="flex items-center gap-2.5">
@@ -475,7 +475,7 @@
     </aside>
 
     <!-- Top Bar -->
-    <header class="app-topbar fixed top-0 z-30 h-[64px] bg-white border-b border-border flex items-center justify-between px-4 sm:px-6 gap-4">
+    <header class="app-topbar fixed top-0 z-30 h-[64px] bg-surface border-b border-border flex items-center justify-between px-4 sm:px-6 gap-4">
 
         <!-- Left / Start Area (Mobile button + Search) -->
         <div class="flex items-center gap-3 flex-1 min-w-0">
@@ -508,12 +508,17 @@
             @endif
 
             @if(auth()->user()->can('sales.invoice.create') || auth()->user()->can('purchasing.purchase.create'))
-                <details class="relative app-quick-add">
-                    <summary aria-label="{{ __('app.quick_add') }}" class="app-quick-add-trigger">
+                <details class="relative app-quick-add"
+                         x-data="accountingQuickAdd"
+                         x-ref="quickAdd"
+                         @click.outside="close(false)"
+                         @keydown="handleKeydown($event)">
+                    <summary x-ref="trigger" aria-label="{{ __('app.quick_add') }}" class="app-quick-add-trigger">
                         <x-icon name="plus" class="w-4 h-4" aria-hidden="true" />
                         <span class="hidden sm:inline">{{ __('app.quick_add') }}</span>
                     </summary>
-                    <div class="absolute end-0 mt-2 w-52 rounded-card border border-border bg-surface p-2 shadow-panel z-50">
+                    <div class="absolute end-0 mt-2 w-52 rounded-card border border-border bg-surface p-2 shadow-panel z-50"
+                         @click="close(false)">
                         @can('sales.invoice.create')
                             <a href="{{ route('invoices.create') }}" class="block rounded-control px-3 py-3 text-sm hover:bg-surface-soft">{{ __('dashboard.new_sale') }}</a>
                         @endcan
@@ -534,7 +539,7 @@
                         @csrf
                         <input type="hidden" name="locale" value="en">
                         <button type="submit"
-                           class="min-h-11 px-2.5 rounded-control border border-border bg-white text-xs font-semibold text-text-secondary hover:bg-surface-soft hover:text-text-primary flex items-center gap-1.5 transition-colors cursor-pointer"
+                           class="min-h-11 px-2.5 rounded-control border border-border bg-surface text-sm font-semibold text-text-secondary hover:bg-surface-soft hover:text-text-primary flex items-center gap-1.5 transition-colors cursor-pointer"
                            title="{{ __('app.switch_language') }}">
                             <x-icon name="globe" class="w-4 h-4 text-text-muted" />
                             <span class="font-bold">EN</span>
@@ -546,7 +551,7 @@
                     @csrf
                     <input type="hidden" name="locale" value="ar">
                     <button type="submit"
-                       class="min-h-11 px-2.5 rounded-control border border-border bg-white text-xs font-semibold text-text-secondary hover:bg-surface-soft hover:text-text-primary flex items-center gap-1.5 transition-colors cursor-pointer"
+                       class="min-h-11 px-2.5 rounded-control border border-border bg-surface text-sm font-semibold text-text-secondary hover:bg-surface-soft hover:text-text-primary flex items-center gap-1.5 transition-colors cursor-pointer"
                        title="{{ __('app.switch_language') }}">
                         <x-icon name="globe" class="w-4 h-4 text-text-muted" />
                         <span class="font-bold">عربي</span>
@@ -555,10 +560,10 @@
             @endif
 
             <!-- User Menu Dropdown -->
-            <div class="relative" x-data="{ openUserMenu: false }" @click.outside="openUserMenu = false"
-                 @keydown.escape.stop.prevent="if (openUserMenu) { openUserMenu = false; $refs.userMenuTrigger.focus(); }">
-                <button @click="openUserMenu = !openUserMenu"
-                        x-ref="userMenuTrigger" :aria-expanded="openUserMenu"
+            <div class="relative" x-data="accountingUserMenu" @click.outside="close(false)"
+                 @keydown="handleKeydown($event)">
+                <button @click="toggle()"
+                        x-ref="userMenuTrigger" :aria-expanded="openUserMenu.toString()"
                         type="button"
                         class="flex items-center gap-2.5 py-1 px-1 sm:px-2 rounded-control hover:bg-surface-soft transition-colors text-right">
                     <div class="w-[34px] h-[34px] rounded-full bg-slate-200 text-slate-700 font-extrabold text-xs grid place-items-center shrink-0 border border-slate-300">
@@ -582,8 +587,9 @@
                      x-transition:leave="transition ease-in duration-75"
                      x-transition:leave-start="transform opacity-100 scale-100"
                      x-transition:leave-end="transform opacity-0 scale-95"
-                     class="absolute {{ $isRtl ? 'left-0' : 'right-0' }} mt-2 w-48 rounded-card bg-white shadow-xl border border-border py-1 text-xs z-50"
-                     style="display: none;">
+                     class="absolute {{ $isRtl ? 'left-0' : 'right-0' }} mt-2 w-48 rounded-card bg-surface shadow-xl border border-border py-1 text-xs z-50"
+                     style="display: none;"
+                     @click="close(false)">
                     <a href="{{ route('profile') }}" class="block px-4 py-2 hover:bg-surface-soft text-text-secondary hover:text-text-primary">
                         {{ __('app.profile') }}
                     </a>

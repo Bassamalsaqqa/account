@@ -7,7 +7,7 @@
 
 @section('content')
 <div class="max-w-2xl mx-auto my-8">
-    <section class="rounded-card border border-border bg-white p-6 sm:p-8 shadow-panel">
+    <section class="rounded-card border border-border bg-surface p-6 sm:p-8 shadow-panel">
         <div class="w-12 h-12 rounded-card bg-danger-bg text-danger grid place-items-center mb-5 border border-danger/20">
             <x-icon name="lock" class="w-6 h-6" />
         </div>
@@ -28,7 +28,7 @@
                 {{ __('platform.return_dashboard') }}
             </a>
             <a href="{{ route('profile') }}"
-               class="inline-flex min-h-11 items-center justify-center rounded-control border border-border bg-white px-5 text-sm font-semibold text-text-secondary hover:bg-surface-soft transition-colors">
+               class="inline-flex min-h-11 items-center justify-center rounded-control border border-border bg-surface px-5 text-sm font-semibold text-text-secondary hover:bg-surface-soft transition-colors">
                 {{ __('platform.profile') }}
             </a>
         </div>

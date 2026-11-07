@@ -98,16 +98,22 @@ class PayablesReconciliationService
             }
 
             // Audit the liability sources even when no payment has referenced them yet.
-            foreach (Purchase::where('company_id', $cid)->where('status', Purchase::STATUS_POSTED)->get() as $purchase) {
+            foreach (Purchase::where('company_id', $cid)->whereIn('status', [Purchase::STATUS_POSTED, Purchase::STATUS_VOID])->get() as $purchase) {
                 try {
                     app(PurchasePostingCommandBuilder::class)->validatePosted($purchase);
+                    if ($purchase->isVoid()) {
+                        app(PurchaseVoidIntegrity::class)->assertComplete($purchase);
+                    }
                 } catch (\Throwable $e) {
                     $violations[] = "Purchase [ID {$purchase->id}] integrity failure: {$e->getMessage()}";
                 }
             }
-            foreach (PurchaseReturn::where('company_id', $cid)->where('status', Purchase::STATUS_POSTED)->get() as $return) {
+            foreach (PurchaseReturn::where('company_id', $cid)->whereIn('status', [PurchaseReturn::STATUS_POSTED, PurchaseReturn::STATUS_VOID])->get() as $return) {
                 try {
                     app(PurchaseReturnPostingCommandBuilder::class)->validatePosted($return);
+                    if ($return->isVoid()) {
+                        app(PurchaseVoidIntegrity::class)->assertComplete($return);
+                    }
                 } catch (\Throwable $e) {
                     $violations[] = "Purchase Return [ID {$return->id}] integrity failure: {$e->getMessage()}";
                 }
@@ -175,8 +181,8 @@ class PayablesReconciliationService
     private function canonicalSourceBatchViolations(int $companyId): array
     {
         $sources = [
-            'purchase' => ['purchases', 'status', Purchase::STATUS_POSTED],
-            'purchase_return' => ['purchase_returns', 'status', PurchaseReturn::STATUS_POSTED],
+            'purchase' => ['purchases', 'status', [Purchase::STATUS_POSTED, Purchase::STATUS_VOID]],
+            'purchase_return' => ['purchase_returns', 'status', [PurchaseReturn::STATUS_POSTED, PurchaseReturn::STATUS_VOID]],
             'vendor_payment' => ['vendor_payments', 'posted_at', null],
             'vendor_payment_application' => ['vendor_payment_application_events', 'applied_at', null],
         ];
@@ -215,7 +221,7 @@ class PayablesReconciliationService
                 }
 
                 if (($requiredStatus === null && $batch->owner_lifecycle === null)
-                    || ($requiredStatus !== null && $batch->owner_lifecycle !== $requiredStatus)) {
+                    || ($requiredStatus !== null && ! in_array($batch->owner_lifecycle, $requiredStatus, true))) {
                     $violations[] = "{$label} references an uncompleted source event.";
                 }
 

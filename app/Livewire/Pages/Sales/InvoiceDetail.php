@@ -8,6 +8,7 @@ use App\Actions\Sales\DeleteSalesInvoiceDraftAction;
 use App\Actions\Sales\VoidSalesInvoiceAction;
 use App\Application\Commands\SalesInvoiceCommands;
 use App\Exceptions\NoActiveCompanyException;
+use App\Livewire\Concerns\CorrectsTradeDocument;
 use App\Models\PublicShare;
 use App\Models\SalesInvoice;
 use App\Services\Sales\PublicShareService;
@@ -27,6 +28,18 @@ use Symfony\Component\HttpKernel\Exception\HttpException;
 class InvoiceDetail extends Component
 {
     public SalesInvoice $invoice;
+
+    use CorrectsTradeDocument;
+
+    protected function correctionPublicId(): string
+    {
+        return $this->invoice->public_id;
+    }
+
+    protected function correctionFamily(): string
+    {
+        return 'sales_invoice';
+    }
 
     public ?string $shareUrl = null;
 
@@ -77,6 +90,9 @@ class InvoiceDetail extends Component
             ->where('company_id', $company->id)
             ->where('public_id', $publicId)
             ->firstOrFail();
+        if (in_array(request()->query('correction'), ['edit', 'delete'], true)) {
+            $this->openCorrection(request()->query('correction'));
+        }
     }
 
     public function postInvoice(SalesInvoiceCommands $commands): void

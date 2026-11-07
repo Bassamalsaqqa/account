@@ -21,6 +21,7 @@ use App\Models\Unit;
 use App\Services\Audit\AuditService;
 use App\Services\Inventory\QuickProductCreation;
 use App\Support\Tenancy\CompanyContext;
+use Brick\Math\BigDecimal;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -210,7 +211,9 @@ final class QuickProductReceiveTest extends Phase5ETestCase
             'lines' => [['product_id' => $this->product->id, 'quantity' => '7', 'unit_cost' => '9.75']],
         ]);
         Livewire::test(PurchaseForm::class, ['publicId' => $draft->public_id, 'receiveProduct' => 'foreign-or-missing'])
-            ->assertSet('receivingStock', false)->assertSet('lines.0.quantity', '7.000000')->assertSet('lines.0.unit_cost', '9.750000');
+            ->assertSet('receivingStock', false)
+            ->assertSet('lines.0.quantity', fn ($value) => is_string($value) && BigDecimal::of($value)->isEqualTo('7.000000'))
+            ->assertSet('lines.0.unit_cost', fn ($value) => is_string($value) && BigDecimal::of($value)->isEqualTo('9.750000'));
     }
 
     public function test_receive_rejects_missing_inactive_product_and_cost_restricted_actor(): void

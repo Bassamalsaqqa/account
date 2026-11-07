@@ -1,36 +1,25 @@
 <div class="space-y-6">
-    <!-- Page Header -->
-    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-            <h1 class="text-xl font-extrabold text-text-primary flex items-center gap-2.5">
-                <x-icon name="box" class="w-6 h-6 text-primary" />
-                <span>{{ __('inventory.products') }}</span>
-            </h1>
-            <p class="text-xs text-text-secondary mt-1">
-                {{ __('inventory.search_products_placeholder') }}
-            </p>
-        </div>
-
+    <x-page-heading :title="__('inventory.products')" icon="box">
         @if ($canManageProduct)
             <div class="flex flex-wrap items-center gap-2">
                 <a href="{{ route('brands.index') }}"
-                   class="touch-action gap-1.5 border border-border bg-white hover:bg-surface-soft text-text-secondary hover:text-text-primary text-xs font-semibold transition-colors">
+                   class="touch-action gap-1.5 border border-border bg-surface hover:bg-surface-soft text-text-secondary hover:text-text-primary text-sm font-semibold transition-colors">
                     <x-icon name="box" class="w-4 h-4" />
                     <span>{{ __('inventory.brands') }}</span>
                 </a>
                 <a href="{{ route('products.create') }}"
-                   class="touch-action bg-primary hover:bg-primary-hover text-white text-xs font-bold shadow-button transition-colors">
+                   class="touch-action bg-primary hover:bg-primary-hover text-white text-sm font-bold shadow-button transition-colors">
                     <x-icon name="plus" class="w-4 h-4" />
                     <span>{{ __('inventory.add_product') }}</span>
                 </a>
             </div>
         @endif
-    </div>
+    </x-page-heading>
 
     <!-- Filters & Search Toolbar -->
     <x-refinement-filters :active-count="(int) filled($categoryFilter) + (int) filled($brandFilter) + (int) ($statusFilter !== 'all') + (int) $lowStockOnly + (int) $expiryOnly + (int) filled($cameraBarcode)">
         <x-slot:search>
-            <div class="flex min-w-0 items-center rounded-control border border-border bg-white focus-within:border-primary focus-within:ring-1 focus-within:ring-primary">
+            <div class="flex min-w-0 items-center rounded-control border border-border bg-surface focus-within:border-primary focus-within:ring-1 focus-within:ring-primary">
                 <input id="products-search" aria-label="{{ __('inventory.search_products_placeholder') }}" type="text"
                        wire:model.live.debounce.300ms="search"
                        placeholder="{{ __('inventory.search_products_placeholder') }}"
@@ -39,13 +28,13 @@
             </div>
         </x-slot:search>
         <x-slot:statuses>
-        <button type="button" wire:click="$set('statusFilter', 'all')" wire:loading.attr="disabled" wire:target="statusFilter" aria-pressed="{{ $statusFilter === 'all' ? 'true' : 'false' }}" class="touch-action shrink-0 border text-sm font-semibold {{ $statusFilter === 'all' ? 'border-primary bg-primary text-white' : 'border-border bg-white text-text-secondary' }}">{{ __('inventory.filter_all_status') }}</button>
-        <button type="button" wire:click="$set('statusFilter', 'active')" wire:loading.attr="disabled" wire:target="statusFilter" aria-pressed="{{ $statusFilter === 'active' ? 'true' : 'false' }}" class="touch-action shrink-0 border text-sm font-semibold {{ $statusFilter === 'active' ? 'border-primary bg-primary text-white' : 'border-border bg-white text-text-secondary' }}">{{ __('inventory.filter_active_only') }}</button>
-        <button type="button" wire:click="$set('statusFilter', 'inactive')" wire:loading.attr="disabled" wire:target="statusFilter" aria-pressed="{{ $statusFilter === 'inactive' ? 'true' : 'false' }}" class="touch-action shrink-0 border text-sm font-semibold {{ $statusFilter === 'inactive' ? 'border-primary bg-primary text-white' : 'border-border bg-white text-text-secondary' }}">{{ __('inventory.filter_inactive_only') }}</button>
+        <button type="button" wire:click="$set('statusFilter', 'all')" wire:loading.attr="disabled" wire:target="statusFilter" aria-pressed="{{ $statusFilter === 'all' ? 'true' : 'false' }}" class="touch-action shrink-0 border text-sm font-semibold {{ $statusFilter === 'all' ? 'border-primary bg-primary text-white' : 'border-border bg-surface text-text-secondary' }}">{{ __('inventory.filter_all_status') }}</button>
+        <button type="button" wire:click="$set('statusFilter', 'active')" wire:loading.attr="disabled" wire:target="statusFilter" aria-pressed="{{ $statusFilter === 'active' ? 'true' : 'false' }}" class="touch-action shrink-0 border text-sm font-semibold {{ $statusFilter === 'active' ? 'border-primary bg-primary text-white' : 'border-border bg-surface text-text-secondary' }}">{{ __('inventory.filter_active_only') }}</button>
+        <button type="button" wire:click="$set('statusFilter', 'inactive')" wire:loading.attr="disabled" wire:target="statusFilter" aria-pressed="{{ $statusFilter === 'inactive' ? 'true' : 'false' }}" class="touch-action shrink-0 border text-sm font-semibold {{ $statusFilter === 'inactive' ? 'border-primary bg-primary text-white' : 'border-border bg-surface text-text-secondary' }}">{{ __('inventory.filter_inactive_only') }}</button>
         </x-slot:statuses>
         <select id="products-category-filter" wire:model.live="categoryFilter"
                         aria-label="{{ __('inventory.category') }}"
-                        class="min-h-11 w-full h-11 px-3 rounded-control border border-border bg-white text-xs text-text-primary focus:outline-none focus:border-primary focus:ring-2 focus:ring-focus-ring">
+                        class="min-h-11 w-full h-11 px-3 rounded-control border border-border bg-surface text-sm text-text-primary focus:outline-none focus:border-primary focus:ring-2 focus:ring-focus-ring">
                     <option value="">{{ __('inventory.filter_category') }}</option>
                     @foreach ($categories as $cat)
                         <option value="{{ $cat->id }}">{{ $cat->name_ar }}</option>
@@ -53,7 +42,7 @@
                 </select>
         <select id="products-brand-filter" wire:model.live="brandFilter"
                         aria-label="{{ __('inventory.brand') }}"
-                        class="min-h-11 w-full h-11 px-3 rounded-control border border-border bg-white text-xs text-text-primary focus:outline-none focus:border-primary focus:ring-2 focus:ring-focus-ring">
+                        class="min-h-11 w-full h-11 px-3 rounded-control border border-border bg-surface text-sm text-text-primary focus:outline-none focus:border-primary focus:ring-2 focus:ring-focus-ring">
                     <option value="">{{ __('inventory.filter_brand') }}</option>
                     @foreach ($brands as $b)
                         <option value="{{ $b->id }}">
@@ -63,16 +52,16 @@
                 </select>
         <select id="products-status-filter" wire:model.live="statusFilter"
                         aria-label="{{ __('inventory.filter_status') }}"
-                        class="min-h-11 w-full h-11 px-3 rounded-control border border-border bg-white text-xs text-text-primary focus:outline-none focus:border-primary focus:ring-2 focus:ring-focus-ring">
+                        class="min-h-11 w-full h-11 px-3 rounded-control border border-border bg-surface text-sm text-text-primary focus:outline-none focus:border-primary focus:ring-2 focus:ring-focus-ring">
                     <option value="all">{{ __('inventory.filter_all_status') }}</option>
                     <option value="active">{{ __('inventory.filter_active_only') }}</option>
                     <option value="inactive">{{ __('inventory.filter_inactive_only') }}</option>
                 </select>
-        <label for="products-low-stock-only" class="min-h-11 flex items-center gap-1.5 cursor-pointer text-xs text-text-secondary select-none">
+        <label for="products-low-stock-only" class="min-h-11 flex items-center gap-1.5 cursor-pointer text-sm text-text-secondary select-none">
                     <input id="products-low-stock-only" type="checkbox" wire:model.live="lowStockOnly" class="rounded border-border text-primary focus:ring-primary w-4 h-4" />
                     <span>{{ __('inventory.filter_low_stock') }}</span>
                 </label>
-        <label for="products-expiry-only" class="min-h-11 flex items-center gap-1.5 cursor-pointer text-xs text-text-secondary select-none">
+        <label for="products-expiry-only" class="min-h-11 flex items-center gap-1.5 cursor-pointer text-sm text-text-secondary select-none">
                     <input id="products-expiry-only" type="checkbox" wire:model.live="expiryOnly" class="rounded border-border text-primary focus:ring-primary w-4 h-4" />
                     <span>{{ __('inventory.filter_expiry') }}</span>
                 </label>
@@ -82,7 +71,7 @@
                 <div class="inline-flex items-center gap-2 px-3 py-1.5 bg-primary/10 text-primary text-xs font-semibold rounded-control">
                     <span>{{ __('camera.filtered_by_barcode') }} <strong dir="ltr" class="font-mono">{{ $cameraBarcode }}</strong></span>
                 </div>
-                <button wire:loading.attr="disabled" type="button" wire:click="clearCameraBarcode" class="touch-action min-h-[44px] min-w-[44px] text-xs font-semibold text-danger hover:underline">
+                <button wire:loading.attr="disabled" type="button" wire:click="clearCameraBarcode" class="touch-action min-h-[44px] min-w-[44px] text-sm font-semibold text-danger hover:underline">
                     {{ __('camera.clear_filter') }}
                 </button>
             </div>
@@ -127,7 +116,7 @@
                                            title="{{ $product->name() }}" class="touch-action min-w-0 font-bold text-text-primary hover:text-primary transition-colors truncate">
                                             {{ $product->name() }}
                                         </a>
-                                        <div class="table-cell-secondary text-[11px] text-text-muted">
+                                        <div class="table-cell-secondary text-xs text-text-muted">
                                             @if ($product->sku)
                                                 <span class="font-mono dir-ltr">{{ $product->sku }}</span>
                                             @endif
@@ -164,11 +153,11 @@
                             @if ($canViewCost)
                                 <td class="p-3.5 text-center font-mono tabular-nums dir-ltr text-text-secondary">
                                     {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($product->costState?->average_cost_base ?? '0.000000') }}
-                                    <span class="text-[10px] text-text-muted">{{ $company->base_currency_code }}</span>
+                                    <span class="text-xs text-text-muted">{{ $company->base_currency_code }}</span>
                                 </td>
                                 <td class="p-3.5 text-center font-mono font-bold tabular-nums dir-ltr text-text-primary">
                                     {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($product->costState?->inventory_value_base ?? '0.000000') }}
-                                    <span class="text-[10px] text-text-muted">{{ $company->base_currency_code }}</span>
+                                    <span class="text-xs text-text-muted">{{ $company->base_currency_code }}</span>
                                 </td>
                             @endif
 
@@ -287,7 +276,7 @@
                             {{ __('inventory.product_details') }}
                         </a>
                         @can('inventory.barcode_labels.print')
-                            <a href="{{ route('labels.index') }}" class="touch-action bg-white text-primary text-sm font-semibold"><x-icon name="barcode" class="h-4 w-4" />{{ __('refinement_lists.barcode_labels') }}</a>
+                            <a href="{{ route('labels.index') }}" class="touch-action bg-surface text-primary text-sm font-semibold"><x-icon name="barcode" class="h-4 w-4" />{{ __('refinement_lists.barcode_labels') }}</a>
                         @endcan
                         @if ($canManageProduct)
                             <a href="{{ route('products.edit', $product->public_id) }}"

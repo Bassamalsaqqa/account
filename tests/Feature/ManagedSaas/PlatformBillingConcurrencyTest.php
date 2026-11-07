@@ -132,20 +132,27 @@ final class PlatformBillingConcurrencyTest extends TestCase
             config(['database.connections.'.$peerName => config('database.connections.'.DB::getDefaultConnection())]);
             $peer = DB::connection($peerName);
             try {
-                DB::beginTransaction();
-                $this->assertCount(0, DB::table('platform_subscription_payments')->get());
-                $peer->table('platform_subscription_payments')->insert([
-                    'company_id' => $company->id, 'charge_id' => $payment['charge_id'], 'operator_user_id' => $identity['actor'],
-                    'amount' => '80.000000', 'currency' => 'ILS', 'received_on' => '2026-01-01', 'created_at' => now(),
-                ]);
-                $peer->table('platform_subscriptions')->where('company_id', $company->id)->update(['revision' => 2]);
-                try {
-                    app(ManageSubscription::class)->execute($company->public_id, 'payment', array_replace($payment, ['expected_revision' => 2, 'amount' => '50']));
-                    $this->fail('An old snapshot allowed a 130% settlement.');
-                } catch (ValidationException $exception) {
-                    $this->assertArrayHasKey('amount', $exception->errors());
-                    $this->assertSame('80.000000', $peer->table('platform_subscription_payments')->sum('amount'));
-                }
+                $committed = false;
+                DB::transaction(function () use ($peer, $company, $identity, $payment, &$committed): void {
+                    if (! $committed) {
+                        $this->assertCount(0, DB::table('platform_subscription_payments')->get());
+                        $peer->table('platform_subscription_payments')->insert([
+                            'company_id' => $company->id, 'charge_id' => $payment['charge_id'], 'operator_user_id' => $identity['actor'],
+                            'amount' => '80.000000', 'currency' => 'ILS', 'received_on' => '2026-01-01', 'created_at' => now(),
+                        ]);
+                        $peer->table('platform_subscriptions')->where('company_id', $company->id)->update(['revision' => 2]);
+                        $committed = true;
+                    }
+                    try {
+                        app(ManageSubscription::class)->execute($company->public_id, 'payment', array_replace($payment, ['expected_revision' => 2, 'amount' => '50']));
+                        $this->fail('An old snapshot allowed a 130% settlement.');
+                    } catch (ValidationException $exception) {
+                        $this->assertArrayHasKey('amount', $exception->errors());
+                        $this->assertSame('80.000000', $peer->table('platform_subscription_payments')->sum('amount'));
+                    }
+                }, attempts: 3);
+                $this->assertDatabaseCount('platform_subscription_payments', 1);
+                $this->assertDatabaseCount('platform_billing_requests', 1);
             } finally {
                 DB::rollBack(0);
                 DB::purge($peerName);

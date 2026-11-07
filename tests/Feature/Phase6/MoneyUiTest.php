@@ -120,7 +120,7 @@ class MoneyUiTest extends Phase6TestCase
                 'transfer_date' => '2099-01-01', 'from_amount' => '1', 'to_amount' => '1',
                 'from_exchange_rate' => '3.5', 'to_exchange_rate' => '3.5', 'idempotency_key' => 'future-transfer']);
         $count = PostingBatch::count();
-        Livewire::test(TransferDetail::class, ['publicId' => $transfer->public_id])->call('reverse')->assertHasErrors('transfer');
+        Livewire::test(TransferDetail::class, ['publicId' => $transfer->public_id])->call('openReversalReview')->call('confirmReversalReview')->assertHasErrors('transfer');
         $this->assertFalse($transfer->fresh()->is_reversed);
         $this->assertSame($count, PostingBatch::count());
     }

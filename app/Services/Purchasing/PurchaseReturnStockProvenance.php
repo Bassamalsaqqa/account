@@ -130,7 +130,7 @@ final class PurchaseReturnStockProvenance
             ->where('purchase_return_id', $movement->source_id)
             ->find($movement->source_line_id);
 
-        if ($return === null || $line === null || ($requirePosted && $return->status !== PurchaseReturn::STATUS_POSTED)
+        if ($return === null || $line === null || ($requirePosted && ! in_array($return->status, [PurchaseReturn::STATUS_POSTED, PurchaseReturn::STATUS_VOID], true))
             || $movement->source_type !== 'purchase_return' || $movement->movement_type !== StockMovement::TYPE_PURCHASE_RETURN
             || (int) $movement->warehouse_id !== (int) $return->warehouse_id
             || (int) $movement->product_id !== (int) $line->product_id

@@ -74,7 +74,7 @@ final class VendorPaymentAllocationStatusRegressionTest extends Phase5ETestCase
         $this->assertSame(__('purchasing.posted'), $statuses[$initialPurchase->purchase_number]);
         $this->assertStringContainsString(__('purchasing.apply_advance'), $statuses[$laterPurchase->purchase_number]);
 
-        $component->call('reversePayment')->assertHasNoErrors();
+        $component->call('openReversalReview')->call('confirmReversalReview')->assertHasNoErrors();
         $expected = [
             $initialPurchase->purchase_number => __('purchasing.reversed'),
             $laterPurchase->purchase_number => __('purchasing.reversed'),

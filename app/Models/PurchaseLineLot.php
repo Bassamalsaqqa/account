@@ -22,6 +22,7 @@ use Illuminate\Support\Str;
  * @property int $id
  * @property int $company_id
  * @property int $purchase_line_id
+ * @property string|null $lot_number
  * @property string $quantity
  * @property string $quantity_base
  * @property Carbon|null $expiry_date

@@ -11,6 +11,8 @@ use App\Services\Purchasing\PurchasePayablePosition;
 use App\Services\Purchasing\PurchasePostingCommandBuilder;
 use App\Services\Purchasing\PurchasePostingScope;
 use App\Services\Purchasing\PurchaseReceiptCapability;
+use App\Services\Purchasing\PurchaseVoidCapability;
+use App\Services\Purchasing\PurchaseVoidScope;
 use App\Services\Sales\SalesActorGuard;
 use App\Support\Tenancy\BelongsToCompany;
 use Brick\Math\BigDecimal;
@@ -35,9 +37,20 @@ use Illuminate\Support\Str;
  * @property Carbon|null $due_date
  * @property string|null $vendor_invoice_number
  * @property string|null $notes
+ * @property string $subtotal_currency
+ * @property string $subtotal_base
+ * @property string $discount_total_currency
+ * @property string $discount_total_base
+ * @property string $tax_total_currency
+ * @property string $tax_total_base
  * @property string $grand_total_currency
  * @property string $grand_total_base
  * @property Carbon|null $posted_at
+ * @property Carbon|null $void_business_date
+ * @property Carbon|null $voided_at
+ * @property int|null $voided_by
+ * @property string|null $void_reason
+ * @property int|null $void_posting_batch_id
  * @property array<string, mixed>|null $vendor_snapshot
  * @property array<string, mixed>|null $company_snapshot
  * @property string $exchange_rate
@@ -53,7 +66,7 @@ class Purchase extends Model
     public const string STATUS_VOID = 'void';
 
     /** @var list<string> */
-    public const RESERVED_FIELDS = ['purchase_number', 'posting_batch_id', 'posted_at', 'posted_by', 'voided_at', 'voided_by', 'void_reason', 'void_posting_batch_id'];
+    public const RESERVED_FIELDS = ['purchase_number', 'posting_batch_id', 'posted_at', 'posted_by', 'void_business_date', 'voided_at', 'voided_by', 'void_reason', 'void_posting_batch_id'];
 
     /** @var list<string> */
     protected $fillable = [
@@ -62,7 +75,7 @@ class Purchase extends Model
         'exchange_rate', 'document_locale', 'subtotal_currency', 'discount_total_currency',
         'tax_total_currency', 'grand_total_currency', 'subtotal_base', 'discount_total_base',
         'tax_total_base', 'grand_total_base', 'notes', 'vendor_snapshot', 'company_snapshot',
-        'posting_batch_id', 'posted_at', 'posted_by', 'voided_at', 'voided_by', 'void_reason',
+        'posting_batch_id', 'posted_at', 'posted_by', 'void_business_date', 'voided_at', 'voided_by', 'void_reason',
         'void_posting_batch_id', 'created_by', 'updated_by',
     ];
 
@@ -74,14 +87,14 @@ class Purchase extends Model
         return [
             'purchase_date' => 'date:Y-m-d', 'due_date' => 'date:Y-m-d',
             'vendor_snapshot' => 'array', 'company_snapshot' => 'array',
-            'posted_at' => 'datetime', 'voided_at' => 'datetime',
+            'posted_at' => 'datetime', 'void_business_date' => 'date', 'voided_at' => 'datetime',
             'exchange_rate' => 'string',
         ];
     }
 
     private bool $completingPost = false;
 
-    public function completeCanonicalPost(?PostingBatch $batch, string $number, User $actor, ?PurchaseReceiptCapability $capability = null): void
+    public function completeCanonicalPost(?PostingBatch $batch, string $number, User $actor, ?PurchaseReceiptCapability $capability = null, ?string $voidDate = null): void
     {
         if (DB::transactionLevel() === 0) {
             throw new ImmutableRecordException('Purchase completion requires an existing outer posting transaction.');
@@ -118,6 +131,57 @@ class Purchase extends Model
         });
     }
 
+    private bool $completingVoid = false;
+
+    public function completeCanonicalVoid(?PostingBatch $reversalBatch, string $reason, User $actor, ?PurchaseVoidCapability $capability = null, ?string $voidDate = null): void
+    {
+        if (DB::transactionLevel() === 0) {
+            throw new ImmutableRecordException('Purchase void completion requires an existing outer void transaction.');
+        }
+        try {
+            app(PurchaseVoidScope::class)->assertCompletion($this, $actor, $capability);
+        } catch (\InvalidArgumentException $exception) {
+            throw new ImmutableRecordException($exception->getMessage(), previous: $exception);
+        }
+        DB::transaction(function () use ($reversalBatch, $reason, $actor, $voidDate): void {
+            app(SalesActorGuard::class)->lockAndAuthorize((int) $this->company_id, $actor, 'purchasing.purchase.void');
+            app(SalesActorGuard::class)->lockAndAuthorize((int) $this->company_id, $actor, 'purchasing.cost.view');
+            $this->assertMutableVoid();
+
+            if ($this->posting_batch_id !== null) {
+                if ($reversalBatch === null) {
+                    throw new ImmutableRecordException('Voiding a posted purchase with a GL batch requires a reversal batch.');
+                }
+                $persistedReversal = PostingBatch::where('company_id', $this->company_id)->findOrFail($reversalBatch->id);
+                if ((int) $persistedReversal->posted_by !== (int) $actor->id
+                    || (int) $persistedReversal->reversal_of_id !== (int) $this->posting_batch_id
+                    || $persistedReversal->status !== PostingBatch::STATUS_POSTED) {
+                    throw new ImmutableRecordException('Coherent canonical Purchase void posting is required.');
+                }
+            } elseif ($reversalBatch !== null) {
+                throw new ImmutableRecordException('Zero-cost purchase cannot carry a reversal posting batch.');
+            }
+
+            if ($this->isDirty() || trim($reason) === '') {
+                throw new ImmutableRecordException('Coherent canonical Purchase void is required.');
+            }
+
+            $this->completingVoid = true;
+            try {
+                $this->status = self::STATUS_VOID;
+                app(PurchaseDocumentRules::class)->date((string) $voidDate);
+                $this->void_business_date = Carbon::parse($voidDate);
+                $this->voided_at = now();
+                $this->voided_by = $actor->id;
+                $this->void_reason = trim($reason);
+                $this->void_posting_batch_id = $reversalBatch?->id;
+                $this->save();
+            } finally {
+                $this->completingVoid = false;
+            }
+        });
+    }
+
     public function setPurchaseDateAttribute(string $value): void
     {
         app(PurchaseDocumentRules::class)->date($value);
@@ -136,10 +200,22 @@ class Purchase extends Model
     {
         static::saving(function (self $purchase): void {
             if ($purchase->exists) {
-                $purchase->assertMutableDraft();
+                if ($purchase->completingVoid) {
+                    $purchase->assertMutableVoid();
+                } else {
+                    $purchase->assertMutableDraft();
+                }
                 if ($purchase->isDirty(['company_id', 'public_id', 'created_by'])) {
                     throw new ImmutableRecordException('Purchase ownership and identity are immutable.');
                 }
+            }
+            if ($purchase->completingVoid) {
+                if ($purchase->status !== self::STATUS_VOID
+                    || array_diff(array_keys($purchase->getDirty()), ['status', 'void_business_date', 'voided_at', 'voided_by', 'void_reason', 'void_posting_batch_id', 'updated_at']) !== []) {
+                    throw new ImmutableRecordException('Only canonical voiding may finalize a voided Purchase.');
+                }
+
+                return;
             }
             if (! $purchase->isDraft()) {
                 if (! $purchase->completingPost || $purchase->status !== self::STATUS_POSTED
@@ -180,6 +256,11 @@ class Purchase extends Model
         return $this->status === self::STATUS_POSTED;
     }
 
+    public function isVoid(): bool
+    {
+        return $this->status === self::STATUS_VOID;
+    }
+
     public function assertMutableDraft(): void
     {
         // Read persisted lifecycle rather than trusting a stale or caller-modified model.
@@ -187,6 +268,27 @@ class Purchase extends Model
             ->whereKey($this->id)->value('status') !== self::STATUS_DRAFT) {
             throw new ImmutableRecordException('Only persisted Purchase drafts are mutable.');
         }
+    }
+
+    public function assertMutableVoid(): void
+    {
+        // Read persisted lifecycle rather than trusting a stale or caller-modified model.
+        if (! $this->exists || self::where('company_id', $this->getRawOriginal('company_id'))
+            ->whereKey($this->id)->value('status') !== self::STATUS_POSTED) {
+            throw new ImmutableRecordException('Only persisted posted Purchases may be voided.');
+        }
+    }
+
+    /** @return BelongsTo<PostingBatch, $this> */
+    public function voidPostingBatch(): BelongsTo
+    {
+        return $this->belongsTo(PostingBatch::class, 'void_posting_batch_id');
+    }
+
+    /** @return BelongsTo<User, $this> */
+    public function voider(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'voided_by');
     }
 
     /** @return BelongsTo<Vendor, $this> */

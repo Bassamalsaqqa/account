@@ -12,9 +12,13 @@ use App\Models\Company;
 use Illuminate\Http\Request;
 use Illuminate\Testing\TestResponse;
 use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\PreserveGlobalState;
+use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
 use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 use Tests\Feature\Phase8\Phase8TestCase;
 
+#[RunTestsInSeparateProcesses]
+#[PreserveGlobalState(false)]
 final class CompanyDataExportLimitsTest extends Phase8TestCase
 {
     private string $ownedDirectory;

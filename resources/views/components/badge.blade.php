@@ -13,6 +13,6 @@ $classes = match($variant) {
 };
 @endphp
 
-<span {{ $attributes->merge(['class' => "inline-flex items-center justify-center px-2.5 py-0.5 rounded-full text-[11px] font-bold tracking-tight border {$classes}"]) }}>
+<span {{ $attributes->merge(['class' => "inline-flex items-center justify-center px-2.5 py-0.5 rounded-full text-xs font-bold tracking-tight border {$classes}"]) }}>
     {{ $slot }}
 </span>

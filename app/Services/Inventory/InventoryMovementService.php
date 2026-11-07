@@ -35,6 +35,10 @@ use App\Services\Purchasing\PurchaseReceiptIntent;
 use App\Services\Purchasing\PurchaseReturnIssueCapability;
 use App\Services\Purchasing\PurchaseReturnPostingScope;
 use App\Services\Purchasing\PurchaseReturnValuation;
+use App\Services\Purchasing\PurchaseReturnVoidCapability;
+use App\Services\Purchasing\PurchaseReturnVoidScope;
+use App\Services\Purchasing\PurchaseVoidCapability;
+use App\Services\Purchasing\PurchaseVoidScope;
 use App\Services\Sales\SalesActorGuard;
 use App\Support\Tenancy\CompanyContext;
 use Brick\Math\BigDecimal;
@@ -125,6 +129,48 @@ class InventoryMovementService
         return $this->recordMovement($command);
     }
 
+    /**
+     * Purchase void only: the caller owns the stock + accounting reversal transaction.
+     *
+     * @return list<StockMovement>
+     */
+    public function recordPurchaseVoid(StockMovementCommand $command, ?PurchaseVoidCapability $capability = null): array
+    {
+        if ($command->movementType !== StockMovement::TYPE_PURCHASE_RETURN) {
+            throw new InvalidInventoryMovementException('The Purchase void entrypoint accepts only outbound Purchase Return movements.');
+        }
+        if ($command->sourceType !== 'purchase_void') {
+            throw new InvalidInventoryMovementException('The Purchase void entrypoint requires sourceType purchase_void.');
+        }
+        if (DB::transactionLevel() === 0) {
+            throw new InvalidInventoryMovementException('Purchase void requires an existing outer Purchase void transaction.');
+        }
+        app(PurchaseVoidScope::class)->assertVoid($command, $capability);
+
+        return $this->recordMovement($command);
+    }
+
+    /**
+     * Purchase Return void only: the caller owns the stock + accounting reversal transaction.
+     *
+     * @return list<StockMovement>
+     */
+    public function recordPurchaseReturnVoid(StockMovementCommand $command, ?PurchaseReturnVoidCapability $capability = null): array
+    {
+        if ($command->movementType !== StockMovement::TYPE_PURCHASE) {
+            throw new InvalidInventoryMovementException('The Purchase Return void entrypoint accepts only inbound Purchase movements.');
+        }
+        if ($command->sourceType !== 'purchase_return_void') {
+            throw new InvalidInventoryMovementException('The Purchase Return void entrypoint requires sourceType purchase_return_void.');
+        }
+        if (DB::transactionLevel() === 0) {
+            throw new InvalidInventoryMovementException('Purchase return void requires an existing outer Purchase Return void transaction.');
+        }
+        app(PurchaseReturnVoidScope::class)->assertVoid($command, $capability);
+
+        return $this->recordMovement($command);
+    }
+
     /** @return list<StockMovement> */
     private function recordMovement(StockMovementCommand $command): array
     {
@@ -154,13 +200,15 @@ class InventoryMovementService
                 throw new AuthorizationException('User does not have permission to post opening stock.');
             }
         } elseif ($command->movementType === StockMovement::TYPE_PURCHASE) {
-            app(TenantWriteAccess::class)->transaction((int) $command->companyId, function () use ($command, $authUser): void {
-                app(SalesActorGuard::class)->lockAndAuthorize($command->companyId, $authUser, 'purchasing.purchase.post');
+            $perm = $command->sourceType === 'purchase_return_void' ? 'purchasing.return.void' : 'purchasing.purchase.post';
+            app(TenantWriteAccess::class)->transaction((int) $command->companyId, function () use ($command, $authUser, $perm): void {
+                app(SalesActorGuard::class)->lockAndAuthorize($command->companyId, $authUser, $perm);
                 app(SalesActorGuard::class)->lockAndAuthorize($command->companyId, $authUser, 'purchasing.cost.view');
             });
         } elseif ($command->movementType === StockMovement::TYPE_PURCHASE_RETURN) {
-            app(TenantWriteAccess::class)->transaction((int) $command->companyId, function () use ($command, $authUser): void {
-                app(SalesActorGuard::class)->lockAndAuthorize($command->companyId, $authUser, 'purchasing.return.manage');
+            $perm = $command->sourceType === 'purchase_void' ? 'purchasing.purchase.void' : 'purchasing.return.manage';
+            app(TenantWriteAccess::class)->transaction((int) $command->companyId, function () use ($command, $authUser, $perm): void {
+                app(SalesActorGuard::class)->lockAndAuthorize($command->companyId, $authUser, $perm);
                 app(SalesActorGuard::class)->lockAndAuthorize($command->companyId, $authUser, 'purchasing.cost.view');
             });
         } elseif ($command->movementType === StockMovement::TYPE_SALE) {
@@ -190,14 +238,28 @@ class InventoryMovementService
                     throw new InvalidInventoryMovementException('Sales compensation requires an original immutable sale movement and exact historical value.');
                 }
             } elseif ($command->movementType === StockMovement::TYPE_PURCHASE) {
-                if ($line->unitCostBase === null || $line->valueDeltaBase === null || $line->originalMovementId !== null
-                    || $command->sourceType !== 'purchase' || $command->sourceLineId === null) {
-                    throw new InvalidInventoryMovementException('Purchase receipts require explicit acquisition cost/value and Purchase line provenance.');
+                if ($command->sourceType === 'purchase_return_void') {
+                    if ($line->unitCostBase === null || $line->valueDeltaBase === null || $line->originalMovementId === null
+                        || $command->sourceLineId === null) {
+                        throw new InvalidInventoryMovementException('Purchase return void requires explicit historical cost/value, original return movement provenance, and source line.');
+                    }
+                } else {
+                    if ($line->unitCostBase === null || $line->valueDeltaBase === null || $line->originalMovementId !== null
+                        || $command->sourceType !== 'purchase' || $command->sourceLineId === null) {
+                        throw new InvalidInventoryMovementException('Purchase receipts require explicit acquisition cost/value and Purchase line provenance.');
+                    }
                 }
             } elseif ($command->movementType === StockMovement::TYPE_PURCHASE_RETURN) {
-                if ($line->originalMovementId === null || $line->valueDeltaBase !== null
-                    || $command->sourceType !== 'purchase_return' || $command->sourceLineId === null) {
-                    throw new InvalidInventoryMovementException('Purchase return issue requires original receipt movement provenance.');
+                if ($command->sourceType === 'purchase_void') {
+                    if ($line->originalMovementId === null || $line->valueDeltaBase === null
+                        || $command->sourceLineId === null) {
+                        throw new InvalidInventoryMovementException('Purchase void requires original receipt movement provenance, historical value, and source line.');
+                    }
+                } else {
+                    if ($line->originalMovementId === null || $line->valueDeltaBase !== null
+                        || $command->sourceType !== 'purchase_return' || $command->sourceLineId === null) {
+                        throw new InvalidInventoryMovementException('Purchase return issue requires original receipt movement provenance.');
+                    }
                 }
             } elseif ($line->originalMovementId !== null || $line->valueDeltaBase !== null) {
                 throw new InvalidInventoryMovementException('Ordinary inventory operations cannot override their calculated value or historical source.');
@@ -223,10 +285,12 @@ class InventoryMovementService
             }
 
             if ($command->movementType === StockMovement::TYPE_PURCHASE) {
-                app(SalesActorGuard::class)->lockAndAuthorize((int) $company->id, auth()->user(), 'purchasing.purchase.post');
+                $perm = $command->sourceType === 'purchase_return_void' ? 'purchasing.return.void' : 'purchasing.purchase.post';
+                app(SalesActorGuard::class)->lockAndAuthorize((int) $company->id, auth()->user(), $perm);
                 app(SalesActorGuard::class)->lockAndAuthorize((int) $company->id, auth()->user(), 'purchasing.cost.view');
             } elseif ($command->movementType === StockMovement::TYPE_PURCHASE_RETURN) {
-                app(SalesActorGuard::class)->lockAndAuthorize((int) $company->id, auth()->user(), 'purchasing.return.manage');
+                $perm = $command->sourceType === 'purchase_void' ? 'purchasing.purchase.void' : 'purchasing.return.manage';
+                app(SalesActorGuard::class)->lockAndAuthorize((int) $company->id, auth()->user(), $perm);
                 app(SalesActorGuard::class)->lockAndAuthorize((int) $company->id, auth()->user(), 'purchasing.cost.view');
             }
 
@@ -297,7 +361,7 @@ class InventoryMovementService
                 throw new IdempotencyConflictException("Idempotency key [{$command->idempotencyKey}] was previously used with a different number of lines.");
             }
 
-            if ($command->movementType === StockMovement::TYPE_PURCHASE) {
+            if ($command->movementType === StockMovement::TYPE_PURCHASE && $command->sourceType === 'purchase') {
                 app(PurchaseReceiptIntent::class)->validate($command);
             }
 
@@ -386,23 +450,43 @@ class InventoryMovementService
                 /** @var Warehouse $warehouse */
                 $warehouse = $lockedWarehouses->get($line->warehouseId);
 
-                // Determine base quantity and conversion factor through canonical unit conversion layer
-                $unitId = $line->unitId ?? $product->base_unit_id;
-                /** @var ProductUnit|null $prodUnit */
-                $prodUnit = ProductUnit::where('company_id', $company->id)
-                    ->where('product_id', $product->id)
-                    ->where('unit_id', $unitId)
-                    ->with('unit')
-                    ->lockForUpdate()
-                    ->first();
+                if (in_array($command->sourceType, ['purchase_void', 'purchase_return_void'], true)) {
+                    $original = StockMovement::withoutGlobalScopes()->where('company_id', $company->id)->findOrFail($line->originalMovementId);
+                    $source = $command->sourceType === 'purchase_void' ? 'purchase' : 'purchase_return';
+                    $direction = BigDecimal::of($original->quantity_delta_base);
+                    if ($original->source_type !== $source || (int) $original->source_id !== $command->sourceId
+                        || (int) $original->source_line_id !== $command->sourceLineId
+                        || (int) $original->product_id !== $line->productId || (int) $original->warehouse_id !== $line->warehouseId
+                        || $original->lot_id !== $line->lotId || $original->unit_id !== $line->unitId
+                        || ! BigDecimal::of($original->source_quantity)->isEqualTo($line->quantity->toBigDecimal())
+                        || ! BigDecimal::of($original->unit_cost_base)->isEqualTo(BigDecimal::of($line->unitCostBase))
+                        || ! BigDecimal::of($original->value_delta_base)->abs()->isEqualTo(BigDecimal::of($line->valueDeltaBase))
+                        || ($source === 'purchase' ? ! $direction->isPositive() : ! $direction->isNegative())) {
+                        throw new InvalidInventoryMovementException('Invalid historical purchase compensation provenance.');
+                    }
+                    $sourceQty = Quantity::of($original->source_quantity);
+                    $quantityBase = Quantity::of($direction->abs());
+                    $conversionToBase = BigDecimal::of($original->conversion_to_base);
+                } else {
+                    // Determine base quantity and conversion factor through canonical unit conversion layer
+                    $unitId = $line->unitId ?? $product->base_unit_id;
+                    /** @var ProductUnit|null $prodUnit */
+                    $prodUnit = ProductUnit::where('company_id', $company->id)
+                        ->where('product_id', $product->id)
+                        ->where('unit_id', $unitId)
+                        ->with('unit')
+                        ->lockForUpdate()
+                        ->first();
 
-                if ($prodUnit === null) {
-                    throw new InvalidInventoryMovementException("Unit [{$unitId}] is not an active configured unit for product [{$product->id}].");
+                    if ($prodUnit === null) {
+                        throw new InvalidInventoryMovementException("Unit [{$unitId}] is not an active configured unit for product [{$product->id}].");
+                    }
+
+                    $sourceQty = $line->quantity;
+                    $quantityBase = $this->unitConversionService->toBase($sourceQty, $prodUnit);
+                    $conversionToBase = BigDecimal::of((string) $prodUnit->conversion_to_base);
+
                 }
-
-                $sourceQty = $line->quantity;
-                $quantityBase = $this->unitConversionService->toBase($sourceQty, $prodUnit);
-                $conversionToBase = BigDecimal::of((string) $prodUnit->conversion_to_base);
 
                 if ($quantityBase->isLessThanOrEqualTo(0)) {
                     throw new InvalidInventoryMovementException("Stock movement line quantity must be strictly positive (> 0). Given [{$quantityBase}].");
@@ -509,14 +593,24 @@ class InventoryMovementService
                     }
 
                     if ($line->originalMovementId !== null) {
-                        $lineValDelta = app(HistoricalSaleCost::class)->value(
-                            $company->id, $line->originalMovementId, $product->id, $warehouse->id, $lotId,
-                            $command->sourceType, $command->sourceId, $quantityBase->toBigDecimal()
-                        );
-                        $original = StockMovement::where('id', $line->originalMovementId)->firstOrFail();
-                        if (! BigDecimal::of((string) $original->unit_cost_base)->isEqualTo($inUnitCost)
-                            || ! $lineValDelta->isEqualTo(BigDecimal::of((string) $line->valueDeltaBase))) {
-                            throw new InvalidInventoryMovementException('Historical compensation cost/value does not match the original sale allocation.');
+                        if ($command->sourceType === 'purchase_return_void') {
+                            $original = StockMovement::where('company_id', $company->id)->where('id', $line->originalMovementId)->firstOrFail();
+                            $expectedVal = BigDecimal::of((string) $original->value_delta_base)->abs()->toScale(6);
+                            $providedVal = BigDecimal::of((string) $line->valueDeltaBase)->toScale(6);
+                            if (! $providedVal->isEqualTo($expectedVal)) {
+                                throw new InvalidInventoryMovementException('Historical compensation cost/value does not match the original return movement.');
+                            }
+                            $lineValDelta = $providedVal;
+                        } else {
+                            $lineValDelta = app(HistoricalSaleCost::class)->value(
+                                $company->id, $line->originalMovementId, $product->id, $warehouse->id, $lotId,
+                                $command->sourceType, $command->sourceId, $quantityBase->toBigDecimal()
+                            );
+                            $original = StockMovement::where('id', $line->originalMovementId)->firstOrFail();
+                            if (! BigDecimal::of((string) $original->unit_cost_base)->isEqualTo($inUnitCost)
+                                || ! $lineValDelta->isEqualTo(BigDecimal::of((string) $line->valueDeltaBase))) {
+                                throw new InvalidInventoryMovementException('Historical compensation cost/value does not match the original sale allocation.');
+                            }
                         }
                     } elseif ($command->movementType === StockMovement::TYPE_PURCHASE) {
                         $lineValDelta = BigDecimal::of($line->valueDeltaBase)->toScale(6);
@@ -545,17 +639,21 @@ class InventoryMovementService
                         if ($line->originalMovementId === null) {
                             throw new InvalidInventoryMovementException('Purchase return movement requires an original receipt movement ID.');
                         }
-                        $historicalTarget = app(HistoricalPurchaseReceiptValue::class)->target(
-                            companyId: (int) $company->id,
-                            originalMovementId: (int) $line->originalMovementId,
-                            requestedBaseQty: $quantityBase->toBigDecimal(),
-                            beforeMovementId: null,
-                            expectedPurchaseId: null,
-                            expectedPurchaseLineId: null,
-                            expectedProductId: (int) $product->id,
-                            expectedWarehouseId: (int) $warehouse->id,
-                            expectedLotId: $lotId
-                        );
+                        if ($command->sourceType === 'purchase_void') {
+                            $historicalTarget = BigDecimal::of($line->valueDeltaBase)->toScale(6);
+                        } else {
+                            $historicalTarget = app(HistoricalPurchaseReceiptValue::class)->target(
+                                companyId: (int) $company->id,
+                                originalMovementId: (int) $line->originalMovementId,
+                                requestedBaseQty: $quantityBase->toBigDecimal(),
+                                beforeMovementId: null,
+                                expectedPurchaseId: null,
+                                expectedPurchaseLineId: null,
+                                expectedProductId: (int) $product->id,
+                                expectedWarehouseId: (int) $warehouse->id,
+                                expectedLotId: $lotId
+                            );
+                        }
 
                         $valuation = PurchaseReturnValuation::compute(
                             $oldCompanyQty,
@@ -563,6 +661,9 @@ class InventoryMovementService
                             $quantityBase->toBigDecimal(),
                             $historicalTarget
                         );
+                        if ($command->sourceType === 'purchase_void' && ! $valuation->actualRemoved->isEqualTo($historicalTarget)) {
+                            throw new InvalidInventoryMovementException("Cannot void purchase: company inventory value [{$oldCompanyVal}] is less than original receipt value [{$historicalTarget}].");
+                        }
                         $newCompanyQty = $valuation->newCompanyQty;
                         $newCompanyVal = $valuation->newCompanyVal;
                         $newCompanyAvg = $valuation->newCompanyAvg;

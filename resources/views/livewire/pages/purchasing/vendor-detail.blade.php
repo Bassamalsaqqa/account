@@ -3,7 +3,7 @@
         <div class="flex justify-end"><x-document-actions route-name="pdf.vendor-statement" :parameters="['publicId' => $vendor->public_id, 'from' => $statementFrom, 'to' => $statementTo]" :permissions="['purchasing.document.pdf']" /></div>
     @endif
     <!-- Top Action / Info Banner -->
-    <div class="bg-white rounded-card border border-border shadow-xs p-6 space-y-4">
+    <div class="bg-surface rounded-card border border-border shadow-xs p-6 space-y-4">
         <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div>
                 <div class="flex items-center gap-3">
@@ -47,7 +47,7 @@
 
             <!-- Header Quick Actions -->
             <div class="flex flex-wrap items-center gap-2">
-                <a href="{{ route('vendors.index') }}" class="touch-action px-3 py-1.5 text-xs text-text-secondary hover:text-text-primary">
+                <a href="{{ route('vendors.index') }}" class="touch-action px-3 py-1.5 text-sm text-text-secondary hover:text-text-primary">
                     {{ __('purchasing.back') }}
                 </a>
                 @if ($canManage)
@@ -99,15 +99,15 @@
                         </div>
                         <div class="grid grid-cols-3 gap-2 pt-2 text-xs">
                             <div>
-                                <span class="text-text-muted block text-[10px] uppercase">{{ __('purchasing.purchases') }}</span>
+                                <span class="text-text-muted block text-xs uppercase">{{ __('purchasing.purchases') }}</span>
                                 <span class="font-mono font-bold" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($b['purchased'], $curr) }}</span>
                             </div>
                             <div>
-                                <span class="text-text-muted block text-[10px] uppercase">{{ __('purchasing.purchase_returns') }}</span>
+                                <span class="text-text-muted block text-xs uppercase">{{ __('purchasing.purchase_returns') }}</span>
                                 <span class="font-mono font-bold" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($b['returned'], $curr) }}</span>
                             </div>
                             <div>
-                                <span class="text-text-muted block text-[10px] uppercase">{{ __('purchasing.vendor_payments') }}</span>
+                                <span class="text-text-muted block text-xs uppercase">{{ __('purchasing.vendor_payments') }}</span>
                                 <span class="font-mono font-bold" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($b['paid'], $curr) }}</span>
                             </div>
                         </div>
@@ -150,7 +150,7 @@
     <!-- Tab Contents -->
     @if ($activeTab === 'overview')
         <div class="space-y-5">
-            <section class="bg-white border border-border rounded-card p-4 sm:p-5">
+            <section class="bg-surface border border-border rounded-card p-4 sm:p-5">
                 <dl class="grid sm:grid-cols-2 gap-5 text-sm">
                     @foreach (['name_ar' => 'vendor_name_ar', 'name_en' => 'vendor_name_en', 'business_name_ar' => 'business_name_ar', 'business_name_en' => 'business_name_en', 'code' => 'vendor_code', 'tax_number' => 'tax_number', 'phone' => 'phone', 'whatsapp' => 'whatsapp', 'email' => 'email', 'address_ar' => 'address_ar', 'address_en' => 'address_en', 'city_ar' => 'city_ar', 'city_en' => 'city_en', 'postal_code' => 'postal_code', 'country_code' => 'country_code'] as $field => $label)
                         <div class="min-w-0">
@@ -168,16 +168,16 @@
                     </div>
                 </dl>
             </section>
-            <section class="bg-white border border-border rounded-card p-4 sm:p-5">
+            <section class="bg-surface border border-border rounded-card p-4 sm:p-5">
                 <h2 class="text-sm font-bold mb-3">{{ __('purchasing.notes') }}</h2>
                 <p class="text-sm text-text-secondary break-words whitespace-pre-line">{{ $vendor->notes ?? __('purchasing.no_notes') }}</p>
             </section>
         </div>
     @elseif ($activeTab === 'purchases' && $withCost)
-        <div class="bg-white rounded-card border border-border overflow-hidden">
+        <div class="bg-surface rounded-card border border-border overflow-hidden">
             <div class="overflow-x-auto">
                 <table class="data-table w-full text-xs">
-                    <thead class="bg-surface-soft text-text-muted font-bold text-[11px] uppercase">
+                    <thead class="bg-surface-soft text-text-muted font-bold text-xs uppercase">
                         <tr>
                             <th class="py-2.5 px-4 text-start">{{ __('purchasing.purchase_number') }}</th>
                             <th class="py-2.5 px-4 text-start">{{ __('purchasing.purchase_date') }}</th>
@@ -210,10 +210,10 @@
             @endif
         </div>
     @elseif ($activeTab === 'returns' && $withCost)
-        <div class="bg-white rounded-card border border-border overflow-hidden">
+        <div class="bg-surface rounded-card border border-border overflow-hidden">
             <div class="overflow-x-auto">
                 <table class="data-table w-full text-xs">
-                    <thead class="bg-surface-soft text-text-muted font-bold text-[11px] uppercase">
+                    <thead class="bg-surface-soft text-text-muted font-bold text-xs uppercase">
                         <tr>
                             <th class="py-2.5 px-4 text-start">{{ __('purchasing.purchase_return_number') }}</th>
                             <th class="py-2.5 px-4 text-start">{{ __('purchasing.return_date') }}</th>
@@ -246,10 +246,10 @@
             @endif
         </div>
     @elseif ($activeTab === 'payments' && $withCost)
-        <div class="bg-white rounded-card border border-border overflow-hidden">
+        <div class="bg-surface rounded-card border border-border overflow-hidden">
             <div class="overflow-x-auto">
                 <table class="data-table w-full text-xs">
-                    <thead class="bg-surface-soft text-text-muted font-bold text-[11px] uppercase">
+                    <thead class="bg-surface-soft text-text-muted font-bold text-xs uppercase">
                         <tr>
                             <th class="py-2.5 px-4 text-start">{{ __('purchasing.payment_number') }}</th>
                             <th class="py-2.5 px-4 text-start">{{ __('purchasing.payment_date') }}</th>
@@ -273,11 +273,11 @@
                                 </td>
                                 <td class="py-2.5 px-4">
                                     @if ($pmt->is_reversed)
-                                        <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-danger-bg text-danger">
+                                        <span class="px-2 py-0.5 rounded-full text-xs font-bold bg-danger-bg text-danger">
                                             {{ __('purchasing.reversed') }}
                                         </span>
                                     @else
-                                        <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-success-bg text-success">
+                                        <span class="px-2 py-0.5 rounded-full text-xs font-bold bg-success-bg text-success">
                                             {{ __('purchasing.posted') }}
                                         </span>
                                     @endif
@@ -296,12 +296,12 @@
     @elseif ($activeTab === 'statement' && $canStatement)
         <div class="space-y-6">
             <!-- Date Filters -->
-            <div class="bg-white p-4 rounded-card border border-border flex flex-wrap gap-4 items-center">
+            <div class="bg-surface p-4 rounded-card border border-border flex flex-wrap gap-4 items-center">
                 <div class="flex items-center gap-2 text-xs">
                     <label for="statement-from" class="font-bold text-text-secondary">{{ __('purchasing.statement_from') }}:</label>
-                    <input id="statement-from" type="date" wire:model.live="statementFrom" class="h-8 px-2 rounded-control border border-border text-xs" />
+                    <input id="statement-from" type="date" wire:model.live="statementFrom" class="h-8 px-2 rounded-control border border-border text-sm" />
                     <label for="statement-to">{{ __('purchasing.statement_to') }}:</label>
-                    <input id="statement-to" type="date" wire:model.live="statementTo" class="h-8 px-2 rounded-control border border-border text-xs" />
+                    <input id="statement-to" type="date" wire:model.live="statementTo" class="h-8 px-2 rounded-control border border-border text-sm" />
                 </div>
             </div>
 
@@ -310,7 +310,7 @@
             @enderror
             @if ($statementData !== null)
             @forelse ($statementData['currencies'] as $currKey => $s)
-                <div class="bg-white rounded-card border border-border p-6 space-y-6">
+                <div class="bg-surface rounded-card border border-border p-6 space-y-6">
                     <div class="flex items-center justify-between border-b border-border pb-3">
                         <h2 class="text-lg font-bold text-text-primary">{{ __('purchasing.statement') }} ({{ $currKey }})</h2>
                         <div class="text-xs text-text-secondary">
@@ -322,7 +322,7 @@
                     <!-- Entries Table -->
                     <div class="overflow-x-auto">
                         <table class="data-table w-full text-xs">
-                            <thead class="bg-surface-soft text-text-muted font-bold text-[11px] uppercase">
+                            <thead class="bg-surface-soft text-text-muted font-bold text-xs uppercase">
                                 <tr>
                                     <th class="py-2 px-3 text-start">{{ __('purchasing.statement_date') }}</th>
                                     <th class="py-2 px-3 text-start">{{ __('purchasing.statement_type') }}</th>
@@ -366,53 +366,53 @@
                         </h3>
                         <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 text-xs">
                             <div class="p-3 rounded-control bg-canvas border border-border">
-                                <span class="text-text-muted block text-[10px] uppercase">{{ __('purchasing.current') }}</span>
+                                <span class="text-text-muted block text-xs uppercase">{{ __('purchasing.current') }}</span>
                                 <span class="font-mono font-bold text-text-primary mt-1 block" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($s['aging']['current'], $currKey) }}</span>
                             </div>
                             <div class="p-3 rounded-control bg-canvas border border-border">
-                                <span class="text-text-muted block text-[10px] uppercase">{{ __('purchasing.days_1_30') }}</span>
+                                <span class="text-text-muted block text-xs uppercase">{{ __('purchasing.days_1_30') }}</span>
                                 <span class="font-mono font-bold text-text-primary mt-1 block" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($s['aging']['days_1_30'], $currKey) }}</span>
                             </div>
                             <div class="p-3 rounded-control bg-canvas border border-border">
-                                <span class="text-text-muted block text-[10px] uppercase">{{ __('purchasing.days_31_60') }}</span>
+                                <span class="text-text-muted block text-xs uppercase">{{ __('purchasing.days_31_60') }}</span>
                                 <span class="font-mono font-bold text-text-primary mt-1 block" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($s['aging']['days_31_60'], $currKey) }}</span>
                             </div>
                             <div class="p-3 rounded-control bg-canvas border border-border">
-                                <span class="text-text-muted block text-[10px] uppercase">{{ __('purchasing.days_61_90') }}</span>
+                                <span class="text-text-muted block text-xs uppercase">{{ __('purchasing.days_61_90') }}</span>
                                 <span class="font-mono font-bold text-text-primary mt-1 block" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($s['aging']['days_61_90'], $currKey) }}</span>
                             </div>
                             <div class="p-3 rounded-control bg-canvas border border-border">
-                                <span class="text-text-muted block text-[10px] uppercase">{{ __('purchasing.days_90_plus') }}</span>
+                                <span class="text-text-muted block text-xs uppercase">{{ __('purchasing.days_90_plus') }}</span>
                                 <span class="font-mono font-bold text-danger mt-1 block" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($s['aging']['days_90_plus'], $currKey) }}</span>
                             </div>
                             <div class="p-3 rounded-control bg-canvas border border-border">
-                                <span class="text-text-muted block text-[10px] uppercase">{{ __('purchasing.unspecified') }}</span>
+                                <span class="text-text-muted block text-xs uppercase">{{ __('purchasing.unspecified') }}</span>
                                 <span class="font-mono font-bold text-text-primary mt-1 block" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($s['aging']['unspecified'], $currKey) }}</span>
                             </div>
                         </div>
 
                         <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs mt-3 pt-3 border-t border-border">
                             <div>
-                                <span class="text-text-muted block text-[10px] uppercase">{{ __('purchasing.gross_open_purchases') }}</span>
+                                <span class="text-text-muted block text-xs uppercase">{{ __('purchasing.gross_open_purchases') }}</span>
                                 <span class="font-mono font-bold" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($s['aging']['gross_open_purchases'], $currKey) }}</span>
                             </div>
                             <div>
-                                <span class="text-text-muted block text-[10px] uppercase">{{ __('purchasing.unapplied_credit') }}</span>
+                                <span class="text-text-muted block text-xs uppercase">{{ __('purchasing.unapplied_credit') }}</span>
                                 <span class="font-mono font-bold text-info" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($s['aging']['unapplied_credit_position'], $currKey) }}</span>
                             </div>
                             <div>
-                                <span class="text-text-muted block text-[10px] uppercase">{{ __('purchasing.net_payable') }}</span>
+                                <span class="text-text-muted block text-xs uppercase">{{ __('purchasing.net_payable') }}</span>
                                 <span class="font-mono font-bold text-danger" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($s['aging']['net_payable'], $currKey) }}</span>
                             </div>
                             <div>
-                                <span class="text-text-muted block text-[10px] uppercase">{{ __('purchasing.net_credit') }}</span>
+                                <span class="text-text-muted block text-xs uppercase">{{ __('purchasing.net_credit') }}</span>
                                 <span class="font-mono font-bold text-success" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($s['aging']['net_vendor_credit'], $currKey) }}</span>
                             </div>
                         </div>
                     </div>
                 </div>
             @empty
-                <p class="text-xs text-text-muted py-6 text-center bg-white rounded-card border border-border">{{ __('purchasing.no_purchases') }}</p>
+                <p class="text-xs text-text-muted py-6 text-center bg-surface rounded-card border border-border">{{ __('purchasing.no_purchases') }}</p>
             @endforelse
             @endif
         </div>
@@ -428,12 +428,12 @@
             </div>
 
             <!-- Supplied Products Summary -->
-            <div class="bg-white rounded-card border border-border overflow-hidden">
+            <div class="bg-surface rounded-card border border-border overflow-hidden">
                 <div class="p-4 border-b border-border flex flex-wrap items-center justify-between gap-3">
                     <div><h3 class="text-sm font-extrabold text-text-primary">{{ __('purchasing.supplied_products') }}</h3>
                     <p class="text-xs text-text-muted mt-1">{{ __('purchasing.supplied_products_window', ['count' => \App\Domain\Purchasing\Queries\VendorProductHistoryQuery::SUMMARY_LINE_LIMIT]) }}</p></div>
                     @if ($selectedProductId !== null)
-                        <button type="button" wire:click="selectProductFilter(null)" class="text-xs text-primary font-bold hover:underline" wire:loading.attr="disabled" wire:target="selectProductFilter">
+                        <button type="button" wire:click="selectProductFilter(null)" class="text-sm text-primary font-bold hover:underline" wire:loading.attr="disabled" wire:target="selectProductFilter">
                             {{ __('purchasing.all_supplied_products') }}
                         </button>
                     @endif
@@ -442,7 +442,7 @@
                 @if ($vendorProducts->isNotEmpty())
                     <div class="overflow-x-auto">
                         <table class="data-table w-full text-xs">
-                            <thead class="bg-surface-soft text-text-muted font-bold text-[11px] uppercase">
+                            <thead class="bg-surface-soft text-text-muted font-bold text-xs uppercase">
                                 <tr>
                                     <th class="py-2.5 px-4 text-start">{{ __('purchasing.product') }}</th>
                                     <th class="py-2.5 px-4 text-start">{{ __('purchasing.last_purchase_date') }}</th>
@@ -465,7 +465,7 @@
                                                 {{ $p['product_name'] }}
                                             @endif
                                             @if ($p['product_sku'])
-                                                <span class="block text-[10px] text-text-muted font-mono">{{ $p['product_sku'] }}</span>
+                                                <span class="block text-xs text-text-muted font-mono">{{ $p['product_sku'] }}</span>
                                             @endif
                                         </td>
                                         <td class="py-3 px-4 text-text-secondary whitespace-nowrap font-mono" dir="ltr">
@@ -473,12 +473,12 @@
                                         </td>
                                         <td class="py-3 px-4 text-end font-mono font-bold whitespace-nowrap" dir="ltr">
                                             {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney(strpos($p['latest_unit_cost'], '.') !== false ? rtrim(rtrim($p['latest_unit_cost'], '0'), '.') : $p['latest_unit_cost']) }}
-                                            <span class="text-[10px] font-normal text-text-muted">{{ $p['latest_currency_code'] }} / {{ $p['latest_unit_name'] }}</span>
+                                            <span class="text-xs font-normal text-text-muted">{{ $p['latest_currency_code'] }} / {{ $p['latest_unit_name'] }}</span>
                                         </td>
                                         <td class="py-3 px-4 text-end font-mono font-bold text-primary whitespace-nowrap" dir="ltr">
                                             @if ($p['latest_net_commercial_price_per_base_unit'] !== null)
                                                 {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($p['latest_net_commercial_price_per_base_unit']) }}
-                                                <span class="text-[10px] font-normal text-text-muted">{{ $p['base_currency_code'] }}</span>
+                                                <span class="text-xs font-normal text-text-muted">{{ $p['base_currency_code'] }}</span>
                                             @else
                                                 —
                                             @endif
@@ -491,11 +491,11 @@
                                         </td>
                                         <td class="table-actions py-3 px-4 text-center whitespace-nowrap">
                                             @if ($selectedProductId === $p['product_id'])
-                                                <button type="button" wire:click="selectProductFilter(null)" class="px-2.5 py-1 bg-surface-soft border border-border rounded text-[11px] font-bold text-text-secondary hover:text-text-primary" wire:loading.attr="disabled" wire:target="selectProductFilter">
+                                                <button type="button" wire:click="selectProductFilter(null)" class="px-2.5 py-1 bg-surface-soft border border-border rounded text-sm font-bold text-text-secondary hover:text-text-primary" wire:loading.attr="disabled" wire:target="selectProductFilter">
                                                     {{ __('purchasing.all_products') }}
                                                 </button>
                                             @else
-                                                <button type="button" wire:click="selectProductFilter({{ $p['product_id'] }})" class="px-2.5 py-1 bg-primary text-white rounded text-[11px] font-bold hover:opacity-90" wire:loading.attr="disabled" wire:target="selectProductFilter">
+                                                <button type="button" wire:click="selectProductFilter({{ $p['product_id'] }})" class="px-2.5 py-1 bg-primary text-white rounded text-sm font-bold hover:opacity-90" wire:loading.attr="disabled" wire:target="selectProductFilter">
                                                     {{ __('purchasing.filter_by_product') }}
                                                 </button>
                                             @endif
@@ -511,7 +511,7 @@
             </div>
 
             <!-- Recent Purchase Price History Lines -->
-            <div class="bg-white rounded-card border border-border overflow-hidden">
+            <div class="bg-surface rounded-card border border-border overflow-hidden">
                 <div class="p-4 border-b border-border flex flex-wrap items-center justify-between gap-3">
                     <h3 class="text-sm font-extrabold text-text-primary">{{ __('purchasing.purchase_price_history') }}</h3>
                     @if ($selectedProductId !== null)
@@ -524,7 +524,7 @@
                 @if ($vendorPriceLines->isNotEmpty())
                     <div class="overflow-x-auto">
                         <table class="data-table w-full text-xs">
-                            <thead class="bg-surface-soft text-text-muted font-bold text-[11px] uppercase">
+                            <thead class="bg-surface-soft text-text-muted font-bold text-xs uppercase">
                                 <tr>
                                     <th class="py-2.5 px-4 text-start">{{ __('purchasing.purchase_number') }}</th>
                                     <th class="py-2.5 px-4 text-start">{{ __('purchasing.purchase_date') }}</th>
@@ -560,7 +560,7 @@
                                                 {{ $line->product_name }}
                                             @endif
                                             @if ($line->product_sku)
-                                                <span class="block text-[10px] text-text-muted font-mono">{{ $line->product_sku }}</span>
+                                                <span class="block text-xs text-text-muted font-mono">{{ $line->product_sku }}</span>
                                             @endif
                                         </td>
                                         <td class="py-3 px-4 text-text-secondary whitespace-nowrap">
@@ -571,7 +571,7 @@
                                         </td>
                                         <td class="py-3 px-4 text-end font-mono font-bold whitespace-nowrap" dir="ltr">
                                             {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney(strpos($line->unit_cost, '.') !== false ? rtrim(rtrim($line->unit_cost, '0'), '.') : $line->unit_cost) }}
-                                            <span class="text-[10px] font-normal text-text-muted">{{ $line->currency_code }}</span>
+                                            <span class="text-xs font-normal text-text-muted">{{ $line->currency_code }}</span>
                                         </td>
                                         <td class="py-3 px-4 text-end font-mono whitespace-nowrap" dir="ltr">
                                             @if ($line->discount_type && $line->discount_type !== 'none')
@@ -586,7 +586,7 @@
                                         <td class="py-3 px-4 text-end font-mono font-bold text-primary whitespace-nowrap" dir="ltr">
                                             @if ($line->net_commercial_price_per_base_unit !== null)
                                                 {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($line->net_commercial_price_per_base_unit) }}
-                                                <span class="text-[10px] font-normal text-text-muted">{{ $line->base_currency_code }}</span>
+                                                <span class="text-xs font-normal text-text-muted">{{ $line->base_currency_code }}</span>
                                             @else
                                                 —
                                             @endif

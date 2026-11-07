@@ -216,6 +216,7 @@ Route::middleware(['auth'])->group(function () {
         // Phase 4 Sales Returns
         Route::get('returns', ReturnIndex::class)->name('returns.index');
         Route::get('returns/create', ReturnForm::class)->name('returns.create');
+        Route::get('returns/{publicId}/edit', ReturnForm::class)->name('returns.edit');
         Route::get('returns/{publicId}', ReturnDetail::class)->name('returns.show');
 
         // Phase 4 Customer Payments (Receipts)

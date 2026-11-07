@@ -1,6 +1,6 @@
 <div class="space-y-6">
     <!-- Header Card -->
-    <div class="bg-white rounded-card border border-border shadow-xs p-6 space-y-4">
+    <div class="bg-surface rounded-card border border-border shadow-xs p-6 space-y-4">
         <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div>
                 <div class="flex items-center gap-3">
@@ -36,11 +36,19 @@
                 </div>
             </div>
 
-            <!-- Action Buttons -->
+            @if($purchase->isPosted() && $withCost && auth()->user()->can('purchasing.purchase.void'))
+                <div class="flex gap-2">
+                    @if(auth()->user()->can('purchasing.purchase.create') && auth()->user()->can('purchasing.purchase.edit_draft'))
+                        <button type="button" wire:click="openCorrection('edit')" class="touch-action px-3 text-sm font-bold"><x-icon name="edit" class="inline h-4 w-4" /> {{ __('corrections.edit') }}</button>
+                    @endif
+                    <button type="button" wire:click="openCorrection('delete')" class="touch-action px-3 text-sm font-bold text-danger">{{ __('corrections.delete') }}</button>
+                </div>
+                @endif
+                <!-- Action Buttons -->
             <div class="flex flex-wrap items-center gap-2">
                 @if($canPost)
                     <button type="button" wire:click="post" wire:loading.attr="disabled" wire:target="post"
-                            class="px-3.5 py-1.5 rounded-control bg-primary text-white text-xs font-bold hover:bg-primary-hover transition-colors shadow-xs cursor-pointer">
+                            class="px-3.5 py-1.5 rounded-control bg-primary text-white text-sm font-bold hover:bg-primary-hover transition-colors shadow-xs cursor-pointer">
                         {{ __('purchasing.post_purchase') }}
                     </button>
                 @endif
@@ -50,17 +58,17 @@
                     </a>
                 @endif
                 @if($canCreateReturn)
-                    <a href="{{ route('purchase-returns.create', $document['public_id']) }}" class="touch-action px-3 py-1.5 rounded-control border border-border text-xs font-bold text-text-secondary hover:bg-surface-soft transition-colors">
+                    <a href="{{ route('purchase-returns.create', $document['public_id']) }}" class="touch-action px-3 py-1.5 rounded-control border border-border text-sm font-bold text-text-secondary hover:bg-surface-soft transition-colors">
                         ↩ {{ __('purchasing.create_purchase_return') }}
                     </a>
                 @endif
                 @if($canEdit)
-                    <a href="{{ route('purchases.edit', $document['public_id']) }}" class="touch-action px-3 py-1.5 rounded-control border border-border text-xs font-bold text-text-secondary hover:bg-surface-soft transition-colors">
+                    <a href="{{ route('purchases.edit', $document['public_id']) }}" class="touch-action px-3 py-1.5 rounded-control border border-border text-sm font-bold text-text-secondary hover:bg-surface-soft transition-colors">
                         {{ __('purchasing.edit_purchase') }}
                     </a>
                 @endif
                 @if($canCreatePurchase)
-                    <a href="{{ route('purchases.create') }}" class="touch-action inline-flex items-center gap-1.5 px-3 py-1.5 rounded-control border border-border text-xs font-bold text-text-secondary hover:text-text-primary hover:bg-surface-soft transition-colors focus-visible:ring-2 focus-visible:ring-primary">
+                    <a href="{{ route('purchases.create') }}" class="touch-action inline-flex items-center gap-1.5 px-3 py-1.5 rounded-control border border-border text-sm font-bold text-text-secondary hover:text-text-primary hover:bg-surface-soft transition-colors focus-visible:ring-2 focus-visible:ring-primary">
                         <x-icon name="plus" class="w-3.5 h-3.5 text-primary" />
                         <span>{{ __('release_b1_workflow.new_purchase') }}</span>
                     </a>
@@ -68,28 +76,39 @@
                 @if(auth()->user()?->can('purchasing.purchase.view'))
                     <x-document-actions route-name="pdf.purchase" :parameters="['publicId' => $document['public_id']]" :permissions="['purchasing.document.pdf']" />
                 @endif
-                <a href="{{ route('purchases.index') }}" class="touch-action px-3 py-1.5 rounded-control bg-surface-soft text-text-secondary hover:text-text-primary text-xs font-bold transition-colors">
+                <a href="{{ route('purchases.index') }}" class="touch-action px-3 py-1.5 rounded-control bg-surface-soft text-text-secondary hover:text-text-primary text-sm font-bold transition-colors">
                     {{ __('sales.back') }}
                 </a>
             </div>
         </div>
 
+        @if($correctionHistory && $withCost)
+            <p class="text-sm text-text-secondary">{{ __('corrections.retained') }}
+                @php
+                    $linkedId = (int) $correctionHistory->purchase_id === (int) $purchase->id ? $correctionHistory->replacement_id : $correctionHistory->purchase_id;
+                $linkedPurchase = $linkedId ? \App\Models\Purchase::where('company_id', $purchase->company_id)->find($linkedId) : null;
+                @endphp
+                @if($linkedPurchase)
+                    <a class="touch-action underline" href="{{ route('purchases.show', $linkedPurchase->public_id) }}">{{ $linkedPurchase->purchase_number ?? __('purchasing.draft') }} <bdi dir="ltr">#{{ $linkedPurchase->id }}</bdi></a>
+                @endif
+            </p>
+        @endif
         <!-- Metadata Summary -->
         <div class="grid grid-cols-2 md:grid-cols-4 gap-4 pt-4 border-t border-border text-xs">
             <div>
-                <span class="text-text-muted block text-[11px]">{{ __('purchasing.purchase_date') }}</span>
+                <span class="text-text-muted block text-xs">{{ __('purchasing.purchase_date') }}</span>
                 <span class="font-bold text-text-primary" dir="ltr">{{ $document['purchase_date'] ?? '—' }}</span>
             </div>
             <div>
-                <span class="text-text-muted block text-[11px]">{{ __('purchasing.due_date') }}</span>
+                <span class="text-text-muted block text-xs">{{ __('purchasing.due_date') }}</span>
                 <span class="font-bold text-text-primary" dir="ltr">{{ $document['due_date'] ?? __('purchasing.no_due_date') }}</span>
             </div>
             <div>
-                <span class="text-text-muted block text-[11px]">{{ __('purchasing.receiving_warehouse') }}</span>
+                <span class="text-text-muted block text-xs">{{ __('purchasing.receiving_warehouse') }}</span>
                 <span class="font-bold text-text-primary">{{ $document['warehouse_name'] ?? '—' }}</span>
             </div>
             <div>
-                <span class="text-text-muted block text-[11px]">{{ __('purchasing.currency') }}</span>
+                <span class="text-text-muted block text-xs">{{ __('purchasing.currency') }}</span>
                 <span class="font-bold text-text-primary">{{ $document['currency_code'] ?? '—' }}</span>
             </div>
         </div>
@@ -108,7 +127,7 @@
         @endif
     </div>
 
-    @if($document['status'] === 'draft')<p class="p-3 rounded-control bg-info-bg text-info text-sm">{{ __('purchasing.draft_notice') }}</p>@else<p class="p-3 rounded-control bg-success-bg text-success text-sm">{{ __('purchasing.posted_notice') }} <bdi>{{ $document['posted_at'] }}</bdi></p>@endif
+    @if($document['status'] === 'draft')<p class="p-3 rounded-control bg-info-bg text-info text-sm">{{ __('purchasing.draft_notice') }}</p>@else<p class="p-3 rounded-control bg-success-bg text-success text-sm">{{ $document['status'] === 'void' ? __('corrections.retained') : __('purchasing.posted_notice') }} <bdi>{{ $document['posted_at'] }}</bdi></p>@endif
     @error('post')<p role="alert" class="p-3 bg-danger-bg text-danger rounded-control text-sm">{{ $message }}</p>@enderror
     @if(session('success'))<p role="status" class="text-success text-sm">{{ session('success') }}</p>@endif
     @if($duplicateWarning)<p role="status" class="p-3 rounded-control bg-warning-bg text-warning text-sm">{{ __('purchasing.duplicate_vendor_invoice') }}</p>@endif
@@ -197,8 +216,8 @@
                     @if($availableExpenses->isNotEmpty())
                         <div class="grid sm:grid-cols-3 gap-3">
                             <div>
-                                <label class="block text-xs font-medium text-text-secondary mb-1">{{ __('purchasing.select_expense') }}</label>
-                                <select wire:model.live="selectedExpenseId" class="w-full text-xs rounded-control border border-border bg-white px-2.5 py-2">
+                                <label class="block text-sm font-medium text-text-secondary mb-1">{{ __('purchasing.select_expense') }}</label>
+                                <select wire:model.live="selectedExpenseId" class="w-full text-sm rounded-control border border-border bg-surface px-2.5 py-2">
                                     <option value="">-- {{ __('purchasing.select_expense') }} --</option>
                                     @foreach($availableExpenses as $availExp)
                                         <option value="{{ $availExp->id }}">
@@ -208,15 +227,15 @@
                                 </select>
                             </div>
                             <div>
-                                <label class="block text-xs font-medium text-text-secondary mb-1">{{ __('purchasing.allocation_method') }}</label>
-                                <select wire:model.live="allocationMethod" class="w-full text-xs rounded-control border border-border bg-white px-2.5 py-2">
+                                <label class="block text-sm font-medium text-text-secondary mb-1">{{ __('purchasing.allocation_method') }}</label>
+                                <select wire:model.live="allocationMethod" class="w-full text-sm rounded-control border border-border bg-surface px-2.5 py-2">
                                     <option value="value">{{ __('purchasing.method_value') }}</option>
                                     <option value="quantity">{{ __('purchasing.method_quantity') }}</option>
                                     <option value="manual">{{ __('purchasing.method_manual') }}</option>
                                 </select>
                             </div>
                             <div class="flex items-end">
-                                <button type="button" wire:click="attachLandedCost" wire:loading.attr="disabled" class="h-9 px-4 rounded-control bg-primary text-white text-xs font-bold hover:bg-primary-hover disabled:opacity-50">
+                                <button type="button" wire:click="attachLandedCost" wire:loading.attr="disabled" class="h-9 px-4 rounded-control bg-primary text-white text-sm font-bold hover:bg-primary-hover disabled:opacity-50">
                                     {{ __('purchasing.attach_landed_cost') }}
                                 </button>
                             </div>
@@ -228,7 +247,7 @@
                                 @foreach($document['lines'] as $line)
                                     <div class="flex items-center justify-between gap-3 text-xs">
                                         <span>{{ $line['item_description'] }} ({{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($line['quantity']) }} {{ $line['unit_name'] }})</span>
-                                        <input type="text" wire:model="manualAllocations.{{ $line['id'] }}" placeholder="0.00" class="w-32 rounded border border-border bg-white px-2 py-1 text-xs text-end font-mono">
+                                        <input type="text" wire:model="manualAllocations.{{ $line['id'] }}" placeholder="0.00" class="w-32 rounded border border-border bg-surface px-2 py-1 text-sm text-end font-mono">
                                     </div>
                                 @endforeach
                             </div>
@@ -242,25 +261,28 @@
         @if($payablePosition !== null)
             <section class="bg-surface border border-border rounded-card p-4 grid grid-cols-2 md:grid-cols-4 gap-4 text-xs">
                 <div>
-                    <span class="text-text-secondary block text-[11px]">{{ __('purchasing.all_statuses') }}</span>
+                    <span class="text-text-secondary block text-xs">{{ __('purchasing.all_statuses') }}</span>
                     <span class="inline-block mt-1 px-2.5 py-0.5 rounded-full text-xs font-bold {{ $payablePosition->status === 'settled' ? 'bg-success-bg text-success' : ($payablePosition->status === 'partially_paid' ? 'bg-warning-bg text-warning' : ($payablePosition->status === 'credit' ? 'bg-info-bg text-info' : 'bg-surface-soft text-text-secondary')) }}">
                         {{ __('purchasing.'.$payablePosition->status) }}
                     </span>
                 </div>
                 <div>
-                    <span class="text-text-secondary block text-[11px]">{{ __('purchasing.allocated') }}</span>
+                    <span class="text-text-secondary block text-xs">{{ __('purchasing.allocated') }}</span>
                     <p class="font-mono font-bold mt-1 text-text-primary" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($payablePosition->activeAllocatedAmount, $document['currency_code']) }} {{ $document['currency_code'] }}</p>
                 </div>
                 <div>
-                    <span class="text-text-secondary block text-[11px]">{{ __('purchasing.purchase_returns') }}</span>
+                    <span class="text-text-secondary block text-xs">{{ __('purchasing.purchase_returns') }}</span>
                     <p class="font-mono font-bold mt-1 text-text-primary" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($payablePosition->postedReturnedAmount, $document['currency_code']) }} {{ $document['currency_code'] }}</p>
                 </div>
                 <div>
-                    <span class="text-text-secondary block text-[11px]">{{ __('purchasing.outstanding_balance') }}</span>
+                    <span class="text-text-secondary block text-xs">{{ __('purchasing.outstanding_balance') }}</span>
                     <p class="font-mono font-bold mt-1 {{ $payablePosition->hasOutstanding() ? 'text-danger' : 'text-text-primary' }}" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($payablePosition->outstanding, $document['currency_code']) }} {{ $document['currency_code'] }}</p>
                 </div>
             </section>
         @endif
     @else<p class="text-sm text-text-secondary">{{ __('purchasing.cost_restricted') }}</p>@endif
     @if($document['notes'])<section class="bg-surface border border-border rounded-card p-4"><h2 class="font-bold text-sm">{{ __('purchasing.notes') }}</h2><p class="text-sm mt-2 whitespace-pre-wrap">{{ $document['notes'] }}</p></section>@endif
+    @if($correctionOpen)
+        <x-correction-preview :correction-mode="$correctionMode" :correction-preview="$correctionPreview" />
+    @endif
 </div>

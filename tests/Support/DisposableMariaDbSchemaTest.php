@@ -187,9 +187,10 @@ final class DisposableMariaDbSchemaTest extends TestCase
         putenv('PHASE8_ALLOW_DISPOSABLE_DB=1');
         $_ENV['PHASE8_ALLOW_DISPOSABLE_DB'] = '1';
 
+        $sentinel = DisposableMariaDbSchema::create();
+        $sentinelName = $sentinel->schemaName();
+
         $pdo = $this->getPdo();
-        $sentinelName = 'accounting_p8_sentinel_'.bin2hex(random_bytes(4));
-        $pdo->exec("CREATE DATABASE `{$sentinelName}`");
         $pdo->exec("CREATE TABLE `{$sentinelName}`.sentinel_test (id INT PRIMARY KEY, marker VARCHAR(50))");
         $pdo->exec("INSERT INTO `{$sentinelName}`.sentinel_test VALUES (1, 'MUST_PRESERVE')");
 
@@ -208,7 +209,7 @@ final class DisposableMariaDbSchemaTest extends TestCase
             $stmt = $pdo->query("SELECT marker FROM `{$sentinelName}`.sentinel_test WHERE id = 1");
             $this->assertSame('MUST_PRESERVE', $stmt->fetchColumn(), 'Sentinel database and records must remain completely intact.');
         } finally {
-            $pdo->exec("DROP DATABASE IF EXISTS `{$sentinelName}`");
+            $sentinel->drop();
         }
     }
 }

@@ -14,26 +14,26 @@
     <x-refinement-filters :active-count="(int) filled($productFilter) + (int) filled($warehouseFilter) + (int) filled($typeFilter) + (int) filled($fromDate) + (int) filled($toDate)">
 
 
-        <select aria-label="{{ __('inventory.all_products') }}" wire:model.live="productFilter" class="min-h-11 w-full h-11 px-2 rounded-control border border-border text-xs bg-white">
+        <select aria-label="{{ __('inventory.all_products') }}" wire:model.live="productFilter" class="min-h-11 w-full h-11 px-2 rounded-control border border-border text-sm bg-surface">
                     <option value="">{{ __('inventory.all_products') }}</option>
                     @foreach ($products as $p)
                         <option value="{{ $p->id }}">{{ $p->name() }}</option>
                     @endforeach
                 </select>
-        <select aria-label="{{ __('inventory.all_warehouses') }}" wire:model.live="warehouseFilter" class="min-h-11 w-full h-11 px-2 rounded-control border border-border text-xs bg-white">
+        <select aria-label="{{ __('inventory.all_warehouses') }}" wire:model.live="warehouseFilter" class="min-h-11 w-full h-11 px-2 rounded-control border border-border text-sm bg-surface">
                     <option value="">{{ __('inventory.all_warehouses') }}</option>
                     @foreach ($warehouses as $w)
                         <option value="{{ $w->id }}">{{ app()->getLocale() === 'en' ? ($w->name_en ?: $w->name_ar) : $w->name_ar }}</option>
                     @endforeach
                 </select>
-        <select aria-label="{{ __('inventory.all_movement_types') }}" wire:model.live="typeFilter" class="min-h-11 w-full h-11 px-2 rounded-control border border-border text-xs bg-white">
+        <select aria-label="{{ __('inventory.all_movement_types') }}" wire:model.live="typeFilter" class="min-h-11 w-full h-11 px-2 rounded-control border border-border text-sm bg-surface">
                     <option value="">{{ __('inventory.all_movement_types') }}</option>
                     @foreach ($movementTypes as $type)
                         <option value="{{ $type }}">{{ __('inventory.type_' . $type) }}</option>
                     @endforeach
                 </select>
-        <label class="grid gap-1 text-sm text-text-secondary">{{ __('inventory.date_from') }}<input aria-label="{{ __('inventory.date_from') }}" type="date" wire:model.live="fromDate" class="min-h-11 w-full h-11 px-2 rounded-control border border-border text-xs bg-white font-mono dir-ltr" /></label>
-        <label class="grid gap-1 text-sm text-text-secondary">{{ __('inventory.date_to') }}<input aria-label="{{ __('inventory.date_to') }}" type="date" wire:model.live="toDate" class="min-h-11 w-full h-11 px-2 rounded-control border border-border text-xs bg-white font-mono dir-ltr" /></label>
+        <label class="grid gap-1 text-sm text-text-secondary">{{ __('inventory.date_from') }}<input aria-label="{{ __('inventory.date_from') }}" type="date" wire:model.live="fromDate" class="min-h-11 w-full h-11 px-2 rounded-control border border-border text-sm bg-surface font-mono dir-ltr" /></label>
+        <label class="grid gap-1 text-sm text-text-secondary">{{ __('inventory.date_to') }}<input aria-label="{{ __('inventory.date_to') }}" type="date" wire:model.live="toDate" class="min-h-11 w-full h-11 px-2 rounded-control border border-border text-sm bg-surface font-mono dir-ltr" /></label>
     </x-refinement-filters>
 
     <!-- Ledger Table -->
@@ -80,7 +80,7 @@
                             <td class="p-3.5 text-text-secondary">
                                 {{ app()->getLocale() === 'en' ? ($m->warehouse?->name_en ?: $m->warehouse?->name_ar) : $m->warehouse?->name_ar }}
                             </td>
-                            <td class="p-3.5 text-center font-mono text-[11px] dir-ltr text-text-muted">
+                            <td class="p-3.5 text-center font-mono text-xs dir-ltr text-text-muted">
                                 {{ $m->lot?->lot_number ?? ($m->lot_id ? '#' . $m->lot_id : '—') }}
                             </td>
                             <td class="p-3.5 text-center font-mono font-bold tabular-nums dir-ltr {{ $m->isInbound() ? 'text-success' : 'text-danger' }}">
@@ -100,7 +100,7 @@
                             <td class="p-3.5 text-text-secondary max-w-xs truncate">
                                 {{ $m->reason ?? '—' }}
                             </td>
-                            <td class="p-3.5 text-text-muted text-[11px]">
+                            <td class="p-3.5 text-text-muted text-xs">
                                 {{ $m->user?->name ?? __('inventory.system') }}
                             </td>
                         </tr>

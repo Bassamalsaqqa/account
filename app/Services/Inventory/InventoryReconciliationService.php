@@ -348,10 +348,22 @@ class InventoryReconciliationService
                         $expectedValDelta = $delta->multipliedBy($inUnitCost)->toScale(6, RoundingMode::HALF_UP);
 
                         if ($m->movement_type === StockMovement::TYPE_PURCHASE) {
-                            try {
-                                $expectedValDelta = app(PurchaseStockProvenance::class)->value($m);
-                            } catch (\Throwable $exception) {
-                                $historyCorruptions[] = "Movement [{$m->id}] Purchase acquisition provenance corrupt: {$exception->getMessage()}";
+                            if ($m->source_type === 'purchase_return_void') {
+                                try {
+                                    $original = StockMovement::withoutGlobalScopes()->where('company_id', $m->company_id)->find($m->reversal_of_id);
+                                    if ($original === null || $original->movement_type !== StockMovement::TYPE_PURCHASE_RETURN) {
+                                        throw new \InvalidArgumentException('Purchase return void movement must reference original return movement.');
+                                    }
+                                    $expectedValDelta = BigDecimal::of((string) $original->value_delta_base)->abs()->toScale(6);
+                                } catch (\Throwable $exception) {
+                                    $historyCorruptions[] = "Movement [{$m->id}] purchase return void compensation corrupt: {$exception->getMessage()}";
+                                }
+                            } else {
+                                try {
+                                    $expectedValDelta = app(PurchaseStockProvenance::class)->value($m);
+                                } catch (\Throwable $exception) {
+                                    $historyCorruptions[] = "Movement [{$m->id}] Purchase acquisition provenance corrupt: {$exception->getMessage()}";
+                                }
                             }
                         } elseif ($m->movement_type === StockMovement::TYPE_SALE_RETURN) {
                             try {
@@ -386,12 +398,16 @@ class InventoryReconciliationService
                                 if ($original === null || $original->movement_type !== StockMovement::TYPE_PURCHASE) {
                                     throw new \InvalidArgumentException('Purchase return movement must reference original purchase movement.');
                                 }
-                                $expectedTarget = app(HistoricalPurchaseReceiptValue::class)->target(
-                                    (int) $m->company_id,
-                                    (int) $m->reversal_of_id,
-                                    $absDelta,
-                                    (int) $m->id
-                                );
+                                if ($m->source_type === 'purchase_void') {
+                                    $expectedTarget = BigDecimal::of((string) $original->value_delta_base)->toScale(6);
+                                } else {
+                                    $expectedTarget = app(HistoricalPurchaseReceiptValue::class)->target(
+                                        (int) $m->company_id,
+                                        (int) $m->reversal_of_id,
+                                        $absDelta,
+                                        (int) $m->id
+                                    );
+                                }
                                 $valuation = PurchaseReturnValuation::compute(
                                     $runningQty,
                                     $runningVal,
@@ -411,10 +427,12 @@ class InventoryReconciliationService
                                     $historyCorruptions[] = "Movement [{$m->id}] for product [{$product->id}] purchase return value delta corrupt: stored [{$valDeltaStored}] vs expected [{$expectedValDelta}].";
                                 }
 
-                                try {
-                                    app(PurchaseReturnStockProvenance::class)->value($m, true);
-                                } catch (\Throwable $provEx) {
-                                    $historyCorruptions[] = "Movement [{$m->id}] purchase return provenance corrupt: {$provEx->getMessage()}";
+                                if ($m->source_type !== 'purchase_void') {
+                                    try {
+                                        app(PurchaseReturnStockProvenance::class)->value($m, true);
+                                    } catch (\Throwable $provEx) {
+                                        $historyCorruptions[] = "Movement [{$m->id}] purchase return provenance corrupt: {$provEx->getMessage()}";
+                                    }
                                 }
 
                                 $runningQty = $valuation->newCompanyQty;

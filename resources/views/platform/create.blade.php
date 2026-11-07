@@ -12,7 +12,7 @@
     <!-- Back Navigation -->
     <div>
         <a href="{{ route('platform.index') }}"
-           class="inline-flex min-h-11 items-center gap-1.5 text-xs sm:text-sm font-semibold text-text-secondary hover:text-primary transition-colors">
+           class="inline-flex min-h-11 items-center gap-1.5 text-sm sm:text-sm font-semibold text-text-secondary hover:text-primary transition-colors">
             <x-icon name="chevron" class="w-4 h-4 rtl:rotate-180" />
             <span>{{ __('platform.back') }}</span>
         </a>
@@ -46,7 +46,7 @@
     <!-- Form Card -->
     <form method="POST"
           action="{{ route('platform.companies.store') }}"
-          class="rounded-card border border-border bg-white p-6 sm:p-8 space-y-6 shadow-panel"
+          class="rounded-card border border-border bg-surface p-6 sm:p-8 space-y-6 shadow-panel"
           x-data="{ review: false, saving: false, summary: {}, dirty: false }"
           @input="dirty = true"
           @change="dirty = true"
@@ -67,7 +67,7 @@
                 <div class="grid gap-5 sm:grid-cols-2">
                     @foreach(['name_ar', 'name_en'] as $field)
                         <div class="min-w-0">
-                            <label class="block font-bold text-xs uppercase tracking-wider text-text-secondary mb-1.5" for="{{ $field }}">
+                            <label class="block font-bold text-sm uppercase tracking-wider text-text-secondary mb-1.5" for="{{ $field }}">
                                 {{ __('platform.'.$field) }}
                             </label>
                             <input x-ref="{{ $field }}"
@@ -75,7 +75,7 @@
                                    name="{{ $field }}"
                                    type="text"
                                    value="{{ old($field) }}"
-                                   class="min-h-11 w-full rounded-control border border-border bg-white px-3.5 text-sm text-text-primary focus:border-primary focus:ring-primary/20"
+                                   class="min-h-11 w-full rounded-control border border-border bg-surface px-3.5 text-sm text-text-primary focus:border-primary focus:ring-primary/20"
                                    maxlength="255"
                                    @if($field !== 'name_en') required @endif
                                    @error($field) aria-invalid="true" aria-describedby="{{ $field }}-error" @enderror>
@@ -87,11 +87,11 @@
 
                     @foreach(['base_currency_code' => ['ILS', 'USD', 'JOD'], 'default_locale' => ['ar', 'en'], 'timezone' => ['Asia/Hebron', 'Asia/Gaza', 'Asia/Amman']] as $field => $options)
                         <div class="min-w-0">
-                            <label class="block font-bold text-xs uppercase tracking-wider text-text-secondary mb-1.5" for="{{ $field }}">
+                            <label class="block font-bold text-sm uppercase tracking-wider text-text-secondary mb-1.5" for="{{ $field }}">
                                 {{ __('platform.'.(['base_currency_code' => 'currency', 'default_locale' => 'locale', 'timezone' => 'timezone'][$field])) }}
                             </label>
                             <select x-ref="{{ $field }}"
-                                    class="min-h-11 w-full rounded-control border border-border bg-white px-3.5 text-sm text-text-primary focus:border-primary focus:ring-primary/20"
+                                    class="min-h-11 w-full rounded-control border border-border bg-surface px-3.5 text-sm text-text-primary focus:border-primary focus:ring-primary/20"
                                     id="{{ $field }}"
                                     name="{{ $field }}"
                                     required>
@@ -114,7 +114,7 @@
                 <div class="grid gap-5 sm:grid-cols-2">
                     @foreach(['owner_name', 'owner_email', 'password', 'password_confirmation'] as $field)
                         <div class="min-w-0">
-                            <label class="block font-bold text-xs uppercase tracking-wider text-text-secondary mb-1.5" for="{{ $field }}">
+                            <label class="block font-bold text-sm uppercase tracking-wider text-text-secondary mb-1.5" for="{{ $field }}">
                                 {{ __('platform.'.$field) }}
                             </label>
                             <input x-ref="{{ $field }}"
@@ -122,7 +122,7 @@
                                    name="{{ $field }}"
                                    type="{{ str_starts_with($field, 'password') ? 'password' : ($field === 'owner_email' ? 'email' : 'text') }}"
                                    value="{{ str_starts_with($field, 'password') ? '' : old($field) }}"
-                                   class="min-h-11 w-full rounded-control border border-border bg-white px-3.5 text-sm text-text-primary focus:border-primary focus:ring-primary/20"
+                                   class="min-h-11 w-full rounded-control border border-border bg-surface px-3.5 text-sm text-text-primary focus:border-primary focus:ring-primary/20"
                                    maxlength="255"
                                    required
                                    @if(str_starts_with($field, 'password')) autocomplete="new-password" minlength="8" @endif
@@ -172,7 +172,7 @@
 
             <div class="flex flex-wrap items-center justify-end gap-3 pt-2">
                 <button type="button"
-                        class="inline-flex min-h-11 items-center justify-center rounded-control border border-border bg-white px-5 text-sm font-semibold text-text-secondary hover:bg-surface-soft transition-colors cursor-pointer"
+                        class="inline-flex min-h-11 items-center justify-center rounded-control border border-border bg-surface px-5 text-sm font-semibold text-text-secondary hover:bg-surface-soft transition-colors cursor-pointer"
                         @click="review = false; $nextTick(() => requestAnimationFrame(() => $refs.name_ar.focus()))"
                         :disabled="saving">
                     {{ __('platform.edit') }}

@@ -3,7 +3,7 @@
     <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
             <div class="flex items-center gap-2 mb-1">
-                <a href="{{ route('products.index') }}" class="touch-action text-xs text-text-muted hover:text-primary transition-colors">&larr; {{ __('inventory.products') }}</a>
+                <a href="{{ route('products.index') }}" class="touch-action text-sm text-text-muted hover:text-primary transition-colors">&larr; {{ __('inventory.products') }}</a>
                 <span class="text-text-muted">/</span>
                 <span class="text-xs text-text-secondary">{{ (app()->getLocale() === 'en' && $product->category?->name_en) ? $product->category->name_en : ($product->category?->name_ar ?? __('inventory.general')) }}</span>
             </div>
@@ -34,7 +34,7 @@
             @endif
             @if ($canManageProduct)
                 <a href="{{ route('products.edit', $product->public_id) }}"
-                   class="touch-action inline-flex items-center gap-1.5 px-3 py-2 bg-white border border-border hover:bg-surface-soft text-text-primary text-xs font-bold rounded-control transition-colors">
+                   class="touch-action inline-flex items-center gap-1.5 px-3 py-2 bg-surface border border-border hover:bg-surface-soft text-text-primary text-xs font-bold rounded-control transition-colors">
                     <x-icon name="pencil" class="w-4 h-4 text-text-secondary" />
                     <span>{{ __('inventory.edit_product') }}</span>
                 </a>
@@ -46,7 +46,7 @@
     <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
         <!-- Stock KPI -->
         <x-card padding="p-4" class="space-y-1">
-            <div class="text-[11px] font-bold text-text-muted uppercase tracking-wider">{{ __('inventory.total_stock') }}</div>
+            <div class="text-xs font-bold text-text-muted uppercase tracking-wider">{{ __('inventory.total_stock') }}</div>
             <div class="text-xl font-extrabold font-mono tabular-nums dir-ltr text-text-primary">
                 {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($stockTotal) }}
                 <span class="text-xs font-normal text-text-secondary font-arabic">{{ (app()->getLocale() === 'en' && $product->baseUnit?->name_en) ? $product->baseUnit->name_en : $product->baseUnit?->name_ar }}</span>
@@ -56,7 +56,7 @@
 
         <!-- Suggested Sale Price KPI -->
         <x-card padding="p-4" class="space-y-1">
-            <div class="text-[11px] font-bold text-text-muted uppercase tracking-wider">{{ __('inventory.suggested_sale_price') }}</div>
+            <div class="text-xs font-bold text-text-muted uppercase tracking-wider">{{ __('inventory.suggested_sale_price') }}</div>
             <div class="text-xl font-extrabold font-mono tabular-nums dir-ltr text-text-primary">
                 {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($product->default_sale_price_base ?? '—') }}
                 <span class="text-xs font-normal text-text-secondary font-arabic">{{ $company->base_currency_code }}</span>
@@ -66,7 +66,7 @@
         @if ($canViewCost)
             <!-- Average Cost KPI -->
             <x-card padding="p-4" class="space-y-1">
-                <div class="text-[11px] font-bold text-text-muted uppercase tracking-wider">{{ __('inventory.moving_average_cost') }}</div>
+                <div class="text-xs font-bold text-text-muted uppercase tracking-wider">{{ __('inventory.moving_average_cost') }}</div>
                 <div class="text-xl font-extrabold font-mono tabular-nums dir-ltr text-primary">
                     {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($costState?->average_cost_base ?? '0.000000') }}
                     <span class="text-xs font-normal text-text-secondary font-arabic">{{ $company->base_currency_code }}</span>
@@ -75,7 +75,7 @@
 
             <!-- Inventory Valuation KPI -->
             <x-card padding="p-4" class="space-y-1">
-                <div class="text-[11px] font-bold text-text-muted uppercase tracking-wider">{{ __('inventory.inventory_value') }}</div>
+                <div class="text-xs font-bold text-text-muted uppercase tracking-wider">{{ __('inventory.inventory_value') }}</div>
                 <div class="text-xl font-extrabold font-mono tabular-nums dir-ltr text-text-primary">
                     {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($costState?->inventory_value_base ?? '0.000000') }}
                     <span class="text-xs font-normal text-text-secondary font-arabic">{{ $company->base_currency_code }}</span>
@@ -456,7 +456,7 @@
                 <div class="flex items-center justify-between p-3.5 border-b border-border bg-surface-soft">
                     <span class="text-xs font-bold text-text-secondary">{{ __('inventory.barcodes') }}</span>
                     <a href="{{ route('labels.index', ['search' => $product->sku ?? ($product->barcodes->first()?->barcode ?? '')]) }}"
-                       class="touch-action inline-flex items-center gap-1.5 px-3 py-1.5 rounded-control border border-border bg-white text-xs font-bold text-text-secondary hover:text-text-primary hover:bg-surface transition-colors focus-visible:ring-2 focus-visible:ring-primary">
+                       class="touch-action inline-flex items-center gap-1.5 px-3 py-1.5 rounded-control border border-border bg-surface text-xs font-bold text-text-secondary hover:text-text-primary hover:bg-surface transition-colors focus-visible:ring-2 focus-visible:ring-primary">
                         <x-icon name="printer" class="w-3.5 h-3.5 text-primary" />
                         <span>{{ __('release_b1_workflow.print_barcode_labels') }}</span>
                     </a>
@@ -512,7 +512,7 @@
                 <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
                     @foreach ($product->images as $img)
                         <div class="rounded-control border border-border overflow-hidden bg-surface-soft space-y-2 p-2">
-                            <div class="aspect-square rounded-control overflow-hidden bg-white relative">
+                            <div class="aspect-square rounded-control overflow-hidden bg-surface relative">
                                 <img src="{{ asset('storage/' . $img->path) }}" alt="{{ (app()->getLocale() === 'en' ? ($img->alt_en ?: $img->alt_ar) : $img->alt_ar) ?? $product->name() }}" class="w-full h-full object-cover" />
                                 @if ($img->is_primary)
                                     <div class="absolute top-1.5 right-1.5">
@@ -520,7 +520,7 @@
                                     </div>
                                 @endif
                             </div>
-                            <div class="text-[11px] text-text-muted truncate">
+                            <div class="text-xs text-text-muted truncate">
                                 {{ $img->width }}x{{ $img->height }} • {{ round($img->file_size / 1024) }} KB
                             </div>
                         </div>
@@ -555,7 +555,7 @@
                 @if ($purchaseHistory->isNotEmpty())
                     <div class="overflow-x-auto">
                         <table class="data-table w-full text-xs">
-                            <thead class="bg-surface-soft text-text-muted font-bold text-[11px] uppercase">
+                            <thead class="bg-surface-soft text-text-muted font-bold text-xs uppercase">
                                 <tr>
                                     <th class="py-2.5 px-4 text-start">{{ __('purchasing.purchase_number') }}</th>
                                     <th class="py-2.5 px-4 text-start">{{ __('purchasing.purchase_date') }}</th>
@@ -591,7 +591,7 @@
                                                 {{ $item->vendor_name }}
                                             @endif
                                             @if ($item->vendor_code)
-                                                <span class="block text-[10px] text-text-muted font-mono">{{ $item->vendor_code }}</span>
+                                                <span class="block text-xs text-text-muted font-mono">{{ $item->vendor_code }}</span>
                                             @endif
                                         </td>
                                         <td class="py-3 px-4 text-text-secondary whitespace-nowrap">
@@ -602,7 +602,7 @@
                                         </td>
                                         <td class="py-3 px-4 text-end font-mono font-bold whitespace-nowrap" dir="ltr">
                                             {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney(strpos($item->unit_cost, '.') !== false ? rtrim(rtrim($item->unit_cost, '0'), '.') : $item->unit_cost) }}
-                                            <span class="text-[10px] font-normal text-text-muted">{{ $item->currency_code }}</span>
+                                            <span class="text-xs font-normal text-text-muted">{{ $item->currency_code }}</span>
                                         </td>
                                         <td class="py-3 px-4 text-end font-mono whitespace-nowrap" dir="ltr">
                                             @if ($item->discount_type && $item->discount_type !== 'none')
@@ -617,7 +617,7 @@
                                         <td class="py-3 px-4 text-end font-mono font-bold text-primary whitespace-nowrap" dir="ltr">
                                             @if ($item->net_commercial_price_per_base_unit !== null)
                                                 {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($item->net_commercial_price_per_base_unit) }}
-                                                <span class="text-[10px] font-normal text-text-muted">{{ $item->base_currency_code }}</span>
+                                                <span class="text-xs font-normal text-text-muted">{{ $item->base_currency_code }}</span>
                                             @else
                                                 —
                                             @endif

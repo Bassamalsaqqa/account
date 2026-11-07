@@ -8,6 +8,7 @@ use App\Actions\Purchasing\ApplyVendorPaymentCreditAction;
 use App\Actions\Purchasing\ReverseVendorPaymentAction;
 use App\Domain\Accounting\Exceptions\ImmutableRecordException;
 use App\Domain\Money\Queries\SettlementTargetsQuery;
+use App\Livewire\Concerns\ReviewsStandaloneReversal;
 use App\Livewire\Pages\Purchasing\Concerns\AuthorizesPurchasingPages;
 use App\Models\VendorPayment;
 use App\Services\Purchasing\VendorPaymentValidationException;
@@ -24,13 +25,12 @@ use Livewire\Component;
 class PaymentDetail extends Component
 {
     use AuthorizesPurchasingPages;
+    use ReviewsStandaloneReversal;
 
     #[Locked]
     public string $publicId;
 
     public VendorPayment $payment;
-
-    public bool $showReverseModal = false;
 
     public string $reversalReason = '';
 
@@ -137,7 +137,7 @@ class PaymentDetail extends Component
         session()->flash('success', __('purchasing.credit_applied_successfully'));
     }
 
-    public function reversePayment(ReverseVendorPaymentAction $reverseAction, CompanyContext $context): void
+    private function executeReviewedreversePayment(ReverseVendorPaymentAction $reverseAction, CompanyContext $context): void
     {
         $this->authorizePaymentFinancialRead();
         $this->authorizePurchasing('money.vendor_payment.reverse');
@@ -155,7 +155,6 @@ class PaymentDetail extends Component
             return;
         }
         $this->payment->load(['vendor', 'moneyAccount', 'allocations.purchase', 'applicationEvents']);
-        $this->showReverseModal = false;
         session()->flash('success', __('purchasing.reversed_successfully'));
     }
 

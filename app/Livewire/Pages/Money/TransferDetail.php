@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Livewire\Pages\Money;
 
 use App\Actions\Money\ReverseMoneyTransferAction;
+use App\Livewire\Concerns\ReviewsStandaloneReversal;
 use App\Livewire\Pages\Money\Concerns\AuthorizesMoneyPages;
 use App\Models\MoneyTransfer;
 use Illuminate\Contracts\View\View;
@@ -16,6 +17,7 @@ use Livewire\Component;
 class TransferDetail extends Component
 {
     use AuthorizesMoneyPages;
+    use ReviewsStandaloneReversal;
 
     #[Locked]
     public string $publicId;
@@ -35,7 +37,7 @@ class TransferDetail extends Component
         return MoneyTransfer::where('company_id', $this->pageCompanyId)->where('public_id', $this->publicId)->firstOrFail();
     }
 
-    public function reverse(): void
+    private function executeReviewedreverse(): void
     {
         $this->authorizeMoney('money.transfer.reverse');
         $this->validate(['reason' => 'nullable|string|max:500']);

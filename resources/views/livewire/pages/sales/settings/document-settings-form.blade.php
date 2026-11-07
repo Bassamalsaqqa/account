@@ -1,8 +1,8 @@
 <div class="space-y-5">
     {{-- Session Success Banner --}}
     @if (session()->has('success'))
-        <div role="status" aria-live="polite" class="p-3.5 rounded-card bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs sm:text-sm font-bold flex items-center gap-2.5 shadow-xs">
-            <x-icon name="check" class="w-4 h-4 text-emerald-600 shrink-0" />
+        <div role="status" aria-live="polite" class="p-3.5 rounded-card bg-success-bg border border-success/20 text-success text-xs sm:text-sm font-bold flex items-center gap-2.5 shadow-xs">
+            <x-icon name="check" class="w-4 h-4 text-success shrink-0" />
             <span>{{ session('success') }}</span>
         </div>
     @endif
@@ -15,7 +15,7 @@
             <form wire:submit="save" class="space-y-5">
 
                 {{-- Section 1: Template Selection --}}
-                <section class="bg-white border border-border rounded-xl p-4 sm:p-5 shadow-xs space-y-3.5" aria-labelledby="template-heading">
+                <section class="bg-surface border border-border rounded-xl p-4 sm:p-5 shadow-xs space-y-3.5" aria-labelledby="template-heading">
                     <div class="border-b border-border pb-2.5 flex items-center justify-between">
                         <div>
                             <h2 id="template-heading" class="text-sm font-extrabold text-text-primary">{{ __('documents.template_options') }}</h2>
@@ -27,7 +27,7 @@
                             'modern' => ['label' => __('documents.template_modern'), 'icon' => 'sparkles'],
                             'compact' => ['label' => __('documents.template_compact'), 'icon' => 'receipt'],
                         ] as $key => $opt)
-                            <label for="template_{{ $key }}" class="flex items-center justify-between p-3 rounded-xl border cursor-pointer transition {{ $template === $key ? 'border-primary bg-primary/5 ring-1 ring-primary shadow-xs' : 'border-border bg-white hover:bg-surface-soft' }}">
+                            <label for="template_{{ $key }}" class="flex items-center justify-between p-3 rounded-xl border cursor-pointer transition {{ $template === $key ? 'border-primary bg-primary/5 ring-1 ring-primary shadow-xs' : 'border-border bg-surface hover:bg-surface-soft' }}">
                                 <div class="flex items-center gap-2 font-bold text-sm text-text-primary">
                                     <x-icon :name="$opt['icon']" class="w-4 h-4 text-primary shrink-0" />
                                     <span>{{ $opt['label'] }}</span>
@@ -40,7 +40,7 @@
                 </section>
 
                 {{-- Section 2: Brand Accent Color --}}
-                <section class="bg-white border border-border rounded-xl p-4 sm:p-5 shadow-xs space-y-3.5" aria-labelledby="color-heading">
+                <section class="bg-surface border border-border rounded-xl p-4 sm:p-5 shadow-xs space-y-3.5" aria-labelledby="color-heading">
                     <div class="border-b border-border pb-2.5">
                         <h2 id="color-heading" class="text-sm font-extrabold text-text-primary">{{ __('documents.accent_color') }}</h2>
                     </div>
@@ -55,7 +55,7 @@
                                 <input id="color_{{ substr($hex, 1) }}" type="radio" name="accent_color" value="{{ $hex }}" wire:model.live="accent_color" class="sr-only" />
                                 <span class="w-5 h-5 rounded-full {{ $color['class'] }} border border-white shadow-2xs shrink-0 flex items-center justify-center">
                                     @if ($accent_color === $hex)
-                                        <span class="w-1.5 h-1.5 rounded-full bg-white"></span>
+                                        <span class="w-1.5 h-1.5 rounded-full bg-surface"></span>
                                     @endif
                                 </span>
                                 <span class="text-xs font-bold text-text-secondary">{{ $color['name'] }}</span>
@@ -66,7 +66,7 @@
                 </section>
 
                 {{-- Section 3: Default Language --}}
-                <section class="bg-white border border-border rounded-xl p-4 sm:p-5 shadow-xs space-y-3.5" aria-labelledby="locale-heading">
+                <section class="bg-surface border border-border rounded-xl p-4 sm:p-5 shadow-xs space-y-3.5" aria-labelledby="locale-heading">
                     <div class="border-b border-border pb-2.5">
                         <h2 id="locale-heading" class="text-sm font-extrabold text-text-primary">{{ __('documents.default_locale') }}</h2>
                     </div>
@@ -88,7 +88,7 @@
                 </section>
 
                 {{-- Section 4: Branding Logo & QR Code --}}
-                <section class="bg-white border border-border rounded-xl p-4 sm:p-5 shadow-xs space-y-3.5" aria-labelledby="branding-heading">
+                <section class="bg-surface border border-border rounded-xl p-4 sm:p-5 shadow-xs space-y-3.5" aria-labelledby="branding-heading">
                     <div class="border-b border-border pb-2.5">
                         <h2 id="branding-heading" class="text-sm font-extrabold text-text-primary">{{ __('documents.display_options') }}</h2>
                     </div>
@@ -107,7 +107,7 @@
                                    type="file"
                                    wire:model="logo"
                                    accept="image/png,image/jpeg,image/webp"
-                                   class="block w-full text-xs text-text-secondary file:mr-3 file:py-1.5 file:px-3 file:rounded-control file:border-0 file:text-xs file:font-semibold file:bg-primary file:text-white hover:file:bg-primary-hover file:cursor-pointer cursor-pointer">
+                                   class="block w-full text-sm text-text-secondary file:mr-3 file:py-1.5 file:px-3 file:rounded-control file:border-0 file:text-sm file:font-semibold file:bg-primary file:text-white hover:file:bg-primary-hover file:cursor-pointer cursor-pointer">
                             <p class="text-xs text-text-muted">{{ __('documents.logo_help') }}</p>
                         </div>
 
@@ -130,25 +130,25 @@
                 </section>
 
                 {{-- Section 5: Footers & Quotation Terms --}}
-                <section class="bg-white border border-border rounded-xl p-4 sm:p-5 shadow-xs space-y-3.5" aria-labelledby="footer-heading">
+                <section class="bg-surface border border-border rounded-xl p-4 sm:p-5 shadow-xs space-y-3.5" aria-labelledby="footer-heading">
                     <div class="border-b border-border pb-2.5">
                         <h2 id="footer-heading" class="text-sm font-extrabold text-text-primary">{{ __('documents.footer_and_terms') }}</h2>
                     </div>
                     <div class="space-y-3 text-sm">
                         <div>
-                            <label for="invoice_footer_ar" class="block font-bold text-text-secondary mb-1 text-xs sm:text-sm">{{ __('documents.invoice_footer_ar') }}</label>
+                            <label for="invoice_footer_ar" class="block font-bold text-text-secondary mb-1 text-sm sm:text-sm">{{ __('documents.invoice_footer_ar') }}</label>
                             <textarea id="invoice_footer_ar" rows="2" wire:model.live.debounce.300ms="invoice_footer_ar" class="w-full rounded-control border border-border p-2.5 text-sm focus:border-primary focus:ring-1 focus:ring-primary" dir="rtl"></textarea>
                         </div>
                         <div>
-                            <label for="invoice_footer_en" class="block font-bold text-text-secondary mb-1 text-xs sm:text-sm">{{ __('documents.invoice_footer_en') }}</label>
+                            <label for="invoice_footer_en" class="block font-bold text-text-secondary mb-1 text-sm sm:text-sm">{{ __('documents.invoice_footer_en') }}</label>
                             <textarea id="invoice_footer_en" rows="2" wire:model.live.debounce.300ms="invoice_footer_en" class="w-full rounded-control border border-border p-2.5 text-sm focus:border-primary focus:ring-1 focus:ring-primary" dir="ltr"></textarea>
                         </div>
                         <div>
-                            <label for="quotation_terms_ar" class="block font-bold text-text-secondary mb-1 text-xs sm:text-sm">{{ __('documents.quotation_terms_ar') }}</label>
+                            <label for="quotation_terms_ar" class="block font-bold text-text-secondary mb-1 text-sm sm:text-sm">{{ __('documents.quotation_terms_ar') }}</label>
                             <textarea id="quotation_terms_ar" rows="2" wire:model.live.debounce.300ms="quotation_terms_ar" class="w-full rounded-control border border-border p-2.5 text-sm focus:border-primary focus:ring-1 focus:ring-primary" dir="rtl"></textarea>
                         </div>
                         <div>
-                            <label for="quotation_terms_en" class="block font-bold text-text-secondary mb-1 text-xs sm:text-sm">{{ __('documents.quotation_terms_en') }}</label>
+                            <label for="quotation_terms_en" class="block font-bold text-text-secondary mb-1 text-sm sm:text-sm">{{ __('documents.quotation_terms_en') }}</label>
                             <textarea id="quotation_terms_en" rows="2" wire:model.live.debounce.300ms="quotation_terms_en" class="w-full rounded-control border border-border p-2.5 text-sm focus:border-primary focus:ring-1 focus:ring-primary" dir="ltr"></textarea>
                         </div>
                     </div>
@@ -157,7 +157,7 @@
                 {{-- Save Changes Button --}}
                 <div class="pt-2 flex items-center justify-end gap-3">
                     <button type="submit" wire:loading.attr="disabled"
-                            class="h-10 min-h-[40px] px-6 rounded-control bg-primary hover:bg-primary-hover text-white text-xs sm:text-sm font-bold shadow-xs transition cursor-pointer inline-flex items-center justify-center">
+                            class="h-10 min-h-[40px] px-6 rounded-control bg-primary hover:bg-primary-hover text-white text-sm sm:text-sm font-bold shadow-xs transition cursor-pointer inline-flex items-center justify-center">
                         <span wire:loading.remove wire:target="save">{{ __('documents.save') }}</span>
                         <span wire:loading wire:target="save" class="flex items-center gap-1.5">
                             <span class="inline-block w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
@@ -228,7 +228,7 @@
                  }
              }"
              @resize.window.debounce.100ms="measure()">
-            <div class="bg-white border border-border rounded-xl p-4 sm:p-5 shadow-panel space-y-3.5">
+            <div class="bg-surface border border-border rounded-xl p-4 sm:p-5 shadow-panel space-y-3.5">
                 <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 border-b border-border pb-3">
                     <div class="space-y-0.5">
                         <div class="flex items-center gap-2">
@@ -241,17 +241,17 @@
                     {{-- Toolbar: Zoom Controls & Download --}}
                     <div class="flex items-center gap-2 flex-wrap">
                         <div class="inline-flex items-center rounded-control border border-border bg-surface-soft p-0.5 text-xs font-bold text-text-secondary">
-                            <button type="button" @click="zoomOut()" title="{{ __('documents.zoom_out') }}" aria-label="{{ __('documents.zoom_out') }}" class="px-2.5 py-1 hover:text-text-primary hover:bg-white rounded-xs transition cursor-pointer">&minus;</button>
-                            <button type="button" @click="setZoom('fit')" title="{{ __('documents.fit_page') }}" aria-label="{{ __('documents.fit_page') }}" class="px-2.5 py-1 text-xs hover:text-text-primary hover:bg-white rounded-xs transition cursor-pointer" :class="zoom === 'fit' ? 'bg-white text-primary shadow-2xs font-extrabold' : ''">
+                            <button type="button" @click="zoomOut()" title="{{ __('documents.zoom_out') }}" aria-label="{{ __('documents.zoom_out') }}" class="px-2.5 py-1 hover:text-text-primary hover:bg-surface rounded-xs transition cursor-pointer">&minus;</button>
+                            <button type="button" @click="setZoom('fit')" title="{{ __('documents.fit_page') }}" aria-label="{{ __('documents.fit_page') }}" class="px-2.5 py-1 text-sm hover:text-text-primary hover:bg-surface rounded-xs transition cursor-pointer" :class="zoom === 'fit' ? 'bg-surface text-primary shadow-2xs font-extrabold' : ''">
                                 <span x-text="Math.round(scale * 100) + '%'"></span>
                             </button>
-                            <button type="button" @click="zoomIn()" title="{{ __('documents.zoom_in') }}" aria-label="{{ __('documents.zoom_in') }}" class="px-2.5 py-1 hover:text-text-primary hover:bg-white rounded-xs transition cursor-pointer">&plus;</button>
+                            <button type="button" @click="zoomIn()" title="{{ __('documents.zoom_in') }}" aria-label="{{ __('documents.zoom_in') }}" class="px-2.5 py-1 hover:text-text-primary hover:bg-surface rounded-xs transition cursor-pointer">&plus;</button>
                         </div>
 
                         <button type="button"
                                 wire:click="downloadSamplePdf"
                                 wire:loading.attr="disabled"
-                                class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-control bg-surface-soft hover:bg-surface-muted border border-border text-xs font-bold text-text-primary shadow-2xs transition cursor-pointer">
+                                class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-control bg-surface-soft hover:bg-surface-muted border border-border text-sm font-bold text-text-primary shadow-2xs transition cursor-pointer">
                             <x-icon name="file" class="w-3.5 h-3.5 text-primary" />
                             <span wire:loading.remove wire:target="downloadSamplePdf">{{ __('documents.download_sample_pdf') }}</span>
                             <span wire:loading wire:target="downloadSamplePdf">{{ __('documents.saving') }}</span>
@@ -270,7 +270,7 @@
                                 role="tab"
                                 :aria-selected="{{ $preview_type === $typeKey ? 'true' : 'false' }}"
                                 wire:click="$set('preview_type', '{{ $typeKey }}')"
-                                class="flex-1 py-1.5 px-2 rounded-control text-center transition cursor-pointer {{ $preview_type === $typeKey ? 'bg-white text-primary shadow-xs font-extrabold' : 'text-text-secondary hover:text-text-primary' }}">
+                                class="flex-1 py-1.5 px-2 rounded-control text-center transition cursor-pointer {{ $preview_type === $typeKey ? 'bg-surface text-primary shadow-xs font-extrabold' : 'text-text-secondary hover:text-text-primary' }}">
                             {{ $typeLabel }}
                         </button>
                     @endforeach
@@ -279,7 +279,7 @@
                 {{-- Isolated Paper Sheet Viewport --}}
                 <div x-ref="viewport"
                      class="bg-slate-100 rounded-xl border border-border p-3 sm:p-4 overflow-auto shadow-inner flex items-center justify-center min-h-[460px] max-h-[800px]">
-                    <div class="relative bg-white rounded-xs shadow-md border border-slate-300 overflow-hidden shrink-0 transition-all duration-150"
+                    <div class="relative bg-surface rounded-xs shadow-md border border-slate-300 overflow-hidden shrink-0 transition-colors duration-150"
                          :style="'width: ' + scaledW + 'px; height: ' + scaledH + 'px;'">
                         <iframe
                             x-ref="frame"

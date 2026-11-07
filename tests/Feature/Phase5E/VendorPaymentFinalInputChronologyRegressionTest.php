@@ -11,6 +11,7 @@ use App\Domain\Purchasing\Queries\VendorStatementQuery;
 use App\Livewire\Pages\Purchasing\PaymentDetail;
 use App\Livewire\Pages\Purchasing\PaymentForm;
 use App\Livewire\Pages\Purchasing\VendorDetail;
+use App\Models\MoneyAccount;
 use App\Models\VendorPayment;
 use App\Services\Accounting\AccountingReconciliationService;
 use App\Services\Inventory\InventoryReconciliationService;
@@ -50,10 +51,13 @@ final class VendorPaymentFinalInputChronologyRegressionTest extends Phase5ETestC
     {
         $account = $currency === 'USD' ? $this->usdCashAccount : $this->jodCashAccount;
         $account->update(['sort_order' => -1]);
+        Livewire::test(PaymentForm::class)->assertSet('currency_code', 'ILS')->assertSet('exchange_rate', '1.0000000000')
+            ->assertSet('money_account_id', fn ($id) => MoneyAccount::where('company_id', $this->company->id)->whereKey($id)->where('currency_code', 'ILS')->exists());
+        MoneyAccount::where('company_id', $this->company->id)->where('currency_code', 'ILS')->update(['is_active' => false]);
         Livewire::test(PaymentForm::class)->assertSet('money_account_id', $account->id)->assertSet('exchange_rate', '');
         $purchase = $this->createAndPostPurchase(['currency_code' => $currency, 'exchange_rate' => '3.50']);
         Livewire::test(PaymentForm::class, ['purchase_id' => $purchase->id])
-            ->assertSet('currency_code', $currency)->assertSet('exchange_rate', '')
+            ->assertSet('currency_code', $currency)->assertSet('money_account_id', $account->id)->assertSet('exchange_rate', '')
             ->assertSet('amount', '100.00')
             ->assertSet('allocations.0.preview_fx', null);
     }
@@ -108,7 +112,7 @@ final class VendorPaymentFinalInputChronologyRegressionTest extends Phase5ETestC
     {
         $payment = app(PostVendorPaymentAction::class)->execute($this->company, $this->owner, $this->intent(['payment_date' => '2026-10-07']));
         $before = $this->historySnapshot();
-        Livewire::test(PaymentDetail::class, ['publicId' => $payment->public_id])->set('showReverseModal', true)->call('reversePayment')
+        Livewire::test(PaymentDetail::class, ['publicId' => $payment->public_id])->call('openReversalReview')->call('confirmReversalReview')
             ->assertHasErrors('reversalReason')->assertSee(__('purchasing.reversal_before_activity_date'));
         $this->assertSame($before, $this->historySnapshot());
         $this->assertFalse($payment->fresh()->is_reversed);

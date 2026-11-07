@@ -9,18 +9,19 @@
     </div>
     <x-refinement-filters :active-count="(int) ($statusFilter !== 'all') + (int) filled($vendorFilter)">
         <x-slot:search>
-            <input type="search" wire:model.live.debounce.300ms="search" aria-label="{{ __('purchasing.search_purchase_returns') }}" placeholder="{{ __('purchasing.search_purchase_returns') }}" class="min-h-11 w-full min-w-0 rounded-control border border-border bg-white px-3 py-2 text-sm focus:border-primary focus:ring-primary" />
+            <input type="search" wire:model.live.debounce.300ms="search" aria-label="{{ __('purchasing.search_purchase_returns') }}" placeholder="{{ __('purchasing.search_purchase_returns') }}" class="min-h-11 w-full min-w-0 rounded-control border border-border bg-surface px-3 py-2 text-sm focus:border-primary focus:ring-primary" />
         </x-slot:search>
         <x-slot:statuses>
-        <button type="button" wire:click="$set('statusFilter', 'all')" wire:loading.attr="disabled" wire:target="statusFilter" aria-pressed="{{ $statusFilter === 'all' ? 'true' : 'false' }}" class="touch-action shrink-0 border text-sm font-semibold {{ $statusFilter === 'all' ? 'border-primary bg-primary text-white' : 'border-border bg-white text-text-secondary' }}">{{ __('purchasing.all_statuses') }}</button>
-        <button type="button" wire:click="$set('statusFilter', 'draft')" wire:loading.attr="disabled" wire:target="statusFilter" aria-pressed="{{ $statusFilter === 'draft' ? 'true' : 'false' }}" class="touch-action shrink-0 border text-sm font-semibold {{ $statusFilter === 'draft' ? 'border-primary bg-primary text-white' : 'border-border bg-white text-text-secondary' }}">{{ __('purchasing.draft') }}</button>
-        <button type="button" wire:click="$set('statusFilter', 'posted')" wire:loading.attr="disabled" wire:target="statusFilter" aria-pressed="{{ $statusFilter === 'posted' ? 'true' : 'false' }}" class="touch-action shrink-0 border text-sm font-semibold {{ $statusFilter === 'posted' ? 'border-primary bg-primary text-white' : 'border-border bg-white text-text-secondary' }}">{{ __('purchasing.posted') }}</button>
+        <button type="button" wire:click="$set('statusFilter', 'all')" wire:loading.attr="disabled" wire:target="statusFilter" aria-pressed="{{ $statusFilter === 'all' ? 'true' : 'false' }}" class="touch-action shrink-0 border text-sm font-semibold {{ $statusFilter === 'all' ? 'border-primary bg-primary text-white' : 'border-border bg-surface text-text-secondary' }}">{{ __('purchasing.all_statuses') }}</button>
+        <button type="button" wire:click="$set('statusFilter', 'draft')" wire:loading.attr="disabled" wire:target="statusFilter" aria-pressed="{{ $statusFilter === 'draft' ? 'true' : 'false' }}" class="touch-action shrink-0 border text-sm font-semibold {{ $statusFilter === 'draft' ? 'border-primary bg-primary text-white' : 'border-border bg-surface text-text-secondary' }}">{{ __('purchasing.draft') }}</button>
+        <button type="button" wire:click="$set('statusFilter', 'posted')" wire:loading.attr="disabled" wire:target="statusFilter" aria-pressed="{{ $statusFilter === 'posted' ? 'true' : 'false' }}" class="touch-action shrink-0 border text-sm font-semibold {{ $statusFilter === 'posted' ? 'border-primary bg-primary text-white' : 'border-border bg-surface text-text-secondary' }}">{{ __('purchasing.posted') }}</button>
         </x-slot:statuses>
         <select wire:model.live="vendorFilter" aria-label="{{ __('purchasing.vendor') }}" class="min-h-11 h-11 min-w-0 px-3 rounded-control border border-border text-sm">
             <option value="">{{ __('purchasing.all_vendors') }}</option>
             @foreach($vendors as $vendor)
                 <option value="{{ $vendor->id }}">{{ $vendor->displayName() }}</option>
-            @endforeach
+
+                    @endforeach
         </select>
         <select wire:model.live="statusFilter" aria-label="{{ __('purchasing.status') }}" class="min-h-11 h-11 px-3 rounded-control border border-border text-sm">
             <option value="all">{{ __('purchasing.all_statuses') }}</option>
@@ -28,11 +29,11 @@
             <option value="posted">{{ __('purchasing.posted') }}</option>
         </select>
     </x-refinement-filters>
-    <div class="bg-white rounded-card border border-border shadow-xs overflow-hidden">
+    <div class="bg-surface rounded-card border border-border shadow-xs overflow-hidden">
         <div class="hidden lg:block overflow-x-auto">
             <table class="data-table w-full text-start text-xs border-collapse">
                 <thead>
-                    <tr class="border-b border-border bg-surface-soft text-text-muted font-bold text-[11px] uppercase tracking-wider">
+                    <tr class="border-b border-border bg-surface-soft text-text-muted font-bold text-xs uppercase tracking-wider">
                         <th class="py-3 px-4 text-start">{{ __('purchasing.purchase_return_number') }}</th>
                         <th class="py-3 px-4 text-start">{{ __('purchasing.vendor') }}</th>
                         <th class="py-3 px-4 text-start">{{ __('purchasing.purchase_number') }}</th>
@@ -69,7 +70,7 @@
                             </td>
                             <td class="py-3 px-4" dir="ltr">{{ $return->return_date->format('Y-m-d') }}</td>
                             <td class="py-3 px-4">
-                                <span class="px-2 py-0.5 rounded-full text-[10px] font-bold @if($return->status === 'posted') bg-success-bg text-success @elseif($return->status === 'void') bg-danger-bg text-danger @else bg-slate-100 text-slate-600 @endif">
+                                <span class="px-2 py-0.5 rounded-full text-xs font-bold @if($return->status === 'posted') bg-success-bg text-success @elseif($return->status === 'void') bg-danger-bg text-danger @else bg-slate-100 text-slate-600 @endif">
                                     {{ __('purchasing.'.$return->status) }}
                                 </span>
                             </td>
@@ -82,6 +83,7 @@
                             <td class="table-actions py-3 px-4 text-end">
                                 <div class="row-action-group justify-end" role="group" aria-label="{{ __('sales.actions') }}">
                                     <x-row-action data-row-link :href="route('purchase-returns.show', $return->public_id)" :label="__('workflow.open')" icon="eye" />
+                                    <x-correction-shortcuts family="purchase_return" :public-id="$return->public_id" :status="$return->status" />
                                 </div>
                             </td>
                         </tr>
@@ -134,6 +136,7 @@
                             </div>
                         @endif
                     </dl>
+                <div class="row-action-group"><x-correction-shortcuts family="purchase_return" :public-id="$return->public_id" :status="$return->status" /></div>
                 </article>
             @empty
                 <p class="p-8 text-center text-text-secondary">{{ __('purchasing.no_purchase_returns') }}</p>

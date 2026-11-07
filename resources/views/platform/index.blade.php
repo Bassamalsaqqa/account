@@ -11,19 +11,19 @@
     @if(isset($platformSummary))
         <section aria-label="{{ __('platform.summary_heading') }}">
             <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                <div class="rounded-card border border-border bg-white p-4 sm:p-5 shadow-panel">
+                <div class="rounded-card border border-border bg-surface p-4 sm:p-5 shadow-panel">
                     <p class="text-xs font-medium text-text-muted">{{ __('platform.summary_companies') }}</p>
                     <p class="mt-2 text-2xl font-bold tracking-tight text-text-primary tabular-nums">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($platformSummary['companies'] ?? $companies->total()) }}</p>
                 </div>
-                <div class="rounded-card border border-border bg-white p-4 sm:p-5 shadow-panel">
+                <div class="rounded-card border border-border bg-surface p-4 sm:p-5 shadow-panel">
                     <p class="text-xs font-medium text-text-muted">{{ __('platform.summary_active') }}</p>
                     <p class="mt-2 text-2xl font-bold tracking-tight text-success tabular-nums">{{ $platformSummary['active'] ?? 0 }}</p>
                 </div>
-                <div class="rounded-card border border-border bg-white p-4 sm:p-5 shadow-panel">
+                <div class="rounded-card border border-border bg-surface p-4 sm:p-5 shadow-panel">
                     <p class="text-xs font-medium text-text-muted">{{ __('platform.summary_inactive') }}</p>
                     <p class="mt-2 text-2xl font-bold tracking-tight text-text-secondary tabular-nums">{{ $platformSummary['inactive'] ?? 0 }}</p>
                 </div>
-                <div class="rounded-card border border-border bg-white p-4 sm:p-5 shadow-panel">
+                <div class="rounded-card border border-border bg-surface p-4 sm:p-5 shadow-panel">
                     <p class="text-xs font-medium text-text-muted">{{ __('platform.summary_health_unmeasured') }}</p>
                     <p class="mt-2 text-2xl font-bold tracking-tight text-warning tabular-nums">{{ $platformSummary['health_unmeasured'] ?? 0 }}</p>
                 </div>
@@ -33,7 +33,7 @@
 
     <!-- Subscription Billing Calendar Summary (if permitted) -->
     @if($billingSummary !== null)
-        <section aria-label="{{ __('subscriptions.summary_title') }}" class="rounded-card border border-border bg-white p-4 sm:p-5 shadow-panel">
+        <section aria-label="{{ __('subscriptions.summary_title') }}" class="rounded-card border border-border bg-surface p-4 sm:p-5 shadow-panel">
             <h2 class="text-xs font-bold uppercase tracking-wider text-text-muted mb-3">{{ __('subscriptions.summary_title') }}</h2>
             <dl class="grid grid-cols-2 gap-4 lg:grid-cols-4">
                 @foreach($billingSummary as $state => $count)
@@ -65,13 +65,13 @@
     </div>
 
     <!-- Search Form -->
-    <form method="GET" class="rounded-card border border-border bg-white p-3 sm:p-4 shadow-panel flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+    <form method="GET" class="rounded-card border border-border bg-surface p-3 sm:p-4 shadow-panel flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
         <div class="relative flex-1 min-w-0">
             <label for="platform-search" class="sr-only">{{ __('platform.search') }}</label>
             <div class="absolute inset-y-0 start-0 ps-3.5 flex items-center pointer-events-none text-text-muted">
                 <x-icon name="search" class="w-4 h-4" />
             </div>
-            <input class="min-h-11 w-full rounded-control border border-border bg-surface-soft/50 ps-10 pe-3.5 text-sm text-text-primary placeholder:text-text-muted focus:bg-white focus:border-primary focus:ring-primary/20 transition-colors"
+            <input class="min-h-11 w-full rounded-control border border-border bg-surface-soft/50 ps-10 pe-3.5 text-sm text-text-primary placeholder:text-text-muted focus:bg-surface focus:border-primary focus:ring-primary/20 transition-colors"
                    id="platform-search"
                    name="q"
                    value="{{ $search }}"
@@ -79,13 +79,13 @@
                    placeholder="{{ __('platform.search') }}">
         </div>
         <button type="submit"
-                class="inline-flex min-h-11 items-center justify-center gap-2 rounded-control border border-border bg-white px-5 text-sm font-semibold text-text-secondary hover:bg-surface-soft hover:text-text-primary transition-colors cursor-pointer shrink-0">
+                class="inline-flex min-h-11 items-center justify-center gap-2 rounded-control border border-border bg-surface px-5 text-sm font-semibold text-text-secondary hover:bg-surface-soft hover:text-text-primary transition-colors cursor-pointer shrink-0">
             <span>{{ __('platform.find') }}</span>
         </button>
     </form>
 
     <!-- Desktop Companies Table -->
-    <div class="hidden lg:block rounded-card border border-border bg-white shadow-panel overflow-hidden">
+    <div class="hidden lg:block rounded-card border border-border bg-surface shadow-panel overflow-hidden">
         <table class="data-table w-full text-start">
             <caption class="sr-only">{{ __('platform.companies') }}</caption>
             <thead class="bg-surface-soft/75 border-b border-border text-text-secondary">
@@ -139,7 +139,7 @@
                         </td>
                         <td class="table-actions px-5 py-4 text-sm text-end">
                             <a href="{{ route('platform.companies.show', $company->public_id) }}"
-                               class="inline-flex min-h-9 items-center justify-center rounded-control border border-border bg-white px-3.5 text-xs font-semibold text-text-secondary hover:bg-surface-soft hover:text-text-primary transition-colors">
+                               class="inline-flex min-h-9 items-center justify-center rounded-control border border-border bg-surface px-3.5 text-xs font-semibold text-text-secondary hover:bg-surface-soft hover:text-text-primary transition-colors">
                                 {{ __('platform.view') }}
                             </a>
                         </td>
@@ -159,7 +159,7 @@
     <!-- Mobile Companies Cards -->
     <div class="grid gap-3.5 sm:grid-cols-2 lg:hidden">
         @forelse($companies as $company)
-            <article class="rounded-card border border-border bg-white p-4 sm:p-5 shadow-panel flex flex-col justify-between">
+            <article class="rounded-card border border-border bg-surface p-4 sm:p-5 shadow-panel flex flex-col justify-between">
                 <div>
                     <h2 class="break-words text-base font-bold text-text-primary">
                         {{ app()->getLocale() === 'en' ? ($company->name_en ?: $company->name_ar) : $company->name_ar }}
@@ -172,7 +172,7 @@
                         <div class="flex items-center justify-between gap-2 py-1 border-b border-border/70">
                             <dt class="text-text-muted">{{ __('platform.status') }}</dt>
                             <dd>
-                                <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold {{ $company->status === 'active' ? 'bg-success-bg text-success border border-success/20' : 'bg-surface-soft text-text-secondary border border-border' }}">
+                                <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold {{ $company->status === 'active' ? 'bg-success-bg text-success border border-success/20' : 'bg-surface-soft text-text-secondary border border-border' }}">
                                     {{ __('platform.status_'.$company->status) }}
                                 </span>
                             </dd>
@@ -184,7 +184,7 @@
                         <div class="flex items-center justify-between gap-2 py-1 border-b border-border/70">
                             <dt class="text-text-muted">{{ __('platform.ai') }}</dt>
                             <dd>
-                                <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold {{ $company->ai_enabled ? 'bg-surface-blue text-primary border border-primary-100' : 'bg-surface-soft text-text-secondary border border-border' }}">
+                                <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold {{ $company->ai_enabled ? 'bg-surface-blue text-primary border border-primary-100' : 'bg-surface-soft text-text-secondary border border-border' }}">
                                     {{ __('platform.'.($company->ai_enabled ? 'on' : 'off')) }}
                                 </span>
                             </dd>
@@ -200,13 +200,13 @@
 
                 <div class="pt-3 border-t border-border/70 mt-2">
                     <a href="{{ route('platform.companies.show', $company->public_id) }}"
-                       class="inline-flex min-h-11 w-full items-center justify-center rounded-control border border-border bg-white px-4 text-xs font-semibold text-text-secondary hover:bg-surface-soft hover:text-text-primary transition-colors">
+                       class="inline-flex min-h-11 w-full items-center justify-center rounded-control border border-border bg-surface px-4 text-xs font-semibold text-text-secondary hover:bg-surface-soft hover:text-text-primary transition-colors">
                         {{ __('platform.view') }}
                     </a>
                 </div>
             </article>
         @empty
-            <div class="sm:col-span-2 rounded-card border border-border bg-white p-8 text-center text-sm text-text-muted shadow-panel">
+            <div class="sm:col-span-2 rounded-card border border-border bg-surface p-8 text-center text-sm text-text-muted shadow-panel">
                 <x-icon name="store" class="w-8 h-8 mx-auto mb-2 text-text-muted" />
                 <p>{{ __('platform.empty') }}</p>
             </div>

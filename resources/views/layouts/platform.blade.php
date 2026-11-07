@@ -34,7 +34,7 @@
     @endphp
 
     <!-- Fixed Desktop Sidebar (width 264px, matching the tenant workspace) -->
-    <aside id="platform-sidebar" class="hidden lg:flex lg:flex-col lg:w-[264px] lg:fixed lg:inset-y-0 lg:start-0 lg:z-30 bg-white border-e border-border" aria-label="{{ __('platform.title') }}">
+    <aside id="platform-sidebar" class="hidden lg:flex lg:flex-col lg:w-[264px] lg:fixed lg:inset-y-0 lg:start-0 lg:z-30 bg-surface border-e border-border" aria-label="{{ __('platform.title') }}">
         <!-- Control Plane Identity -->
         <div class="min-h-[80px] flex items-center gap-3 px-4 border-b border-border/70 shrink-0">
             <div class="w-[42px] h-[42px] rounded-card bg-primary text-white grid place-items-center shadow-panel shrink-0">
@@ -42,7 +42,7 @@
             </div>
             <div class="min-w-0">
                 <span class="text-[15px] font-extrabold text-text-primary truncate block leading-tight">{{ __('platform.title') }}</span>
-                <span class="text-[11px] font-medium text-text-muted truncate block leading-tight mt-0.5">{{ __('platform.operator_console') }}</span>
+                <span class="text-xs font-medium text-text-muted truncate block leading-tight mt-0.5">{{ __('platform.operator_console') }}</span>
             </div>
         </div>
 
@@ -50,7 +50,7 @@
         <nav class="flex-1 overflow-y-auto px-3 py-4 space-y-6" aria-label="{{ __('platform.title') }}">
             <!-- Core Group -->
             <div class="space-y-1">
-                <span class="px-2.5 text-[11px] font-semibold uppercase tracking-wider text-text-muted block mb-1.5">{{ __('platform.nav_core') }}</span>
+                <span class="px-2.5 text-xs font-semibold uppercase tracking-wider text-text-muted block mb-1.5">{{ __('platform.nav_core') }}</span>
                 @if(in_array('company.read', $platformPermissions, true))
                     <a href="{{ route('platform.index') }}"
                        @if(request()->routeIs('platform.index', 'platform.companies.show', 'platform.companies.subscription.*')) aria-current="page" @endif
@@ -73,7 +73,7 @@
             <!-- Governance Group -->
             @if(in_array('audit.read', $platformPermissions, true))
                 <div class="space-y-1">
-                    <span class="px-2.5 text-[11px] font-semibold uppercase tracking-wider text-text-muted block mb-1.5">{{ __('platform.nav_governance') }}</span>
+                    <span class="px-2.5 text-xs font-semibold uppercase tracking-wider text-text-muted block mb-1.5">{{ __('platform.nav_governance') }}</span>
                     <a href="{{ route('platform.audit') }}"
                        @if(request()->routeIs('platform.audit')) aria-current="page" @endif
                        class="flex items-center gap-2.5 min-h-11 px-3 py-2 rounded-control text-sm font-semibold transition-colors {{ request()->routeIs('platform.audit') ? 'bg-primary-50 text-primary font-bold shadow-[inset_3px_0_0_#255fd6] rtl:shadow-[inset_-3px_0_0_#255fd6]' : 'text-text-secondary hover:bg-surface-soft hover:text-text-primary' }}">
@@ -85,31 +85,31 @@
 
             <!-- Future Modules Group (Explicitly quiet/unavailable) -->
             <div class="space-y-1">
-                <span class="px-2.5 text-[11px] font-semibold uppercase tracking-wider text-text-muted block mb-1.5">{{ __('platform.nav_future') }}</span>
+                <span class="px-2.5 text-xs font-semibold uppercase tracking-wider text-text-muted block mb-1.5">{{ __('platform.nav_future') }}</span>
                 <div class="flex items-center justify-between px-2.5 py-2 rounded-control text-sm text-text-muted cursor-not-allowed select-none">
                     <div class="flex items-center gap-2.5 min-w-0">
                         <x-icon name="chart" class="w-4 h-4 shrink-0 opacity-60" />
                         <span class="truncate">{{ __('platform.nav_system_health') }}</span>
                     </div>
-                    <span class="text-[10px] font-medium px-1.5 py-0.5 rounded bg-surface-soft text-text-muted border border-border shrink-0">{{ __('platform.coming_soon') }}</span>
+                    <span class="text-xs font-medium px-1.5 py-0.5 rounded bg-surface-soft text-text-muted border border-border shrink-0">{{ __('platform.coming_soon') }}</span>
                 </div>
                 <div class="flex items-center justify-between px-2.5 py-2 rounded-control text-sm text-text-muted cursor-not-allowed select-none">
                     <div class="flex items-center gap-2.5 min-w-0">
                         <x-icon name="shield" class="w-4 h-4 shrink-0 opacity-60" />
                         <span class="truncate">{{ __('platform.nav_global_policies') }}</span>
                     </div>
-                    <span class="text-[10px] font-medium px-1.5 py-0.5 rounded bg-surface-soft text-text-muted border border-border shrink-0">{{ __('platform.coming_soon') }}</span>
+                    <span class="text-xs font-medium px-1.5 py-0.5 rounded bg-surface-soft text-text-muted border border-border shrink-0">{{ __('platform.coming_soon') }}</span>
                 </div>
             </div>
         </nav>
 
         <!-- Sidebar Footer Controls -->
         <div class="p-3 border-t border-border/70 space-y-1 shrink-0">
-            <a href="{{ route('dashboard') }}" class="flex items-center gap-2.5 px-2.5 py-2 rounded-control text-xs font-semibold text-text-secondary hover:bg-surface-soft hover:text-text-primary transition-colors">
+            <a href="{{ route('dashboard') }}" class="flex items-center gap-2.5 px-2.5 py-2 rounded-control text-sm font-semibold text-text-secondary hover:bg-surface-soft hover:text-text-primary transition-colors">
                 <x-icon name="dashboard" class="w-4 h-4 shrink-0 text-text-muted" />
                 <span>{{ __('platform.tenant_portal') }}</span>
             </a>
-            <a href="{{ route('profile') }}" class="flex items-center gap-2.5 px-2.5 py-2 rounded-control text-xs font-semibold text-text-secondary hover:bg-surface-soft hover:text-text-primary transition-colors">
+            <a href="{{ route('profile') }}" class="flex items-center gap-2.5 px-2.5 py-2 rounded-control text-sm font-semibold text-text-secondary hover:bg-surface-soft hover:text-text-primary transition-colors">
                 <x-icon name="settings" class="w-4 h-4 shrink-0 text-text-muted" />
                 <span>{{ __('platform.profile') }}</span>
             </a>
@@ -120,7 +120,7 @@
                     </div>
                     <div class="min-w-0 flex-1">
                         <p class="text-xs font-bold text-text-primary truncate leading-tight">{{ auth()->user()->name }}</p>
-                        <p class="text-[10px] font-medium text-text-muted truncate leading-tight">{{ __('platform.operator_badge') }}</p>
+                        <p class="text-xs font-medium text-text-muted truncate leading-tight">{{ __('platform.operator_badge') }}</p>
                     </div>
                 </div>
             @endif
@@ -129,7 +129,7 @@
 
     <!-- Mobile Navigation Drawer (<dialog> Modal Sheet) -->
     <dialog aria-label="{{ __('platform.title') }}" id="platform-mobile-drawer" style="display: none;" class="fixed inset-0 z-50 p-0 m-0 h-full max-h-none w-full max-w-none bg-black/40 backdrop-blur-xs backdrop:bg-black/40 border-0 outline-none">
-        <div id="platform-drawer-content" class="w-[264px] max-w-[85vw] h-full bg-white shadow-xl flex flex-col outline-none ms-0 me-auto">
+        <div id="platform-drawer-content" class="w-[264px] max-w-[85vw] h-full bg-surface shadow-xl flex flex-col outline-none ms-0 me-auto">
             <!-- Drawer Header -->
             <div class="h-16 flex items-center justify-between px-4 border-b border-border/70 shrink-0">
                 <div class="flex items-center gap-2.5 min-w-0">
@@ -149,7 +149,7 @@
             <!-- Drawer Navigation -->
             <nav class="flex-1 overflow-y-auto px-3 py-4 space-y-6" aria-label="{{ __('platform.title') }}">
                 <div class="space-y-1">
-                    <span class="px-2.5 text-[11px] font-semibold uppercase tracking-wider text-text-muted block mb-1.5">{{ __('platform.nav_core') }}</span>
+                    <span class="px-2.5 text-xs font-semibold uppercase tracking-wider text-text-muted block mb-1.5">{{ __('platform.nav_core') }}</span>
                     @if(in_array('company.read', $platformPermissions, true))
                         <a href="{{ route('platform.index') }}"
                            @if(request()->routeIs('platform.index', 'platform.companies.show', 'platform.companies.subscription.*')) aria-current="page" @endif
@@ -171,7 +171,7 @@
 
                 @if(in_array('audit.read', $platformPermissions, true))
                     <div class="space-y-1">
-                        <span class="px-2.5 text-[11px] font-semibold uppercase tracking-wider text-text-muted block mb-1.5">{{ __('platform.nav_governance') }}</span>
+                        <span class="px-2.5 text-xs font-semibold uppercase tracking-wider text-text-muted block mb-1.5">{{ __('platform.nav_governance') }}</span>
                         <a href="{{ route('platform.audit') }}"
                            @if(request()->routeIs('platform.audit')) aria-current="page" @endif
                            class="flex min-h-11 items-center gap-3 px-3 rounded-control text-sm font-medium transition-colors {{ request()->routeIs('platform.audit') ? 'bg-primary-50 text-primary font-bold shadow-[inset_3px_0_0_#255fd6] rtl:shadow-[inset_-3px_0_0_#255fd6]' : 'text-text-secondary hover:bg-surface-soft hover:text-text-primary' }}">
@@ -182,20 +182,20 @@
                 @endif
 
                 <div class="space-y-1">
-                    <span class="px-2.5 text-[11px] font-semibold uppercase tracking-wider text-text-muted block mb-1.5">{{ __('platform.nav_future') }}</span>
+                    <span class="px-2.5 text-xs font-semibold uppercase tracking-wider text-text-muted block mb-1.5">{{ __('platform.nav_future') }}</span>
                     <div class="flex min-h-11 items-center justify-between px-3 rounded-control text-sm text-text-muted select-none">
                         <div class="flex items-center gap-3 min-w-0">
                             <x-icon name="chart" class="w-5 h-5 shrink-0 opacity-60" />
                             <span class="truncate">{{ __('platform.nav_system_health') }}</span>
                         </div>
-                        <span class="text-[10px] font-medium px-1.5 py-0.5 rounded bg-surface-soft text-text-muted border border-border shrink-0">{{ __('platform.coming_soon') }}</span>
+                        <span class="text-xs font-medium px-1.5 py-0.5 rounded bg-surface-soft text-text-muted border border-border shrink-0">{{ __('platform.coming_soon') }}</span>
                     </div>
                     <div class="flex min-h-11 items-center justify-between px-3 rounded-control text-sm text-text-muted select-none">
                         <div class="flex items-center gap-3 min-w-0">
                             <x-icon name="shield" class="w-5 h-5 shrink-0 opacity-60" />
                             <span class="truncate">{{ __('platform.nav_global_policies') }}</span>
                         </div>
-                        <span class="text-[10px] font-medium px-1.5 py-0.5 rounded bg-surface-soft text-text-muted border border-border shrink-0">{{ __('platform.coming_soon') }}</span>
+                        <span class="text-xs font-medium px-1.5 py-0.5 rounded bg-surface-soft text-text-muted border border-border shrink-0">{{ __('platform.coming_soon') }}</span>
                     </div>
                 </div>
             </nav>
@@ -228,7 +228,7 @@
     <!-- Main Outer Wrapper (Offset on desktop for fixed sidebar) -->
     <div class="lg:ps-[264px] flex-1 flex flex-col min-w-0">
         <!-- Compact Context Header (Top Bar) -->
-        <header class="sticky top-0 z-20 bg-white/95 backdrop-blur-xs border-b border-border h-[64px] flex items-center justify-between px-4 sm:px-6">
+        <header class="sticky top-0 z-20 bg-surface/95 backdrop-blur-xs border-b border-border h-[64px] flex items-center justify-between px-4 sm:px-6">
             <div class="flex items-center gap-3 min-w-0">
                 <!-- Mobile Drawer Toggle Trigger -->
                 <button type="button"
@@ -255,7 +255,7 @@
                     @csrf
                     <input type="hidden" name="locale" value="{{ app()->getLocale() === 'ar' ? 'en' : 'ar' }}">
                     <button type="submit"
-                            class="min-h-11 px-3 rounded-control border border-border bg-white text-xs font-semibold text-text-secondary hover:bg-surface-soft hover:text-text-primary flex items-center gap-1.5 transition-colors cursor-pointer"
+                            class="min-h-11 px-3 rounded-control border border-border bg-surface text-sm font-semibold text-text-secondary hover:bg-surface-soft hover:text-text-primary flex items-center gap-1.5 transition-colors cursor-pointer"
                             title="{{ app()->getLocale() === 'ar' ? 'Switch to English' : 'التحويل إلى العربية' }}">
                         <x-icon name="globe" class="w-4 h-4 text-text-muted" />
                         <span class="font-bold">{{ app()->getLocale() === 'ar' ? 'EN' : 'عربي' }}</span>
@@ -264,8 +264,8 @@
 
                 <!-- Operator Account Pill (Desktop) -->
                 @if(auth()->check())
-                    <a href="{{ route('profile') }}" class="hidden sm:flex items-center gap-2 py-1 px-2.5 rounded-control border border-border hover:bg-surface-soft text-text-secondary text-xs font-semibold min-h-11 transition-colors">
-                        <div class="w-9 h-9 rounded-full bg-surface-soft text-text-secondary font-bold text-[10px] grid place-items-center shrink-0 border border-border">
+                    <a href="{{ route('profile') }}" class="hidden sm:flex items-center gap-2 py-1 px-2.5 rounded-control border border-border hover:bg-surface-soft text-text-secondary text-sm font-semibold min-h-11 transition-colors">
+                        <div class="w-9 h-9 rounded-full bg-surface-soft text-text-secondary font-bold text-xs grid place-items-center shrink-0 border border-border">
                             {{ mb_substr(auth()->user()->name ?? 'OP', 0, 2) }}
                         </div>
                         <span class="max-w-[120px] truncate text-text-primary font-semibold">{{ auth()->user()->name }}</span>
@@ -287,7 +287,7 @@
         </main>
 
         <!-- Platform Footer -->
-        <footer class="mt-auto border-t border-border bg-white py-4 px-4 sm:px-6 lg:px-8 text-xs text-text-muted">
+        <footer class="mt-auto border-t border-border bg-surface py-4 px-4 sm:px-6 lg:px-8 text-xs text-text-muted">
             <div class="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-3">
                 <p>{{ __('platform.permission_help') }}</p>
                 <p>{{ __('app.app_name') }} &copy; {{ date('Y') }}</p>

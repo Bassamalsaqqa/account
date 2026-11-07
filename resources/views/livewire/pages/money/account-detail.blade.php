@@ -2,7 +2,7 @@
 @include('livewire.pages.money.nav')
 <h1 class="text-2xl font-bold">{{ $account->displayName() }}</h1>
 
-<section class="rounded-card border border-border bg-white p-4 sm:p-6 flex flex-wrap justify-between gap-4">
+<section class="rounded-card border border-border bg-surface p-4 sm:p-6 flex flex-wrap justify-between gap-4">
 <div>
 <p class="text-xs text-text-secondary">{{ __('money.current_balance') }}</p>
 <p class="text-xl font-bold" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($balance['balance_currency'] ?? __('money.unavailable')) }} {{ $account->currency_code }}</p>
@@ -15,7 +15,7 @@
 
 <x-money-daily-summary :summaries="[$dailySummary]" :selected-date="$selectedDate" :today="$today" />
 
-<section class="rounded-card border border-border bg-white p-4 sm:p-6 space-y-4">
+<section class="rounded-card border border-border bg-surface p-4 sm:p-6 space-y-4">
 <h2 class="font-bold">{{ __('money.movements') }}</h2>
 @forelse($movements as $movement)<article class="grid gap-2 border-b border-border py-3 sm:grid-cols-3">
 <div>

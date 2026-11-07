@@ -12,14 +12,14 @@
     <!-- Back to Directory Link -->
     <div>
         <a href="{{ route('platform.index') }}"
-           class="inline-flex min-h-11 items-center gap-1.5 text-xs sm:text-sm font-semibold text-text-secondary hover:text-primary transition-colors">
+           class="inline-flex min-h-11 items-center gap-1.5 text-sm sm:text-sm font-semibold text-text-secondary hover:text-primary transition-colors">
             <x-icon name="chevron" class="w-4 h-4 rtl:rotate-180" />
             <span>{{ __('platform.back') }}</span>
         </a>
     </div>
 
     <!-- Company Header & Identity Card -->
-    <div class="rounded-card border border-border bg-white p-6 sm:p-7 shadow-panel">
+    <div class="rounded-card border border-border bg-surface p-6 sm:p-7 shadow-panel">
         <div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
             <div class="min-w-0">
                 <h1 class="break-words text-xl sm:text-2xl font-bold tracking-tight text-text-primary">
@@ -94,7 +94,7 @@
                 <dd>
                     @include('platform.health', ['checkedAt' => $health?->checked_at, 'domains' => $health?->domains])
                 </dd>
-                <p class="text-[11px] text-text-muted mt-1.5 leading-relaxed">
+                <p class="text-xs text-text-muted mt-1.5 leading-relaxed">
                     {{ __('platform.health_help') }}
                 </p>
             </div>
@@ -133,7 +133,7 @@
     @php
         $canImpersonate = in_array('company.impersonate', $platformPermissions, true) && $company->status === 'active';
     @endphp
-    <section class="rounded-card border border-border bg-white p-6 sm:p-7 shadow-panel" aria-labelledby="impersonation-section-title">
+    <section class="rounded-card border border-border bg-surface p-6 sm:p-7 shadow-panel" aria-labelledby="impersonation-section-title">
         <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pb-4 border-b border-border/70">
             <div class="flex items-center gap-2.5">
                 <div class="w-8 h-8 rounded-control bg-primary-50 text-primary grid place-items-center shrink-0">
@@ -179,7 +179,7 @@
                 <form class="mt-5 grid gap-4 sm:grid-cols-2" method="POST" action="{{ route('platform.support.start', $company->public_id) }}">
                     @csrf
                     <div class="sm:col-span-1">
-                        <label class="mb-1.5 block text-xs font-bold uppercase tracking-wider text-text-secondary" for="support-reason">{{ __('support.reason') }}</label>
+                        <label class="mb-1.5 block text-sm font-bold uppercase tracking-wider text-text-secondary" for="support-reason">{{ __('support.reason') }}</label>
                         <input id="support-reason"
                                name="reason"
                                required
@@ -188,20 +188,20 @@
                                value="{{ old('reason') }}"
                                aria-describedby="support-reason-help @error('reason') support-reason-error @enderror"
                                @error('reason') aria-invalid="true" @enderror
-                               class="min-h-11 w-full rounded-control border border-border bg-white px-3.5 text-sm text-text-primary focus:border-primary focus:ring-primary/20">
+                               class="min-h-11 w-full rounded-control border border-border bg-surface px-3.5 text-sm text-text-primary focus:border-primary focus:ring-primary/20">
                         <p id="support-reason-help" class="mt-1 text-xs leading-relaxed text-text-muted">{{ __('support.reason_help') }}</p>
                         @error('reason')<p id="support-reason-error" role="alert" class="mt-1 text-xs text-danger font-semibold">{{ $message }}</p>@enderror
                     </div>
 
                     <div class="sm:col-span-1">
-                        <label class="mb-1.5 block text-xs font-bold uppercase tracking-wider text-text-secondary" for="support-password">{{ __('support.password') }}</label>
+                        <label class="mb-1.5 block text-sm font-bold uppercase tracking-wider text-text-secondary" for="support-password">{{ __('support.password') }}</label>
                         <input id="support-password"
                                name="current_password"
                                type="password"
                                required
                                autocomplete="current-password"
                                @error('current_password') aria-invalid="true" aria-describedby="support-password-error" @enderror
-                               class="min-h-11 w-full rounded-control border border-border bg-white px-3.5 text-sm text-text-primary focus:border-primary focus:ring-primary/20">
+                               class="min-h-11 w-full rounded-control border border-border bg-surface px-3.5 text-sm text-text-primary focus:border-primary focus:ring-primary/20">
                         @error('current_password')<p id="support-password-error" role="alert" class="mt-1 text-xs text-danger font-semibold">{{ $message }}</p>@enderror
                     </div>
 
@@ -227,7 +227,7 @@
             <p class="text-xs sm:text-sm text-text-muted mt-0.5">{{ __('platform.member_help') }}</p>
         </div>
 
-        <div class="rounded-card border border-border bg-white shadow-panel overflow-hidden">
+        <div class="rounded-card border border-border bg-surface shadow-panel overflow-hidden">
             <ul class="divide-y divide-slate-100">
                 @forelse($members as $member)
                     <li class="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 hover:bg-surface-soft/60 transition-colors">

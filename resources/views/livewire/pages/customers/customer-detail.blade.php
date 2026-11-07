@@ -1,6 +1,6 @@
 <div class="space-y-6">
     <!-- Top Action / Info Banner -->
-    <div class="bg-white rounded-card border border-border shadow-xs p-6 space-y-4">
+    <div class="bg-surface rounded-card border border-border shadow-xs p-6 space-y-4">
         <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div>
                 <div class="flex items-center gap-3">
@@ -75,7 +75,7 @@
         <!-- Financial Summary KPI Cards -->
         <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-4 border-t border-border">
             <div class="p-4 rounded-control bg-canvas border border-border">
-                <div class="text-[11px] font-bold text-text-muted uppercase tracking-wider">
+                <div class="text-xs font-bold text-text-muted uppercase tracking-wider">
                     {{ __('sales.outstanding_balance') }}
                 </div>
                 @if (isset($currencyBalances) && count($currencyBalances) > 1)
@@ -94,7 +94,7 @@
             </div>
 
             <div class="p-4 rounded-control bg-canvas border border-border">
-                <div class="text-[11px] font-bold text-text-muted uppercase tracking-wider">
+                <div class="text-xs font-bold text-text-muted uppercase tracking-wider">
                     {{ __('sales.total') }} {{ __('sales.sales_invoices') }}
                 </div>
                 @if (isset($currencyBalances) && count($currencyBalances) > 1)
@@ -113,7 +113,7 @@
             </div>
 
             <div class="p-4 rounded-control bg-canvas border border-border">
-                <div class="text-[11px] font-bold text-text-muted uppercase tracking-wider">
+                <div class="text-xs font-bold text-text-muted uppercase tracking-wider">
                     {{ __('sales.credit_limit') }}
                 </div>
                 <div class="text-xl font-extrabold mt-1 text-text-secondary" dir="ltr">
@@ -198,7 +198,7 @@
     </div>
 
     <!-- Tab Contents -->
-    <div role="tabpanel" id="panel-customer-{{ $activeTab }}" aria-labelledby="tab-customer-{{ $activeTab }}" tabindex="0" wire:key="customer-panel-{{ $activeTab }}" wire:loading.class="opacity-70" class="bg-white rounded-card border border-border shadow-xs p-6">
+    <div role="tabpanel" id="panel-customer-{{ $activeTab }}" aria-labelledby="tab-customer-{{ $activeTab }}" tabindex="0" wire:key="customer-panel-{{ $activeTab }}" wire:loading.class="opacity-70" class="bg-surface rounded-card border border-border shadow-xs p-6">
         @if ($activeTab === 'overview')
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6 text-xs">
                 <div class="space-y-3">
@@ -250,7 +250,7 @@
             <div class="overflow-x-auto">
                 <table class="data-table w-full text-start text-xs border-collapse">
                     <thead>
-                        <tr class="border-b border-border bg-surface-soft text-text-muted font-bold text-[11px] uppercase">
+                        <tr class="border-b border-border bg-surface-soft text-text-muted font-bold text-xs uppercase">
                             <th class="py-2.5 px-3 text-start">{{ __('sales.invoice_number') }}</th>
                             <th class="py-2.5 px-3 text-start">{{ __('sales.date') }}</th>
                             <th class="py-2.5 px-3 text-start">{{ __('sales.status') }}</th>
@@ -270,12 +270,12 @@
                                 </td>
                                 <td class="py-2.5 px-3" dir="ltr">{{ $inv->issue_date ? (is_string($inv->issue_date) ? $inv->issue_date : $inv->issue_date->toDateString()) : '—' }}</td>
                                 <td class="py-2.5 px-3">
-                                    <span class="px-2 py-0.5 rounded-full text-[10px] font-bold {{ $inv->status === 'posted' ? 'bg-success-bg text-success' : ($inv->status === 'draft' ? 'bg-slate-100 text-slate-600' : 'bg-danger-bg text-danger') }}">
+                                    <span class="px-2 py-0.5 rounded-full text-xs font-bold {{ $inv->status === 'posted' ? 'bg-success-bg text-success' : ($inv->status === 'draft' ? 'bg-slate-100 text-slate-600' : 'bg-danger-bg text-danger') }}">
                                         {{ __('sales.' . $inv->status) }}
                                     </span>
                                 </td>
                                 <td class="py-2.5 px-3">
-                                    <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-surface-soft text-text-secondary">
+                                    <span class="px-2 py-0.5 rounded-full text-xs font-bold bg-surface-soft text-text-secondary">
                                         {{ __('sales.' . $inv->derivedPaymentStatus()) }}
                                     </span>
                                 </td>
@@ -286,7 +286,7 @@
                                     {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($inv->calculateOutstanding(), $inv->currency_code) }} {{ $inv->currency_code }}
                                 </td>
                                 <td class="table-actions py-2.5 px-3 text-end">
-                                    <a href="{{ route('invoices.show', $inv->public_id) }}" class="touch-action text-primary hover:underline font-bold text-[11px]">
+                                    <a href="{{ route('invoices.show', $inv->public_id) }}" class="touch-action text-primary hover:underline font-bold text-xs">
                                         {{ __('sales.invoice_details') }}
                                     </a>
                                 </td>
@@ -307,7 +307,7 @@
             <div class="overflow-x-auto">
                 <table class="data-table w-full text-start text-xs border-collapse">
                     <thead>
-                        <tr class="border-b border-border bg-surface-soft text-text-muted font-bold text-[11px] uppercase">
+                        <tr class="border-b border-border bg-surface-soft text-text-muted font-bold text-xs uppercase">
                             <th class="py-2.5 px-3 text-start">{{ __('sales.quote_number') }}</th>
                             <th class="py-2.5 px-3 text-start">{{ __('sales.date') }}</th>
                             <th class="py-2.5 px-3 text-start">{{ __('sales.valid_until') }}</th>
@@ -327,7 +327,7 @@
                                 <td class="py-2.5 px-3" dir="ltr">{{ $quote->issue_date ? (is_string($quote->issue_date) ? $quote->issue_date : $quote->issue_date->toDateString()) : '—' }}</td>
                                 <td class="py-2.5 px-3" dir="ltr">{{ $quote->expiry_date ? (is_string($quote->expiry_date) ? $quote->expiry_date : $quote->expiry_date->toDateString()) : '—' }}</td>
                                 <td class="py-2.5 px-3">
-                                    <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-surface-soft text-text-secondary">
+                                    <span class="px-2 py-0.5 rounded-full text-xs font-bold bg-surface-soft text-text-secondary">
                                         {{ __('sales.status_' . $quote->status) }}
                                     </span>
                                 </td>
@@ -335,7 +335,7 @@
                                     {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($quote->grand_total_currency, $quote->currency_code) }} {{ $quote->currency_code }}
                                 </td>
                                 <td class="table-actions py-2.5 px-3 text-end">
-                                    <a href="{{ route('quotations.show', $quote->public_id) }}" class="touch-action text-primary hover:underline font-bold text-[11px]">
+                                    <a href="{{ route('quotations.show', $quote->public_id) }}" class="touch-action text-primary hover:underline font-bold text-xs">
                                         {{ __('sales.quotation_details') }}
                                     </a>
                                 </td>
@@ -356,7 +356,7 @@
             <div class="overflow-x-auto">
                 <table class="data-table w-full text-start text-xs border-collapse">
                     <thead>
-                        <tr class="border-b border-border bg-surface-soft text-text-muted font-bold text-[11px] uppercase">
+                        <tr class="border-b border-border bg-surface-soft text-text-muted font-bold text-xs uppercase">
                             <th class="py-2.5 px-3 text-start">{{ __('sales.payment_number') }}</th>
                             <th class="py-2.5 px-3 text-start">{{ __('sales.date') }}</th>
                             <th class="py-2.5 px-3 text-start">{{ __('sales.payment_method') }}</th>
@@ -382,17 +382,17 @@
                                 </td>
                                 <td class="py-2.5 px-3">
                                     @if ($pmt->is_reversed)
-                                        <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-danger-bg text-danger">
+                                        <span class="px-2 py-0.5 rounded-full text-xs font-bold bg-danger-bg text-danger">
                                             {{ __('sales.voided') }}
                                         </span>
                                     @else
-                                        <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-success-bg text-success">
+                                        <span class="px-2 py-0.5 rounded-full text-xs font-bold bg-success-bg text-success">
                                             {{ __('sales.posted') }}
                                         </span>
                                     @endif
                                 </td>
                                 <td class="table-actions py-2.5 px-3 text-end">
-                                    <a href="{{ route('payments.show', $pmt->public_id) }}" class="touch-action text-primary hover:underline font-bold text-[11px]">
+                                    <a href="{{ route('payments.show', $pmt->public_id) }}" class="touch-action text-primary hover:underline font-bold text-xs">
                                         {{ __('sales.payment_details') }}
                                     </a>
                                 </td>
@@ -413,7 +413,7 @@
             <div class="overflow-x-auto">
                 <table class="data-table w-full text-start text-xs border-collapse">
                     <thead>
-                        <tr class="border-b border-border bg-surface-soft text-text-muted font-bold text-[11px] uppercase">
+                        <tr class="border-b border-border bg-surface-soft text-text-muted font-bold text-xs uppercase">
                             <th class="py-2.5 px-3 text-start">{{ __('sales.return_number') }}</th>
                             <th class="py-2.5 px-3 text-start">{{ __('sales.date') }}</th>
                             <th class="py-2.5 px-3 text-start">{{ __('sales.original_invoice') }}</th>
@@ -433,7 +433,7 @@
                                 <td class="py-2.5 px-3" dir="ltr">{{ $ret->issue_date ? (is_string($ret->issue_date) ? $ret->issue_date : $ret->issue_date->toDateString()) : '—' }}</td>
                                 <td class="py-2.5 px-3 font-mono" dir="ltr">{{ $ret->salesInvoice?->invoice_number ?? '—' }}</td>
                                 <td class="py-2.5 px-3">
-                                    <span class="px-2 py-0.5 rounded-full text-[10px] font-bold {{ $ret->status === 'posted' ? 'bg-success-bg text-success' : 'bg-slate-100 text-slate-600' }}">
+                                    <span class="px-2 py-0.5 rounded-full text-xs font-bold {{ $ret->status === 'posted' ? 'bg-success-bg text-success' : 'bg-slate-100 text-slate-600' }}">
                                         {{ __('sales.' . $ret->status) }}
                                     </span>
                                 </td>
@@ -441,7 +441,7 @@
                                     {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($ret->grand_total_currency, $ret->currency_code) }} {{ $ret->currency_code }}
                                 </td>
                                 <td class="table-actions py-2.5 px-3 text-end">
-                                    <a href="{{ route('returns.show', $ret->public_id) }}" class="touch-action text-primary hover:underline font-bold text-[11px]">
+                                    <a href="{{ route('returns.show', $ret->public_id) }}" class="touch-action text-primary hover:underline font-bold text-xs">
                                         {{ __('sales.return_details') }}
                                     </a>
                                 </td>
@@ -464,11 +464,11 @@
                 <div class="flex flex-wrap items-center gap-4 bg-canvas p-3 rounded-control border border-border text-xs">
                     <div class="flex items-center gap-2">
                         <label class="font-bold text-text-primary">{{ __('sales.from_date') }}:</label>
-                        <input type="date" wire:model.live="statementFrom" class="h-8 px-2 rounded-control border border-border bg-white text-xs" />
+                        <input type="date" wire:model.live="statementFrom" class="h-8 px-2 rounded-control border border-border bg-surface text-sm" />
                     </div>
                     <div class="flex items-center gap-2">
                         <label class="font-bold text-text-primary">{{ __('sales.to_date') }}:</label>
-                        <input type="date" wire:model.live="statementTo" class="h-8 px-2 rounded-control border border-border bg-white text-xs" />
+                        <input type="date" wire:model.live="statementTo" class="h-8 px-2 rounded-control border border-border bg-surface text-sm" />
                     </div>
                     <a href="{{ route('pdf.statement', ['publicId' => $customer->public_id, 'from' => $statementFrom, 'to' => $statementTo]) }}"
                        target="_blank"
@@ -495,23 +495,23 @@
                         <!-- Aging Breakdown -->
                         <div class="grid grid-cols-2 sm:grid-cols-5 gap-2 text-center text-xs">
                             <div class="p-2 rounded-control bg-canvas">
-                                <div class="text-[10px] text-text-muted">{{ __('sales.aging_current') }}</div>
+                                <div class="text-xs text-text-muted">{{ __('sales.aging_current') }}</div>
                                 <div class="font-bold text-text-primary mt-0.5" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($currencyStatement['aging']['current'] ?? '0', $curr) }}</div>
                             </div>
                             <div class="p-2 rounded-control bg-canvas">
-                                <div class="text-[10px] text-text-muted">{{ __('sales.aging_1_30') }}</div>
+                                <div class="text-xs text-text-muted">{{ __('sales.aging_1_30') }}</div>
                                 <div class="font-bold text-text-primary mt-0.5" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($currencyStatement['aging']['days_1_30'] ?? '0', $curr) }}</div>
                             </div>
                             <div class="p-2 rounded-control bg-canvas">
-                                <div class="text-[10px] text-text-muted">{{ __('sales.aging_31_60') }}</div>
+                                <div class="text-xs text-text-muted">{{ __('sales.aging_31_60') }}</div>
                                 <div class="font-bold text-text-primary mt-0.5" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($currencyStatement['aging']['days_31_60'] ?? '0', $curr) }}</div>
                             </div>
                             <div class="p-2 rounded-control bg-canvas">
-                                <div class="text-[10px] text-text-muted">{{ __('sales.aging_61_90') }}</div>
+                                <div class="text-xs text-text-muted">{{ __('sales.aging_61_90') }}</div>
                                 <div class="font-bold text-text-primary mt-0.5" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($currencyStatement['aging']['days_61_90'] ?? '0', $curr) }}</div>
                             </div>
                             <div class="p-2 rounded-control bg-canvas">
-                                <div class="text-[10px] text-text-muted">{{ __('sales.aging_90_plus') }}</div>
+                                <div class="text-xs text-text-muted">{{ __('sales.aging_90_plus') }}</div>
                                 <div class="font-bold text-danger mt-0.5" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($currencyStatement['aging']['days_90_plus'] ?? '0', $curr) }}</div>
                             </div>
                         </div>
@@ -520,7 +520,7 @@
                         <div class="overflow-x-auto">
                             <table class="data-table w-full text-start text-xs border-collapse">
                                 <thead>
-                                    <tr class="border-b border-border bg-surface-soft text-text-muted font-bold text-[11px] uppercase">
+                                    <tr class="border-b border-border bg-surface-soft text-text-muted font-bold text-xs uppercase">
                                         <th class="py-2 px-3 text-start">{{ __('sales.date') }}</th>
                                         <th class="py-2 px-3 text-start">{{ __('sales.actions') }}</th>
                                         <th class="py-2 px-3 text-start">{{ __('sales.debit') }}</th>
@@ -540,7 +540,7 @@
                                             <td class="py-2 px-3" dir="ltr">{{ $entry['date'] }}</td>
                                             <td class="py-2 px-3">
                                                 <span class="font-bold font-mono">{{ $entry['number'] }}</span>
-                                                <span class="text-text-muted text-[11px]">({{ $entry['type'] }})</span>
+                                                <span class="text-text-muted text-xs">({{ $entry['type'] }})</span>
                                             </td>
                                             <td class="py-2 px-3" dir="ltr">
                                                 {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::isPositive($entry['debit']) ? \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($entry['debit'], $curr) : '—' }}

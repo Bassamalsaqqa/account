@@ -8,6 +8,7 @@ use App\Models\Company;
 use App\Models\User;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Contracts\Console\Kernel;
+use Illuminate\Database\QueryException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -43,6 +44,24 @@ while (! is_file($directory.'/go')) {
     usleep(1000);
 }
 if (($input['operation'] ?? null) === 'revoke') {
+    if (($input['prove_lock_wait'] ?? false) === true) {
+        // Prove this connection cannot acquire this exact grant while creation holds it.
+        // A server-global wait counter could instead observe another concurrent test.
+        DB::statement('SET SESSION innodb_lock_wait_timeout = 1');
+        try {
+            DB::transaction(static function () use ($user): void {
+                DB::table('platform_operator_grants')->where('user_id', $user->id)->lockForUpdate()->first();
+            });
+            throw new RuntimeException('Revocation acquired the authorization grant before creator release.');
+        } catch (QueryException $exception) {
+            if ((int) ($exception->errorInfo[1] ?? 0) !== 1205) {
+                throw $exception;
+            }
+            file_put_contents($directory.'/revoker-lock-timeout', '1205');
+        } finally {
+            DB::statement('SET SESSION innodb_lock_wait_timeout = 30');
+        }
+    }
     file_put_contents($directory.'/revoker-connection', (string) DB::selectOne('SELECT CONNECTION_ID() AS id')->id);
     DB::transaction(static function () use ($user): void {
         DB::table('platform_operator_grants')->where('user_id', $user->id)->lockForUpdate()->first();

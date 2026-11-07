@@ -16,7 +16,7 @@
     <!-- Open Camera Button (Touch Target >= 44px) -->
     <button type="button"
             @click="open()"
-            class="{{ $buttonClass ?? 'min-h-[44px] min-w-[44px] px-3.5 py-2 inline-flex items-center justify-center gap-2 rounded-control border border-border bg-white text-text-primary text-xs font-semibold hover:bg-surface-soft hover:border-primary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 transition-colors' }}"
+            class="{{ $buttonClass ?? 'min-h-[44px] min-w-[44px] px-3.5 py-2 inline-flex items-center justify-center gap-2 rounded-control border border-border bg-surface text-text-primary text-sm font-semibold hover:bg-surface-soft hover:border-primary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 transition-colors' }}"
             title="{{ $buttonLabel ?? __('camera.scan_camera') }}"
             aria-label="{{ $buttonLabel ?? __('camera.scan_camera') }}"
             aria-haspopup="dialog"
@@ -59,7 +59,7 @@
                 <div x-show="isOpen"
                      @click.stop
                      x-trap.inert.noscroll="isOpen"
-                     class="pointer-events-auto relative w-full max-w-lg bg-white rounded-control shadow-xl border border-border overflow-hidden flex flex-col max-h-[90vh]">
+                     class="pointer-events-auto relative w-full max-w-lg bg-surface rounded-control shadow-xl border border-border overflow-hidden flex flex-col max-h-[90vh]">
 
                     <!-- Header -->
                     <div class="flex items-center justify-between px-4 py-3 border-b border-border bg-surface-soft">
@@ -146,7 +146,7 @@
 
                             <div x-show="status === 'preview_paused'" class="flex flex-col items-center gap-3">
                                 <p class="text-sm font-medium">{{ __('camera.preview_paused') }}</p>
-                                <button type="button" @click="resumePreview()" :disabled="resumingPreview" class="min-h-11 px-4 rounded-control bg-white text-slate-900 font-bold disabled:opacity-50">{{ __('camera.play_preview') }}</button>
+                                <button type="button" @click="resumePreview()" :disabled="resumingPreview" class="min-h-11 px-4 rounded-control bg-surface text-slate-900 font-bold disabled:opacity-50">{{ __('camera.play_preview') }}</button>
                             </div>
 
                             <div x-show="status === 'permission_denied'" class="flex flex-col items-center gap-2 max-w-xs">
@@ -174,7 +174,7 @@
                                 <p class="text-sm font-bold text-rose-300" x-text="errorMessage || '{{ __('camera.camera_error') }}'"></p>
                                 <button type="button"
                                         @click="scanAgain()"
-                                        class="mt-2 min-h-[44px] min-w-[44px] px-4 py-2 bg-white/20 hover:bg-white/30 rounded-control text-xs font-semibold text-white">
+                                        class="mt-2 min-h-[44px] min-w-[44px] px-4 py-2 bg-surface/20 hover:bg-surface/30 rounded-control text-sm font-semibold text-white">
                                     {{ __('camera.scan_again') }}
                                 </button>
                             </div>
@@ -184,18 +184,18 @@
                     <!-- Footer & Status Bar (Distinct live status presentation) -->
                     <div class="px-4 py-3 bg-canvas border-t border-border flex flex-col sm:flex-row items-center justify-between gap-3">
                         <div class="text-xs text-text-secondary text-center sm:text-start" role="status" aria-live="polite">
-                            <p x-show="status === 'review'" class="text-amber-800 font-bold" x-text="errorMessage"></p>
+                            <p x-show="status === 'review'" class="text-warning font-bold" x-text="errorMessage"></p>
                             <span :id="$id('camera-modal-desc')">
                                 <span x-show="status === 'scanning' && !lastScannedCode">{{ __('camera.scanning') }}</span>
                                 <span x-show="status === 'processing'" class="text-primary font-bold flex items-center gap-1.5">
                                     <span class="inline-block w-2 h-2 rounded-full bg-primary animate-ping"></span>
                                     <span>{{ __('camera.processing') }}</span>
                                 </span>
-                                <span x-show="status === 'slow_server'" class="text-amber-600 font-bold flex items-center gap-1.5">
+                                <span x-show="status === 'slow_server'" class="text-warning font-bold flex items-center gap-1.5">
                                     <span>⚠️</span>
                                     <span>{{ __('camera.slow_server') }}</span>
                                 </span>
-                                <span x-show="status === 'scanning' && lastScannedCode" class="text-emerald-700 font-bold flex items-center gap-1.5">
+                                <span x-show="status === 'scanning' && lastScannedCode" class="text-success font-bold flex items-center gap-1.5">
                                     <span>✓</span>
                                     <span>{{ __('camera.scan_success') }}: <span dir="ltr" class="font-mono font-semibold" x-text="lastScannedCode"></span></span>
                                 </span>
@@ -206,13 +206,13 @@
                             <button type="button"
                                     x-show="lastScannedCode"
                                     @click="scanAgain()"
-                                    class="min-h-[44px] min-w-[44px] px-3.5 py-2 border border-border bg-white text-text-primary text-xs font-semibold rounded-control hover:bg-surface-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary">
+                                    class="min-h-[44px] min-w-[44px] px-3.5 py-2 border border-border bg-surface text-text-primary text-sm font-semibold rounded-control hover:bg-surface-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary">
                                 {{ __('camera.scan_again') }}
                             </button>
 
                             <button type="button"
                                     @click="close()"
-                                    class="min-h-[44px] min-w-[44px] px-4 py-2 bg-surface-soft hover:bg-border text-text-primary text-xs font-semibold rounded-control focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary">
+                                    class="min-h-[44px] min-w-[44px] px-4 py-2 bg-surface-soft hover:bg-border text-text-primary text-sm font-semibold rounded-control focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary">
                                 {{ __('camera.close_camera') }}
                             </button>
                         </div>

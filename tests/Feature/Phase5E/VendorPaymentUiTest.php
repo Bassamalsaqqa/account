@@ -192,9 +192,9 @@ class VendorPaymentUiTest extends Phase5ETestCase
             ->assertOk()
             ->assertSee($payment->payment_number)
             ->assertSee('100.00')
-            ->set('showReverseModal', true)
+
             ->set('reversalReason', 'Wrong vendor invoice selected')
-            ->call('reversePayment')
+            ->call('openReversalReview')->call('confirmReversalReview')
             ->assertHasNoErrors();
 
         $this->assertTrue($payment->fresh()->is_reversed);
@@ -351,14 +351,13 @@ class VendorPaymentUiTest extends Phase5ETestCase
 
         $component = Livewire::actingAs($user)
             ->test(PaymentDetail::class, ['publicId' => $payment->public_id])
-            ->assertOk();
+            ->call('openReversalReview')->assertOk();
 
         // Revoke reverse permission before call
         $user->roles->first()->revokePermissionTo('money.vendor_payment.reverse');
         setPermissionsTeamId($this->company->id);
 
-        $component->call('reversePayment')
-            ->assertForbidden();
+        $component->call('confirmReversalReview')->assertForbidden();
     }
 
     public function test_purchase_prefill_without_matching_currency_account_cannot_post_an_unrelated_advance(): void

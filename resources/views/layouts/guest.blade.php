@@ -39,7 +39,7 @@
         <link rel="apple-touch-icon" href="{{ asset('icons/icon-192.png') }}">
     @endif
 </head>
-<body class="bg-canvas text-text-primary antialiased font-arabic min-h-screen flex flex-col justify-between p-4 sm:p-6">
+<body class="guest-app bg-canvas text-text-primary antialiased font-arabic min-h-screen flex flex-col justify-between p-4 sm:p-6">
 
     <!-- Top Navigation / Language Switcher -->
     <div class="flex items-center justify-between max-w-md w-full mx-auto pt-2">
@@ -54,7 +54,7 @@
             @csrf
             <input type="hidden" name="locale" value="{{ app()->getLocale() === 'ar' ? 'en' : 'ar' }}">
             <button type="submit"
-               class="px-2.5 py-1 rounded-control border border-border bg-white text-xs font-bold text-text-secondary hover:bg-surface-soft transition-colors flex items-center gap-1.5 cursor-pointer">
+               class="px-2.5 py-1 rounded-control border border-border bg-surface text-sm font-bold text-text-secondary hover:bg-surface-soft transition-colors flex items-center gap-1.5 cursor-pointer">
                 <x-icon name="globe" class="w-3.5 h-3.5 text-text-muted" />
                 <span>{{ app()->getLocale() === 'ar' ? 'English' : 'العربية' }}</span>
             </button>
@@ -63,7 +63,7 @@
 
     <!-- Centered Form Container -->
     <div class="w-full max-w-md mx-auto my-auto py-6">
-        <div class="bg-white border border-border rounded-card p-6 sm:p-8 shadow-panel">
+        <div class="bg-surface border border-border rounded-card p-6 sm:p-8 shadow-panel">
             {{ $slot }}
         </div>
     </div>

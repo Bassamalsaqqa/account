@@ -11,6 +11,7 @@
     @elseif($inv->isPosted() && auth()->user()->can('money.receipt.create') && \App\Domain\Sales\Formatters\SalesMoneyFormatter::isPositive($summaries[$inv->id]['outstanding']))
         <x-row-action :href="route('payments.create', ['invoice_id' => $inv->id])" wire:click.prevent="openPaymentModal({{ $inv->id }})" :label="__('mobile.record_payment')" icon="money" tone="primary" />
     @endif
+    <x-correction-shortcuts family="sales_invoice" :public-id="$inv->public_id" :status="$inv->status" />
     @can('sales.document.pdf')
         <x-row-action :href="route('pdf.invoice', ['publicId' => $inv->public_id, 'locale' => app()->getLocale()])" :label="__('refinement_lists.pdf')" icon="pdf" :new-tab="true" />
     @endcan

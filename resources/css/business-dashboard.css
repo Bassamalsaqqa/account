@@ -2,20 +2,20 @@
 .merchant-home .home-action {
     display: inline-flex; align-items: center; justify-content: center; gap: 8px;
     min-height: 38px; padding: 8px 16px; border-radius: var(--radius-control);
-    font-size: 13px; font-weight: 700; line-height: 1.3; white-space: nowrap;
+    font-size: 14px; font-weight: 700; line-height: 1.3; white-space: nowrap;
     transition: background-color 150ms ease, border-color 150ms ease, box-shadow 150ms ease;
     cursor: pointer;
 }
 .merchant-home .home-action svg { width: 16px; height: 16px; flex: none; }
 .merchant-home .home-action-primary {
-    background: var(--color-primary); color: #ffffff; border: 1px solid var(--color-primary);
+    background: var(--color-primary); color: var(--color-surface); border: 1px solid var(--color-primary);
     box-shadow: 0 1px 3px rgba(37, 95, 214, 0.2);
 }
 .merchant-home .home-action-primary:hover {
     background: var(--color-primary-hover); border-color: var(--color-primary-hover);
 }
 .merchant-home .home-action-secondary {
-    background: #ffffff; color: var(--color-text-primary); border: 1px solid var(--color-border);
+    background: var(--color-surface); color: var(--color-text-primary); border: 1px solid var(--color-border);
     box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
 }
 .merchant-home .home-action-secondary:hover {
@@ -34,41 +34,41 @@
     box-shadow: 0 4px 10px rgba(0, 0, 0, 0.06);
 }
 .merchant-home .home-total-sales {
-    background: #f0fdf4; /* emerald-50 */
-    border: 1px solid #bbf7d0; /* emerald-200 */
+    background: var(--color-success-bg);
+    border: 1px solid color-mix(in srgb, var(--color-success) 22%, var(--color-surface));
 }
 .merchant-home .home-total-sales:hover {
-    border-color: #86efac; /* emerald-300 */
+    border-color: var(--color-success);
 }
 .merchant-home .home-total-purchases {
-    background: #eff6ff; /* blue-50 */
-    border: 1px solid #bfdbfe; /* blue-200 */
+    background: var(--color-info-bg);
+    border: 1px solid color-mix(in srgb, var(--color-info) 22%, var(--color-surface));
 }
 .merchant-home .home-total-purchases:hover {
-    border-color: #93c5fd; /* blue-300 */
+    border-color: var(--color-info);
 }
 
 .merchant-home .home-total-label {
-    font-size: 13px; font-weight: 700;
+    font-size: 14px; font-weight: 700;
     display: flex; align-items: center; justify-content: space-between; gap: 8px;
 }
-.merchant-home .home-total-sales .home-total-label { color: #166534; /* emerald-800 */ }
-.merchant-home .home-total-purchases .home-total-label { color: #1e40af; /* blue-800 */ }
+.merchant-home .home-total-sales .home-total-label { color: var(--color-success); }
+.merchant-home .home-total-purchases .home-total-label { color: var(--color-info); }
 
 .merchant-home .home-total-value {
     margin-block-start: 8px; font-size: clamp(20px, 1.8vw, 24px);
     font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1.15;
     letter-spacing: -0.02em;
 }
-.merchant-home .home-total-sales .home-total-value { color: #064e3b; /* emerald-950 */ }
-.merchant-home .home-total-purchases .home-total-value { color: #172554; /* blue-950 */ }
+.merchant-home .home-total-sales .home-total-value { color: var(--color-text-primary); }
+.merchant-home .home-total-purchases .home-total-value { color: var(--color-text-primary); }
 
 .merchant-home .home-currency {
-    font-size: 13px; font-weight: 700; margin-inline-start: 4px;
+    font-size: 14px; font-weight: 700; margin-inline-start: 4px;
     display: inline-block;
 }
-.merchant-home .home-total-sales .home-currency { color: #15803d; }
-.merchant-home .home-total-purchases .home-currency { color: #2563eb; }
+.merchant-home .home-total-sales .home-currency { color: var(--color-success); }
+.merchant-home .home-total-purchases .home-currency { color: var(--color-info); }
 
 /* Treasury & Wallets */
 .merchant-home .home-wallets {
@@ -85,29 +85,29 @@
 }
 
 .merchant-home .home-wallet-cash {
-    background: #fffbeb; /* amber-50 */
-    border: 1px solid #fde68a; /* amber-200 */
+    background: var(--color-warning-bg);
+    border: 1px solid color-mix(in srgb, var(--color-warning) 22%, var(--color-surface));
 }
 .merchant-home .home-wallet-bank {
-    background: #f0f9ff; /* sky-50 */
-    border: 1px solid #bae6fd; /* sky-200 */
+    background: var(--color-info-bg);
+    border: 1px solid color-mix(in srgb, var(--color-info) 22%, var(--color-surface));
 }
 .merchant-home .home-wallet-checks {
-    background: #faf5ff; /* purple-50 */
-    border: 1px solid #e9d5ff; /* purple-200 */
+    background: var(--color-checks-bg);
+    border: 1px solid color-mix(in srgb, var(--color-checks) 22%, var(--color-surface));
 }
 
 .merchant-home .home-wallet-label {
-    display: block; font-size: 13px; font-weight: 700; color: var(--color-text-primary);
+    display: block; font-size: 14px; font-weight: 700; color: var(--color-text-primary);
     overflow-wrap: anywhere;
 }
 .merchant-home .home-wallet-type {
-    display: inline-block; font-size: 11px; font-weight: 600;
+    display: inline-block; font-size: 12px; font-weight: 600;
     padding: 2px 7px; border-radius: 9999px; margin-block-start: 4px;
 }
-.merchant-home .home-wallet-cash .home-wallet-type { background: #fef3c7; color: #92400e; border: 1px solid #fde68a; }
-.merchant-home .home-wallet-bank .home-wallet-type { background: #e0f2fe; color: #075985; border: 1px solid #bae6fd; }
-.merchant-home .home-wallet-checks .home-wallet-type { background: #f3e8ff; color: #6b21a8; border: 1px solid #e9d5ff; }
+.merchant-home .home-wallet-cash .home-wallet-type { background: var(--color-warning-bg); color: var(--color-warning); border: 1px solid color-mix(in srgb, var(--color-warning) 22%, var(--color-surface)); }
+.merchant-home .home-wallet-bank .home-wallet-type { background: var(--color-info-bg); color: var(--color-info); border: 1px solid color-mix(in srgb, var(--color-info) 22%, var(--color-surface)); }
+.merchant-home .home-wallet-checks .home-wallet-type { background: var(--color-checks-bg); color: var(--color-checks); border: 1px solid color-mix(in srgb, var(--color-checks) 22%, var(--color-surface)); }
 
 .merchant-home .home-wallet-value {
     display: flex; flex-wrap: wrap; gap: 6px 10px; margin-block-start: 8px;
@@ -119,8 +119,8 @@
 .app-quick-add-trigger {
     display: inline-flex; align-items: center; justify-content: center; gap: 6px;
     min-height: 36px; padding: 7px 12px; border: 1px solid var(--color-border);
-    border-radius: var(--radius-control); background: #ffffff;
-    color: var(--color-text-primary); font-size: 13px; font-weight: 600;
+    border-radius: var(--radius-control); background: var(--color-surface);
+    color: var(--color-text-primary); font-size: 14px; font-weight: 600;
     cursor: pointer; white-space: nowrap; list-style: none;
     transition: background-color 120ms ease, border-color 120ms ease;
 }
@@ -140,3 +140,7 @@
         transform: none !important;
     }
 }
+
+.merchant-home .home-shortcut { background: var(--color-surface); border-color: var(--color-border); text-align: start; flex-direction: row; justify-content: start; min-height: 60px; }
+.merchant-home .home-shortcut:hover { background: var(--color-surface-soft); border-color: var(--color-border-strong); }
+.merchant-home .home-shortcut > span { color: var(--color-text-primary); font-size: 14px; font-weight: 600; }

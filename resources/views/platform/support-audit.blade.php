@@ -7,7 +7,7 @@
             <p class="text-text-secondary mt-0.5 italic">"{{ $supportAudit['reason'] }}"</p>
         @endif
         @if(!empty($supportAudit['exit_reason']))
-            <p class="text-text-muted mt-0.5 font-mono text-[11px]" dir="ltr">exit: {{ $supportAudit['exit_reason'] }}</p>
+            <p class="text-text-muted mt-0.5 font-mono text-xs" dir="ltr">exit: {{ $supportAudit['exit_reason'] }}</p>
         @endif
     </div>
 @endif

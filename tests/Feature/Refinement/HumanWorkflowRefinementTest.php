@@ -21,6 +21,8 @@ use App\Models\PostingBatch;
 use App\Models\Purchase;
 use App\Models\StockMovement;
 use Livewire\Livewire;
+use PHPUnit\Framework\Attributes\DataProvider;
+use Spatie\Permission\Models\Role;
 use Tests\Feature\Phase5E\Phase5ETestCase;
 
 class HumanWorkflowRefinementTest extends Phase5ETestCase
@@ -75,20 +77,53 @@ class HumanWorkflowRefinementTest extends Phase5ETestCase
         $this->assertDatabaseCount('stock_movements', 0);
     }
 
-    public function test_purchase_confirm_creates_one_canonical_receipt_and_retries_do_not_duplicate_it(): void
+    public static function purchaseConfirmationModes(): array
+    {
+        return [
+            'new unpaid' => [false, false],
+            'existing unpaid' => [true, false],
+            'new paid' => [false, true],
+            'existing paid' => [true, true],
+        ];
+    }
+
+    #[DataProvider('purchaseConfirmationModes')]
+    public function test_purchase_confirm_creates_one_canonical_receipt_and_retries_do_not_duplicate_it(bool $existing, bool $paid): void
     {
         $form = Livewire::test(PurchaseForm::class)
             ->set('vendor_id', $this->vendor->id)
             ->call('selectProduct', 0, $this->product->id)
-            ->set('lines.0.quantity', '2')->set('lines.0.unit_cost', '25.00')
-            ->call('saveAndConfirm')->assertHasNoErrors();
+            ->set('lines.0.quantity', '2')->set('lines.0.unit_cost', '25.00');
+        if ($existing) {
+            $form->call('saveDraft')->assertHasNoErrors();
+            $form = Livewire::test(PurchaseForm::class, ['publicId' => $form->get('savedDraftPublicId')]);
+        }
+        if ($paid) {
+            $form->set('settlement.mode', 'full')->set('settlement.money_account_id', $this->ilsCashAccount->id);
+        }
+        $quantity = $form->get('lines.0.quantity');
+        $form->call('saveAndConfirm')->assertHasNoErrors();
         $purchase = Purchase::where('company_id', $this->company->id)->sole();
         $this->assertTrue($purchase->isPosted());
         $form->assertRedirect(route('purchases.show', $purchase->public_id));
-        $form->call('saveAndConfirm')->assertHasNoErrors();
+        $form->call('saveAndConfirm')->assertHasNoErrors()->assertRedirect(route('purchases.show', $purchase->public_id));
+        $form->call('confirmPost')->assertHasNoErrors()->assertRedirect(route('purchases.show', $purchase->public_id));
+        $this->assertDatabaseCount('command_receipts', 1);
+        $this->assertDatabaseCount('vendor_payments', $paid ? 1 : 0);
+        $form->set('lines.0.quantity', '3')->call('saveAndConfirm')
+            ->assertSet('previewError', __('commands.form_changed_repreview_required'));
+        $this->assertSame('2.000000', $purchase->lines()->sole()->quantity);
+        $form->set('lines.0.quantity', $quantity)->set('settlement.notes', 'Changed after confirmation')
+            ->call('saveAndConfirm')->assertSet('previewError', __('commands.form_changed_repreview_required'));
         $this->assertSame(1, Purchase::where('company_id', $this->company->id)->count());
         $this->assertSame(1, PostingBatch::where('company_id', $this->company->id)->where('source_type', 'purchase')->count());
         $this->assertSame(1, StockMovement::where('company_id', $this->company->id)->where('source_type', 'purchase')->count());
+        if ($paid) {
+            $form->set('settlement.notes', '');
+            Role::where('company_id', $this->company->id)->where('name', 'Owner')->firstOrFail()
+                ->revokePermissionTo('money.vendor_payment.create');
+            $form->call('saveAndConfirm')->assertForbidden();
+        }
     }
 
     public function test_a_free_line_in_a_paid_purchase_remains_a_real_zero_cost_stock_receipt(): void

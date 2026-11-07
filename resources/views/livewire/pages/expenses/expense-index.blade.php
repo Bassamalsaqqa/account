@@ -1,12 +1,8 @@
 <div class="min-w-0 space-y-6">
-    <div class="flex flex-wrap items-center justify-between gap-3">
-        <div>
-            <h1 class="text-2xl font-bold">{{ __('expenses.title') }}</h1>
-            <p class="text-sm text-text-muted">{{ __('expenses.expenses') }}</p>
-        </div>
+    <x-page-heading :title="__('expenses.title')" icon="money">
         <div class="flex flex-wrap gap-2">
             @if($canManage)
-                <a href="{{ route('expenses.categories') }}" class="touch-action border border-border bg-white text-sm font-semibold text-text-secondary hover:bg-surface-soft">
+                <a href="{{ route('expenses.categories') }}" class="touch-action border border-border bg-surface text-sm font-semibold text-text-secondary hover:bg-surface-soft">
                     {{ __('expenses.categories') }}
                 </a>
                 <a href="{{ route('expenses.create') }}" class="touch-action bg-primary text-sm font-semibold text-white hover:bg-primary-hover focus:ring-2 focus:ring-primary focus:ring-offset-2">
@@ -14,46 +10,46 @@
                 </a>
             @endif
         </div>
-    </div>
+    </x-page-heading>
 
     <!-- Filters -->
     <x-refinement-filters :active-count="(int) filled($categoryId) + (int) filled($classification) + (int) filled($paymentMethod) + (int) filled($status) + (int) filled($fromDate) + (int) filled($toDate)">
         <x-slot:search>
-            <input aria-label="{{ __('expenses.search') }}" id="expense-search" type="search" wire:model.live.debounce.300ms="search" placeholder="{{ __('expenses.search') }}" class="min-h-11 w-full min-w-0 rounded-control border border-border bg-white px-3 py-2 text-sm focus:border-primary focus:ring-primary">
+            <input aria-label="{{ __('expenses.search') }}" id="expense-search" type="search" wire:model.live.debounce.300ms="search" placeholder="{{ __('expenses.search') }}" class="min-h-11 w-full min-w-0 rounded-control border border-border bg-surface px-3 py-2 text-sm focus:border-primary focus:ring-primary">
         </x-slot:search>
         <x-slot:statuses>
-        <button type="button" wire:click="$set('status', '')" wire:loading.attr="disabled" wire:target="status" aria-pressed="{{ $status === '' ? 'true' : 'false' }}" class="touch-action shrink-0 border text-sm font-semibold {{ $status === '' ? 'border-primary bg-primary text-white' : 'border-border bg-white text-text-secondary' }}">{{ __('expenses.all_statuses') }}</button>
-        <button type="button" wire:click="$set('status', 'posted')" wire:loading.attr="disabled" wire:target="status" aria-pressed="{{ $status === 'posted' ? 'true' : 'false' }}" class="touch-action shrink-0 border text-sm font-semibold {{ $status === 'posted' ? 'border-primary bg-primary text-white' : 'border-border bg-white text-text-secondary' }}">{{ __('expenses.posted') }}</button>
-        <button type="button" wire:click="$set('status', 'reversed')" wire:loading.attr="disabled" wire:target="status" aria-pressed="{{ $status === 'reversed' ? 'true' : 'false' }}" class="touch-action shrink-0 border text-sm font-semibold {{ $status === 'reversed' ? 'border-primary bg-primary text-white' : 'border-border bg-white text-text-secondary' }}">{{ __('expenses.reversed') }}</button>
+        <button type="button" wire:click="$set('status', '')" wire:loading.attr="disabled" wire:target="status" aria-pressed="{{ $status === '' ? 'true' : 'false' }}" class="touch-action shrink-0 border text-sm font-semibold {{ $status === '' ? 'border-primary bg-primary text-white' : 'border-border bg-surface text-text-secondary' }}">{{ __('expenses.all_statuses') }}</button>
+        <button type="button" wire:click="$set('status', 'posted')" wire:loading.attr="disabled" wire:target="status" aria-pressed="{{ $status === 'posted' ? 'true' : 'false' }}" class="touch-action shrink-0 border text-sm font-semibold {{ $status === 'posted' ? 'border-primary bg-primary text-white' : 'border-border bg-surface text-text-secondary' }}">{{ __('expenses.posted') }}</button>
+        <button type="button" wire:click="$set('status', 'reversed')" wire:loading.attr="disabled" wire:target="status" aria-pressed="{{ $status === 'reversed' ? 'true' : 'false' }}" class="touch-action shrink-0 border text-sm font-semibold {{ $status === 'reversed' ? 'border-primary bg-primary text-white' : 'border-border bg-surface text-text-secondary' }}">{{ __('expenses.reversed') }}</button>
         </x-slot:statuses>
-        <select aria-label="{{ __('expenses.all_categories') }}" id="expense-category-filter" wire:model.live="categoryId" class="min-h-11 w-full min-w-0 rounded-control border border-border bg-white px-3 py-2 text-sm focus:border-primary focus:ring-primary">
+        <select aria-label="{{ __('expenses.all_categories') }}" id="expense-category-filter" wire:model.live="categoryId" class="min-h-11 w-full min-w-0 rounded-control border border-border bg-surface px-3 py-2 text-sm focus:border-primary focus:ring-primary">
                     <option value="">{{ __('expenses.all_categories') }}</option>
                     @foreach($categories as $cat)
                         <option value="{{ $cat->id }}">{{ app()->getLocale() === 'en' ? ($cat->name_en ?: $cat->name_ar) : $cat->name_ar }}</option>
                     @endforeach
                 </select>
-        <select aria-label="{{ __('expenses.all_classifications') }}" id="expense-classification-filter" wire:model.live="classification" class="min-h-11 w-full min-w-0 rounded-control border border-border bg-white px-3 py-2 text-sm focus:border-primary focus:ring-primary">
+        <select aria-label="{{ __('expenses.all_classifications') }}" id="expense-classification-filter" wire:model.live="classification" class="min-h-11 w-full min-w-0 rounded-control border border-border bg-surface px-3 py-2 text-sm focus:border-primary focus:ring-primary">
                     <option value="">{{ __('expenses.all_classifications') }}</option>
                     <option value="operating">{{ __('expenses.operating') }}</option>
                     <option value="landed_cost">{{ __('expenses.landed_cost') }}</option>
                 </select>
-        <select aria-label="{{ __('expenses.all_methods') }}" id="expense-payment-method-filter" wire:model.live="paymentMethod" class="min-h-11 w-full min-w-0 rounded-control border border-border bg-white px-3 py-2 text-sm focus:border-primary focus:ring-primary">
+        <select aria-label="{{ __('expenses.all_methods') }}" id="expense-payment-method-filter" wire:model.live="paymentMethod" class="min-h-11 w-full min-w-0 rounded-control border border-border bg-surface px-3 py-2 text-sm focus:border-primary focus:ring-primary">
                     <option value="">{{ __('expenses.all_methods') }}</option>
                     <option value="cash">{{ __('expenses.cash') }}</option>
                     <option value="bank">{{ __('expenses.bank') }}</option>
                     <option value="check">{{ __('expenses.check') }}</option>
                 </select>
-        <select aria-label="{{ __('expenses.all_statuses') }}" id="expense-status-filter" wire:model.live="status" class="min-h-11 w-full min-w-0 rounded-control border border-border bg-white px-3 py-2 text-sm focus:border-primary focus:ring-primary">
+        <select aria-label="{{ __('expenses.all_statuses') }}" id="expense-status-filter" wire:model.live="status" class="min-h-11 w-full min-w-0 rounded-control border border-border bg-surface px-3 py-2 text-sm focus:border-primary focus:ring-primary">
                     <option value="">{{ __('expenses.all_statuses') }}</option>
                     <option value="posted">{{ __('expenses.posted') }}</option>
                     <option value="reversed">{{ __('expenses.reversed') }}</option>
                 </select>
-        <label class="grid gap-1 text-sm text-text-secondary">{{ __('inventory.date_from') }}<input aria-label="{{ __('inventory.date_from') }}" id="expense-from-date" type="date" wire:model.live="fromDate" class="min-h-11 w-full min-w-0 rounded-control border border-border bg-white px-3 py-2 text-sm focus:border-primary focus:ring-primary"></label>
-        <label class="grid gap-1 text-sm text-text-secondary">{{ __('inventory.date_to') }}<input aria-label="{{ __('inventory.date_to') }}" id="expense-to-date" type="date" wire:model.live="toDate" class="min-h-11 w-full min-w-0 rounded-control border border-border bg-white px-3 py-2 text-sm focus:border-primary focus:ring-primary"></label>
+        <label class="grid gap-1 text-sm text-text-secondary">{{ __('inventory.date_from') }}<input aria-label="{{ __('inventory.date_from') }}" id="expense-from-date" type="date" wire:model.live="fromDate" class="min-h-11 w-full min-w-0 rounded-control border border-border bg-surface px-3 py-2 text-sm focus:border-primary focus:ring-primary"></label>
+        <label class="grid gap-1 text-sm text-text-secondary">{{ __('inventory.date_to') }}<input aria-label="{{ __('inventory.date_to') }}" id="expense-to-date" type="date" wire:model.live="toDate" class="min-h-11 w-full min-w-0 rounded-control border border-border bg-surface px-3 py-2 text-sm focus:border-primary focus:ring-primary"></label>
     </x-refinement-filters>
 
     <!-- Table -->
-    <div class="rounded-card border border-border bg-white overflow-hidden shadow-sm">
+    <div class="rounded-card border border-border bg-surface overflow-hidden shadow-sm">
         <div class="hidden lg:block overflow-x-auto">
             <table class="data-table w-full text-sm text-start">
                 <thead class="bg-surface-soft border-b border-border text-xs uppercase text-text-muted">
@@ -87,7 +83,7 @@
                             </td>
                             <td class="px-4 py-3 whitespace-nowrap">
                                 @if($exp->classification === 'landed_cost')
-                                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-800">
+                                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-warning-bg text-warning">
                                         {{ __('expenses.landed_cost') }}
                                     </span>
                                 @else
@@ -108,11 +104,11 @@
                             </td>
                             <td class="px-4 py-3 whitespace-nowrap">
                                 @if($exp->status === 'posted')
-                                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-emerald-100 text-emerald-800">
+                                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-success-bg text-success">
                                         {{ __('expenses.posted') }}
                                     </span>
                                 @else
-                                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-rose-100 text-rose-800">
+                                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-danger-bg text-danger">
                                         {{ __('expenses.reversed') }}
                                     </span>
                                 @endif
@@ -153,7 +149,7 @@
                             <div class="min-w-0 space-y-1">
                                 <dt class="text-xs font-medium text-text-secondary">{{ __('expenses.classification') }}</dt>
                                 <dd class="break-words text-sm tabular-nums text-text-primary">@if($exp->classification === 'landed_cost')
-                                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-800">
+                                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-warning-bg text-warning">
                                         {{ __('expenses.landed_cost') }}
                                     </span>
                                 @else
@@ -177,11 +173,11 @@
                             <div class="min-w-0 space-y-1 col-span-2">
                                 <dt class="text-xs font-medium text-text-secondary">{{ __('expenses.status') }}</dt>
                                 <dd class="break-words text-sm tabular-nums text-text-primary">@if($exp->status === 'posted')
-                                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-emerald-100 text-emerald-800">
+                                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-success-bg text-success">
                                         {{ __('expenses.posted') }}
                                     </span>
                                 @else
-                                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-rose-100 text-rose-800">
+                                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-danger-bg text-danger">
                                         {{ __('expenses.reversed') }}
                                     </span>
                                 @endif</dd>

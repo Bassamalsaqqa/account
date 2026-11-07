@@ -32,13 +32,13 @@
         <div class="flex flex-wrap items-center gap-2">
             @if ($sourceInvoicePublicId && auth()->user()?->hasPermissionTo('sales.invoice.view'))
                 <a href="{{ route('invoices.show', $sourceInvoicePublicId) }}"
-                   class="min-h-11 inline-flex items-center justify-center gap-2 px-3 active:bg-surface-soft focus-visible:ring-2 focus-visible:ring-primary py-1.5 rounded-control border border-border bg-white text-text-secondary hover:text-text-primary hover:bg-surface-soft text-xs font-bold transition-colors">
+                   class="min-h-11 inline-flex items-center justify-center gap-2 px-3 active:bg-surface-soft focus-visible:ring-2 focus-visible:ring-primary py-1.5 rounded-control border border-border bg-surface text-text-secondary hover:text-text-primary hover:bg-surface-soft text-sm font-bold transition-colors">
                     <x-icon name="arrow-right" class="w-4 h-4 rtl:rotate-0 ltr:rotate-180 text-primary" />
                     <span>{{ __('release_b1_workflow.back_to_invoice') }}: {{ $sourceInvoiceNumber }}</span>
                 </a>
             @endif
             <a href="{{ route('payments.index') }}"
-               class="min-h-11 inline-flex items-center justify-center gap-2 px-3 active:bg-surface-soft focus-visible:ring-2 focus-visible:ring-primary py-1.5 rounded-control bg-surface-soft text-text-secondary hover:text-text-primary text-xs font-bold transition-colors">
+               class="min-h-11 inline-flex items-center justify-center gap-2 px-3 active:bg-surface-soft focus-visible:ring-2 focus-visible:ring-primary py-1.5 rounded-control bg-surface-soft text-text-secondary hover:text-text-primary text-sm font-bold transition-colors">
                 {{ __('sales.back') }}
             </a>
         </div>
@@ -46,7 +46,7 @@
     @endif
 
     <!-- Main Form -->
-    <form novalidate @submit.prevent="run('save', [], true)" class="{{ $isModal ? 'space-y-5' : 'bg-white rounded-card border border-border shadow-xs p-6 space-y-6' }}">
+    <form novalidate @submit.prevent="run('save', [], true)" class="{{ $isModal ? 'space-y-5' : 'bg-surface rounded-card border border-border shadow-xs p-6 space-y-6' }}">
 
         <!-- Payment Details Header -->
         <div class="grid grid-cols-1 {{ $sourceInvoiceId !== null ? 'md:grid-cols-2' : 'md:grid-cols-3' }} gap-4 pb-4 border-b border-border">
@@ -63,7 +63,7 @@
                         <option value="{{ $c->id }}">{{ $c->displayName() }}</option>
                     @endforeach
                 </select>
-                @error('customer_id') <span class="text-danger text-[11px] mt-1 block">{{ $message }}</span> @enderror
+                @error('customer_id') <span class="text-danger text-xs mt-1 block">{{ $message }}</span> @enderror
             </div>
 
             <!-- Money Account -->
@@ -79,7 +79,7 @@
                         <option value="{{ $acc->id }}">{{ $acc->displayName() }} ({{ $acc->currency_code }})</option>
                     @endforeach
                 </select>
-                @error('money_account_id') <span class="text-danger text-[11px] mt-1 block">{{ $message }}</span> @enderror
+                @error('money_account_id') <span class="text-danger text-xs mt-1 block">{{ $message }}</span> @enderror
             </div>
 
             <!-- Payment Method -->
@@ -93,7 +93,7 @@
                     <option value="cash">{{ __('sales.cash') }}</option>
                     <option value="bank_transfer">{{ __('sales.bank_transfer') }}</option>
                 </select>
-                @error('payment_method') <span class="text-danger text-[11px] mt-1 block">{{ $message }}</span> @enderror
+                @error('payment_method') <span class="text-danger text-xs mt-1 block">{{ $message }}</span> @enderror
             </div>
 
             <!-- Payment Date -->
@@ -105,7 +105,7 @@
                        wire:model="payment_date"
                        required
                        class="w-full min-h-11 px-3 rounded-control border border-border bg-canvas text-xs text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden"  :disabled="documentBusy || saving"/>
-                @error('payment_date') <span class="text-danger text-[11px] mt-1 block">{{ $message }}</span> @enderror
+                @error('payment_date') <span class="text-danger text-xs mt-1 block">{{ $message }}</span> @enderror
             </div>
 
             <div>
@@ -115,7 +115,7 @@
                         <option value="{{ $language->locale }}">{{ __('sales.language_'.$language->locale) }}</option>
                     @endforeach
                 </select>
-                @error('document_locale') <span class="text-danger text-[11px]">{{ $message }}</span> @enderror
+                @error('document_locale') <span class="text-danger text-xs">{{ $message }}</span> @enderror
             </div>
 
             <!-- Amount -->
@@ -132,9 +132,9 @@
                            min="{{ $currency_code === 'JOD' ? '0.001' : '0.01' }}"
                            dir="ltr"
                            class="w-full min-h-11 px-3 pe-28 rounded-control border border-border bg-canvas text-xs font-mono font-bold text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden text-start" inputmode="decimal"  :disabled="documentBusy || saving"/>
-                    <button type="button" @click="run('useFullBalance')" :disabled="saving || window.isDocumentBlocked($wire)" wire:loading.attr="disabled" class="absolute end-1 top-1 bottom-1 px-3 inline-flex items-center justify-center rounded-control bg-surface-soft hover:bg-primary-50 text-xs font-bold text-primary border border-border disabled:opacity-50 transition-colors">{{ __('refinement.full_balance') }}</button>
+                    <button type="button" @click="run('useFullBalance')" :disabled="saving || window.isDocumentBlocked($wire)" wire:loading.attr="disabled" class="absolute end-1 top-1 bottom-1 px-3 inline-flex items-center justify-center rounded-control bg-surface-soft hover:bg-primary-50 text-sm font-bold text-primary border border-border disabled:opacity-50 transition-colors">{{ __('refinement.full_balance') }}</button>
                 </div>
-                @error('amount') <span class="text-danger text-[11px] mt-1 block">{{ $message }}</span> @enderror
+                @error('amount') <span class="text-danger text-xs mt-1 block">{{ $message }}</span> @enderror
             </div>
 
             <!-- Exchange Rate -->
@@ -150,7 +150,7 @@
                        dir="ltr"
                        required
                        class="w-full min-h-11 px-3 rounded-control border border-border bg-canvas text-xs text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden font-mono text-start" inputmode="decimal"  :disabled="documentBusy || saving"/>
-                @error('exchange_rate') <span class="text-danger text-[11px] mt-1 block">{{ $message }}</span> @enderror
+                @error('exchange_rate') <span class="text-danger text-xs mt-1 block">{{ $message }}</span> @enderror
             </div>
             @endif
 
@@ -179,7 +179,7 @@
                 @if (! empty($allocations))
                     <button type="button"
                             wire:click="autoAllocate"
-                            class="min-h-11 inline-flex items-center justify-center gap-2 px-3 active:bg-surface-soft focus-visible:ring-2 focus-visible:ring-primary px-2.5 py-1 rounded-control bg-surface-soft hover:bg-primary-50 text-text-secondary hover:text-primary text-xs font-bold transition-colors" wire:loading.attr="disabled" :disabled="documentBusy || saving">
+                            class="min-h-11 inline-flex items-center justify-center gap-2 px-3 active:bg-surface-soft focus-visible:ring-2 focus-visible:ring-primary px-2.5 py-1 rounded-control bg-surface-soft hover:bg-primary-50 text-text-secondary hover:text-primary text-sm font-bold transition-colors" wire:loading.attr="disabled" :disabled="documentBusy || saving">
                         {{ __('sales.auto_allocate') }}
                     </button>
                 @endif
@@ -238,17 +238,17 @@
 
         <!-- Buttons -->
         <p wire:loading role="status" class="text-sm font-semibold text-primary">{{ __('refinement.working') }}</p>
-            <div class="sticky bottom-[calc(5rem+env(safe-area-inset-bottom))] z-20 flex flex-wrap items-center justify-end gap-3 border-t border-border bg-white p-3 shadow-sm md:static md:shadow-none">
+            <div class="sticky bottom-[calc(5rem+env(safe-area-inset-bottom))] z-20 flex flex-wrap items-center justify-end gap-3 border-t border-border bg-surface p-3 shadow-sm md:static md:shadow-none">
             @if ($isModal)
                 <button type="button" @click="$dispatch('dialog-close')" class="min-h-11 rounded-control border border-border px-3 text-sm">{{ __('workflow.close') }}</button>
             @else
             <a href="{{ route('payments.index') }}"
-               class="min-h-11 inline-flex items-center justify-center gap-2 px-3 active:bg-surface-soft focus-visible:ring-2 focus-visible:ring-primary px-4 py-2 rounded-control border border-border text-xs font-bold text-text-secondary hover:bg-surface-soft transition-colors">
+               class="min-h-11 inline-flex items-center justify-center gap-2 px-3 active:bg-surface-soft focus-visible:ring-2 focus-visible:ring-primary px-4 py-2 rounded-control border border-border text-sm font-bold text-text-secondary hover:bg-surface-soft transition-colors">
                 {{ __('sales.cancel') }}
             </a>
             @endif
             <button type="submit" :disabled="saving || window.isDocumentBlocked($wire)"
-                    class="min-h-11 inline-flex items-center justify-center gap-2 px-3 active:bg-surface-soft focus-visible:ring-2 focus-visible:ring-primary px-5 py-2 rounded-control bg-primary text-white text-xs font-bold hover:bg-primary-hover transition-colors shadow-sm cursor-pointer" wire:loading.attr="disabled" wire:target="save">
+                    class="min-h-11 inline-flex items-center justify-center gap-2 px-3 active:bg-surface-soft focus-visible:ring-2 focus-visible:ring-primary px-5 py-2 rounded-control bg-primary text-white text-sm font-bold hover:bg-primary-hover transition-colors shadow-sm cursor-pointer" wire:loading.attr="disabled" wire:target="save">
                 {{ __('sales.confirm') }}
             </button>
         </div>

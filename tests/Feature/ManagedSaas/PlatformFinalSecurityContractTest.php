@@ -139,6 +139,8 @@ final class PlatformFinalSecurityContractTest extends TestCase
      */
     public function test_denied_audit_storage_failure_fails_closed_without_leaking_sensitive_data(): void
     {
+        // This contract covers the deployed error response, not the local debug exception renderer.
+        config(['app.debug' => false]);
         $user = User::factory()->create();
         RateLimiter::clear('platform:'.$user->id);
 

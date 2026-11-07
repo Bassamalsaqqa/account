@@ -21,12 +21,12 @@ final class TradeProvenance
 
     public static function purchases(Company $company): void
     {
-        if (DB::table('purchases')->where('company_id', $company->id)->whereNotIn('status', ['draft', 'posted'])->exists()
-            || DB::table('purchases')->where('company_id', $company->id)->whereNotNull('void_posting_batch_id')->exists()) {
+        if (DB::table('purchases')->where('company_id', $company->id)->whereNotIn('status', ['draft', 'posted', 'void'])->exists()
+            || DB::table('purchase_returns')->where('company_id', $company->id)->whereNotIn('status', ['draft', 'posted', 'void'])->exists()) {
             throw new ReportingException('Unsupported Purchase void lifecycle.');
         }
-        self::document($company, 'purchases', 'purchase', 'purchase_number', false, true);
-        self::document($company, 'purchase_returns', 'purchase_return', 'return_number', false, true);
+        self::document($company, 'purchases', 'purchase', 'purchase_number', true, true);
+        self::document($company, 'purchase_returns', 'purchase_return', 'return_number', true, true);
         self::lines($company, 'purchase_lines', 'purchases', 'purchase_id');
         self::lines($company, 'purchase_return_lines', 'purchase_returns', 'purchase_return_id');
     }
@@ -84,11 +84,31 @@ final class TradeProvenance
         }
         if ($voidable) {
             $badVoid = (clone $q)->leftJoin('posting_batches as v', 'v.id', '=', 'd.void_posting_batch_id')->where('d.status', 'void')
-                ->where(function ($q) use ($company): void {
-                    $q->whereNull('v.id')->orWhere('v.company_id', '!=', $company->id)->orWhere('v.source_type', '!=', 'reversal')
-                        ->orWhere('v.status', '!=', 'posted')->orWhereNull('v.posting_date')->orWhereNull('v.reversal_of_id')
-                        ->orWhereColumn('v.reversal_of_id', '!=', 'd.posting_batch_id')
-                        ->orWhereNull('b.reversed_by_batch_id')->orWhereColumn('b.reversed_by_batch_id', '!=', 'v.id');
+                ->where(function ($q) use ($company, $zeroAllowed, $source): void {
+                    $q->whereNull('d.voided_at')->orWhereNull('d.voided_by');
+                    if (in_array($source, ['purchase', 'purchase_return'], true)) {
+                        $q->orWhereNull('d.void_business_date');
+                    }
+                    if ($zeroAllowed) {
+                        $q->orWhere(function ($q) use ($company): void {
+                            $q->whereNotNull('d.posting_batch_id')
+                                ->where(function ($q) use ($company): void {
+                                    $q->whereNull('v.id')->orWhere('v.company_id', '!=', $company->id)->orWhere('v.source_type', '!=', 'reversal')
+                                        ->orWhere('v.status', '!=', 'posted')->orWhereNull('v.posting_date')->orWhereNull('v.reversal_of_id')
+                                        ->orWhereColumn('v.reversal_of_id', '!=', 'd.posting_batch_id')
+                                        ->orWhereNull('b.reversed_by_batch_id')->orWhereColumn('b.reversed_by_batch_id', '!=', 'v.id');
+                                });
+                        })->orWhere(function ($q): void {
+                            $q->whereNull('d.posting_batch_id')->whereNotNull('d.void_posting_batch_id');
+                        });
+                    } else {
+                        $q->orWhere(function ($q) use ($company): void {
+                            $q->whereNull('v.id')->orWhere('v.company_id', '!=', $company->id)->orWhere('v.source_type', '!=', 'reversal')
+                                ->orWhere('v.status', '!=', 'posted')->orWhereNull('v.posting_date')->orWhereNull('v.reversal_of_id')
+                                ->orWhereColumn('v.reversal_of_id', '!=', 'd.posting_batch_id')
+                                ->orWhereNull('b.reversed_by_batch_id')->orWhereColumn('b.reversed_by_batch_id', '!=', 'v.id');
+                        });
+                    }
                 })->exists();
             if ($badVoid) {
                 throw new ReportingException("Incoherent canonical $source void history.");

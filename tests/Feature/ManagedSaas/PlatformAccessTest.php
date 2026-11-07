@@ -158,8 +158,10 @@ class PlatformAccessTest extends TestCase
         foreach (['ar' => 'استخدام رمز الاسترداد', 'en' => 'Use a recovery code'] as $locale => $label) {
             // Separate HTTP requests have a fresh asset-render lifecycle in the browser.
             Livewire::flushState();
-            $this->withSession(['login.id' => $user->id, 'locale' => $locale])->get('/two-factor-challenge')
-                ->assertOk()->assertSee($label)->assertSee('livewire.min.js', false)->assertDontSee('auth.use_recovery_code');
+            $response = $this->withSession(['login.id' => $user->id, 'locale' => $locale])->get('/two-factor-challenge')
+                ->assertOk()->assertSee($label)->assertDontSee('auth.use_recovery_code');
+            // Livewire may fingerprint its script route; require the initialized dependency script itself.
+            $this->assertMatchesRegularExpression('/<script\b[^>]*\bsrc="[^"]+"[^>]*\bdata-update-uri="[^"]+"[^>]*>/', $response->getContent());
         }
     }
 }

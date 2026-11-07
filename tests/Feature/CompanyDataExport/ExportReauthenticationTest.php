@@ -10,10 +10,14 @@ use App\Models\AuditEvent;
 use App\Support\Tenancy\CompanyContext;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
+use PHPUnit\Framework\Attributes\PreserveGlobalState;
+use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 use Tests\Feature\Phase8\Phase8TestCase;
 use ZipArchive;
 
+#[RunTestsInSeparateProcesses]
+#[PreserveGlobalState(false)]
 final class ExportReauthenticationTest extends Phase8TestCase
 {
     private string $baseTemp;
