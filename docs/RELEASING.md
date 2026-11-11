@@ -1,8 +1,8 @@
 # Backend Release & Orchestration Guide
 
-**Target Application:** Small Trader Accounting (`account.palsync.net`)  
-**Repository:** `https://github.com/Bassamalsaqqa/account`  
-**Authoritative Operational SOPs:** [docs/CONTROLLED_RELEASE_CHECKLIST.md](CONTROLLED_RELEASE_CHECKLIST.md) and [docs/HOSTINGER_DEPLOYMENT_GUIDE.md](HOSTINGER_DEPLOYMENT_GUIDE.md)  
+**Target Application:** Small Trader Accounting (`account.palsync.net`)
+**Repository:** `https://github.com/Bassamalsaqqa/account`
+**Authoritative Operational SOPs:** [docs/CONTROLLED_RELEASE_CHECKLIST.md](CONTROLLED_RELEASE_CHECKLIST.md) and [docs/HOSTINGER_DEPLOYMENT_GUIDE.md](HOSTINGER_DEPLOYMENT_GUIDE.md)
 **Companion Mobile Repository:** [small-trader-android](https://github.com/Bassamalsaqqa/small-trader-android) ([Draft Release Playbook](https://github.com/Bassamalsaqqa/small-trader-android/blob/t3/android-release-playbook/docs/RELEASING.md))
 
 > [!IMPORTANT]
@@ -22,7 +22,7 @@
 ## 2. Release Integrity & Build Invariants
 
 All releases require exact commit tracking and locked artifact generation:
-1. **Source & Locked Builds:** Verify clean working tree (`git rev-parse HEAD`), install locked dependencies (`composer install --no-dev`, `npm ci`), and run `npm run build`. The repository has no CI automation baseline; operators execute qualification manually.
+1. **Source & Locked Builds:** Verify a clean working tree (`git status --short`) and record the source SHA (`git rev-parse HEAD`), install locked dependencies (`composer install --no-dev`, `npm ci`), and run `npm run build`. The repository has no CI automation baseline; operators execute qualification manually.
 2. **Build Checksums & Assets:** Record SHA256 for `public/build/manifest.json` and entrypoint assets. Verify source maps are absent (`0 .map files`). Enforce permissions: directories `0755`, files `0644` (never `0777`). Atomic replacement is required; never overlay newly hashed chunks onto old build directories.
 3. **Off-Host Backup Custody:** Create coherent SQL transaction and file archives before deployment, transferring to secure off-host custody per [HOSTINGER_DEPLOYMENT_GUIDE.md](HOSTINGER_DEPLOYMENT_GUIDE.md).
 4. **Forward-Schema Rollback Policy:** Database migrations are strictly forward-only. No `migrate:rollback` or `migrate:fresh`. Never overwrite production with an old SQL snapshot (destroys active double-entry journals, vouchers, and audit logs). Rollbacks use audited forward migrations or code reverts against a matching rollback commit artifact.
@@ -32,12 +32,12 @@ All releases require exact commit tracking and locked artifact generation:
 
 ## 3. Pre-Release Verification Protocol
 
-Execute verification under maintenance mode (`artisan down --retry=60 --render="errors.503"`), as detailed in [CONTROLLED_RELEASE_CHECKLIST.md](CONTROLLED_RELEASE_CHECKLIST.md):
-- **Lint & Static Analysis:** `vendor/bin/pint --test` and `vendor/bin/phpstan analyse`.
-- **Targeted Tests:** `php artisan test` covering affected functional domains.
-- **6 Economic Reconciliations:** Run accounting, inventory, sales, money, phase 7, and payables reconciliation passes. All must report 0 discrepancies before reopening.
-- **Session & Asset Verification:** Verify authenticated AR/EN sessions, asset loading, web app manifest, and clean logs (`storage/logs/laravel.log`).
-- **Authorized Reopening:** `php artisan up` executed only upon owner or approved operator authorization.
+Qualify the candidate locally before requesting deployment approval:
+- Install development dependencies from the lockfile for Pint, PHPStan and tests; keep the production `--no-dev` artifact separate.
+- Run relevant static checks and focused tests through the disposable MariaDB runner in [SETUP_AND_OPERATIONS_GUIDE.md](SETUP_AND_OPERATIONS_GUIDE.md). Never run the default application test command against a persistent or production database.
+- Record actual results, limitations and compatibility evidence for the current and previous pilot APK. An untested APK remains unqualified.
+
+After concrete owner approval, use [CONTROLLED_RELEASE_CHECKLIST.md](CONTROLLED_RELEASE_CHECKLIST.md) for maintenance, recovery custody, deployment, six canonical reconciliations, authenticated AR/EN and asset checks, and separately authorized reopening. Do not improvise maintenance or deployment commands from this coordination guide.
 
 ---
 
@@ -65,7 +65,8 @@ Record in `docs/evidence/` or the release PR. Placeholders indicate required ver
 
 ### 3. API & Mobile Compatibility
 - **API Contract Spec:** [e.g. Contract Rev 1 (Current) / Rev 2 (Draft)]
-- **Compatible Android APKs:** [e.g. None / versionName (versionCode)]
+- **Current and Previous Pilot APKs:** [Each versionName/versionCode, source SHA and artifact SHA256]
+- **Compatibility Evidence:** [Each APK: API version, contract revision/manifest, tested endpoints, results or NOT RUN]
 - **Offline Sync Status:** Strictly OFF
 
 ### 4. Verification & Economic Reconciliations
@@ -77,6 +78,6 @@ Record in `docs/evidence/` or the release PR. Placeholders indicate required ver
 ### 5. Custody & Operational Authorization
 - **Off-Host Backup Path:** [Documented path according to SOP]
 - **Deployment Script:** [NOT RUN / PENDING / bin/deploy.sh execution under PHP 8.4]
-- **Owner / Operator Authorization:** [PENDING / Written approval required prior to reopening]
+- **Owner / Operator Authorization:** [PENDING / Written approval required prior to deployment and reopening]
 - **Reopened via `artisan up`:** [PENDING / Timestamp and operator name]
 ```
