@@ -5,7 +5,13 @@
   "oneOf": [
     {
       "type": "object",
-      "required": ["token", "token_type", "expires_at", "actor", "companies"],
+      "required": [
+        "token",
+        "token_type",
+        "expires_at",
+        "actor",
+        "companies"
+      ],
       "properties": {
         "token": {
           "type": "string",
@@ -13,7 +19,9 @@
         },
         "token_type": {
           "type": "string",
-          "enum": ["Bearer"]
+          "enum": [
+            "Bearer"
+          ]
         },
         "expires_at": {
           "type": "string",
@@ -21,7 +29,13 @@
         },
         "actor": {
           "type": "object",
-          "required": ["id", "name", "email", "role", "password_epoch"],
+          "required": [
+            "id",
+            "name",
+            "email",
+            "role",
+            "password_epoch"
+          ],
           "properties": {
             "id": {
               "type": "string",
@@ -29,7 +43,8 @@
             },
             "name": {
               "type": "string",
-              "minLength": 1
+              "minLength": 1,
+              "maxLength": 255
             },
             "email": {
               "type": "string",
@@ -37,7 +52,9 @@
             },
             "role": {
               "type": "string",
-              "enum": ["cashier", "manager", "admin"]
+              "minLength": 1,
+              "maxLength": 255,
+              "description": "Presentation label only; never an authorization grant."
             },
             "password_epoch": {
               "type": "string",
@@ -51,7 +68,12 @@
           "minItems": 1,
           "items": {
             "type": "object",
-            "required": ["id", "name", "base_currency", "is_default"],
+            "required": [
+              "id",
+              "name",
+              "base_currency",
+              "is_default"
+            ],
             "properties": {
               "id": {
                 "type": "string",
@@ -59,7 +81,8 @@
               },
               "name": {
                 "type": "string",
-                "minLength": 1
+                "minLength": 1,
+                "maxLength": 255
               },
               "base_currency": {
                 "type": "string",
@@ -77,19 +100,16 @@
     },
     {
       "type": "object",
-      "required": ["status", "mfa_challenge_id", "expires_at"],
+      "required": [
+        "status",
+        "retry"
+      ],
       "properties": {
         "status": {
-          "type": "string",
-          "enum": ["MFA_REQUIRED"]
+          "const": "MFA_REQUIRED"
         },
-        "mfa_challenge_id": {
-          "type": "string",
-          "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
-        },
-        "expires_at": {
-          "type": "string",
-          "format": "date-time"
+        "retry": {
+          "const": "fresh_challenge"
         }
       },
       "additionalProperties": false

@@ -20,7 +20,10 @@
       "format": "date-time"
     },
     "next_cursor": {
-      "type": ["string", "null"],
+      "type": [
+        "string",
+        "null"
+      ],
       "maxLength": 255
     },
     "has_more": {
@@ -30,7 +33,12 @@
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["id", "code", "name", "is_walk_in"],
+        "required": [
+          "id",
+          "code",
+          "name",
+          "is_walk_in"
+        ],
         "properties": {
           "id": {
             "type": "string",
@@ -39,16 +47,19 @@
           "code": {
             "type": "string",
             "minLength": 1,
-            "maxLength": 32
+            "maxLength": 64
           },
           "name": {
             "type": "string",
             "minLength": 1,
-            "maxLength": 100
+            "maxLength": 255
           },
           "phone": {
-            "type": ["string", "null"],
-            "maxLength": 32
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 64
           },
           "is_walk_in": {
             "type": "boolean"
