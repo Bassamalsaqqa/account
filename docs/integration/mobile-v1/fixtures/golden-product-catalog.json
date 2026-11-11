@@ -1,0 +1,77 @@
+{
+  "company_id": "01JCV8X9M2NQW3TYZ4R5S6789A",
+  "catalog_snapshot_version": "snap-20261110-v1",
+  "generated_at": "2026-11-10T12:00:00Z",
+  "next_cursor": null,
+  "has_more": false,
+  "products": [
+    {
+      "id": "01JCV8X9M6A1B2C3D4E5F6G7H8",
+      "sku": "SKU-OLIVE-OIL-1L",
+      "barcode": "6291041001234",
+      "name": "Extra Virgin Olive Oil 1L",
+      "unit_price": "25.000000",
+      "tax_rate": "16.000000",
+      "tax_rate_id": "01JCV8X9MDPTRSVWXYZ0123456",
+      "is_tracked": true,
+      "available_quantity": "142.000000",
+      "base_unit": {
+        "id": "01JCV8X9MBV4W5X6Y7Z8012345",
+        "code": "BTL",
+        "name": "Bottle"
+      },
+      "default_unit": {
+        "unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+        "product_unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+        "conversion_to_base": "1.000000",
+        "sale_price": "25.000000"
+      },
+      "units": [
+        {
+          "product_unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+          "unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+          "code": "BTL",
+          "name": "Bottle",
+          "conversion_to_base": "1.000000",
+          "is_base": true,
+          "is_default_sale": true,
+          "sale_price": "25.000000"
+        }
+      ]
+    },
+    {
+      "id": "01JCV8X9M7J2K3M4N5P6Q7R8S9",
+      "sku": "SKU-FLOUR-BULK",
+      "barcode": null,
+      "name": "Wheat Flour Bulk",
+      "unit_price": "4.500000",
+      "tax_rate": "0.000000",
+      "tax_rate_id": "01JCV8X9MDZER0000000000000",
+      "is_tracked": true,
+      "available_quantity": "520.500000",
+      "base_unit": {
+        "id": "01JCV8X9MC6789ABCDEFGHJKMN",
+        "code": "KG",
+        "name": "Kilogram"
+      },
+      "default_unit": {
+        "unit_id": "01JCV8X9MC6789ABCDEFGHJKMN",
+        "product_unit_id": "01JCV8X9MC6789ABCDEFGHJKMN",
+        "conversion_to_base": "1.000000",
+        "sale_price": "4.500000"
+      },
+      "units": [
+        {
+          "product_unit_id": "01JCV8X9MC6789ABCDEFGHJKMN",
+          "unit_id": "01JCV8X9MC6789ABCDEFGHJKMN",
+          "code": "KG",
+          "name": "Kilogram",
+          "conversion_to_base": "1.000000",
+          "is_base": true,
+          "is_default_sale": true,
+          "sale_price": "4.500000"
+        }
+      ]
+    }
+  ]
+}

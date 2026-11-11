@@ -1,0 +1,16 @@
+{
+  "client_event_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+  "company_id": "01JCV8X9M2NQW3TYZ4R5S6789A",
+  "status": "posted",
+  "payload_digest": "sha256:d442ce49a7609a9a42bb5165990d481d1c7c563cb8030403487099a9919728d9",
+  "official_invoice": {
+    "invoice_id": "01JCV8X9ME7890123456789ABC",
+    "invoice_number": "INV-2026-00042",
+    "payment_id": "01JCV8X9MFGHJKMNPQRSTVWXYZ",
+    "payment_receipt_number": "RCT-2026-00042",
+    "grand_total": "58.000000",
+    "posted_at": "2026-11-10T12:02:10Z"
+  },
+  "conflict": null,
+  "queried_at": "2026-11-10T12:05:00Z"
+}
