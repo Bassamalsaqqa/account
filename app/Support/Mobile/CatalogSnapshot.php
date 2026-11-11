@@ -20,6 +20,9 @@ final class CatalogSnapshot
         $connection = DB::connection();
 
         if ($connection->transactionLevel() > 0) {
+            // The caller owns ambient transaction isolation. This branch cannot
+            // establish a new consistent snapshot; callers must already use
+            // REPEATABLE READ. Standard mobile HTTP entrypoints start at level 0.
             return $callback();
         }
 
@@ -42,8 +45,8 @@ final class CatalogSnapshot
     }
 
     /**
-     * Truthfully reflects company catalog changes boundedly without memory scanning or cost leakage.
-     * Uses keyset bounded chunks of 256 across company-scoped stable primary keys with constant O(1) buffer memory.
+     * Hashes an O(n) company catalog scan without restricted costs.
+     * Keyset chunks of 256 bound each PHP/PDO result buffer independently of catalog size.
      */
     public static function version(Company $company): string
     {
