@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Http\Middleware;
 
+use App\Application\Platform\SupportViewContext;
+use App\Application\Platform\SupportViewSession;
 use App\Models\Company;
 use App\Models\MobileAccessToken;
 use App\Models\MobileDevice;
@@ -13,10 +15,21 @@ use App\Support\Tenancy\CompanyContext;
 use Closure;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\RateLimiter;
+use Spatie\Permission\PermissionRegistrar;
 use Symfony\Component\HttpFoundation\Response;
 
 final class MobileV2Authenticate
 {
+    /**
+     * Reviewed non-financial capabilities permitted on Mobile V2 probes.
+     * All financial operations and unknown capabilities fail closed.
+     */
+    public const array ALLOWED_NON_FINANCIAL_CAPABILITIES = [
+        'product.viewAny',
+        'identity.verify',
+        'identity.probe',
+    ];
+
     /**
      * Handle authentication, identity qualification, and scope verification for Mobile V2 requests.
      */
@@ -29,12 +42,35 @@ final class MobileV2Authenticate
             return $this->handleAuthenticated($request, $next, $requiredPermission);
         } finally {
             $context->clear();
+            app(SupportViewContext::class)->clear();
+            if (auth()->check()) {
+                auth()->logout();
+            }
+            $request->attributes->remove('mobile_user');
+            $request->attributes->remove('mobile_token');
+            $request->attributes->remove('mobile_device');
+            $request->attributes->remove('mobile_company');
+            $request->setUserResolver(fn () => null);
         }
     }
 
     private function handleAuthenticated(Request $request, Closure $next, ?string $requiredPermission = null): Response
     {
-        // 1. Sessionless: Extract Bearer token from Authorization header. Session cookies and impersonation fail.
+        // 1. Sessionless: Deny active support impersonation / delegation context explicitly
+        $hasSupportSession = ($request->hasSession() && $request->session()->has(SupportViewSession::KEY))
+            || ($request->cookies->has(SupportViewSession::KEY))
+            || (app()->bound('session') && app('session')->isStarted() && app('session')->has(SupportViewSession::KEY))
+            || (app()->bound('session.store') && app('session.store')->has(SupportViewSession::KEY));
+
+        if (app(SupportViewContext::class)->active() || $hasSupportSession) {
+            return MobileV2ApiBoundary::buildErrorResponse(
+                code: 'FORBIDDEN',
+                message: 'Support impersonation is unauthorized on Mobile V2.',
+                status: 403
+            );
+        }
+
+        // 2. Extract Bearer token from Authorization header without silent trimming
         $authHeader = (string) $request->header('Authorization');
         if (! str_starts_with($authHeader, 'Bearer ')) {
             return MobileV2ApiBoundary::buildErrorResponse(
@@ -44,8 +80,8 @@ final class MobileV2Authenticate
             );
         }
 
-        $rawToken = trim(substr($authHeader, 7));
-        if ($rawToken === '') {
+        $rawToken = substr($authHeader, 7);
+        if ($rawToken === '' || strlen($rawToken) > 256 || preg_match('/[\s\x00-\x1F\x7F]/', $rawToken)) {
             return MobileV2ApiBoundary::buildErrorResponse(
                 code: 'UNAUTHENTICATED',
                 message: 'Authentication required or token expired.',
@@ -53,33 +89,62 @@ final class MobileV2Authenticate
             );
         }
 
-        // 2. Explicit route company vs payload company disagreement check BEFORE lookups
+        // 3. Explicit route company vs payload company disagreement check BEFORE lookups
         $routeCompanyId = $request->route('companyId') ?? $request->route('company_id');
         if ($routeCompanyId !== null) {
             $rawBody = (string) $request->getContent();
             if ($rawBody !== '') {
                 $decoded = json_decode($rawBody, true);
                 if (is_array($decoded)) {
-                    $payloadCompanyId = null;
-                    if (isset($decoded['company_id']) && is_string($decoded['company_id'])) {
-                        $payloadCompanyId = $decoded['company_id'];
-                    } elseif (isset($decoded['companyId']) && is_string($decoded['companyId'])) {
-                        $payloadCompanyId = $decoded['companyId'];
-                    }
+                    $hasSnake = array_key_exists('company_id', $decoded);
+                    $hasCamel = array_key_exists('companyId', $decoded);
 
-                    if ($payloadCompanyId !== null && ! hash_equals((string) $routeCompanyId, $payloadCompanyId)) {
-                        return MobileV2ApiBoundary::buildErrorResponse(
-                            code: 'VALIDATION_FAILED',
-                            message: 'Company identifier in payload does not match route context.',
-                            status: 422,
-                            details: ['company_id' => ['The company_id does not match the route context.']]
-                        );
+                    if ($hasSnake || $hasCamel) {
+                        $snakeVal = $decoded['company_id'] ?? null;
+                        $camelVal = $decoded['companyId'] ?? null;
+
+                        if ($hasSnake && (! is_string($snakeVal) || trim($snakeVal) === '')) {
+                            return MobileV2ApiBoundary::buildErrorResponse(
+                                code: 'VALIDATION_FAILED',
+                                message: 'Company identifier in payload must be a non-empty string.',
+                                status: 422,
+                                details: ['company_id' => ['The company_id must be a valid string.']]
+                            );
+                        }
+
+                        if ($hasCamel && (! is_string($camelVal) || trim($camelVal) === '')) {
+                            return MobileV2ApiBoundary::buildErrorResponse(
+                                code: 'VALIDATION_FAILED',
+                                message: 'Company identifier in payload must be a non-empty string.',
+                                status: 422,
+                                details: ['companyId' => ['The companyId must be a valid string.']]
+                            );
+                        }
+
+                        if ($hasSnake && $hasCamel && ! hash_equals((string) $snakeVal, (string) $camelVal)) {
+                            return MobileV2ApiBoundary::buildErrorResponse(
+                                code: 'VALIDATION_FAILED',
+                                message: 'Conflicting company identifier aliases provided in payload.',
+                                status: 422,
+                                details: ['company_id' => ['The company_id and companyId aliases do not match.']]
+                            );
+                        }
+
+                        $payloadCompanyId = (string) ($snakeVal ?? $camelVal);
+                        if (! hash_equals((string) $routeCompanyId, $payloadCompanyId)) {
+                            return MobileV2ApiBoundary::buildErrorResponse(
+                                code: 'VALIDATION_FAILED',
+                                message: 'Company identifier in payload does not match route context.',
+                                status: 422,
+                                details: ['company_id' => ['The company_id does not match the route context.']]
+                            );
+                        }
                     }
                 }
             }
         }
 
-        // 3. Hash and look up token
+        // 4. Hash and look up token
         $tokenHash = hash('sha256', $rawToken);
         /** @var MobileAccessToken|null $token */
         $token = MobileAccessToken::where('token_hash', $tokenHash)->first();
@@ -93,7 +158,7 @@ final class MobileV2Authenticate
             );
         }
 
-        // 4. Verify device status and strict ownership
+        // 5. Verify device status and strict ownership
         /** @var MobileDevice|null $device */
         $device = MobileDevice::where('device_id', $token->device_id)->first();
         if ($device === null || $device->isRevoked() || (int) $device->user_id !== (int) $token->user_id) {
@@ -108,7 +173,7 @@ final class MobileV2Authenticate
             );
         }
 
-        // 5. Verify User and password revision epoch
+        // 6. Verify User and password revision epoch
         /** @var User|null $user */
         $user = User::find($token->user_id);
         if ($user === null) {
@@ -132,7 +197,19 @@ final class MobileV2Authenticate
             );
         }
 
-        // 6. Tenant and company context qualification:
+        // 7. Identity conflation / mixed auth check: reject mismatched ambient browser actor
+        if (auth()->check() && (int) auth()->id() !== (int) $user->id) {
+            return MobileV2ApiBoundary::buildErrorResponse(
+                code: 'UNAUTHENTICATED',
+                message: 'Mixed authentication context detected. Ambient session does not match native bearer token.',
+                status: 401
+            );
+        }
+
+        // Bind verified native actor into auth() so CompanyContext::user() returns verified actor
+        auth()->setUser($user);
+
+        // 8. Tenant and company context qualification:
         // No default company fallback; route company must be explicitly provided
         $company = null;
         if ($routeCompanyId !== null && is_string($routeCompanyId)) {
@@ -168,7 +245,7 @@ final class MobileV2Authenticate
             $request->attributes->set('mobile_company', $company);
         }
 
-        // 7. Permission and Financial Authority Enforcement
+        // 9. Permission and Financial Authority Enforcement
         if ($requiredPermission !== null) {
             // Financial authority is unresolved on V2: Bearer token proves staff/device identity ONLY, NEVER financial posting permission
             if (self::isFinancialPermission($requiredPermission)) {
@@ -179,10 +256,19 @@ final class MobileV2Authenticate
                 );
             }
 
+            // Only reviewed non-financial capabilities on allowlist are permitted
+            if (! in_array($requiredPermission, self::ALLOWED_NON_FINANCIAL_CAPABILITIES, true)) {
+                return MobileV2ApiBoundary::buildErrorResponse(
+                    code: 'FORBIDDEN',
+                    message: "Action is unauthorized. Requested capability [{$requiredPermission}] is not on the reviewed capability allowlist.",
+                    status: 403
+                );
+            }
+
             if ($company === null) {
                 return MobileV2ApiBoundary::buildErrorResponse(
                     code: 'FORBIDDEN',
-                    message: "Action is unauthorized. Missing required company context for permission [{$requiredPermission}].",
+                    message: "Action is unauthorized. Missing required company context for capability [{$requiredPermission}].",
                     status: 403
                 );
             }
@@ -197,7 +283,7 @@ final class MobileV2Authenticate
             }
         }
 
-        // 8. Bounded rate limit per authenticated actor + company
+        // 10. Bounded rate limit per authenticated actor + company
         $actorKey = 'mobile_v2:actor:'.$user->id.':company:'.($routeCompanyId ?? 'none');
         $maxAttempts = (int) config('mobile.rate_limits.authenticated_per_minute', 120);
         if (RateLimiter::tooManyAttempts($actorKey, $maxAttempts)) {
@@ -212,10 +298,10 @@ final class MobileV2Authenticate
         }
         RateLimiter::hit($actorKey, 60);
 
-        // 9. Update token last used timestamp
+        // 11. Update token last used timestamp
         $token->update(['last_used_at' => now()]);
 
-        // 10. Attach verified context
+        // 12. Attach verified context
         $request->attributes->set('mobile_user', $user);
         $request->attributes->set('mobile_token', $token);
         $request->attributes->set('mobile_device', $device);
@@ -225,10 +311,13 @@ final class MobileV2Authenticate
     }
 
     /**
-     * Check if user has permission in company without role name bypass.
+     * Check if user has permission in company without role name bypass, evicting Spatie cache.
      */
     private function userHasPermission(User $user, Company $company, string $permission): bool
     {
+        app(PermissionRegistrar::class)->forgetCachedPermissions();
+        $user->unsetRelation('roles')->unsetRelation('permissions');
+
         return $permission === 'product.viewAny'
             ? app(ProductPolicy::class)->viewAny($user)
             : $user->hasPermissionTo($permission);
@@ -240,23 +329,28 @@ final class MobileV2Authenticate
     public static function isFinancialPermission(string $permission): bool
     {
         $financialPrefixes = [
-            'sales.invoice.create',
-            'sales.invoice.post',
-            'sales.invoice.void',
-            'sales.invoice.edit_draft',
-            'sales.invoice.change_price',
-            'sales.invoice.change_discount',
-            'sales.payment.',
+            'sales.',
+            'purchasing.',
+            'money.',
+            'payroll.',
             'customer.payment.',
             'vendor.payment.',
-            'money.',
-            'purchasing.',
+            'inventory.stock.',
+            'inventory.cost.',
             'inventory.operation.',
             'offline.',
+            'financial.',
         ];
 
         foreach ($financialPrefixes as $prefix) {
             if (str_starts_with($permission, $prefix)) {
+                return true;
+            }
+        }
+
+        $financialKeywords = ['post', 'reverse', 'pay', 'void', 'allocate', 'adjust'];
+        foreach ($financialKeywords as $keyword) {
+            if (str_contains($permission, $keyword)) {
                 return true;
             }
         }

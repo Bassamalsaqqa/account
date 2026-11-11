@@ -11,6 +11,7 @@ return [
     | Gate mobile API endpoints. Defaults to false for shared-hosting safety.
     | When disabled, all /api/mobile/v1/* routes return 404 with standard error.
     |
+    */
     'enabled' => (bool) env('MOBILE_API_ENABLED', false),
 
     /*

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Middleware;
 
+use App\Application\Platform\SupportViewContext;
 use App\Support\Mobile\Contract\ContractConstants;
 use App\Support\Mobile\Contract\Exceptions\CanonicalSerializationException;
 use App\Support\Mobile\Contract\StrictJsonParser;
@@ -49,6 +50,15 @@ final class MobileV2ApiBoundary
             return $this->handleV2($request, $next);
         } finally {
             $context->clear();
+            app(SupportViewContext::class)->clear();
+            if (auth()->check()) {
+                auth()->logout();
+            }
+            $request->attributes->remove('mobile_user');
+            $request->attributes->remove('mobile_token');
+            $request->attributes->remove('mobile_device');
+            $request->attributes->remove('mobile_company');
+            $request->setUserResolver(fn () => null);
         }
     }
 
@@ -110,17 +120,17 @@ final class MobileV2ApiBoundary
 
         RateLimiter::hit($rateKey, 60);
 
-        // 5. Reject GET requests with a request body
+        // 5. Reject GET and HEAD requests with any non-empty request body
         $rawBody = (string) $request->getContent();
-        if ($request->isMethod('GET') && $rawBody !== '' && trim($rawBody) !== '[]') {
+        if (in_array($request->method(), ['GET', 'HEAD'], true) && $rawBody !== '') {
             return self::buildErrorResponse(
                 code: 'BAD_REQUEST',
-                message: 'GET requests must not contain a request body.',
+                message: $request->method().' requests must not contain a request body.',
                 status: 400
             );
         }
 
-        // 6. Safe query parameter bounds
+        // 6. Safe query parameter bounds and recursive control character validation
         $queryString = (string) $request->server->get('QUERY_STRING', '');
         if (strlen($queryString) > self::MAX_QUERY_STRING_LENGTH) {
             return self::buildErrorResponse(
@@ -130,21 +140,12 @@ final class MobileV2ApiBoundary
             );
         }
 
-        foreach ($request->query() as $key => $val) {
-            if (preg_match('/[\x00-\x1F\x7F]/', (string) $key)) {
-                return self::buildErrorResponse(
-                    code: 'BAD_REQUEST',
-                    message: 'Query parameter contains invalid control characters.',
-                    status: 400
-                );
-            }
-            if (is_string($val) && preg_match('/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/', $val)) {
-                return self::buildErrorResponse(
-                    code: 'BAD_REQUEST',
-                    message: 'Query parameter contains invalid control characters.',
-                    status: 400
-                );
-            }
+        if (! self::validateQueryParams($request->query(), 0)) {
+            return self::buildErrorResponse(
+                code: 'BAD_REQUEST',
+                message: 'Query parameter contains invalid control characters.',
+                status: 400
+            );
         }
 
         // 7. Payload size constraint check (<= 1 MiB)
@@ -179,10 +180,10 @@ final class MobileV2ApiBoundary
             if ($rawBody !== '') {
                 try {
                     StrictJsonParser::parse($rawBody);
-                } catch (CanonicalSerializationException $e) {
+                } catch (CanonicalSerializationException) {
                     return self::buildErrorResponse(
                         code: 'INVALID_JSON',
-                        message: 'Invalid JSON payload: '.$e->getMessage(),
+                        message: 'The request body must be valid, well-formed canonical JSON.',
                         status: 422
                     );
                 }
@@ -207,21 +208,58 @@ final class MobileV2ApiBoundary
         return $response;
     }
 
-    /**
-     * Standardize any downstream HTTP errors into schema-compliant error response.
-     */
-    public static function standardizeErrorResponse(Response $response): Response
-    {
-        $status = $response->getStatusCode();
-        $content = (string) $response->getContent();
-        $decoded = json_decode($content, true);
+    public const array ALLOWED_INTERNAL_ERROR_CODES = [
+        'MOBILE_API_DISABLED',
+        'UNAUTHENTICATED',
+        'FORBIDDEN',
+        'FORBIDDEN_TENANT_MISMATCH',
+        'NOT_FOUND',
+        'METHOD_NOT_ALLOWED',
+        'NOT_ACCEPTABLE',
+        'CONFLICT',
+        'PAYLOAD_TOO_LARGE',
+        'UNSUPPORTED_MEDIA_TYPE',
+        'VALIDATION_FAILED',
+        'TOO_MANY_REQUESTS',
+        'FINANCIAL_AUTHORITY_UNRESOLVED',
+        'INTERNAL_SERVER_ERROR',
+        'BAD_REQUEST',
+        'INVALID_JSON',
+    ];
 
-        if (is_array($decoded) && isset($decoded['error']) && is_array($decoded['error'])
-            && isset($decoded['error']['code'], $decoded['error']['message'])) {
-            return $response;
+    /**
+     * Recursively validate query parameters to reject control characters and enforce bounded depth.
+     *
+     * @param  array<mixed, mixed>  $params
+     */
+    public static function validateQueryParams(array $params, int $depth = 0): bool
+    {
+        if ($depth > 16) {
+            return false;
         }
 
-        $code = match ($status) {
+        foreach ($params as $key => $val) {
+            if (preg_match('/[\x00-\x1F\x7F]/', (string) $key)) {
+                return false;
+            }
+
+            if (is_array($val)) {
+                if (! self::validateQueryParams($val, $depth + 1)) {
+                    return false;
+                }
+            } elseif (is_string($val)) {
+                if (preg_match('/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/', $val)) {
+                    return false;
+                }
+            }
+        }
+
+        return true;
+    }
+
+    public static function defaultCodeForStatus(int $status): string
+    {
+        return match ($status) {
             400 => 'BAD_REQUEST',
             401 => 'UNAUTHENTICATED',
             403 => 'FORBIDDEN',
@@ -235,34 +273,82 @@ final class MobileV2ApiBoundary
             429 => 'TOO_MANY_REQUESTS',
             default => 'INTERNAL_SERVER_ERROR',
         };
+    }
 
-        $message = match ($status) {
-            400 => 'Bad request.',
-            401 => 'Authentication required or token expired.',
-            403 => 'Action is unauthorized.',
-            404 => 'The requested resource was not found.',
-            405 => 'The requested HTTP method is not allowed for this route.',
-            406 => 'Not acceptable.',
-            409 => 'Resource state conflict.',
-            413 => 'Payload exceeds maximum allowed size.',
-            415 => 'Unsupported media type.',
-            422 => 'The given data failed validation.',
-            429 => 'Rate limit exceeded. Please retry later.',
-            default => 'An unexpected server error occurred.',
+    public static function defaultMessageForCode(string $code, int $status): string
+    {
+        return match ($code) {
+            'MOBILE_API_DISABLED' => 'The mobile API is currently disabled.',
+            'UNAUTHENTICATED' => 'Authentication required or token expired.',
+            'FORBIDDEN_TENANT_MISMATCH' => 'User does not possess active authorized membership in the requested company context.',
+            'FORBIDDEN' => 'Action is unauthorized.',
+            'FINANCIAL_AUTHORITY_UNRESOLVED' => 'Financial authority is unresolved on Mobile V2.',
+            'NOT_FOUND' => 'The requested resource was not found.',
+            'METHOD_NOT_ALLOWED' => 'The requested HTTP method is not allowed for this route.',
+            'NOT_ACCEPTABLE' => 'The Accept header must include application/json.',
+            'CONFLICT' => 'Resource state conflict.',
+            'PAYLOAD_TOO_LARGE' => 'Payload exceeds maximum allowed size of '.self::MAX_PAYLOAD_BYTES.' bytes.',
+            'UNSUPPORTED_MEDIA_TYPE' => 'The request Content-Type must be application/json.',
+            'VALIDATION_FAILED' => 'The given data failed validation.',
+            'TOO_MANY_REQUESTS' => 'Rate limit exceeded. Please retry later.',
+            'BAD_REQUEST' => 'Bad request.',
+            'INVALID_JSON' => 'The request body must be valid, well-formed canonical JSON.',
+            default => match ($status) {
+                400 => 'Bad request.',
+                401 => 'Authentication required or token expired.',
+                403 => 'Action is unauthorized.',
+                404 => 'The requested resource was not found.',
+                405 => 'The requested HTTP method is not allowed for this route.',
+                406 => 'The Accept header must include application/json.',
+                409 => 'Resource state conflict.',
+                413 => 'Payload exceeds maximum allowed size.',
+                415 => 'The request Content-Type must be application/json.',
+                422 => 'The given data failed validation.',
+                429 => 'Rate limit exceeded. Please retry later.',
+                default => 'An unexpected server error occurred.',
+            },
         };
+    }
 
+    /**
+     * Standardize any downstream HTTP errors into schema-compliant error response.
+     */
+    public static function standardizeErrorResponse(Response $response): Response
+    {
+        $status = $response->getStatusCode();
+        $content = (string) $response->getContent();
+        $decoded = json_decode($content, true);
+
+        $code = self::defaultCodeForStatus($status);
+        $message = null;
         $details = null;
+
         if (is_array($decoded)) {
-            if (isset($decoded['errors']) && is_array($decoded['errors'])) {
+            if (isset($decoded['error']) && is_array($decoded['error'])) {
+                $candidateCode = $decoded['error']['code'] ?? null;
+                if (is_string($candidateCode) && in_array($candidateCode, self::ALLOWED_INTERNAL_ERROR_CODES, true)) {
+                    $code = $candidateCode;
+                    $candMsg = $decoded['error']['message'] ?? null;
+                    if (is_string($candMsg) && strlen($candMsg) <= 256 && ! preg_match('/(SELECT|INSERT|UPDATE|DELETE|DROP|FROM|WHERE|TABLE|SQLSTATE|PDOException|#\d+|\.php:)/i', $candMsg)) {
+                        $message = $candMsg;
+                    }
+                }
+                if (isset($decoded['error']['details']) && is_array($decoded['error']['details'])) {
+                    $details = self::sanitizeValidationErrors($decoded['error']['details']);
+                }
+            } elseif (isset($decoded['errors']) && is_array($decoded['errors'])) {
                 $details = self::sanitizeValidationErrors($decoded['errors']);
-            } elseif (isset($decoded['message']) && is_string($decoded['message']) && $status !== 500) {
-                $message = $decoded['message'];
             }
         }
 
+        $message ??= self::defaultMessageForCode($code, $status);
+
         $extraHeaders = [];
         if ($response->headers->has('Retry-After')) {
-            $extraHeaders['Retry-After'] = (string) $response->headers->get('Retry-After');
+            $rawRetry = (string) $response->headers->get('Retry-After');
+            if (ctype_digit($rawRetry) && (int) $rawRetry >= 0 && (int) $rawRetry <= 86400) {
+                $extraHeaders['Retry-After'] = $rawRetry;
+            }
         }
 
         return self::buildErrorResponse($code, $message, $status, $details, headers: $extraHeaders);
@@ -273,8 +359,14 @@ final class MobileV2ApiBoundary
      */
     public static function renderException(Throwable $e): JsonResponse
     {
-        if ($e instanceof HttpResponseException && $e->getResponse() instanceof JsonResponse) {
-            return $e->getResponse();
+        if ($e instanceof HttpResponseException) {
+            $resp = self::standardizeErrorResponse($e->getResponse());
+
+            return $resp instanceof JsonResponse ? $resp : response()->json(
+                json_decode((string) $resp->getContent(), true),
+                $resp->getStatusCode(),
+                $resp->headers->all()
+            );
         }
 
         if ($e instanceof AuthenticationException) {
@@ -288,7 +380,7 @@ final class MobileV2ApiBoundary
         if ($e instanceof AuthorizationException) {
             return self::buildErrorResponse(
                 code: 'FORBIDDEN',
-                message: $e->getMessage() !== '' ? $e->getMessage() : 'Action is unauthorized.',
+                message: 'Action is unauthorized.',
                 status: 403
             );
         }
@@ -321,16 +413,30 @@ final class MobileV2ApiBoundary
         if ($e instanceof ConflictHttpException) {
             return self::buildErrorResponse(
                 code: 'CONFLICT',
-                message: $e->getMessage() !== '' ? $e->getMessage() : 'Resource state conflict.',
+                message: 'Resource state conflict.',
                 status: 409
             );
         }
 
         if ($e instanceof HttpExceptionInterface) {
+            $status = $e->getStatusCode();
+            $code = self::defaultCodeForStatus($status);
+            $message = self::defaultMessageForCode($code, $status);
+
+            $headers = [];
+            $headersMap = $e->getHeaders();
+            if (isset($headersMap['Retry-After'])) {
+                $rawRetry = (string) $headersMap['Retry-After'];
+                if (ctype_digit($rawRetry) && (int) $rawRetry >= 0 && (int) $rawRetry <= 86400) {
+                    $headers['Retry-After'] = $rawRetry;
+                }
+            }
+
             return self::buildErrorResponse(
-                code: 'HTTP_ERROR',
-                message: $e->getMessage() !== '' ? $e->getMessage() : 'An HTTP error occurred.',
-                status: $e->getStatusCode()
+                code: $code,
+                message: $message,
+                status: $status,
+                headers: $headers
             );
         }
 
@@ -344,25 +450,103 @@ final class MobileV2ApiBoundary
     }
 
     /**
-     * Sanitize validation error details to ensure no sensitive credentials or raw tokens are leaked.
+     * Sanitize validation error details to ensure no sensitive credentials, secrets, or raw SQL are leaked.
      *
      * @param  array<string, mixed>  $errors
      * @return array<string, mixed>
      */
     public static function sanitizeValidationErrors(array $errors): array
     {
-        $sensitiveKeys = ['password', 'password_confirmation', 'current_password', 'token', 'raw_token', 'mfa_code', 'code', 'recovery_code', 'secret', 'provider_secret'];
-
         $sanitized = [];
-        foreach ($errors as $key => $messages) {
-            if (in_array(strtolower((string) $key), $sensitiveKeys, true)) {
-                $sanitized[$key] = ['The provided credential field failed validation.'];
-            } else {
-                $sanitized[$key] = $messages;
+        foreach ($errors as $field => $messages) {
+            $fieldName = (string) $field;
+
+            if (self::isSensitiveField($fieldName)) {
+                $sanitized[$fieldName] = is_array($messages)
+                    ? ['The provided credential or secret field failed validation.']
+                    : 'The provided credential or secret field failed validation.';
+
+                continue;
             }
+
+            $safeFieldName = self::sanitizeFieldName($fieldName);
+
+            if (! is_array($messages)) {
+                if (is_string($messages)) {
+                    $sanitized[$safeFieldName] = self::sanitizeValidationMessage($messages, $safeFieldName);
+                }
+
+                continue;
+            }
+
+            $sanitizedMessages = [];
+            foreach ($messages as $msg) {
+                if (is_string($msg)) {
+                    $sanitizedMessages[] = self::sanitizeValidationMessage($msg, $safeFieldName);
+                }
+            }
+
+            if ($sanitizedMessages === []) {
+                $sanitizedMessages[] = "The {$safeFieldName} field failed validation.";
+            }
+
+            $sanitized[$safeFieldName] = $sanitizedMessages;
         }
 
         return $sanitized;
+    }
+
+    public static function isSensitiveField(string $field): bool
+    {
+        $lower = strtolower($field);
+        $sensitiveTokens = [
+            'password',
+            'secret',
+            'token',
+            'raw_token',
+            'credential',
+            'mfa',
+            'code',
+            'recovery',
+            'hash',
+            'bearer',
+            'private',
+            'provider_secret',
+            'auth',
+        ];
+
+        $parts = explode('.', $lower);
+        foreach ($parts as $part) {
+            foreach ($sensitiveTokens as $token) {
+                if ($part === $token || str_contains($part, $token)) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    public static function sanitizeFieldName(string $field): string
+    {
+        if (strlen($field) > 64 || preg_match('/[^a-zA-Z0-9_\-\.]/', $field)) {
+            return 'field';
+        }
+
+        return $field;
+    }
+
+    public static function sanitizeValidationMessage(string $msg, string $safeField): string
+    {
+        if (preg_match('/(SELECT|INSERT|UPDATE|DELETE|DROP|FROM|WHERE|TABLE|SQLSTATE|PDOException|#\d+|\.php:)/i', $msg)) {
+            return "The {$safeField} field failed validation.";
+        }
+
+        if (strlen($msg) > 255) {
+            return "The {$safeField} field failed validation.";
+        }
+
+        return $msg;
     }
 
     /**
