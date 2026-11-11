@@ -43,6 +43,7 @@ Small Trader Accounting (`التاجر الصغير`) is a multi-tenant, double-
 | [**Engineering Blueprint**](docs/ENGINEERING_BLUEPRINT_v1.0.md) | Architecture, database schema, and technical boundaries |
 | [**Deployment Guide**](docs/HOSTINGER_DEPLOYMENT_GUIDE.md) | Hostinger production deployment and release procedure |
 | [**Controlled Release Checklist**](docs/CONTROLLED_RELEASE_CHECKLIST.md) | Gate verification checklist prior to production deployment |
+| [**Release & Orchestration Guide**](docs/RELEASING.md) | Versioning conventions, build manifests, mobile API compatibility, and release notes |
 | [**Architectural Decisions**](docs/adr/) | Accepted ADRs (0002 through 0013) |
 
 ## System Requirements
