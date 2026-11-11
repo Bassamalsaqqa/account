@@ -85,3 +85,51 @@ requires an explicit mode and does not change the original lexeme.
 The decoded UTF-16 boundary and exact decimal interpretation are coordinated with
 the Android correction. A coordinated formal contract update is pending; these
 implementation notes do not modify or supersede the frozen mirror provenance.
+
+## 7. Slice 2 Architecture & Security Model
+
+### Shared-Hosting Native Compatibility
+- **Default State**: `MOBILE_API_ENABLED=false` in `config/mobile.php` (`.env` key `MOBILE_API_ENABLED`). When false, all `/api/mobile/v1/*` routes return generic 404 `MOBILE_API_DISABLED` without revealing endpoint existence or software stack.
+- **Dependency-Free Architecture**: No Redis, daemon workers, Laravel Horizon, or Supervisor processes are required.
+- **Hashed Opaque Tokens**: Native SHA-256 hashed Bearer tokens stored in `mobile_access_tokens.token_hash`. Plaintext tokens are never stored, logged, or exposed in audit trails.
+- **Sessionless Operation**: Mobile API runs strictly sessionless. `CompanyContext::setCompany` is activated explicitly during the request lifecycle and does not interact with browser sessions, cookies, or CSRF tokens (`api-v1.php` and `CommandSessionGuard` remain untouched).
+- **Transport Security & Anti-Caching**: HTTPS/TLS enforcement on non-local environments. All mobile responses include `Cache-Control: must-revalidate, no-cache, no-store, private` and `Pragma: no-cache` to ensure intermediary caches and browsers never store authenticated or tenant responses.
+
+### Authentication, MFA, and Security Revalidation
+- **Cryptographic Challenges (`/auth/challenge`)**: 32-byte cryptographically secure random nonces hashed with SHA-256. Bounded 5-minute TTL. Atomic single-use consumption (`used_at` timestamp).
+- **Login (`/auth/login`)**:
+  - Validates challenge nonce proof and single-use constraint.
+  - Safe generic `INVALID_CREDENTIALS` (401) errors for invalid email, wrong password, expired challenge, or nonce mismatch (no user enumeration).
+  - Fortify TOTP MFA integration: Optional and honors existing confirmed Fortify MFA (`two_factor_secret` + `two_factor_confirmed_at`). No blanket compulsory MFA.
+  - Recovery Codes: Single-use atomic consumption from encrypted recovery codes array.
+  - Device Revocation: Devices in `mobile_devices` table can be revoked remotely (`/devices/{deviceId}/revoke`). Revoked devices immediately fail closed on login and subsequent bearer requests with `DEVICE_REVOKED` / `UNAUTHENTICATED`.
+  - Password Revision Epoch: User password hash updates invalidate all active bearer tokens instantly via `password_epoch` check (`epoch-{sha256(password)}`).
+  - Tenant Membership: User must be an active member of at least one company. Company selection cannot bypass active membership.
+
+### Scope-Before-Return Boundary (Zero Oracle Policy)
+- **Strict Execution Order**:
+  1. Verify Bearer token existence, expiration, and token hash match.
+  2. Verify device status (must exist and not be revoked).
+  3. Verify user active status and password revision epoch.
+  4. Verify requested company exists, is active, and the authenticated user holds an active membership.
+  5. Verify user holds required module permissions (`inventory.stock.view`, `sales.invoice.view`, `customers.view`).
+- **No Existence or Digest Oracle**:
+  - All company lookups, product queries, customer queries, and future transaction/receipt lookups execute *strictly within* the authenticated company scope.
+  - An unauthorized actor requesting a company they do not belong to receives `403 FORBIDDEN_TENANT_MISMATCH` before any database queries for products, customers, or receipts execute.
+  - A valid payload digest, valid event ID, or receipt ID never authorizes return across company or actor scopes.
+  - If a token is being revalidated or stale, cached data from another scope is never returned.
+
+## 8. Planned Guard for Slice 3 Receipt & Financial Integration
+
+For the upcoming Slice 3 offline sales intake and receipt retrieval (`/api/mobile/v1/companies/{companyId}/sales/offline` and receipt status endpoints):
+1. **Planned Guard Contract (`ReceiptScopeGuard`)**:
+   - The receipt guard requires verification of:
+     1. Matching company context (`companies.public_id == route.companyId`).
+     2. Matching actor / device scope (receipt author or device that created the offline sale, unless caller holds `sales.invoice.view` / `Manager` / `Owner` role).
+     3. Active POS / invoicing permissions at receipt return time.
+2. **Replay & Idempotency Isolation**:
+   - Outbox replay and receipt acknowledgments look up records strictly scoped by `company_id`.
+   - Inquiries by `client_event_id` or `payload_digest` across tenants are rejected immediately with 404/403 without acknowledging receipt existence or validity of the digest.
+3. **Database Concurrency & Locking**:
+   - Atomic idempotency check and journal posting inside database transactions with row-level locks (`SELECT ... FOR UPDATE` on idempotency keys) to prevent duplicate economic ledger entries during mobile network retries.
+

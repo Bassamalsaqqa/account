@@ -11,5 +11,6 @@ return [
     FortifyServiceProvider::class,
     Phase11ServiceProvider::class,
     Phase12ServiceProvider::class,
+    App\Providers\MobileApiServiceProvider::class,
     VoltServiceProvider::class,
 ];

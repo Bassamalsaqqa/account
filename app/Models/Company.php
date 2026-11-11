@@ -153,6 +153,14 @@ class Company extends Model
     }
 
     /**
+     * @return HasOne<CompanyMobileSetting, $this>
+     */
+    public function mobileSetting(): HasOne
+    {
+        return $this->hasOne(CompanyMobileSetting::class);
+    }
+
+    /**
      * @return HasMany<AuditEvent, $this>
      */
     public function auditEvents(): HasMany
