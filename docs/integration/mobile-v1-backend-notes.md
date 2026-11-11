@@ -104,7 +104,7 @@ requires an explicit mode and does not change the original lexeme.
 ## 7. Coordinated DRAFT Revision 2 Decisions (from `mobile-v1-revision-2-decisions.md` & ADR-0001)
 
 ### MFA Retry Semantics
-- When MFA is required, the login endpoint responds with `status: "MFA_REQUIRED"`, `retry: "fresh_challenge"`, an HTTP 403 or 401 response per schema, and a transient challenge token.
+- When MFA is required, the response body is `status: "MFA_REQUIRED"`, `retry: "fresh_challenge"`. It conveys no token, continuation proof, or nonce-less challenge ID; HTTP behavior follows the mirrored OpenAPI operation.
 - Ordinary challenge burn rules apply: each attempt consumes the challenge; the client must obtain a fresh challenge nonce and ID before retrying with credentials and MFA code or recovery code.
 
 ### Immutable Staff/Device Token & Fresh Tenant Identity
@@ -127,10 +127,10 @@ Field widths reflect actual Account database column definitions (no truncation):
 ### Offline Lease Policy
 - Offline status is disabled/unavailable (`status: "unavailable"`).
 - NO offline transaction caps are granted.
-- Schema enforces null lease fields (`device_lease_id: null`, `offline_cap_cents: null`, `lease_expires_at: null`, `sync_interval_seconds: null`).
+- The disabled/unavailable offline-policy branch enforces `device_lease: null`; it grants no lease or numeric caps.
 
 ### Master List Invariants
-- `unit_masters: []` and `tax_masters: []` are permitted in bootstrap responses.
+- `units: []` and `taxes: []` are permitted in bootstrap responses.
 - Empty master lists indicate absent configuration, NOT sale readiness.
 
 ### Nullable Product Tax Pair
