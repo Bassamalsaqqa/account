@@ -26,7 +26,10 @@
       "format": "date-time"
     },
     "next_cursor": {
-      "type": ["string", "null"],
+      "type": [
+        "string",
+        "null"
+      ],
       "maxLength": 255
     },
     "has_more": {
@@ -57,28 +60,38 @@
           "sku": {
             "type": "string",
             "minLength": 1,
-            "maxLength": 64
+            "maxLength": 128
           },
           "barcode": {
-            "type": ["string", "null"],
-            "maxLength": 64
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 128
           },
           "name": {
             "type": "string",
             "minLength": 1,
-            "maxLength": 100
+            "maxLength": 255
           },
           "unit_price": {
             "type": "string",
             "pattern": "^(?:0|[1-9][0-9]{0,13})(?:\\.[0-9]{1,6})?$"
           },
           "tax_rate": {
-            "type": "string",
+            "type": [
+              "string",
+              "null"
+            ],
             "pattern": "^(?:100(?:\\.0{1,6})?|(?:0|[1-9][0-9]?)(?:\\.[0-9]{1,6})?)$"
           },
           "tax_rate_id": {
-            "type": "string",
-            "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$"
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$",
+            "description": "Null pair means no product default tax association, never zero tax or exemption. Mature Product has no tax FK; return null pair."
           },
           "is_tracked": {
             "type": "boolean"
@@ -89,7 +102,11 @@
           },
           "base_unit": {
             "type": "object",
-            "required": ["id", "code", "name"],
+            "required": [
+              "id",
+              "code",
+              "name"
+            ],
             "properties": {
               "id": {
                 "type": "string",
@@ -103,14 +120,19 @@
               "name": {
                 "type": "string",
                 "minLength": 1,
-                "maxLength": 100
+                "maxLength": 128
               }
             },
             "additionalProperties": false
           },
           "default_unit": {
             "type": "object",
-            "required": ["unit_id", "product_unit_id", "conversion_to_base", "sale_price"],
+            "required": [
+              "unit_id",
+              "product_unit_id",
+              "conversion_to_base",
+              "sale_price"
+            ],
             "properties": {
               "unit_id": {
                 "type": "string",
@@ -125,7 +147,10 @@
                 "pattern": "^(?:0\\.(?=[0-9]{1,6}$)[0-9]*[1-9][0-9]*|[1-9][0-9]{0,13}(?:\\.[0-9]{1,6})?)$"
               },
               "sale_price": {
-                "type": ["string", "null"],
+                "type": [
+                  "string",
+                  "null"
+                ],
                 "pattern": "^(?:0|[1-9][0-9]{0,13})(?:\\.[0-9]{1,6})?$"
               }
             },
@@ -133,7 +158,6 @@
           },
           "units": {
             "type": "array",
-            "minItems": 1,
             "items": {
               "type": "object",
               "required": [
@@ -162,7 +186,7 @@
                 "name": {
                   "type": "string",
                   "minLength": 1,
-                  "maxLength": 100
+                  "maxLength": 128
                 },
                 "conversion_to_base": {
                   "type": "string",
@@ -175,7 +199,10 @@
                   "type": "boolean"
                 },
                 "sale_price": {
-                  "type": ["string", "null"],
+                  "type": [
+                    "string",
+                    "null"
+                  ],
                   "pattern": "^(?:0|[1-9][0-9]{0,13})(?:\\.[0-9]{1,6})?$"
                 }
               },
@@ -183,7 +210,32 @@
             }
           }
         },
-        "additionalProperties": false
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "tax_rate_id": {
+                  "type": "null"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "tax_rate": {
+                  "type": "null"
+                }
+              }
+            },
+            "else": {
+              "properties": {
+                "tax_rate": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        ]
       }
     }
   },
