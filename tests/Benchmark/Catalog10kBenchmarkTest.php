@@ -24,6 +24,7 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 use Illuminate\Testing\TestResponse;
 use RuntimeException;
+use Symfony\Component\HttpFoundation\Response;
 use Tests\Support\DisposableMariaDbSchema;
 use Tests\TestCase;
 
@@ -47,11 +48,9 @@ final class Catalog10kBenchmarkTest extends TestCase
 
     private string $token;
 
-    protected function setUp(): void
+    protected function beforeRefreshingDatabase(): void
     {
-        parent::setUp();
-
-        // 1. Mandatory testing guards: ensure testing environment, owned disposable schema, and refuse persistent 3353
+        // RefreshDatabase invokes this hook before it can run migrations.
         if (! app()->environment('testing')) {
             throw new RuntimeException('Catalog10kBenchmarkTest refused: APP_ENV is not testing.');
         }
@@ -63,6 +62,11 @@ final class Catalog10kBenchmarkTest extends TestCase
         if ($port === 3353) {
             throw new RuntimeException('Forbidden: Catalog10kBenchmarkTest cannot run on persistent 3353 database.');
         }
+    }
+
+    protected function setUp(): void
+    {
+        parent::setUp();
 
         config(['mobile.enabled' => true]);
 
@@ -404,7 +408,7 @@ final class Catalog10kBenchmarkTest extends TestCase
     }
 
     /**
-     * @return array{status: int, latency_ms: float, queries: int, peak_memory_kb: float, memory_delta_kb: float, response: TestResponse}
+     * @return array{status: int, latency_ms: float, queries: int, peak_memory_kb: float, memory_delta_kb: float, response: TestResponse<Response>}
      */
     private function measureRequest(string $uri): array
     {

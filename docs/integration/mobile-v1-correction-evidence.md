@@ -61,3 +61,9 @@ Final logs are deliberately retained outside the checkout in `/tmp/pr88-correcti
 | `mobile-audit.log` | `dac04dda7966b04d2eb83ba22b729e4025f820bba102192effa983b1fa377af8` | Composer security audit clean run |
 | `mobile-10k-qualification.log` | `58042d8f45d3f42e0ea07908fffa7bf5a9bd12af9b6bf73cfbbf0b57b94b8711` | Historical untracked qualification baseline |
 | `mobile-10k-tracked-qualification.log` | `9dd5dc5df0273ba1acfc9fa38285570ba9db31af0c30c27f8abf216cd4a108e8` | Tracked qualification run output |
+
+## Supervisor benchmark verification and guard correction
+
+The tracked benchmark at `d33805a6cef854b06b6ee4b59db95e5082abf17a` was independently rerun: 1 test / 22 assertions passed; owned schema `accounting_p8_tmp_211381c00765` was cleaned. Observed HTTP requests took approximately 1.0–1.2 seconds with 173–185 queries. These local observations do not establish a universal latency or memory bound.
+
+The disposable-target guard was then moved into Laravel's `beforeRefreshingDatabase` hook so that it runs before the trait can invoke migrations. The corrected benchmark rerun passed 1 test / 22 assertions, with owned schema `accounting_p8_tmp_c7cc6967b48c` cleaned. Pint and explicit PHPStan analysis of `tests/Benchmark/Catalog10kBenchmarkTest.php` passed after adding the TestResponse generic annotation. The configured application-only PHPStan scope did not previously cover this benchmark file. Production code is unchanged by this correction; the earlier independently verified runtime suite remains 119 tests / 803 assertions at `7916c1339d8d077185360354f14f3da317dc7775`.
