@@ -641,64 +641,31 @@ class PurchaseForm extends Component
         $selectedCost = (string) $selected['unit_cost'];
         $selectedDescription = (string) $selected['item_description'];
 
-        $existingIndex = null;
-        foreach ($this->lines as $idx => $line) {
-            $linePid = ! empty($line['product_id']) ? (int) $line['product_id'] : null;
-            $lineUnitId = ! empty($line['product_unit_id']) ? (int) $line['product_unit_id'] : null;
-            $lineCost = (string) ($line['unit_cost'] ?? '');
-            $lineDesc = (string) ($line['item_description'] ?? '');
-            $hasLots = ! empty($line['lots']);
-            $discountType = $line['discount_type'] ?? 'none';
-            $taxRateId = $line['tax_rate_id'] ?? null;
+        $isTrulyEmptyFirstRow = count($this->lines) === 1
+            && empty($this->lines[0]['product_id'])
+            && trim((string) ($this->lines[0]['item_description'] ?? '')) === ''
+            && empty($this->lines[0]['lots'])
+            && in_array((string) ($this->lines[0]['quantity'] ?? ''), ['1', '1.000000', '1.00', ''], true)
+            && in_array((string) ($this->lines[0]['unit_cost'] ?? ''), ['0', '0.00', '0.000000', ''], true)
+            && (($this->lines[0]['discount_type'] ?? 'none') === 'none')
+            && empty($this->lines[0]['tax_rate_id']);
 
-            if ($linePid === $productId
-                && $lineUnitId === $selectedUnitId
-                && ! $hasLots
-                && $lineCost === $selectedCost
-                && $lineDesc === $selectedDescription
-                && $discountType === 'none'
-                && empty($taxRateId)
-            ) {
-                $existingIndex = $idx;
-                break;
-            }
-        }
+        $newLine = array_replace([
+            'product_id' => $productId,
+            'product_unit_id' => $selectedUnitId,
+            'item_description' => $selectedDescription,
+            'quantity' => '1',
+            'unit_cost' => $selectedCost,
+            'discount_type' => 'none',
+            'discount_value' => '0',
+            'tax_rate_id' => null,
+            'lots' => [],
+        ], $selected);
 
-        if ($existingIndex !== null) {
-            if (! is_string($this->lines[$existingIndex]['quantity']) || preg_match('/^\d+(?:\.\d{1,6})?$/D', $this->lines[$existingIndex]['quantity']) !== 1) {
-                $this->addError("lines.{$existingIndex}.quantity", __('commands.exact_string_required'));
-
-                return;
-            }
-            $curQty = BigDecimal::of((string) ($this->lines[$existingIndex]['quantity'] ?: '0'));
-            $this->lines[$existingIndex]['quantity'] = (string) $curQty->plus(1);
+        if ($isTrulyEmptyFirstRow) {
+            $this->lines[0] = $newLine;
         } else {
-            $isTrulyEmptyFirstRow = count($this->lines) === 1
-                && empty($this->lines[0]['product_id'])
-                && trim((string) ($this->lines[0]['item_description'] ?? '')) === ''
-                && empty($this->lines[0]['lots'])
-                && in_array((string) ($this->lines[0]['quantity'] ?? ''), ['1', '1.000000', '1.00', ''], true)
-                && in_array((string) ($this->lines[0]['unit_cost'] ?? ''), ['0', '0.00', '0.000000', ''], true)
-                && (($this->lines[0]['discount_type'] ?? 'none') === 'none')
-                && empty($this->lines[0]['tax_rate_id']);
-
-            $newLine = array_replace([
-                'product_id' => $productId,
-                'product_unit_id' => $selectedUnitId,
-                'item_description' => $selectedDescription,
-                'quantity' => '1',
-                'unit_cost' => $selectedCost,
-                'discount_type' => 'none',
-                'discount_value' => '0',
-                'tax_rate_id' => null,
-                'lots' => [],
-            ], $selected);
-
-            if ($isTrulyEmptyFirstRow) {
-                $this->lines[0] = $newLine;
-            } else {
-                $this->lines[] = $newLine;
-            }
+            $this->lines[] = $newLine;
         }
 
         $this->productSearch = '';
@@ -1360,14 +1327,23 @@ class PurchaseForm extends Component
     public function render(): View
     {
         $company = $this->authorizeForm();
-        $products = app(BoundedProductSearchService::class)->searchProductsQuery($company->id, $this->productSearch, 'purchasing');
-        $unitOptions = [];
-        $expiryLines = [];
+        $user = auth()->user();
         $selectedProductIds = collect($this->lines)->pluck('product_id')->filter()->unique()->values()->all();
         $selectedProducts = Product::where('company_id', $company->id)->whereIn('id', $selectedProductIds)
             ->with(['productUnits' => fn ($units) => $units->where('company_id', $company->id)->where('active', true)
                 ->whereHas('unit', fn ($unit) => $unit->where('company_id', $company->id)->where('active', true))->with('unit')])->get()->keyBy('id');
         abort_unless($selectedProducts->count() === count($selectedProductIds), 404);
+
+        $matchingProducts = trim($this->productSearch) !== '' && $user !== null
+            ? app(BoundedProductSearchService::class)->searchProductsQuery($company->id, $user, $this->productSearch, 'purchasing')
+                ->orderByRaw('COALESCE(name_ar, name_en) ASC')
+                ->orderBy('id')
+                ->limit(30)
+                ->get(['id', 'name_ar', 'name_en', 'sku'])
+            : collect();
+        $products = $matchingProducts->merge($selectedProducts->values());
+        $unitOptions = [];
+        $expiryLines = [];
         foreach ($this->lines as $index => $line) {
             if (! empty($line['product_id'])) {
                 $product = $selectedProducts->get($line['product_id']);
@@ -1442,7 +1418,7 @@ class PurchaseForm extends Component
 
         return view('livewire.pages.purchasing.purchase-form', [
             'baseCurrencyCode' => $company->base_currency_code,
-            'products' => $products->orderByRaw('COALESCE(name_ar, name_en) ASC')->orderBy('id')->limit(50)->get(['id', 'name_ar', 'name_en', 'sku']),
+            'products' => $products,
             'searchResults' => $this->searchResults,
             'vendors' => $vendors,
             'warehouses' => Warehouse::where('company_id', $company->id)->where('active', true)->get(),

@@ -4,10 +4,8 @@ declare(strict_types=1);
 
 namespace Tests\Unit\Services;
 
-use App\Models\Product;
 use App\Models\User;
 use App\Services\Search\BoundedProductSearchService;
-use Illuminate\Database\Eloquent\Builder;
 use Tests\TestCase;
 
 class BoundedProductSearchServiceTest extends TestCase
@@ -24,7 +22,7 @@ class BoundedProductSearchServiceTest extends TestCase
     {
         $this->assertSame('', $this->service->normalize(''));
         $this->assertSame('', $this->service->normalize('   '));
-        $this->assertSame('test', $this->service->normalize('  test  '));
+        $this->assertSame('test', $this->service->normalize('  TEST  '));
     }
 
     public function test_normalization_converts_eastern_arabic_and_persian_digits(): void
@@ -35,8 +33,8 @@ class BoundedProductSearchServiceTest extends TestCase
         // Persian: ۰۱۲۳۴۵۶۷۸۹ -> 0123456789
         $this->assertSame('1234567890', $this->service->normalize('۱۲۳۴۵۶۷۸۹۰'));
 
-        // Mixed barcode: BAR-١٢٣-۴۵
-        $this->assertSame('BAR-123-45', $this->service->normalize('BAR-١٢٣-۴۵'));
+        // Mixed barcode with lowercase conversion: BAR-١٢٣-۴۵ -> bar-123-45
+        $this->assertSame('bar-123-45', $this->service->normalize('BAR-١٢٣-۴۵'));
     }
 
     public function test_normalization_strips_arabic_diacritics_and_tatweel(): void
@@ -66,23 +64,16 @@ class BoundedProductSearchServiceTest extends TestCase
 
     public function test_normalization_clamps_to_160_characters(): void
     {
-        $long = str_repeat('a', 200);
+        $long = str_repeat('A', 200);
         $normalized = $this->service->normalize($long);
         $this->assertSame(160, mb_strlen($normalized));
+        $this->assertSame(str_repeat('a', 160), $normalized);
     }
 
-    public function test_search_products_query_applies_context_and_tenant_bounds(): void
+    public function test_escape_like_escapes_sql_metacharacters(): void
     {
-        // Note: Unit test inspecting query building invariants without executing against database
-        $salesQuery = $this->service->searchProductsQuery(10, 'SOAP', 'sales');
-        $this->assertInstanceOf(Builder::class, $salesQuery);
-
-        $purchaseQuery = $this->service->searchProductsQuery(10, 'COFFEE', 'purchasing');
-        $this->assertInstanceOf(Builder::class, $purchaseQuery);
-
-        // Verify empty query returns un-filtered product builder
-        $emptyQuery = $this->service->searchProductsQuery(10, '', 'sales');
-        $this->assertInstanceOf(Builder::class, $emptyQuery);
+        $this->assertSame('100\\%\\_clean\\\\test', $this->service->escapeLike('100%_clean\\test'));
+        $this->assertSame('plain-sku', $this->service->escapeLike('plain-sku'));
     }
 
     public function test_bounded_constants_and_zero_query_contract(): void
@@ -98,9 +89,9 @@ class BoundedProductSearchServiceTest extends TestCase
 
     public function test_normalization_handles_complex_commercial_sku_and_barcodes(): void
     {
-        // Barcode with leading/trailing spaces and Persian digits
+        // Barcode with leading/trailing spaces, Persian digits, and uppercase English
         $input = "  BAR-۰۱۲۳-PROD  \n";
-        $this->assertSame('BAR-0123-PROD', $this->service->normalize($input));
+        $this->assertSame('bar-0123-prod', $this->service->normalize($input));
 
         // Arabic text with mixed tatweel and harakat
         $input2 = 'شــــامـبـو أطـــفـالٍ';

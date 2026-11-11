@@ -15,6 +15,7 @@ use App\Models\ProductBarcode;
 use App\Models\User;
 use App\Services\Purchasing\PurchaseDocumentRules;
 use App\Services\Sales\SalesDocumentRules;
+use App\Support\Tenancy\CompanyContext;
 use Brick\Math\BigDecimal;
 use Brick\Math\RoundingMode;
 use Illuminate\Database\Eloquent\Builder;
@@ -28,10 +29,20 @@ final class BoundedProductSearchService
 
     /**
      * Normalize search query according to commercial multi-platform specification:
-     * - Trim whitespace
-     * - Map Eastern Arabic and Persian digits to ASCII digits
-     * - Strip Arabic diacritics and tatweel
-     * - Normalize Arabic letter variants (alef variants, taa marbuta, alef maqsura)
+     * - Trim whitespace and clamp to max 160 characters
+     * - Map Eastern Arabic (٠-٩) and Persian (۰-۹) digits to ASCII digits (0-9)
+     * - Strip Arabic diacritics (Harakat: \x{064B}-\x{065F}\x{0670}) and Tatweel (\x{0640})
+     * - Normalize Arabic letter variants (alef variants to bare alef, taa marbuta to haa, alef maqsura to yaa)
+     * - Normalize Latin / English characters to lowercase
+     *
+     * Database Collation and Storage Invariant:
+     * Stored product names and SKUs remain unmodified master data as entered by traders.
+     * MariaDB collation `utf8mb4_unicode_ci` provides case-insensitive Latin matching and
+     * collates ASCII digits identically to Eastern Arabic digits. However, MariaDB treats
+     * Arabic letter variants (أ/إ/آ vs ا, ة vs ه, ى vs ي) as distinct characters.
+     * To prevent unindexed full-table scans, search predicates execute prefix matching
+     * on both literal input and normalized forms against composite B-tree indexes
+     * (company_id, active, name_ar/name_en) without tablewide functional transforms on columns.
      */
     public function normalize(string $rawQuery): string
     {
@@ -61,7 +72,18 @@ final class BoundedProductSearchService
         $term = str_replace('ة', 'ه', $term);
         $term = str_replace('ى', 'ي', $term);
 
+        // Normalize Latin lowercase
+        $term = mb_strtolower($term);
+
         return trim($term);
+    }
+
+    /**
+     * Escape SQL LIKE metacharacters % and _ as well as backslash for literal prefix matching.
+     */
+    public function escapeLike(string $value): string
+    {
+        return addcslashes($value, '%_\\');
     }
 
     /**
@@ -97,26 +119,45 @@ final class BoundedProductSearchService
         string $exchangeRate = '1.0000000000',
         int $limit = self::MAX_CANDIDATES
     ): array {
-        $normalized = $this->normalize($query);
-        if ($normalized === '') {
+        $rawTerm = mb_substr(trim($query), 0, 160);
+        if ($rawTerm === '') {
             return [];
         }
 
+        $normalized = $this->normalize($rawTerm);
         $limit = max(1, min($limit, self::MAX_CANDIDATES));
 
         $this->authorize($companyId, $user, $context);
 
-        $canViewCost = $user->hasPermissionTo('purchasing.cost.view');
+        $previousTeam = getPermissionsTeamId();
+        try {
+            setPermissionsTeamId($companyId);
+            app(PermissionRegistrar::class)->setPermissionsTeamId($companyId);
+            $user->unsetRelation('roles')->unsetRelation('permissions');
+            $canViewCost = $user->hasPermissionTo('purchasing.cost.view');
+        } finally {
+            setPermissionsTeamId($previousTeam);
+            app(PermissionRegistrar::class)->setPermissionsTeamId($previousTeam);
+            $user->unsetRelation('roles')->unsetRelation('permissions');
+        }
 
-        $candidateIds = $this->resolveCandidateIds($companyId, $normalized, $context, $limit);
+        $candidateIds = $this->resolveCandidateIds($companyId, $rawTerm, $normalized, $context, $limit);
         if (empty($candidateIds)) {
             return [];
         }
 
         $orderedIds = array_keys($candidateIds);
 
-        $products = Product::with(['productUnits.unit', 'baseUnit'])
+        $products = Product::with([
+            'productUnits' => fn ($q) => $q->where('company_id', $companyId)
+                ->where('active', true)
+                ->whereHas('unit', fn ($u) => $u->where('company_id', $companyId)->where('active', true))
+                ->with(['unit' => fn ($u) => $u->where('company_id', $companyId)->where('active', true)]),
+            'baseUnit' => fn ($u) => $u->where('company_id', $companyId)->where('active', true),
+        ])
             ->where('company_id', $companyId)
+            ->where('active', true)
+            ->when($context === 'purchasing', fn ($q) => $q->where('product_type', Product::TYPE_STOCK)->where('track_stock', true))
             ->whereIn('id', $orderedIds)
             ->get()
             ->keyBy('id');
@@ -140,10 +181,6 @@ final class BoundedProductSearchService
                 if (! $pu->active || ! $pu->unit || ! $pu->unit->active) {
                     continue;
                 }
-                $isDefault = $context === 'purchasing' ? (bool) $pu->is_default_purchase : (bool) $pu->is_default_sale;
-                if ($isDefault || $pu->is_base) {
-                    $defaultUnitId ??= (int) $pu->id;
-                }
                 $units[] = [
                     'id' => (int) $pu->id,
                     'unit_id' => (int) $pu->unit_id,
@@ -153,6 +190,32 @@ final class BoundedProductSearchService
                 ];
             }
 
+            // 1. Context-specific default unit first
+            foreach ($product->productUnits as $pu) {
+                if (! $pu->active || ! $pu->unit || ! $pu->unit->active) {
+                    continue;
+                }
+                $isDefault = $context === 'purchasing' ? (bool) $pu->is_default_purchase : (bool) $pu->is_default_sale;
+                if ($isDefault) {
+                    $defaultUnitId = (int) $pu->id;
+                    break;
+                }
+            }
+
+            // 2. Base unit fallback
+            if ($defaultUnitId === null) {
+                foreach ($product->productUnits as $pu) {
+                    if (! $pu->active || ! $pu->unit || ! $pu->unit->active) {
+                        continue;
+                    }
+                    if ($pu->is_base) {
+                        $defaultUnitId = (int) $pu->id;
+                        break;
+                    }
+                }
+            }
+
+            // 3. First active unit fallback
             if ($defaultUnitId === null && ! empty($units)) {
                 $defaultUnitId = $units[0]['id'];
             }
@@ -207,12 +270,14 @@ final class BoundedProductSearchService
 
     /**
      * Build matching products query for InvoiceForm / PurchaseForm view rendering.
+     * Enforces context authorization, strict company/active/type scoping,
+     * and safe prefix matching without leading wildcards.
      *
      * @return Builder<Product>
      */
-    public function searchProductsQuery(int $companyId, string $query, string $context = 'sales'): Builder
+    public function searchProductsQuery(int $companyId, User $user, string $query, string $context = 'sales'): Builder
     {
-        $term = mb_substr(trim($query), 0, 160);
+        $this->authorize($companyId, $user, $context);
 
         $queryBuilder = Product::where('company_id', $companyId)
             ->where('active', true);
@@ -222,41 +287,42 @@ final class BoundedProductSearchService
                 ->where('track_stock', true);
         }
 
+        $term = mb_substr(trim($query), 0, 160);
         if ($term === '') {
-            return $queryBuilder;
+            return $queryBuilder->whereRaw('0 = 1');
         }
 
+        $rawEsc = $this->escapeLike($term);
         $normalized = $this->normalize($term);
+        $normEsc = $this->escapeLike($normalized);
 
-        $barcodeSubquery = ProductBarcode::select('product_id')
-            ->where('company_id', $companyId)
+        $barcodeSubquery = ProductBarcode::select('product_barcodes.product_id')
+            ->join('products', 'products.id', '=', 'product_barcodes.product_id')
+            ->where('product_barcodes.company_id', $companyId)
+            ->where('products.company_id', $companyId)
+            ->where('products.active', true)
+            ->when($context === 'purchasing', fn ($q) => $q->where('products.product_type', Product::TYPE_STOCK)->where('products.track_stock', true))
             ->where(function (Builder $b) use ($term, $normalized): void {
-                $b->where('barcode', $term);
-                if ($normalized !== $term) {
-                    $b->orWhere('barcode', $normalized);
+                $b->where('product_barcodes.barcode', $term);
+                if ($normalized !== $term && $normalized !== '') {
+                    $b->orWhere('product_barcodes.barcode', $normalized);
                 }
             });
 
-        $queryBuilder->where(function (Builder $q) use ($term, $normalized, $barcodeSubquery): void {
-            // Exact / prefix SKU
-            $q->where('sku', 'like', "{$term}%");
-            if ($normalized !== $term) {
-                $q->orWhere('sku', 'like', "{$normalized}%");
+        $queryBuilder->where(function (Builder $q) use ($rawEsc, $normEsc, $barcodeSubquery): void {
+            // Exact / prefix SKU (indexed via company_id, sku)
+            $q->where('sku', 'like', "{$rawEsc}%");
+            if ($normEsc !== $rawEsc && $normEsc !== '') {
+                $q->orWhere('sku', 'like', "{$normEsc}%");
             }
 
-            // Prefix name
-            $q->orWhere('name_ar', 'like', "{$term}%")
-                ->orWhere('name_en', 'like', "{$term}%");
+            // Prefix name (indexed via company_id, active, name_ar/name_en)
+            $q->orWhere('name_ar', 'like', "{$rawEsc}%")
+                ->orWhere('name_en', 'like', "{$rawEsc}%");
 
-            if ($normalized !== $term) {
-                $q->orWhere('name_ar', 'like', "{$normalized}%")
-                    ->orWhere('name_en', 'like', "{$normalized}%");
-            }
-
-            // Substring if term >= 3
-            if (mb_strlen($normalized) >= self::MIN_SUBSTRING_LENGTH) {
-                $q->orWhere('name_ar', 'like', "%{$normalized}%")
-                    ->orWhere('name_en', 'like', "%{$normalized}%");
+            if ($normEsc !== $rawEsc && $normEsc !== '') {
+                $q->orWhere('name_ar', 'like', "{$normEsc}%")
+                    ->orWhere('name_en', 'like', "{$normEsc}%");
             }
 
             $q->orWhereIn('id', $barcodeSubquery);
@@ -266,137 +332,178 @@ final class BoundedProductSearchService
     }
 
     /**
-     * Resolve candidate IDs with tiered relevance scores.
-     * Tier 1: Exact Barcode / SKU (100)
-     * Tier 2: Prefix Barcode / SKU (80)
-     * Tier 3: Prefix / Exact AR/EN Name (60)
-     * Tier 4: Token Substring (40)
+     * Resolve candidate IDs with tiered relevance scores and deterministic stable ID tie-breakers.
+     * Tier 1: Exact Barcode (100) / Exact SKU (95)
+     * Tier 2: Prefix Barcode (80) / Prefix SKU (75)
+     * Tier 3: Prefix AR/EN Name (60)
+     * Tier 4: (Unsupported unindexed leading-wildcard LIKE removed)
      *
-     * @return array<int, array{score: int, barcode: ?string}>
+     * @return array<int, array{id: int, score: int, barcode: ?string}>
      */
-    private function resolveCandidateIds(int $companyId, string $term, string $context, int $limit): array
+    private function resolveCandidateIds(int $companyId, string $raw, string $normalized, string $context, int $limit): array
     {
-        /** @var array<int, array{score: int, barcode: ?string}> $candidates */
+        /** @var array<int, array{id: int, score: int, barcode: ?string}> $candidates */
         $candidates = [];
 
-        $baseProductQuery = fn () => Product::where('company_id', $companyId)->where('active', true)
+        $baseProductQuery = fn () => Product::where('company_id', $companyId)
+            ->where('active', true)
             ->when($context === 'purchasing', fn ($q) => $q->where('product_type', Product::TYPE_STOCK)->where('track_stock', true));
 
+        $rawEsc = $this->escapeLike($raw);
+        $normEsc = $this->escapeLike($normalized);
+
         // ── Tier 1: Exact Barcode / SKU ──
-        $exactBarcodes = ProductBarcode::where('company_id', $companyId)
-            ->where('barcode', $term)
-            ->get(['product_id', 'barcode']);
+        $exactBarcodes = ProductBarcode::query()
+            ->select(['product_barcodes.product_id', 'product_barcodes.barcode'])
+            ->join('products', 'products.id', '=', 'product_barcodes.product_id')
+            ->where('product_barcodes.company_id', $companyId)
+            ->where('products.company_id', $companyId)
+            ->where('products.active', true)
+            ->when($context === 'purchasing', fn ($q) => $q->where('products.product_type', Product::TYPE_STOCK)->where('products.track_stock', true))
+            ->where(function (Builder $b) use ($raw, $normalized): void {
+                $b->where('product_barcodes.barcode', $raw);
+                if ($normalized !== $raw && $normalized !== '') {
+                    $b->orWhere('product_barcodes.barcode', $normalized);
+                }
+            })
+            ->orderBy('products.id')
+            ->limit($limit)
+            ->get();
 
         foreach ($exactBarcodes as $bc) {
             $pid = (int) $bc->product_id;
-            $candidates[$pid] = ['score' => 100, 'barcode' => $bc->barcode];
+            $candidates[$pid] = ['id' => $pid, 'score' => 100, 'barcode' => $bc->barcode];
         }
 
         $exactSkus = $baseProductQuery()
-            ->where('sku', $term)
+            ->where(function (Builder $q) use ($raw, $normalized): void {
+                $q->where('sku', $raw);
+                if ($normalized !== $raw && $normalized !== '') {
+                    $q->orWhere('sku', $normalized);
+                }
+            })
+            ->orderBy('id')
+            ->limit($limit)
             ->pluck('id');
 
         foreach ($exactSkus as $id) {
             $pid = (int) $id;
             if (! isset($candidates[$pid]) || $candidates[$pid]['score'] < 95) {
-                $candidates[$pid] = ['score' => 95, 'barcode' => $candidates[$pid]['barcode'] ?? null];
+                $candidates[$pid] = ['id' => $pid, 'score' => 95, 'barcode' => $candidates[$pid]['barcode'] ?? null];
             }
         }
 
         // ── Tier 2: Prefix Barcode / SKU ──
         if (count($candidates) < $limit) {
-            $prefixBarcodes = ProductBarcode::where('company_id', $companyId)
-                ->where('barcode', 'like', "{$term}%")
-                ->where('barcode', '!=', $term)
-                ->limit($limit)
-                ->get(['product_id', 'barcode']);
+            $needed = $limit - count($candidates);
+            $prefixBarcodes = ProductBarcode::query()
+                ->select(['product_barcodes.product_id', 'product_barcodes.barcode'])
+                ->join('products', 'products.id', '=', 'product_barcodes.product_id')
+                ->where('product_barcodes.company_id', $companyId)
+                ->where('products.company_id', $companyId)
+                ->where('products.active', true)
+                ->when($context === 'purchasing', fn ($q) => $q->where('products.product_type', Product::TYPE_STOCK)->where('products.track_stock', true))
+                ->where(function (Builder $b) use ($rawEsc, $normEsc): void {
+                    $b->where('product_barcodes.barcode', 'like', "{$rawEsc}%");
+                    if ($normEsc !== $rawEsc && $normEsc !== '') {
+                        $b->orWhere('product_barcodes.barcode', 'like', "{$normEsc}%");
+                    }
+                })
+                ->whereNotIn('product_barcodes.product_id', array_keys($candidates))
+                ->orderBy('products.id')
+                ->limit($needed)
+                ->get();
 
             foreach ($prefixBarcodes as $bc) {
                 $pid = (int) $bc->product_id;
                 if (! isset($candidates[$pid])) {
-                    $candidates[$pid] = ['score' => 80, 'barcode' => $bc->barcode];
+                    $candidates[$pid] = ['id' => $pid, 'score' => 80, 'barcode' => $bc->barcode];
                 }
             }
 
-            $prefixSkus = $baseProductQuery()
-                ->where('sku', 'like', "{$term}%")
-                ->where('sku', '!=', $term)
-                ->limit($limit)
-                ->pluck('id');
+            if (count($candidates) < $limit) {
+                $needed = $limit - count($candidates);
+                $prefixSkus = $baseProductQuery()
+                    ->where(function (Builder $q) use ($rawEsc, $normEsc): void {
+                        $q->where('sku', 'like', "{$rawEsc}%");
+                        if ($normEsc !== $rawEsc && $normEsc !== '') {
+                            $q->orWhere('sku', 'like', "{$normEsc}%");
+                        }
+                    })
+                    ->whereNotIn('id', array_keys($candidates))
+                    ->orderBy('id')
+                    ->limit($needed)
+                    ->pluck('id');
 
-            foreach ($prefixSkus as $id) {
-                $pid = (int) $id;
-                if (! isset($candidates[$pid])) {
-                    $candidates[$pid] = ['score' => 75, 'barcode' => null];
+                foreach ($prefixSkus as $id) {
+                    $pid = (int) $id;
+                    if (! isset($candidates[$pid])) {
+                        $candidates[$pid] = ['id' => $pid, 'score' => 75, 'barcode' => null];
+                    }
                 }
             }
         }
 
-        // ── Tier 3: Prefix / Exact AR/EN Name ──
+        // ── Tier 3: Prefix Name (AR and EN) ──
         if (count($candidates) < $limit) {
+            $needed = $limit - count($candidates);
             $prefixNames = $baseProductQuery()
-                ->where(function (Builder $q) use ($term): void {
-                    $q->where('name_ar', 'like', "{$term}%")
-                        ->orWhere('name_en', 'like', "{$term}%");
+                ->where(function (Builder $q) use ($rawEsc, $normEsc): void {
+                    $q->where('name_ar', 'like', "{$rawEsc}%")
+                        ->orWhere('name_en', 'like', "{$rawEsc}%");
+                    if ($normEsc !== $rawEsc && $normEsc !== '') {
+                        $q->orWhere('name_ar', 'like', "{$normEsc}%")
+                            ->orWhere('name_en', 'like', "{$normEsc}%");
+                    }
                 })
-                ->limit($limit)
+                ->whereNotIn('id', array_keys($candidates))
+                ->orderBy('id')
+                ->limit($needed)
                 ->pluck('id');
 
             foreach ($prefixNames as $id) {
                 $pid = (int) $id;
                 if (! isset($candidates[$pid])) {
-                    $candidates[$pid] = ['score' => 60, 'barcode' => null];
+                    $candidates[$pid] = ['id' => $pid, 'score' => 60, 'barcode' => null];
                 }
             }
         }
 
-        // ── Tier 4: Token Substring Match (safely bounded) ──
-        if (count($candidates) < $limit && mb_strlen($term) >= self::MIN_SUBSTRING_LENGTH) {
-            $needed = $limit - count($candidates);
-            $substringNames = $baseProductQuery()
-                ->where(function (Builder $q) use ($term): void {
-                    $q->where('name_ar', 'like', "%{$term}%")
-                        ->orWhere('name_en', 'like', "%{$term}%");
-                })
-                ->whereNotIn('id', array_keys($candidates))
-                ->limit($needed)
-                ->pluck('id');
-
-            foreach ($substringNames as $id) {
-                $pid = (int) $id;
-                if (! isset($candidates[$pid])) {
-                    $candidates[$pid] = ['score' => 40, 'barcode' => null];
-                }
+        // Deterministic sort: score DESC, then stable ID ASC
+        uasort($candidates, function (array $a, array $b): int {
+            if ($b['score'] !== $a['score']) {
+                return $b['score'] <=> $a['score'];
             }
-        }
 
-        // Sort candidates by score DESC, keeping array keys (product_id)
-        uasort($candidates, fn ($a, $b) => $b['score'] <=> $a['score']);
+            return $a['id'] <=> $b['id'];
+        });
 
         return array_slice($candidates, 0, $limit, true);
     }
 
-    private function computeSalePrice(Product $product, ?int $unitId, string $currency, string $exchangeRate): string
+    private function computeSalePrice(Product $product, ?int $unitId, string $currency, string $exchangeRate): ?string
     {
         try {
             $unit = app(SalesDocumentRules::class)->selectedUnit($product, $unitId, Quantity::of('1'));
             $rate = BigDecimal::of($exchangeRate);
             if (! $rate->isPositive()) {
-                return '0.00';
+                return null;
             }
             $basePrice = $unit->default_sale_price_base === null
-                ? BigDecimal::of($product->default_sale_price_base ?? '0')->multipliedBy($unit->conversion_to_base)
+                ? ($product->default_sale_price_base !== null
+                    ? BigDecimal::of($product->default_sale_price_base)->multipliedBy($unit->conversion_to_base)
+                    : BigDecimal::of('0'))
                 : BigDecimal::of($unit->default_sale_price_base);
 
-            $decimals = $currency === 'JOD' ? 3 : 2;
+            $price = $basePrice->dividedBy($rate, 2, RoundingMode::HALF_UP);
 
-            return (string) $basePrice->dividedBy($rate, $decimals, RoundingMode::HALF_UP);
+            return SalesMoneyFormatter::formatMoneyInput($price);
         } catch (\Throwable) {
-            return '0.00';
+            return null;
         }
     }
 
-    private function computePurchaseCost(Product $product, ?int $unitId, string $currency, string $exchangeRate, ?Company $company, string $locale): string
+    private function computePurchaseCost(Product $product, ?int $unitId, string $currency, string $exchangeRate, ?Company $company, string $locale): ?string
     {
         try {
             $rules = app(PurchaseDocumentRules::class);
@@ -406,13 +513,16 @@ final class BoundedProductSearchService
             $unit = $rules->selectedUnit($product, $unitId, '1');
             $base = $unit->default_purchase_price_base !== null
                 ? BigDecimal::of($unit->default_purchase_price_base)
-                : BigDecimal::of($product->default_purchase_cost_base ?? '0')->multipliedBy($unit->conversion_to_base);
+                : ($product->default_purchase_cost_base !== null
+                    ? BigDecimal::of($product->default_purchase_cost_base)->multipliedBy($unit->conversion_to_base)
+                    : BigDecimal::of('0'));
 
-            $decimals = $currency === 'JOD' ? 3 : 2;
+            $fx = ExchangeRate::from($exchangeRate)->getValue();
+            $cost = $base->dividedBy($fx, 2, RoundingMode::HALF_UP);
 
-            return (string) $base->dividedBy(ExchangeRate::from($exchangeRate)->getValue(), $decimals, RoundingMode::HALF_UP);
+            return SalesMoneyFormatter::formatMoneyInput($cost);
         } catch (\Throwable) {
-            return '0.00';
+            return null;
         }
     }
 
@@ -422,7 +532,7 @@ final class BoundedProductSearchService
     private function computeAvailableQuantity(int $companyId, int $productId, ?int $unitId, ?int $warehouseId): array
     {
         try {
-            $product = Product::find($productId);
+            $product = Product::where('company_id', $companyId)->find($productId);
             if (! $product || ! $product->track_stock) {
                 return ['formatted' => null, 'status' => 'ok'];
             }
@@ -434,27 +544,37 @@ final class BoundedProductSearchService
             if ($warehouseId !== null) {
                 $query->where('warehouse_id', $warehouseId);
             }
-            $sum = (string) $query->sum('quantity_base');
-            $qty = BigDecimal::of($sum)->dividedBy($conversion, 6, RoundingMode::FLOOR);
+            $sumBase = (string) $query->sum('quantity_base');
+            $qtyInUnit = BigDecimal::of($sumBase)->dividedBy($conversion, 6, RoundingMode::FLOOR);
 
             $status = 'ok';
-            if ($qty->isLessThanOrEqualTo(0)) {
+            $baseQty = BigDecimal::of($sumBase);
+            if ($baseQty->isLessThanOrEqualTo(0)) {
                 $status = 'out_of_stock';
-            } elseif ($product->minimum_stock_base !== null && $qty->isLessThanOrEqualTo($product->minimum_stock_base)) {
+            } elseif ($product->minimum_stock_base !== null && $baseQty->isLessThanOrEqualTo($product->minimum_stock_base)) {
                 $status = 'low_stock';
             }
 
             return [
-                'formatted' => SalesMoneyFormatter::formatQuantity((string) $qty),
+                'formatted' => SalesMoneyFormatter::formatQuantity((string) $qtyInUnit),
                 'status' => $status,
             ];
         } catch (\Throwable) {
-            return ['formatted' => null, 'status' => 'ok'];
+            return ['formatted' => null, 'status' => 'unknown'];
         }
     }
 
     private function authorize(int $companyId, User $user, string $context): void
     {
+        if ($context !== 'sales' && $context !== 'purchasing') {
+            abort(403, 'Invalid search context.');
+        }
+
+        $companyContext = app(CompanyContext::class);
+        if ($companyContext->hasCompany() && (int) $companyContext->companyId() !== $companyId) {
+            abort(403, 'Company context mismatch.');
+        }
+
         $isMember = CompanyUser::where('company_id', $companyId)
             ->where('user_id', $user->id)
             ->where('status', 'active')
@@ -463,26 +583,33 @@ final class BoundedProductSearchService
 
         abort_unless($isMember, 403, 'Unauthorized company access.');
 
-        setPermissionsTeamId($companyId);
-        app(PermissionRegistrar::class)->setPermissionsTeamId($companyId);
-        $user->unsetRelation('roles')->unsetRelation('permissions');
+        $previousTeam = getPermissionsTeamId();
+        try {
+            setPermissionsTeamId($companyId);
+            app(PermissionRegistrar::class)->setPermissionsTeamId($companyId);
+            $user->unsetRelation('roles')->unsetRelation('permissions');
 
-        if ($context === 'sales') {
-            abort_unless(
-                $user->hasPermissionTo('sales.invoice.create')
-                || $user->hasPermissionTo('sales.invoice.edit_draft')
-                || $user->hasPermissionTo('sales.invoice.view'),
-                403,
-                'Unauthorized sales search.'
-            );
-        } elseif ($context === 'purchasing') {
-            abort_unless(
-                $user->hasPermissionTo('purchasing.purchase.create')
-                || $user->hasPermissionTo('purchasing.purchase.edit_draft')
-                || $user->hasPermissionTo('purchasing.purchase.view'),
-                403,
-                'Unauthorized purchasing search.'
-            );
+            if ($context === 'sales') {
+                abort_unless(
+                    $user->hasPermissionTo('sales.invoice.create')
+                    || $user->hasPermissionTo('sales.invoice.edit_draft')
+                    || $user->hasPermissionTo('sales.invoice.view'),
+                    403,
+                    'Unauthorized sales search.'
+                );
+            } elseif ($context === 'purchasing') {
+                abort_unless(
+                    $user->hasPermissionTo('purchasing.purchase.create')
+                    || $user->hasPermissionTo('purchasing.purchase.edit_draft')
+                    || $user->hasPermissionTo('purchasing.purchase.view'),
+                    403,
+                    'Unauthorized purchasing search.'
+                );
+            }
+        } finally {
+            setPermissionsTeamId($previousTeam);
+            app(PermissionRegistrar::class)->setPermissionsTeamId($previousTeam);
+            $user->unsetRelation('roles')->unsetRelation('permissions');
         }
     }
 }

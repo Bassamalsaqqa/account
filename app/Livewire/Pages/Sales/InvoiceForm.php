@@ -569,65 +569,34 @@ class InvoiceForm extends Component
         $selectedPrice = (string) $selected['unit_price'];
         $selectedDescription = (string) $selected['item_description'];
 
-        $existingIndex = null;
-        foreach ($this->lines as $idx => $line) {
-            $linePid = ! empty($line['product_id']) ? (int) $line['product_id'] : null;
-            $lineUnitId = ! empty($line['product_unit_id']) ? (int) $line['product_unit_id'] : null;
-            $linePrice = (string) ($line['unit_price']);
-            $lineDesc = (string) ($line['item_description']);
-            $discountType = $line['discount_type'];
-            $taxRateId = $line['tax_rate_id'] ?? null;
+        $isTrulyEmptyFirstRow = count($this->lines) === 1
+            && empty($this->lines[0]['product_id'])
+            && trim((string) ($this->lines[0]['item_description'])) === ''
+            && in_array((string) ($this->lines[0]['quantity']), ['1', '1.000000', '1.00', ''], true)
+            && in_array((string) ($this->lines[0]['unit_price']), ['0', '0.00', '0.000000', ''], true)
+            && (($this->lines[0]['discount_type']) === 'none')
+            && empty($this->lines[0]['tax_rate_id']);
 
-            if ($linePid === $productId
-                && $lineUnitId === $selectedUnitId
-                && $linePrice === $selectedPrice
-                && $lineDesc === $selectedDescription
-                && $discountType === 'none'
-                && empty($taxRateId)
-            ) {
-                $existingIndex = $idx;
-                break;
-            }
-        }
+        $newLine = [
+            'product_id' => $productId,
+            'product_unit_id' => $selectedUnitId,
+            'item_description' => $selectedDescription,
+            'quantity' => '1',
+            'unit_price' => $selectedPrice,
+            'discount_type' => 'none',
+            'discount_value' => '0',
+            'tax_rate_id' => null,
+            'available_quantity' => $selected['available_quantity'] ?? null,
+            'subtotal' => '0.00',
+            'discount_amount' => '0.00',
+            'tax_amount' => '0.00',
+            'line_total' => '0.00',
+        ];
 
-        if ($existingIndex !== null) {
-            if (! is_string($this->lines[$existingIndex]['quantity']) || preg_match('/^\d+(?:\.\d{1,6})?$/D', $this->lines[$existingIndex]['quantity']) !== 1) {
-                $this->addError("lines.{$existingIndex}.quantity", __('commands.exact_string_required'));
-
-                return;
-            }
-            $curQty = BigDecimal::of((string) ($this->lines[$existingIndex]['quantity'] ?: '0'));
-            $this->lines[$existingIndex]['quantity'] = (string) $curQty->plus(1);
+        if ($isTrulyEmptyFirstRow) {
+            $this->lines[0] = $newLine;
         } else {
-            $isTrulyEmptyFirstRow = count($this->lines) === 1
-                && empty($this->lines[0]['product_id'])
-                && trim((string) ($this->lines[0]['item_description'])) === ''
-                && in_array((string) ($this->lines[0]['quantity']), ['1', '1.000000', '1.00', ''], true)
-                && in_array((string) ($this->lines[0]['unit_price']), ['0', '0.00', '0.000000', ''], true)
-                && (($this->lines[0]['discount_type']) === 'none')
-                && empty($this->lines[0]['tax_rate_id']);
-
-            $newLine = [
-                'product_id' => $productId,
-                'product_unit_id' => $selectedUnitId,
-                'item_description' => $selectedDescription,
-                'quantity' => '1',
-                'unit_price' => $selectedPrice,
-                'discount_type' => 'none',
-                'discount_value' => '0',
-                'tax_rate_id' => null,
-                'available_quantity' => $selected['available_quantity'] ?? null,
-                'subtotal' => '0.00',
-                'discount_amount' => '0.00',
-                'tax_amount' => '0.00',
-                'line_total' => '0.00',
-            ];
-
-            if ($isTrulyEmptyFirstRow) {
-                $this->lines[0] = $newLine;
-            } else {
-                $this->lines[] = $newLine;
-            }
+            $this->lines[] = $newLine;
         }
 
         $this->productSearch = '';
@@ -1368,12 +1337,17 @@ class InvoiceForm extends Component
         }
         $currencies = $company->currencies()->where('enabled', true)->get();
         $warehouses = Warehouse::where('company_id', $company->id)->where('active', true)->get();
-        $productsQuery = app(BoundedProductSearchService::class)->searchProductsQuery($company->id, $this->productSearch, 'sales');
         $selectedProductIds = collect($this->lines)->pluck('product_id')->filter()->unique()->values()->all();
         $selectedProducts = Product::with(['productUnits.unit', 'baseUnit'])->where('company_id', $company->id)
             ->whereIn('id', $selectedProductIds)->get();
         abort_unless($selectedProducts->count() === count($selectedProductIds), 404);
-        $matchingProducts = $productsQuery->orderByRaw('COALESCE(name_ar, name_en) ASC')->orderBy('id')->limit(50)->get();
+        $matchingProducts = trim($this->productSearch) !== ''
+            ? app(BoundedProductSearchService::class)->searchProductsQuery($company->id, $user, $this->productSearch, 'sales')
+                ->orderByRaw('COALESCE(name_ar, name_en) ASC')
+                ->orderBy('id')
+                ->limit(30)
+                ->get()
+            : collect();
         $products = $matchingProducts->merge($selectedProducts);
         $lastCustomerPrices = $this->customer_id !== null && count($selectedProductIds) <= 100
             && app(ReportingGuard::class)->allows($company, ['reports.sales.view', 'sales.invoice.view'], $user)

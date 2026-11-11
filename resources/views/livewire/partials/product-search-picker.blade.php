@@ -5,51 +5,10 @@
     'searchResults' => [],
 ])
 
-<div x-data="{
-    open: false,
-    activeIndex: 0,
-    init() {
-        this.$watch('$wire.searchResults', (val) => {
-            if (val && val.length > 0) {
-                this.open = true;
-                this.activeIndex = 0;
-            }
-        });
-    },
-    selectNext() {
-        const count = ($wire.searchResults || []).length;
-        if (count > 0) {
-            this.activeIndex = (this.activeIndex + 1) % count;
-            this.scrollToActive();
-        }
-    },
-    selectPrev() {
-        const count = ($wire.searchResults || []).length;
-        if (count > 0) {
-            this.activeIndex = (this.activeIndex - 1 + count) % count;
-            this.scrollToActive();
-        }
-    },
-    selectCurrent() {
-        const results = $wire.searchResults || [];
-        if (results.length > 0 && results[this.activeIndex]) {
-            const item = results[this.activeIndex];
-            $wire.addProduct(item.id, item.default_unit_id);
-            this.open = false;
-        } else {
-            $wire.addSelectedProduct();
-            this.open = false;
-        }
-    },
-    scrollToActive() {
-        this.$nextTick(() => {
-            const el = this.$refs.resultsList?.querySelector(`[data-index='${this.activeIndex}']`);
-            if (el) {
-                el.scrollIntoView({ block: 'nearest' });
-            }
-        });
-    }
-}" @click.outside="open = false" @product-added.window="open = false" class="relative">
+<div x-data="productPickerComponent({ prefix: '{{ $prefix }}', context: '{{ $context }}' })"
+     x-on:click.outside="close()"
+     x-on:product-added.window="close()"
+     class="relative">
     <label for="{{ $prefix }}-product-search" class="block text-sm font-bold text-text-primary mb-1">
         {{ $context === 'purchasing' ? __('purchasing.search_products') : __('sales.search_products') }}
     </label>
@@ -58,22 +17,29 @@
         <div class="relative flex min-w-0 flex-1 items-center rounded-control border border-border bg-canvas focus-within:border-primary focus-within:ring-1 focus-within:ring-primary">
             <input id="{{ $prefix }}-product-search"
                    type="search"
+                   role="combobox"
+                   aria-autocomplete="list"
+                   aria-haspopup="listbox"
+                   :aria-expanded="open"
+                   aria-controls="{{ $prefix }}-product-listbox"
+                   :aria-activedescendant="open && activeIndex >= 0 ? '{{ $prefix }}-option-' + activeIndex : null"
                    maxlength="160"
                    autocomplete="off"
                    wire:model.live.debounce.250ms="productSearch"
-                   x-on:focus="if (($wire.searchResults || []).length > 0) open = true"
+                   x-on:focus="onFocus()"
+                   x-on:blur="onBlur()"
                    x-on:keydown.down.prevent="selectNext()"
                    x-on:keydown.up.prevent="selectPrev()"
                    x-on:keydown.enter.prevent="selectCurrent()"
-                   x-on:keydown.escape="open = false"
+                   x-on:keydown.escape.prevent="close()"
                    placeholder="{{ $context === 'purchasing' ? __('purchasing.search_products') : __('sales.search_products_hint') }}"
                    class="min-w-0 w-full h-11 px-3 rounded-control border-0 bg-transparent text-sm text-text-primary focus:ring-0 outline-hidden"
                    :disabled="documentBusy || saving" />
 
             <button type="button"
                     x-show="$wire.productSearch && $wire.productSearch.length > 0"
-                    x-on:click="$wire.set('productSearch', ''); open = false;"
-                    class="p-1 text-text-muted hover:text-text-primary focus:outline-none cursor-pointer"
+                    x-on:click="clearSearch()"
+                    class="min-h-[44px] min-w-[44px] inline-flex items-center justify-center p-2 text-text-muted hover:text-text-primary focus:outline-none cursor-pointer"
                     aria-label="{{ __('common.clear') ?? 'Clear' }}">
                 <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
@@ -110,25 +76,29 @@
     @enderror
 
     <!-- Bounded Search Results Dropdown -->
-    <div x-show="open && (($wire.searchResults && $wire.searchResults.length > 0) || ($wire.productSearch && $wire.productSearch.trim().length > 0))"
+    <div id="{{ $prefix }}-product-listbox"
+         role="listbox"
+         tabindex="-1"
+         aria-label="{{ $context === 'purchasing' ? __('purchasing.search_products') : __('sales.search_products') }}"
+         x-show="open && $wire.productSearch && $wire.productSearch.trim().length > 0"
          x-cloak
-         x-transition:enter="transition ease-out duration-100"
+         x-transition:enter="transition ease-out duration-100 motion-reduce:transition-none"
          x-transition:enter-start="opacity-0 scale-95"
          x-transition:enter-end="opacity-100 scale-100"
-         x-transition:leave="transition ease-in duration-75"
+         x-transition:leave="transition ease-in duration-75 motion-reduce:transition-none"
          x-transition:leave-start="opacity-100 scale-100"
          x-transition:leave-end="opacity-0 scale-95"
          class="absolute z-40 left-0 right-0 mt-1.5 bg-surface rounded-card border border-border shadow-lg overflow-hidden max-h-80 flex flex-col">
 
         @if(!empty($searchResults))
-            <ul x-ref="resultsList" role="listbox" class="overflow-y-auto divide-y divide-border p-0 m-0">
+            <ul x-ref="resultsList" class="overflow-y-auto divide-y divide-border p-0 m-0 list-none">
                 @foreach ($searchResults as $idx => $candidate)
-                    <li role="option"
-                        aria-selected="{{ $idx === 0 ? 'true' : 'false' }}"
+                    <li id="{{ $prefix }}-option-{{ $idx }}"
+                        role="option"
+                        :aria-selected="activeIndex === {{ $idx }}"
                         data-index="{{ $idx }}">
                         <button type="button"
-                                wire:click="addProduct({{ $candidate['id'] }}, {{ $candidate['default_unit_id'] ?? 'null' }})"
-                                x-on:click="open = false"
+                                x-on:click="addCandidate({{ $candidate['id'] }}, {{ $candidate['default_unit_id'] ?? 'null' }})"
                                 x-on:mouseenter="activeIndex = {{ $idx }}"
                                 :class="{'bg-primary/10 border-s-4 border-primary': activeIndex === {{ $idx }}}"
                                 class="w-full text-start p-2.5 min-h-[44px] hover:bg-surface-soft flex items-center justify-between gap-3 cursor-pointer transition-colors outline-hidden">
@@ -184,7 +154,7 @@
                     </li>
                 @endforeach
             </ul>
-        @elseif(!empty(trim($productSearch)))
+        @else
             <div role="status" class="p-4 text-center text-sm text-text-secondary">
                 {{ $context === 'purchasing' ? __('purchasing.no_matching_products') : __('sales.no_matching_products') }}
             </div>

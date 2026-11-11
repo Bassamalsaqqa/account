@@ -1,133 +1,152 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { productPickerComponent } from '../../resources/js/product-search-picker.js';
 
-function createPickerFixture(initialResults = []) {
-    let addProductCalls = [];
-    let addSelectedProductCalls = [];
+function createPickerInstance(initialResults = [], initialQuery = '') {
+    const addProductCalls = [];
+    const addSelectedProductCalls = [];
+    const watchers = {};
 
     const wire = {
         searchResults: initialResults,
-        productSearch: '',
+        productSearch: initialQuery,
         addProduct(id, unitId) {
             addProductCalls.push({ id, unitId });
         },
         addSelectedProduct() {
             addSelectedProductCalls.push(true);
         },
+        set(prop, val) {
+            this[prop] = val;
+            if (watchers[`$wire.${prop}`]) {
+                watchers[`$wire.${prop}`](val);
+            }
+        },
     };
 
-    const state = {
-        open: false,
-        activeIndex: 0,
-        wire,
-        $refs: {
-            resultsList: {
-                querySelector(selector) {
-                    return { scrollIntoView() {} };
-                },
+    const instance = productPickerComponent({ prefix: 'test-picker', context: 'sales' });
+
+    instance.$wire = wire;
+    instance.$refs = {
+        resultsList: {
+            querySelector() {
+                return { scrollIntoView() {} };
             },
         },
-        $nextTick(fn) {
-            fn();
-        },
-        $watch(expr, callback) {
-            this._watcher = callback;
-        },
-        init() {
-            if (this.wire.searchResults && this.wire.searchResults.length > 0) {
-                this.open = true;
-                this.activeIndex = 0;
-            }
-        },
-        selectNext() {
-            const count = (this.wire.searchResults || []).length;
-            if (count > 0) {
-                this.activeIndex = (this.activeIndex + 1) % count;
-                this.scrollToActive();
-            }
-        },
-        selectPrev() {
-            const count = (this.wire.searchResults || []).length;
-            if (count > 0) {
-                this.activeIndex = (this.activeIndex - 1 + count) % count;
-                this.scrollToActive();
-            }
-        },
-        selectCurrent() {
-            const results = this.wire.searchResults || [];
-            if (results.length > 0 && results[this.activeIndex]) {
-                const item = results[this.activeIndex];
-                this.wire.addProduct(item.id, item.default_unit_id);
-                this.open = false;
-            } else {
-                this.wire.addSelectedProduct();
-                this.open = false;
-            }
-        },
-        scrollToActive() {},
+    };
+    instance.$nextTick = (fn) => fn();
+    instance.$watch = (expr, cb) => {
+        watchers[expr] = cb;
     };
 
-    state.init();
-    return { state, wire, addProductCalls, addSelectedProductCalls };
+    instance.init();
+
+    return {
+        instance,
+        wire,
+        watchers,
+        addProductCalls,
+        addSelectedProductCalls,
+        setSearchResults(results) {
+            wire.searchResults = results;
+            if (watchers['$wire.searchResults']) {
+                watchers['$wire.searchResults'](results);
+            }
+        },
+        setProductSearch(term) {
+            wire.productSearch = term;
+            if (watchers['$wire.productSearch']) {
+                watchers['$wire.productSearch'](term);
+            }
+        },
+    };
 }
 
-test('keyboard navigation cycles active index through search results', () => {
+test('shipped controller keyboard navigation cycles active index through search results', () => {
     const results = [
         { id: 101, default_unit_id: 1, name_ar: 'قهوة' },
         { id: 102, default_unit_id: 2, name_ar: 'شاي' },
         { id: 103, default_unit_id: 3, name_ar: 'سكر' },
     ];
 
-    const { state } = createPickerFixture(results);
-    assert.equal(state.open, true);
-    assert.equal(state.activeIndex, 0);
+    const { instance, setProductSearch, setSearchResults } = createPickerInstance([], '');
+    assert.equal(instance.open, false);
+    assert.equal(instance.activeIndex, -1);
+
+    // Typing a query with results opens picker and highlights first item (index 0)
+    setProductSearch('قهوة');
+    setSearchResults(results);
+    assert.equal(instance.open, true);
+    assert.equal(instance.activeIndex, 0);
 
     // Arrow Down moves to index 1
-    state.selectNext();
-    assert.equal(state.activeIndex, 1);
+    instance.selectNext();
+    assert.equal(instance.activeIndex, 1);
 
     // Arrow Down moves to index 2
-    state.selectNext();
-    assert.equal(state.activeIndex, 2);
+    instance.selectNext();
+    assert.equal(instance.activeIndex, 2);
 
     // Arrow Down wraps around to index 0
-    state.selectNext();
-    assert.equal(state.activeIndex, 0);
+    instance.selectNext();
+    assert.equal(instance.activeIndex, 0);
 
     // Arrow Up wraps to index 2
-    state.selectPrev();
-    assert.equal(state.activeIndex, 2);
+    instance.selectPrev();
+    assert.equal(instance.activeIndex, 2);
 
     // Arrow Up moves to index 1
-    state.selectPrev();
-    assert.equal(state.activeIndex, 1);
+    instance.selectPrev();
+    assert.equal(instance.activeIndex, 1);
 });
 
-test('selectCurrent adds highlighted item when candidates exist', () => {
+test('shipped controller selectCurrent adds highlighted item when candidates exist', () => {
     const results = [
         { id: 101, default_unit_id: 1, name_ar: 'قهوة' },
         { id: 102, default_unit_id: 5, name_ar: 'هيل' },
     ];
 
-    const { state, addProductCalls } = createPickerFixture(results);
-    state.selectNext(); // highlight index 1
-    state.selectCurrent();
+    const { instance, setProductSearch, setSearchResults, addProductCalls } = createPickerInstance([], '');
+    setProductSearch('هيل');
+    setSearchResults(results);
 
-    assert.equal(state.open, false);
+    instance.selectNext(); // highlight index 1
+    instance.selectCurrent();
+
+    assert.equal(instance.open, false);
+    assert.equal(instance.activeIndex, -1);
     assert.equal(addProductCalls.length, 1);
     assert.deepEqual(addProductCalls[0], { id: 102, unitId: 5 });
 });
 
-test('selectCurrent invokes addSelectedProduct when candidates array is empty', () => {
-    const { state, addSelectedProductCalls } = createPickerFixture([]);
-    state.selectCurrent();
+test('shipped controller empty results opens and displays empty state without getting stuck', () => {
+    const { instance, setProductSearch, setSearchResults } = createPickerInstance([], '');
 
-    assert.equal(state.open, false);
-    assert.equal(addSelectedProductCalls.length, 1);
+    // User types query that returns 0 results
+    setProductSearch('منتج_غير_موجود');
+    setSearchResults([]);
+
+    // Dropdown MUST open so user sees "No matching products", with activeIndex -1 (no selection)
+    assert.equal(instance.open, true);
+    assert.equal(instance.activeIndex, -1);
 });
 
-test('empty initial results starts closed', () => {
-    const { state } = createPickerFixture([]);
-    assert.equal(state.open, false);
-    assert.equal(state.activeIndex, 0);
+test('shipped controller clearing search input resets open state and active index', () => {
+    const { instance, setProductSearch, setSearchResults } = createPickerInstance([], '');
+
+    setProductSearch('قهوة');
+    setSearchResults([{ id: 101, default_unit_id: 1, name_ar: 'قهوة' }]);
+    assert.equal(instance.open, true);
+
+    // Clearing search closes dropdown
+    instance.clearSearch();
+    assert.equal(instance.open, false);
+    assert.equal(instance.activeIndex, -1);
+    assert.equal(instance.$wire.productSearch, '');
+});
+
+test('shipped controller empty initial query starts closed with activeIndex -1', () => {
+    const { instance } = createPickerInstance([], '');
+    assert.equal(instance.open, false);
+    assert.equal(instance.activeIndex, -1);
 });
