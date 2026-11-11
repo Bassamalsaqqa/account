@@ -34,6 +34,7 @@ use App\Models\Warehouse;
 use App\Services\Money\EligibleMoneyAccounts;
 use App\Services\Sales\SalesActorGuard;
 use App\Services\Sales\SalesProductSelection;
+use App\Services\Search\BoundedProductSearchService;
 use App\Support\InvoiceConfirmation;
 use App\Support\Tenancy\CompanyContext;
 use Brick\Math\BigDecimal;
@@ -121,6 +122,11 @@ class InvoiceForm extends Component
     public string $customerSearch = '';
 
     public string $productSearch = '';
+
+    /** @var list<array<string, mixed>> */
+    public array $searchResults = [];
+
+    public int $searchSelectedIndex = 0;
 
     #[Locked]
     public int $pageCompanyId;
@@ -502,6 +508,152 @@ class InvoiceForm extends Component
         $this->resetErrorBag('barcodeSearch');
         $this->recalculate();
         $this->dispatch('barcode-scanned');
+    }
+
+    public function updatedProductSearch(): void
+    {
+        $term = trim($this->productSearch);
+        if ($term === '') {
+            $this->searchResults = [];
+            $this->searchSelectedIndex = 0;
+
+            return;
+        }
+
+        $user = auth()->user();
+        if (! $user) {
+            $this->searchResults = [];
+
+            return;
+        }
+
+        $this->searchResults = app(BoundedProductSearchService::class)->search(
+            $this->pageCompanyId,
+            $user,
+            $term,
+            'sales',
+            $this->warehouse_id,
+            $this->currency_code,
+            $this->exchange_rate,
+            30
+        );
+        $this->searchSelectedIndex = 0;
+    }
+
+    public function addProduct(int $productId, ?int $unitId = null): void
+    {
+        $context = app(CompanyContext::class);
+        abort_unless(auth()->check() && $context->hasCompany() && (int) $context->companyId() === (int) $this->pageCompanyId, 403);
+        $user = auth()->user();
+        abort_unless($user->hasPermissionTo($this->isEditing ? 'sales.invoice.edit_draft' : 'sales.invoice.create'), 403);
+
+        if ($this->showPreview) {
+            $this->cancelPreview();
+        }
+
+        try {
+            $selected = app(SalesProductSelection::class)->select(
+                $productId,
+                $unitId,
+                $this->currency_code,
+                $this->exchange_rate,
+                $this->warehouse_id
+            );
+        } catch (\Throwable) {
+            $this->addError('productSearch', __('commands.code_validation_failed'));
+
+            return;
+        }
+
+        $selectedUnitId = (int) $selected['product_unit_id'];
+        $selectedPrice = (string) $selected['unit_price'];
+        $selectedDescription = (string) $selected['item_description'];
+
+        $existingIndex = null;
+        foreach ($this->lines as $idx => $line) {
+            $linePid = ! empty($line['product_id']) ? (int) $line['product_id'] : null;
+            $lineUnitId = ! empty($line['product_unit_id']) ? (int) $line['product_unit_id'] : null;
+            $linePrice = (string) ($line['unit_price']);
+            $lineDesc = (string) ($line['item_description']);
+            $discountType = $line['discount_type'];
+            $taxRateId = $line['tax_rate_id'] ?? null;
+
+            if ($linePid === $productId
+                && $lineUnitId === $selectedUnitId
+                && $linePrice === $selectedPrice
+                && $lineDesc === $selectedDescription
+                && $discountType === 'none'
+                && empty($taxRateId)
+            ) {
+                $existingIndex = $idx;
+                break;
+            }
+        }
+
+        if ($existingIndex !== null) {
+            if (! is_string($this->lines[$existingIndex]['quantity']) || preg_match('/^\d+(?:\.\d{1,6})?$/D', $this->lines[$existingIndex]['quantity']) !== 1) {
+                $this->addError("lines.{$existingIndex}.quantity", __('commands.exact_string_required'));
+
+                return;
+            }
+            $curQty = BigDecimal::of((string) ($this->lines[$existingIndex]['quantity'] ?: '0'));
+            $this->lines[$existingIndex]['quantity'] = (string) $curQty->plus(1);
+        } else {
+            $isTrulyEmptyFirstRow = count($this->lines) === 1
+                && empty($this->lines[0]['product_id'])
+                && trim((string) ($this->lines[0]['item_description'])) === ''
+                && in_array((string) ($this->lines[0]['quantity']), ['1', '1.000000', '1.00', ''], true)
+                && in_array((string) ($this->lines[0]['unit_price']), ['0', '0.00', '0.000000', ''], true)
+                && (($this->lines[0]['discount_type']) === 'none')
+                && empty($this->lines[0]['tax_rate_id']);
+
+            $newLine = [
+                'product_id' => $productId,
+                'product_unit_id' => $selectedUnitId,
+                'item_description' => $selectedDescription,
+                'quantity' => '1',
+                'unit_price' => $selectedPrice,
+                'discount_type' => 'none',
+                'discount_value' => '0',
+                'tax_rate_id' => null,
+                'available_quantity' => $selected['available_quantity'] ?? null,
+                'subtotal' => '0.00',
+                'discount_amount' => '0.00',
+                'tax_amount' => '0.00',
+                'line_total' => '0.00',
+            ];
+
+            if ($isTrulyEmptyFirstRow) {
+                $this->lines[0] = $newLine;
+            } else {
+                $this->lines[] = $newLine;
+            }
+        }
+
+        $this->productSearch = '';
+        $this->searchResults = [];
+        $this->searchSelectedIndex = 0;
+        $this->resetErrorBag('productSearch');
+        $this->recalculate();
+        $this->dispatch('product-added');
+    }
+
+    public function addSelectedProduct(): void
+    {
+        if (! empty($this->searchResults) && isset($this->searchResults[$this->searchSelectedIndex])) {
+            $candidate = $this->searchResults[$this->searchSelectedIndex];
+            $this->addProduct((int) $candidate['id'], $candidate['default_unit_id'] ?? null);
+
+            return;
+        }
+
+        $term = trim($this->productSearch);
+        if ($term !== '') {
+            $this->barcodeSearch = $term;
+            $this->scanBarcode();
+            $this->productSearch = '';
+            $this->searchResults = [];
+        }
     }
 
     public function addLine(): void
@@ -1216,13 +1368,7 @@ class InvoiceForm extends Component
         }
         $currencies = $company->currencies()->where('enabled', true)->get();
         $warehouses = Warehouse::where('company_id', $company->id)->where('active', true)->get();
-        $term = mb_substr(trim($this->productSearch), 0, 160);
-        $productsQuery = Product::where('company_id', $company->id)->where('active', true);
-        if ($term !== '') {
-            $productsQuery->where(fn ($query) => $query->where('name_ar', 'like', "%{$term}%")
-                ->orWhere('name_en', 'like', "%{$term}%")->orWhere('sku', 'like', "%{$term}%")
-                ->orWhereHas('barcodes', fn ($barcodes) => $barcodes->where('company_id', $company->id)->where('barcode', $term)));
-        }
+        $productsQuery = app(BoundedProductSearchService::class)->searchProductsQuery($company->id, $this->productSearch, 'sales');
         $selectedProductIds = collect($this->lines)->pluck('product_id')->filter()->unique()->values()->all();
         $selectedProducts = Product::with(['productUnits.unit', 'baseUnit'])->where('company_id', $company->id)
             ->whereIn('id', $selectedProductIds)->get();
@@ -1247,6 +1393,7 @@ class InvoiceForm extends Component
             'warehouses' => $warehouses,
             'products' => $products,
             'productMatchCount' => $matchingProducts->count(),
+            'searchResults' => $this->searchResults,
             'taxes' => $taxes,
             'canChangePrice' => $canChangePrice,
             'canChangeDiscount' => $canChangeDiscount,
