@@ -68,7 +68,7 @@ final class CustomerDirectoryTest extends TestCase
     {
         $raw = 'st_m_'.bin2hex(random_bytes(32));
         $deviceId = (string) Str::uuid();
-        MobileDevice::create(['device_id' => $deviceId, 'device_name' => 'Tablet']);
+        MobileDevice::create(['device_id' => $deviceId, 'device_name' => 'Tablet', 'user_id' => $this->user->id]);
 
         MobileAccessToken::create([
             'token_hash' => hash('sha256', $raw),

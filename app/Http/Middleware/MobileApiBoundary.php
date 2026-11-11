@@ -4,15 +4,19 @@ declare(strict_types=1);
 
 namespace App\Http\Middleware;
 
+use App\Support\Mobile\WireResponse;
+use App\Support\Tenancy\CompanyContext;
 use Closure;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Auth\AuthenticationException;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
+use Illuminate\Http\Exceptions\HttpResponseException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Validation\ValidationException;
+use Spatie\Permission\PermissionRegistrar;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 use Symfony\Component\HttpKernel\Exception\MethodNotAllowedHttpException;
@@ -29,6 +33,18 @@ final class MobileApiBoundary
      * Handle an incoming request for Mobile V1 API.
      */
     public function handle(Request $request, Closure $next): Response
+    {
+        $context = app(CompanyContext::class);
+        $context->clear();
+        app(PermissionRegistrar::class)->forgetCachedPermissions();
+        try {
+            return $this->handleMobile($request, $next);
+        } finally {
+            $context->clear();
+        }
+    }
+
+    private function handleMobile(Request $request, Closure $next): Response
     {
         // 1. Inspect ONLY path api/mobile/v1 or api/mobile/v1/*; all other paths pass untouched
         if (! $request->is('api/mobile/v1') && ! $request->is('api/mobile/v1/*')) {
@@ -133,6 +149,20 @@ final class MobileApiBoundary
             $response = self::renderException($e);
         }
 
+        $schema = match ($request->route()?->getName()) {
+            'mobile.v1.auth.challenge' => 'auth-challenge-response',
+            'mobile.v1.auth.login' => 'auth-login-response',
+            'mobile.v1.auth.logout' => 'auth-logout-response',
+            'mobile.v1.devices.revoke' => 'device-revoke-response',
+            'mobile.v1.bootstrap' => 'bootstrap-response',
+            'mobile.v1.products.index' => 'product-catalog-response',
+            'mobile.v1.customers.index' => 'customer-directory-response',
+            default => null,
+        };
+        if ($response->isSuccessful() && $schema !== null && ! WireResponse::accepts(json_decode((string) $response->getContent()), $schema)) {
+            $response = self::buildErrorResponse(code: 'CONTRACT_INCOMPATIBLE', message: 'Existing data cannot be represented by the frozen Mobile V1 contract.', status: 409);
+        }
+
         // 9. Standardize downstream error response shapes to error-response.json
         if ($response->getStatusCode() >= 400) {
             $response = self::standardizeErrorResponse($response);
@@ -211,6 +241,9 @@ final class MobileApiBoundary
      */
     public static function renderException(Throwable $e): JsonResponse
     {
+        if ($e instanceof HttpResponseException && $e->getResponse() instanceof JsonResponse) {
+            return $e->getResponse();
+        }
         if ($e instanceof AuthenticationException) {
             return self::buildErrorResponse(
                 code: 'UNAUTHENTICATED',

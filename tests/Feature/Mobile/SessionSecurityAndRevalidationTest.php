@@ -134,7 +134,7 @@ final class SessionSecurityAndRevalidationTest extends TestCase
     private function issueToken(string $deviceId): string
     {
         $raw = 'st_m_'.bin2hex(random_bytes(32));
-        MobileDevice::firstOrCreate(['device_id' => $deviceId], ['device_name' => 'Tablet']);
+        MobileDevice::firstOrCreate(['device_id' => $deviceId], ['device_name' => 'Tablet', 'user_id' => $this->user->id]);
 
         MobileAccessToken::create([
             'token_hash' => hash('sha256', $raw),
@@ -171,7 +171,7 @@ final class SessionSecurityAndRevalidationTest extends TestCase
         // Verify token works initially
         $resp1 = $this->withHeader('Authorization', "Bearer {$token}")
             ->getJson("/api/mobile/v1/companies/{$this->companyA->public_id}/bootstrap");
-        $resp1->assertStatus(200);
+        $resp1->assertStatus(409)->assertJsonPath('error.code', 'BOOTSTRAP_CONFIG_UNSUPPORTED');
 
         // User changes password
         $this->user->update(['password' => Hash::make('new-secure-password')]);

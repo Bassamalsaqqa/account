@@ -10,7 +10,6 @@ use App\Models\Company;
 use App\Models\CompanyMobileSetting;
 use App\Models\Customer;
 use App\Models\User;
-use App\Support\Tenancy\CompanyContext;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -22,9 +21,9 @@ final class CustomerController extends Controller
     public function index(Request $request, string $companyId): JsonResponse
     {
         /** @var Company $company */
-        $company = $request->attributes->get('mobile_company') ?? app(CompanyContext::class)->company();
+        $company = $request->attributes->get('mobile_company');
         /** @var User $user */
-        $user = $request->attributes->get('mobile_user') ?? auth()->user();
+        $user = $request->attributes->get('mobile_user');
 
         // 1. Authorize permission
         if (! $this->canReadCustomers($user, $company)) {
@@ -95,8 +94,7 @@ final class CustomerController extends Controller
             $isWalkIn = false;
             if ($walkInCustomerId !== null && (int) $customer->id === (int) $walkInCustomerId) {
                 $isWalkIn = true;
-            } elseif (in_array(strtoupper((string) $customer->code), ['CUST-WALK-IN', 'WALK-IN'], true)) {
-                $isWalkIn = true;
+
             }
 
             $code = $customer->code;
@@ -131,10 +129,6 @@ final class CustomerController extends Controller
      */
     private function canReadCustomers(User $user, Company $company): bool
     {
-        if ($user->hasRole('Owner') || $user->hasRole('Admin') || $user->hasRole('Manager')) {
-            return true;
-        }
-
-        return $user->hasPermissionTo('customers.view') || $user->hasPermissionTo('sales.invoice.view');
+        return $user->hasPermissionTo('customers.view');
     }
 }

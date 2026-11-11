@@ -149,7 +149,7 @@ final class BootstrapTest extends TestCase
     {
         $raw = 'st_m_'.bin2hex(random_bytes(32));
         $deviceId = (string) Str::uuid();
-        MobileDevice::create(['device_id' => $deviceId, 'device_name' => 'Tablet']);
+        MobileDevice::create(['device_id' => $deviceId, 'device_name' => 'Tablet', 'user_id' => $this->user->id]);
 
         MobileAccessToken::create([
             'token_hash' => hash('sha256', $raw),
@@ -163,75 +163,12 @@ final class BootstrapTest extends TestCase
         return $raw;
     }
 
-    public function test_bootstrap_returns_valid_structure_matching_schema(): void
+    public function test_bootstrap_is_unavailable_without_approved_policy_even_with_complete_mappings(): void
     {
         $token = $this->issueToken();
-
-        $response = $this->withHeader('Authorization', "Bearer {$token}")
-            ->getJson("/api/mobile/v1/companies/{$this->company->public_id}/bootstrap");
-
-        $response->assertStatus(200)
-            ->assertHeader('Cache-Control', 'must-revalidate, no-cache, no-store, private');
-
-        $data = $response->json();
-
-        // 1. Identifiers and Strings
-        $this->assertSame($this->company->public_id, $data['company_id']);
-        $this->assertNotEmpty($data['company_name']);
-        $this->assertSame('ILS', $data['base_currency']);
-        $this->assertSame($this->customer->public_id, $data['walk_in_customer_id']);
-
-        // 2. Staff Profile
-        $this->assertSame($this->user->public_id, $data['staff']['id']);
-        $this->assertSame('cashier', $data['staff']['role']);
-        $this->assertIsArray($data['staff']['permissions']);
-
-        // 3. Device Lease is strictly null when offline_policy.enabled is false
-        $this->assertNull($data['device_lease']);
-
-        // 4. Warehouse & Cash Account
-        $this->assertSame($this->warehouse->public_id, $data['default_warehouse']['id']);
-        $this->assertSame('WH-MAIN', $data['default_warehouse']['code']);
-        $this->assertSame($this->cashAccount->public_id, $data['approved_cash_account']['id']);
-        $this->assertSame('ILS', $data['approved_cash_account']['currency']);
-
-        // 5. Units
-        $this->assertNotEmpty($data['units']);
-        $this->assertSame($this->unit->public_id, $data['units'][0]['id']);
-        $this->assertSame('PCS', $data['units'][0]['code']);
-        $this->assertFalse($data['units'][0]['allows_fraction']);
-        $this->assertSame(0, $data['units'][0]['decimal_places']);
-
-        // 6. Taxes (exact 6-decimal string rate and boolean is_default)
-        $this->assertNotEmpty($data['taxes']);
-        $this->assertSame($this->taxRate->public_id, $data['taxes'][0]['id']);
-        $this->assertSame('16.000000', $data['taxes'][0]['rate']);
-        $this->assertSame('exclusive', $data['taxes'][0]['calculation']);
-        $this->assertTrue($data['taxes'][0]['is_default']);
-
-        // 7. Offline Policy
-        $this->assertFalse($data['offline_policy']['enabled']);
-        $this->assertTrue($data['offline_policy']['cash_only']);
-        $this->assertSame(12, $data['offline_policy']['max_offline_hours']);
-        $this->assertSame(50, $data['offline_policy']['max_offline_sales_count']);
-        $this->assertSame('5000.000000', $data['offline_policy']['max_offline_total_amount']);
-
-        // 8. Snapshot Version
-        $this->assertSame('snap-20261110-v1', $data['catalog_snapshot_version']);
-    }
-
-    public function test_bootstrap_truthfully_fails_when_walk_in_customer_is_not_configured(): void
-    {
-        // Remove walk-in customer configuration
-        CompanyMobileSetting::where('company_id', $this->company->id)->update(['walk_in_customer_id' => null]);
-        $this->customer->update(['code' => 'CUST-REGULAR']);
-
-        $token = $this->issueToken();
-
-        $response = $this->withHeader('Authorization', "Bearer {$token}")
-            ->getJson("/api/mobile/v1/companies/{$this->company->public_id}/bootstrap");
-
-        $response->assertStatus(409)
-            ->assertJsonPath('error.code', 'BOOTSTRAP_CONFIG_INCOMPLETE');
+        $this->withHeader('Authorization', "Bearer {$token}")
+            ->getJson("/api/mobile/v1/companies/{$this->company->public_id}/bootstrap")
+            ->assertStatus(409)->assertJsonPath('error.code', 'BOOTSTRAP_CONFIG_UNSUPPORTED')
+            ->assertJsonMissingPath('offline_policy')->assertJsonMissingPath('device_lease');
     }
 }

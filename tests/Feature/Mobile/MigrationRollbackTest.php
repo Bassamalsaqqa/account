@@ -20,19 +20,15 @@ final class MigrationRollbackTest extends TestCase
         $this->assertTrue(Schema::hasTable('mobile_auth_challenges'));
         $this->assertTrue(Schema::hasTable('mobile_access_tokens'));
         $this->assertTrue(Schema::hasTable('company_mobile_settings'));
-        $this->assertTrue(Schema::hasColumn('products', 'tax_rate_id'));
-        $this->assertTrue(Schema::hasColumn('products', 'barcode'));
-
-        // 2. Rollback the last migration
-        $status = Artisan::call('migrate:rollback', ['--step' => 1]);
-        $this->assertSame(0, $status);
-
-        $this->assertFalse(Schema::hasTable('mobile_devices'));
-        $this->assertFalse(Schema::hasTable('mobile_auth_challenges'));
-        $this->assertFalse(Schema::hasTable('mobile_access_tokens'));
-        $this->assertFalse(Schema::hasTable('company_mobile_settings'));
         $this->assertFalse(Schema::hasColumn('products', 'tax_rate_id'));
         $this->assertFalse(Schema::hasColumn('products', 'barcode'));
+
+        $this->assertTrue(Schema::hasColumn('mobile_devices', 'user_id'));
+        $status = Artisan::call('migrate:rollback', ['--step' => 1]);
+        $this->assertSame(0, $status);
+        $this->assertFalse(Schema::hasColumn('mobile_devices', 'user_id'));
+        $this->assertTrue(Schema::hasColumn('products', 'tax_rate_id'));
+        $this->assertTrue(Schema::hasColumn('products', 'barcode'));
 
         // 3. Re-migrate forward
         $reStatus = Artisan::call('migrate');
@@ -42,7 +38,7 @@ final class MigrationRollbackTest extends TestCase
         $this->assertTrue(Schema::hasTable('mobile_auth_challenges'));
         $this->assertTrue(Schema::hasTable('mobile_access_tokens'));
         $this->assertTrue(Schema::hasTable('company_mobile_settings'));
-        $this->assertTrue(Schema::hasColumn('products', 'tax_rate_id'));
-        $this->assertTrue(Schema::hasColumn('products', 'barcode'));
+        $this->assertFalse(Schema::hasColumn('products', 'tax_rate_id'));
+        $this->assertFalse(Schema::hasColumn('products', 'barcode'));
     }
 }

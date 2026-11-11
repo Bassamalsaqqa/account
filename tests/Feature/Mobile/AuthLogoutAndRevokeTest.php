@@ -54,7 +54,7 @@ final class AuthLogoutAndRevokeTest extends TestCase
     private function issueToken(User $user, string $deviceId): string
     {
         $raw = 'st_m_'.bin2hex(random_bytes(32));
-        MobileDevice::firstOrCreate(['device_id' => $deviceId], ['device_name' => 'Tablet']);
+        MobileDevice::firstOrCreate(['device_id' => $deviceId], ['device_name' => 'Tablet', 'user_id' => $user->id]);
 
         MobileAccessToken::create([
             'token_hash' => hash('sha256', $raw),
@@ -130,7 +130,7 @@ final class AuthLogoutAndRevokeTest extends TestCase
             ->assertJsonPath('error.code', 'FORBIDDEN');
     }
 
-    public function test_admin_can_revoke_another_device(): void
+    public function test_admin_cannot_revoke_foreign_device(): void
     {
         $adminDeviceId = (string) Str::uuid();
         $cashierDeviceId = (string) Str::uuid();
@@ -143,11 +143,7 @@ final class AuthLogoutAndRevokeTest extends TestCase
                 'reason' => 'Administrator terminated compromised device',
             ]);
 
-        $response->assertStatus(200)
-            ->assertJsonPath('device_id', $cashierDeviceId)
-            ->assertJsonPath('status', 'revoked');
-
-        $cashierDevice = MobileDevice::where('device_id', $cashierDeviceId)->first();
-        $this->assertTrue($cashierDevice->isRevoked());
+        $response->assertForbidden();
+        $this->assertNull(MobileDevice::where('device_id', $cashierDeviceId)->firstOrFail()->revoked_at);
     }
 }

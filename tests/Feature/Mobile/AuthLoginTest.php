@@ -16,6 +16,8 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Str;
 use Laravel\Fortify\Contracts\TwoFactorAuthenticationProvider;
+use PragmaRX\Google2FA\Google2FA;
+use Symfony\Component\Process\Process;
 use Tests\TestCase;
 
 final class AuthLoginTest extends TestCase
@@ -99,6 +101,9 @@ final class AuthLoginTest extends TestCase
         $response->assertStatus(200)
             ->assertHeader('Cache-Control', 'must-revalidate, no-cache, no-store, private');
 
+        $validator = new Process(['python', base_path('tests/Support/Mobile/validate-response.py'), 'auth-login-response']);
+        $validator->setInput($response->getContent())->run();
+        $this->assertTrue($validator->isSuccessful(), $validator->getErrorOutput());
         $data = $response->json();
         $this->assertArrayHasKey('token', $data);
         $this->assertSame('Bearer', $data['token_type']);
@@ -122,7 +127,7 @@ final class AuthLoginTest extends TestCase
         $this->assertNotNull($tokenRecord);
         $this->assertSame(hash('sha256', $data['token']), $tokenRecord->token_hash);
         $this->assertNotSame($data['token'], $tokenRecord->token_hash);
-        $this->assertSame($this->company->id, $tokenRecord->company_id);
+        $this->assertNull($tokenRecord->company_id);
 
         // Verify device record created
         $deviceRecord = MobileDevice::where('device_id', $deviceId)->first();
@@ -218,7 +223,7 @@ final class AuthLoginTest extends TestCase
         ]);
 
         $response->assertStatus(401)
-            ->assertJsonPath('error.code', 'DEVICE_REVOKED');
+            ->assertJsonPath('error.code', 'INVALID_CREDENTIALS');
     }
 
     public function test_login_safe_generic_error_for_invalid_password_or_email(): void
@@ -282,10 +287,20 @@ final class AuthLoginTest extends TestCase
             'recovery_code' => null,
         ]);
 
-        $resp1->assertStatus(200)
-            ->assertJsonPath('status', 'MFA_REQUIRED');
-        $mfaChallengeId = $resp1->json('mfa_challenge_id');
-        $this->assertNotNull($mfaChallengeId);
+        $resp1->assertStatus(409)->assertJsonPath('error.code', 'MFA_RETRY_REQUIRED');
+        $this->assertSame(0, MobileAccessToken::count());
+        // The consumed challenge cannot be retried, even with a genuine TOTP.
+        $totp = app(Google2FA::class)->getCurrentOtp($secret);
+        $payload = [
+            'challenge_id' => $ch1['challenge_id'], 'nonce' => $ch1['nonce'],
+            'device_id' => $deviceId, 'device_name' => 'Tablet',
+            'email' => 'cashier@example.com', 'password' => $this->password, 'mfa_code' => $totp,
+        ];
+        $this->postJson('/api/mobile/v1/auth/login', $payload)->assertUnauthorized();
+        $fresh = $this->createChallenge($deviceId);
+        $payload['challenge_id'] = $fresh['challenge_id'];
+        $payload['nonce'] = $fresh['nonce'];
+        $this->postJson('/api/mobile/v1/auth/login', $payload)->assertOk()->assertJsonPath('token_type', 'Bearer');
 
         // 2. Mutual exclusion: submitting both mfa_code and recovery_code rejected with 422
         $chMutual = $this->createChallenge($deviceId);
@@ -331,5 +346,53 @@ final class AuthLoginTest extends TestCase
         ]);
         $respRec2->assertStatus(401)
             ->assertJsonPath('error.code', 'INVALID_CREDENTIALS');
+    }
+
+    public function test_recovery_consumption_rolls_back_if_token_creation_fails(): void
+    {
+        $this->user->forceFill(['two_factor_secret' => encrypt('JBSWY3DPEHPK3PXP'), 'two_factor_confirmed_at' => now(), 'two_factor_recovery_codes' => encrypt(json_encode(['ABCDEFGH-12345678']))])->save();
+        $device = (string) Str::uuid();
+        $challenge = $this->createChallenge($device);
+        MobileAccessToken::creating(function (): void {
+            throw new \RuntimeException('Injected token failure');
+        });
+        try {
+            $this->postJson('/api/mobile/v1/auth/login', [
+                'challenge_id' => $challenge['challenge_id'], 'nonce' => $challenge['nonce'],
+                'device_id' => $device, 'device_name' => 'Rollback', 'email' => $this->user->email,
+                'password' => $this->password, 'recovery_code' => 'ABCDEFGH-12345678',
+            ])->assertStatus(500);
+            $this->assertContains('ABCDEFGH-12345678', $this->user->fresh()->recoveryCodes());
+            $this->assertSame(0, MobileAccessToken::count());
+            $this->assertFalse(MobileDevice::where('device_id', $device)->exists());
+        } finally {
+            MobileAccessToken::flushEventListeners();
+        }
+    }
+
+    public function test_success_does_not_clear_interleaved_account_or_ip_failures(): void
+    {
+        $device = (string) Str::uuid();
+        foreach (['wrong-password', $this->password] as $password) {
+            $challenge = $this->createChallenge($device);
+            $this->postJson('/api/mobile/v1/auth/login', [
+                'challenge_id' => $challenge['challenge_id'], 'nonce' => $challenge['nonce'],
+                'device_id' => $device, 'device_name' => 'Tablet', 'email' => $this->user->email, 'password' => $password,
+            ])->assertStatus($password === $this->password ? 200 : 401);
+        }
+        $this->assertSame(1, RateLimiter::attempts('mobile_login_actor:'.hash('sha256', mb_strtolower($this->user->email))));
+        $this->assertSame(1, RateLimiter::attempts('mobile_login_ip:127.0.0.1'));
+    }
+
+    public function test_inactive_company_is_not_advertised_and_cannot_enable_login(): void
+    {
+        $this->company->update(['status' => 'inactive']);
+        $device = (string) Str::uuid();
+        $challenge = $this->createChallenge($device);
+        $this->postJson('/api/mobile/v1/auth/login', [
+            'challenge_id' => $challenge['challenge_id'], 'nonce' => $challenge['nonce'],
+            'device_id' => $device, 'device_name' => 'Tablet', 'email' => $this->user->email, 'password' => $this->password,
+        ])->assertUnauthorized()->assertJsonMissingPath('companies');
+        $this->assertSame(0, MobileAccessToken::count());
     }
 }

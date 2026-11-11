@@ -10,6 +10,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Carbon;
 
 /**
+ * @property int|null $user_id
  * @property int $id
  * @property string $device_id
  * @property string $device_name
@@ -28,6 +29,7 @@ class MobileDevice extends Model
      */
     protected $fillable = [
         'device_id',
+        'user_id',
         'device_name',
         'platform',
         'app_version',

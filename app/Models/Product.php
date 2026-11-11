@@ -45,8 +45,6 @@ class Product extends Model
         'minimum_stock_base',
         'default_purchase_cost_base',
         'default_sale_price_base',
-        'tax_rate_id',
-        'barcode',
         'active',
         'created_by',
         'updated_by',
@@ -163,14 +161,6 @@ class Product extends Model
     public function brand(): BelongsTo
     {
         return $this->belongsTo(Brand::class, 'brand_id');
-    }
-
-    /**
-     * @return BelongsTo<TaxRate, $this>
-     */
-    public function taxRate(): BelongsTo
-    {
-        return $this->belongsTo(TaxRate::class, 'tax_rate_id');
     }
 
     /**

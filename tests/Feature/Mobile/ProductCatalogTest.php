@@ -91,7 +91,7 @@ final class ProductCatalogTest extends TestCase
     {
         $raw = 'st_m_'.bin2hex(random_bytes(32));
         $deviceId = (string) Str::uuid();
-        MobileDevice::create(['device_id' => $deviceId, 'device_name' => 'Tablet']);
+        MobileDevice::create(['device_id' => $deviceId, 'device_name' => 'Tablet', 'user_id' => $this->user->id]);
 
         MobileAccessToken::create([
             'token_hash' => hash('sha256', $raw),
@@ -105,12 +105,11 @@ final class ProductCatalogTest extends TestCase
         return $raw;
     }
 
-    public function test_product_catalog_returns_valid_structure_matching_schema(): void
+    public function test_nonempty_catalog_rejects_unapproved_tax_mapping_and_redacts_costs(): void
     {
         $product = Product::create([
             'company_id' => $this->company->id,
             'sku' => 'SKU-OLIVE-OIL-1L',
-            'barcode' => '6291041001234',
             'name_ar' => 'زيت زيتون بكر ممتاز 1 لتر',
             'name_en' => 'Extra Virgin Olive Oil 1L',
             'product_type' => Product::TYPE_STOCK,
@@ -118,7 +117,6 @@ final class ProductCatalogTest extends TestCase
             'track_stock' => true,
             'default_sale_price_base' => '25.000000',
             'default_purchase_cost_base' => '18.000000', // Sensitive cost that MUST be redacted
-            'tax_rate_id' => $this->taxRate->id,
             'active' => true,
             'created_by' => $this->user->id,
         ]);
@@ -146,37 +144,7 @@ final class ProductCatalogTest extends TestCase
         $response = $this->withHeader('Authorization', "Bearer {$token}")
             ->getJson("/api/mobile/v1/companies/{$this->company->public_id}/products");
 
-        $response->assertStatus(200)
-            ->assertHeader('Cache-Control', 'must-revalidate, no-cache, no-store, private');
-
-        $data = $response->json();
-        $this->assertSame($this->company->public_id, $data['company_id']);
-        $this->assertFalse($data['has_more']);
-        $this->assertNull($data['next_cursor']);
-        $this->assertCount(1, $data['products']);
-
-        $item = $data['products'][0];
-        $this->assertSame($product->public_id, $item['id']);
-        $this->assertSame('SKU-OLIVE-OIL-1L', $item['sku']);
-        $this->assertSame('6291041001234', $item['barcode']);
-        $this->assertSame('25.000000', $item['unit_price']);
-        $this->assertSame('16.000000', $item['tax_rate']);
-        $this->assertSame($this->taxRate->public_id, $item['tax_rate_id']);
-        $this->assertTrue($item['is_tracked']);
-        $this->assertSame('142.000000', $item['available_quantity']);
-
-        // Default Unit: product_unit_id maps to unit's public_id
-        $this->assertSame($this->unitPiece->public_id, $item['default_unit']['unit_id']);
-        $this->assertSame($this->unitPiece->public_id, $item['default_unit']['product_unit_id']);
-        $this->assertSame('1.000000', $item['default_unit']['conversion_to_base']);
-        $this->assertSame('25.000000', $item['default_unit']['sale_price']);
-
-        // Units array
-        $this->assertCount(1, $item['units']);
-        $this->assertSame($this->unitPiece->public_id, $item['units'][0]['product_unit_id']);
-        $this->assertSame('PCS', $item['units'][0]['code']);
-        $this->assertTrue($item['units'][0]['is_base']);
-        $this->assertTrue($item['units'][0]['is_default_sale']);
+        $response->assertStatus(409)->assertJsonPath('error.code', 'CATALOG_CONFIG_UNSUPPORTED');
 
         // Strict Cost Redaction Check: no cost fields anywhere in response
         $rawContent = $response->getContent();
@@ -186,50 +154,14 @@ final class ProductCatalogTest extends TestCase
         $this->assertStringNotContainsString('cogs', $rawContent);
     }
 
-    public function test_product_catalog_bounded_pagination_and_search(): void
+    public function test_empty_catalog_is_schema_compatible_and_snapshot_is_deterministic(): void
     {
-        // Seed 35 products
-        for ($i = 1; $i <= 35; $i++) {
-            Product::create([
-                'company_id' => $this->company->id,
-                'sku' => sprintf('SKU-%04d', $i),
-                'name_ar' => "منتج رقم {$i}",
-                'product_type' => Product::TYPE_STOCK,
-                'base_unit_id' => $this->unitPiece->id,
-                'default_sale_price_base' => '10.000000',
-                'active' => true,
-                'created_by' => $this->user->id,
-            ]);
-        }
-
         $token = $this->issueToken();
-
-        // 1. Clamped limit: requesting 50 returns max 30
-        $response1 = $this->withHeader('Authorization', "Bearer {$token}")
-            ->getJson("/api/mobile/v1/companies/{$this->company->public_id}/products?limit=50");
-
-        $response1->assertStatus(200);
-        $data1 = $response1->json();
-        $this->assertCount(30, $data1['products']);
-        $this->assertTrue($data1['has_more']);
-        $this->assertNotNull($data1['next_cursor']);
-
-        // 2. Second page using next_cursor
-        $response2 = $this->withHeader('Authorization', "Bearer {$token}")
-            ->getJson("/api/mobile/v1/companies/{$this->company->public_id}/products?cursor={$data1['next_cursor']}");
-
-        $response2->assertStatus(200);
-        $data2 = $response2->json();
-        $this->assertCount(5, $data2['products']);
-        $this->assertFalse($data2['has_more']);
-        $this->assertNull($data2['next_cursor']);
-
-        // 3. Search filter
-        $responseSearch = $this->withHeader('Authorization', "Bearer {$token}")
-            ->getJson("/api/mobile/v1/companies/{$this->company->public_id}/products?search=SKU-0012");
-        $responseSearch->assertStatus(200);
-        $dataSearch = $responseSearch->json();
-        $this->assertCount(1, $dataSearch['products']);
-        $this->assertSame('SKU-0012', $dataSearch['products'][0]['sku']);
+        $first = $this->withHeader('Authorization', "Bearer {$token}")
+            ->getJson("/api/mobile/v1/companies/{$this->company->public_id}/products")->assertOk();
+        $second = $this->withHeader('Authorization', "Bearer {$token}")
+            ->getJson("/api/mobile/v1/companies/{$this->company->public_id}/products")->assertOk();
+        $this->assertSame($first->json('catalog_snapshot_version'), $second->json('catalog_snapshot_version'));
+        $first->assertJsonPath('products', []);
     }
 }

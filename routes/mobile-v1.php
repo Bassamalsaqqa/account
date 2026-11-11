@@ -33,9 +33,8 @@ Route::post('/devices/{deviceId}/revoke', [DeviceController::class, 'revoke'])
     ->name('mobile.v1.devices.revoke');
 
 Route::prefix('companies/{companyId}')
-    ->middleware(MobileAuthenticate::class)
     ->group(function (): void {
-        Route::get('/bootstrap', [BootstrapController::class, 'show'])->name('mobile.v1.bootstrap');
-        Route::get('/products', [ProductController::class, 'index'])->name('mobile.v1.products.index');
-        Route::get('/customers', [CustomerController::class, 'index'])->name('mobile.v1.customers.index');
+        Route::get('/bootstrap', [BootstrapController::class, 'show'])->middleware('mobile.auth:sales.invoice.create')->name('mobile.v1.bootstrap');
+        Route::get('/products', [ProductController::class, 'index'])->middleware('mobile.auth:product.viewAny')->name('mobile.v1.products.index');
+        Route::get('/customers', [CustomerController::class, 'index'])->middleware('mobile.auth:customers.view')->name('mobile.v1.customers.index');
     });

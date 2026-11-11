@@ -11,8 +11,11 @@ use App\Models\MobileAccessToken;
 use App\Models\MobileAuthChallenge;
 use App\Models\MobileDevice;
 use App\Models\User;
+use App\Support\Mobile\WireResponse;
+use Illuminate\Http\Exceptions\HttpResponseException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Str;
@@ -82,7 +85,7 @@ final class AuthController extends Controller
 
         $ip = (string) $request->ip();
         $ipKey = "mobile_login_ip:{$ip}";
-        $actorKey = 'mobile_login_actor:'.strtolower($payload['email']).':'.$payload['device_id'];
+        $actorKey = 'mobile_login_actor:'.hash('sha256', mb_strtolower(trim($payload['email'])));
 
         $maxIp = (int) config('mobile.rate_limits.login_attempts_per_minute', 10);
         if (RateLimiter::tooManyAttempts($ipKey, $maxIp) || RateLimiter::tooManyAttempts($actorKey, 5)) {
@@ -114,17 +117,6 @@ final class AuthController extends Controller
             );
         }
 
-        // 2. Check Device Revocation
-        /** @var MobileDevice|null $device */
-        $device = MobileDevice::where('device_id', $payload['device_id'])->first();
-        if ($device !== null && $device->isRevoked()) {
-            return MobileApiBoundary::buildErrorResponse(
-                code: 'DEVICE_REVOKED',
-                message: 'This device has been revoked.',
-                status: 401
-            );
-        }
-
         // 3. Atomically consume the challenge (single-use)
         if (! $challenge->consume()) {
             return MobileApiBoundary::buildErrorResponse(
@@ -134,181 +126,178 @@ final class AuthController extends Controller
             );
         }
 
-        // 4. Verify User and Password
-        /** @var User|null $user */
-        $user = User::where('email', $payload['email'])->first();
-        if ($user === null || ! Hash::check($payload['password'], (string) $user->password)) {
-            RateLimiter::hit($ipKey, 60);
-            RateLimiter::hit($actorKey, 60);
+        return DB::transaction(function () use ($payload, $challenge, $ipKey, $actorKey): JsonResponse {
+            // Lock order: user, device, token. Never issue against a stale credential revision.
+            // 4. Verify User and Password
+            /** @var User|null $user */
+            $user = User::where('email', $payload['email'])->lockForUpdate()->first();
+            if ($user === null || ! Hash::check($payload['password'], (string) $user->password)) {
+                RateLimiter::hit($ipKey, 60);
+                RateLimiter::hit($actorKey, 60);
 
-            return MobileApiBoundary::buildErrorResponse(
-                code: 'INVALID_CREDENTIALS',
-                message: 'Invalid credentials or challenge expired.',
-                status: 401
-            );
-        }
-
-        // Verify user has active company memberships
-        $activeCompanies = $user->activeCompanies()->get();
-        if ($activeCompanies->isEmpty()) {
-            RateLimiter::hit($ipKey, 60);
-            RateLimiter::hit($actorKey, 60);
-
-            return MobileApiBoundary::buildErrorResponse(
-                code: 'INVALID_CREDENTIALS',
-                message: 'Invalid credentials or challenge expired.',
-                status: 401
-            );
-        }
-
-        // 5. Check Fortify Two-Factor Authentication
-        if ($user->hasEnabledTwoFactorAuthentication()) {
-            $mfaCode = $payload['mfa_code'] ?? null;
-            $recoveryCode = $payload['recovery_code'] ?? null;
-
-            if ($mfaCode === null && $recoveryCode === null) {
-                // Return MFA_REQUIRED challenge
-                $mfaChallengeId = (string) Str::uuid();
-                $mfaNonce = bin2hex(random_bytes(32));
-                $ttl = (int) config('mobile.challenge_ttl_seconds', 300);
-                $mfaExpiresAt = now()->addSeconds($ttl);
-
-                MobileAuthChallenge::create([
-                    'challenge_id' => $mfaChallengeId,
-                    'device_id' => $payload['device_id'],
-                    'nonce_hash' => hash('sha256', $mfaNonce),
-                    'user_id' => $user->id,
-                    'app_version' => $challenge->app_version,
-                    'platform' => $challenge->platform,
-                    'expires_at' => $mfaExpiresAt,
-                ]);
-
-                return response()->json([
-                    'status' => 'MFA_REQUIRED',
-                    'mfa_challenge_id' => $mfaChallengeId,
-                    'expires_at' => $mfaExpiresAt->format('Y-m-d\TH:i:s\Z'),
-                ], 200, [
-                    'Content-Type' => 'application/json',
-                    'Cache-Control' => 'no-store, no-cache, must-revalidate, private',
-                    'Pragma' => 'no-cache',
-                ]);
+                return MobileApiBoundary::buildErrorResponse(
+                    code: 'INVALID_CREDENTIALS',
+                    message: 'Invalid credentials or challenge expired.',
+                    status: 401
+                );
             }
 
-            if ($mfaCode !== null) {
-                $secret = decrypt($user->two_factor_secret);
-                /** @var TwoFactorAuthenticationProvider $provider */
-                $provider = app(TwoFactorAuthenticationProvider::class);
-                if (! $provider->verify($secret, $mfaCode)) {
-                    RateLimiter::hit($ipKey, 60);
-                    RateLimiter::hit($actorKey, 60);
+            // Verify user has active company memberships
+            $activeCompanies = $user->activeCompanies()->where('companies.status', 'active')->lockForUpdate()->get();
+            if ($activeCompanies->isEmpty()) {
+                RateLimiter::hit($ipKey, 60);
+                RateLimiter::hit($actorKey, 60);
 
-                    return MobileApiBoundary::buildErrorResponse(
-                        code: 'INVALID_CREDENTIALS',
-                        message: 'Invalid credentials or challenge expired.',
-                        status: 401
-                    );
-                }
-            } elseif ($recoveryCode !== null) {
-                $codes = $user->recoveryCodes();
-                $matched = collect($codes)->first(fn ($c) => hash_equals((string) $c, $recoveryCode));
-
-                if (! $matched) {
-                    RateLimiter::hit($ipKey, 60);
-                    RateLimiter::hit($actorKey, 60);
-
-                    return MobileApiBoundary::buildErrorResponse(
-                        code: 'INVALID_CREDENTIALS',
-                        message: 'Invalid credentials or challenge expired.',
-                        status: 401
-                    );
-                }
-
-                // Atomically replace the used single-use recovery code
-                $user->replaceRecoveryCode($matched);
+                return MobileApiBoundary::buildErrorResponse(
+                    code: 'INVALID_CREDENTIALS',
+                    message: 'Invalid credentials or challenge expired.',
+                    status: 401
+                );
             }
-        }
 
-        // Authentication Successful: clear rate limit counters
-        RateLimiter::clear($ipKey);
-        RateLimiter::clear($actorKey);
+            $device = MobileDevice::where('device_id', $payload['device_id'])->lockForUpdate()->first();
+            if ($device !== null && ($device->isRevoked() || (int) $device->user_id !== (int) $user->id)) {
+                RateLimiter::hit($actorKey, 60);
 
-        // 6. Upsert Device Record
-        MobileDevice::updateOrCreate(
-            ['device_id' => $payload['device_id']],
-            [
+                return MobileApiBoundary::buildErrorResponse(code: 'INVALID_CREDENTIALS', message: 'Invalid credentials or challenge expired.', status: 401);
+            }
+            if ($challenge->user_id !== null && (int) $challenge->user_id !== (int) $user->id) {
+                return MobileApiBoundary::buildErrorResponse(code: 'INVALID_CREDENTIALS', message: 'Invalid credentials or challenge expired.', status: 401);
+            }
+
+            // 5. Check Fortify Two-Factor Authentication
+            if ($user->hasEnabledTwoFactorAuthentication()) {
+                $mfaCode = $payload['mfa_code'] ?? null;
+                $recoveryCode = $payload['recovery_code'] ?? null;
+
+                if ($mfaCode === null && $recoveryCode === null) {
+                    // Frozen response cannot express the approved fresh-challenge retry protocol.
+                    // Do not mint an unusable nonce-less continuation.
+                    return MobileApiBoundary::buildErrorResponse(code: 'MFA_RETRY_REQUIRED', message: 'Fetch a fresh challenge and resend credentials with MFA or recovery code.', status: 409);
+                }
+
+                if ($mfaCode !== null) {
+                    $secret = decrypt($user->two_factor_secret);
+                    /** @var TwoFactorAuthenticationProvider $provider */
+                    $provider = app(TwoFactorAuthenticationProvider::class);
+                    if (! $provider->verify($secret, $mfaCode)) {
+                        RateLimiter::hit($ipKey, 60);
+                        RateLimiter::hit($actorKey, 60);
+
+                        return MobileApiBoundary::buildErrorResponse(
+                            code: 'INVALID_CREDENTIALS',
+                            message: 'Invalid credentials or challenge expired.',
+                            status: 401
+                        );
+                    }
+                } elseif ($recoveryCode !== null) {
+                    $codes = $user->recoveryCodes();
+                    $matched = collect($codes)->first(fn ($c) => hash_equals((string) $c, $recoveryCode));
+
+                    if (! $matched) {
+                        RateLimiter::hit($ipKey, 60);
+                        RateLimiter::hit($actorKey, 60);
+
+                        return MobileApiBoundary::buildErrorResponse(
+                            code: 'INVALID_CREDENTIALS',
+                            message: 'Invalid credentials or challenge expired.',
+                            status: 401
+                        );
+                    }
+
+                    // Atomically replace the used single-use recovery code
+                    $user->replaceRecoveryCode($matched);
+                }
+            }
+
+            // Authentication Successful: clear rate limit counters
+            // Success must not erase concurrent failures from other requests.
+
+            $attributes = [
                 'device_name' => $payload['device_name'],
                 'platform' => $challenge->platform,
                 'app_version' => $challenge->app_version,
-                'updated_at' => now(),
-            ]
-        );
-
-        // 7. Generate Token
-        $rawToken = 'st_m_'.bin2hex(random_bytes(32));
-        $tokenHash = hash('sha256', $rawToken);
-        $ttl = (int) config('mobile.token_ttl_seconds', 604800);
-        $expiresAt = now()->addSeconds($ttl);
-        $passwordEpoch = 'epoch-'.substr(hash('sha256', (string) $user->password), 0, 16);
-
-        /** @var Company|null $defaultCompany */
-        $defaultCompany = $user->lastActiveCompany;
-        if ($defaultCompany === null || ! $activeCompanies->contains('id', $defaultCompany->id)) {
-            $defaultCompany = $activeCompanies->first();
-        }
-
-        MobileAccessToken::create([
-            'token_hash' => $tokenHash,
-            'device_id' => $payload['device_id'],
-            'user_id' => $user->id,
-            'company_id' => $defaultCompany->id,
-            'password_epoch' => $passwordEpoch,
-            'expires_at' => $expiresAt,
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
-
-        // 8. Determine Actor Role
-        setPermissionsTeamId($defaultCompany->id);
-        $roleName = $user->roles()->where('roles.company_id', $defaultCompany->id)->value('name');
-
-        $role = match (strtolower((string) $roleName)) {
-            'owner', 'admin' => 'admin',
-            'manager' => 'manager',
-            default => 'cashier',
-        };
-
-        // 9. Map Companies List
-        $companies = $activeCompanies->map(function (Company $c) use ($defaultCompany) {
-            return [
-                'id' => $c->public_id,
-                'name' => $c->displayName(),
-                'base_currency' => $c->base_currency_code,
-                'is_default' => (int) $c->id === (int) $defaultCompany->id,
             ];
-        })->values()->all();
+            if ($device === null) {
+                // A concurrent different actor cannot claim this UUID via an upsert.
+                MobileDevice::create($attributes + ['device_id' => $payload['device_id'], 'user_id' => $user->id]);
+            } else {
+                $device->update($attributes);
+            }
 
-        // Ensure at least one is default
-        if (! collect($companies)->contains('is_default', true) && count($companies) > 0) {
-            $companies[0]['is_default'] = true;
-        }
+            // 7. Generate Token
+            $rawToken = 'st_m_'.bin2hex(random_bytes(32));
+            $tokenHash = hash('sha256', $rawToken);
+            $ttl = (int) config('mobile.token_ttl_seconds', 604800);
+            $expiresAt = now()->addSeconds($ttl);
+            $passwordEpoch = 'epoch-'.substr(hash('sha256', (string) $user->password), 0, 16);
 
-        return response()->json([
-            'token' => $rawToken,
-            'token_type' => 'Bearer',
-            'expires_at' => $expiresAt->format('Y-m-d\TH:i:s\Z'),
-            'actor' => [
-                'id' => $user->public_id,
-                'name' => $user->name,
-                'email' => $user->email,
-                'role' => $role,
+            /** @var Company|null $defaultCompany */
+            $defaultCompany = $user->lastActiveCompany;
+            if ($defaultCompany === null || ! $activeCompanies->contains('id', $defaultCompany->id)) {
+                $defaultCompany = $activeCompanies->first();
+            }
+
+            MobileAccessToken::create([
+                'token_hash' => $tokenHash,
+                'device_id' => $payload['device_id'],
+                'user_id' => $user->id,
+                'company_id' => null, // Staff + device token; tenant selected and checked per request.
                 'password_epoch' => $passwordEpoch,
-            ],
-            'companies' => $companies,
-        ], 200, [
-            'Content-Type' => 'application/json',
-            'Cache-Control' => 'no-store, no-cache, must-revalidate, private',
-            'Pragma' => 'no-cache',
-        ]);
+                'expires_at' => $expiresAt,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+
+            // 8. Determine Actor Role
+            setPermissionsTeamId($defaultCompany->id);
+            $user->unsetRelation('roles')->unsetRelation('permissions');
+            $roleName = $user->roles()->where('roles.company_id', $defaultCompany->id)->value('name');
+
+            $role = match (strtolower((string) $roleName)) {
+                'owner', 'admin', 'administrator' => 'admin',
+                'manager' => 'manager',
+                default => 'cashier',
+            };
+
+            // 9. Map Companies List
+            $companies = $activeCompanies->map(function (Company $c) use ($defaultCompany) {
+                return [
+                    'id' => $c->public_id,
+                    'name' => $c->displayName(),
+                    'base_currency' => $c->base_currency_code,
+                    'is_default' => (int) $c->id === (int) $defaultCompany->id,
+                ];
+            })->values()->all();
+
+            // Ensure at least one is default
+            if (! collect($companies)->contains('is_default', true) && count($companies) > 0) {
+                $companies[0]['is_default'] = true;
+            }
+
+            $response = response()->json([
+                'token' => $rawToken,
+                'token_type' => 'Bearer',
+                'expires_at' => $expiresAt->format('Y-m-d\TH:i:s\Z'),
+                'actor' => [
+                    'id' => $user->public_id,
+                    'name' => $user->name,
+                    'email' => $user->email,
+                    'role' => $role,
+                    'password_epoch' => $passwordEpoch,
+                ],
+                'companies' => $companies,
+            ], 200, [
+                'Content-Type' => 'application/json',
+                'Cache-Control' => 'no-store, no-cache, must-revalidate, private',
+                'Pragma' => 'no-cache',
+            ]);
+            if (! WireResponse::accepts(json_decode((string) $response->getContent()), 'auth-login-response')) {
+                throw new HttpResponseException(MobileApiBoundary::buildErrorResponse(code: 'CONTRACT_INCOMPATIBLE', message: 'Existing data cannot be represented by Mobile V1.', status: 409));
+            }
+
+            return $response;
+        });
     }
 
     /**
@@ -413,7 +402,7 @@ final class AuthController extends Controller
         }
 
         return [
-            'device_id' => (string) $deviceId,
+            'device_id' => strtolower((string) $deviceId),
             'app_version' => (string) $appVersion,
             'platform' => (string) $platform,
         ];
@@ -522,7 +511,7 @@ final class AuthController extends Controller
         return [
             'challenge_id' => (string) $challengeId,
             'nonce' => (string) $nonce,
-            'device_id' => (string) $deviceId,
+            'device_id' => strtolower((string) $deviceId),
             'device_name' => (string) $deviceName,
             'email' => (string) $email,
             'password' => (string) $password,

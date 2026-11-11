@@ -8,9 +8,11 @@ use App\Models\Company;
 use App\Models\MobileAccessToken;
 use App\Models\MobileDevice;
 use App\Models\User;
+use App\Policies\ProductPolicy;
 use App\Support\Tenancy\CompanyContext;
 use Closure;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\RateLimiter;
 use Symfony\Component\HttpFoundation\Response;
 
 final class MobileAuthenticate
@@ -56,7 +58,7 @@ final class MobileAuthenticate
         // 3. Verify device status
         /** @var MobileDevice|null $device */
         $device = MobileDevice::where('device_id', $token->device_id)->first();
-        if ($device === null || $device->isRevoked()) {
+        if ($device === null || $device->isRevoked() || (int) $device->user_id !== (int) $token->user_id) {
             return MobileApiBoundary::buildErrorResponse(
                 code: 'UNAUTHENTICATED',
                 message: 'The Bearer token has been revoked or expired.',
@@ -124,11 +126,6 @@ final class MobileAuthenticate
             // Sessionless CompanyContext activation
             app(CompanyContext::class)->setCompany($company, $user);
 
-            // Bind company to token if not already set or changed to authorized company
-            if ($token->company_id !== (int) $company->id) {
-                $token->update(['company_id' => $company->id]);
-            }
-
             // Revalidate required permission server-side
             if ($requiredPermission !== null) {
                 if (! $this->userHasPermission($user, $company, $requiredPermission)) {
@@ -143,6 +140,11 @@ final class MobileAuthenticate
             $request->attributes->set('mobile_company', $company);
         }
 
+        $key = 'mobile:actor:'.$user->id.':company:'.($companyId ?? 'none');
+        if (RateLimiter::tooManyAttempts($key, (int) config('mobile.rate_limits.authenticated_per_minute', 120))) {
+            return MobileApiBoundary::buildErrorResponse(code: 'TOO_MANY_REQUESTS', message: 'Rate limit exceeded.', status: 429);
+        }
+        RateLimiter::hit($key, 60);
         // 6. Update token last used timestamp
         $token->update(['last_used_at' => now()]);
 
@@ -160,11 +162,8 @@ final class MobileAuthenticate
      */
     private function userHasPermission(User $user, Company $company, string $permission): bool
     {
-        // Owner and Admin roles have full operational permissions
-        if ($user->hasRole('Owner') || $user->hasRole('Admin')) {
-            return true;
-        }
-
-        return $user->hasPermissionTo($permission);
+        return $permission === 'product.viewAny'
+            ? app(ProductPolicy::class)->viewAny($user)
+            : $user->hasPermissionTo($permission);
     }
 }

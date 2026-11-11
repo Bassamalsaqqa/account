@@ -11,6 +11,7 @@ use App\Models\MobileDevice;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 final class DeviceController extends Controller
 {
@@ -62,29 +63,20 @@ final class DeviceController extends Controller
         /** @var User $user */
         $user = $request->attributes->get('mobile_user');
 
-        // 3. Authorization check
-        // An actor can revoke their own device. Revoking another device requires manager or admin role.
-        if (strtolower($token->device_id) !== strtolower($deviceId)) {
-            $isPrivileged = $user->hasRole('Owner') || $user->hasRole('Administrator') || $user->hasRole('Admin') || $user->hasRole('Manager')
-                || $user->hasPermissionTo('settings.company.manage');
-
-            if (! $isPrivileged) {
-                return MobileApiBoundary::buildErrorResponse(
-                    code: 'FORBIDDEN',
-                    message: 'Unauthorized to revoke device.',
-                    status: 403
-                );
+        // Only the durable owner may revoke a registered device. Unknown/foreign UUIDs
+        // are indistinguishable; no company-free administrative revocation capability.
+        $device = DB::transaction(function () use ($deviceId, $user, $reason) {
+            $device = MobileDevice::where('device_id', strtolower($deviceId))
+                ->where('user_id', $user->id)->lockForUpdate()->first();
+            if ($device !== null) {
+                $device->revoke($reason, $user);
             }
+
+            return $device;
+        });
+        if ($device === null) {
+            return MobileApiBoundary::buildErrorResponse(code: 'FORBIDDEN', message: 'Unauthorized to revoke device.', status: 403);
         }
-
-        // 4. Find or create device record and revoke
-        /** @var MobileDevice $device */
-        $device = MobileDevice::firstOrCreate(
-            ['device_id' => $deviceId],
-            ['device_name' => 'Device '.$deviceId]
-        );
-
-        $device->revoke($reason, $user);
 
         return response()->json([
             'device_id' => $deviceId,
