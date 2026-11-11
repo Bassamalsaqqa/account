@@ -1,0 +1,5 @@
+# Pinned dependencies for Small Trader Mobile V1 contract validation
+jsonschema==4.26.0
+openapi-spec-validator==0.9.0
+referencing==0.37.0
+jsonschema-specifications==2025.9.1
