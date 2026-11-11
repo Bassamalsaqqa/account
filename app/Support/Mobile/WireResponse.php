@@ -45,11 +45,21 @@ final class WireResponse
             }
         }
         $type = match (true) {
-            $value === null => 'null', is_string($value) => 'string', is_bool($value) => 'boolean',
-            is_int($value) => 'integer', is_array($value) => 'array', $value instanceof stdClass => 'object', default => 'number',
+            $value === null => 'null',
+            is_string($value) => 'string',
+            is_bool($value) => 'boolean',
+            is_int($value) => 'integer',
+            is_array($value) => 'array',
+            $value instanceof stdClass => 'object',
+            default => 'number',
         };
-        if (isset($schema['type']) && ! in_array($type, (array) $schema['type'], true)) {
-            return false;
+        if (isset($schema['type'])) {
+            $allowedTypes = (array) $schema['type'];
+            $isTypeMatch = in_array($type, $allowedTypes, true)
+                || ($type === 'integer' && in_array('number', $allowedTypes, true));
+            if (! $isTypeMatch) {
+                return false;
+            }
         }
         if (isset($schema['enum']) && ! in_array($value, $schema['enum'], true)) {
             return false;
@@ -61,8 +71,22 @@ final class WireResponse
             if (isset($schema['pattern']) && preg_match('~'.$schema['pattern'].'~uD', $value) !== 1) {
                 return false;
             }
+            if (isset($schema['format'])) {
+                if ($schema['format'] === 'date-time') {
+                    if (preg_match('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/D', $value) !== 1 || strtotime($value) === false) {
+                        return false;
+                    }
+                } elseif ($schema['format'] === 'email') {
+                    if (filter_var($value, FILTER_VALIDATE_EMAIL) === false) {
+                        return false;
+                    }
+                }
+            }
         }
-        if (is_int($value) && ($value < ($schema['minimum'] ?? PHP_INT_MIN) || $value > ($schema['maximum'] ?? PHP_INT_MAX))) {
+        if ((is_int($value) || is_float($value)) && (
+            (isset($schema['minimum']) && $value < $schema['minimum']) ||
+            (isset($schema['maximum']) && $value > $schema['maximum'])
+        )) {
             return false;
         }
         if (is_array($value)) {

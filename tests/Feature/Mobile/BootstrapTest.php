@@ -19,6 +19,7 @@ use App\Services\Tenancy\CompanyRoleService;
 use App\Support\Tenancy\CompanyContext;
 use App\Support\Tenancy\CompanyScope;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 use Symfony\Component\Process\Process;
@@ -292,5 +293,154 @@ final class BootstrapTest extends TestCase
         $data = $response->json();
         $this->assertSame([], $data['units']);
         $this->assertSame([], $data['taxes']);
+    }
+
+    public function test_bootstrap_fails_when_approved_cash_account_is_bank_type(): void
+    {
+        $this->cashAccount->update(['account_type' => 'bank']);
+        $token = $this->issueToken();
+
+        $this->withHeader('Authorization', "Bearer {$token}")
+            ->getJson("/api/mobile/v1/companies/{$this->company->public_id}/bootstrap")
+            ->assertStatus(409)
+            ->assertJsonPath('error.code', 'BOOTSTRAP_CONFIG_UNSUPPORTED');
+    }
+
+    public function test_bootstrap_fails_when_ledger_account_is_inactive_or_foreign(): void
+    {
+        $token = $this->issueToken();
+
+        // 1. Inactive ledger account
+        DB::table('ledger_accounts')
+            ->where('id', $this->cashAccount->ledger_account_id)
+            ->update(['active' => false]);
+
+        $this->withHeader('Authorization', "Bearer {$token}")
+            ->getJson("/api/mobile/v1/companies/{$this->company->public_id}/bootstrap")
+            ->assertStatus(409)
+            ->assertJsonPath('error.code', 'BOOTSTRAP_CONFIG_UNSUPPORTED');
+
+        // Restore active
+        DB::table('ledger_accounts')
+            ->where('id', $this->cashAccount->ledger_account_id)
+            ->update(['active' => true]);
+
+        // 2. Foreign company ledger account
+        $otherCompany = Company::factory()->create(['status' => 'active']);
+        $foreignLedger = CompanyScope::executeWithoutScope(fn () => LedgerAccount::create([
+            'company_id' => $otherCompany->id,
+            'code' => '1099',
+            'name_ar' => 'حساب أجنبي',
+            'name_en' => 'Foreign Ledger',
+            'account_type' => LedgerAccount::TYPE_ASSET,
+            'normal_balance' => LedgerAccount::BALANCE_DEBIT,
+            'is_control' => false,
+            'is_system' => false,
+            'active' => true,
+        ]));
+
+        $this->cashAccount->update([
+            'is_active' => true,
+            'ledger_account_id' => $foreignLedger->id,
+        ]);
+        $this->withHeader('Authorization', "Bearer {$token}")
+            ->getJson("/api/mobile/v1/companies/{$this->company->public_id}/bootstrap")
+            ->assertStatus(409)
+            ->assertJsonPath('error.code', 'BOOTSTRAP_CONFIG_UNSUPPORTED');
+    }
+
+    public function test_bootstrap_fails_when_base_currency_is_disabled_or_inactive(): void
+    {
+        $token = $this->issueToken();
+
+        // 1. Explicitly disabled in company_currencies
+        DB::table('company_currencies')->updateOrInsert(
+            ['company_id' => $this->company->id, 'currency_code' => 'ILS'],
+            ['enabled' => false, 'is_base' => true, 'display_order' => 1, 'created_at' => now(), 'updated_at' => now()]
+        );
+        $this->withHeader('Authorization', "Bearer {$token}")
+            ->getJson("/api/mobile/v1/companies/{$this->company->public_id}/bootstrap")
+            ->assertStatus(409)
+            ->assertJsonPath('error.code', 'BOOTSTRAP_CONFIG_UNSUPPORTED');
+
+        DB::table('company_currencies')->where('company_id', $this->company->id)->delete();
+
+        // 2. Globally inactive in currencies table
+        DB::table('currencies')->where('code', 'ILS')->update(['active' => false]);
+        $this->withHeader('Authorization', "Bearer {$token}")
+            ->getJson("/api/mobile/v1/companies/{$this->company->public_id}/bootstrap")
+            ->assertStatus(409)
+            ->assertJsonPath('error.code', 'BOOTSTRAP_CONFIG_UNSUPPORTED');
+    }
+
+    public function test_bootstrap_fails_when_configured_default_tax_rate_is_foreign_or_inactive(): void
+    {
+        $token = $this->issueToken();
+
+        // 1. Inactive default tax rate
+        $this->taxRate->update(['active' => false]);
+        $this->withHeader('Authorization', "Bearer {$token}")
+            ->getJson("/api/mobile/v1/companies/{$this->company->public_id}/bootstrap")
+            ->assertStatus(409)
+            ->assertJsonPath('error.code', 'BOOTSTRAP_CONFIG_UNSUPPORTED');
+
+        // 2. Foreign company tax rate
+        $otherCompany = Company::factory()->create(['status' => 'active']);
+        $foreignTax = CompanyScope::executeWithoutScope(fn () => TaxRate::create([
+            'company_id' => $otherCompany->id,
+            'code' => 'VAT_OTHER',
+            'name_ar' => 'ضريبة أخرى',
+            'name_en' => 'Other VAT',
+            'rate' => '10.000000',
+            'calculation' => 'exclusive',
+            'active' => true,
+            'created_by' => $this->user->id,
+        ]));
+
+        CompanyMobileSetting::where('company_id', $this->company->id)->update(['default_tax_rate_id' => $foreignTax->id]);
+        $this->withHeader('Authorization', "Bearer {$token}")
+            ->getJson("/api/mobile/v1/companies/{$this->company->public_id}/bootstrap")
+            ->assertStatus(409)
+            ->assertJsonPath('error.code', 'BOOTSTRAP_CONFIG_UNSUPPORTED');
+    }
+
+    public function test_bootstrap_fails_with_409_when_stored_unit_decimal_places_exceeds_contract(): void
+    {
+        $this->unit->update(['decimal_places' => 7]);
+        $token = $this->issueToken();
+
+        $this->withHeader('Authorization', "Bearer {$token}")
+            ->getJson("/api/mobile/v1/companies/{$this->company->public_id}/bootstrap")
+            ->assertStatus(409)
+            ->assertJsonPath('error.code', 'CONTRACT_INCOMPATIBLE');
+    }
+
+    public function test_bootstrap_fails_when_default_warehouse_is_foreign_or_inactive(): void
+    {
+        $token = $this->issueToken();
+
+        // 1. Inactive warehouse
+        $this->warehouse->update(['active' => false]);
+        $this->withHeader('Authorization', "Bearer {$token}")
+            ->getJson("/api/mobile/v1/companies/{$this->company->public_id}/bootstrap")
+            ->assertStatus(409)
+            ->assertJsonPath('error.code', 'BOOTSTRAP_CONFIG_UNSUPPORTED');
+
+        // 2. Foreign warehouse
+        $otherCompany = Company::factory()->create(['status' => 'active']);
+        $foreignWarehouse = CompanyScope::executeWithoutScope(fn () => Warehouse::create([
+            'company_id' => $otherCompany->id,
+            'code' => 'WH_OTHER',
+            'name_ar' => 'مستودع أجنبي',
+            'active' => true,
+            'created_by' => $this->user->id,
+        ]));
+        $this->warehouse->update(['active' => true]);
+        CompanyMobileSetting::where('company_id', $this->company->id)->update(['default_warehouse_id' => $foreignWarehouse->id]);
+
+        $this->withHeader('Authorization', "Bearer {$token}")
+            ->getJson("/api/mobile/v1/companies/{$this->company->public_id}/bootstrap")
+            ->assertStatus(409)
+            ->assertJsonPath('error.code', 'BOOTSTRAP_CONFIG_UNSUPPORTED');
     }
 }

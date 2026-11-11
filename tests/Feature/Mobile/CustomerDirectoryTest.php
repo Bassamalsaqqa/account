@@ -12,7 +12,9 @@ use App\Models\MobileDevice;
 use App\Models\User;
 use App\Services\Tenancy\CompanyRoleService;
 use App\Support\Tenancy\CompanyContext;
+use App\Support\Tenancy\CompanyScope;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 use Tests\TestCase;
@@ -163,5 +165,75 @@ final class CustomerDirectoryTest extends TestCase
         $dataSearch = $responseSearch->json();
         $this->assertCount(1, $dataSearch['customers']);
         $this->assertSame('CUST-0015', $dataSearch['customers'][0]['code']);
+    }
+
+    public function test_customer_directory_query_validation_strictly_rejects_invalid_parameters(): void
+    {
+        $token = $this->issueToken();
+
+        // Invalid limit formats
+        foreach (['limit[]' => '10', 'limit' => '-5', 'limit' => '10.5', 'limit' => 'abc', 'limit' => '0', 'limit' => '101'] as $param => $val) {
+            $this->withHeader('Authorization', "Bearer {$token}")
+                ->getJson("/api/mobile/v1/companies/{$this->company->public_id}/customers?{$param}={$val}")
+                ->assertStatus(422);
+        }
+
+        // Invalid cursor formats
+        foreach (['01JCV8X9MDPTRSVWXYZ012345678', 'invalid_lower_case_cursor_xx', 'not-a-crockford-ulid-string'] as $badCursor) {
+            $this->withHeader('Authorization', "Bearer {$token}")
+                ->getJson("/api/mobile/v1/companies/{$this->company->public_id}/customers?cursor={$badCursor}")
+                ->assertStatus(422);
+        }
+
+        // Search string exceeding 100 characters
+        $longSearch = str_repeat('c', 101);
+        $this->withHeader('Authorization', "Bearer {$token}")
+            ->getJson("/api/mobile/v1/companies/{$this->company->public_id}/customers?search={$longSearch}")
+            ->assertStatus(422);
+    }
+
+    public function test_customer_directory_fails_with_409_when_stored_customer_exceeds_wire_contract(): void
+    {
+        // Stored customer with empty code violates schema minLength: 1
+        $badCustomer = CompanyScope::executeWithoutScope(fn () => Customer::create([
+            'company_id' => $this->company->id,
+            'code' => 'TEMP-CODE',
+            'name_ar' => 'عميل بدون كود صالح',
+            'status' => 'active',
+            'created_by' => $this->user->id,
+        ]));
+        DB::table('customers')
+            ->where('id', $badCustomer->id)
+            ->update(['code' => '']);
+
+        $token = $this->issueToken();
+        $this->withHeader('Authorization', "Bearer {$token}")
+            ->getJson("/api/mobile/v1/companies/{$this->company->public_id}/customers")
+            ->assertStatus(409)
+            ->assertJsonPath('error.code', 'CONTRACT_INCOMPATIBLE');
+    }
+
+    public function test_customer_directory_absolute_cap_30_even_when_config_is_1000(): void
+    {
+        config(['mobile.rate_limits.customer_page_limit' => 1000]);
+        CompanyScope::executeWithoutScope(function (): void {
+            for ($i = 1; $i <= 35; $i++) {
+                Customer::create([
+                    'company_id' => $this->company->id,
+                    'code' => sprintf('CUST-LIM-%04d', $i),
+                    'name_ar' => "عميل سقف {$i}",
+                    'status' => 'active',
+                    'created_by' => $this->user->id,
+                ]);
+            }
+        });
+
+        $token = $this->issueToken();
+        $response = $this->withHeader('Authorization', "Bearer {$token}")
+            ->getJson("/api/mobile/v1/companies/{$this->company->public_id}/customers?limit=100")
+            ->assertOk();
+
+        $this->assertCount(30, $response->json('customers'));
+        $this->assertTrue($response->json('has_more'));
     }
 }

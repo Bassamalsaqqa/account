@@ -15,6 +15,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Str;
 use Spatie\Permission\Models\Role;
+use Spatie\Permission\PermissionRegistrar;
 use Tests\TestCase;
 
 final class SecurityCorrectionsTest extends TestCase
@@ -115,7 +116,7 @@ final class SecurityCorrectionsTest extends TestCase
         app(CompanyContext::class)->setCompany($company, $user);
         $user->givePermissionTo('customers.view');
         $name = str_repeat('ع', 255);
-        $customer = Customer::create(['company_id' => $company->id, 'name_ar' => $name, 'status' => 'active', 'created_by' => $user->id]);
+        $customer = Customer::create(['company_id' => $company->id, 'code' => 'CUST-255', 'name_ar' => $name, 'status' => 'active', 'created_by' => $user->id]);
         $token = $this->token($user);
         $response = $this->withToken($token)->getJson("/api/mobile/v1/companies/{$company->public_id}/customers")
             ->assertOk();
@@ -137,5 +138,46 @@ final class SecurityCorrectionsTest extends TestCase
             $token = $this->token($user); // Device rotation does not reset actor/company quota.
             $this->withToken($token)->getJson("/api/mobile/v1/companies/{$company->public_id}/customers")->assertStatus($status);
         }
+    }
+
+    public function test_permission_cache_not_thrashed_and_tenant_context_cleaned_on_exception_paths(): void
+    {
+        config(['mobile.enabled' => true]);
+        app(CompanyRoleService::class)->ensurePermissionsExist();
+
+        $user = User::factory()->create();
+        $companyA = Company::factory()->create(['status' => 'active']);
+        $companyB = Company::factory()->create(['status' => 'active']);
+        $user->companies()->attach([$companyA->id, $companyB->id], ['status' => 'active']);
+
+        setPermissionsTeamId($companyA->id);
+        $user->givePermissionTo('customers.view');
+        setPermissionsTeamId($companyB->id);
+        $user->givePermissionTo('customers.view');
+
+        $token = $this->token($user);
+
+        // 1. Request to company A cleans context cleanly
+        $this->withToken($token)->getJson("/api/mobile/v1/companies/{$companyA->public_id}/customers")->assertOk();
+        $this->assertFalse(app(CompanyContext::class)->hasCompany());
+        $this->assertNull(getPermissionsTeamId());
+
+        // 2. Exception path (invalid route/unauthorized endpoint) ensures context cleanup in finally
+        $this->withToken($token)->getJson("/api/mobile/v1/companies/{$companyA->public_id}/non-existent-endpoint")->assertNotFound();
+        $this->assertFalse(app(CompanyContext::class)->hasCompany());
+        $this->assertNull(getPermissionsTeamId());
+
+        // 3. Request to company B succeeds with company B team isolation
+        $this->withToken($token)->getJson("/api/mobile/v1/companies/{$companyB->public_id}/customers")->assertOk();
+        $this->assertFalse(app(CompanyContext::class)->hasCompany());
+        $this->assertNull(getPermissionsTeamId());
+
+        // 4. Immediate revocation in company B takes effect without affecting company A
+        setPermissionsTeamId($companyB->id);
+        $user->unsetRelation('permissions')->revokePermissionTo('customers.view');
+        app(PermissionRegistrar::class)->forgetCachedPermissions();
+
+        $this->withToken($token)->getJson("/api/mobile/v1/companies/{$companyB->public_id}/customers")->assertForbidden();
+        $this->withToken($token)->getJson("/api/mobile/v1/companies/{$companyA->public_id}/customers")->assertOk();
     }
 }

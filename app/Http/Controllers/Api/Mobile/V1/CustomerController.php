@@ -10,6 +10,8 @@ use App\Models\Company;
 use App\Models\CompanyMobileSetting;
 use App\Models\Customer;
 use App\Models\User;
+use App\Support\Mobile\WireResponse;
+use Illuminate\Http\Exceptions\HttpResponseException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -34,25 +36,76 @@ final class CustomerController extends Controller
             );
         }
 
-        // 2. Resolve bounded limit (max 30 per specification)
-        $maxLimit = (int) config('mobile.max_page_limit', 30);
-        $rawLimit = $request->query('limit', $maxLimit);
-        $limit = is_numeric($rawLimit) ? min(max((int) $rawLimit, 1), $maxLimit) : $maxLimit;
+        // 2. Resolve bounded limit (absolute cap 30 per specification, OpenAPI 1..100)
+        if ($request->has('limit')) {
+            $rawLimit = $request->query('limit');
+            if (is_array($rawLimit) || ! is_scalar($rawLimit) || preg_match('/^(?:0|[1-9][0-9]*)$/', (string) $rawLimit) !== 1) {
+                return MobileApiBoundary::buildErrorResponse(
+                    code: 'VALIDATION_FAILED',
+                    message: 'Limit must be a valid integer.',
+                    status: 422
+                );
+            }
+            $intLimit = (int) $rawLimit;
+            if ($intLimit < 1 || $intLimit > 100) {
+                return MobileApiBoundary::buildErrorResponse(
+                    code: 'VALIDATION_FAILED',
+                    message: 'Limit must be an integer between 1 and 100.',
+                    status: 422
+                );
+            }
+            $limit = min($intLimit, 30);
+        } else {
+            $limit = min((int) config('mobile.max_page_limit', 30), 30);
+        }
 
-        // 3. Resolve search (max 100 characters)
-        $search = $request->query('search');
-        if (is_string($search) && trim($search) !== '') {
-            $search = mb_substr(trim($search), 0, 100);
+        // 3. Resolve search (max 100 characters, literal prefix only - no leading wildcard)
+        if ($request->has('search')) {
+            $rawSearch = $request->query('search');
+            if (is_array($rawSearch) || ! is_string($rawSearch)) {
+                return MobileApiBoundary::buildErrorResponse(
+                    code: 'VALIDATION_FAILED',
+                    message: 'Search query must be a valid string.',
+                    status: 422
+                );
+            }
+            if (mb_strlen($rawSearch) > 100) {
+                return MobileApiBoundary::buildErrorResponse(
+                    code: 'VALIDATION_FAILED',
+                    message: 'Search parameter cannot exceed 100 characters.',
+                    status: 422
+                );
+            }
+            $search = trim($rawSearch) !== '' ? trim($rawSearch) : null;
         } else {
             $search = null;
         }
 
-        // 4. Resolve cursor
-        $cursor = $request->query('cursor');
-        if (! is_string($cursor) || trim($cursor) === '') {
-            $cursor = null;
+        // 4. Resolve cursor (must be 26-char Crockford ULID uppercase pattern)
+        if ($request->has('cursor')) {
+            $rawCursor = $request->query('cursor');
+            if (is_array($rawCursor) || ! is_string($rawCursor)) {
+                return MobileApiBoundary::buildErrorResponse(
+                    code: 'VALIDATION_FAILED',
+                    message: 'Cursor must be a valid ULID string.',
+                    status: 422
+                );
+            }
+            $trimmedCursor = trim($rawCursor);
+            if ($trimmedCursor !== '') {
+                if (preg_match('/^[0-7][0-9A-HJKMNP-TV-Z]{25}$/', $trimmedCursor) !== 1) {
+                    return MobileApiBoundary::buildErrorResponse(
+                        code: 'VALIDATION_FAILED',
+                        message: 'Cursor must match canonical Crockford ULID format.',
+                        status: 422
+                    );
+                }
+                $cursor = $trimmedCursor;
+            } else {
+                $cursor = null;
+            }
         } else {
-            $cursor = trim($cursor);
+            $cursor = null;
         }
 
         // 5. Query active customers
@@ -95,24 +148,18 @@ final class CustomerController extends Controller
             $isWalkIn = false;
             if ($walkInCustomerId !== null && (int) $customer->id === (int) $walkInCustomerId) {
                 $isWalkIn = true;
-
-            }
-
-            $code = $customer->code;
-            if (empty($code)) {
-                $code = 'CUST-'.substr($customer->public_id, -6);
             }
 
             return [
                 'id' => $customer->public_id,
-                'code' => $code,
-                'name' => $customer->displayName(),
-                'phone' => $customer->phone !== null && trim($customer->phone) !== '' ? $customer->phone : null,
+                'code' => (string) $customer->code,
+                'name' => (string) $customer->displayName(),
+                'phone' => $customer->phone !== null && trim((string) $customer->phone) !== '' ? trim((string) $customer->phone) : null,
                 'is_walk_in' => $isWalkIn,
             ];
         })->values()->all();
 
-        return response()->json([
+        $response = response()->json([
             'company_id' => $company->public_id,
             'generated_at' => now()->format('Y-m-d\TH:i:s\Z'),
             'next_cursor' => $nextCursor,
@@ -123,6 +170,16 @@ final class CustomerController extends Controller
             'Cache-Control' => 'no-store, no-cache, must-revalidate, private',
             'Pragma' => 'no-cache',
         ]);
+
+        if (! WireResponse::accepts(json_decode((string) $response->getContent()), 'customer-directory-response')) {
+            throw new HttpResponseException(MobileApiBoundary::buildErrorResponse(
+                code: 'CONTRACT_INCOMPATIBLE',
+                message: 'Existing data cannot be represented by Mobile V1.',
+                status: 409
+            ));
+        }
+
+        return $response;
     }
 
     /**
@@ -130,6 +187,7 @@ final class CustomerController extends Controller
      */
     private function canReadCustomers(User $user, Company $company): bool
     {
-        return $user->hasPermissionTo('customers.view');
+        return $user->memberships()->where('company_id', $company->id)->where('status', 'active')->exists()
+            && $user->hasPermissionTo('customers.view');
     }
 }

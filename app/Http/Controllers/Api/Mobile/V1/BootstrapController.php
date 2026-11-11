@@ -7,7 +7,9 @@ namespace App\Http\Controllers\Api\Mobile\V1;
 use App\Http\Controllers\Controller;
 use App\Http\Middleware\MobileApiBoundary;
 use App\Models\Company;
+use App\Models\CompanyCurrency;
 use App\Models\CompanyMobileSetting;
+use App\Models\Currency;
 use App\Models\Customer;
 use App\Models\MoneyAccount;
 use App\Models\TaxRate;
@@ -65,7 +67,7 @@ final class BootstrapController extends Controller
             );
         }
 
-        // 2. Approved cash account: must be configured, exist in same company, active, and matching base currency
+        // 2. Approved cash account: must be configured, exist in same company, active, TYPE_CASH, and matching base currency
         if ($setting->approved_cash_account_id === null) {
             return MobileApiBoundary::buildErrorResponse(
                 code: 'BOOTSTRAP_CONFIG_UNSUPPORTED',
@@ -76,14 +78,27 @@ final class BootstrapController extends Controller
         /** @var MoneyAccount|null $cashAccount */
         $cashAccount = MoneyAccount::where('id', $setting->approved_cash_account_id)
             ->where('company_id', $company->id)
+            ->with('ledgerAccount')
             ->first();
-        if ($cashAccount === null || ! $cashAccount->is_active || $cashAccount->currency_code !== $company->base_currency_code) {
+
+        if ($cashAccount === null || ! $cashAccount->is_active || $cashAccount->account_type !== MoneyAccount::TYPE_CASH || $cashAccount->currency_code !== $company->base_currency_code) {
             return MobileApiBoundary::buildErrorResponse(
                 code: 'BOOTSTRAP_CONFIG_UNSUPPORTED',
-                message: 'Configured cash account is missing, inactive, currency-mismatched, or belongs to another company.',
+                message: 'Configured cash account is missing, inactive, non-cash, currency-mismatched, or belongs to another company.',
                 status: 409
             );
         }
+
+        // Ledger account: must exist, belong to same company, be active, and have valid non-empty code
+        $ledger = $cashAccount->ledgerAccount;
+        if ($ledger === null || (int) $ledger->company_id !== (int) $company->id || ! $ledger->active || empty(trim((string) $ledger->code))) {
+            return MobileApiBoundary::buildErrorResponse(
+                code: 'BOOTSTRAP_CONFIG_UNSUPPORTED',
+                message: 'Approved cash account must have an active owned eligible ledger account.',
+                status: 409
+            );
+        }
+        $cashCode = trim((string) $ledger->code);
 
         // 3. Default warehouse: must be configured, exist in same company, and active
         if ($setting->default_warehouse_id === null) {
@@ -105,11 +120,29 @@ final class BootstrapController extends Controller
             );
         }
 
-        // 4. Base currency validation
-        if (! preg_match('/^[A-Z]{3}$/', (string) $company->base_currency_code)) {
+        // 4. Base currency validation: exact format, active global currency, and enabled company currency
+        $baseCurrencyCode = (string) $company->base_currency_code;
+        if (! preg_match('/^[A-Z]{3}$/', $baseCurrencyCode)) {
             return MobileApiBoundary::buildErrorResponse(
                 code: 'BOOTSTRAP_CONFIG_UNSUPPORTED',
-                message: 'Company base currency is invalid.',
+                message: 'Company base currency code format is invalid.',
+                status: 409
+            );
+        }
+        $isGlobalActive = Currency::where('code', $baseCurrencyCode)->where('active', true)->exists();
+        $isCompanyDisabled = CompanyCurrency::where('company_id', $company->id)
+            ->where('currency_code', $baseCurrencyCode)
+            ->where('enabled', false)
+            ->exists();
+        $hasCompanyCurrencies = CompanyCurrency::where('company_id', $company->id)->exists();
+        $isCompanyEnabled = ! $hasCompanyCurrencies || CompanyCurrency::where('company_id', $company->id)
+            ->where('currency_code', $baseCurrencyCode)
+            ->where('enabled', true)
+            ->exists();
+        if (! $isGlobalActive || $isCompanyDisabled || ! $isCompanyEnabled) {
+            return MobileApiBoundary::buildErrorResponse(
+                code: 'BOOTSTRAP_CONFIG_UNSUPPORTED',
+                message: 'Company base currency is not an active global currency and enabled company currency.',
                 status: 409
             );
         }
@@ -123,7 +156,7 @@ final class BootstrapController extends Controller
         };
         $permissions = $user->getAllPermissions()->pluck('name')->values()->all();
 
-        // 6. Units: active units in same company (empty allowed)
+        // 6. Units: active units in same company (empty allowed, no truncation or clamping)
         $units = Unit::where('company_id', $company->id)
             ->where('active', true)
             ->orderBy('id')
@@ -133,17 +166,30 @@ final class BootstrapController extends Controller
 
                 return [
                     'id' => $u->public_id,
-                    'code' => mb_substr($u->code, 0, 32),
-                    'name' => mb_substr($u->displayName(), 0, 128),
-                    'symbol' => $symbol !== null && trim((string) $symbol) !== '' ? mb_substr(trim((string) $symbol), 0, 32) : null,
+                    'code' => (string) $u->code,
+                    'name' => (string) $u->displayName(),
+                    'symbol' => $symbol !== null && trim((string) $symbol) !== '' ? trim((string) $symbol) : null,
                     'allows_fraction' => (bool) $u->allows_fraction,
-                    'decimal_places' => min(max((int) $u->decimal_places, 0), 6),
+                    'decimal_places' => (int) $u->decimal_places,
                 ];
             })
             ->values()
             ->all();
 
-        // 7. Taxes: active tax rates in same company (empty allowed, no invented default)
+        // 7. Taxes: configured default tax rate must be valid same-company active if specified
+        if ($setting->default_tax_rate_id !== null) {
+            $defaultTaxRate = TaxRate::where('id', $setting->default_tax_rate_id)
+                ->where('company_id', $company->id)
+                ->first();
+            if ($defaultTaxRate === null || ! $defaultTaxRate->active) {
+                return MobileApiBoundary::buildErrorResponse(
+                    code: 'BOOTSTRAP_CONFIG_UNSUPPORTED',
+                    message: 'Configured default tax rate is missing, inactive, or belongs to another company.',
+                    status: 409
+                );
+            }
+        }
+
         $taxes = TaxRate::where('company_id', $company->id)
             ->where('active', true)
             ->orderBy('id')
@@ -153,8 +199,8 @@ final class BootstrapController extends Controller
 
                 return [
                     'id' => $t->public_id,
-                    'code' => mb_substr($t->code, 0, 32),
-                    'name' => mb_substr($t->displayName(), 0, 255),
+                    'code' => (string) $t->code,
+                    'name' => (string) $t->displayName(),
                     'rate' => (string) BigDecimal::of((string) $t->rate)->toScale(6, RoundingMode::UNNECESSARY),
                     'calculation' => $t->calculation === TaxRate::CALC_INCLUSIVE ? 'inclusive' : 'exclusive',
                     'is_default' => $isDefault,
@@ -163,30 +209,27 @@ final class BootstrapController extends Controller
             ->values()
             ->all();
 
-        // Cash account code
-        $cashCode = (string) ($cashAccount->account_number ?: ($cashAccount->ledgerAccount->code ?? 'CASH'));
-
         $response = response()->json([
             'company_id' => $company->public_id,
-            'company_name' => mb_substr($company->displayName(), 0, 255),
+            'company_name' => (string) $company->displayName(),
             'base_currency' => $company->base_currency_code,
             'walk_in_customer_id' => $walkInCustomer->public_id,
             'staff' => [
                 'id' => $user->public_id,
-                'name' => mb_substr($user->name, 0, 255),
+                'name' => (string) $user->name,
                 'role' => $role,
                 'permissions' => $permissions,
             ],
             'device_lease' => null,
             'default_warehouse' => [
                 'id' => $warehouse->public_id,
-                'code' => mb_substr($warehouse->code, 0, 64),
-                'name' => mb_substr($warehouse->displayName(), 0, 255),
+                'code' => (string) $warehouse->code,
+                'name' => (string) $warehouse->displayName(),
             ],
             'approved_cash_account' => [
                 'id' => $cashAccount->public_id,
-                'code' => mb_substr($cashCode, 0, 32),
-                'name' => mb_substr($cashAccount->displayName(), 0, 255),
+                'code' => (string) $cashCode,
+                'name' => (string) $cashAccount->displayName(),
                 'currency' => $cashAccount->currency_code,
             ],
             'units' => $units,

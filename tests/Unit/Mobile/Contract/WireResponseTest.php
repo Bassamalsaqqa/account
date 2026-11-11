@@ -42,4 +42,44 @@ final class WireResponseTest extends TestCase
         $this->assertFalse(WireResponse::accepts($fixture, 'product-catalog-response'));
         $this->assertSame(256, mb_strlen($fixture->products[0]->name));
     }
+
+    public function test_format_validation_and_numeric_bounds_enforced(): void
+    {
+        $loginFixture = json_decode(file_get_contents(base_path('docs/integration/mobile-v1/fixtures/golden-auth-login.json')))->response;
+        $this->assertTrue(WireResponse::accepts($loginFixture, 'auth-login-response'));
+
+        // Invalid date-time format fails validation
+        $loginFixture->expires_at = 'not-a-date-time';
+        $this->assertFalse(WireResponse::accepts($loginFixture, 'auth-login-response'));
+
+        // Valid date-time format succeeds
+        $loginFixture->expires_at = '2026-11-17T12:00:00Z';
+        $this->assertTrue(WireResponse::accepts($loginFixture, 'auth-login-response'));
+
+        // Invalid email format in actor profile fails
+        $loginFixture->actor->email = 'not-an-email';
+        $this->assertFalse(WireResponse::accepts($loginFixture, 'auth-login-response'));
+
+        $loginFixture->actor->email = 'cashier@example.com';
+        $this->assertTrue(WireResponse::accepts($loginFixture, 'auth-login-response'));
+    }
+
+    public function test_bootstrap_offline_policy_conditional_structure(): void
+    {
+        $bootstrapFixture = json_decode(file_get_contents(base_path('docs/integration/mobile-v1/fixtures/golden-bootstrap.json')));
+        $this->assertTrue(WireResponse::accepts($bootstrapFixture, 'bootstrap-response'));
+
+        // When disabled: must NOT have max_offline_* properties per rev2 schema conditional
+        $this->assertFalse($bootstrapFixture->offline_policy->enabled);
+        $this->assertFalse(isset($bootstrapFixture->offline_policy->max_offline_hours));
+
+        // Adding max_offline_hours when enabled is false violates the conditional contract
+        $invalidDisabled = clone $bootstrapFixture;
+        $invalidDisabled->offline_policy = (object) [
+            'enabled' => false,
+            'availability' => 'unavailable',
+            'max_offline_hours' => 12,
+        ];
+        $this->assertFalse(WireResponse::accepts($invalidDisabled, 'bootstrap-response'));
+    }
 }

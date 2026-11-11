@@ -40,25 +40,76 @@ final class ProductController extends Controller
             );
         }
 
-        // 2. Resolve bounded limit (max 30 per specification)
-        $maxLimit = (int) config('mobile.max_page_limit', 30);
-        $rawLimit = $request->query('limit', $maxLimit);
-        $limit = is_numeric($rawLimit) ? min(max((int) $rawLimit, 1), $maxLimit) : $maxLimit;
+        // 2. Resolve bounded limit (absolute cap 30 per specification, OpenAPI 1..100)
+        if ($request->has('limit')) {
+            $rawLimit = $request->query('limit');
+            if (is_array($rawLimit) || ! is_scalar($rawLimit) || preg_match('/^(?:0|[1-9][0-9]*)$/', (string) $rawLimit) !== 1) {
+                return MobileApiBoundary::buildErrorResponse(
+                    code: 'VALIDATION_FAILED',
+                    message: 'Limit must be a valid integer.',
+                    status: 422
+                );
+            }
+            $intLimit = (int) $rawLimit;
+            if ($intLimit < 1 || $intLimit > 100) {
+                return MobileApiBoundary::buildErrorResponse(
+                    code: 'VALIDATION_FAILED',
+                    message: 'Limit must be an integer between 1 and 100.',
+                    status: 422
+                );
+            }
+            $limit = min($intLimit, 30);
+        } else {
+            $limit = min((int) config('mobile.max_page_limit', 30), 30);
+        }
 
         // 3. Resolve search (max 100 characters, literal prefix only - no leading wildcard)
-        $search = $request->query('search');
-        if (is_string($search) && trim($search) !== '') {
-            $search = mb_substr(trim($search), 0, 100);
+        if ($request->has('search')) {
+            $rawSearch = $request->query('search');
+            if (is_array($rawSearch) || ! is_string($rawSearch)) {
+                return MobileApiBoundary::buildErrorResponse(
+                    code: 'VALIDATION_FAILED',
+                    message: 'Search query must be a valid string.',
+                    status: 422
+                );
+            }
+            if (mb_strlen($rawSearch) > 100) {
+                return MobileApiBoundary::buildErrorResponse(
+                    code: 'VALIDATION_FAILED',
+                    message: 'Search parameter cannot exceed 100 characters.',
+                    status: 422
+                );
+            }
+            $search = trim($rawSearch) !== '' ? trim($rawSearch) : null;
         } else {
             $search = null;
         }
 
-        // 4. Resolve cursor
-        $cursor = $request->query('cursor');
-        if (! is_string($cursor) || trim($cursor) === '') {
-            $cursor = null;
+        // 4. Resolve cursor (must be 26-char Crockford ULID uppercase pattern)
+        if ($request->has('cursor')) {
+            $rawCursor = $request->query('cursor');
+            if (is_array($rawCursor) || ! is_string($rawCursor)) {
+                return MobileApiBoundary::buildErrorResponse(
+                    code: 'VALIDATION_FAILED',
+                    message: 'Cursor must be a valid ULID string.',
+                    status: 422
+                );
+            }
+            $trimmedCursor = trim($rawCursor);
+            if ($trimmedCursor !== '') {
+                if (preg_match('/^[0-7][0-9A-HJKMNP-TV-Z]{25}$/', $trimmedCursor) !== 1) {
+                    return MobileApiBoundary::buildErrorResponse(
+                        code: 'VALIDATION_FAILED',
+                        message: 'Cursor must match canonical Crockford ULID format.',
+                        status: 422
+                    );
+                }
+                $cursor = $trimmedCursor;
+            } else {
+                $cursor = null;
+            }
         } else {
-            $cursor = trim($cursor);
+            $cursor = null;
         }
 
         // 5. Query Products without cost columns (Strict Server-Side Redaction)
@@ -115,41 +166,157 @@ final class ProductController extends Controller
 
         $productsPayload = [];
         foreach ($records as $product) {
-            $primaryBarcode = $product->primaryBarcode;
-            $barcode = $primaryBarcode !== null ? $primaryBarcode->barcode : $product->barcodes->first()?->barcode;
+            // 1. Price validation (Finding 2)
+            if ($product->default_sale_price_base === null) {
+                throw new HttpResponseException(MobileApiBoundary::buildErrorResponse(
+                    code: 'CONTRACT_INCOMPATIBLE',
+                    message: 'Unpriced products cannot be represented by Mobile V1.',
+                    status: 409
+                ));
+            }
 
-            $qty = BigDecimal::zero();
-            if ($product->track_stock) {
-                foreach ($product->balances as $balance) {
-                    $qty = $qty->plus((string) $balance->quantity_base);
+            try {
+                $baseUnitPrice = (string) BigDecimal::of((string) $product->default_sale_price_base)
+                    ->toScale(6, RoundingMode::UNNECESSARY);
+            } catch (\Throwable) {
+                throw new HttpResponseException(MobileApiBoundary::buildErrorResponse(
+                    code: 'CONTRACT_INCOMPATIBLE',
+                    message: 'Product unit price cannot be represented in exact 6 decimal scale without rounding.',
+                    status: 409
+                ));
+            }
+
+            // 2. Base unit validation (Finding 3)
+            $baseUnit = $product->baseUnit;
+            if ($baseUnit === null || (int) $baseUnit->company_id !== (int) $company->id || ! $baseUnit->active) {
+                throw new HttpResponseException(MobileApiBoundary::buildErrorResponse(
+                    code: 'CONTRACT_INCOMPATIBLE',
+                    message: 'Product declared base unit is missing, inactive, or belongs to another company.',
+                    status: 409
+                ));
+            }
+
+            // 3. ProductUnits validation (Finding 3: Canonical SalesDocumentRules::selectedUnit invariants)
+            $activeUnits = $product->productUnits->where('company_id', $company->id)->where('active', true);
+            if ($activeUnits->isEmpty()) {
+                throw new HttpResponseException(MobileApiBoundary::buildErrorResponse(
+                    code: 'CONTRACT_INCOMPATIBLE',
+                    message: 'Product has no active product units.',
+                    status: 409
+                ));
+            }
+
+            // Verify each active product unit has an active, same-company unit and valid conversion factor
+            foreach ($activeUnits as $pu) {
+                if ($pu->unit === null || (int) $pu->unit->company_id !== (int) $company->id || ! $pu->unit->active) {
+                    throw new HttpResponseException(MobileApiBoundary::buildErrorResponse(
+                        code: 'CONTRACT_INCOMPATIBLE',
+                        message: 'Product unit references missing, inactive, or foreign unit.',
+                        status: 409
+                    ));
+                }
+                try {
+                    $conv = BigDecimal::of((string) $pu->conversion_to_base);
+                    if (! $conv->isPositive()) {
+                        throw new \InvalidArgumentException;
+                    }
+                    $conv->toScale(6, RoundingMode::UNNECESSARY);
+                } catch (\Throwable) {
+                    throw new HttpResponseException(MobileApiBoundary::buildErrorResponse(
+                        code: 'CONTRACT_INCOMPATIBLE',
+                        message: 'Unit conversion factor must be positive and representable in 6 decimal scale.',
+                        status: 409
+                    ));
                 }
             }
-            if ($qty->isNegative()) {
-                $qty = BigDecimal::zero();
+
+            // Exactly one base unit invariant matching products.base_unit_id with conversion 1.000000
+            $baseRows = $activeUnits->where('is_base', true);
+            if ($baseRows->count() !== 1) {
+                throw new HttpResponseException(MobileApiBoundary::buildErrorResponse(
+                    code: 'CONTRACT_INCOMPATIBLE',
+                    message: 'Product must have exactly one active base ProductUnit row.',
+                    status: 409
+                ));
             }
-            $availableQuantity = (string) $qty->toScale(6, RoundingMode::UNNECESSARY);
+            /** @var ProductUnit $basePu */
+            $basePu = $baseRows->first();
+            if ((int) $basePu->unit_id !== (int) $product->base_unit_id) {
+                throw new HttpResponseException(MobileApiBoundary::buildErrorResponse(
+                    code: 'CONTRACT_INCOMPATIBLE',
+                    message: 'Base ProductUnit unit_id does not match product base_unit_id.',
+                    status: 409
+                ));
+            }
+            if (! BigDecimal::of((string) $basePu->conversion_to_base)->isEqualTo(BigDecimal::one())) {
+                throw new HttpResponseException(MobileApiBoundary::buildErrorResponse(
+                    code: 'CONTRACT_INCOMPATIBLE',
+                    message: 'Base ProductUnit must have conversion factor of exactly 1.000000.',
+                    status: 409
+                ));
+            }
 
-            $baseUnit = $product->baseUnit;
+            // Exactly one active default sales unit invariant
+            $defaultRows = $activeUnits->where('is_default_sale', true);
+            if ($defaultRows->count() !== 1) {
+                throw new HttpResponseException(MobileApiBoundary::buildErrorResponse(
+                    code: 'CONTRACT_INCOMPATIBLE',
+                    message: 'Exactly one active default sales unit is required.',
+                    status: 409
+                ));
+            }
+            /** @var ProductUnit $defaultPu */
+            $defaultPu = $defaultRows->first();
 
-            $activeUnits = $product->productUnits->where('company_id', $company->id)->where('active', true);
-            $unitsPayload = [];
-            foreach ($activeUnits as $pu) {
-                $unitOverride = $pu->default_sale_price_base;
-                if ($unitOverride !== null) {
-                    $puSalePrice = (string) BigDecimal::of((string) $unitOverride)->toScale(6, RoundingMode::UNNECESSARY);
-                } elseif ($product->default_sale_price_base !== null) {
-                    $puSalePrice = (string) BigDecimal::of((string) $product->default_sale_price_base)
-                        ->multipliedBy(BigDecimal::of((string) $pu->conversion_to_base))
+            // Default unit payload calculation
+            try {
+                if ($defaultPu->default_sale_price_base !== null) {
+                    $defaultSalePrice = (string) BigDecimal::of((string) $defaultPu->default_sale_price_base)
                         ->toScale(6, RoundingMode::UNNECESSARY);
                 } else {
-                    $puSalePrice = null;
+                    $defaultSalePrice = (string) BigDecimal::of((string) $product->default_sale_price_base)
+                        ->multipliedBy(BigDecimal::of((string) $defaultPu->conversion_to_base))
+                        ->toScale(6, RoundingMode::UNNECESSARY);
+                }
+            } catch (\Throwable) {
+                throw new HttpResponseException(MobileApiBoundary::buildErrorResponse(
+                    code: 'CONTRACT_INCOMPATIBLE',
+                    message: 'Default sales unit price cannot be represented without rounding.',
+                    status: 409
+                ));
+            }
+
+            $defaultUnitPayload = [
+                'unit_id' => $defaultPu->unit->public_id,
+                'product_unit_id' => $defaultPu->unit->public_id,
+                'conversion_to_base' => (string) BigDecimal::of((string) $defaultPu->conversion_to_base)->toScale(6, RoundingMode::UNNECESSARY),
+                'sale_price' => $defaultSalePrice,
+            ];
+
+            // Build units payload
+            $unitsPayload = [];
+            foreach ($activeUnits as $pu) {
+                try {
+                    if ($pu->default_sale_price_base !== null) {
+                        $puSalePrice = (string) BigDecimal::of((string) $pu->default_sale_price_base)->toScale(6, RoundingMode::UNNECESSARY);
+                    } else {
+                        $puSalePrice = (string) BigDecimal::of((string) $product->default_sale_price_base)
+                            ->multipliedBy(BigDecimal::of((string) $pu->conversion_to_base))
+                            ->toScale(6, RoundingMode::UNNECESSARY);
+                    }
+                } catch (\Throwable) {
+                    throw new HttpResponseException(MobileApiBoundary::buildErrorResponse(
+                        code: 'CONTRACT_INCOMPATIBLE',
+                        message: 'Unit sale price cannot be represented without rounding.',
+                        status: 409
+                    ));
                 }
 
                 $unitsPayload[] = [
                     'product_unit_id' => $pu->unit->public_id,
                     'unit_id' => $pu->unit->public_id,
-                    'code' => mb_substr((string) $pu->unit->code, 0, 32),
-                    'name' => mb_substr((string) $pu->unit->displayName(), 0, 128),
+                    'code' => (string) $pu->unit->code,
+                    'name' => (string) $pu->unit->displayName(),
                     'conversion_to_base' => (string) BigDecimal::of((string) $pu->conversion_to_base)->toScale(6, RoundingMode::UNNECESSARY),
                     'is_base' => (bool) $pu->is_base,
                     'is_default_sale' => (bool) $pu->is_default_sale,
@@ -157,73 +324,45 @@ final class ProductController extends Controller
                 ];
             }
 
-            if (empty($unitsPayload)) {
-                $unitsPayload = [
-                    [
-                        'product_unit_id' => $baseUnit->public_id,
-                        'unit_id' => $baseUnit->public_id,
-                        'code' => mb_substr((string) $baseUnit->code, 0, 32),
-                        'name' => mb_substr((string) $baseUnit->displayName(), 0, 128),
-                        'conversion_to_base' => '1.000000',
-                        'is_base' => true,
-                        'is_default_sale' => true,
-                        'sale_price' => $product->default_sale_price_base !== null
-                            ? (string) BigDecimal::of((string) $product->default_sale_price_base)->toScale(6, RoundingMode::UNNECESSARY)
-                            : null,
-                    ],
-                ];
-            }
+            // Inventory balances & barcode
+            $primaryBarcode = $product->primaryBarcode;
+            $barcode = $primaryBarcode !== null ? $primaryBarcode->barcode : $product->barcodes->first()?->barcode;
 
-            /** @var ProductUnit|null $defaultPu */
-            $defaultPu = $activeUnits->firstWhere('is_default_sale', true)
-                ?? $activeUnits->firstWhere('is_base', true)
-                ?? $activeUnits->first();
-
-            if ($defaultPu !== null) {
-                $defaultOverride = $defaultPu->default_sale_price_base;
-                if ($defaultOverride !== null) {
-                    $defaultSalePrice = (string) BigDecimal::of((string) $defaultOverride)->toScale(6, RoundingMode::UNNECESSARY);
-                } elseif ($product->default_sale_price_base !== null) {
-                    $defaultSalePrice = (string) BigDecimal::of((string) $product->default_sale_price_base)
-                        ->multipliedBy(BigDecimal::of((string) $defaultPu->conversion_to_base))
-                        ->toScale(6, RoundingMode::UNNECESSARY);
-                } else {
-                    $defaultSalePrice = null;
+            $qty = BigDecimal::zero();
+            if ($product->track_stock) {
+                foreach ($product->balances as $balance) {
+                    if ((int) $balance->company_id === (int) $company->id) {
+                        $qty = $qty->plus((string) $balance->quantity_base);
+                    }
                 }
-
-                $defaultUnitPayload = [
-                    'unit_id' => $defaultPu->unit->public_id,
-                    'product_unit_id' => $defaultPu->unit->public_id,
-                    'conversion_to_base' => (string) BigDecimal::of((string) $defaultPu->conversion_to_base)->toScale(6, RoundingMode::UNNECESSARY),
-                    'sale_price' => $defaultSalePrice,
-                ];
-            } else {
-                $defaultUnitPayload = [
-                    'unit_id' => $baseUnit->public_id,
-                    'product_unit_id' => $baseUnit->public_id,
-                    'conversion_to_base' => '1.000000',
-                    'sale_price' => $product->default_sale_price_base !== null
-                        ? (string) BigDecimal::of((string) $product->default_sale_price_base)->toScale(6, RoundingMode::UNNECESSARY)
-                        : null,
-                ];
+            }
+            if ($qty->isNegative()) {
+                $qty = BigDecimal::zero();
+            }
+            try {
+                $availableQuantity = (string) $qty->toScale(6, RoundingMode::UNNECESSARY);
+            } catch (\Throwable) {
+                throw new HttpResponseException(MobileApiBoundary::buildErrorResponse(
+                    code: 'CONTRACT_INCOMPATIBLE',
+                    message: 'Available quantity cannot be represented without rounding.',
+                    status: 409
+                ));
             }
 
             $productsPayload[] = [
                 'id' => $product->public_id,
-                'sku' => mb_substr((string) $product->sku, 0, 128),
-                'barcode' => $barcode !== null && trim((string) $barcode) !== '' ? mb_substr(trim((string) $barcode), 0, 128) : null,
-                'name' => mb_substr((string) $product->displayName(), 0, 255),
-                'unit_price' => $product->default_sale_price_base !== null
-                    ? (string) BigDecimal::of((string) $product->default_sale_price_base)->toScale(6, RoundingMode::UNNECESSARY)
-                    : '0.000000',
+                'sku' => (string) $product->sku,
+                'barcode' => $barcode !== null && trim((string) $barcode) !== '' ? trim((string) $barcode) : null,
+                'name' => (string) $product->displayName(),
+                'unit_price' => $baseUnitPrice,
                 'tax_rate' => null,
                 'tax_rate_id' => null,
                 'is_tracked' => (bool) $product->track_stock,
                 'available_quantity' => $availableQuantity,
                 'base_unit' => [
                     'id' => $baseUnit->public_id,
-                    'code' => mb_substr((string) $baseUnit->code, 0, 32),
-                    'name' => mb_substr((string) $baseUnit->displayName(), 0, 128),
+                    'code' => (string) $baseUnit->code,
+                    'name' => (string) $baseUnit->displayName(),
                 ],
                 'default_unit' => $defaultUnitPayload,
                 'units' => $unitsPayload,

@@ -16,7 +16,6 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Validation\ValidationException;
-use Spatie\Permission\PermissionRegistrar;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 use Symfony\Component\HttpKernel\Exception\MethodNotAllowedHttpException;
@@ -36,7 +35,6 @@ final class MobileApiBoundary
     {
         $context = app(CompanyContext::class);
         $context->clear();
-        app(PermissionRegistrar::class)->forgetCachedPermissions();
         try {
             return $this->handleMobile($request, $next);
         } finally {
