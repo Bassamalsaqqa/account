@@ -75,7 +75,7 @@ final class AuthLogoutAndRevokeTest extends TestCase
 
         $response = $this->withHeader('Authorization', "Bearer {$token}")
             ->postJson('/api/mobile/v1/auth/logout', [
-                'device_id' => $deviceId,
+                'device_id' => strtoupper($deviceId),
             ]);
 
         $response->assertStatus(200)
@@ -88,6 +88,32 @@ final class AuthLogoutAndRevokeTest extends TestCase
             ]);
         $subsequent->assertStatus(401)
             ->assertJsonPath('error.code', 'UNAUTHENTICATED');
+    }
+
+    public function test_uppercase_device_uuid_challenge_login_logout_round_trip(): void
+    {
+        $deviceId = strtoupper('aabbccdd-1234-4234-8234-aabbccddeeff');
+        $challenge = $this->postJson('/api/mobile/v1/auth/challenge', [
+            'device_id' => $deviceId,
+            'app_version' => '1.0.0',
+            'platform' => 'android',
+        ])->assertOk()->json();
+
+        $login = $this->postJson('/api/mobile/v1/auth/login', [
+            'challenge_id' => $challenge['challenge_id'],
+            'nonce' => $challenge['nonce'],
+            'device_id' => $deviceId,
+            'device_name' => 'Tablet',
+            'email' => $this->cashier->email,
+            'password' => 'password123',
+        ])->assertOk();
+
+        $this->withHeader('Authorization', 'Bearer '.$login->json('token'))
+            ->postJson('/api/mobile/v1/auth/logout', ['device_id' => $deviceId])
+            ->assertOk()->assertJsonPath('status', 'logged_out');
+        $this->withHeader('Authorization', 'Bearer '.$login->json('token'))
+            ->postJson('/api/mobile/v1/auth/logout', ['device_id' => $deviceId])
+            ->assertUnauthorized();
     }
 
     public function test_device_revoke_own_device_succeeds(): void

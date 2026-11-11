@@ -329,7 +329,7 @@ final class AuthController extends Controller
 
         /** @var MobileAccessToken $token */
         $token = $request->attributes->get('mobile_token');
-        if ($token->device_id !== $data['device_id']) {
+        if ($token->device_id !== strtolower($data['device_id'])) {
             return MobileApiBoundary::buildErrorResponse(
                 code: 'UNAUTHENTICATED',
                 message: 'The device ID does not match the authenticated session.',

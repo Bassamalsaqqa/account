@@ -31,8 +31,6 @@ final class ProductCatalogTest extends TestCase
 
     private Unit $unitPiece;
 
-    private TaxRate $taxRate;
-
     private Warehouse $warehouse;
 
     protected function setUp(): void
@@ -76,7 +74,7 @@ final class ProductCatalogTest extends TestCase
             'active' => true,
         ]);
 
-        $this->taxRate = TaxRate::create([
+        TaxRate::create([
             'company_id' => $this->company->id,
             'code' => 'VAT16',
             'name_ar' => 'ضريبة القيمة المضافة',
@@ -145,6 +143,12 @@ final class ProductCatalogTest extends TestCase
             ->getJson("/api/mobile/v1/companies/{$this->company->public_id}/products");
 
         $response->assertStatus(409)->assertJsonPath('error.code', 'CATALOG_CONFIG_UNSUPPORTED');
+
+        foreach (['?search=does-not-match', '?cursor=ZZZZZZZZZZZZZZZZZZZZZZZZZZ'] as $suffix) {
+            $this->withHeader('Authorization', "Bearer {$token}")
+                ->getJson("/api/mobile/v1/companies/{$this->company->public_id}/products{$suffix}")
+                ->assertStatus(409)->assertJsonPath('error.code', 'CATALOG_CONFIG_UNSUPPORTED');
+        }
 
         // Strict Cost Redaction Check: no cost fields anywhere in response
         $rawContent = $response->getContent();
