@@ -1,0 +1,98 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.smalltrader.app/mobile/v1/auth-login-response.json",
+  "title": "AuthLoginResponse",
+  "oneOf": [
+    {
+      "type": "object",
+      "required": ["token", "token_type", "expires_at", "actor", "companies"],
+      "properties": {
+        "token": {
+          "type": "string",
+          "minLength": 20
+        },
+        "token_type": {
+          "type": "string",
+          "enum": ["Bearer"]
+        },
+        "expires_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "actor": {
+          "type": "object",
+          "required": ["id", "name", "email", "role", "password_epoch"],
+          "properties": {
+            "id": {
+              "type": "string",
+              "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$"
+            },
+            "name": {
+              "type": "string",
+              "minLength": 1
+            },
+            "email": {
+              "type": "string",
+              "format": "email"
+            },
+            "role": {
+              "type": "string",
+              "enum": ["cashier", "manager", "admin"]
+            },
+            "password_epoch": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "additionalProperties": false
+        },
+        "companies": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["id", "name", "base_currency", "is_default"],
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$"
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "base_currency": {
+                "type": "string",
+                "pattern": "^[A-Z]{3}$"
+              },
+              "is_default": {
+                "type": "boolean"
+              }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": ["status", "mfa_challenge_id", "expires_at"],
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": ["MFA_REQUIRED"]
+        },
+        "mfa_challenge_id": {
+          "type": "string",
+          "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+        },
+        "expires_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "additionalProperties": false
+    }
+  ]
+}

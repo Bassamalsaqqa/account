@@ -1,0 +1,73 @@
+{
+  "company_id": "01JCV8X9M2NQW3TYZ4R5S6789A",
+  "company_name": "Al-Amal Retail Company",
+  "base_currency": "ILS",
+  "walk_in_customer_id": "01JCV8X9M4K1P2Q3R4S5T6V7W8",
+  "staff": {
+    "id": "01JCV8X9M8T1V2W3X4Y5Z67890",
+    "name": "Ahmad Cashier",
+    "role": "cashier",
+    "permissions": [
+      "sales.create",
+      "sales.read",
+      "customers.read",
+      "products.read"
+    ]
+  },
+  "device_lease": null,
+  "default_warehouse": {
+    "id": "01JCV8X9M9A2B3C4D5E6F7G8H9",
+    "code": "WH-MAIN",
+    "name": "Main Store Warehouse"
+  },
+  "approved_cash_account": {
+    "id": "01JCV8X9MAJ3K4M5N6P7Q8R9S0",
+    "code": "CASH-REG-01",
+    "name": "Cash Register 01 (ILS)",
+    "currency": "ILS"
+  },
+  "units": [
+    {
+      "id": "01JCV8X9MBV4W5X6Y7Z8012345",
+      "code": "PCS",
+      "name": "Piece",
+      "symbol": "pc",
+      "allows_fraction": false,
+      "decimal_places": 0
+    },
+    {
+      "id": "01JCV8X9MC6789ABCDEFGHJKMN",
+      "code": "KG",
+      "name": "Kilogram",
+      "symbol": "kg",
+      "allows_fraction": true,
+      "decimal_places": 3
+    }
+  ],
+  "taxes": [
+    {
+      "id": "01JCV8X9MDPTRSVWXYZ0123456",
+      "code": "VAT16",
+      "name": "Standard VAT (16%)",
+      "rate": "16.000000",
+      "calculation": "exclusive",
+      "is_default": true
+    },
+    {
+      "id": "01JCV8X9MDZER0000000000000",
+      "code": "ZERO",
+      "name": "Zero-Rated (0%)",
+      "rate": "0.000000",
+      "calculation": "exclusive",
+      "is_default": false
+    }
+  ],
+  "offline_policy": {
+    "enabled": false,
+    "cash_only": true,
+    "max_offline_hours": 12,
+    "max_offline_sales_count": 50,
+    "max_offline_total_amount": "5000.000000"
+  },
+  "catalog_snapshot_version": "snap-20261110-v1"
+}

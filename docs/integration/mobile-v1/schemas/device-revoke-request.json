@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.smalltrader.app/mobile/v1/device-revoke-request.json",
+  "title": "DeviceRevokeRequest",
+  "type": "object",
+  "required": ["reason"],
+  "properties": {
+    "reason": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 255
+    }
+  },
+  "additionalProperties": false
+}
