@@ -293,3 +293,5 @@ If a deployment needs to be rolled back to a known-good commit or tag:
    ```bash
    /opt/alt/php84/usr/bin/php artisan up
    ```
+
+For version numbering conventions, repeatable build manifest inventories, mobile client API compatibility tracking, and standard release notes, consult [docs/RELEASING.md](RELEASING.md).

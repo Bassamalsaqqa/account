@@ -13,6 +13,7 @@ Use the repository source and the relevant project documentation together:
 | **Interface & Everyday Workflow Rules** | `docs/UI_WORKFLOW_RULES.md` |
 | **Deployment Procedures** | `docs/HOSTINGER_DEPLOYMENT_GUIDE.md` |
 | **Controlled Release Checklist** | `docs/CONTROLLED_RELEASE_CHECKLIST.md` |
+| **Release & Orchestration Guide** | `docs/RELEASING.md` |
 | **Approved UI Reference Wireframes** | `references/ui/` (when working on the corresponding screen) |
 
 Read only the sections relevant to the task. Do not load large source-of-truth documents in full for trivial or narrowly scoped work.
