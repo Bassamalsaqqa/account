@@ -27,18 +27,18 @@ This guide defines the orchestration rules and cross-repository synchronization 
 ## 2. Versioning & Git Tag Conventions
 
 ### 2.1 Backend Repository (`account`)
-The backend adheres to Semantic Versioning (`vMAJOR.MINOR.PATCH`):
-- **Tag Format:** `vX.Y.Z` (e.g., example `v0.1.0-pilot.1` for pre-release pilot increments, progressing to `v0.1.0` upon formal general availability; these version strings are illustrative examples and do NOT constitute a claim that these versions have been released).
+The backend adheres to Semantic Versioning (`vMAJOR.MINOR.PATCH[-PRERELEASE]`):
+- **Tag Format:** `vX.Y.Z` or `vX.Y.Z-pilot.N` (e.g., example `v0.1.0-pilot.1` for pre-release pilot increments, progressing to `v0.1.0` upon formal general availability; these version strings are illustrative examples and do NOT constitute a claim that these versions have been released).
 - **Independent Cadence:** The backend repository and Android client repository maintain **independent release cadences**. They do NOT move in lockstep.
-- **Tag Creation Custody:** Git tags are never created automatically or speculatively during feature development. Tags are annotated and created by the repository owner only upon formal release approval.
+- **Tag Creation Custody:** Git tags are never created automatically or speculatively during feature development. Tags are annotated and created by the repository owner only upon formal release approval. No tags or releases have been created.
 
 ### 2.2 Companion Android Client (`small-trader-android`) Boundary
 The companion Android repository owns its application versioning and upgrade lifecycle independently:
 - **`versionName`:** Standard SemVer string **without** leading `v` (e.g., `0.1.0-pilot.1`, `0.1.0`).
 - **`versionCode`:** Strictly monotonic positive integer incremented with every distributed build (e.g., `10001`, `10002`).
-- **Application ID & Signing Key:** Immutable `applicationId` (`net.palsync.smalltrader`) and release signing keystore custody remain exclusively with the Android maintainer.
+- **Application ID & Signing Key:** Immutable `applicationId` (`net.palsync.smalltrader`) and release signing keystore custody remain exclusively with the Android maintainer. No signing keys or release builds have been distributed.
 - **In-Place Upgrades:** Updates are installed strictly in-place over existing installations. Uninstallation is prohibited because it deletes local Room database drafts and outbox transaction queues.
-- **Android Release Guide:** Consult the companion Android documentation at [https://github.com/Bassamalsaqqa/small-trader-android/blob/main/docs/RELEASING.md](https://github.com/Bassamalsaqqa/small-trader-android/blob/main/docs/RELEASING.md).
+- **Android Release Guide Draft:** Consult the companion Android documentation draft at [https://github.com/Bassamalsaqqa/small-trader-android/blob/t3/android-release-playbook/docs/RELEASING.md](https://github.com/Bassamalsaqqa/small-trader-android/blob/t3/android-release-playbook/docs/RELEASING.md) (PR #8, branch `t3/android-release-playbook`, head `ce4ebcd0cfb05de7aadde88a55d2c9a4ca80e32c`). Note that this Android guide is a draft under review and not yet an approved authority.
 
 ---
 
@@ -126,6 +126,7 @@ The following table documents the compatibility status across backend releases, 
 > - Native mobile authentication (PR 88) and contract revision 2 (PR 86, PR 89) are currently in active draft / code review.  
 > - **They are NOT merged, NOT deployed, and NOT pilot-ready in production.**  
 > - Offline synchronization and offline financial mutations remain strictly **POLICY OFF**. No client-side offline journal or financial writes are authorized.  
+> - Any cross-repository financial protocol proposal remains strictly **PENDING** with **ZERO ACTIVATION**.  
 > - Do not claim or assume runtime mobile integration exists until explicitly qualified and approved by the Owner.
 
 ---
