@@ -6,7 +6,28 @@ namespace App\Support\Mobile;
 
 use stdClass;
 
-/** Fail closed against the frozen response constraints; never shorten mature data. */
+/**
+ * In-process lightweight defense-in-depth response boundary guard.
+ *
+ * NOTE: This is NOT a complete or general-purpose JSON Schema Draft 2020-12 validator,
+ * and makes NO claim of complete schema specification compliance.
+ * Unsupported Draft 2020-12 keywords and mechanisms include:
+ * - Dynamic scoping and anchors ($dynamicRef, $dynamicAnchor, $anchor, $vocabulary)
+ * - Unevaluated annotations (unevaluatedProperties, unevaluatedItems)
+ * - Dependent schemas and keywords (dependentRequired, dependentSchemas)
+ * - Pattern-based properties (patternProperties, propertyNames)
+ * - Tuple prefix validation (prefixItems, contains, minContains, maxContains)
+ * - Arbitrary regex dialect compatibility beyond PCRE / Unicode D modifier.
+ *
+ * All authoritative schema validation for testing and certification is independently
+ * executed via Python jsonschema Draft202012Validator with FormatChecker.
+ *
+ * Within its operational boundary for Mobile V1 API responses, WireResponse
+ * enforces explicit fail-closed checks on all keywords present in the frozen response schemas:
+ * oneOf, anyOf, allOf, if/then/else, const, type, enum, minLength, maxLength,
+ * pattern, format (date-time, email), minimum, maximum, minItems, maxItems, items,
+ * required, and additionalProperties.
+ */
 final class WireResponse
 {
     public static function accepts(mixed $value, string $schema): bool

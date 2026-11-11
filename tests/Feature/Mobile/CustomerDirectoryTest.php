@@ -17,6 +17,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
+use Symfony\Component\Process\Process;
 use Tests\TestCase;
 
 final class CustomerDirectoryTest extends TestCase
@@ -120,6 +121,9 @@ final class CustomerDirectoryTest extends TestCase
         $this->assertSame('CUST-00102', $regItem['code']);
         $this->assertSame('+970599123456', $regItem['phone']);
         $this->assertFalse($regItem['is_walk_in']);
+
+        $validator = new Process(['python', base_path('tests/Support/Mobile/validate-response.py'), 'customer-directory-response']);
+        $validator->setInput((string) $response->getContent())->mustRun();
     }
 
     public function test_customer_directory_bounded_pagination_and_search(): void
@@ -171,17 +175,17 @@ final class CustomerDirectoryTest extends TestCase
     {
         $token = $this->issueToken();
 
-        // Invalid limit formats
-        foreach (['limit[]' => '10', 'limit' => '-5', 'limit' => '10.5', 'limit' => 'abc', 'limit' => '0', 'limit' => '101'] as $param => $val) {
+        // Invalid limit formats (negative, float, non-digit, embedded newline)
+        foreach (['limit[]' => '10', 'limit' => '-5', 'limit' => '10.5', 'limit' => 'abc', 'limit' => '0', 'limit' => '101', 'limit' => '10 2', 'limit' => "10\n2"] as $param => $val) {
             $this->withHeader('Authorization', "Bearer {$token}")
-                ->getJson("/api/mobile/v1/companies/{$this->company->public_id}/customers?{$param}={$val}")
+                ->getJson("/api/mobile/v1/companies/{$this->company->public_id}/customers?{$param}=".urlencode((string) $val))
                 ->assertStatus(422);
         }
 
-        // Invalid cursor formats
-        foreach (['01JCV8X9MDPTRSVWXYZ012345678', 'invalid_lower_case_cursor_xx', 'not-a-crockford-ulid-string'] as $badCursor) {
+        // Invalid cursor formats (arrays, invalid length, invalid chars, embedded newline)
+        foreach (['01JCV8X9MDPTRSVWXYZ012345678', 'invalid_lower_case_cursor_xx', 'not-a-crockford-ulid-string', "01JCV8X9MDPT\nRSVWXYZ01234", str_repeat('A', 256)] as $badCursor) {
             $this->withHeader('Authorization', "Bearer {$token}")
-                ->getJson("/api/mobile/v1/companies/{$this->company->public_id}/customers?cursor={$badCursor}")
+                ->getJson("/api/mobile/v1/companies/{$this->company->public_id}/customers?cursor=".urlencode($badCursor))
                 ->assertStatus(422);
         }
 
@@ -190,6 +194,12 @@ final class CustomerDirectoryTest extends TestCase
         $this->withHeader('Authorization', "Bearer {$token}")
             ->getJson("/api/mobile/v1/companies/{$this->company->public_id}/customers?search={$longSearch}")
             ->assertStatus(422);
+
+        // Config default <= 0 falls back safely to valid limit 1..30
+        config(['mobile.max_page_limit' => 0]);
+        $this->withHeader('Authorization', "Bearer {$token}")
+            ->getJson("/api/mobile/v1/companies/{$this->company->public_id}/customers")
+            ->assertOk();
     }
 
     public function test_customer_directory_fails_with_409_when_stored_customer_exceeds_wire_contract(): void

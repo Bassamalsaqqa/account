@@ -769,4 +769,165 @@ final class ProductCatalogTest extends TestCase
         $v4 = $r4->json('catalog_snapshot_version');
         $this->assertNotSame($v3, $v4);
     }
+
+    public function test_restricted_cost_mutation_does_not_affect_catalog_snapshot_version(): void
+    {
+        $token = $this->issueToken();
+
+        $product = CompanyScope::executeWithoutScope(function () {
+            $p = Product::create([
+                'company_id' => $this->company->id,
+                'sku' => 'SKU-COST-MUT',
+                'name_ar' => 'منتج اختبار التكلفة',
+                'product_type' => Product::TYPE_STOCK,
+                'base_unit_id' => $this->unitPiece->id,
+                'track_stock' => false,
+                'default_sale_price_base' => '50.000000',
+                'default_purchase_cost_base' => '25.000000',
+                'active' => true,
+                'created_by' => $this->user->id,
+            ]);
+
+            ProductUnit::create([
+                'company_id' => $this->company->id,
+                'product_id' => $p->id,
+                'unit_id' => $this->unitPiece->id,
+                'conversion_to_base' => '1.000000',
+                'is_base' => true,
+                'is_default_sale' => true,
+                'default_purchase_price_base' => '25.000000',
+                'default_sale_price_base' => '50.000000',
+                'active' => true,
+            ]);
+
+            return $p;
+        });
+
+        $v0 = $this->withHeader('Authorization', "Bearer {$token}")
+            ->getJson("/api/mobile/v1/companies/{$this->company->public_id}/products")->assertOk()->json('catalog_snapshot_version');
+
+        // Mutate restricted cost on product_units (purchase price)
+        CompanyScope::executeWithoutScope(function () use ($product): void {
+            ProductUnit::where('product_id', $product->id)->update([
+                'default_purchase_price_base' => '35.000000',
+            ]);
+        });
+
+        $v1 = $this->withHeader('Authorization', "Bearer {$token}")
+            ->getJson("/api/mobile/v1/companies/{$this->company->public_id}/products")->assertOk()->json('catalog_snapshot_version');
+
+        $this->assertSame($v0, $v1, 'Restricted purchase cost must NOT affect public catalog snapshot version!');
+    }
+
+    public function test_foreign_barcode_and_balances_scoped_at_query_source_do_not_leak_or_affect_search_or_snapshot(): void
+    {
+        $token = $this->issueToken();
+        $otherCompany = Company::factory()->create(['status' => 'active']);
+
+        $product = CompanyScope::executeWithoutScope(function () {
+            $p = Product::create([
+                'company_id' => $this->company->id,
+                'sku' => 'SKU-TENANT-SCOPE-01',
+                'name_ar' => 'منتج حماية النطاق',
+                'product_type' => Product::TYPE_STOCK,
+                'base_unit_id' => $this->unitPiece->id,
+                'track_stock' => true,
+                'default_sale_price_base' => '10.000000',
+                'active' => true,
+                'created_by' => $this->user->id,
+            ]);
+
+            ProductUnit::create([
+                'company_id' => $this->company->id,
+                'product_id' => $p->id,
+                'unit_id' => $this->unitPiece->id,
+                'conversion_to_base' => '1.000000',
+                'is_base' => true,
+                'is_default_sale' => true,
+                'default_sale_price_base' => '10.000000',
+                'active' => true,
+            ]);
+
+            return $p;
+        });
+
+        // Insert foreign barcode belonging to otherCompany pointing to product->id
+        DB::table('product_barcodes')->insert([
+            'company_id' => $otherCompany->id,
+            'product_id' => $product->id,
+            'unit_id' => null,
+            'barcode' => 'FOREIGN_BARCODE_CORRUPT',
+            'type' => 'code128',
+            'is_primary' => true,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $otherWarehouseId = DB::table('warehouses')->insertGetId([
+            'public_id' => (string) Str::ulid(),
+            'company_id' => $otherCompany->id,
+            'code' => 'WH-OTHER',
+            'name_ar' => 'مستودع أجنبي',
+            'active' => true,
+            'is_default' => true,
+            'created_by' => $this->user->id,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        // Insert foreign inventory balance belonging to otherCompany pointing to product->id
+        DB::table('inventory_balances')->insert([
+            'company_id' => $otherCompany->id,
+            'product_id' => $product->id,
+            'warehouse_id' => $otherWarehouseId,
+            'quantity_base' => '8888.000000',
+            'updated_at' => now(),
+        ]);
+
+        // 1. Foreign barcode must not be returned in Product DTO
+        $resp = $this->withHeader('Authorization', "Bearer {$token}")
+            ->getJson("/api/mobile/v1/companies/{$this->company->public_id}/products")->assertOk();
+        $prodDto = collect($resp->json('products'))->firstWhere('id', $product->public_id);
+        $this->assertNotNull($prodDto);
+        $this->assertNull($prodDto['barcode'], 'Foreign company barcode must not be attached to product DTO!');
+        $this->assertSame('0.000000', $prodDto['available_quantity'], 'Foreign balance must not leak into product available quantity!');
+
+        // 2. Searching by the foreign barcode must NOT find this product
+        $searchResp = $this->withHeader('Authorization', "Bearer {$token}")
+            ->getJson("/api/mobile/v1/companies/{$this->company->public_id}/products?search=FOREIGN_BARCODE")->assertOk();
+        $this->assertEmpty($searchResp->json('products'), 'whereHas barcodes scoped at query source must not match foreign company barcodes!');
+
+        // 3. Non-matching search does not leak anything
+        $nonMatchingResp = $this->withHeader('Authorization', "Bearer {$token}")
+            ->getJson("/api/mobile/v1/companies/{$this->company->public_id}/products?search=NONEXISTENT_XYZ")->assertOk();
+        $this->assertEmpty($nonMatchingResp->json('products'));
+    }
+
+    public function test_query_validation_rejects_terminal_newlines_and_validates_config_defaults(): void
+    {
+        $token = $this->issueToken();
+
+        // Invalid limit formats (negative, float, non-digit, embedded newline)
+        foreach (['limit[]' => '10', 'limit' => '-5', 'limit' => '10.5', 'limit' => 'abc', 'limit' => '0', 'limit' => '101', 'limit' => '10 2', 'limit' => "10\n2"] as $param => $val) {
+            $this->withHeader('Authorization', "Bearer {$token}")
+                ->getJson("/api/mobile/v1/companies/{$this->company->public_id}/products?{$param}=".urlencode((string) $val))
+                ->assertStatus(422)
+                ->assertJsonPath('error.code', 'VALIDATION_FAILED');
+        }
+
+        // Invalid cursor formats (arrays, invalid length, invalid chars, embedded newline)
+        foreach (['01JCV8X9MDPTRSVWXYZ012345678', 'invalid_lower_case_cursor_xx', 'not-a-crockford-ulid-string', "01JCV8X9MDPT\nRSVWXYZ01234", str_repeat('A', 256)] as $badCursor) {
+            $this->withHeader('Authorization', "Bearer {$token}")
+                ->getJson("/api/mobile/v1/companies/{$this->company->public_id}/products?cursor=".urlencode($badCursor))
+                ->assertStatus(422)
+                ->assertJsonPath('error.code', 'VALIDATION_FAILED');
+        }
+
+        // Config default <= 0 falls back safely to valid limit
+        config(['mobile.max_page_limit' => 0]);
+        $resp = $this->withHeader('Authorization', "Bearer {$token}")
+            ->getJson("/api/mobile/v1/companies/{$this->company->public_id}/products")
+            ->assertOk();
+        $this->assertIsArray($resp->json('products'));
+    }
 }

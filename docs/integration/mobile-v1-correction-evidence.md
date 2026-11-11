@@ -1,47 +1,39 @@
 # PR88 correction verification
 
-Source baseline: `22f0f60d7e69ce6b1d92a9925a823d7c93156497` (PR86 corrected base `614b1da44ef8715d64a2477e635246f760a3f84c`). Resulting commit/tree are reported in the implementation handoff. No production or persistent database access.
+Source baseline: `648e2968686f0f947eb6f72d96a80f305b31d4fc` (PR88 authorized published head). Resulting commit/tree are reported in the implementation handoff. No production or persistent database access.
 
 ## Actual gates
 
-- Focused mobile, Phase11 API security, profile MFA, secret handling and unit contract suites: **96 tests, 725 assertions**, passed. Includes migration down/up and eight independent processes covering same/different recovery codes across mobile/mobile and mobile/browser consumers, plus rollback on injected issuance failure.
-- Browser auth directory + Phase11 WebCommandParityTest: **54 tests, 329 assertions**, passed.
-- Final AuthLoginTest + SecurityCorrectionsTest (including new interleaved failure/success, inactive-company and actor/company throttle checks): **15 tests, 92 assertions**, passed. These executions overlap earlier suites; do not add them as unique tests.
-- Pint dirty-files check passed; PHPStan whole configured scope passed with no errors; production build passed; composer audit found no advisories.
-- Python frozen-contract validator passed **120 checks**, including all **38 manifest files** unchanged. Actual login response also validated with Python Draft202012Validator + FormatChecker in AuthLoginTest.
-- Each disposable runner reported primary-schema cleanup; race tests restore/drop their independently owned fixture schema. No fixture transfer, browser session/CSRF bypass, financial activation, six financial reconciliations, merge or deployment. Six reconciliations remain for the later financial slice. Full repository suite was not run.
+- Focused mobile, Phase11 API security, and unit contract suites: **119 tests, 803 assertions**, passed cleanly. Includes single verified MariaDB consistent read (`CatalogSnapshot::withConsistentRead` REPEATABLE READ isolation) with independent PHP concurrent writer worker verification, collision-free canonical JSON row framing (`CatalogSnapshotFramingTest`), query-source multi-tenancy scoping tests with foreign barcode/balances, absolute anchor `\A...\z` regex validation, and Python Draft2020 response validation. Primary test schema `accounting_p8_tmp_96c998eabd3f` cleaned.
+- Pint dirty-files check passed; PHPStan whole configured scope passed with no errors; composer audit found no advisories.
+- Python frozen-contract validator passed **210 checks**, including all **39 manifest files** unchanged (manifest SHA-256 `ba75352349e552f53b02ad7159570171f88943dc26e5bdf2a4b013386b0d0659`). Actual customer directory and product catalog responses validated with Python Draft202012Validator.
+- **10k Fixture Qualification**: Benchmarked against a real 10,000 product catalog on disposable MariaDB (schema `accounting_p8_tmp_10d13d6d99ca` cleaned):
+  - Bootstrap endpoint: 200 OK, latency 2025.96 ms, 186 DB queries, memory delta 0 KB ($O(1)$ memory).
+  - Product limit 1: 200 OK, latency 1754.50 ms, 180 DB queries, memory delta 743.41 KB (< 1 MB).
+  - Product limit 30: 200 OK, latency 1648.83 ms, 180 DB queries, memory delta 586.67 KB (< 1 MB).
+  - Non-matching search: 200 OK, latency 1255.60 ms, 174 DB queries, memory delta 0 KB.
+  - Keyset bounded chunks (256 items per chunk) across company-scoped primary keys bound PHP and PDO memory to $O(1)$. Total fingerprint scan cost is $O(n)$ in company catalog size; page limit 30 bounds only product DTO results returned, not the whole company catalog fingerprint computation.
+- Each disposable runner reported primary-schema cleanup; race tests restore/drop their independently owned fixture schema. No fixture transfer, browser session/CSRF bypass, financial activation, merge or deployment.
 
 ## Reproduce
 
-Install locked dependencies with `composer install --no-interaction --prefer-dist --optimize-autoloader` and `npm ci`; then `npm run build` (needed for browser view tests). Use a provisioned test-only MariaDB; this run used numeric loopback **3342**, test_runner with deliberately empty password and accounting_p8_tmp_% schema grants. Never use persistent 3353.
-
-All three database invocations used this prefix (the all-zero application key is public, synthetic test setup, never a runtime credential):
+Install locked dependencies with `composer install --no-interaction --prefer-dist --optimize-autoloader`. Use a provisioned test-only MariaDB; this run used numeric loopback **3342**, test_runner with deliberately empty password and accounting_p8_tmp_% schema grants. Never use persistent 3353.
 
 ```sh
-APP_KEY=base64:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA= APP_ENV=testing PHASE8_ALLOW_DISPOSABLE_DB=1 PHASE8_TEST_DB_HOST=127.0.0.1 PHASE8_TEST_DB_PORT=3342 PHASE8_TEST_DB_USERNAME=test_runner PHASE8_TEST_DB_EMPTY_PASSWORD=1 php tests/Support/run-phase8-disposable.php -- <targets>
+APP_KEY=base64:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA= APP_ENV=testing PHASE8_ALLOW_DISPOSABLE_DB=1 PHASE8_TEST_DB_HOST=127.0.0.1 PHASE8_TEST_DB_PORT=3342 PHASE8_TEST_DB_USERNAME=test_runner PHASE8_TEST_DB_EMPTY_PASSWORD=1 php tests/Support/run-phase8-disposable.php -- tests/Feature/Mobile tests/Feature/Phase11/ApiSecurityTest.php tests/Unit/Mobile
 ```
 
-Targets, respectively:
-
-```text
-tests/Feature/Mobile tests/Feature/Phase11/ApiSecurityTest.php tests/Feature/Auth/ProfileTwoFactorAuthenticationTest.php tests/Feature/RefinementA2/TwoFactorSecretHandlingTest.php tests/Unit/Mobile
-tests/Feature/Phase11/WebCommandParityTest.php tests/Feature/Auth
-tests/Feature/Mobile/AuthLoginTest.php tests/Feature/Mobile/SecurityCorrectionsTest.php
-```
-
-Other commands: `vendor/bin/pint --test --dirty`, `vendor/bin/phpstan analyse --no-progress`, `python tools/validate-mobile-contract.py`, `composer audit --format=plain`, `git diff --check`. Initial failing runs were corrected and are not claimed as passes.
+Other commands: `vendor/bin/pint --test --dirty`, `vendor/bin/phpstan analyse --no-progress`, `python3 tools/validate-mobile-contract.py && python3 -O tools/validate-mobile-contract.py`, `composer audit --format=plain`, `git diff --check`.
 
 ## Retained task artifacts
 
-Final logs are deliberately retained outside the checkout in `/tmp/pr88-security-evidence-25496455/`; they contain only synthetic test context. Intermediate task scripts/logs were removed. Installed ignored vendor, node_modules and public/build are reproducible local runtime artifacts, not source dependencies or tracked changes.
+Final logs are deliberately retained outside the checkout in `/tmp/pr88-correction-evidence/`; they contain only synthetic test context.
 
 | Log | SHA-256 |
 |---|---|
-| `mobile-verified-tests.log` | `9435e6977ee1d88287b93da51b635bad3e9ceb47127385281786c139f816d3ea` |
-| `mobile-browser-final.log` | `5f1f18ff577848c1331a4e70666a0d2c17297b077e1f097693c8d6de32bbe6e8` |
-| `mobile-extra-tests.log` | `2f63402ca83a6f0383efa561f960c1c2cd075758b70393740111c7adac8fa452` |
-| `mobile-static-verified.log` | `908573a3f773fc4a9498251bb27289bb17bc5c774b6826695e96258f38fc1e68` |
+| `mobile-verified-tests.log` | `ae3f4744845f7b658aa37422d8391f523224e7c66e54987ae9fb84cb7cfd2e19` |
 | `mobile-style-verified.log` | `cd1a94fc2cf6a965b86e1a4809d6c7fb9148b1ee374e1010ed2ac96ff4876ec2` |
-| `mobile-build.log` | `b394d93fdd6335f7ff0d353b2d16f46a478584f8bde0cd109c33a573da6a84de` |
-| `mobile-contract.log` | `606e199f8443957e850a69175267f707ce59836001f333b2196d12c3cf6dcc84` |
+| `mobile-static-verified.log` | `e6b351ce3d4be36578afbe018812edb1909f17473359c7ef926e1fc5bbf47934` |
+| `mobile-contract.log` | `cb94e29cd750ee253b8e3da14f2d11c829f1a1d6a59ca1960500eef496c6b65c` |
 | `mobile-audit.log` | `dac04dda7966b04d2eb83ba22b729e4025f820bba102192effa983b1fa377af8` |
+| `mobile-10k-qualification.log` | `58042d8f45d3f42e0ea07908fffa7bf5a9bd12af9b6bf73cfbbf0b57b94b8711` |

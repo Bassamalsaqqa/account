@@ -39,7 +39,7 @@ final class CustomerController extends Controller
         // 2. Resolve bounded limit (absolute cap 30 per specification, OpenAPI 1..100)
         if ($request->has('limit')) {
             $rawLimit = $request->query('limit');
-            if (is_array($rawLimit) || ! is_scalar($rawLimit) || preg_match('/^(?:0|[1-9][0-9]*)$/', (string) $rawLimit) !== 1) {
+            if (is_array($rawLimit) || ! is_scalar($rawLimit) || preg_match('/\A(?:0|[1-9][0-9]*)\z/', (string) $rawLimit) !== 1) {
                 return MobileApiBoundary::buildErrorResponse(
                     code: 'VALIDATION_FAILED',
                     message: 'Limit must be a valid integer.',
@@ -56,7 +56,11 @@ final class CustomerController extends Controller
             }
             $limit = min($intLimit, 30);
         } else {
-            $limit = min((int) config('mobile.max_page_limit', 30), 30);
+            $configDefault = (int) config('mobile.max_page_limit', 30);
+            if ($configDefault < 1) {
+                $configDefault = 30;
+            }
+            $limit = min($configDefault, 30);
         }
 
         // 3. Resolve search (max 100 characters, literal prefix only - no leading wildcard)
@@ -91,16 +95,22 @@ final class CustomerController extends Controller
                     status: 422
                 );
             }
-            $trimmedCursor = trim($rawCursor);
-            if ($trimmedCursor !== '') {
-                if (preg_match('/^[0-7][0-9A-HJKMNP-TV-Z]{25}$/', $trimmedCursor) !== 1) {
+            if (strlen($rawCursor) > 255) {
+                return MobileApiBoundary::buildErrorResponse(
+                    code: 'VALIDATION_FAILED',
+                    message: 'Cursor exceeds maximum length of 255 characters.',
+                    status: 422
+                );
+            }
+            if ($rawCursor !== '') {
+                if (preg_match('/\A[0-7][0-9A-HJKMNP-TV-Z]{25}\z/', $rawCursor) !== 1) {
                     return MobileApiBoundary::buildErrorResponse(
                         code: 'VALIDATION_FAILED',
                         message: 'Cursor must match canonical Crockford ULID format.',
                         status: 422
                     );
                 }
-                $cursor = $trimmedCursor;
+                $cursor = $rawCursor;
             } else {
                 $cursor = null;
             }
