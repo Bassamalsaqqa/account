@@ -161,6 +161,7 @@ final class StrictJsonParser
     {
         $this->consume('"');
         $sb = '';
+        $units = 0;
 
         while ($this->pos < $this->len) {
             $c = $this->src[$this->pos++];
@@ -168,15 +169,12 @@ final class StrictJsonParser
                 return new StrictJsonString($sb);
             }
 
-            if (strlen($sb) >= ContractConstants::MAX_STRING_LENGTH) {
-                throw new CanonicalSerializationException('JSON string length exceeds maximum allowed '.ContractConstants::MAX_STRING_LENGTH);
-            }
-
             if ($c === '\\') {
                 if ($this->pos >= $this->len) {
                     throw new CanonicalSerializationException('Unterminated escape sequence in string');
                 }
                 $esc = $this->src[$this->pos++];
+                $units++;
                 switch ($esc) {
                     case '"':
                         $sb .= '"';
@@ -223,6 +221,7 @@ final class StrictJsonParser
                                         $this->pos += 6;
                                         $codePoint = 0x10000 + (($code - 0xD800) << 10) + ($code2 - 0xDC00);
                                         $sb .= mb_chr($codePoint, 'UTF-8');
+                                        $units++;
                                         break;
                                     }
                                 }
@@ -242,7 +241,15 @@ final class StrictJsonParser
                 if ($ord < 0x20) {
                     throw new CanonicalSerializationException("Unescaped control character in string literal at position {$this->pos}");
                 }
+                // Input UTF-8 is validated once in the constructor. Count each
+                // leading byte once; supplementary scalars use two UTF-16 units.
+                if ($ord < 0x80 || $ord >= 0xC0) {
+                    $units += $ord >= 0xF0 ? 2 : 1;
+                }
                 $sb .= $c;
+            }
+            if ($units > ContractConstants::MAX_STRING_LENGTH) {
+                throw new CanonicalSerializationException('JSON string length exceeds maximum UTF-16 code units');
             }
         }
 

@@ -10,7 +10,14 @@ final readonly class StrictJsonNumber implements StrictJsonElement
         public string $rawString,
         public int $value,
         public bool $isInt = true
-    ) {}
+    ) {
+        if (! $isInt || ! preg_match('/\A(?:0|-?[1-9][0-9]*)\z/', $rawString)
+            || (string) $value !== $rawString
+            || $value < ContractConstants::MIN_SAFE_INTEGER
+            || $value > ContractConstants::MAX_SAFE_INTEGER) {
+            throw new Exceptions\CanonicalSerializationException('Invalid or inconsistent strict integer');
+        }
+    }
 
     public function asInt(): int
     {

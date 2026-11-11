@@ -16,7 +16,12 @@ final class CanonicalJsonSerializer
      */
     public static function serialize(mixed $obj, int $depth = 0): string
     {
-        return self::serializeInternal($obj, $depth);
+        $result = self::serializeInternal($obj, $depth);
+        if (strlen($result) > ContractConstants::MAX_PAYLOAD_BYTES) {
+            throw new CanonicalSerializationException('Canonical payload exceeds maximum allowed bytes');
+        }
+
+        return $result;
     }
 
     /**
@@ -60,7 +65,7 @@ final class CanonicalJsonSerializer
 
     private static function serializeInternal(mixed $obj, int $depth): string
     {
-        if ($depth > ContractConstants::MAX_NESTING_DEPTH) {
+        if ($depth < 0 || $depth > ContractConstants::MAX_NESTING_DEPTH) {
             throw new CanonicalSerializationException(
                 'Serialization recursion depth exceeded maximum allowed '.ContractConstants::MAX_NESTING_DEPTH
             );
@@ -161,6 +166,10 @@ final class CanonicalJsonSerializer
      */
     private static function serializeArrayElements(array $elements, int $depth): string
     {
+        if ($depth >= ContractConstants::MAX_NESTING_DEPTH) {
+            throw new CanonicalSerializationException('Container nesting depth exceeded');
+        }
+
         $parts = [];
         foreach ($elements as $item) {
             $parts[] = self::serializeInternal($item, $depth + 1);
@@ -174,7 +183,11 @@ final class CanonicalJsonSerializer
      */
     private static function serializeObjectProperties(array $properties, int $depth): string
     {
-        $keys = array_keys($properties);
+        if ($depth >= ContractConstants::MAX_NESTING_DEPTH) {
+            throw new CanonicalSerializationException('Container nesting depth exceeded');
+        }
+
+        $keys = array_map(strval(...), array_keys($properties));
         $sortedKeys = self::sortKeysUtf16($keys);
 
         $parts = [];
@@ -190,20 +203,7 @@ final class CanonicalJsonSerializer
      */
     private static function serializeAssociativeArray(array $properties, int $depth): string
     {
-        $stringMap = [];
-        foreach ($properties as $k => $v) {
-            $stringMap[(string) $k] = $v;
-        }
-
-        $keys = array_keys($stringMap);
-        $sortedKeys = self::sortKeysUtf16($keys);
-
-        $parts = [];
-        foreach ($sortedKeys as $k) {
-            $parts[] = self::escapeString($k).':'.self::serializeInternal($stringMap[$k], $depth + 1);
-        }
-
-        return '{'.implode(',', $parts).'}';
+        return self::serializeObjectProperties($properties, $depth);
     }
 
     /**
@@ -231,6 +231,10 @@ final class CanonicalJsonSerializer
     {
         if (! mb_check_encoding($s, 'UTF-8')) {
             throw new CanonicalSerializationException('Invalid UTF-8 or unpaired Unicode surrogate detected');
+        }
+
+        if (intdiv(strlen(mb_convert_encoding($s, 'UTF-16BE', 'UTF-8')), 2) > ContractConstants::MAX_STRING_LENGTH) {
+            throw new CanonicalSerializationException('String exceeds maximum UTF-16 code units');
         }
 
         $len = strlen($s);

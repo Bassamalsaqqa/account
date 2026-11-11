@@ -252,7 +252,7 @@ class CanonicalJsonSerializerTest extends TestCase
     public function test_negative_zero_number_element_rejected_in_serializer(): void
     {
         $this->expectException(CanonicalSerializationException::class);
-        $this->expectExceptionMessage("Negative zero '-0' is forbidden in canonical JSON profile");
+        $this->expectExceptionMessage('Invalid or inconsistent strict integer');
         CanonicalJsonSerializer::serialize(new StrictJsonNumber('-0', 0, true));
     }
 

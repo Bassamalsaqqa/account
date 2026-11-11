@@ -57,3 +57,31 @@
   - NO mobile authentication endpoints or handlers.
   - NO financial service or ledger posting mutations.
   - NO database migrations.
+
+## 6. Owner-agreed boundary and exactness clarification
+
+Decoded JSON strings, including keys, are limited to 65,536 UTF-16 code units:
+BMP characters (including Arabic and euro) count as one, supplementary characters
+as two, whether raw UTF-8 or escaped surrogate pairs. Raw input is limited to
+1,048,576 UTF-8 bytes. The parser counts decoded units incrementally without
+rescanning accumulated strings. This clarification is coordinated with the Android
+counterpart; frozen mirrored contract files and validation tools remain unchanged.
+
+Native serialization enforces the same decoded string and 32-container nesting
+limits, and limits its resulting canonical UTF-8 payload to 1,048,576 bytes.
+Raw input size and canonical output size are distinct: whitespace/escapes can
+make raw input larger. Native serialization checks aggregate output size after
+construction, so this is an acceptance bound rather than a streaming memory bound.
+Strict objects and stdClass always emit object shape, including empty and numeric
+key objects; PHP lists emit arrays. StrictJsonObject::toNative() remains a convenience
+array conversion and cannot preserve object/list identity; serialize the strict
+element itself when identity matters.
+
+Public strict numbers validate integer grammar, safe range and raw/value agreement.
+Decimal lexemes reject whitespace without trimming, preserve original digest bytes,
+and use UNNECESSARY scale conversion by default. Precision loss throws; rounding
+requires an explicit mode and does not change the original lexeme.
+
+The decoded UTF-16 boundary and exact decimal interpretation are coordinated with
+the Android correction. A coordinated formal contract update is pending; these
+implementation notes do not modify or supersede the frozen mirror provenance.

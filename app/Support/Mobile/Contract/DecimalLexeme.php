@@ -14,7 +14,7 @@ final readonly class DecimalLexeme implements Stringable
     public function __construct(
         public string $lexeme
     ) {
-        if (! preg_match('/^-?(?:0|[1-9]\d*)(?:\.\d+)?$/', $this->lexeme)) {
+        if (! preg_match('/\A-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?\z/', $this->lexeme)) {
             throw new CanonicalSerializationException("Invalid decimal lexeme format: '{$this->lexeme}'");
         }
     }
@@ -37,7 +37,7 @@ final readonly class DecimalLexeme implements Stringable
         return BigDecimal::of($this->lexeme);
     }
 
-    public function toScale(int $scale, RoundingMode $roundingMode = RoundingMode::HALF_UP): BigDecimal
+    public function toScale(int $scale, RoundingMode $roundingMode = RoundingMode::UNNECESSARY): BigDecimal
     {
         return $this->toBigDecimal()->toScale($scale, $roundingMode);
     }
