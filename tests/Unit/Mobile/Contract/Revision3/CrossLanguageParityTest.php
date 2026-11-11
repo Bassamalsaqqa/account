@@ -189,4 +189,80 @@ final class CrossLanguageParityTest extends TestCase
         $this->assertSame('6.900000', $line['tax_amount']);
         $this->assertSame('50.000000', $line['line_total']);
     }
+
+    public function test_golden_fixture_defect_1_appended_newline_rejected(): void
+    {
+        $fixturePath = $this->contractsPath.'/fixtures/golden-online-sale-intent-profile.json';
+        /** @var array<string, mixed> $fixture */
+        $fixture = json_decode((string) file_get_contents($fixturePath), true, 512, JSON_THROW_ON_ERROR);
+
+        $mutContext = $fixture['context'];
+        $mutContext['actor_id'] = $mutContext['actor_id']."\n";
+
+        $this->expectException(IntentProfileValidationException::class);
+        OnlineSaleIntentProfile::construct($mutContext, $fixture['request']);
+    }
+
+    public function test_golden_fixture_defect_2_lines_associative_object_rejected(): void
+    {
+        $fixturePath = $this->contractsPath.'/fixtures/golden-online-sale-intent-profile.json';
+        /** @var array<string, mixed> $fixture */
+        $fixture = json_decode((string) file_get_contents($fixturePath), true, 512, JSON_THROW_ON_ERROR);
+
+        $mutRequest = $fixture['request'];
+        $mutRequest['lines'] = ['wrong-key' => $mutRequest['lines'][0]];
+
+        $this->expectException(IntentProfileValidationException::class);
+        OnlineSaleIntentProfile::construct($fixture['context'], $mutRequest);
+    }
+
+    public function test_golden_fixture_defect_3_unpaid_raw_payment_with_positive_amount_rejected(): void
+    {
+        $fixturePath = $this->contractsPath.'/fixtures/golden-online-sale-intent-profile.json';
+        /** @var array<string, mixed> $fixture */
+        $fixture = json_decode((string) file_get_contents($fixturePath), true, 512, JSON_THROW_ON_ERROR);
+
+        $mutRequest = $fixture['request'];
+        $mutRequest['payment'] = [
+            'settlement_mode' => 'unpaid',
+            'amount' => '50.000000',
+        ];
+
+        $this->expectException(IntentProfileValidationException::class);
+        OnlineSaleIntentProfile::construct($fixture['context'], $mutRequest);
+    }
+
+    public function test_golden_fixture_defect_4_verify_malformed_profile_matching_own_digest_rejected(): void
+    {
+        $fixturePath = $this->contractsPath.'/fixtures/golden-online-sale-intent-profile.json';
+        /** @var array<string, mixed> $fixture */
+        $fixture = json_decode((string) file_get_contents($fixturePath), true, 512, JSON_THROW_ON_ERROR);
+
+        $profile = OnlineSaleIntentProfile::construct($fixture['context'], $fixture['request']);
+        $profile['lines'] = 'invalid';
+        $digest = OnlineSaleIntentProfile::computeDigest($profile);
+
+        $this->expectException(IntentProfileValidationException::class);
+        OnlineSaleIntentProfile::verify($profile, $digest);
+    }
+
+    public function test_golden_fixture_defect_5_one_argument_resolver_rejected(): void
+    {
+        $fixturePath = $this->contractsPath.'/fixtures/golden-online-sale-intent-profile.json';
+        /** @var array<string, mixed> $fixture */
+        $fixture = json_decode((string) file_get_contents($fixturePath), true, 512, JSON_THROW_ON_ERROR);
+
+        $profile = OnlineSaleIntentProfile::construct($fixture['context'], $fixture['request']);
+
+        $oneArgResolver = fn (string $company): int => 101;
+
+        $this->expectException(\InvalidArgumentException::class);
+        PaymentSettlementValidator::adaptOnlinePaymentToCanonicalChoice(
+            $profile,
+            '50.000000',
+            2,
+            '2026-11-11',
+            $oneArgResolver
+        );
+    }
 }

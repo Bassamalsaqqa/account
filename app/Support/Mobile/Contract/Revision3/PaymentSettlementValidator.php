@@ -9,13 +9,21 @@ use Brick\Math\RoundingMode;
 use Closure;
 use DateTimeImmutable;
 use InvalidArgumentException;
+use ReflectionFunction;
+use ReflectionMethod;
 use Throwable;
 
 final class PaymentSettlementValidator
 {
-    private const string DECIMAL_MONEY_REGEX = '/^(?:0|[1-9][0-9]{0,13})(?:\.[0-9]{1,6})?$/';
+    private const string DECIMAL_MONEY_REGEX = '/\A(?:0|[1-9][0-9]{0,13})(?:\.[0-9]{1,6})?\z/';
 
-    private const string ULID_REGEX = '/^[0-7][0-9A-HJKMNP-TV-Z]{25}$/';
+    private const string POSITIVE_DECIMAL_REGEX = '/\A(?:0\.(?=[0-9]{1,6}\z)[0-9]*[1-9][0-9]*|[1-9][0-9]{0,13}(?:\.[0-9]{1,6})?)\z/';
+
+    private const string TAX_RATE_REGEX = '/\A(?:100(?:\.0{1,6})?|(?:0|[1-9][0-9]?)(?:\.[0-9]{1,6})?)\z/';
+
+    private const string ULID_REGEX = '/\A[0-7][0-9A-HJKMNP-TV-Z]{25}\z/';
+
+    private const string DATE_REGEX = '/\A\d{4}-\d{2}-\d{2}\z/';
 
     public static function validateCurrencyMinorUnits(mixed $cmu): bool
     {
@@ -26,8 +34,12 @@ final class PaymentSettlementValidator
         return $cmu >= 0 && $cmu <= 6;
     }
 
-    public static function parseAndValidateMonetaryAmount(mixed $val, int $cmu): ?BigDecimal
+    public static function parseAndValidateMonetaryAmount(mixed $val, mixed $cmu): ?BigDecimal
     {
+        if (! self::validateCurrencyMinorUnits($cmu)) {
+            return null;
+        }
+
         if (! is_string($val)) {
             return null;
         }
@@ -42,6 +54,7 @@ final class PaymentSettlementValidator
             return null;
         }
 
+        /** @var int $cmu */
         $cents = $d->multipliedBy(BigDecimal::of(10)->power($cmu));
         if ($cents->hasNonZeroFractionalPart()) {
             return null;
@@ -62,6 +75,18 @@ final class PaymentSettlementValidator
     ): array {
         if (! self::validateCurrencyMinorUnits($minorUnits)) {
             throw new InvalidArgumentException("minor_units must be an explicit integer between 0 and 6 (got {$minorUnits})");
+        }
+
+        if (preg_match(self::POSITIVE_DECIMAL_REGEX, $quantityStr) !== 1) {
+            throw new InvalidArgumentException("Invalid quantity decimal lexeme: '{$quantityStr}'");
+        }
+
+        if (preg_match(self::DECIMAL_MONEY_REGEX, $unitPriceStr) !== 1) {
+            throw new InvalidArgumentException("Invalid unit_price decimal lexeme: '{$unitPriceStr}'");
+        }
+
+        if (preg_match(self::TAX_RATE_REGEX, $taxRateStr) !== 1) {
+            throw new InvalidArgumentException("Invalid tax_rate decimal lexeme: '{$taxRateStr}'");
         }
 
         $q = BigDecimal::of($quantityStr);
@@ -178,7 +203,7 @@ final class PaymentSettlementValidator
 
     /**
      * @param  array<string, mixed>  $payment
-     * @param  (Closure(string, string): mixed)|null  $cashAccountResolver
+     * @param  (callable(string, string): mixed)|null  $cashAccountResolver
      * @return array<string, mixed>
      */
     public static function adaptOfflineCashToCanonicalReceipt(
@@ -186,7 +211,7 @@ final class PaymentSettlementValidator
         string $grandTotalStr,
         int $currencyMinorUnits,
         ?string $reviewedPaymentDate = null,
-        ?Closure $cashAccountResolver = null,
+        ?callable $cashAccountResolver = null,
         ?string $companyId = null,
         ?int $customerId = null
     ): array {
@@ -220,8 +245,13 @@ final class PaymentSettlementValidator
             'change_returned' => $changeStr,
         ];
 
-        if ($reviewedPaymentDate !== null && $cashAccountResolver !== null) {
-            if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $reviewedPaymentDate) !== 1) {
+        $isCommandRequested = ($reviewedPaymentDate !== null || $cashAccountResolver !== null || $companyId !== null || $customerId !== null);
+
+        if ($isCommandRequested) {
+            if ($reviewedPaymentDate === null) {
+                throw new InvalidArgumentException('reviewed_payment_date is required for canonical receipt command');
+            }
+            if (preg_match(self::DATE_REGEX, $reviewedPaymentDate) !== 1) {
                 throw new InvalidArgumentException("reviewed_payment_date must be valid Y-m-d format, got '{$reviewedPaymentDate}'");
             }
             $date = DateTimeImmutable::createFromFormat('!Y-m-d', $reviewedPaymentDate);
@@ -229,17 +259,22 @@ final class PaymentSettlementValidator
                 throw new InvalidArgumentException("reviewed_payment_date is not a valid calendar date: '{$reviewedPaymentDate}'");
             }
 
+            if ($cashAccountResolver === null) {
+                throw new InvalidArgumentException('cash_account_resolver is required for canonical receipt command');
+            }
+            self::validateCashAccountResolver($cashAccountResolver);
+
+            if (! is_string($companyId) || preg_match(self::ULID_REGEX, $companyId) !== 1) {
+                throw new InvalidArgumentException('Explicit company identity required');
+            }
+
             if ($customerId === null || $customerId <= 0) {
                 throw new InvalidArgumentException('customer_id must be a positive integer for canonical receipt command');
             }
 
             $wireAcct = $payment['cash_account_id'] ?? null;
-            if (! is_string($wireAcct) || $wireAcct === '') {
-                throw new InvalidArgumentException('cash_account_id required to resolve money_account_id');
-            }
-
-            if (! is_string($companyId) || preg_match(self::ULID_REGEX, $companyId) !== 1) {
-                throw new InvalidArgumentException('Explicit company identity required');
+            if (! is_string($wireAcct) || preg_match(self::ULID_REGEX, $wireAcct) !== 1) {
+                throw new InvalidArgumentException('Valid cash_account_id ULID required to resolve money_account_id');
             }
 
             try {
@@ -248,7 +283,7 @@ final class PaymentSettlementValidator
                 throw new InvalidArgumentException('Cash account resolution failed');
             }
 
-            if (! is_int($internalId) || $internalId <= 0) {
+            if (is_bool($internalId) || ! is_int($internalId) || $internalId <= 0) {
                 throw new InvalidArgumentException('Resolved money_account_id must be a positive integer');
             }
 
@@ -266,8 +301,8 @@ final class PaymentSettlementValidator
     }
 
     /**
-     * @param  array<string, mixed>  $intentProfile
-     * @param  (Closure(string, string): mixed)|null  $cashAccountResolver
+     * @param  array<string, mixed>  $intentProfile  Normative online sale intent profile
+     * @param  (callable(string, string): mixed)|callable|null  $cashAccountResolver
      * @return array<string, mixed>
      */
     public static function adaptOnlinePaymentToCanonicalChoice(
@@ -275,19 +310,33 @@ final class PaymentSettlementValidator
         string $grandTotalStr,
         int $currencyMinorUnits,
         ?string $reviewedPaymentDate = null,
-        ?Closure $cashAccountResolver = null
+        ?callable $cashAccountResolver = null
     ): array {
         if (! self::validateCurrencyMinorUnits($currencyMinorUnits)) {
             throw new InvalidArgumentException("currency_minor_units must be an explicit integer in 0..6 (got {$currencyMinorUnits})");
         }
 
-        $payment = $intentProfile['payment'] ?? [];
-        if (! is_array($payment) || ! self::verifyPaymentDecimalConsistency($payment, $grandTotalStr, $currencyMinorUnits)) {
+        $gt = self::parseAndValidateMonetaryAmount($grandTotalStr, $currencyMinorUnits);
+        if ($gt === null || ! $gt->isPositive()) {
+            throw new InvalidArgumentException('Grand total must be a valid positive monetary decimal string');
+        }
+
+        $companyId = $intentProfile['company_id'] ?? null;
+        if (! is_string($companyId) || preg_match(self::ULID_REGEX, $companyId) !== 1) {
+            throw new InvalidArgumentException('Explicit company identity required');
+        }
+
+        $payment = $intentProfile['payment'] ?? null;
+        if (! is_array($payment) || array_is_list($payment) || ! self::verifyPaymentDecimalConsistency($payment, $grandTotalStr, $currencyMinorUnits)) {
             throw new InvalidArgumentException('Online payment decimal consistency or domain bound violation');
         }
 
         $mode = $payment['settlement_mode'] ?? null;
         if ($mode === 'unpaid') {
+            if (($payment['payment_method'] ?? null) !== null || ($payment['cash_account_id'] ?? null) !== null) {
+                throw new InvalidArgumentException('Unpaid payment must have null payment_method and cash_account_id');
+            }
+
             return ['mode' => 'unpaid'];
         }
 
@@ -295,7 +344,7 @@ final class PaymentSettlementValidator
             if ($reviewedPaymentDate === null) {
                 throw new InvalidArgumentException('reviewed_payment_date is mandatory for full/partial settlement (no default permitted)');
             }
-            if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $reviewedPaymentDate) !== 1) {
+            if (preg_match(self::DATE_REGEX, $reviewedPaymentDate) !== 1) {
                 throw new InvalidArgumentException("reviewed_payment_date must be valid Y-m-d format, got '{$reviewedPaymentDate}'");
             }
             $date = DateTimeImmutable::createFromFormat('!Y-m-d', $reviewedPaymentDate);
@@ -306,15 +355,15 @@ final class PaymentSettlementValidator
             if ($cashAccountResolver === null) {
                 throw new InvalidArgumentException('cash_account_resolver is mandatory for full/partial settlement (company-scoped resolver required)');
             }
+            self::validateCashAccountResolver($cashAccountResolver);
 
-            $companyId = $intentProfile['company_id'] ?? null;
-            if (! is_string($companyId) || preg_match(self::ULID_REGEX, $companyId) !== 1) {
-                throw new InvalidArgumentException('Explicit company identity required');
+            if (($payment['payment_method'] ?? null) !== 'cash') {
+                throw new InvalidArgumentException("payment_method must be 'cash' for {$mode} settlement");
             }
 
             $wireAcctId = $payment['cash_account_id'] ?? null;
-            if (! is_string($wireAcctId) || $wireAcctId === '') {
-                throw new InvalidArgumentException('Missing cash_account_id in payment intent profile');
+            if (! is_string($wireAcctId) || preg_match(self::ULID_REGEX, $wireAcctId) !== 1) {
+                throw new InvalidArgumentException('Missing or invalid cash_account_id ULID in payment intent profile');
             }
 
             try {
@@ -323,16 +372,15 @@ final class PaymentSettlementValidator
                 throw new InvalidArgumentException('Cash account resolution failed');
             }
 
-            if (! is_int($internalMoneyAccountId) || $internalMoneyAccountId <= 0) {
+            if (is_bool($internalMoneyAccountId) || ! is_int($internalMoneyAccountId) || $internalMoneyAccountId <= 0) {
                 throw new InvalidArgumentException('Resolved money_account_id must be a positive integer');
             }
 
             $amtStr = (string) $payment['amount'];
             $amt = BigDecimal::of($amtStr);
-            $total = BigDecimal::of($grandTotalStr);
 
             if ($mode === 'full') {
-                if (! $amt->isEqualTo($total)) {
+                if (! $amt->isEqualTo($gt)) {
                     throw new InvalidArgumentException("Full settlement amount {$amtStr} must equal grand total {$grandTotalStr}");
                 }
 
@@ -361,5 +409,28 @@ final class PaymentSettlementValidator
         }
 
         throw new InvalidArgumentException("Unsupported settlement mode: {$mode}");
+    }
+
+    private static function validateCashAccountResolver(callable $resolver): void
+    {
+        if ($resolver instanceof Closure) {
+            $ref = new ReflectionFunction($resolver);
+        } elseif (is_object($resolver) && method_exists($resolver, '__invoke')) {
+            $ref = new ReflectionMethod($resolver, '__invoke');
+        } elseif (is_array($resolver)) {
+            $ref = new ReflectionMethod($resolver[0], $resolver[1]);
+        } elseif (is_string($resolver)) {
+            $ref = new ReflectionFunction($resolver);
+        } else {
+            throw new InvalidArgumentException('Invalid cash account resolver callable');
+        }
+
+        if (! $ref->isVariadic() && $ref->getNumberOfParameters() < 2) {
+            throw new InvalidArgumentException('Cash account resolver must accept both company_id and wire_account arguments');
+        }
+
+        if ($ref->getNumberOfRequiredParameters() > 2) {
+            throw new InvalidArgumentException('Cash account resolver requires more than 2 parameters');
+        }
     }
 }

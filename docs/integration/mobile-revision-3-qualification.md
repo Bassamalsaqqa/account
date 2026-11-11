@@ -29,27 +29,22 @@
 
 ---
 
-## 2. Pure PHP Revision 3 Qualification Helpers
+## 2. Pure PHP Revision 3 Qualification Helpers & Defect Corrections
 
 Implemented in `App\Support\Mobile\Contract\Revision3`:
 - `OnlineSaleIntentProfile`:
-  * Validates context keys strictly (`['actor_id', 'company_id', 'currency_minor_units']`).
-  * Enforces Crockford ULID regex (`^[0-7][0-9A-HJKMNP-TV-Z]{25}$`) on actor and company identifiers.
-  * Rejects boolean as integer for `currency_minor_units` (scale 0..6).
-  * Strict raw request schema validation before projection: rejects unknown root, line, or payment properties.
-  * Line item validation: requires between 1 and 100 items. Requires `tax_rate_id` on every line item; missing `tax_rate_id` throws `IntentProfileValidationException` (never defaults to implicit NoTax).
-  * Explicit NoTax (`tax_rate_id: null`) requires `tax_rate: "0.000000"` and `tax_inclusive: false`.
-  * Real zero-rate master (`tax_rate_id` Crockford ULID with `tax_rate: "0.000000"`) is recognized as distinct.
-  * Enforces positive conversion to base and quantity (`DEC(20,6)` scale <= 6, strictly positive) and non-negative unit price.
-  * Preserves exact original string decimal lexemes verbatim across line ordering, UTF-16 restricted JCS sorting, and SHA-256 payload digest derivation.
-  * Unpaid settlement mode allows omission or explicit `null` for `payment_method` and `cash_account_id`, normalizing to explicit `null` in the intent profile; for `full` and `partial`, requires `payment_method: "cash"` and a valid `cash_account_id` ULID.
+  * **Absolute Regex Anchors (`\A...\z`)**: Replaced all `^$` regex anchors with absolute string anchors (`\A...\z`) throughout Revision 3 code to strictly reject terminal newlines across Crockford ULIDs, UUIDs, ISO currencies, calendar dates, and exact decimal money lexemes across context, raw JSON, native arrays, and profile verification.
+  * **AST Shape Validation Before Projection**: When parsing raw JSON strings, AST structure is validated before calling `toNative()`, asserting that `lines` is an instance of `StrictJsonArray` and that line items and payment are instances of `StrictJsonObject`. Prevents JSON associative objects (including numeric-keyed objects like `{"0": ...}`) from silently projecting into list arrays. On native PHP array inputs, strictly asserts `array_is_list($lines)` and associative arrays for line items and payment, with recursive validation rejecting arbitrary PHP objects, floats, malformed UTF-8, and Unicode surrogates.
+  * **Strict Request Schema Enforcement**: Unpaid settlement mode strictly requires `amount` to represent zero (`BigDecimal::isZero()`), rejecting positive amounts (e.g. `'50'`). Non-null payment method or cash account instructions on unpaid requests are rejected. Full and partial modes require strictly positive amounts, `payment_method: 'cash'`, and valid Crockford ULID `cash_account_id`.
+  * **Deep Normative Profile Verification**: In `OnlineSaleIntentProfile::verify()`, the entire nested normative profile is exhaustively validated against the full schema rules and explicit required nullable payment keys before digest derivation. Eliminates false-positive verification where a malformed profile (such as `lines => 'invalid'`) matches its own computed digest.
+  * **Lexeme and Line Invariants**: Preserves original decimal lexemes, line order, and explicit `tax_rate_id: null` verbatim across line ordering, UTF-16 restricted JCS sorting, and SHA-256 payload digest derivation.
 - `PaymentSettlementValidator`:
   * Side-effect free predicates using `Brick\Math\BigDecimal`.
-  * Explicit currency minor units context integer 0..6; rejects booleans, negative, or > 6.
+  * Explicit currency minor units context integer 0..6; rejects booleans, negative, or > 6 across all public calls.
   * Validates decimal string lexemes: finite, non-exponent, DEC(20,6), zero IEEE-754 floats.
   * Allows trailing zeros representing integer currency minor units (e.g. `50.000000` at minor units = 2).
   * Rejects overprecision beyond minor units without rounding (e.g. `0.000001` at minor units = 2).
-  * First-Release Policy: positive financial grand total only (`grand_total > 0`). Rejects `grand_total <= 0` across all paid, unpaid, and offline modes.
+  * **First-Release Policy Scope**: Positive financial grand total only (`grand_total > 0`). Rejects `grand_total <= 0` across all paid, unpaid, and offline modes. This constraint is an explicit mobile contract qualification requirement for the first release that is deliberately stricter than canonical backend unpaid invoices (which may permit zero-total orders in certain canonical workflows); it does not constitute a global canonical accounting writer claim.
   * Online settlement predicates:
     - `unpaid`: `amount == 0` with `grand_total > 0`.
     - `partial`: `0 < amount < grand_total`.
@@ -59,9 +54,11 @@ Implemented in `App\Support\Mobile\Contract\Revision3`:
     - `amount_settled == grand_total > 0`.
   * Pure line calculator parity (`calculateCanonicalLine`):
     - Matches exact decimal arithmetic of `SalesLineCalculator` and Python verifier.
-  * Adaptation illustrations (contract qualification only, not server runtime):
-    - `adaptOfflineCashToCanonicalReceipt`: maps net retained settled amount (e.g. tender 60, total 50, change 10 -> receipt 50), preserving audit fields separately.
-    - `adaptOnlinePaymentToCanonicalChoice`: maps validated payment intent to `ImmediateSaleCommands` `$choice` array. Unpaid maps exactly to `['mode' => 'unpaid']` only after profile digest derivation, stripping wire payment fields without mutating wire profile, digest, or line `tax_rate_id: null`. Full and partial require reviewed payment date (valid `Y-m-d`) and company-scoped cash account resolver returning positive internal integer ID, failing closed without leaking credentials.
+    - Strictly validates minor units (0..6), positive quantity lexeme, decimal money unit price lexeme, and tax rate decimal lexeme, preventing uncaught exponents or negative values.
+  * **Adaptation Illustrations (Qualification Only, Not Server Runtime)**:
+    - `adaptOfflineCashToCanonicalReceipt`: maps net retained settled amount (e.g. tender 60, total 50, change 10 -> receipt 50), preserving audit fields separately. Distinct offline audit-only mode is supported when command illustration arguments are omitted; if command mapping is requested, all parameters (payment date, cash account resolver, company ID, customer ID) are required and fail closed on incomplete context.
+    - `adaptOnlinePaymentToCanonicalChoice`: maps validated payment intent to `ImmediateSaleCommands` `$choice` array. Unpaid maps exactly to `['mode' => 'unpaid']` only after profile digest derivation, stripping wire payment fields without mutating wire profile, digest, or line `tax_rate_id: null`. Full and partial require reviewed payment date (valid `Y-m-d`) and company-scoped cash account resolver.
+    - **Resolver Reflection & Error Redaction**: Cash account resolvers are inspected via Reflection to ensure they explicitly accept at least 2 arguments (`company_id`, `wire_account`) without single-argument fallback. Resolved money account ID must be a positive integer (rejects boolean, zero, negative). Resolver exceptions are caught and redacted to prevent leaking internal database errors or credentials. Arbitrary callables are not claimed to verify tenant ownership (pure illustration only).
 
 ---
 
@@ -81,16 +78,16 @@ Implemented in `App\Support\Mobile\Contract\Revision3`:
   * `tests/Unit/Mobile/Contract/ContractBoundaryTest.php` (5 tests, 114 assertions)
   * Baseline total: 30 tests, 228 assertions passed.
 - New Revision 3 pure qualification suite:
-  * `tests/Unit/Mobile/Contract/Revision3/PaymentSettlementValidatorTest.php` (6 tests, 51 assertions)
-  * `tests/Unit/Mobile/Contract/Revision3/OnlineSaleIntentProfileTest.php` (17 tests, 57 assertions)
-  * `tests/Unit/Mobile/Contract/Revision3/CrossLanguageParityTest.php` (7 tests, 47 assertions)
-  * Revision 3 total: 30 tests, 155 assertions passed.
+  * `tests/Unit/Mobile/Contract/Revision3/PaymentSettlementValidatorTest.php` (14 tests, 112 assertions)
+  * `tests/Unit/Mobile/Contract/Revision3/OnlineSaleIntentProfileTest.php` (46 tests, 85 assertions)
+  * `tests/Unit/Mobile/Contract/Revision3/CrossLanguageParityTest.php` (10 tests, 49 assertions)
+  * Revision 3 total: 70 tests, 246 assertions passed.
 - Combined pure mobile contract suite:
-  * 60 tests, 383 assertions, 0 failures, 0 errors.
+  * 100 tests, 474 assertions, 0 failures, 0 errors.
 
 ### Code Style & Static Analysis
-- Pint: `vendor/bin/pint --test app/Support/Mobile/Contract tests/Unit/Mobile/Contract` passed.
-- PHPStan: `vendor/bin/phpstan analyse --memory-limit=1G app/Support/Mobile/Contract tests/Unit/Mobile/Contract` passed with 0 errors.
+- Pint: `vendor/bin/pint --test app/Support/Mobile/Contract/Revision3 tests/Unit/Mobile/Contract/Revision3` passed.
+- PHPStan: `vendor/bin/phpstan analyse --memory-limit=1G app/Support/Mobile/Contract/Revision3 tests/Unit/Mobile/Contract/Revision3` passed with 0 errors.
 
 ---
 
