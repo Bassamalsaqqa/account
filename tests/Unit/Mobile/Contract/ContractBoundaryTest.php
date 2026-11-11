@@ -19,8 +19,8 @@ final class ContractBoundaryTest extends TestCase
         try {
             $operation();
             self::fail('Expected rejection');
-        } catch (CanonicalSerializationException) {
-            self::assertTrue(true);
+        } catch (CanonicalSerializationException $exception) {
+            self::assertNotSame('', $exception->getMessage());
         }
     }
 
