@@ -105,3 +105,9 @@ In accordance with `AGENTS.md` and repository architectural invariants, the foll
    - Offline multi-device sequence locking, server-issued device leases, and outbox reconciliation remain OFF.
 5. **No Financial Runtime or Production Mutations**:
    - Zero modifications to Eloquent models, financial posting services (`AccountingPostingService`), stock movement services, database migrations, or production deployment scripts.
+
+## 5. Supervisor follow-up to independent review (2026-11-12)
+
+The independent review at `5d8f18c` confirmed the five original corrections. A small follow-up bounds native traversal at the shared maximum nesting depth (including circular references), supports static-method string resolvers using PHP 8.4-compatible reflection, and requires a fully validated normative profile with matching minor-unit context before online payment projection. Resolver ownership remains the caller's obligation; these pure helpers provide no runtime authorization or posting proof.
+
+Supervisor execution after these changes: `vendor/bin/phpunit tests/Unit/Mobile/Contract` passed **105 tests / 481 assertions**, with no warnings or deprecations. Scoped Pint and PHPStan on the Revision3 source and tests passed. Earlier Python 303/210 normal and optimized results remain applicable: neither contract bundle nor validator changed. No database, migration, financial route, deployment, or production action occurred. A new independent review of this follow-up remains pending.

@@ -623,4 +623,28 @@ final class OnlineSaleIntentProfileTest extends TestCase
         $this->expectException(IntentProfileValidationException::class);
         OnlineSaleIntentProfile::verify($profile, $digest);
     }
+
+    public function test_native_cycle_is_rejected_with_bounded_depth(): void
+    {
+        $cycle = [];
+        $cycle['self'] = &$cycle;
+        $request = $this->validRequest();
+        $request['cycle'] = $cycle;
+        $this->expectException(IntentProfileValidationException::class);
+        $this->expectExceptionMessage('Maximum structure nesting depth exceeded');
+        OnlineSaleIntentProfile::construct($this->validContext(), $request);
+    }
+
+    public function test_native_deep_structure_is_rejected_with_bounded_depth(): void
+    {
+        $deep = [];
+        for ($i = 0; $i < 34; $i++) {
+            $deep = ['nested' => $deep];
+        }
+        $request = $this->validRequest();
+        $request['deep'] = $deep;
+        $this->expectException(IntentProfileValidationException::class);
+        $this->expectExceptionMessage('Maximum structure nesting depth exceeded');
+        OnlineSaleIntentProfile::construct($this->validContext(), $request);
+    }
 }

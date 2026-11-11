@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Support\Mobile\Contract\Revision3;
 
+use App\Support\Mobile\Contract\Revision3\Exceptions\IntentProfileValidationException;
 use Brick\Math\BigDecimal;
 use Brick\Math\RoundingMode;
 use Closure;
@@ -316,6 +317,15 @@ final class PaymentSettlementValidator
             throw new InvalidArgumentException("currency_minor_units must be an explicit integer in 0..6 (got {$currencyMinorUnits})");
         }
 
+        try {
+            OnlineSaleIntentProfile::validateNormativeProfile($intentProfile);
+        } catch (IntentProfileValidationException) {
+            throw new InvalidArgumentException('A valid normative online intent profile is required');
+        }
+        if ($intentProfile['currency_minor_units'] !== $currencyMinorUnits) {
+            throw new InvalidArgumentException('Currency minor units must match the validated profile');
+        }
+
         $gt = self::parseAndValidateMonetaryAmount($grandTotalStr, $currencyMinorUnits);
         if ($gt === null || ! $gt->isPositive()) {
             throw new InvalidArgumentException('Grand total must be a valid positive monetary decimal string');
@@ -420,7 +430,9 @@ final class PaymentSettlementValidator
         } elseif (is_array($resolver)) {
             $ref = new ReflectionMethod($resolver[0], $resolver[1]);
         } elseif (is_string($resolver)) {
-            $ref = new ReflectionFunction($resolver);
+            $ref = str_contains($resolver, '::')
+                ? new ReflectionMethod(...explode('::', $resolver, 2))
+                : new ReflectionFunction($resolver);
         } else {
             throw new InvalidArgumentException('Invalid cash account resolver callable');
         }

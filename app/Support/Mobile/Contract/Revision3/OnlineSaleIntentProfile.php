@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Support\Mobile\Contract\Revision3;
 
 use App\Support\Mobile\Contract\CanonicalJsonSerializer;
+use App\Support\Mobile\Contract\ContractConstants;
 use App\Support\Mobile\Contract\Exceptions\CanonicalSerializationException;
 use App\Support\Mobile\Contract\Revision3\Exceptions\IntentProfileValidationException;
 use App\Support\Mobile\Contract\StrictJsonArray;
@@ -563,8 +564,11 @@ final class OnlineSaleIntentProfile
         }
     }
 
-    private static function assertValidNativeStructure(mixed $val, string $path = 'root'): void
+    private static function assertValidNativeStructure(mixed $val, string $path = 'root', int $depth = 0): void
     {
+        if ($depth > ContractConstants::MAX_NESTING_DEPTH) {
+            throw new IntentProfileValidationException('Maximum structure nesting depth exceeded');
+        }
         if (is_object($val)) {
             throw new IntentProfileValidationException("Forbidden object detected at {$path}");
         }
@@ -592,7 +596,7 @@ final class OnlineSaleIntentProfile
                         throw new IntentProfileValidationException("Invalid UTF-8 string in key at {$path}.{$k}");
                     }
                 }
-                self::assertValidNativeStructure($v, "{$path}.{$k}");
+                self::assertValidNativeStructure($v, "{$path}.{$k}", $depth + 1);
             }
         }
     }

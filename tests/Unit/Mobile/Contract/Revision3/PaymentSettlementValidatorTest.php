@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Unit\Mobile\Contract\Revision3;
 
+use App\Support\Mobile\Contract\Revision3\OnlineSaleIntentProfile;
 use App\Support\Mobile\Contract\Revision3\PaymentSettlementValidator;
 use Brick\Math\BigDecimal;
 use InvalidArgumentException;
@@ -297,7 +298,7 @@ final class PaymentSettlementValidatorTest extends TestCase
                 'amount' => '0.000000',
             ],
         ];
-        $choiceUnpaid = PaymentSettlementValidator::adaptOnlinePaymentToCanonicalChoice($unpaidProfile, '50.000000', 2);
+        $choiceUnpaid = PaymentSettlementValidator::adaptOnlinePaymentToCanonicalChoice($this->completeProfile($unpaidProfile), '50.000000', 2);
         $this->assertSame(['mode' => 'unpaid'], $choiceUnpaid);
         // Wire profile unmodified
         $this->assertSame('0.000000', $unpaidProfile['payment']['amount']);
@@ -313,7 +314,7 @@ final class PaymentSettlementValidatorTest extends TestCase
             ],
         ];
         $choicePartial = PaymentSettlementValidator::adaptOnlinePaymentToCanonicalChoice(
-            $partialProfile,
+            $this->completeProfile($partialProfile),
             '50.000000',
             2,
             '2026-11-11',
@@ -337,7 +338,7 @@ final class PaymentSettlementValidatorTest extends TestCase
             ],
         ];
         $choiceFull = PaymentSettlementValidator::adaptOnlinePaymentToCanonicalChoice(
-            $fullProfile,
+            $this->completeProfile($fullProfile),
             '50.000000',
             2,
             '2026-11-11',
@@ -360,7 +361,7 @@ final class PaymentSettlementValidatorTest extends TestCase
         ];
         $this->expectException(InvalidArgumentException::class);
         PaymentSettlementValidator::adaptOnlinePaymentToCanonicalChoice(
-            $overProfile,
+            $this->completeProfile($overProfile),
             '50.000000',
             2,
             '2026-11-11',
@@ -388,7 +389,7 @@ final class PaymentSettlementValidatorTest extends TestCase
         $this->expectException(InvalidArgumentException::class);
         $this->expectExceptionMessage('Cash account resolver must accept both company_id and wire_account arguments');
         PaymentSettlementValidator::adaptOnlinePaymentToCanonicalChoice(
-            $profile,
+            $this->completeProfile($profile),
             '50.000000',
             2,
             '2026-11-11',
@@ -413,7 +414,7 @@ final class PaymentSettlementValidatorTest extends TestCase
         $this->expectException(InvalidArgumentException::class);
         $this->expectExceptionMessage('Cash account resolver requires more than 2 parameters');
         PaymentSettlementValidator::adaptOnlinePaymentToCanonicalChoice(
-            $profile,
+            $this->completeProfile($profile),
             '50.000000',
             2,
             '2026-11-11',
@@ -438,7 +439,7 @@ final class PaymentSettlementValidatorTest extends TestCase
         $this->expectException(InvalidArgumentException::class);
         $this->expectExceptionMessage('Resolved money_account_id must be a positive integer');
         PaymentSettlementValidator::adaptOnlinePaymentToCanonicalChoice(
-            $profile,
+            $this->completeProfile($profile),
             '50.000000',
             2,
             '2026-11-11',
@@ -462,7 +463,7 @@ final class PaymentSettlementValidatorTest extends TestCase
 
         $caught = false;
         try {
-            PaymentSettlementValidator::adaptOnlinePaymentToCanonicalChoice($profile, '50.000000', 2, '2026-11-11', $zeroResolver);
+            PaymentSettlementValidator::adaptOnlinePaymentToCanonicalChoice($this->completeProfile($profile), '50.000000', 2, '2026-11-11', $zeroResolver);
         } catch (InvalidArgumentException $e) {
             $caught = true;
             $this->assertStringContainsString('Resolved money_account_id must be a positive integer', $e->getMessage());
@@ -472,7 +473,7 @@ final class PaymentSettlementValidatorTest extends TestCase
         $negResolver = fn (string $company, string $wire): int => -10;
         $caughtNeg = false;
         try {
-            PaymentSettlementValidator::adaptOnlinePaymentToCanonicalChoice($profile, '50.000000', 2, '2026-11-11', $negResolver);
+            PaymentSettlementValidator::adaptOnlinePaymentToCanonicalChoice($this->completeProfile($profile), '50.000000', 2, '2026-11-11', $negResolver);
         } catch (InvalidArgumentException $e) {
             $caughtNeg = true;
             $this->assertStringContainsString('Resolved money_account_id must be a positive integer', $e->getMessage());
@@ -498,7 +499,7 @@ final class PaymentSettlementValidatorTest extends TestCase
 
         try {
             PaymentSettlementValidator::adaptOnlinePaymentToCanonicalChoice(
-                $profile,
+                $this->completeProfile($profile),
                 '50.000000',
                 2,
                 '2026-11-11',
@@ -528,11 +529,44 @@ final class PaymentSettlementValidatorTest extends TestCase
 
         $this->expectException(InvalidArgumentException::class);
         PaymentSettlementValidator::adaptOnlinePaymentToCanonicalChoice(
-            $profile,
+            $this->completeProfile($profile),
             '50.000000',
             2,
             "2026-11-11\n",
             $resolver
         );
+    }
+
+    /** @param array<string, mixed> $slice
+     * @return array<string, mixed>
+     */
+    private function completeProfile(array $slice): array
+    {
+        $fixture = json_decode(file_get_contents(__DIR__.'/../../../../../contracts/mobile-revision3/docs/integration/mobile-v1/fixtures/golden-online-sale-intent-profile.json'), true, 512, JSON_THROW_ON_ERROR);
+
+        return array_replace(OnlineSaleIntentProfile::construct($fixture['context'], $fixture['request']), $slice);
+    }
+
+    public static function resolveCashAccount(string $company, string $account): int
+    {
+        return 101;
+    }
+
+    public function test_static_method_string_resolver_is_supported(): void
+    {
+        $choice = PaymentSettlementValidator::adaptOnlinePaymentToCanonicalChoice($this->completeProfile([]), '50', 2, '2026-11-11', self::class.'::resolveCashAccount');
+        $this->assertSame(101, $choice['money_account_id']);
+    }
+
+    public function test_adapter_rejects_incomplete_profile(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        PaymentSettlementValidator::adaptOnlinePaymentToCanonicalChoice(['company_id' => '01JCV8X9M2NQW3TYZ4R5S6789A', 'payment' => ['settlement_mode' => 'unpaid', 'amount' => '0']], '50', 2);
+    }
+
+    public function test_adapter_rejects_conflicting_minor_units(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        PaymentSettlementValidator::adaptOnlinePaymentToCanonicalChoice($this->completeProfile([]), '50', 3);
     }
 }
