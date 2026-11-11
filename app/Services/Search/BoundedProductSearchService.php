@@ -35,14 +35,12 @@ final class BoundedProductSearchService
      * - Normalize Arabic letter variants (alef variants to bare alef, taa marbuta to haa, alef maqsura to yaa)
      * - Normalize Latin / English characters to lowercase
      *
-     * Database Collation and Storage Invariant:
-     * Stored product names and SKUs remain unmodified master data as entered by traders.
-     * MariaDB collation `utf8mb4_unicode_ci` provides case-insensitive Latin matching and
-     * collates ASCII digits identically to Eastern Arabic digits. However, MariaDB treats
-     * Arabic letter variants (أ/إ/آ vs ا, ة vs ه, ى vs ي) as distinct characters.
-     * To prevent unindexed full-table scans, search predicates execute prefix matching
-     * on both literal input and normalized forms against composite B-tree indexes
-     * (company_id, active, name_ar/name_en) without tablewide functional transforms on columns.
+     * Server contract: stored catalog values are preserved. The literal query and a
+     * folded query are tried as prefixes; stored columns are never transformed.
+     * Symmetric Arabic/digit/diacritic folding is DEFERRED: a folded query may not
+     * match a variant stored in the catalog. Android must not promise symmetric
+     * matching. Collation behavior depends on the deployed MariaDB collation.
+     * Candidate count is bounded; optimizer work and latency are not guaranteed.
      */
     public function normalize(string $rawQuery): string
     {
@@ -253,6 +251,7 @@ final class BoundedProductSearchService
                 'display_name' => $product->displayName(),
                 'base_unit_id' => (int) $product->base_unit_id,
                 'base_unit_name' => $product->baseUnit?->name() ?? '',
+                'selected_unit_name' => collect($units)->firstWhere('id', $defaultUnitId)['name'] ?? '',
                 'default_unit_id' => $defaultUnitId,
                 'price' => $price,
                 'cost' => $cost,
@@ -489,10 +488,11 @@ final class BoundedProductSearchService
             if (! $rate->isPositive()) {
                 return null;
             }
+            if ($unit->default_sale_price_base === null && $product->default_sale_price_base === null) {
+                return null;
+            }
             $basePrice = $unit->default_sale_price_base === null
-                ? ($product->default_sale_price_base !== null
-                    ? BigDecimal::of($product->default_sale_price_base)->multipliedBy($unit->conversion_to_base)
-                    : BigDecimal::of('0'))
+                ? BigDecimal::of($product->default_sale_price_base)->multipliedBy($unit->conversion_to_base)
                 : BigDecimal::of($unit->default_sale_price_base);
 
             $price = $basePrice->dividedBy($rate, 2, RoundingMode::HALF_UP);
@@ -511,11 +511,12 @@ final class BoundedProductSearchService
                 $rules->header($company, $currency, $exchangeRate, now($company->timezone)->format('Y-m-d'), null, $locale);
             }
             $unit = $rules->selectedUnit($product, $unitId, '1');
+            if ($unit->default_purchase_price_base === null && $product->default_purchase_cost_base === null) {
+                return null;
+            }
             $base = $unit->default_purchase_price_base !== null
                 ? BigDecimal::of($unit->default_purchase_price_base)
-                : ($product->default_purchase_cost_base !== null
-                    ? BigDecimal::of($product->default_purchase_cost_base)->multipliedBy($unit->conversion_to_base)
-                    : BigDecimal::of('0'));
+                : BigDecimal::of($product->default_purchase_cost_base)->multipliedBy($unit->conversion_to_base);
 
             $fx = ExchangeRate::from($exchangeRate)->getValue();
             $cost = $base->dividedBy($fx, 2, RoundingMode::HALF_UP);

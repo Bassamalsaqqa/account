@@ -1,0 +1,427 @@
+[
+  {
+    "term": "SKU-BENCH-005",
+    "query_count": 133,
+    "latency_ms": {
+      "min": 104.656665,
+      "median": 182.769063,
+      "p95": 277.702678
+    },
+    "plans": [
+      {
+        "table": null,
+        "type": null,
+        "key": null,
+        "rows": null,
+        "Extra": "No tables used"
+      },
+      {
+        "table": "company_user",
+        "type": "const",
+        "key": "company_user_company_id_user_id_unique",
+        "rows": "1",
+        "Extra": ""
+      },
+      {
+        "table": "companies",
+        "type": "const",
+        "key": "PRIMARY",
+        "rows": "1",
+        "Extra": ""
+      },
+      {
+        "table": "model_has_permissions",
+        "type": "ref",
+        "key": "model_has_permissions_model_id_model_type_index",
+        "rows": "1",
+        "Extra": "Using where; Using index"
+      },
+      {
+        "table": "permissions",
+        "type": "eq_ref",
+        "key": "PRIMARY",
+        "rows": "1",
+        "Extra": ""
+      },
+      {
+        "table": "model_has_roles",
+        "type": "ref",
+        "key": "model_has_roles_model_id_model_type_index",
+        "rows": "1",
+        "Extra": "Using where; Using index"
+      },
+      {
+        "table": "roles",
+        "type": "eq_ref",
+        "key": "PRIMARY",
+        "rows": "1",
+        "Extra": "Using where"
+      },
+      {
+        "table": null,
+        "type": null,
+        "key": null,
+        "rows": null,
+        "Extra": "Impossible WHERE noticed after reading const tables"
+      },
+      {
+        "table": "product_barcodes",
+        "type": "ref",
+        "key": "product_barcodes_company_id_product_id_index",
+        "rows": "1",
+        "Extra": "Using where"
+      },
+      {
+        "table": "products",
+        "type": "eq_ref",
+        "key": "products_company_id_active_index",
+        "rows": "1",
+        "Extra": "Using index"
+      },
+      {
+        "table": "products",
+        "type": "index",
+        "key": "PRIMARY",
+        "rows": "297",
+        "Extra": "Using where"
+      },
+      {
+        "table": "products",
+        "type": "range",
+        "key": "PRIMARY",
+        "rows": "30",
+        "Extra": "Using where"
+      },
+      {
+        "table": "product_units",
+        "type": "ref",
+        "key": "product_units_company_id_product_id_index",
+        "rows": "1",
+        "Extra": "Using index condition; Using where"
+      },
+      {
+        "table": "units",
+        "type": "eq_ref",
+        "key": "units_company_id_active_index",
+        "rows": "1",
+        "Extra": "Using index"
+      },
+      {
+        "table": "units",
+        "type": "const",
+        "key": "PRIMARY",
+        "rows": "1",
+        "Extra": ""
+      },
+      {
+        "table": "product_units",
+        "type": "ref",
+        "key": "product_units_product_id_unit_id_unique",
+        "rows": "1",
+        "Extra": "Using where"
+      },
+      {
+        "table": "products",
+        "type": "const",
+        "key": "PRIMARY",
+        "rows": "1",
+        "Extra": ""
+      },
+      {
+        "table": "inventory_balances",
+        "type": "ref",
+        "key": "inventory_balances_company_id_product_id_warehouse_id_unique",
+        "rows": "1",
+        "Extra": ""
+      }
+    ]
+  },
+  {
+    "term": "منتج تجريبي رقم 5",
+    "query_count": 134,
+    "latency_ms": {
+      "min": 128.78415,
+      "median": 151.785563,
+      "p95": 213.090931
+    },
+    "plans": [
+      {
+        "table": null,
+        "type": null,
+        "key": null,
+        "rows": null,
+        "Extra": "No tables used"
+      },
+      {
+        "table": "company_user",
+        "type": "const",
+        "key": "company_user_company_id_user_id_unique",
+        "rows": "1",
+        "Extra": ""
+      },
+      {
+        "table": "companies",
+        "type": "const",
+        "key": "PRIMARY",
+        "rows": "1",
+        "Extra": ""
+      },
+      {
+        "table": "model_has_permissions",
+        "type": "ref",
+        "key": "model_has_permissions_model_id_model_type_index",
+        "rows": "1",
+        "Extra": "Using where; Using index"
+      },
+      {
+        "table": "permissions",
+        "type": "eq_ref",
+        "key": "PRIMARY",
+        "rows": "1",
+        "Extra": ""
+      },
+      {
+        "table": "model_has_roles",
+        "type": "ref",
+        "key": "model_has_roles_model_id_model_type_index",
+        "rows": "1",
+        "Extra": "Using where; Using index"
+      },
+      {
+        "table": "roles",
+        "type": "eq_ref",
+        "key": "PRIMARY",
+        "rows": "1",
+        "Extra": "Using where"
+      },
+      {
+        "table": null,
+        "type": null,
+        "key": null,
+        "rows": null,
+        "Extra": "Impossible WHERE noticed after reading const tables"
+      },
+      {
+        "table": "product_barcodes",
+        "type": "ref",
+        "key": "product_barcodes_company_id_product_id_index",
+        "rows": "1",
+        "Extra": "Using where"
+      },
+      {
+        "table": "products",
+        "type": "eq_ref",
+        "key": "products_company_id_active_index",
+        "rows": "1",
+        "Extra": "Using index"
+      },
+      {
+        "table": "products",
+        "type": "range",
+        "key": "products_company_id_sku_unique",
+        "rows": "1",
+        "Extra": "Using index condition; Using where; Using filesort"
+      },
+      {
+        "table": "products",
+        "type": "index",
+        "key": "PRIMARY",
+        "rows": "267",
+        "Extra": "Using where"
+      },
+      {
+        "table": "products",
+        "type": "range",
+        "key": "PRIMARY",
+        "rows": "30",
+        "Extra": "Using where"
+      },
+      {
+        "table": "product_units",
+        "type": "ref",
+        "key": "product_units_company_id_product_id_index",
+        "rows": "1",
+        "Extra": "Using index condition; Using where"
+      },
+      {
+        "table": "units",
+        "type": "eq_ref",
+        "key": "units_company_id_active_index",
+        "rows": "1",
+        "Extra": "Using index"
+      },
+      {
+        "table": "units",
+        "type": "const",
+        "key": "PRIMARY",
+        "rows": "1",
+        "Extra": ""
+      },
+      {
+        "table": "product_units",
+        "type": "ref",
+        "key": "product_units_product_id_unit_id_unique",
+        "rows": "1",
+        "Extra": "Using where"
+      },
+      {
+        "table": "products",
+        "type": "const",
+        "key": "PRIMARY",
+        "rows": "1",
+        "Extra": ""
+      },
+      {
+        "table": "inventory_balances",
+        "type": "ref",
+        "key": "inventory_balances_company_id_product_id_warehouse_id_unique",
+        "rows": "1",
+        "Extra": ""
+      }
+    ]
+  },
+  {
+    "term": "Benchmark Product 50",
+    "query_count": 134,
+    "latency_ms": {
+      "min": 134.381692,
+      "median": 152.672438,
+      "p95": 196.100371
+    },
+    "plans": [
+      {
+        "table": null,
+        "type": null,
+        "key": null,
+        "rows": null,
+        "Extra": "No tables used"
+      },
+      {
+        "table": "company_user",
+        "type": "const",
+        "key": "company_user_company_id_user_id_unique",
+        "rows": "1",
+        "Extra": ""
+      },
+      {
+        "table": "companies",
+        "type": "const",
+        "key": "PRIMARY",
+        "rows": "1",
+        "Extra": ""
+      },
+      {
+        "table": "model_has_permissions",
+        "type": "ref",
+        "key": "model_has_permissions_model_id_model_type_index",
+        "rows": "1",
+        "Extra": "Using where; Using index"
+      },
+      {
+        "table": "permissions",
+        "type": "eq_ref",
+        "key": "PRIMARY",
+        "rows": "1",
+        "Extra": ""
+      },
+      {
+        "table": "model_has_roles",
+        "type": "ref",
+        "key": "model_has_roles_model_id_model_type_index",
+        "rows": "1",
+        "Extra": "Using where; Using index"
+      },
+      {
+        "table": "roles",
+        "type": "eq_ref",
+        "key": "PRIMARY",
+        "rows": "1",
+        "Extra": "Using where"
+      },
+      {
+        "table": null,
+        "type": null,
+        "key": null,
+        "rows": null,
+        "Extra": "Impossible WHERE noticed after reading const tables"
+      },
+      {
+        "table": "product_barcodes",
+        "type": "ref",
+        "key": "product_barcodes_company_id_product_id_index",
+        "rows": "1",
+        "Extra": "Using where"
+      },
+      {
+        "table": "products",
+        "type": "eq_ref",
+        "key": "products_company_id_active_index",
+        "rows": "1",
+        "Extra": "Using index"
+      },
+      {
+        "table": "products",
+        "type": "range",
+        "key": "products_company_id_sku_unique",
+        "rows": "1",
+        "Extra": "Using index condition; Using where; Using filesort"
+      },
+      {
+        "table": "products",
+        "type": "index_merge",
+        "key": "products_company_active_name_ar_idx,products_company_active_name_en_idx",
+        "rows": "112",
+        "Extra": "Using sort_union(products_company_active_name_ar_idx,products_company_active_name_en_idx); Using where; Using filesort"
+      },
+      {
+        "table": "products",
+        "type": "range",
+        "key": "PRIMARY",
+        "rows": "30",
+        "Extra": "Using where"
+      },
+      {
+        "table": "product_units",
+        "type": "ref",
+        "key": "product_units_company_id_product_id_index",
+        "rows": "1",
+        "Extra": "Using index condition; Using where"
+      },
+      {
+        "table": "units",
+        "type": "eq_ref",
+        "key": "units_company_id_active_index",
+        "rows": "1",
+        "Extra": "Using index"
+      },
+      {
+        "table": "units",
+        "type": "const",
+        "key": "PRIMARY",
+        "rows": "1",
+        "Extra": ""
+      },
+      {
+        "table": "product_units",
+        "type": "ref",
+        "key": "product_units_product_id_unit_id_unique",
+        "rows": "1",
+        "Extra": "Using where"
+      },
+      {
+        "table": "products",
+        "type": "const",
+        "key": "PRIMARY",
+        "rows": "1",
+        "Extra": ""
+      },
+      {
+        "table": "inventory_balances",
+        "type": "ref",
+        "key": "inventory_balances_company_id_product_id_warehouse_id_unique",
+        "rows": "1",
+        "Extra": ""
+      }
+    ]
+  }
+]

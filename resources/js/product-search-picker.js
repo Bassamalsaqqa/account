@@ -5,12 +5,24 @@ export function productPickerComponent({ prefix = 'product', context = 'sales' }
         open: false,
         activeIndex: -1,
         inputFocused: false,
+        inputQuery: null,
+
+        onInput(value) {
+            this.inputQuery = String(value);
+            this.close();
+        },
+
+        resultsReady() {
+            const query = this.inputQuery ?? String(this.$wire.productSearch || '');
+            return query.length > 0 && query === this.$wire.searchResultsQuery
+                && query === String(this.$wire.productSearch || '');
+        },
 
         init() {
             this.$watch('$wire.searchResults', (val) => {
                 const count = (val || []).length;
                 const query = String(this.$wire.productSearch || '').trim();
-                if (query.length > 0) {
+                if (query.length > 0 && this.resultsReady()) {
                     this.open = true;
                     this.activeIndex = count > 0 ? 0 : -1;
                     if (count > 0) {
@@ -20,6 +32,11 @@ export function productPickerComponent({ prefix = 'product', context = 'sales' }
                     this.open = false;
                     this.activeIndex = -1;
                 }
+            });
+
+            this.$watch('$wire.searchResultsQuery', () => {
+                this.open = this.resultsReady();
+                this.activeIndex = this.open && (this.$wire.searchResults || []).length ? 0 : -1;
             });
 
             this.$watch('$wire.productSearch', (val) => {
@@ -34,7 +51,7 @@ export function productPickerComponent({ prefix = 'product', context = 'sales' }
         onFocus() {
             this.inputFocused = true;
             const query = String(this.$wire.productSearch || '').trim();
-            if (query.length > 0) {
+            if (query.length > 0 && this.resultsReady()) {
                 this.open = true;
                 const count = (this.$wire.searchResults || []).length;
                 this.activeIndex = count > 0 ? 0 : -1;
@@ -46,6 +63,7 @@ export function productPickerComponent({ prefix = 'product', context = 'sales' }
         },
 
         selectNext() {
+            if (!this.resultsReady()) return;
             const count = (this.$wire.searchResults || []).length;
             if (count > 0) {
                 this.activeIndex = (this.activeIndex + 1) % count;
@@ -54,6 +72,7 @@ export function productPickerComponent({ prefix = 'product', context = 'sales' }
         },
 
         selectPrev() {
+            if (!this.resultsReady()) return;
             const count = (this.$wire.searchResults || []).length;
             if (count > 0) {
                 this.activeIndex = (this.activeIndex - 1 + count) % count;
@@ -62,6 +81,7 @@ export function productPickerComponent({ prefix = 'product', context = 'sales' }
         },
 
         selectCurrent() {
+            if (!this.resultsReady()) return;
             const results = this.$wire.searchResults || [];
             if (results.length > 0 && this.activeIndex >= 0 && results[this.activeIndex]) {
                 const item = results[this.activeIndex];
@@ -73,7 +93,7 @@ export function productPickerComponent({ prefix = 'product', context = 'sales' }
                 }
             } else {
                 const query = String(this.$wire.productSearch || '').trim();
-                if (query.length > 0) {
+                if (query.length > 0 && this.resultsReady()) {
                     this.close();
                     if (typeof window !== 'undefined' && typeof window.enqueueDocumentOperation === 'function') {
                         window.enqueueDocumentOperation(this.$wire, 'addSelectedProduct', []);
@@ -85,6 +105,8 @@ export function productPickerComponent({ prefix = 'product', context = 'sales' }
         },
 
         addCandidate(id, defaultUnitId) {
+            if (!this.resultsReady()) return;
+            if (!(this.$wire.searchResults || []).some(item => item.id === id && item.default_unit_id === defaultUnitId)) return;
             this.close();
             if (typeof window !== 'undefined' && typeof window.enqueueDocumentOperation === 'function') {
                 window.enqueueDocumentOperation(this.$wire, 'addProduct', [id, defaultUnitId]);

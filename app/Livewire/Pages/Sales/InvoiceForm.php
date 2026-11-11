@@ -124,7 +124,11 @@ class InvoiceForm extends Component
     public string $productSearch = '';
 
     /** @var list<array<string, mixed>> */
+    #[Locked]
     public array $searchResults = [];
+
+    #[Locked]
+    public string $searchResultsQuery = '';
 
     public int $searchSelectedIndex = 0;
 
@@ -510,8 +514,14 @@ class InvoiceForm extends Component
         $this->dispatch('barcode-scanned');
     }
 
+    public function hydrate(): void
+    {
+        $this->updatedProductSearch();
+    }
+
     public function updatedProductSearch(): void
     {
+        $this->searchResultsQuery = $this->productSearch;
         $term = trim($this->productSearch);
         if ($term === '') {
             $this->searchResults = [];
@@ -1299,6 +1309,7 @@ class InvoiceForm extends Component
 
     public function render(CompanyContext $context): View
     {
+        $this->updatedProductSearch();
         abort_unless(auth()->check() && $context->hasCompany() && $context->companyId() === $this->pageCompanyId, 403);
         $user = auth()->user();
         $company = DB::transaction(fn () => app(SalesActorGuard::class)->lockAndAuthorize(

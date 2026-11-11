@@ -26,6 +26,7 @@
                    maxlength="160"
                    autocomplete="off"
                    wire:model.live.debounce.250ms="productSearch"
+                   x-on:input="onInput($event.target.value)"
                    x-on:focus="onFocus()"
                    x-on:blur="onBlur()"
                    x-on:keydown.down.prevent="selectNext()"
@@ -80,7 +81,7 @@
          role="listbox"
          tabindex="-1"
          aria-label="{{ $context === 'purchasing' ? __('purchasing.search_products') : __('sales.search_products') }}"
-         x-show="open && $wire.productSearch && $wire.productSearch.trim().length > 0"
+         x-show="open && resultsReady() && $wire.productSearch && $wire.productSearch.trim().length > 0"
          x-cloak
          x-transition:enter="transition ease-out duration-100 motion-reduce:transition-none"
          x-transition:enter-start="opacity-0 scale-95"
@@ -123,7 +124,7 @@
                                         <span class="dir-ltr text-text-muted">{{ $candidate['name_en'] }}</span>
                                         <span>•</span>
                                     @endif
-                                    <span>{{ $candidate['base_unit_name'] }}</span>
+                                    <span>{{ $candidate['selected_unit_name'] }}</span>
                                 </div>
                             </div>
 

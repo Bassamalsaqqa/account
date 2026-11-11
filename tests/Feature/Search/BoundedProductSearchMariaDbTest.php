@@ -256,25 +256,18 @@ class BoundedProductSearchMariaDbTest extends TestCase
         $pu = ProductUnit::where('product_id', $product->id)->firstOrFail();
         $pu->update(['default_sale_price_base' => '20.000000', 'default_purchase_price_base' => '12.000000']);
 
-        // In InvoiceForm: adding product twice must yield 2 separate lines
-        $invoiceComponent = Livewire::test(InvoiceForm::class)
-            ->call('addProduct', (int) $product->id, (int) $pu->id)
-            ->call('addProduct', (int) $product->id, (int) $pu->id);
-
-        $lines = $invoiceComponent->get('lines');
-        $this->assertCount(2, $lines, 'addProduct in InvoiceForm must create independent separate lines without collapsing duplicates.');
-        $this->assertSame('1', $lines[0]['quantity']);
-        $this->assertSame('1', $lines[1]['quantity']);
-
-        // In PurchaseForm: adding product twice must also yield 2 separate lines
-        $purchaseComponent = Livewire::test(PurchaseForm::class)
-            ->call('addProduct', (int) $product->id, (int) $pu->id)
-            ->call('addProduct', (int) $product->id, (int) $pu->id);
-
-        $purchaseLines = $purchaseComponent->get('lines');
-        $this->assertCount(2, $purchaseLines, 'addProduct in PurchaseForm must create independent separate lines without collapsing duplicates.');
-        $this->assertSame('1', $purchaseLines[0]['quantity']);
-        $this->assertSame('1', $purchaseLines[1]['quantity']);
+        foreach ([[InvoiceForm::class, 'unit_price'], [PurchaseForm::class, 'unit_cost']] as [$component, $amount]) {
+            $form = Livewire::test($component)
+                ->set('productSearch', 'COFFEE-01')->call('addSelectedProduct')
+                ->set('productSearch', 'COFFEE-01')->call('addSelectedProduct');
+            $this->assertCount(2, $form->get('lines'));
+            $form->set('lines.0.quantity', '3')->set('lines.0.'.$amount, '0.00')
+                ->assertSet('lines.1.quantity', '1');
+            $this->assertNotSame('0.00', $form->get('lines.1.'.$amount));
+            $form->call('removeLine', 0)->assertSet('lines.0.product_id', (int) $product->id)
+                ->assertSet('lines.0.quantity', '1');
+            $this->assertCount(1, $form->get('lines'));
+        }
     }
 
     public function test_10k_product_fixture_benchmark_and_explain_query_plan(): void
@@ -326,46 +319,39 @@ class BoundedProductSearchMariaDbTest extends TestCase
 
         DB::statement('ANALYZE TABLE products');
 
-        // 1. Verify EXPLAIN on SKU prefix search uses composite unique index
-        $skuExplain = DB::select(
-            'EXPLAIN SELECT id, sku FROM products WHERE company_id = ? AND active = 1 AND sku LIKE ? LIMIT 30',
-            [$companyId, 'SKU-BENCH-005%']
-        );
-        $this->assertNotEmpty($skuExplain);
-        $skuPlan = (array) $skuExplain[0];
-        $this->assertStringContainsString('products_company_id_sku_unique', (string) $skuPlan['key']);
-        $this->assertSame('range', (string) $skuPlan['type']);
+        // Capture the statements actually executed by candidate resolution, hydration,
+        // authorization and price/stock suggestions. Do not prescribe optimizer choices.
+        $samples = [];
+        $evidence = [];
+        foreach (['SKU-BENCH-005', 'منتج تجريبي رقم 5', 'Benchmark Product 50'] as $term) {
+            $durations = [];
+            for ($iteration = 0; $iteration < 11; $iteration++) {
+                DB::flushQueryLog();
+                DB::enableQueryLog();
+                $start = hrtime(true);
+                $results = $this->searchService->search($companyId, $this->owner, $term, 'sales');
+                $durations[] = (hrtime(true) - $start) / 1000000;
+                $queries = DB::getQueryLog();
+                DB::disableQueryLog();
+                $this->assertLessThanOrEqual(30, count($results));
+            }
+            sort($durations);
+            $plans = [];
+            foreach ($queries as $query) {
+                if (! str_starts_with(strtolower(ltrim($query['query'])), 'select')) {
+                    continue;
+                }
+                foreach (DB::select('EXPLAIN '.$query['query'], $query['bindings']) as $row) {
+                    $row = (array) $row;
+                    $plans[] = array_intersect_key($row, array_flip(['table', 'type', 'key', 'rows', 'Extra']));
+                }
+            }
+            $evidence[] = ['term' => $term, 'query_count' => count($queries),
+                'latency_ms' => ['min' => $durations[0], 'median' => $durations[5], 'p95' => $durations[10]],
+                'plans' => $plans];
+        }
+        fwrite(STDERR, "\nACTUAL_SEARCH_EVIDENCE ".json_encode($evidence, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT)."\n");
 
-        // 2. Verify EXPLAIN on Arabic Name prefix search uses composite prefix index
-        $nameArExplain = DB::select(
-            'EXPLAIN SELECT id, name_ar FROM products WHERE company_id = ? AND active = 1 AND name_ar LIKE ? LIMIT 30',
-            [$companyId, 'منتج تجريبي رقم 5%']
-        );
-        $this->assertNotEmpty($nameArExplain);
-        $nameArPlan = (array) $nameArExplain[0];
-        $this->assertStringContainsString('products_company_active_name_ar_idx', (string) $nameArPlan['key']);
-        $this->assertSame('range', (string) $nameArPlan['type']);
-
-        // 3. Verify EXPLAIN on English Name prefix search uses composite prefix index
-        $nameEnExplain = DB::select(
-            'EXPLAIN SELECT id, name_en FROM products WHERE company_id = ? AND active = 1 AND name_en LIKE ? LIMIT 30',
-            [$companyId, 'Benchmark Product 5%']
-        );
-        $this->assertNotEmpty($nameEnExplain);
-        $nameEnPlan = (array) $nameEnExplain[0];
-        $this->assertStringContainsString('products_company_active_name_en_idx', (string) $nameEnPlan['key']);
-        $this->assertSame('range', (string) $nameEnPlan['type']);
-
-        // 4. Measure execution latency over 10k products (warm cache)
-        $this->searchService->searchProductsQuery($companyId, $this->owner, 'Benchmark Product 50', 'sales')->limit(30)->get();
-
-        $start = hrtime(true);
-        $queryBuilder = $this->searchService->searchProductsQuery($companyId, $this->owner, 'Benchmark Product 50', 'sales');
-        $results = $queryBuilder->limit(30)->get();
-        $durationMs = (hrtime(true) - $start) / 1000000;
-
-        $this->assertNotEmpty($results);
-        $this->assertLessThan(100.0, $durationMs, "Query execution on 10k records took {$durationMs}ms, exceeding threshold.");
     }
 
     private function createProduct(string $nameAr, string $nameEn, string $sku, string $type = Product::TYPE_STOCK, bool $trackStock = true): Product

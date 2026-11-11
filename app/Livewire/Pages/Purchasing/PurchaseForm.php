@@ -144,7 +144,11 @@ class PurchaseForm extends Component
     public string $productSearch = '';
 
     /** @var list<array<string, mixed>> */
+    #[Locked]
     public array $searchResults = [];
+
+    #[Locked]
+    public string $searchResultsQuery = '';
 
     public int $searchSelectedIndex = 0;
 
@@ -274,6 +278,7 @@ class PurchaseForm extends Component
 
     public function hydrate(): void
     {
+        $this->updatedProductSearch();
         $this->authorizeForm();
     }
 
@@ -587,6 +592,7 @@ class PurchaseForm extends Component
 
     public function updatedProductSearch(): void
     {
+        $this->searchResultsQuery = $this->productSearch;
         $term = trim($this->productSearch);
         if ($term === '') {
             $this->searchResults = [];
@@ -1326,6 +1332,7 @@ class PurchaseForm extends Component
 
     public function render(): View
     {
+        $this->updatedProductSearch();
         $company = $this->authorizeForm();
         $user = auth()->user();
         $selectedProductIds = collect($this->lines)->pluck('product_id')->filter()->unique()->values()->all();

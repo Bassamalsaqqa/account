@@ -9,6 +9,7 @@ function createPickerInstance(initialResults = [], initialQuery = '') {
 
     const wire = {
         searchResults: initialResults,
+        searchResultsQuery: initialQuery,
         productSearch: initialQuery,
         addProduct(id, unitId) {
             addProductCalls.push({ id, unitId });
@@ -48,6 +49,7 @@ function createPickerInstance(initialResults = [], initialQuery = '') {
         addProductCalls,
         addSelectedProductCalls,
         setSearchResults(results) {
+            wire.searchResultsQuery = wire.productSearch;
             wire.searchResults = results;
             if (watchers['$wire.searchResults']) {
                 watchers['$wire.searchResults'](results);
@@ -149,4 +151,16 @@ test('shipped controller empty initial query starts closed with activeIndex -1',
     const { instance } = createPickerInstance([], '');
     assert.equal(instance.open, false);
     assert.equal(instance.activeIndex, -1);
+});
+
+test('pending input and stale responses cannot select old candidates', () => {
+    const { instance, wire, setSearchResults, addProductCalls } = createPickerInstance([], 'old');
+    setSearchResults([{id: 1, default_unit_id: 2}]);
+    instance.onInput('new');
+    instance.selectCurrent();
+    instance.addCandidate(1, 2);
+    wire.productSearch = 'new';
+    instance.selectCurrent();
+    assert.equal(addProductCalls.length, 0);
+    assert.equal(instance.resultsReady(), false);
 });
