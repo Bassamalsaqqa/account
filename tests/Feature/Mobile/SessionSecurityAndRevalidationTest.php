@@ -171,7 +171,7 @@ final class SessionSecurityAndRevalidationTest extends TestCase
         // Verify token works initially
         $resp1 = $this->withHeader('Authorization', "Bearer {$token}")
             ->getJson("/api/mobile/v1/companies/{$this->companyA->public_id}/bootstrap");
-        $resp1->assertStatus(409)->assertJsonPath('error.code', 'BOOTSTRAP_CONFIG_UNSUPPORTED');
+        $resp1->assertOk();
 
         // User changes password
         $this->user->update(['password' => Hash::make('new-secure-password')]);

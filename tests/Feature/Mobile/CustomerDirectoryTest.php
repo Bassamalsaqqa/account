@@ -108,12 +108,12 @@ final class CustomerDirectoryTest extends TestCase
         $this->assertNull($data['next_cursor']);
         $this->assertCount(2, $data['customers']);
 
-        $walkInItem = collect($data['customers'])->firstWhere('id', $this->walkInCustomer->public_id);
+        $walkInItem = collect((array) $data['customers'])->firstWhere('id', $this->walkInCustomer->public_id);
         $this->assertNotNull($walkInItem);
         $this->assertSame('CUST-WALK-IN', $walkInItem['code']);
         $this->assertTrue($walkInItem['is_walk_in']);
 
-        $regItem = collect($data['customers'])->firstWhere('id', $regularCustomer->public_id);
+        $regItem = collect((array) $data['customers'])->firstWhere('id', $regularCustomer->public_id);
         $this->assertNotNull($regItem);
         $this->assertSame('CUST-00102', $regItem['code']);
         $this->assertSame('+970599123456', $regItem['phone']);

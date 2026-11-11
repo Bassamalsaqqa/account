@@ -25,6 +25,25 @@ final class WireResponse
                 }
             }
         }
+        if (isset($schema['const']) && $value !== $schema['const']) {
+            return false;
+        }
+        if (isset($schema['allOf'])) {
+            foreach ($schema['allOf'] as $candidate) {
+                if (! self::matches($value, $candidate)) {
+                    return false;
+                }
+            }
+        }
+        if (isset($schema['if'])) {
+            if (self::matches($value, $schema['if'])) {
+                if (isset($schema['then']) && ! self::matches($value, $schema['then'])) {
+                    return false;
+                }
+            } elseif (isset($schema['else']) && ! self::matches($value, $schema['else'])) {
+                return false;
+            }
+        }
         $type = match (true) {
             $value === null => 'null', is_string($value) => 'string', is_bool($value) => 'boolean',
             is_int($value) => 'integer', is_array($value) => 'array', $value instanceof stdClass => 'object', default => 'number',

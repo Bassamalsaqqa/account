@@ -64,10 +64,7 @@
   ],
   "offline_policy": {
     "enabled": false,
-    "cash_only": true,
-    "max_offline_hours": 12,
-    "max_offline_sales_count": 50,
-    "max_offline_total_amount": "5000.000000"
+    "availability": "unavailable"
   },
   "catalog_snapshot_version": "snap-20261110-v1"
 }

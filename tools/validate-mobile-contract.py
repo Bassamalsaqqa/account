@@ -39,11 +39,21 @@ from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
 import jsonschema
-from jsonschema import Draft202012Validator
+from jsonschema import Draft202012Validator, FormatChecker
+from jsonschema.validators import extend
 from jsonschema.exceptions import ValidationError as JsonSchemaValidationError, SchemaError
 import referencing
 from referencing import Registry, Resource
 import openapi_spec_validator
+
+def full_pattern(validator, pattern, instance, schema):
+    # JSON Schema search semantics plus strict end boundary for this contract's anchored patterns.
+    if isinstance(instance, str) and re.search(pattern, instance) is None:
+        yield JsonSchemaValidationError("String does not match pattern")
+    elif isinstance(instance, str) and pattern.endswith("$") and re.fullmatch(pattern[:-1], instance) is None:
+        yield JsonSchemaValidationError("String must match the entire bounded lexeme")
+
+ContractValidator = extend(Draft202012Validator, {"pattern": full_pattern})
 
 # Set up decimal context matching Laravel SalesLineCalculator.php (commit f8a0cf7012c4875bec7320d42e0f8dde58593b52)
 decimal.getcontext().prec = 28
@@ -176,7 +186,7 @@ class SchemaValidatorHub:
         if schema_name not in self.schemas:
             raise ValueError(f"Schema not found in registry: {schema_name}")
         schema_data = self.schemas[schema_name]
-        validator = Draft202012Validator(schema_data, registry=self.registry)
+        validator = ContractValidator(schema_data, registry=self.registry, format_checker=FormatChecker())
         errors = sorted(validator.iter_errors(instance), key=lambda e: e.path)
         if errors:
             err_msg = "\n".join(
@@ -809,7 +819,23 @@ def run_suite() -> int:
         print("  OK: Check 17 passed (mfa_code and recovery_code mutually exclusive constraint enforced)")
         passed_checks += 1
 
-    print("\n  [Contract Isolation Notice] All 17 validation checks verify contract schemas, OpenAPI invariants,")
+    # Revision 2 positive/negative read/auth fixtures, including every displayed width.
+    import copy
+    cases = json.loads((FIXTURES_DIR / "revision-2-validation-cases.json").read_text())
+    revision_count = 0
+    for case in cases:
+        try:
+            validator_hub.validate_instance(case["instance"], case["schema"], case["name"])
+            accepted = True
+        except JsonSchemaValidationError:
+            accepted = False
+        if accepted != case["valid"]:
+            raise ValueError(f"Revision 2 fixture failed: {case['name']}")
+        revision_count += 1
+    print(f"  OK: {revision_count} revision 2 positive/negative fixture validations")
+    passed_checks += revision_count
+
+    print("\n  [Contract Isolation Notice] These validation checks verify contract schemas, OpenAPI invariants,")
     print("  exact decimal arithmetic, and JCS digests. Database row locks, tenant middlewares, and ledger")
     print("  postings are authoritative in Laravel account PHPUnit suites.")
 

@@ -13,6 +13,7 @@ use App\Support\Tenancy\CompanyContext;
 use Closure;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\RateLimiter;
+use Spatie\Permission\PermissionRegistrar;
 use Symfony\Component\HttpFoundation\Response;
 
 final class MobileAuthenticate
@@ -21,6 +22,20 @@ final class MobileAuthenticate
      * Handle authentication and scope verification for Mobile V1 requests.
      */
     public function handle(Request $request, Closure $next, ?string $requiredPermission = null): Response
+    {
+        $context = app(CompanyContext::class);
+        $context->clear();
+        app(PermissionRegistrar::class)->forgetCachedPermissions();
+
+        try {
+            return $this->handleAuthenticated($request, $next, $requiredPermission);
+        } finally {
+            $context->clear();
+            app(PermissionRegistrar::class)->forgetCachedPermissions();
+        }
+    }
+
+    private function handleAuthenticated(Request $request, Closure $next, ?string $requiredPermission = null): Response
     {
         // 1. Extract Bearer token from Authorization header
         $authHeader = (string) $request->header('Authorization');

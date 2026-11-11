@@ -171,9 +171,19 @@ final class AuthController extends Controller
                 $recoveryCode = $payload['recovery_code'] ?? null;
 
                 if ($mfaCode === null && $recoveryCode === null) {
-                    // Frozen response cannot express the approved fresh-challenge retry protocol.
-                    // Do not mint an unusable nonce-less continuation.
-                    return MobileApiBoundary::buildErrorResponse(code: 'MFA_RETRY_REQUIRED', message: 'Fetch a fresh challenge and resend credentials with MFA or recovery code.', status: 409);
+                    $mfaResponse = response()->json([
+                        'status' => 'MFA_REQUIRED',
+                        'retry' => 'fresh_challenge',
+                    ], 200, [
+                        'Content-Type' => 'application/json',
+                        'Cache-Control' => 'no-store, no-cache, must-revalidate, private',
+                        'Pragma' => 'no-cache',
+                    ]);
+                    if (! WireResponse::accepts(json_decode((string) $mfaResponse->getContent()), 'auth-login-response')) {
+                        throw new HttpResponseException(MobileApiBoundary::buildErrorResponse(code: 'CONTRACT_INCOMPATIBLE', message: 'Existing data cannot be represented by Mobile V1.', status: 409));
+                    }
+
+                    return $mfaResponse;
                 }
 
                 if ($mfaCode !== null) {

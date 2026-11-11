@@ -92,7 +92,7 @@ Prior iterations suffered from informal contract specifications, toy validators,
 ### 2.9 Authentication Lifecycle, MFA_REQUIRED & Hardware Custody
 1. **Challenge Lifecycle**: `POST /auth/challenge` issues single-use nonces and challenge UUIDs with a 5-minute TTL.
 2. **Fortify Parity & Mutual Exclusion**: `POST /auth/login` supports standard credentials, optional TOTP `mfa_code`, and optional single-use Fortify `recovery_code`. The request schema enforces strict mutual exclusion between `mfa_code` and `recovery_code` (submitting both simultaneously is rejected).
-3. **Explicit MFA_REQUIRED Status**: If credentials are valid but two-factor authentication is required, the server responds with an explicit `MFA_REQUIRED` status and challenge UUID.
+3. **Explicit MFA_REQUIRED Status**: If credentials are valid but two-factor authentication is required, the server responds with `status: MFA_REQUIRED` and `retry: fresh_challenge`; obtain a fresh ordinary challenge before retrying credentials with MFA/recovery.
 4. **Auth Revocation Fails Closed**: Revoked tokens fail at the gateway with **HTTP 401 Unauthorized**. No 401 response ever issues parked receipts or sync outcomes. The Android client locks the local outbox (`QUEUE_LOCKED_AUTH_DENIED`) pending authenticated manager resolution.
 5. **Keystore Key Custody**: Hardware-backed AES-256-GCM keys reside in `AndroidKeyStore`. Master keys encrypt token ciphertext stored in private app storage; bearer tokens are never stored directly in plaintext or in Android Keystore.
 
@@ -141,3 +141,17 @@ All offline policies remain strictly disabled by default (`offline_policy.enable
 4. **Provisional Customer Document**: Local slip clearly labeled **"Pending synchronization / غير مرحّلة بعد"** with local serial, no official fiscal invoice number.
 5. **Revocation Resolution Policy**: If an operator is revoked while disconnected, the device locks the outbox queue on HTTP 401 until an authorized manager resolves it.
 6. **Cross-Platform Parity Testing**: Complete automated test suites verifying exact digest and rounding parity across Kotlin (`small-trader-android`) and PHP (`account`) must pass prior to production rollout.
+
+## Coordinated DRAFT revision 2 (read/MFA/bootstrap only)
+
+This explicit revision supersedes conflicting read/auth examples above. Historical baseline is Git `088f1f9d5fdb231b31d7bc1525092b500411cb5f`, manifest SHA-256 `a8d04a130bdb0bd909a7cfabdde93fb6f90c96cc07dbedfbd01971bdb07c6733`. API prefix remains `/api/mobile/v1`. Financial schemas and canonical digest fixtures remain unchanged and are not financial release approval.
+
+MFA_REQUIRED returns only `status: MFA_REQUIRED, retry: fresh_challenge`. The ordinary challenge is consumed; fetch a fresh ordinary challenge and resend credentials with its new nonce/id plus MFA or recovery code, mutually exclusive. No continuation proof and no compulsory MFA. Token identity is immutable STAFF + DEVICE. Each company route requires explicit selection, fresh active company/membership, canonical grants and tenant ownership; never named-role exemptions or session fallback. Roles are bounded presentation strings only.
+
+Offline unavailable is `{enabled:false,availability:"unavailable"}` with null device_lease enforced by schema. No approved numeric defaults exist. Enabled policy requires all explicitly reviewed limits; shape validation cannot approve business policy. Online bootstrap can succeed while offline is OFF. Canonical walk-in customer, warehouse and approved cash mapping requirements remain: missing configuration is a truthful configuration error, never first-record guessing. Empty unit/tax masters are valid reads, not sale-readiness claims.
+
+Product tax_rate and tax_rate_id form a nullable pair. Null means NO PRODUCT DEFAULT ASSOCIATION, not zero tax/exemption. Mature Product has no tax FK and returns null pair. Bootstrap taxes are actual company tax-master definitions. UI must explicitly select a permitted line TaxRate under canonical SalesDraftIntent; null ID plus zero is only an explicit no-tax choice. Never manufacture a product tax column, use product ULID as tax ULID, or infer tax identity from a percentage. Before financial implementation, amend online preview to carry explicit line tax public ID, resolved/validated server-side against percentage/inclusive snapshots. Current preview's percentage-only request has this unresolved gap. Offline tax identity probably needs a new event version; do not post current offline payload by guessing a tax record. Existing economic payloads and golden digests are frozen.
+
+### Restricted parser boundary clarification
+
+Raw JSON payload limit is 1 MiB of UTF-8 bytes. Each decoded JSON string is bounded at 65536 UTF-16 code units, checked after appending a full escaped surrogate pair. Unicode hex escapes accept unsigned ASCII hex digits only; unescaped controls are rejected. Integers must be within the exact safe integer domain [-9007199254740991,9007199254740991], consistently for parsed and raw values. Economic decimal input lexemes are preserved without trimming or rounding; floats are forbidden. Economic bounded-string validation must require a full match (a trailing newline must not pass a dollar-anchor check). These clarify parser requirements, not a change to immutable financial fields or digest vectors.

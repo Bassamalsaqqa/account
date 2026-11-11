@@ -14,6 +14,7 @@ use App\Support\Tenancy\CompanyContext;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Str;
+use Spatie\Permission\Models\Role;
 use Tests\TestCase;
 
 final class SecurityCorrectionsTest extends TestCase
@@ -41,7 +42,9 @@ final class SecurityCorrectionsTest extends TestCase
         app(CompanyRoleService::class)->seedCompanyRoles($company);
         setPermissionsTeamId($company->id);
         $user->assignRole('Administrator');
-        $user->roles()->firstOrFail()->syncPermissions([]);
+        /** @var Role $role */
+        $role = $user->roles()->firstOrFail();
+        $role->syncPermissions([]);
         $token = $this->token($user);
         foreach (['products', 'customers', 'bootstrap'] as $endpoint) {
             $this->withToken($token)->getJson("/api/mobile/v1/companies/{$company->public_id}/{$endpoint}")->assertForbidden();
@@ -114,8 +117,9 @@ final class SecurityCorrectionsTest extends TestCase
         $name = str_repeat('ع', 255);
         $customer = Customer::create(['company_id' => $company->id, 'name_ar' => $name, 'status' => 'active', 'created_by' => $user->id]);
         $token = $this->token($user);
-        $this->withToken($token)->getJson("/api/mobile/v1/companies/{$company->public_id}/customers")
-            ->assertStatus(409)->assertJsonPath('error.code', 'CONTRACT_INCOMPATIBLE');
+        $response = $this->withToken($token)->getJson("/api/mobile/v1/companies/{$company->public_id}/customers")
+            ->assertOk();
+        $this->assertSame($name, $response->json('customers.0.name'));
         app(CompanyContext::class)->setCompany($company, $user);
         $this->assertSame($name, $customer->fresh()->name_ar);
     }

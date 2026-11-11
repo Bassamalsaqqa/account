@@ -17,9 +17,11 @@ use App\Models\User;
 use App\Models\Warehouse;
 use App\Services\Tenancy\CompanyRoleService;
 use App\Support\Tenancy\CompanyContext;
+use App\Support\Tenancy\CompanyScope;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
+use Symfony\Component\Process\Process;
 use Tests\TestCase;
 
 final class BootstrapTest extends TestCase
@@ -163,12 +165,132 @@ final class BootstrapTest extends TestCase
         return $raw;
     }
 
-    public function test_bootstrap_is_unavailable_without_approved_policy_even_with_complete_mappings(): void
+    public function test_bootstrap_succeeds_with_valid_configuration(): void
     {
         $token = $this->issueToken();
+        $response = $this->withHeader('Authorization', "Bearer {$token}")
+            ->getJson("/api/mobile/v1/companies/{$this->company->public_id}/bootstrap");
+
+        $response->assertStatus(200)
+            ->assertHeader('Cache-Control', 'must-revalidate, no-cache, no-store, private');
+
+        $validator = new Process(['python', base_path('tests/Support/Mobile/validate-response.py'), 'bootstrap-response']);
+        $validator->setInput($response->getContent())->run();
+        $this->assertTrue($validator->isSuccessful(), $validator->getErrorOutput());
+
+        $data = $response->json();
+        $this->assertSame($this->company->public_id, $data['company_id']);
+        $this->assertSame('ILS', $data['base_currency']);
+        $this->assertSame($this->customer->public_id, $data['walk_in_customer_id']);
+        $this->assertSame($this->warehouse->public_id, $data['default_warehouse']['id']);
+        $this->assertSame('WH-MAIN', $data['default_warehouse']['code']);
+        $this->assertSame($this->cashAccount->public_id, $data['approved_cash_account']['id']);
+        $this->assertSame('ILS', $data['approved_cash_account']['currency']);
+        $this->assertNull($data['device_lease']);
+
+        $this->assertSame(['enabled' => false, 'availability' => 'unavailable'], $data['offline_policy']);
+        $this->assertArrayNotHasKey('max_offline_hours', $data['offline_policy']);
+        $this->assertArrayNotHasKey('max_offline_sales_count', $data['offline_policy']);
+        $this->assertArrayNotHasKey('max_offline_total_amount', $data['offline_policy']);
+
+        $this->assertCount(1, $data['units']);
+        $this->assertSame($this->unit->public_id, $data['units'][0]['id']);
+        $this->assertCount(1, $data['taxes']);
+        $this->assertSame($this->taxRate->public_id, $data['taxes'][0]['id']);
+        $this->assertTrue($data['taxes'][0]['is_default']);
+    }
+
+    public function test_bootstrap_fails_truthfully_when_walkin_customer_is_missing_or_inactive(): void
+    {
+        $token = $this->issueToken();
+
+        // 1. Inactive walk-in customer
+        $this->customer->update(['status' => 'inactive']);
         $this->withHeader('Authorization', "Bearer {$token}")
             ->getJson("/api/mobile/v1/companies/{$this->company->public_id}/bootstrap")
-            ->assertStatus(409)->assertJsonPath('error.code', 'BOOTSTRAP_CONFIG_UNSUPPORTED')
-            ->assertJsonMissingPath('offline_policy')->assertJsonMissingPath('device_lease');
+            ->assertStatus(409)->assertJsonPath('error.code', 'BOOTSTRAP_CONFIG_UNSUPPORTED');
+
+        // 2. Different company customer
+        $otherCompany = Company::factory()->create(['status' => 'active']);
+        $otherCust = CompanyScope::executeWithoutScope(fn () => Customer::create([
+            'public_id' => (string) Str::ulid(),
+            'company_id' => $otherCompany->id,
+            'code' => 'OTHER-CUST',
+            'name_ar' => 'عميل آخر',
+            'status' => 'active',
+            'created_by' => $this->user->id,
+        ]));
+        CompanyMobileSetting::where('company_id', $this->company->id)->update(['walk_in_customer_id' => $otherCust->id]);
+        $this->withHeader('Authorization', "Bearer {$token}")
+            ->getJson("/api/mobile/v1/companies/{$this->company->public_id}/bootstrap")
+            ->assertStatus(409)->assertJsonPath('error.code', 'BOOTSTRAP_CONFIG_UNSUPPORTED');
+
+        // 3. Null walk-in customer
+        CompanyMobileSetting::where('company_id', $this->company->id)->update(['walk_in_customer_id' => null]);
+        $this->withHeader('Authorization', "Bearer {$token}")
+            ->getJson("/api/mobile/v1/companies/{$this->company->public_id}/bootstrap")
+            ->assertStatus(409)->assertJsonPath('error.code', 'BOOTSTRAP_CONFIG_UNSUPPORTED');
+    }
+
+    public function test_bootstrap_fails_truthfully_when_cash_account_is_missing_inactive_or_currency_mismatched(): void
+    {
+        $token = $this->issueToken();
+
+        // 1. Inactive cash account
+        $this->cashAccount->update(['is_active' => false]);
+        $this->withHeader('Authorization', "Bearer {$token}")
+            ->getJson("/api/mobile/v1/companies/{$this->company->public_id}/bootstrap")
+            ->assertStatus(409)->assertJsonPath('error.code', 'BOOTSTRAP_CONFIG_UNSUPPORTED');
+
+        // 2. Currency mismatched
+        $this->cashAccount->update(['is_active' => true, 'currency_code' => 'USD']);
+        $this->withHeader('Authorization', "Bearer {$token}")
+            ->getJson("/api/mobile/v1/companies/{$this->company->public_id}/bootstrap")
+            ->assertStatus(409)->assertJsonPath('error.code', 'BOOTSTRAP_CONFIG_UNSUPPORTED');
+
+        // 3. Null cash account
+        CompanyMobileSetting::where('company_id', $this->company->id)->update(['approved_cash_account_id' => null]);
+        $this->withHeader('Authorization', "Bearer {$token}")
+            ->getJson("/api/mobile/v1/companies/{$this->company->public_id}/bootstrap")
+            ->assertStatus(409)->assertJsonPath('error.code', 'BOOTSTRAP_CONFIG_UNSUPPORTED');
+    }
+
+    public function test_bootstrap_fails_truthfully_when_default_warehouse_is_missing_or_inactive(): void
+    {
+        $token = $this->issueToken();
+
+        // 1. Inactive warehouse
+        $this->warehouse->update(['active' => false]);
+        $this->withHeader('Authorization', "Bearer {$token}")
+            ->getJson("/api/mobile/v1/companies/{$this->company->public_id}/bootstrap")
+            ->assertStatus(409)->assertJsonPath('error.code', 'BOOTSTRAP_CONFIG_UNSUPPORTED');
+
+        // 2. Null warehouse
+        CompanyMobileSetting::where('company_id', $this->company->id)->update(['default_warehouse_id' => null]);
+        $this->withHeader('Authorization', "Bearer {$token}")
+            ->getJson("/api/mobile/v1/companies/{$this->company->public_id}/bootstrap")
+            ->assertStatus(409)->assertJsonPath('error.code', 'BOOTSTRAP_CONFIG_UNSUPPORTED');
+    }
+
+    public function test_bootstrap_allows_empty_units_and_taxes_without_invented_defaults(): void
+    {
+        CompanyScope::executeWithoutScope(function (): void {
+            Unit::where('company_id', $this->company->id)->delete();
+            TaxRate::where('company_id', $this->company->id)->delete();
+        });
+        CompanyMobileSetting::where('company_id', $this->company->id)->update(['default_tax_rate_id' => null]);
+
+        $token = $this->issueToken();
+        $response = $this->withHeader('Authorization', "Bearer {$token}")
+            ->getJson("/api/mobile/v1/companies/{$this->company->public_id}/bootstrap");
+
+        $response->assertStatus(200);
+        $validator = new Process(['python', base_path('tests/Support/Mobile/validate-response.py'), 'bootstrap-response']);
+        $validator->setInput($response->getContent())->run();
+        $this->assertTrue($validator->isSuccessful(), $validator->getErrorOutput());
+
+        $data = $response->json();
+        $this->assertSame([], $data['units']);
+        $this->assertSame([], $data['taxes']);
     }
 }

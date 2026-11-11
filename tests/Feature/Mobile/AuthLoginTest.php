@@ -61,6 +61,9 @@ final class AuthLoginTest extends TestCase
         $this->user->assignRole('Cashier');
     }
 
+    /**
+     * @return array<string, mixed>
+     */
     private function createChallenge(string $deviceId): array
     {
         $challengeId = (string) Str::uuid();
@@ -287,7 +290,12 @@ final class AuthLoginTest extends TestCase
             'recovery_code' => null,
         ]);
 
-        $resp1->assertStatus(409)->assertJsonPath('error.code', 'MFA_RETRY_REQUIRED');
+        $resp1->assertStatus(200)
+            ->assertJsonPath('status', 'MFA_REQUIRED')
+            ->assertJsonPath('retry', 'fresh_challenge');
+        $validator = new Process(['python', base_path('tests/Support/Mobile/validate-response.py'), 'auth-login-response']);
+        $validator->setInput($resp1->getContent())->run();
+        $this->assertTrue($validator->isSuccessful(), $validator->getErrorOutput());
         $this->assertSame(0, MobileAccessToken::count());
         // The consumed challenge cannot be retried, even with a genuine TOTP.
         $totp = app(Google2FA::class)->getCurrentOtp($secret);

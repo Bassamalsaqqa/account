@@ -60,11 +60,12 @@ final class CustomerController extends Controller
             ->where('status', 'active');
 
         if ($search !== null) {
-            $query->where(function ($q) use ($search): void {
-                $q->where('name_ar', 'like', "%{$search}%")
-                    ->orWhere('name_en', 'like', "%{$search}%")
-                    ->orWhere('code', 'like', "%{$search}%")
-                    ->orWhere('phone', 'like', "%{$search}%");
+            $escapedSearch = str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $search);
+            $query->where(function ($q) use ($escapedSearch): void {
+                $q->where('name_ar', 'like', "{$escapedSearch}%")
+                    ->orWhere('name_en', 'like', "{$escapedSearch}%")
+                    ->orWhere('code', 'like', "{$escapedSearch}%")
+                    ->orWhere('phone', 'like', "{$escapedSearch}%");
             });
         }
 

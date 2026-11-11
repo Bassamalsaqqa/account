@@ -28,14 +28,18 @@ final class WireResponseTest extends TestCase
     {
         $fixture = json_decode(file_get_contents(base_path('docs/integration/mobile-v1/fixtures/golden-product-catalog.json')));
         foreach (['0.000000', '16.123456', '100.000000'] as $percentage) {
+            $fixture->products[0]->tax_rate_id = '01JCV8X9MDPTRSVWXYZ0123456';
             $fixture->products[0]->tax_rate = $percentage;
             $this->assertTrue(WireResponse::accepts($fixture, 'product-catalog-response'));
         }
         $fixture->products[0]->tax_rate = '100.000001';
         $this->assertFalse(WireResponse::accepts($fixture, 'product-catalog-response'));
-        $fixture->products[0]->tax_rate = '16.000000';
-        $fixture->products[0]->name = str_repeat('ع', 101);
+        $fixture->products[0]->tax_rate = null;
+        $fixture->products[0]->tax_rate_id = null;
+        $fixture->products[0]->name = str_repeat('ع', 255);
+        $this->assertTrue(WireResponse::accepts($fixture, 'product-catalog-response'));
+        $fixture->products[0]->name = str_repeat('ع', 256);
         $this->assertFalse(WireResponse::accepts($fixture, 'product-catalog-response'));
-        $this->assertSame(101, mb_strlen($fixture->products[0]->name));
+        $this->assertSame(256, mb_strlen($fixture->products[0]->name));
     }
 }
