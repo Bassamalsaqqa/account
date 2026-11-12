@@ -1,0 +1,9 @@
+{
+  "request": {
+    "device_id": "8e2b8bc6-f80c-4034-8c88-59368d1f2e10"
+  },
+  "response": {
+    "status": "logged_out",
+    "revoked_at": "2026-11-10T12:30:00Z"
+  }
+}

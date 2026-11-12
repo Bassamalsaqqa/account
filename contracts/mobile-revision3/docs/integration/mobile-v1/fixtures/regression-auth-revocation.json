@@ -1,0 +1,66 @@
+{
+  "scenario": "Staff revoked while disconnected. Intake attempt using revoked Bearer token fails at the authentication gate with 401 Unauthorized; local Room queue transitions to auth-locked state pending authenticated manager resolution; no receipts or parked records are issued to revoked credentials.",
+  "revocation_event": {
+    "actor_id": "01JCV8X9M8T1V2W3X4Y5Z67890",
+    "revocation_action": "Administrator terminated cashier staff account while device was offline",
+    "revoked_at": "2026-11-10T13:30:00Z"
+  },
+  "intake_submission": {
+    "client_event_id": "4ab96f75-6828-4673-c40d-3da74f77bfa7",
+    "device_id": "8e2b8bc6-f80c-4034-8c88-59368d1f2e10",
+    "captured_at": "2026-11-10T14:00:00Z",
+    "payload_digest": "sha256:f6b5c8ad4742841c05ce335f252bf39ec82bf6482118e58a81544dea91db0b8a",
+    "event": {
+      "client_event_id": "4ab96f75-6828-4673-c40d-3da74f77bfa7",
+      "event_version": 1,
+      "company_id": "01JCV8X9M2NQW3TYZ4R5S6789A",
+      "actor_id": "01JCV8X9M8T1V2W3X4Y5Z67890",
+      "device_id": "8e2b8bc6-f80c-4034-8c88-59368d1f2e10",
+      "device_lease_id": "7c1e5a2b-3d4f-5678-90ab-cdef12345678",
+      "captured_at": "2026-11-10T14:00:00Z",
+      "customer_id": "01JCV8X9M4K1P2Q3R4S5T6V7W8",
+      "currency": "ILS",
+      "warehouse_id": "01JCV8X9M9A2B3C4D5E6F7G8H9",
+      "cash_account_id": "01JCV8X9MAJ3K4M5N6P7Q8R9S0",
+      "catalog_snapshot_version": "snap-20261110-v1",
+      "local_receipt_number": "REC-OFF-00043",
+      "lines": [
+        {
+          "product_id": "01JCV8X9M6A1B2C3D4E5F6G7H8",
+          "product_unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+          "unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+          "quantity": "1.000000",
+          "unit_price": "25.000000",
+          "tax_rate": "16.000000",
+          "tax_amount": "4.000000",
+          "line_total": "29.000000"
+        }
+      ],
+      "payment": {
+        "mode": "full",
+        "payment_method": "cash",
+        "cash_account_id": "01JCV8X9MAJ3K4M5N6P7Q8R9S0",
+        "amount_tendered": "50.000000",
+        "amount_settled": "29.000000",
+        "change_returned": "21.000000"
+      }
+    }
+  },
+  "expected_status": 401,
+  "expected_response": {
+    "error": {
+      "code": "UNAUTHENTICATED",
+      "message": "The Bearer token has been revoked or expired.",
+      "details": {
+        "reason": "ACTOR_REVOKED",
+        "revoked_at": "2026-11-10T13:30:00Z"
+      }
+    }
+  },
+  "client_outbox_state": {
+    "queue_status": "QUEUE_LOCKED_AUTH_DENIED",
+    "preserved_local_records": 1,
+    "unlocked_by": "authenticated_manager_resolution_only",
+    "cross_actor_exposure": false
+  }
+}

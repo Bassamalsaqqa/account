@@ -1,0 +1,5964 @@
+[
+  {
+    "name": "fresh MFA",
+    "schema": "auth-login-response.json",
+    "instance": {
+      "status": "MFA_REQUIRED",
+      "retry": "fresh_challenge"
+    },
+    "valid": true
+  },
+  {
+    "name": "old nonce-less MFA",
+    "schema": "auth-login-response.json",
+    "instance": {
+      "status": "MFA_REQUIRED",
+      "mfa_challenge_id": "00000000-0000-0000-0000-000000000000",
+      "expires_at": "2026-11-11T12:00:00Z"
+    },
+    "valid": false
+  },
+  {
+    "name": "disabled without invented limits",
+    "schema": "bootstrap-response.json",
+    "instance": {
+      "company_id": "01JCV8X9M2NQW3TYZ4R5S6789A",
+      "company_name": "Al-Amal Retail Company",
+      "base_currency": "ILS",
+      "walk_in_customer_id": "01JCV8X9M4K1P2Q3R4S5T6V7W8",
+      "staff": {
+        "id": "01JCV8X9M8T1V2W3X4Y5Z67890",
+        "name": "Ahmad Cashier",
+        "role": "cashier",
+        "permissions": [
+          "sales.create",
+          "sales.read",
+          "customers.read",
+          "products.read"
+        ]
+      },
+      "device_lease": null,
+      "default_warehouse": {
+        "id": "01JCV8X9M9A2B3C4D5E6F7G8H9",
+        "code": "WH-MAIN",
+        "name": "Main Store Warehouse"
+      },
+      "approved_cash_account": {
+        "id": "01JCV8X9MAJ3K4M5N6P7Q8R9S0",
+        "code": "CASH-REG-01",
+        "name": "Cash Register 01 (ILS)",
+        "currency": "ILS"
+      },
+      "units": [
+        {
+          "id": "01JCV8X9MBV4W5X6Y7Z8012345",
+          "code": "PCS",
+          "name": "Piece",
+          "symbol": "pc",
+          "allows_fraction": false,
+          "decimal_places": 0
+        },
+        {
+          "id": "01JCV8X9MC6789ABCDEFGHJKMN",
+          "code": "KG",
+          "name": "Kilogram",
+          "symbol": "kg",
+          "allows_fraction": true,
+          "decimal_places": 3
+        }
+      ],
+      "taxes": [
+        {
+          "id": "01JCV8X9MDPTRSVWXYZ0123456",
+          "code": "VAT16",
+          "name": "Standard VAT (16%)",
+          "rate": "16.000000",
+          "calculation": "exclusive",
+          "is_default": true
+        },
+        {
+          "id": "01JCV8X9MDZER0000000000000",
+          "code": "ZERO",
+          "name": "Zero-Rated (0%)",
+          "rate": "0.000000",
+          "calculation": "exclusive",
+          "is_default": false
+        }
+      ],
+      "offline_policy": {
+        "enabled": false,
+        "availability": "unavailable"
+      },
+      "catalog_snapshot_version": "snap-20261110-v1",
+      "base_currency_minor_units": 2
+    },
+    "valid": true
+  },
+  {
+    "name": "disabled with lease",
+    "schema": "bootstrap-response.json",
+    "instance": {
+      "company_id": "01JCV8X9M2NQW3TYZ4R5S6789A",
+      "company_name": "Al-Amal Retail Company",
+      "base_currency": "ILS",
+      "walk_in_customer_id": "01JCV8X9M4K1P2Q3R4S5T6V7W8",
+      "staff": {
+        "id": "01JCV8X9M8T1V2W3X4Y5Z67890",
+        "name": "Ahmad Cashier",
+        "role": "cashier",
+        "permissions": [
+          "sales.create",
+          "sales.read",
+          "customers.read",
+          "products.read"
+        ]
+      },
+      "device_lease": {
+        "lease_id": "00000000-0000-0000-0000-000000000000",
+        "device_id": "00000000-0000-0000-0000-000000000000",
+        "actor_id": "01JCV8X9M8T1V2W3X4Y5Z67890",
+        "expires_at": "2026-11-11T12:00:00Z"
+      },
+      "default_warehouse": {
+        "id": "01JCV8X9M9A2B3C4D5E6F7G8H9",
+        "code": "WH-MAIN",
+        "name": "Main Store Warehouse"
+      },
+      "approved_cash_account": {
+        "id": "01JCV8X9MAJ3K4M5N6P7Q8R9S0",
+        "code": "CASH-REG-01",
+        "name": "Cash Register 01 (ILS)",
+        "currency": "ILS"
+      },
+      "units": [
+        {
+          "id": "01JCV8X9MBV4W5X6Y7Z8012345",
+          "code": "PCS",
+          "name": "Piece",
+          "symbol": "pc",
+          "allows_fraction": false,
+          "decimal_places": 0
+        },
+        {
+          "id": "01JCV8X9MC6789ABCDEFGHJKMN",
+          "code": "KG",
+          "name": "Kilogram",
+          "symbol": "kg",
+          "allows_fraction": true,
+          "decimal_places": 3
+        }
+      ],
+      "taxes": [
+        {
+          "id": "01JCV8X9MDPTRSVWXYZ0123456",
+          "code": "VAT16",
+          "name": "Standard VAT (16%)",
+          "rate": "16.000000",
+          "calculation": "exclusive",
+          "is_default": true
+        },
+        {
+          "id": "01JCV8X9MDZER0000000000000",
+          "code": "ZERO",
+          "name": "Zero-Rated (0%)",
+          "rate": "0.000000",
+          "calculation": "exclusive",
+          "is_default": false
+        }
+      ],
+      "offline_policy": {
+        "enabled": false,
+        "availability": "unavailable"
+      },
+      "catalog_snapshot_version": "snap-20261110-v1",
+      "base_currency_minor_units": 2
+    },
+    "valid": false
+  },
+  {
+    "name": "empty mature masters",
+    "schema": "bootstrap-response.json",
+    "instance": {
+      "company_id": "01JCV8X9M2NQW3TYZ4R5S6789A",
+      "company_name": "Al-Amal Retail Company",
+      "base_currency": "ILS",
+      "walk_in_customer_id": "01JCV8X9M4K1P2Q3R4S5T6V7W8",
+      "staff": {
+        "id": "01JCV8X9M8T1V2W3X4Y5Z67890",
+        "name": "Ahmad Cashier",
+        "role": "cashier",
+        "permissions": [
+          "sales.create",
+          "sales.read",
+          "customers.read",
+          "products.read"
+        ]
+      },
+      "device_lease": null,
+      "default_warehouse": {
+        "id": "01JCV8X9M9A2B3C4D5E6F7G8H9",
+        "code": "WH-MAIN",
+        "name": "Main Store Warehouse"
+      },
+      "approved_cash_account": {
+        "id": "01JCV8X9MAJ3K4M5N6P7Q8R9S0",
+        "code": "CASH-REG-01",
+        "name": "Cash Register 01 (ILS)",
+        "currency": "ILS"
+      },
+      "units": [],
+      "taxes": [],
+      "offline_policy": {
+        "enabled": false,
+        "availability": "unavailable"
+      },
+      "catalog_snapshot_version": "snap-20261110-v1",
+      "base_currency_minor_units": 2
+    },
+    "valid": true
+  },
+  {
+    "name": "no product tax association",
+    "schema": "product-catalog-response.json",
+    "instance": {
+      "company_id": "01JCV8X9M2NQW3TYZ4R5S6789A",
+      "catalog_snapshot_version": "snap-20261110-v1",
+      "generated_at": "2026-11-10T12:00:00Z",
+      "next_cursor": null,
+      "has_more": false,
+      "products": [
+        {
+          "id": "01JCV8X9M6A1B2C3D4E5F6G7H8",
+          "sku": "SKU-OLIVE-OIL-1L",
+          "barcode": "6291041001234",
+          "name": "Extra Virgin Olive Oil 1L",
+          "unit_price": "25.000000",
+          "tax_rate": null,
+          "tax_rate_id": null,
+          "is_tracked": true,
+          "available_quantity": "142.000000",
+          "base_unit": {
+            "id": "01JCV8X9MBV4W5X6Y7Z8012345",
+            "code": "BTL",
+            "name": "Bottle"
+          },
+          "default_unit": {
+            "unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+            "product_unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+            "conversion_to_base": "1.000000",
+            "sale_price": "25.000000"
+          },
+          "units": [
+            {
+              "product_unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+              "unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+              "code": "BTL",
+              "name": "Bottle",
+              "conversion_to_base": "1.000000",
+              "is_base": true,
+              "is_default_sale": true,
+              "sale_price": "25.000000"
+            }
+          ]
+        },
+        {
+          "id": "01JCV8X9M7J2K3M4N5P6Q7R8S9",
+          "sku": "SKU-FLOUR-BULK",
+          "barcode": null,
+          "name": "Wheat Flour Bulk",
+          "unit_price": "4.500000",
+          "tax_rate": null,
+          "tax_rate_id": null,
+          "is_tracked": true,
+          "available_quantity": "520.500000",
+          "base_unit": {
+            "id": "01JCV8X9MC6789ABCDEFGHJKMN",
+            "code": "KG",
+            "name": "Kilogram"
+          },
+          "default_unit": {
+            "unit_id": "01JCV8X9MC6789ABCDEFGHJKMN",
+            "product_unit_id": "01JCV8X9MC6789ABCDEFGHJKMN",
+            "conversion_to_base": "1.000000",
+            "sale_price": "4.500000"
+          },
+          "units": [
+            {
+              "product_unit_id": "01JCV8X9MC6789ABCDEFGHJKMN",
+              "unit_id": "01JCV8X9MC6789ABCDEFGHJKMN",
+              "code": "KG",
+              "name": "Kilogram",
+              "conversion_to_base": "1.000000",
+              "is_base": true,
+              "is_default_sale": true,
+              "sale_price": "4.500000"
+            }
+          ]
+        }
+      ]
+    },
+    "valid": true
+  },
+  {
+    "name": "mismatched tax_rate",
+    "schema": "product-catalog-response.json",
+    "instance": {
+      "company_id": "01JCV8X9M2NQW3TYZ4R5S6789A",
+      "catalog_snapshot_version": "snap-20261110-v1",
+      "generated_at": "2026-11-10T12:00:00Z",
+      "next_cursor": null,
+      "has_more": false,
+      "products": [
+        {
+          "id": "01JCV8X9M6A1B2C3D4E5F6G7H8",
+          "sku": "SKU-OLIVE-OIL-1L",
+          "barcode": "6291041001234",
+          "name": "Extra Virgin Olive Oil 1L",
+          "unit_price": "25.000000",
+          "tax_rate": "0.000000",
+          "tax_rate_id": null,
+          "is_tracked": true,
+          "available_quantity": "142.000000",
+          "base_unit": {
+            "id": "01JCV8X9MBV4W5X6Y7Z8012345",
+            "code": "BTL",
+            "name": "Bottle"
+          },
+          "default_unit": {
+            "unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+            "product_unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+            "conversion_to_base": "1.000000",
+            "sale_price": "25.000000"
+          },
+          "units": [
+            {
+              "product_unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+              "unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+              "code": "BTL",
+              "name": "Bottle",
+              "conversion_to_base": "1.000000",
+              "is_base": true,
+              "is_default_sale": true,
+              "sale_price": "25.000000"
+            }
+          ]
+        },
+        {
+          "id": "01JCV8X9M7J2K3M4N5P6Q7R8S9",
+          "sku": "SKU-FLOUR-BULK",
+          "barcode": null,
+          "name": "Wheat Flour Bulk",
+          "unit_price": "4.500000",
+          "tax_rate": null,
+          "tax_rate_id": null,
+          "is_tracked": true,
+          "available_quantity": "520.500000",
+          "base_unit": {
+            "id": "01JCV8X9MC6789ABCDEFGHJKMN",
+            "code": "KG",
+            "name": "Kilogram"
+          },
+          "default_unit": {
+            "unit_id": "01JCV8X9MC6789ABCDEFGHJKMN",
+            "product_unit_id": "01JCV8X9MC6789ABCDEFGHJKMN",
+            "conversion_to_base": "1.000000",
+            "sale_price": "4.500000"
+          },
+          "units": [
+            {
+              "product_unit_id": "01JCV8X9MC6789ABCDEFGHJKMN",
+              "unit_id": "01JCV8X9MC6789ABCDEFGHJKMN",
+              "code": "KG",
+              "name": "Kilogram",
+              "conversion_to_base": "1.000000",
+              "is_base": true,
+              "is_default_sale": true,
+              "sale_price": "4.500000"
+            }
+          ]
+        }
+      ]
+    },
+    "valid": false
+  },
+  {
+    "name": "mismatched tax_rate_id",
+    "schema": "product-catalog-response.json",
+    "instance": {
+      "company_id": "01JCV8X9M2NQW3TYZ4R5S6789A",
+      "catalog_snapshot_version": "snap-20261110-v1",
+      "generated_at": "2026-11-10T12:00:00Z",
+      "next_cursor": null,
+      "has_more": false,
+      "products": [
+        {
+          "id": "01JCV8X9M6A1B2C3D4E5F6G7H8",
+          "sku": "SKU-OLIVE-OIL-1L",
+          "barcode": "6291041001234",
+          "name": "Extra Virgin Olive Oil 1L",
+          "unit_price": "25.000000",
+          "tax_rate": null,
+          "tax_rate_id": "01JCV8X9MDPTRSVWXYZ0123456",
+          "is_tracked": true,
+          "available_quantity": "142.000000",
+          "base_unit": {
+            "id": "01JCV8X9MBV4W5X6Y7Z8012345",
+            "code": "BTL",
+            "name": "Bottle"
+          },
+          "default_unit": {
+            "unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+            "product_unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+            "conversion_to_base": "1.000000",
+            "sale_price": "25.000000"
+          },
+          "units": [
+            {
+              "product_unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+              "unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+              "code": "BTL",
+              "name": "Bottle",
+              "conversion_to_base": "1.000000",
+              "is_base": true,
+              "is_default_sale": true,
+              "sale_price": "25.000000"
+            }
+          ]
+        },
+        {
+          "id": "01JCV8X9M7J2K3M4N5P6Q7R8S9",
+          "sku": "SKU-FLOUR-BULK",
+          "barcode": null,
+          "name": "Wheat Flour Bulk",
+          "unit_price": "4.500000",
+          "tax_rate": null,
+          "tax_rate_id": null,
+          "is_tracked": true,
+          "available_quantity": "520.500000",
+          "base_unit": {
+            "id": "01JCV8X9MC6789ABCDEFGHJKMN",
+            "code": "KG",
+            "name": "Kilogram"
+          },
+          "default_unit": {
+            "unit_id": "01JCV8X9MC6789ABCDEFGHJKMN",
+            "product_unit_id": "01JCV8X9MC6789ABCDEFGHJKMN",
+            "conversion_to_base": "1.000000",
+            "sale_price": "4.500000"
+          },
+          "units": [
+            {
+              "product_unit_id": "01JCV8X9MC6789ABCDEFGHJKMN",
+              "unit_id": "01JCV8X9MC6789ABCDEFGHJKMN",
+              "code": "KG",
+              "name": "Kilogram",
+              "conversion_to_base": "1.000000",
+              "is_base": true,
+              "is_default_sale": true,
+              "sale_price": "4.500000"
+            }
+          ]
+        }
+      ]
+    },
+    "valid": false
+  },
+  {
+    "name": "bootstrap['company_name'] max",
+    "schema": "bootstrap-response.json",
+    "instance": {
+      "company_id": "01JCV8X9M2NQW3TYZ4R5S6789A",
+      "company_name": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "base_currency": "ILS",
+      "walk_in_customer_id": "01JCV8X9M4K1P2Q3R4S5T6V7W8",
+      "staff": {
+        "id": "01JCV8X9M8T1V2W3X4Y5Z67890",
+        "name": "Ahmad Cashier",
+        "role": "cashier",
+        "permissions": [
+          "sales.create",
+          "sales.read",
+          "customers.read",
+          "products.read"
+        ]
+      },
+      "device_lease": null,
+      "default_warehouse": {
+        "id": "01JCV8X9M9A2B3C4D5E6F7G8H9",
+        "code": "WH-MAIN",
+        "name": "Main Store Warehouse"
+      },
+      "approved_cash_account": {
+        "id": "01JCV8X9MAJ3K4M5N6P7Q8R9S0",
+        "code": "CASH-REG-01",
+        "name": "Cash Register 01 (ILS)",
+        "currency": "ILS"
+      },
+      "units": [
+        {
+          "id": "01JCV8X9MBV4W5X6Y7Z8012345",
+          "code": "PCS",
+          "name": "Piece",
+          "symbol": "pc",
+          "allows_fraction": false,
+          "decimal_places": 0
+        },
+        {
+          "id": "01JCV8X9MC6789ABCDEFGHJKMN",
+          "code": "KG",
+          "name": "Kilogram",
+          "symbol": "kg",
+          "allows_fraction": true,
+          "decimal_places": 3
+        }
+      ],
+      "taxes": [
+        {
+          "id": "01JCV8X9MDPTRSVWXYZ0123456",
+          "code": "VAT16",
+          "name": "Standard VAT (16%)",
+          "rate": "16.000000",
+          "calculation": "exclusive",
+          "is_default": true
+        },
+        {
+          "id": "01JCV8X9MDZER0000000000000",
+          "code": "ZERO",
+          "name": "Zero-Rated (0%)",
+          "rate": "0.000000",
+          "calculation": "exclusive",
+          "is_default": false
+        }
+      ],
+      "offline_policy": {
+        "enabled": false,
+        "availability": "unavailable"
+      },
+      "catalog_snapshot_version": "snap-20261110-v1",
+      "base_currency_minor_units": 2
+    },
+    "valid": true
+  },
+  {
+    "name": "bootstrap['company_name'] over",
+    "schema": "bootstrap-response.json",
+    "instance": {
+      "company_id": "01JCV8X9M2NQW3TYZ4R5S6789A",
+      "company_name": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "base_currency": "ILS",
+      "walk_in_customer_id": "01JCV8X9M4K1P2Q3R4S5T6V7W8",
+      "staff": {
+        "id": "01JCV8X9M8T1V2W3X4Y5Z67890",
+        "name": "Ahmad Cashier",
+        "role": "cashier",
+        "permissions": [
+          "sales.create",
+          "sales.read",
+          "customers.read",
+          "products.read"
+        ]
+      },
+      "device_lease": null,
+      "default_warehouse": {
+        "id": "01JCV8X9M9A2B3C4D5E6F7G8H9",
+        "code": "WH-MAIN",
+        "name": "Main Store Warehouse"
+      },
+      "approved_cash_account": {
+        "id": "01JCV8X9MAJ3K4M5N6P7Q8R9S0",
+        "code": "CASH-REG-01",
+        "name": "Cash Register 01 (ILS)",
+        "currency": "ILS"
+      },
+      "units": [
+        {
+          "id": "01JCV8X9MBV4W5X6Y7Z8012345",
+          "code": "PCS",
+          "name": "Piece",
+          "symbol": "pc",
+          "allows_fraction": false,
+          "decimal_places": 0
+        },
+        {
+          "id": "01JCV8X9MC6789ABCDEFGHJKMN",
+          "code": "KG",
+          "name": "Kilogram",
+          "symbol": "kg",
+          "allows_fraction": true,
+          "decimal_places": 3
+        }
+      ],
+      "taxes": [
+        {
+          "id": "01JCV8X9MDPTRSVWXYZ0123456",
+          "code": "VAT16",
+          "name": "Standard VAT (16%)",
+          "rate": "16.000000",
+          "calculation": "exclusive",
+          "is_default": true
+        },
+        {
+          "id": "01JCV8X9MDZER0000000000000",
+          "code": "ZERO",
+          "name": "Zero-Rated (0%)",
+          "rate": "0.000000",
+          "calculation": "exclusive",
+          "is_default": false
+        }
+      ],
+      "offline_policy": {
+        "enabled": false,
+        "availability": "unavailable"
+      },
+      "catalog_snapshot_version": "snap-20261110-v1",
+      "base_currency_minor_units": 2
+    },
+    "valid": false
+  },
+  {
+    "name": "bootstrap['staff', 'name'] max",
+    "schema": "bootstrap-response.json",
+    "instance": {
+      "company_id": "01JCV8X9M2NQW3TYZ4R5S6789A",
+      "company_name": "Al-Amal Retail Company",
+      "base_currency": "ILS",
+      "walk_in_customer_id": "01JCV8X9M4K1P2Q3R4S5T6V7W8",
+      "staff": {
+        "id": "01JCV8X9M8T1V2W3X4Y5Z67890",
+        "name": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+        "role": "cashier",
+        "permissions": [
+          "sales.create",
+          "sales.read",
+          "customers.read",
+          "products.read"
+        ]
+      },
+      "device_lease": null,
+      "default_warehouse": {
+        "id": "01JCV8X9M9A2B3C4D5E6F7G8H9",
+        "code": "WH-MAIN",
+        "name": "Main Store Warehouse"
+      },
+      "approved_cash_account": {
+        "id": "01JCV8X9MAJ3K4M5N6P7Q8R9S0",
+        "code": "CASH-REG-01",
+        "name": "Cash Register 01 (ILS)",
+        "currency": "ILS"
+      },
+      "units": [
+        {
+          "id": "01JCV8X9MBV4W5X6Y7Z8012345",
+          "code": "PCS",
+          "name": "Piece",
+          "symbol": "pc",
+          "allows_fraction": false,
+          "decimal_places": 0
+        },
+        {
+          "id": "01JCV8X9MC6789ABCDEFGHJKMN",
+          "code": "KG",
+          "name": "Kilogram",
+          "symbol": "kg",
+          "allows_fraction": true,
+          "decimal_places": 3
+        }
+      ],
+      "taxes": [
+        {
+          "id": "01JCV8X9MDPTRSVWXYZ0123456",
+          "code": "VAT16",
+          "name": "Standard VAT (16%)",
+          "rate": "16.000000",
+          "calculation": "exclusive",
+          "is_default": true
+        },
+        {
+          "id": "01JCV8X9MDZER0000000000000",
+          "code": "ZERO",
+          "name": "Zero-Rated (0%)",
+          "rate": "0.000000",
+          "calculation": "exclusive",
+          "is_default": false
+        }
+      ],
+      "offline_policy": {
+        "enabled": false,
+        "availability": "unavailable"
+      },
+      "catalog_snapshot_version": "snap-20261110-v1",
+      "base_currency_minor_units": 2
+    },
+    "valid": true
+  },
+  {
+    "name": "bootstrap['staff', 'name'] over",
+    "schema": "bootstrap-response.json",
+    "instance": {
+      "company_id": "01JCV8X9M2NQW3TYZ4R5S6789A",
+      "company_name": "Al-Amal Retail Company",
+      "base_currency": "ILS",
+      "walk_in_customer_id": "01JCV8X9M4K1P2Q3R4S5T6V7W8",
+      "staff": {
+        "id": "01JCV8X9M8T1V2W3X4Y5Z67890",
+        "name": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+        "role": "cashier",
+        "permissions": [
+          "sales.create",
+          "sales.read",
+          "customers.read",
+          "products.read"
+        ]
+      },
+      "device_lease": null,
+      "default_warehouse": {
+        "id": "01JCV8X9M9A2B3C4D5E6F7G8H9",
+        "code": "WH-MAIN",
+        "name": "Main Store Warehouse"
+      },
+      "approved_cash_account": {
+        "id": "01JCV8X9MAJ3K4M5N6P7Q8R9S0",
+        "code": "CASH-REG-01",
+        "name": "Cash Register 01 (ILS)",
+        "currency": "ILS"
+      },
+      "units": [
+        {
+          "id": "01JCV8X9MBV4W5X6Y7Z8012345",
+          "code": "PCS",
+          "name": "Piece",
+          "symbol": "pc",
+          "allows_fraction": false,
+          "decimal_places": 0
+        },
+        {
+          "id": "01JCV8X9MC6789ABCDEFGHJKMN",
+          "code": "KG",
+          "name": "Kilogram",
+          "symbol": "kg",
+          "allows_fraction": true,
+          "decimal_places": 3
+        }
+      ],
+      "taxes": [
+        {
+          "id": "01JCV8X9MDPTRSVWXYZ0123456",
+          "code": "VAT16",
+          "name": "Standard VAT (16%)",
+          "rate": "16.000000",
+          "calculation": "exclusive",
+          "is_default": true
+        },
+        {
+          "id": "01JCV8X9MDZER0000000000000",
+          "code": "ZERO",
+          "name": "Zero-Rated (0%)",
+          "rate": "0.000000",
+          "calculation": "exclusive",
+          "is_default": false
+        }
+      ],
+      "offline_policy": {
+        "enabled": false,
+        "availability": "unavailable"
+      },
+      "catalog_snapshot_version": "snap-20261110-v1",
+      "base_currency_minor_units": 2
+    },
+    "valid": false
+  },
+  {
+    "name": "bootstrap['staff', 'role'] max",
+    "schema": "bootstrap-response.json",
+    "instance": {
+      "company_id": "01JCV8X9M2NQW3TYZ4R5S6789A",
+      "company_name": "Al-Amal Retail Company",
+      "base_currency": "ILS",
+      "walk_in_customer_id": "01JCV8X9M4K1P2Q3R4S5T6V7W8",
+      "staff": {
+        "id": "01JCV8X9M8T1V2W3X4Y5Z67890",
+        "name": "Ahmad Cashier",
+        "role": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+        "permissions": [
+          "sales.create",
+          "sales.read",
+          "customers.read",
+          "products.read"
+        ]
+      },
+      "device_lease": null,
+      "default_warehouse": {
+        "id": "01JCV8X9M9A2B3C4D5E6F7G8H9",
+        "code": "WH-MAIN",
+        "name": "Main Store Warehouse"
+      },
+      "approved_cash_account": {
+        "id": "01JCV8X9MAJ3K4M5N6P7Q8R9S0",
+        "code": "CASH-REG-01",
+        "name": "Cash Register 01 (ILS)",
+        "currency": "ILS"
+      },
+      "units": [
+        {
+          "id": "01JCV8X9MBV4W5X6Y7Z8012345",
+          "code": "PCS",
+          "name": "Piece",
+          "symbol": "pc",
+          "allows_fraction": false,
+          "decimal_places": 0
+        },
+        {
+          "id": "01JCV8X9MC6789ABCDEFGHJKMN",
+          "code": "KG",
+          "name": "Kilogram",
+          "symbol": "kg",
+          "allows_fraction": true,
+          "decimal_places": 3
+        }
+      ],
+      "taxes": [
+        {
+          "id": "01JCV8X9MDPTRSVWXYZ0123456",
+          "code": "VAT16",
+          "name": "Standard VAT (16%)",
+          "rate": "16.000000",
+          "calculation": "exclusive",
+          "is_default": true
+        },
+        {
+          "id": "01JCV8X9MDZER0000000000000",
+          "code": "ZERO",
+          "name": "Zero-Rated (0%)",
+          "rate": "0.000000",
+          "calculation": "exclusive",
+          "is_default": false
+        }
+      ],
+      "offline_policy": {
+        "enabled": false,
+        "availability": "unavailable"
+      },
+      "catalog_snapshot_version": "snap-20261110-v1",
+      "base_currency_minor_units": 2
+    },
+    "valid": true
+  },
+  {
+    "name": "bootstrap['staff', 'role'] over",
+    "schema": "bootstrap-response.json",
+    "instance": {
+      "company_id": "01JCV8X9M2NQW3TYZ4R5S6789A",
+      "company_name": "Al-Amal Retail Company",
+      "base_currency": "ILS",
+      "walk_in_customer_id": "01JCV8X9M4K1P2Q3R4S5T6V7W8",
+      "staff": {
+        "id": "01JCV8X9M8T1V2W3X4Y5Z67890",
+        "name": "Ahmad Cashier",
+        "role": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+        "permissions": [
+          "sales.create",
+          "sales.read",
+          "customers.read",
+          "products.read"
+        ]
+      },
+      "device_lease": null,
+      "default_warehouse": {
+        "id": "01JCV8X9M9A2B3C4D5E6F7G8H9",
+        "code": "WH-MAIN",
+        "name": "Main Store Warehouse"
+      },
+      "approved_cash_account": {
+        "id": "01JCV8X9MAJ3K4M5N6P7Q8R9S0",
+        "code": "CASH-REG-01",
+        "name": "Cash Register 01 (ILS)",
+        "currency": "ILS"
+      },
+      "units": [
+        {
+          "id": "01JCV8X9MBV4W5X6Y7Z8012345",
+          "code": "PCS",
+          "name": "Piece",
+          "symbol": "pc",
+          "allows_fraction": false,
+          "decimal_places": 0
+        },
+        {
+          "id": "01JCV8X9MC6789ABCDEFGHJKMN",
+          "code": "KG",
+          "name": "Kilogram",
+          "symbol": "kg",
+          "allows_fraction": true,
+          "decimal_places": 3
+        }
+      ],
+      "taxes": [
+        {
+          "id": "01JCV8X9MDPTRSVWXYZ0123456",
+          "code": "VAT16",
+          "name": "Standard VAT (16%)",
+          "rate": "16.000000",
+          "calculation": "exclusive",
+          "is_default": true
+        },
+        {
+          "id": "01JCV8X9MDZER0000000000000",
+          "code": "ZERO",
+          "name": "Zero-Rated (0%)",
+          "rate": "0.000000",
+          "calculation": "exclusive",
+          "is_default": false
+        }
+      ],
+      "offline_policy": {
+        "enabled": false,
+        "availability": "unavailable"
+      },
+      "catalog_snapshot_version": "snap-20261110-v1",
+      "base_currency_minor_units": 2
+    },
+    "valid": false
+  },
+  {
+    "name": "bootstrap['default_warehouse', 'code'] max",
+    "schema": "bootstrap-response.json",
+    "instance": {
+      "company_id": "01JCV8X9M2NQW3TYZ4R5S6789A",
+      "company_name": "Al-Amal Retail Company",
+      "base_currency": "ILS",
+      "walk_in_customer_id": "01JCV8X9M4K1P2Q3R4S5T6V7W8",
+      "staff": {
+        "id": "01JCV8X9M8T1V2W3X4Y5Z67890",
+        "name": "Ahmad Cashier",
+        "role": "cashier",
+        "permissions": [
+          "sales.create",
+          "sales.read",
+          "customers.read",
+          "products.read"
+        ]
+      },
+      "device_lease": null,
+      "default_warehouse": {
+        "id": "01JCV8X9M9A2B3C4D5E6F7G8H9",
+        "code": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+        "name": "Main Store Warehouse"
+      },
+      "approved_cash_account": {
+        "id": "01JCV8X9MAJ3K4M5N6P7Q8R9S0",
+        "code": "CASH-REG-01",
+        "name": "Cash Register 01 (ILS)",
+        "currency": "ILS"
+      },
+      "units": [
+        {
+          "id": "01JCV8X9MBV4W5X6Y7Z8012345",
+          "code": "PCS",
+          "name": "Piece",
+          "symbol": "pc",
+          "allows_fraction": false,
+          "decimal_places": 0
+        },
+        {
+          "id": "01JCV8X9MC6789ABCDEFGHJKMN",
+          "code": "KG",
+          "name": "Kilogram",
+          "symbol": "kg",
+          "allows_fraction": true,
+          "decimal_places": 3
+        }
+      ],
+      "taxes": [
+        {
+          "id": "01JCV8X9MDPTRSVWXYZ0123456",
+          "code": "VAT16",
+          "name": "Standard VAT (16%)",
+          "rate": "16.000000",
+          "calculation": "exclusive",
+          "is_default": true
+        },
+        {
+          "id": "01JCV8X9MDZER0000000000000",
+          "code": "ZERO",
+          "name": "Zero-Rated (0%)",
+          "rate": "0.000000",
+          "calculation": "exclusive",
+          "is_default": false
+        }
+      ],
+      "offline_policy": {
+        "enabled": false,
+        "availability": "unavailable"
+      },
+      "catalog_snapshot_version": "snap-20261110-v1",
+      "base_currency_minor_units": 2
+    },
+    "valid": true
+  },
+  {
+    "name": "bootstrap['default_warehouse', 'code'] over",
+    "schema": "bootstrap-response.json",
+    "instance": {
+      "company_id": "01JCV8X9M2NQW3TYZ4R5S6789A",
+      "company_name": "Al-Amal Retail Company",
+      "base_currency": "ILS",
+      "walk_in_customer_id": "01JCV8X9M4K1P2Q3R4S5T6V7W8",
+      "staff": {
+        "id": "01JCV8X9M8T1V2W3X4Y5Z67890",
+        "name": "Ahmad Cashier",
+        "role": "cashier",
+        "permissions": [
+          "sales.create",
+          "sales.read",
+          "customers.read",
+          "products.read"
+        ]
+      },
+      "device_lease": null,
+      "default_warehouse": {
+        "id": "01JCV8X9M9A2B3C4D5E6F7G8H9",
+        "code": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+        "name": "Main Store Warehouse"
+      },
+      "approved_cash_account": {
+        "id": "01JCV8X9MAJ3K4M5N6P7Q8R9S0",
+        "code": "CASH-REG-01",
+        "name": "Cash Register 01 (ILS)",
+        "currency": "ILS"
+      },
+      "units": [
+        {
+          "id": "01JCV8X9MBV4W5X6Y7Z8012345",
+          "code": "PCS",
+          "name": "Piece",
+          "symbol": "pc",
+          "allows_fraction": false,
+          "decimal_places": 0
+        },
+        {
+          "id": "01JCV8X9MC6789ABCDEFGHJKMN",
+          "code": "KG",
+          "name": "Kilogram",
+          "symbol": "kg",
+          "allows_fraction": true,
+          "decimal_places": 3
+        }
+      ],
+      "taxes": [
+        {
+          "id": "01JCV8X9MDPTRSVWXYZ0123456",
+          "code": "VAT16",
+          "name": "Standard VAT (16%)",
+          "rate": "16.000000",
+          "calculation": "exclusive",
+          "is_default": true
+        },
+        {
+          "id": "01JCV8X9MDZER0000000000000",
+          "code": "ZERO",
+          "name": "Zero-Rated (0%)",
+          "rate": "0.000000",
+          "calculation": "exclusive",
+          "is_default": false
+        }
+      ],
+      "offline_policy": {
+        "enabled": false,
+        "availability": "unavailable"
+      },
+      "catalog_snapshot_version": "snap-20261110-v1",
+      "base_currency_minor_units": 2
+    },
+    "valid": false
+  },
+  {
+    "name": "bootstrap['default_warehouse', 'name'] max",
+    "schema": "bootstrap-response.json",
+    "instance": {
+      "company_id": "01JCV8X9M2NQW3TYZ4R5S6789A",
+      "company_name": "Al-Amal Retail Company",
+      "base_currency": "ILS",
+      "walk_in_customer_id": "01JCV8X9M4K1P2Q3R4S5T6V7W8",
+      "staff": {
+        "id": "01JCV8X9M8T1V2W3X4Y5Z67890",
+        "name": "Ahmad Cashier",
+        "role": "cashier",
+        "permissions": [
+          "sales.create",
+          "sales.read",
+          "customers.read",
+          "products.read"
+        ]
+      },
+      "device_lease": null,
+      "default_warehouse": {
+        "id": "01JCV8X9M9A2B3C4D5E6F7G8H9",
+        "code": "WH-MAIN",
+        "name": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+      },
+      "approved_cash_account": {
+        "id": "01JCV8X9MAJ3K4M5N6P7Q8R9S0",
+        "code": "CASH-REG-01",
+        "name": "Cash Register 01 (ILS)",
+        "currency": "ILS"
+      },
+      "units": [
+        {
+          "id": "01JCV8X9MBV4W5X6Y7Z8012345",
+          "code": "PCS",
+          "name": "Piece",
+          "symbol": "pc",
+          "allows_fraction": false,
+          "decimal_places": 0
+        },
+        {
+          "id": "01JCV8X9MC6789ABCDEFGHJKMN",
+          "code": "KG",
+          "name": "Kilogram",
+          "symbol": "kg",
+          "allows_fraction": true,
+          "decimal_places": 3
+        }
+      ],
+      "taxes": [
+        {
+          "id": "01JCV8X9MDPTRSVWXYZ0123456",
+          "code": "VAT16",
+          "name": "Standard VAT (16%)",
+          "rate": "16.000000",
+          "calculation": "exclusive",
+          "is_default": true
+        },
+        {
+          "id": "01JCV8X9MDZER0000000000000",
+          "code": "ZERO",
+          "name": "Zero-Rated (0%)",
+          "rate": "0.000000",
+          "calculation": "exclusive",
+          "is_default": false
+        }
+      ],
+      "offline_policy": {
+        "enabled": false,
+        "availability": "unavailable"
+      },
+      "catalog_snapshot_version": "snap-20261110-v1",
+      "base_currency_minor_units": 2
+    },
+    "valid": true
+  },
+  {
+    "name": "bootstrap['default_warehouse', 'name'] over",
+    "schema": "bootstrap-response.json",
+    "instance": {
+      "company_id": "01JCV8X9M2NQW3TYZ4R5S6789A",
+      "company_name": "Al-Amal Retail Company",
+      "base_currency": "ILS",
+      "walk_in_customer_id": "01JCV8X9M4K1P2Q3R4S5T6V7W8",
+      "staff": {
+        "id": "01JCV8X9M8T1V2W3X4Y5Z67890",
+        "name": "Ahmad Cashier",
+        "role": "cashier",
+        "permissions": [
+          "sales.create",
+          "sales.read",
+          "customers.read",
+          "products.read"
+        ]
+      },
+      "device_lease": null,
+      "default_warehouse": {
+        "id": "01JCV8X9M9A2B3C4D5E6F7G8H9",
+        "code": "WH-MAIN",
+        "name": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+      },
+      "approved_cash_account": {
+        "id": "01JCV8X9MAJ3K4M5N6P7Q8R9S0",
+        "code": "CASH-REG-01",
+        "name": "Cash Register 01 (ILS)",
+        "currency": "ILS"
+      },
+      "units": [
+        {
+          "id": "01JCV8X9MBV4W5X6Y7Z8012345",
+          "code": "PCS",
+          "name": "Piece",
+          "symbol": "pc",
+          "allows_fraction": false,
+          "decimal_places": 0
+        },
+        {
+          "id": "01JCV8X9MC6789ABCDEFGHJKMN",
+          "code": "KG",
+          "name": "Kilogram",
+          "symbol": "kg",
+          "allows_fraction": true,
+          "decimal_places": 3
+        }
+      ],
+      "taxes": [
+        {
+          "id": "01JCV8X9MDPTRSVWXYZ0123456",
+          "code": "VAT16",
+          "name": "Standard VAT (16%)",
+          "rate": "16.000000",
+          "calculation": "exclusive",
+          "is_default": true
+        },
+        {
+          "id": "01JCV8X9MDZER0000000000000",
+          "code": "ZERO",
+          "name": "Zero-Rated (0%)",
+          "rate": "0.000000",
+          "calculation": "exclusive",
+          "is_default": false
+        }
+      ],
+      "offline_policy": {
+        "enabled": false,
+        "availability": "unavailable"
+      },
+      "catalog_snapshot_version": "snap-20261110-v1",
+      "base_currency_minor_units": 2
+    },
+    "valid": false
+  },
+  {
+    "name": "bootstrap['approved_cash_account', 'code'] max",
+    "schema": "bootstrap-response.json",
+    "instance": {
+      "company_id": "01JCV8X9M2NQW3TYZ4R5S6789A",
+      "company_name": "Al-Amal Retail Company",
+      "base_currency": "ILS",
+      "walk_in_customer_id": "01JCV8X9M4K1P2Q3R4S5T6V7W8",
+      "staff": {
+        "id": "01JCV8X9M8T1V2W3X4Y5Z67890",
+        "name": "Ahmad Cashier",
+        "role": "cashier",
+        "permissions": [
+          "sales.create",
+          "sales.read",
+          "customers.read",
+          "products.read"
+        ]
+      },
+      "device_lease": null,
+      "default_warehouse": {
+        "id": "01JCV8X9M9A2B3C4D5E6F7G8H9",
+        "code": "WH-MAIN",
+        "name": "Main Store Warehouse"
+      },
+      "approved_cash_account": {
+        "id": "01JCV8X9MAJ3K4M5N6P7Q8R9S0",
+        "code": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+        "name": "Cash Register 01 (ILS)",
+        "currency": "ILS"
+      },
+      "units": [
+        {
+          "id": "01JCV8X9MBV4W5X6Y7Z8012345",
+          "code": "PCS",
+          "name": "Piece",
+          "symbol": "pc",
+          "allows_fraction": false,
+          "decimal_places": 0
+        },
+        {
+          "id": "01JCV8X9MC6789ABCDEFGHJKMN",
+          "code": "KG",
+          "name": "Kilogram",
+          "symbol": "kg",
+          "allows_fraction": true,
+          "decimal_places": 3
+        }
+      ],
+      "taxes": [
+        {
+          "id": "01JCV8X9MDPTRSVWXYZ0123456",
+          "code": "VAT16",
+          "name": "Standard VAT (16%)",
+          "rate": "16.000000",
+          "calculation": "exclusive",
+          "is_default": true
+        },
+        {
+          "id": "01JCV8X9MDZER0000000000000",
+          "code": "ZERO",
+          "name": "Zero-Rated (0%)",
+          "rate": "0.000000",
+          "calculation": "exclusive",
+          "is_default": false
+        }
+      ],
+      "offline_policy": {
+        "enabled": false,
+        "availability": "unavailable"
+      },
+      "catalog_snapshot_version": "snap-20261110-v1",
+      "base_currency_minor_units": 2
+    },
+    "valid": true
+  },
+  {
+    "name": "bootstrap['approved_cash_account', 'code'] over",
+    "schema": "bootstrap-response.json",
+    "instance": {
+      "company_id": "01JCV8X9M2NQW3TYZ4R5S6789A",
+      "company_name": "Al-Amal Retail Company",
+      "base_currency": "ILS",
+      "walk_in_customer_id": "01JCV8X9M4K1P2Q3R4S5T6V7W8",
+      "staff": {
+        "id": "01JCV8X9M8T1V2W3X4Y5Z67890",
+        "name": "Ahmad Cashier",
+        "role": "cashier",
+        "permissions": [
+          "sales.create",
+          "sales.read",
+          "customers.read",
+          "products.read"
+        ]
+      },
+      "device_lease": null,
+      "default_warehouse": {
+        "id": "01JCV8X9M9A2B3C4D5E6F7G8H9",
+        "code": "WH-MAIN",
+        "name": "Main Store Warehouse"
+      },
+      "approved_cash_account": {
+        "id": "01JCV8X9MAJ3K4M5N6P7Q8R9S0",
+        "code": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+        "name": "Cash Register 01 (ILS)",
+        "currency": "ILS"
+      },
+      "units": [
+        {
+          "id": "01JCV8X9MBV4W5X6Y7Z8012345",
+          "code": "PCS",
+          "name": "Piece",
+          "symbol": "pc",
+          "allows_fraction": false,
+          "decimal_places": 0
+        },
+        {
+          "id": "01JCV8X9MC6789ABCDEFGHJKMN",
+          "code": "KG",
+          "name": "Kilogram",
+          "symbol": "kg",
+          "allows_fraction": true,
+          "decimal_places": 3
+        }
+      ],
+      "taxes": [
+        {
+          "id": "01JCV8X9MDPTRSVWXYZ0123456",
+          "code": "VAT16",
+          "name": "Standard VAT (16%)",
+          "rate": "16.000000",
+          "calculation": "exclusive",
+          "is_default": true
+        },
+        {
+          "id": "01JCV8X9MDZER0000000000000",
+          "code": "ZERO",
+          "name": "Zero-Rated (0%)",
+          "rate": "0.000000",
+          "calculation": "exclusive",
+          "is_default": false
+        }
+      ],
+      "offline_policy": {
+        "enabled": false,
+        "availability": "unavailable"
+      },
+      "catalog_snapshot_version": "snap-20261110-v1",
+      "base_currency_minor_units": 2
+    },
+    "valid": false
+  },
+  {
+    "name": "bootstrap['approved_cash_account', 'name'] max",
+    "schema": "bootstrap-response.json",
+    "instance": {
+      "company_id": "01JCV8X9M2NQW3TYZ4R5S6789A",
+      "company_name": "Al-Amal Retail Company",
+      "base_currency": "ILS",
+      "walk_in_customer_id": "01JCV8X9M4K1P2Q3R4S5T6V7W8",
+      "staff": {
+        "id": "01JCV8X9M8T1V2W3X4Y5Z67890",
+        "name": "Ahmad Cashier",
+        "role": "cashier",
+        "permissions": [
+          "sales.create",
+          "sales.read",
+          "customers.read",
+          "products.read"
+        ]
+      },
+      "device_lease": null,
+      "default_warehouse": {
+        "id": "01JCV8X9M9A2B3C4D5E6F7G8H9",
+        "code": "WH-MAIN",
+        "name": "Main Store Warehouse"
+      },
+      "approved_cash_account": {
+        "id": "01JCV8X9MAJ3K4M5N6P7Q8R9S0",
+        "code": "CASH-REG-01",
+        "name": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+        "currency": "ILS"
+      },
+      "units": [
+        {
+          "id": "01JCV8X9MBV4W5X6Y7Z8012345",
+          "code": "PCS",
+          "name": "Piece",
+          "symbol": "pc",
+          "allows_fraction": false,
+          "decimal_places": 0
+        },
+        {
+          "id": "01JCV8X9MC6789ABCDEFGHJKMN",
+          "code": "KG",
+          "name": "Kilogram",
+          "symbol": "kg",
+          "allows_fraction": true,
+          "decimal_places": 3
+        }
+      ],
+      "taxes": [
+        {
+          "id": "01JCV8X9MDPTRSVWXYZ0123456",
+          "code": "VAT16",
+          "name": "Standard VAT (16%)",
+          "rate": "16.000000",
+          "calculation": "exclusive",
+          "is_default": true
+        },
+        {
+          "id": "01JCV8X9MDZER0000000000000",
+          "code": "ZERO",
+          "name": "Zero-Rated (0%)",
+          "rate": "0.000000",
+          "calculation": "exclusive",
+          "is_default": false
+        }
+      ],
+      "offline_policy": {
+        "enabled": false,
+        "availability": "unavailable"
+      },
+      "catalog_snapshot_version": "snap-20261110-v1",
+      "base_currency_minor_units": 2
+    },
+    "valid": true
+  },
+  {
+    "name": "bootstrap['approved_cash_account', 'name'] over",
+    "schema": "bootstrap-response.json",
+    "instance": {
+      "company_id": "01JCV8X9M2NQW3TYZ4R5S6789A",
+      "company_name": "Al-Amal Retail Company",
+      "base_currency": "ILS",
+      "walk_in_customer_id": "01JCV8X9M4K1P2Q3R4S5T6V7W8",
+      "staff": {
+        "id": "01JCV8X9M8T1V2W3X4Y5Z67890",
+        "name": "Ahmad Cashier",
+        "role": "cashier",
+        "permissions": [
+          "sales.create",
+          "sales.read",
+          "customers.read",
+          "products.read"
+        ]
+      },
+      "device_lease": null,
+      "default_warehouse": {
+        "id": "01JCV8X9M9A2B3C4D5E6F7G8H9",
+        "code": "WH-MAIN",
+        "name": "Main Store Warehouse"
+      },
+      "approved_cash_account": {
+        "id": "01JCV8X9MAJ3K4M5N6P7Q8R9S0",
+        "code": "CASH-REG-01",
+        "name": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+        "currency": "ILS"
+      },
+      "units": [
+        {
+          "id": "01JCV8X9MBV4W5X6Y7Z8012345",
+          "code": "PCS",
+          "name": "Piece",
+          "symbol": "pc",
+          "allows_fraction": false,
+          "decimal_places": 0
+        },
+        {
+          "id": "01JCV8X9MC6789ABCDEFGHJKMN",
+          "code": "KG",
+          "name": "Kilogram",
+          "symbol": "kg",
+          "allows_fraction": true,
+          "decimal_places": 3
+        }
+      ],
+      "taxes": [
+        {
+          "id": "01JCV8X9MDPTRSVWXYZ0123456",
+          "code": "VAT16",
+          "name": "Standard VAT (16%)",
+          "rate": "16.000000",
+          "calculation": "exclusive",
+          "is_default": true
+        },
+        {
+          "id": "01JCV8X9MDZER0000000000000",
+          "code": "ZERO",
+          "name": "Zero-Rated (0%)",
+          "rate": "0.000000",
+          "calculation": "exclusive",
+          "is_default": false
+        }
+      ],
+      "offline_policy": {
+        "enabled": false,
+        "availability": "unavailable"
+      },
+      "catalog_snapshot_version": "snap-20261110-v1",
+      "base_currency_minor_units": 2
+    },
+    "valid": false
+  },
+  {
+    "name": "bootstrap['units', 0, 'code'] max",
+    "schema": "bootstrap-response.json",
+    "instance": {
+      "company_id": "01JCV8X9M2NQW3TYZ4R5S6789A",
+      "company_name": "Al-Amal Retail Company",
+      "base_currency": "ILS",
+      "walk_in_customer_id": "01JCV8X9M4K1P2Q3R4S5T6V7W8",
+      "staff": {
+        "id": "01JCV8X9M8T1V2W3X4Y5Z67890",
+        "name": "Ahmad Cashier",
+        "role": "cashier",
+        "permissions": [
+          "sales.create",
+          "sales.read",
+          "customers.read",
+          "products.read"
+        ]
+      },
+      "device_lease": null,
+      "default_warehouse": {
+        "id": "01JCV8X9M9A2B3C4D5E6F7G8H9",
+        "code": "WH-MAIN",
+        "name": "Main Store Warehouse"
+      },
+      "approved_cash_account": {
+        "id": "01JCV8X9MAJ3K4M5N6P7Q8R9S0",
+        "code": "CASH-REG-01",
+        "name": "Cash Register 01 (ILS)",
+        "currency": "ILS"
+      },
+      "units": [
+        {
+          "id": "01JCV8X9MBV4W5X6Y7Z8012345",
+          "code": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+          "name": "Piece",
+          "symbol": "pc",
+          "allows_fraction": false,
+          "decimal_places": 0
+        },
+        {
+          "id": "01JCV8X9MC6789ABCDEFGHJKMN",
+          "code": "KG",
+          "name": "Kilogram",
+          "symbol": "kg",
+          "allows_fraction": true,
+          "decimal_places": 3
+        }
+      ],
+      "taxes": [
+        {
+          "id": "01JCV8X9MDPTRSVWXYZ0123456",
+          "code": "VAT16",
+          "name": "Standard VAT (16%)",
+          "rate": "16.000000",
+          "calculation": "exclusive",
+          "is_default": true
+        },
+        {
+          "id": "01JCV8X9MDZER0000000000000",
+          "code": "ZERO",
+          "name": "Zero-Rated (0%)",
+          "rate": "0.000000",
+          "calculation": "exclusive",
+          "is_default": false
+        }
+      ],
+      "offline_policy": {
+        "enabled": false,
+        "availability": "unavailable"
+      },
+      "catalog_snapshot_version": "snap-20261110-v1",
+      "base_currency_minor_units": 2
+    },
+    "valid": true
+  },
+  {
+    "name": "bootstrap['units', 0, 'code'] over",
+    "schema": "bootstrap-response.json",
+    "instance": {
+      "company_id": "01JCV8X9M2NQW3TYZ4R5S6789A",
+      "company_name": "Al-Amal Retail Company",
+      "base_currency": "ILS",
+      "walk_in_customer_id": "01JCV8X9M4K1P2Q3R4S5T6V7W8",
+      "staff": {
+        "id": "01JCV8X9M8T1V2W3X4Y5Z67890",
+        "name": "Ahmad Cashier",
+        "role": "cashier",
+        "permissions": [
+          "sales.create",
+          "sales.read",
+          "customers.read",
+          "products.read"
+        ]
+      },
+      "device_lease": null,
+      "default_warehouse": {
+        "id": "01JCV8X9M9A2B3C4D5E6F7G8H9",
+        "code": "WH-MAIN",
+        "name": "Main Store Warehouse"
+      },
+      "approved_cash_account": {
+        "id": "01JCV8X9MAJ3K4M5N6P7Q8R9S0",
+        "code": "CASH-REG-01",
+        "name": "Cash Register 01 (ILS)",
+        "currency": "ILS"
+      },
+      "units": [
+        {
+          "id": "01JCV8X9MBV4W5X6Y7Z8012345",
+          "code": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+          "name": "Piece",
+          "symbol": "pc",
+          "allows_fraction": false,
+          "decimal_places": 0
+        },
+        {
+          "id": "01JCV8X9MC6789ABCDEFGHJKMN",
+          "code": "KG",
+          "name": "Kilogram",
+          "symbol": "kg",
+          "allows_fraction": true,
+          "decimal_places": 3
+        }
+      ],
+      "taxes": [
+        {
+          "id": "01JCV8X9MDPTRSVWXYZ0123456",
+          "code": "VAT16",
+          "name": "Standard VAT (16%)",
+          "rate": "16.000000",
+          "calculation": "exclusive",
+          "is_default": true
+        },
+        {
+          "id": "01JCV8X9MDZER0000000000000",
+          "code": "ZERO",
+          "name": "Zero-Rated (0%)",
+          "rate": "0.000000",
+          "calculation": "exclusive",
+          "is_default": false
+        }
+      ],
+      "offline_policy": {
+        "enabled": false,
+        "availability": "unavailable"
+      },
+      "catalog_snapshot_version": "snap-20261110-v1",
+      "base_currency_minor_units": 2
+    },
+    "valid": false
+  },
+  {
+    "name": "bootstrap['units', 0, 'name'] max",
+    "schema": "bootstrap-response.json",
+    "instance": {
+      "company_id": "01JCV8X9M2NQW3TYZ4R5S6789A",
+      "company_name": "Al-Amal Retail Company",
+      "base_currency": "ILS",
+      "walk_in_customer_id": "01JCV8X9M4K1P2Q3R4S5T6V7W8",
+      "staff": {
+        "id": "01JCV8X9M8T1V2W3X4Y5Z67890",
+        "name": "Ahmad Cashier",
+        "role": "cashier",
+        "permissions": [
+          "sales.create",
+          "sales.read",
+          "customers.read",
+          "products.read"
+        ]
+      },
+      "device_lease": null,
+      "default_warehouse": {
+        "id": "01JCV8X9M9A2B3C4D5E6F7G8H9",
+        "code": "WH-MAIN",
+        "name": "Main Store Warehouse"
+      },
+      "approved_cash_account": {
+        "id": "01JCV8X9MAJ3K4M5N6P7Q8R9S0",
+        "code": "CASH-REG-01",
+        "name": "Cash Register 01 (ILS)",
+        "currency": "ILS"
+      },
+      "units": [
+        {
+          "id": "01JCV8X9MBV4W5X6Y7Z8012345",
+          "code": "PCS",
+          "name": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+          "symbol": "pc",
+          "allows_fraction": false,
+          "decimal_places": 0
+        },
+        {
+          "id": "01JCV8X9MC6789ABCDEFGHJKMN",
+          "code": "KG",
+          "name": "Kilogram",
+          "symbol": "kg",
+          "allows_fraction": true,
+          "decimal_places": 3
+        }
+      ],
+      "taxes": [
+        {
+          "id": "01JCV8X9MDPTRSVWXYZ0123456",
+          "code": "VAT16",
+          "name": "Standard VAT (16%)",
+          "rate": "16.000000",
+          "calculation": "exclusive",
+          "is_default": true
+        },
+        {
+          "id": "01JCV8X9MDZER0000000000000",
+          "code": "ZERO",
+          "name": "Zero-Rated (0%)",
+          "rate": "0.000000",
+          "calculation": "exclusive",
+          "is_default": false
+        }
+      ],
+      "offline_policy": {
+        "enabled": false,
+        "availability": "unavailable"
+      },
+      "catalog_snapshot_version": "snap-20261110-v1",
+      "base_currency_minor_units": 2
+    },
+    "valid": true
+  },
+  {
+    "name": "bootstrap['units', 0, 'name'] over",
+    "schema": "bootstrap-response.json",
+    "instance": {
+      "company_id": "01JCV8X9M2NQW3TYZ4R5S6789A",
+      "company_name": "Al-Amal Retail Company",
+      "base_currency": "ILS",
+      "walk_in_customer_id": "01JCV8X9M4K1P2Q3R4S5T6V7W8",
+      "staff": {
+        "id": "01JCV8X9M8T1V2W3X4Y5Z67890",
+        "name": "Ahmad Cashier",
+        "role": "cashier",
+        "permissions": [
+          "sales.create",
+          "sales.read",
+          "customers.read",
+          "products.read"
+        ]
+      },
+      "device_lease": null,
+      "default_warehouse": {
+        "id": "01JCV8X9M9A2B3C4D5E6F7G8H9",
+        "code": "WH-MAIN",
+        "name": "Main Store Warehouse"
+      },
+      "approved_cash_account": {
+        "id": "01JCV8X9MAJ3K4M5N6P7Q8R9S0",
+        "code": "CASH-REG-01",
+        "name": "Cash Register 01 (ILS)",
+        "currency": "ILS"
+      },
+      "units": [
+        {
+          "id": "01JCV8X9MBV4W5X6Y7Z8012345",
+          "code": "PCS",
+          "name": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+          "symbol": "pc",
+          "allows_fraction": false,
+          "decimal_places": 0
+        },
+        {
+          "id": "01JCV8X9MC6789ABCDEFGHJKMN",
+          "code": "KG",
+          "name": "Kilogram",
+          "symbol": "kg",
+          "allows_fraction": true,
+          "decimal_places": 3
+        }
+      ],
+      "taxes": [
+        {
+          "id": "01JCV8X9MDPTRSVWXYZ0123456",
+          "code": "VAT16",
+          "name": "Standard VAT (16%)",
+          "rate": "16.000000",
+          "calculation": "exclusive",
+          "is_default": true
+        },
+        {
+          "id": "01JCV8X9MDZER0000000000000",
+          "code": "ZERO",
+          "name": "Zero-Rated (0%)",
+          "rate": "0.000000",
+          "calculation": "exclusive",
+          "is_default": false
+        }
+      ],
+      "offline_policy": {
+        "enabled": false,
+        "availability": "unavailable"
+      },
+      "catalog_snapshot_version": "snap-20261110-v1",
+      "base_currency_minor_units": 2
+    },
+    "valid": false
+  },
+  {
+    "name": "bootstrap['units', 0, 'symbol'] max",
+    "schema": "bootstrap-response.json",
+    "instance": {
+      "company_id": "01JCV8X9M2NQW3TYZ4R5S6789A",
+      "company_name": "Al-Amal Retail Company",
+      "base_currency": "ILS",
+      "walk_in_customer_id": "01JCV8X9M4K1P2Q3R4S5T6V7W8",
+      "staff": {
+        "id": "01JCV8X9M8T1V2W3X4Y5Z67890",
+        "name": "Ahmad Cashier",
+        "role": "cashier",
+        "permissions": [
+          "sales.create",
+          "sales.read",
+          "customers.read",
+          "products.read"
+        ]
+      },
+      "device_lease": null,
+      "default_warehouse": {
+        "id": "01JCV8X9M9A2B3C4D5E6F7G8H9",
+        "code": "WH-MAIN",
+        "name": "Main Store Warehouse"
+      },
+      "approved_cash_account": {
+        "id": "01JCV8X9MAJ3K4M5N6P7Q8R9S0",
+        "code": "CASH-REG-01",
+        "name": "Cash Register 01 (ILS)",
+        "currency": "ILS"
+      },
+      "units": [
+        {
+          "id": "01JCV8X9MBV4W5X6Y7Z8012345",
+          "code": "PCS",
+          "name": "Piece",
+          "symbol": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+          "allows_fraction": false,
+          "decimal_places": 0
+        },
+        {
+          "id": "01JCV8X9MC6789ABCDEFGHJKMN",
+          "code": "KG",
+          "name": "Kilogram",
+          "symbol": "kg",
+          "allows_fraction": true,
+          "decimal_places": 3
+        }
+      ],
+      "taxes": [
+        {
+          "id": "01JCV8X9MDPTRSVWXYZ0123456",
+          "code": "VAT16",
+          "name": "Standard VAT (16%)",
+          "rate": "16.000000",
+          "calculation": "exclusive",
+          "is_default": true
+        },
+        {
+          "id": "01JCV8X9MDZER0000000000000",
+          "code": "ZERO",
+          "name": "Zero-Rated (0%)",
+          "rate": "0.000000",
+          "calculation": "exclusive",
+          "is_default": false
+        }
+      ],
+      "offline_policy": {
+        "enabled": false,
+        "availability": "unavailable"
+      },
+      "catalog_snapshot_version": "snap-20261110-v1",
+      "base_currency_minor_units": 2
+    },
+    "valid": true
+  },
+  {
+    "name": "bootstrap['units', 0, 'symbol'] over",
+    "schema": "bootstrap-response.json",
+    "instance": {
+      "company_id": "01JCV8X9M2NQW3TYZ4R5S6789A",
+      "company_name": "Al-Amal Retail Company",
+      "base_currency": "ILS",
+      "walk_in_customer_id": "01JCV8X9M4K1P2Q3R4S5T6V7W8",
+      "staff": {
+        "id": "01JCV8X9M8T1V2W3X4Y5Z67890",
+        "name": "Ahmad Cashier",
+        "role": "cashier",
+        "permissions": [
+          "sales.create",
+          "sales.read",
+          "customers.read",
+          "products.read"
+        ]
+      },
+      "device_lease": null,
+      "default_warehouse": {
+        "id": "01JCV8X9M9A2B3C4D5E6F7G8H9",
+        "code": "WH-MAIN",
+        "name": "Main Store Warehouse"
+      },
+      "approved_cash_account": {
+        "id": "01JCV8X9MAJ3K4M5N6P7Q8R9S0",
+        "code": "CASH-REG-01",
+        "name": "Cash Register 01 (ILS)",
+        "currency": "ILS"
+      },
+      "units": [
+        {
+          "id": "01JCV8X9MBV4W5X6Y7Z8012345",
+          "code": "PCS",
+          "name": "Piece",
+          "symbol": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+          "allows_fraction": false,
+          "decimal_places": 0
+        },
+        {
+          "id": "01JCV8X9MC6789ABCDEFGHJKMN",
+          "code": "KG",
+          "name": "Kilogram",
+          "symbol": "kg",
+          "allows_fraction": true,
+          "decimal_places": 3
+        }
+      ],
+      "taxes": [
+        {
+          "id": "01JCV8X9MDPTRSVWXYZ0123456",
+          "code": "VAT16",
+          "name": "Standard VAT (16%)",
+          "rate": "16.000000",
+          "calculation": "exclusive",
+          "is_default": true
+        },
+        {
+          "id": "01JCV8X9MDZER0000000000000",
+          "code": "ZERO",
+          "name": "Zero-Rated (0%)",
+          "rate": "0.000000",
+          "calculation": "exclusive",
+          "is_default": false
+        }
+      ],
+      "offline_policy": {
+        "enabled": false,
+        "availability": "unavailable"
+      },
+      "catalog_snapshot_version": "snap-20261110-v1",
+      "base_currency_minor_units": 2
+    },
+    "valid": false
+  },
+  {
+    "name": "bootstrap['units', 1, 'code'] max",
+    "schema": "bootstrap-response.json",
+    "instance": {
+      "company_id": "01JCV8X9M2NQW3TYZ4R5S6789A",
+      "company_name": "Al-Amal Retail Company",
+      "base_currency": "ILS",
+      "walk_in_customer_id": "01JCV8X9M4K1P2Q3R4S5T6V7W8",
+      "staff": {
+        "id": "01JCV8X9M8T1V2W3X4Y5Z67890",
+        "name": "Ahmad Cashier",
+        "role": "cashier",
+        "permissions": [
+          "sales.create",
+          "sales.read",
+          "customers.read",
+          "products.read"
+        ]
+      },
+      "device_lease": null,
+      "default_warehouse": {
+        "id": "01JCV8X9M9A2B3C4D5E6F7G8H9",
+        "code": "WH-MAIN",
+        "name": "Main Store Warehouse"
+      },
+      "approved_cash_account": {
+        "id": "01JCV8X9MAJ3K4M5N6P7Q8R9S0",
+        "code": "CASH-REG-01",
+        "name": "Cash Register 01 (ILS)",
+        "currency": "ILS"
+      },
+      "units": [
+        {
+          "id": "01JCV8X9MBV4W5X6Y7Z8012345",
+          "code": "PCS",
+          "name": "Piece",
+          "symbol": "pc",
+          "allows_fraction": false,
+          "decimal_places": 0
+        },
+        {
+          "id": "01JCV8X9MC6789ABCDEFGHJKMN",
+          "code": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+          "name": "Kilogram",
+          "symbol": "kg",
+          "allows_fraction": true,
+          "decimal_places": 3
+        }
+      ],
+      "taxes": [
+        {
+          "id": "01JCV8X9MDPTRSVWXYZ0123456",
+          "code": "VAT16",
+          "name": "Standard VAT (16%)",
+          "rate": "16.000000",
+          "calculation": "exclusive",
+          "is_default": true
+        },
+        {
+          "id": "01JCV8X9MDZER0000000000000",
+          "code": "ZERO",
+          "name": "Zero-Rated (0%)",
+          "rate": "0.000000",
+          "calculation": "exclusive",
+          "is_default": false
+        }
+      ],
+      "offline_policy": {
+        "enabled": false,
+        "availability": "unavailable"
+      },
+      "catalog_snapshot_version": "snap-20261110-v1",
+      "base_currency_minor_units": 2
+    },
+    "valid": true
+  },
+  {
+    "name": "bootstrap['units', 1, 'code'] over",
+    "schema": "bootstrap-response.json",
+    "instance": {
+      "company_id": "01JCV8X9M2NQW3TYZ4R5S6789A",
+      "company_name": "Al-Amal Retail Company",
+      "base_currency": "ILS",
+      "walk_in_customer_id": "01JCV8X9M4K1P2Q3R4S5T6V7W8",
+      "staff": {
+        "id": "01JCV8X9M8T1V2W3X4Y5Z67890",
+        "name": "Ahmad Cashier",
+        "role": "cashier",
+        "permissions": [
+          "sales.create",
+          "sales.read",
+          "customers.read",
+          "products.read"
+        ]
+      },
+      "device_lease": null,
+      "default_warehouse": {
+        "id": "01JCV8X9M9A2B3C4D5E6F7G8H9",
+        "code": "WH-MAIN",
+        "name": "Main Store Warehouse"
+      },
+      "approved_cash_account": {
+        "id": "01JCV8X9MAJ3K4M5N6P7Q8R9S0",
+        "code": "CASH-REG-01",
+        "name": "Cash Register 01 (ILS)",
+        "currency": "ILS"
+      },
+      "units": [
+        {
+          "id": "01JCV8X9MBV4W5X6Y7Z8012345",
+          "code": "PCS",
+          "name": "Piece",
+          "symbol": "pc",
+          "allows_fraction": false,
+          "decimal_places": 0
+        },
+        {
+          "id": "01JCV8X9MC6789ABCDEFGHJKMN",
+          "code": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+          "name": "Kilogram",
+          "symbol": "kg",
+          "allows_fraction": true,
+          "decimal_places": 3
+        }
+      ],
+      "taxes": [
+        {
+          "id": "01JCV8X9MDPTRSVWXYZ0123456",
+          "code": "VAT16",
+          "name": "Standard VAT (16%)",
+          "rate": "16.000000",
+          "calculation": "exclusive",
+          "is_default": true
+        },
+        {
+          "id": "01JCV8X9MDZER0000000000000",
+          "code": "ZERO",
+          "name": "Zero-Rated (0%)",
+          "rate": "0.000000",
+          "calculation": "exclusive",
+          "is_default": false
+        }
+      ],
+      "offline_policy": {
+        "enabled": false,
+        "availability": "unavailable"
+      },
+      "catalog_snapshot_version": "snap-20261110-v1",
+      "base_currency_minor_units": 2
+    },
+    "valid": false
+  },
+  {
+    "name": "bootstrap['units', 1, 'name'] max",
+    "schema": "bootstrap-response.json",
+    "instance": {
+      "company_id": "01JCV8X9M2NQW3TYZ4R5S6789A",
+      "company_name": "Al-Amal Retail Company",
+      "base_currency": "ILS",
+      "walk_in_customer_id": "01JCV8X9M4K1P2Q3R4S5T6V7W8",
+      "staff": {
+        "id": "01JCV8X9M8T1V2W3X4Y5Z67890",
+        "name": "Ahmad Cashier",
+        "role": "cashier",
+        "permissions": [
+          "sales.create",
+          "sales.read",
+          "customers.read",
+          "products.read"
+        ]
+      },
+      "device_lease": null,
+      "default_warehouse": {
+        "id": "01JCV8X9M9A2B3C4D5E6F7G8H9",
+        "code": "WH-MAIN",
+        "name": "Main Store Warehouse"
+      },
+      "approved_cash_account": {
+        "id": "01JCV8X9MAJ3K4M5N6P7Q8R9S0",
+        "code": "CASH-REG-01",
+        "name": "Cash Register 01 (ILS)",
+        "currency": "ILS"
+      },
+      "units": [
+        {
+          "id": "01JCV8X9MBV4W5X6Y7Z8012345",
+          "code": "PCS",
+          "name": "Piece",
+          "symbol": "pc",
+          "allows_fraction": false,
+          "decimal_places": 0
+        },
+        {
+          "id": "01JCV8X9MC6789ABCDEFGHJKMN",
+          "code": "KG",
+          "name": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+          "symbol": "kg",
+          "allows_fraction": true,
+          "decimal_places": 3
+        }
+      ],
+      "taxes": [
+        {
+          "id": "01JCV8X9MDPTRSVWXYZ0123456",
+          "code": "VAT16",
+          "name": "Standard VAT (16%)",
+          "rate": "16.000000",
+          "calculation": "exclusive",
+          "is_default": true
+        },
+        {
+          "id": "01JCV8X9MDZER0000000000000",
+          "code": "ZERO",
+          "name": "Zero-Rated (0%)",
+          "rate": "0.000000",
+          "calculation": "exclusive",
+          "is_default": false
+        }
+      ],
+      "offline_policy": {
+        "enabled": false,
+        "availability": "unavailable"
+      },
+      "catalog_snapshot_version": "snap-20261110-v1",
+      "base_currency_minor_units": 2
+    },
+    "valid": true
+  },
+  {
+    "name": "bootstrap['units', 1, 'name'] over",
+    "schema": "bootstrap-response.json",
+    "instance": {
+      "company_id": "01JCV8X9M2NQW3TYZ4R5S6789A",
+      "company_name": "Al-Amal Retail Company",
+      "base_currency": "ILS",
+      "walk_in_customer_id": "01JCV8X9M4K1P2Q3R4S5T6V7W8",
+      "staff": {
+        "id": "01JCV8X9M8T1V2W3X4Y5Z67890",
+        "name": "Ahmad Cashier",
+        "role": "cashier",
+        "permissions": [
+          "sales.create",
+          "sales.read",
+          "customers.read",
+          "products.read"
+        ]
+      },
+      "device_lease": null,
+      "default_warehouse": {
+        "id": "01JCV8X9M9A2B3C4D5E6F7G8H9",
+        "code": "WH-MAIN",
+        "name": "Main Store Warehouse"
+      },
+      "approved_cash_account": {
+        "id": "01JCV8X9MAJ3K4M5N6P7Q8R9S0",
+        "code": "CASH-REG-01",
+        "name": "Cash Register 01 (ILS)",
+        "currency": "ILS"
+      },
+      "units": [
+        {
+          "id": "01JCV8X9MBV4W5X6Y7Z8012345",
+          "code": "PCS",
+          "name": "Piece",
+          "symbol": "pc",
+          "allows_fraction": false,
+          "decimal_places": 0
+        },
+        {
+          "id": "01JCV8X9MC6789ABCDEFGHJKMN",
+          "code": "KG",
+          "name": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+          "symbol": "kg",
+          "allows_fraction": true,
+          "decimal_places": 3
+        }
+      ],
+      "taxes": [
+        {
+          "id": "01JCV8X9MDPTRSVWXYZ0123456",
+          "code": "VAT16",
+          "name": "Standard VAT (16%)",
+          "rate": "16.000000",
+          "calculation": "exclusive",
+          "is_default": true
+        },
+        {
+          "id": "01JCV8X9MDZER0000000000000",
+          "code": "ZERO",
+          "name": "Zero-Rated (0%)",
+          "rate": "0.000000",
+          "calculation": "exclusive",
+          "is_default": false
+        }
+      ],
+      "offline_policy": {
+        "enabled": false,
+        "availability": "unavailable"
+      },
+      "catalog_snapshot_version": "snap-20261110-v1",
+      "base_currency_minor_units": 2
+    },
+    "valid": false
+  },
+  {
+    "name": "bootstrap['units', 1, 'symbol'] max",
+    "schema": "bootstrap-response.json",
+    "instance": {
+      "company_id": "01JCV8X9M2NQW3TYZ4R5S6789A",
+      "company_name": "Al-Amal Retail Company",
+      "base_currency": "ILS",
+      "walk_in_customer_id": "01JCV8X9M4K1P2Q3R4S5T6V7W8",
+      "staff": {
+        "id": "01JCV8X9M8T1V2W3X4Y5Z67890",
+        "name": "Ahmad Cashier",
+        "role": "cashier",
+        "permissions": [
+          "sales.create",
+          "sales.read",
+          "customers.read",
+          "products.read"
+        ]
+      },
+      "device_lease": null,
+      "default_warehouse": {
+        "id": "01JCV8X9M9A2B3C4D5E6F7G8H9",
+        "code": "WH-MAIN",
+        "name": "Main Store Warehouse"
+      },
+      "approved_cash_account": {
+        "id": "01JCV8X9MAJ3K4M5N6P7Q8R9S0",
+        "code": "CASH-REG-01",
+        "name": "Cash Register 01 (ILS)",
+        "currency": "ILS"
+      },
+      "units": [
+        {
+          "id": "01JCV8X9MBV4W5X6Y7Z8012345",
+          "code": "PCS",
+          "name": "Piece",
+          "symbol": "pc",
+          "allows_fraction": false,
+          "decimal_places": 0
+        },
+        {
+          "id": "01JCV8X9MC6789ABCDEFGHJKMN",
+          "code": "KG",
+          "name": "Kilogram",
+          "symbol": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+          "allows_fraction": true,
+          "decimal_places": 3
+        }
+      ],
+      "taxes": [
+        {
+          "id": "01JCV8X9MDPTRSVWXYZ0123456",
+          "code": "VAT16",
+          "name": "Standard VAT (16%)",
+          "rate": "16.000000",
+          "calculation": "exclusive",
+          "is_default": true
+        },
+        {
+          "id": "01JCV8X9MDZER0000000000000",
+          "code": "ZERO",
+          "name": "Zero-Rated (0%)",
+          "rate": "0.000000",
+          "calculation": "exclusive",
+          "is_default": false
+        }
+      ],
+      "offline_policy": {
+        "enabled": false,
+        "availability": "unavailable"
+      },
+      "catalog_snapshot_version": "snap-20261110-v1",
+      "base_currency_minor_units": 2
+    },
+    "valid": true
+  },
+  {
+    "name": "bootstrap['units', 1, 'symbol'] over",
+    "schema": "bootstrap-response.json",
+    "instance": {
+      "company_id": "01JCV8X9M2NQW3TYZ4R5S6789A",
+      "company_name": "Al-Amal Retail Company",
+      "base_currency": "ILS",
+      "walk_in_customer_id": "01JCV8X9M4K1P2Q3R4S5T6V7W8",
+      "staff": {
+        "id": "01JCV8X9M8T1V2W3X4Y5Z67890",
+        "name": "Ahmad Cashier",
+        "role": "cashier",
+        "permissions": [
+          "sales.create",
+          "sales.read",
+          "customers.read",
+          "products.read"
+        ]
+      },
+      "device_lease": null,
+      "default_warehouse": {
+        "id": "01JCV8X9M9A2B3C4D5E6F7G8H9",
+        "code": "WH-MAIN",
+        "name": "Main Store Warehouse"
+      },
+      "approved_cash_account": {
+        "id": "01JCV8X9MAJ3K4M5N6P7Q8R9S0",
+        "code": "CASH-REG-01",
+        "name": "Cash Register 01 (ILS)",
+        "currency": "ILS"
+      },
+      "units": [
+        {
+          "id": "01JCV8X9MBV4W5X6Y7Z8012345",
+          "code": "PCS",
+          "name": "Piece",
+          "symbol": "pc",
+          "allows_fraction": false,
+          "decimal_places": 0
+        },
+        {
+          "id": "01JCV8X9MC6789ABCDEFGHJKMN",
+          "code": "KG",
+          "name": "Kilogram",
+          "symbol": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+          "allows_fraction": true,
+          "decimal_places": 3
+        }
+      ],
+      "taxes": [
+        {
+          "id": "01JCV8X9MDPTRSVWXYZ0123456",
+          "code": "VAT16",
+          "name": "Standard VAT (16%)",
+          "rate": "16.000000",
+          "calculation": "exclusive",
+          "is_default": true
+        },
+        {
+          "id": "01JCV8X9MDZER0000000000000",
+          "code": "ZERO",
+          "name": "Zero-Rated (0%)",
+          "rate": "0.000000",
+          "calculation": "exclusive",
+          "is_default": false
+        }
+      ],
+      "offline_policy": {
+        "enabled": false,
+        "availability": "unavailable"
+      },
+      "catalog_snapshot_version": "snap-20261110-v1",
+      "base_currency_minor_units": 2
+    },
+    "valid": false
+  },
+  {
+    "name": "bootstrap['taxes', 0, 'code'] max",
+    "schema": "bootstrap-response.json",
+    "instance": {
+      "company_id": "01JCV8X9M2NQW3TYZ4R5S6789A",
+      "company_name": "Al-Amal Retail Company",
+      "base_currency": "ILS",
+      "walk_in_customer_id": "01JCV8X9M4K1P2Q3R4S5T6V7W8",
+      "staff": {
+        "id": "01JCV8X9M8T1V2W3X4Y5Z67890",
+        "name": "Ahmad Cashier",
+        "role": "cashier",
+        "permissions": [
+          "sales.create",
+          "sales.read",
+          "customers.read",
+          "products.read"
+        ]
+      },
+      "device_lease": null,
+      "default_warehouse": {
+        "id": "01JCV8X9M9A2B3C4D5E6F7G8H9",
+        "code": "WH-MAIN",
+        "name": "Main Store Warehouse"
+      },
+      "approved_cash_account": {
+        "id": "01JCV8X9MAJ3K4M5N6P7Q8R9S0",
+        "code": "CASH-REG-01",
+        "name": "Cash Register 01 (ILS)",
+        "currency": "ILS"
+      },
+      "units": [
+        {
+          "id": "01JCV8X9MBV4W5X6Y7Z8012345",
+          "code": "PCS",
+          "name": "Piece",
+          "symbol": "pc",
+          "allows_fraction": false,
+          "decimal_places": 0
+        },
+        {
+          "id": "01JCV8X9MC6789ABCDEFGHJKMN",
+          "code": "KG",
+          "name": "Kilogram",
+          "symbol": "kg",
+          "allows_fraction": true,
+          "decimal_places": 3
+        }
+      ],
+      "taxes": [
+        {
+          "id": "01JCV8X9MDPTRSVWXYZ0123456",
+          "code": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+          "name": "Standard VAT (16%)",
+          "rate": "16.000000",
+          "calculation": "exclusive",
+          "is_default": true
+        },
+        {
+          "id": "01JCV8X9MDZER0000000000000",
+          "code": "ZERO",
+          "name": "Zero-Rated (0%)",
+          "rate": "0.000000",
+          "calculation": "exclusive",
+          "is_default": false
+        }
+      ],
+      "offline_policy": {
+        "enabled": false,
+        "availability": "unavailable"
+      },
+      "catalog_snapshot_version": "snap-20261110-v1",
+      "base_currency_minor_units": 2
+    },
+    "valid": true
+  },
+  {
+    "name": "bootstrap['taxes', 0, 'code'] over",
+    "schema": "bootstrap-response.json",
+    "instance": {
+      "company_id": "01JCV8X9M2NQW3TYZ4R5S6789A",
+      "company_name": "Al-Amal Retail Company",
+      "base_currency": "ILS",
+      "walk_in_customer_id": "01JCV8X9M4K1P2Q3R4S5T6V7W8",
+      "staff": {
+        "id": "01JCV8X9M8T1V2W3X4Y5Z67890",
+        "name": "Ahmad Cashier",
+        "role": "cashier",
+        "permissions": [
+          "sales.create",
+          "sales.read",
+          "customers.read",
+          "products.read"
+        ]
+      },
+      "device_lease": null,
+      "default_warehouse": {
+        "id": "01JCV8X9M9A2B3C4D5E6F7G8H9",
+        "code": "WH-MAIN",
+        "name": "Main Store Warehouse"
+      },
+      "approved_cash_account": {
+        "id": "01JCV8X9MAJ3K4M5N6P7Q8R9S0",
+        "code": "CASH-REG-01",
+        "name": "Cash Register 01 (ILS)",
+        "currency": "ILS"
+      },
+      "units": [
+        {
+          "id": "01JCV8X9MBV4W5X6Y7Z8012345",
+          "code": "PCS",
+          "name": "Piece",
+          "symbol": "pc",
+          "allows_fraction": false,
+          "decimal_places": 0
+        },
+        {
+          "id": "01JCV8X9MC6789ABCDEFGHJKMN",
+          "code": "KG",
+          "name": "Kilogram",
+          "symbol": "kg",
+          "allows_fraction": true,
+          "decimal_places": 3
+        }
+      ],
+      "taxes": [
+        {
+          "id": "01JCV8X9MDPTRSVWXYZ0123456",
+          "code": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+          "name": "Standard VAT (16%)",
+          "rate": "16.000000",
+          "calculation": "exclusive",
+          "is_default": true
+        },
+        {
+          "id": "01JCV8X9MDZER0000000000000",
+          "code": "ZERO",
+          "name": "Zero-Rated (0%)",
+          "rate": "0.000000",
+          "calculation": "exclusive",
+          "is_default": false
+        }
+      ],
+      "offline_policy": {
+        "enabled": false,
+        "availability": "unavailable"
+      },
+      "catalog_snapshot_version": "snap-20261110-v1",
+      "base_currency_minor_units": 2
+    },
+    "valid": false
+  },
+  {
+    "name": "bootstrap['taxes', 0, 'name'] max",
+    "schema": "bootstrap-response.json",
+    "instance": {
+      "company_id": "01JCV8X9M2NQW3TYZ4R5S6789A",
+      "company_name": "Al-Amal Retail Company",
+      "base_currency": "ILS",
+      "walk_in_customer_id": "01JCV8X9M4K1P2Q3R4S5T6V7W8",
+      "staff": {
+        "id": "01JCV8X9M8T1V2W3X4Y5Z67890",
+        "name": "Ahmad Cashier",
+        "role": "cashier",
+        "permissions": [
+          "sales.create",
+          "sales.read",
+          "customers.read",
+          "products.read"
+        ]
+      },
+      "device_lease": null,
+      "default_warehouse": {
+        "id": "01JCV8X9M9A2B3C4D5E6F7G8H9",
+        "code": "WH-MAIN",
+        "name": "Main Store Warehouse"
+      },
+      "approved_cash_account": {
+        "id": "01JCV8X9MAJ3K4M5N6P7Q8R9S0",
+        "code": "CASH-REG-01",
+        "name": "Cash Register 01 (ILS)",
+        "currency": "ILS"
+      },
+      "units": [
+        {
+          "id": "01JCV8X9MBV4W5X6Y7Z8012345",
+          "code": "PCS",
+          "name": "Piece",
+          "symbol": "pc",
+          "allows_fraction": false,
+          "decimal_places": 0
+        },
+        {
+          "id": "01JCV8X9MC6789ABCDEFGHJKMN",
+          "code": "KG",
+          "name": "Kilogram",
+          "symbol": "kg",
+          "allows_fraction": true,
+          "decimal_places": 3
+        }
+      ],
+      "taxes": [
+        {
+          "id": "01JCV8X9MDPTRSVWXYZ0123456",
+          "code": "VAT16",
+          "name": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+          "rate": "16.000000",
+          "calculation": "exclusive",
+          "is_default": true
+        },
+        {
+          "id": "01JCV8X9MDZER0000000000000",
+          "code": "ZERO",
+          "name": "Zero-Rated (0%)",
+          "rate": "0.000000",
+          "calculation": "exclusive",
+          "is_default": false
+        }
+      ],
+      "offline_policy": {
+        "enabled": false,
+        "availability": "unavailable"
+      },
+      "catalog_snapshot_version": "snap-20261110-v1",
+      "base_currency_minor_units": 2
+    },
+    "valid": true
+  },
+  {
+    "name": "bootstrap['taxes', 0, 'name'] over",
+    "schema": "bootstrap-response.json",
+    "instance": {
+      "company_id": "01JCV8X9M2NQW3TYZ4R5S6789A",
+      "company_name": "Al-Amal Retail Company",
+      "base_currency": "ILS",
+      "walk_in_customer_id": "01JCV8X9M4K1P2Q3R4S5T6V7W8",
+      "staff": {
+        "id": "01JCV8X9M8T1V2W3X4Y5Z67890",
+        "name": "Ahmad Cashier",
+        "role": "cashier",
+        "permissions": [
+          "sales.create",
+          "sales.read",
+          "customers.read",
+          "products.read"
+        ]
+      },
+      "device_lease": null,
+      "default_warehouse": {
+        "id": "01JCV8X9M9A2B3C4D5E6F7G8H9",
+        "code": "WH-MAIN",
+        "name": "Main Store Warehouse"
+      },
+      "approved_cash_account": {
+        "id": "01JCV8X9MAJ3K4M5N6P7Q8R9S0",
+        "code": "CASH-REG-01",
+        "name": "Cash Register 01 (ILS)",
+        "currency": "ILS"
+      },
+      "units": [
+        {
+          "id": "01JCV8X9MBV4W5X6Y7Z8012345",
+          "code": "PCS",
+          "name": "Piece",
+          "symbol": "pc",
+          "allows_fraction": false,
+          "decimal_places": 0
+        },
+        {
+          "id": "01JCV8X9MC6789ABCDEFGHJKMN",
+          "code": "KG",
+          "name": "Kilogram",
+          "symbol": "kg",
+          "allows_fraction": true,
+          "decimal_places": 3
+        }
+      ],
+      "taxes": [
+        {
+          "id": "01JCV8X9MDPTRSVWXYZ0123456",
+          "code": "VAT16",
+          "name": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+          "rate": "16.000000",
+          "calculation": "exclusive",
+          "is_default": true
+        },
+        {
+          "id": "01JCV8X9MDZER0000000000000",
+          "code": "ZERO",
+          "name": "Zero-Rated (0%)",
+          "rate": "0.000000",
+          "calculation": "exclusive",
+          "is_default": false
+        }
+      ],
+      "offline_policy": {
+        "enabled": false,
+        "availability": "unavailable"
+      },
+      "catalog_snapshot_version": "snap-20261110-v1",
+      "base_currency_minor_units": 2
+    },
+    "valid": false
+  },
+  {
+    "name": "bootstrap['taxes', 1, 'code'] max",
+    "schema": "bootstrap-response.json",
+    "instance": {
+      "company_id": "01JCV8X9M2NQW3TYZ4R5S6789A",
+      "company_name": "Al-Amal Retail Company",
+      "base_currency": "ILS",
+      "walk_in_customer_id": "01JCV8X9M4K1P2Q3R4S5T6V7W8",
+      "staff": {
+        "id": "01JCV8X9M8T1V2W3X4Y5Z67890",
+        "name": "Ahmad Cashier",
+        "role": "cashier",
+        "permissions": [
+          "sales.create",
+          "sales.read",
+          "customers.read",
+          "products.read"
+        ]
+      },
+      "device_lease": null,
+      "default_warehouse": {
+        "id": "01JCV8X9M9A2B3C4D5E6F7G8H9",
+        "code": "WH-MAIN",
+        "name": "Main Store Warehouse"
+      },
+      "approved_cash_account": {
+        "id": "01JCV8X9MAJ3K4M5N6P7Q8R9S0",
+        "code": "CASH-REG-01",
+        "name": "Cash Register 01 (ILS)",
+        "currency": "ILS"
+      },
+      "units": [
+        {
+          "id": "01JCV8X9MBV4W5X6Y7Z8012345",
+          "code": "PCS",
+          "name": "Piece",
+          "symbol": "pc",
+          "allows_fraction": false,
+          "decimal_places": 0
+        },
+        {
+          "id": "01JCV8X9MC6789ABCDEFGHJKMN",
+          "code": "KG",
+          "name": "Kilogram",
+          "symbol": "kg",
+          "allows_fraction": true,
+          "decimal_places": 3
+        }
+      ],
+      "taxes": [
+        {
+          "id": "01JCV8X9MDPTRSVWXYZ0123456",
+          "code": "VAT16",
+          "name": "Standard VAT (16%)",
+          "rate": "16.000000",
+          "calculation": "exclusive",
+          "is_default": true
+        },
+        {
+          "id": "01JCV8X9MDZER0000000000000",
+          "code": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+          "name": "Zero-Rated (0%)",
+          "rate": "0.000000",
+          "calculation": "exclusive",
+          "is_default": false
+        }
+      ],
+      "offline_policy": {
+        "enabled": false,
+        "availability": "unavailable"
+      },
+      "catalog_snapshot_version": "snap-20261110-v1",
+      "base_currency_minor_units": 2
+    },
+    "valid": true
+  },
+  {
+    "name": "bootstrap['taxes', 1, 'code'] over",
+    "schema": "bootstrap-response.json",
+    "instance": {
+      "company_id": "01JCV8X9M2NQW3TYZ4R5S6789A",
+      "company_name": "Al-Amal Retail Company",
+      "base_currency": "ILS",
+      "walk_in_customer_id": "01JCV8X9M4K1P2Q3R4S5T6V7W8",
+      "staff": {
+        "id": "01JCV8X9M8T1V2W3X4Y5Z67890",
+        "name": "Ahmad Cashier",
+        "role": "cashier",
+        "permissions": [
+          "sales.create",
+          "sales.read",
+          "customers.read",
+          "products.read"
+        ]
+      },
+      "device_lease": null,
+      "default_warehouse": {
+        "id": "01JCV8X9M9A2B3C4D5E6F7G8H9",
+        "code": "WH-MAIN",
+        "name": "Main Store Warehouse"
+      },
+      "approved_cash_account": {
+        "id": "01JCV8X9MAJ3K4M5N6P7Q8R9S0",
+        "code": "CASH-REG-01",
+        "name": "Cash Register 01 (ILS)",
+        "currency": "ILS"
+      },
+      "units": [
+        {
+          "id": "01JCV8X9MBV4W5X6Y7Z8012345",
+          "code": "PCS",
+          "name": "Piece",
+          "symbol": "pc",
+          "allows_fraction": false,
+          "decimal_places": 0
+        },
+        {
+          "id": "01JCV8X9MC6789ABCDEFGHJKMN",
+          "code": "KG",
+          "name": "Kilogram",
+          "symbol": "kg",
+          "allows_fraction": true,
+          "decimal_places": 3
+        }
+      ],
+      "taxes": [
+        {
+          "id": "01JCV8X9MDPTRSVWXYZ0123456",
+          "code": "VAT16",
+          "name": "Standard VAT (16%)",
+          "rate": "16.000000",
+          "calculation": "exclusive",
+          "is_default": true
+        },
+        {
+          "id": "01JCV8X9MDZER0000000000000",
+          "code": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+          "name": "Zero-Rated (0%)",
+          "rate": "0.000000",
+          "calculation": "exclusive",
+          "is_default": false
+        }
+      ],
+      "offline_policy": {
+        "enabled": false,
+        "availability": "unavailable"
+      },
+      "catalog_snapshot_version": "snap-20261110-v1",
+      "base_currency_minor_units": 2
+    },
+    "valid": false
+  },
+  {
+    "name": "bootstrap['taxes', 1, 'name'] max",
+    "schema": "bootstrap-response.json",
+    "instance": {
+      "company_id": "01JCV8X9M2NQW3TYZ4R5S6789A",
+      "company_name": "Al-Amal Retail Company",
+      "base_currency": "ILS",
+      "walk_in_customer_id": "01JCV8X9M4K1P2Q3R4S5T6V7W8",
+      "staff": {
+        "id": "01JCV8X9M8T1V2W3X4Y5Z67890",
+        "name": "Ahmad Cashier",
+        "role": "cashier",
+        "permissions": [
+          "sales.create",
+          "sales.read",
+          "customers.read",
+          "products.read"
+        ]
+      },
+      "device_lease": null,
+      "default_warehouse": {
+        "id": "01JCV8X9M9A2B3C4D5E6F7G8H9",
+        "code": "WH-MAIN",
+        "name": "Main Store Warehouse"
+      },
+      "approved_cash_account": {
+        "id": "01JCV8X9MAJ3K4M5N6P7Q8R9S0",
+        "code": "CASH-REG-01",
+        "name": "Cash Register 01 (ILS)",
+        "currency": "ILS"
+      },
+      "units": [
+        {
+          "id": "01JCV8X9MBV4W5X6Y7Z8012345",
+          "code": "PCS",
+          "name": "Piece",
+          "symbol": "pc",
+          "allows_fraction": false,
+          "decimal_places": 0
+        },
+        {
+          "id": "01JCV8X9MC6789ABCDEFGHJKMN",
+          "code": "KG",
+          "name": "Kilogram",
+          "symbol": "kg",
+          "allows_fraction": true,
+          "decimal_places": 3
+        }
+      ],
+      "taxes": [
+        {
+          "id": "01JCV8X9MDPTRSVWXYZ0123456",
+          "code": "VAT16",
+          "name": "Standard VAT (16%)",
+          "rate": "16.000000",
+          "calculation": "exclusive",
+          "is_default": true
+        },
+        {
+          "id": "01JCV8X9MDZER0000000000000",
+          "code": "ZERO",
+          "name": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+          "rate": "0.000000",
+          "calculation": "exclusive",
+          "is_default": false
+        }
+      ],
+      "offline_policy": {
+        "enabled": false,
+        "availability": "unavailable"
+      },
+      "catalog_snapshot_version": "snap-20261110-v1",
+      "base_currency_minor_units": 2
+    },
+    "valid": true
+  },
+  {
+    "name": "bootstrap['taxes', 1, 'name'] over",
+    "schema": "bootstrap-response.json",
+    "instance": {
+      "company_id": "01JCV8X9M2NQW3TYZ4R5S6789A",
+      "company_name": "Al-Amal Retail Company",
+      "base_currency": "ILS",
+      "walk_in_customer_id": "01JCV8X9M4K1P2Q3R4S5T6V7W8",
+      "staff": {
+        "id": "01JCV8X9M8T1V2W3X4Y5Z67890",
+        "name": "Ahmad Cashier",
+        "role": "cashier",
+        "permissions": [
+          "sales.create",
+          "sales.read",
+          "customers.read",
+          "products.read"
+        ]
+      },
+      "device_lease": null,
+      "default_warehouse": {
+        "id": "01JCV8X9M9A2B3C4D5E6F7G8H9",
+        "code": "WH-MAIN",
+        "name": "Main Store Warehouse"
+      },
+      "approved_cash_account": {
+        "id": "01JCV8X9MAJ3K4M5N6P7Q8R9S0",
+        "code": "CASH-REG-01",
+        "name": "Cash Register 01 (ILS)",
+        "currency": "ILS"
+      },
+      "units": [
+        {
+          "id": "01JCV8X9MBV4W5X6Y7Z8012345",
+          "code": "PCS",
+          "name": "Piece",
+          "symbol": "pc",
+          "allows_fraction": false,
+          "decimal_places": 0
+        },
+        {
+          "id": "01JCV8X9MC6789ABCDEFGHJKMN",
+          "code": "KG",
+          "name": "Kilogram",
+          "symbol": "kg",
+          "allows_fraction": true,
+          "decimal_places": 3
+        }
+      ],
+      "taxes": [
+        {
+          "id": "01JCV8X9MDPTRSVWXYZ0123456",
+          "code": "VAT16",
+          "name": "Standard VAT (16%)",
+          "rate": "16.000000",
+          "calculation": "exclusive",
+          "is_default": true
+        },
+        {
+          "id": "01JCV8X9MDZER0000000000000",
+          "code": "ZERO",
+          "name": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+          "rate": "0.000000",
+          "calculation": "exclusive",
+          "is_default": false
+        }
+      ],
+      "offline_policy": {
+        "enabled": false,
+        "availability": "unavailable"
+      },
+      "catalog_snapshot_version": "snap-20261110-v1",
+      "base_currency_minor_units": 2
+    },
+    "valid": false
+  },
+  {
+    "name": "bootstrap['catalog_snapshot_version'] max",
+    "schema": "bootstrap-response.json",
+    "instance": {
+      "company_id": "01JCV8X9M2NQW3TYZ4R5S6789A",
+      "company_name": "Al-Amal Retail Company",
+      "base_currency": "ILS",
+      "walk_in_customer_id": "01JCV8X9M4K1P2Q3R4S5T6V7W8",
+      "staff": {
+        "id": "01JCV8X9M8T1V2W3X4Y5Z67890",
+        "name": "Ahmad Cashier",
+        "role": "cashier",
+        "permissions": [
+          "sales.create",
+          "sales.read",
+          "customers.read",
+          "products.read"
+        ]
+      },
+      "device_lease": null,
+      "default_warehouse": {
+        "id": "01JCV8X9M9A2B3C4D5E6F7G8H9",
+        "code": "WH-MAIN",
+        "name": "Main Store Warehouse"
+      },
+      "approved_cash_account": {
+        "id": "01JCV8X9MAJ3K4M5N6P7Q8R9S0",
+        "code": "CASH-REG-01",
+        "name": "Cash Register 01 (ILS)",
+        "currency": "ILS"
+      },
+      "units": [
+        {
+          "id": "01JCV8X9MBV4W5X6Y7Z8012345",
+          "code": "PCS",
+          "name": "Piece",
+          "symbol": "pc",
+          "allows_fraction": false,
+          "decimal_places": 0
+        },
+        {
+          "id": "01JCV8X9MC6789ABCDEFGHJKMN",
+          "code": "KG",
+          "name": "Kilogram",
+          "symbol": "kg",
+          "allows_fraction": true,
+          "decimal_places": 3
+        }
+      ],
+      "taxes": [
+        {
+          "id": "01JCV8X9MDPTRSVWXYZ0123456",
+          "code": "VAT16",
+          "name": "Standard VAT (16%)",
+          "rate": "16.000000",
+          "calculation": "exclusive",
+          "is_default": true
+        },
+        {
+          "id": "01JCV8X9MDZER0000000000000",
+          "code": "ZERO",
+          "name": "Zero-Rated (0%)",
+          "rate": "0.000000",
+          "calculation": "exclusive",
+          "is_default": false
+        }
+      ],
+      "offline_policy": {
+        "enabled": false,
+        "availability": "unavailable"
+      },
+      "catalog_snapshot_version": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "base_currency_minor_units": 2
+    },
+    "valid": true
+  },
+  {
+    "name": "bootstrap['catalog_snapshot_version'] over",
+    "schema": "bootstrap-response.json",
+    "instance": {
+      "company_id": "01JCV8X9M2NQW3TYZ4R5S6789A",
+      "company_name": "Al-Amal Retail Company",
+      "base_currency": "ILS",
+      "walk_in_customer_id": "01JCV8X9M4K1P2Q3R4S5T6V7W8",
+      "staff": {
+        "id": "01JCV8X9M8T1V2W3X4Y5Z67890",
+        "name": "Ahmad Cashier",
+        "role": "cashier",
+        "permissions": [
+          "sales.create",
+          "sales.read",
+          "customers.read",
+          "products.read"
+        ]
+      },
+      "device_lease": null,
+      "default_warehouse": {
+        "id": "01JCV8X9M9A2B3C4D5E6F7G8H9",
+        "code": "WH-MAIN",
+        "name": "Main Store Warehouse"
+      },
+      "approved_cash_account": {
+        "id": "01JCV8X9MAJ3K4M5N6P7Q8R9S0",
+        "code": "CASH-REG-01",
+        "name": "Cash Register 01 (ILS)",
+        "currency": "ILS"
+      },
+      "units": [
+        {
+          "id": "01JCV8X9MBV4W5X6Y7Z8012345",
+          "code": "PCS",
+          "name": "Piece",
+          "symbol": "pc",
+          "allows_fraction": false,
+          "decimal_places": 0
+        },
+        {
+          "id": "01JCV8X9MC6789ABCDEFGHJKMN",
+          "code": "KG",
+          "name": "Kilogram",
+          "symbol": "kg",
+          "allows_fraction": true,
+          "decimal_places": 3
+        }
+      ],
+      "taxes": [
+        {
+          "id": "01JCV8X9MDPTRSVWXYZ0123456",
+          "code": "VAT16",
+          "name": "Standard VAT (16%)",
+          "rate": "16.000000",
+          "calculation": "exclusive",
+          "is_default": true
+        },
+        {
+          "id": "01JCV8X9MDZER0000000000000",
+          "code": "ZERO",
+          "name": "Zero-Rated (0%)",
+          "rate": "0.000000",
+          "calculation": "exclusive",
+          "is_default": false
+        }
+      ],
+      "offline_policy": {
+        "enabled": false,
+        "availability": "unavailable"
+      },
+      "catalog_snapshot_version": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "base_currency_minor_units": 2
+    },
+    "valid": false
+  },
+  {
+    "name": "product-catalog['catalog_snapshot_version'] max",
+    "schema": "product-catalog-response.json",
+    "instance": {
+      "company_id": "01JCV8X9M2NQW3TYZ4R5S6789A",
+      "catalog_snapshot_version": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "generated_at": "2026-11-10T12:00:00Z",
+      "next_cursor": null,
+      "has_more": false,
+      "products": [
+        {
+          "id": "01JCV8X9M6A1B2C3D4E5F6G7H8",
+          "sku": "SKU-OLIVE-OIL-1L",
+          "barcode": "6291041001234",
+          "name": "Extra Virgin Olive Oil 1L",
+          "unit_price": "25.000000",
+          "tax_rate": null,
+          "tax_rate_id": null,
+          "is_tracked": true,
+          "available_quantity": "142.000000",
+          "base_unit": {
+            "id": "01JCV8X9MBV4W5X6Y7Z8012345",
+            "code": "BTL",
+            "name": "Bottle"
+          },
+          "default_unit": {
+            "unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+            "product_unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+            "conversion_to_base": "1.000000",
+            "sale_price": "25.000000"
+          },
+          "units": [
+            {
+              "product_unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+              "unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+              "code": "BTL",
+              "name": "Bottle",
+              "conversion_to_base": "1.000000",
+              "is_base": true,
+              "is_default_sale": true,
+              "sale_price": "25.000000"
+            }
+          ]
+        },
+        {
+          "id": "01JCV8X9M7J2K3M4N5P6Q7R8S9",
+          "sku": "SKU-FLOUR-BULK",
+          "barcode": null,
+          "name": "Wheat Flour Bulk",
+          "unit_price": "4.500000",
+          "tax_rate": null,
+          "tax_rate_id": null,
+          "is_tracked": true,
+          "available_quantity": "520.500000",
+          "base_unit": {
+            "id": "01JCV8X9MC6789ABCDEFGHJKMN",
+            "code": "KG",
+            "name": "Kilogram"
+          },
+          "default_unit": {
+            "unit_id": "01JCV8X9MC6789ABCDEFGHJKMN",
+            "product_unit_id": "01JCV8X9MC6789ABCDEFGHJKMN",
+            "conversion_to_base": "1.000000",
+            "sale_price": "4.500000"
+          },
+          "units": [
+            {
+              "product_unit_id": "01JCV8X9MC6789ABCDEFGHJKMN",
+              "unit_id": "01JCV8X9MC6789ABCDEFGHJKMN",
+              "code": "KG",
+              "name": "Kilogram",
+              "conversion_to_base": "1.000000",
+              "is_base": true,
+              "is_default_sale": true,
+              "sale_price": "4.500000"
+            }
+          ]
+        }
+      ]
+    },
+    "valid": true
+  },
+  {
+    "name": "product-catalog['catalog_snapshot_version'] over",
+    "schema": "product-catalog-response.json",
+    "instance": {
+      "company_id": "01JCV8X9M2NQW3TYZ4R5S6789A",
+      "catalog_snapshot_version": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "generated_at": "2026-11-10T12:00:00Z",
+      "next_cursor": null,
+      "has_more": false,
+      "products": [
+        {
+          "id": "01JCV8X9M6A1B2C3D4E5F6G7H8",
+          "sku": "SKU-OLIVE-OIL-1L",
+          "barcode": "6291041001234",
+          "name": "Extra Virgin Olive Oil 1L",
+          "unit_price": "25.000000",
+          "tax_rate": null,
+          "tax_rate_id": null,
+          "is_tracked": true,
+          "available_quantity": "142.000000",
+          "base_unit": {
+            "id": "01JCV8X9MBV4W5X6Y7Z8012345",
+            "code": "BTL",
+            "name": "Bottle"
+          },
+          "default_unit": {
+            "unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+            "product_unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+            "conversion_to_base": "1.000000",
+            "sale_price": "25.000000"
+          },
+          "units": [
+            {
+              "product_unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+              "unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+              "code": "BTL",
+              "name": "Bottle",
+              "conversion_to_base": "1.000000",
+              "is_base": true,
+              "is_default_sale": true,
+              "sale_price": "25.000000"
+            }
+          ]
+        },
+        {
+          "id": "01JCV8X9M7J2K3M4N5P6Q7R8S9",
+          "sku": "SKU-FLOUR-BULK",
+          "barcode": null,
+          "name": "Wheat Flour Bulk",
+          "unit_price": "4.500000",
+          "tax_rate": null,
+          "tax_rate_id": null,
+          "is_tracked": true,
+          "available_quantity": "520.500000",
+          "base_unit": {
+            "id": "01JCV8X9MC6789ABCDEFGHJKMN",
+            "code": "KG",
+            "name": "Kilogram"
+          },
+          "default_unit": {
+            "unit_id": "01JCV8X9MC6789ABCDEFGHJKMN",
+            "product_unit_id": "01JCV8X9MC6789ABCDEFGHJKMN",
+            "conversion_to_base": "1.000000",
+            "sale_price": "4.500000"
+          },
+          "units": [
+            {
+              "product_unit_id": "01JCV8X9MC6789ABCDEFGHJKMN",
+              "unit_id": "01JCV8X9MC6789ABCDEFGHJKMN",
+              "code": "KG",
+              "name": "Kilogram",
+              "conversion_to_base": "1.000000",
+              "is_base": true,
+              "is_default_sale": true,
+              "sale_price": "4.500000"
+            }
+          ]
+        }
+      ]
+    },
+    "valid": false
+  },
+  {
+    "name": "product-catalog['products', 0, 'sku'] max",
+    "schema": "product-catalog-response.json",
+    "instance": {
+      "company_id": "01JCV8X9M2NQW3TYZ4R5S6789A",
+      "catalog_snapshot_version": "snap-20261110-v1",
+      "generated_at": "2026-11-10T12:00:00Z",
+      "next_cursor": null,
+      "has_more": false,
+      "products": [
+        {
+          "id": "01JCV8X9M6A1B2C3D4E5F6G7H8",
+          "sku": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+          "barcode": "6291041001234",
+          "name": "Extra Virgin Olive Oil 1L",
+          "unit_price": "25.000000",
+          "tax_rate": null,
+          "tax_rate_id": null,
+          "is_tracked": true,
+          "available_quantity": "142.000000",
+          "base_unit": {
+            "id": "01JCV8X9MBV4W5X6Y7Z8012345",
+            "code": "BTL",
+            "name": "Bottle"
+          },
+          "default_unit": {
+            "unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+            "product_unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+            "conversion_to_base": "1.000000",
+            "sale_price": "25.000000"
+          },
+          "units": [
+            {
+              "product_unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+              "unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+              "code": "BTL",
+              "name": "Bottle",
+              "conversion_to_base": "1.000000",
+              "is_base": true,
+              "is_default_sale": true,
+              "sale_price": "25.000000"
+            }
+          ]
+        },
+        {
+          "id": "01JCV8X9M7J2K3M4N5P6Q7R8S9",
+          "sku": "SKU-FLOUR-BULK",
+          "barcode": null,
+          "name": "Wheat Flour Bulk",
+          "unit_price": "4.500000",
+          "tax_rate": null,
+          "tax_rate_id": null,
+          "is_tracked": true,
+          "available_quantity": "520.500000",
+          "base_unit": {
+            "id": "01JCV8X9MC6789ABCDEFGHJKMN",
+            "code": "KG",
+            "name": "Kilogram"
+          },
+          "default_unit": {
+            "unit_id": "01JCV8X9MC6789ABCDEFGHJKMN",
+            "product_unit_id": "01JCV8X9MC6789ABCDEFGHJKMN",
+            "conversion_to_base": "1.000000",
+            "sale_price": "4.500000"
+          },
+          "units": [
+            {
+              "product_unit_id": "01JCV8X9MC6789ABCDEFGHJKMN",
+              "unit_id": "01JCV8X9MC6789ABCDEFGHJKMN",
+              "code": "KG",
+              "name": "Kilogram",
+              "conversion_to_base": "1.000000",
+              "is_base": true,
+              "is_default_sale": true,
+              "sale_price": "4.500000"
+            }
+          ]
+        }
+      ]
+    },
+    "valid": true
+  },
+  {
+    "name": "product-catalog['products', 0, 'sku'] over",
+    "schema": "product-catalog-response.json",
+    "instance": {
+      "company_id": "01JCV8X9M2NQW3TYZ4R5S6789A",
+      "catalog_snapshot_version": "snap-20261110-v1",
+      "generated_at": "2026-11-10T12:00:00Z",
+      "next_cursor": null,
+      "has_more": false,
+      "products": [
+        {
+          "id": "01JCV8X9M6A1B2C3D4E5F6G7H8",
+          "sku": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+          "barcode": "6291041001234",
+          "name": "Extra Virgin Olive Oil 1L",
+          "unit_price": "25.000000",
+          "tax_rate": null,
+          "tax_rate_id": null,
+          "is_tracked": true,
+          "available_quantity": "142.000000",
+          "base_unit": {
+            "id": "01JCV8X9MBV4W5X6Y7Z8012345",
+            "code": "BTL",
+            "name": "Bottle"
+          },
+          "default_unit": {
+            "unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+            "product_unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+            "conversion_to_base": "1.000000",
+            "sale_price": "25.000000"
+          },
+          "units": [
+            {
+              "product_unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+              "unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+              "code": "BTL",
+              "name": "Bottle",
+              "conversion_to_base": "1.000000",
+              "is_base": true,
+              "is_default_sale": true,
+              "sale_price": "25.000000"
+            }
+          ]
+        },
+        {
+          "id": "01JCV8X9M7J2K3M4N5P6Q7R8S9",
+          "sku": "SKU-FLOUR-BULK",
+          "barcode": null,
+          "name": "Wheat Flour Bulk",
+          "unit_price": "4.500000",
+          "tax_rate": null,
+          "tax_rate_id": null,
+          "is_tracked": true,
+          "available_quantity": "520.500000",
+          "base_unit": {
+            "id": "01JCV8X9MC6789ABCDEFGHJKMN",
+            "code": "KG",
+            "name": "Kilogram"
+          },
+          "default_unit": {
+            "unit_id": "01JCV8X9MC6789ABCDEFGHJKMN",
+            "product_unit_id": "01JCV8X9MC6789ABCDEFGHJKMN",
+            "conversion_to_base": "1.000000",
+            "sale_price": "4.500000"
+          },
+          "units": [
+            {
+              "product_unit_id": "01JCV8X9MC6789ABCDEFGHJKMN",
+              "unit_id": "01JCV8X9MC6789ABCDEFGHJKMN",
+              "code": "KG",
+              "name": "Kilogram",
+              "conversion_to_base": "1.000000",
+              "is_base": true,
+              "is_default_sale": true,
+              "sale_price": "4.500000"
+            }
+          ]
+        }
+      ]
+    },
+    "valid": false
+  },
+  {
+    "name": "product-catalog['products', 0, 'barcode'] max",
+    "schema": "product-catalog-response.json",
+    "instance": {
+      "company_id": "01JCV8X9M2NQW3TYZ4R5S6789A",
+      "catalog_snapshot_version": "snap-20261110-v1",
+      "generated_at": "2026-11-10T12:00:00Z",
+      "next_cursor": null,
+      "has_more": false,
+      "products": [
+        {
+          "id": "01JCV8X9M6A1B2C3D4E5F6G7H8",
+          "sku": "SKU-OLIVE-OIL-1L",
+          "barcode": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+          "name": "Extra Virgin Olive Oil 1L",
+          "unit_price": "25.000000",
+          "tax_rate": null,
+          "tax_rate_id": null,
+          "is_tracked": true,
+          "available_quantity": "142.000000",
+          "base_unit": {
+            "id": "01JCV8X9MBV4W5X6Y7Z8012345",
+            "code": "BTL",
+            "name": "Bottle"
+          },
+          "default_unit": {
+            "unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+            "product_unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+            "conversion_to_base": "1.000000",
+            "sale_price": "25.000000"
+          },
+          "units": [
+            {
+              "product_unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+              "unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+              "code": "BTL",
+              "name": "Bottle",
+              "conversion_to_base": "1.000000",
+              "is_base": true,
+              "is_default_sale": true,
+              "sale_price": "25.000000"
+            }
+          ]
+        },
+        {
+          "id": "01JCV8X9M7J2K3M4N5P6Q7R8S9",
+          "sku": "SKU-FLOUR-BULK",
+          "barcode": null,
+          "name": "Wheat Flour Bulk",
+          "unit_price": "4.500000",
+          "tax_rate": null,
+          "tax_rate_id": null,
+          "is_tracked": true,
+          "available_quantity": "520.500000",
+          "base_unit": {
+            "id": "01JCV8X9MC6789ABCDEFGHJKMN",
+            "code": "KG",
+            "name": "Kilogram"
+          },
+          "default_unit": {
+            "unit_id": "01JCV8X9MC6789ABCDEFGHJKMN",
+            "product_unit_id": "01JCV8X9MC6789ABCDEFGHJKMN",
+            "conversion_to_base": "1.000000",
+            "sale_price": "4.500000"
+          },
+          "units": [
+            {
+              "product_unit_id": "01JCV8X9MC6789ABCDEFGHJKMN",
+              "unit_id": "01JCV8X9MC6789ABCDEFGHJKMN",
+              "code": "KG",
+              "name": "Kilogram",
+              "conversion_to_base": "1.000000",
+              "is_base": true,
+              "is_default_sale": true,
+              "sale_price": "4.500000"
+            }
+          ]
+        }
+      ]
+    },
+    "valid": true
+  },
+  {
+    "name": "product-catalog['products', 0, 'barcode'] over",
+    "schema": "product-catalog-response.json",
+    "instance": {
+      "company_id": "01JCV8X9M2NQW3TYZ4R5S6789A",
+      "catalog_snapshot_version": "snap-20261110-v1",
+      "generated_at": "2026-11-10T12:00:00Z",
+      "next_cursor": null,
+      "has_more": false,
+      "products": [
+        {
+          "id": "01JCV8X9M6A1B2C3D4E5F6G7H8",
+          "sku": "SKU-OLIVE-OIL-1L",
+          "barcode": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+          "name": "Extra Virgin Olive Oil 1L",
+          "unit_price": "25.000000",
+          "tax_rate": null,
+          "tax_rate_id": null,
+          "is_tracked": true,
+          "available_quantity": "142.000000",
+          "base_unit": {
+            "id": "01JCV8X9MBV4W5X6Y7Z8012345",
+            "code": "BTL",
+            "name": "Bottle"
+          },
+          "default_unit": {
+            "unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+            "product_unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+            "conversion_to_base": "1.000000",
+            "sale_price": "25.000000"
+          },
+          "units": [
+            {
+              "product_unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+              "unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+              "code": "BTL",
+              "name": "Bottle",
+              "conversion_to_base": "1.000000",
+              "is_base": true,
+              "is_default_sale": true,
+              "sale_price": "25.000000"
+            }
+          ]
+        },
+        {
+          "id": "01JCV8X9M7J2K3M4N5P6Q7R8S9",
+          "sku": "SKU-FLOUR-BULK",
+          "barcode": null,
+          "name": "Wheat Flour Bulk",
+          "unit_price": "4.500000",
+          "tax_rate": null,
+          "tax_rate_id": null,
+          "is_tracked": true,
+          "available_quantity": "520.500000",
+          "base_unit": {
+            "id": "01JCV8X9MC6789ABCDEFGHJKMN",
+            "code": "KG",
+            "name": "Kilogram"
+          },
+          "default_unit": {
+            "unit_id": "01JCV8X9MC6789ABCDEFGHJKMN",
+            "product_unit_id": "01JCV8X9MC6789ABCDEFGHJKMN",
+            "conversion_to_base": "1.000000",
+            "sale_price": "4.500000"
+          },
+          "units": [
+            {
+              "product_unit_id": "01JCV8X9MC6789ABCDEFGHJKMN",
+              "unit_id": "01JCV8X9MC6789ABCDEFGHJKMN",
+              "code": "KG",
+              "name": "Kilogram",
+              "conversion_to_base": "1.000000",
+              "is_base": true,
+              "is_default_sale": true,
+              "sale_price": "4.500000"
+            }
+          ]
+        }
+      ]
+    },
+    "valid": false
+  },
+  {
+    "name": "product-catalog['products', 0, 'name'] max",
+    "schema": "product-catalog-response.json",
+    "instance": {
+      "company_id": "01JCV8X9M2NQW3TYZ4R5S6789A",
+      "catalog_snapshot_version": "snap-20261110-v1",
+      "generated_at": "2026-11-10T12:00:00Z",
+      "next_cursor": null,
+      "has_more": false,
+      "products": [
+        {
+          "id": "01JCV8X9M6A1B2C3D4E5F6G7H8",
+          "sku": "SKU-OLIVE-OIL-1L",
+          "barcode": "6291041001234",
+          "name": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+          "unit_price": "25.000000",
+          "tax_rate": null,
+          "tax_rate_id": null,
+          "is_tracked": true,
+          "available_quantity": "142.000000",
+          "base_unit": {
+            "id": "01JCV8X9MBV4W5X6Y7Z8012345",
+            "code": "BTL",
+            "name": "Bottle"
+          },
+          "default_unit": {
+            "unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+            "product_unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+            "conversion_to_base": "1.000000",
+            "sale_price": "25.000000"
+          },
+          "units": [
+            {
+              "product_unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+              "unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+              "code": "BTL",
+              "name": "Bottle",
+              "conversion_to_base": "1.000000",
+              "is_base": true,
+              "is_default_sale": true,
+              "sale_price": "25.000000"
+            }
+          ]
+        },
+        {
+          "id": "01JCV8X9M7J2K3M4N5P6Q7R8S9",
+          "sku": "SKU-FLOUR-BULK",
+          "barcode": null,
+          "name": "Wheat Flour Bulk",
+          "unit_price": "4.500000",
+          "tax_rate": null,
+          "tax_rate_id": null,
+          "is_tracked": true,
+          "available_quantity": "520.500000",
+          "base_unit": {
+            "id": "01JCV8X9MC6789ABCDEFGHJKMN",
+            "code": "KG",
+            "name": "Kilogram"
+          },
+          "default_unit": {
+            "unit_id": "01JCV8X9MC6789ABCDEFGHJKMN",
+            "product_unit_id": "01JCV8X9MC6789ABCDEFGHJKMN",
+            "conversion_to_base": "1.000000",
+            "sale_price": "4.500000"
+          },
+          "units": [
+            {
+              "product_unit_id": "01JCV8X9MC6789ABCDEFGHJKMN",
+              "unit_id": "01JCV8X9MC6789ABCDEFGHJKMN",
+              "code": "KG",
+              "name": "Kilogram",
+              "conversion_to_base": "1.000000",
+              "is_base": true,
+              "is_default_sale": true,
+              "sale_price": "4.500000"
+            }
+          ]
+        }
+      ]
+    },
+    "valid": true
+  },
+  {
+    "name": "product-catalog['products', 0, 'name'] over",
+    "schema": "product-catalog-response.json",
+    "instance": {
+      "company_id": "01JCV8X9M2NQW3TYZ4R5S6789A",
+      "catalog_snapshot_version": "snap-20261110-v1",
+      "generated_at": "2026-11-10T12:00:00Z",
+      "next_cursor": null,
+      "has_more": false,
+      "products": [
+        {
+          "id": "01JCV8X9M6A1B2C3D4E5F6G7H8",
+          "sku": "SKU-OLIVE-OIL-1L",
+          "barcode": "6291041001234",
+          "name": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+          "unit_price": "25.000000",
+          "tax_rate": null,
+          "tax_rate_id": null,
+          "is_tracked": true,
+          "available_quantity": "142.000000",
+          "base_unit": {
+            "id": "01JCV8X9MBV4W5X6Y7Z8012345",
+            "code": "BTL",
+            "name": "Bottle"
+          },
+          "default_unit": {
+            "unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+            "product_unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+            "conversion_to_base": "1.000000",
+            "sale_price": "25.000000"
+          },
+          "units": [
+            {
+              "product_unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+              "unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+              "code": "BTL",
+              "name": "Bottle",
+              "conversion_to_base": "1.000000",
+              "is_base": true,
+              "is_default_sale": true,
+              "sale_price": "25.000000"
+            }
+          ]
+        },
+        {
+          "id": "01JCV8X9M7J2K3M4N5P6Q7R8S9",
+          "sku": "SKU-FLOUR-BULK",
+          "barcode": null,
+          "name": "Wheat Flour Bulk",
+          "unit_price": "4.500000",
+          "tax_rate": null,
+          "tax_rate_id": null,
+          "is_tracked": true,
+          "available_quantity": "520.500000",
+          "base_unit": {
+            "id": "01JCV8X9MC6789ABCDEFGHJKMN",
+            "code": "KG",
+            "name": "Kilogram"
+          },
+          "default_unit": {
+            "unit_id": "01JCV8X9MC6789ABCDEFGHJKMN",
+            "product_unit_id": "01JCV8X9MC6789ABCDEFGHJKMN",
+            "conversion_to_base": "1.000000",
+            "sale_price": "4.500000"
+          },
+          "units": [
+            {
+              "product_unit_id": "01JCV8X9MC6789ABCDEFGHJKMN",
+              "unit_id": "01JCV8X9MC6789ABCDEFGHJKMN",
+              "code": "KG",
+              "name": "Kilogram",
+              "conversion_to_base": "1.000000",
+              "is_base": true,
+              "is_default_sale": true,
+              "sale_price": "4.500000"
+            }
+          ]
+        }
+      ]
+    },
+    "valid": false
+  },
+  {
+    "name": "product-catalog['products', 0, 'base_unit', 'code'] max",
+    "schema": "product-catalog-response.json",
+    "instance": {
+      "company_id": "01JCV8X9M2NQW3TYZ4R5S6789A",
+      "catalog_snapshot_version": "snap-20261110-v1",
+      "generated_at": "2026-11-10T12:00:00Z",
+      "next_cursor": null,
+      "has_more": false,
+      "products": [
+        {
+          "id": "01JCV8X9M6A1B2C3D4E5F6G7H8",
+          "sku": "SKU-OLIVE-OIL-1L",
+          "barcode": "6291041001234",
+          "name": "Extra Virgin Olive Oil 1L",
+          "unit_price": "25.000000",
+          "tax_rate": null,
+          "tax_rate_id": null,
+          "is_tracked": true,
+          "available_quantity": "142.000000",
+          "base_unit": {
+            "id": "01JCV8X9MBV4W5X6Y7Z8012345",
+            "code": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+            "name": "Bottle"
+          },
+          "default_unit": {
+            "unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+            "product_unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+            "conversion_to_base": "1.000000",
+            "sale_price": "25.000000"
+          },
+          "units": [
+            {
+              "product_unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+              "unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+              "code": "BTL",
+              "name": "Bottle",
+              "conversion_to_base": "1.000000",
+              "is_base": true,
+              "is_default_sale": true,
+              "sale_price": "25.000000"
+            }
+          ]
+        },
+        {
+          "id": "01JCV8X9M7J2K3M4N5P6Q7R8S9",
+          "sku": "SKU-FLOUR-BULK",
+          "barcode": null,
+          "name": "Wheat Flour Bulk",
+          "unit_price": "4.500000",
+          "tax_rate": null,
+          "tax_rate_id": null,
+          "is_tracked": true,
+          "available_quantity": "520.500000",
+          "base_unit": {
+            "id": "01JCV8X9MC6789ABCDEFGHJKMN",
+            "code": "KG",
+            "name": "Kilogram"
+          },
+          "default_unit": {
+            "unit_id": "01JCV8X9MC6789ABCDEFGHJKMN",
+            "product_unit_id": "01JCV8X9MC6789ABCDEFGHJKMN",
+            "conversion_to_base": "1.000000",
+            "sale_price": "4.500000"
+          },
+          "units": [
+            {
+              "product_unit_id": "01JCV8X9MC6789ABCDEFGHJKMN",
+              "unit_id": "01JCV8X9MC6789ABCDEFGHJKMN",
+              "code": "KG",
+              "name": "Kilogram",
+              "conversion_to_base": "1.000000",
+              "is_base": true,
+              "is_default_sale": true,
+              "sale_price": "4.500000"
+            }
+          ]
+        }
+      ]
+    },
+    "valid": true
+  },
+  {
+    "name": "product-catalog['products', 0, 'base_unit', 'code'] over",
+    "schema": "product-catalog-response.json",
+    "instance": {
+      "company_id": "01JCV8X9M2NQW3TYZ4R5S6789A",
+      "catalog_snapshot_version": "snap-20261110-v1",
+      "generated_at": "2026-11-10T12:00:00Z",
+      "next_cursor": null,
+      "has_more": false,
+      "products": [
+        {
+          "id": "01JCV8X9M6A1B2C3D4E5F6G7H8",
+          "sku": "SKU-OLIVE-OIL-1L",
+          "barcode": "6291041001234",
+          "name": "Extra Virgin Olive Oil 1L",
+          "unit_price": "25.000000",
+          "tax_rate": null,
+          "tax_rate_id": null,
+          "is_tracked": true,
+          "available_quantity": "142.000000",
+          "base_unit": {
+            "id": "01JCV8X9MBV4W5X6Y7Z8012345",
+            "code": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+            "name": "Bottle"
+          },
+          "default_unit": {
+            "unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+            "product_unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+            "conversion_to_base": "1.000000",
+            "sale_price": "25.000000"
+          },
+          "units": [
+            {
+              "product_unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+              "unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+              "code": "BTL",
+              "name": "Bottle",
+              "conversion_to_base": "1.000000",
+              "is_base": true,
+              "is_default_sale": true,
+              "sale_price": "25.000000"
+            }
+          ]
+        },
+        {
+          "id": "01JCV8X9M7J2K3M4N5P6Q7R8S9",
+          "sku": "SKU-FLOUR-BULK",
+          "barcode": null,
+          "name": "Wheat Flour Bulk",
+          "unit_price": "4.500000",
+          "tax_rate": null,
+          "tax_rate_id": null,
+          "is_tracked": true,
+          "available_quantity": "520.500000",
+          "base_unit": {
+            "id": "01JCV8X9MC6789ABCDEFGHJKMN",
+            "code": "KG",
+            "name": "Kilogram"
+          },
+          "default_unit": {
+            "unit_id": "01JCV8X9MC6789ABCDEFGHJKMN",
+            "product_unit_id": "01JCV8X9MC6789ABCDEFGHJKMN",
+            "conversion_to_base": "1.000000",
+            "sale_price": "4.500000"
+          },
+          "units": [
+            {
+              "product_unit_id": "01JCV8X9MC6789ABCDEFGHJKMN",
+              "unit_id": "01JCV8X9MC6789ABCDEFGHJKMN",
+              "code": "KG",
+              "name": "Kilogram",
+              "conversion_to_base": "1.000000",
+              "is_base": true,
+              "is_default_sale": true,
+              "sale_price": "4.500000"
+            }
+          ]
+        }
+      ]
+    },
+    "valid": false
+  },
+  {
+    "name": "product-catalog['products', 0, 'base_unit', 'name'] max",
+    "schema": "product-catalog-response.json",
+    "instance": {
+      "company_id": "01JCV8X9M2NQW3TYZ4R5S6789A",
+      "catalog_snapshot_version": "snap-20261110-v1",
+      "generated_at": "2026-11-10T12:00:00Z",
+      "next_cursor": null,
+      "has_more": false,
+      "products": [
+        {
+          "id": "01JCV8X9M6A1B2C3D4E5F6G7H8",
+          "sku": "SKU-OLIVE-OIL-1L",
+          "barcode": "6291041001234",
+          "name": "Extra Virgin Olive Oil 1L",
+          "unit_price": "25.000000",
+          "tax_rate": null,
+          "tax_rate_id": null,
+          "is_tracked": true,
+          "available_quantity": "142.000000",
+          "base_unit": {
+            "id": "01JCV8X9MBV4W5X6Y7Z8012345",
+            "code": "BTL",
+            "name": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+          },
+          "default_unit": {
+            "unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+            "product_unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+            "conversion_to_base": "1.000000",
+            "sale_price": "25.000000"
+          },
+          "units": [
+            {
+              "product_unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+              "unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+              "code": "BTL",
+              "name": "Bottle",
+              "conversion_to_base": "1.000000",
+              "is_base": true,
+              "is_default_sale": true,
+              "sale_price": "25.000000"
+            }
+          ]
+        },
+        {
+          "id": "01JCV8X9M7J2K3M4N5P6Q7R8S9",
+          "sku": "SKU-FLOUR-BULK",
+          "barcode": null,
+          "name": "Wheat Flour Bulk",
+          "unit_price": "4.500000",
+          "tax_rate": null,
+          "tax_rate_id": null,
+          "is_tracked": true,
+          "available_quantity": "520.500000",
+          "base_unit": {
+            "id": "01JCV8X9MC6789ABCDEFGHJKMN",
+            "code": "KG",
+            "name": "Kilogram"
+          },
+          "default_unit": {
+            "unit_id": "01JCV8X9MC6789ABCDEFGHJKMN",
+            "product_unit_id": "01JCV8X9MC6789ABCDEFGHJKMN",
+            "conversion_to_base": "1.000000",
+            "sale_price": "4.500000"
+          },
+          "units": [
+            {
+              "product_unit_id": "01JCV8X9MC6789ABCDEFGHJKMN",
+              "unit_id": "01JCV8X9MC6789ABCDEFGHJKMN",
+              "code": "KG",
+              "name": "Kilogram",
+              "conversion_to_base": "1.000000",
+              "is_base": true,
+              "is_default_sale": true,
+              "sale_price": "4.500000"
+            }
+          ]
+        }
+      ]
+    },
+    "valid": true
+  },
+  {
+    "name": "product-catalog['products', 0, 'base_unit', 'name'] over",
+    "schema": "product-catalog-response.json",
+    "instance": {
+      "company_id": "01JCV8X9M2NQW3TYZ4R5S6789A",
+      "catalog_snapshot_version": "snap-20261110-v1",
+      "generated_at": "2026-11-10T12:00:00Z",
+      "next_cursor": null,
+      "has_more": false,
+      "products": [
+        {
+          "id": "01JCV8X9M6A1B2C3D4E5F6G7H8",
+          "sku": "SKU-OLIVE-OIL-1L",
+          "barcode": "6291041001234",
+          "name": "Extra Virgin Olive Oil 1L",
+          "unit_price": "25.000000",
+          "tax_rate": null,
+          "tax_rate_id": null,
+          "is_tracked": true,
+          "available_quantity": "142.000000",
+          "base_unit": {
+            "id": "01JCV8X9MBV4W5X6Y7Z8012345",
+            "code": "BTL",
+            "name": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+          },
+          "default_unit": {
+            "unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+            "product_unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+            "conversion_to_base": "1.000000",
+            "sale_price": "25.000000"
+          },
+          "units": [
+            {
+              "product_unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+              "unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+              "code": "BTL",
+              "name": "Bottle",
+              "conversion_to_base": "1.000000",
+              "is_base": true,
+              "is_default_sale": true,
+              "sale_price": "25.000000"
+            }
+          ]
+        },
+        {
+          "id": "01JCV8X9M7J2K3M4N5P6Q7R8S9",
+          "sku": "SKU-FLOUR-BULK",
+          "barcode": null,
+          "name": "Wheat Flour Bulk",
+          "unit_price": "4.500000",
+          "tax_rate": null,
+          "tax_rate_id": null,
+          "is_tracked": true,
+          "available_quantity": "520.500000",
+          "base_unit": {
+            "id": "01JCV8X9MC6789ABCDEFGHJKMN",
+            "code": "KG",
+            "name": "Kilogram"
+          },
+          "default_unit": {
+            "unit_id": "01JCV8X9MC6789ABCDEFGHJKMN",
+            "product_unit_id": "01JCV8X9MC6789ABCDEFGHJKMN",
+            "conversion_to_base": "1.000000",
+            "sale_price": "4.500000"
+          },
+          "units": [
+            {
+              "product_unit_id": "01JCV8X9MC6789ABCDEFGHJKMN",
+              "unit_id": "01JCV8X9MC6789ABCDEFGHJKMN",
+              "code": "KG",
+              "name": "Kilogram",
+              "conversion_to_base": "1.000000",
+              "is_base": true,
+              "is_default_sale": true,
+              "sale_price": "4.500000"
+            }
+          ]
+        }
+      ]
+    },
+    "valid": false
+  },
+  {
+    "name": "product-catalog['products', 0, 'units', 0, 'code'] max",
+    "schema": "product-catalog-response.json",
+    "instance": {
+      "company_id": "01JCV8X9M2NQW3TYZ4R5S6789A",
+      "catalog_snapshot_version": "snap-20261110-v1",
+      "generated_at": "2026-11-10T12:00:00Z",
+      "next_cursor": null,
+      "has_more": false,
+      "products": [
+        {
+          "id": "01JCV8X9M6A1B2C3D4E5F6G7H8",
+          "sku": "SKU-OLIVE-OIL-1L",
+          "barcode": "6291041001234",
+          "name": "Extra Virgin Olive Oil 1L",
+          "unit_price": "25.000000",
+          "tax_rate": null,
+          "tax_rate_id": null,
+          "is_tracked": true,
+          "available_quantity": "142.000000",
+          "base_unit": {
+            "id": "01JCV8X9MBV4W5X6Y7Z8012345",
+            "code": "BTL",
+            "name": "Bottle"
+          },
+          "default_unit": {
+            "unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+            "product_unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+            "conversion_to_base": "1.000000",
+            "sale_price": "25.000000"
+          },
+          "units": [
+            {
+              "product_unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+              "unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+              "code": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+              "name": "Bottle",
+              "conversion_to_base": "1.000000",
+              "is_base": true,
+              "is_default_sale": true,
+              "sale_price": "25.000000"
+            }
+          ]
+        },
+        {
+          "id": "01JCV8X9M7J2K3M4N5P6Q7R8S9",
+          "sku": "SKU-FLOUR-BULK",
+          "barcode": null,
+          "name": "Wheat Flour Bulk",
+          "unit_price": "4.500000",
+          "tax_rate": null,
+          "tax_rate_id": null,
+          "is_tracked": true,
+          "available_quantity": "520.500000",
+          "base_unit": {
+            "id": "01JCV8X9MC6789ABCDEFGHJKMN",
+            "code": "KG",
+            "name": "Kilogram"
+          },
+          "default_unit": {
+            "unit_id": "01JCV8X9MC6789ABCDEFGHJKMN",
+            "product_unit_id": "01JCV8X9MC6789ABCDEFGHJKMN",
+            "conversion_to_base": "1.000000",
+            "sale_price": "4.500000"
+          },
+          "units": [
+            {
+              "product_unit_id": "01JCV8X9MC6789ABCDEFGHJKMN",
+              "unit_id": "01JCV8X9MC6789ABCDEFGHJKMN",
+              "code": "KG",
+              "name": "Kilogram",
+              "conversion_to_base": "1.000000",
+              "is_base": true,
+              "is_default_sale": true,
+              "sale_price": "4.500000"
+            }
+          ]
+        }
+      ]
+    },
+    "valid": true
+  },
+  {
+    "name": "product-catalog['products', 0, 'units', 0, 'code'] over",
+    "schema": "product-catalog-response.json",
+    "instance": {
+      "company_id": "01JCV8X9M2NQW3TYZ4R5S6789A",
+      "catalog_snapshot_version": "snap-20261110-v1",
+      "generated_at": "2026-11-10T12:00:00Z",
+      "next_cursor": null,
+      "has_more": false,
+      "products": [
+        {
+          "id": "01JCV8X9M6A1B2C3D4E5F6G7H8",
+          "sku": "SKU-OLIVE-OIL-1L",
+          "barcode": "6291041001234",
+          "name": "Extra Virgin Olive Oil 1L",
+          "unit_price": "25.000000",
+          "tax_rate": null,
+          "tax_rate_id": null,
+          "is_tracked": true,
+          "available_quantity": "142.000000",
+          "base_unit": {
+            "id": "01JCV8X9MBV4W5X6Y7Z8012345",
+            "code": "BTL",
+            "name": "Bottle"
+          },
+          "default_unit": {
+            "unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+            "product_unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+            "conversion_to_base": "1.000000",
+            "sale_price": "25.000000"
+          },
+          "units": [
+            {
+              "product_unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+              "unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+              "code": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+              "name": "Bottle",
+              "conversion_to_base": "1.000000",
+              "is_base": true,
+              "is_default_sale": true,
+              "sale_price": "25.000000"
+            }
+          ]
+        },
+        {
+          "id": "01JCV8X9M7J2K3M4N5P6Q7R8S9",
+          "sku": "SKU-FLOUR-BULK",
+          "barcode": null,
+          "name": "Wheat Flour Bulk",
+          "unit_price": "4.500000",
+          "tax_rate": null,
+          "tax_rate_id": null,
+          "is_tracked": true,
+          "available_quantity": "520.500000",
+          "base_unit": {
+            "id": "01JCV8X9MC6789ABCDEFGHJKMN",
+            "code": "KG",
+            "name": "Kilogram"
+          },
+          "default_unit": {
+            "unit_id": "01JCV8X9MC6789ABCDEFGHJKMN",
+            "product_unit_id": "01JCV8X9MC6789ABCDEFGHJKMN",
+            "conversion_to_base": "1.000000",
+            "sale_price": "4.500000"
+          },
+          "units": [
+            {
+              "product_unit_id": "01JCV8X9MC6789ABCDEFGHJKMN",
+              "unit_id": "01JCV8X9MC6789ABCDEFGHJKMN",
+              "code": "KG",
+              "name": "Kilogram",
+              "conversion_to_base": "1.000000",
+              "is_base": true,
+              "is_default_sale": true,
+              "sale_price": "4.500000"
+            }
+          ]
+        }
+      ]
+    },
+    "valid": false
+  },
+  {
+    "name": "product-catalog['products', 0, 'units', 0, 'name'] max",
+    "schema": "product-catalog-response.json",
+    "instance": {
+      "company_id": "01JCV8X9M2NQW3TYZ4R5S6789A",
+      "catalog_snapshot_version": "snap-20261110-v1",
+      "generated_at": "2026-11-10T12:00:00Z",
+      "next_cursor": null,
+      "has_more": false,
+      "products": [
+        {
+          "id": "01JCV8X9M6A1B2C3D4E5F6G7H8",
+          "sku": "SKU-OLIVE-OIL-1L",
+          "barcode": "6291041001234",
+          "name": "Extra Virgin Olive Oil 1L",
+          "unit_price": "25.000000",
+          "tax_rate": null,
+          "tax_rate_id": null,
+          "is_tracked": true,
+          "available_quantity": "142.000000",
+          "base_unit": {
+            "id": "01JCV8X9MBV4W5X6Y7Z8012345",
+            "code": "BTL",
+            "name": "Bottle"
+          },
+          "default_unit": {
+            "unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+            "product_unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+            "conversion_to_base": "1.000000",
+            "sale_price": "25.000000"
+          },
+          "units": [
+            {
+              "product_unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+              "unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+              "code": "BTL",
+              "name": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+              "conversion_to_base": "1.000000",
+              "is_base": true,
+              "is_default_sale": true,
+              "sale_price": "25.000000"
+            }
+          ]
+        },
+        {
+          "id": "01JCV8X9M7J2K3M4N5P6Q7R8S9",
+          "sku": "SKU-FLOUR-BULK",
+          "barcode": null,
+          "name": "Wheat Flour Bulk",
+          "unit_price": "4.500000",
+          "tax_rate": null,
+          "tax_rate_id": null,
+          "is_tracked": true,
+          "available_quantity": "520.500000",
+          "base_unit": {
+            "id": "01JCV8X9MC6789ABCDEFGHJKMN",
+            "code": "KG",
+            "name": "Kilogram"
+          },
+          "default_unit": {
+            "unit_id": "01JCV8X9MC6789ABCDEFGHJKMN",
+            "product_unit_id": "01JCV8X9MC6789ABCDEFGHJKMN",
+            "conversion_to_base": "1.000000",
+            "sale_price": "4.500000"
+          },
+          "units": [
+            {
+              "product_unit_id": "01JCV8X9MC6789ABCDEFGHJKMN",
+              "unit_id": "01JCV8X9MC6789ABCDEFGHJKMN",
+              "code": "KG",
+              "name": "Kilogram",
+              "conversion_to_base": "1.000000",
+              "is_base": true,
+              "is_default_sale": true,
+              "sale_price": "4.500000"
+            }
+          ]
+        }
+      ]
+    },
+    "valid": true
+  },
+  {
+    "name": "product-catalog['products', 0, 'units', 0, 'name'] over",
+    "schema": "product-catalog-response.json",
+    "instance": {
+      "company_id": "01JCV8X9M2NQW3TYZ4R5S6789A",
+      "catalog_snapshot_version": "snap-20261110-v1",
+      "generated_at": "2026-11-10T12:00:00Z",
+      "next_cursor": null,
+      "has_more": false,
+      "products": [
+        {
+          "id": "01JCV8X9M6A1B2C3D4E5F6G7H8",
+          "sku": "SKU-OLIVE-OIL-1L",
+          "barcode": "6291041001234",
+          "name": "Extra Virgin Olive Oil 1L",
+          "unit_price": "25.000000",
+          "tax_rate": null,
+          "tax_rate_id": null,
+          "is_tracked": true,
+          "available_quantity": "142.000000",
+          "base_unit": {
+            "id": "01JCV8X9MBV4W5X6Y7Z8012345",
+            "code": "BTL",
+            "name": "Bottle"
+          },
+          "default_unit": {
+            "unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+            "product_unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+            "conversion_to_base": "1.000000",
+            "sale_price": "25.000000"
+          },
+          "units": [
+            {
+              "product_unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+              "unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+              "code": "BTL",
+              "name": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+              "conversion_to_base": "1.000000",
+              "is_base": true,
+              "is_default_sale": true,
+              "sale_price": "25.000000"
+            }
+          ]
+        },
+        {
+          "id": "01JCV8X9M7J2K3M4N5P6Q7R8S9",
+          "sku": "SKU-FLOUR-BULK",
+          "barcode": null,
+          "name": "Wheat Flour Bulk",
+          "unit_price": "4.500000",
+          "tax_rate": null,
+          "tax_rate_id": null,
+          "is_tracked": true,
+          "available_quantity": "520.500000",
+          "base_unit": {
+            "id": "01JCV8X9MC6789ABCDEFGHJKMN",
+            "code": "KG",
+            "name": "Kilogram"
+          },
+          "default_unit": {
+            "unit_id": "01JCV8X9MC6789ABCDEFGHJKMN",
+            "product_unit_id": "01JCV8X9MC6789ABCDEFGHJKMN",
+            "conversion_to_base": "1.000000",
+            "sale_price": "4.500000"
+          },
+          "units": [
+            {
+              "product_unit_id": "01JCV8X9MC6789ABCDEFGHJKMN",
+              "unit_id": "01JCV8X9MC6789ABCDEFGHJKMN",
+              "code": "KG",
+              "name": "Kilogram",
+              "conversion_to_base": "1.000000",
+              "is_base": true,
+              "is_default_sale": true,
+              "sale_price": "4.500000"
+            }
+          ]
+        }
+      ]
+    },
+    "valid": false
+  },
+  {
+    "name": "product-catalog['products', 1, 'sku'] max",
+    "schema": "product-catalog-response.json",
+    "instance": {
+      "company_id": "01JCV8X9M2NQW3TYZ4R5S6789A",
+      "catalog_snapshot_version": "snap-20261110-v1",
+      "generated_at": "2026-11-10T12:00:00Z",
+      "next_cursor": null,
+      "has_more": false,
+      "products": [
+        {
+          "id": "01JCV8X9M6A1B2C3D4E5F6G7H8",
+          "sku": "SKU-OLIVE-OIL-1L",
+          "barcode": "6291041001234",
+          "name": "Extra Virgin Olive Oil 1L",
+          "unit_price": "25.000000",
+          "tax_rate": null,
+          "tax_rate_id": null,
+          "is_tracked": true,
+          "available_quantity": "142.000000",
+          "base_unit": {
+            "id": "01JCV8X9MBV4W5X6Y7Z8012345",
+            "code": "BTL",
+            "name": "Bottle"
+          },
+          "default_unit": {
+            "unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+            "product_unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+            "conversion_to_base": "1.000000",
+            "sale_price": "25.000000"
+          },
+          "units": [
+            {
+              "product_unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+              "unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+              "code": "BTL",
+              "name": "Bottle",
+              "conversion_to_base": "1.000000",
+              "is_base": true,
+              "is_default_sale": true,
+              "sale_price": "25.000000"
+            }
+          ]
+        },
+        {
+          "id": "01JCV8X9M7J2K3M4N5P6Q7R8S9",
+          "sku": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+          "barcode": null,
+          "name": "Wheat Flour Bulk",
+          "unit_price": "4.500000",
+          "tax_rate": null,
+          "tax_rate_id": null,
+          "is_tracked": true,
+          "available_quantity": "520.500000",
+          "base_unit": {
+            "id": "01JCV8X9MC6789ABCDEFGHJKMN",
+            "code": "KG",
+            "name": "Kilogram"
+          },
+          "default_unit": {
+            "unit_id": "01JCV8X9MC6789ABCDEFGHJKMN",
+            "product_unit_id": "01JCV8X9MC6789ABCDEFGHJKMN",
+            "conversion_to_base": "1.000000",
+            "sale_price": "4.500000"
+          },
+          "units": [
+            {
+              "product_unit_id": "01JCV8X9MC6789ABCDEFGHJKMN",
+              "unit_id": "01JCV8X9MC6789ABCDEFGHJKMN",
+              "code": "KG",
+              "name": "Kilogram",
+              "conversion_to_base": "1.000000",
+              "is_base": true,
+              "is_default_sale": true,
+              "sale_price": "4.500000"
+            }
+          ]
+        }
+      ]
+    },
+    "valid": true
+  },
+  {
+    "name": "product-catalog['products', 1, 'sku'] over",
+    "schema": "product-catalog-response.json",
+    "instance": {
+      "company_id": "01JCV8X9M2NQW3TYZ4R5S6789A",
+      "catalog_snapshot_version": "snap-20261110-v1",
+      "generated_at": "2026-11-10T12:00:00Z",
+      "next_cursor": null,
+      "has_more": false,
+      "products": [
+        {
+          "id": "01JCV8X9M6A1B2C3D4E5F6G7H8",
+          "sku": "SKU-OLIVE-OIL-1L",
+          "barcode": "6291041001234",
+          "name": "Extra Virgin Olive Oil 1L",
+          "unit_price": "25.000000",
+          "tax_rate": null,
+          "tax_rate_id": null,
+          "is_tracked": true,
+          "available_quantity": "142.000000",
+          "base_unit": {
+            "id": "01JCV8X9MBV4W5X6Y7Z8012345",
+            "code": "BTL",
+            "name": "Bottle"
+          },
+          "default_unit": {
+            "unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+            "product_unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+            "conversion_to_base": "1.000000",
+            "sale_price": "25.000000"
+          },
+          "units": [
+            {
+              "product_unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+              "unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+              "code": "BTL",
+              "name": "Bottle",
+              "conversion_to_base": "1.000000",
+              "is_base": true,
+              "is_default_sale": true,
+              "sale_price": "25.000000"
+            }
+          ]
+        },
+        {
+          "id": "01JCV8X9M7J2K3M4N5P6Q7R8S9",
+          "sku": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+          "barcode": null,
+          "name": "Wheat Flour Bulk",
+          "unit_price": "4.500000",
+          "tax_rate": null,
+          "tax_rate_id": null,
+          "is_tracked": true,
+          "available_quantity": "520.500000",
+          "base_unit": {
+            "id": "01JCV8X9MC6789ABCDEFGHJKMN",
+            "code": "KG",
+            "name": "Kilogram"
+          },
+          "default_unit": {
+            "unit_id": "01JCV8X9MC6789ABCDEFGHJKMN",
+            "product_unit_id": "01JCV8X9MC6789ABCDEFGHJKMN",
+            "conversion_to_base": "1.000000",
+            "sale_price": "4.500000"
+          },
+          "units": [
+            {
+              "product_unit_id": "01JCV8X9MC6789ABCDEFGHJKMN",
+              "unit_id": "01JCV8X9MC6789ABCDEFGHJKMN",
+              "code": "KG",
+              "name": "Kilogram",
+              "conversion_to_base": "1.000000",
+              "is_base": true,
+              "is_default_sale": true,
+              "sale_price": "4.500000"
+            }
+          ]
+        }
+      ]
+    },
+    "valid": false
+  },
+  {
+    "name": "product-catalog['products', 1, 'name'] max",
+    "schema": "product-catalog-response.json",
+    "instance": {
+      "company_id": "01JCV8X9M2NQW3TYZ4R5S6789A",
+      "catalog_snapshot_version": "snap-20261110-v1",
+      "generated_at": "2026-11-10T12:00:00Z",
+      "next_cursor": null,
+      "has_more": false,
+      "products": [
+        {
+          "id": "01JCV8X9M6A1B2C3D4E5F6G7H8",
+          "sku": "SKU-OLIVE-OIL-1L",
+          "barcode": "6291041001234",
+          "name": "Extra Virgin Olive Oil 1L",
+          "unit_price": "25.000000",
+          "tax_rate": null,
+          "tax_rate_id": null,
+          "is_tracked": true,
+          "available_quantity": "142.000000",
+          "base_unit": {
+            "id": "01JCV8X9MBV4W5X6Y7Z8012345",
+            "code": "BTL",
+            "name": "Bottle"
+          },
+          "default_unit": {
+            "unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+            "product_unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+            "conversion_to_base": "1.000000",
+            "sale_price": "25.000000"
+          },
+          "units": [
+            {
+              "product_unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+              "unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+              "code": "BTL",
+              "name": "Bottle",
+              "conversion_to_base": "1.000000",
+              "is_base": true,
+              "is_default_sale": true,
+              "sale_price": "25.000000"
+            }
+          ]
+        },
+        {
+          "id": "01JCV8X9M7J2K3M4N5P6Q7R8S9",
+          "sku": "SKU-FLOUR-BULK",
+          "barcode": null,
+          "name": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+          "unit_price": "4.500000",
+          "tax_rate": null,
+          "tax_rate_id": null,
+          "is_tracked": true,
+          "available_quantity": "520.500000",
+          "base_unit": {
+            "id": "01JCV8X9MC6789ABCDEFGHJKMN",
+            "code": "KG",
+            "name": "Kilogram"
+          },
+          "default_unit": {
+            "unit_id": "01JCV8X9MC6789ABCDEFGHJKMN",
+            "product_unit_id": "01JCV8X9MC6789ABCDEFGHJKMN",
+            "conversion_to_base": "1.000000",
+            "sale_price": "4.500000"
+          },
+          "units": [
+            {
+              "product_unit_id": "01JCV8X9MC6789ABCDEFGHJKMN",
+              "unit_id": "01JCV8X9MC6789ABCDEFGHJKMN",
+              "code": "KG",
+              "name": "Kilogram",
+              "conversion_to_base": "1.000000",
+              "is_base": true,
+              "is_default_sale": true,
+              "sale_price": "4.500000"
+            }
+          ]
+        }
+      ]
+    },
+    "valid": true
+  },
+  {
+    "name": "product-catalog['products', 1, 'name'] over",
+    "schema": "product-catalog-response.json",
+    "instance": {
+      "company_id": "01JCV8X9M2NQW3TYZ4R5S6789A",
+      "catalog_snapshot_version": "snap-20261110-v1",
+      "generated_at": "2026-11-10T12:00:00Z",
+      "next_cursor": null,
+      "has_more": false,
+      "products": [
+        {
+          "id": "01JCV8X9M6A1B2C3D4E5F6G7H8",
+          "sku": "SKU-OLIVE-OIL-1L",
+          "barcode": "6291041001234",
+          "name": "Extra Virgin Olive Oil 1L",
+          "unit_price": "25.000000",
+          "tax_rate": null,
+          "tax_rate_id": null,
+          "is_tracked": true,
+          "available_quantity": "142.000000",
+          "base_unit": {
+            "id": "01JCV8X9MBV4W5X6Y7Z8012345",
+            "code": "BTL",
+            "name": "Bottle"
+          },
+          "default_unit": {
+            "unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+            "product_unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+            "conversion_to_base": "1.000000",
+            "sale_price": "25.000000"
+          },
+          "units": [
+            {
+              "product_unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+              "unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+              "code": "BTL",
+              "name": "Bottle",
+              "conversion_to_base": "1.000000",
+              "is_base": true,
+              "is_default_sale": true,
+              "sale_price": "25.000000"
+            }
+          ]
+        },
+        {
+          "id": "01JCV8X9M7J2K3M4N5P6Q7R8S9",
+          "sku": "SKU-FLOUR-BULK",
+          "barcode": null,
+          "name": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+          "unit_price": "4.500000",
+          "tax_rate": null,
+          "tax_rate_id": null,
+          "is_tracked": true,
+          "available_quantity": "520.500000",
+          "base_unit": {
+            "id": "01JCV8X9MC6789ABCDEFGHJKMN",
+            "code": "KG",
+            "name": "Kilogram"
+          },
+          "default_unit": {
+            "unit_id": "01JCV8X9MC6789ABCDEFGHJKMN",
+            "product_unit_id": "01JCV8X9MC6789ABCDEFGHJKMN",
+            "conversion_to_base": "1.000000",
+            "sale_price": "4.500000"
+          },
+          "units": [
+            {
+              "product_unit_id": "01JCV8X9MC6789ABCDEFGHJKMN",
+              "unit_id": "01JCV8X9MC6789ABCDEFGHJKMN",
+              "code": "KG",
+              "name": "Kilogram",
+              "conversion_to_base": "1.000000",
+              "is_base": true,
+              "is_default_sale": true,
+              "sale_price": "4.500000"
+            }
+          ]
+        }
+      ]
+    },
+    "valid": false
+  },
+  {
+    "name": "product-catalog['products', 1, 'base_unit', 'code'] max",
+    "schema": "product-catalog-response.json",
+    "instance": {
+      "company_id": "01JCV8X9M2NQW3TYZ4R5S6789A",
+      "catalog_snapshot_version": "snap-20261110-v1",
+      "generated_at": "2026-11-10T12:00:00Z",
+      "next_cursor": null,
+      "has_more": false,
+      "products": [
+        {
+          "id": "01JCV8X9M6A1B2C3D4E5F6G7H8",
+          "sku": "SKU-OLIVE-OIL-1L",
+          "barcode": "6291041001234",
+          "name": "Extra Virgin Olive Oil 1L",
+          "unit_price": "25.000000",
+          "tax_rate": null,
+          "tax_rate_id": null,
+          "is_tracked": true,
+          "available_quantity": "142.000000",
+          "base_unit": {
+            "id": "01JCV8X9MBV4W5X6Y7Z8012345",
+            "code": "BTL",
+            "name": "Bottle"
+          },
+          "default_unit": {
+            "unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+            "product_unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+            "conversion_to_base": "1.000000",
+            "sale_price": "25.000000"
+          },
+          "units": [
+            {
+              "product_unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+              "unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+              "code": "BTL",
+              "name": "Bottle",
+              "conversion_to_base": "1.000000",
+              "is_base": true,
+              "is_default_sale": true,
+              "sale_price": "25.000000"
+            }
+          ]
+        },
+        {
+          "id": "01JCV8X9M7J2K3M4N5P6Q7R8S9",
+          "sku": "SKU-FLOUR-BULK",
+          "barcode": null,
+          "name": "Wheat Flour Bulk",
+          "unit_price": "4.500000",
+          "tax_rate": null,
+          "tax_rate_id": null,
+          "is_tracked": true,
+          "available_quantity": "520.500000",
+          "base_unit": {
+            "id": "01JCV8X9MC6789ABCDEFGHJKMN",
+            "code": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+            "name": "Kilogram"
+          },
+          "default_unit": {
+            "unit_id": "01JCV8X9MC6789ABCDEFGHJKMN",
+            "product_unit_id": "01JCV8X9MC6789ABCDEFGHJKMN",
+            "conversion_to_base": "1.000000",
+            "sale_price": "4.500000"
+          },
+          "units": [
+            {
+              "product_unit_id": "01JCV8X9MC6789ABCDEFGHJKMN",
+              "unit_id": "01JCV8X9MC6789ABCDEFGHJKMN",
+              "code": "KG",
+              "name": "Kilogram",
+              "conversion_to_base": "1.000000",
+              "is_base": true,
+              "is_default_sale": true,
+              "sale_price": "4.500000"
+            }
+          ]
+        }
+      ]
+    },
+    "valid": true
+  },
+  {
+    "name": "product-catalog['products', 1, 'base_unit', 'code'] over",
+    "schema": "product-catalog-response.json",
+    "instance": {
+      "company_id": "01JCV8X9M2NQW3TYZ4R5S6789A",
+      "catalog_snapshot_version": "snap-20261110-v1",
+      "generated_at": "2026-11-10T12:00:00Z",
+      "next_cursor": null,
+      "has_more": false,
+      "products": [
+        {
+          "id": "01JCV8X9M6A1B2C3D4E5F6G7H8",
+          "sku": "SKU-OLIVE-OIL-1L",
+          "barcode": "6291041001234",
+          "name": "Extra Virgin Olive Oil 1L",
+          "unit_price": "25.000000",
+          "tax_rate": null,
+          "tax_rate_id": null,
+          "is_tracked": true,
+          "available_quantity": "142.000000",
+          "base_unit": {
+            "id": "01JCV8X9MBV4W5X6Y7Z8012345",
+            "code": "BTL",
+            "name": "Bottle"
+          },
+          "default_unit": {
+            "unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+            "product_unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+            "conversion_to_base": "1.000000",
+            "sale_price": "25.000000"
+          },
+          "units": [
+            {
+              "product_unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+              "unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+              "code": "BTL",
+              "name": "Bottle",
+              "conversion_to_base": "1.000000",
+              "is_base": true,
+              "is_default_sale": true,
+              "sale_price": "25.000000"
+            }
+          ]
+        },
+        {
+          "id": "01JCV8X9M7J2K3M4N5P6Q7R8S9",
+          "sku": "SKU-FLOUR-BULK",
+          "barcode": null,
+          "name": "Wheat Flour Bulk",
+          "unit_price": "4.500000",
+          "tax_rate": null,
+          "tax_rate_id": null,
+          "is_tracked": true,
+          "available_quantity": "520.500000",
+          "base_unit": {
+            "id": "01JCV8X9MC6789ABCDEFGHJKMN",
+            "code": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+            "name": "Kilogram"
+          },
+          "default_unit": {
+            "unit_id": "01JCV8X9MC6789ABCDEFGHJKMN",
+            "product_unit_id": "01JCV8X9MC6789ABCDEFGHJKMN",
+            "conversion_to_base": "1.000000",
+            "sale_price": "4.500000"
+          },
+          "units": [
+            {
+              "product_unit_id": "01JCV8X9MC6789ABCDEFGHJKMN",
+              "unit_id": "01JCV8X9MC6789ABCDEFGHJKMN",
+              "code": "KG",
+              "name": "Kilogram",
+              "conversion_to_base": "1.000000",
+              "is_base": true,
+              "is_default_sale": true,
+              "sale_price": "4.500000"
+            }
+          ]
+        }
+      ]
+    },
+    "valid": false
+  },
+  {
+    "name": "product-catalog['products', 1, 'base_unit', 'name'] max",
+    "schema": "product-catalog-response.json",
+    "instance": {
+      "company_id": "01JCV8X9M2NQW3TYZ4R5S6789A",
+      "catalog_snapshot_version": "snap-20261110-v1",
+      "generated_at": "2026-11-10T12:00:00Z",
+      "next_cursor": null,
+      "has_more": false,
+      "products": [
+        {
+          "id": "01JCV8X9M6A1B2C3D4E5F6G7H8",
+          "sku": "SKU-OLIVE-OIL-1L",
+          "barcode": "6291041001234",
+          "name": "Extra Virgin Olive Oil 1L",
+          "unit_price": "25.000000",
+          "tax_rate": null,
+          "tax_rate_id": null,
+          "is_tracked": true,
+          "available_quantity": "142.000000",
+          "base_unit": {
+            "id": "01JCV8X9MBV4W5X6Y7Z8012345",
+            "code": "BTL",
+            "name": "Bottle"
+          },
+          "default_unit": {
+            "unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+            "product_unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+            "conversion_to_base": "1.000000",
+            "sale_price": "25.000000"
+          },
+          "units": [
+            {
+              "product_unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+              "unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+              "code": "BTL",
+              "name": "Bottle",
+              "conversion_to_base": "1.000000",
+              "is_base": true,
+              "is_default_sale": true,
+              "sale_price": "25.000000"
+            }
+          ]
+        },
+        {
+          "id": "01JCV8X9M7J2K3M4N5P6Q7R8S9",
+          "sku": "SKU-FLOUR-BULK",
+          "barcode": null,
+          "name": "Wheat Flour Bulk",
+          "unit_price": "4.500000",
+          "tax_rate": null,
+          "tax_rate_id": null,
+          "is_tracked": true,
+          "available_quantity": "520.500000",
+          "base_unit": {
+            "id": "01JCV8X9MC6789ABCDEFGHJKMN",
+            "code": "KG",
+            "name": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+          },
+          "default_unit": {
+            "unit_id": "01JCV8X9MC6789ABCDEFGHJKMN",
+            "product_unit_id": "01JCV8X9MC6789ABCDEFGHJKMN",
+            "conversion_to_base": "1.000000",
+            "sale_price": "4.500000"
+          },
+          "units": [
+            {
+              "product_unit_id": "01JCV8X9MC6789ABCDEFGHJKMN",
+              "unit_id": "01JCV8X9MC6789ABCDEFGHJKMN",
+              "code": "KG",
+              "name": "Kilogram",
+              "conversion_to_base": "1.000000",
+              "is_base": true,
+              "is_default_sale": true,
+              "sale_price": "4.500000"
+            }
+          ]
+        }
+      ]
+    },
+    "valid": true
+  },
+  {
+    "name": "product-catalog['products', 1, 'base_unit', 'name'] over",
+    "schema": "product-catalog-response.json",
+    "instance": {
+      "company_id": "01JCV8X9M2NQW3TYZ4R5S6789A",
+      "catalog_snapshot_version": "snap-20261110-v1",
+      "generated_at": "2026-11-10T12:00:00Z",
+      "next_cursor": null,
+      "has_more": false,
+      "products": [
+        {
+          "id": "01JCV8X9M6A1B2C3D4E5F6G7H8",
+          "sku": "SKU-OLIVE-OIL-1L",
+          "barcode": "6291041001234",
+          "name": "Extra Virgin Olive Oil 1L",
+          "unit_price": "25.000000",
+          "tax_rate": null,
+          "tax_rate_id": null,
+          "is_tracked": true,
+          "available_quantity": "142.000000",
+          "base_unit": {
+            "id": "01JCV8X9MBV4W5X6Y7Z8012345",
+            "code": "BTL",
+            "name": "Bottle"
+          },
+          "default_unit": {
+            "unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+            "product_unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+            "conversion_to_base": "1.000000",
+            "sale_price": "25.000000"
+          },
+          "units": [
+            {
+              "product_unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+              "unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+              "code": "BTL",
+              "name": "Bottle",
+              "conversion_to_base": "1.000000",
+              "is_base": true,
+              "is_default_sale": true,
+              "sale_price": "25.000000"
+            }
+          ]
+        },
+        {
+          "id": "01JCV8X9M7J2K3M4N5P6Q7R8S9",
+          "sku": "SKU-FLOUR-BULK",
+          "barcode": null,
+          "name": "Wheat Flour Bulk",
+          "unit_price": "4.500000",
+          "tax_rate": null,
+          "tax_rate_id": null,
+          "is_tracked": true,
+          "available_quantity": "520.500000",
+          "base_unit": {
+            "id": "01JCV8X9MC6789ABCDEFGHJKMN",
+            "code": "KG",
+            "name": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+          },
+          "default_unit": {
+            "unit_id": "01JCV8X9MC6789ABCDEFGHJKMN",
+            "product_unit_id": "01JCV8X9MC6789ABCDEFGHJKMN",
+            "conversion_to_base": "1.000000",
+            "sale_price": "4.500000"
+          },
+          "units": [
+            {
+              "product_unit_id": "01JCV8X9MC6789ABCDEFGHJKMN",
+              "unit_id": "01JCV8X9MC6789ABCDEFGHJKMN",
+              "code": "KG",
+              "name": "Kilogram",
+              "conversion_to_base": "1.000000",
+              "is_base": true,
+              "is_default_sale": true,
+              "sale_price": "4.500000"
+            }
+          ]
+        }
+      ]
+    },
+    "valid": false
+  },
+  {
+    "name": "product-catalog['products', 1, 'units', 0, 'code'] max",
+    "schema": "product-catalog-response.json",
+    "instance": {
+      "company_id": "01JCV8X9M2NQW3TYZ4R5S6789A",
+      "catalog_snapshot_version": "snap-20261110-v1",
+      "generated_at": "2026-11-10T12:00:00Z",
+      "next_cursor": null,
+      "has_more": false,
+      "products": [
+        {
+          "id": "01JCV8X9M6A1B2C3D4E5F6G7H8",
+          "sku": "SKU-OLIVE-OIL-1L",
+          "barcode": "6291041001234",
+          "name": "Extra Virgin Olive Oil 1L",
+          "unit_price": "25.000000",
+          "tax_rate": null,
+          "tax_rate_id": null,
+          "is_tracked": true,
+          "available_quantity": "142.000000",
+          "base_unit": {
+            "id": "01JCV8X9MBV4W5X6Y7Z8012345",
+            "code": "BTL",
+            "name": "Bottle"
+          },
+          "default_unit": {
+            "unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+            "product_unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+            "conversion_to_base": "1.000000",
+            "sale_price": "25.000000"
+          },
+          "units": [
+            {
+              "product_unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+              "unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+              "code": "BTL",
+              "name": "Bottle",
+              "conversion_to_base": "1.000000",
+              "is_base": true,
+              "is_default_sale": true,
+              "sale_price": "25.000000"
+            }
+          ]
+        },
+        {
+          "id": "01JCV8X9M7J2K3M4N5P6Q7R8S9",
+          "sku": "SKU-FLOUR-BULK",
+          "barcode": null,
+          "name": "Wheat Flour Bulk",
+          "unit_price": "4.500000",
+          "tax_rate": null,
+          "tax_rate_id": null,
+          "is_tracked": true,
+          "available_quantity": "520.500000",
+          "base_unit": {
+            "id": "01JCV8X9MC6789ABCDEFGHJKMN",
+            "code": "KG",
+            "name": "Kilogram"
+          },
+          "default_unit": {
+            "unit_id": "01JCV8X9MC6789ABCDEFGHJKMN",
+            "product_unit_id": "01JCV8X9MC6789ABCDEFGHJKMN",
+            "conversion_to_base": "1.000000",
+            "sale_price": "4.500000"
+          },
+          "units": [
+            {
+              "product_unit_id": "01JCV8X9MC6789ABCDEFGHJKMN",
+              "unit_id": "01JCV8X9MC6789ABCDEFGHJKMN",
+              "code": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+              "name": "Kilogram",
+              "conversion_to_base": "1.000000",
+              "is_base": true,
+              "is_default_sale": true,
+              "sale_price": "4.500000"
+            }
+          ]
+        }
+      ]
+    },
+    "valid": true
+  },
+  {
+    "name": "product-catalog['products', 1, 'units', 0, 'code'] over",
+    "schema": "product-catalog-response.json",
+    "instance": {
+      "company_id": "01JCV8X9M2NQW3TYZ4R5S6789A",
+      "catalog_snapshot_version": "snap-20261110-v1",
+      "generated_at": "2026-11-10T12:00:00Z",
+      "next_cursor": null,
+      "has_more": false,
+      "products": [
+        {
+          "id": "01JCV8X9M6A1B2C3D4E5F6G7H8",
+          "sku": "SKU-OLIVE-OIL-1L",
+          "barcode": "6291041001234",
+          "name": "Extra Virgin Olive Oil 1L",
+          "unit_price": "25.000000",
+          "tax_rate": null,
+          "tax_rate_id": null,
+          "is_tracked": true,
+          "available_quantity": "142.000000",
+          "base_unit": {
+            "id": "01JCV8X9MBV4W5X6Y7Z8012345",
+            "code": "BTL",
+            "name": "Bottle"
+          },
+          "default_unit": {
+            "unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+            "product_unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+            "conversion_to_base": "1.000000",
+            "sale_price": "25.000000"
+          },
+          "units": [
+            {
+              "product_unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+              "unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+              "code": "BTL",
+              "name": "Bottle",
+              "conversion_to_base": "1.000000",
+              "is_base": true,
+              "is_default_sale": true,
+              "sale_price": "25.000000"
+            }
+          ]
+        },
+        {
+          "id": "01JCV8X9M7J2K3M4N5P6Q7R8S9",
+          "sku": "SKU-FLOUR-BULK",
+          "barcode": null,
+          "name": "Wheat Flour Bulk",
+          "unit_price": "4.500000",
+          "tax_rate": null,
+          "tax_rate_id": null,
+          "is_tracked": true,
+          "available_quantity": "520.500000",
+          "base_unit": {
+            "id": "01JCV8X9MC6789ABCDEFGHJKMN",
+            "code": "KG",
+            "name": "Kilogram"
+          },
+          "default_unit": {
+            "unit_id": "01JCV8X9MC6789ABCDEFGHJKMN",
+            "product_unit_id": "01JCV8X9MC6789ABCDEFGHJKMN",
+            "conversion_to_base": "1.000000",
+            "sale_price": "4.500000"
+          },
+          "units": [
+            {
+              "product_unit_id": "01JCV8X9MC6789ABCDEFGHJKMN",
+              "unit_id": "01JCV8X9MC6789ABCDEFGHJKMN",
+              "code": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+              "name": "Kilogram",
+              "conversion_to_base": "1.000000",
+              "is_base": true,
+              "is_default_sale": true,
+              "sale_price": "4.500000"
+            }
+          ]
+        }
+      ]
+    },
+    "valid": false
+  },
+  {
+    "name": "product-catalog['products', 1, 'units', 0, 'name'] max",
+    "schema": "product-catalog-response.json",
+    "instance": {
+      "company_id": "01JCV8X9M2NQW3TYZ4R5S6789A",
+      "catalog_snapshot_version": "snap-20261110-v1",
+      "generated_at": "2026-11-10T12:00:00Z",
+      "next_cursor": null,
+      "has_more": false,
+      "products": [
+        {
+          "id": "01JCV8X9M6A1B2C3D4E5F6G7H8",
+          "sku": "SKU-OLIVE-OIL-1L",
+          "barcode": "6291041001234",
+          "name": "Extra Virgin Olive Oil 1L",
+          "unit_price": "25.000000",
+          "tax_rate": null,
+          "tax_rate_id": null,
+          "is_tracked": true,
+          "available_quantity": "142.000000",
+          "base_unit": {
+            "id": "01JCV8X9MBV4W5X6Y7Z8012345",
+            "code": "BTL",
+            "name": "Bottle"
+          },
+          "default_unit": {
+            "unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+            "product_unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+            "conversion_to_base": "1.000000",
+            "sale_price": "25.000000"
+          },
+          "units": [
+            {
+              "product_unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+              "unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+              "code": "BTL",
+              "name": "Bottle",
+              "conversion_to_base": "1.000000",
+              "is_base": true,
+              "is_default_sale": true,
+              "sale_price": "25.000000"
+            }
+          ]
+        },
+        {
+          "id": "01JCV8X9M7J2K3M4N5P6Q7R8S9",
+          "sku": "SKU-FLOUR-BULK",
+          "barcode": null,
+          "name": "Wheat Flour Bulk",
+          "unit_price": "4.500000",
+          "tax_rate": null,
+          "tax_rate_id": null,
+          "is_tracked": true,
+          "available_quantity": "520.500000",
+          "base_unit": {
+            "id": "01JCV8X9MC6789ABCDEFGHJKMN",
+            "code": "KG",
+            "name": "Kilogram"
+          },
+          "default_unit": {
+            "unit_id": "01JCV8X9MC6789ABCDEFGHJKMN",
+            "product_unit_id": "01JCV8X9MC6789ABCDEFGHJKMN",
+            "conversion_to_base": "1.000000",
+            "sale_price": "4.500000"
+          },
+          "units": [
+            {
+              "product_unit_id": "01JCV8X9MC6789ABCDEFGHJKMN",
+              "unit_id": "01JCV8X9MC6789ABCDEFGHJKMN",
+              "code": "KG",
+              "name": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+              "conversion_to_base": "1.000000",
+              "is_base": true,
+              "is_default_sale": true,
+              "sale_price": "4.500000"
+            }
+          ]
+        }
+      ]
+    },
+    "valid": true
+  },
+  {
+    "name": "product-catalog['products', 1, 'units', 0, 'name'] over",
+    "schema": "product-catalog-response.json",
+    "instance": {
+      "company_id": "01JCV8X9M2NQW3TYZ4R5S6789A",
+      "catalog_snapshot_version": "snap-20261110-v1",
+      "generated_at": "2026-11-10T12:00:00Z",
+      "next_cursor": null,
+      "has_more": false,
+      "products": [
+        {
+          "id": "01JCV8X9M6A1B2C3D4E5F6G7H8",
+          "sku": "SKU-OLIVE-OIL-1L",
+          "barcode": "6291041001234",
+          "name": "Extra Virgin Olive Oil 1L",
+          "unit_price": "25.000000",
+          "tax_rate": null,
+          "tax_rate_id": null,
+          "is_tracked": true,
+          "available_quantity": "142.000000",
+          "base_unit": {
+            "id": "01JCV8X9MBV4W5X6Y7Z8012345",
+            "code": "BTL",
+            "name": "Bottle"
+          },
+          "default_unit": {
+            "unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+            "product_unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+            "conversion_to_base": "1.000000",
+            "sale_price": "25.000000"
+          },
+          "units": [
+            {
+              "product_unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+              "unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+              "code": "BTL",
+              "name": "Bottle",
+              "conversion_to_base": "1.000000",
+              "is_base": true,
+              "is_default_sale": true,
+              "sale_price": "25.000000"
+            }
+          ]
+        },
+        {
+          "id": "01JCV8X9M7J2K3M4N5P6Q7R8S9",
+          "sku": "SKU-FLOUR-BULK",
+          "barcode": null,
+          "name": "Wheat Flour Bulk",
+          "unit_price": "4.500000",
+          "tax_rate": null,
+          "tax_rate_id": null,
+          "is_tracked": true,
+          "available_quantity": "520.500000",
+          "base_unit": {
+            "id": "01JCV8X9MC6789ABCDEFGHJKMN",
+            "code": "KG",
+            "name": "Kilogram"
+          },
+          "default_unit": {
+            "unit_id": "01JCV8X9MC6789ABCDEFGHJKMN",
+            "product_unit_id": "01JCV8X9MC6789ABCDEFGHJKMN",
+            "conversion_to_base": "1.000000",
+            "sale_price": "4.500000"
+          },
+          "units": [
+            {
+              "product_unit_id": "01JCV8X9MC6789ABCDEFGHJKMN",
+              "unit_id": "01JCV8X9MC6789ABCDEFGHJKMN",
+              "code": "KG",
+              "name": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+              "conversion_to_base": "1.000000",
+              "is_base": true,
+              "is_default_sale": true,
+              "sale_price": "4.500000"
+            }
+          ]
+        }
+      ]
+    },
+    "valid": false
+  },
+  {
+    "name": "customer-directory['customers', 0, 'code'] max",
+    "schema": "customer-directory-response.json",
+    "instance": {
+      "company_id": "01JCV8X9M2NQW3TYZ4R5S6789A",
+      "generated_at": "2026-11-10T12:00:00Z",
+      "next_cursor": null,
+      "has_more": false,
+      "customers": [
+        {
+          "id": "01JCV8X9M4K1P2Q3R4S5T6V7W8",
+          "code": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+          "name": "Walk-in Customer / عميل نقدي",
+          "phone": null,
+          "is_walk_in": true
+        },
+        {
+          "id": "01JCV8X9M5T2V3V4W5X6Y7Z890",
+          "code": "CUST-00102",
+          "name": "Tariq Supermarket",
+          "phone": "+970599123456",
+          "is_walk_in": false
+        }
+      ]
+    },
+    "valid": true
+  },
+  {
+    "name": "customer-directory['customers', 0, 'code'] over",
+    "schema": "customer-directory-response.json",
+    "instance": {
+      "company_id": "01JCV8X9M2NQW3TYZ4R5S6789A",
+      "generated_at": "2026-11-10T12:00:00Z",
+      "next_cursor": null,
+      "has_more": false,
+      "customers": [
+        {
+          "id": "01JCV8X9M4K1P2Q3R4S5T6V7W8",
+          "code": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+          "name": "Walk-in Customer / عميل نقدي",
+          "phone": null,
+          "is_walk_in": true
+        },
+        {
+          "id": "01JCV8X9M5T2V3V4W5X6Y7Z890",
+          "code": "CUST-00102",
+          "name": "Tariq Supermarket",
+          "phone": "+970599123456",
+          "is_walk_in": false
+        }
+      ]
+    },
+    "valid": false
+  },
+  {
+    "name": "customer-directory['customers', 0, 'name'] max",
+    "schema": "customer-directory-response.json",
+    "instance": {
+      "company_id": "01JCV8X9M2NQW3TYZ4R5S6789A",
+      "generated_at": "2026-11-10T12:00:00Z",
+      "next_cursor": null,
+      "has_more": false,
+      "customers": [
+        {
+          "id": "01JCV8X9M4K1P2Q3R4S5T6V7W8",
+          "code": "CUST-WALK-IN",
+          "name": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+          "phone": null,
+          "is_walk_in": true
+        },
+        {
+          "id": "01JCV8X9M5T2V3V4W5X6Y7Z890",
+          "code": "CUST-00102",
+          "name": "Tariq Supermarket",
+          "phone": "+970599123456",
+          "is_walk_in": false
+        }
+      ]
+    },
+    "valid": true
+  },
+  {
+    "name": "customer-directory['customers', 0, 'name'] over",
+    "schema": "customer-directory-response.json",
+    "instance": {
+      "company_id": "01JCV8X9M2NQW3TYZ4R5S6789A",
+      "generated_at": "2026-11-10T12:00:00Z",
+      "next_cursor": null,
+      "has_more": false,
+      "customers": [
+        {
+          "id": "01JCV8X9M4K1P2Q3R4S5T6V7W8",
+          "code": "CUST-WALK-IN",
+          "name": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+          "phone": null,
+          "is_walk_in": true
+        },
+        {
+          "id": "01JCV8X9M5T2V3V4W5X6Y7Z890",
+          "code": "CUST-00102",
+          "name": "Tariq Supermarket",
+          "phone": "+970599123456",
+          "is_walk_in": false
+        }
+      ]
+    },
+    "valid": false
+  },
+  {
+    "name": "customer-directory['customers', 1, 'code'] max",
+    "schema": "customer-directory-response.json",
+    "instance": {
+      "company_id": "01JCV8X9M2NQW3TYZ4R5S6789A",
+      "generated_at": "2026-11-10T12:00:00Z",
+      "next_cursor": null,
+      "has_more": false,
+      "customers": [
+        {
+          "id": "01JCV8X9M4K1P2Q3R4S5T6V7W8",
+          "code": "CUST-WALK-IN",
+          "name": "Walk-in Customer / عميل نقدي",
+          "phone": null,
+          "is_walk_in": true
+        },
+        {
+          "id": "01JCV8X9M5T2V3V4W5X6Y7Z890",
+          "code": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+          "name": "Tariq Supermarket",
+          "phone": "+970599123456",
+          "is_walk_in": false
+        }
+      ]
+    },
+    "valid": true
+  },
+  {
+    "name": "customer-directory['customers', 1, 'code'] over",
+    "schema": "customer-directory-response.json",
+    "instance": {
+      "company_id": "01JCV8X9M2NQW3TYZ4R5S6789A",
+      "generated_at": "2026-11-10T12:00:00Z",
+      "next_cursor": null,
+      "has_more": false,
+      "customers": [
+        {
+          "id": "01JCV8X9M4K1P2Q3R4S5T6V7W8",
+          "code": "CUST-WALK-IN",
+          "name": "Walk-in Customer / عميل نقدي",
+          "phone": null,
+          "is_walk_in": true
+        },
+        {
+          "id": "01JCV8X9M5T2V3V4W5X6Y7Z890",
+          "code": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+          "name": "Tariq Supermarket",
+          "phone": "+970599123456",
+          "is_walk_in": false
+        }
+      ]
+    },
+    "valid": false
+  },
+  {
+    "name": "customer-directory['customers', 1, 'name'] max",
+    "schema": "customer-directory-response.json",
+    "instance": {
+      "company_id": "01JCV8X9M2NQW3TYZ4R5S6789A",
+      "generated_at": "2026-11-10T12:00:00Z",
+      "next_cursor": null,
+      "has_more": false,
+      "customers": [
+        {
+          "id": "01JCV8X9M4K1P2Q3R4S5T6V7W8",
+          "code": "CUST-WALK-IN",
+          "name": "Walk-in Customer / عميل نقدي",
+          "phone": null,
+          "is_walk_in": true
+        },
+        {
+          "id": "01JCV8X9M5T2V3V4W5X6Y7Z890",
+          "code": "CUST-00102",
+          "name": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+          "phone": "+970599123456",
+          "is_walk_in": false
+        }
+      ]
+    },
+    "valid": true
+  },
+  {
+    "name": "customer-directory['customers', 1, 'name'] over",
+    "schema": "customer-directory-response.json",
+    "instance": {
+      "company_id": "01JCV8X9M2NQW3TYZ4R5S6789A",
+      "generated_at": "2026-11-10T12:00:00Z",
+      "next_cursor": null,
+      "has_more": false,
+      "customers": [
+        {
+          "id": "01JCV8X9M4K1P2Q3R4S5T6V7W8",
+          "code": "CUST-WALK-IN",
+          "name": "Walk-in Customer / عميل نقدي",
+          "phone": null,
+          "is_walk_in": true
+        },
+        {
+          "id": "01JCV8X9M5T2V3V4W5X6Y7Z890",
+          "code": "CUST-00102",
+          "name": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+          "phone": "+970599123456",
+          "is_walk_in": false
+        }
+      ]
+    },
+    "valid": false
+  },
+  {
+    "name": "customer-directory['customers', 1, 'phone'] max",
+    "schema": "customer-directory-response.json",
+    "instance": {
+      "company_id": "01JCV8X9M2NQW3TYZ4R5S6789A",
+      "generated_at": "2026-11-10T12:00:00Z",
+      "next_cursor": null,
+      "has_more": false,
+      "customers": [
+        {
+          "id": "01JCV8X9M4K1P2Q3R4S5T6V7W8",
+          "code": "CUST-WALK-IN",
+          "name": "Walk-in Customer / عميل نقدي",
+          "phone": null,
+          "is_walk_in": true
+        },
+        {
+          "id": "01JCV8X9M5T2V3V4W5X6Y7Z890",
+          "code": "CUST-00102",
+          "name": "Tariq Supermarket",
+          "phone": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+          "is_walk_in": false
+        }
+      ]
+    },
+    "valid": true
+  },
+  {
+    "name": "customer-directory['customers', 1, 'phone'] over",
+    "schema": "customer-directory-response.json",
+    "instance": {
+      "company_id": "01JCV8X9M2NQW3TYZ4R5S6789A",
+      "generated_at": "2026-11-10T12:00:00Z",
+      "next_cursor": null,
+      "has_more": false,
+      "customers": [
+        {
+          "id": "01JCV8X9M4K1P2Q3R4S5T6V7W8",
+          "code": "CUST-WALK-IN",
+          "name": "Walk-in Customer / عميل نقدي",
+          "phone": null,
+          "is_walk_in": true
+        },
+        {
+          "id": "01JCV8X9M5T2V3V4W5X6Y7Z890",
+          "code": "CUST-00102",
+          "name": "Tariq Supermarket",
+          "phone": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+          "is_walk_in": false
+        }
+      ]
+    },
+    "valid": false
+  },
+  {
+    "name": "auth-login['actor', 'name'] max",
+    "schema": "auth-login-response.json",
+    "instance": {
+      "token": "sanctum_1092837465_mobile_token_982347109238471092384710",
+      "token_type": "Bearer",
+      "expires_at": "2026-11-17T12:00:00Z",
+      "actor": {
+        "id": "01JCV8X9M8T1V2W3X4Y5Z67890",
+        "name": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+        "email": "cashier@smalltrader.example",
+        "role": "cashier",
+        "password_epoch": "epoch-20261101-v1"
+      },
+      "companies": [
+        {
+          "id": "01JCV8X9M2NQW3TYZ4R5S6789A",
+          "name": "Al-Amal Retail Company",
+          "base_currency": "ILS",
+          "is_default": true
+        }
+      ]
+    },
+    "valid": true
+  },
+  {
+    "name": "auth-login['actor', 'name'] over",
+    "schema": "auth-login-response.json",
+    "instance": {
+      "token": "sanctum_1092837465_mobile_token_982347109238471092384710",
+      "token_type": "Bearer",
+      "expires_at": "2026-11-17T12:00:00Z",
+      "actor": {
+        "id": "01JCV8X9M8T1V2W3X4Y5Z67890",
+        "name": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+        "email": "cashier@smalltrader.example",
+        "role": "cashier",
+        "password_epoch": "epoch-20261101-v1"
+      },
+      "companies": [
+        {
+          "id": "01JCV8X9M2NQW3TYZ4R5S6789A",
+          "name": "Al-Amal Retail Company",
+          "base_currency": "ILS",
+          "is_default": true
+        }
+      ]
+    },
+    "valid": false
+  },
+  {
+    "name": "auth-login['actor', 'role'] max",
+    "schema": "auth-login-response.json",
+    "instance": {
+      "token": "sanctum_1092837465_mobile_token_982347109238471092384710",
+      "token_type": "Bearer",
+      "expires_at": "2026-11-17T12:00:00Z",
+      "actor": {
+        "id": "01JCV8X9M8T1V2W3X4Y5Z67890",
+        "name": "Ahmad Cashier",
+        "email": "cashier@smalltrader.example",
+        "role": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+        "password_epoch": "epoch-20261101-v1"
+      },
+      "companies": [
+        {
+          "id": "01JCV8X9M2NQW3TYZ4R5S6789A",
+          "name": "Al-Amal Retail Company",
+          "base_currency": "ILS",
+          "is_default": true
+        }
+      ]
+    },
+    "valid": true
+  },
+  {
+    "name": "auth-login['actor', 'role'] over",
+    "schema": "auth-login-response.json",
+    "instance": {
+      "token": "sanctum_1092837465_mobile_token_982347109238471092384710",
+      "token_type": "Bearer",
+      "expires_at": "2026-11-17T12:00:00Z",
+      "actor": {
+        "id": "01JCV8X9M8T1V2W3X4Y5Z67890",
+        "name": "Ahmad Cashier",
+        "email": "cashier@smalltrader.example",
+        "role": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+        "password_epoch": "epoch-20261101-v1"
+      },
+      "companies": [
+        {
+          "id": "01JCV8X9M2NQW3TYZ4R5S6789A",
+          "name": "Al-Amal Retail Company",
+          "base_currency": "ILS",
+          "is_default": true
+        }
+      ]
+    },
+    "valid": false
+  },
+  {
+    "name": "auth-login['companies', 0, 'name'] max",
+    "schema": "auth-login-response.json",
+    "instance": {
+      "token": "sanctum_1092837465_mobile_token_982347109238471092384710",
+      "token_type": "Bearer",
+      "expires_at": "2026-11-17T12:00:00Z",
+      "actor": {
+        "id": "01JCV8X9M8T1V2W3X4Y5Z67890",
+        "name": "Ahmad Cashier",
+        "email": "cashier@smalltrader.example",
+        "role": "cashier",
+        "password_epoch": "epoch-20261101-v1"
+      },
+      "companies": [
+        {
+          "id": "01JCV8X9M2NQW3TYZ4R5S6789A",
+          "name": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+          "base_currency": "ILS",
+          "is_default": true
+        }
+      ]
+    },
+    "valid": true
+  },
+  {
+    "name": "auth-login['companies', 0, 'name'] over",
+    "schema": "auth-login-response.json",
+    "instance": {
+      "token": "sanctum_1092837465_mobile_token_982347109238471092384710",
+      "token_type": "Bearer",
+      "expires_at": "2026-11-17T12:00:00Z",
+      "actor": {
+        "id": "01JCV8X9M8T1V2W3X4Y5Z67890",
+        "name": "Ahmad Cashier",
+        "email": "cashier@smalltrader.example",
+        "role": "cashier",
+        "password_epoch": "epoch-20261101-v1"
+      },
+      "companies": [
+        {
+          "id": "01JCV8X9M2NQW3TYZ4R5S6789A",
+          "name": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+          "base_currency": "ILS",
+          "is_default": true
+        }
+      ]
+    },
+    "valid": false
+  },
+  {
+    "name": "economic trailing newline rejected without schema mutation",
+    "schema": "offline-sale-intake-request.json",
+    "instance": {
+      "client_event_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+      "device_id": "8e2b8bc6-f80c-4034-8c88-59368d1f2e10",
+      "captured_at": "2026-11-10T12:00:00Z",
+      "payload_digest": "sha256:d442ce49a7609a9a42bb5165990d481d1c7c563cb8030403487099a9919728d9",
+      "event": {
+        "client_event_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+        "event_version": 1,
+        "company_id": "01JCV8X9M2NQW3TYZ4R5S6789A",
+        "actor_id": "01JCV8X9M8T1V2W3X4Y5Z67890",
+        "device_id": "8e2b8bc6-f80c-4034-8c88-59368d1f2e10",
+        "device_lease_id": "7c1e5a2b-3d4f-5678-90ab-cdef12345678",
+        "captured_at": "2026-11-10T12:00:00Z",
+        "customer_id": "01JCV8X9M4K1P2Q3R4S5T6V7W8",
+        "currency": "ILS",
+        "warehouse_id": "01JCV8X9M9A2B3C4D5E6F7G8H9",
+        "cash_account_id": "01JCV8X9MAJ3K4M5N6P7Q8R9S0",
+        "catalog_snapshot_version": "snap-20261110-v1",
+        "local_receipt_number": "REC-OFF-00042",
+        "lines": [
+          {
+            "product_id": "01JCV8X9M6A1B2C3D4E5F6G7H8",
+            "product_unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+            "unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+            "quantity": "2.000000",
+            "unit_price": "25.000000\n",
+            "tax_rate": "16.000000",
+            "tax_amount": "8.000000",
+            "line_total": "58.000000"
+          }
+        ],
+        "payment": {
+          "mode": "full",
+          "payment_method": "cash",
+          "cash_account_id": "01JCV8X9MAJ3K4M5N6P7Q8R9S0",
+          "amount_tendered": "100.000000",
+          "amount_settled": "58.000000",
+          "change_returned": "42.000000"
+        }
+      }
+    },
+    "valid": false
+  }
+]
