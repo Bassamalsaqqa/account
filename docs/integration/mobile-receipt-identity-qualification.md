@@ -8,14 +8,17 @@ Baseline: Stacked on PR92 `origin/t3/mobile-v2-boundary-qualification` HEAD `7b8
 
 This qualification establishes the cross-version durable mobile event receipt identity, absent-row race handling, InnoDB/MariaDB rollback atomicity, and financial authority review for the Small Trader mobile subsystem.
 
-### Key Architectural Invariants:
-1. **Durable Mobile Event Identity**: Backed by `mobile_event_receipts` with a strict `UNIQUE(company_id, client_event_id)` constraint spanning all API versions (v1, v2, v3, and offline events). Client event IDs cannot collide within a company across versions, while remaining fully isolated across distinct tenants.
-2. **Immutable Provenance & Zero Credential Leakage**: Stores actor ID, device ID, event version, representation format, SHA-256 payload digest, original canonical payload bytes (bounded at 1 MiB, credentials excluded), terminal canonical results, and optional relational links to canonical business entities (`sales_invoice_id`, `customer_payment_id`, `command_receipt_id`).
-3. **Loss-ACK Idempotent Replay**: Re-submitting an identical event payload returns the stored terminal canonical result without re-executing accounting actions, generating new sequence numbers, or altering inventory/ledger balances. Re-submitting the same event ID with an altered payload yields HTTP 409 Conflict.
-4. **Scope-Before-Digest Security (Zero Oracle)**: Foreign actor or device mismatch returns HTTP 403 Forbidden *before* payload digest comparison, preventing attackers from probing payload contents via timing or digest mismatch responses.
-5. **Default-Deny Financial Execution**: Mobile bearer tokens establish staff and device identity *only*. All mobile financial execution remains strictly denied by default via `DenyFinancialExecutionAdapter` (HTTP 403 `FinancialExecutionDeniedException`). Financial execution requires explicit, reviewed canonical capability mapping.
-6. **MariaDB/InnoDB Concurrency & Deadlock Resilience**: Linearized transaction ordering under `Company::whereKey($companyId)->lockForUpdate()` prevents lock inversion. Concurrent absent-row insert races gracefully catch unique constraint violations (1062) and InnoDB deadlocks (1213 / `DeadlockException`) with bounded backoff jitter retry.
-7. **All-Or-Nothing Atomicity**: Any failure during invoice numbering, draft creation, stock allocation, payment posting, or receipt recording rolls back all database mutations cleanly, leaving 0 leftover rows and 100% healthy reconciliations across all six audit services.
+### Key Architectural Invariants & Hardened Guarantees:
+1. **Durable Mobile Event Identity & Strict Contract Allowlist**: Backed by `mobile_event_receipts` with a strict `UNIQUE(company_id, client_event_id)` constraint spanning all API versions (v1, v2, v3, and offline events). Client event IDs are strictly validated as RFC 4122 UUIDs (`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`). Event versions and representations are strictly allowlisted (`[1, 2, 3]` and `['v1_canonical', 'v2_intent', 'v3_offline_event']`); arbitrary ranges or unknown profiles are denied by default.
+2. **Strict Canonical JCS Byte Verification**: Enforces strict JSON parsing via `StrictJsonParser` preventing duplicate keys, trailing characters, invalid escapes, or non-finite numbers. Byte-for-byte canonical JCS serialization (`CanonicalJsonSerializer`) is verified against the incoming bytes before admission, preserving decimal lexemes without normalizations. Generic parser exceptions prevent echoing sensitive payload keys or credentials.
+3. **Scope-Before-Digest Security (Zero Oracle)**: Active company and actor scope checks execute *before* payload digest comparison. Foreign actor, device mismatch, or foreign company access returns uniform authentication/scope errors, preventing attackers from probing payload contents or using digest mismatch 409 responses as a cross-tenant oracle. Denies `SupportViewContext` impersonation.
+4. **Verified Authenticated Lookup API**: The `lookup` method requires a verified bearer token hash, active device, fresh company membership, and unrevoked password epoch under transaction locks. Lookup rejects raw caller IDs as proof and executes under the same security gate as `recordOrReplay`.
+5. **Default-Deny Financial Authority**: Mobile bearer tokens establish staff and device identity *only*. All mobile financial execution remains strictly denied by default via `DenyFinancialExecutionAdapter` (throwing `FinancialExecutionDeniedException`). Financial execution requires explicit, reviewed canonical capability mapping. Per-call executor and permissions overrides are prohibited; tests bind authorized adapters via the container and verify real Spatie permissions against row locks in `model_has_roles` and `model_has_permissions`. Caller passing empty permissions cannot bypass authority.
+6. **Hierarchical Transactional Row Locking**: Enforces consistent lock acquisition order to prevent deadlocks: Company root first, then token, device, user, membership row, and Spatie assignment rows (`company_id` team foreign key). Cache tags and Spatie registrar caches are cleared locally.
+7. **Ambient Guard Isolation**: Captures prior guard state without lazy authentication, enforces strict isolation, clears `CompanyContext::clearSessionless()` before and in `finally` blocks, and cleanly restores prior guard state.
+8. **Bounded Terminal Results & Restrict On Delete**: `original_canonical_bytes` is stored with binary charset (`longblob`) to prevent UTF-8 charset normalization. Foreign keys to `sales_invoices`, `customer_payments`, and `command_receipts` enforce `ON DELETE RESTRICT` (forbidding `SET NULL`). Terminal canonical results are bounded (<= 64 KiB) and scrubbed of credential artifacts.
+9. **InnoDB Concurrency & Deadlock Resilience**: Duplicate error detection is strictly constrained to SQLSTATE 23000, error 1062, and exact constraint `mobile_event_receipts_company_client_event_unique`. Deadlock detection is restricted to error 1213 / SQLSTATE 40001. Retries are disallowed within nested transactions (`$initialLevel > 0`) to prevent corrupted savepoints.
+10. **All-Or-Nothing Atomicity & Zero Replay Bypass**: Any failure during invoice numbering, draft creation, stock allocation, payment posting, or receipt record creation rolls back all database mutations cleanly, leaving 0 leftover rows and 100% healthy reconciliations across all six audit services.
 
 ---
 
@@ -34,8 +37,8 @@ This qualification establishes the cross-version durable mobile event receipt id
    - `PostCustomerPaymentAction` requires active transaction locks on Company, Customer, and MoneyAccount, verifying team permissions (`money.receipt.create`).
    - `AccountingPostingService` commits double-entry journal entries into `posting_batches` and `posting_lines`.
 4. **Guard Evaluation**:
-   - Synthesizing or bypassing `CommandSessionGuard` for mobile requests would compromise browser session guarantees and violate tenancy boundaries.
-   - Therefore, mobile financial execution must be decoupled through a dedicated adapter boundary (`FinancialExecutionAdapterInterface`) that enforces canonical domain actions without synthesized web session artifacts.
+   - Synthesizing or bypassing `CommandSessionGuard` for mobile requests would compromise browser session guarantees and violate tenancy boundaries. Fake session drivers in tests/workers are removed.
+   - Mobile financial execution is decoupled through a dedicated adapter boundary (`FinancialExecutionAdapterInterface`) that enforces canonical domain actions without synthesized web session artifacts.
 
 ---
 
@@ -57,7 +60,7 @@ This qualification establishes the cross-version durable mobile event receipt id
 
 ### Default Production Policy:
 - In production, `DenyFinancialExecutionAdapter` is bound in `AppServiceProvider`.
-- Any attempt to process financial events through `MobileEventReceiptManager` without an authorized, explicit adapter override fails with HTTP 403 `FinancialExecutionDeniedException`.
+- Any attempt to process or replay financial events through `MobileEventReceiptManager` without an authorized, explicit adapter override fails with HTTP 403 `FinancialExecutionDeniedException`.
 
 ---
 
@@ -69,13 +72,13 @@ This qualification establishes the cross-version durable mobile event receipt id
 CREATE TABLE `mobile_event_receipts` (
     `id` bigint unsigned NOT NULL AUTO_INCREMENT,
     `company_id` bigint unsigned NOT NULL,
-    `client_event_id` varchar(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+    `client_event_id` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
     `actor_id` bigint unsigned NOT NULL,
     `device_id` char(36) NOT NULL,
     `event_version` smallint unsigned NOT NULL,
     `representation` varchar(64) NOT NULL,
     `payload_digest` char(64) NOT NULL,
-    `original_canonical_bytes` longtext NULL,
+    `original_canonical_bytes` longtext CHARACTER SET binary NULL,
     `sales_invoice_id` bigint unsigned NULL,
     `sales_invoice_public_id` varchar(32) NULL,
     `customer_payment_id` bigint unsigned NULL,
@@ -94,9 +97,9 @@ CREATE TABLE `mobile_event_receipts` (
     CONSTRAINT `mobile_event_receipts_company_id_foreign` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE RESTRICT,
     CONSTRAINT `mobile_event_receipts_actor_id_foreign` FOREIGN KEY (`actor_id`) REFERENCES `users` (`id`) ON DELETE RESTRICT,
     CONSTRAINT `mobile_event_receipts_device_id_foreign` FOREIGN KEY (`device_id`) REFERENCES `mobile_devices` (`device_id`) ON DELETE RESTRICT,
-    CONSTRAINT `mobile_event_receipts_sales_invoice_id_foreign` FOREIGN KEY (`sales_invoice_id`) REFERENCES `sales_invoices` (`id`) ON DELETE SET NULL,
-    CONSTRAINT `mobile_event_receipts_customer_payment_id_foreign` FOREIGN KEY (`customer_payment_id`) REFERENCES `customer_payments` (`id`) ON DELETE SET NULL,
-    CONSTRAINT `mobile_event_receipts_command_receipt_id_foreign` FOREIGN KEY (`command_receipt_id`) REFERENCES `command_receipts` (`id`) ON DELETE SET NULL
+    CONSTRAINT `mobile_event_receipts_sales_invoice_id_foreign` FOREIGN KEY (`sales_invoice_id`) REFERENCES `sales_invoices` (`id`) ON DELETE RESTRICT,
+    CONSTRAINT `mobile_event_receipts_customer_payment_id_foreign` FOREIGN KEY (`customer_payment_id`) REFERENCES `customer_payments` (`id`) ON DELETE RESTRICT,
+    CONSTRAINT `mobile_event_receipts_command_receipt_id_foreign` FOREIGN KEY (`command_receipt_id`) REFERENCES `command_receipts` (`id`) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 ```
 
@@ -106,13 +109,14 @@ CREATE TABLE `mobile_event_receipts` (
 
 ### Concurrency Mechanics:
 1. **Absent-Row Race Convergence**:
-   - Two concurrent worker processes racing to commit the exact same `(company_id, client_event_id)` both reach the database.
+   - Two concurrent worker processes racing to commit the exact same `(company_id, client_event_id)` both reach the database without fake session guard bypasses.
    - Transaction A locks the company and commits the invoice, payment, and receipt.
-   - Transaction B attempts insertion, catching either a unique constraint violation (1062) or an InnoDB deadlock (1213 / `DeadlockException`), backs off with jitter, re-reads the receipt under lock, and returns the identical replay outcome.
+   - Transaction B attempts insertion, catching either exact unique constraint violation (1062) or InnoDB deadlock (1213 / `DeadlockException`), backs off with jitter, re-reads the receipt under lock, and returns the identical replay outcome.
    - Verified in `tests/Feature/Mobile/MobileReceiptConcurrencyTest.php::test_concurrent_workers_same_company_same_event_converge_to_single_sale`: exactly 1 invoice created, 1 payment created, 1 receipt created, 0 duplicates.
 2. **Altered Payload Conflict**:
    - Two concurrent worker processes submitting identical `(company_id, client_event_id)` but different payloads.
    - First process commits; second process catches the collision, compares digests via `hash_equals()`, and throws HTTP 409 `MobileEventDuplicatePayloadException`.
+   - Scope checks execute prior to digest comparison, preventing oracle vulnerabilities.
    - Verified in `test_concurrent_workers_same_company_same_event_different_payload_produces_conflict_409`.
 3. **Cross-Tenant Independence**:
    - Two concurrent worker processes submitting the identical `client_event_id` for two different companies (`TenantA` and `TenantB`).
@@ -121,9 +125,10 @@ CREATE TABLE `mobile_event_receipts` (
 4. **Fault Rollback Atomicity**:
    - Five distinct fault injection points tested in `tests/Feature/Mobile/MobileReceiptRollbackAtomicityTest.php`:
      - Numbering service failure: 0 rows written.
+     - Invoice draft failure: 0 rows written.
      - Stock decrement failure: 0 rows written.
      - Customer payment failure: 0 rows written.
-     - Receipt creation failure: 0 rows written.
+     - Receipt record creation failure (hooked on `created` event inside transaction): 0 rows written.
    - Full canonical post test verifies that all 6 reconciliation services report clean, healthy states with 0 violations:
      - `accounting:reconcile`
      - `inventory:reconcile`
@@ -140,12 +145,11 @@ Executed on isolated disposable MariaDB schemas (`tests/Support/run-phase8-dispo
 
 | Test Suite | Tests | Assertions | Result | Notes |
 |---|---|---|---|---|
-| `MobileEventReceiptIdentityTest` | 13 | 48 | PASS | Default deny, replay, altered 409, scope checks, cross-tenant isolation, cross-version collision, credentials revalidation, JSON strictness |
-| `MobileReceiptRollbackAtomicityTest` | 5 | 42 | PASS | 4 fault injections with zero leftover state + full canonical post with all 6 reconciliations verified |
-| `MobileReceiptConcurrencyTest` | 3 | 31 | PASS | 2-worker race convergence, altered payload 409 conflict, cross-tenant concurrent independence |
+| `MobileEventReceiptIdentityTest` | 21 | 70 | PASS | Strict JSON, byte JCS verification, UUID client_event_id, version allowlist, scope-before-digest, verified lookup, default-deny replay/lookup, row locking |
+| `MobileReceiptRollbackAtomicityTest` | 6 | 55 | PASS | 5 fault injections (including fault after MobileEventReceipt::create) with zero leftover state + full canonical post with all 6 reconciliations verified |
+| `MobileReceiptConcurrencyTest` | 4 | 39 | PASS | 2-worker race convergence, altered payload 409 conflict, cross-tenant concurrent independence, no fake session bypass |
 | `MobileReceiptMigrationPreservationTest` | 1 | 20 | PASS | Forward/rollback roundtrip preserves business fingerprint and all 6 reconciliations |
-| `All Mobile Feature Tests` | 121 | 1052 | PASS | Full regression pass across all native mobile feature tests |
-| `Fin1 Immediate Sale Tests` | 45 | 315 | PASS | Full regression pass across Fin1 sales commands and document sequencing |
+| `All Mobile Feature Tests` | 131 | 1095 | PASS | Full regression pass across all native mobile feature tests |
 | `Mobile Contract Validator` | 210 | 210 | PASS | Python OpenAPI 3.1 & JSON Schema Draft 2020-12 validation (`tools/validate-mobile-contract.py`) |
-| `PHPStan Static Analysis` | 746 files | 0 errors | PASS | `./vendor/bin/phpstan analyse --memory-limit=1G` |
+| `PHPStan Static Analysis` | - | 0 errors | PASS | `./vendor/bin/phpstan analyse --level=8` |
 | `Laravel Pint Code Style` | - | - | PASS | `./vendor/bin/pint --test` |

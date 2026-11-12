@@ -72,8 +72,20 @@ class MobileEventReceipt extends Model
             'sales_invoice_id' => 'integer',
             'customer_payment_id' => 'integer',
             'command_receipt_id' => 'integer',
+            'original_canonical_bytes' => 'string',
             'terminal_canonical_result' => 'array',
         ];
+    }
+
+    protected static function booted(): void
+    {
+        static::updating(function (): void {
+            throw new \RuntimeException('Mobile event receipts are immutable and cannot be updated once created.');
+        });
+
+        static::deleting(function (): void {
+            throw new \RuntimeException('Mobile event receipts are immutable and cannot be deleted.');
+        });
     }
 
     /**

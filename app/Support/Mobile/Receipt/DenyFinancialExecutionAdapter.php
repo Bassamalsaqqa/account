@@ -14,6 +14,21 @@ final class DenyFinancialExecutionAdapter implements FinancialExecutionAdapterIn
     /**
      * {@inheritDoc}
      */
+    public function authorize(
+        Company $company,
+        User $actor,
+        MobileDevice $device,
+        string $operation,
+        ?array $payload = null
+    ): void {
+        throw new FinancialExecutionDeniedException(
+            'Financial authority is unresolved on Mobile V2. Bearer token proves staff/device identity only, never financial posting permission or financial read authority.'
+        );
+    }
+
+    /**
+     * {@inheritDoc}
+     */
     public function execute(
         Company $company,
         User $actor,
@@ -21,6 +36,8 @@ final class DenyFinancialExecutionAdapter implements FinancialExecutionAdapterIn
         array $payload,
         string $idempotencySuffix
     ): array {
+        $this->authorize($company, $actor, $device, 'execute', $payload);
+
         throw new FinancialExecutionDeniedException(
             'Financial authority is unresolved on Mobile V2. Bearer token proves staff/device identity only, never financial posting permission.'
         );

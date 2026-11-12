@@ -170,16 +170,14 @@ final class MobileReceiptConcurrencyTest extends TestCase
             $schema->migrate();
             $schema->switchLaravelConnection();
             [$company, $owner, $device, $token] = $this->setupCompanyFixture('Converge', 'ILS');
-
             $directory = sys_get_temp_dir().'/mobile_receipt_race_'.bin2hex(random_bytes(8));
             mkdir($directory, 0700);
             $a = $b = null;
-
             try {
-                $payload = json_encode(['action' => 'race_sale', 'amount' => '25.000000'], JSON_THROW_ON_ERROR);
+                $payload = '{"action":"race_sale","amount":"25.000000"}';
                 $input = [
                     'company_id' => $company->id,
-                    'client_event_id' => 'evt-race-converge-001',
+                    'client_event_id' => '00000000-0000-4000-8000-000000000101',
                     'token_hash' => $token->token_hash,
                     'event_version' => 1,
                     'representation' => 'v1_canonical',
@@ -256,12 +254,12 @@ final class MobileReceiptConcurrencyTest extends TestCase
             $a = $b = null;
 
             try {
-                $payload1 = json_encode(['action' => 'race_sale', 'amount' => '10.000000'], JSON_THROW_ON_ERROR);
-                $payload2 = json_encode(['action' => 'race_sale', 'amount' => '20.000000'], JSON_THROW_ON_ERROR);
+                $payload1 = '{"action":"race_sale","amount":"10.000000"}';
+                $payload2 = '{"action":"race_sale","amount":"20.000000"}';
 
                 $inputA = [
                     'company_id' => $company->id,
-                    'client_event_id' => 'evt-race-conflict-001',
+                    'client_event_id' => '00000000-0000-4000-8000-000000000102',
                     'token_hash' => $token->token_hash,
                     'event_version' => 1,
                     'representation' => 'v1_canonical',
@@ -271,7 +269,7 @@ final class MobileReceiptConcurrencyTest extends TestCase
 
                 $inputB = [
                     'company_id' => $company->id,
-                    'client_event_id' => 'evt-race-conflict-001',
+                    'client_event_id' => '00000000-0000-4000-8000-000000000102',
                     'token_hash' => $token->token_hash,
                     'event_version' => 1,
                     'representation' => 'v1_canonical',
@@ -330,11 +328,11 @@ final class MobileReceiptConcurrencyTest extends TestCase
             $a = $b = null;
 
             try {
-                $payload = json_encode(['action' => 'race_sale', 'amount' => '25.000000'], JSON_THROW_ON_ERROR);
+                $payload = '{"action":"race_sale","amount":"25.000000"}';
 
                 $inputA = [
                     'company_id' => $companyA->id,
-                    'client_event_id' => 'evt-shared-concurrent-id',
+                    'client_event_id' => '00000000-0000-4000-8000-000000000103',
                     'token_hash' => $tokenA->token_hash,
                     'event_version' => 1,
                     'representation' => 'v1_canonical',
@@ -344,7 +342,7 @@ final class MobileReceiptConcurrencyTest extends TestCase
 
                 $inputB = [
                     'company_id' => $companyB->id,
-                    'client_event_id' => 'evt-shared-concurrent-id',
+                    'client_event_id' => '00000000-0000-4000-8000-000000000103',
                     'token_hash' => $tokenB->token_hash,
                     'event_version' => 1,
                     'representation' => 'v1_canonical',
@@ -370,6 +368,79 @@ final class MobileReceiptConcurrencyTest extends TestCase
 
                 // Exactly 2 receipts in DB, one for company A, one for company B
                 $this->assertDatabaseCount('mobile_event_receipts', 2);
+            } finally {
+                $a?->stop();
+                $b?->stop();
+                foreach (glob($directory.'/*') ?: [] as $file) {
+                    unlink($file);
+                }
+                rmdir($directory);
+            }
+        } finally {
+            if (DB::transactionLevel() > 0) {
+                DB::rollBack(0);
+            }
+            $schema->restoreLaravelConnection();
+            $schema->drop();
+        }
+    }
+
+    public function test_concurrent_workers_cross_version_same_payload_converges_to_single_sale(): void
+    {
+        $schema = DisposableMariaDbSchema::create();
+        try {
+            $schema->migrate();
+            $schema->switchLaravelConnection();
+            [$company, $owner, $device, $token] = $this->setupCompanyFixture('CrossVer', 'ILS');
+
+            $directory = sys_get_temp_dir().'/mobile_receipt_race_'.bin2hex(random_bytes(8));
+            mkdir($directory, 0700);
+            $a = $b = null;
+
+            try {
+                $payload = '{"action":"race_sale","amount":"25.000000"}';
+
+                $inputA = [
+                    'company_id' => $company->id,
+                    'client_event_id' => '00000000-0000-4000-8000-000000000104',
+                    'token_hash' => $token->token_hash,
+                    'event_version' => 1,
+                    'representation' => 'v1_canonical',
+                    'canonical_bytes' => $payload,
+                    'executor_mode' => 'canonical',
+                ];
+
+                $inputB = [
+                    'company_id' => $company->id,
+                    'client_event_id' => '00000000-0000-4000-8000-000000000104',
+                    'token_hash' => $token->token_hash,
+                    'event_version' => 2,
+                    'representation' => 'v2_intent',
+                    'canonical_bytes' => $payload,
+                    'executor_mode' => 'canonical',
+                ];
+
+                $a = $this->startWorker($schema, $directory, 'worker-a', $inputA);
+                $b = $this->startWorker($schema, $directory, 'worker-b', $inputB);
+
+                touch($directory.'/go');
+
+                $this->assertSame(0, $a->wait(), $a->getErrorOutput());
+                $this->assertSame(0, $b->wait(), $b->getErrorOutput());
+
+                $resA = json_decode($a->getOutput(), true, 512, JSON_THROW_ON_ERROR);
+                $resB = json_decode($b->getOutput(), true, 512, JSON_THROW_ON_ERROR);
+
+                $this->assertSame(200, $resA['status'], 'Worker A failed: '.json_encode($resA));
+                $this->assertSame(200, $resB['status'], 'Worker B failed: '.json_encode($resB));
+
+                $outcomes = [$resA['outcome'], $resB['outcome']];
+                sort($outcomes);
+                $this->assertSame(['created', 'replay'], $outcomes);
+
+                $this->assertDatabaseCount('sales_invoices', 1);
+                $this->assertDatabaseCount('customer_payments', 1);
+                $this->assertDatabaseCount('mobile_event_receipts', 1);
             } finally {
                 $a?->stop();
                 $b?->stop();

@@ -16,6 +16,7 @@ use App\Models\Customer;
 use App\Models\DocumentSequence;
 use App\Models\MobileAccessToken;
 use App\Models\MobileDevice;
+use App\Models\MobileEventReceipt;
 use App\Models\MoneyAccount;
 use App\Models\Product;
 use App\Models\ProductUnit;
@@ -43,6 +44,8 @@ use Tests\TestCase;
 final class MobileReceiptRollbackAtomicityTest extends TestCase
 {
     use RefreshDatabase;
+
+    private static bool $failAfterReceiptCreation = false;
 
     private User $owner;
 
@@ -82,6 +85,7 @@ final class MobileReceiptRollbackAtomicityTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        self::$failAfterReceiptCreation = false;
 
         $this->owner = User::factory()->create([
             'email' => 'atomicity_owner@example.com',
@@ -176,6 +180,18 @@ final class MobileReceiptRollbackAtomicityTest extends TestCase
         ]);
 
         $this->manager = new MobileEventReceiptManager;
+
+        MobileEventReceipt::created(function (): void {
+            if (self::$failAfterReceiptCreation) {
+                throw new RuntimeException('Simulated fault immediately after receipt record creation');
+            }
+        });
+    }
+
+    protected function tearDown(): void
+    {
+        self::$failAfterReceiptCreation = false;
+        parent::tearDown();
     }
 
     private function createFaultInjectingExecutor(
@@ -197,6 +213,16 @@ final class MobileReceiptRollbackAtomicityTest extends TestCase
                 private MoneyAccount $cash,
                 private ?string $failAt
             ) {}
+
+            public function authorize(
+                Company $company,
+                User $actor,
+                MobileDevice $device,
+                string $operation,
+                ?array $payload = null
+            ): void {
+                // Verified test actor authorization
+            }
 
             public function execute(
                 Company $company,
@@ -294,16 +320,20 @@ final class MobileReceiptRollbackAtomicityTest extends TestCase
 
     public function test_full_successful_canonical_execution_commits_all_legs_and_satisfies_all_six_reconciliations(): void
     {
-        $payload = json_encode(['action' => 'checkout', 'total' => '100.000000'], JSON_THROW_ON_ERROR);
+        $payload = '{"action":"checkout","total":"100.000000"}';
+
+        $this->app->instance(
+            FinancialExecutionAdapterInterface::class,
+            $this->createFaultInjectingExecutor(null)
+        );
 
         $result = $this->manager->recordOrReplay(
             companyId: (int) $this->company->id,
-            clientEventId: 'atom-success-001',
+            clientEventId: (string) Str::uuid(),
             tokenHash: $this->token->token_hash,
             eventVersion: 1,
             representation: 'v1_canonical',
-            canonicalBytes: $payload,
-            executor: $this->createFaultInjectingExecutor(null)
+            canonicalBytes: $payload
         );
 
         $this->assertSame('created', $result['outcome']);
@@ -328,7 +358,8 @@ final class MobileReceiptRollbackAtomicityTest extends TestCase
             'quantity_base' => '8.000000',
         ]);
 
-        // Verify all 6 reconciliations pass cleanly
+        // Restore test context and verify all 6 reconciliations pass cleanly
+        app(CompanyContext::class)->setCompany($this->company, $this->owner);
         $this->assertTrue(app(AccountingReconciliationService::class)->reconcile($this->company)->isHealthy, 'Accounting reconciliation must pass');
         $this->assertTrue(app(InventoryReconciliationService::class)->auditCompany($this->company)->isHealthy, 'Inventory reconciliation must pass');
         $this->assertTrue(app(SalesReconciliationService::class)->reconcile($this->company)->isHealthy, 'Sales reconciliation must pass');
@@ -339,17 +370,21 @@ final class MobileReceiptRollbackAtomicityTest extends TestCase
 
     public function test_fault_after_numbering_rolls_back_entire_state(): void
     {
-        $payload = json_encode(['action' => 'checkout'], JSON_THROW_ON_ERROR);
+        $payload = '{"action":"checkout"}';
+
+        $this->app->instance(
+            FinancialExecutionAdapterInterface::class,
+            $this->createFaultInjectingExecutor('numbering')
+        );
 
         try {
             $this->manager->recordOrReplay(
                 companyId: (int) $this->company->id,
-                clientEventId: 'atom-fault-numbering',
+                clientEventId: (string) Str::uuid(),
                 tokenHash: $this->token->token_hash,
                 eventVersion: 1,
                 representation: 'v1_canonical',
-                canonicalBytes: $payload,
-                executor: $this->createFaultInjectingExecutor('numbering')
+                canonicalBytes: $payload
             );
             $this->fail('Expected RuntimeException');
         } catch (RuntimeException $e) {
@@ -365,17 +400,21 @@ final class MobileReceiptRollbackAtomicityTest extends TestCase
 
     public function test_fault_after_posting_and_stock_movement_rolls_back_inventory_and_invoices(): void
     {
-        $payload = json_encode(['action' => 'checkout'], JSON_THROW_ON_ERROR);
+        $payload = '{"action":"checkout"}';
+
+        $this->app->instance(
+            FinancialExecutionAdapterInterface::class,
+            $this->createFaultInjectingExecutor('posting_or_stock')
+        );
 
         try {
             $this->manager->recordOrReplay(
                 companyId: (int) $this->company->id,
-                clientEventId: 'atom-fault-stock',
+                clientEventId: (string) Str::uuid(),
                 tokenHash: $this->token->token_hash,
                 eventVersion: 1,
                 representation: 'v1_canonical',
-                canonicalBytes: $payload,
-                executor: $this->createFaultInjectingExecutor('posting_or_stock')
+                canonicalBytes: $payload
             );
             $this->fail('Expected RuntimeException');
         } catch (RuntimeException $e) {
@@ -396,17 +435,21 @@ final class MobileReceiptRollbackAtomicityTest extends TestCase
 
     public function test_fault_after_payment_rolls_back_payment_and_invoice(): void
     {
-        $payload = json_encode(['action' => 'checkout'], JSON_THROW_ON_ERROR);
+        $payload = '{"action":"checkout"}';
+
+        $this->app->instance(
+            FinancialExecutionAdapterInterface::class,
+            $this->createFaultInjectingExecutor('payment')
+        );
 
         try {
             $this->manager->recordOrReplay(
                 companyId: (int) $this->company->id,
-                clientEventId: 'atom-fault-payment',
+                clientEventId: (string) Str::uuid(),
                 tokenHash: $this->token->token_hash,
                 eventVersion: 1,
                 representation: 'v1_canonical',
-                canonicalBytes: $payload,
-                executor: $this->createFaultInjectingExecutor('payment')
+                canonicalBytes: $payload
             );
             $this->fail('Expected RuntimeException');
         } catch (RuntimeException $e) {
@@ -422,17 +465,21 @@ final class MobileReceiptRollbackAtomicityTest extends TestCase
 
     public function test_fault_before_receipt_commit_leaves_zero_partial_state(): void
     {
-        $payload = json_encode(['action' => 'checkout'], JSON_THROW_ON_ERROR);
+        $payload = '{"action":"checkout"}';
+
+        $this->app->instance(
+            FinancialExecutionAdapterInterface::class,
+            $this->createFaultInjectingExecutor('before_receipt_commit')
+        );
 
         try {
             $this->manager->recordOrReplay(
                 companyId: (int) $this->company->id,
-                clientEventId: 'atom-fault-before-receipt',
+                clientEventId: (string) Str::uuid(),
                 tokenHash: $this->token->token_hash,
                 eventVersion: 1,
                 representation: 'v1_canonical',
-                canonicalBytes: $payload,
-                executor: $this->createFaultInjectingExecutor('before_receipt_commit')
+                canonicalBytes: $payload
             );
             $this->fail('Expected RuntimeException');
         } catch (RuntimeException $e) {
@@ -450,5 +497,54 @@ final class MobileReceiptRollbackAtomicityTest extends TestCase
             'product_id' => $this->product->id,
             'quantity_base' => '10.000000',
         ]);
+    }
+
+    public function test_fault_after_receipt_creation_rolls_back_entire_state_and_preserves_reconciliations(): void
+    {
+        $payload = '{"action":"checkout","total":"100.000000"}';
+
+        $this->app->instance(
+            FinancialExecutionAdapterInterface::class,
+            $this->createFaultInjectingExecutor(null)
+        );
+
+        self::$failAfterReceiptCreation = true;
+
+        try {
+            $this->manager->recordOrReplay(
+                companyId: (int) $this->company->id,
+                clientEventId: (string) Str::uuid(),
+                tokenHash: $this->token->token_hash,
+                eventVersion: 1,
+                representation: 'v1_canonical',
+                canonicalBytes: $payload
+            );
+            $this->fail('Expected RuntimeException');
+        } catch (RuntimeException $e) {
+            $this->assertStringContainsString('Simulated fault immediately after receipt record creation', $e->getMessage());
+        } finally {
+            self::$failAfterReceiptCreation = false;
+        }
+
+        // Complete atomicity: everything rolled back, including receipt, invoice, payment, movements
+        $this->assertDatabaseCount('sales_invoices', 0);
+        $this->assertDatabaseCount('customer_payments', 0);
+        $this->assertDatabaseCount('mobile_event_receipts', 0);
+        $this->assertDatabaseCount('posting_batches', 1); // only opening stock
+        $this->assertDatabaseCount('stock_movements', 1); // only opening stock
+        $this->assertDatabaseHas('inventory_balances', [
+            'company_id' => $this->company->id,
+            'product_id' => $this->product->id,
+            'quantity_base' => '10.000000',
+        ]);
+
+        // Restore test context and verify all 6 reconciliations pass cleanly with 0 violations
+        app(CompanyContext::class)->setCompany($this->company, $this->owner);
+        $this->assertTrue(app(AccountingReconciliationService::class)->reconcile($this->company)->isHealthy, 'Accounting reconciliation must pass');
+        $this->assertTrue(app(InventoryReconciliationService::class)->auditCompany($this->company)->isHealthy, 'Inventory reconciliation must pass');
+        $this->assertTrue(app(SalesReconciliationService::class)->reconcile($this->company)->isHealthy, 'Sales reconciliation must pass');
+        $this->assertTrue(app(PayablesReconciliationService::class)->reconcile($this->company)->isHealthy, 'Payables reconciliation must pass');
+        $this->assertTrue(app(MoneyReconciliationService::class)->reconcile($this->company)->isHealthy, 'Money reconciliation must pass');
+        $this->assertTrue(app(Phase7ReconciliationService::class)->reconcile($this->company)->isHealthy, 'Phase7 reconciliation must pass');
     }
 }

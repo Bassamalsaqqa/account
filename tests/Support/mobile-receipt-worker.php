@@ -22,9 +22,8 @@ use App\Support\Mobile\Receipt\Exceptions\MobileEventDuplicatePayloadException;
 use App\Support\Mobile\Receipt\Exceptions\MobileEventForeignScopeException;
 use App\Support\Mobile\Receipt\FinancialExecutionAdapterInterface;
 use App\Support\Mobile\Receipt\MobileEventReceiptManager;
-use App\Support\Tenancy\CompanyContext;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Contracts\Console\Kernel;
-use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 use Tests\Support\DisposableMariaDbSchema;
@@ -55,23 +54,39 @@ $executorMode = (string) ($input['executor_mode'] ?? 'canonical');
 $tokenRecord = MobileAccessToken::where('token_hash', $tokenHash)->firstOrFail();
 $actor = User::findOrFail($tokenRecord->user_id);
 $companyRecord = Company::findOrFail($companyId);
-
-$request = Request::create('/api/mobile/v1/companies/'.$companyId.'/sales/commit', 'POST');
-$session = app('session')->driver();
-$session->start();
-$request->setLaravelSession($session);
-$request->setUserResolver(static fn () => $actor);
-$app->instance('request', $request);
-auth()->setUser($actor);
-
-app(CompanyContext::class)->setCompany($companyRecord, $actor);
-setPermissionsTeamId($companyRecord->id);
-
 // Define executor based on input mode
 $executor = null;
 if ($executorMode === 'canonical') {
     $executor = new class implements FinancialExecutionAdapterInterface
     {
+        public function authorize(
+            Company $company,
+            User $actor,
+            MobileDevice $device,
+            string $operation,
+            ?array $payload = null
+        ): void {
+            // Test fixture: verify actual canonical Spatie permissions
+            if ($operation === 'execute') {
+                foreach ([
+                    'sales.invoice.create',
+                    'sales.invoice.post',
+                    'money.receipt.create',
+                    'money.receipt.allocate',
+                ] as $perm) {
+                    if (! $actor->hasPermissionTo($perm)) {
+                        throw new AuthorizationException("Missing permission [{$perm}]");
+                    }
+                }
+            } elseif (in_array($operation, ['replay', 'lookup'], true)) {
+                foreach (['sales.invoice.view', 'money.receipt.view'] as $perm) {
+                    if (! $actor->hasPermissionTo($perm)) {
+                        throw new AuthorizationException("Missing read permission [{$perm}]");
+                    }
+                }
+            }
+        }
+
         public function execute(
             Company $company,
             User $actor,
@@ -146,6 +161,7 @@ if ($executorMode === 'canonical') {
             ];
         }
     };
+    $app->instance(FinancialExecutionAdapterInterface::class, $executor);
 }
 
 // Signal readiness at the barrier
@@ -162,15 +178,14 @@ while (! is_file($directory.'/go')) {
 
 // Execute through manager
 try {
-    $manager = new MobileEventReceiptManager;
+    $manager = new MobileEventReceiptManager($executor);
     $result = $manager->recordOrReplay(
         companyId: $companyId,
         clientEventId: $clientEventId,
         tokenHash: $tokenHash,
         eventVersion: $eventVersion,
         representation: $representation,
-        canonicalBytes: $canonicalBytes,
-        executor: $executor
+        canonicalBytes: $canonicalBytes
     );
 
     echo json_encode([

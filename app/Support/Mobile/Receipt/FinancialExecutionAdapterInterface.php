@@ -11,6 +11,21 @@ use App\Models\User;
 interface FinancialExecutionAdapterInterface
 {
     /**
+     * Authorize operation ('execute', 'replay', 'lookup') for the authenticated actor and device.
+     * Throws FinancialExecutionDeniedException or AuthorizationException if unauthorized.
+     *
+     * @param  string  $operation  'execute', 'replay', or 'lookup'
+     * @param  array<string, mixed>|null  $payload  Decoded economic payload if available
+     */
+    public function authorize(
+        Company $company,
+        User $actor,
+        MobileDevice $device,
+        string $operation,
+        ?array $payload = null
+    ): void;
+
+    /**
      * Execute canonical business operations inside the atomic write transaction under company locks.
      *
      * @param  Company  $company  Locked company model
