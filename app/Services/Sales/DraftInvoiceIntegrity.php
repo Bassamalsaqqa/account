@@ -11,6 +11,7 @@ use App\Domain\Sales\Calculators\SalesLineCalculator;
 use App\Models\SalesInvoice;
 use App\Models\SalesInvoiceLine;
 use App\Models\TaxRate;
+use App\Services\Money\CurrencyMinorUnitsResolver;
 use Brick\Math\BigDecimal;
 use Illuminate\Support\Collection;
 use InvalidArgumentException;
@@ -20,6 +21,10 @@ final class DraftInvoiceIntegrity
     /** @param Collection<int, SalesInvoiceLine> $lines */
     public function validate(SalesInvoice $invoice, Collection $lines): void
     {
+        $resolver = app(CurrencyMinorUnitsResolver::class);
+        $minorUnits = $resolver->resolveForCompany((int) $invoice->company_id, $invoice->currency_code);
+        $baseMinorUnits = $resolver->resolveForCompany((int) $invoice->company_id, (string) $invoice->company->base_currency_code);
+
         $results = [];
         foreach ($lines as $line) {
             $quantity = Quantity::of($line->quantity);
@@ -46,8 +51,9 @@ final class DraftInvoiceIntegrity
                 quantity: $line->quantity, unitPrice: $line->unit_price,
                 discountType: $line->discount_type, discountValue: $line->discount_value,
                 taxRate: $taxRate, taxInclusive: $line->tax_inclusive,
-                currencyMinorUnits: $invoice->currency_code === 'JOD' ? 3 : 2,
+                currencyMinorUnits: $minorUnits,
                 exchangeRate: $invoice->exchange_rate,
+                baseCurrencyMinorUnits: $baseMinorUnits,
             ));
             foreach (['subtotal', 'discount', 'tax', 'total'] as $field) {
                 foreach (['' => $field, '_base' => $field.'Base'] as $suffix => $property) {

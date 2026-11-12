@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Services\Money;
 
-use App\Models\Currency;
 use App\Services\Sales\ReceiptRequestValues;
 use Brick\Math\BigDecimal;
 use Brick\Math\Exception\RoundingNecessaryException;
@@ -13,15 +12,12 @@ use InvalidArgumentException;
 
 final class MoneyValues
 {
-    public static function amount(mixed $value, string $currency): BigDecimal
+    public static function amount(mixed $value, string $currency, ?int $companyId = null): BigDecimal
     {
-        $minorUnits = Currency::where('code', $currency)->value('minor_units');
-        if ($minorUnits === null) {
-            throw new InvalidArgumentException('Unknown currency.');
-        }
+        $minorUnits = app(CurrencyMinorUnitsResolver::class)->resolve($currency);
 
         try {
-            return BigDecimal::of(ReceiptRequestValues::decimal($value, (int) $minorUnits))->toScale(6);
+            return BigDecimal::of(ReceiptRequestValues::decimal($value, $minorUnits))->toScale(6);
         } catch (RoundingNecessaryException $exception) {
             throw new InvalidArgumentException('Amount must match the currency minor-unit precision exactly.', previous: $exception);
         }

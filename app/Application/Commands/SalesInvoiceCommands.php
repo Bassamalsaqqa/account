@@ -20,6 +20,7 @@ use App\Models\SalesInvoiceLine;
 use App\Models\TaxRate;
 use App\Models\User;
 use App\Models\Warehouse;
+use App\Services\Money\CurrencyMinorUnitsResolver;
 use App\Services\Sales\DraftInvoiceIntegrity;
 use App\Services\Sales\SalesActorGuard;
 use App\Services\Sales\SalesDocumentRules;
@@ -422,6 +423,7 @@ class SalesInvoiceCommands
         }
 
         // Product, unit, pricing, discount, and tax canonical rule verification
+        $minorUnits = app(CurrencyMinorUnitsResolver::class)->resolveForCompany((int) $inv->company_id, $inv->currency_code);
         foreach ($lines as $line) {
             if ($line->product_id !== null) {
                 $pQuery = Product::where('company_id', $inv->company_id)->whereKey($line->product_id);
@@ -457,7 +459,8 @@ class SalesInvoiceCommands
                             $actor,
                             BigDecimal::of((string) $inv->exchange_rate),
                             $inv->currency_code,
-                            BigDecimal::of((string) $line->unit_price)
+                            BigDecimal::of((string) $line->unit_price),
+                            $minorUnits
                         );
                     } catch (AuthorizationException $e) {
                         // Authorization exceptions must remain 403, never caught as blockers
