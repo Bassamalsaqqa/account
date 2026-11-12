@@ -129,3 +129,9 @@ Offline intake, offline sale queuing, and offline lease grants remain strictly h
 - **Migrations**: 0 migrations added. Existing schemas and migrations remain untouched.
 - **Canonicity**: Canonical financial writers, browser guards, and session CSRF protections remain untouched.
 - **Contract Parity**: Frozen Mobile V1 schemas and `manifest.sha256` remain completely unmodified; 210/210 Python contract tests continue to pass in normal and optimized modes.
+
+### Supervisor verification and test-only static fixes (2026-11-12)
+
+At runtime head `1ffe772c5cc155ceab4bf578ed2b85fc3194bc33`, supervisor execution of the combined Mobile feature, Phase11 API security, and Unit Mobile suites passed **156 tests / 1,291 assertions**; owned schema `accounting_p8_tmp_769686f95723` was cleaned. Independent review found no remaining material runtime findings. Supervisor also ran Python validation in normal and optimized modes (**210 each**) and verified the frozen manifest unchanged.
+
+Explicit static analysis of the new test file uncovered eight issues missed by app-only analysis. The test-only follow-up adds header/response type annotations, correctly removes inherited activation environment variables with Symfony Process `false` values, fixes `Event::assertNotDispatched` arguments, and removes redundant non-null assertions and a redundant fallback. Scoped PHPStan now passes. Supervisor reran focused V2 tests: **37 tests / 478 assertions**, no failures; owned schema `accounting_p8_tmp_13c6f1e320af` was cleaned. Assertion reduction reflects removal of ten redundant non-null checks. Runtime source is unchanged by this follow-up. No migration, activation, merge, deployment, or production access occurred.

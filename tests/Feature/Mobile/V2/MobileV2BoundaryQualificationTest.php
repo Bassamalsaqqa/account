@@ -26,11 +26,13 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Str;
+use Illuminate\Testing\TestResponse;
 use Illuminate\Validation\ValidationException;
 use RuntimeException;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
+use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\Exception\ConflictHttpException;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 use Symfony\Component\Process\Process;
@@ -73,6 +75,10 @@ final class MobileV2BoundaryQualificationTest extends TestCase
         return parent::createApplication();
     }
 
+    /**
+     * @param  array<string, string>  $headers
+     * @return TestResponse<Response>
+     */
     public function getJson($uri, array $headers = [], $options = 0)
     {
         return $this->get($uri, array_merge(['Accept' => 'application/json'], $headers));
@@ -589,7 +595,7 @@ final class MobileV2BoundaryQualificationTest extends TestCase
         $code = "require '{$autoloadPath}'; \$c = require '{$configPath}'; echo json_encode(['enabled' => \$c['enabled'] ?? null, 'v2_enabled' => \$c['v2_enabled'] ?? null, 'has_enabled' => array_key_exists('enabled', \$c), 'has_v2_enabled' => array_key_exists('v2_enabled', \$c)]);";
 
         // 1. Default env: both false and keys exist
-        $p1 = new Process([$php, '-r', $code], base_path(), ['MOBILE_API_ENABLED' => null, 'MOBILE_V2_API_ENABLED' => null]);
+        $p1 = new Process([$php, '-r', $code], base_path(), ['MOBILE_API_ENABLED' => false, 'MOBILE_V2_API_ENABLED' => false]);
         $p1->mustRun();
         $r1 = json_decode($p1->getOutput(), true);
         $this->assertTrue($r1['has_enabled']);
@@ -1328,13 +1334,12 @@ final class MobileV2BoundaryQualificationTest extends TestCase
             }
 
             $response = $fn();
-            $this->assertNotNull($response, "Scenario {$name} failed to return a response.");
 
             $fresh = $ambientUser->fresh();
             $this->assertSame($originalRememberToken, $fresh->remember_token, "Scenario {$name} modified remember_token.");
             $this->assertSame($originalUpdatedAt, $fresh->updated_at->toISOString(), "Scenario {$name} triggered User DB write.");
             $this->assertSame($ambientUser->id, session()->get($sessionAuthKey), "Scenario {$name} cleared or modified session auth key.");
-            Event::assertNotDispatched(Logout::class, "Scenario {$name} dispatched Logout event.");
+            Event::assertNotDispatched(Logout::class);
 
             $queued = Cookie::getQueuedCookies();
             foreach ($queued as $cookie) {
@@ -1368,7 +1373,7 @@ final class MobileV2BoundaryQualificationTest extends TestCase
         ];
 
         foreach (MobileV2ApiBoundary::ALLOWED_INTERNAL_ERROR_CODES as $code) {
-            $status = $statusMap[$code] ?? 500;
+            $status = $statusMap[$code];
             $res = $this->getJson("/api/mobile/v2/test-harness/downstream-code-probe/{$code}/{$status}");
             $res->assertStatus($status)
                 ->assertJsonPath('error.code', $code);
@@ -1607,7 +1612,6 @@ final class MobileV2BoundaryQualificationTest extends TestCase
                 Cookie::unqueue($recallerName);
 
                 $response = $fn();
-                $this->assertNotNull($response, "Scenario {$name} failed to return a response.");
 
                 // 1. Guard hasUser stays false
                 $this->assertFalse($guard->hasUser(), "Scenario {$name} resolved guard user.");
@@ -1621,7 +1625,7 @@ final class MobileV2BoundaryQualificationTest extends TestCase
                 $this->assertSame($originalUpdatedAt, $fresh->updated_at->toISOString(), "Scenario {$name} triggered User DB write.");
 
                 // 4. Zero Logout events
-                Event::assertNotDispatched(Logout::class, "Scenario {$name} dispatched Logout event.");
+                Event::assertNotDispatched(Logout::class);
 
                 // 5. Zero queued remember cookies
                 $queued = Cookie::getQueuedCookies();
