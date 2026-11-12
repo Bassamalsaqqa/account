@@ -4,7 +4,11 @@ declare(strict_types=1);
 
 namespace Tests\Unit\Services;
 
+use App\Models\Product;
+use App\Models\ProductUnit;
 use App\Models\User;
+use App\Services\Purchasing\PurchaseProductSelection;
+use App\Services\Sales\SalesProductSelection;
 use App\Services\Search\BoundedProductSearchService;
 use Tests\TestCase;
 
@@ -16,6 +20,22 @@ class BoundedProductSearchServiceTest extends TestCase
     {
         parent::setUp();
         $this->service = new BoundedProductSearchService;
+    }
+
+    public function test_shared_suggestions_convert_cartons_exactly_and_distinguish_missing_from_zero(): void
+    {
+        $product = new Product;
+        $unit = new ProductUnit(['conversion_to_base' => '12']);
+        foreach ([[new SalesProductSelection, 'default_sale_price_base', 'default_sale_price_base'],
+            [new PurchaseProductSelection, 'default_purchase_cost_base', 'default_purchase_price_base']] as [$selection, $productField, $unitField]) {
+            $this->assertNull($selection->suggestedBasePrice($product, $unit));
+            $product->{$productField} = '1.234567';
+            $this->assertTrue($selection->suggestedBasePrice($product, $unit)->isEqualTo('14.814804'));
+            $unit->{$unitField} = '0';
+            $this->assertTrue($selection->suggestedBasePrice($product, $unit)->isZero());
+            $unit->{$unitField} = '9.876543';
+            $this->assertTrue($selection->suggestedBasePrice($product, $unit)->isEqualTo('9.876543'));
+        }
     }
 
     public function test_normalization_trims_and_handles_empty(): void

@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Services\Search;
 
-use App\Domain\Inventory\ValueObjects\Quantity;
 use App\Domain\Money\ValueObjects\ExchangeRate;
 use App\Domain\Sales\Formatters\SalesMoneyFormatter;
 use App\Models\Company;
@@ -13,8 +12,10 @@ use App\Models\InventoryBalance;
 use App\Models\Product;
 use App\Models\ProductBarcode;
 use App\Models\User;
+use App\Models\Warehouse;
 use App\Services\Purchasing\PurchaseDocumentRules;
-use App\Services\Sales\SalesDocumentRules;
+use App\Services\Purchasing\PurchaseProductSelection;
+use App\Services\Sales\SalesProductSelection;
 use App\Support\Tenancy\CompanyContext;
 use Brick\Math\BigDecimal;
 use Brick\Math\RoundingMode;
@@ -126,6 +127,9 @@ final class BoundedProductSearchService
         $limit = max(1, min($limit, self::MAX_CANDIDATES));
 
         $this->authorize($companyId, $user, $context);
+        if ($warehouseId !== null) {
+            abort_unless(Warehouse::where('company_id', $companyId)->whereKey($warehouseId)->exists(), 403);
+        }
 
         $previousTeam = getPermissionsTeamId();
         try {
@@ -160,9 +164,25 @@ final class BoundedProductSearchService
             ->get()
             ->keyBy('id');
 
+        $stock = InventoryBalance::where('company_id', $companyId)
+            ->whereIn('product_id', $orderedIds)
+            ->when($warehouseId !== null, fn ($q) => $q->where('warehouse_id', $warehouseId))
+            ->selectRaw('product_id, SUM(quantity_base) AS quantity_base')
+            ->groupBy('product_id')->pluck('quantity_base', 'product_id');
+
         $results = [];
         $company = Company::find($companyId);
         $locale = $company !== null ? (string) $company->default_locale : 'ar';
+        if ($context === 'purchasing' && $canViewCost) {
+            try {
+                abort_unless($company !== null, 403);
+                app(PurchaseDocumentRules::class)->header(
+                    $company, $currencyCode, $exchangeRate, now($company->timezone)->format('Y-m-d'), null, $locale
+                );
+            } catch (\Throwable) {
+                $canViewCost = false;
+            }
+        }
 
         foreach ($orderedIds as $productId) {
             /** @var Product|null $product */
@@ -226,7 +246,7 @@ final class BoundedProductSearchService
             if ($context === 'sales') {
                 $price = $this->computeSalePrice($product, $defaultUnitId, $currencyCode, $exchangeRate);
                 if ($product->track_stock) {
-                    $avail = $this->computeAvailableQuantity($companyId, (int) $product->id, $defaultUnitId, $warehouseId);
+                    $avail = $this->computeAvailableQuantity($product, $defaultUnitId, (string) ($stock[$product->id] ?? '0'));
                     $availableQuantity = $avail['formatted'];
                     $stockStatus = $avail['status'];
                 }
@@ -483,17 +503,18 @@ final class BoundedProductSearchService
     private function computeSalePrice(Product $product, ?int $unitId, string $currency, string $exchangeRate): ?string
     {
         try {
-            $unit = app(SalesDocumentRules::class)->selectedUnit($product, $unitId, Quantity::of('1'));
+            $unit = $product->productUnits->firstWhere('id', $unitId);
+            if ($unit === null) {
+                return null;
+            }
             $rate = BigDecimal::of($exchangeRate);
             if (! $rate->isPositive()) {
                 return null;
             }
-            if ($unit->default_sale_price_base === null && $product->default_sale_price_base === null) {
+            $basePrice = app(SalesProductSelection::class)->suggestedBasePrice($product, $unit);
+            if ($basePrice === null) {
                 return null;
             }
-            $basePrice = $unit->default_sale_price_base === null
-                ? BigDecimal::of($product->default_sale_price_base)->multipliedBy($unit->conversion_to_base)
-                : BigDecimal::of($unit->default_sale_price_base);
 
             $price = $basePrice->dividedBy($rate, 2, RoundingMode::HALF_UP);
 
@@ -506,17 +527,14 @@ final class BoundedProductSearchService
     private function computePurchaseCost(Product $product, ?int $unitId, string $currency, string $exchangeRate, ?Company $company, string $locale): ?string
     {
         try {
-            $rules = app(PurchaseDocumentRules::class);
-            if ($company) {
-                $rules->header($company, $currency, $exchangeRate, now($company->timezone)->format('Y-m-d'), null, $locale);
-            }
-            $unit = $rules->selectedUnit($product, $unitId, '1');
-            if ($unit->default_purchase_price_base === null && $product->default_purchase_cost_base === null) {
+            $unit = $product->productUnits->firstWhere('id', $unitId);
+            if ($unit === null) {
                 return null;
             }
-            $base = $unit->default_purchase_price_base !== null
-                ? BigDecimal::of($unit->default_purchase_price_base)
-                : BigDecimal::of($product->default_purchase_cost_base)->multipliedBy($unit->conversion_to_base);
+            $base = app(PurchaseProductSelection::class)->suggestedBasePrice($product, $unit);
+            if ($base === null) {
+                return null;
+            }
 
             $fx = ExchangeRate::from($exchangeRate)->getValue();
             $cost = $base->dividedBy($fx, 2, RoundingMode::HALF_UP);
@@ -530,23 +548,13 @@ final class BoundedProductSearchService
     /**
      * @return array{formatted: ?string, status: string}
      */
-    private function computeAvailableQuantity(int $companyId, int $productId, ?int $unitId, ?int $warehouseId): array
+    private function computeAvailableQuantity(Product $product, ?int $unitId, string $sumBase): array
     {
         try {
-            $product = Product::where('company_id', $companyId)->find($productId);
-            if (! $product || ! $product->track_stock) {
-                return ['formatted' => null, 'status' => 'ok'];
-            }
-
             $pu = $product->productUnits->firstWhere('id', $unitId) ?? $product->productUnits->firstWhere('is_base', true);
             $conversion = $pu ? BigDecimal::of((string) $pu->conversion_to_base) : BigDecimal::of('1');
 
-            $query = InventoryBalance::where('company_id', $companyId)->where('product_id', $productId);
-            if ($warehouseId !== null) {
-                $query->where('warehouse_id', $warehouseId);
-            }
-            $sumBase = (string) $query->sum('quantity_base');
-            $qtyInUnit = BigDecimal::of($sumBase)->dividedBy($conversion, 6, RoundingMode::FLOOR);
+            $qtyInUnit = BigDecimal::of($sumBase)->dividedBy($conversion, 6, RoundingMode::UNNECESSARY);
 
             $status = 'ok';
             $baseQty = BigDecimal::of($sumBase);

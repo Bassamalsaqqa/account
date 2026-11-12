@@ -201,6 +201,14 @@ class BoundedProductSearchMariaDbTest extends TestCase
         );
         $this->assertNotEmpty($ownerResults);
         $this->assertSame('15.50', $ownerResults[0]['cost']);
+        $role->givePermissionTo('purchasing.cost.view');
+        $visible = $this->searchService->search((int) $this->company->id, $cashier, 'SUGAR', 'purchasing');
+        $this->assertSame('15.50', $visible[0]['cost']);
+        $role->revokePermissionTo('purchasing.cost.view');
+        $redacted = $this->searchService->search((int) $this->company->id, $cashier, 'SUGAR', 'purchasing');
+        $this->assertNull($redacted[0]['cost']);
+        $this->assertStringNotContainsString('15.50', json_encode($redacted, JSON_THROW_ON_ERROR));
+
     }
 
     public function test_stock_status_truthfully_distinguishes_out_of_stock_low_stock_and_healthy(): void
@@ -335,6 +343,7 @@ class BoundedProductSearchMariaDbTest extends TestCase
                 DB::disableQueryLog();
                 $this->assertLessThanOrEqual(30, count($results));
             }
+            $this->assertLessThan(30, count($queries), 'Full authorized search must not issue per-product queries.');
             sort($durations);
             $plans = [];
             foreach ($queries as $query) {
@@ -348,6 +357,7 @@ class BoundedProductSearchMariaDbTest extends TestCase
             }
             $evidence[] = ['term' => $term, 'query_count' => count($queries),
                 'latency_ms' => ['min' => $durations[0], 'median' => $durations[5], 'p95' => $durations[10]],
+                'statements' => array_values(array_unique(array_column($queries, 'query'))),
                 'plans' => $plans];
         }
         fwrite(STDERR, "\nACTUAL_SEARCH_EVIDENCE ".json_encode($evidence, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT)."\n");

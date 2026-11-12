@@ -569,6 +569,7 @@ class PurchaseForm extends Component
                 'product_id' => $product->id,
                 'product_unit_id' => $selectedUnitId,
                 'item_description' => $selectedDescription,
+                'row_key' => (string) Str::uuid(),
                 'quantity' => '1',
                 'unit_cost' => $selectedCost,
                 'discount_type' => 'none',
@@ -660,6 +661,7 @@ class PurchaseForm extends Component
             'product_id' => $productId,
             'product_unit_id' => $selectedUnitId,
             'item_description' => $selectedDescription,
+            'row_key' => (string) Str::uuid(),
             'quantity' => '1',
             'unit_cost' => $selectedCost,
             'discount_type' => 'none',
@@ -707,6 +709,7 @@ class PurchaseForm extends Component
         }
         $this->authorizeForm();
         $this->lines[] = ['product_id' => null, 'product_unit_id' => null, 'item_description' => '',
+            'row_key' => (string) Str::uuid(),
             'quantity' => '1', 'unit_cost' => '0', 'discount_type' => 'none', 'discount_value' => '0', 'tax_rate_id' => null, 'lots' => []];
     }
 
@@ -741,6 +744,7 @@ class PurchaseForm extends Component
         unset($this->expandedLotCustomization[$index]);
         if ($productId === '') {
             $this->lines[$index] = ['product_id' => null, 'product_unit_id' => null, 'item_description' => '',
+                'row_key' => (string) Str::uuid(),
                 'quantity' => '1', 'unit_cost' => '0', 'discount_type' => 'none', 'discount_value' => '0', 'tax_rate_id' => null, 'lots' => []];
             $this->recalculate();
 
@@ -1332,6 +1336,11 @@ class PurchaseForm extends Component
 
     public function render(): View
     {
+        foreach ($this->lines as &$identityLine) {
+            $identityLine['row_key'] ??= (string) Str::uuid();
+        }
+        unset($identityLine);
+
         $this->updatedProductSearch();
         $company = $this->authorizeForm();
         $user = auth()->user();

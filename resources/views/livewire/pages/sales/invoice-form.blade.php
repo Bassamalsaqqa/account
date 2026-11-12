@@ -206,7 +206,7 @@
                             @php
                                 $selectedProduct = !empty($line['product_id']) ? $products->firstWhere('id', $line['product_id']) : null;
                             @endphp
-                            <tr wire:key="inv-line-{{ $index }}">
+                            <tr wire:key="inv-line-{{ $line['row_key'] }}">
                                 <td class="py-2 px-2 align-top space-y-1">
 <div class="entry-product-fields">
                                     <select id="invoice-desktop-line-{{ $index }}-product-id" aria-label="{{ __('sales.product') }} {{ $index + 1 }}" @error('lines.'.$index.'.product_id') aria-invalid="true" aria-describedby="invoice-desktop-line-{{ $index }}-product-id-error" @enderror wire:change="selectProduct({{ $index }}, $event.target.value)"
@@ -341,7 +341,7 @@
                     @php
                         $selectedProduct = !empty($line['product_id']) ? $products->firstWhere('id', $line['product_id']) : null;
                     @endphp
-                    <div wire:key="inv-card-{{ $index }}" class="p-3 bg-canvas rounded-card border border-border space-y-3">
+                    <div wire:key="inv-card-{{ $line['row_key'] }}" class="p-3 bg-canvas rounded-card border border-border space-y-3">
                         <div class="flex items-center justify-between">
                             <span class="text-xs font-bold text-text-primary">#{{ $index + 1 }}</span>
                             @if (count($lines) > 1)
@@ -478,7 +478,7 @@
 
         <!-- Totals & Notes Section -->
         <div class="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4 border-t border-border">
-            <div class="space-y-4">
+            <x-optional-fields id="invoice-optional-details" :open="$isEditing || filled($notes) || filled($terms)" :label="__('sales.optional_details')">
                 <div>
                     <label for="invoice-terms" class="block text-sm font-bold text-text-primary mb-1">
                         {{ __('sales.terms') }}
@@ -495,7 +495,7 @@
                               rows="2"
                               class="w-full p-2.5 rounded-control border border-border bg-canvas text-sm text-text-primary outline-hidden" :disabled="documentBusy || saving"></textarea>
                 </div>
-            </div>
+            </x-optional-fields>
 
             <!-- Preview Calculation Card -->
             <div class="bg-surface-soft p-4 rounded-control border border-border space-y-2 text-xs">

@@ -137,6 +137,7 @@ class InvoiceForm extends Component
 
     /**
      * @var list<array{
+     *     row_key?: string,
      *     id?: ?int,
      *     product_id?: ?int,
      *     product_unit_id?: ?int,
@@ -277,6 +278,7 @@ class InvoiceForm extends Component
                     'product_id' => null,
                     'product_unit_id' => null,
                     'item_description' => '',
+                    'row_key' => (string) Str::uuid(),
                     'quantity' => '1',
                     'unit_price' => '0.00',
                     'discount_type' => 'none',
@@ -489,6 +491,7 @@ class InvoiceForm extends Component
                 'product_id' => (int) $product->id,
                 'product_unit_id' => $selectedUnitId,
                 'item_description' => $selectedDescription,
+                'row_key' => (string) Str::uuid(),
                 'quantity' => '1',
                 'unit_price' => $selectedPrice,
                 'discount_type' => 'none',
@@ -591,6 +594,7 @@ class InvoiceForm extends Component
             'product_id' => $productId,
             'product_unit_id' => $selectedUnitId,
             'item_description' => $selectedDescription,
+            'row_key' => (string) Str::uuid(),
             'quantity' => '1',
             'unit_price' => $selectedPrice,
             'discount_type' => 'none',
@@ -645,6 +649,7 @@ class InvoiceForm extends Component
             'product_id' => null,
             'product_unit_id' => null,
             'item_description' => '',
+            'row_key' => (string) Str::uuid(),
             'quantity' => '1',
             'unit_price' => '0.00',
             'discount_type' => 'none',
@@ -1309,6 +1314,11 @@ class InvoiceForm extends Component
 
     public function render(CompanyContext $context): View
     {
+        foreach ($this->lines as &$identityLine) {
+            $identityLine['row_key'] ??= (string) Str::uuid();
+        }
+        unset($identityLine);
+
         $this->updatedProductSearch();
         abort_unless(auth()->check() && $context->hasCompany() && $context->companyId() === $this->pageCompanyId, 403);
         $user = auth()->user();

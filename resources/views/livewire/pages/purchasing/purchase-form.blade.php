@@ -64,14 +64,12 @@
         </div>
         <div class="border-t border-border pt-3">
             <div class="entry-grid grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 pt-3">
-        <div class="sm:col-span-2"><label for="supplier-number" class="block text-sm font-bold mb-1.5">{{ __('purchasing.vendor_invoice_number') }}</label><input id="supplier-number" wire:model.blur="vendor_invoice_number" maxlength="128" dir="ltr" class="w-full h-11 px-3 border border-border rounded-control text-sm"  :disabled="documentBusy || saving"/></div>
         @foreach(['due_date' => 'due_date'] as $field => $label)<div><label for="purchase-{{ $field }}" class="block text-sm font-bold mb-1.5">{{ __('purchasing.'.$label) }}</label><input id="purchase-{{ $field }}" type="date" wire:model="{{ $field }}" class="w-full min-w-0 h-11 px-3 border border-border rounded-control text-sm" @if($field === 'purchase_date') required @endif  :disabled="documentBusy || saving"/></div>@endforeach
         <div><label for="purchase-currency" class="block text-sm font-bold mb-1.5">{{ __('purchasing.currency') }}</label><select id="purchase-currency" wire:model.live="currency_code" class="w-full h-11 px-3 border border-border rounded-control text-sm" :disabled="documentBusy || saving">@foreach($currencies as $currency)<option value="{{ $currency->currency_code }}">{{ $currency->currency_code }}</option>@endforeach</select></div>
         @if ($currency_code !== $baseCurrencyCode)
         <div><label for="purchase-rate" class="block text-sm font-bold mb-1.5">{{ __('purchasing.exchange_rate') }}</label><input id="purchase-rate" wire:model.blur="exchange_rate" wire:change="updatedExchangeRate" inputmode="decimal" dir="ltr" class="w-full h-11 px-3 border border-border rounded-control text-sm font-mono"  :disabled="documentBusy || saving"/></div>
         @endif
         <div class=""><label for="purchase-warehouse" class="block text-sm font-bold mb-1.5">{{ __('purchasing.receiving_warehouse') }}</label><select id="purchase-warehouse" wire:model="warehouse_id" required class="w-full h-11 px-3 border border-border rounded-control text-sm" :disabled="documentBusy || saving"><option value="">{{ __('purchasing.select_warehouse') }}</option>@foreach($warehouses as $warehouse)<option value="{{ $warehouse->id }}">{{ $warehouse->displayName() }}</option>@endforeach</select></div>
-        <div class=""><label for="purchase-locale" class="block text-sm font-bold mb-1.5">{{ __('purchasing.document_language') }}</label><select id="purchase-locale" wire:model="document_locale" class="w-full h-11 px-3 border border-border rounded-control text-sm" :disabled="documentBusy || saving">@foreach($languages as $language)<option value="{{ $language->locale }}">{{ __('purchasing.locale_'.$language->locale) }}</option>@endforeach</select></div>
             </div>
         </div>
     </section>
@@ -95,7 +93,7 @@
             </button>
         </div>
         @foreach($lines as $index => $line)
-            <article wire:key="purchase-line-{{ $index }}-{{ $line['product_id'] ?? 'new' }}" class="bg-surface border border-border rounded-card p-4 space-y-3">
+            <article wire:key="purchase-line-{{ $line['row_key'] }}" class="bg-surface border border-border rounded-card p-4 space-y-3">
                 <div class="flex justify-between items-center gap-2"><h3 class="text-xs font-bold">{{ __('purchasing.line') }} <bdi>{{ $index + 1 }}</bdi></h3><button type="button" wire:click="removeLine({{ $index }})" class="min-h-[44px] px-3 text-danger text-sm font-bold cursor-pointer hover:bg-danger/10 rounded-control" wire:loading.attr="disabled" wire:target="removeLine" :disabled="documentBusy || saving">{{ __('purchasing.remove_line') }}</button></div>
                 <div class="grid grid-cols-2 lg:grid-cols-12 gap-3">
                     <div class="col-span-2 lg:col-span-4"><label for="line-product-{{ $index }}" class="block text-sm text-text-secondary mb-1">{{ __('purchasing.product') }}</label><select id="line-product-{{ $index }}" wire:change="selectProduct({{ $index }}, $event.target.value)" class="w-full h-11 px-2 border border-border rounded-control text-sm" :disabled="documentBusy || saving"><option value="">{{ __('purchasing.select_product') }}</option>
@@ -224,11 +222,17 @@
 
     @include('livewire.partials.immediate-purchase-settlement')
 
-    @if ($showPreview && ! empty($previewData['settlement']))
+    @if ($showPreview && $settlementPreview && ! empty($previewData['settlement']))
         @include('livewire.partials.immediate-purchase-review', ['review' => $previewData['settlement']])
     @endif
 
+    <x-optional-fields id="purchase-optional-details" :open="$publicId !== null || filled($notes) || filled($vendor_invoice_number)">
+        <div class="entry-grid grid grid-cols-1 sm:grid-cols-2 gap-4">
+<div class="sm:col-span-2"><label for="supplier-number" class="block text-sm font-bold mb-1.5">{{ __('purchasing.vendor_invoice_number') }}</label><input id="supplier-number" wire:model.blur="vendor_invoice_number" maxlength="128" dir="ltr" class="w-full h-11 px-3 border border-border rounded-control text-sm"  :disabled="documentBusy || saving"/></div>
+<div class=""><label for="purchase-locale" class="block text-sm font-bold mb-1.5">{{ __('purchasing.document_language') }}</label><select id="purchase-locale" wire:model="document_locale" class="w-full h-11 px-3 border border-border rounded-control text-sm" :disabled="documentBusy || saving">@foreach($languages as $language)<option value="{{ $language->locale }}">{{ __('purchasing.locale_'.$language->locale) }}</option>@endforeach</select></div>
     <div><label for="purchase-notes" class="block text-sm font-bold mb-1.5">{{ __('purchasing.notes') }}</label><textarea id="purchase-notes" wire:model="notes" rows="3" class="w-full border border-border rounded-control bg-surface p-3 text-sm" :disabled="documentBusy || saving"></textarea></div>
+        </div>
+    </x-optional-fields>
     <footer class="flex flex-wrap gap-3">
         @can('purchasing.purchase.post')
             <button type="button" @click="if (!saving && !window.isDocumentBlocked($wire)) { saving = true; window.enqueueDocumentOperation($wire, 'saveAndConfirm').catch(() => { operationFailed = true; }).finally(() => saving = false); }" :disabled="saving || documentBusy" class="min-h-11 px-4 bg-primary text-white font-semibold text-sm rounded-control">{{ __('purchasing.post_purchase') }}</button>
