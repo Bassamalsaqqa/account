@@ -9,16 +9,30 @@ Baseline: Stacked on PR92 `origin/t3/mobile-v2-boundary-qualification` HEAD `7b8
 This qualification establishes the cross-version durable mobile event receipt identity, absent-row race handling, InnoDB/MariaDB rollback atomicity, and financial authority review for the Small Trader mobile subsystem.
 
 ### Key Architectural Invariants & Hardened Guarantees:
-1. **Durable Mobile Event Identity & Strict Contract Allowlist**: Backed by `mobile_event_receipts` with a strict `UNIQUE(company_id, client_event_id)` constraint spanning all API versions (v1, v2, v3, and offline events). Client event IDs are strictly validated as RFC 4122 UUIDs (`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`). Event versions and representations are strictly allowlisted (`[1, 2, 3]` and `['v1_canonical', 'v2_intent', 'v3_offline_event']`); arbitrary ranges or unknown profiles are denied by default.
-2. **Strict Canonical JCS Byte Verification**: Enforces strict JSON parsing via `StrictJsonParser` preventing duplicate keys, trailing characters, invalid escapes, or non-finite numbers. Byte-for-byte canonical JCS serialization (`CanonicalJsonSerializer`) is verified against the incoming bytes before admission, preserving decimal lexemes without normalizations. Generic parser exceptions prevent echoing sensitive payload keys or credentials.
-3. **Scope-Before-Digest Security (Zero Oracle)**: Active company and actor scope checks execute *before* payload digest comparison. Foreign actor, device mismatch, or foreign company access returns uniform authentication/scope errors, preventing attackers from probing payload contents or using digest mismatch 409 responses as a cross-tenant oracle. Denies `SupportViewContext` impersonation.
-4. **Verified Authenticated Lookup API**: The `lookup` method requires a verified bearer token hash, active device, fresh company membership, and unrevoked password epoch under transaction locks. Lookup rejects raw caller IDs as proof and executes under the same security gate as `recordOrReplay`.
-5. **Default-Deny Financial Authority**: Mobile bearer tokens establish staff and device identity *only*. All mobile financial execution remains strictly denied by default via `DenyFinancialExecutionAdapter` (throwing `FinancialExecutionDeniedException`). Financial execution requires explicit, reviewed canonical capability mapping. Per-call executor and permissions overrides are prohibited; tests bind authorized adapters via the container and verify real Spatie permissions against row locks in `model_has_roles` and `model_has_permissions`. Caller passing empty permissions cannot bypass authority.
-6. **Hierarchical Transactional Row Locking**: Enforces consistent lock acquisition order to prevent deadlocks: Company root first, then token, device, user, membership row, and Spatie assignment rows (`company_id` team foreign key). Cache tags and Spatie registrar caches are cleared locally.
-7. **Ambient Guard Isolation**: Captures prior guard state without lazy authentication, enforces strict isolation, clears `CompanyContext::clearSessionless()` before and in `finally` blocks, and cleanly restores prior guard state.
-8. **Bounded Terminal Results & Restrict On Delete**: `original_canonical_bytes` is stored with binary charset (`longblob`) to prevent UTF-8 charset normalization. Foreign keys to `sales_invoices`, `customer_payments`, and `command_receipts` enforce `ON DELETE RESTRICT` (forbidding `SET NULL`). Terminal canonical results are bounded (<= 64 KiB) and scrubbed of credential artifacts.
-9. **InnoDB Concurrency & Deadlock Resilience**: Duplicate error detection is strictly constrained to SQLSTATE 23000, error 1062, and exact constraint `mobile_event_receipts_company_client_event_unique`. Deadlock detection is restricted to error 1213 / SQLSTATE 40001. Retries are disallowed within nested transactions (`$initialLevel > 0`) to prevent corrupted savepoints.
-10. **All-Or-Nothing Atomicity & Zero Replay Bypass**: Any failure during invoice numbering, draft creation, stock allocation, payment posting, or receipt record creation rolls back all database mutations cleanly, leaving 0 leftover rows and 100% healthy reconciliations across all six audit services.
+1. **Durable Mobile Event Identity & Strict Contract Allowlist**: Backed by `mobile_event_receipts` with a strict `UNIQUE(company_id, client_event_id)` constraint spanning all API versions. Client event IDs are strictly validated as RFC 4122 UUIDs (`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`).
+   - Contract Revision 3, API Version v2, and Offline Event version 2 are strictly distinguished.
+   - New event admissions are bounded strictly to `event_version` 2 and representations `['v2_intent', 'v2_online_sale_intent', 'offline_sale_intake', 'offline_sale']`.
+   - Legacy v1 event admission is explicitly unsupported (`Legacy v1 event admission is unsupported.`) without pretending identical economic profiles. Historical v1 records stored directly in the database retain cross-version convergence on identical payload digests.
+   - Arbitrary JSON is not accepted as financial intent; payload context bindings (`company_id`, `actor_id`, `device_id`, `client_event_id`) are verified against authenticated scope before domain admission.
+2. **Strict Canonical JCS Byte Verification (Syntax Canonicality Only)**: Enforces strict JSON parsing via `StrictJsonParser` preventing duplicate keys, trailing characters, invalid escapes, or non-finite numbers. Byte-for-byte canonical JCS serialization (`CanonicalJsonSerializer`) is verified against incoming bytes before admission, preserving decimal lexemes without normalizations. Strict JCS verification provides syntax canonicality only; it does not confer financial authority or schema authority. Production Deny remains mandatory.
+3. **Scope-Before-Digest Security & Zero Company Existence Oracle**: Two-stage token authentication: Stage 1 resolves and validates the bearer token before querying company existence. Any missing token, invalid token, or unknown company returns identical `MobileEventAuthenticationException('The Bearer token has been revoked or expired.')`, providing zero company existence oracle to unauthenticated callers.
+   - Guard user isolation wraps operations in `try ... finally` executing `CompanyContext::clearSessionless()` and restoring prior guard user even on validation, SupportView denial, and root guard failures.
+   - Lookup guard sets `$guard->setUser($user)` and restores prior state in `finally`.
+   - Authenticated replays check replay before event scope or digest comparisons.
+4. **Root Database Transaction Level Guarantee**: `recordOrReplay()` unconditionally requires root database transaction level (`DB::transactionLevel() === 0`), rejecting nested transaction callers before any side effects or receipt mutations. Outer transactions must not disable the guard to fake proof; tests utilize non-nested fixture strategies on owned disposable schemas. No ACK is returned until root DB commit.
+5. **Hierarchical Lock Ordering & Deadlock Prevention**:
+   - Enforces canonical lock acquisition order: Company root -> Device -> User -> Token -> Company Membership -> Receipt.
+   - Locking `Device` before `Token` eliminates lock inversion cycles with `AuthController::login` (which acquires user lock then inserts/updates device and token) and `DeviceController::revoke`.
+   - Documented cooperative model assignment locks: Spatie registrar caches and schema definitions are protected cooperatively within the process, but cross-process registrar cache flushes are not fully linearizable without cooperative writer locks; Production Deny remains mandatory.
+6. **Canonical Entity Public ID Derivation & Allowlisted DTO Validation**:
+   - Public IDs (`sales_invoice_public_id`, `customer_payment_public_id`, `command_receipt_id`) are derived directly from locked canonical rows (`sales_invoices`, `customer_payments`, `command_receipts`), throwing `RuntimeException` on any mismatch.
+   - Customer and currency identities are strictly enforced between invoice and payment, and existence of `customer_payment_allocations` is verified.
+   - Terminal canonical results are bounded (<= 64 KiB), scrubbed of credential artifacts, and restricted to typed allowlisted keys (`ALLOWED_TERMINAL_RESULT_KEYS`), rejecting unknown keys and raw model instances.
+7. **Model Hook Immutability Scope**:
+   - `MobileEventReceipt` enforces software immutability via Eloquent model lifecycle hooks (`updating` and `deleting` throw `RuntimeException`).
+   - Software hooks guard Eloquent mutations; raw SQL mutations are constrained by foreign keys with `ON DELETE RESTRICT`. Unsolicited database triggers are not injected.
+8. **InnoDB Concurrency & Deadlock Resilience**: Duplicate error detection is strictly constrained to SQLSTATE 23000, error 1062, and exact constraint `mobile_event_receipts_company_client_event_unique`. Deadlock detection is restricted to error 1213 / SQLSTATE 40001. Retries are disallowed within nested transactions to prevent corrupted savepoints.
+9. **All-Or-Nothing Atomicity & Zero Replay Bypass**: Any failure during numbering, draft creation, stock allocation, payment posting, or receipt record creation rolls back all database mutations cleanly, leaving 0 leftover rows and 100% healthy reconciliations across all six audit services.
 
 ---
 
@@ -143,13 +157,17 @@ CREATE TABLE `mobile_event_receipts` (
 
 Executed on isolated disposable MariaDB schemas (`tests/Support/run-phase8-disposable.php` on port 3342):
 
+### Receipt Qualification Test Suites:
 | Test Suite | Tests | Assertions | Result | Notes |
 |---|---|---|---|---|
-| `MobileEventReceiptIdentityTest` | 21 | 70 | PASS | Strict JSON, byte JCS verification, UUID client_event_id, version allowlist, scope-before-digest, verified lookup, default-deny replay/lookup, row locking |
-| `MobileReceiptRollbackAtomicityTest` | 6 | 55 | PASS | 5 fault injections (including fault after MobileEventReceipt::create) with zero leftover state + full canonical post with all 6 reconciliations verified |
+| `MobileEventReceiptIdentityTest` | 30 | 92 | PASS | Strict JSON, JCS syntax verification, UUID client_event_id, version allowlist (rev 3/v2/offline 2 distinct, v1 unsupported), payload context binding, zero company oracle, lookup guard user, grant revocation without cache flush, root transaction guarantee, public ID mismatch rollback, allowlisted DTO validation, sessionless context cleanup, raw binary/Unicode preservation |
+| `MobileReceiptRollbackAtomicityTest` | 6 | 55 | PASS | 5 fault injections (including fault after MobileEventReceipt::create) with zero leftover state + full canonical post with all 6 reconciliations verified on non-nested fixture runner |
 | `MobileReceiptConcurrencyTest` | 4 | 39 | PASS | 2-worker race convergence, altered payload 409 conflict, cross-tenant concurrent independence, no fake session bypass |
 | `MobileReceiptMigrationPreservationTest` | 1 | 20 | PASS | Forward/rollback roundtrip preserves business fingerprint and all 6 reconciliations |
-| `All Mobile Feature Tests` | 131 | 1095 | PASS | Full regression pass across all native mobile feature tests |
-| `Mobile Contract Validator` | 210 | 210 | PASS | Python OpenAPI 3.1 & JSON Schema Draft 2020-12 validation (`tools/validate-mobile-contract.py`) |
-| `PHPStan Static Analysis` | - | 0 errors | PASS | `./vendor/bin/phpstan analyse --level=8` |
-| `Laravel Pint Code Style` | - | - | PASS | `./vendor/bin/pint --test` |
+
+### Static Analysis, Code Formatting & Contract Verification:
+| Check | Standard / Configuration | Result | Notes |
+|---|---|---|---|
+| `PHPStan Static Analysis` | Configured `phpstan.neon` (Level 6) | PASS | 0 errors across 746 files |
+| `Laravel Pint Code Style` | `./vendor/bin/pint --test` | PASS | All files adhere to strict PSR-12 / Laravel style |
+| `Mobile Contract Validator` | `tools/validate-mobile-contract.py` | PASS | All 210 OpenAPI 3.1 & JSON Schema Draft 2020-12 checks pass under Python 3 and Python 3 `-O` |

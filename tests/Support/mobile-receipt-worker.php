@@ -46,8 +46,8 @@ $input = json_decode(file_get_contents($directory.'/'.$slot.'.json'), true, 512,
 $companyId = (int) $input['company_id'];
 $clientEventId = (string) $input['client_event_id'];
 $tokenHash = (string) $input['token_hash'];
-$eventVersion = (int) ($input['event_version'] ?? 1);
-$representation = (string) ($input['representation'] ?? 'v1_canonical');
+$eventVersion = (int) ($input['event_version'] ?? 2);
+$representation = (string) ($input['representation'] ?? 'v2_intent');
 $canonicalBytes = (string) $input['canonical_bytes'];
 $executorMode = (string) ($input['executor_mode'] ?? 'canonical');
 

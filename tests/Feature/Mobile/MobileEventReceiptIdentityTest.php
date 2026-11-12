@@ -4,10 +4,13 @@ declare(strict_types=1);
 
 namespace Tests\Feature\Mobile;
 
+use App\Application\Platform\SupportViewContext;
 use App\Models\Company;
+use App\Models\Customer;
 use App\Models\MobileAccessToken;
 use App\Models\MobileDevice;
 use App\Models\MobileEventReceipt;
+use App\Models\SalesInvoice;
 use App\Models\User;
 use App\Services\Tenancy\CompanyRoleService;
 use App\Support\Mobile\Receipt\DenyFinancialExecutionAdapter;
@@ -18,9 +21,9 @@ use App\Support\Mobile\Receipt\Exceptions\MobileEventForeignScopeException;
 use App\Support\Mobile\Receipt\FinancialExecutionAdapterInterface;
 use App\Support\Mobile\Receipt\MobileEventReceiptManager;
 use App\Support\Tenancy\CompanyContext;
+use App\Support\Tenancy\CompanyScope;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\QueryException;
-use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
@@ -32,13 +35,15 @@ use Tests\TestCase;
 
 final class MobileEventReceiptIdentityTest extends TestCase
 {
-    use RefreshDatabase;
+    // Non-nested fixture strategy on owned disposable schema: no outer transaction wrapper
 
     private User $user;
 
     private Company $companyA;
 
     private Company $companyB;
+
+    private Customer $customerA;
 
     private MobileDevice $device;
 
@@ -63,12 +68,43 @@ final class MobileEventReceiptIdentityTest extends TestCase
         }
     }
 
+    protected function tearDown(): void
+    {
+        if (DB::transactionLevel() > 0) {
+            DB::rollBack(0);
+        }
+
+        CompanyScope::executeWithoutScope(function () {
+            try {
+                DB::statement('SET FOREIGN_KEY_CHECKS=0');
+                MobileEventReceipt::query()->delete();
+                DB::table('customer_payment_allocations')->delete();
+                DB::table('customer_payments')->delete();
+                DB::table('sales_invoice_lines')->delete();
+                SalesInvoice::query()->delete();
+                Customer::query()->delete();
+                MobileAccessToken::query()->delete();
+                MobileDevice::query()->delete();
+                DB::table('model_has_roles')->delete();
+                DB::table('model_has_permissions')->delete();
+                DB::table('company_user')->delete();
+                Company::query()->delete();
+                User::query()->delete();
+            } finally {
+                DB::statement('SET FOREIGN_KEY_CHECKS=1');
+                app(CompanyContext::class)->clear();
+            }
+        });
+
+        parent::tearDown();
+    }
+
     protected function setUp(): void
     {
         parent::setUp();
 
         $this->user = User::factory()->create([
-            'email' => 'staff_receipt@example.com',
+            'email' => 'staff_receipt_'.Str::random(8).'@example.com',
             'password' => Hash::make('ReceiptSecured!Pass123'),
         ]);
 
@@ -105,6 +141,15 @@ final class MobileEventReceiptIdentityTest extends TestCase
         $this->user->givePermissionTo('sales.invoice.view');
         $this->user->givePermissionTo('money.receipt.view');
 
+        $this->customerA = CompanyScope::executeWithoutScope(fn () => Customer::create([
+            'company_id' => $this->companyA->id,
+            'name_ar' => 'عميل المقبوضات',
+            'name_en' => 'Receipt Customer',
+            'currency_code' => 'ILS',
+            'active' => true,
+            'created_by' => $this->user->id,
+        ]));
+
         $deviceId = (string) Str::uuid();
         $this->device = MobileDevice::create([
             'device_id' => $deviceId,
@@ -138,14 +183,17 @@ final class MobileEventReceiptIdentityTest extends TestCase
                 string $operation,
                 ?array $payload = null
             ): void {
-                if ($operation === 'execute') {
-                    if (! $actor->hasPermissionTo('sales.invoice.post')) {
-                        throw new AuthorizationException('Missing required financial permission [sales.invoice.post]');
-                    }
-                } elseif (in_array($operation, ['replay', 'lookup'], true)) {
-                    if (! $actor->hasPermissionTo('sales.invoice.view')) {
-                        throw new AuthorizationException('Missing required read permission [sales.invoice.view]');
-                    }
+                $permission = $operation === 'execute' ? 'sales.invoice.post' : 'sales.invoice.view';
+                $hasPerm = DB::table('model_has_permissions')
+                    ->join('permissions', 'permissions.id', '=', 'model_has_permissions.permission_id')
+                    ->where('model_has_permissions.model_type', User::class)
+                    ->where('model_has_permissions.model_id', $actor->id)
+                    ->where('model_has_permissions.company_id', $company->id)
+                    ->where('permissions.name', $permission)
+                    ->exists();
+
+                if (! $hasPerm) {
+                    throw new AuthorizationException("Missing required financial permission [{$permission}]");
                 }
             }
 
@@ -158,10 +206,10 @@ final class MobileEventReceiptIdentityTest extends TestCase
             ): array {
                 return [
                     'sales_invoice_id' => $this->result['sales_invoice_id'] ?? null,
-                    'sales_invoice_public_id' => $this->result['sales_invoice_public_id'] ?? 'INV_01HXYZTEST000000000001',
+                    'sales_invoice_public_id' => $this->result['sales_invoice_public_id'] ?? null,
                     'customer_payment_id' => $this->result['customer_payment_id'] ?? null,
-                    'customer_payment_public_id' => $this->result['customer_payment_public_id'] ?? 'PAY_01HXYZTEST000000000001',
-                    'command_receipt_id' => null,
+                    'customer_payment_public_id' => $this->result['customer_payment_public_id'] ?? null,
+                    'command_receipt_id' => $this->result['command_receipt_id'] ?? null,
                     'terminal_canonical_result' => $this->result['terminal_canonical_result'] ?? [
                         'status' => 'completed',
                         'grand_total' => '150.000000',
@@ -179,38 +227,35 @@ final class MobileEventReceiptIdentityTest extends TestCase
         $this->expectException(FinancialExecutionDeniedException::class);
         $this->expectExceptionMessage('Financial authority is unresolved on Mobile V2');
 
-        // Without passing custom executor, manager uses default DenyFinancialExecutionAdapter
-        $manager = new MobileEventReceiptManager;
-        $manager->recordOrReplay(
+        $this->manager->recordOrReplay(
             companyId: (int) $this->companyA->id,
             clientEventId: (string) Str::uuid(),
             tokenHash: $this->token->token_hash,
-            eventVersion: 1,
-            representation: 'v1_canonical',
+            eventVersion: 2,
+            representation: 'v2_intent',
             canonicalBytes: $payload
         );
-
-        $this->assertDatabaseCount('mobile_event_receipts', 0);
     }
 
-    public function test_production_default_denies_replay_and_lookup_of_existing_receipt(): void
+    public function test_production_default_denies_replay_and_lookup(): void
     {
         $payload = '{"amount":"100.000000"}';
         $uuid = (string) Str::uuid();
+
         app(CompanyContext::class)->setCompany($this->companyA, $this->user);
 
-        // Seed an existing receipt row in the DB
+        // Seed an existing receipt row in the DB directly
         MobileEventReceipt::create([
             'company_id' => $this->companyA->id,
             'client_event_id' => $uuid,
             'actor_id' => $this->user->id,
             'device_id' => $this->device->device_id,
-            'event_version' => 1,
-            'representation' => 'v1_canonical',
+            'event_version' => 2,
+            'representation' => 'v2_intent',
             'payload_digest' => hash('sha256', $payload),
             'original_canonical_bytes' => $payload,
             'status' => 'completed',
-            'terminal_canonical_result' => ['grand_total' => '100.000000'],
+            'terminal_canonical_result' => ['status' => 'completed', 'grand_total' => '100.000000'],
         ]);
 
         $manager = new MobileEventReceiptManager;
@@ -221,8 +266,8 @@ final class MobileEventReceiptIdentityTest extends TestCase
                 companyId: (int) $this->companyA->id,
                 clientEventId: $uuid,
                 tokenHash: $this->token->token_hash,
-                eventVersion: 1,
-                representation: 'v1_canonical',
+                eventVersion: 2,
+                representation: 'v2_intent',
                 canonicalBytes: $payload
             );
             $this->fail('Expected FinancialExecutionDeniedException on replay');
@@ -246,9 +291,9 @@ final class MobileEventReceiptIdentityTest extends TestCase
 
         $manager = new MobileEventReceiptManager($this->createTestExecutor([
             'sales_invoice_id' => null,
-            'sales_invoice_public_id' => 'INV_505PUBLICID',
+            'sales_invoice_public_id' => null,
             'customer_payment_id' => null,
-            'customer_payment_public_id' => 'PAY_606PUBLICID',
+            'customer_payment_public_id' => null,
         ]));
 
         $res = $manager->recordOrReplay(
@@ -263,9 +308,9 @@ final class MobileEventReceiptIdentityTest extends TestCase
         $this->assertSame('created', $res['outcome']);
         $this->assertSame('completed', $res['status']);
         $this->assertNull($res['sales_invoice_id']);
-        $this->assertSame('INV_505PUBLICID', $res['sales_invoice_public_id']);
+        $this->assertNull($res['sales_invoice_public_id']);
         $this->assertNull($res['customer_payment_id']);
-        $this->assertSame('PAY_606PUBLICID', $res['customer_payment_public_id']);
+        $this->assertNull($res['customer_payment_public_id']);
 
         $this->assertDatabaseCount('mobile_event_receipts', 1);
         $row = MobileEventReceipt::withoutGlobalScopes()->firstOrFail();
@@ -285,16 +330,19 @@ final class MobileEventReceiptIdentityTest extends TestCase
         $uuid = (string) Str::uuid();
 
         $manager1 = new MobileEventReceiptManager($this->createTestExecutor([
-            'sales_invoice_id' => null,
-            'sales_invoice_public_id' => 'INV_111ORIGINAL',
+            'terminal_canonical_result' => [
+                'status' => 'completed',
+                'grand_total' => '100.000000',
+                'paid_amount' => '100.000000',
+            ],
         ]));
 
         $res1 = $manager1->recordOrReplay(
             companyId: (int) $this->companyA->id,
             clientEventId: $uuid,
             tokenHash: $this->token->token_hash,
-            eventVersion: 1,
-            representation: 'v1_canonical',
+            eventVersion: 2,
+            representation: 'v2_intent',
             canonicalBytes: $payload
         );
 
@@ -303,29 +351,30 @@ final class MobileEventReceiptIdentityTest extends TestCase
 
         // Second call: exact same payload and event ID
         $manager2 = new MobileEventReceiptManager($this->createTestExecutor([
-            'sales_invoice_id' => null,
-            'sales_invoice_public_id' => 'INV_999DIFFERENT', // would differ if executed
+            'terminal_canonical_result' => [
+                'status' => 'completed',
+                'grand_total' => '999.000000', // would differ if re-executed
+            ],
         ]));
 
         $res2 = $manager2->recordOrReplay(
             companyId: (int) $this->companyA->id,
             clientEventId: $uuid,
             tokenHash: $this->token->token_hash,
-            eventVersion: 1,
-            representation: 'v1_canonical',
+            eventVersion: 2,
+            representation: 'v2_intent',
             canonicalBytes: $payload
         );
 
         $this->assertSame('replay', $res2['outcome']);
-        $this->assertNull($res2['sales_invoice_id']);
-        $this->assertSame('INV_111ORIGINAL', $res2['sales_invoice_public_id']);
+        $this->assertSame('100.000000', $res2['terminal_canonical_result']['grand_total']);
         $this->assertDatabaseCount('mobile_event_receipts', 1);
 
         // Also test lookup with verified token
         $lookup = $manager2->lookup((int) $this->companyA->id, $uuid, $this->token->token_hash);
         $this->assertNotNull($lookup);
         $this->assertSame('lookup', $lookup['outcome']);
-        $this->assertSame('INV_111ORIGINAL', $lookup['sales_invoice_public_id']);
+        $this->assertSame('100.000000', $lookup['terminal_canonical_result']['grand_total']);
     }
 
     public function test_altered_payload_for_same_client_event_id_throws_409_conflict(): void
@@ -340,8 +389,8 @@ final class MobileEventReceiptIdentityTest extends TestCase
             companyId: (int) $this->companyA->id,
             clientEventId: $uuid,
             tokenHash: $this->token->token_hash,
-            eventVersion: 1,
-            representation: 'v1_canonical',
+            eventVersion: 2,
+            representation: 'v2_intent',
             canonicalBytes: $payloadOriginal
         );
 
@@ -352,8 +401,8 @@ final class MobileEventReceiptIdentityTest extends TestCase
             companyId: (int) $this->companyA->id,
             clientEventId: $uuid,
             tokenHash: $this->token->token_hash,
-            eventVersion: 1,
-            representation: 'v1_canonical',
+            eventVersion: 2,
+            representation: 'v2_intent',
             canonicalBytes: $payloadAltered
         );
     }
@@ -371,13 +420,14 @@ final class MobileEventReceiptIdentityTest extends TestCase
             companyId: (int) $this->companyA->id,
             clientEventId: $uuid,
             tokenHash: $this->token->token_hash,
-            eventVersion: 1,
-            representation: 'v1_canonical',
+            eventVersion: 2,
+            representation: 'v2_intent',
             canonicalBytes: $payloadOriginal
         );
 
         // Colleague in same company
         $colleague = User::factory()->create([
+            'email' => 'colleague_'.Str::random(8).'@example.com',
             'password' => Hash::make('ColleaguePass123'),
         ]);
         $this->companyA->users()->attach($colleague->id, ['status' => 'active', 'is_owner' => false]);
@@ -407,8 +457,8 @@ final class MobileEventReceiptIdentityTest extends TestCase
                 companyId: (int) $this->companyA->id,
                 clientEventId: $uuid,
                 tokenHash: $foreignToken->token_hash,
-                eventVersion: 1,
-                representation: 'v1_canonical',
+                eventVersion: 2,
+                representation: 'v2_intent',
                 canonicalBytes: $payloadAltered
             );
             $this->fail('Expected MobileEventForeignScopeException');
@@ -428,24 +478,24 @@ final class MobileEventReceiptIdentityTest extends TestCase
         $uuid = (string) Str::uuid();
 
         // Company A
-        $managerA = new MobileEventReceiptManager($this->createTestExecutor(['sales_invoice_public_id' => 'INV_A']));
+        $managerA = new MobileEventReceiptManager($this->createTestExecutor());
         $resA = $managerA->recordOrReplay(
             companyId: (int) $this->companyA->id,
             clientEventId: $uuid,
             tokenHash: $this->token->token_hash,
-            eventVersion: 1,
-            representation: 'v1_canonical',
+            eventVersion: 2,
+            representation: 'v2_intent',
             canonicalBytes: $payload
         );
 
         // Company B with same clientEventId
-        $managerB = new MobileEventReceiptManager($this->createTestExecutor(['sales_invoice_public_id' => 'INV_B']));
+        $managerB = new MobileEventReceiptManager($this->createTestExecutor());
         $resB = $managerB->recordOrReplay(
             companyId: (int) $this->companyB->id,
             clientEventId: $uuid,
             tokenHash: $this->token->token_hash,
-            eventVersion: 1,
-            representation: 'v1_canonical',
+            eventVersion: 2,
+            representation: 'v2_intent',
             canonicalBytes: $payload
         );
 
@@ -459,22 +509,26 @@ final class MobileEventReceiptIdentityTest extends TestCase
         $payload = '{"grand_total":"100.000000"}';
         $uuid = (string) Str::uuid();
 
-        // Created under v1
-        $manager1 = new MobileEventReceiptManager($this->createTestExecutor(['sales_invoice_public_id' => 'INV_V1']));
-        $res1 = $manager1->recordOrReplay(
-            companyId: (int) $this->companyA->id,
-            clientEventId: $uuid,
-            tokenHash: $this->token->token_hash,
-            eventVersion: 1,
-            representation: 'v1_canonical',
-            canonicalBytes: $payload
-        );
-
-        $this->assertSame('created', $res1['outcome']);
+        // Historical receipt seeded in database directly (e.g. legacy v1)
+        CompanyScope::executeWithoutScope(fn () => MobileEventReceipt::create([
+            'company_id' => $this->companyA->id,
+            'client_event_id' => $uuid,
+            'actor_id' => $this->user->id,
+            'device_id' => $this->device->device_id,
+            'event_version' => 1,
+            'representation' => 'v1_canonical',
+            'payload_digest' => hash('sha256', $payload),
+            'original_canonical_bytes' => $payload,
+            'status' => 'completed',
+            'terminal_canonical_result' => [
+                'status' => 'completed',
+                'grand_total' => '100.000000',
+            ],
+        ]));
 
         // Retried under v2 with same payload
-        $manager2 = new MobileEventReceiptManager($this->createTestExecutor(['sales_invoice_public_id' => 'INV_V2']));
-        $res2 = $manager2->recordOrReplay(
+        $manager = new MobileEventReceiptManager($this->createTestExecutor());
+        $res = $manager->recordOrReplay(
             companyId: (int) $this->companyA->id,
             clientEventId: $uuid,
             tokenHash: $this->token->token_hash,
@@ -483,8 +537,8 @@ final class MobileEventReceiptIdentityTest extends TestCase
             canonicalBytes: $payload
         );
 
-        $this->assertSame('replay', $res2['outcome']);
-        $this->assertSame('INV_V1', $res2['sales_invoice_public_id']);
+        $this->assertSame('replay', $res['outcome']);
+        $this->assertSame('100.000000', $res['terminal_canonical_result']['grand_total']);
     }
 
     public function test_revoked_token_fails_linearized_check_inside_transaction(): void
@@ -500,8 +554,8 @@ final class MobileEventReceiptIdentityTest extends TestCase
             companyId: (int) $this->companyA->id,
             clientEventId: (string) Str::uuid(),
             tokenHash: $this->token->token_hash,
-            eventVersion: 1,
-            representation: 'v1_canonical',
+            eventVersion: 2,
+            representation: 'v2_intent',
             canonicalBytes: $payload
         );
     }
@@ -519,8 +573,8 @@ final class MobileEventReceiptIdentityTest extends TestCase
             companyId: (int) $this->companyA->id,
             clientEventId: (string) Str::uuid(),
             tokenHash: $this->token->token_hash,
-            eventVersion: 1,
-            representation: 'v1_canonical',
+            eventVersion: 2,
+            representation: 'v2_intent',
             canonicalBytes: $payload
         );
     }
@@ -538,8 +592,8 @@ final class MobileEventReceiptIdentityTest extends TestCase
             companyId: (int) $this->companyA->id,
             clientEventId: (string) Str::uuid(),
             tokenHash: $this->token->token_hash,
-            eventVersion: 1,
-            representation: 'v1_canonical',
+            eventVersion: 2,
+            representation: 'v2_intent',
             canonicalBytes: $payload
         );
 
@@ -563,8 +617,8 @@ final class MobileEventReceiptIdentityTest extends TestCase
             companyId: (int) $this->companyA->id,
             clientEventId: (string) Str::uuid(),
             tokenHash: $this->token->token_hash,
-            eventVersion: 1,
-            representation: 'v1_canonical',
+            eventVersion: 2,
+            representation: 'v2_intent',
             canonicalBytes: $payload
         );
     }
@@ -584,8 +638,8 @@ final class MobileEventReceiptIdentityTest extends TestCase
             companyId: (int) $this->companyA->id,
             clientEventId: (string) Str::uuid(),
             tokenHash: $this->token->token_hash,
-            eventVersion: 1,
-            representation: 'v1_canonical',
+            eventVersion: 2,
+            representation: 'v2_intent',
             canonicalBytes: $payload
         );
     }
@@ -646,6 +700,24 @@ final class MobileEventReceiptIdentityTest extends TestCase
             companyId: (int) $this->companyA->id,
             clientEventId: 'not-a-valid-uuid',
             tokenHash: $this->token->token_hash,
+            eventVersion: 2,
+            representation: 'v2_intent',
+            canonicalBytes: $payload
+        );
+    }
+
+    public function test_legacy_v1_new_admission_is_unsupported(): void
+    {
+        $payload = '{"amount":"10.000000"}';
+        $manager = new MobileEventReceiptManager($this->createTestExecutor());
+
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('Legacy v1 event admission is unsupported.');
+
+        $manager->recordOrReplay(
+            companyId: (int) $this->companyA->id,
+            clientEventId: (string) Str::uuid(),
+            tokenHash: $this->token->token_hash,
             eventVersion: 1,
             representation: 'v1_canonical',
             canonicalBytes: $payload
@@ -657,34 +729,34 @@ final class MobileEventReceiptIdentityTest extends TestCase
         $payload = '{"amount":"10.000000"}';
         $manager = new MobileEventReceiptManager($this->createTestExecutor());
 
-        // Unsupported version
+        // Unsupported version 3 (no invented v3_offline_event)
         try {
             $manager->recordOrReplay(
                 companyId: (int) $this->companyA->id,
                 clientEventId: (string) Str::uuid(),
                 tokenHash: $this->token->token_hash,
-                eventVersion: 99,
-                representation: 'v1_canonical',
+                eventVersion: 3,
+                representation: 'v2_intent',
                 canonicalBytes: $payload
             );
-            $this->fail('Expected InvalidArgumentException for version 99');
+            $this->fail('Expected InvalidArgumentException for version 3');
         } catch (InvalidArgumentException $e) {
             $this->assertStringContainsString('Unsupported event version.', $e->getMessage());
         }
 
-        // Mismatched representation
+        // Invented representation v3_offline_event rejected
         try {
             $manager->recordOrReplay(
                 companyId: (int) $this->companyA->id,
                 clientEventId: (string) Str::uuid(),
                 tokenHash: $this->token->token_hash,
-                eventVersion: 1,
-                representation: 'v2_intent',
+                eventVersion: 2,
+                representation: 'v3_offline_event',
                 canonicalBytes: $payload
             );
-            $this->fail('Expected InvalidArgumentException for mismatched representation');
+            $this->fail('Expected InvalidArgumentException for invented v3_offline_event');
         } catch (InvalidArgumentException $e) {
-            $this->assertStringContainsString('Representation does not match event version.', $e->getMessage());
+            $this->assertStringContainsString('Unsupported representation format.', $e->getMessage());
         }
     }
 
@@ -701,10 +773,9 @@ final class MobileEventReceiptIdentityTest extends TestCase
                 companyId: (int) $this->companyA->id,
                 clientEventId: (string) Str::uuid(),
                 tokenHash: $this->token->token_hash,
-                eventVersion: 1,
-                representation: 'v1_canonical',
-                canonicalBytes: $payload,
-                requireRootTransaction: true
+                eventVersion: 2,
+                representation: 'v2_intent',
+                canonicalBytes: $payload
             );
         });
     }
@@ -718,12 +789,12 @@ final class MobileEventReceiptIdentityTest extends TestCase
             'client_event_id' => (string) Str::uuid(),
             'actor_id' => $this->user->id,
             'device_id' => $this->device->device_id,
-            'event_version' => 1,
-            'representation' => 'v1_canonical',
+            'event_version' => 2,
+            'representation' => 'v2_intent',
             'payload_digest' => hash('sha256', $payload),
             'original_canonical_bytes' => $payload,
             'status' => 'completed',
-            'terminal_canonical_result' => ['amount' => '10.000000'],
+            'terminal_canonical_result' => ['status' => 'completed', 'amount' => '10.000000'],
         ]);
 
         // Attempt update
@@ -747,9 +818,9 @@ final class MobileEventReceiptIdentityTest extends TestCase
     {
         $payload = '{"amount":"10.000000"}';
 
-        // Fake executor returns sales invoice from company B while operating under company A
+        // Fake executor returns non-existent or foreign invoice
         $manager = new MobileEventReceiptManager($this->createTestExecutor([
-            'sales_invoice_id' => 999999, // non-existent or foreign
+            'sales_invoice_id' => 999999,
         ]));
 
         $this->expectException(RuntimeException::class);
@@ -759,8 +830,8 @@ final class MobileEventReceiptIdentityTest extends TestCase
             companyId: (int) $this->companyA->id,
             clientEventId: (string) Str::uuid(),
             tokenHash: $this->token->token_hash,
-            eventVersion: 1,
-            representation: 'v1_canonical',
+            eventVersion: 2,
+            representation: 'v2_intent',
             canonicalBytes: $payload
         );
     }
@@ -801,5 +872,310 @@ final class MobileEventReceiptIdentityTest extends TestCase
 
         $arbitraryMsg = new \Exception('Value 1213 is too high');
         $this->assertFalse(MobileEventReceiptManager::isDeadlockError($arbitraryMsg));
+    }
+
+    public function test_auth_unknown_company_oracle_returns_identical_auth_error(): void
+    {
+        $payload = '{"amount":"10.000000"}';
+        $invalidTokenHash = hash('sha256', 'st_m_invalid_token_hash_value');
+        $manager = new MobileEventReceiptManager($this->createTestExecutor());
+
+        // 1. With non-existent unknown company ID 999999
+        $errUnknownCompany = null;
+        try {
+            $manager->recordOrReplay(
+                companyId: 999999,
+                clientEventId: (string) Str::uuid(),
+                tokenHash: $invalidTokenHash,
+                eventVersion: 2,
+                representation: 'v2_intent',
+                canonicalBytes: $payload
+            );
+        } catch (MobileEventAuthenticationException $e) {
+            $errUnknownCompany = $e->getMessage();
+        }
+
+        // 2. With real valid company ID
+        $errValidCompany = null;
+        try {
+            $manager->recordOrReplay(
+                companyId: (int) $this->companyA->id,
+                clientEventId: (string) Str::uuid(),
+                tokenHash: $invalidTokenHash,
+                eventVersion: 2,
+                representation: 'v2_intent',
+                canonicalBytes: $payload
+            );
+        } catch (MobileEventAuthenticationException $e) {
+            $errValidCompany = $e->getMessage();
+        }
+
+        $this->assertSame('The Bearer token has been revoked or expired.', $errUnknownCompany);
+        $this->assertSame($errUnknownCompany, $errValidCompany);
+
+        // 3. Lookup: non-existent company vs valid company
+        $lookupErrUnknown = null;
+        try {
+            $manager->lookup(999999, (string) Str::uuid(), $invalidTokenHash);
+        } catch (MobileEventAuthenticationException $e) {
+            $lookupErrUnknown = $e->getMessage();
+        }
+
+        $lookupErrValid = null;
+        try {
+            $manager->lookup((int) $this->companyA->id, (string) Str::uuid(), $invalidTokenHash);
+        } catch (MobileEventAuthenticationException $e) {
+            $lookupErrValid = $e->getMessage();
+        }
+
+        $this->assertSame('The Bearer token has been revoked or expired.', $lookupErrUnknown);
+        $this->assertSame($lookupErrUnknown, $lookupErrValid);
+    }
+
+    public function test_lookup_authenticates_sets_guard_user_and_restores_prior_guard(): void
+    {
+        $payload = '{"amount":"10.000000"}';
+        $uuid = (string) Str::uuid();
+
+        CompanyScope::executeWithoutScope(fn () => MobileEventReceipt::create([
+            'company_id' => $this->companyA->id,
+            'client_event_id' => $uuid,
+            'actor_id' => $this->user->id,
+            'device_id' => $this->device->device_id,
+            'event_version' => 2,
+            'representation' => 'v2_intent',
+            'payload_digest' => hash('sha256', $payload),
+            'original_canonical_bytes' => $payload,
+            'status' => 'completed',
+            'terminal_canonical_result' => ['status' => 'completed', 'grand_total' => '10.000000'],
+        ]));
+
+        $guard = auth()->guard();
+        $this->assertFalse($guard->hasUser());
+
+        $observedGuardUserInExecutor = null;
+        $executor = new class($observedGuardUserInExecutor) implements FinancialExecutionAdapterInterface
+        {
+            public function __construct(public mixed &$observedGuardUser) {}
+
+            public function authorize(Company $c, User $a, MobileDevice $d, string $op, ?array $p = null): void
+            {
+                $this->observedGuardUser = auth()->guard()->user();
+            }
+
+            public function execute(Company $c, User $a, MobileDevice $d, array $p, string $s): array
+            {
+                return [];
+            }
+        };
+
+        $manager = new MobileEventReceiptManager($executor);
+        $lookup = $manager->lookup((int) $this->companyA->id, $uuid, $this->token->token_hash);
+
+        $this->assertNotNull($lookup);
+        $this->assertNotNull($observedGuardUserInExecutor);
+        $this->assertSame((int) $this->user->id, (int) $observedGuardUserInExecutor->id);
+
+        // After lookup completes, guard hasUser is restored to false
+        $this->assertFalse($guard->hasUser());
+    }
+
+    public function test_grant_revocation_respected_immediately_without_global_cache_flush(): void
+    {
+        $payload = '{"amount":"10.000000"}';
+        $manager = new MobileEventReceiptManager($this->createTestExecutor());
+
+        // Revoke sales.invoice.post directly from model_has_permissions in DB
+        DB::table('model_has_permissions')
+            ->where('model_id', $this->user->id)
+            ->where('company_id', $this->companyA->id)
+            ->delete();
+
+        $this->expectException(AuthorizationException::class);
+        $this->expectExceptionMessage('Missing required financial permission [sales.invoice.post]');
+
+        $manager->recordOrReplay(
+            companyId: (int) $this->companyA->id,
+            clientEventId: (string) Str::uuid(),
+            tokenHash: $this->token->token_hash,
+            eventVersion: 2,
+            representation: 'v2_intent',
+            canonicalBytes: $payload
+        );
+    }
+
+    public function test_public_id_mismatch_between_executor_and_database_fails_and_rolls_back(): void
+    {
+        // Create actual sales invoice in companyA
+        $invoice = CompanyScope::executeWithoutScope(fn () => SalesInvoice::create([
+            'company_id' => $this->companyA->id,
+            'customer_id' => $this->customerA->id,
+            'public_id' => 'INV_ACTUAL_DB_PUBLIC_ID',
+            'invoice_number' => 'INV-MISMATCH-001',
+            'issue_date' => '2026-11-12',
+            'due_date' => '2026-11-12',
+            'status' => 'draft',
+            'currency_code' => 'ILS',
+            'exchange_rate' => '1.0000000000',
+            'subtotal_base' => '100.000000',
+            'tax_total_base' => '0.000000',
+            'total_base' => '100.000000',
+            'balance_due_base' => '100.000000',
+            'created_by' => $this->user->id,
+        ]));
+
+        $manager = new MobileEventReceiptManager($this->createTestExecutor([
+            'sales_invoice_id' => $invoice->id,
+            'sales_invoice_public_id' => 'INV_FAKE_MISMATCH_PUBLIC_ID',
+        ]));
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('Sales invoice public ID mismatch between executor and database row.');
+
+        $manager->recordOrReplay(
+            companyId: (int) $this->companyA->id,
+            clientEventId: (string) Str::uuid(),
+            tokenHash: $this->token->token_hash,
+            eventVersion: 2,
+            representation: 'v2_intent',
+            canonicalBytes: '{"amount":"100.000000"}'
+        );
+    }
+
+    public function test_terminal_canonical_result_rejects_unknown_keys_and_forbidden_credentials(): void
+    {
+        $payload = '{"amount":"10.000000"}';
+
+        // 1. Unknown key rejected
+        $managerUnknown = new MobileEventReceiptManager($this->createTestExecutor([
+            'terminal_canonical_result' => [
+                'status' => 'completed',
+                'untrusted_arbitrary_key' => 'malicious_content',
+            ],
+        ]));
+
+        try {
+            $managerUnknown->recordOrReplay(
+                companyId: (int) $this->companyA->id,
+                clientEventId: (string) Str::uuid(),
+                tokenHash: $this->token->token_hash,
+                eventVersion: 2,
+                representation: 'v2_intent',
+                canonicalBytes: $payload
+            );
+            $this->fail('Expected RuntimeException for unknown key');
+        } catch (RuntimeException $e) {
+            $this->assertStringContainsString('Terminal canonical result contains forbidden or unexpected key', $e->getMessage());
+        }
+
+        // 2. Sensitive credential in string rejected
+        $managerCred = new MobileEventReceiptManager($this->createTestExecutor([
+            'terminal_canonical_result' => [
+                'status' => 'completed',
+                'grand_total' => 'bearer_token_secret_value',
+            ],
+        ]));
+
+        try {
+            $managerCred->recordOrReplay(
+                companyId: (int) $this->companyA->id,
+                clientEventId: (string) Str::uuid(),
+                tokenHash: $this->token->token_hash,
+                eventVersion: 2,
+                representation: 'v2_intent',
+                canonicalBytes: $payload
+            );
+            $this->fail('Expected RuntimeException for sensitive credential');
+        } catch (RuntimeException $e) {
+            $this->assertStringContainsString('Terminal canonical result contains forbidden sensitive credential', $e->getMessage());
+        }
+    }
+
+    public function test_sessionless_context_cleared_in_finally_on_all_failures(): void
+    {
+        $context = app(CompanyContext::class);
+        $context->setCompany($this->companyA, $this->user);
+        $this->assertTrue($context->hasCompany());
+
+        // 1. Invalid UUID
+        try {
+            $this->manager->recordOrReplay(
+                companyId: (int) $this->companyA->id,
+                clientEventId: 'not-a-uuid',
+                tokenHash: $this->token->token_hash,
+                eventVersion: 2,
+                representation: 'v2_intent',
+                canonicalBytes: '{"amount":"10.000000"}'
+            );
+        } catch (InvalidArgumentException) {
+            // expected
+        }
+        $this->assertFalse($context->hasCompany());
+
+        // 2. SupportViewContext active
+        $context->setCompany($this->companyA, $this->user);
+        $support = app(SupportViewContext::class);
+        $support->activate(['operator_id' => 999]);
+
+        try {
+            $this->manager->recordOrReplay(
+                companyId: (int) $this->companyA->id,
+                clientEventId: (string) Str::uuid(),
+                tokenHash: $this->token->token_hash,
+                eventVersion: 2,
+                representation: 'v2_intent',
+                canonicalBytes: '{"amount":"10.000000"}'
+            );
+        } catch (MobileEventAuthenticationException) {
+            // expected
+        } finally {
+            $support->clear();
+        }
+        $this->assertFalse($context->hasCompany());
+    }
+
+    public function test_payload_context_binding_mismatch_rejected_before_admission(): void
+    {
+        $manager = new MobileEventReceiptManager($this->createTestExecutor());
+        $uuid = (string) Str::uuid();
+
+        // Payload specifies a foreign client_event_id
+        $payloadMismatchEvent = json_encode([
+            'client_event_id' => (string) Str::uuid(),
+            'grand_total' => '100.000000',
+        ], JSON_THROW_ON_ERROR);
+
+        $this->expectException(MobileEventForeignScopeException::class);
+        $this->expectExceptionMessage('Payload client_event_id does not match event context.');
+
+        $manager->recordOrReplay(
+            companyId: (int) $this->companyA->id,
+            clientEventId: $uuid,
+            tokenHash: $this->token->token_hash,
+            eventVersion: 2,
+            representation: 'v2_intent',
+            canonicalBytes: $payloadMismatchEvent
+        );
+    }
+
+    public function test_original_canonical_bytes_preserves_raw_binary_and_unicode_without_normalization(): void
+    {
+        $arabicPayload = '{"amount":"100.000000","note":"تجربة مقبوضات عربية 🚀"}';
+        $uuid = (string) Str::uuid();
+
+        $manager = new MobileEventReceiptManager($this->createTestExecutor());
+        $res = $manager->recordOrReplay(
+            companyId: (int) $this->companyA->id,
+            clientEventId: $uuid,
+            tokenHash: $this->token->token_hash,
+            eventVersion: 2,
+            representation: 'v2_intent',
+            canonicalBytes: $arabicPayload
+        );
+
+        $this->assertSame('created', $res['outcome']);
+
+        $row = MobileEventReceipt::withoutGlobalScopes()->where('client_event_id', $uuid)->firstOrFail();
+        $this->assertSame($arabicPayload, $row->original_canonical_bytes);
     }
 }

@@ -77,6 +77,12 @@ class MobileEventReceipt extends Model
         ];
     }
 
+    /**
+     * Boot model events to enforce software immutability for Eloquent operations.
+     * Note: Eloquent model hooks provide application-level software immutability only;
+     * they do not constitute absolute database engine guarantees against raw SQL queries
+     * executed outside trusted boundaries. Unsolicited database triggers are not introduced.
+     */
     protected static function booted(): void
     {
         static::updating(function (): void {

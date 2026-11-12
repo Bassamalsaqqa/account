@@ -36,16 +36,43 @@ final class MobileEventReceiptManager
     private const int MAX_TERMINAL_RESULT_BYTES = 65536; // 64 KiB
 
     /** @var list<int> */
-    private const array ALLOWED_VERSIONS = [1, 2, 3];
+    private const array SUPPORTED_EVENT_VERSIONS = [2];
 
     /** @var list<string> */
-    private const array ALLOWED_REPRESENTATIONS = ['v1_canonical', 'v2_intent', 'v3_offline_event'];
+    private const array SUPPORTED_REPRESENTATIONS = [
+        'v2_intent',
+        'v2_online_sale_intent',
+        'offline_sale_intake',
+        'offline_sale',
+    ];
 
-    /** @var array<int, list<string>> */
-    private const array VERSION_REPRESENTATIONS = [
-        1 => ['v1_canonical'],
-        2 => ['v2_intent'],
-        3 => ['v3_offline_event'],
+    private const array ALLOWED_TERMINAL_RESULT_KEYS = [
+        'status',
+        'sales_invoice_id',
+        'sales_invoice_public_id',
+        'invoice_public_id',
+        'invoice_number',
+        'customer_payment_id',
+        'customer_payment_public_id',
+        'payment_public_id',
+        'command_receipt_id',
+        'customer_id',
+        'customer_public_id',
+        'currency',
+        'total_amount',
+        'grand_total',
+        'paid_amount',
+        'amount',
+        'lines_count',
+    ];
+
+    private const array FORBIDDEN_CREDENTIAL_SUBSTRINGS = [
+        'password',
+        'token_hash',
+        'secret',
+        'authorization',
+        'bearer',
+        'private_key',
     ];
 
     private const string UUID_REGEX = '/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/Di';
@@ -61,11 +88,12 @@ final class MobileEventReceiptManager
 
     /**
      * Record a new mobile event receipt atomically with financial operations or return idempotent replay.
+     * Enforces root database transaction level unconditionally; nested transactions are rejected before effects.
      *
      * @param  string  $clientEventId  RFC 4122 UUID v4 client event ID
      * @param  string  $tokenHash  SHA-256 hash of the bearer token
-     * @param  int  $eventVersion  Supported event version (1, 2, 3)
-     * @param  string  $representation  Supported representation ('v1_canonical', 'v2_intent', 'v3_offline_event')
+     * @param  int  $eventVersion  Supported event version (2; v1 legacy new admission is unsupported)
+     * @param  string  $representation  Supported representation ('v2_intent', 'v2_online_sale_intent', etc.)
      * @param  string  $canonicalBytes  Exact original canonical bytes of economic payload
      * @return array{
      *     outcome: string,
@@ -85,29 +113,35 @@ final class MobileEventReceiptManager
         string $tokenHash,
         int $eventVersion,
         string $representation,
-        string $canonicalBytes,
-        bool $requireRootTransaction = false
+        string $canonicalBytes
     ): array {
-        $initialLevel = DB::transactionLevel();
-        if ($requireRootTransaction && $initialLevel > 0) {
-            throw new RuntimeException('Mobile event receipt manager requires root database transaction level.');
-        }
-
-        $decodedPayload = $this->validateInputs($clientEventId, $eventVersion, $representation, $canonicalBytes);
-        $payloadDigest = hash('sha256', $canonicalBytes);
-
         $context = app(CompanyContext::class);
         $guard = auth()->guard();
         $priorHadUser = $guard->hasUser();
         $priorGuardUser = $priorHadUser ? $guard->user() : null;
 
-        if (app(SupportViewContext::class)->active()) {
-            throw new MobileEventAuthenticationException('Support impersonation is unauthorized on mobile event receipts.');
-        }
-
-        $context->clearSessionless();
-
         try {
+            $context->clearSessionless();
+
+            if (app(SupportViewContext::class)->active()) {
+                throw new MobileEventAuthenticationException('Support impersonation is unauthorized on mobile event receipts.');
+            }
+
+            // Cheap bounded structural validation
+            $decodedPayload = $this->validateInputs($clientEventId, $eventVersion, $representation, $canonicalBytes);
+            $payloadDigest = hash('sha256', $canonicalBytes);
+
+            // Stage 1: Initial unlocked token authentication before company existence query (zero oracle)
+            $tentativeToken = MobileAccessToken::where('token_hash', $tokenHash)->first();
+            if ($tentativeToken === null || ! $tentativeToken->isValid()) {
+                throw new MobileEventAuthenticationException('The Bearer token has been revoked or expired.');
+            }
+
+            // Root commit guarantee: reject nested transactions before effects
+            if (DB::transactionLevel() > 0) {
+                throw new RuntimeException('Mobile event receipt manager requires root database transaction level.');
+            }
+
             $attempts = 0;
             while (true) {
                 $attempts++;
@@ -126,7 +160,8 @@ final class MobileEventReceiptManager
                         $context,
                         $guard,
                         $priorHadUser,
-                        $priorGuardUser
+                        $priorGuardUser,
+                        $tentativeToken
                     ): array {
                         // 1. Root canonical company lock establishes global consistent lock order
                         /** @var Company|null $company */
@@ -135,29 +170,28 @@ final class MobileEventReceiptManager
                             throw new MobileEventForeignScopeException('Target company not found or inactive.');
                         }
 
-                        // 2. Lock & revalidate bearer token
+                        // 2. Lock & revalidate device status and strict ownership
+                        /** @var MobileDevice|null $device */
+                        $device = MobileDevice::where('device_id', $tentativeToken->device_id)->lockForUpdate()->first();
+                        if ($device === null || $device->isRevoked() || (int) $device->user_id !== (int) $tentativeToken->user_id) {
+                            throw new MobileEventAuthenticationException('Device has been revoked or does not match token owner.');
+                        }
+
+                        // 3. Lock & revalidate user
+                        /** @var User|null $user */
+                        $user = User::whereKey($tentativeToken->user_id)->lockForUpdate()->first();
+                        if ($user === null) {
+                            throw new MobileEventAuthenticationException('User not found.');
+                        }
+
+                        // 4. Lock & revalidate bearer token under lock
                         /** @var MobileAccessToken|null $token */
                         $token = MobileAccessToken::where('token_hash', $tokenHash)->lockForUpdate()->first();
                         if ($token === null || ! $token->isValid()) {
                             throw new MobileEventAuthenticationException('The Bearer token has been revoked or expired.');
                         }
-
-                        // 3. Lock & revalidate device status and strict ownership
-                        /** @var MobileDevice|null $device */
-                        $device = MobileDevice::where('device_id', $token->device_id)->lockForUpdate()->first();
-                        if ($device === null || $device->isRevoked() || (int) $device->user_id !== (int) $token->user_id) {
+                        if ($token->device_id !== $device->device_id || (int) $token->user_id !== (int) $user->id) {
                             throw new MobileEventAuthenticationException('Device has been revoked or does not match token owner.');
-                        }
-
-                        // 4. Lock & revalidate user and password revision epoch
-                        /** @var User|null $user */
-                        $user = User::whereKey($token->user_id)->lockForUpdate()->first();
-                        if ($user === null) {
-                            throw new MobileEventAuthenticationException('User not found.');
-                        }
-
-                        if ($priorHadUser && $priorGuardUser !== null && (int) $priorGuardUser->getAuthIdentifier() !== (int) $user->id) {
-                            throw new MobileEventAuthenticationException('Ambient guard user conflicts with authenticated mobile token user.');
                         }
 
                         $expectedEpoch = 'epoch-'.substr(hash('sha256', (string) $user->password), 0, 16);
@@ -178,6 +212,10 @@ final class MobileEventReceiptManager
                             throw new MobileEventForeignScopeException('User does not possess active authorized membership in the requested company.');
                         }
 
+                        if ($priorHadUser && $priorGuardUser !== null && (int) $priorGuardUser->getAuthIdentifier() !== (int) $user->id) {
+                            throw new MobileEventAuthenticationException('Ambient guard user conflicts with authenticated mobile token user.');
+                        }
+
                         $guard->setUser($user);
 
                         // Activate sessionless CompanyContext for model tenancy
@@ -186,7 +224,9 @@ final class MobileEventReceiptManager
                         app(PermissionRegistrar::class)->setPermissionsTeamId($companyId);
                         $user->unsetRelation('roles')->unsetRelation('permissions');
 
-                        // Row lock role and permission assignments for linearizable security check
+                        // Cooperative row locks on model assignments serialize against concurrent assignment updates.
+                        // Note: Spatie registrar caches and definition changes (roles/permissions tables) are not fully linearizable without
+                        // cooperative writer locks across all administrative grant paths; ProductionDeny remains mandatory across all operations.
                         $teamKey = (string) config('permission.column_names.team_foreign_key', 'company_id');
                         DB::table('model_has_roles')
                             ->where('model_type', User::class)
@@ -201,7 +241,10 @@ final class MobileEventReceiptManager
                             ->lockForUpdate()
                             ->get();
 
-                        // 6. Check existing receipt row under lock
+                        // 6. Verify payload context binding before admission when known context keys are present
+                        $this->verifyPayloadContextBinding($decodedPayload, $company, $user, $device, $clientEventId);
+
+                        // 7. Check existing receipt row under lock
                         /** @var MobileEventReceipt|null $receipt */
                         $receipt = MobileEventReceipt::withoutGlobalScopes()
                             ->where('company_id', $companyId)
@@ -237,44 +280,95 @@ final class MobileEventReceiptManager
                             ];
                         }
 
-                        // 7. If receipt does not exist: authorize and execute financial adapter
+                        // 8. If receipt does not exist: authorize and execute financial adapter
                         $activeExecutor = $this->getExecutor();
                         $activeExecutor->authorize($company, $user, $device, 'execute', $decodedPayload);
 
                         $suffix = hash('sha256', $user->id.'|'.$device->device_id.'|'.$clientEventId);
                         $financialResult = $activeExecutor->execute($company, $user, $device, $decodedPayload, $suffix);
 
-                        // 8. Strict entity ownership check: Foreign keys MUST belong to this company
+                        // 9. Strict entity ownership & public ID derivation from locked canonical entities
                         $invId = $financialResult['sales_invoice_id'] ?? null;
-                        if ($invId !== null && ! DB::table('sales_invoices')->where('id', $invId)->where('company_id', $companyId)->exists()) {
-                            throw new RuntimeException('Financial executor returned sales invoice not belonging to target company.');
-                        }
-
-                        $payId = $financialResult['customer_payment_id'] ?? null;
-                        if ($payId !== null && ! DB::table('customer_payments')->where('id', $payId)->where('company_id', $companyId)->exists()) {
-                            throw new RuntimeException('Financial executor returned customer payment not belonging to target company.');
-                        }
-
-                        $cmdId = $financialResult['command_receipt_id'] ?? null;
-                        if ($cmdId !== null && ! DB::table('command_receipts')->where('id', $cmdId)->where('company_id', $companyId)->exists()) {
-                            throw new RuntimeException('Financial executor returned command receipt not belonging to target company.');
-                        }
-
-                        // 9. Bounded terminal result validation & credential stripping
-                        $terminalResult = $financialResult['terminal_canonical_result'];
-                        $encodedTerminal = json_encode($terminalResult, JSON_THROW_ON_ERROR);
-                        if (strlen($encodedTerminal) > self::MAX_TERMINAL_RESULT_BYTES) {
-                            throw new RuntimeException('Terminal canonical result exceeds 64 KiB bound.');
-                        }
-
-                        $lowerTerminal = strtolower($encodedTerminal);
-                        foreach (['password', 'token_hash', 'secret', 'authorization', 'bearer'] as $sensitiveKey) {
-                            if (str_contains($lowerTerminal, '"'.$sensitiveKey.'"') || str_contains($lowerTerminal, '"'.$sensitiveKey.'_')) {
-                                throw new RuntimeException("Terminal canonical result contains forbidden sensitive credential: {$sensitiveKey}");
+                        $canonicalInvPublicId = null;
+                        $invRow = null;
+                        if ($invId !== null) {
+                            $invRow = DB::table('sales_invoices')
+                                ->where('id', $invId)
+                                ->where('company_id', $companyId)
+                                ->lockForUpdate()
+                                ->first();
+                            if ($invRow === null) {
+                                throw new RuntimeException('Financial executor returned sales invoice not belonging to target company.');
+                            }
+                            $canonicalInvPublicId = (string) $invRow->public_id;
+                            if (isset($financialResult['sales_invoice_public_id'])) {
+                                if (! hash_equals($canonicalInvPublicId, (string) $financialResult['sales_invoice_public_id'])) {
+                                    throw new RuntimeException('Sales invoice public ID mismatch between executor and database row.');
+                                }
                             }
                         }
 
-                        // 10. Store receipt record in the exact same atomic transaction
+                        $payId = $financialResult['customer_payment_id'] ?? null;
+                        $canonicalPayPublicId = null;
+                        $payRow = null;
+                        if ($payId !== null) {
+                            $payRow = DB::table('customer_payments')
+                                ->where('id', $payId)
+                                ->where('company_id', $companyId)
+                                ->lockForUpdate()
+                                ->first();
+                            if ($payRow === null) {
+                                throw new RuntimeException('Financial executor returned customer payment not belonging to target company.');
+                            }
+                            $canonicalPayPublicId = (string) $payRow->public_id;
+                            if (isset($financialResult['customer_payment_public_id'])) {
+                                if (! hash_equals($canonicalPayPublicId, (string) $financialResult['customer_payment_public_id'])) {
+                                    throw new RuntimeException('Customer payment public ID mismatch between executor and database row.');
+                                }
+                            }
+                        }
+
+                        // Relationship verification between invoice and customer payment
+                        if ($invId !== null && $payId !== null) {
+                            if ((int) $invRow->customer_id !== (int) $payRow->customer_id) {
+                                throw new RuntimeException('Customer mismatch between sales invoice and customer payment.');
+                            }
+                            if ($invRow->currency_code !== $payRow->currency_code) {
+                                throw new RuntimeException('Currency mismatch between sales invoice and customer payment.');
+                            }
+                            $hasAllocation = DB::table('customer_payment_allocations')
+                                ->where('customer_payment_id', $payId)
+                                ->where('sales_invoice_id', $invId)
+                                ->exists();
+                            if (! $hasAllocation) {
+                                throw new RuntimeException('Missing payment allocation between customer payment and sales invoice.');
+                            }
+                        }
+
+                        $cmdId = $financialResult['command_receipt_id'] ?? null;
+                        if ($cmdId !== null) {
+                            $cmdRow = DB::table('command_receipts')
+                                ->where('id', $cmdId)
+                                ->where('company_id', $companyId)
+                                ->where('user_id', $user->id)
+                                ->lockForUpdate()
+                                ->first();
+                            if ($cmdRow === null) {
+                                throw new RuntimeException('Financial executor returned command receipt not belonging to target company or authenticated actor.');
+                            }
+                        }
+
+                        // 10. Bounded typed allowlisted terminal result validation
+                        $terminalResult = $this->buildTerminalCanonicalResult(
+                            $financialResult['terminal_canonical_result'],
+                            $invId,
+                            $canonicalInvPublicId,
+                            $payId,
+                            $canonicalPayPublicId,
+                            $cmdId
+                        );
+
+                        // 11. Store receipt record in the exact same atomic transaction
                         /** @var MobileEventReceipt $created */
                         $created = MobileEventReceipt::create([
                             'company_id' => $companyId,
@@ -286,9 +380,9 @@ final class MobileEventReceiptManager
                             'payload_digest' => $payloadDigest,
                             'original_canonical_bytes' => $canonicalBytes,
                             'sales_invoice_id' => $invId,
-                            'sales_invoice_public_id' => $financialResult['sales_invoice_public_id'] ?? null,
+                            'sales_invoice_public_id' => $canonicalInvPublicId,
                             'customer_payment_id' => $payId,
-                            'customer_payment_public_id' => $financialResult['customer_payment_public_id'] ?? null,
+                            'customer_payment_public_id' => $canonicalPayPublicId,
                             'command_receipt_id' => $cmdId,
                             'status' => 'completed',
                             'terminal_canonical_result' => $terminalResult,
@@ -309,11 +403,6 @@ final class MobileEventReceiptManager
                 } catch (QueryException|PDOException $e) {
                     $isDuplicate = self::isDuplicateConstraintError($e, 'mobile_event_receipts_company_client_event_unique');
                     $isDeadlock = self::isDeadlockError($e);
-
-                    // Nested savepoint retry after deadlock/duplicate is unsafe for outer transaction; fail closed
-                    if ($initialLevel > 0) {
-                        throw $e;
-                    }
 
                     if (($isDuplicate || $isDeadlock) && $attempts < self::MAX_DEADLOCK_RETRIES) {
                         usleep(random_int(10000, 30000));
@@ -355,41 +444,57 @@ final class MobileEventReceiptManager
     public function lookup(
         int $companyId,
         string $clientEventId,
-        string $tokenHash,
-        bool $requireRootTransaction = false
+        string $tokenHash
     ): ?array {
-        if ($requireRootTransaction && DB::transactionLevel() > 0) {
-            throw new RuntimeException('Mobile event receipt lookup requires root database transaction level.');
-        }
-
-        if (! preg_match(self::UUID_REGEX, $clientEventId)) {
-            throw new InvalidArgumentException('Client event ID must be a valid UUID string.');
-        }
-
         $context = app(CompanyContext::class);
         $guard = auth()->guard();
         $priorHadUser = $guard->hasUser();
         $priorGuardUser = $priorHadUser ? $guard->user() : null;
 
-        if (app(SupportViewContext::class)->active()) {
-            throw new MobileEventAuthenticationException('Support impersonation is unauthorized on mobile event receipts.');
-        }
-
-        $context->clearSessionless();
-
         try {
+            $context->clearSessionless();
+
+            if (! preg_match(self::UUID_REGEX, $clientEventId)) {
+                throw new InvalidArgumentException('Client event ID must be a valid UUID string.');
+            }
+
+            if (app(SupportViewContext::class)->active()) {
+                throw new MobileEventAuthenticationException('Support impersonation is unauthorized on mobile event receipts.');
+            }
+
+            // Stage 1: Unlocked token authentication before company existence query (zero oracle)
+            $tentativeToken = MobileAccessToken::where('token_hash', $tokenHash)->first();
+            if ($tentativeToken === null || ! $tentativeToken->isValid()) {
+                throw new MobileEventAuthenticationException('The Bearer token has been revoked or expired.');
+            }
+
             return DB::transaction(function () use (
                 $companyId,
                 $clientEventId,
                 $tokenHash,
                 $context,
+                $guard,
                 $priorHadUser,
-                $priorGuardUser
+                $priorGuardUser,
+                $tentativeToken
             ): ?array {
+                // Consistent lock order: Company root -> Device -> User -> Token -> Membership
                 /** @var Company|null $company */
                 $company = Company::whereKey($companyId)->lockForUpdate()->first();
                 if ($company === null || $company->status !== 'active') {
                     throw new MobileEventForeignScopeException('Target company not found or inactive.');
+                }
+
+                /** @var MobileDevice|null $device */
+                $device = MobileDevice::where('device_id', $tentativeToken->device_id)->lockForUpdate()->first();
+                if ($device === null || $device->isRevoked() || (int) $device->user_id !== (int) $tentativeToken->user_id) {
+                    throw new MobileEventAuthenticationException('Device has been revoked or does not match token owner.');
+                }
+
+                /** @var User|null $user */
+                $user = User::whereKey($tentativeToken->user_id)->lockForUpdate()->first();
+                if ($user === null) {
+                    throw new MobileEventAuthenticationException('User not found.');
                 }
 
                 /** @var MobileAccessToken|null $token */
@@ -397,21 +502,8 @@ final class MobileEventReceiptManager
                 if ($token === null || ! $token->isValid()) {
                     throw new MobileEventAuthenticationException('The Bearer token has been revoked or expired.');
                 }
-
-                /** @var MobileDevice|null $device */
-                $device = MobileDevice::where('device_id', $token->device_id)->lockForUpdate()->first();
-                if ($device === null || $device->isRevoked() || (int) $device->user_id !== (int) $token->user_id) {
+                if ($token->device_id !== $device->device_id || (int) $token->user_id !== (int) $user->id) {
                     throw new MobileEventAuthenticationException('Device has been revoked or does not match token owner.');
-                }
-
-                /** @var User|null $user */
-                $user = User::whereKey($token->user_id)->lockForUpdate()->first();
-                if ($user === null) {
-                    throw new MobileEventAuthenticationException('User not found.');
-                }
-
-                if ($priorHadUser && $priorGuardUser !== null && (int) $priorGuardUser->getAuthIdentifier() !== (int) $user->id) {
-                    throw new MobileEventAuthenticationException('Ambient guard user conflicts with authenticated mobile token user.');
                 }
 
                 $expectedEpoch = 'epoch-'.substr(hash('sha256', (string) $user->password), 0, 16);
@@ -430,6 +522,12 @@ final class MobileEventReceiptManager
                 if ($membership === null) {
                     throw new MobileEventForeignScopeException('User does not possess active authorized membership in the requested company.');
                 }
+
+                if ($priorHadUser && $priorGuardUser !== null && (int) $priorGuardUser->getAuthIdentifier() !== (int) $user->id) {
+                    throw new MobileEventAuthenticationException('Ambient guard user conflicts with authenticated mobile token user.');
+                }
+
+                $guard->setUser($user);
 
                 $context->setCompany($company, $user);
                 setPermissionsTeamId($companyId);
@@ -480,6 +578,7 @@ final class MobileEventReceiptManager
 
     /**
      * Validate raw JSON economic payload: checks UTF-8, duplicate keys, object shape, and verifies canonical JCS bytes.
+     * Note: Strict JCS verification provides syntax canonicality only; it does not confer financial authority or schema authority.
      *
      * @return array<string, mixed>
      */
@@ -554,6 +653,108 @@ final class MobileEventReceiptManager
     }
 
     /**
+     * @param  array<string, mixed>  $payload
+     */
+    private function verifyPayloadContextBinding(
+        array $payload,
+        Company $company,
+        User $user,
+        MobileDevice $device,
+        string $clientEventId
+    ): void {
+        $target = isset($payload['event']) && is_array($payload['event']) ? $payload['event'] : $payload;
+
+        if (isset($target['client_event_id']) && strcasecmp((string) $target['client_event_id'], $clientEventId) !== 0) {
+            throw new MobileEventForeignScopeException('Payload client_event_id does not match event context.');
+        }
+
+        if (isset($target['device_id']) && (string) $target['device_id'] !== $device->device_id) {
+            throw new MobileEventForeignScopeException('Payload device_id does not match authenticated device.');
+        }
+
+        if (isset($target['actor_id'])) {
+            $actorMatch = (string) $target['actor_id'] === (string) $user->id
+                || (isset($user->public_id) && (string) $target['actor_id'] === (string) $user->public_id);
+            if (! $actorMatch) {
+                throw new MobileEventForeignScopeException('Payload actor_id does not match authenticated actor.');
+            }
+        }
+
+        if (isset($target['company_id'])) {
+            $companyMatch = (string) $target['company_id'] === (string) $company->id
+                || (isset($company->public_id) && (string) $target['company_id'] === (string) $company->public_id);
+            if (! $companyMatch) {
+                throw new MobileEventForeignScopeException('Payload company_id does not match authenticated company.');
+            }
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $rawTerminal
+     * @return array<string, mixed>
+     */
+    private function buildTerminalCanonicalResult(
+        array $rawTerminal,
+        ?int $invId,
+        ?string $canonicalInvPublicId,
+        ?int $payId,
+        ?string $canonicalPayPublicId,
+        ?int $cmdId
+    ): array {
+        $encoded = json_encode($rawTerminal, JSON_THROW_ON_ERROR);
+        if (strlen($encoded) > self::MAX_TERMINAL_RESULT_BYTES) {
+            throw new RuntimeException('Terminal canonical result exceeds 64 KiB bound.');
+        }
+
+        foreach (array_keys($rawTerminal) as $key) {
+            if (! in_array($key, self::ALLOWED_TERMINAL_RESULT_KEYS, true)) {
+                throw new RuntimeException("Terminal canonical result contains forbidden or unexpected key: {$key}");
+            }
+        }
+
+        // Verify no sensitive credential substrings in keys or values
+        $lowerEncoded = strtolower($encoded);
+        foreach (self::FORBIDDEN_CREDENTIAL_SUBSTRINGS as $sensitive) {
+            if (str_contains($lowerEncoded, '"'.$sensitive.'"') || str_contains($lowerEncoded, '"'.$sensitive.'_') || str_contains($lowerEncoded, '_'.$sensitive.'"')) {
+                throw new RuntimeException("Terminal canonical result contains forbidden sensitive credential: {$sensitive}");
+            }
+        }
+
+        // Validate public ID consistency with locked canonical entities
+        if ($canonicalInvPublicId !== null) {
+            if (isset($rawTerminal['sales_invoice_public_id']) && ! hash_equals($canonicalInvPublicId, (string) $rawTerminal['sales_invoice_public_id'])) {
+                throw new RuntimeException('Terminal canonical result sales invoice public ID mismatch.');
+            }
+            if (isset($rawTerminal['invoice_public_id']) && ! hash_equals($canonicalInvPublicId, (string) $rawTerminal['invoice_public_id'])) {
+                throw new RuntimeException('Terminal canonical result invoice public ID mismatch.');
+            }
+        }
+
+        if ($canonicalPayPublicId !== null) {
+            if (isset($rawTerminal['customer_payment_public_id']) && ! hash_equals($canonicalPayPublicId, (string) $rawTerminal['customer_payment_public_id'])) {
+                throw new RuntimeException('Terminal canonical result customer payment public ID mismatch.');
+            }
+            if (isset($rawTerminal['payment_public_id']) && ! hash_equals($canonicalPayPublicId, (string) $rawTerminal['payment_public_id'])) {
+                throw new RuntimeException('Terminal canonical result payment public ID mismatch.');
+            }
+        }
+
+        if ($invId !== null && isset($rawTerminal['sales_invoice_id']) && (int) $rawTerminal['sales_invoice_id'] !== $invId) {
+            throw new RuntimeException('Terminal canonical result sales invoice ID mismatch.');
+        }
+
+        if ($payId !== null && isset($rawTerminal['customer_payment_id']) && (int) $rawTerminal['customer_payment_id'] !== $payId) {
+            throw new RuntimeException('Terminal canonical result customer payment ID mismatch.');
+        }
+
+        if ($cmdId !== null && isset($rawTerminal['command_receipt_id']) && (int) $rawTerminal['command_receipt_id'] !== $cmdId) {
+            throw new RuntimeException('Terminal canonical result command receipt ID mismatch.');
+        }
+
+        return $rawTerminal;
+    }
+
+    /**
      * @return array<string, mixed>
      */
     private function validateInputs(
@@ -566,16 +767,16 @@ final class MobileEventReceiptManager
             throw new InvalidArgumentException('Client event ID must be a valid UUID string.');
         }
 
-        if (! in_array($eventVersion, self::ALLOWED_VERSIONS, true)) {
+        if ($eventVersion === 1 || $representation === 'v1_canonical') {
+            throw new InvalidArgumentException('Legacy v1 event admission is unsupported.');
+        }
+
+        if (! in_array($eventVersion, self::SUPPORTED_EVENT_VERSIONS, true)) {
             throw new InvalidArgumentException('Unsupported event version.');
         }
 
-        if (! in_array($representation, self::ALLOWED_REPRESENTATIONS, true)) {
+        if (! in_array($representation, self::SUPPORTED_REPRESENTATIONS, true)) {
             throw new InvalidArgumentException('Unsupported representation format.');
-        }
-
-        if (! in_array($representation, self::VERSION_REPRESENTATIONS[$eventVersion], true)) {
-            throw new InvalidArgumentException('Representation does not match event version.');
         }
 
         return $this->validateEconomicPayload($canonicalBytes);

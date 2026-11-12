@@ -13,6 +13,7 @@ use App\Actions\Sales\PostSalesInvoiceAction;
 use App\Domain\Inventory\ValueObjects\Quantity;
 use App\Models\Company;
 use App\Models\Customer;
+use App\Models\CustomerPayment;
 use App\Models\DocumentSequence;
 use App\Models\MobileAccessToken;
 use App\Models\MobileDevice;
@@ -20,6 +21,7 @@ use App\Models\MobileEventReceipt;
 use App\Models\MoneyAccount;
 use App\Models\Product;
 use App\Models\ProductUnit;
+use App\Models\SalesInvoice;
 use App\Models\Unit;
 use App\Models\User;
 use App\Models\Warehouse;
@@ -34,7 +36,7 @@ use App\Services\Tenancy\CompanyRoleService;
 use App\Support\Mobile\Receipt\FinancialExecutionAdapterInterface;
 use App\Support\Mobile\Receipt\MobileEventReceiptManager;
 use App\Support\Tenancy\CompanyContext;
-use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 use RuntimeException;
@@ -43,7 +45,41 @@ use Tests\TestCase;
 
 final class MobileReceiptRollbackAtomicityTest extends TestCase
 {
-    use RefreshDatabase;
+    // Non-nested fixture strategy on owned disposable schema: no outer transaction wrapper
+
+    protected function tearDown(): void
+    {
+        if (DB::transactionLevel() > 0) {
+            DB::rollBack(0);
+        }
+        self::$failAfterReceiptCreation = false;
+        try {
+            DB::statement('SET FOREIGN_KEY_CHECKS=0');
+            MobileEventReceipt::query()->delete();
+            DB::table('customer_payment_allocations')->delete();
+            CustomerPayment::query()->delete();
+            DB::table('sales_invoice_lines')->delete();
+            SalesInvoice::query()->delete();
+            DB::table('stock_movements')->delete();
+            DB::table('posting_lines')->delete();
+            DB::table('posting_batches')->delete();
+            ProductUnit::query()->delete();
+            Product::query()->delete();
+            MoneyAccount::query()->delete();
+            Customer::query()->delete();
+            MobileAccessToken::query()->delete();
+            MobileDevice::query()->delete();
+            DB::table('model_has_roles')->delete();
+            DB::table('model_has_permissions')->delete();
+            DB::table('company_user')->delete();
+            Company::query()->delete();
+            User::query()->delete();
+        } finally {
+            DB::statement('SET FOREIGN_KEY_CHECKS=1');
+        }
+
+        parent::tearDown();
+    }
 
     private static bool $failAfterReceiptCreation = false;
 
@@ -88,7 +124,7 @@ final class MobileReceiptRollbackAtomicityTest extends TestCase
         self::$failAfterReceiptCreation = false;
 
         $this->owner = User::factory()->create([
-            'email' => 'atomicity_owner@example.com',
+            'email' => 'atomicity_owner_'.Str::random(8).'@example.com',
             'password' => Hash::make('AtomicitySecured!Pass123'),
         ]);
 
@@ -186,12 +222,6 @@ final class MobileReceiptRollbackAtomicityTest extends TestCase
                 throw new RuntimeException('Simulated fault immediately after receipt record creation');
             }
         });
-    }
-
-    protected function tearDown(): void
-    {
-        self::$failAfterReceiptCreation = false;
-        parent::tearDown();
     }
 
     private function createFaultInjectingExecutor(
@@ -331,8 +361,8 @@ final class MobileReceiptRollbackAtomicityTest extends TestCase
             companyId: (int) $this->company->id,
             clientEventId: (string) Str::uuid(),
             tokenHash: $this->token->token_hash,
-            eventVersion: 1,
-            representation: 'v1_canonical',
+            eventVersion: 2,
+            representation: 'v2_intent',
             canonicalBytes: $payload
         );
 
@@ -382,8 +412,8 @@ final class MobileReceiptRollbackAtomicityTest extends TestCase
                 companyId: (int) $this->company->id,
                 clientEventId: (string) Str::uuid(),
                 tokenHash: $this->token->token_hash,
-                eventVersion: 1,
-                representation: 'v1_canonical',
+                eventVersion: 2,
+                representation: 'v2_intent',
                 canonicalBytes: $payload
             );
             $this->fail('Expected RuntimeException');
@@ -412,8 +442,8 @@ final class MobileReceiptRollbackAtomicityTest extends TestCase
                 companyId: (int) $this->company->id,
                 clientEventId: (string) Str::uuid(),
                 tokenHash: $this->token->token_hash,
-                eventVersion: 1,
-                representation: 'v1_canonical',
+                eventVersion: 2,
+                representation: 'v2_intent',
                 canonicalBytes: $payload
             );
             $this->fail('Expected RuntimeException');
@@ -447,8 +477,8 @@ final class MobileReceiptRollbackAtomicityTest extends TestCase
                 companyId: (int) $this->company->id,
                 clientEventId: (string) Str::uuid(),
                 tokenHash: $this->token->token_hash,
-                eventVersion: 1,
-                representation: 'v1_canonical',
+                eventVersion: 2,
+                representation: 'v2_intent',
                 canonicalBytes: $payload
             );
             $this->fail('Expected RuntimeException');
@@ -477,8 +507,8 @@ final class MobileReceiptRollbackAtomicityTest extends TestCase
                 companyId: (int) $this->company->id,
                 clientEventId: (string) Str::uuid(),
                 tokenHash: $this->token->token_hash,
-                eventVersion: 1,
-                representation: 'v1_canonical',
+                eventVersion: 2,
+                representation: 'v2_intent',
                 canonicalBytes: $payload
             );
             $this->fail('Expected RuntimeException');
@@ -515,8 +545,8 @@ final class MobileReceiptRollbackAtomicityTest extends TestCase
                 companyId: (int) $this->company->id,
                 clientEventId: (string) Str::uuid(),
                 tokenHash: $this->token->token_hash,
-                eventVersion: 1,
-                representation: 'v1_canonical',
+                eventVersion: 2,
+                representation: 'v2_intent',
                 canonicalBytes: $payload
             );
             $this->fail('Expected RuntimeException');
