@@ -1,0 +1,151 @@
+{
+  "title": "PR94 P0 Refusal Proof Zero-Mutation Evidence",
+  "generated_at": "2026-11-13T00:48:00+02:00",
+  "target_branch": "t3/mobile-receipt-identity-qualification",
+  "foundation_commit": "7bb6d779e52ca2f284045d66f8f3f6aee7b4e6fb",
+  "baseline_commit": "f8a0cf7012c4875bec7320d42e0f8dde58593b52",
+  "command": "php vendor/bin/phpunit --testdox tests/Unit/Mobile/MobileReceiptTestOwnershipGuardTest.php",
+  "test_class": "Tests\\Unit\\Mobile\\MobileReceiptTestOwnershipGuardTest",
+  "test_counts": {
+    "total": 34,
+    "passed": 34,
+    "failed": 0,
+    "errors": 0,
+    "assertions": 180
+  },
+  "invariants_tested": [
+    {
+      "scenario": "refuses_when_app_env_is_not_testing",
+      "classes": ["MobileEventReceiptIdentityTest", "MobileReceiptRollbackAtomicityTest"],
+      "expected_refusal": "APP_ENV is not testing",
+      "db_queries_executed": 0,
+      "admitted": false,
+      "cleanup_executed": false
+    },
+    {
+      "scenario": "refuses_when_phase8_opt_in_missing_or_not_one",
+      "classes": ["MobileEventReceiptIdentityTest", "MobileReceiptRollbackAtomicityTest"],
+      "expected_refusal": "PHASE8_ALLOW_DISPOSABLE_DB opt-in flag is missing or not 1",
+      "db_queries_executed": 0,
+      "admitted": false,
+      "cleanup_executed": false
+    },
+    {
+      "scenario": "refuses_when_port_is_persistent_preview_3353",
+      "classes": ["MobileEventReceiptIdentityTest", "MobileReceiptRollbackAtomicityTest"],
+      "expected_refusal": "Forbidden: cannot run on persistent 3353 database",
+      "db_queries_executed": 0,
+      "admitted": false,
+      "cleanup_executed": false
+    },
+    {
+      "scenario": "refuses_when_port_is_default_3306_instead_of_3342",
+      "classes": ["MobileEventReceiptIdentityTest", "MobileReceiptRollbackAtomicityTest"],
+      "expected_refusal": "port must be 3342, got 3306",
+      "db_queries_executed": 0,
+      "admitted": false,
+      "cleanup_executed": false
+    },
+    {
+      "scenario": "refuses_when_host_is_not_loopback",
+      "classes": ["MobileEventReceiptIdentityTest", "MobileReceiptRollbackAtomicityTest"],
+      "expected_refusal": "connection host must be 127.0.0.1",
+      "db_queries_executed": 0,
+      "admitted": false,
+      "cleanup_executed": false
+    },
+    {
+      "scenario": "refuses_when_schema_is_non_owned_persistent_format",
+      "classes": ["MobileEventReceiptIdentityTest", "MobileReceiptRollbackAtomicityTest"],
+      "expected_refusal": "database name does not match disposable schema pattern",
+      "db_queries_executed": 0,
+      "admitted": false,
+      "cleanup_executed": false
+    },
+    {
+      "scenario": "refuses_when_proof_is_missing",
+      "classes": ["MobileEventReceiptIdentityTest", "MobileReceiptRollbackAtomicityTest"],
+      "expected_refusal": "Disposable schema ownership proof is required",
+      "db_queries_executed": 0,
+      "admitted": false,
+      "cleanup_executed": false
+    },
+    {
+      "scenario": "refuses_when_proof_nonce_is_stale_or_mismatched",
+      "classes": ["MobileEventReceiptIdentityTest", "MobileReceiptRollbackAtomicityTest"],
+      "expected_refusal": "Disposable schema ownership proof does not match this database",
+      "db_queries_executed": 0,
+      "admitted": false,
+      "cleanup_executed": false
+    },
+    {
+      "scenario": "refuses_when_proof_is_foreign_to_active_database",
+      "classes": ["MobileEventReceiptIdentityTest", "MobileReceiptRollbackAtomicityTest"],
+      "expected_refusal": "Disposable schema ownership proof does not match this database",
+      "db_queries_executed": 0,
+      "admitted": false,
+      "cleanup_executed": false
+    },
+    {
+      "scenario": "refuses_when_default_connection_is_not_mysql",
+      "classes": ["MobileEventReceiptIdentityTest", "MobileReceiptRollbackAtomicityTest"],
+      "expected_refusal": "default database connection must be 'mysql'",
+      "db_queries_executed": 0,
+      "admitted": false,
+      "cleanup_executed": false
+    },
+    {
+      "scenario": "refuses_when_connection_config_uses_forbidden_unix_socket",
+      "classes": ["MobileEventReceiptIdentityTest", "MobileReceiptRollbackAtomicityTest"],
+      "expected_refusal": "unix_socket connection is not allowed for disposable database",
+      "db_queries_executed": 0,
+      "admitted": false,
+      "cleanup_executed": false
+    },
+    {
+      "scenario": "refuses_when_connection_config_uses_forbidden_url",
+      "classes": ["MobileEventReceiptIdentityTest", "MobileReceiptRollbackAtomicityTest"],
+      "expected_refusal": "database URL configuration is forbidden; explicit host and port required",
+      "db_queries_executed": 0,
+      "admitted": false,
+      "cleanup_executed": false
+    },
+    {
+      "scenario": "refuses_when_connection_config_uses_forbidden_read_write_separation",
+      "classes": ["MobileEventReceiptIdentityTest", "MobileReceiptRollbackAtomicityTest"],
+      "expected_refusal": "read/write separation configuration is forbidden for disposable database",
+      "db_queries_executed": 0,
+      "admitted": false,
+      "cleanup_executed": false
+    },
+    {
+      "scenario": "refuses_when_actual_selected_database_mismatches_expected_schema",
+      "classes": ["MobileEventReceiptIdentityTest", "MobileReceiptRollbackAtomicityTest"],
+      "expected_refusal": "actual selected schema 'accounting_p8_tmp_wrongdb999' does not match expected owned schema",
+      "db_queries_executed": 1,
+      "destructive_queries_executed": 0,
+      "admitted": false,
+      "cleanup_executed": false
+    },
+    {
+      "scenario": "refuses_teardown_when_config_or_proof_switches_midtest",
+      "classes": ["MobileEventReceiptIdentityTest", "MobileReceiptRollbackAtomicityTest"],
+      "expected_refusal": "Forbidden: cannot run on persistent 3353 database",
+      "destructive_queries_executed": 0,
+      "admitted": false,
+      "safe_exit": true
+    },
+    {
+      "scenario": "partial_setup_failure_teardown_executes_safely_without_destructive_cleanup",
+      "classes": ["MobileEventReceiptIdentityTest", "MobileReceiptRollbackAtomicityTest"],
+      "destructive_queries_executed": 0,
+      "safe_exit": true
+    },
+    {
+      "scenario": "admits_ownership_when_all_proof_invariants_satisfied",
+      "classes": ["MobileEventReceiptIdentityTest", "MobileReceiptRollbackAtomicityTest"],
+      "admitted": true
+    }
+  ],
+  "zero_mutation_guarantee": "Refusal happens before any DB connection attempt, socket write, or SQL DML for all static invariants. Live PDO read-only identity check runs only after static proof passes and rejects mismatched schemas with zero mutations. Teardown on unadmitted setup or mid-test drift exits immediately without executing any queries, DELETEs, or FK modifications."
+}

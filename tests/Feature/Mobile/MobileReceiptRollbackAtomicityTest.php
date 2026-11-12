@@ -13,7 +13,6 @@ use App\Actions\Sales\PostSalesInvoiceAction;
 use App\Domain\Inventory\ValueObjects\Quantity;
 use App\Models\Company;
 use App\Models\Customer;
-use App\Models\CustomerPayment;
 use App\Models\DocumentSequence;
 use App\Models\MobileAccessToken;
 use App\Models\MobileDevice;
@@ -21,7 +20,6 @@ use App\Models\MobileEventReceipt;
 use App\Models\MoneyAccount;
 use App\Models\Product;
 use App\Models\ProductUnit;
-use App\Models\SalesInvoice;
 use App\Models\Unit;
 use App\Models\User;
 use App\Models\Warehouse;
@@ -36,49 +34,61 @@ use App\Services\Tenancy\CompanyRoleService;
 use App\Support\Mobile\Receipt\FinancialExecutionAdapterInterface;
 use App\Support\Mobile\Receipt\MobileEventReceiptManager;
 use App\Support\Tenancy\CompanyContext;
+use App\Support\Tenancy\CompanyScope;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 use RuntimeException;
-use Tests\Support\DisposableMariaDbSchema;
+use Tests\Support\EnforcesDisposableDatabaseOwnership;
 use Tests\TestCase;
 
 final class MobileReceiptRollbackAtomicityTest extends TestCase
 {
+    use EnforcesDisposableDatabaseOwnership;
+
     // Non-nested fixture strategy on owned disposable schema: no outer transaction wrapper
 
     protected function tearDown(): void
     {
-        if (DB::transactionLevel() > 0) {
-            DB::rollBack(0);
-        }
         self::$failAfterReceiptCreation = false;
-        try {
-            DB::statement('SET FOREIGN_KEY_CHECKS=0');
-            MobileEventReceipt::query()->delete();
-            DB::table('customer_payment_allocations')->delete();
-            CustomerPayment::query()->delete();
-            DB::table('sales_invoice_lines')->delete();
-            SalesInvoice::query()->delete();
-            DB::table('stock_movements')->delete();
-            DB::table('posting_lines')->delete();
-            DB::table('posting_batches')->delete();
-            ProductUnit::query()->delete();
-            Product::query()->delete();
-            MoneyAccount::query()->delete();
-            Customer::query()->delete();
-            MobileAccessToken::query()->delete();
-            MobileDevice::query()->delete();
-            DB::table('model_has_roles')->delete();
-            DB::table('model_has_permissions')->delete();
-            DB::table('company_user')->delete();
-            Company::query()->delete();
-            User::query()->delete();
-        } finally {
-            DB::statement('SET FOREIGN_KEY_CHECKS=1');
+
+        if (! $this->isDisposableDatabaseOwnershipAdmitted()) {
+            parent::tearDown();
+
+            return;
         }
 
-        parent::tearDown();
+        try {
+            $this->revalidateOwnedDisposableDatabase();
+
+            if (DB::transactionLevel() > 0) {
+                DB::rollBack(0);
+            }
+
+            CompanyScope::executeWithoutScope(function () {
+                if (isset($this->company)) {
+                    $companyId = $this->company->id;
+                    DB::table('mobile_event_receipts')->where('company_id', $companyId)->delete();
+                    DB::table('customer_payment_allocations')->where('company_id', $companyId)->delete();
+                    DB::table('customer_payments')->where('company_id', $companyId)->delete();
+                    DB::table('sales_invoice_lot_allocations')->where('company_id', $companyId)->delete();
+                    DB::table('sales_invoice_lines')->where('company_id', $companyId)->delete();
+                    DB::table('sales_invoices')->where('company_id', $companyId)->delete();
+                    DB::table('inventory_lot_balances')->where('company_id', $companyId)->delete();
+                    DB::table('inventory_balances')->where('company_id', $companyId)->delete();
+                    DB::table('inventory_lots')->where('company_id', $companyId)->delete();
+                    DB::table('stock_movements')->where('company_id', $companyId)->delete();
+                    DB::table('posting_lines')->where('company_id', $companyId)->delete();
+                    DB::table('posting_batches')->where('company_id', $companyId)->delete();
+                }
+            });
+
+            app(CompanyContext::class)->clear();
+        } finally {
+            $this->disposableDatabaseOwnershipAdmitted = false;
+            $this->admittedDatabaseName = null;
+            parent::tearDown();
+        }
     }
 
     private static bool $failAfterReceiptCreation = false;
@@ -103,25 +113,11 @@ final class MobileReceiptRollbackAtomicityTest extends TestCase
 
     private MobileEventReceiptManager $manager;
 
-    protected function beforeRefreshingDatabase(): void
-    {
-        if (! app()->environment('testing')) {
-            throw new RuntimeException('MobileReceiptRollbackAtomicityTest refused: APP_ENV is not testing.');
-        }
-
-        DisposableMariaDbSchema::testSettings();
-        DisposableMariaDbSchema::assertPrimarySchema((string) config('database.connections.mysql.database'));
-
-        $port = (int) config('database.connections.mysql.port');
-        if ($port === 3353) {
-            throw new RuntimeException('Forbidden: MobileReceiptRollbackAtomicityTest cannot run on persistent 3353 database.');
-        }
-    }
-
     protected function setUp(): void
     {
         parent::setUp();
         self::$failAfterReceiptCreation = false;
+        $this->assertOwnedDisposableDatabase();
 
         $this->owner = User::factory()->create([
             'email' => 'atomicity_owner_'.Str::random(8).'@example.com',
@@ -208,7 +204,7 @@ final class MobileReceiptRollbackAtomicityTest extends TestCase
         $rawToken = 'st_m_atom_'.bin2hex(random_bytes(32));
         $this->token = MobileAccessToken::create([
             'token_hash' => hash('sha256', $rawToken),
-            'device_id' => $deviceId,
+            'device_id' => $this->device->device_id,
             'user_id' => $this->owner->id,
             'company_id' => $this->company->id,
             'password_epoch' => 'epoch-'.substr(hash('sha256', (string) $this->owner->password), 0, 16),

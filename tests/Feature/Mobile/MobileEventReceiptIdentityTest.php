@@ -30,11 +30,13 @@ use Illuminate\Support\Str;
 use InvalidArgumentException;
 use PDOException;
 use RuntimeException;
-use Tests\Support\DisposableMariaDbSchema;
+use Tests\Support\EnforcesDisposableDatabaseOwnership;
 use Tests\TestCase;
 
 final class MobileEventReceiptIdentityTest extends TestCase
 {
+    use EnforcesDisposableDatabaseOwnership;
+
     // Non-nested fixture strategy on owned disposable schema: no outer transaction wrapper
 
     private User $user;
@@ -53,55 +55,39 @@ final class MobileEventReceiptIdentityTest extends TestCase
 
     private MobileEventReceiptManager $manager;
 
-    protected function beforeRefreshingDatabase(): void
-    {
-        if (! app()->environment('testing')) {
-            throw new RuntimeException('MobileEventReceiptIdentityTest refused: APP_ENV is not testing.');
-        }
-
-        DisposableMariaDbSchema::testSettings();
-        DisposableMariaDbSchema::assertPrimarySchema((string) config('database.connections.mysql.database'));
-
-        $port = (int) config('database.connections.mysql.port');
-        if ($port === 3353) {
-            throw new RuntimeException('Forbidden: MobileEventReceiptIdentityTest cannot run on persistent 3353 database.');
-        }
-    }
-
     protected function tearDown(): void
     {
-        if (DB::transactionLevel() > 0) {
-            DB::rollBack(0);
+        if (! $this->isDisposableDatabaseOwnershipAdmitted()) {
+            parent::tearDown();
+
+            return;
         }
 
-        CompanyScope::executeWithoutScope(function () {
-            try {
-                DB::statement('SET FOREIGN_KEY_CHECKS=0');
-                MobileEventReceipt::query()->delete();
-                DB::table('customer_payment_allocations')->delete();
-                DB::table('customer_payments')->delete();
-                DB::table('sales_invoice_lines')->delete();
-                SalesInvoice::query()->delete();
-                Customer::query()->delete();
-                MobileAccessToken::query()->delete();
-                MobileDevice::query()->delete();
-                DB::table('model_has_roles')->delete();
-                DB::table('model_has_permissions')->delete();
-                DB::table('company_user')->delete();
-                Company::query()->delete();
-                User::query()->delete();
-            } finally {
-                DB::statement('SET FOREIGN_KEY_CHECKS=1');
-                app(CompanyContext::class)->clear();
-            }
-        });
+        try {
+            $this->revalidateOwnedDisposableDatabase();
 
-        parent::tearDown();
+            if (DB::transactionLevel() > 0) {
+                DB::rollBack(0);
+            }
+
+            CompanyScope::executeWithoutScope(function () {
+                if (isset($this->companyA) && isset($this->companyB)) {
+                    MobileEventReceipt::whereIn('company_id', [$this->companyA->id, $this->companyB->id])->delete();
+                }
+            });
+
+            app(CompanyContext::class)->clear();
+        } finally {
+            $this->disposableDatabaseOwnershipAdmitted = false;
+            $this->admittedDatabaseName = null;
+            parent::tearDown();
+        }
     }
 
     protected function setUp(): void
     {
         parent::setUp();
+        $this->assertOwnedDisposableDatabase();
 
         $this->user = User::factory()->create([
             'email' => 'staff_receipt_'.Str::random(8).'@example.com',
@@ -170,10 +156,16 @@ final class MobileEventReceiptIdentityTest extends TestCase
         $this->manager = new MobileEventReceiptManager;
     }
 
+    /**
+     * @param  array{sales_invoice_id?: int|null, sales_invoice_public_id?: string|null, customer_payment_id?: int|null, customer_payment_public_id?: string|null, command_receipt_id?: int|null, terminal_canonical_result?: array<string, mixed>}  $terminalResult
+     */
     private function createTestExecutor(array $terminalResult = []): FinancialExecutionAdapterInterface
     {
         return new class($terminalResult) implements FinancialExecutionAdapterInterface
         {
+            /**
+             * @param  array{sales_invoice_id?: int|null, sales_invoice_public_id?: string|null, customer_payment_id?: int|null, customer_payment_public_id?: string|null, command_receipt_id?: int|null, terminal_canonical_result?: array<string, mixed>}  $result
+             */
             public function __construct(private array $result) {}
 
             public function authorize(
@@ -965,7 +957,14 @@ final class MobileEventReceiptIdentityTest extends TestCase
 
             public function execute(Company $c, User $a, MobileDevice $d, array $p, string $s): array
             {
-                return [];
+                return [
+                    'sales_invoice_id' => null,
+                    'sales_invoice_public_id' => null,
+                    'customer_payment_id' => null,
+                    'customer_payment_public_id' => null,
+                    'command_receipt_id' => null,
+                    'terminal_canonical_result' => [],
+                ];
             }
         };
 
