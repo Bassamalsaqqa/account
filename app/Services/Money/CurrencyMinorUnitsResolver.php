@@ -7,6 +7,7 @@ namespace App\Services\Money;
 use App\Models\Company;
 use App\Models\CompanyCurrency;
 use App\Models\Currency;
+use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
 
 /**
@@ -97,8 +98,8 @@ final class CurrencyMinorUnitsResolver
      * Authoritative fresh resolution and row-level locking for company write operations.
      *
      * Locks records in deterministic order:
-     * 1. Global Currency record FOR UPDATE
-     * 2. Tenant CompanyCurrency record FOR UPDATE
+     * 1. Global Currency record SHARED LOCK (allows concurrent company writes, prevents metadata mutation)
+     * 2. Tenant CompanyCurrency record FOR UPDATE (exclusive lock scoped to company)
      *
      * Validates master active status, company enablement, and minor units (0..6).
      * Refreshes the in-memory resolver cache so subsequent reads within the same request/transaction
@@ -110,6 +111,7 @@ final class CurrencyMinorUnitsResolver
      * @return int Supported minor units (0..6)
      *
      * @throws InvalidArgumentException
+     * @throws \LogicException If lockForUpdate is true outside an active database transaction
      */
     public function resolveFreshForCompany(Company|int $company, string $currencyCode, bool $lockForUpdate = true): int
     {
@@ -122,9 +124,8 @@ final class CurrencyMinorUnitsResolver
     /**
      * Authoritative fresh multi-currency resolution and row-level locking in deterministic alphabetical order.
      *
-     * For each currency in alphabetical order:
-     * 1. Currency (global record) lockForUpdate
-     * 2. CompanyCurrency (company record) lockForUpdate
+     * 1. All master Currency records in alphabetical order with SHARED LOCK
+     * 2. All tenant CompanyCurrency records in alphabetical order with FOR UPDATE (company-scoped)
      *
      * @param  Company|int  $company  Company model or ID
      * @param  list<string>  $currencyCodes  List of currency codes
@@ -132,12 +133,17 @@ final class CurrencyMinorUnitsResolver
      * @return array<string, int> Map of currency code => minor units
      *
      * @throws InvalidArgumentException
+     * @throws \LogicException If lockForUpdate is true outside an active database transaction
      */
     public function resolveCurrenciesForCompanyWrite(Company|int $company, array $currencyCodes, bool $lockForUpdate = true): array
     {
         $companyId = $company instanceof Company ? (int) $company->id : (int) $company;
         if ($companyId <= 0) {
             throw new InvalidArgumentException("Invalid company ID [{$companyId}].");
+        }
+
+        if ($lockForUpdate && DB::transactionLevel() <= 0) {
+            throw new \LogicException('Currency write resolution with locking requires an active database transaction.');
         }
 
         $codes = [];
@@ -157,12 +163,13 @@ final class CurrencyMinorUnitsResolver
         $sortedCodes = array_values($codes);
         sort($sortedCodes, SORT_STRING);
 
-        $result = [];
+        // 1. Lock master Currency records in deterministic alphabetical order with sharedLock
+        // sharedLock allows concurrent reads across independent companies while preventing concurrent metadata mutations
+        $masterRecords = [];
         foreach ($sortedCodes as $code) {
-            // 1. Lock global Currency record
             $currencyQuery = Currency::where('code', $code);
             if ($lockForUpdate) {
-                $currencyQuery = $currencyQuery->lockForUpdate();
+                $currencyQuery = $currencyQuery->sharedLock();
             }
             /** @var Currency|null $currency */
             $currency = $currencyQuery->first();
@@ -189,7 +196,16 @@ final class CurrencyMinorUnitsResolver
                 throw new InvalidArgumentException("Currency [{$code}] minor units [{$minorUnits}] is invalid. Supported range is 0 to 6.");
             }
 
-            // 2. Lock tenant CompanyCurrency record
+            $masterRecords[$code] = [
+                'minor_units' => $minorUnits,
+                'active' => true,
+            ];
+        }
+
+        // 2. Lock tenant CompanyCurrency records in deterministic alphabetical order with lockForUpdate
+        // Exclusive locks are scoped strictly to the tenant company, avoiding cross-company serialization
+        $result = [];
+        foreach ($sortedCodes as $code) {
             $ccQuery = CompanyCurrency::where('company_id', $companyId)->where('currency_code', $code);
             if ($lockForUpdate) {
                 $ccQuery = $ccQuery->lockForUpdate();
@@ -202,13 +218,10 @@ final class CurrencyMinorUnitsResolver
             }
 
             // Refresh in-memory resolver caches with fresh locked authoritative state
-            $this->currencyCache[$code] = [
-                'minor_units' => $minorUnits,
-                'active' => true,
-            ];
+            $this->currencyCache[$code] = $masterRecords[$code];
             $this->companyEnabledCache["{$companyId}:{$code}"] = true;
 
-            $result[$code] = $minorUnits;
+            $result[$code] = $masterRecords[$code]['minor_units'];
         }
 
         return $result;

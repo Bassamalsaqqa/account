@@ -123,16 +123,41 @@ final class ImmediateSaleCommands
                 throw new HttpException(409, 'Sale confirmation expired or the invoice is no longer a draft.');
             }
             try {
-                $intent = $this->intent($locked, $actor, $payload['intent']);
-                $company = Company::findOrFail($locked->company_id);
-                $paymentCurrency = $check ? ($intent['currency_code'] ?? null)
-                    : ($paid ? MoneyAccount::where('company_id', $company->id)->whereKey((int) ($intent['money_account_id'] ?? 0))->value('currency_code') : null);
+                $rawIntent = $payload['intent'];
+                $company = Company::where('id', $locked->company_id)->lockForUpdate()->firstOrFail();
+
+                // Determine all required currencies from STRICT validated signed raw intent / owned accounts / check data
+                // WITHOUT premature economic normalization, so fresh locking and qualification occur BEFORE intent() / paymentTerms().
+                $paymentCurrency = null;
+                if ($paid && $check) {
+                    $rawCheckCurrency = $rawIntent['currency_code'] ?? null;
+                    if (! is_string($rawCheckCurrency) || ! preg_match('/\A[A-Z]{3}\z/', $rawCheckCurrency)) {
+                        throw new InvalidArgumentException('Choose the check currency explicitly.');
+                    }
+                    $paymentCurrency = $rawCheckCurrency;
+                } elseif ($paid) {
+                    $rawAccountId = (int) ($rawIntent['money_account_id'] ?? 0);
+                    if ($rawAccountId <= 0) {
+                        throw new InvalidArgumentException('Choose an active matching company payment account.');
+                    }
+                    /** @var MoneyAccount|null $account */
+                    $account = MoneyAccount::where('company_id', $company->id)->whereKey($rawAccountId)->lockForUpdate()->first();
+                    if ($account === null || ! $account->is_active) {
+                        throw new InvalidArgumentException('Choose an active matching company payment account.');
+                    }
+                    $paymentCurrency = $account->currency_code;
+                }
+
                 $currenciesToLock = array_values(array_unique(array_filter([
-                    $locked->currency_code,
-                    is_string($paymentCurrency) ? $paymentCurrency : null,
+                    (string) $locked->currency_code,
+                    $paid ? $paymentCurrency : null,
                     (string) $company->base_currency_code,
                 ])));
+
+                // Fresh transactional locking and qualification BEFORE intent normalization / payment terms
                 app(CurrencyMinorUnitsResolver::class)->resolveCurrenciesForCompanyWrite((int) $company->id, $currenciesToLock, lockForUpdate: true);
+
+                $intent = $this->intent($locked, $actor, $rawIntent);
                 $terms = $this->paymentTerms($locked, $intent);
             } catch (InvalidArgumentException|ModelNotFoundException $exception) {
                 // These instructions were validated when the signed preview was

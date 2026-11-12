@@ -181,11 +181,6 @@ class PostCustomerPaymentAction
             if ($method === 'check') {
                 $check = app(CheckPaymentSource::class)->instrument((int) $lockedCompany->id, $user, $data, 'incoming');
                 $currency = $check->currency_code;
-                $cashLedger = app(CheckPaymentSource::class)->ledger($check);
-
-                $currenciesToLock = array_values(array_unique([$currency, (string) $lockedCompany->base_currency_code]));
-                $minorUnitsMap = app(CurrencyMinorUnitsResolver::class)->resolveCurrenciesForCompanyWrite((int) $lockedCompany->id, $currenciesToLock, lockForUpdate: true);
-                $minorUnits = $minorUnitsMap[$currency];
             } else {
                 // 3. Lock MoneyAccount FOR UPDATE
                 /** @var MoneyAccount $moneyAccount */
@@ -198,21 +193,66 @@ class PostCustomerPaymentAction
                 if (($method === CustomerPayment::METHOD_CASH) !== ($moneyAccount->account_type === MoneyAccount::TYPE_CASH)) {
                     throw new InvalidArgumentException('Receipt method must match its money account type.');
                 }
+            }
 
-                $currenciesToLock = array_values(array_unique([$currency, (string) $lockedCompany->base_currency_code]));
-                try {
-                    $minorUnitsMap = app(CurrencyMinorUnitsResolver::class)->resolveCurrenciesForCompanyWrite((int) $lockedCompany->id, $currenciesToLock, lockForUpdate: true);
-                    $minorUnits = $minorUnitsMap[$currency];
-                } catch (InvalidArgumentException $e) {
-                    if (str_contains($e->getMessage(), 'is not enabled')) {
+            // 4. Collect and lock allocation invoices deterministically by ID within tenant company
+            $allocationsInput = $data['allocations'];
+            $allocInvoiceIds = [];
+            foreach ($allocationsInput as $allocItem) {
+                if (! isset($allocItem['sales_invoice_id'])) {
+                    throw new InvalidArgumentException('Allocation sales invoice ID is required.');
+                }
+                $invId = (int) $allocItem['sales_invoice_id'];
+                if ($invId <= 0) {
+                    throw new InvalidArgumentException("Invalid sales invoice ID [{$invId}].");
+                }
+                $allocInvoiceIds[$invId] = $invId;
+            }
+
+            $sortedInvoiceIds = array_values($allocInvoiceIds);
+            sort($sortedInvoiceIds, SORT_NUMERIC);
+
+            /** @var array<int, SalesInvoice> $lockedInvoicesById */
+            $lockedInvoicesById = [];
+            foreach ($sortedInvoiceIds as $invId) {
+                /** @var SalesInvoice $inv */
+                $inv = SalesInvoice::where('company_id', $lockedCompany->id)
+                    ->where('id', $invId)
+                    ->lockForUpdate()
+                    ->firstOrFail();
+                $lockedInvoicesById[$invId] = $inv;
+            }
+
+            // 5. Collect complete union of receipt, base, and allocation currencies and lock ONCE in deterministic order BEFORE amount processing
+            $allCurrenciesToLock = array_values(array_unique(array_merge(
+                [$currency, (string) $lockedCompany->base_currency_code],
+                array_map(fn (SalesInvoice $inv) => (string) $inv->currency_code, $lockedInvoicesById)
+            )));
+
+            try {
+                $minorUnitsMap = app(CurrencyMinorUnitsResolver::class)->resolveCurrenciesForCompanyWrite(
+                    (int) $lockedCompany->id,
+                    $allCurrenciesToLock,
+                    lockForUpdate: true
+                );
+                $minorUnits = $minorUnitsMap[$currency];
+            } catch (InvalidArgumentException $e) {
+                if (str_contains($e->getMessage(), 'is not enabled')) {
+                    if (str_contains($e->getMessage(), "[{$currency}]")) {
                         throw new InvalidArgumentException('Receipt currency is not enabled.', previous: $e);
                     }
-                    throw $e;
+                    throw new InvalidArgumentException('Document currency is not enabled.', previous: $e);
                 }
+                throw $e;
+            }
 
+            if ($method === 'check') {
+                $cashLedger = app(CheckPaymentSource::class)->ledger($check);
+            } else {
                 $cashLedger = LedgerAccount::where('company_id', $lockedCompany->id)->where('id', $moneyAccount->ledger_account_id)->where('active', true)->where('is_control', false)->lockForUpdate()->firstOrFail();
                 app(MoneyAccountLedger::class)->validate($moneyAccount, true);
             }
+
             if ($currency === $lockedCompany->base_currency_code && ! BigDecimal::of($data['exchange_rate'])->isEqualTo(1)) {
                 throw new InvalidArgumentException('Base currency rate must equal one.');
             }
@@ -236,8 +276,7 @@ class PostCustomerPaymentAction
             $paymentDate = $data['payment_date'];
             $year = (int) substr($paymentDate, 0, 4);
 
-            // 4. Validate and calculate allocations
-            $allocationsInput = $data['allocations'];
+            // 6. Validate and calculate allocations
             $allocatedTotal = BigDecimal::zero();
             $preparedAllocations = [];
 
@@ -250,11 +289,8 @@ class PostCustomerPaymentAction
             $remainingOutstandingByInvoice = [];
 
             foreach ($allocationsInput as $allocInput) {
-                /** @var SalesInvoice $invoice */
-                $invoice = SalesInvoice::where('company_id', $lockedCompany->id)
-                    ->where('id', $allocInput['sales_invoice_id'])
-                    ->lockForUpdate()
-                    ->firstOrFail();
+                $invId = (int) $allocInput['sales_invoice_id'];
+                $invoice = $lockedInvoicesById[$invId];
 
                 if (! $invoice->isPosted()) {
                     throw new InvalidArgumentException("Cannot allocate payment to non-posted invoice [{$invoice->id}].");
@@ -264,14 +300,6 @@ class PostCustomerPaymentAction
                     throw new InvalidArgumentException("Cannot allocate payment to invoice [{$invoice->id}] belonging to another customer.");
                 }
 
-                try {
-                    app(CurrencyMinorUnitsResolver::class)->resolveFreshForCompany((int) $lockedCompany->id, $invoice->currency_code, lockForUpdate: true);
-                } catch (InvalidArgumentException $e) {
-                    if (str_contains($e->getMessage(), 'is not enabled')) {
-                        throw new InvalidArgumentException('Document currency is not enabled.', previous: $e);
-                    }
-                    throw $e;
-                }
                 if ($paymentDate < Carbon::parse($invoice->issue_date)->toDateString()) {
                     throw new InvalidArgumentException('Direct payment allocation cannot precede its document date.');
                 }
