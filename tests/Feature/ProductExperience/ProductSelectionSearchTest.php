@@ -19,6 +19,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Livewire\Features\SupportLockedProperties\CannotUpdateLockedPropertyException;
 use Livewire\Livewire;
+use Spatie\Permission\Models\Role;
 use Tests\Support\SalesCorrectionFixtures;
 use Tests\TestCase;
 
@@ -101,6 +102,7 @@ class ProductSelectionSearchTest extends TestCase
         $form = Livewire::test(PurchaseForm::class)->set('productSearch', 'SOAP-LOOKUP');
         $this->assertSame('987654.32', $form->get('searchResults')[0]['cost']);
         foreach ($this->owner->roles as $role) {
+            $this->assertInstanceOf(Role::class, $role);
             $role->revokePermissionTo('purchasing.cost.view');
         }
         $this->owner->revokePermissionTo('purchasing.cost.view');
@@ -230,6 +232,7 @@ class ProductSelectionSearchTest extends TestCase
     {
         $form = Livewire::test(PurchaseForm::class)->call('selectProduct', 0, $this->soap->id);
         $instance = $form->instance();
+        $this->assertInstanceOf(PurchaseForm::class, $instance);
         $before = $this->economicCounts();
         DB::enableQueryLog();
         DB::flushQueryLog();

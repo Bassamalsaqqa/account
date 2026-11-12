@@ -10,6 +10,7 @@ use App\Models\User;
 use App\Services\Purchasing\PurchaseProductSelection;
 use App\Services\Sales\SalesProductSelection;
 use App\Services\Search\BoundedProductSearchService;
+use Brick\Math\BigDecimal;
 use Tests\TestCase;
 
 class BoundedProductSearchServiceTest extends TestCase
@@ -29,12 +30,18 @@ class BoundedProductSearchServiceTest extends TestCase
         foreach ([[new SalesProductSelection, 'default_sale_price_base', 'default_sale_price_base'],
             [new PurchaseProductSelection, 'default_purchase_cost_base', 'default_purchase_price_base']] as [$selection, $productField, $unitField]) {
             $this->assertNull($selection->suggestedBasePrice($product, $unit));
-            $product->{$productField} = '1.234567';
-            $this->assertTrue($selection->suggestedBasePrice($product, $unit)->isEqualTo('14.814804'));
-            $unit->{$unitField} = '0';
-            $this->assertTrue($selection->suggestedBasePrice($product, $unit)->isZero());
-            $unit->{$unitField} = '9.876543';
-            $this->assertTrue($selection->suggestedBasePrice($product, $unit)->isEqualTo('9.876543'));
+            $product->setAttribute($productField, '1.234567');
+            $suggestion = $selection->suggestedBasePrice($product, $unit);
+            $this->assertInstanceOf(BigDecimal::class, $suggestion);
+            $this->assertTrue($suggestion->isEqualTo('14.814804'));
+            $unit->setAttribute($unitField, '0');
+            $suggestion = $selection->suggestedBasePrice($product, $unit);
+            $this->assertInstanceOf(BigDecimal::class, $suggestion);
+            $this->assertTrue($suggestion->isZero());
+            $unit->setAttribute($unitField, '9.876543');
+            $suggestion = $selection->suggestedBasePrice($product, $unit);
+            $this->assertInstanceOf(BigDecimal::class, $suggestion);
+            $this->assertTrue($suggestion->isEqualTo('9.876543'));
         }
     }
 

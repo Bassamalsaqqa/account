@@ -90,3 +90,9 @@ GOMAXPROCS=1 RAYON_NUM_THREADS=1 UV_THREADPOOL_SIZE=1 npm run build
 - Browser visual, RTL layout, mobile viewport and keyboard focus inspection: NOT VERIFIED (no project browser runner configured in repository).
 - Symmetric Arabic diacritic/folding normalization: explicitly DEFERRED (asymmetric prefix against raw stored names preserved).
 - Production deployment or staging migration: none attempted.
+
+## Supervisor functional qualification checkpoint
+
+Runtime head `109a38d9da97e9c6ba26691d527fead58f819eab` passed supervisor execution of the full listed workflow suite (**101 tests / 1,039 assertions**, owned schema cleaned) and shipped JS (**24 tests**, no failures). Supervisor production build passed with zero source maps, and scoped Pint passed. Independent review found no remaining material functional source defects; browser geometry, responsive rendering, RTL and physical focus remain **NOT VERIFIED**.
+
+Explicit PHPStan analysis over application code and modified test files uncovered 14 test typing/nullability issues missed by the app-only configuration. A test-only follow-up adds real instance/nullability assertions and uses Eloquent attribute setters for exact decimal fixtures, without suppression comments or runtime changes. Scoped PHPStan now passes; the affected tests passed **21 tests / 130 assertions**, owned schema `accounting_p8_tmp_2da737771e69` cleaned. This checkpoint does not resolve the separate PR88 mobile catalog scan cost or qualify integration with the unmerged PR93 signatures. No merge, deployment, or production access occurred.
