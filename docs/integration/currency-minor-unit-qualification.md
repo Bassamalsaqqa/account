@@ -154,3 +154,9 @@ Owned primary schema cleaned.
 >    - `CreateCompanyAction` limits company base currency to `ILS`, `USD`, `JOD`. Core GL posting assumes 2 or 3 minor units for base currency journal balances.
 > 3. **Mobile Posting Routes & Receipt Store**:
 >    - Not modified in this PR. Bounded strictly to backend qualification.
+
+## 7. Supervisor qualification checkpoint
+
+Runtime head `94432064db3b46f88fa02a7ae876f60dec586c24` passed the supervisor's canonical Sales/Money run: **63 tests / 382 assertions**, on owned disposable schema `accounting_p8_tmp_091d39f03bf7`, cleaned on exit. Supervisor ran Pint and PHPStan explicitly over `app/` plus `tests/Feature/Money/CurrencyMinorUnitQualificationTest.php`; both passed. Independent delta review found no remaining material source findings, subject to the documented scope limits.
+
+Concurrency evidence is bounded: the two-connection test proves compatible shared master locks and exclusion of metadata updates. The opposite-allocation payment test executes canonical payments sequentially; it does not prove simultaneous multi-process posting. Mobile event receipt atomicity, absence-row races, and cross-version idempotency require their own later MariaDB qualification. Historical precision is not snapshotted: out-of-band master precision mutation remains unsupported. This checkpoint is not owner merge/deployment approval or mobile financial activation.
