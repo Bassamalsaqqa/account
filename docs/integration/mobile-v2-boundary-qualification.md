@@ -13,22 +13,25 @@ Mobile V2 introduces an explicit, default-OFF boundary qualification for upcomin
 
 ## 2. Independent Audit Findings & Technical Resolution
 
-### Finding 1: Ambient Guard & Session Isolation Without API Logout (P1)
-- **Defect**: Both `MobileV2Authenticate` and `MobileV2ApiBoundary` previously called `auth()->logout()` in their `finally` blocks. On Laravel's `SessionGuard`, `logout()` cycles the `remember_token`, performs a database write to the `users` table, deletes the browser session auth key, queues remember cookie deletion, and fires `Logout` events—even for disabled paths, unknown routes, invalid tokens, or mixed ambient actors. Furthermore, `app(SupportViewContext::class)->clear()` cleared unowned ambient support context.
+### Finding 1: Ambient Guard & Session Isolation Without API Logout or Lazy Browser Auth (P1)
+- **Defect**: Both `MobileV2Authenticate` and `MobileV2ApiBoundary` previously called `auth()->logout()` in their `finally` blocks, causing remember token cycling, user table writes, session key deletion, cookie queue mutations, and `Logout` events. Furthermore, `CompanyContext::clear()` invoked `user() -> auth()->user()`, triggering lazy browser session authentication and remember-me token resolution on session guards when `hasUser()` was false. Finally, `MobileV2ApiBoundary` previously omitted `CompanyContext` clearing on boundary exits.
 - **Resolution**:
-  - Completely eliminated `auth()->logout()` in all API cleanup paths.
-  - Implemented in-memory guard state capture and restoration: captures `$guard->hasUser()` and `$guard->user()` along with `$request->getUserResolver()` on entry; restores in-memory user via `$guard->setUser($priorUser)` when a prior user was present or `$guard->forgetUser()` when absent.
-  - Eliminated `SupportViewContext::clear()` from `finally` blocks, preserving unowned ambient contexts while maintaining strict 403 rejection if active impersonation is detected on entry.
-  - Verified that `remember_token` remains unchanged, session auth key is untouched, no `Logout` events are dispatched, no cookies are queued, and no user DB writes occur across disabled routes, unknown routes, invalid tokens, mixed actors, success requests, and thrown exceptions.
+  - Added explicit, sessionless `CompanyContext::clearSessionless()` using stored explicit user and already-resolved guard user only (`hasUser() === true`), resetting company, Spatie team ID, and unsetting relations without calling `auth()->user()`.
+  - Enforced `CompanyContext::clearSessionless()` both BEFORE entry and in FINALLY across all boundary paths (disabled 404, TLS, parser, rate limit, unknown route, and exception exits).
+  - Captured guard state (`hasUser()`, prior user, and user resolver) BEFORE clearing context in `MobileV2Authenticate`.
+  - Completely eliminated `auth()->logout()` across all API cleanup paths.
+  - Verified with real remember-cookie headers and `hasUser()` initially false that 0 calls to `retrieveByToken` occur, 0 session mutations occur, 0 user DB writes occur, 0 `Logout` events fire, 0 cookies are queued, and `$guard->hasUser()` remains false across disabled, unknown, invalid, and success requests.
 
-### Finding 2: Strict Canonical Error Redaction & Field Key Allowlist (P1)
-- **Defect**: `standardizeErrorResponse` allowed any short downstream message without SQL keywords for allowlisted codes. Downstream exceptions and structured errors could leak raw credentials, arbitrary keys, or internal messages. Sensitive field keys were preserved verbatim, and `sanitizeValidationMessage` allowed arbitrary text.
+### Finding 2: Strict Canonical Error Redaction & Complete Removal of Internal Safe Header (P1)
+- **Defect**: An internal header trust bypass (`INTERNAL_SAFE_HEADER = 'X-Mobile-V2-Internal-Safe'`) was used to bypass `standardizeErrorResponse`, allowing downstream responses to spoof the header or leak unreviewed messages, raw credentials, or unexpected extra fields.
 - **Resolution**:
-  - Enforced fixed, reviewed canonical messages (`defaultMessageForCode`) ALWAYS for untrusted downstream errors; eliminated regex-based SQL guesswork for downstream messages.
-  - Introduced internal safe response tagging (`INTERNAL_SAFE_HEADER = 'X-Mobile-V2-Internal-Safe'`) to differentiate genuine boundary/auth responses from untrusted downstream responses.
-  - Defined strict validation field key allowlist `ALLOWED_VALIDATION_FIELD_KEYS`. Unknown field keys are sanitized to generic `'field'`, never echoing arbitrary secret keys.
-  - Sensitive field keys (matching `isSensitiveField`) strictly output generic message `['The provided credential or secret field failed validation.']`. Non-sensitive allowed keys strictly output bounded generic template `["The {$safeFieldName} field failed validation."]`. Arbitrary exception texts and nested credential details never propagate.
-  - Verified across every allowed error code (`MOBILE_API_DISABLED`, `UNAUTHENTICATED`, `FORBIDDEN`, `FORBIDDEN_TENANT_MISMATCH`, `NOT_FOUND`, `METHOD_NOT_ALLOWED`, `NOT_ACCEPTABLE`, `CONFLICT`, `PAYLOAD_TOO_LARGE`, `UNSUPPORTED_MEDIA_TYPE`, `VALIDATION_FAILED`, `TOO_MANY_REQUESTS`, `FINANCIAL_AUTHORITY_UNRESOLVED`, `INTERNAL_SERVER_ERROR`, `BAD_REQUEST`, `INVALID_JSON`), ensuring downstream secret messages are redacted, status codes and bounded `Retry-After` headers are preserved, and `no-store` headers are enforced.
+  - Completely DELETED the `INTERNAL_SAFE_HEADER` constant and header. `standardizeErrorResponse` trusts no HTTP header and no arbitrary public build message.
+  - `buildErrorResponse` itself canonicalizes code, message, and details directly, guaranteeing that early boundary returns and downstream errors are safe and contain no internal headers.
+  - Enforced fixed, reviewed canonical messages (`defaultMessageForCode`) uniformly across all status codes and error paths.
+  - Preserved strictly nonsecret machine fields required by contract when explicitly validated (`reason` known enum, `revoked_at` ISO 8601 string, `requested_company_id`).
+  - Validation error field keys are restricted to `ALLOWED_VALIDATION_FIELD_KEYS` (unknown keys mapped to generic `'field'`).
+  - Downstream responses spoofing `X-Mobile-V2-Internal-Safe` (any value) are sanitized, secret messages redacted to canonical text, extra fields stripped, and the header removed from the response.
+  - Preserved status codes, bounded `Retry-After` headers (1..86400), and `Cache-Control: no-store, no-cache, must-revalidate, private`.
 
 ### Finding 3: Removal of Invented Permissions & Global Forget Cache Thrash (P2)
 - **Defect**: `ALLOWED_NON_FINANCIAL_CAPABILITIES` contained invented permissions `'identity.verify'` and `'identity.probe'`, which do not exist in the database and threw `PermissionDoesNotExist` 500 errors. Additionally, `app(PermissionRegistrar::class)->forgetCachedPermissions()` was called per request, causing global cache thrashing across all tenants.
@@ -63,31 +66,38 @@ APP_ENV=testing PHASE8_ALLOW_DISPOSABLE_DB=1 PHASE8_TEST_DB_HOST=127.0.0.1 PHASE
   php tests/Support/run-phase8-disposable.php -- tests/Feature/Mobile/V2/MobileV2BoundaryQualificationTest.php
 
 # Result:
-# Owned primary test schema: accounting_p8_tmp_e7cab1d13468
+# Owned primary test schema: accounting_p8_tmp_d7a2b7cf5f85
 # PHPUnit 12.5.36 by Sebastian Bergmann and contributors.
-# ...................................                               35 / 35 (100%)
-# Time: 00:14.404, Memory: 79.00 MB
-# OK (35 tests, 403 assertions)
+# .....................................                             37 / 37 (100%)
+# Time: 00:22.475, Memory: 79.00 MB
+# OK (37 tests, 488 assertions)
 # Owned primary schema cleaned.
 
-# Unit Mobile Test Suite Run
-php tests/Support/run-phase8-disposable.php -- tests/Unit/Mobile
-# OK (40 tests, 260 assertions)
+# Full Feature Mobile Regression Suite Run (All 12 feature suites)
+APP_ENV=testing APP_KEY="base64:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=" \
+  PHASE8_ALLOW_DISPOSABLE_DB=1 PHASE8_TEST_DB_HOST=127.0.0.1 PHASE8_TEST_DB_PORT=3342 \
+  PHASE8_TEST_DB_USERNAME=test_runner PHASE8_TEST_DB_EMPTY_PASSWORD=1 \
+  php tests/Support/run-phase8-disposable.php -- tests/Feature/Mobile
+# OK (99 tests, 921 assertions)
 # Owned primary schema cleaned.
 
 # Phase 11 API Security Suite Run
-APP_KEY="base64:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=" \
+APP_ENV=testing APP_KEY="base64:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=" \
+  PHASE8_ALLOW_DISPOSABLE_DB=1 PHASE8_TEST_DB_HOST=127.0.0.1 PHASE8_TEST_DB_PORT=3342 \
+  PHASE8_TEST_DB_USERNAME=test_runner PHASE8_TEST_DB_EMPTY_PASSWORD=1 \
   php tests/Support/run-phase8-disposable.php -- tests/Feature/Phase11/ApiSecurityTest.php
 # OK (17 tests, 110 assertions)
 # Owned primary schema cleaned.
 
-# Mobile V1 Feature Tests Run
-APP_KEY="base64:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=" \
-  php tests/Support/run-phase8-disposable.php -- tests/Feature/Mobile/AuthLoginTest.php tests/Feature/Mobile/AuthChallengeTest.php tests/Feature/Mobile/ProductCatalogTest.php
-# OK (26 tests, 195 assertions)
+# Unit Mobile Test Suite Run
+APP_ENV=testing APP_KEY="base64:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=" \
+  PHASE8_ALLOW_DISPOSABLE_DB=1 PHASE8_TEST_DB_HOST=127.0.0.1 PHASE8_TEST_DB_PORT=3342 \
+  PHASE8_TEST_DB_USERNAME=test_runner PHASE8_TEST_DB_EMPTY_PASSWORD=1 \
+  php tests/Support/run-phase8-disposable.php -- tests/Unit/Mobile
+# OK (40 tests, 260 assertions)
 # Owned primary schema cleaned.
 
-# Python Contract & Schema Suite
+# Python Contract & Schema Suite (Verified tracked at HEAD: tools/validate-mobile-contract.py)
 python3 ./tools/validate-mobile-contract.py && python3 -O ./tools/validate-mobile-contract.py
 # SUCCESS: All 210 contract, schema, fixture, regression, and negative tests passed!
 

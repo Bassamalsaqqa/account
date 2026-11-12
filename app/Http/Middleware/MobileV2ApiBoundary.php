@@ -7,6 +7,7 @@ namespace App\Http\Middleware;
 use App\Support\Mobile\Contract\ContractConstants;
 use App\Support\Mobile\Contract\Exceptions\CanonicalSerializationException;
 use App\Support\Mobile\Contract\StrictJsonParser;
+use App\Support\Tenancy\CompanyContext;
 use Closure;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Auth\AuthenticationException;
@@ -17,6 +18,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Validation\ValidationException;
+use Spatie\Permission\PermissionRegistrar;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\Exception\ConflictHttpException;
 use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
@@ -31,8 +33,6 @@ final class MobileV2ApiBoundary
     public const int MAX_QUERY_STRING_LENGTH = 2048;
 
     public const int MAX_JSON_DEPTH = ContractConstants::MAX_NESTING_DEPTH; // 32
-
-    public const string INTERNAL_SAFE_HEADER = 'X-Mobile-V2-Internal-Safe';
 
     public const array ALLOWED_VALIDATION_FIELD_KEYS = [
         'company_id',
@@ -80,9 +80,16 @@ final class MobileV2ApiBoundary
         $priorGuardUser = $priorHadUser ? $guard->user() : null;
         $priorUserResolver = $request->getUserResolver();
 
+        $context = app(CompanyContext::class);
+        $context->clearSessionless();
+
         try {
             return $this->handleV2($request, $next);
         } finally {
+            $context->clearSessionless();
+            setPermissionsTeamId(null);
+            app(PermissionRegistrar::class)->setPermissionsTeamId(null);
+
             if ($priorHadUser && $priorGuardUser !== null) {
                 $guard->setUser($priorGuardUser);
             } elseif (method_exists($guard, 'forgetUser')) {
@@ -355,18 +362,12 @@ final class MobileV2ApiBoundary
     {
         $status = $response->getStatusCode();
 
-        if ($response->headers->has(self::INTERNAL_SAFE_HEADER)) {
-            $response->headers->remove(self::INTERNAL_SAFE_HEADER);
-            self::applySecurityHeaders($response);
-
-            return $response;
-        }
-
         $content = (string) $response->getContent();
         $decoded = json_decode($content, true);
 
         $code = self::defaultCodeForStatus($status);
         $details = null;
+        $conflictEvidence = null;
 
         if (is_array($decoded)) {
             if (isset($decoded['error']) && is_array($decoded['error'])) {
@@ -375,14 +376,15 @@ final class MobileV2ApiBoundary
                     $code = $candidateCode;
                 }
                 if (isset($decoded['error']['details']) && is_array($decoded['error']['details'])) {
-                    $details = self::sanitizeValidationErrors($decoded['error']['details']);
+                    $details = self::sanitizeDetails($decoded['error']['details'], $code, $status);
+                }
+                if (isset($decoded['error']['conflict_evidence']) && is_array($decoded['error']['conflict_evidence'])) {
+                    $conflictEvidence = self::sanitizeConflictEvidence($decoded['error']['conflict_evidence']);
                 }
             } elseif (isset($decoded['errors']) && is_array($decoded['errors'])) {
                 $details = self::sanitizeValidationErrors($decoded['errors']);
             }
         }
-
-        $message = self::defaultMessageForCode($code, $status);
 
         $extraHeaders = [];
         if ($response->headers->has('Retry-After')) {
@@ -393,7 +395,7 @@ final class MobileV2ApiBoundary
             }
         }
 
-        return self::buildErrorResponse($code, $message, $status, $details, headers: $extraHeaders);
+        return self::buildErrorResponse($code, null, $status, $details, conflictEvidence: $conflictEvidence, headers: $extraHeaders);
     }
 
     /**
@@ -511,7 +513,7 @@ final class MobileV2ApiBoundary
                 ? $fieldName
                 : 'field';
 
-            if (self::isSensitiveField($fieldName)) {
+            if (self::isSensitiveField($fieldName) || $messages === ['The provided credential or secret field failed validation.']) {
                 $sanitized[$safeFieldName] = ['The provided credential or secret field failed validation.'];
 
                 continue;
@@ -577,27 +579,118 @@ final class MobileV2ApiBoundary
     }
 
     /**
+     * Sanitize structured details to preserve only validated machine fields or generic validation errors.
+     *
+     * @return array<string, mixed>|null
+     */
+    public static function sanitizeDetails(mixed $details, ?string $code = null, ?int $status = null): ?array
+    {
+        if (! is_array($details) || empty($details)) {
+            return null;
+        }
+
+        $sanitized = [];
+
+        // 1. Preserved machine fields for contract
+        if (isset($details['reason']) && is_string($details['reason'])) {
+            $allowedReasons = [
+                'TOKEN_INVALID_OR_EXPIRED',
+                'ACTOR_REVOKED',
+                'USER_NOT_FOUND',
+                'PASSWORD_REVISED',
+            ];
+            if (in_array($details['reason'], $allowedReasons, true)) {
+                $sanitized['reason'] = $details['reason'];
+            }
+        }
+
+        if (isset($details['revoked_at']) && is_string($details['revoked_at'])) {
+            if (preg_match('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/', $details['revoked_at'])) {
+                $sanitized['revoked_at'] = $details['revoked_at'];
+            }
+        }
+
+        if (isset($details['requested_company_id']) && is_string($details['requested_company_id'])) {
+            if (strlen($details['requested_company_id']) <= 64 && preg_match('/^[a-zA-Z0-9_\-]+$/', $details['requested_company_id'])) {
+                $sanitized['requested_company_id'] = $details['requested_company_id'];
+            }
+        }
+
+        // 2. Validation error field details (only for VALIDATION_FAILED / 422)
+        $isValidation = $code === 'VALIDATION_FAILED' || $status === 422;
+        if ($isValidation) {
+            $fieldErrors = [];
+            foreach ($details as $k => $v) {
+                if (in_array($k, ['reason', 'revoked_at', 'requested_company_id'], true)) {
+                    continue;
+                }
+                if (is_array($v) || is_string($v)) {
+                    $fieldErrors[(string) $k] = is_array($v) ? $v : [$v];
+                }
+            }
+
+            if (! empty($fieldErrors)) {
+                $sanitizedValidation = self::sanitizeValidationErrors($fieldErrors);
+                foreach ($sanitizedValidation as $safeKey => $messages) {
+                    $sanitized[$safeKey] = $messages;
+                }
+            }
+        }
+
+        return ! empty($sanitized) ? $sanitized : null;
+    }
+
+    /**
+     * Sanitize conflict evidence payload.
+     *
+     * @param  array<string, mixed>  $evidence
+     * @return array<string, mixed>|null
+     */
+    public static function sanitizeConflictEvidence(array $evidence): ?array
+    {
+        $sanitized = [];
+        $count = 0;
+        foreach ($evidence as $k => $v) {
+            if (++$count > 10) {
+                break;
+            }
+            if (strlen((string) $k) <= 64 && (is_string($v) || is_numeric($v) || is_bool($v))) {
+                $sanitized[$k] = $v;
+            }
+        }
+
+        return ! empty($sanitized) ? $sanitized : null;
+    }
+
+    /**
      * Build schema-compliant error JSON response.
      *
-     * @param  array<string, mixed>|list<mixed>|string|null  $details
      * @param  array<string, mixed>|null  $conflictEvidence
      * @param  array<string, string>  $headers
      */
     public static function buildErrorResponse(
         string $code,
-        string $message,
-        int $status,
+        ?string $message = null,
+        int $status = 500,
         mixed $details = null,
         ?array $conflictEvidence = null,
         array $headers = []
     ): JsonResponse {
+        $canonicalCode = in_array($code, self::ALLOWED_INTERNAL_ERROR_CODES, true)
+            ? $code
+            : self::defaultCodeForStatus($status);
+
+        $canonicalMessage = self::defaultMessageForCode($canonicalCode, $status);
+
+        $sanitizedDetails = $details !== null ? self::sanitizeDetails($details, $canonicalCode, $status) : null;
+
         $errorPayload = [
-            'code' => $code,
-            'message' => $message,
+            'code' => $canonicalCode,
+            'message' => $canonicalMessage,
         ];
 
-        if ($details !== null) {
-            $errorPayload['details'] = $details;
+        if ($sanitizedDetails !== null && count($sanitizedDetails) > 0) {
+            $errorPayload['details'] = $sanitizedDetails;
         }
 
         if ($conflictEvidence !== null) {
@@ -608,8 +701,9 @@ final class MobileV2ApiBoundary
             'Content-Type' => 'application/json',
             'Cache-Control' => 'no-store, no-cache, must-revalidate, private',
             'Pragma' => 'no-cache',
-            self::INTERNAL_SAFE_HEADER => 'true',
         ], $headers);
+
+        unset($allHeaders['X-Mobile-V2-Internal-Safe'], $allHeaders['x-mobile-v2-internal-safe']);
 
         return response()->json(['error' => $errorPayload], $status, $allHeaders);
     }
@@ -621,6 +715,9 @@ final class MobileV2ApiBoundary
     {
         $response->headers->set('Cache-Control', 'no-store, no-cache, must-revalidate, private');
         $response->headers->set('Pragma', 'no-cache');
+
+        $response->headers->remove('X-Mobile-V2-Internal-Safe');
+        $response->headers->remove('x-mobile-v2-internal-safe');
 
         if ($response->headers->get('Access-Control-Allow-Origin') === '*') {
             $response->headers->remove('Access-Control-Allow-Origin');

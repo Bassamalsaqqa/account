@@ -35,18 +35,18 @@ final class MobileV2Authenticate
      */
     public function handle(Request $request, Closure $next, ?string $requiredPermission = null): Response
     {
-        $context = app(CompanyContext::class);
-        $context->clear();
-
         $guard = auth()->guard();
         $priorHadUser = $guard->hasUser();
         $priorGuardUser = $priorHadUser ? $guard->user() : null;
         $priorUserResolver = $request->getUserResolver();
 
+        $context = app(CompanyContext::class);
+        $context->clearSessionless();
+
         try {
             return $this->handleAuthenticated($request, $next, $requiredPermission, $guard, $priorHadUser, $priorGuardUser);
         } finally {
-            $context->clear();
+            $context->clearSessionless();
             setPermissionsTeamId(null);
             app(PermissionRegistrar::class)->setPermissionsTeamId(null);
 
