@@ -13,6 +13,8 @@ use App\Models\User;
 use App\Policies\ProductPolicy;
 use App\Support\Tenancy\CompanyContext;
 use Closure;
+use Illuminate\Contracts\Auth\Authenticatable;
+use Illuminate\Contracts\Auth\Guard;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\RateLimiter;
 use Spatie\Permission\PermissionRegistrar;
@@ -26,8 +28,6 @@ final class MobileV2Authenticate
      */
     public const array ALLOWED_NON_FINANCIAL_CAPABILITIES = [
         'product.viewAny',
-        'identity.verify',
-        'identity.probe',
     ];
 
     /**
@@ -38,24 +38,40 @@ final class MobileV2Authenticate
         $context = app(CompanyContext::class);
         $context->clear();
 
+        $guard = auth()->guard();
+        $priorHadUser = $guard->hasUser();
+        $priorGuardUser = $priorHadUser ? $guard->user() : null;
+        $priorUserResolver = $request->getUserResolver();
+
         try {
-            return $this->handleAuthenticated($request, $next, $requiredPermission);
+            return $this->handleAuthenticated($request, $next, $requiredPermission, $guard, $priorHadUser, $priorGuardUser);
         } finally {
             $context->clear();
-            app(SupportViewContext::class)->clear();
-            if (auth()->check()) {
-                auth()->logout();
+            setPermissionsTeamId(null);
+            app(PermissionRegistrar::class)->setPermissionsTeamId(null);
+
+            if ($priorHadUser && $priorGuardUser !== null) {
+                $guard->setUser($priorGuardUser);
+            } elseif (method_exists($guard, 'forgetUser')) {
+                $guard->forgetUser();
             }
+
+            $request->setUserResolver($priorUserResolver);
             $request->attributes->remove('mobile_user');
             $request->attributes->remove('mobile_token');
             $request->attributes->remove('mobile_device');
             $request->attributes->remove('mobile_company');
-            $request->setUserResolver(fn () => null);
         }
     }
 
-    private function handleAuthenticated(Request $request, Closure $next, ?string $requiredPermission = null): Response
-    {
+    private function handleAuthenticated(
+        Request $request,
+        Closure $next,
+        ?string $requiredPermission,
+        Guard $guard,
+        bool $priorHadUser,
+        ?Authenticatable $priorGuardUser
+    ): Response {
         // 1. Sessionless: Deny active support impersonation / delegation context explicitly
         $hasSupportSession = ($request->hasSession() && $request->session()->has(SupportViewSession::KEY))
             || ($request->cookies->has(SupportViewSession::KEY))
@@ -198,7 +214,18 @@ final class MobileV2Authenticate
         }
 
         // 7. Identity conflation / mixed auth check: reject mismatched ambient browser actor
-        if (auth()->check() && (int) auth()->id() !== (int) $user->id) {
+        $ambientUserId = null;
+        if ($priorHadUser && $priorGuardUser !== null) {
+            $ambientUserId = (int) $priorGuardUser->getAuthIdentifier();
+        } elseif (app()->bound('session') && $request->hasSession() && $request->session()->isStarted()) {
+            $sessionAuthKey = method_exists($guard, 'getName') ? $guard->getName() : 'login_web_'.sha1(User::class);
+            $sessionUserId = $request->session()->get($sessionAuthKey);
+            if ($sessionUserId !== null) {
+                $ambientUserId = (int) $sessionUserId;
+            }
+        }
+
+        if ($ambientUserId !== null && $ambientUserId !== (int) $user->id) {
             return MobileV2ApiBoundary::buildErrorResponse(
                 code: 'UNAUTHENTICATED',
                 message: 'Mixed authentication context detected. Ambient session does not match native bearer token.',
@@ -207,9 +234,27 @@ final class MobileV2Authenticate
         }
 
         // Bind verified native actor into auth() so CompanyContext::user() returns verified actor
-        auth()->setUser($user);
+        $guard->setUser($user);
 
-        // 8. Tenant and company context qualification:
+        // 8. Bounded rate limit per verified actor immediately after identity verification (before company DB/permissions)
+        $actorKey = 'mobile_v2:actor:'.$user->id;
+        $maxAttempts = (int) config('mobile.rate_limits.authenticated_per_minute', 120);
+        if ($maxAttempts <= 0) {
+            $maxAttempts = 120;
+        }
+        if (RateLimiter::tooManyAttempts($actorKey, $maxAttempts)) {
+            $retryAfter = max(1, min(86400, RateLimiter::availableIn($actorKey)));
+
+            return MobileV2ApiBoundary::buildErrorResponse(
+                code: 'TOO_MANY_REQUESTS',
+                message: "Rate limit exceeded. Please retry after {$retryAfter} seconds.",
+                status: 429,
+                headers: ['Retry-After' => (string) $retryAfter]
+            );
+        }
+        RateLimiter::hit($actorKey, 60);
+
+        // 9. Tenant and company context qualification:
         // No default company fallback; route company must be explicitly provided
         $company = null;
         if ($routeCompanyId !== null && is_string($routeCompanyId)) {
@@ -245,7 +290,7 @@ final class MobileV2Authenticate
             $request->attributes->set('mobile_company', $company);
         }
 
-        // 9. Permission and Financial Authority Enforcement
+        // 10. Permission and Financial Authority Enforcement
         if ($requiredPermission !== null) {
             // Financial authority is unresolved on V2: Bearer token proves staff/device identity ONLY, NEVER financial posting permission
             if (self::isFinancialPermission($requiredPermission)) {
@@ -283,21 +328,6 @@ final class MobileV2Authenticate
             }
         }
 
-        // 10. Bounded rate limit per authenticated actor + company
-        $actorKey = 'mobile_v2:actor:'.$user->id.':company:'.($routeCompanyId ?? 'none');
-        $maxAttempts = (int) config('mobile.rate_limits.authenticated_per_minute', 120);
-        if (RateLimiter::tooManyAttempts($actorKey, $maxAttempts)) {
-            $retryAfter = RateLimiter::availableIn($actorKey);
-
-            return MobileV2ApiBoundary::buildErrorResponse(
-                code: 'TOO_MANY_REQUESTS',
-                message: "Rate limit exceeded. Please retry after {$retryAfter} seconds.",
-                status: 429,
-                headers: ['Retry-After' => (string) $retryAfter]
-            );
-        }
-        RateLimiter::hit($actorKey, 60);
-
         // 11. Update token last used timestamp
         $token->update(['last_used_at' => now()]);
 
@@ -311,11 +341,10 @@ final class MobileV2Authenticate
     }
 
     /**
-     * Check if user has permission in company without role name bypass, evicting Spatie cache.
+     * Check if user has permission in company without role name bypass.
      */
     private function userHasPermission(User $user, Company $company, string $permission): bool
     {
-        app(PermissionRegistrar::class)->forgetCachedPermissions();
         $user->unsetRelation('roles')->unsetRelation('permissions');
 
         return $permission === 'product.viewAny'

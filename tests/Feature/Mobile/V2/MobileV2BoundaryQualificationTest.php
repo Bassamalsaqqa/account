@@ -14,10 +14,13 @@ use App\Models\User;
 use App\Services\Tenancy\CompanyRoleService;
 use App\Support\Tenancy\CompanyContext;
 use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Auth\Events\Logout;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Exceptions\HttpResponseException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Cookie;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\RateLimiter;
@@ -26,6 +29,7 @@ use Illuminate\Validation\ValidationException;
 use RuntimeException;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
+use Spatie\Permission\PermissionRegistrar;
 use Symfony\Component\HttpKernel\Exception\ConflictHttpException;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 use Symfony\Component\Process\Process;
@@ -204,6 +208,24 @@ final class MobileV2BoundaryQualificationTest extends TestCase
                         'regular_field' => ['SELECT secret FROM sensitive_table with SuperSecretCredential_XYZ'],
                     ]);
                 });
+
+                $router->get('/downstream-code-probe/{code}/{status}', function ($code, $status) {
+                    return response()->json([
+                        'error' => [
+                            'code' => $code,
+                            'message' => 'SuperSecretCredential_XYZ',
+                            'leak_extra' => 'SuperSecretCredential_XYZ',
+                        ],
+                    ], (int) $status);
+                });
+
+                $router->get('/companies/{companyId}/identity-verify-probe', function () {
+                    return response()->json(['status' => 'ok']);
+                })->middleware('mobile.v2.auth:identity.verify');
+
+                $router->get('/companies/{companyId}/identity-probe-probe', function () {
+                    return response()->json(['status' => 'ok']);
+                })->middleware('mobile.v2.auth:identity.probe');
             });
     }
 
@@ -820,6 +842,12 @@ final class MobileV2BoundaryQualificationTest extends TestCase
                 ],
             ]);
 
+        // Clear test ambient actor so step 5 tests purely native verified actor
+        $this->flushSession();
+        if (auth()->guard()->hasUser()) {
+            auth()->guard()->forgetUser();
+        }
+
         // 5. Native verified actor matches inside pipeline: CompanyContext::user() === verified actor
         $response5 = $this->withHeader('Authorization', "Bearer {$token}")
             ->getJson('/api/mobile/v2/test-harness/auth-user-probe');
@@ -1133,7 +1161,7 @@ final class MobileV2BoundaryQualificationTest extends TestCase
     public function test_authenticated_actor_rate_limiter(): void
     {
         $token = $this->issueToken();
-        $actorKey = 'mobile_v2:actor:'.$this->user->id.':company:'.$this->companyA->public_id;
+        $actorKey = 'mobile_v2:actor:'.$this->user->id;
         RateLimiter::clear($actorKey);
 
         for ($i = 0; $i < 120; $i++) {
@@ -1146,6 +1174,294 @@ final class MobileV2BoundaryQualificationTest extends TestCase
         $response->assertStatus(429)
             ->assertHeader('Retry-After')
             ->assertJsonPath('error.code', 'TOO_MANY_REQUESTS');
+    }
+
+    public function test_actor_rate_limiter_runs_before_company_db_and_covers_foreign_and_missing_companies(): void
+    {
+        $token = $this->issueToken();
+        $actorKey = 'mobile_v2:actor:'.$this->user->id;
+        RateLimiter::clear($actorKey);
+
+        // Pre-hit to 119 attempts
+        for ($i = 0; $i < 119; $i++) {
+            RateLimiter::hit($actorKey, 60);
+        }
+
+        // Attempt 120 on non-existent company: returns 403 FORBIDDEN_TENANT_MISMATCH, consumes 120th attempt
+        $r1 = $this->withHeader('Authorization', "Bearer {$token}")
+            ->getJson('/api/mobile/v2/test-harness/companies/missing_company_xyz/read-probe');
+        $r1->assertStatus(403);
+        $this->assertSame(120, RateLimiter::attempts($actorKey));
+
+        // Attempt 121 on foreign company B (user not member): hits 429 TOO_MANY_REQUESTS on stable actor counter
+        $r2 = $this->withHeader('Authorization', "Bearer {$token}")
+            ->getJson('/api/mobile/v2/test-harness/companies/'.$this->companyB->public_id.'/read-probe');
+        $r2->assertStatus(429)
+            ->assertHeader('Retry-After')
+            ->assertJsonPath('error.code', 'TOO_MANY_REQUESTS');
+
+        // Stable actor key: verify no keys fanned out with company string
+        $this->assertFalse(RateLimiter::tooManyAttempts('mobile_v2:actor:'.$this->user->id.':company:missing_company_xyz', 120));
+
+        // Actor limits do not cross unfairly to another actor
+        $user2 = User::factory()->create([
+            'email' => 'staff_v2_other@example.com',
+            'password' => Hash::make($this->password),
+        ]);
+        $token2 = $this->issueToken(user: $user2);
+        $rOther = $this->withHeader('Authorization', "Bearer {$token2}")
+            ->getJson('/api/mobile/v2/test-harness/companies/missing_company_xyz/read-probe');
+        $rOther->assertStatus(403); // not rate-limited (429)
+    }
+
+    public function test_invalid_rate_limits_config_fails_closed_to_reasonable_bounds(): void
+    {
+        config(['mobile.rate_limits.authenticated_per_minute' => -5]);
+        config(['mobile.rate_limits.ip_overall_per_minute' => 0]);
+
+        $token = $this->issueToken();
+        $actorKey = 'mobile_v2:actor:'.$this->user->id;
+        RateLimiter::clear($actorKey);
+        RateLimiter::clear('mobile_v2:ip_overall:127.0.0.1');
+
+        // Request still succeeds within safe fail-closed bound of 120
+        $res = $this->withHeader('Authorization', "Bearer {$token}")
+            ->getJson('/api/mobile/v2/test-harness/auth-probe');
+        $res->assertStatus(200);
+
+        // Pre-hit to 120
+        for ($i = 0; $i < 120; $i++) {
+            RateLimiter::hit($actorKey, 60);
+        }
+
+        $resBlocked = $this->withHeader('Authorization', "Bearer {$token}")
+            ->getJson('/api/mobile/v2/test-harness/auth-probe');
+        $resBlocked->assertStatus(429);
+    }
+
+    public function test_guard_isolation_preserves_ambient_session_remember_token_and_emits_no_logout_or_writes(): void
+    {
+        $ambientUser = User::factory()->create([
+            'email' => 'ambient_guard_test@example.com',
+            'password' => Hash::make($this->password),
+            'remember_token' => 'fixed_ambient_remember_token_xyz',
+        ]);
+        $ambientUser->save();
+
+        $originalRememberToken = $ambientUser->remember_token;
+        $originalUpdatedAt = $ambientUser->fresh()->updated_at->toISOString();
+
+        $guard = auth()->guard('web');
+        $sessionAuthKey = method_exists($guard, 'getName') ? $guard->getName() : 'login_web_59ba36addc2b2f9401580f014c7f58ea4e30989d';
+
+        session()->put($sessionAuthKey, $ambientUser->id);
+        session()->save();
+        $guard->setUser($ambientUser);
+
+        Event::fake([Logout::class]);
+
+        $validToken = $this->issueToken(user: $ambientUser);
+        $otherUserToken = $this->issueToken(user: $this->user);
+
+        $scenarios = [
+            'disabled_path' => function () {
+                config(['mobile.enabled' => false]);
+                $res = $this->getJson('/api/mobile/v2/test-harness/auth-probe');
+                config(['mobile.enabled' => true]);
+
+                return $res;
+            },
+            'unknown_path' => function () {
+                return $this->getJson('/api/mobile/v2/unknown/path/route');
+            },
+            'invalid_token' => function () {
+                return $this->withHeader('Authorization', 'Bearer invalid_token_123')
+                    ->getJson('/api/mobile/v2/test-harness/auth-probe');
+            },
+            'mixed_actor' => function () use ($otherUserToken) {
+                return $this->withHeader('Authorization', "Bearer {$otherUserToken}")
+                    ->getJson('/api/mobile/v2/test-harness/auth-probe');
+            },
+            'success_request' => function () use ($validToken) {
+                return $this->withHeader('Authorization', "Bearer {$validToken}")
+                    ->getJson('/api/mobile/v2/test-harness/auth-probe');
+            },
+            'downstream_throw' => function () use ($validToken) {
+                return $this->withHeader('Authorization', "Bearer {$validToken}")
+                    ->getJson('/api/mobile/v2/test-harness/exception-probe');
+            },
+        ];
+
+        foreach ($scenarios as $name => $fn) {
+            Cookie::unqueue($sessionAuthKey);
+            if (method_exists($guard, 'getRecallerName')) {
+                Cookie::unqueue($guard->getRecallerName());
+            }
+
+            $response = $fn();
+            $this->assertNotNull($response, "Scenario {$name} failed to return a response.");
+
+            $fresh = $ambientUser->fresh();
+            $this->assertSame($originalRememberToken, $fresh->remember_token, "Scenario {$name} modified remember_token.");
+            $this->assertSame($originalUpdatedAt, $fresh->updated_at->toISOString(), "Scenario {$name} triggered User DB write.");
+            $this->assertSame($ambientUser->id, session()->get($sessionAuthKey), "Scenario {$name} cleared or modified session auth key.");
+            Event::assertNotDispatched(Logout::class, "Scenario {$name} dispatched Logout event.");
+
+            $queued = Cookie::getQueuedCookies();
+            foreach ($queued as $cookie) {
+                if (method_exists($guard, 'getRecallerName')) {
+                    $this->assertNotSame($guard->getRecallerName(), $cookie->getName(), "Scenario {$name} queued recaller cookie deletion.");
+                }
+            }
+        }
+    }
+
+    public function test_every_allowed_error_code_redacts_untrusted_downstream_secret_message_to_canonical(): void
+    {
+        $secret = 'SuperSecretCredential_XYZ';
+        $statusMap = [
+            'MOBILE_API_DISABLED' => 404,
+            'UNAUTHENTICATED' => 401,
+            'FORBIDDEN' => 403,
+            'FORBIDDEN_TENANT_MISMATCH' => 403,
+            'NOT_FOUND' => 404,
+            'METHOD_NOT_ALLOWED' => 405,
+            'NOT_ACCEPTABLE' => 406,
+            'CONFLICT' => 409,
+            'PAYLOAD_TOO_LARGE' => 413,
+            'UNSUPPORTED_MEDIA_TYPE' => 415,
+            'VALIDATION_FAILED' => 422,
+            'TOO_MANY_REQUESTS' => 429,
+            'FINANCIAL_AUTHORITY_UNRESOLVED' => 403,
+            'INTERNAL_SERVER_ERROR' => 500,
+            'BAD_REQUEST' => 400,
+            'INVALID_JSON' => 422,
+        ];
+
+        foreach (MobileV2ApiBoundary::ALLOWED_INTERNAL_ERROR_CODES as $code) {
+            $status = $statusMap[$code] ?? 500;
+            $res = $this->getJson("/api/mobile/v2/test-harness/downstream-code-probe/{$code}/{$status}");
+            $res->assertStatus($status)
+                ->assertJsonPath('error.code', $code);
+            $this->assertStringNotContainsString($secret, (string) $res->getContent(), "Code {$code} leaked secret message.");
+            $this->assertSame(
+                MobileV2ApiBoundary::defaultMessageForCode($code, $status),
+                $res->json('error.message'),
+                "Code {$code} did not use canonical message."
+            );
+            $this->assertArrayNotHasKey('leak_extra', (array) $res->json('error'));
+        }
+    }
+
+    public function test_validation_errors_redact_arbitrary_field_keys_and_dotted_credentials(): void
+    {
+        $secret = 'SuperSecretCredential_XYZ';
+        $res = $this->postJson('/api/mobile/v2/test-harness/validation-exception-probe', []);
+        $res->assertStatus(422)
+            ->assertJsonPath('error.code', 'VALIDATION_FAILED');
+
+        $this->assertStringNotContainsString($secret, (string) $res->getContent());
+        $details = $res->json('error.details');
+
+        // Sensitive allowed key: auth.password -> redacted message
+        $this->assertSame(['The provided credential or secret field failed validation.'], $details['auth.password'] ?? null);
+
+        // Unknown key credentials.secret -> mapped to 'field' with redacted message
+        $this->assertArrayNotHasKey('credentials.secret', $details);
+        $this->assertSame(['The provided credential or secret field failed validation.'], $details['field'] ?? null);
+
+        // Regular allowed key regular_field -> generic field template
+        $this->assertSame(['The regular_field field failed validation.'], $details['regular_field'] ?? null);
+    }
+
+    public function test_invented_permissions_denied_and_role_revocation_works_without_cache_thrash(): void
+    {
+        $token = $this->issueToken();
+
+        // 1. Invented capabilities 'identity.verify' and 'identity.probe' return 403 FORBIDDEN, never 500 PermissionDoesNotExist
+        $rVerify = $this->withHeader('Authorization', "Bearer {$token}")
+            ->getJson('/api/mobile/v2/test-harness/companies/'.$this->companyA->public_id.'/identity-verify-probe');
+        $rVerify->assertStatus(403)
+            ->assertJsonPath('error.code', 'FORBIDDEN');
+
+        $rProbe = $this->withHeader('Authorization', "Bearer {$token}")
+            ->getJson('/api/mobile/v2/test-harness/companies/'.$this->companyA->public_id.'/identity-probe-probe');
+        $rProbe->assertStatus(403)
+            ->assertJsonPath('error.code', 'FORBIDDEN');
+
+        // 2. Real reviewed capability product.viewAny succeeds for authorized Cashier
+        $rProduct = $this->withHeader('Authorization', "Bearer {$token}")
+            ->getJson('/api/mobile/v2/test-harness/companies/'.$this->companyA->public_id.'/read-probe');
+        $rProduct->assertStatus(200);
+
+        // 3. Remove Cashier role: takes effect immediately without global forgetCachedPermissions()
+        setPermissionsTeamId($this->companyA->id);
+        $this->user->removeRole('Cashier');
+        $this->user->unsetRelation('roles')->unsetRelation('permissions');
+
+        $rRevoked = $this->withHeader('Authorization', "Bearer {$token}")
+            ->getJson('/api/mobile/v2/test-harness/companies/'.$this->companyA->public_id.'/read-probe');
+        $rRevoked->assertStatus(403)
+            ->assertJsonPath('error.code', 'FORBIDDEN');
+
+        // 4. Re-assign Cashier role: access restored
+        setPermissionsTeamId($this->companyA->id);
+        app(PermissionRegistrar::class)->setPermissionsTeamId($this->companyA->id);
+        $this->user->assignRole('Cashier');
+        $this->user->unsetRelation('roles')->unsetRelation('permissions');
+        app(CompanyContext::class)->clear();
+        $rRestored = $this->withHeader('Authorization', "Bearer {$token}")
+            ->getJson('/api/mobile/v2/test-harness/companies/'.$this->companyA->public_id.'/read-probe');
+        $rRestored->assertStatus(200);
+    }
+
+    public function test_all_http_verbs_on_unknown_and_disabled_v2_paths(): void
+    {
+        $verbs = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'];
+
+        // 1. Default OFF: all verbs on V2 return 404 MOBILE_API_DISABLED
+        config(['mobile.enabled' => false, 'mobile.v2_enabled' => false]);
+        foreach ($verbs as $verb) {
+            $content = in_array($verb, ['GET', 'HEAD', 'OPTIONS']) ? '' : '{"test":1}';
+            $headers = [
+                'CONTENT_TYPE' => 'application/json',
+                'HTTP_ACCEPT' => 'application/json',
+            ];
+            $response = $this->call($verb, '/api/mobile/v2/unknown-route', [], [], [], $headers, $content);
+            $response->assertStatus(404)
+                ->assertHeader('Cache-Control', 'must-revalidate, no-cache, no-store, private')
+                ->assertJsonPath('error.code', 'MOBILE_API_DISABLED');
+        }
+
+        // 2. Enabled unknown path: all verbs return 404 NOT_FOUND (never 405 MethodNotAllowed)
+        config(['mobile.enabled' => true, 'mobile.v2_enabled' => true]);
+        foreach ($verbs as $verb) {
+            $content = in_array($verb, ['GET', 'HEAD', 'OPTIONS']) ? '' : '{"test":1}';
+            $headers = [
+                'CONTENT_TYPE' => 'application/json',
+                'HTTP_ACCEPT' => 'application/json',
+            ];
+            $response = $this->call($verb, '/api/mobile/v2/unknown-route', [], [], [], $headers, $content);
+            $response->assertStatus(404)
+                ->assertHeader('Cache-Control', 'must-revalidate, no-cache, no-store, private')
+                ->assertJsonPath('error.code', 'NOT_FOUND');
+        }
+
+        // Root /api/mobile/v2 and /api/mobile/v2/ also return 404 on all verbs
+        foreach (['/api/mobile/v2', '/api/mobile/v2/'] as $rootPath) {
+            $res = $this->getJson($rootPath);
+            $res->assertStatus(404)
+                ->assertJsonPath('error.code', 'NOT_FOUND');
+        }
+
+        // Real routes continue to resolve correctly on allowed verb, 404 on unknown verb
+        $resPublic = $this->getJson('/api/mobile/v2/test-harness/public-probe');
+        $resPublic->assertStatus(200);
+
+        // Exactly 1 IP rate limit attempt consumed per request (no double mount)
+        RateLimiter::clear('mobile_v2:ip_overall:127.0.0.1');
+        $this->getJson('/api/mobile/v2/test-harness/public-probe');
+        $this->assertSame(1, RateLimiter::attempts('mobile_v2:ip_overall:127.0.0.1'));
     }
 
     // =========================================================================

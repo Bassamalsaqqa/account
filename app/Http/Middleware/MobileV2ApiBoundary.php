@@ -4,11 +4,9 @@ declare(strict_types=1);
 
 namespace App\Http\Middleware;
 
-use App\Application\Platform\SupportViewContext;
 use App\Support\Mobile\Contract\ContractConstants;
 use App\Support\Mobile\Contract\Exceptions\CanonicalSerializationException;
 use App\Support\Mobile\Contract\StrictJsonParser;
-use App\Support\Tenancy\CompanyContext;
 use Closure;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Auth\AuthenticationException;
@@ -34,6 +32,35 @@ final class MobileV2ApiBoundary
 
     public const int MAX_JSON_DEPTH = ContractConstants::MAX_NESTING_DEPTH; // 32
 
+    public const string INTERNAL_SAFE_HEADER = 'X-Mobile-V2-Internal-Safe';
+
+    public const array ALLOWED_VALIDATION_FIELD_KEYS = [
+        'company_id',
+        'companyId',
+        'device_id',
+        'device_name',
+        'platform',
+        'app_version',
+        'os_version',
+        'push_token',
+        'status',
+        'page',
+        'per_page',
+        'limit',
+        'cursor',
+        'query',
+        'search',
+        'filter',
+        'sort',
+        'order',
+        'regular_field',
+        'field',
+        'auth.password',
+        'reason',
+        'revoked_at',
+        'requested_company_id',
+    ];
+
     /**
      * Handle incoming request for Mobile V2 API before routing and web middleware.
      */
@@ -43,22 +70,30 @@ final class MobileV2ApiBoundary
             return $next($request);
         }
 
-        $context = app(CompanyContext::class);
-        $context->clear();
+        if ($request->attributes->has('_mobile_v2_boundary_mounted')) {
+            return $next($request);
+        }
+        $request->attributes->set('_mobile_v2_boundary_mounted', true);
+
+        $guard = auth()->guard();
+        $priorHadUser = $guard->hasUser();
+        $priorGuardUser = $priorHadUser ? $guard->user() : null;
+        $priorUserResolver = $request->getUserResolver();
 
         try {
             return $this->handleV2($request, $next);
         } finally {
-            $context->clear();
-            app(SupportViewContext::class)->clear();
-            if (auth()->check()) {
-                auth()->logout();
+            if ($priorHadUser && $priorGuardUser !== null) {
+                $guard->setUser($priorGuardUser);
+            } elseif (method_exists($guard, 'forgetUser')) {
+                $guard->forgetUser();
             }
+            $request->setUserResolver($priorUserResolver);
             $request->attributes->remove('mobile_user');
             $request->attributes->remove('mobile_token');
             $request->attributes->remove('mobile_device');
             $request->attributes->remove('mobile_company');
-            $request->setUserResolver(fn () => null);
+            $request->attributes->remove('_mobile_v2_boundary_mounted');
         }
     }
 
@@ -106,9 +141,12 @@ final class MobileV2ApiBoundary
         $ip = (string) $request->ip();
         $rateKey = "mobile_v2:ip_overall:{$ip}";
         $maxAttempts = (int) config('mobile.rate_limits.ip_overall_per_minute', 120);
+        if ($maxAttempts <= 0) {
+            $maxAttempts = 120;
+        }
 
         if (RateLimiter::tooManyAttempts($rateKey, $maxAttempts)) {
-            $retryAfter = RateLimiter::availableIn($rateKey);
+            $retryAfter = max(1, min(86400, RateLimiter::availableIn($rateKey)));
 
             return self::buildErrorResponse(
                 code: 'TOO_MANY_REQUESTS',
@@ -316,11 +354,18 @@ final class MobileV2ApiBoundary
     public static function standardizeErrorResponse(Response $response): Response
     {
         $status = $response->getStatusCode();
+
+        if ($response->headers->has(self::INTERNAL_SAFE_HEADER)) {
+            $response->headers->remove(self::INTERNAL_SAFE_HEADER);
+            self::applySecurityHeaders($response);
+
+            return $response;
+        }
+
         $content = (string) $response->getContent();
         $decoded = json_decode($content, true);
 
         $code = self::defaultCodeForStatus($status);
-        $message = null;
         $details = null;
 
         if (is_array($decoded)) {
@@ -328,10 +373,6 @@ final class MobileV2ApiBoundary
                 $candidateCode = $decoded['error']['code'] ?? null;
                 if (is_string($candidateCode) && in_array($candidateCode, self::ALLOWED_INTERNAL_ERROR_CODES, true)) {
                     $code = $candidateCode;
-                    $candMsg = $decoded['error']['message'] ?? null;
-                    if (is_string($candMsg) && strlen($candMsg) <= 256 && ! preg_match('/(SELECT|INSERT|UPDATE|DELETE|DROP|FROM|WHERE|TABLE|SQLSTATE|PDOException|#\d+|\.php:)/i', $candMsg)) {
-                        $message = $candMsg;
-                    }
                 }
                 if (isset($decoded['error']['details']) && is_array($decoded['error']['details'])) {
                     $details = self::sanitizeValidationErrors($decoded['error']['details']);
@@ -341,13 +382,14 @@ final class MobileV2ApiBoundary
             }
         }
 
-        $message ??= self::defaultMessageForCode($code, $status);
+        $message = self::defaultMessageForCode($code, $status);
 
         $extraHeaders = [];
         if ($response->headers->has('Retry-After')) {
             $rawRetry = (string) $response->headers->get('Retry-After');
-            if (ctype_digit($rawRetry) && (int) $rawRetry >= 0 && (int) $rawRetry <= 86400) {
-                $extraHeaders['Retry-After'] = $rawRetry;
+            if (ctype_digit($rawRetry)) {
+                $retrySec = max(0, min(86400, (int) $rawRetry));
+                $extraHeaders['Retry-After'] = (string) $retrySec;
             }
         }
 
@@ -372,7 +414,7 @@ final class MobileV2ApiBoundary
         if ($e instanceof AuthenticationException) {
             return self::buildErrorResponse(
                 code: 'UNAUTHENTICATED',
-                message: 'Authentication required or token expired.',
+                message: self::defaultMessageForCode('UNAUTHENTICATED', 401),
                 status: 401
             );
         }
@@ -380,7 +422,7 @@ final class MobileV2ApiBoundary
         if ($e instanceof AuthorizationException) {
             return self::buildErrorResponse(
                 code: 'FORBIDDEN',
-                message: 'Action is unauthorized.',
+                message: self::defaultMessageForCode('FORBIDDEN', 403),
                 status: 403
             );
         }
@@ -388,7 +430,7 @@ final class MobileV2ApiBoundary
         if ($e instanceof NotFoundHttpException || $e instanceof ModelNotFoundException) {
             return self::buildErrorResponse(
                 code: 'NOT_FOUND',
-                message: 'The requested resource was not found.',
+                message: self::defaultMessageForCode('NOT_FOUND', 404),
                 status: 404
             );
         }
@@ -396,7 +438,7 @@ final class MobileV2ApiBoundary
         if ($e instanceof MethodNotAllowedHttpException) {
             return self::buildErrorResponse(
                 code: 'METHOD_NOT_ALLOWED',
-                message: 'The requested HTTP method is not allowed for this route.',
+                message: self::defaultMessageForCode('METHOD_NOT_ALLOWED', 405),
                 status: 405
             );
         }
@@ -404,7 +446,7 @@ final class MobileV2ApiBoundary
         if ($e instanceof ValidationException) {
             return self::buildErrorResponse(
                 code: 'VALIDATION_FAILED',
-                message: 'The given data failed validation.',
+                message: self::defaultMessageForCode('VALIDATION_FAILED', 422),
                 status: 422,
                 details: self::sanitizeValidationErrors($e->errors())
             );
@@ -413,7 +455,7 @@ final class MobileV2ApiBoundary
         if ($e instanceof ConflictHttpException) {
             return self::buildErrorResponse(
                 code: 'CONFLICT',
-                message: 'Resource state conflict.',
+                message: self::defaultMessageForCode('CONFLICT', 409),
                 status: 409
             );
         }
@@ -427,8 +469,9 @@ final class MobileV2ApiBoundary
             $headersMap = $e->getHeaders();
             if (isset($headersMap['Retry-After'])) {
                 $rawRetry = (string) $headersMap['Retry-After'];
-                if (ctype_digit($rawRetry) && (int) $rawRetry >= 0 && (int) $rawRetry <= 86400) {
-                    $headers['Retry-After'] = $rawRetry;
+                if (ctype_digit($rawRetry)) {
+                    $retrySec = max(0, min(86400, (int) $rawRetry));
+                    $headers['Retry-After'] = (string) $retrySec;
                 }
             }
 
@@ -444,7 +487,7 @@ final class MobileV2ApiBoundary
 
         return self::buildErrorResponse(
             code: 'INTERNAL_SERVER_ERROR',
-            message: 'An unexpected server error occurred.',
+            message: self::defaultMessageForCode('INTERNAL_SERVER_ERROR', 500),
             status: 500
         );
     }
@@ -458,39 +501,23 @@ final class MobileV2ApiBoundary
     public static function sanitizeValidationErrors(array $errors): array
     {
         $sanitized = [];
+        $count = 0;
         foreach ($errors as $field => $messages) {
+            if (++$count > 20) {
+                break;
+            }
             $fieldName = (string) $field;
+            $safeFieldName = in_array($fieldName, self::ALLOWED_VALIDATION_FIELD_KEYS, true)
+                ? $fieldName
+                : 'field';
 
             if (self::isSensitiveField($fieldName)) {
-                $sanitized[$fieldName] = is_array($messages)
-                    ? ['The provided credential or secret field failed validation.']
-                    : 'The provided credential or secret field failed validation.';
+                $sanitized[$safeFieldName] = ['The provided credential or secret field failed validation.'];
 
                 continue;
             }
 
-            $safeFieldName = self::sanitizeFieldName($fieldName);
-
-            if (! is_array($messages)) {
-                if (is_string($messages)) {
-                    $sanitized[$safeFieldName] = self::sanitizeValidationMessage($messages, $safeFieldName);
-                }
-
-                continue;
-            }
-
-            $sanitizedMessages = [];
-            foreach ($messages as $msg) {
-                if (is_string($msg)) {
-                    $sanitizedMessages[] = self::sanitizeValidationMessage($msg, $safeFieldName);
-                }
-            }
-
-            if ($sanitizedMessages === []) {
-                $sanitizedMessages[] = "The {$safeFieldName} field failed validation.";
-            }
-
-            $sanitized[$safeFieldName] = $sanitizedMessages;
+            $sanitized[$safeFieldName] = ["The {$safeFieldName} field failed validation."];
         }
 
         return $sanitized;
@@ -581,6 +608,7 @@ final class MobileV2ApiBoundary
             'Content-Type' => 'application/json',
             'Cache-Control' => 'no-store, no-cache, must-revalidate, private',
             'Pragma' => 'no-cache',
+            self::INTERNAL_SAFE_HEADER => 'true',
         ], $headers);
 
         return response()->json(['error' => $errorPayload], $status, $allHeaders);
