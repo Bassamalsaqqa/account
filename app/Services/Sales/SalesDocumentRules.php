@@ -70,7 +70,7 @@ final class SalesDocumentRules
         return $selected;
     }
 
-    public function price(Product $product, ProductUnit $unit, User $actor, BigDecimal $rate, string $currency, BigDecimal $requested): void
+    public function price(Product $product, ProductUnit $unit, User $actor, BigDecimal $rate, string $currency, BigDecimal $requested, ?int $minorUnits = null): void
     {
         $suggestion = $unit->default_sale_price_base;
         if ($suggestion === null && $product->default_sale_price_base !== null) {
@@ -79,7 +79,7 @@ final class SalesDocumentRules
         if ($actor->hasPermissionTo('sales.invoice.change_price')) {
             return;
         }
-        $minorUnits = app(CurrencyMinorUnitsResolver::class)->resolveForCompany((int) $product->company_id, $currency);
+        $minorUnits ??= app(CurrencyMinorUnitsResolver::class)->resolveForCompany((int) $product->company_id, $currency);
         if ($suggestion === null || ! $requested->toScale($minorUnits, RoundingMode::HALF_UP)
             ->isEqualTo(BigDecimal::of((string) $suggestion)->dividedBy($rate, $minorUnits, RoundingMode::HALF_UP))) {
             throw new AuthorizationException('Manual price permission is required when there is no matching suggested price.');

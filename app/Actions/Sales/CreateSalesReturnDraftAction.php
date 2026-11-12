@@ -93,8 +93,8 @@ class CreateSalesReturnDraftAction
             $customer = $invoice->customer;
             $currency = $invoice->currency_code;
             $fx = BigDecimal::of((string) $invoice->exchange_rate);
-            $minorUnits = app(CurrencyMinorUnitsResolver::class)->resolveForCompany((int) $company->id, $currency);
-            $baseMinorUnits = app(CurrencyMinorUnitsResolver::class)->resolveForCompany((int) $company->id, (string) $company->base_currency_code);
+            $minorUnits = app(CurrencyMinorUnitsResolver::class)->resolve($currency);
+            $baseMinorUnits = app(CurrencyMinorUnitsResolver::class)->resolve((string) $company->base_currency_code);
 
             $lineResults = [];
             $preparedLines = [];

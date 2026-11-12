@@ -33,7 +33,7 @@ final class ReceiptPreview
             $allocation['preview_fx'] = $rate === null ? null : (string) $consumed->multipliedBy($rate)->toScale(6, RoundingMode::HALF_UP)->minus($book);
         }
         unset($allocation);
-        $scale = app(CurrencyMinorUnitsResolver::class)->resolve($currency, $companyId);
+        $scale = app(CurrencyMinorUnitsResolver::class)->resolve($currency);
 
         return ['allocations' => $allocations, 'allocated' => (string) $total->toScale($scale, RoundingMode::HALF_UP),
             'unallocated' => (string) BigDecimal::of($amount ?: '0')->minus($total)->toScale($scale, RoundingMode::HALF_UP)];

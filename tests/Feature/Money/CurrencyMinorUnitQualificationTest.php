@@ -5,10 +5,14 @@ declare(strict_types=1);
 namespace Tests\Feature\Money;
 
 use App\Actions\Company\CreateCompanyAction;
+use App\Actions\Money\ReceiveCheckAction;
 use App\Actions\Sales\CreateMoneyAccountAction;
 use App\Actions\Sales\CreateSalesInvoiceDraftAction;
+use App\Actions\Sales\CreateSalesReturnDraftAction;
 use App\Actions\Sales\PostCustomerPaymentAction;
 use App\Actions\Sales\PostSalesInvoiceAction;
+use App\Actions\Sales\PostSalesReturnAction;
+use App\Domain\Posting\Exceptions\PostingValidationException;
 use App\Domain\Sales\Calculators\SalesLineCalculationInput;
 use App\Domain\Sales\Calculators\SalesLineCalculator;
 use App\Models\Company;
@@ -21,15 +25,25 @@ use App\Models\ProductUnit;
 use App\Models\TaxRate;
 use App\Models\Unit;
 use App\Models\User;
+use App\Services\Accounting\AccountingReconciliationService;
+use App\Services\Accounting\Phase7ReconciliationService;
+use App\Services\Inventory\InventoryReconciliationService;
+use App\Services\Money\CheckHistory;
 use App\Services\Money\CurrencyMinorUnitsResolver;
+use App\Services\Money\CustomerPaymentHistory;
+use App\Services\Money\MoneyReconciliationService;
 use App\Services\Money\MoneyValues;
+use App\Services\Purchasing\PayablesReconciliationService;
 use App\Services\Sales\DraftInvoiceIntegrity;
 use App\Services\Sales\ReceiptPreview;
+use App\Services\Sales\SalesCorrectionAudit;
 use App\Services\Sales\SalesDocumentRules;
+use App\Services\Sales\SalesReconciliationService;
 use App\Support\Tenancy\CompanyContext;
 use Brick\Math\BigDecimal;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
 use Spatie\Permission\Models\Permission;
 use Tests\TestCase;
@@ -117,9 +131,13 @@ final class CurrencyMinorUnitQualificationTest extends TestCase
     {
         Currency::updateOrInsert(['code' => 'INA'], ['name' => 'Inactive Currency', 'symbol' => 'INA', 'minor_units' => 2, 'active' => false]);
 
+        // Historical resolution succeeds
+        $this->assertSame(2, $this->resolver->resolve('INA'));
+
+        // New transaction eligibility rejects inactive currency
         $this->expectException(InvalidArgumentException::class);
         $this->expectExceptionMessage('Currency [INA] is inactive.');
-        $this->resolver->resolve('INA');
+        $this->resolver->resolveForCompany($this->company, 'INA');
     }
 
     public function test_authoritative_resolver_rejects_minor_units_outside_supported_domain_0_to_6(): void
@@ -161,6 +179,7 @@ final class CurrencyMinorUnitQualificationTest extends TestCase
 
         // Enable KWD for company
         CompanyCurrency::where('company_id', $this->company->id)->where('currency_code', 'KWD')->update(['enabled' => true]);
+        $this->resolver->flush();
         $this->assertSame(3, $this->resolver->resolveForCompany($this->company, 'KWD'));
     }
 
@@ -650,5 +669,557 @@ final class CurrencyMinorUnitQualificationTest extends TestCase
         ], 'JPY');
         $this->assertSame('300', $resJpy['allocated']);
         $this->assertSame('700', $resJpy['unallocated']);
+    }
+
+    public function test_authoritative_resolver_distinguishes_historical_read_from_new_transaction_eligibility(): void
+    {
+        Currency::updateOrInsert(['code' => 'RET'], ['name' => 'Retired Currency', 'symbol' => 'RT', 'minor_units' => 3, 'active' => false]);
+        CompanyCurrency::create([
+            'company_id' => $this->company->id,
+            'currency_code' => 'RET',
+            'enabled' => false,
+            'is_base' => false,
+            'display_order' => 20,
+        ]);
+
+        // Historical read paths must succeed
+        $this->assertSame(3, $this->resolver->resolve('RET'));
+        $this->assertSame(3, $this->resolver->resolveHistorical('RET'));
+        $moneyAmount = MoneyValues::amount('15.125', 'RET');
+        $this->assertSame('15.125000', (string) $moneyAmount);
+
+        // New transaction paths must reject
+        try {
+            $this->resolver->resolveForCompany($this->company, 'RET');
+            $this->fail('Expected InvalidArgumentException for inactive master currency in new transactions.');
+        } catch (InvalidArgumentException $e) {
+            $this->assertStringContainsString('Currency [RET] is inactive.', $e->getMessage());
+        }
+
+        // Active master but disabled company currency
+        Currency::updateOrInsert(['code' => 'DIS'], ['name' => 'Disabled For Tenant', 'symbol' => 'DS', 'minor_units' => 0, 'active' => true]);
+        CompanyCurrency::create([
+            'company_id' => $this->company->id,
+            'currency_code' => 'DIS',
+            'enabled' => false,
+            'is_base' => false,
+            'display_order' => 21,
+        ]);
+
+        // Historical read succeeds
+        $this->assertSame(0, $this->resolver->resolve('DIS'));
+        $this->assertSame('500.000000', (string) MoneyValues::amount('500', 'DIS'));
+
+        // Tenant transaction fails
+        try {
+            $this->resolver->resolveForCompany($this->company, 'DIS');
+            $this->fail('Expected InvalidArgumentException for disabled company currency.');
+        } catch (InvalidArgumentException $e) {
+            $this->assertStringContainsString('Currency [DIS] is not enabled for company', $e->getMessage());
+        }
+    }
+
+    public function test_historical_reads_and_audits_preserve_retired_and_disabled_currencies(): void
+    {
+        Currency::updateOrInsert(['code' => 'KWD'], ['name' => 'Kuwaiti Dinar', 'symbol' => 'KD', 'minor_units' => 3, 'active' => true]);
+        Currency::updateOrInsert(['code' => 'JPY'], ['name' => 'Japanese Yen', 'symbol' => '¥', 'minor_units' => 0, 'active' => true]);
+
+        // Enable KWD and JPY
+        CompanyCurrency::updateOrInsert(['company_id' => $this->company->id, 'currency_code' => 'KWD'], ['enabled' => true, 'is_base' => false, 'display_order' => 11]);
+        CompanyCurrency::updateOrInsert(['company_id' => $this->company->id, 'currency_code' => 'JPY'], ['enabled' => true, 'is_base' => false, 'display_order' => 12]);
+
+        $tax = TaxRate::create([
+            'company_id' => $this->company->id,
+            'code' => 'VAT16_HIST',
+            'name_ar' => 'ضريبة 16%',
+            'name_en' => 'VAT 16%',
+            'rate' => '16.000000',
+            'calculation' => TaxRate::CALC_EXCLUSIVE,
+            'active' => true,
+        ]);
+
+        // Post KWD invoice
+        $kwdDraft = app(CreateSalesInvoiceDraftAction::class)->execute($this->company, $this->owner, [
+            'customer_id' => $this->customer->id,
+            'currency_code' => 'KWD',
+            'exchange_rate' => '12.0000000000',
+            'issue_date' => '2026-10-21',
+            'lines' => [
+                [
+                    'item_description' => 'Historical KWD Service',
+                    'quantity' => '2',
+                    'unit_price' => '50.125',
+                    'tax_rate_id' => $tax->id,
+                ],
+            ],
+        ]);
+        $kwdPosted = app(PostSalesInvoiceAction::class)->execute($kwdDraft, $this->owner);
+
+        // Post JPY invoice
+        $jpyDraft = app(CreateSalesInvoiceDraftAction::class)->execute($this->company, $this->owner, [
+            'customer_id' => $this->customer->id,
+            'currency_code' => 'JPY',
+            'exchange_rate' => '0.0250000000',
+            'issue_date' => '2026-10-21',
+            'lines' => [
+                [
+                    'item_description' => 'Historical JPY Goods',
+                    'quantity' => '1',
+                    'unit_price' => '2500',
+                ],
+            ],
+        ]);
+        $jpyPosted = app(PostSalesInvoiceAction::class)->execute($jpyDraft, $this->owner);
+
+        // Post KWD customer payment
+        $kwdCash = app(CreateMoneyAccountAction::class)->execute($this->company, $this->owner, [
+            'account_type' => 'cash',
+            'name_ar' => 'صندوق دينار تاريخي',
+            'name_en' => 'Historical KWD Cash',
+            'currency_code' => 'KWD',
+        ]);
+        $kwdPayment = app(PostCustomerPaymentAction::class)->execute($this->company, $this->owner, [
+            'customer_id' => $this->customer->id,
+            'money_account_id' => $kwdCash->id,
+            'payment_date' => '2026-10-21',
+            'payment_method' => 'cash',
+            'amount' => '116.290',
+            'exchange_rate' => '12.0000000000',
+            'idempotency_key' => 'rcpt-kwd-hist-1',
+            'allocations' => [
+                [
+                    'sales_invoice_id' => $kwdPosted->id,
+                    'allocated_amount' => '116.290',
+                ],
+            ],
+        ]);
+
+        // Receive incoming check in KWD
+        Permission::findOrCreate('money.check.incoming.manage');
+        Permission::findOrCreate('money.receipt.create');
+        $this->owner->givePermissionTo(['money.check.incoming.manage', 'money.receipt.create']);
+        $kwdCheck = app(ReceiveCheckAction::class)->execute($this->company, $this->owner, [
+            'idempotency_key' => 'chk-kwd-hist-1',
+            'currency_code' => 'KWD',
+            'amount' => '50.000',
+            'exchange_rate' => '12.0000000000',
+            'check_number' => 'CHK-KWD-001',
+            'bank_name' => 'National Bank of Kuwait',
+            'date' => '2026-10-21',
+            'due_date' => '2026-10-25',
+            'customer_id' => $this->customer->id,
+        ]);
+
+        // Now RETIRE both currencies: deactivate in master and disable for company
+        Currency::where('code', 'KWD')->update(['active' => false]);
+        Currency::where('code', 'JPY')->update(['active' => false]);
+        CompanyCurrency::where('company_id', $this->company->id)->whereIn('currency_code', ['KWD', 'JPY'])->update(['enabled' => false]);
+
+        // Flush resolver cache to ensure fresh state
+        $this->resolver->flush();
+
+        // 1. MoneyValues::amount must continue to resolve historical precision without error
+        $this->assertSame('116.290000', (string) MoneyValues::amount((string) $kwdPosted->grand_total_currency, 'KWD'));
+        $this->assertSame('2500.000000', (string) MoneyValues::amount((string) $jpyPosted->grand_total_currency, 'JPY'));
+        $this->assertSame('100.000000', (string) MoneyValues::amount('100.00', 'ILS'));
+        $this->assertSame('50.000000', (string) MoneyValues::amount('50.000', 'JOD'));
+
+        // 2. SalesCorrectionAudit must run across historical invoice lines and pass without error
+        $errors = app(SalesCorrectionAudit::class)->audit((int) $this->company->id);
+        $this->assertEmpty($errors, 'SalesCorrectionAudit reported errors on historical lines with retired currencies: '.json_encode($errors));
+
+        // 3. CustomerPaymentHistory and CheckHistory must validate posted records without throwing
+        app(CustomerPaymentHistory::class)->validate($kwdPayment);
+        app(CheckHistory::class)->validate($kwdCheck);
+
+        // 4. New transactions in retired currency MUST be rejected
+        try {
+            app(CreateSalesInvoiceDraftAction::class)->execute($this->company, $this->owner, [
+                'customer_id' => $this->customer->id,
+                'currency_code' => 'KWD',
+                'exchange_rate' => '12.0',
+                'issue_date' => '2026-10-22',
+                'lines' => [['item_description' => 'Disallowed', 'quantity' => '1', 'unit_price' => '10.000']],
+            ]);
+            $this->fail('Expected rejection of new draft in disabled/retired currency.');
+        } catch (InvalidArgumentException $e) {
+            $this->assertTrue(
+                str_contains($e->getMessage(), 'inactive') ||
+                str_contains($e->getMessage(), 'Enabled currency') ||
+                str_contains($e->getMessage(), 'not enabled')
+            );
+        }
+    }
+
+    public function test_partial_and_full_sales_returns_succeed_after_currency_deactivation_and_disablement(): void
+    {
+        Permission::findOrCreate('sales.return.create');
+        $this->owner->givePermissionTo('sales.return.create');
+
+        // Re-enable KWD temporarily to post the original invoice
+        Currency::updateOrInsert(['code' => 'KWD'], ['name' => 'Kuwaiti Dinar', 'symbol' => 'KD', 'minor_units' => 3, 'active' => true]);
+        CompanyCurrency::updateOrInsert(['company_id' => $this->company->id, 'currency_code' => 'KWD'], ['enabled' => true, 'is_base' => false, 'display_order' => 11]);
+        $this->resolver->flush();
+
+        $tax = TaxRate::create([
+            'company_id' => $this->company->id,
+            'code' => 'VAT16_RET',
+            'name_ar' => 'ضريبة 16%',
+            'name_en' => 'VAT 16%',
+            'rate' => '16.000000',
+            'calculation' => TaxRate::CALC_EXCLUSIVE,
+            'active' => true,
+        ]);
+
+        $invoice = app(CreateSalesInvoiceDraftAction::class)->execute($this->company, $this->owner, [
+            'customer_id' => $this->customer->id,
+            'currency_code' => 'KWD',
+            'exchange_rate' => '12.0000000000',
+            'issue_date' => '2026-10-22',
+            'lines' => [
+                [
+                    'item_description' => 'Returnable KWD Unit',
+                    'quantity' => '2',
+                    'unit_price' => '50.125',
+                    'tax_rate_id' => $tax->id,
+                ],
+            ],
+        ]);
+        $postedInvoice = app(PostSalesInvoiceAction::class)->execute($invoice, $this->owner);
+        $lineId = $postedInvoice->lines->first()->id;
+
+        // RETIRE KWD: Deactivate in master Currency table
+        Currency::where('code', 'KWD')->update(['active' => false]);
+        $this->resolver->flush();
+
+        // 1. Partial Return: Return 0.5 of 2 units succeeds even though master Currency is inactive
+        $partialReturnDraft = app(CreateSalesReturnDraftAction::class)->execute($this->company, $this->owner, [
+            'sales_invoice_id' => $postedInvoice->id,
+            'issue_date' => '2026-10-22',
+            'lines' => [
+                [
+                    'sales_invoice_line_id' => $lineId,
+                    'quantity' => '0.5',
+                ],
+            ],
+        ]);
+
+        $this->assertSame('25.063000', (string) $partialReturnDraft->subtotal_currency);
+        $this->assertSame('4.010000', (string) $partialReturnDraft->tax_total_currency);
+        $this->assertSame('29.073000', (string) $partialReturnDraft->grand_total_currency);
+
+        $postedReturn1 = app(PostSalesReturnAction::class)->execute($partialReturnDraft, $this->owner);
+        $this->assertTrue($postedReturn1->isPosted());
+        $this->assertNotNull($postedReturn1->posting_batch_id);
+
+        // 2. Second Return: Return 0.5 unit (1 unit returned total, 1 unit remaining)
+        $secondReturnDraft = app(CreateSalesReturnDraftAction::class)->execute($this->company, $this->owner, [
+            'sales_invoice_id' => $postedInvoice->id,
+            'issue_date' => '2026-10-22',
+            'lines' => [
+                [
+                    'sales_invoice_line_id' => $lineId,
+                    'quantity' => '0.5',
+                ],
+            ],
+        ]);
+
+        $this->assertSame('25.062000', (string) $secondReturnDraft->subtotal_currency);
+        $this->assertSame('4.010000', (string) $secondReturnDraft->tax_total_currency);
+        $this->assertSame('29.072000', (string) $secondReturnDraft->grand_total_currency);
+
+        $postedReturn2 = app(PostSalesReturnAction::class)->execute($secondReturnDraft, $this->owner);
+        $this->assertTrue($postedReturn2->isPosted());
+
+        // 3. Preserve posting controls: when company currency is disabled, posting controls are enforced
+        CompanyCurrency::where('company_id', $this->company->id)->where('currency_code', 'KWD')->update(['enabled' => false]);
+        $this->resolver->flush();
+
+        // Return draft creation still succeeds and resolves scale without throwing
+        $postDisableDraft = app(CreateSalesReturnDraftAction::class)->execute($this->company, $this->owner, [
+            'sales_invoice_id' => $postedInvoice->id,
+            'issue_date' => '2026-10-22',
+            'lines' => [
+                [
+                    'sales_invoice_line_id' => $lineId,
+                    'quantity' => '1.0',
+                ],
+            ],
+        ]);
+        $this->assertSame('50.125000', (string) $postDisableDraft->subtotal_currency);
+
+        // But posting to GL enforces AccountingPostingService posting controls (not silently waived)
+        try {
+            app(PostSalesReturnAction::class)->execute($postDisableDraft, $this->owner);
+            $this->fail('Expected PostingValidationException when company currency row is disabled.');
+        } catch (PostingValidationException $e) {
+            $this->assertStringContainsString('Currency is not enabled for company', $e->getMessage());
+        }
+
+        // Verify original invoice integrity is preserved
+        $freshInvoice = $postedInvoice->fresh();
+        $this->assertTrue($freshInvoice->isPosted());
+        $this->assertSame('116.290000', (string) $freshInvoice->grand_total_currency);
+    }
+
+    public function test_query_amplification_bounded_between_1_and_100_lines_without_price_change_permission(): void
+    {
+        // Create a restricted user who belongs to company with permission to create sales drafts,
+        // but strictly WITHOUT permission to change prices.
+        $restrictedUser = User::factory()->create();
+        CompanyUser::create([
+            'company_id' => $this->company->id,
+            'user_id' => $restrictedUser->id,
+            'status' => 'active',
+            'is_owner' => false,
+        ]);
+        Permission::findOrCreate('sales.invoice.create');
+        $restrictedUser->givePermissionTo('sales.invoice.create');
+
+        $baseUnit = Unit::firstOrCreate(
+            ['company_id' => $this->company->id, 'code' => 'piece_qa'],
+            ['name_ar' => 'قطعة', 'name_en' => 'Piece', 'symbol' => 'pc', 'allow_decimal' => false, 'active' => true]
+        );
+
+        // Create 100 products with default sales price 100.00
+        $products = [];
+        $productUnits = [];
+        for ($i = 1; $i <= 100; $i++) {
+            $p = Product::create([
+                'company_id' => $this->company->id,
+                'sku' => "PRD-QA-{$i}",
+                'name_ar' => "منتج {$i}",
+                'name_en' => "Product {$i}",
+                'product_type' => 'stock',
+                'base_unit_id' => $baseUnit->id,
+                'active' => true,
+                'default_sale_price_base' => '100.000000',
+                'created_by' => $this->owner->id,
+            ]);
+            $pu = ProductUnit::create([
+                'company_id' => $this->company->id,
+                'product_id' => $p->id,
+                'unit_id' => $baseUnit->id,
+                'conversion_to_base' => '1.000000',
+                'is_base' => true,
+                'is_default_sale' => true,
+                'is_default_purchase' => true,
+                'active' => true,
+                'default_sale_price_base' => '100.000000',
+            ]);
+            $products[] = $p;
+            $productUnits[] = $pu;
+        }
+
+        // Prepare 1-line draft input
+        $action = app(CreateSalesInvoiceDraftAction::class);
+        $lines1 = [
+            [
+                'product_id' => $products[0]->id,
+                'product_unit_id' => $productUnits[0]->id,
+                'item_description' => 'Item 1',
+                'quantity' => '1',
+                'unit_price' => '100.00',
+            ],
+        ];
+
+        // Measure queries for 1 line
+        $this->actingAs($restrictedUser);
+        DB::enableQueryLog();
+        DB::flushQueryLog();
+        $draft1 = $action->execute($this->company, $restrictedUser, [
+            'customer_id' => $this->customer->id,
+            'currency_code' => 'ILS',
+            'exchange_rate' => '1.0',
+            'issue_date' => '2026-10-20',
+            'lines' => $lines1,
+        ]);
+        $queries1 = DB::getQueryLog();
+        DB::disableQueryLog();
+
+        $currencyQueries1 = array_filter($queries1, fn ($q) => str_contains((string) $q['query'], 'currencies') || str_contains((string) $q['query'], 'company_currencies'));
+
+        // Prepare 100-line draft input
+        $lines100 = [];
+        for ($i = 0; $i < 100; $i++) {
+            $lines100[] = [
+                'product_id' => $products[$i]->id,
+                'product_unit_id' => $productUnits[$i]->id,
+                'item_description' => "Item {$i}",
+                'quantity' => '1',
+                'unit_price' => '100.00',
+            ];
+        }
+
+        // Flush cache to ensure a fresh benchmark start
+        app(CurrencyMinorUnitsResolver::class)->flush();
+
+        // Measure queries for 100 lines
+        DB::enableQueryLog();
+        DB::flushQueryLog();
+        $draft100 = $action->execute($this->company, $restrictedUser, [
+            'customer_id' => $this->customer->id,
+            'currency_code' => 'ILS',
+            'exchange_rate' => '1.0',
+            'issue_date' => '2026-10-20',
+            'lines' => $lines100,
+        ]);
+        $queries100 = DB::getQueryLog();
+        DB::disableQueryLog();
+        $this->actingAs($this->owner);
+
+        $currencyQueries100 = array_filter($queries100, fn ($q) => str_contains((string) $q['query'], 'currencies') || str_contains((string) $q['query'], 'company_currencies'));
+
+        // Bounded queries: line loop performs zero per-line currency metadata queries
+        $this->assertCount(count($currencyQueries1), $currencyQueries100, 'Currency metadata queries must not amplify with line count.');
+        $this->assertLessThanOrEqual(5, count($currencyQueries100), 'Currency queries must remain bounded to operation boundary.');
+    }
+
+    public function test_currency_enablement_changes_between_requests_not_cached_past_authority_check(): void
+    {
+        Currency::updateOrInsert(['code' => 'KWD'], ['name' => 'Kuwaiti Dinar', 'symbol' => 'KD', 'minor_units' => 3, 'active' => true]);
+        CompanyCurrency::updateOrInsert(['company_id' => $this->company->id, 'currency_code' => 'KWD'], ['enabled' => true, 'is_base' => false, 'display_order' => 11]);
+
+        $resolver = app(CurrencyMinorUnitsResolver::class);
+        $resolver->flush();
+
+        // In active session, resolution succeeds
+        $this->assertSame(3, $resolver->resolveForCompany($this->company, 'KWD'));
+
+        // Admin disables KWD in DB
+        CompanyCurrency::where('company_id', $this->company->id)->where('currency_code', 'KWD')->update(['enabled' => false]);
+
+        // Between requests / retries, flush() is called
+        $resolver->flush();
+
+        // Authority check must immediately reflect DB state, not stale cache
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('Currency [KWD] is not enabled for company');
+        $resolver->resolveForCompany($this->company, 'KWD');
+    }
+
+    public function test_all_six_canonical_reconciliations_pass_after_representative_transactions_and_returns(): void
+    {
+        // Set up active standard and foreign currencies
+        Currency::updateOrInsert(['code' => 'KWD'], ['name' => 'Kuwaiti Dinar', 'symbol' => 'KD', 'minor_units' => 3, 'active' => true]);
+        Currency::updateOrInsert(['code' => 'JPY'], ['name' => 'Japanese Yen', 'symbol' => '¥', 'minor_units' => 0, 'active' => true]);
+        CompanyCurrency::updateOrInsert(['company_id' => $this->company->id, 'currency_code' => 'KWD'], ['enabled' => true, 'is_base' => false, 'display_order' => 11]);
+        CompanyCurrency::updateOrInsert(['company_id' => $this->company->id, 'currency_code' => 'JPY'], ['enabled' => true, 'is_base' => false, 'display_order' => 12]);
+
+        $tax = TaxRate::create([
+            'company_id' => $this->company->id,
+            'code' => 'VAT16_REC',
+            'name_ar' => 'ضريبة 16%',
+            'name_en' => 'VAT 16%',
+            'rate' => '16.000000',
+            'calculation' => TaxRate::CALC_EXCLUSIVE,
+            'active' => true,
+        ]);
+
+        // 1. ILS base transaction + payment
+        $ilsDraft = app(CreateSalesInvoiceDraftAction::class)->execute($this->company, $this->owner, [
+            'customer_id' => $this->customer->id,
+            'currency_code' => 'ILS',
+            'exchange_rate' => '1.0',
+            'issue_date' => '2026-10-23',
+            'lines' => [
+                ['item_description' => 'Standard Base Item', 'quantity' => '1', 'unit_price' => '100.00', 'tax_rate_id' => $tax->id],
+            ],
+        ]);
+        $ilsPosted = app(PostSalesInvoiceAction::class)->execute($ilsDraft, $this->owner);
+
+        $ilsCash = app(CreateMoneyAccountAction::class)->execute($this->company, $this->owner, [
+            'account_type' => 'cash', 'name_ar' => 'صندوق شيكل للمطابقة', 'name_en' => 'ILS Cash Rec', 'currency_code' => 'ILS',
+        ]);
+        app(PostCustomerPaymentAction::class)->execute($this->company, $this->owner, [
+            'customer_id' => $this->customer->id, 'money_account_id' => $ilsCash->id, 'payment_date' => '2026-10-23',
+            'payment_method' => 'cash', 'amount' => '116.00', 'exchange_rate' => '1.0', 'idempotency_key' => 'rcpt-rec-ils-1',
+            'allocations' => [['sales_invoice_id' => $ilsPosted->id, 'allocated_amount' => '116.00']],
+        ]);
+
+        // 2. KWD foreign transaction + return
+        $kwdDraft = app(CreateSalesInvoiceDraftAction::class)->execute($this->company, $this->owner, [
+            'customer_id' => $this->customer->id,
+            'currency_code' => 'KWD',
+            'exchange_rate' => '12.0000000000',
+            'issue_date' => '2026-10-23',
+            'lines' => [
+                ['item_description' => 'Foreign KWD Goods', 'quantity' => '2', 'unit_price' => '50.000', 'tax_rate_id' => $tax->id],
+            ],
+        ]);
+        $kwdPosted = app(PostSalesInvoiceAction::class)->execute($kwdDraft, $this->owner);
+
+        $kwdReturnDraft = app(CreateSalesReturnDraftAction::class)->execute($this->company, $this->owner, [
+            'sales_invoice_id' => $kwdPosted->id,
+            'issue_date' => '2026-10-23',
+            'lines' => [['sales_invoice_line_id' => $kwdPosted->lines->first()->id, 'quantity' => '1']],
+        ]);
+        app(PostSalesReturnAction::class)->execute($kwdReturnDraft, $this->owner);
+
+        // 3. JPY foreign transaction + return
+        $jpyDraft = app(CreateSalesInvoiceDraftAction::class)->execute($this->company, $this->owner, [
+            'customer_id' => $this->customer->id,
+            'currency_code' => 'JPY',
+            'exchange_rate' => '0.0250000000',
+            'issue_date' => '2026-10-23',
+            'lines' => [
+                ['item_description' => 'Foreign JPY Item', 'quantity' => '1', 'unit_price' => '3000'],
+            ],
+        ]);
+        $jpyPosted = app(PostSalesInvoiceAction::class)->execute($jpyDraft, $this->owner);
+
+        $jpyReturnDraft = app(CreateSalesReturnDraftAction::class)->execute($this->company, $this->owner, [
+            'sales_invoice_id' => $jpyPosted->id,
+            'issue_date' => '2026-10-23',
+            'lines' => [['sales_invoice_line_id' => $jpyPosted->lines->first()->id, 'quantity' => '1']],
+        ]);
+        app(PostSalesReturnAction::class)->execute($jpyReturnDraft, $this->owner);
+
+        // Record database fingerprint before reconciliation
+        $fingerprintBefore = $this->getDatabaseFingerprint();
+
+        // Execute all 6 reconciliation services and assert no errors
+        $accountingReport = app(AccountingReconciliationService::class)->reconcile($this->company);
+        $this->assertTrue($accountingReport->isHealthy, 'Accounting reconciliation failed: '.json_encode($accountingReport->violations));
+        $this->assertEmpty($accountingReport->violations, 'Accounting reconciliation has violations');
+
+        $salesReport = app(SalesReconciliationService::class)->reconcile($this->company);
+        $this->assertTrue($salesReport->isHealthy, 'Sales reconciliation failed: '.json_encode($salesReport->violations));
+        $this->assertEmpty($salesReport->violations, 'Sales reconciliation has violations');
+
+        $payablesReport = app(PayablesReconciliationService::class)->reconcile($this->company);
+        $this->assertTrue($payablesReport->isHealthy, 'Payables reconciliation failed: '.json_encode($payablesReport->violations));
+        $this->assertEmpty($payablesReport->violations, 'Payables reconciliation has violations');
+
+        $moneyReport = app(MoneyReconciliationService::class)->reconcile($this->company);
+        $this->assertTrue($moneyReport->isHealthy, 'Money reconciliation failed: '.json_encode($moneyReport->violations));
+        $this->assertEmpty($moneyReport->violations, 'Money reconciliation has violations');
+
+        $phase7Report = app(Phase7ReconciliationService::class)->reconcile($this->company);
+        $this->assertTrue($phase7Report->isHealthy, 'Phase 7 reconciliation failed: '.json_encode($phase7Report->violations));
+        $this->assertEmpty($phase7Report->violations, 'Phase 7 reconciliation has violations');
+
+        $inventoryReport = app(InventoryReconciliationService::class)->auditCompany($this->company);
+        $this->assertTrue($inventoryReport->isHealthy, 'Inventory audit failed: '.json_encode($inventoryReport->discrepancies));
+        $this->assertEmpty($inventoryReport->discrepancies, 'Inventory audit has discrepancies');
+
+        // Confirm reconciliations are strictly read-only
+        $fingerprintAfter = $this->getDatabaseFingerprint();
+        $this->assertSame($fingerprintBefore, $fingerprintAfter, 'Reconciliation services mutated persisted database state.');
+    }
+
+    /** @return array<string, string> */
+    private function getDatabaseFingerprint(): array
+    {
+        $fingerprints = [];
+        foreach (DB::select('SHOW TABLES') as $table) {
+            $name = array_values((array) $table)[0];
+            $rows = DB::table($name)->get()->map(fn ($row) => json_encode($row, JSON_THROW_ON_ERROR))->all();
+            sort($rows, SORT_STRING);
+            $fingerprints[$name] = hash('sha256', json_encode($rows, JSON_THROW_ON_ERROR));
+        }
+        ksort($fingerprints);
+
+        return $fingerprints;
     }
 }

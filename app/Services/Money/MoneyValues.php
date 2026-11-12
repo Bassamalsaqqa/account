@@ -14,7 +14,7 @@ final class MoneyValues
 {
     public static function amount(mixed $value, string $currency, ?int $companyId = null): BigDecimal
     {
-        $minorUnits = app(CurrencyMinorUnitsResolver::class)->resolve($currency, $companyId);
+        $minorUnits = app(CurrencyMinorUnitsResolver::class)->resolve($currency);
 
         try {
             return BigDecimal::of(ReceiptRequestValues::decimal($value, $minorUnits))->toScale(6);

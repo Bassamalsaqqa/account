@@ -149,7 +149,7 @@ class CreateSalesInvoiceDraftAction
                         ! empty($lineData['product_unit_id']) ? (int) $lineData['product_unit_id'] : null,
                         app(SalesDocumentRules::class)->quantity($lineData['quantity']));
                     $conversionRatio = BigDecimal::of((string) $productUnit->conversion_to_base);
-                    app(SalesDocumentRules::class)->price($product, $productUnit, $user, $fx, $currency, BigDecimal::of($lineData['unit_price']));
+                    app(SalesDocumentRules::class)->price($product, $productUnit, $user, $fx, $currency, BigDecimal::of($lineData['unit_price']), $minorUnits);
                 } else {
                     app(SalesDocumentRules::class)->quantity($lineData['quantity']);
                     if (! $user->hasPermissionTo('sales.invoice.change_price')) {

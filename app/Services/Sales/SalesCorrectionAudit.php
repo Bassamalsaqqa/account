@@ -56,7 +56,7 @@ final class SalesCorrectionAudit
         foreach (DB::table('sales_invoice_lines as l')->join('sales_invoices as i', 'i.id', '=', 'l.sales_invoice_id')
             ->where('i.company_id', $companyId)->get(['l.*', 'i.currency_code', 'i.exchange_rate']) as $line) {
             try {
-                $minorUnits = app(CurrencyMinorUnitsResolver::class)->resolve((string) $line->currency_code, $companyId);
+                $minorUnits = app(CurrencyMinorUnitsResolver::class)->resolve((string) $line->currency_code);
                 $result = app(SalesLineCalculator::class)->calculate(new SalesLineCalculationInput(
                     quantity: $line->quantity, unitPrice: $line->unit_price, discountType: $line->discount_type,
                     discountValue: $line->discount_value ?? '0', taxRate: $line->tax_rate_snapshot, taxInclusive: (bool) $line->tax_inclusive,

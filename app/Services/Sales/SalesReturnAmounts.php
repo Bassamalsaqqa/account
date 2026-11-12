@@ -20,7 +20,7 @@ final class SalesReturnAmounts
     {
         app(TenantWriteAccess::class)->assertWritable((int) $return->company_id);
         $totals = ['subtotal' => BigDecimal::zero(), 'discount' => BigDecimal::zero(), 'tax' => BigDecimal::zero(), 'total' => BigDecimal::zero()];
-        $scale = app(CurrencyMinorUnitsResolver::class)->resolveForCompany((int) $return->company_id, $return->currency_code);
+        $scale = app(CurrencyMinorUnitsResolver::class)->resolve($return->currency_code);
         $seen = [];
         foreach ($return->lines()->lockForUpdate()->get() as $line) {
             if (isset($seen[$line->sales_invoice_line_id])) {
