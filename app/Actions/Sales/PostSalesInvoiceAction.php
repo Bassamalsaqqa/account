@@ -98,12 +98,15 @@ class PostSalesInvoiceAction implements StockEventOwner
                 throw new InvalidArgumentException("Cannot post invoice for inactive customer [{$customer->id}].");
             }
 
+            $currencies = array_values(array_unique([$lockedInvoice->currency_code, (string) $company->base_currency_code]));
+            $minorUnitsMap = app(CurrencyMinorUnitsResolver::class)->resolveCurrenciesForCompanyWrite((int) $company->id, $currencies, lockForUpdate: true);
+            $minorUnits = $minorUnitsMap[$lockedInvoice->currency_code];
+
             app(SalesDocumentRules::class)->header($company, $lockedInvoice->currency_code,
                 BigDecimal::of((string) $lockedInvoice->exchange_rate), $lockedInvoice->issue_date->format('Y-m-d'), $lockedInvoice->document_locale);
             $lockedInvoice->customer_snapshot = $customer->only(['name_ar', 'name_en', 'business_name_ar', 'business_name_en', 'business_name', 'address_ar', 'address_en', 'phone', 'email', 'address_line_1_ar', 'address_line_1_en', 'tax_number']);
             $lockedInvoice->company_snapshot = $company->only(['name_ar', 'name_en', 'phone', 'email', 'address_ar', 'address_en', 'tax_number', 'registration_number']);
             $lockedInvoice->save();
-            $minorUnits = app(CurrencyMinorUnitsResolver::class)->resolveForCompany((int) $lockedInvoice->company_id, $lockedInvoice->currency_code);
             $lines = $lockedInvoice->lines()->lockForUpdate()->get();
             app(DraftInvoiceIntegrity::class)->validate($lockedInvoice, $lines);
             foreach ($lines as $line) {

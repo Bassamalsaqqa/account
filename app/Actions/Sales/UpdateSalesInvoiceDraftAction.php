@@ -117,6 +117,11 @@ class UpdateSalesInvoiceDraftAction
             $issueDate = $data['issue_date'] ?? (string) $lockedInvoice->issue_date->format('Y-m-d');
             $dueDate = array_key_exists('due_date', $data) ? ($data['due_date'] ?: null) : $lockedInvoice->due_date?->format('Y-m-d');
 
+            $currencies = array_values(array_unique([$currency, (string) $company->base_currency_code]));
+            $minorUnitsMap = app(CurrencyMinorUnitsResolver::class)->resolveCurrenciesForCompanyWrite((int) $company->id, $currencies, lockForUpdate: true);
+            $minorUnits = $minorUnitsMap[$currency];
+            $baseMinorUnits = $minorUnitsMap[(string) $company->base_currency_code];
+
             app(SalesDocumentRules::class)->header($company, $currency, $fx, $issueDate, $data['document_locale'] ?? $lockedInvoice->document_locale);
             if ($dueDate !== null) {
                 app(SalesDocumentRules::class)->date($dueDate);
@@ -128,9 +133,6 @@ class UpdateSalesInvoiceDraftAction
                 if (empty($data['lines'])) {
                     throw new InvalidArgumentException('Sales invoice must contain at least one line.');
                 }
-
-                $minorUnits = app(CurrencyMinorUnitsResolver::class)->resolveForCompany((int) $company->id, $currency);
-                $baseMinorUnits = app(CurrencyMinorUnitsResolver::class)->resolveForCompany((int) $company->id, (string) $company->base_currency_code);
 
                 app(SalesDocumentRules::class)->header($company, $currency, $fx, $issueDate, $data['document_locale'] ?? $customer->preferred_locale ?? $company->default_locale);
                 $lineResults = [];

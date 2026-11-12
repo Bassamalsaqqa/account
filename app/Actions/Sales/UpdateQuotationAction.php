@@ -105,6 +105,11 @@ class UpdateQuotationAction
             $issueDate = $data['issue_date'] ?? (string) $lockedQuote->issue_date->format('Y-m-d');
             $expiryDate = array_key_exists('expiry_date', $data) ? $data['expiry_date'] : ($lockedQuote->expiry_date ? (string) $lockedQuote->expiry_date->format('Y-m-d') : null);
 
+            $currencies = array_values(array_unique([$currency, (string) $company->base_currency_code]));
+            $minorUnitsMap = app(CurrencyMinorUnitsResolver::class)->resolveCurrenciesForCompanyWrite((int) $company->id, $currencies, lockForUpdate: true);
+            $minorUnits = $minorUnitsMap[$currency];
+            $baseMinorUnits = $minorUnitsMap[(string) $company->base_currency_code];
+
             app(SalesDocumentRules::class)->header($company, $currency, $fx, $issueDate,
                 $data['document_locale'] ?? $lockedQuote->document_locale);
             if ($expiryDate !== null) {
@@ -122,8 +127,6 @@ class UpdateQuotationAction
                 app(SalesDocumentRules::class)->header($company, $currency, $fx, $issueDate, $data['document_locale'] ?? $customer->preferred_locale ?? $company->default_locale);
                 $lineResults = [];
                 $preparedLines = [];
-                $minorUnits = app(CurrencyMinorUnitsResolver::class)->resolveForCompany((int) $company->id, $currency);
-                $baseMinorUnits = app(CurrencyMinorUnitsResolver::class)->resolveForCompany((int) $company->id, (string) $company->base_currency_code);
 
                 foreach ($data['lines'] as $idx => $lineData) {
                     $taxRate = null;
