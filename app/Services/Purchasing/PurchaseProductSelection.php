@@ -6,6 +6,7 @@ namespace App\Services\Purchasing;
 
 use App\Domain\Money\ValueObjects\ExchangeRate;
 use App\Models\Product;
+use App\Models\ProductUnit;
 use App\Services\Sales\SalesActorGuard;
 use App\Support\Tenancy\CompanyContext;
 use Brick\Math\BigDecimal;
@@ -14,6 +15,17 @@ use Illuminate\Support\Facades\DB;
 
 final class PurchaseProductSelection
 {
+    /** Read-only suggestion from an already company-scoped product and unit. Missing is distinct from zero. */
+    public function suggestedBasePrice(Product $product, ProductUnit $unit): ?BigDecimal
+    {
+        if ($unit->default_purchase_price_base !== null) {
+            return BigDecimal::of($unit->default_purchase_price_base);
+        }
+
+        return $product->default_purchase_cost_base === null ? null
+            : BigDecimal::of($product->default_purchase_cost_base)->multipliedBy($unit->conversion_to_base);
+    }
+
     /** @return array{product_id: int, product_unit_id: int, item_description: string, unit_cost: string, track_expiry: bool} */
     public function select(int $productId, ?int $unitId, string $currency, string $exchangeRate): array
     {
@@ -24,9 +36,7 @@ final class PurchaseProductSelection
             $rules->header($company, $currency, $exchangeRate, now($company->timezone)->format('Y-m-d'), null, $company->default_locale);
             $product = Product::where('company_id', $company->id)->lockForUpdate()->findOrFail($productId);
             $unit = $rules->selectedUnit($product, $unitId, '1');
-            $base = $unit->default_purchase_price_base !== null
-                ? BigDecimal::of($unit->default_purchase_price_base)
-                : BigDecimal::of($product->default_purchase_cost_base ?? '0')->multipliedBy($unit->conversion_to_base);
+            $base = $this->suggestedBasePrice($product, $unit) ?? BigDecimal::zero();
             $cost = $base->dividedBy(ExchangeRate::from($exchangeRate)->getValue(), $currency === 'JOD' ? 3 : 2, RoundingMode::HALF_UP);
 
             return ['product_id' => (int) $product->id, 'product_unit_id' => (int) $unit->id,

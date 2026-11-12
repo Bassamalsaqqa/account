@@ -12,6 +12,7 @@ import './document-operations';
 import './camera-scanner';
 import './global-search';
 import './barcode-entry';
+import './product-search-picker';
 import './profile-two-factor';
 import './company-data-download';
 

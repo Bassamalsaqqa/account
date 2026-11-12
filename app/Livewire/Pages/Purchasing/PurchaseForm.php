@@ -37,6 +37,7 @@ use App\Services\Purchasing\PurchaseDocumentRules;
 use App\Services\Purchasing\PurchaseDraftBuilder;
 use App\Services\Purchasing\PurchaseFormConfirmation;
 use App\Services\Purchasing\PurchaseProductSelection;
+use App\Services\Search\BoundedProductSearchService;
 use App\Support\Tenancy\CompanyContext;
 use Brick\Math\BigDecimal;
 use Brick\Math\Exception\MathException;
@@ -141,6 +142,15 @@ class PurchaseForm extends Component
     public string $vendorSearch = '';
 
     public string $productSearch = '';
+
+    /** @var list<array<string, mixed>> */
+    #[Locked]
+    public array $searchResults = [];
+
+    #[Locked]
+    public string $searchResultsQuery = '';
+
+    public int $searchSelectedIndex = 0;
 
     /** @var list<array<string, mixed>> */
     public array $lines = [];
@@ -268,6 +278,7 @@ class PurchaseForm extends Component
 
     public function hydrate(): void
     {
+        $this->updatedProductSearch();
         $this->authorizeForm();
     }
 
@@ -558,6 +569,7 @@ class PurchaseForm extends Component
                 'product_id' => $product->id,
                 'product_unit_id' => $selectedUnitId,
                 'item_description' => $selectedDescription,
+                'row_key' => (string) Str::uuid(),
                 'quantity' => '1',
                 'unit_cost' => $selectedCost,
                 'discount_type' => 'none',
@@ -579,6 +591,117 @@ class PurchaseForm extends Component
         $this->dispatch('barcode-scanned');
     }
 
+    public function updatedProductSearch(): void
+    {
+        $this->searchResultsQuery = $this->productSearch;
+        $term = trim($this->productSearch);
+        if ($term === '') {
+            $this->searchResults = [];
+            $this->searchSelectedIndex = 0;
+
+            return;
+        }
+
+        $this->authorizeForm();
+        $user = auth()->user();
+        if (! $user) {
+            $this->searchResults = [];
+
+            return;
+        }
+
+        $this->searchResults = app(BoundedProductSearchService::class)->search(
+            $this->pageCompanyId,
+            $user,
+            $term,
+            'purchasing',
+            null,
+            $this->currency_code,
+            $this->exchange_rate,
+            30
+        );
+        $this->searchSelectedIndex = 0;
+    }
+
+    public function addProduct(int $productId, ?int $unitId = null): void
+    {
+        $this->authorizeForm();
+
+        if ($this->showPreview) {
+            $this->cancelPreview();
+        }
+
+        try {
+            $selected = app(PurchaseProductSelection::class)->select(
+                $productId,
+                $unitId,
+                $this->currency_code,
+                $this->exchange_rate
+            );
+        } catch (\Throwable) {
+            $this->addError('productSearch', __('purchasing.invalid_draft'));
+
+            return;
+        }
+
+        $selectedUnitId = (int) $selected['product_unit_id'];
+        $selectedCost = (string) $selected['unit_cost'];
+        $selectedDescription = (string) $selected['item_description'];
+
+        $isTrulyEmptyFirstRow = count($this->lines) === 1
+            && empty($this->lines[0]['product_id'])
+            && trim((string) ($this->lines[0]['item_description'] ?? '')) === ''
+            && empty($this->lines[0]['lots'])
+            && in_array((string) ($this->lines[0]['quantity'] ?? ''), ['1', '1.000000', '1.00', ''], true)
+            && in_array((string) ($this->lines[0]['unit_cost'] ?? ''), ['0', '0.00', '0.000000', ''], true)
+            && (($this->lines[0]['discount_type'] ?? 'none') === 'none')
+            && empty($this->lines[0]['tax_rate_id']);
+
+        $newLine = array_replace([
+            'product_id' => $productId,
+            'product_unit_id' => $selectedUnitId,
+            'item_description' => $selectedDescription,
+            'row_key' => (string) Str::uuid(),
+            'quantity' => '1',
+            'unit_cost' => $selectedCost,
+            'discount_type' => 'none',
+            'discount_value' => '0',
+            'tax_rate_id' => null,
+            'lots' => [],
+        ], $selected);
+
+        if ($isTrulyEmptyFirstRow) {
+            $this->lines[0] = $newLine;
+        } else {
+            $this->lines[] = $newLine;
+        }
+
+        $this->productSearch = '';
+        $this->searchResults = [];
+        $this->searchSelectedIndex = 0;
+        $this->resetErrorBag('productSearch');
+        $this->recalculate();
+        $this->dispatch('product-added');
+    }
+
+    public function addSelectedProduct(): void
+    {
+        if (! empty($this->searchResults) && isset($this->searchResults[$this->searchSelectedIndex])) {
+            $candidate = $this->searchResults[$this->searchSelectedIndex];
+            $this->addProduct((int) $candidate['id'], $candidate['default_unit_id'] ?? null);
+
+            return;
+        }
+
+        $term = trim($this->productSearch);
+        if ($term !== '') {
+            $this->barcodeSearch = $term;
+            $this->scanBarcode();
+            $this->productSearch = '';
+            $this->searchResults = [];
+        }
+    }
+
     public function addLine(): void
     {
         if ($this->showPreview) {
@@ -586,6 +709,7 @@ class PurchaseForm extends Component
         }
         $this->authorizeForm();
         $this->lines[] = ['product_id' => null, 'product_unit_id' => null, 'item_description' => '',
+            'row_key' => (string) Str::uuid(),
             'quantity' => '1', 'unit_cost' => '0', 'discount_type' => 'none', 'discount_value' => '0', 'tax_rate_id' => null, 'lots' => []];
     }
 
@@ -620,6 +744,7 @@ class PurchaseForm extends Component
         unset($this->expandedLotCustomization[$index]);
         if ($productId === '') {
             $this->lines[$index] = ['product_id' => null, 'product_unit_id' => null, 'item_description' => '',
+                'row_key' => (string) Str::uuid(),
                 'quantity' => '1', 'unit_cost' => '0', 'discount_type' => 'none', 'discount_value' => '0', 'tax_rate_id' => null, 'lots' => []];
             $this->recalculate();
 
@@ -1211,20 +1336,30 @@ class PurchaseForm extends Component
 
     public function render(): View
     {
-        $company = $this->authorizeForm();
-        $term = mb_substr(trim($this->productSearch), 0, 160);
-        $products = Product::where('company_id', $company->id)->where('active', true)->where('product_type', Product::TYPE_STOCK)->where('track_stock', true);
-        if ($term !== '') {
-            $products->where(fn ($q) => $q->where('name_ar', 'like', "%{$term}%")->orWhere('name_en', 'like', "%{$term}%")
-                ->orWhere('sku', 'like', "%{$term}%")->orWhereHas('barcodes', fn ($b) => $b->where('company_id', $company->id)->where('barcode', $term)));
+        foreach ($this->lines as &$identityLine) {
+            $identityLine['row_key'] ??= (string) Str::uuid();
         }
-        $unitOptions = [];
-        $expiryLines = [];
+        unset($identityLine);
+
+        $this->updatedProductSearch();
+        $company = $this->authorizeForm();
+        $user = auth()->user();
         $selectedProductIds = collect($this->lines)->pluck('product_id')->filter()->unique()->values()->all();
         $selectedProducts = Product::where('company_id', $company->id)->whereIn('id', $selectedProductIds)
             ->with(['productUnits' => fn ($units) => $units->where('company_id', $company->id)->where('active', true)
                 ->whereHas('unit', fn ($unit) => $unit->where('company_id', $company->id)->where('active', true))->with('unit')])->get()->keyBy('id');
         abort_unless($selectedProducts->count() === count($selectedProductIds), 404);
+
+        $matchingProducts = trim($this->productSearch) !== '' && $user !== null
+            ? app(BoundedProductSearchService::class)->searchProductsQuery($company->id, $user, $this->productSearch, 'purchasing')
+                ->orderByRaw('COALESCE(name_ar, name_en) ASC')
+                ->orderBy('id')
+                ->limit(30)
+                ->get(['id', 'name_ar', 'name_en', 'sku'])
+            : collect();
+        $products = $matchingProducts->merge($selectedProducts->values());
+        $unitOptions = [];
+        $expiryLines = [];
         foreach ($this->lines as $index => $line) {
             if (! empty($line['product_id'])) {
                 $product = $selectedProducts->get($line['product_id']);
@@ -1299,7 +1434,8 @@ class PurchaseForm extends Component
 
         return view('livewire.pages.purchasing.purchase-form', [
             'baseCurrencyCode' => $company->base_currency_code,
-            'products' => $products->orderByRaw('COALESCE(name_ar, name_en) ASC')->orderBy('id')->limit(50)->get(['id', 'name_ar', 'name_en', 'sku']),
+            'products' => $products,
+            'searchResults' => $this->searchResults,
             'vendors' => $vendors,
             'warehouses' => Warehouse::where('company_id', $company->id)->where('active', true)->get(),
             'currencies' => $company->currencies()->where('enabled', true)->get(),
