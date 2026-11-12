@@ -4,6 +4,7 @@ use App\Http\Middleware\ApplicationSecurityHeaders;
 use App\Http\Middleware\ApplySupportView;
 use App\Http\Middleware\EnsureCompanyContext;
 use App\Http\Middleware\EnsurePlatformAccess;
+use App\Http\Middleware\MobileV2ApiBoundary;
 use App\Http\Middleware\Phase11ApiBoundary;
 use App\Http\Middleware\Phase12Boundary;
 use App\Http\Middleware\PublicDocumentHeaders;
@@ -22,6 +23,7 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->prepend(Phase12Boundary::class);
         $middleware->prepend(Phase11ApiBoundary::class);
+        $middleware->prepend(MobileV2ApiBoundary::class);
         $middleware->prepend(ApplicationSecurityHeaders::class);
         $middleware->web(prepend: [PublicDocumentHeaders::class]);
         $middleware->web(append: [
