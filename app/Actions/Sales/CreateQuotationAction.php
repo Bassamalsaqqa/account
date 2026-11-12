@@ -112,6 +112,11 @@ class CreateQuotationAction
             $documentLocale = $data['document_locale'] ?? $customer->preferred_locale ?? 'ar';
             $year = (int) substr($issueDate, 0, 4);
 
+            $currencies = array_values(array_unique([$currency, (string) $company->base_currency_code]));
+            $minorUnitsMap = app(CurrencyMinorUnitsResolver::class)->resolveCurrenciesForCompanyWrite((int) $company->id, $currencies, lockForUpdate: true);
+            $minorUnits = $minorUnitsMap[$currency];
+            $baseMinorUnits = $minorUnitsMap[(string) $company->base_currency_code];
+
             // Generate permanent sequence number on save
             $quotationNumber = $this->sequenceService->generateNextNumber(
                 $company->id,
@@ -123,8 +128,6 @@ class CreateQuotationAction
             app(SalesDocumentRules::class)->header($company, $currency, $fx, $issueDate, $data['document_locale'] ?? $customer->preferred_locale ?? $company->default_locale);
             $lineResults = [];
             $preparedLines = [];
-            $minorUnits = app(CurrencyMinorUnitsResolver::class)->resolveForCompany((int) $company->id, $currency);
-            $baseMinorUnits = app(CurrencyMinorUnitsResolver::class)->resolveForCompany((int) $company->id, (string) $company->base_currency_code);
 
             foreach ($data['lines'] as $idx => $lineData) {
                 $taxRate = null;

@@ -11,7 +11,6 @@ use App\Domain\Posting\DTO\PostingCommand;
 use App\Exceptions\IdempotencyConflictException;
 use App\Exceptions\NoActiveCompanyException;
 use App\Models\Company;
-use App\Models\CompanyCurrency;
 use App\Models\CompanyLanguage;
 use App\Models\Customer;
 use App\Models\CustomerPayment;
@@ -183,6 +182,10 @@ class PostCustomerPaymentAction
                 $check = app(CheckPaymentSource::class)->instrument((int) $lockedCompany->id, $user, $data, 'incoming');
                 $currency = $check->currency_code;
                 $cashLedger = app(CheckPaymentSource::class)->ledger($check);
+
+                $currenciesToLock = array_values(array_unique([$currency, (string) $lockedCompany->base_currency_code]));
+                $minorUnitsMap = app(CurrencyMinorUnitsResolver::class)->resolveCurrenciesForCompanyWrite((int) $lockedCompany->id, $currenciesToLock, lockForUpdate: true);
+                $minorUnits = $minorUnitsMap[$currency];
             } else {
                 // 3. Lock MoneyAccount FOR UPDATE
                 /** @var MoneyAccount $moneyAccount */
@@ -195,16 +198,24 @@ class PostCustomerPaymentAction
                 if (($method === CustomerPayment::METHOD_CASH) !== ($moneyAccount->account_type === MoneyAccount::TYPE_CASH)) {
                     throw new InvalidArgumentException('Receipt method must match its money account type.');
                 }
-                if (! CompanyCurrency::where('company_id', $lockedCompany->id)->where('currency_code', $currency)->where('enabled', true)->exists()) {
-                    throw new InvalidArgumentException('Receipt currency is not enabled.');
+
+                $currenciesToLock = array_values(array_unique([$currency, (string) $lockedCompany->base_currency_code]));
+                try {
+                    $minorUnitsMap = app(CurrencyMinorUnitsResolver::class)->resolveCurrenciesForCompanyWrite((int) $lockedCompany->id, $currenciesToLock, lockForUpdate: true);
+                    $minorUnits = $minorUnitsMap[$currency];
+                } catch (InvalidArgumentException $e) {
+                    if (str_contains($e->getMessage(), 'is not enabled')) {
+                        throw new InvalidArgumentException('Receipt currency is not enabled.', previous: $e);
+                    }
+                    throw $e;
                 }
+
                 $cashLedger = LedgerAccount::where('company_id', $lockedCompany->id)->where('id', $moneyAccount->ledger_account_id)->where('active', true)->where('is_control', false)->lockForUpdate()->firstOrFail();
                 app(MoneyAccountLedger::class)->validate($moneyAccount, true);
             }
             if ($currency === $lockedCompany->base_currency_code && ! BigDecimal::of($data['exchange_rate'])->isEqualTo(1)) {
                 throw new InvalidArgumentException('Base currency rate must equal one.');
             }
-            $minorUnits = app(CurrencyMinorUnitsResolver::class)->resolveForCompany((int) $lockedCompany->id, $currency);
 
             try {
                 $totalAmount = BigDecimal::of((string) $data['amount'])->toScale($minorUnits, RoundingMode::UNNECESSARY);
@@ -253,8 +264,13 @@ class PostCustomerPaymentAction
                     throw new InvalidArgumentException("Cannot allocate payment to invoice [{$invoice->id}] belonging to another customer.");
                 }
 
-                if (! CompanyCurrency::where('company_id', $lockedCompany->id)->where('currency_code', $invoice->currency_code)->where('enabled', true)->exists()) {
-                    throw new InvalidArgumentException('Document currency is not enabled.');
+                try {
+                    app(CurrencyMinorUnitsResolver::class)->resolveFreshForCompany((int) $lockedCompany->id, $invoice->currency_code, lockForUpdate: true);
+                } catch (InvalidArgumentException $e) {
+                    if (str_contains($e->getMessage(), 'is not enabled')) {
+                        throw new InvalidArgumentException('Document currency is not enabled.', previous: $e);
+                    }
+                    throw $e;
                 }
                 if ($paymentDate < Carbon::parse($invoice->issue_date)->toDateString()) {
                     throw new InvalidArgumentException('Direct payment allocation cannot precede its document date.');

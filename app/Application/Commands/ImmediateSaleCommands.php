@@ -17,6 +17,7 @@ use App\Models\User;
 use App\Services\Money\CheckCreation;
 use App\Services\Money\CheckHistory;
 use App\Services\Money\CheckPaymentSource;
+use App\Services\Money\CurrencyMinorUnitsResolver;
 use App\Services\Money\MoneyAccountLedger;
 use App\Services\Money\MoneyValues;
 use App\Services\Sales\ReceiptRequestValues;
@@ -123,6 +124,15 @@ final class ImmediateSaleCommands
             }
             try {
                 $intent = $this->intent($locked, $actor, $payload['intent']);
+                $company = Company::findOrFail($locked->company_id);
+                $paymentCurrency = $check ? ($intent['currency_code'] ?? null)
+                    : ($paid ? MoneyAccount::where('company_id', $company->id)->whereKey((int) ($intent['money_account_id'] ?? 0))->value('currency_code') : null);
+                $currenciesToLock = array_values(array_unique(array_filter([
+                    $locked->currency_code,
+                    is_string($paymentCurrency) ? $paymentCurrency : null,
+                    (string) $company->base_currency_code,
+                ])));
+                app(CurrencyMinorUnitsResolver::class)->resolveCurrenciesForCompanyWrite((int) $company->id, $currenciesToLock, lockForUpdate: true);
                 $terms = $this->paymentTerms($locked, $intent);
             } catch (InvalidArgumentException|ModelNotFoundException $exception) {
                 // These instructions were validated when the signed preview was

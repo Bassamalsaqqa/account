@@ -12,6 +12,7 @@ use App\Actions\Sales\CreateSalesReturnDraftAction;
 use App\Actions\Sales\PostCustomerPaymentAction;
 use App\Actions\Sales\PostSalesInvoiceAction;
 use App\Actions\Sales\PostSalesReturnAction;
+use App\Application\Commands\ImmediateSaleCommands;
 use App\Domain\Posting\Exceptions\PostingValidationException;
 use App\Domain\Sales\Calculators\SalesLineCalculationInput;
 use App\Domain\Sales\Calculators\SalesLineCalculator;
@@ -20,8 +21,12 @@ use App\Models\CompanyCurrency;
 use App\Models\CompanyUser;
 use App\Models\Currency;
 use App\Models\Customer;
+use App\Models\CustomerPayment;
+use App\Models\PostingBatch;
 use App\Models\Product;
 use App\Models\ProductUnit;
+use App\Models\SalesInvoice;
+use App\Models\StockMovement;
 use App\Models\TaxRate;
 use App\Models\Unit;
 use App\Models\User;
@@ -46,6 +51,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
 use Spatie\Permission\Models\Permission;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 use Tests\TestCase;
 
 final class CurrencyMinorUnitQualificationTest extends TestCase
@@ -1051,10 +1057,7 @@ final class CurrencyMinorUnitQualificationTest extends TestCase
             ];
         }
 
-        // Flush cache to ensure a fresh benchmark start
-        app(CurrencyMinorUnitsResolver::class)->flush();
-
-        // Measure queries for 100 lines
+        // Measure queries for 100 lines (WITHOUT manual flush, testing real operation reuse)
         DB::enableQueryLog();
         DB::flushQueryLog();
         $draft100 = $action->execute($this->company, $restrictedUser, [
@@ -1071,8 +1074,16 @@ final class CurrencyMinorUnitQualificationTest extends TestCase
         $currencyQueries100 = array_filter($queries100, fn ($q) => str_contains((string) $q['query'], 'currencies') || str_contains((string) $q['query'], 'company_currencies'));
 
         // Bounded queries: line loop performs zero per-line currency metadata queries
-        $this->assertCount(count($currencyQueries1), $currencyQueries100, 'Currency metadata queries must not amplify with line count.');
-        $this->assertLessThanOrEqual(5, count($currencyQueries100), 'Currency queries must remain bounded to operation boundary.');
+        // Currency metadata query count is identical between 1 line and 100 lines
+        $count1 = count($currencyQueries1);
+        $count100 = count($currencyQueries100);
+        $totalQueries1 = count($queries1);
+        $totalQueries100 = count($queries100);
+        $this->assertCount($count1, $currencyQueries100, 'Currency metadata queries must not amplify with line count.');
+        $this->assertLessThanOrEqual(5, $count100, 'Currency queries must remain bounded to operation boundary.');
+        // Verify bounded numbers are strictly non-zero and identical
+        $this->assertSame($count1, $count100);
+        $this->assertGreaterThan(0, $count1);
     }
 
     public function test_currency_enablement_changes_between_requests_not_cached_past_authority_check(): void
@@ -1081,21 +1092,273 @@ final class CurrencyMinorUnitQualificationTest extends TestCase
         CompanyCurrency::updateOrInsert(['company_id' => $this->company->id, 'currency_code' => 'KWD'], ['enabled' => true, 'is_base' => false, 'display_order' => 11]);
 
         $resolver = app(CurrencyMinorUnitsResolver::class);
-        $resolver->flush();
 
-        // In active session, resolution succeeds
+        // In active session, resolution succeeds and warms cache
         $this->assertSame(3, $resolver->resolveForCompany($this->company, 'KWD'));
 
         // Admin disables KWD in DB
         CompanyCurrency::where('company_id', $this->company->id)->where('currency_code', 'KWD')->update(['enabled' => false]);
 
-        // Between requests / retries, flush() is called
-        $resolver->flush();
-
-        // Authority check must immediately reflect DB state, not stale cache
+        // Fresh authority write check must immediately reflect DB state WITHOUT requiring caller flush()
         $this->expectException(InvalidArgumentException::class);
         $this->expectExceptionMessage('Currency [KWD] is not enabled for company');
-        $resolver->resolveForCompany($this->company, 'KWD');
+        $resolver->resolveFreshForCompany($this->company, 'KWD');
+    }
+
+    public function test_warmed_resolver_cache_does_not_permit_post_after_master_currency_deactivated(): void
+    {
+        Currency::updateOrInsert(['code' => 'KWD'], ['name' => 'Kuwaiti Dinar', 'symbol' => 'KD', 'minor_units' => 3, 'active' => true]);
+        CompanyCurrency::updateOrInsert(['company_id' => $this->company->id, 'currency_code' => 'KWD'], ['enabled' => true, 'is_base' => false, 'display_order' => 11]);
+
+        $draft = app(CreateSalesInvoiceDraftAction::class)->execute($this->company, $this->owner, [
+            'customer_id' => $this->customer->id,
+            'currency_code' => 'KWD',
+            'exchange_rate' => '12.0',
+            'issue_date' => '2026-10-25',
+            'lines' => [
+                [
+                    'item_description' => 'KWD Draft Line',
+                    'quantity' => '1',
+                    'unit_price' => '25.000',
+                ],
+            ],
+        ]);
+
+        // 1. Warm resolver cache for KWD
+        $this->assertSame(3, $this->resolver->resolveForCompany($this->company, 'KWD'));
+
+        // 2. Deactivate master currency in DB (NO manual flush())
+        Currency::where('code', 'KWD')->update(['active' => false]);
+
+        // 3. Post invoice must reject stale warm cache and fail
+        try {
+            app(PostSalesInvoiceAction::class)->execute($draft, $this->owner);
+            $this->fail('Expected InvalidArgumentException when posting draft with deactivated master currency.');
+        } catch (InvalidArgumentException $e) {
+            $this->assertStringContainsString('Currency [KWD] is inactive.', $e->getMessage());
+        }
+
+        // 4. Assert atomic rollback: draft remains unposted, no stock movement, no journal entries
+        $refreshedDraft = SalesInvoice::findOrFail($draft->id);
+        $this->assertTrue($refreshedDraft->isDraft());
+        $this->assertNull($refreshedDraft->posting_batch_id);
+        $this->assertSame(0, StockMovement::where('company_id', $this->company->id)->count());
+        $this->assertSame(0, PostingBatch::where('company_id', $this->company->id)->count());
+    }
+
+    public function test_warmed_resolver_cache_does_not_permit_post_after_company_currency_disabled(): void
+    {
+        Currency::updateOrInsert(['code' => 'KWD'], ['name' => 'Kuwaiti Dinar', 'symbol' => 'KD', 'minor_units' => 3, 'active' => true]);
+        CompanyCurrency::updateOrInsert(['company_id' => $this->company->id, 'currency_code' => 'KWD'], ['enabled' => true, 'is_base' => false, 'display_order' => 11]);
+
+        $draft = app(CreateSalesInvoiceDraftAction::class)->execute($this->company, $this->owner, [
+            'customer_id' => $this->customer->id,
+            'currency_code' => 'KWD',
+            'exchange_rate' => '12.0',
+            'issue_date' => '2026-10-25',
+            'lines' => [
+                [
+                    'item_description' => 'KWD Draft Line',
+                    'quantity' => '1',
+                    'unit_price' => '30.000',
+                ],
+            ],
+        ]);
+
+        // 1. Warm resolver cache
+        $this->assertSame(3, $this->resolver->resolveForCompany($this->company, 'KWD'));
+
+        // 2. Disable company currency in DB (NO manual flush())
+        CompanyCurrency::where('company_id', $this->company->id)->where('currency_code', 'KWD')->update(['enabled' => false]);
+
+        // 3. Post invoice must reject stale warm cache and fail
+        try {
+            app(PostSalesInvoiceAction::class)->execute($draft, $this->owner);
+            $this->fail('Expected InvalidArgumentException when posting draft with disabled company currency.');
+        } catch (InvalidArgumentException $e) {
+            $this->assertStringContainsString('Currency [KWD] is not enabled for company', $e->getMessage());
+        }
+
+        // 4. Assert atomic rollback
+        $refreshedDraft = SalesInvoice::findOrFail($draft->id);
+        $this->assertTrue($refreshedDraft->isDraft());
+        $this->assertNull($refreshedDraft->posting_batch_id);
+        $this->assertSame(0, StockMovement::where('company_id', $this->company->id)->count());
+        $this->assertSame(0, PostingBatch::where('company_id', $this->company->id)->count());
+    }
+
+    public function test_warmed_resolver_uses_fresh_precision_after_database_mutation_without_manual_flush(): void
+    {
+        Currency::updateOrInsert(['code' => 'KWD'], ['name' => 'Kuwaiti Dinar', 'symbol' => 'KD', 'minor_units' => 3, 'active' => true]);
+        CompanyCurrency::updateOrInsert(['company_id' => $this->company->id, 'currency_code' => 'KWD'], ['enabled' => true, 'is_base' => false, 'display_order' => 11]);
+
+        // Warm resolver with scale 3
+        $this->assertSame(3, $this->resolver->resolveForCompany($this->company, 'KWD'));
+
+        // Create draft invoice with 3 decimal precision
+        $draft = app(CreateSalesInvoiceDraftAction::class)->execute($this->company, $this->owner, [
+            'customer_id' => $this->customer->id,
+            'currency_code' => 'KWD',
+            'exchange_rate' => '12.0',
+            'issue_date' => '2026-10-25',
+            'lines' => [
+                [
+                    'item_description' => 'Precision Test Line',
+                    'quantity' => '1',
+                    'unit_price' => '45.125',
+                ],
+            ],
+        ]);
+
+        // Mutate DB minor_units to 2 (without calling flush())
+        Currency::where('code', 'KWD')->update(['minor_units' => 2]);
+
+        // Post action performs fresh write resolution; the draft line now violates 2-decimal scale
+        try {
+            app(PostSalesInvoiceAction::class)->execute($draft, $this->owner);
+            $this->fail('Expected failure when draft amounts conflict with freshly locked precision.');
+        } catch (InvalidArgumentException $e) {
+            $this->assertTrue(
+                str_contains($e->getMessage(), 'Draft') || str_contains($e->getMessage(), 'decimals') || str_contains($e->getMessage(), 'precision'),
+                'Exception did not indicate precision/integrity failure: '.$e->getMessage()
+            );
+        }
+
+        // Draft was not posted
+        $this->assertTrue(SalesInvoice::findOrFail($draft->id)->isDraft());
+        $this->assertSame(0, PostingBatch::where('company_id', $this->company->id)->count());
+    }
+
+    public function test_warmed_resolver_rejects_customer_payment_after_master_deactivation_or_disablement(): void
+    {
+        Currency::updateOrInsert(['code' => 'KWD'], ['name' => 'Kuwaiti Dinar', 'symbol' => 'KD', 'minor_units' => 3, 'active' => true]);
+        CompanyCurrency::updateOrInsert(['company_id' => $this->company->id, 'currency_code' => 'KWD'], ['enabled' => true, 'is_base' => false, 'display_order' => 11]);
+
+        $cash = app(CreateMoneyAccountAction::class)->execute($this->company, $this->owner, [
+            'account_type' => 'cash',
+            'name_ar' => 'صندوق دينار اختباري',
+            'name_en' => 'Test KWD Cash',
+            'currency_code' => 'KWD',
+        ]);
+
+        // Warm resolver
+        $this->assertSame(3, $this->resolver->resolveForCompany($this->company, 'KWD'));
+
+        // Deactivate master KWD in DB (NO manual flush())
+        Currency::where('code', 'KWD')->update(['active' => false]);
+
+        try {
+            app(PostCustomerPaymentAction::class)->execute($this->company, $this->owner, [
+                'customer_id' => $this->customer->id,
+                'money_account_id' => $cash->id,
+                'payment_date' => '2026-10-25',
+                'payment_method' => 'cash',
+                'amount' => '50.000',
+                'exchange_rate' => '12.0000000000',
+                'idempotency_key' => 'rcpt-kwd-warm-reject',
+                'allocations' => [],
+            ]);
+            $this->fail('Expected InvalidArgumentException for deactivated currency in customer payment.');
+        } catch (InvalidArgumentException $e) {
+            $this->assertStringContainsString('Currency [KWD] is inactive.', $e->getMessage());
+        }
+
+        $this->assertSame(0, CustomerPayment::where('company_id', $this->company->id)->count());
+        $this->assertSame(0, PostingBatch::where('company_id', $this->company->id)->count());
+    }
+
+    public function test_warmed_resolver_rejects_immediate_sale_execute_after_currency_deactivation(): void
+    {
+        Currency::updateOrInsert(['code' => 'KWD'], ['name' => 'Kuwaiti Dinar', 'symbol' => 'KD', 'minor_units' => 3, 'active' => true]);
+        CompanyCurrency::updateOrInsert(['company_id' => $this->company->id, 'currency_code' => 'KWD'], ['enabled' => true, 'is_base' => false, 'display_order' => 11]);
+
+        $cash = app(CreateMoneyAccountAction::class)->execute($this->company, $this->owner, [
+            'account_type' => 'cash',
+            'name_ar' => 'صندوق دينار فوري',
+            'name_en' => 'Immediate KWD Cash',
+            'currency_code' => 'KWD',
+        ]);
+
+        $draft = app(CreateSalesInvoiceDraftAction::class)->execute($this->company, $this->owner, [
+            'customer_id' => $this->customer->id,
+            'currency_code' => 'KWD',
+            'exchange_rate' => '12.0',
+            'issue_date' => '2026-10-25',
+            'lines' => [
+                ['item_description' => 'Immediate Line', 'quantity' => '1', 'unit_price' => '20.000'],
+            ],
+        ]);
+
+        Permission::findOrCreate('money.receipt.create');
+        Permission::findOrCreate('money.receipt.allocate');
+        Permission::findOrCreate('sales.invoice.post');
+        Permission::findOrCreate('sales.invoice.view');
+        $this->owner->givePermissionTo(['money.receipt.create', 'money.receipt.allocate', 'sales.invoice.post', 'sales.invoice.view']);
+
+        $service = app(ImmediateSaleCommands::class);
+        $preview = $service->preview($draft, $this->owner, [
+            'mode' => 'full',
+            'payment_method' => 'cash',
+            'money_account_id' => $cash->id,
+            'payment_date' => '2026-10-25',
+            'amount' => '20.000',
+            'exchange_rate' => '12.0',
+            'invoice_amount' => '20.000',
+            'payment_currency_amount' => '20.000',
+        ]);
+
+        // Resolver is warm
+        $this->assertSame(3, $this->resolver->resolveForCompany($this->company, 'KWD'));
+
+        // Deactivate KWD master in DB (NO manual flush())
+        Currency::where('code', 'KWD')->update(['active' => false]);
+
+        try {
+            $service->execute($draft, $this->owner, (string) $preview['confirmation_token'], 'imm-kwd-token-1');
+            $this->fail('Expected HttpException 409 when currency becomes inactive after preview.');
+        } catch (HttpException $e) {
+            $this->assertSame(409, $e->getStatusCode());
+            $this->assertStringContainsString('Payment context changed; review the sale again.', $e->getMessage());
+        }
+
+        // Assert atomic rollback: invoice is still draft, no payment, no batch
+        $this->assertTrue(SalesInvoice::findOrFail($draft->id)->isDraft());
+        $this->assertSame(0, CustomerPayment::where('company_id', $this->company->id)->count());
+        $this->assertSame(0, PostingBatch::where('company_id', $this->company->id)->count());
+    }
+
+    public function test_documented_hold_historical_reads_source_current_master_scale_without_snapshot(): void
+    {
+        Currency::updateOrInsert(['code' => 'KWD'], ['name' => 'Kuwaiti Dinar', 'symbol' => 'KD', 'minor_units' => 3, 'active' => true]);
+        CompanyCurrency::updateOrInsert(['company_id' => $this->company->id, 'currency_code' => 'KWD'], ['enabled' => true, 'is_base' => false, 'display_order' => 11]);
+
+        $draft = app(CreateSalesInvoiceDraftAction::class)->execute($this->company, $this->owner, [
+            'customer_id' => $this->customer->id,
+            'currency_code' => 'KWD',
+            'exchange_rate' => '12.0',
+            'issue_date' => '2026-10-25',
+            'lines' => [
+                ['item_description' => 'Documented Hold Line', 'quantity' => '1', 'unit_price' => '10.500'],
+            ],
+        ]);
+        $posted = app(PostSalesInvoiceAction::class)->execute($draft, $this->owner);
+
+        // Historical resolution with original master scale (3)
+        $this->assertSame(3, $this->resolver->resolveHistorical('KWD'));
+        $this->assertSame('10.500000', (string) MoneyValues::amount((string) $posted->grand_total_currency, 'KWD'));
+
+        // Documented Hold Demonstration:
+        // If master Currency.minor_units is directly mutated out-of-band (raw SQL/admin update),
+        // historical reads source the current master scale because sales invoices do not snapshot minor_units.
+        Currency::where('code', 'KWD')->update(['minor_units' => 2]);
+        $this->resolver->flush();
+
+        // The historical resolver reflects the new master scale (2), demonstrating that out-of-band scale mutation
+        // alters historical scale interpretation in the absence of a document-level scale snapshot schema.
+        $this->assertSame(2, $this->resolver->resolveHistorical('KWD'));
+
+        // This test serves as executable source evidence that master precision mutation is NOT supported,
+        // and PR #93 provides retirement compatibility rather than claiming false historical precision preservation.
     }
 
     public function test_all_six_canonical_reconciliations_pass_after_representative_transactions_and_returns(): void

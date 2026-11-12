@@ -2,7 +2,9 @@
 
 ## 1. Overview & Baseline SHA
 - **Baseline SHA**: `f8a0cf7012c4875bec7320d42e0f8dde58593b52` (clean git checkout from `origin/main`)
+- **Previous Head**: `f52a501af0c6ed2f6c57395ba8f2fa1838b2dd1a`
 - **Branch**: `t3/currency-minor-unit-qualification`
+- **PR**: https://github.com/Bassamalsaqqa/account/pull/93
 - **Goal**: Independent canonical currency minor-unit qualification fix before mobile financial implementation. Bounded to online sale price, draft integrity, preview, posting, returns, and customer payment paths needed for first release.
 - **Out of Scope**: Mobile posting routes, offline sync policy, receipt store implementation, purchasing domain writers, GL core base currency policies (`CreateCompanyAction` base currency restrictions).
 
@@ -40,17 +42,28 @@
 
 ### 3.2 Canonical Resolution Implemented
 - **`App\Services\Money\CurrencyMinorUnitsResolver`**:
-  - Registered as `scoped` in `AppServiceProvider` (request-scoped singleton with flushable in-memory caches).
-  - Queries master `currencies` table and validates currency existence, `active` status, and ensures minor units fall within `0..6`.
-  - **Separation of Concerns**:
-    - `resolveForCompany(Company $company, string $currencyCode)`: Required for NEW transactions (drafts, quotations, pricing, payment posting). Enforces master `active == true` and company enablement `company_currencies.enabled == true`.
-    - `resolve(string $currencyCode)` / `resolveHistorical(string $currencyCode)`: Used for historical transaction inspection, audit (`SalesCorrectionAudit`), reversals, and returns (`CreateSalesReturnDraftAction`, `SalesReturnAmounts`). Does not require master currency to be active or company enabled, ensuring retired/disabled currencies do not corrupt historical reads.
-  - Raw original minor units validation ensures non-integer inputs (e.g. `2.5`) are rejected strictly.
-- **Query Amplification Elimination**:
-  - Pre-resolves minor units once per canonical document operation (`CreateSalesInvoiceDraftAction`, `UpdateSalesInvoiceDraftAction`, `PostSalesInvoiceAction`) and passes `$minorUnits` directly into `SalesDocumentRules::price(...)`.
-  - Query counts tested and verified to remain bounded between 1 and 100 invoice lines when users lack `sales.invoice.change_price` permission (<= 5 queries total).
+   - Registered as `scoped` in `AppServiceProvider` (request-scoped singleton with flushable in-memory caches).
+   - Queries master `currencies` table and validates currency existence, `active` status, and ensures minor units fall within `0..6`.
+   - **Separation of Concerns**:
+     - `resolveForCompany(Company $company, string $currencyCode)`: In-memory cached lookup for fast reads, draft calculation, and interactive price rule validation.
+     - `resolveCurrenciesForCompanyWrite(Company $company, array $currencyCodes)`: **Authoritative transactional write validation**. Directly executed inside transaction boundaries before any business checks or state mutations. Acquires deterministic row-level locks on `Currency` (master) and `CompanyCurrency` (tenant) in alphabetical currency code order to prevent deadlocks. Revalidates master active status and company enablement from fresh database state, and refreshes the scoped resolver cache. No caller `flush()` is required.
+     - `resolve(string $currencyCode)` / `resolveHistorical(string $currencyCode)`: Used for historical transaction inspection, audit (`SalesCorrectionAudit`), reversals, and returns (`CreateSalesReturnDraftAction`, `SalesReturnAmounts`). Does not require master currency to be active or company enabled, ensuring retired/disabled currencies do not corrupt historical reads.
+   - Raw original minor units validation ensures non-integer inputs (e.g. `2.5`) are rejected strictly.
+- **Write Authority Protection Across Action Callsites**:
+  - `CreateSalesInvoiceDraftAction`: Resolves and locks document + base currency using `resolveCurrenciesForCompanyWrite` before number generation and line processing.
+  - `UpdateSalesInvoiceDraftAction`: Resolves and locks document + base currency using `resolveCurrenciesForCompanyWrite`.
+  - `PostSalesInvoiceAction`: Resolves and locks document + base currency deterministically before customer/company snapshots, FEFO allocation, and posting.
+  - `PostCustomerPaymentAction`: Resolves and locks receipt, invoice, and base currencies deterministically, verifying enablement and fresh scales.
+  - `ImmediateSaleCommands`: Resolves and locks payment, invoice, and base currencies deterministically before execution.
+  - `CreateQuotationAction` & `UpdateQuotationAction`: Pre-resolve and lock currencies before sequence generation and line processing.
+- **Query Amplification Elimination (N+1)**:
+  - Pre-resolves minor units once per canonical document operation and refreshes cache.
+  - Line validation loops in `SalesDocumentRules::price(...)` perform 0 additional currency queries.
+  - Benchmark confirmed: 1 line draft creation executes **3 currency metadata queries**; 100 lines draft creation executes **3 currency metadata queries** (delta = 0).
 - **Historical Scale Preservation vs Master Mutation**:
-  - Master currency scale is immutable in domain practice; master `minor_units` mutation would alter interpretation of unpersisted scale. Historical resolver uses current authoritative scale without inventing fake migrations or guessing historical timestamps. Existing domain posting controls in `AccountingPostingService` remain intact.
+  - Schema stores currency amounts as `decimal(20, 6)` across all document and ledger lines, but does NOT store an independent snapshot column for `minor_units`.
+  - Auditing of the codebase confirmed there are **no runtime editors or actions** permitting master currency `minor_units` modification.
+  - Master currency scale mutation at runtime is **unsupported** and unbackfilled. The PR boundary provides **retirement compatibility** (deactivated master currencies or disabled company currencies remain readable and auditable for historical transactions and returns). It does NOT protect against out-of-band raw SQL updates to master scale. A documented hold test (`test_documented_hold_historical_reads_source_current_master_scale_without_snapshot`) explicitly documents this architecture boundary.
 
 ---
 
@@ -66,30 +79,47 @@
 ## 5. Verification & Test Evidence
 
 ### 5.1 Dedicated Qualification Suite
-- **Test File**: `tests/Feature/Money/CurrencyMinorUnitQualificationTest.php`
+- **Test File**: `tests/Feature/Money/CurrencyMinorUnitQualificationTest.php` (25 tests, 169 assertions)
 - **Execution Command**:
   ```bash
   APP_KEY=base64:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA= APP_ENV=testing PHASE8_ALLOW_DISPOSABLE_DB=1 PHASE8_TEST_DB_HOST=127.0.0.1 PHASE8_TEST_DB_PORT=3342 PHASE8_TEST_DB_USERNAME=test_runner PHASE8_TEST_DB_EMPTY_PASSWORD=1 php tests/Support/run-phase8-disposable.php -- tests/Feature/Money/CurrencyMinorUnitQualificationTest.php
   ```
 - **Results**:
   ```
-  OK (19 tests, 127 assertions)
+  OK (25 tests, 169 assertions)
   Owned primary schema cleaned.
   ```
 
 ### 5.2 Full Sales Regression Suite
+- **Test Files**:
+  - `tests/Unit/Phase4/SalesCalculatorsTest.php`
+  - `tests/Feature/Phase4/CustomerPaymentAndFxTest.php`
+  - `tests/Feature/Phase4/SalesInvoicePostingAndFefoTest.php`
+  - `tests/Feature/Fin1/ImmediateSaleCommandsTest.php`
+  - `tests/Feature/Phase6/CrossCurrencyCustomerPaymentsTest.php`
+  - `tests/Feature/Money/CurrencyMinorUnitQualificationTest.php`
 - **Execution Command**:
   ```bash
   APP_KEY=base64:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA= APP_ENV=testing PHASE8_ALLOW_DISPOSABLE_DB=1 PHASE8_TEST_DB_HOST=127.0.0.1 PHASE8_TEST_DB_PORT=3342 PHASE8_TEST_DB_USERNAME=test_runner PHASE8_TEST_DB_EMPTY_PASSWORD=1 php tests/Support/run-phase8-disposable.php -- tests/Unit/Phase4/SalesCalculatorsTest.php tests/Feature/Phase4/CustomerPaymentAndFxTest.php tests/Feature/Phase4/SalesInvoicePostingAndFefoTest.php tests/Feature/Fin1/ImmediateSaleCommandsTest.php tests/Feature/Phase6/CrossCurrencyCustomerPaymentsTest.php tests/Feature/Money/CurrencyMinorUnitQualificationTest.php
   ```
 - **Results**:
   ```
-  OK (50 tests, 318 assertions)
+  OK (56 tests, 349 assertions)
   Owned primary schema cleaned.
   ```
 
-### 5.3 All 6 Canonical Reconciliations Verified
-The following reconciliation services were executed against end-to-end representative multi-currency transactions and returns, confirming zero discrepancies and zero violations:
+### 5.3 History Reconciliation Suite (All 6 Canonical Reconciliations Verified)
+- **Test File**: `tests/Feature/Phase8/ReconciliationSuiteTest.php` (44 tests, 219 assertions)
+- **Execution Command**:
+  ```bash
+  APP_KEY=base64:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA= APP_ENV=testing PHASE8_ALLOW_DISPOSABLE_DB=1 PHASE8_TEST_DB_HOST=127.0.0.1 PHASE8_TEST_DB_PORT=3342 PHASE8_TEST_DB_USERNAME=test_runner PHASE8_TEST_DB_EMPTY_PASSWORD=1 php tests/Support/run-phase8-disposable.php -- tests/Feature/Phase8/ReconciliationSuiteTest.php
+  ```
+- **Results**:
+  ```
+  OK (44 tests, 219 assertions)
+  Owned primary schema cleaned.
+  ```
+All six reconciliation services were executed against end-to-end representative multi-currency transactions and returns, confirming zero discrepancies and zero violations:
 1. `AccountingReconciliationService::reconcile($company)` -> `isHealthy === true`, `violations === []`
 2. `InventoryReconciliationService::auditCompany($company)` -> `isHealthy === true`, `discrepancies === []`
 3. `SalesReconciliationService::reconcile($company)` -> `isHealthy === true`, `violations === []`

@@ -94,6 +94,127 @@ final class CurrencyMinorUnitsResolver
     }
 
     /**
+     * Authoritative fresh resolution and row-level locking for company write operations.
+     *
+     * Locks records in deterministic order:
+     * 1. Global Currency record FOR UPDATE
+     * 2. Tenant CompanyCurrency record FOR UPDATE
+     *
+     * Validates master active status, company enablement, and minor units (0..6).
+     * Refreshes the in-memory resolver cache so subsequent reads within the same request/transaction
+     * reuse the locked authoritative metadata without re-querying, and returns the authoritative scale.
+     *
+     * @param  Company|int  $company  Company model or ID
+     * @param  string  $currencyCode  ISO 4217 currency code
+     * @param  bool  $lockForUpdate  Whether to acquire row locks (default true for write transactions)
+     * @return int Supported minor units (0..6)
+     *
+     * @throws InvalidArgumentException
+     */
+    public function resolveFreshForCompany(Company|int $company, string $currencyCode, bool $lockForUpdate = true): int
+    {
+        $code = strtoupper(trim($currencyCode));
+        $map = $this->resolveCurrenciesForCompanyWrite($company, [$code], $lockForUpdate);
+
+        return $map[$code];
+    }
+
+    /**
+     * Authoritative fresh multi-currency resolution and row-level locking in deterministic alphabetical order.
+     *
+     * For each currency in alphabetical order:
+     * 1. Currency (global record) lockForUpdate
+     * 2. CompanyCurrency (company record) lockForUpdate
+     *
+     * @param  Company|int  $company  Company model or ID
+     * @param  list<string>  $currencyCodes  List of currency codes
+     * @param  bool  $lockForUpdate  Whether to acquire row locks (default true for write transactions)
+     * @return array<string, int> Map of currency code => minor units
+     *
+     * @throws InvalidArgumentException
+     */
+    public function resolveCurrenciesForCompanyWrite(Company|int $company, array $currencyCodes, bool $lockForUpdate = true): array
+    {
+        $companyId = $company instanceof Company ? (int) $company->id : (int) $company;
+        if ($companyId <= 0) {
+            throw new InvalidArgumentException("Invalid company ID [{$companyId}].");
+        }
+
+        $codes = [];
+        foreach ($currencyCodes as $rawCode) {
+            $code = strtoupper(trim((string) $rawCode));
+            if ($code === '') {
+                throw new InvalidArgumentException('Currency code is required.');
+            }
+            $codes[$code] = $code;
+        }
+
+        if (empty($codes)) {
+            return [];
+        }
+
+        // Deterministic lock order: alphabetical by currency code to avoid cross-tenant/cross-currency deadlocks
+        $sortedCodes = array_values($codes);
+        sort($sortedCodes, SORT_STRING);
+
+        $result = [];
+        foreach ($sortedCodes as $code) {
+            // 1. Lock global Currency record
+            $currencyQuery = Currency::where('code', $code);
+            if ($lockForUpdate) {
+                $currencyQuery = $currencyQuery->lockForUpdate();
+            }
+            /** @var Currency|null $currency */
+            $currency = $currencyQuery->first();
+            if ($currency === null) {
+                throw new InvalidArgumentException("Unknown currency [{$code}].");
+            }
+
+            if (! (bool) $currency->active) {
+                $this->currencyCache[$code] = [
+                    'minor_units' => (int) $currency->minor_units,
+                    'active' => false,
+                ];
+                throw new InvalidArgumentException("Currency [{$code}] is inactive.");
+            }
+
+            $rawOriginal = $currency->getRawOriginal('minor_units');
+            $rawUnits = $rawOriginal ?? $currency->getAttribute('minor_units');
+            if (! is_int($rawUnits) && (! is_string($rawUnits) || ! ctype_digit($rawUnits))) {
+                throw new InvalidArgumentException("Currency [{$code}] has invalid minor units.");
+            }
+
+            $minorUnits = (int) $rawUnits;
+            if ($minorUnits < self::MIN_SUPPORTED_MINOR_UNITS || $minorUnits > self::MAX_SUPPORTED_MINOR_UNITS) {
+                throw new InvalidArgumentException("Currency [{$code}] minor units [{$minorUnits}] is invalid. Supported range is 0 to 6.");
+            }
+
+            // 2. Lock tenant CompanyCurrency record
+            $ccQuery = CompanyCurrency::where('company_id', $companyId)->where('currency_code', $code);
+            if ($lockForUpdate) {
+                $ccQuery = $ccQuery->lockForUpdate();
+            }
+            /** @var CompanyCurrency|null $companyCurrency */
+            $companyCurrency = $ccQuery->first();
+            if ($companyCurrency === null || ! (bool) $companyCurrency->enabled) {
+                $this->companyEnabledCache["{$companyId}:{$code}"] = false;
+                throw new InvalidArgumentException("Currency [{$code}] is not enabled for company [{$companyId}].");
+            }
+
+            // Refresh in-memory resolver caches with fresh locked authoritative state
+            $this->currencyCache[$code] = [
+                'minor_units' => $minorUnits,
+                'active' => true,
+            ];
+            $this->companyEnabledCache["{$companyId}:{$code}"] = true;
+
+            $result[$code] = $minorUnits;
+        }
+
+        return $result;
+    }
+
+    /**
      * Resolve authoritative minor units for historical transaction inspection, reversal, or return.
      * Does not require master currency to be active or company enabled.
      *
