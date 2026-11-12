@@ -31,6 +31,7 @@ use App\Models\ProductUnit;
 use App\Models\SalesInvoice;
 use App\Models\TaxRate;
 use App\Models\Warehouse;
+use App\Services\Money\CurrencyMinorUnitsResolver;
 use App\Services\Money\EligibleMoneyAccounts;
 use App\Services\Sales\SalesActorGuard;
 use App\Services\Sales\SalesProductSelection;
@@ -604,8 +605,8 @@ class InvoiceForm extends Component
         $lineCalculator = app(SalesLineCalculator::class);
         $totalsCalculator = app(SalesDocumentTotalsCalculator::class);
 
-        $minorUnits = in_array($this->currency_code, ['JOD', 'KWD', 'BHD', 'OMR'], true) ? 3 : 2;
-        $baseMinorUnits = in_array($company->base_currency_code, ['JOD', 'KWD', 'BHD', 'OMR'], true) ? 3 : 2;
+        $minorUnits = app(CurrencyMinorUnitsResolver::class)->resolveForCompany((int) $company->id, (string) $this->currency_code);
+        $baseMinorUnits = app(CurrencyMinorUnitsResolver::class)->resolveForCompany((int) $company->id, (string) $company->base_currency_code);
         $fx = BigDecimal::of($this->exchange_rate ?: '1.0');
 
         $calcResults = [];
