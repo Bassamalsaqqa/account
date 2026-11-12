@@ -16,6 +16,18 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Mobile V2 API Master Activation (Draft Boundary Qualification)
+    |--------------------------------------------------------------------------
+    |
+    | Gate mobile V2 API endpoints. Defaults to false.
+    | When disabled, all /api/mobile/v2/* routes return 404 with standard sanitized JSON error.
+    | Both mobile.enabled AND mobile.v2_enabled must be true to open the boundary.
+    |
+    */
+    'v2_enabled' => (bool) env('MOBILE_V2_API_ENABLED', false),
+
+    /*
+    |--------------------------------------------------------------------------
     | Challenge and Token Lifetimes
     |--------------------------------------------------------------------------
     |
