@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.smalltrader.app/mobile/v1/offline-sale-intake-response.json",
+  "title": "OfflineSaleIntakeResponse",
+  "type": "object",
+  "required": [
+    "client_event_id",
+    "status",
+    "payload_digest",
+    "outcome",
+    "processed_at"
+  ],
+  "properties": {
+    "client_event_id": {
+      "type": "string",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+    },
+    "status": {
+      "type": "string",
+      "enum": ["posted"]
+    },
+    "payload_digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "outcome": {
+      "type": "object",
+      "required": [
+        "action",
+        "invoice_id",
+        "invoice_number",
+        "payment_id",
+        "grand_total"
+      ],
+      "properties": {
+        "action": {
+          "type": "string",
+          "enum": ["posted_canonically"]
+        },
+        "invoice_id": {
+          "type": "string",
+          "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$"
+        },
+        "invoice_number": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "payment_id": {
+          "type": "string",
+          "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$"
+        },
+        "grand_total": {
+          "type": "string",
+          "pattern": "^(?:0\\.(?=[0-9]{1,6}$)[0-9]*[1-9][0-9]*|[1-9][0-9]{0,13}(?:\\.[0-9]{1,6})?)$"
+        },
+        "conflict_code": {
+          "type": ["string", "null"]
+        },
+        "conflict_reason": {
+          "type": ["string", "null"]
+        },
+        "resolution_instructions": {
+          "type": ["string", "null"]
+        }
+      },
+      "additionalProperties": false
+    },
+    "processed_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.smalltrader.app/mobile/v1/sale-commit-request.json",
+  "title": "SaleCommitRequest",
+  "type": "object",
+  "required": ["client_event_id", "preview_token", "payload_digest", "idempotency_key"],
+  "properties": {
+    "client_event_id": {
+      "type": "string",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+    },
+    "preview_token": {
+      "type": "string",
+      "minLength": 32
+    },
+    "payload_digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "idempotency_key": {
+      "type": "string",
+      "pattern": "^[a-zA-Z0-9_\\-\\.:]{8,128}$"
+    }
+  },
+  "additionalProperties": false
+}

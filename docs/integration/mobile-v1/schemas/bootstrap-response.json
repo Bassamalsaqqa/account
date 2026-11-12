@@ -1,0 +1,332 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.smalltrader.app/mobile/v1/bootstrap-response.json",
+  "title": "BootstrapResponse",
+  "type": "object",
+  "required": [
+    "company_id",
+    "company_name",
+    "base_currency",
+    "walk_in_customer_id",
+    "staff",
+    "device_lease",
+    "default_warehouse",
+    "approved_cash_account",
+    "units",
+    "taxes",
+    "offline_policy",
+    "catalog_snapshot_version"
+  ],
+  "properties": {
+    "company_id": {
+      "type": "string",
+      "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$"
+    },
+    "company_name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 255
+    },
+    "base_currency": {
+      "type": "string",
+      "pattern": "^[A-Z]{3}$"
+    },
+    "walk_in_customer_id": {
+      "type": "string",
+      "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$"
+    },
+    "staff": {
+      "type": "object",
+      "required": [
+        "id",
+        "name",
+        "role",
+        "permissions"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255
+        },
+        "role": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255,
+          "description": "Presentation label only; never an authorization grant."
+        },
+        "permissions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "device_lease": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "required": [
+        "lease_id",
+        "device_id",
+        "actor_id",
+        "expires_at"
+      ],
+      "properties": {
+        "lease_id": {
+          "type": "string",
+          "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+        },
+        "device_id": {
+          "type": "string",
+          "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+        },
+        "actor_id": {
+          "type": "string",
+          "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$"
+        },
+        "expires_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "additionalProperties": false
+    },
+    "default_warehouse": {
+      "type": "object",
+      "required": [
+        "id",
+        "code",
+        "name"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$"
+        },
+        "code": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255
+        }
+      },
+      "additionalProperties": false
+    },
+    "approved_cash_account": {
+      "type": "object",
+      "required": [
+        "id",
+        "code",
+        "name",
+        "currency"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$"
+        },
+        "code": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255
+        },
+        "currency": {
+          "type": "string",
+          "pattern": "^[A-Z]{3}$"
+        }
+      },
+      "additionalProperties": false
+    },
+    "units": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "code",
+          "name",
+          "allows_fraction",
+          "decimal_places"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$"
+          },
+          "code": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 32
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "symbol": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 32
+          },
+          "allows_fraction": {
+            "type": "boolean"
+          },
+          "decimal_places": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 6
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "taxes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "code",
+          "name",
+          "rate",
+          "calculation",
+          "is_default"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$"
+          },
+          "code": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 32
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "rate": {
+            "type": "string",
+            "pattern": "^(?:100(?:\\.0{1,6})?|(?:0|[1-9][0-9]?)(?:\\.[0-9]{1,6})?)$"
+          },
+          "calculation": {
+            "type": "string",
+            "enum": [
+              "exclusive",
+              "inclusive"
+            ]
+          },
+          "is_default": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "offline_policy": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "enabled",
+            "availability"
+          ],
+          "properties": {
+            "enabled": {
+              "const": false
+            },
+            "availability": {
+              "const": "unavailable"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "enabled",
+            "cash_only",
+            "max_offline_hours",
+            "max_offline_sales_count",
+            "max_offline_total_amount",
+            "availability"
+          ],
+          "properties": {
+            "enabled": {
+              "const": true
+            },
+            "cash_only": {
+              "type": "boolean"
+            },
+            "max_offline_hours": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "max_offline_sales_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "max_offline_total_amount": {
+              "type": "string",
+              "pattern": "^(?:0|[1-9][0-9]{0,13})(?:\\.[0-9]{1,6})?$"
+            },
+            "availability": {
+              "const": "available"
+            }
+          },
+          "additionalProperties": false,
+          "description": "Enabled only with explicitly reviewed, fully supplied limits; schema validity alone is not policy approval."
+        }
+      ]
+    },
+    "catalog_snapshot_version": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    }
+  },
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "offline_policy": {
+            "properties": {
+              "enabled": {
+                "const": false
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "device_lease": {
+            "type": "null"
+          }
+        }
+      }
+    }
+  ]
+}
