@@ -34,6 +34,7 @@ use App\Models\Warehouse;
 use App\Services\Money\EligibleMoneyAccounts;
 use App\Services\Sales\SalesActorGuard;
 use App\Services\Sales\SalesProductSelection;
+use App\Services\Search\BoundedProductSearchService;
 use App\Support\InvoiceConfirmation;
 use App\Support\Tenancy\CompanyContext;
 use Brick\Math\BigDecimal;
@@ -122,11 +123,21 @@ class InvoiceForm extends Component
 
     public string $productSearch = '';
 
+    /** @var list<array<string, mixed>> */
+    #[Locked]
+    public array $searchResults = [];
+
+    #[Locked]
+    public string $searchResultsQuery = '';
+
+    public int $searchSelectedIndex = 0;
+
     #[Locked]
     public int $pageCompanyId;
 
     /**
      * @var list<array{
+     *     row_key?: string,
      *     id?: ?int,
      *     product_id?: ?int,
      *     product_unit_id?: ?int,
@@ -267,6 +278,7 @@ class InvoiceForm extends Component
                     'product_id' => null,
                     'product_unit_id' => null,
                     'item_description' => '',
+                    'row_key' => (string) Str::uuid(),
                     'quantity' => '1',
                     'unit_price' => '0.00',
                     'discount_type' => 'none',
@@ -479,6 +491,7 @@ class InvoiceForm extends Component
                 'product_id' => (int) $product->id,
                 'product_unit_id' => $selectedUnitId,
                 'item_description' => $selectedDescription,
+                'row_key' => (string) Str::uuid(),
                 'quantity' => '1',
                 'unit_price' => $selectedPrice,
                 'discount_type' => 'none',
@@ -504,6 +517,128 @@ class InvoiceForm extends Component
         $this->dispatch('barcode-scanned');
     }
 
+    public function hydrate(): void
+    {
+        $this->updatedProductSearch();
+    }
+
+    public function updatedProductSearch(): void
+    {
+        $this->searchResultsQuery = $this->productSearch;
+        $term = trim($this->productSearch);
+        if ($term === '') {
+            $this->searchResults = [];
+            $this->searchSelectedIndex = 0;
+
+            return;
+        }
+
+        $user = auth()->user();
+        if (! $user) {
+            $this->searchResults = [];
+
+            return;
+        }
+
+        $this->searchResults = app(BoundedProductSearchService::class)->search(
+            $this->pageCompanyId,
+            $user,
+            $term,
+            'sales',
+            $this->warehouse_id,
+            $this->currency_code,
+            $this->exchange_rate,
+            30
+        );
+        $this->searchSelectedIndex = 0;
+    }
+
+    public function addProduct(int $productId, ?int $unitId = null): void
+    {
+        $context = app(CompanyContext::class);
+        abort_unless(auth()->check() && $context->hasCompany() && (int) $context->companyId() === (int) $this->pageCompanyId, 403);
+        $user = auth()->user();
+        abort_unless($user->hasPermissionTo($this->isEditing ? 'sales.invoice.edit_draft' : 'sales.invoice.create'), 403);
+
+        if ($this->showPreview) {
+            $this->cancelPreview();
+        }
+
+        try {
+            $selected = app(SalesProductSelection::class)->select(
+                $productId,
+                $unitId,
+                $this->currency_code,
+                $this->exchange_rate,
+                $this->warehouse_id
+            );
+        } catch (\Throwable) {
+            $this->addError('productSearch', __('commands.code_validation_failed'));
+
+            return;
+        }
+
+        $selectedUnitId = (int) $selected['product_unit_id'];
+        $selectedPrice = (string) $selected['unit_price'];
+        $selectedDescription = (string) $selected['item_description'];
+
+        $isTrulyEmptyFirstRow = count($this->lines) === 1
+            && empty($this->lines[0]['product_id'])
+            && trim((string) ($this->lines[0]['item_description'])) === ''
+            && in_array((string) ($this->lines[0]['quantity']), ['1', '1.000000', '1.00', ''], true)
+            && in_array((string) ($this->lines[0]['unit_price']), ['0', '0.00', '0.000000', ''], true)
+            && (($this->lines[0]['discount_type']) === 'none')
+            && empty($this->lines[0]['tax_rate_id']);
+
+        $newLine = [
+            'product_id' => $productId,
+            'product_unit_id' => $selectedUnitId,
+            'item_description' => $selectedDescription,
+            'row_key' => (string) Str::uuid(),
+            'quantity' => '1',
+            'unit_price' => $selectedPrice,
+            'discount_type' => 'none',
+            'discount_value' => '0',
+            'tax_rate_id' => null,
+            'available_quantity' => $selected['available_quantity'] ?? null,
+            'subtotal' => '0.00',
+            'discount_amount' => '0.00',
+            'tax_amount' => '0.00',
+            'line_total' => '0.00',
+        ];
+
+        if ($isTrulyEmptyFirstRow) {
+            $this->lines[0] = $newLine;
+        } else {
+            $this->lines[] = $newLine;
+        }
+
+        $this->productSearch = '';
+        $this->searchResults = [];
+        $this->searchSelectedIndex = 0;
+        $this->resetErrorBag('productSearch');
+        $this->recalculate();
+        $this->dispatch('product-added');
+    }
+
+    public function addSelectedProduct(): void
+    {
+        if (! empty($this->searchResults) && isset($this->searchResults[$this->searchSelectedIndex])) {
+            $candidate = $this->searchResults[$this->searchSelectedIndex];
+            $this->addProduct((int) $candidate['id'], $candidate['default_unit_id'] ?? null);
+
+            return;
+        }
+
+        $term = trim($this->productSearch);
+        if ($term !== '') {
+            $this->barcodeSearch = $term;
+            $this->scanBarcode();
+            $this->productSearch = '';
+            $this->searchResults = [];
+        }
+    }
+
     public function addLine(): void
     {
         if ($this->showPreview) {
@@ -514,6 +649,7 @@ class InvoiceForm extends Component
             'product_id' => null,
             'product_unit_id' => null,
             'item_description' => '',
+            'row_key' => (string) Str::uuid(),
             'quantity' => '1',
             'unit_price' => '0.00',
             'discount_type' => 'none',
@@ -1178,6 +1314,12 @@ class InvoiceForm extends Component
 
     public function render(CompanyContext $context): View
     {
+        foreach ($this->lines as &$identityLine) {
+            $identityLine['row_key'] ??= (string) Str::uuid();
+        }
+        unset($identityLine);
+
+        $this->updatedProductSearch();
         abort_unless(auth()->check() && $context->hasCompany() && $context->companyId() === $this->pageCompanyId, 403);
         $user = auth()->user();
         $company = DB::transaction(fn () => app(SalesActorGuard::class)->lockAndAuthorize(
@@ -1216,18 +1358,17 @@ class InvoiceForm extends Component
         }
         $currencies = $company->currencies()->where('enabled', true)->get();
         $warehouses = Warehouse::where('company_id', $company->id)->where('active', true)->get();
-        $term = mb_substr(trim($this->productSearch), 0, 160);
-        $productsQuery = Product::where('company_id', $company->id)->where('active', true);
-        if ($term !== '') {
-            $productsQuery->where(fn ($query) => $query->where('name_ar', 'like', "%{$term}%")
-                ->orWhere('name_en', 'like', "%{$term}%")->orWhere('sku', 'like', "%{$term}%")
-                ->orWhereHas('barcodes', fn ($barcodes) => $barcodes->where('company_id', $company->id)->where('barcode', $term)));
-        }
         $selectedProductIds = collect($this->lines)->pluck('product_id')->filter()->unique()->values()->all();
         $selectedProducts = Product::with(['productUnits.unit', 'baseUnit'])->where('company_id', $company->id)
             ->whereIn('id', $selectedProductIds)->get();
         abort_unless($selectedProducts->count() === count($selectedProductIds), 404);
-        $matchingProducts = $productsQuery->orderByRaw('COALESCE(name_ar, name_en) ASC')->orderBy('id')->limit(50)->get();
+        $matchingProducts = trim($this->productSearch) !== ''
+            ? app(BoundedProductSearchService::class)->searchProductsQuery($company->id, $user, $this->productSearch, 'sales')
+                ->orderByRaw('COALESCE(name_ar, name_en) ASC')
+                ->orderBy('id')
+                ->limit(30)
+                ->get()
+            : collect();
         $products = $matchingProducts->merge($selectedProducts);
         $lastCustomerPrices = $this->customer_id !== null && count($selectedProductIds) <= 100
             && app(ReportingGuard::class)->allows($company, ['reports.sales.view', 'sales.invoice.view'], $user)
@@ -1247,6 +1388,7 @@ class InvoiceForm extends Component
             'warehouses' => $warehouses,
             'products' => $products,
             'productMatchCount' => $matchingProducts->count(),
+            'searchResults' => $this->searchResults,
             'taxes' => $taxes,
             'canChangePrice' => $canChangePrice,
             'canChangeDiscount' => $canChangeDiscount,

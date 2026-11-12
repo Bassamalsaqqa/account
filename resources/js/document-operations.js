@@ -1,6 +1,6 @@
 const queues = new Map();
-const allowed = new Set(['scanCameraBarcode', 'incrementQuantity', 'decrementQuantity', 'stepQuantity', 'addLine', 'saveDraft', 'saveAndConfirm', 'save', 'stepInventoryQuantity', 'stepReturnQuantity', 'returnFullRemaining', 'payRemaining', 'useFullBalance']);
-const identityFields = ['id', 'product_id', 'product_unit_id', 'item_description', 'unit_price', 'unit_cost', 'discount_type', 'discount_value', 'tax_rate_id', 'tax_inclusive', 'lot_id', 'lots', 'lot_allocations', 'warehouse_id', 'purchase_line_id', 'sales_invoice_line_id'];
+const allowed = new Set(['scanCameraBarcode', 'incrementQuantity', 'decrementQuantity', 'stepQuantity', 'addLine', 'addProduct', 'addSelectedProduct', 'removeLine', 'saveDraft', 'saveAndConfirm', 'save', 'stepInventoryQuantity', 'stepReturnQuantity', 'returnFullRemaining', 'payRemaining', 'useFullBalance']);
+const identityFields = ['row_key', 'id', 'product_id', 'product_unit_id', 'item_description', 'unit_price', 'unit_cost', 'discount_type', 'discount_value', 'tax_rate_id', 'tax_inclusive', 'lot_id', 'lots', 'lot_allocations', 'warehouse_id', 'purchase_line_id', 'sales_invoice_line_id'];
 const keyFor = wire => wire.$id || wire.id || wire;
 const copy = value => JSON.parse(JSON.stringify(value));
 const lineFor = (wire, index) => wire.lines?.[index] ?? wire.$get?.(`lines.${index}`) ?? wire.get?.(`lines.${index}`);

@@ -116,20 +116,20 @@ class QuantityBatchTest extends Phase5ETestCase
         }
     }
 
-    public function test_actual_js_shaped_16_key_identity_batch_step(): void
+    public function test_actual_js_shaped_17_key_identity_batch_step(): void
     {
         $form = Livewire::test(InvoiceForm::class)->call('selectProduct', 0, $this->product->id);
         $rawLine = $form->get('lines.0');
 
         // The actual JS client builds identity using:
-        // const identityFields = ['id', 'product_id', 'product_unit_id', 'item_description', 'unit_price', 'unit_cost', 'discount_type', 'discount_value', 'tax_rate_id', 'tax_inclusive', 'lot_id', 'lots', 'lot_allocations', 'warehouse_id', 'purchase_line_id', 'sales_invoice_line_id'];
+        // const identityFields = ['row_key', 'id', 'product_id', 'product_unit_id', 'item_description', 'unit_price', 'unit_cost', 'discount_type', 'discount_value', 'tax_rate_id', 'tax_inclusive', 'lot_id', 'lots', 'lot_allocations', 'warehouse_id', 'purchase_line_id', 'sales_invoice_line_id'];
         // const identityFor = line => Object.fromEntries(identityFields.map(key => [key, line?.[key] ?? null]));
         $jsShapedIdentity = [];
         foreach (DocumentIdentity::FIELDS as $field) {
             $jsShapedIdentity[$field] = $rawLine[$field] ?? null;
         }
 
-        $this->assertCount(16, $jsShapedIdentity);
+        $this->assertCount(17, $jsShapedIdentity);
         $this->assertArrayHasKey('purchase_line_id', $jsShapedIdentity);
         $this->assertArrayHasKey('sales_invoice_line_id', $jsShapedIdentity);
 

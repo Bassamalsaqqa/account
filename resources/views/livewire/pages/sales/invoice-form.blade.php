@@ -160,23 +160,13 @@
             @endif
             </div>
         </div>
-    <div class="grid gap-4 md:grid-cols-2 pb-4 border-b border-border">
-        @include('livewire.partials.barcode-entry', ['prefix' => 'invoice'])
-        <div>
-            <label for="invoice-product-search" class="block text-sm font-bold text-text-primary mb-1">{{ __('sales.search_products') }}</label>
-            <div class="flex gap-2 items-center">
-                <input id="invoice-product-search" type="search" maxlength="160" wire:model.live.debounce.300ms="productSearch" x-on:keydown.enter.prevent
-                       placeholder="{{ __('sales.search_products_hint') }}"
-                       class="flex-1 min-w-0 h-11 px-3 rounded-control border border-border bg-canvas text-sm text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden"  :disabled="documentBusy || saving"/>
-                @if (auth()->user()->hasPermissionTo('inventory.product.manage'))
-                    <button type="button" wire:click="openQuickProductModal" aria-haspopup="dialog" class="shrink-0 min-h-11 px-3 py-2 rounded-control border border-border text-sm font-bold text-primary hover:bg-surface-soft focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary cursor-pointer" wire:loading.attr="disabled" wire:target="openQuickProductModal" :disabled="documentBusy || saving">
-                        + {{ __('quick_product.create') }}
-                    </button>
-                @endif
-            </div>
-            <p wire:loading wire:target="productSearch" role="status" class="mt-1 text-xs text-text-secondary">{{ __('sales.products_searching') }}</p>
-            @if($productMatchCount === 0)<p role="status" class="mt-1 text-sm text-text-secondary">{{ __('sales.no_matching_products') }}</p>@endif
-        </div>
+    <div class="pb-4 border-b border-border">
+        @include('livewire.partials.product-search-picker', [
+            'prefix' => 'invoice',
+            'context' => 'sales',
+            'currencyCode' => $currency_code,
+            'searchResults' => $searchResults,
+        ])
     </div>
 
 
@@ -216,7 +206,7 @@
                             @php
                                 $selectedProduct = !empty($line['product_id']) ? $products->firstWhere('id', $line['product_id']) : null;
                             @endphp
-                            <tr wire:key="inv-line-{{ $index }}">
+                            <tr wire:key="inv-line-{{ $line['row_key'] }}">
                                 <td class="py-2 px-2 align-top space-y-1">
 <div class="entry-product-fields">
                                     <select id="invoice-desktop-line-{{ $index }}-product-id" aria-label="{{ __('sales.product') }} {{ $index + 1 }}" @error('lines.'.$index.'.product_id') aria-invalid="true" aria-describedby="invoice-desktop-line-{{ $index }}-product-id-error" @enderror wire:change="selectProduct({{ $index }}, $event.target.value)"
@@ -351,7 +341,7 @@
                     @php
                         $selectedProduct = !empty($line['product_id']) ? $products->firstWhere('id', $line['product_id']) : null;
                     @endphp
-                    <div wire:key="inv-card-{{ $index }}" class="p-3 bg-canvas rounded-card border border-border space-y-3">
+                    <div wire:key="inv-card-{{ $line['row_key'] }}" class="p-3 bg-canvas rounded-card border border-border space-y-3">
                         <div class="flex items-center justify-between">
                             <span class="text-xs font-bold text-text-primary">#{{ $index + 1 }}</span>
                             @if (count($lines) > 1)
@@ -488,7 +478,7 @@
 
         <!-- Totals & Notes Section -->
         <div class="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4 border-t border-border">
-            <div class="space-y-4">
+            <x-optional-fields id="invoice-optional-details" :open="$isEditing || filled($notes) || filled($terms)" :label="__('sales.optional_details')">
                 <div>
                     <label for="invoice-terms" class="block text-sm font-bold text-text-primary mb-1">
                         {{ __('sales.terms') }}
@@ -505,7 +495,7 @@
                               rows="2"
                               class="w-full p-2.5 rounded-control border border-border bg-canvas text-sm text-text-primary outline-hidden" :disabled="documentBusy || saving"></textarea>
                 </div>
-            </div>
+            </x-optional-fields>
 
             <!-- Preview Calculation Card -->
             <div class="bg-surface-soft p-4 rounded-control border border-border space-y-2 text-xs">

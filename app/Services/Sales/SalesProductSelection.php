@@ -8,6 +8,7 @@ use App\Domain\Inventory\ValueObjects\Quantity;
 use App\Domain\Sales\Formatters\SalesMoneyFormatter;
 use App\Models\InventoryBalance;
 use App\Models\Product;
+use App\Models\ProductUnit;
 use App\Support\Tenancy\CompanyContext;
 use Brick\Math\BigDecimal;
 use Brick\Math\RoundingMode;
@@ -15,6 +16,17 @@ use Illuminate\Support\Facades\DB;
 
 final class SalesProductSelection
 {
+    /** Read-only suggestion from an already company-scoped product and unit. Missing is distinct from zero. */
+    public function suggestedBasePrice(Product $product, ProductUnit $unit): ?BigDecimal
+    {
+        if ($unit->default_sale_price_base !== null) {
+            return BigDecimal::of($unit->default_sale_price_base);
+        }
+
+        return $product->default_sale_price_base === null ? null
+            : BigDecimal::of($product->default_sale_price_base)->multipliedBy($unit->conversion_to_base);
+    }
+
     /** @return array{product_id: int, product_unit_id: int, item_description: string, unit_price: string, available_quantity: ?string} */
     public function select(int $productId, ?int $unitId, string $currency, string $exchangeRate, ?int $warehouseId = null): array
     {
@@ -27,9 +39,7 @@ final class SalesProductSelection
             if (! $rate->isPositive()) {
                 throw new \InvalidArgumentException('A positive exchange rate is required.');
             }
-            $basePrice = $unit->default_sale_price_base === null
-                ? BigDecimal::of($product->default_sale_price_base ?? '0')->multipliedBy($unit->conversion_to_base)
-                : BigDecimal::of($unit->default_sale_price_base);
+            $basePrice = $this->suggestedBasePrice($product, $unit) ?? BigDecimal::zero();
             $price = $basePrice->dividedBy($rate, $currency === 'JOD' ? 3 : 2, RoundingMode::HALF_UP);
             $available = null;
             if ($product->track_stock) {

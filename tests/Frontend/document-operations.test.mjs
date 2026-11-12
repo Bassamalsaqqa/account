@@ -234,3 +234,13 @@ test('actual mobile Confirm handler flushes pending quantity edits and suppresse
     assert.equal(calls[1].quantity, '2');
     assert.equal(state.saving, false);
 });
+
+test('identical duplicate row replacement rejects delayed quantity by stable key', async () => {
+    const {wire, calls} = fixture('duplicate-stable-key');
+    wire.lines[0].row_key = 'first';
+    const pending = enqueueQuantityStep(wire, 0, 'up', {debounceMs: 30});
+    wire.lines[0] = {...wire.lines[0], row_key: 'second'};
+    await assert.rejects(pending, /Line changed/);
+    assert.deepEqual(calls, []);
+    assert.equal(wire.lines[0].quantity, '1');
+});

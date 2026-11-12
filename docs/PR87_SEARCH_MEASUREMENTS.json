@@ -1,0 +1,555 @@
+[
+    {
+        "term": "SKU-BENCH-005",
+        "query_count": 14,
+        "latency_ms": {
+            "min": 21.540662,
+            "median": 27.874098,
+            "p95": 86.774405
+        },
+        "statements": [
+            "select exists(select * from `company_user` where `company_id` = ? and `user_id` = ? and `status` = ? and exists (select * from `companies` where `company_user`.`company_id` = `companies`.`id` and `status` = ?)) as `exists`",
+            "select `permissions`.*, `model_has_permissions`.`model_id` as `pivot_model_id`, `model_has_permissions`.`permission_id` as `pivot_permission_id`, `model_has_permissions`.`model_type` as `pivot_model_type`, `model_has_permissions`.`company_id` as `pivot_company_id` from `permissions` inner join `model_has_permissions` on `permissions`.`id` = `model_has_permissions`.`permission_id` where `model_has_permissions`.`company_id` = ? and `model_has_permissions`.`model_id` in (9) and `model_has_permissions`.`model_type` = ?",
+            "select `roles`.*, `model_has_roles`.`model_id` as `pivot_model_id`, `model_has_roles`.`role_id` as `pivot_role_id`, `model_has_roles`.`model_type` as `pivot_model_type`, `model_has_roles`.`company_id` as `pivot_company_id` from `roles` inner join `model_has_roles` on `roles`.`id` = `model_has_roles`.`role_id` where `model_has_roles`.`company_id` = ? and (`roles`.`company_id` is null or `roles`.`company_id` = ?) and `model_has_roles`.`model_id` in (9) and `model_has_roles`.`model_type` = ?",
+            "select `product_barcodes`.`product_id`, `product_barcodes`.`barcode` from `product_barcodes` inner join `products` on `products`.`id` = `product_barcodes`.`product_id` where `product_barcodes`.`company_id` = ? and `products`.`company_id` = ? and `products`.`active` = ? and (`product_barcodes`.`barcode` = ? or `product_barcodes`.`barcode` = ?) and `product_barcodes`.`company_id` = ? order by `products`.`id` asc limit 30",
+            "select `id` from `products` where `company_id` = ? and `active` = ? and (`sku` = ? or `sku` = ?) and `products`.`company_id` = ? and `products`.`deleted_at` is null order by `id` asc limit 30",
+            "select `product_barcodes`.`product_id`, `product_barcodes`.`barcode` from `product_barcodes` inner join `products` on `products`.`id` = `product_barcodes`.`product_id` where `product_barcodes`.`company_id` = ? and `products`.`company_id` = ? and `products`.`active` = ? and (`product_barcodes`.`barcode` like ? or `product_barcodes`.`barcode` like ?) and 1 = 1 and `product_barcodes`.`company_id` = ? order by `products`.`id` asc limit 30",
+            "select `id` from `products` where `company_id` = ? and `active` = ? and (`sku` like ? or `sku` like ?) and 1 = 1 and `products`.`company_id` = ? and `products`.`deleted_at` is null order by `id` asc limit 30",
+            "select * from `products` where `company_id` = ? and `active` = ? and `id` in (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) and `products`.`company_id` = ? and `products`.`deleted_at` is null",
+            "select * from `product_units` where `product_units`.`product_id` in (5012, 5013, 5014, 5015, 5016, 5017, 5018, 5019, 5020, 5021, 5022, 5023, 5024, 5025, 5026, 5027, 5028, 5029, 5030, 5031, 5032, 5033, 5034, 5035, 5036, 5037, 5038, 5039, 5040, 5041) and `company_id` = ? and `active` = ? and exists (select * from `units` where `product_units`.`unit_id` = `units`.`id` and `company_id` = ? and `active` = ? and `units`.`company_id` = ?) and `product_units`.`company_id` = ?",
+            "select * from `units` where `units`.`id` in (73) and `company_id` = ? and `active` = ? and `units`.`company_id` = ?",
+            "select product_id, SUM(quantity_base) AS quantity_base from `inventory_balances` where `company_id` = ? and `product_id` in (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) and `inventory_balances`.`company_id` = ? group by `product_id`",
+            "select * from `companies` where `companies`.`id` = ? limit 1"
+        ],
+        "plans": [
+            {
+                "table": null,
+                "type": null,
+                "key": null,
+                "rows": null,
+                "Extra": "No tables used"
+            },
+            {
+                "table": "company_user",
+                "type": "const",
+                "key": "company_user_company_id_user_id_unique",
+                "rows": "1",
+                "Extra": ""
+            },
+            {
+                "table": "companies",
+                "type": "const",
+                "key": "PRIMARY",
+                "rows": "1",
+                "Extra": ""
+            },
+            {
+                "table": "model_has_permissions",
+                "type": "ref",
+                "key": "PRIMARY",
+                "rows": "1",
+                "Extra": "Using where; Using index"
+            },
+            {
+                "table": "permissions",
+                "type": "eq_ref",
+                "key": "PRIMARY",
+                "rows": "1",
+                "Extra": ""
+            },
+            {
+                "table": "model_has_roles",
+                "type": "ref",
+                "key": "PRIMARY",
+                "rows": "1",
+                "Extra": "Using where; Using index"
+            },
+            {
+                "table": "roles",
+                "type": "eq_ref",
+                "key": "PRIMARY",
+                "rows": "1",
+                "Extra": "Using where"
+            },
+            {
+                "table": "model_has_permissions",
+                "type": "ref",
+                "key": "PRIMARY",
+                "rows": "1",
+                "Extra": "Using where; Using index"
+            },
+            {
+                "table": "permissions",
+                "type": "eq_ref",
+                "key": "PRIMARY",
+                "rows": "1",
+                "Extra": ""
+            },
+            {
+                "table": "model_has_roles",
+                "type": "ref",
+                "key": "PRIMARY",
+                "rows": "1",
+                "Extra": "Using where; Using index"
+            },
+            {
+                "table": "roles",
+                "type": "eq_ref",
+                "key": "PRIMARY",
+                "rows": "1",
+                "Extra": "Using where"
+            },
+            {
+                "table": null,
+                "type": null,
+                "key": null,
+                "rows": null,
+                "Extra": "Impossible WHERE noticed after reading const tables"
+            },
+            {
+                "table": null,
+                "type": null,
+                "key": null,
+                "rows": null,
+                "Extra": "Impossible WHERE noticed after reading const tables"
+            },
+            {
+                "table": "product_barcodes",
+                "type": "ref",
+                "key": "product_barcodes_company_id_product_id_index",
+                "rows": "1",
+                "Extra": "Using where"
+            },
+            {
+                "table": "products",
+                "type": "eq_ref",
+                "key": "PRIMARY",
+                "rows": "1",
+                "Extra": "Using where"
+            },
+            {
+                "table": "products",
+                "type": "index",
+                "key": "PRIMARY",
+                "rows": "297",
+                "Extra": "Using where"
+            },
+            {
+                "table": "products",
+                "type": "range",
+                "key": "products_company_id_active_index",
+                "rows": "30",
+                "Extra": "Using index condition; Using where"
+            },
+            {
+                "table": "product_units",
+                "type": "ALL",
+                "key": null,
+                "rows": "1",
+                "Extra": "Using where"
+            },
+            {
+                "table": "units",
+                "type": "eq_ref",
+                "key": "PRIMARY",
+                "rows": "1",
+                "Extra": "Using where"
+            },
+            {
+                "table": "units",
+                "type": "const",
+                "key": "PRIMARY",
+                "rows": "1",
+                "Extra": ""
+            },
+            {
+                "table": "inventory_balances",
+                "type": "range",
+                "key": "inventory_balances_company_id_product_id_warehouse_id_unique",
+                "rows": "1",
+                "Extra": "Using where"
+            },
+            {
+                "table": "companies",
+                "type": "const",
+                "key": "PRIMARY",
+                "rows": "1",
+                "Extra": ""
+            }
+        ]
+    },
+    {
+        "term": "منتج تجريبي رقم 5",
+        "query_count": 15,
+        "latency_ms": {
+            "min": 17.238353,
+            "median": 19.721441,
+            "p95": 21.253896
+        },
+        "statements": [
+            "select exists(select * from `company_user` where `company_id` = ? and `user_id` = ? and `status` = ? and exists (select * from `companies` where `company_user`.`company_id` = `companies`.`id` and `status` = ?)) as `exists`",
+            "select `permissions`.*, `model_has_permissions`.`model_id` as `pivot_model_id`, `model_has_permissions`.`permission_id` as `pivot_permission_id`, `model_has_permissions`.`model_type` as `pivot_model_type`, `model_has_permissions`.`company_id` as `pivot_company_id` from `permissions` inner join `model_has_permissions` on `permissions`.`id` = `model_has_permissions`.`permission_id` where `model_has_permissions`.`company_id` = ? and `model_has_permissions`.`model_id` in (9) and `model_has_permissions`.`model_type` = ?",
+            "select `roles`.*, `model_has_roles`.`model_id` as `pivot_model_id`, `model_has_roles`.`role_id` as `pivot_role_id`, `model_has_roles`.`model_type` as `pivot_model_type`, `model_has_roles`.`company_id` as `pivot_company_id` from `roles` inner join `model_has_roles` on `roles`.`id` = `model_has_roles`.`role_id` where `model_has_roles`.`company_id` = ? and (`roles`.`company_id` is null or `roles`.`company_id` = ?) and `model_has_roles`.`model_id` in (9) and `model_has_roles`.`model_type` = ?",
+            "select `product_barcodes`.`product_id`, `product_barcodes`.`barcode` from `product_barcodes` inner join `products` on `products`.`id` = `product_barcodes`.`product_id` where `product_barcodes`.`company_id` = ? and `products`.`company_id` = ? and `products`.`active` = ? and (`product_barcodes`.`barcode` = ?) and `product_barcodes`.`company_id` = ? order by `products`.`id` asc limit 30",
+            "select `id` from `products` where `company_id` = ? and `active` = ? and (`sku` = ?) and `products`.`company_id` = ? and `products`.`deleted_at` is null order by `id` asc limit 30",
+            "select `product_barcodes`.`product_id`, `product_barcodes`.`barcode` from `product_barcodes` inner join `products` on `products`.`id` = `product_barcodes`.`product_id` where `product_barcodes`.`company_id` = ? and `products`.`company_id` = ? and `products`.`active` = ? and (`product_barcodes`.`barcode` like ?) and 1 = 1 and `product_barcodes`.`company_id` = ? order by `products`.`id` asc limit 30",
+            "select `id` from `products` where `company_id` = ? and `active` = ? and (`sku` like ?) and 1 = 1 and `products`.`company_id` = ? and `products`.`deleted_at` is null order by `id` asc limit 30",
+            "select `id` from `products` where `company_id` = ? and `active` = ? and (`name_ar` like ? or `name_en` like ?) and 1 = 1 and `products`.`company_id` = ? and `products`.`deleted_at` is null order by `id` asc limit 30",
+            "select * from `products` where `company_id` = ? and `active` = ? and `id` in (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) and `products`.`company_id` = ? and `products`.`deleted_at` is null",
+            "select * from `product_units` where `product_units`.`product_id` in (17, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 512, 513, 514, 515, 516, 517, 518, 519, 520, 521, 522, 523, 524, 525, 526, 527, 528, 529, 530) and `company_id` = ? and `active` = ? and exists (select * from `units` where `product_units`.`unit_id` = `units`.`id` and `company_id` = ? and `active` = ? and `units`.`company_id` = ?) and `product_units`.`company_id` = ?",
+            "select * from `units` where `units`.`id` in (73) and `company_id` = ? and `active` = ? and `units`.`company_id` = ?",
+            "select product_id, SUM(quantity_base) AS quantity_base from `inventory_balances` where `company_id` = ? and `product_id` in (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) and `inventory_balances`.`company_id` = ? group by `product_id`",
+            "select * from `companies` where `companies`.`id` = ? limit 1"
+        ],
+        "plans": [
+            {
+                "table": null,
+                "type": null,
+                "key": null,
+                "rows": null,
+                "Extra": "No tables used"
+            },
+            {
+                "table": "company_user",
+                "type": "const",
+                "key": "company_user_company_id_user_id_unique",
+                "rows": "1",
+                "Extra": ""
+            },
+            {
+                "table": "companies",
+                "type": "const",
+                "key": "PRIMARY",
+                "rows": "1",
+                "Extra": ""
+            },
+            {
+                "table": "model_has_permissions",
+                "type": "ref",
+                "key": "PRIMARY",
+                "rows": "1",
+                "Extra": "Using where; Using index"
+            },
+            {
+                "table": "permissions",
+                "type": "eq_ref",
+                "key": "PRIMARY",
+                "rows": "1",
+                "Extra": ""
+            },
+            {
+                "table": "model_has_roles",
+                "type": "ref",
+                "key": "PRIMARY",
+                "rows": "1",
+                "Extra": "Using where; Using index"
+            },
+            {
+                "table": "roles",
+                "type": "eq_ref",
+                "key": "PRIMARY",
+                "rows": "1",
+                "Extra": "Using where"
+            },
+            {
+                "table": "model_has_permissions",
+                "type": "ref",
+                "key": "PRIMARY",
+                "rows": "1",
+                "Extra": "Using where; Using index"
+            },
+            {
+                "table": "permissions",
+                "type": "eq_ref",
+                "key": "PRIMARY",
+                "rows": "1",
+                "Extra": ""
+            },
+            {
+                "table": "model_has_roles",
+                "type": "ref",
+                "key": "PRIMARY",
+                "rows": "1",
+                "Extra": "Using where; Using index"
+            },
+            {
+                "table": "roles",
+                "type": "eq_ref",
+                "key": "PRIMARY",
+                "rows": "1",
+                "Extra": "Using where"
+            },
+            {
+                "table": null,
+                "type": null,
+                "key": null,
+                "rows": null,
+                "Extra": "Impossible WHERE noticed after reading const tables"
+            },
+            {
+                "table": null,
+                "type": null,
+                "key": null,
+                "rows": null,
+                "Extra": "Impossible WHERE noticed after reading const tables"
+            },
+            {
+                "table": "product_barcodes",
+                "type": "ref",
+                "key": "product_barcodes_company_id_product_id_index",
+                "rows": "1",
+                "Extra": "Using where"
+            },
+            {
+                "table": "products",
+                "type": "eq_ref",
+                "key": "PRIMARY",
+                "rows": "1",
+                "Extra": "Using where"
+            },
+            {
+                "table": "products",
+                "type": "range",
+                "key": "products_company_id_sku_unique",
+                "rows": "1",
+                "Extra": "Using index condition; Using where; Using filesort"
+            },
+            {
+                "table": "products",
+                "type": "index",
+                "key": "PRIMARY",
+                "rows": "536",
+                "Extra": "Using where"
+            },
+            {
+                "table": "products",
+                "type": "range",
+                "key": "products_company_id_active_index",
+                "rows": "30",
+                "Extra": "Using index condition; Using where"
+            },
+            {
+                "table": "product_units",
+                "type": "ALL",
+                "key": null,
+                "rows": "1",
+                "Extra": "Using where"
+            },
+            {
+                "table": "units",
+                "type": "eq_ref",
+                "key": "PRIMARY",
+                "rows": "1",
+                "Extra": "Using where"
+            },
+            {
+                "table": "units",
+                "type": "const",
+                "key": "PRIMARY",
+                "rows": "1",
+                "Extra": ""
+            },
+            {
+                "table": "inventory_balances",
+                "type": "range",
+                "key": "inventory_balances_company_id_product_id_warehouse_id_unique",
+                "rows": "1",
+                "Extra": "Using where"
+            },
+            {
+                "table": "companies",
+                "type": "const",
+                "key": "PRIMARY",
+                "rows": "1",
+                "Extra": ""
+            }
+        ]
+    },
+    {
+        "term": "Benchmark Product 50",
+        "query_count": 15,
+        "latency_ms": {
+            "min": 17.297805,
+            "median": 20.790336,
+            "p95": 32.083612
+        },
+        "statements": [
+            "select exists(select * from `company_user` where `company_id` = ? and `user_id` = ? and `status` = ? and exists (select * from `companies` where `company_user`.`company_id` = `companies`.`id` and `status` = ?)) as `exists`",
+            "select `permissions`.*, `model_has_permissions`.`model_id` as `pivot_model_id`, `model_has_permissions`.`permission_id` as `pivot_permission_id`, `model_has_permissions`.`model_type` as `pivot_model_type`, `model_has_permissions`.`company_id` as `pivot_company_id` from `permissions` inner join `model_has_permissions` on `permissions`.`id` = `model_has_permissions`.`permission_id` where `model_has_permissions`.`company_id` = ? and `model_has_permissions`.`model_id` in (9) and `model_has_permissions`.`model_type` = ?",
+            "select `roles`.*, `model_has_roles`.`model_id` as `pivot_model_id`, `model_has_roles`.`role_id` as `pivot_role_id`, `model_has_roles`.`model_type` as `pivot_model_type`, `model_has_roles`.`company_id` as `pivot_company_id` from `roles` inner join `model_has_roles` on `roles`.`id` = `model_has_roles`.`role_id` where `model_has_roles`.`company_id` = ? and (`roles`.`company_id` is null or `roles`.`company_id` = ?) and `model_has_roles`.`model_id` in (9) and `model_has_roles`.`model_type` = ?",
+            "select `product_barcodes`.`product_id`, `product_barcodes`.`barcode` from `product_barcodes` inner join `products` on `products`.`id` = `product_barcodes`.`product_id` where `product_barcodes`.`company_id` = ? and `products`.`company_id` = ? and `products`.`active` = ? and (`product_barcodes`.`barcode` = ? or `product_barcodes`.`barcode` = ?) and `product_barcodes`.`company_id` = ? order by `products`.`id` asc limit 30",
+            "select `id` from `products` where `company_id` = ? and `active` = ? and (`sku` = ? or `sku` = ?) and `products`.`company_id` = ? and `products`.`deleted_at` is null order by `id` asc limit 30",
+            "select `product_barcodes`.`product_id`, `product_barcodes`.`barcode` from `product_barcodes` inner join `products` on `products`.`id` = `product_barcodes`.`product_id` where `product_barcodes`.`company_id` = ? and `products`.`company_id` = ? and `products`.`active` = ? and (`product_barcodes`.`barcode` like ? or `product_barcodes`.`barcode` like ?) and 1 = 1 and `product_barcodes`.`company_id` = ? order by `products`.`id` asc limit 30",
+            "select `id` from `products` where `company_id` = ? and `active` = ? and (`sku` like ? or `sku` like ?) and 1 = 1 and `products`.`company_id` = ? and `products`.`deleted_at` is null order by `id` asc limit 30",
+            "select `id` from `products` where `company_id` = ? and `active` = ? and (`name_ar` like ? or `name_en` like ? or `name_ar` like ? or `name_en` like ?) and 1 = 1 and `products`.`company_id` = ? and `products`.`deleted_at` is null order by `id` asc limit 30",
+            "select * from `products` where `company_id` = ? and `active` = ? and `id` in (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) and `products`.`company_id` = ? and `products`.`deleted_at` is null",
+            "select * from `product_units` where `product_units`.`product_id` in (62, 512, 513, 514, 515, 516, 517, 518, 519, 520, 521, 5012, 5013, 5014, 5015, 5016, 5017, 5018, 5019, 5020, 5021, 5022, 5023, 5024, 5025, 5026, 5027, 5028, 5029, 5030) and `company_id` = ? and `active` = ? and exists (select * from `units` where `product_units`.`unit_id` = `units`.`id` and `company_id` = ? and `active` = ? and `units`.`company_id` = ?) and `product_units`.`company_id` = ?",
+            "select * from `units` where `units`.`id` in (73) and `company_id` = ? and `active` = ? and `units`.`company_id` = ?",
+            "select product_id, SUM(quantity_base) AS quantity_base from `inventory_balances` where `company_id` = ? and `product_id` in (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) and `inventory_balances`.`company_id` = ? group by `product_id`",
+            "select * from `companies` where `companies`.`id` = ? limit 1"
+        ],
+        "plans": [
+            {
+                "table": null,
+                "type": null,
+                "key": null,
+                "rows": null,
+                "Extra": "No tables used"
+            },
+            {
+                "table": "company_user",
+                "type": "const",
+                "key": "company_user_company_id_user_id_unique",
+                "rows": "1",
+                "Extra": ""
+            },
+            {
+                "table": "companies",
+                "type": "const",
+                "key": "PRIMARY",
+                "rows": "1",
+                "Extra": ""
+            },
+            {
+                "table": "model_has_permissions",
+                "type": "ref",
+                "key": "PRIMARY",
+                "rows": "1",
+                "Extra": "Using where; Using index"
+            },
+            {
+                "table": "permissions",
+                "type": "eq_ref",
+                "key": "PRIMARY",
+                "rows": "1",
+                "Extra": ""
+            },
+            {
+                "table": "model_has_roles",
+                "type": "ref",
+                "key": "PRIMARY",
+                "rows": "1",
+                "Extra": "Using where; Using index"
+            },
+            {
+                "table": "roles",
+                "type": "eq_ref",
+                "key": "PRIMARY",
+                "rows": "1",
+                "Extra": "Using where"
+            },
+            {
+                "table": "model_has_permissions",
+                "type": "ref",
+                "key": "PRIMARY",
+                "rows": "1",
+                "Extra": "Using where; Using index"
+            },
+            {
+                "table": "permissions",
+                "type": "eq_ref",
+                "key": "PRIMARY",
+                "rows": "1",
+                "Extra": ""
+            },
+            {
+                "table": "model_has_roles",
+                "type": "ref",
+                "key": "PRIMARY",
+                "rows": "1",
+                "Extra": "Using where; Using index"
+            },
+            {
+                "table": "roles",
+                "type": "eq_ref",
+                "key": "PRIMARY",
+                "rows": "1",
+                "Extra": "Using where"
+            },
+            {
+                "table": null,
+                "type": null,
+                "key": null,
+                "rows": null,
+                "Extra": "Impossible WHERE noticed after reading const tables"
+            },
+            {
+                "table": null,
+                "type": null,
+                "key": null,
+                "rows": null,
+                "Extra": "Impossible WHERE noticed after reading const tables"
+            },
+            {
+                "table": "product_barcodes",
+                "type": "ref",
+                "key": "product_barcodes_company_id_product_id_index",
+                "rows": "1",
+                "Extra": "Using where"
+            },
+            {
+                "table": "products",
+                "type": "eq_ref",
+                "key": "PRIMARY",
+                "rows": "1",
+                "Extra": "Using where"
+            },
+            {
+                "table": "products",
+                "type": "range",
+                "key": "products_company_id_sku_unique",
+                "rows": "1",
+                "Extra": "Using index condition; Using where; Using filesort"
+            },
+            {
+                "table": "products",
+                "type": "index_merge",
+                "key": "products_company_active_name_ar_idx,products_company_active_name_en_idx",
+                "rows": "112",
+                "Extra": "Using sort_union(products_company_active_name_ar_idx,products_company_active_name_en_idx); Using where; Using filesort"
+            },
+            {
+                "table": "products",
+                "type": "range",
+                "key": "products_company_id_active_index",
+                "rows": "30",
+                "Extra": "Using index condition; Using where"
+            },
+            {
+                "table": "product_units",
+                "type": "ALL",
+                "key": null,
+                "rows": "1",
+                "Extra": "Using where"
+            },
+            {
+                "table": "units",
+                "type": "eq_ref",
+                "key": "PRIMARY",
+                "rows": "1",
+                "Extra": "Using where"
+            },
+            {
+                "table": "units",
+                "type": "const",
+                "key": "PRIMARY",
+                "rows": "1",
+                "Extra": ""
+            },
+            {
+                "table": "inventory_balances",
+                "type": "range",
+                "key": "inventory_balances_company_id_product_id_warehouse_id_unique",
+                "rows": "1",
+                "Extra": "Using where"
+            },
+            {
+                "table": "companies",
+                "type": "const",
+                "key": "PRIMARY",
+                "rows": "1",
+                "Extra": ""
+            }
+        ]
+    }
+]

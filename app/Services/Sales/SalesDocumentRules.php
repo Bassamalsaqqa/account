@@ -70,10 +70,7 @@ final class SalesDocumentRules
 
     public function price(Product $product, ProductUnit $unit, User $actor, BigDecimal $rate, string $currency, BigDecimal $requested): void
     {
-        $suggestion = $unit->default_sale_price_base;
-        if ($suggestion === null && $product->default_sale_price_base !== null) {
-            $suggestion = (string) BigDecimal::of((string) $product->default_sale_price_base)->multipliedBy($unit->conversion_to_base);
-        }
+        $suggestion = app(SalesProductSelection::class)->suggestedBasePrice($product, $unit);
         if ($actor->hasPermissionTo('sales.invoice.change_price')) {
             return;
         }
