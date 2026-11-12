@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Sales;
 
+use App\Services\Money\CurrencyMinorUnitsResolver;
 use Brick\Math\BigDecimal;
 use Brick\Math\RoundingMode;
 
@@ -12,7 +13,7 @@ final class ReceiptPreview
     /** @param list<array<string, mixed>> $allocations
      * @return array{allocations: list<array<string, mixed>>, allocated: string, unallocated: string}
      */
-    public function calculate(string $amount, string $exchangeRate, array $allocations, string $currency): array
+    public function calculate(string $amount, string $exchangeRate, array $allocations, string $currency, ?int $companyId = null): array
     {
         $rate = trim($exchangeRate) === '' ? null : BigDecimal::of($exchangeRate);
         $total = BigDecimal::zero();
@@ -32,7 +33,7 @@ final class ReceiptPreview
             $allocation['preview_fx'] = $rate === null ? null : (string) $consumed->multipliedBy($rate)->toScale(6, RoundingMode::HALF_UP)->minus($book);
         }
         unset($allocation);
-        $scale = $currency === 'JOD' ? 3 : 2;
+        $scale = app(CurrencyMinorUnitsResolver::class)->resolve($currency, $companyId);
 
         return ['allocations' => $allocations, 'allocated' => (string) $total->toScale($scale, RoundingMode::HALF_UP),
             'unallocated' => (string) BigDecimal::of($amount ?: '0')->minus($total)->toScale($scale, RoundingMode::HALF_UP)];

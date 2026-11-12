@@ -8,6 +8,7 @@ use App\Actions\Sales\ApplyCustomerPaymentCreditAction;
 use App\Domain\Sales\Calculators\SalesLineCalculationInput;
 use App\Domain\Sales\Calculators\SalesLineCalculator;
 use App\Models\SalesInvoice;
+use App\Services\Money\CurrencyMinorUnitsResolver;
 use App\Services\Money\PaymentAllocationIntent;
 use Brick\Math\BigDecimal;
 use Brick\Math\RoundingMode;
@@ -55,10 +56,11 @@ final class SalesCorrectionAudit
         foreach (DB::table('sales_invoice_lines as l')->join('sales_invoices as i', 'i.id', '=', 'l.sales_invoice_id')
             ->where('i.company_id', $companyId)->get(['l.*', 'i.currency_code', 'i.exchange_rate']) as $line) {
             try {
+                $minorUnits = app(CurrencyMinorUnitsResolver::class)->resolve((string) $line->currency_code, $companyId);
                 $result = app(SalesLineCalculator::class)->calculate(new SalesLineCalculationInput(
                     quantity: $line->quantity, unitPrice: $line->unit_price, discountType: $line->discount_type,
                     discountValue: $line->discount_value ?? '0', taxRate: $line->tax_rate_snapshot, taxInclusive: (bool) $line->tax_inclusive,
-                    currencyMinorUnits: $line->currency_code === 'JOD' ? 3 : 2, exchangeRate: $line->exchange_rate));
+                    currencyMinorUnits: $minorUnits, exchangeRate: $line->exchange_rate));
                 if (! $result->tax->isEqualTo($line->line_tax) || ! $result->total->isEqualTo($line->line_total)) {
                     $errors[] = "Invoice line [{$line->id}] exact percentage-point tax calculation mismatch.";
                 }

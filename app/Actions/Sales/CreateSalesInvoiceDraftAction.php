@@ -20,6 +20,7 @@ use App\Models\SalesInvoiceLine;
 use App\Models\TaxRate;
 use App\Models\User;
 use App\Models\Warehouse;
+use App\Services\Money\CurrencyMinorUnitsResolver;
 use App\Services\Sales\SalesActorGuard;
 use App\Services\Sales\SalesDocumentRules;
 use App\Support\Tenancy\CompanyContext;
@@ -130,8 +131,8 @@ class CreateSalesInvoiceDraftAction
                 }
             }
 
-            $minorUnits = in_array($currency, ['JOD', 'KWD', 'BHD', 'OMR'], true) ? 3 : 2;
-            $baseMinorUnits = in_array($company->base_currency_code, ['JOD', 'KWD', 'BHD', 'OMR'], true) ? 3 : 2;
+            $minorUnits = app(CurrencyMinorUnitsResolver::class)->resolveForCompany((int) $company->id, $currency);
+            $baseMinorUnits = app(CurrencyMinorUnitsResolver::class)->resolveForCompany((int) $company->id, (string) $company->base_currency_code);
 
             app(SalesDocumentRules::class)->header($company, $currency, $fx, $issueDate, $data['document_locale'] ?? $customer->preferred_locale ?? $company->default_locale);
             $lineResults = [];

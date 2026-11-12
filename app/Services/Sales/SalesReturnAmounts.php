@@ -8,6 +8,7 @@ use App\Application\Platform\TenantWriteAccess;
 use App\Models\SalesInvoiceLine;
 use App\Models\SalesReturn;
 use App\Models\SalesReturnLine;
+use App\Services\Money\CurrencyMinorUnitsResolver;
 use Brick\Math\BigDecimal;
 use Brick\Math\RoundingMode;
 use InvalidArgumentException;
@@ -19,7 +20,7 @@ final class SalesReturnAmounts
     {
         app(TenantWriteAccess::class)->assertWritable((int) $return->company_id);
         $totals = ['subtotal' => BigDecimal::zero(), 'discount' => BigDecimal::zero(), 'tax' => BigDecimal::zero(), 'total' => BigDecimal::zero()];
-        $scale = $return->currency_code === 'JOD' ? 3 : 2;
+        $scale = app(CurrencyMinorUnitsResolver::class)->resolveForCompany((int) $return->company_id, $return->currency_code);
         $seen = [];
         foreach ($return->lines()->lockForUpdate()->get() as $line) {
             if (isset($seen[$line->sales_invoice_line_id])) {
