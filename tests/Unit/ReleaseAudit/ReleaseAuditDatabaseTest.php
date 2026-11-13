@@ -19,7 +19,6 @@ use App\Models\Employee;
 use App\Models\Expense;
 use App\Models\ExpenseCategory;
 use App\Models\MoneyAccount;
-use App\Models\PostingLine;
 use App\Models\Product;
 use App\Models\ProductUnit;
 use App\Models\Unit;
@@ -310,7 +309,7 @@ final class ReleaseAuditDatabaseTest extends TestCase
         self::assertSame("FINGERPRINTS_EQUAL\n", $cmpProc1->getOutput());
 
         // 2. Corrupt ledger balance to verify unhealthy detection
-        PostingLine::create([
+        DB::table('posting_lines')->insert([
             'posting_batch_id' => 1,
             'company_id' => $company->id,
             'ledger_account_id' => $cashAccount->ledger_account_id,
