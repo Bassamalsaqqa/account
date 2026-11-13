@@ -66,7 +66,7 @@ final class SecurityCorrectionsTest extends TestCase
             setPermissionsTeamId($company->id);
             $user->unsetRelation('permissions')->givePermissionTo('customers.view');
             $this->withToken($token)->getJson("/api/mobile/v1/companies/{$company->public_id}/customers")->assertOk();
-            $this->assertNull(MobileAccessToken::firstOrFail()->company_id);
+            $this->assertNull(MobileAccessToken::where('token_hash', hash('sha256', $token))->firstOrFail()->company_id);
             setPermissionsTeamId($company->id);
             $user->unsetRelation('permissions')->revokePermissionTo('customers.view');
             $this->withToken($token)->getJson("/api/mobile/v1/companies/{$company->public_id}/customers")->assertForbidden();
@@ -81,6 +81,7 @@ final class SecurityCorrectionsTest extends TestCase
         $user->companies()->attach($company->id, ['status' => 'active']);
         $token = $this->token($user);
         $foreign = MobileDevice::create(['device_id' => (string) Str::uuid(), 'device_name' => 'Foreign', 'user_id' => User::factory()->create()->id]);
+        $initialDeviceCount = MobileDevice::count();
         foreach ([$foreign->device_id, (string) Str::uuid()] as $id) {
             $this->withToken($token)->postJson("/api/mobile/v1/devices/{$id}/revoke", ['reason' => 'test'])->assertForbidden();
         }
@@ -89,7 +90,7 @@ final class SecurityCorrectionsTest extends TestCase
         $this->postJson('/api/mobile/v1/auth/login', $challenge + ['device_id' => $foreign->device_id, 'device_name' => 'Attack', 'email' => $user->email, 'password' => 'password'])->assertUnauthorized();
         $this->assertNull($foreign->fresh()->revoked_at);
         $this->assertSame('Foreign', $foreign->fresh()->device_name);
-        $this->assertSame(2, MobileDevice::count());
+        $this->assertSame($initialDeviceCount, MobileDevice::count());
     }
 
     public function test_account_throttle_survives_device_and_ip_rotation(): void
