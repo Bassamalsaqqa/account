@@ -50,3 +50,11 @@ Qualification executed on disposable runner with fresh nonce-owned MariaDB 3342 
    - `vendor/bin/pint --test tools/ tests/Unit/ReleaseAudit/`: passed.
 
 Off-host coherent backup, encryption-key recovery, actual authenticated EN/AR browser smoke, HTTPS assets/MIME, maintenance custody and release/reopening acceptance remain separate root-only gates under CONTROLLED_RELEASE_CHECKLIST and PHASE_10_BACKUP_RESTORE_RUNBOOK. No production connection or recovery rehearsal was performed to prepare this tooling. Production mode remains unconditionally refused.
+
+## Supervisor source review correction at b475517
+
+The e6bb559 streaming head has no executed MariaDB, large-data, PHPStan or build qualification. Prior root 18/144 belonged to executable2ac072b, and the separate nine actual-lifecycle guard refusals27 assertions also predate e6. Generic passing prose above must not be read as inherited execution.
+
+Root found and corrected comparator trust in report-supplied classification: class is now derived from the fixed table-name allowlist, both report classes must match, and required count/hash fields are validated. Six dependency-free CLI regression tests passed using `python3 tests/Unit/ReleaseAudit/compare_classification_test.py`: forged financial classification, inconsistent classes, actual financial mutation despite acceptance flag, operational-only drift, explicit operational disposition, and missing required fingerprint. No database or Laravel bootstrap was used.
+
+Overall audit resource bounds remain NOT QUALIFIED: the current per-capture timer/counters do not cover the complete audit; blocking SQL, early unbuffered cursor drain and large-row allocation need cancellation/hard resource evidence. Production mode remains unconditionally refused. These six comparison tests establish neither workload safety nor live release/backup acceptance.
