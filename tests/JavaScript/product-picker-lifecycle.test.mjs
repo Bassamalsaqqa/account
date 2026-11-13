@@ -164,3 +164,65 @@ test('pending input and stale responses cannot select old candidates', () => {
     assert.equal(addProductCalls.length, 0);
     assert.equal(instance.resultsReady(), false);
 });
+
+
+test('Enter flushes pending scanner input and adds the fresh authoritative candidate', async () => {
+    const { instance, wire, addProductCalls } = createPickerInstance([], '');
+    instance.onInput('987654');
+    wire.set = async (key, query) => {
+        wire[key] = query;
+        wire.searchResultsQuery = query;
+        wire.searchResults = [{ id: 41, default_unit_id: 9 }];
+    };
+    await instance.submitSearch();
+    assert.deepEqual(addProductCalls, [{ id: 41, unitId: 9 }]);
+    assert.equal(instance.pending, false);
+});
+
+test('Enter retains the keyboard-selected unit after the fresh lookup', async () => {
+    const { instance, wire, addProductCalls, setSearchResults } = createPickerInstance([], 'item');
+    setSearchResults([{ id: 1, default_unit_id: 2 }, { id: 1, default_unit_id: 3 }]);
+    instance.selectNext();
+    await instance.submitSearch();
+    assert.deepEqual(addProductCalls, [{ id: 1, unitId: 3 }]);
+});
+
+test('input changed while Enter lookup is pending cannot add a stale candidate', async () => {
+    const { instance, wire, addProductCalls } = createPickerInstance([], 'old');
+    let finish;
+    wire.set = () => new Promise(resolve => { finish = resolve; });
+    const submission = instance.submitSearch();
+    instance.onInput('new');
+    wire.searchResultsQuery = 'old';
+    wire.searchResults = [{ id: 1, default_unit_id: 2 }];
+    finish();
+    await submission;
+    assert.equal(addProductCalls.length, 0);
+});
+
+test('repeated Enter is coalesced and network errors preserve input for retry', async () => {
+    const { instance, wire, addProductCalls } = createPickerInstance([], 'sku');
+    instance.$el = { dataset: { networkError: 'Try again' } };
+    let fail;
+    let requests = 0;
+    wire.set = () => { requests++; return new Promise((resolve, reject) => { fail = reject; }); };
+    const first = instance.submitSearch();
+    await instance.submitSearch();
+    fail(new Error('offline'));
+    await first;
+    assert.equal(requests, 1);
+    assert.equal(instance.feedback, 'Try again');
+    assert.equal(instance.pending, false);
+    assert.equal(wire.productSearch, 'sku');
+    assert.equal(addProductCalls.length, 0);
+});
+
+test('clearing a previously typed query permits a subsequent search', () => {
+    const { instance, wire } = createPickerInstance([], 'old');
+    instance.onInput('old');
+    instance.clearSearch();
+    instance.onInput('new');
+    wire.productSearch = 'new';
+    wire.searchResultsQuery = 'new';
+    assert.equal(instance.resultsReady(), true);
+});

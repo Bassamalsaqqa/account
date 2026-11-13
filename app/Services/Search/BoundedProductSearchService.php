@@ -127,6 +127,7 @@ final class BoundedProductSearchService
         $limit = max(1, min($limit, self::MAX_CANDIDATES));
 
         $this->authorize($companyId, $user, $context);
+        $context = $context === 'quotation' ? 'sales' : $context;
         if ($warehouseId !== null) {
             abort_unless(Warehouse::where('company_id', $companyId)->whereKey($warehouseId)->exists(), 403);
         }
@@ -575,7 +576,7 @@ final class BoundedProductSearchService
 
     private function authorize(int $companyId, User $user, string $context): void
     {
-        if ($context !== 'sales' && $context !== 'purchasing') {
+        if (! in_array($context, ['sales', 'purchasing', 'quotation'], true)) {
             abort(403, 'Invalid search context.');
         }
 
@@ -598,7 +599,9 @@ final class BoundedProductSearchService
             app(PermissionRegistrar::class)->setPermissionsTeamId($companyId);
             $user->unsetRelation('roles')->unsetRelation('permissions');
 
-            if ($context === 'sales') {
+            if ($context === 'quotation') {
+                abort_unless($user->hasPermissionTo('sales.quote.create') || $user->hasPermissionTo('sales.quote.edit'), 403);
+            } elseif ($context === 'sales') {
                 abort_unless(
                     $user->hasPermissionTo('sales.invoice.create')
                     || $user->hasPermissionTo('sales.invoice.edit_draft')

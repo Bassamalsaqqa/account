@@ -1,3 +1,5 @@
+import { enqueueDocumentOperation } from './document-operations.js';
+
 export function productPickerComponent({ prefix = 'product', context = 'sales' } = {}) {
     return {
         prefix,
@@ -6,6 +8,42 @@ export function productPickerComponent({ prefix = 'product', context = 'sales' }
         activeIndex: -1,
         inputFocused: false,
         inputQuery: null,
+        pending: false,
+        feedback: '',
+
+        async submitSearch() {
+            if (this.pending) return;
+            const query = String(this.inputQuery ?? this.$wire.productSearch ?? '').trim();
+            if (!query) return;
+            const selected = this.resultsReady() ? (this.$wire.searchResults || [])[this.activeIndex] : null;
+            this.pending = true;
+            this.feedback = '';
+            try {
+                // Flush the debounced field before accepting Enter from a hardware scanner.
+                await this.$wire.set('productSearch', query);
+                if (String(this.inputQuery ?? query).trim() !== query) return;
+                this.inputQuery = query;
+                if (!this.resultsReady()) return;
+                const results = this.$wire.searchResults || [];
+                if (results.length) {
+                    const item = selected
+                        ? results.find(item => item.id === selected.id && item.default_unit_id === selected.default_unit_id)
+                        : results[0];
+                    await this.commitCandidate(item);
+                }
+            } catch {
+                this.feedback = this.$el?.dataset.networkError || '';
+            } finally {
+                this.pending = false;
+            }
+        },
+
+        async commitCandidate(item) {
+            if (!item || !this.resultsReady()) return;
+            this.close();
+            await enqueueDocumentOperation(this.$wire, 'addProduct', [item.id, item.default_unit_id]);
+            this.inputQuery = null;
+        },
 
         onInput(value) {
             this.inputQuery = String(value);
@@ -80,42 +118,28 @@ export function productPickerComponent({ prefix = 'product', context = 'sales' }
             }
         },
 
-        selectCurrent() {
-            if (!this.resultsReady()) return;
-            const results = this.$wire.searchResults || [];
-            if (results.length > 0 && this.activeIndex >= 0 && results[this.activeIndex]) {
-                const item = results[this.activeIndex];
-                this.close();
-                if (typeof window !== 'undefined' && typeof window.enqueueDocumentOperation === 'function') {
-                    window.enqueueDocumentOperation(this.$wire, 'addProduct', [item.id, item.default_unit_id]);
-                } else {
-                    this.$wire.addProduct(item.id, item.default_unit_id);
-                }
-            } else {
-                const query = String(this.$wire.productSearch || '').trim();
-                if (query.length > 0 && this.resultsReady()) {
-                    this.close();
-                    if (typeof window !== 'undefined' && typeof window.enqueueDocumentOperation === 'function') {
-                        window.enqueueDocumentOperation(this.$wire, 'addSelectedProduct', []);
-                    } else {
-                        this.$wire.addSelectedProduct();
-                    }
-                }
-            }
+        async selectCurrent() {
+            if (this.pending || !this.resultsReady()) return;
+            const item = (this.$wire.searchResults || [])[this.activeIndex];
+            if (!item) return;
+            this.pending = true;
+            this.feedback = '';
+            try { await this.commitCandidate(item); }
+            catch { this.feedback = this.$el?.dataset.networkError || ''; }
+            finally { this.pending = false; }
         },
 
-        addCandidate(id, defaultUnitId) {
-            if (!this.resultsReady()) return;
-            if (!(this.$wire.searchResults || []).some(item => item.id === id && item.default_unit_id === defaultUnitId)) return;
-            this.close();
-            if (typeof window !== 'undefined' && typeof window.enqueueDocumentOperation === 'function') {
-                window.enqueueDocumentOperation(this.$wire, 'addProduct', [id, defaultUnitId]);
-            } else {
-                this.$wire.addProduct(id, defaultUnitId);
-            }
+        async addCandidate(id, defaultUnitId) {
+            if (this.pending || !this.resultsReady()) return;
+            const results = this.$wire.searchResults || [];
+            const index = results.findIndex(item => item.id === id && item.default_unit_id === defaultUnitId);
+            if (index < 0) return;
+            this.activeIndex = index;
+            await this.selectCurrent();
         },
 
         clearSearch() {
+            this.inputQuery = '';
             this.$wire.set('productSearch', '');
             this.close();
             if (typeof document !== 'undefined') {

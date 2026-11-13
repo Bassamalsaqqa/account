@@ -7,6 +7,7 @@ namespace Tests\Feature\Search;
 use App\Actions\Company\CreateCompanyAction;
 use App\Livewire\Pages\Purchasing\PurchaseForm;
 use App\Livewire\Pages\Sales\InvoiceForm;
+use App\Livewire\Pages\Sales\QuotationForm;
 use App\Models\Company;
 use App\Models\CompanyUser;
 use App\Models\InventoryBalance;
@@ -40,6 +41,21 @@ class BoundedProductSearchMariaDbTest extends TestCase
     protected Unit $pieceUnit;
 
     protected BoundedProductSearchService $searchService;
+
+    public function test_quotation_shared_picker_is_bounded_and_revalidates_selected_identity(): void
+    {
+        $product = $this->createProduct('صنف تجريبي', 'Test item', 'QUOTE-PICK');
+        $form = Livewire::test(QuotationForm::class)
+            ->set('productSearch', $product->sku);
+        $this->assertLessThanOrEqual(30, count($form->get('searchResults')));
+        $this->assertSame($product->sku, $form->get('searchResultsQuery'));
+        $this->assertNull($form->get('searchResults.0.cost'));
+        $form->call('addProduct', $product->id);
+        $this->assertSame($product->id, $form->get('lines.0.product_id'));
+        $this->assertNotEmpty($form->get('lines.0.row_key'));
+        $this->assertSame('', $form->get('productSearch'));
+        $form->call('addProduct', 2147483647)->assertNotFound();
+    }
 
     protected function setUp(): void
     {
