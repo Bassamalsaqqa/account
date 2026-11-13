@@ -68,6 +68,9 @@ try {
             $report = $domain === 'inventory' ? $service->auditCompany($company, true) : $service->reconcile($company, true);
             $findings = $domain === 'inventory' ? $report->discrepancies : $report->violations;
             $ok = $report->isHealthy === true && $findings === [];
+            if (! $ok) {
+                fwrite(STDERR, "DOMAIN $domain VIOLATIONS: ".json_encode($findings)."\n");
+            }
             $healthy = $healthy && $ok;
             $domains[] = [
                 'company_id' => $company->id,
