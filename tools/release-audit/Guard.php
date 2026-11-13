@@ -33,7 +33,7 @@ final class Guard
     }
 
     /**
-     * @param list<string> $args
+     * @param  list<string>  $args
      * @return array<string, mixed>
      */
     public static function preflight(array $args, string $root): array
@@ -55,8 +55,8 @@ final class Guard
             self::refuse();
         }
         $head = trim((string) shell_exec('git -C '.escapeshellarg($root).' rev-parse HEAD 2>/dev/null'));
-        $dirty = shell_exec('git -C '.escapeshellarg($root).' status --porcelain --untracked-files=normal 2>/dev/null');
-        if ($head !== $code || ! is_string($dirty) || trim($dirty) !== '') {
+        $dirty = shell_exec('git -C '.escapeshellarg($root).' status --porcelain --untracked-files=normal 2>/dev/null') ?? '';
+        if ($head !== $code || trim($dirty) !== '') {
             self::refuse();
         }
         $c = json_decode((string) file_get_contents($control), true, flags: JSON_THROW_ON_ERROR);

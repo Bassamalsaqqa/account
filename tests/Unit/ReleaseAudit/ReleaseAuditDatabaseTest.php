@@ -16,6 +16,9 @@ use ReleaseAudit\Fingerprint;
 use Symfony\Component\Process\Process;
 use Tests\Feature\Phase7\Phase7TestCase;
 
+require_once dirname(__DIR__, 3).'/tools/release-audit/Guard.php';
+require_once dirname(__DIR__, 3).'/tools/release-audit/Fingerprint.php';
+
 final class ReleaseAuditDatabaseTest extends Phase7TestCase
 {
     private string $tempDir;
@@ -88,8 +91,8 @@ final class ReleaseAuditDatabaseTest extends Phase7TestCase
     {
         $root = dirname(__DIR__, 3);
         $head = trim((string) shell_exec('git -C '.escapeshellarg($root).' rev-parse HEAD 2>/dev/null'));
-        $dirty = shell_exec('git -C '.escapeshellarg($root).' status --porcelain --untracked-files=normal 2>/dev/null');
-        if (! is_string($dirty) || trim($dirty) !== '') {
+        $dirty = shell_exec('git -C '.escapeshellarg($root).' status --porcelain --untracked-files=normal 2>/dev/null') ?? '';
+        if (trim($dirty) !== '') {
             self::markTestSkipped('Working directory has untracked or modified files; CLI audit requires clean commit.');
         }
 
