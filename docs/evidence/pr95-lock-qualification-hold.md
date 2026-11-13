@@ -15,3 +15,7 @@ Executable source remains `75228efb5bfbb56a7e5497dbae52ea5ab3a674f2`. The separa
 - Source callgraph and relevant MFA/recovery/role/security regressions, fresh nonce-owned MariaDB reverse/random receipt runs, scoped PHPStan and Pint remain required. Existing helper create/migrate/switch/restore/drop must be inspected with live ownership admission before new DB tests.
 
 The preserved partial checkout and original supervisor artifacts were read only. Historical p0-pr94-refusal-proof.json is unchanged. Production DenyFinancialExecutionAdapter and V2 OFF remain unchanged. Independent exact-head review remains required; no financial writer may start from this evidence correction alone.
+
+## Narrow executable follow-up
+
+The strict protocol/password step is now implemented and tested separately: see [source-bound evidence](pr95-password-protocol/README.md) and its manifest. The outstanding list above is historical; password UPDATE contention and strict failures now have new executable coverage. Full qualification remains HOLD for membership candidate races, other winner orders, AI/support cross-entrypoint edges and independent review.

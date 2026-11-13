@@ -1,0 +1,66 @@
+{
+  "executable_source_sha": "1c6b9d794aa4731577600f086caf6f12155aee69",
+  "executor": "Codex implementation agent, directly in authorized checkout; no children",
+  "environment": "PHP 8.4.27, MariaDB loopback 3342, test_runner, explicit intentional empty password",
+  "source_files_sha256": {
+    "tests/Feature/Mobile/MobileReceiptLockOrderQualificationTest.php": "4535f8dc6c368719d86131c965e4eaed83d8bf878a80512408b442c7cd933269",
+    "tests/Support/DisposableMariaDbSchema.php": "d84c0d7e411091b7aeffb749ff05658d296ae5790874d67b9d65bbbf16dcaad2",
+    "tests/Support/StrictBarrier.php": "e5e433cca4936404d4db9697fa33a85566a34168e4cf1efa4e1901c9ebf1a428",
+    "tests/Support/mobile-identity-worker.php": "8b3ff029584f2d74c6eeb02e9156b050f9f5acd32d4a8724f1a7ff1b63fe2b32",
+    "tests/Unit/StrictBarrierTest.php": "381c18d11e796dfaa682936f129cefa271a295d16c5d01694a2d9979dc5566b9"
+  },
+  "logs": {
+    "password": {
+      "raw_sha256": "6060041aa9644022553b12a9c43dbc2ee3947da93cd3bf634ff0d6c76b39458b",
+      "sanitized_sha256": "d8d671d46c84a883163ddaded89c0b7b2180902c5ab556a14c0e559b6c4cae14"
+    },
+    "auth": {
+      "raw_sha256": "1ee053702d5a05593731d6a40106c93b05721d22a6eae7cd7ab3ef2ab9e3ddbe",
+      "sanitized_sha256": "adc47451f1966b68981855cbc283f5772053a1bf70d113c132b426d1cbd649b0"
+    },
+    "protocol": {
+      "raw_sha256": "b7d37d527f10f07da44eedfee9187db2cc1c2cc9b0a7f4ada559a3fc55c10f5f",
+      "sanitized_sha256": "7ab014e45c32c55037b04511ca0c27f1979200a9d133a11fd44117ea233a4ca8"
+    },
+    "phpstan": {
+      "raw_sha256": "56a92c838677fc706b16e4f725b89f0bd04cea8fc8980e248f707f21ec822a72",
+      "sanitized_sha256": "33671e68e4ba4246d34c59ee5cb3daeb91e9dcb2cd11603d1c705d0f9ccd8735"
+    },
+    "pint": {
+      "raw_sha256": "cd1a94fc2cf6a965b86e1a4809d6c7fb9148b1ee374e1010ed2ac96ff4876ec2",
+      "sanitized_sha256": "cd1a94fc2cf6a965b86e1a4809d6c7fb9148b1ee374e1010ed2ac96ff4876ec2"
+    },
+    "refusal": {
+      "raw_sha256": "5b41eae9ec39eb71a5a124977bd3f7109155047dd2a4f8363b2bec5f316b0669",
+      "sanitized_sha256": "5b41eae9ec39eb71a5a124977bd3f7109155047dd2a4f8363b2bec5f316b0669"
+    },
+    "build": {
+      "raw_sha256": "c407fc183b932a03de078bb7ce04f6e7d540e7d2657235eccccc1a8f22d3f1dd",
+      "sanitized_sha256": "c407fc183b932a03de078bb7ce04f6e7d540e7d2657235eccccc1a8f22d3f1dd"
+    }
+  },
+  "results": {
+    "protocol": [
+      5,
+      6
+    ],
+    "password": [
+      2,
+      12
+    ],
+    "auth": [
+      9,
+      26
+    ],
+    "phpstan": "5 changed files; no errors",
+    "pint": "passed",
+    "build": "passed",
+    "refusal": "exit 1 before schema creation"
+  },
+  "prior_attempts": [
+    "fa8c582 password 1/6 passed",
+    "ae07e78 password 2/12 passed",
+    "intermediate combined auth/password run: 10 tests, 28 assertions, 3 rendering failures before build; cleaned primary schema; not qualification"
+  ],
+  "status": "NARROW PASSWORD/PROTOCOL STEP ONLY; full PR95 HOLD"
+}
