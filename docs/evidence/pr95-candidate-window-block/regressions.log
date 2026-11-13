@@ -1,0 +1,41 @@
+Sanitized diagnostic excerpt; full raw log hash recorded in manifest.
+Owned schema created: accounting_p8_tmp_82ecfa0a299d
+Owned primary test schema: accounting_p8_tmp_82ecfa0a299d
+PHPUnit 12.5.36 by Sebastian Bergmann and contributors.
+Runtime:       PHP 8.4.27
+Owned schema dropped: accounting_p8_tmp_ecf6e76c74e4
+Time: 08:33.170, Memory: 101.00 MB
+1) Tests\Feature\Mobile\RecoveryConcurrencyTest::test_same_recovery_code_issues_only_one_token_and_different_codes_do_not_lose_updates
+Symfony\Component\Process\Exception\ProcessTimedOutException: The process "'/usr/bin/php8.4' 'artisan' 'migrate' '--database=mysql' '--force'" exceeded the timeout of 120 seconds.
+2) Tests\Feature\ManagedSaas\PlatformSupportViewTest::test_support_dashboard_renders_without_hidden_writes
+Illuminate\View\ViewException: Vite manifest not found at: <checkout>/public/build/manifest.json (View: <checkout>/resources/views/layouts/app.blade.php) (View: <checkout>/resources/views/layouts/app.blade.php)
+Illuminate\View\ViewException: Vite manifest not found at: <checkout>/public/build/manifest.json (View: <checkout>/resources/views/layouts/app.blade.php)
+Illuminate\Foundation\ViteManifestNotFoundException: Vite manifest not found at: <checkout>/public/build/manifest.json
+1) Tests\Feature\Auth\ProfileTwoFactorAuthenticationTest::test_profile_page_displays_two_factor_section_for_regular_user_without_settings_permission
+Illuminate\Foundation\ViteManifestNotFoundException: Vite manifest not found at: <checkout>/public/build/manifest.json in <checkout>/vendor/laravel/framework/src/Illuminate/Foundation/Vite.php:974
+2) Tests\Feature\ManagedSaas\PlatformSupportViewTest::test_real_operator_password_starts_owner_impersonation_and_restores_identity
+Illuminate\Foundation\ViteManifestNotFoundException: Vite manifest not found at: <checkout>/public/build/manifest.json in <checkout>/vendor/laravel/framework/src/Illuminate/Foundation/Vite.php:974
+3) Tests\Feature\ManagedSaas\PlatformSupportViewTest::test_missing_permission_or_wrong_password_cannot_start_and_password_is_not_flashed
+Illuminate\Foundation\ViteManifestNotFoundException: Vite manifest not found at: <checkout>/public/build/manifest.json in <checkout>/vendor/laravel/framework/src/Illuminate/Foundation/Vite.php:974
+4) Tests\Feature\ManagedSaas\PlatformSupportViewTest::test_impersonation_exposes_normal_owner_workspaces_without_changing_login_identity
+Illuminate\Foundation\ViteManifestNotFoundException: Vite manifest not found at: <checkout>/public/build/manifest.json in <checkout>/vendor/laravel/framework/src/Illuminate/Foundation/Vite.php:974
+5) Tests\Feature\ManagedSaas\PlatformSupportViewTest::test_tenant_owner_is_not_a_platform_support_operator
+Illuminate\Foundation\ViteManifestNotFoundException: Vite manifest not found at: <checkout>/public/build/manifest.json in <checkout>/vendor/laravel/framework/src/Illuminate/Foundation/Vite.php:974
+6) Tests\Feature\ManagedSaas\PlatformSupportViewTest::test_personal_credentials_platform_and_company_switching_remain_outside_tenant_impersonation
+Illuminate\Foundation\ViteManifestNotFoundException: Vite manifest not found at: <checkout>/public/build/manifest.json in <checkout>/vendor/laravel/framework/src/Illuminate/Foundation/Vite.php:974
+7) Tests\Feature\ManagedSaas\PlatformSupportViewTest::test_signed_livewire_search_and_pagination_preserve_the_effective_owner_and_company
+Illuminate\Foundation\ViteManifestNotFoundException: Vite manifest not found at: <checkout>/public/build/manifest.json in <checkout>/vendor/laravel/framework/src/Illuminate/Foundation/Vite.php:974
+8) Tests\Feature\ManagedSaas\PlatformSupportViewTest::test_start_audit_failure_creates_no_support_authority_and_nested_start_is_denied
+Illuminate\Foundation\ViteManifestNotFoundException: Vite manifest not found at: <checkout>/public/build/manifest.json in <checkout>/vendor/laravel/framework/src/Illuminate/Foundation/Vite.php:974
+9) Tests\Feature\ManagedSaas\PlatformSupportViewTest::test_canonical_product_write_uses_owner_permissions_and_audits_the_real_operator
+Illuminate\Foundation\ViteManifestNotFoundException: Vite manifest not found at: <checkout>/public/build/manifest.json in <checkout>/vendor/laravel/framework/src/Illuminate/Foundation/Vite.php:974
+10) Tests\Feature\ManagedSaas\PlatformSupportViewTest::test_context_setup_failure_still_restores_real_operator_identity
+Illuminate\Foundation\ViteManifestNotFoundException: Vite manifest not found at: <checkout>/public/build/manifest.json in <checkout>/vendor/laravel/framework/src/Illuminate/Foundation/Vite.php:974
+11) Tests\Feature\ManagedSaas\PlatformSupportViewTest::test_prior_company_livewire_form_cannot_write_after_switching_impersonation_target
+Illuminate\Foundation\ViteManifestNotFoundException: Vite manifest not found at: <checkout>/public/build/manifest.json in <checkout>/vendor/laravel/framework/src/Illuminate/Foundation/Vite.php:974
+12) Tests\Feature\ManagedSaas\PlatformSupportViewTest::test_legacy_support_permission_does_not_display_or_authorize_full_impersonation
+Illuminate\Foundation\ViteManifestNotFoundException: Vite manifest not found at: <checkout>/public/build/manifest.json in <checkout>/vendor/laravel/framework/src/Illuminate/Foundation/Vite.php:974
+ERRORS!
+Tests: 75, Assertions: 443, Errors: 2, Failures: 12.
+Owned schema dropped: accounting_p8_tmp_82ecfa0a299d
+Owned primary schema cleaned.
