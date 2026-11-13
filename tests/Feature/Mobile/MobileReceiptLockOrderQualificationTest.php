@@ -69,9 +69,11 @@ final class MobileReceiptLockOrderQualificationTest extends TestCase
             touch($directory.'/go');
             // Same test account can inspect its own connection's server-side state.
             // UPDATE is visible while pending, unlike Laravel's after-query event.
-            StrictBarrier::await(function () use ($schema): bool {
+            StrictBarrier::await(function () use ($schema, $directory): bool {
                 foreach (DB::select('SHOW FULL PROCESSLIST') as $row) {
-                    if ($row->db === $schema->schemaName()
+                    if (is_file($directory.'/worker-a.attempt')
+                        && (string) $row->Id === file_get_contents($directory.'/worker-a.attempt')
+                        && $row->db === $schema->schemaName()
                         && str_contains(strtolower((string) $row->Info), 'update `users`')
                         && str_contains(strtolower((string) $row->State), 'updat')) {
                         return true;

@@ -59,7 +59,7 @@ $lockSignaled = false;
 $barrier = new StrictBarrier;
 
 if ($holdTable !== null) {
-    DB::listen(function ($query) use ($holdTable, $directory, $slot, $waitForFile, $holdMs, &$lockSignaled, $barrier) {
+    DB::listen(function ($query) use ($holdTable, $directory, $slot, $waitForFile, &$lockSignaled, $barrier) {
         $sql = strtolower($query->sql);
         if (! $lockSignaled && $barrier->observe($sql, $holdTable)) {
             $lockSignaled = true;
@@ -72,8 +72,8 @@ if ($holdTable !== null) {
                     }
                     usleep(1000);
                 }
-            } elseif ($holdMs > 0) {
-                usleep($holdMs * 1000);
+            } else {
+                throw new RuntimeException('Explicit held-lock release ACK is required; timed holds are unqualified.');
             }
         }
     });
@@ -252,6 +252,7 @@ try {
         $newPassword = (string) $input['new_password'];
 
         $user = User::findOrFail($userId);
+        file_put_contents($directory.'/'.$slot.'.attempt', (string) DB::selectOne('SELECT CONNECTION_ID() AS id')->id);
         app(ResetUserPassword::class)->reset($user, [
             'password' => $newPassword,
             'password_confirmation' => $newPassword,
