@@ -59,6 +59,7 @@ final class DisposableMariaDbSchema
         $instance->getAdminPdo()->exec("CREATE DATABASE `{$name}` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
         $instance->schemaName = $name;
         $instance->owned = true;
+        fwrite(STDERR, 'Owned schema created: '.$name.PHP_EOL);
 
         return $instance;
     }
@@ -318,6 +319,7 @@ final class DisposableMariaDbSchema
         }
         try {
             $this->getAdminPdo()->exec("DROP DATABASE `{$name}`");
+            fwrite(STDERR, 'Owned schema dropped: '.$name.PHP_EOL);
             $this->owned = false;
             $this->schemaName = null;
         } finally {
