@@ -28,7 +28,7 @@
             @unless($definition['current'])
                 <div class="flex flex-col">
                     <label for="report-preset" class="block text-sm font-bold text-text-secondary mb-1.5">{{ __('reports.preset') }}</label>
-                    <select id="report-preset" wire:model="filters.preset" class="h-10 min-h-[40px] w-full rounded-control border border-border bg-surface px-3 py-0 text-sm sm:text-sm box-border focus:border-primary focus:ring-1 focus:ring-primary">
+                    <select id="report-preset" wire:model.live="filters.preset" class="min-h-[44px] sm:min-h-10 w-full rounded-control border border-border bg-surface px-3 py-0 text-sm sm:text-sm box-border focus:border-primary focus:ring-1 focus:ring-primary">
                         <option value="">{{ __('reports.all') }}</option>
                         @foreach(\App\Application\Reporting\DTO\ReportPeriod::ALLOWED_PRESETS as $preset)
                             <option value="{{ $preset }}" @selected(($filters['preset'] ?? '') === $preset)>{{ __('reports.presets.'.$preset) }}</option>
@@ -38,11 +38,13 @@
                 @if(($filters['preset'] ?? '') === 'custom')
                     <div class="flex flex-col">
                         <label for="report-from" class="block text-sm font-bold text-text-secondary mb-1.5">{{ __('reports.from') }}</label>
-                        <input id="report-from" type="date" wire:model="filters.from" value="{{ $filters['from'] ?? '' }}" class="h-10 min-h-[40px] w-full rounded-control border border-border bg-surface px-3 py-0 text-sm sm:text-sm font-mono box-border focus:border-primary focus:ring-1 focus:ring-primary" dir="ltr" />
+                        <input id="report-from" type="date" wire:model="filters.from" value="{{ $filters['from'] ?? '' }}" class="min-h-[44px] sm:min-h-10 w-full rounded-control border border-border bg-surface px-3 py-0 text-sm sm:text-sm font-mono box-border focus:border-primary focus:ring-1 focus:ring-primary" dir="ltr" />
+                        @error('filters.from')<p role="alert" class="text-sm text-danger">{{ $message }}</p>@enderror
                     </div>
                     <div class="flex flex-col">
                         <label for="report-to" class="block text-sm font-bold text-text-secondary mb-1.5">{{ __('reports.to') }}</label>
-                        <input id="report-to" type="date" wire:model="filters.to" value="{{ $filters['to'] ?? '' }}" class="h-10 min-h-[40px] w-full rounded-control border border-border bg-surface px-3 py-0 text-sm sm:text-sm font-mono box-border focus:border-primary focus:ring-1 focus:ring-primary" dir="ltr" />
+                        <input id="report-to" type="date" wire:model="filters.to" value="{{ $filters['to'] ?? '' }}" class="min-h-[44px] sm:min-h-10 w-full rounded-control border border-border bg-surface px-3 py-0 text-sm sm:text-sm font-mono box-border focus:border-primary focus:ring-1 focus:ring-primary" dir="ltr" />
+                        @error('filters.to')<p role="alert" class="text-sm text-danger">{{ $message }}</p>@enderror
                     </div>
                 @endif
             @endunless
@@ -53,21 +55,9 @@
                         {{ __('reports.'.$field) }}@if(in_array($field,$definition['required'],true)) <span class="text-danger" aria-hidden="true">*</span>@endif
                     </label>
                     @if($field !== 'currency_code')
-                        <div class="space-y-1.5">
-                            <input type="text"
-                                   wire:model.live.debounce.300ms="selectorSearch.{{ $field }}"
-                                   placeholder="{{ __('reports.search') }}"
-                                   class="h-8 min-h-[32px] w-full rounded-control border border-border text-sm px-2.5 py-0 bg-surface-soft focus:border-primary focus:ring-1 focus:ring-primary"
-                                   aria-label="{{ __('reports.search') }} {{ __('reports.'.$field) }}" />
-                            <select id="report-{{ $field }}" wire:model="filters.{{ $field }}" class="h-10 min-h-[40px] w-full rounded-control border border-border bg-surface px-3 py-0 text-sm sm:text-sm box-border focus:border-primary focus:ring-1 focus:ring-primary">
-                                <option value="">{{ __('reports.all') }}</option>
-                                @foreach($values as $option)
-                                    <option value="{{ $option['id'] }}">{{ $option['label'] }}</option>
-                                @endforeach
-                            </select>
-                        </div>
+                        <x-report-party-selector :field="$field" :values="$values" :required="in_array($field, $definition['required'], true)" />
                     @else
-                        <select id="report-{{ $field }}" wire:model="filters.{{ $field }}" class="h-10 min-h-[40px] w-full rounded-control border border-border bg-surface px-3 py-0 text-sm sm:text-sm box-border focus:border-primary focus:ring-1 focus:ring-primary">
+                        <select id="report-{{ $field }}" wire:model="filters.{{ $field }}" class="min-h-[44px] sm:min-h-10 w-full rounded-control border border-border bg-surface px-3 py-0 text-sm sm:text-sm box-border focus:border-primary focus:ring-1 focus:ring-primary">
                             <option value="">{{ __('reports.all') }}</option>
                             @foreach($values as $option)
                                 <option value="{{ $option['id'] }}">{{ $option['label'] }}</option>
@@ -77,10 +67,16 @@
                 </div>
             @endforeach
 
+            @foreach($definition['required'] as $requiredField)
+                @if(!array_key_exists($requiredField, $options))
+                    <p role="status" class="text-sm text-text-muted">{{ __('reports.'.$requiredField) }}: {{ __('reports.restricted') }}</p>
+                @endif
+            @endforeach
+
             @foreach($definition['options'] as $field=>$values)
                 <div class="flex flex-col">
                     <label for="report-{{ $field }}" class="block text-sm font-bold text-text-secondary mb-1.5">{{ __('reports.'.$field) }}</label>
-                    <select id="report-{{ $field }}" wire:model="filters.{{ $field }}" class="h-10 min-h-[40px] w-full rounded-control border border-border bg-surface px-3 py-0 text-sm sm:text-sm box-border focus:border-primary focus:ring-1 focus:ring-primary">
+                    <select id="report-{{ $field }}" wire:model="filters.{{ $field }}" class="min-h-[44px] sm:min-h-10 w-full rounded-control border border-border bg-surface px-3 py-0 text-sm sm:text-sm box-border focus:border-primary focus:ring-1 focus:ring-primary">
                         <option value="">{{ __('reports.all') }}</option>
                         @foreach($values as $value)
                             <option value="{{ $value }}">{{ __('reports.options.'.$value) }}</option>
@@ -91,7 +87,7 @@
 
             <div class="flex flex-col">
                 <label for="report-page-size" class="block text-sm font-bold text-text-secondary mb-1.5">{{ __('reports.page_size') }}</label>
-                <select id="report-page-size" wire:model="filters.per_page" class="h-10 min-h-[40px] w-full rounded-control border border-border bg-surface px-3 py-0 text-sm sm:text-sm box-border focus:border-primary focus:ring-1 focus:ring-primary">
+                <select id="report-page-size" wire:model="filters.per_page" class="min-h-[44px] sm:min-h-10 w-full rounded-control border border-border bg-surface px-3 py-0 text-sm sm:text-sm box-border focus:border-primary focus:ring-1 focus:ring-primary">
                     @foreach(\App\Support\TablePageSize::OPTIONS as $size)
                         <option value="{{ $size }}">{{ $size }}</option>
                     @endforeach
@@ -100,10 +96,10 @@
         </div>
 
         <div class="flex flex-wrap items-center gap-3 pt-2 border-t border-border/60">
-            <button type="submit" wire:loading.attr="disabled" class="h-10 min-h-[40px] px-4 rounded-control bg-primary text-white text-sm sm:text-sm font-bold hover:bg-primary-hover disabled:opacity-60 transition cursor-pointer shadow-xs inline-flex items-center justify-center">
+            <button type="submit" wire:loading.attr="disabled" class="min-h-[44px] sm:min-h-10 px-4 rounded-control bg-primary text-white text-sm sm:text-sm font-bold hover:bg-primary-hover disabled:opacity-60 transition cursor-pointer shadow-xs inline-flex items-center justify-center">
                 {{ __('reports.apply') }}
             </button>
-            <button type="button" wire:click="resetFilters" class="h-10 min-h-[40px] px-3.5 rounded-control border border-border bg-surface text-sm sm:text-sm font-semibold text-text-secondary hover:text-text-primary hover:bg-surface-soft transition cursor-pointer" wire:loading.attr="disabled" wire:target="resetFilters">
+            <button type="button" wire:click="resetFilters" class="min-h-[44px] sm:min-h-10 px-3.5 rounded-control border border-border bg-surface text-sm sm:text-sm font-semibold text-text-secondary hover:text-text-primary hover:bg-surface-soft transition cursor-pointer" wire:loading.attr="disabled" wire:target="resetFilters">
                 {{ __('reports.reset') }}
             </button>
             <span wire:loading class="text-xs font-semibold text-text-muted flex items-center gap-1.5" role="status">
@@ -111,6 +107,7 @@
                 <span>{{ __('reports.loading') }}</span>
             </span>
         </div>
+        @error('selectorSearch')<p class="text-sm text-danger" role="alert">{{ $message }}</p>@enderror
         @error('filters')<p class="text-sm text-danger font-semibold" role="alert">{{ $message }}</p>@enderror
     </form>
 
@@ -141,7 +138,7 @@
                     <div class="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-surface border border-border shadow-2xs">
                         <span class="text-xs font-semibold text-text-secondary">{{ $total['label'] }}</span>
                         <span class="text-xs sm:text-sm font-extrabold text-text-primary tabular-nums">
-                            <bdi>{{ $total['currency'] !== '' ? \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($total['value']) : \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($total['value']) }} {{ $total['currency'] }}</bdi>
+                            <bdi dir="ltr">{{ $total['currency'] !== '' ? \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($total['value']) : \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($total['value']) }} {{ $total['currency'] }}</bdi>
                         </span>
                     </div>
                 @endforeach
