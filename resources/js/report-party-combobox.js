@@ -8,13 +8,14 @@ export function reportPartyCombobox(config) {
         init() {
             this.sync(config.initialSelected ?? '', config.initialValues ?? []);
             unwatch = config.watch?.(id => this.sync(id, [...this.options, ...(config.initialValues ?? [])]));
+            this.$cleanup?.(() => this.destroy());
         },
         sync(id, values) {
             id = String(id ?? '');
             const label = id === '' ? '' : (values.find(item => String(item.id) === id)?.label ?? '');
             // Hydration/reset/back navigation must refresh authorized identity, even after revocation.
-            if (id !== this.selected || label !== this.label) {
-                this.dismiss(); this.selected = id; this.label = label; this.term = label;
+            if (id !== this.selected || label !== this.label || this.busy || this.open) {
+                this.dismiss(); this.options = []; this.selected = id; this.label = label; this.term = label;
             }
         },
         async search() {
@@ -50,10 +51,21 @@ export function reportPartyCombobox(config) {
             if (event.isComposing) return;
             if (event.key === 'Escape') { if (this.open) event.preventDefault(); this.dismiss(); }
             if (event.key === 'Tab') this.dismiss();
-            if (event.key === 'Enter' && this.open) { event.preventDefault(); this.choose(this.active < 0 && this.options.length === 2 ? 1 : this.active); }
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                if (this.open) {
+                    if (this.failed) {
+                        this.search();
+                    } else {
+                        this.choose(this.active < 0 && this.options.length === 2 ? 1 : this.active);
+                    }
+                } else {
+                    this.search();
+                }
+            }
             if (['ArrowDown', 'ArrowUp'].includes(event.key)) {
                 event.preventDefault();
-                if (!this.open) { this.search(); return; }
+                if (!this.open || this.failed) { this.search(); return; }
                 if (!this.options.length || this.busy) return;
                 this.active = this.active < 0
                     ? (event.key === 'ArrowDown' && this.options.length > 1 ? 1 : this.options.length - 1)
@@ -61,7 +73,13 @@ export function reportPartyCombobox(config) {
                 this.$nextTick?.(() => this.$refs?.list?.querySelectorAll('[role="option"]')[this.active]?.scrollIntoView({block: 'nearest'}));
             }
         },
-        destroy() { this.dismiss(); if (typeof unwatch === 'function') unwatch(); },
+        destroy() {
+            this.dismiss();
+            if (typeof unwatch === 'function') {
+                unwatch();
+                unwatch = null;
+            }
+        },
     };
 }
 if (typeof document !== 'undefined') {

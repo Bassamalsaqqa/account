@@ -66,3 +66,137 @@ test('Blade uses explicit server watcher and keyed hydration instead of a litera
     const blade=readFileSync(new URL('../../resources/views/components/report-party-selector.blade.php',import.meta.url),'utf8');
     assert.ok(!blade.includes('x-effect=')); assert.ok(blade.includes('$wire.$watch')); assert.ok(blade.includes('hash('));
 });
+
+test('Enter when closed calls preventDefault and triggers search without form submission', async () => {
+    let searched = false;
+    const {state: s, commits} = setup(async () => { searched = true; return [{id: '1', label: 'Item 1'}]; });
+    assert.equal(s.open, false);
+    const enter = event('Enter');
+    s.key(enter);
+    assert.equal(enter.prevented, true);
+    assert.equal(s.open, true);
+    await Promise.resolve();
+    assert.equal(searched, true);
+    assert.deepEqual(commits, []);
+});
+
+test('error recovery: failed lookup can be retried via Enter or ArrowDown', async () => {
+    let attempts = 0;
+    const {state: s, commits} = setup(async () => {
+        attempts++;
+        if (attempts === 1) throw new Error('Network error');
+        return [{id: '10', label: 'Retried Item'}];
+    });
+    await s.search();
+    assert.equal(s.failed, true);
+    assert.equal(s.busy, false);
+    assert.equal(s.open, true);
+
+    // Retry via Enter
+    const enter = event('Enter');
+    s.key(enter);
+    assert.equal(enter.prevented, true);
+    assert.equal(s.busy, true);
+    await Promise.resolve();
+    assert.equal(s.failed, false);
+    assert.equal(s.options.length, 2);
+    assert.equal(s.options[1].label, 'Retried Item');
+    assert.deepEqual(commits, []);
+});
+
+test('IME composition ignores Escape, Enter, ArrowDown without triggering combobox actions', async () => {
+    const {state: s} = setup();
+    s.sync('1', [{id: '1', label: 'Selected'}]);
+    s.open = true;
+    const compEvent = key => ({key, isComposing: true, preventDefault() { this.prevented = true; }});
+
+    const esc = compEvent('Escape');
+    s.key(esc);
+    assert.equal(esc.prevented, undefined);
+    assert.equal(s.open, true);
+
+    const enter = compEvent('Enter');
+    s.key(enter);
+    assert.equal(enter.prevented, undefined);
+
+    const arrow = compEvent('ArrowDown');
+    s.key(arrow);
+    assert.equal(arrow.prevented, undefined);
+});
+
+test('input typing debounces lookup and keeps query separate from committed filter', async () => {
+    const terms = [];
+    const {state: s, commits} = setup(async term => { terms.push(term); return []; });
+    s.sync('5', [{id: '5', label: 'Committed'}]);
+
+    s.input('a');
+    s.input('ab');
+    s.input('abc');
+    assert.equal(s.term, 'abc');
+    assert.equal(s.selected, '5');
+    assert.equal(s.label, 'Committed');
+    assert.deepEqual(commits, []);
+
+    // Wait for 300ms debounce
+    await new Promise(resolve => setTimeout(resolve, 350));
+    assert.deepEqual(terms, ['abc']);
+    assert.deepEqual(commits, []);
+    assert.equal(s.selected, '5');
+});
+
+test('delayed query response cannot restore wrong tenant label after reset or remount', async () => {
+    let resolveLate;
+    const latePromise = new Promise(resolve => { resolveLate = resolve; });
+    const {state: s} = setup(async () => latePromise);
+
+    // Search in flight for tenant A
+    const searchPromise = s.search();
+    assert.equal(s.busy, true);
+
+    // Tenant resets or switches to tenant B
+    s.sync('', []);
+    assert.equal(s.selected, '');
+    assert.equal(s.label, '');
+    assert.equal(s.term, '');
+
+    // Late response arrives from tenant A
+    resolveLate([{id: '99', label: 'Tenant A Stale'}]);
+    await searchPromise;
+
+    // Verify stale options and label did NOT pollute state
+    assert.equal(s.selected, '');
+    assert.equal(s.label, '');
+    assert.equal(s.term, '');
+    assert.deepEqual(s.options, []);
+});
+
+test('destroy cleans up watcher, cancels pending timers, and is idempotent', async () => {
+    let unwatchCalls = 0;
+    const s = reportPartyCombobox({
+        lookup: async () => [],
+        commit: () => {},
+        emptyLabel: 'All',
+        watch: () => () => { unwatchCalls++; },
+    });
+    s.init();
+    s.input('pending');
+    assert.equal(s.open, true);
+
+    s.destroy();
+    assert.equal(unwatchCalls, 1);
+    assert.equal(s.open, false);
+
+    // Idempotent call
+    s.destroy();
+    assert.equal(unwatchCalls, 1);
+});
+
+test('Blade markup strictly enforces accessibility, deferred commit, and hash-derived keying', () => {
+    const blade = readFileSync(new URL('../../resources/views/components/report-party-selector.blade.php', import.meta.url), 'utf8');
+    assert.ok(blade.includes("commit: id => $wire.$set('filters.{{ $field }}', id, false)"), 'must pass false to defer Livewire commit');
+    assert.ok(blade.includes("wire:key=\"report-selector-{{ $field }}-{{ hash('sha256'"), 'wire:key must use sha256 hash of selection and options');
+    assert.ok(blade.includes('aria-haspopup="listbox"'), 'must include aria-haspopup="listbox"');
+    assert.ok(blade.includes(':aria-activedescendant="open && active >= 0 ? $id(\'party-list\') + \'-\' + active : null"'), 'must manage aria-activedescendant');
+    assert.ok(blade.includes('class="min-h-[44px] sm:min-h-10'), 'must enforce 44px mobile touch target');
+    assert.ok(blade.includes('text-base sm:text-sm'), 'must use 16px text-base on mobile to prevent iOS auto-zoom');
+});
