@@ -246,6 +246,9 @@ final class ReleaseAuditDatabaseTest extends TestCase
         // Clear ambient context so system reconciliation operates context-free
         app(CompanyContext::class)->clear();
 
+        $p7Report = app(\App\Services\Accounting\Phase7ReconciliationService::class)->reconcile($company, true);
+        self::assertTrue($p7Report->isHealthy, 'Direct Phase7 reconciliation failure: '.json_encode($p7Report->violations));
+
         $schema = DB::connection()->getDatabaseName();
         $pdo = DB::connection()->getPdo();
         $identity = $pdo->query('SELECT @@hostname, @@server_id')->fetch(PDO::FETCH_NUM);
