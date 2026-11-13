@@ -105,6 +105,54 @@ final class MobileReceiptLockOrderQualificationTest extends TestCase
         }
     }
 
+    public function test_reset_wins_first_and_missing_holder_cannot_ack_contention(): void
+    {
+        DisposableMariaDbSchema::assertPrimarySchema((string) DB::selectOne('SELECT DATABASE() AS db')->db);
+        $schema = DisposableMariaDbSchema::create();
+        $worker = null;
+        $directory = sys_get_temp_dir().'/mobile_receipt_race_'.bin2hex(random_bytes(8));
+        mkdir($directory, 0700);
+        try {
+            $schema->migrate();
+            $schema->switchLaravelConnection();
+            $this->assertSame($schema->schemaName(), DB::selectOne('SELECT DATABASE() AS db')->db);
+            [$user, , $company, , , $token] = $this->setupMultiCompanyFixture('StrictPassword');
+
+            $worker = $this->startWorker($schema, $directory, 'worker-a', [
+                'mode' => 'password_change', 'user_id' => $user->id,
+                'new_password' => 'FreshStrict!Password123',
+            ]);
+            touch($directory.'/go');
+            // Same test account can inspect its own connection's server-side state.
+            // UPDATE is visible while pending, unlike Laravel's after-query event.
+            $worker->wait();
+            try {
+                StrictBarrier::await(fn (): bool => false, fn (): bool => $worker->isRunning(), 10);
+                $this->fail('Missing holder must not acknowledge contention.');
+            } catch (\RuntimeException $failure) {
+                $this->assertStringContainsString('peer exited', $failure->getMessage());
+            }
+            $this->assertSame(0, $worker->wait(), $worker->getErrorOutput());
+            $result = json_decode($worker->getOutput(), true, flags: JSON_THROW_ON_ERROR);
+            $this->assertSame('password_updated', $result['outcome']);
+            $this->assertNotSame($token->password_epoch, $result['new_epoch']);
+            $this->expectException(MobileEventAuthenticationException::class);
+            app(MobileEventReceiptManager::class)->lookup($company->id, '00000000-0000-4000-8000-000000000999', $token->token_hash);
+        } finally {
+            if (DB::transactionLevel() > 0) {
+                DB::rollBack();
+            }
+            if ($worker !== null && $worker->isRunning()) {
+                $worker->stop();
+            }
+            foreach (glob($directory.'/*') ?: [] as $file) {
+                unlink($file);
+            }
+            rmdir($directory);
+            $schema->drop();
+        }
+    }
+
     protected function setUp(): void
     {
         parent::setUp();
