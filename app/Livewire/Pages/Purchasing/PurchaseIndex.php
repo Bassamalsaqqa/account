@@ -15,6 +15,7 @@ use App\Services\Purchasing\PurchasePayablePosition;
 use App\Support\Tenancy\CompanyContext;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Contracts\View\View;
+use Illuminate\Validation\ValidationException;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Locked;
 use Livewire\Attributes\On;
@@ -44,19 +45,23 @@ class PurchaseIndex extends Component
 
     #[On('close-payment-modal')]
     #[On('vendor-payment-recorded')]
+    public function closePaymentModal(): void
+    {
+        $this->payingPurchaseId = null;
+    }
+
     public function deleteDraft(string $publicId): void
     {
         $company = $this->authorizePurchasing('purchasing.purchase.edit_draft');
         $this->authorizePurchasing('purchasing.cost.view');
         $purchase = Purchase::where('company_id', $company->id)->where('public_id', $publicId)->firstOrFail();
-        app(DeletePurchaseDraftAction::class)->execute($purchase, auth()->user());
-        session()->flash('success', __('purchase_draft_delete.deleted'));
-        $this->redirectRoute('purchases.index', navigate: true);
-    }
-
-    public function closePaymentModal(): void
-    {
-        $this->payingPurchaseId = null;
+        try {
+            app(DeletePurchaseDraftAction::class)->execute($purchase, auth()->user());
+            $this->resetPage();
+            session()->flash('success', __('purchase_draft_delete.deleted'));
+        } catch (ValidationException $e) {
+            $this->setErrorBag($e->validator->getMessageBag());
+        }
     }
 
     public function openPaymentModal(int $purchaseId): void

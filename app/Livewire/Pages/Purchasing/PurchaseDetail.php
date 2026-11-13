@@ -58,14 +58,21 @@ class PurchaseDetail extends Component
 
     public bool $correctionOpen = false;
 
-    public function deleteDraft(string $publicId): void
+    public function deleteDraft(?string $publicId = null): void
     {
+        if ($publicId !== null && $publicId !== $this->publicId) {
+            abort(403);
+        }
         $company = $this->authorizePurchasing('purchasing.purchase.edit_draft');
         $this->authorizePurchasing('purchasing.cost.view');
-        $purchase = Purchase::where('company_id', $company->id)->where('public_id', $publicId)->firstOrFail();
-        app(DeletePurchaseDraftAction::class)->execute($purchase, auth()->user());
-        session()->flash('success', __('purchase_draft_delete.deleted'));
-        $this->redirectRoute('purchases.index', navigate: true);
+        $purchase = Purchase::where('company_id', $company->id)->where('public_id', $this->publicId)->firstOrFail();
+        try {
+            app(DeletePurchaseDraftAction::class)->execute($purchase, auth()->user());
+            session()->flash('success', __('purchase_draft_delete.deleted'));
+            $this->redirectRoute('purchases.index', navigate: true);
+        } catch (ValidationException $e) {
+            $this->setErrorBag($e->validator->getMessageBag());
+        }
     }
 
     public function openCorrection(string $mode): void
