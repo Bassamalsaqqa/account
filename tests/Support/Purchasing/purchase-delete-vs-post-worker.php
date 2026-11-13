@@ -11,6 +11,7 @@ use App\Support\Tenancy\CompanyContext;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
+use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use Tests\Support\DisposableMariaDbSchema;
@@ -50,7 +51,7 @@ auth()->login($actor);
 app(CompanyContext::class)->setCompany($company, $actor);
 setPermissionsTeamId($company->id);
 
-file_put_contents($payload['ready'], 'ready');
+file_put_contents($payload['ready'], (string) DB::selectOne('SELECT CONNECTION_ID() AS id')->id);
 $deadline = microtime(true) + 20;
 while (! is_file($payload['release'])) {
     if (microtime(true) > $deadline) {
@@ -65,27 +66,39 @@ $holdBeforeCommit = (bool) ($payload['hold_before_commit'] ?? false);
 $lockedBarrier = $payload['locked_barrier'] ?? null;
 $proceedBarrier = $payload['proceed_barrier'] ?? null;
 
+// The pause occurs after the canonical action itself acquires its first Company lock.
+// No synthetic outer transaction or Purchase-first lock changes the production lock order.
+if ($holdBeforeCommit) {
+    foreach (['locked_barrier' => 'locked-0', 'proceed_barrier' => 'proceed-0'] as $field => $name) {
+        if (($payload[$field] ?? null) !== $directory.DIRECTORY_SEPARATOR.$name) {
+            throw new RuntimeException('Purchase race held-lock barrier refused.');
+        }
+    }
+    $held = false;
+    DB::listen(function (QueryExecuted $query) use (&$held, $lockedBarrier, $proceedBarrier): void {
+        if ($held || ! str_contains(strtolower($query->sql), 'from `companies`')
+            || ! str_contains(strtolower($query->sql), 'for update')) {
+            return;
+        }
+        if (DB::transactionLevel() < 1) {
+            throw new RuntimeException('Canonical lock hook requires an active transaction.');
+        }
+        $held = true;
+        file_put_contents($lockedBarrier, 'locked');
+        $deadline = microtime(true) + 20;
+        while (! is_file($proceedBarrier)) {
+            if (microtime(true) > $deadline) {
+                throw new RuntimeException('Canonical lock release timed out.');
+            }
+            usleep(5000);
+        }
+    });
+}
+
 try {
     if ($operation === 'post') {
-        $posted = null;
-        if ($holdBeforeCommit && $lockedBarrier && $proceedBarrier) {
-            DB::transaction(function () use ($company, $actor, $payload, $lockedBarrier, $proceedBarrier, &$posted): void {
-                Purchase::where('company_id', $company->id)->lockForUpdate()->findOrFail($payload['purchase_id']);
-                file_put_contents($lockedBarrier, 'locked');
-                $deadline = microtime(true) + 20;
-                while (! is_file($proceedBarrier)) {
-                    if (microtime(true) > $deadline) {
-                        throw new RuntimeException('Proceed barrier timed out.');
-                    }
-                    usleep(5000);
-                }
-                $purchase = Purchase::where('company_id', $company->id)->findOrFail($payload['purchase_id']);
-                $posted = app(PostPurchaseAction::class)->execute($purchase, $actor);
-            });
-        } else {
-            $purchase = Purchase::where('company_id', $company->id)->lockForUpdate()->findOrFail($payload['purchase_id']);
-            $posted = app(PostPurchaseAction::class)->execute($purchase, $actor);
-        }
+        $purchase = Purchase::where('company_id', $company->id)->findOrFail($payload['purchase_id']);
+        $posted = app(PostPurchaseAction::class)->execute($purchase, $actor);
 
         echo json_encode([
             'status' => 'posted',
@@ -94,24 +107,8 @@ try {
             'posting_batch_id' => $posted->posting_batch_id,
         ], JSON_THROW_ON_ERROR);
     } elseif ($operation === 'delete') {
-        if ($holdBeforeCommit && $lockedBarrier && $proceedBarrier) {
-            DB::transaction(function () use ($company, $actor, $payload, $lockedBarrier, $proceedBarrier): void {
-                Purchase::where('company_id', $company->id)->lockForUpdate()->findOrFail($payload['purchase_id']);
-                file_put_contents($lockedBarrier, 'locked');
-                $deadline = microtime(true) + 20;
-                while (! is_file($proceedBarrier)) {
-                    if (microtime(true) > $deadline) {
-                        throw new RuntimeException('Proceed barrier timed out.');
-                    }
-                    usleep(5000);
-                }
-                $purchase = Purchase::where('company_id', $company->id)->findOrFail($payload['purchase_id']);
-                app(DeletePurchaseDraftAction::class)->execute($purchase, $actor);
-            });
-        } else {
-            $purchase = Purchase::where('company_id', $company->id)->lockForUpdate()->findOrFail($payload['purchase_id']);
-            app(DeletePurchaseDraftAction::class)->execute($purchase, $actor);
-        }
+        $purchase = Purchase::where('company_id', $company->id)->findOrFail($payload['purchase_id']);
+        app(DeletePurchaseDraftAction::class)->execute($purchase, $actor);
 
         echo json_encode([
             'status' => 'deleted',
