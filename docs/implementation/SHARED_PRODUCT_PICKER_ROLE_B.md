@@ -16,7 +16,11 @@ PRODUCT.md, DESIGN.md, AGENTS.md, UI workflow rules, barcode/unit master-spec se
 ## Stitch reference
 
 One private synthetic-data project: https://stitch.withgoogle.com/projects/4180170178157455428
-Desktop generation includes a mobile 390px reference; standalone mobile generation requested in the same project. API list_screens returned no screen IDs, so no verified deep screen links are claimed. Project authority remains local DESIGN.md: generated colors, sidebar dimensions and expandable economic cards are not imported. Applied patterns are the single camera-inside-field picker, adjacent quick create, compact desktop controls and 44px mobile targets. No generated React or application code imported. These references do not establish running-app acceptance.
+Desktop generation includes a mobile 390px reference; standalone mobile generation also completed in the same project. A later list_screens read confirmed both screen resources:
+- Desktop: https://stitch.withgoogle.com/projects/4180170178157455428?screen=4e184788c0204a169114305c95192062
+- Mobile: https://stitch.withgoogle.com/projects/4180170178157455428?screen=5638ce323f694230acdbd87c747047fa
+
+The API verified the screen IDs; browser navigation to these deep links was not verified. Project authority remains local DESIGN.md: generated colors, sidebar dimensions and expandable economic cards are not imported. Applied patterns are the single camera-inside-field picker, adjacent quick create, compact desktop controls and 44px mobile targets. No generated React or application code imported. These references do not establish running-app acceptance.
 
 ## Merge gates and overlaps
 
