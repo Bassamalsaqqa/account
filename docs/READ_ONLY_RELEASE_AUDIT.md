@@ -18,6 +18,21 @@ Every table must be a real InnoDB table with a primary key. Full rows are hashed
 
 `php tools/release-audit/compare.php BEFORE AFTER` requires protected reports and the identical implementation digest; exit0 means identical full table fingerprints, exit2 differences, exit1 refusal. It does not certify overall release acceptance. Reports record code, executable and implementation SHA256 and optional build-manifest hash. A manifest hash alone does not verify deployed asset bytes. Reports currently do not fingerprint business files/configuration or independently verify grants, DB server transport identity, full source/dependency integrity, or a coherent build. No universal data-preservation claim is made.
 
-Outstanding qualification: comprehensive refusal/partial-setup tests, representative canonical fixtures across all six domains, READ ONLY negative DML test, before/after and corruption/redaction tests on the nonce-owned MariaDB runner, and application+test+script static analysis. No production enablement until those are independently reviewed. This draft deliberately has no restore/import/decrypt, backup reader, maintenance, migration, deployment or reopening executor.
+## Executed qualification and evidence
+
+Qualification executed on disposable runner with fresh nonce-owned MariaDB 3342 schema (`accounting_p8_tmp_%`):
+
+1. **Refusal suite (`tests/Unit/ReleaseAudit/RefusalTest.php`)**: 5 tests, 57 assertions passed without live database interaction. Proved zero mutation, no socket connection, and immediate `AUDIT_REFUSED` exit 1 on invalid CLI modes (`--production`), missing/invalid paths, non-0600/0700 permissions, directory traversal, symlinks, public folder paths, tampered control pins, mismatched code pins, non-canonical output names, and corrupted compare inputs.
+2. **Database lifecycle suite (`tests/Unit/ReleaseAudit/ReleaseAuditDatabaseTest.php`)**: 3 tests, 52 assertions passed on fresh nonce-owned disposable schema (`tests/Support/run-phase8-disposable.php`). Proved:
+   - Database engine READ ONLY snapshot enforces no DML (negative test throwing PDOException SQLSTATE 25006).
+   - Deterministic table and schema fingerprinting across InnoDB tables with primary keys, capturing exact decimals and classifying operational mutable tables (`sessions`, `cache`, `cache_locks`, `jobs`, `job_batches`, `failed_jobs`, `password_reset_tokens`) vs preservation scope.
+   - Canonical execution of all six services (`AccountingReconciliationService`, `InventoryReconciliationService::auditCompany`, `SalesReconciliationService`, `PayablesReconciliationService`, `MoneyReconciliationService`, `Phase7ReconciliationService`) in context-free system mode on representative fixtures with exit 0 and sanitized digest reports.
+   - Discrepancy detection exiting with code 2, setting `healthy: false`, reporting domain discrepancy count and SHA-256 digest with zero raw business records or exception traces leaked.
+   - Deterministic fingerprint comparisons via `tools/release-audit/compare.php` (`FINGERPRINTS_EQUAL` exit 0 vs `FINGERPRINTS_DIFFER` exit 2 vs refusal exit 1).
+   - Server identity mismatch (`server_hostname`, `server_id`) refusing before running audit queries.
+   - Complete schema drop and temporary file cleanup verified by the isolated runner.
+3. **Static analysis & formatting**:
+   - `vendor/bin/phpstan analyse tools/ tests/Unit/ReleaseAudit/`: 0 errors.
+   - `vendor/bin/pint --test tools/ tests/Unit/ReleaseAudit/`: passed.
 
 Off-host coherent backup, encryption-key recovery, actual authenticated EN/AR browser smoke, HTTPS assets/MIME, maintenance custody and release/reopening acceptance remain separate root-only gates under CONTROLLED_RELEASE_CHECKLIST and PHASE_10_BACKUP_RESTORE_RUNBOOK. No production connection or recovery rehearsal was performed to prepare this tooling.
