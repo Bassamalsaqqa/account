@@ -81,6 +81,44 @@ final class Guard
             || ! is_int($c['server_id'] ?? null) || $c['server_id'] < 1) {
             self::refuse();
         }
+
+        $limits = [
+            'max_execution_seconds' => 60,
+            'max_total_rows' => 500000,
+            'max_total_bytes' => 104857600,
+            'max_memory_bytes' => 67108864,
+        ];
+        if (array_key_exists('limits', $c)) {
+            if (! is_array($c['limits'])) {
+                self::refuse();
+            }
+            foreach ($c['limits'] as $k => $v) {
+                if (! array_key_exists($k, $limits) || ! is_int($v)) {
+                    self::refuse();
+                }
+                if ($k === 'max_execution_seconds' && ($v < 1 || $v > 300)) {
+                    self::refuse();
+                }
+                if ($k === 'max_total_rows' && ($v < 1 || $v > 5000000)) {
+                    self::refuse();
+                }
+                if ($k === 'max_total_bytes' && ($v < 1024 || $v > 1073741824)) {
+                    self::refuse();
+                }
+                if ($k === 'max_memory_bytes' && ($v < 1048576 || $v > 268435456)) {
+                    self::refuse();
+                }
+                $limits[$k] = $v;
+            }
+        }
+        $allowedKeys = ['mode', 'host', 'port', 'user', 'password', 'schema', 'server_hostname', 'server_id', 'limits'];
+        foreach (array_keys($c) as $key) {
+            if (! in_array($key, $allowedKeys, true)) {
+                self::refuse();
+            }
+        }
+        $c['limits'] = $limits;
+
         // Cryptographic runner capability is mandatory before opening a socket.
         require_once $root.'/vendor/autoload.php';
         DisposableMariaDbSchema::assertPrimarySchema($c['schema']);

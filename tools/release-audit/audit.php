@@ -30,6 +30,7 @@ $pdo = null;
 try {
     $root = dirname(__DIR__, 2);
     $c = Guard::preflight($argv, $root);
+    $limits = $c['limits'];
     $pdo = new PDO('mysql:host='.$c['host'].';port='.$c['port'].';dbname='.$c['schema'].';charset=utf8mb4', (string) $c['user'], (string) $c['password'], [
         PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
         PDO::ATTR_EMULATE_PREPARES => false,
@@ -43,7 +44,9 @@ try {
         || (int) $identity[2] !== (int) $c['server_id']) {
         Guard::refuse();
     }
-    $before = Fingerprint::capture($pdo);
+    $before = Fingerprint::capture($pdo, $limits);
+    $metricsBefore = Fingerprint::lastMetrics();
+
     // Minimal isolated container: no application providers, .env, sessions or auth.
     $app = new Application($root);
     $app->instance('config', new Repository(['database' => ['default' => 'audit', 'connections' => []]]));
@@ -80,7 +83,8 @@ try {
             ];
         }
     }
-    $after = Fingerprint::capture($pdo);
+    $after = Fingerprint::capture($pdo, $limits);
+    $metricsAfter = Fingerprint::lastMetrics();
     if ($before !== $after) {
         Guard::refuse();
     }
@@ -94,6 +98,11 @@ try {
         'implementation_sha256' => Guard::implementationDigest(),
         'build_manifest_sha256' => is_file($root.'/public/build/manifest.json') ? hash_file('sha256', $root.'/public/build/manifest.json') : null,
         'companies' => count($domains) === 0 ? 0 : intdiv(count($domains), 6),
+        'limits' => $limits,
+        'metrics' => [
+            'initial_scan' => $metricsBefore,
+            'final_scan' => $metricsAfter,
+        ],
         'domains' => $domains,
         'tables' => $before,
     ];

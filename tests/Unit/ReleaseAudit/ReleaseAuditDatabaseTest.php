@@ -137,6 +137,8 @@ final class ReleaseAuditDatabaseTest extends TestCase
 
         self::assertSame('preservation', $fingerprint['companies']['classification']);
         self::assertSame('preservation', $fingerprint['ledger_accounts']['classification']);
+        self::assertArrayHasKey('normalized_schema_sha256', $fingerprint['companies']);
+        self::assertArrayHasKey('auto_increment', $fingerprint['companies']);
 
         // Assert determinism
         $fingerprint2 = Fingerprint::capture($pdo);
@@ -388,27 +390,154 @@ final class ReleaseAuditDatabaseTest extends TestCase
         self::assertSame(2, $cmpProc2->getExitCode());
         self::assertSame("FINGERPRINTS_DIFFER\n", $cmpProc2->getOutput());
 
-        // 3. Verify server identity mismatch refuses
+        // Financial record mutation can never be ignored even with explicit operational disposition
+        $cmpProc2Disp = new Process([
+            PHP_BINARY,
+            $root.'/tools/release-audit/compare.php',
+            $out1,
+            $out2,
+            Guard::implementationDigest(),
+            '--accept-operational-volatility',
+        ], $root);
+        $cmpProc2Disp->run();
+        self::assertSame(2, $cmpProc2Disp->getExitCode());
+        self::assertSame("FINGERPRINTS_DIFFER\n", $cmpProc2Disp->getOutput());
+
+        // 3. Operational churn on sessions table
+        // Clean the corrupted posting line first
+        DB::table('posting_lines')->where('line_number', 999)->delete();
+
+        DB::table('sessions')->insert([
+            'id' => 'test_session_churn_'.bin2hex(random_bytes(8)),
+            'user_id' => $owner->id,
+            'ip_address' => '127.0.0.1',
+            'user_agent' => 'TestRunner',
+            'payload' => base64_encode('test-session-payload'),
+            'last_activity' => time(),
+        ]);
+
+        $outChurn = $this->tempDir.'/audit-'.bin2hex(random_bytes(12)).'.json';
+        $procChurn = new Process([
+            PHP_BINARY,
+            $root.'/tools/release-audit/audit.php',
+            '--disposable-test',
+            $controlPath,
+            $controlPin,
+            $head,
+            $outChurn,
+        ], $root, getenv());
+        $procChurn->run();
+        self::assertSame(0, $procChurn->getExitCode(), 'Audit with operational churn exited with: '.$procChurn->getErrorOutput());
+
+        // Default compare on operational churn -> exit 3
+        $cmpChurn = new Process([
+            PHP_BINARY,
+            $root.'/tools/release-audit/compare.php',
+            $out1,
+            $outChurn,
+            Guard::implementationDigest(),
+        ], $root);
+        $cmpChurn->run();
+        self::assertSame(3, $cmpChurn->getExitCode());
+        self::assertSame("OPERATIONAL_VOLATILITY_ONLY\n", $cmpChurn->getOutput());
+        self::assertStringContainsString('sessions', $cmpChurn->getErrorOutput());
+
+        // With explicit operator disposition -> exit 0
+        $cmpChurnAccepted = new Process([
+            PHP_BINARY,
+            $root.'/tools/release-audit/compare.php',
+            $out1,
+            $outChurn,
+            Guard::implementationDigest(),
+            '--accept-operational-volatility',
+        ], $root);
+        $cmpChurnAccepted->run();
+        self::assertSame(0, $cmpChurnAccepted->getExitCode());
+        self::assertSame("OPERATIONAL_VOLATILITY_ACCEPTED\n", $cmpChurnAccepted->getOutput());
+
+        // 4. Verify server identity mismatch refuses
         $wrongControlPath = $this->tempDir.'/control_wrong.json';
         $wrongControlPayload = array_replace($controlPayload, ['server_hostname' => 'unauthorized-hostname']);
         file_put_contents($wrongControlPath, json_encode($wrongControlPayload, JSON_THROW_ON_ERROR));
         chmod($wrongControlPath, 0600);
         $wrongControlPin = hash_file('sha256', $wrongControlPath);
 
-        $out3 = $this->tempDir.'/audit-'.bin2hex(random_bytes(12)).'.json';
-        $proc3 = new Process([
+        $out4 = $this->tempDir.'/audit-'.bin2hex(random_bytes(12)).'.json';
+        $proc4 = new Process([
             PHP_BINARY,
             $root.'/tools/release-audit/audit.php',
             '--disposable-test',
             $wrongControlPath,
             $wrongControlPin,
             $head,
-            $out3,
+            $out4,
         ], $root, getenv());
-        $proc3->run();
+        $proc4->run();
 
-        self::assertSame(1, $proc3->getExitCode());
-        self::assertSame("AUDIT_REFUSED\n", $proc3->getErrorOutput());
-        self::assertFileDoesNotExist($out3);
+        self::assertSame(1, $proc4->getExitCode());
+        self::assertSame("AUDIT_REFUSED\n", $proc4->getErrorOutput());
+        self::assertFileDoesNotExist($out4);
+    }
+
+    public function test_unbuffered_streaming_and_row_budget_exceeded_refusal(): void
+    {
+        $root = dirname(__DIR__, 3);
+        $head = trim((string) shell_exec('git -C '.escapeshellarg($root).' rev-parse HEAD 2>/dev/null'));
+        $schema = DB::connection()->getDatabaseName();
+        $pdo = DB::connection()->getPdo();
+        $identity = $pdo->query('SELECT @@hostname, @@server_id')->fetch(PDO::FETCH_NUM);
+        self::assertIsArray($identity);
+
+        // Control payload with strict row limit (e.g. max_total_rows = 5, when database has more)
+        $strictControlPath = $this->tempDir.'/control_strict_rows.json';
+        $strictControlPayload = [
+            'mode' => 'disposable-test',
+            'host' => '127.0.0.1',
+            'port' => 3342,
+            'user' => 'test_runner',
+            'password' => '',
+            'schema' => $schema,
+            'server_hostname' => (string) $identity[0],
+            'server_id' => (int) $identity[1],
+            'limits' => [
+                'max_total_rows' => 5,
+            ],
+        ];
+        file_put_contents($strictControlPath, json_encode($strictControlPayload, JSON_THROW_ON_ERROR));
+        chmod($strictControlPath, 0600);
+        $strictControlPin = hash_file('sha256', $strictControlPath);
+
+        $outStrict = $this->tempDir.'/audit-'.bin2hex(random_bytes(12)).'.json';
+        $procStrict = new Process([
+            PHP_BINARY,
+            $root.'/tools/release-audit/audit.php',
+            '--disposable-test',
+            $strictControlPath,
+            $strictControlPin,
+            $head,
+            $outStrict,
+        ], $root, getenv());
+        $procStrict->run();
+
+        // Must refuse deterministically and emit NO partial output
+        self::assertSame(1, $procStrict->getExitCode());
+        self::assertSame("AUDIT_REFUSED\n", $procStrict->getErrorOutput());
+        self::assertFileDoesNotExist($outStrict, 'Interrupted or budget-exceeded audit must not create output file');
+
+        // Test unbuffered streaming metrics directly on PDO
+        $startMemory = memory_get_usage(true);
+        $fingerprint = Fingerprint::capture($pdo, ['max_total_rows' => 100000]);
+        $metrics = Fingerprint::lastMetrics();
+
+        self::assertNotNull($metrics);
+        self::assertGreaterThan(0, $metrics['total_rows']);
+        self::assertGreaterThan(0, $metrics['total_bytes']);
+        self::assertGreaterThan(0, $metrics['duration_seconds']);
+        // Memory remains tightly bounded
+        self::assertLessThan(67108864, $metrics['peak_memory_bytes']);
+
+        // Verify PDO buffered mode was restored: canonical query executes without error 2014
+        $testQuery = DB::select('SELECT count(*) as count FROM users');
+        self::assertNotEmpty($testQuery);
     }
 }

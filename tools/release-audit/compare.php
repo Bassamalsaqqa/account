@@ -9,11 +9,18 @@ use Throwable;
 require __DIR__.'/Guard.php';
 
 try {
-    if (PHP_SAPI !== 'cli' || count($argv) !== 4) {
+    if (PHP_SAPI !== 'cli' || (count($argv) !== 4 && count($argv) !== 5)) {
         Guard::refuse();
     }
     if (! preg_match('/^[a-f0-9]{64}$/D', $argv[3]) || ! hash_equals(Guard::implementationDigest(), $argv[3])) {
         Guard::refuse();
+    }
+    $disposition = null;
+    if (count($argv) === 5) {
+        if ($argv[4] !== '--accept-operational-volatility') {
+            Guard::refuse();
+        }
+        $disposition = $argv[4];
     }
     $reports = [];
     foreach (array_slice($argv, 1, 2) as $path) {
@@ -27,9 +34,91 @@ try {
         || $a['implementation_sha256'] !== ($b['implementation_sha256'] ?? null)) {
         Guard::refuse();
     }
-    $equal = $a['tables'] === $b['tables'];
-    fwrite(STDOUT, $equal ? "FINGERPRINTS_EQUAL\n" : "FINGERPRINTS_DIFFER\n");
-    exit($equal ? 0 : 2);
+
+    $allTableNames = array_unique(array_merge(array_keys($a['tables']), array_keys($b['tables'])));
+    sort($allTableNames);
+
+    $preservationDiffs = [];
+    $schemaDiffs = [];
+    $operationalChurn = [];
+
+    foreach ($allTableNames as $name) {
+        if (! array_key_exists($name, $a['tables']) || ! array_key_exists($name, $b['tables'])) {
+            $schemaDiffs[$name] = ['type' => 'table_membership_changed'];
+            continue;
+        }
+
+        $tA = $a['tables'][$name];
+        $tB = $b['tables'][$name];
+
+        $normA = $tA['normalized_schema_sha256'] ?? $tA['schema_sha256'] ?? '';
+        $normB = $tB['normalized_schema_sha256'] ?? $tB['schema_sha256'] ?? '';
+        if ($normA !== $normB) {
+            $schemaDiffs[$name] = [
+                'type' => 'substantive_schema_changed',
+                'schema_before' => $normA,
+                'schema_after' => $normB,
+            ];
+            continue;
+        }
+
+        $rowsMatch = ($tA['rows'] === $tB['rows']) && ($tA['rows_sha256'] === $tB['rows_sha256']);
+        $schemaExactMatch = ($tA['schema_sha256'] === $tB['schema_sha256']);
+
+        if ($rowsMatch && $schemaExactMatch) {
+            continue;
+        }
+
+        $isOperational = ($tA['classification'] ?? '') === 'operational_mutable';
+
+        if (! $isOperational) {
+            $preservationDiffs[$name] = [
+                'rows_before' => $tA['rows'],
+                'rows_after' => $tB['rows'],
+                'rows_sha256_before' => $tA['rows_sha256'],
+                'rows_sha256_after' => $tB['rows_sha256'],
+                'counter_before' => $tA['auto_increment'] ?? null,
+                'counter_after' => $tB['auto_increment'] ?? null,
+            ];
+        } else {
+            $operationalChurn[$name] = [
+                'rows_before' => $tA['rows'],
+                'rows_after' => $tB['rows'],
+                'rows_sha256_before' => $tA['rows_sha256'],
+                'rows_sha256_after' => $tB['rows_sha256'],
+                'counter_before' => $tA['auto_increment'] ?? null,
+                'counter_after' => $tB['auto_increment'] ?? null,
+            ];
+        }
+    }
+
+    if ($preservationDiffs === [] && $schemaDiffs === [] && $operationalChurn === []) {
+        fwrite(STDOUT, "FINGERPRINTS_EQUAL\n");
+        exit(0);
+    }
+
+    if ($preservationDiffs !== [] || $schemaDiffs !== []) {
+        fwrite(STDOUT, "FINGERPRINTS_DIFFER\n");
+        if ($schemaDiffs !== []) {
+            fwrite(STDERR, "Schema differences detected in: ".implode(', ', array_keys($schemaDiffs))."\n");
+        }
+        if ($preservationDiffs !== []) {
+            fwrite(STDERR, "Preservation differences detected in: ".implode(', ', array_keys($preservationDiffs))."\n");
+        }
+        exit(2);
+    }
+
+    // Operational churn only
+    $churnList = implode(', ', array_keys($operationalChurn));
+    if ($disposition === '--accept-operational-volatility') {
+        fwrite(STDOUT, "OPERATIONAL_VOLATILITY_ACCEPTED\n");
+        fwrite(STDERR, "Operational churn accepted in: {$churnList}\n");
+        exit(0);
+    }
+
+    fwrite(STDOUT, "OPERATIONAL_VOLATILITY_ONLY\n");
+    fwrite(STDERR, "Operational churn detected in: {$churnList}\n");
+    exit(3);
 } catch (Throwable) {
     fwrite(STDERR, "AUDIT_REFUSED\n");
     exit(1);
