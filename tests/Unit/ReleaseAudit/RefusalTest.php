@@ -196,7 +196,7 @@ final class RefusalTest extends TestCase
             chmod($fileA, 0644);
             chmod($fileB, 0600);
 
-            $proc = new Process([PHP_BINARY, $root.'/tools/release-audit/compare.php', $fileA, $fileB], $root);
+            $proc = new Process([PHP_BINARY, $root.'/tools/release-audit/compare.php', $fileA, $fileB, Guard::implementationDigest()], $root);
             $proc->run();
             self::assertSame(1, $proc->getExitCode());
             self::assertSame("AUDIT_REFUSED\n", $proc->getErrorOutput());
@@ -214,7 +214,13 @@ final class RefusalTest extends TestCase
                 'tables' => [],
             ], JSON_THROW_ON_ERROR));
 
-            $proc = new Process([PHP_BINARY, $root.'/tools/release-audit/compare.php', $fileA, $fileB], $root);
+            $proc = new Process([PHP_BINARY, $root.'/tools/release-audit/compare.php', $fileA, $fileB, Guard::implementationDigest()], $root);
+            $proc->run();
+            self::assertSame(1, $proc->getExitCode());
+            self::assertSame("AUDIT_REFUSED\n", $proc->getErrorOutput());
+            // Matching forged report digests still cannot replace the external operator pin.
+            file_put_contents($fileB, file_get_contents($fileA));
+            $proc = new Process([PHP_BINARY, $root.'/tools/release-audit/compare.php', $fileA, $fileB, Guard::implementationDigest()], $root);
             $proc->run();
             self::assertSame(1, $proc->getExitCode());
             self::assertSame("AUDIT_REFUSED\n", $proc->getErrorOutput());

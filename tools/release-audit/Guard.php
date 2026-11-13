@@ -9,6 +9,20 @@ use Tests\Support\DisposableMariaDbSchema;
 
 final class Guard
 {
+    public static function implementationDigest(): string
+    {
+        $files = [];
+        foreach (['audit.php', 'Guard.php', 'Fingerprint.php', 'compare.php'] as $name) {
+            $digest = hash_file('sha256', __DIR__.'/'.$name);
+            if (! is_string($digest)) {
+                self::refuse();
+            }
+            $files[$name] = $digest;
+        }
+
+        return hash('sha256', json_encode($files, JSON_THROW_ON_ERROR));
+    }
+
     public static function refuse(): never
     {
         throw new RuntimeException('AUDIT_REFUSED');

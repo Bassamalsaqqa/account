@@ -87,10 +87,11 @@ try {
     $pdo->rollBack();
     $result = [
         'version' => 1,
-        'healthy' => $healthy,
+        'healthy' => $healthy && $domains !== [],
+        'scope_empty' => $domains === [],
         'code' => $argv[4],
         'executable_sha256' => hash_file('sha256', __FILE__),
-        'implementation_sha256' => hash('sha256', file_get_contents(__FILE__).file_get_contents(__DIR__.'/Guard.php').file_get_contents(__DIR__.'/Fingerprint.php')),
+        'implementation_sha256' => Guard::implementationDigest(),
         'build_manifest_sha256' => is_file($root.'/public/build/manifest.json') ? hash_file('sha256', $root.'/public/build/manifest.json') : null,
         'companies' => count($domains) === 0 ? 0 : intdiv(count($domains), 6),
         'domains' => $domains,
@@ -104,7 +105,7 @@ try {
     if (fwrite($handle, $json) !== strlen($json) || ! fclose($handle)) {
         Guard::refuse();
     }
-    exit($healthy ? 0 : 2);
+    exit($healthy && $domains !== [] ? 0 : 2);
 } catch (Throwable) {
     if ($pdo instanceof PDO && $pdo->inTransaction()) {
         $pdo->rollBack();

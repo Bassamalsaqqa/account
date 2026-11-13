@@ -32,6 +32,7 @@ use Illuminate\Support\Str;
 use PDO;
 use PDOException;
 use ReleaseAudit\Fingerprint;
+use ReleaseAudit\Guard;
 use Symfony\Component\Process\Process;
 use Tests\TestCase;
 
@@ -303,6 +304,7 @@ final class ReleaseAuditDatabaseTest extends TestCase
             $root.'/tools/release-audit/compare.php',
             $out1,
             $out1,
+            Guard::implementationDigest(),
         ], $root);
         $cmpProc1->run();
         self::assertSame(0, $cmpProc1->getExitCode());
@@ -344,6 +346,7 @@ final class ReleaseAuditDatabaseTest extends TestCase
             $root.'/tools/release-audit/compare.php',
             $out1,
             $out2,
+            Guard::implementationDigest(),
         ], $root);
         $cmpProc2->run();
         self::assertSame(2, $cmpProc2->getExitCode());
