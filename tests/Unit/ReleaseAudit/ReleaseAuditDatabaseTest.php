@@ -34,6 +34,7 @@ use PDOException;
 use ReleaseAudit\Fingerprint;
 use ReleaseAudit\Guard;
 use Symfony\Component\Process\Process;
+use Tests\Support\EnforcesDisposableDatabaseOwnership;
 use Tests\TestCase;
 
 require_once dirname(__DIR__, 3).'/tools/release-audit/Guard.php';
@@ -41,11 +42,14 @@ require_once dirname(__DIR__, 3).'/tools/release-audit/Fingerprint.php';
 
 final class ReleaseAuditDatabaseTest extends TestCase
 {
-    private string $tempDir;
+    use EnforcesDisposableDatabaseOwnership;
+
+    private ?string $tempDir = null;
 
     protected function setUp(): void
     {
         parent::setUp();
+        $this->assertOwnedDisposableDatabase();
 
         $this->tempDir = sys_get_temp_dir().'/rel-audit-db-'.bin2hex(random_bytes(12));
         mkdir($this->tempDir, 0700);
@@ -53,7 +57,7 @@ final class ReleaseAuditDatabaseTest extends TestCase
 
     protected function tearDown(): void
     {
-        if (is_dir($this->tempDir)) {
+        if ($this->tempDir !== null && is_dir($this->tempDir)) {
             $files = glob($this->tempDir.'/*');
             if (is_array($files)) {
                 foreach ($files as $file) {
