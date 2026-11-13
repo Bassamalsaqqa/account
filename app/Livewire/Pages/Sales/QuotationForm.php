@@ -127,6 +127,7 @@ class QuotationForm extends Component
     /**
      * @var list<array{
      *     id?: ?int,
+     *     row_key?: string,
      *     product_id?: ?int,
      *     product_unit_id?: ?int,
      *     item_description: string,
