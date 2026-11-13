@@ -1,0 +1,31 @@
+Note: Using configuration file <WORKTREE>/phpstan.neon.
+Instructions for interpreting errors
+---------
+
+Each error has an associated identifier, like `argument.type`
+or `return.missing`.
+
+Each error identifier has documentation at URL https://phpstan.org/error-identifiers/<identifier>
+This page contains code example, explanation why is this an error
+and instruction how to fix it.
+Before fixing the error, fetch the documentation page for its identifier.
+
+The error usually indicates a real bug or incorrect type in the code. Fix the underlying cause, do not just make the error go away.
+Do not add `@phpstan-ignore` comments, `@phpstan-ignore-next-line` comments, or baseline entries to suppress the error.
+Do not use assert() or inline @var PHPDoc tag to override PHPStan's inferred type.
+Do not add type casts just to silence errors.
+Do not widen parameter or return types just to make the error go away.
+ ------ -------------------------------------------------------------------- 
+  Line   app/Livewire/Pages/Sales/QuotationForm.php                          
+ ------ -------------------------------------------------------------------- 
+  690    Offset 'row_key' on array{id?: int|null, product_id?: int|null,     
+         product_unit_id?: int|null, item_description: string, quantity:     
+         float|int|string, unit_price: float|int|string, discount_type:      
+         string, discount_value: float|int|string, ...} on left side of ??=  
+         does not exist.                                                     
+         🪪  nullCoalesce.offset                                             
+ ------ -------------------------------------------------------------------- 
+
+
+ [ERROR] Found 1 error                                                          
+

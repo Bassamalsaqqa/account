@@ -6,6 +6,7 @@
 ])
 
 <div x-data="productPickerComponent({ prefix: '{{ $prefix }}', context: '{{ $context }}' })"
+     data-network-error="{{ __('camera.network_error') }}"
      x-on:click.outside="close()"
      x-on:product-added.window="close()"
      class="relative">
@@ -31,16 +32,16 @@
                    x-on:blur="onBlur()"
                    x-on:keydown.down.prevent="selectNext()"
                    x-on:keydown.up.prevent="selectPrev()"
-                   x-on:keydown.enter.prevent="selectCurrent()"
+                   x-on:keydown.enter.prevent="if (!$event.repeat) submitSearch()"
                    x-on:keydown.escape.prevent="close()"
                    placeholder="{{ $context === 'purchasing' ? __('purchasing.search_products') : __('sales.search_products_hint') }}"
-                   class="min-w-0 w-full h-11 px-3 rounded-control border-0 bg-transparent text-sm text-text-primary focus:ring-0 outline-hidden"
-                   :disabled="documentBusy || saving" />
+                   class="min-w-0 w-full h-11 md:h-9 px-3 rounded-control border-0 bg-transparent text-sm text-text-primary focus:ring-0 outline-hidden"
+                   :disabled="documentBusy || saving || pending" />
 
             <button type="button"
                     x-show="$wire.productSearch && $wire.productSearch.length > 0"
                     x-on:click="clearSearch()"
-                    class="min-h-[44px] min-w-[44px] inline-flex items-center justify-center p-2 text-text-muted hover:text-text-primary focus:outline-none cursor-pointer"
+                    class="min-h-[44px] min-w-[44px] focus-visible:ring-2 focus-visible:ring-primary inline-flex items-center justify-center p-2 text-text-muted hover:text-text-primary focus:outline-none cursor-pointer"
                     aria-label="{{ __('common.clear') ?? 'Clear' }}">
                 <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
@@ -48,17 +49,17 @@
             </button>
 
             <x-camera-scanner :compact="true"
-                              button-class="min-h-11 min-w-11 inline-flex items-center justify-center rounded-control text-primary hover:bg-surface-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary cursor-pointer" />
+                              button-class="min-h-11 min-w-11 md:min-h-9 md:min-w-9 inline-flex items-center justify-center rounded-control text-primary hover:bg-surface-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary cursor-pointer" />
         </div>
 
         @if (auth()->user()->hasPermissionTo('inventory.product.manage'))
             <button type="button"
                     wire:click="openQuickProductModal"
                     aria-haspopup="dialog"
-                    class="shrink-0 min-h-11 px-3 py-2 rounded-control border border-border text-sm font-bold text-primary hover:bg-surface-soft focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary cursor-pointer transition-colors"
+                    class="shrink-0 min-h-11 md:min-h-9 px-3 py-2 rounded-control border border-border text-sm font-bold text-primary hover:bg-surface-soft focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary cursor-pointer transition-colors"
                     wire:loading.attr="disabled"
                     wire:target="openQuickProductModal"
-                    :disabled="documentBusy || saving">
+                    :disabled="documentBusy || saving || pending">
                 + {{ __('quick_product.create') }}
             </button>
         @endif
@@ -71,6 +72,8 @@
         </svg>
         <span>{{ $context === 'purchasing' ? __('purchasing.products_searching') : __('sales.products_searching') }}</span>
     </div>
+
+    <p x-cloak x-show="feedback" x-text="feedback" role="alert" class="text-danger text-xs mt-1"></p>
 
     @error('productSearch')
         <p role="alert" class="text-danger text-xs mt-1">{{ $message }}</p>

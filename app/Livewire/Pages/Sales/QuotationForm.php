@@ -28,6 +28,7 @@ use App\Models\Quotation;
 use App\Models\TaxRate;
 use App\Services\Sales\SalesActorGuard;
 use App\Services\Sales\SalesProductSelection;
+use App\Services\Search\BoundedProductSearchService;
 use App\Support\Tenancy\CompanyContext;
 use Brick\Math\BigDecimal;
 use Brick\Math\Exception\MathException;
@@ -35,6 +36,7 @@ use Carbon\Carbon;
 use Illuminate\Contracts\View\View;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Locked;
@@ -97,6 +99,13 @@ class QuotationForm extends Component
 
     public string $productSearch = '';
 
+    /** @var list<array<string, mixed>> */
+    #[Locked]
+    public array $searchResults = [];
+
+    #[Locked]
+    public string $searchResultsQuery = '';
+
     public string $barcodeSearch = '';
 
     public string $currency_code = 'ILS';
@@ -118,6 +127,7 @@ class QuotationForm extends Component
     /**
      * @var list<array{
      *     id?: ?int,
+     *     row_key?: string,
      *     product_id?: ?int,
      *     product_unit_id?: ?int,
      *     item_description: string,
@@ -180,6 +190,7 @@ class QuotationForm extends Component
             foreach ($this->quotation->lines as $line) {
                 $this->lines[] = [
                     'id' => $line->id,
+                    'row_key' => (string) Str::uuid(),
                     'product_id' => $line->product_id,
                     'product_unit_id' => $line->product_unit_id,
                     'item_description' => $line->item_description,
@@ -208,6 +219,7 @@ class QuotationForm extends Component
 
             $this->lines = [
                 [
+                    'row_key' => (string) Str::uuid(),
                     'product_id' => null,
                     'product_unit_id' => null,
                     'item_description' => '',
@@ -229,7 +241,7 @@ class QuotationForm extends Component
 
     public function hydrate(CompanyContext $context): void
     {
-        $this->authorizeQuoteAction();
+        $this->updatedProductSearch();
     }
 
     protected function authorizeQuoteAction(): void
@@ -244,6 +256,49 @@ class QuotationForm extends Component
             $quote = Quotation::where('company_id', $this->pageCompanyId)->whereKey($this->quotation?->id)->firstOrFail();
             abort_unless($quote->status === Quotation::STATUS_DRAFT, 403);
         }
+    }
+
+    public function updatedProductSearch(): void
+    {
+        $this->authorizeQuoteAction();
+        $this->searchResultsQuery = $this->productSearch;
+        $this->searchResults = app(BoundedProductSearchService::class)->search(
+            $this->pageCompanyId, auth()->user(), $this->productSearch, 'quotation',
+            null, $this->currency_code, $this->exchange_rate
+        );
+    }
+
+    public function addProduct(int $productId, ?int $unitId = null): void
+    {
+        $this->authorizeQuoteAction();
+        // Resolve again on the server; candidate display data is never economic authority.
+        $selected = app(SalesProductSelection::class)->select($productId, $unitId, $this->currency_code, $this->exchange_rate);
+        $index = null;
+        foreach ($this->lines as $key => $line) {
+            $price = trim((string) $line['unit_price']);
+            try {
+                $unusedPrice = $price === '' || BigDecimal::of($price)->isZero();
+            } catch (MathException) {
+                // Preserve malformed user input so normal field validation can explain it.
+                $unusedPrice = false;
+            }
+            if (empty($line['product_id']) && trim((string) $line['item_description']) === ''
+                && (string) $line['quantity'] === '1' && $unusedPrice
+                && $line['discount_type'] === 'none' && empty($line['tax_rate_id'])) {
+                $index = $key;
+                break;
+            }
+        }
+        if ($index === null) {
+            $this->addLine();
+            $index = array_key_last($this->lines);
+        }
+        $this->lines[$index] = array_merge($this->lines[$index], $selected);
+        $this->productSearch = '';
+        $this->searchResults = [];
+        $this->searchResultsQuery = '';
+        $this->recalculate();
+        $this->dispatch('product-added');
     }
 
     public function updatedCustomerId(): void
@@ -414,6 +469,7 @@ class QuotationForm extends Component
                 && empty($this->lines[0]['tax_rate_id']);
 
             $newLine = [
+                'row_key' => (string) Str::uuid(),
                 'product_id' => (int) $product->id,
                 'product_unit_id' => $selectedUnitId,
                 'item_description' => $selectedDescription,
@@ -446,6 +502,7 @@ class QuotationForm extends Component
     {
         $this->authorizeQuoteAction();
         $this->lines[] = [
+            'row_key' => (string) Str::uuid(),
             'product_id' => null,
             'product_unit_id' => null,
             'item_description' => '',
@@ -630,6 +687,10 @@ class QuotationForm extends Component
     public function render(CompanyContext $context): View
     {
         $this->authorizeQuoteAction();
+        foreach ($this->lines as &$line) {
+            $line['row_key'] ??= (string) Str::uuid();
+        }
+        unset($line);
         $user = auth()->user();
         $company = $context->company();
 
@@ -656,19 +717,11 @@ class QuotationForm extends Component
 
         $currencies = $company->currencies()->where('enabled', true)->get();
 
-        $term = mb_substr(trim($this->productSearch), 0, 160);
-        $productsQuery = Product::where('company_id', $company->id)->where('active', true);
-        if ($term !== '') {
-            $productsQuery->where(fn ($query) => $query->where('name_ar', 'like', "%{$term}%")
-                ->orWhere('name_en', 'like', "%{$term}%")->orWhere('sku', 'like', "%{$term}%")
-                ->orWhereHas('barcodes', fn ($barcodes) => $barcodes->where('company_id', $company->id)->where('barcode', $term)));
-        }
         $selectedProductIds = collect($this->lines)->pluck('product_id')->filter()->unique()->values()->all();
         $selectedProducts = Product::with(['productUnits.unit', 'baseUnit'])->where('company_id', $company->id)
             ->whereIn('id', $selectedProductIds)->get();
         abort_unless($selectedProducts->count() === count($selectedProductIds), 404);
-        $matchingProducts = $productsQuery->with(['productUnits.unit', 'baseUnit'])->orderByRaw('COALESCE(name_ar, name_en) ASC')->orderBy('id')->limit(50)->get();
-        $products = $matchingProducts->merge($selectedProducts)->unique('id');
+        $products = $selectedProducts;
         $lastCustomerPrices = $this->customer_id !== null && count($selectedProductIds) <= 100
             && app(ReportingGuard::class)->allows($company, ['reports.sales.view', 'sales.invoice.view'], $user)
             ? app(CustomerLastPriceQuery::class)->execute($company, $user, $this->customer_id, array_map('intval', $selectedProductIds)) : [];
@@ -679,7 +732,7 @@ class QuotationForm extends Component
             'customers' => $customers,
             'currencies' => $currencies,
             'products' => $products,
-            'productMatchCount' => $matchingProducts->count(),
+            'productMatchCount' => count($this->searchResults),
             'taxes' => $taxes,
             'canManageCustomers' => $user->hasPermissionTo('customers.manage'),
             'lastCustomerPrices' => $lastCustomerPrices,

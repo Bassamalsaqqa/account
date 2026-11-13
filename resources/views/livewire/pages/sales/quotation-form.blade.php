@@ -35,7 +35,7 @@
     </div>
 
     <div class="bg-surface rounded-card border border-border p-4">
-        @include('livewire.partials.barcode-entry', ['prefix' => 'quotation'])
+        @include('livewire.partials.product-search-picker', ['prefix' => 'quotation', 'context' => 'sales', 'currencyCode' => $currency_code, 'searchResults' => $searchResults])
     </div>
 
     <!-- Main Form -->
@@ -160,17 +160,7 @@
                     <h2 class="text-sm font-bold text-text-primary">
                         {{ __('sales.quotation_details') }}
                     </h2>
-                    <div class="flex items-center gap-2 flex-1 max-w-md">
-                        <input type="text"
-                               wire:model.live.debounce.300ms="productSearch"
-                               placeholder="{{ __('workflow.search_products') }}"
-                               class="flex-1 min-w-0 h-11 px-2.5 rounded-control border border-border bg-canvas text-sm text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden"  :disabled="documentBusy || saving"/>
-                        @if (auth()->user()->hasPermissionTo('inventory.product.manage'))
-                            <button type="button" wire:click="openQuickProductModal" aria-haspopup="dialog" class="shrink-0 min-h-11 px-3 py-2 rounded-control border border-border text-sm font-bold text-primary hover:bg-surface-soft focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary cursor-pointer" wire:loading.attr="disabled" wire:target="openQuickProductModal" :disabled="documentBusy || saving">
-                                + {{ __('quick_product.create') }}
-                            </button>
-                        @endif
-                    </div>
+
                 </div>
                 <button type="button"
                         @click="handleAddLine()"
@@ -205,18 +195,10 @@
                             @php
                                 $selectedProduct = !empty($line['product_id']) ? $products->firstWhere('id', $line['product_id']) : null;
                             @endphp
-                            <tr wire:key="line-{{ $index }}">
+                            <tr wire:key="line-{{ $line['row_key'] }}">
                                 <td class="py-2 px-2 align-top space-y-1">
 <div class="entry-product-fields">
-                                    <select wire:change="selectProduct({{ $index }}, $event.target.value)"
-                                            class="w-full h-8 px-2 rounded-control border border-border bg-canvas text-sm" :disabled="documentBusy || saving">
-                                        <option value="">-- {{ __('sales.product') }} --</option>
-                                        @foreach ($products as $p)
-                                            <option value="{{ $p->id }}" @selected($line['product_id'] == $p->id)>
-                                                {{ $p->displayName() }} ({{ $p->sku }})
-                                            </option>
-                                        @endforeach
-                                    </select>
+                                    <span class="block text-sm font-bold">{{ $selectedProduct?->displayName() }}</span>
                                     <input type="text"
                                            wire:model="lines.{{ $index }}.item_description"
                                            placeholder="{{ __('sales.description') }}..."
@@ -337,7 +319,7 @@
                     @php
                         $selectedProduct = !empty($line['product_id']) ? $products->firstWhere('id', $line['product_id']) : null;
                     @endphp
-                    <div wire:key="quote-card-{{ $index }}" class="p-3 bg-canvas rounded-card border border-border space-y-3">
+                    <div wire:key="quote-card-{{ $line['row_key'] }}" class="p-3 bg-canvas rounded-card border border-border space-y-3">
                         <div class="flex items-center justify-between">
                             <span class="text-xs font-bold text-text-primary">#{{ $index + 1 }}</span>
                             @if (count($lines) > 1)
@@ -350,15 +332,7 @@
                         <!-- Product & Description -->
                         <div class="space-y-1">
                             <label class="block text-sm font-bold text-text-secondary">{{ __('sales.product') }}</label>
-                            <select wire:change="selectProduct({{ $index }}, $event.target.value)"
-                                    class="w-full h-8 px-2 rounded-control border border-border bg-surface text-sm" :disabled="documentBusy || saving">
-                                <option value="">-- {{ __('sales.product') }} --</option>
-                                @foreach ($products as $p)
-                                    <option value="{{ $p->id }}" @selected($line['product_id'] == $p->id)>
-                                        {{ $p->displayName() }} ({{ $p->sku }})
-                                    </option>
-                                @endforeach
-                            </select>
+                            <span class="block text-sm font-bold">{{ $selectedProduct?->displayName() }}</span>
                             <input type="text"
                                    wire:model="lines.{{ $index }}.item_description"
                                    placeholder="{{ __('sales.description') }}..."

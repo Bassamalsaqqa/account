@@ -1,0 +1,49 @@
+{
+  "runtimeSha": "b09f76b2a76b1c535c6fa067195859cb6b200871",
+  "typedSourceSha": "f3bb1cebc1c6a3174d38e0bfd7ac6e1615293fef",
+  "executor": "root Codex supervisor",
+  "command": "php tests/Support/run-phase8-disposable.php -- --filter='test_quotation_(shared_picker|picker_|restored_line)' tests/Feature/Search/BoundedProductSearchMariaDbTest.php",
+  "runtime": {
+    "tests": 4,
+    "assertions": 27,
+    "schema": "accounting_p8_tmp_94453afc9f88",
+    "runnerReportedCleanup": true
+  },
+  "coverage": [
+    "existing bounded authorized canonical product re-resolution",
+    "blank and equivalent exact-zero prices reuse an unused row",
+    "malformed price retained with inline validation instead of MathException500",
+    "restored line receives stable row_key across refresh"
+  ],
+  "sourceNote": "typedSourceSha adds only an accurate optional row_key field in the existing PHPDoc shape; no runtime change after the 4/27 execution.",
+  "static": "scoped app QuotationForm plus changed MariaDB test PHPStan 0 errors and Pint passed. Earlier PHPStan failure for missing row_key shape retained.",
+  "buildSeconds": 3.5,
+  "sourceMaps": [],
+  "limits": [
+    "No production access/deploy/main merge; not part of focused PR99 candidate.",
+    "PR93 composition and browser geometry remain unqualified; no new 10k query benchmark claim.",
+    "Earlier worker broad suites are separate evidence, not supervisor reruns."
+  ],
+  "logs": {
+    "quotation": {
+      "rawSha256": "46942e55ee30321c1ea042a23dc647d09d3e7abed734cce0bf38a980b010f1a2",
+      "publishedSha256": "17d7faed6a13188c3530b9fa0bdfacf2ad7a312b1ff5ffce8c878974218e533a"
+    },
+    "phpstan": {
+      "rawSha256": "ca7e9f92887d9a095164ed6cd4055c2d27f136365549239d1c6ecc398b52b3e3",
+      "publishedSha256": "e16fcfb5838d7a5a0db00d9dc69c45ca72c154a3fb487339e59ab50b67e94895"
+    },
+    "phpstan-corrected": {
+      "rawSha256": "567fe08e3a82d757d1af68bcb03b85e9f3df196b583928fa3fb19ff6a5236345",
+      "publishedSha256": "5a14e20736b665e2fa2804d41750897fb8f246bb9e1fb120f5ee03c5ce6a6614"
+    },
+    "pint-final": {
+      "rawSha256": "cd1a94fc2cf6a965b86e1a4809d6c7fb9148b1ee374e1010ed2ac96ff4876ec2",
+      "publishedSha256": "cd1a94fc2cf6a965b86e1a4809d6c7fb9148b1ee374e1010ed2ac96ff4876ec2"
+    },
+    "build": {
+      "rawSha256": "51fe6906582bed5fdd40c25ae15a19b006c7a1bd874a17378da50e264581f497",
+      "publishedSha256": "51fe6906582bed5fdd40c25ae15a19b006c7a1bd874a17378da50e264581f497"
+    }
+  }
+}

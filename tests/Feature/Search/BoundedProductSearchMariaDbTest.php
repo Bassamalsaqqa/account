@@ -7,6 +7,7 @@ namespace Tests\Feature\Search;
 use App\Actions\Company\CreateCompanyAction;
 use App\Livewire\Pages\Purchasing\PurchaseForm;
 use App\Livewire\Pages\Sales\InvoiceForm;
+use App\Livewire\Pages\Sales\QuotationForm;
 use App\Models\Company;
 use App\Models\CompanyUser;
 use App\Models\InventoryBalance;
@@ -40,6 +41,58 @@ class BoundedProductSearchMariaDbTest extends TestCase
     protected Unit $pieceUnit;
 
     protected BoundedProductSearchService $searchService;
+
+    public function test_quotation_shared_picker_is_bounded_and_revalidates_selected_identity(): void
+    {
+        $product = $this->createProduct('صنف تجريبي', 'Test item', 'QUOTE-PICK');
+        $form = Livewire::test(QuotationForm::class)
+            ->set('productSearch', $product->sku);
+        $this->assertLessThanOrEqual(30, count($form->get('searchResults')));
+        $this->assertSame($product->sku, $form->get('searchResultsQuery'));
+        $this->assertNull($form->get('searchResults.0.cost'));
+        $form->call('addProduct', $product->id);
+        $this->assertSame($product->id, $form->get('lines.0.product_id'));
+        $this->assertNotEmpty($form->get('lines.0.row_key'));
+        $this->assertSame('', $form->get('productSearch'));
+        $form->call('addProduct', 2147483647)->assertNotFound();
+    }
+
+    public function test_quotation_picker_reuses_blank_or_exact_zero_price_rows(): void
+    {
+        $product = $this->createProduct('صنف', 'Item', 'QUOTE-EMPTY');
+        foreach (['', '0.000000', '00.00'] as $price) {
+            $form = Livewire::test(QuotationForm::class)
+                ->set('lines.0.unit_price', $price)
+                ->call('addProduct', $product->id)
+                ->assertSuccessful();
+            $this->assertCount(1, $form->get('lines'));
+            $this->assertSame($product->id, $form->get('lines.0.product_id'));
+        }
+    }
+
+    public function test_quotation_picker_preserves_malformed_price_for_inline_validation(): void
+    {
+        $product = $this->createProduct('صنف', 'Item', 'QUOTE-INVALID');
+        $form = Livewire::test(QuotationForm::class)
+            ->set('lines.0.unit_price', 'invalid')
+            ->call('addProduct', $product->id)
+            ->assertSuccessful()
+            ->assertHasErrors('lines.0.unit_price');
+        $this->assertSame('invalid', $form->get('lines.0.unit_price'));
+        $this->assertSame($product->id, $form->get('lines.1.product_id'));
+    }
+
+    public function test_quotation_restored_line_without_identity_receives_a_stable_key(): void
+    {
+        $form = Livewire::test(QuotationForm::class);
+        $lines = $form->get('lines');
+        unset($lines[0]['row_key']);
+        $form->set('lines', $lines)->assertSuccessful();
+        $key = $form->get('lines.0.row_key');
+        $this->assertNotEmpty($key);
+        $form->call('$refresh')->assertSuccessful();
+        $this->assertSame($key, $form->get('lines.0.row_key'));
+    }
 
     protected function setUp(): void
     {
