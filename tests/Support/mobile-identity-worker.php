@@ -31,6 +31,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 use Tests\Support\DisposableMariaDbSchema;
+use Tests\Support\StrictBarrier;
 
 $directory = $argv[1] ?? '';
 $slot = $argv[2] ?? '';
@@ -55,18 +56,19 @@ $holdTable = $input['hold_lock_table'] ?? null;
 $holdMs = (int) ($input['hold_ms'] ?? 0);
 $waitForFile = $input['wait_for_file'] ?? null;
 $lockSignaled = false;
+$barrier = new StrictBarrier;
 
 if ($holdTable !== null) {
-    DB::listen(function ($query) use ($holdTable, $directory, $slot, $waitForFile, $holdMs, &$lockSignaled) {
+    DB::listen(function ($query) use ($holdTable, $directory, $slot, $waitForFile, $holdMs, &$lockSignaled, $barrier) {
         $sql = strtolower($query->sql);
-        if (! $lockSignaled && str_contains($sql, 'for update') && str_contains($sql, strtolower($holdTable))) {
+        if (! $lockSignaled && $barrier->observe($sql, $holdTable)) {
             $lockSignaled = true;
             file_put_contents($directory.'/'.$slot.'.locked', 'locked');
             if ($waitForFile !== null) {
                 $timeout = microtime(true) + 15;
                 while (! is_file($directory.'/'.$waitForFile)) {
                     if (microtime(true) > $timeout) {
-                        break;
+                        throw new RuntimeException('Held-lock release ACK deadline expired.');
                     }
                     usleep(1000);
                 }
@@ -95,7 +97,7 @@ if (isset($input['wait_before_start_file'])) {
     $waitDeadline = microtime(true) + 15;
     while (! is_file($waitFile)) {
         if (microtime(true) > $waitDeadline) {
-            break;
+            throw new RuntimeException('Start ACK deadline expired.');
         }
         usleep(1000);
     }
@@ -278,8 +280,10 @@ try {
 
         $executor = null;
         if ($executorMode === 'canonical') {
-            $executor = new class implements FinancialExecutionAdapterInterface
+            $executor = new class($barrier, $holdTable !== null) implements FinancialExecutionAdapterInterface
             {
+                public function __construct(private StrictBarrier $barrier, private bool $required) {}
+
                 public function authorize(
                     Company $company,
                     User $actor,
@@ -314,6 +318,9 @@ try {
                     array $payload,
                     string $idempotencySuffix
                 ): array {
+                    if ($this->required) {
+                        $this->barrier->requireHeld();
+                    }
                     $customer = Customer::where('company_id', $company->id)->firstOrFail();
                     $warehouse = Warehouse::where('company_id', $company->id)->where('is_default', true)->firstOrFail();
                     $product = Product::where('company_id', $company->id)->where('track_stock', true)->firstOrFail();
@@ -470,6 +477,7 @@ try {
         'duration' => microtime(true) - $startTime,
     ], JSON_THROW_ON_ERROR);
 } catch (Throwable $e) {
+    fwrite(STDERR, $e->getMessage().PHP_EOL);
     echo json_encode([
         'mode' => $mode,
         'outcome' => 'error',
@@ -480,4 +488,11 @@ try {
         'retries' => $retries,
         'duration' => microtime(true) - $startTime,
     ], JSON_THROW_ON_ERROR);
+}
+
+if ($holdTable !== null) {
+    $barrier->requireHeld();
+}
+if (isset($e) && $e instanceof Throwable && ! ($e instanceof MobileEventAuthenticationException)) {
+    exit(1);
 }
