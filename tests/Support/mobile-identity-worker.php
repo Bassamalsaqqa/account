@@ -79,6 +79,18 @@ if ($holdTable !== null) {
     });
 }
 
+// Pause after candidate pluck has returned, before any Company lock executes.
+$candidatePaused = false;
+if (($input['pause_before_company_lock'] ?? false) === true) {
+    DB::connection()->beforeExecuting(function (string $sql) use ($directory, &$candidatePaused): void {
+        if (! $candidatePaused && str_contains(strtolower($sql), 'from `companies`') && str_contains(strtolower($sql), 'for update')) {
+            $candidatePaused = true;
+            file_put_contents($directory.'/candidate-returned', 'before-company-lock');
+            StrictBarrier::await(fn (): bool => is_file($directory.'/release-candidate'), fn (): bool => true);
+        }
+    });
+}
+
 // Signal readiness at the barrier
 file_put_contents($directory.'/'.$slot.'.ready', 'ready');
 
@@ -145,6 +157,9 @@ try {
         /** @var Illuminate\Contracts\Http\Kernel $httpKernel */
         $httpKernel = $app->make(Illuminate\Contracts\Http\Kernel::class);
         $response = $httpKernel->handle($request);
+        if (($input['pause_before_company_lock'] ?? false) === true && ! $candidatePaused) {
+            throw new RuntimeException('Required candidate barrier was not reached.');
+        }
         $status = $response->getStatusCode();
         $body = json_decode((string) $response->getContent(), true) ?? [];
         $httpKernel->terminate($request, $response);
@@ -209,7 +224,7 @@ try {
         $actorId = (int) $input['actor_id'];
 
         $attempts = 0;
-        $maxAttempts = 5;
+        $maxAttempts = 1; // Production action has no retry; never hide contention in the harness.
         $updated = null;
 
         while ($attempts < $maxAttempts) {

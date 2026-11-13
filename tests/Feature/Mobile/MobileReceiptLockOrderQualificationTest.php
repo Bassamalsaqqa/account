@@ -48,6 +48,66 @@ use Tests\TestCase;
  */
 final class MobileReceiptLockOrderQualificationTest extends TestCase
 {
+    public function test_candidate_read_then_production_membership_revocation_commits_before_locking_read(): void
+    {
+        DisposableMariaDbSchema::assertPrimarySchema((string) DB::selectOne('SELECT DATABASE() AS db')->db);
+        $schema = DisposableMariaDbSchema::create();
+        $workers = [];
+        $directory = sys_get_temp_dir().'/mobile_receipt_race_'.bin2hex(random_bytes(8));
+        mkdir($directory, 0700);
+        try {
+            $schema->migrate();
+            $schema->switchLaravelConnection();
+            $this->assertSame($schema->schemaName(), DB::selectOne('SELECT DATABASE() AS db')->db);
+            [$owner, $password, $companyA, $companyB, $device] = $this->setupMultiCompanyFixture('Candidate');
+            // Distinct real Owner retains authority while the login principal is deactivated.
+            $staff = User::factory()->create(['password' => Hash::make($password)]);
+            foreach ([$companyA, $companyB] as $company) {
+                CompanyUser::create(['company_id' => $company->id, 'user_id' => $staff->id, 'status' => 'active', 'is_owner' => false]);
+            }
+            $device->update(['user_id' => $staff->id]);
+            $nonce = bin2hex(random_bytes(32));
+            $challengeId = (string) Str::uuid();
+            MobileAuthChallenge::create([
+                'challenge_id' => $challengeId, 'device_id' => $device->device_id,
+                'nonce_hash' => hash('sha256', $nonce), 'app_version' => '1.0.0',
+                'platform' => 'android', 'expires_at' => now()->addMinutes(5),
+            ]);
+            $login = $workers[] = $this->startWorker($schema, $directory, 'worker-a', [
+                'mode' => 'login', 'email' => $staff->email, 'password' => $password,
+                'device_id' => $device->device_id, 'challenge_id' => $challengeId, 'nonce' => $nonce,
+                'pause_before_company_lock' => true,
+            ]);
+            touch($directory.'/go');
+            StrictBarrier::await(fn (): bool => is_file($directory.'/candidate-returned'), fn (): bool => $login->isRunning());
+            $toggle = $workers[] = $this->startWorker($schema, $directory, 'worker-b', [
+                'mode' => 'toggle_member', 'company_id' => $companyB->id,
+                'target_user_id' => $staff->id, 'actor_id' => $owner->id,
+            ]);
+            $this->assertSame(0, $toggle->wait(), $toggle->getErrorOutput());
+            $result = json_decode($toggle->getOutput(), true, flags: JSON_THROW_ON_ERROR);
+            $this->assertSame('inactive', $result['new_status']);
+            $this->assertSame(0, $result['retries']);
+            touch($directory.'/release-candidate');
+            $this->assertSame(0, $login->wait(), $login->getErrorOutput());
+            $result = json_decode($login->getOutput(), true, flags: JSON_THROW_ON_ERROR);
+            $this->assertSame(200, $result['status']);
+            $this->assertCount(1, $result['body']['companies']);
+            $this->assertSame($companyA->public_id, $result['body']['companies'][0]['company_id']);
+        } finally {
+            foreach ($workers as $worker) {
+                if ($worker->isRunning()) {
+                    $worker->stop();
+                }
+            }
+            foreach (glob($directory.'/*') ?: [] as $file) {
+                unlink($file);
+            }
+            rmdir($directory);
+            $schema->drop();
+        }
+    }
+
     public function test_real_fortify_update_waits_for_user_holder_then_invalidates_old_epoch(): void
     {
         DisposableMariaDbSchema::assertPrimarySchema((string) DB::selectOne('SELECT DATABASE() AS db')->db);
@@ -776,7 +836,7 @@ final class MobileReceiptLockOrderQualificationTest extends TestCase
      * Prevents race condition where candidate query saw membership active but concurrent transaction
      * revoked it before/during membership locking.
      */
-    public function test_auth_controller_login_authoritatively_filters_revoked_memberships_during_race(): void
+    public function test_auth_controller_login_filters_memberships_revoked_before_login(): void
     {
         $schema = DisposableMariaDbSchema::create();
         try {
