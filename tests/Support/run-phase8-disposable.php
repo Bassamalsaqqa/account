@@ -47,6 +47,7 @@ try {
     foreach (DisposableMariaDbSchema::testSettings() as $key => $value) {
         $environment['PHASE8_TEST_DB_'.$key] = $value;
     }
+    $environment['APP_KEY'] = getenv('APP_KEY') !== false ? (string) getenv('APP_KEY') : 'base64:u3G9L02n9bAflb3yS7Y99JqX2Vb5xHj9zKkF8hW9aVc=';
     foreach ($environment as $key => $value) {
         $node = $xpath->query('//php/env[@name="'.$key.'"]')->item(0);
         if ($node === null) {
