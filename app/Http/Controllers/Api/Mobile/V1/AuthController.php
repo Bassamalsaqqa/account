@@ -142,8 +142,35 @@ final class AuthController extends Controller
                 );
             }
 
-            // Verify user has active company memberships
-            $activeCompanies = $user->activeCompanies()->where('companies.status', 'active')->lockForUpdate()->get();
+            // Resolve candidate active company IDs for this user
+            /** @var list<int> $candidateCompanyIds */
+            $candidateCompanyIds = DB::table('company_user')
+                ->where('user_id', $user->id)
+                ->where('status', 'active')
+                ->pluck('company_id')
+                ->map(fn ($id): int => (int) $id)
+                ->sort()
+                ->values()
+                ->all();
+
+            // 1. Lock active Company rows in strictly ascending ID order (tenant boundary)
+            $activeCompanies = Company::whereIn('id', $candidateCompanyIds)
+                ->where('status', 'active')
+                ->orderBy('id', 'asc')
+                ->lockForUpdate()
+                ->get();
+
+            // 2. Lock active CompanyUser membership rows in matching company ID order
+            if ($activeCompanies->isNotEmpty()) {
+                DB::table('company_user')
+                    ->where('user_id', $user->id)
+                    ->whereIn('company_id', $activeCompanies->pluck('id'))
+                    ->where('status', 'active')
+                    ->orderBy('company_id', 'asc')
+                    ->lockForUpdate()
+                    ->get();
+            }
+
             if ($activeCompanies->isEmpty()) {
                 RateLimiter::hit($ipKey, 60);
                 RateLimiter::hit($actorKey, 60);
