@@ -246,19 +246,6 @@ final class ReleaseAuditDatabaseTest extends TestCase
         // Clear ambient context so system reconciliation operates context-free
         app(CompanyContext::class)->clear();
 
-        $exp = \App\Models\Expense::first();
-        if ($exp) {
-            $ref = new \ReflectionClass(\App\Services\Phase7\Phase7History::class);
-            $method = $ref->getMethod('payload');
-            $method->setAccessible(true);
-            $p = $method->invoke(app(\App\Services\Phase7\Phase7History::class), $exp);
-            $hash = hash('sha256', json_encode($p, JSON_THROW_ON_ERROR));
-            fwrite(STDERR, "EXPENSE REQUEST HASH:\nDB: {$exp->request_hash}\nCALC: $hash\nPAYLOAD: ".json_encode($p)."\n");
-        }
-
-        $p7Report = app(\App\Services\Accounting\Phase7ReconciliationService::class)->reconcile($company, true);
-        self::assertTrue($p7Report->isHealthy, 'Direct Phase7 reconciliation failure: '.json_encode($p7Report->violations));
-
         $schema = DB::connection()->getDatabaseName();
         $pdo = DB::connection()->getPdo();
         $identity = $pdo->query('SELECT @@hostname, @@server_id')->fetch(PDO::FETCH_NUM);
@@ -295,9 +282,7 @@ final class ReleaseAuditDatabaseTest extends TestCase
         ], $root, getenv());
         $proc1->run();
 
-        $reportDecoded = is_file($out1) ? json_decode((string) file_get_contents($out1), true) : null;
-        $domainsJson = json_encode($reportDecoded['domains'] ?? []);
-        self::assertSame(0, $proc1->getExitCode(), 'Healthy audit exited with non-zero: '.$proc1->getErrorOutput().' Domains: '.$domainsJson);
+        self::assertSame(0, $proc1->getExitCode(), 'Healthy audit exited with non-zero: '.$proc1->getErrorOutput());
         self::assertFileExists($out1);
         self::assertSame(0600, fileperms($out1) & 0777);
 

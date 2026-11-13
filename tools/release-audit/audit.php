@@ -32,7 +32,6 @@ try {
     $c = Guard::preflight($argv, $root);
     $pdo = new PDO('mysql:host='.$c['host'].';port='.$c['port'].';dbname='.$c['schema'].';charset=utf8mb4', (string) $c['user'], (string) $c['password'], [
         PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
-        PDO::ATTR_STRINGIFY_FETCHES => true,
         PDO::ATTR_EMULATE_PREPARES => false,
     ]);
     $pdo->exec('SET SESSION TRANSACTION ISOLATION LEVEL REPEATABLE READ');
@@ -68,9 +67,6 @@ try {
             $report = $domain === 'inventory' ? $service->auditCompany($company, true) : $service->reconcile($company, true);
             $findings = $domain === 'inventory' ? $report->discrepancies : $report->violations;
             $ok = $report->isHealthy === true && $findings === [];
-            if (! $ok) {
-                fwrite(STDERR, "DOMAIN $domain VIOLATIONS: ".json_encode($findings)."\n");
-            }
             $healthy = $healthy && $ok;
             $domains[] = [
                 'company_id' => $company->id,
