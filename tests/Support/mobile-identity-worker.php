@@ -87,6 +87,9 @@ if (($input['pause_before_company_lock'] ?? false) === true) {
             $candidatePaused = true;
             file_put_contents($directory.'/candidate-returned', 'before-company-lock');
             StrictBarrier::await(fn (): bool => is_file($directory.'/release-candidate'), fn (): bool => true);
+            if (is_file($directory.'/abort-candidate')) {
+                throw new RuntimeException('Coordinator aborted candidate window to release User lock.');
+            }
         }
     });
 }
@@ -223,6 +226,7 @@ try {
         $targetUserId = (int) $input['target_user_id'];
         $actorId = (int) $input['actor_id'];
 
+        file_put_contents($directory.'/'.$slot.'.connection', (string) DB::selectOne('SELECT CONNECTION_ID() AS id')->id);
         $attempts = 0;
         $maxAttempts = 1; // Production action has no retry; never hide contention in the harness.
         $updated = null;

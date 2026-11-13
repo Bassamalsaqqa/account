@@ -48,7 +48,7 @@ use Tests\TestCase;
  */
 final class MobileReceiptLockOrderQualificationTest extends TestCase
 {
-    public function test_candidate_read_then_production_membership_revocation_commits_before_locking_read(): void
+    public function test_candidate_window_blocks_production_membership_update_until_login_rolls_back(): void
     {
         DisposableMariaDbSchema::assertPrimarySchema((string) DB::selectOne('SELECT DATABASE() AS db')->db);
         $schema = DisposableMariaDbSchema::create();
@@ -84,16 +84,36 @@ final class MobileReceiptLockOrderQualificationTest extends TestCase
                 'mode' => 'toggle_member', 'company_id' => $companyB->id,
                 'target_user_id' => $staff->id, 'actor_id' => $owner->id,
             ]);
+            $observed = '';
+            StrictBarrier::await(function () use ($directory, $schema, &$observed): bool {
+                $path = $directory.'/worker-b.connection';
+                if (! is_file($path)) {
+                    return false;
+                }
+                foreach (DB::select('SHOW FULL PROCESSLIST') as $row) {
+                    if ((string) $row->Id === file_get_contents($path) && $row->db === $schema->schemaName()
+                        && str_contains(strtolower((string) $row->Info), 'update `company_user`')) {
+                        $observed = 'company_user UPDATE pending behind login User lock';
+
+                        return true;
+                    }
+                }
+
+                return false;
+            }, fn (): bool => $toggle->isRunning() && $login->isRunning());
+            $this->assertNotSame('', $observed);
+            $this->assertTrue($toggle->isRunning());
+            // Abort and roll back login before waiting for the blocked production action.
+            touch($directory.'/abort-candidate');
+            touch($directory.'/release-candidate');
+            $this->assertSame(0, $login->wait(), $login->getErrorOutput());
+            $loginResult = json_decode($login->getOutput(), true, flags: JSON_THROW_ON_ERROR);
+            $this->assertSame(500, $loginResult['status']);
             $this->assertSame(0, $toggle->wait(), $toggle->getErrorOutput());
             $result = json_decode($toggle->getOutput(), true, flags: JSON_THROW_ON_ERROR);
             $this->assertSame('inactive', $result['new_status']);
             $this->assertSame(0, $result['retries']);
-            touch($directory.'/release-candidate');
-            $this->assertSame(0, $login->wait(), $login->getErrorOutput());
-            $result = json_decode($login->getOutput(), true, flags: JSON_THROW_ON_ERROR);
-            $this->assertSame(200, $result['status']);
-            $this->assertCount(1, $result['body']['companies']);
-            $this->assertSame($companyA->public_id, $result['body']['companies'][0]['company_id']);
+
         } finally {
             foreach ($workers as $worker) {
                 if ($worker->isRunning()) {
