@@ -1,4 +1,6 @@
 <div class="space-y-6">
+    @error('deleteDraft') <p role="alert" class="text-danger text-sm">{{ $message }}</p> @enderror
+
     <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
             <h1 class="text-2xl font-bold tracking-tight text-text-primary">{{ __('purchasing.purchases') }}</h1>
