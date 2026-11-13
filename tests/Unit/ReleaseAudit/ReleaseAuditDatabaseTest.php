@@ -246,6 +246,16 @@ final class ReleaseAuditDatabaseTest extends TestCase
         // Clear ambient context so system reconciliation operates context-free
         app(CompanyContext::class)->clear();
 
+        $exp = \App\Models\Expense::first();
+        if ($exp) {
+            $ref = new \ReflectionClass(\App\Services\Phase7\Phase7History::class);
+            $method = $ref->getMethod('payload');
+            $method->setAccessible(true);
+            $p = $method->invoke(app(\App\Services\Phase7\Phase7History::class), $exp);
+            $hash = hash('sha256', json_encode($p, JSON_THROW_ON_ERROR));
+            fwrite(STDERR, "EXPENSE REQUEST HASH:\nDB: {$exp->request_hash}\nCALC: $hash\nPAYLOAD: ".json_encode($p)."\n");
+        }
+
         $p7Report = app(\App\Services\Accounting\Phase7ReconciliationService::class)->reconcile($company, true);
         self::assertTrue($p7Report->isHealthy, 'Direct Phase7 reconciliation failure: '.json_encode($p7Report->violations));
 
