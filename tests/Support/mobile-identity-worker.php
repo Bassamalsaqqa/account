@@ -86,9 +86,6 @@ if (($input['pause_before_company_lock'] ?? false) === true) {
             $candidatePaused = true;
             file_put_contents($directory.'/candidate-returned', 'before-company-lock');
             StrictBarrier::await(fn (): bool => is_file($directory.'/release-candidate'), fn (): bool => true);
-            if (is_file($directory.'/abort-candidate')) {
-                throw new RuntimeException('Coordinator aborted candidate window to release User lock.');
-            }
         }
     });
 }
@@ -119,6 +116,8 @@ if (isset($input['wait_before_start_file'])) {
 if (isset($input['start_delay_ms'])) {
     usleep(((int) $input['start_delay_ms']) * 1000);
 }
+
+file_put_contents($directory.'/'.$slot.'.connection', (string) DB::selectOne('SELECT CONNECTION_ID() AS id')->id);
 
 $startTime = microtime(true);
 $retries = 0;

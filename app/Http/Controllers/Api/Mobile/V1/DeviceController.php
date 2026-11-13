@@ -66,6 +66,8 @@ final class DeviceController extends Controller
         // Only the durable owner may revoke a registered device. Unknown/foreign UUIDs
         // are indistinguishable; no company-free administrative revocation capability.
         $device = DB::transaction(function () use ($deviceId, $user, $reason) {
+            // Revocation updates a User FK on Device: take that principal first.
+            User::whereKey($user->id)->lockForUpdate()->firstOrFail();
             $device = MobileDevice::where('device_id', strtolower($deviceId))
                 ->where('user_id', $user->id)->lockForUpdate()->first();
             if ($device !== null) {

@@ -39,7 +39,7 @@ use Tests\Support\StrictBarrier;
 use Tests\TestCase;
 
 /**
- * Two-process MariaDB barrier tests verifying consistent global lock order
+ * Two-process MariaDB barrier tests qualifying bounded mobile lock interleavings
  * across AuthController::login, DeviceController::revoke, tenant membership/role
  * mutations, and MobileEventReceiptManager::recordOrReplay.
  *
@@ -48,7 +48,22 @@ use Tests\TestCase;
  */
 final class MobileReceiptLockOrderQualificationTest extends TestCase
 {
-    public function test_candidate_window_blocks_production_membership_update_until_login_rolls_back(): void
+    public function test_admin_first_filters_revoked_company_after_candidate_discovery(): void
+    {
+        $this->qualifyCandidateWindow(true, false);
+    }
+
+    public function test_admin_first_all_revoked_returns_generic_401(): void
+    {
+        $this->qualifyCandidateWindow(true, true);
+    }
+
+    public function test_login_first_holds_company_until_admission_commits(): void
+    {
+        $this->qualifyCandidateWindow(false, false);
+    }
+
+    private function qualifyCandidateWindow(bool $adminFirst, bool $allRevoked): void
     {
         DisposableMariaDbSchema::assertPrimarySchema((string) DB::selectOne('SELECT DATABASE() AS db')->db);
         $schema = DisposableMariaDbSchema::create();
@@ -65,6 +80,9 @@ final class MobileReceiptLockOrderQualificationTest extends TestCase
             foreach ([$companyA, $companyB] as $company) {
                 CompanyUser::create(['company_id' => $company->id, 'user_id' => $staff->id, 'status' => 'active', 'is_owner' => false]);
             }
+            if ($allRevoked) {
+                app(\App\Actions\Company\ToggleCompanyMemberStatusAction::class)->execute($companyA, CompanyUser::where('company_id', $companyA->id)->where('user_id', $staff->id)->firstOrFail(), $owner);
+            }
             $device->update(['user_id' => $staff->id]);
             $nonce = bin2hex(random_bytes(32));
             $challengeId = (string) Str::uuid();
@@ -76,39 +94,46 @@ final class MobileReceiptLockOrderQualificationTest extends TestCase
             $login = $workers[] = $this->startWorker($schema, $directory, 'worker-a', [
                 'mode' => 'login', 'email' => $staff->email, 'password' => $password,
                 'device_id' => $device->device_id, 'challenge_id' => $challengeId, 'nonce' => $nonce,
-                'pause_before_company_lock' => true,
+                'pause_before_company_lock' => $adminFirst,
+                'hold_lock_table' => $adminFirst ? null : 'companies',
+                'wait_for_file' => 'release-login',
             ]);
             touch($directory.'/go');
-            StrictBarrier::await(fn (): bool => is_file($directory.'/candidate-returned'), fn (): bool => $login->isRunning());
+            StrictBarrier::await(fn (): bool => is_file($directory.($adminFirst ? '/candidate-returned' : '/worker-a.locked')), fn (): bool => $login->isRunning());
             $toggle = $workers[] = $this->startWorker($schema, $directory, 'worker-b', [
                 'mode' => 'toggle_member', 'company_id' => $companyB->id,
                 'target_user_id' => $staff->id, 'actor_id' => $owner->id,
+                'hold_lock_table' => $adminFirst ? 'companies' : null,
+                'wait_for_file' => 'release-admin',
             ]);
-            $observed = '';
-            StrictBarrier::await(function () use ($directory, $schema, &$observed): bool {
-                $path = $directory.'/worker-b.connection';
-                if (! is_file($path)) {
-                    return false;
-                }
+            if ($adminFirst) {
+                StrictBarrier::await(fn (): bool => is_file($directory.'/worker-b.locked'), fn (): bool => $toggle->isRunning());
+                touch($directory.'/release-candidate');
+            }
+            $contender = $adminFirst ? $login : $toggle;
+            $slot = $adminFirst ? 'worker-a' : 'worker-b';
+            StrictBarrier::await(function () use ($directory, $schema, $slot): bool {
+                $id = trim((string) file_get_contents($directory.'/'.$slot.'.connection'));
                 foreach (DB::select('SHOW FULL PROCESSLIST') as $row) {
-                    if ((string) $row->Id === file_get_contents($path) && $row->db === $schema->schemaName()
-                        && str_contains(strtolower((string) $row->Info), 'update `company_user`')) {
-                        $observed = 'company_user UPDATE pending behind login User lock';
-
+                    $sql = strtolower((string) $row->Info);
+                    if ((string) $row->Id === $id && $row->db === $schema->schemaName()
+                        && str_contains($sql, 'from `companies`') && str_contains($sql, 'for update')) {
                         return true;
                     }
                 }
 
                 return false;
-            }, fn (): bool => $toggle->isRunning() && $login->isRunning());
-            $this->assertNotSame('', $observed);
-            $this->assertTrue($toggle->isRunning());
-            // Abort and roll back login before waiting for the blocked production action.
-            touch($directory.'/abort-candidate');
-            touch($directory.'/release-candidate');
+            }, fn (): bool => $contender->isRunning() && $login->isRunning() && $toggle->isRunning());
+            touch($directory.($adminFirst ? '/release-admin' : '/release-login'));
             $this->assertSame(0, $login->wait(), $login->getErrorOutput());
             $loginResult = json_decode($login->getOutput(), true, flags: JSON_THROW_ON_ERROR);
-            $this->assertSame(500, $loginResult['status']);
+            $this->assertSame($allRevoked ? 401 : 200, $loginResult['status']);
+            if (! $allRevoked) {
+                $ids = array_column($loginResult['body']['companies'], 'id');
+                $this->assertContains($companyA->public_id, $ids);
+                $this->assertSame(! $adminFirst, in_array($companyB->public_id, $ids, true));
+            }
+            $this->assertSame(0, $loginResult['retries']);
             $this->assertSame(0, $toggle->wait(), $toggle->getErrorOutput());
             $result = json_decode($toggle->getOutput(), true, flags: JSON_THROW_ON_ERROR);
             $this->assertSame('inactive', $result['new_status']);
