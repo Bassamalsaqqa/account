@@ -26,7 +26,6 @@ use App\Support\Mobile\Receipt\FinancialExecutionAdapterInterface;
 use App\Support\Mobile\Receipt\MobileEventReceiptManager;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Contracts\Console\Kernel;
-use Illuminate\Database\QueryException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Symfony\Component\HttpKernel\Exception\HttpException;
@@ -227,34 +226,11 @@ try {
         $actorId = (int) $input['actor_id'];
 
         file_put_contents($directory.'/'.$slot.'.connection', (string) DB::selectOne('SELECT CONNECTION_ID() AS id')->id);
-        $attempts = 0;
-        $maxAttempts = 1; // Production action has no retry; never hide contention in the harness.
-        $updated = null;
-
-        while ($attempts < $maxAttempts) {
-            $attempts++;
-            try {
-                $company = Company::findOrFail($companyId);
-                $membership = CompanyUser::where('company_id', $companyId)->where('user_id', $targetUserId)->firstOrFail();
-                $actor = User::findOrFail($actorId);
-
-                $updated = app(ToggleCompanyMemberStatusAction::class)->execute($company, $membership, $actor);
-                break;
-            } catch (QueryException $e) {
-                if (MobileEventReceiptManager::isDeadlockError($e) && $attempts < $maxAttempts) {
-                    $deadlocks++;
-                    $retries++;
-                    usleep(random_int(10000, 50000));
-
-                    continue;
-                }
-                throw $e;
-            }
-        }
-
-        if ($updated === null) {
-            throw new RuntimeException('Failed to toggle membership within retry bound.');
-        }
+        // Execute exactly once, matching the production action's retry policy.
+        $company = Company::findOrFail($companyId);
+        $membership = CompanyUser::where('company_id', $companyId)->where('user_id', $targetUserId)->firstOrFail();
+        $actor = User::findOrFail($actorId);
+        $updated = app(ToggleCompanyMemberStatusAction::class)->execute($company, $membership, $actor);
 
         echo json_encode([
             'mode' => 'toggle_member',
