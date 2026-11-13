@@ -69,19 +69,10 @@ final class MobileReceiptLockOrderQualificationTest extends TestCase
             touch($directory.'/go');
             // Same test account can inspect its own connection's server-side state.
             // UPDATE is visible while pending, unlike Laravel's after-query event.
-            StrictBarrier::await(function () use ($schema, $directory): bool {
-                foreach (DB::select('SHOW FULL PROCESSLIST') as $row) {
-                    if (is_file($directory.'/worker-a.attempt')
-                        && (string) $row->Id === file_get_contents($directory.'/worker-a.attempt')
-                        && $row->db === $schema->schemaName()
-                        && str_contains(strtolower((string) $row->Info), 'update `users`')
-                        && str_contains(strtolower((string) $row->State), 'updat')) {
-                        return true;
-                    }
-                }
-
-                return false;
-            }, fn (): bool => $worker->isRunning());
+            StrictBarrier::await(
+                fn (): bool => $this->isFortifyUpdatePending($schema, $directory),
+                fn (): bool => $worker->isRunning()
+            );
             $this->assertTrue($worker->isRunning(), 'Reset cannot complete behind held User row.');
             DB::commit(); // Never wait for contender commit while holding its row.
             $this->assertSame(0, $worker->wait(), $worker->getErrorOutput());
@@ -127,7 +118,11 @@ final class MobileReceiptLockOrderQualificationTest extends TestCase
             // UPDATE is visible while pending, unlike Laravel's after-query event.
             $worker->wait();
             try {
-                StrictBarrier::await(fn (): bool => false, fn (): bool => $worker->isRunning(), 10);
+                StrictBarrier::await(
+                    fn (): bool => $this->isFortifyUpdatePending($schema, $directory),
+                    fn (): bool => $worker->isRunning(),
+                    10
+                );
                 $this->fail('Missing holder must not acknowledge contention.');
             } catch (\RuntimeException $failure) {
                 $this->assertStringContainsString('peer exited', $failure->getMessage());
@@ -151,6 +146,25 @@ final class MobileReceiptLockOrderQualificationTest extends TestCase
             rmdir($directory);
             $schema->drop();
         }
+    }
+
+    private function isFortifyUpdatePending(DisposableMariaDbSchema $schema, string $directory): bool
+    {
+        $attemptFile = $directory.'/worker-a.attempt';
+        if (! is_file($attemptFile)) {
+            return false;
+        }
+        $connectionId = file_get_contents($attemptFile);
+        foreach (DB::select('SHOW FULL PROCESSLIST') as $row) {
+            if ((string) $row->Id === $connectionId
+                && $row->db === $schema->schemaName()
+                && str_contains(strtolower((string) $row->Info), 'update `users`')
+                && str_contains(strtolower((string) $row->State), 'updat')) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     protected function setUp(): void
