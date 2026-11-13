@@ -57,6 +57,43 @@ class BoundedProductSearchMariaDbTest extends TestCase
         $form->call('addProduct', 2147483647)->assertNotFound();
     }
 
+    public function test_quotation_picker_reuses_blank_or_exact_zero_price_rows(): void
+    {
+        $product = $this->createProduct('صنف', 'Item', 'QUOTE-EMPTY');
+        foreach (['', '0.000000', '00.00'] as $price) {
+            $form = Livewire::test(QuotationForm::class)
+                ->set('lines.0.unit_price', $price)
+                ->call('addProduct', $product->id)
+                ->assertSuccessful();
+            $this->assertCount(1, $form->get('lines'));
+            $this->assertSame($product->id, $form->get('lines.0.product_id'));
+        }
+    }
+
+    public function test_quotation_picker_preserves_malformed_price_for_inline_validation(): void
+    {
+        $product = $this->createProduct('صنف', 'Item', 'QUOTE-INVALID');
+        $form = Livewire::test(QuotationForm::class)
+            ->set('lines.0.unit_price', 'invalid')
+            ->call('addProduct', $product->id)
+            ->assertSuccessful()
+            ->assertHasErrors('lines.0.unit_price');
+        $this->assertSame('invalid', $form->get('lines.0.unit_price'));
+        $this->assertSame($product->id, $form->get('lines.1.product_id'));
+    }
+
+    public function test_quotation_restored_line_without_identity_receives_a_stable_key(): void
+    {
+        $form = Livewire::test(QuotationForm::class);
+        $lines = $form->get('lines');
+        unset($lines[0]['row_key']);
+        $form->set('lines', $lines)->assertSuccessful();
+        $key = $form->get('lines.0.row_key');
+        $this->assertNotEmpty($key);
+        $form->call('$refresh')->assertSuccessful();
+        $this->assertSame($key, $form->get('lines.0.row_key'));
+    }
+
     protected function setUp(): void
     {
         parent::setUp();

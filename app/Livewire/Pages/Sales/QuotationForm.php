@@ -274,8 +274,15 @@ class QuotationForm extends Component
         $selected = app(SalesProductSelection::class)->select($productId, $unitId, $this->currency_code, $this->exchange_rate);
         $index = null;
         foreach ($this->lines as $key => $line) {
+            $price = trim((string) $line['unit_price']);
+            try {
+                $unusedPrice = $price === '' || BigDecimal::of($price)->isZero();
+            } catch (MathException) {
+                // Preserve malformed user input so normal field validation can explain it.
+                $unusedPrice = false;
+            }
             if (empty($line['product_id']) && trim((string) $line['item_description']) === ''
-                && (string) $line['quantity'] === '1' && BigDecimal::of($line['unit_price'])->isZero()
+                && (string) $line['quantity'] === '1' && $unusedPrice
                 && $line['discount_type'] === 'none' && empty($line['tax_rate_id'])) {
                 $index = $key;
                 break;
@@ -679,6 +686,10 @@ class QuotationForm extends Component
     public function render(CompanyContext $context): View
     {
         $this->authorizeQuoteAction();
+        foreach ($this->lines as &$line) {
+            $line['row_key'] ??= (string) Str::uuid();
+        }
+        unset($line);
         $user = auth()->user();
         $company = $context->company();
 
