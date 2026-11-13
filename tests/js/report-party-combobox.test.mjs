@@ -12,7 +12,7 @@ test('arrows and Enter commit only an authorized option; typing and Escape prese
     s.sync('9', [{id:'9',label:'Selected'}]);
     s.input('new'); s.key(event('Escape'));
     assert.equal(s.selected,'9'); assert.equal(s.term,'Selected'); assert.deepEqual(commits,[]);
-    await s.search(); s.key(event('ArrowDown')); s.key(event('ArrowDown')); s.key(event('Enter'));
+    await s.search(); s.key(event('ArrowDown')); s.key(event('Enter'));
     assert.deepEqual(commits,['7']); assert.equal(s.term,'عميل (C7)'); assert.equal(s.open,false);
 });
 test('stale responses cannot replace results or restore dismissed popup', async () => {
@@ -40,4 +40,29 @@ test('single field has isolated bidirectional labels and complete combobox relat
     const blade=readFileSync(new URL('../../resources/views/components/report-party-selector.blade.php',import.meta.url),'utf8');
     assert.equal((blade.match(/<input /g)||[]).length,1); assert.ok(!blade.includes('<select'));
     for (const token of ['role="combobox"','role="listbox"','role="option"','aria-activedescendant','aria-expanded','aria-controls','x-id=', '<bdi dir="auto"','min-h-[44px]']) assert.ok(blade.includes(token),token);
+});
+
+test('initial hydration and watched reset do not reactively overwrite a new selection', async () => {
+    let notify; let disposed = false; const commits=[];
+    const s=reportPartyCombobox({initialSelected:'9',initialValues:[{id:'9',label:'Existing'}],emptyLabel:'All',
+        lookup:async () => [{id:'7',label:'New'}], commit:id=>commits.push(id),
+        watch:listener=>{notify=listener;return ()=>{disposed=true;};}});
+    s.init(); await s.search(); s.choose(1);
+    assert.equal(s.selected,'7'); assert.equal(s.term,'New'); assert.deepEqual(commits,['7']);
+    notify(''); assert.equal(s.selected,''); assert.equal(s.term,'');
+    s.destroy(); assert.equal(disposed,true);
+});
+test('selected formatted label opens unfiltered lookup and a sole match accepts Enter', async () => {
+    const terms=[]; const {state:s,commits}=setup(async term=>{terms.push(term);return [{id:'7',label:'New (C7)'}];});
+    s.sync('9',[{id:'9',label:'Existing (C9)'}]); await s.search();
+    assert.deepEqual(terms,['']); s.key(event('Enter')); assert.deepEqual(commits,['7']);
+});
+test('keyboard scroll targets rendered options rather than the x-for template', async () => {
+    const {state:s}=setup(); await s.search(); let scrolled=false;
+    s.$refs={list:{querySelectorAll:selector=>{assert.equal(selector,'[role="option"]');return [{}, {scrollIntoView:()=>{scrolled=true;}}];}}};
+    s.$nextTick=callback=>callback(); s.key(event('ArrowDown')); assert.equal(s.active,1); assert.equal(scrolled,true);
+});
+test('Blade uses explicit server watcher and keyed hydration instead of a literal reactive sync effect', () => {
+    const blade=readFileSync(new URL('../../resources/views/components/report-party-selector.blade.php',import.meta.url),'utf8');
+    assert.ok(!blade.includes('x-effect=')); assert.ok(blade.includes('$wire.$watch')); assert.ok(blade.includes('hash('));
 });

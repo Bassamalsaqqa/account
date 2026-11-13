@@ -1,10 +1,9 @@
 @props(['field', 'values', 'selected' => '', 'required' => false])
-<div class="relative" wire:key="report-selector-{{ $field }}"
-    x-data="reportPartyCombobox({lookup: term => $wire.lookupParty(@js($field), term), commit: id => $wire.$set('filters.{{ $field }}', id, false), emptyLabel: @js($required ? __('reports.select_required') : __('reports.all'))})"
+<div class="relative" wire:key="report-selector-{{ $field }}-{{ hash('sha256', json_encode([$selected, $values], JSON_THROW_ON_ERROR)) }}"
+    x-data="reportPartyCombobox({lookup: term => $wire.lookupParty(@js($field), term), commit: id => $wire.$set('filters.{{ $field }}', id, false), emptyLabel: @js($required ? __('reports.select_required') : __('reports.all')), initialSelected: @js((string) $selected), initialValues: @js($values), watch: listener => $wire.$watch('filters.{{ $field }}', listener)})"
     x-id="['party-list', 'party-status']"
-    x-effect="sync(@js((string) $selected), @js($values))"
     @click.outside="dismiss()" @focusout="if (!$el.contains($event.relatedTarget)) dismiss()">
-    <input id="report-{{ $field }}" type="text" role="combobox" aria-autocomplete="list"
+    <input id="report-{{ $field }}" type="text" role="combobox" aria-autocomplete="list" aria-haspopup="listbox"
         :aria-expanded="open" :aria-controls="$id('party-list')" :aria-describedby="$id('party-status')"
         :aria-activedescendant="open && active >= 0 ? $id('party-list') + '-' + active : null"
         aria-required="{{ $required ? 'true' : 'false' }}" :aria-busy="busy"

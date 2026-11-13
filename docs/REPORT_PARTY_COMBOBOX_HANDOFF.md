@@ -13,3 +13,9 @@ Pending root sequential QA under the dependency/DB/build lease: PHP syntax/style
 Browser: preview_status returned available:false. NOT VERIFIED; no browser fallback, server or host changes. Real keyboard/focus/pointer, Arabic/English responsive layout and Livewire morph/back-navigation qualification remain pending. Source-ready does not mean release-ready or Owner accepted.
 
 No DB, migration, composer, npm, dependency install, build, production, SSH, Hostinger, deployment, merge, external agent or cleanup actions occurred. Independent root review required.
+
+## Supervisor review correction (pending integration qualification)
+
+The independent source review at 792a5bb did not accept the literal x-effect synchronization, template-child keyboard scrolling, formatted selected-label query and initial keyboard activation. Root replaced the reactive effect with initialization plus an explicit Livewire filter watcher; a server-derived selected/options key remounts state on changed server presentation. The watcher handles deferred-client selection reset even when the original server key is unchanged. Empty identity keeps an empty label. Keyboard scroll targets rendered role=option elements; selected display labels open an unfiltered lookup; first navigation selects a match and Enter can select a sole match.
+
+Root executed nine pure Node tests, all passed. An initial added reset regression failed because the empty option's All label was retained; that was corrected before the passing run. These tests exercise controller/watch callbacks and source wiring, NOT real Alpine effect scheduling or Livewire DOM morphing. DB endpoint/security integration, PHPStan, build and actual AR/EN browser/hydration checks remain pending the release-audit worker's exclusive QA lease. No production or PR99 change.
