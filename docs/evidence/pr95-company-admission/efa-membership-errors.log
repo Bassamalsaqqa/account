@@ -1,0 +1,46 @@
+Owned schema created: accounting_p8_tmp_79621543be9e
+Owned primary test schema: accounting_p8_tmp_79621543be9e
+PHPUnit 12.5.36 by Sebastian Bergmann and contributors.
+
+Runtime:       PHP 8.4.27
+Configuration: /tmp/p8_phpunit_toiujl6tdpia31XQqe1
+
+Owned schema created: accounting_p8_tmp_8122e841cfed
+Owned schema dropped: accounting_p8_tmp_8122e841cfed
+.Owned schema created: accounting_p8_tmp_3546a9302eab
+Owned schema dropped: accounting_p8_tmp_3546a9302eab
+EOwned schema created: accounting_p8_tmp_9b481ea3314d
+Owned schema dropped: accounting_p8_tmp_9b481ea3314d
+E                                                                 3 / 3 (100%)
+
+Time: 00:42.421, Memory: 67.00 MB
+
+There were 2 errors:
+
+1) Tests\Feature\Mobile\MobileReceiptLockOrderQualificationTest::test_admin_first_all_revoked_returns_generic_401
+App\Exceptions\CompanyReassignmentException: Cannot log audit event for company [1] when active company is [2].
+
+<WORKTREE>/app/Services/Audit/AuditService.php:55
+<WORKTREE>/app/Actions/Company/ToggleCompanyMemberStatusAction.php:68
+<WORKTREE>/app/Application/Platform/TenantWriteAccess.php:84
+<WORKTREE>/vendor/laravel/framework/src/Illuminate/Database/Concerns/ManagesTransactions.php:35
+<WORKTREE>/vendor/laravel/framework/src/Illuminate/Database/DatabaseManager.php:502
+<WORKTREE>/vendor/laravel/framework/src/Illuminate/Support/Facades/Facade.php:364
+<WORKTREE>/app/Application/Platform/TenantWriteAccess.php:82
+<WORKTREE>/app/Actions/Company/ToggleCompanyMemberStatusAction.php:25
+<WORKTREE>/tests/Feature/Mobile/MobileReceiptLockOrderQualificationTest.php:84
+<WORKTREE>/tests/Feature/Mobile/MobileReceiptLockOrderQualificationTest.php:58
+
+2) Tests\Feature\Mobile\MobileReceiptLockOrderQualificationTest::test_login_first_holds_company_until_admission_commits
+ErrorException: file_get_contents(/tmp/mobile_receipt_race_47c15ca8480dd2c1/worker-b.connection): Failed to open stream: No such file or directory
+
+<WORKTREE>/vendor/laravel/framework/src/Illuminate/Foundation/Bootstrap/HandleExceptions.php:265
+<WORKTREE>/tests/Feature/Mobile/MobileReceiptLockOrderQualificationTest.php:116
+<WORKTREE>/tests/Support/StrictBarrier.php:38
+<WORKTREE>/tests/Feature/Mobile/MobileReceiptLockOrderQualificationTest.php:115
+<WORKTREE>/tests/Feature/Mobile/MobileReceiptLockOrderQualificationTest.php:63
+
+ERRORS!
+Tests: 3, Assertions: 11, Errors: 2.
+Owned schema dropped: accounting_p8_tmp_79621543be9e
+Owned primary schema cleaned.

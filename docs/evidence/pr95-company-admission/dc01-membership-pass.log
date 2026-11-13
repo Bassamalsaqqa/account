@@ -1,0 +1,20 @@
+Owned schema created: accounting_p8_tmp_87a23ad8c421
+Owned primary test schema: accounting_p8_tmp_87a23ad8c421
+PHPUnit 12.5.36 by Sebastian Bergmann and contributors.
+
+Runtime:       PHP 8.4.27
+Configuration: /tmp/p8_phpunit_u8im52oimkgaeD31FWq
+
+Owned schema created: accounting_p8_tmp_137d981d9b1c
+Owned schema dropped: accounting_p8_tmp_137d981d9b1c
+.Owned schema created: accounting_p8_tmp_9b3915242f04
+Owned schema dropped: accounting_p8_tmp_9b3915242f04
+.Owned schema created: accounting_p8_tmp_87612606f4fa
+Owned schema dropped: accounting_p8_tmp_87612606f4fa
+.                                                                 3 / 3 (100%)
+
+Time: 00:28.163, Memory: 67.00 MB
+
+OK (3 tests, 25 assertions)
+Owned schema dropped: accounting_p8_tmp_87a23ad8c421
+Owned primary schema cleaned.

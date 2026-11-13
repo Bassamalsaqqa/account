@@ -1,0 +1,10 @@
+PHPUnit 12.5.36 by Sebastian Bergmann and contributors.
+
+Runtime:       PHP 8.4.27
+Configuration: <WORKTREE>/phpunit.xml
+
+....................................                              36 / 36 (100%)
+
+Time: 00:02.960, Memory: 60.50 MB
+
+OK (36 tests, 194 assertions)
