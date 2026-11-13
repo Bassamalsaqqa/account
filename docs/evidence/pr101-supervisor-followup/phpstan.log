@@ -1,0 +1,12 @@
+Note: Using configuration file <WORKTREE>/phpstan.neon.
+<WORKTREE>/tests/Support/EnforcesDisposableDatabaseOwnership.php
+<WORKTREE>/tests/Unit/ReleaseAudit/OwnershipLifecycleRefusalTest.php
+<WORKTREE>/tests/Unit/ReleaseAudit/RefusalTest.php
+<WORKTREE>/tests/Unit/ReleaseAudit/ReleaseAuditDatabaseTest.php
+<WORKTREE>/tools/release-audit/Fingerprint.php
+<WORKTREE>/tools/release-audit/Guard.php
+<WORKTREE>/tools/release-audit/audit.php
+<WORKTREE>/tools/release-audit/compare.php
+
+ [OK] No errors                                                                 
+

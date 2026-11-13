@@ -1,0 +1,56 @@
+{
+  "executableSource": "2ac072b302e680fe7ac45b32a7027f53d78622dc",
+  "reviewedPriorHead": "d22daa4cc5d9a86a8452b86d599e3bceb74e9e47",
+  "executor": "root Codex supervisor",
+  "refusalFirst": {
+    "tests": 9,
+    "assertions": 27,
+    "queriesRecorded": 0,
+    "command": "APP_ENV=testing php vendor/bin/phpunit tests/Unit/ReleaseAudit/OwnershipLifecycleRefusalTest.php",
+    "note": "Actual database-test setUp/partial tearDown invoked, not just helper assertions; prior failed harness9/23 had1error1failure and is preserved."
+  },
+  "guardedSuite": {
+    "tests": 18,
+    "assertions": 144,
+    "command": "php tests/Support/run-phase8-disposable.php -- tests/Unit/ReleaseAudit",
+    "primarySchema": "accounting_p8_tmp_553b0dcbe895",
+    "runnerReportedCleanup": true,
+    "environment": "APP_ENV=testing; PHASE8_ALLOW_DISPOSABLE_DB=1; explicit127.0.0.1:3342 test_runner empty-password opt-in; synthetic APP_KEY; cryptographic runner nonce proof."
+  },
+  "static": "Nonparallel PHPStan tools + all ReleaseAudit tests + copied ownership guard: 0 errors; scoped Pint passed.",
+  "changes": [
+    "Reuse unchanged fc6422 disposable ownership trait before actual new DB-test fixtures; no existing PR94 guard edited.",
+    "Frame named hashes of all four scripts; compare requires independent implementation pin against local code and both reports.",
+    "Empty company scope unhealthy exit2, regression uses its own fresh child schema.",
+    "Partial output preserved as failed evidence; no automatic pathname unlink."
+  ],
+  "limits": [
+    "Production mode unconditionally refused; not a live release-audit acceptance.",
+    "Control pin does not authenticate remote DB cryptographically.",
+    "Same snapshot equality does not prove external writers absent.",
+    "No off-host backup/key recovery, file/config fingerprint, source/vendor/build-byte custody, authenticated browser smoke or deployment.",
+    "Initial worker8/109 and independent source review were separate, not root/runtime production proof."
+  ],
+  "logs": {
+    "ownership-initial-failed": {
+      "rawSha256": "54e7f862c4e8c554cb277a37c7d5ad2e863b3099752d15b5a6cf73051841b045",
+      "publishedSha256": "70349d9099e4d2b0a03df985f9c0fdeb8e2ebb3b80a9f9edbb11f39bb86f7020"
+    },
+    "ownership-corrected-pass": {
+      "rawSha256": "dd48357bf663a6aba16785ee629cbededf22e6b7c47bfc765dc66d909ef536f4",
+      "publishedSha256": "6bf49ec8d2cfb2f2fdc600bb4b7bf479a81b9c0a133580ff5f8694b96a56fc12"
+    },
+    "guarded-suite-pass": {
+      "rawSha256": "51d8ddd0de3dc0c6b687fbdc1dcad9d0fde61123f52bb296448b416665cdda18",
+      "publishedSha256": "86ccfb88fdd53ba5a6f8d351a978981af0fda93f76cb763653472200a60006c7"
+    },
+    "phpstan": {
+      "rawSha256": "0fae03714f8d64cfd1dfafb92731ac97c79d0cc9017c83980438a28f6a3c8ed1",
+      "publishedSha256": "b5d5f081ec737b530a50ff91fe4c387f06181d83205dd398d4cc79aeb0ac8923"
+    },
+    "pint": {
+      "rawSha256": "cd1a94fc2cf6a965b86e1a4809d6c7fb9148b1ee374e1010ed2ac96ff4876ec2",
+      "publishedSha256": "cd1a94fc2cf6a965b86e1a4809d6c7fb9148b1ee374e1010ed2ac96ff4876ec2"
+    }
+  }
+}
