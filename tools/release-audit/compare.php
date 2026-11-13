@@ -7,6 +7,7 @@ namespace ReleaseAudit;
 use Throwable;
 
 require __DIR__.'/Guard.php';
+require __DIR__.'/Fingerprint.php';
 
 try {
     if (PHP_SAPI !== 'cli' || (count($argv) !== 4 && count($argv) !== 5)) {
@@ -50,6 +51,18 @@ try {
 
         $tA = $a['tables'][$name];
         $tB = $b['tables'][$name];
+        $expectedClassification = in_array($name, Fingerprint::OPERATIONAL_MUTABLE_TABLES, true) ? 'operational_mutable' : 'preservation';
+        foreach ([$tA, $tB] as $tableReport) {
+            if (! is_array($tableReport) || ($tableReport['classification'] ?? null) !== $expectedClassification
+                || ! isset($tableReport['rows']) || ! is_int($tableReport['rows']) || $tableReport['rows'] < 0) {
+                Guard::refuse();
+            }
+            foreach (['schema_sha256', 'normalized_schema_sha256', 'rows_sha256'] as $field) {
+                if (! is_string($tableReport[$field] ?? null) || ! preg_match('/^[a-f0-9]{64}$/D', $tableReport[$field])) {
+                    Guard::refuse();
+                }
+            }
+        }
 
         $normA = $tA['normalized_schema_sha256'] ?? $tA['schema_sha256'] ?? '';
         $normB = $tB['normalized_schema_sha256'] ?? $tB['schema_sha256'] ?? '';
@@ -69,7 +82,7 @@ try {
             continue;
         }
 
-        $isOperational = ($tA['classification'] ?? '') === 'operational_mutable';
+        $isOperational = $expectedClassification === 'operational_mutable';
 
         if (! $isOperational) {
             $preservationDiffs[$name] = [
