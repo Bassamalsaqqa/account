@@ -1,0 +1,43 @@
+{
+  "tested_executable_source_sha": "b0390438c826a0efe2a5a2e7d539a787c67c90c6",
+  "executor": "Codex supervisor",
+  "reviewed_prior_head": "bf85aee6e619b413068e76695a666771243901bd",
+  "change": "Missing-holder control now invokes the SAME extracted process-list predicate as the positive contention test, rather than a constant false callback. Reset completion and stale epoch denial asserted separately.",
+  "commands": {
+    "protocol": "vendor/bin/phpunit tests/Unit/StrictBarrierTest.php",
+    "password": "APP_ENV=testing PHASE8_ALLOW_DISPOSABLE_DB=1 PHASE8_TEST_DB_HOST=127.0.0.1 PHASE8_TEST_DB_PORT=3342 PHASE8_TEST_DB_USERNAME=test_runner PHASE8_TEST_DB_EMPTY_PASSWORD=1 php tests/Support/run-phase8-disposable.php -- tests/Feature/Mobile/MobileReceiptLockOrderQualificationTest.php --filter=test_real_fortify_update_waits_for_user_holder_then_invalidates_old_epoch|test_reset_wins_first_and_missing_holder_cannot_ack_contention",
+    "static": "vendor/bin/phpstan analyse --no-progress tests/Feature/Mobile/MobileReceiptLockOrderQualificationTest.php"
+  },
+  "results": {
+    "protocol": {
+      "tests": 5,
+      "assertions": 6
+    },
+    "password": {
+      "tests": 2,
+      "assertions": 12
+    },
+    "phpstan": "PASS",
+    "pint": "PASS"
+  },
+  "owned_schemas_created_and_runner_dropped": [
+    "accounting_p8_tmp_5c61c585b155",
+    "accounting_p8_tmp_ca35d131ac73",
+    "accounting_p8_tmp_66e1f8bc80d8"
+  ],
+  "logs": {
+    "protocol": {
+      "raw_sha256": "6801edd74fddea8cb0a0be469d84980b58f57de82fabcba180e922263cdbb394",
+      "sanitized_sha256": "7f7f4aca7500ecfde27958cc0777c3be37f3065b963cf20a5de02dfea953e75c"
+    },
+    "password": {
+      "raw_sha256": "a0ae99cf45840fb74bc5434d099b667301685d78050a53c46febad78ef9461d7",
+      "sanitized_sha256": "a0ae99cf45840fb74bc5434d099b667301685d78050a53c46febad78ef9461d7"
+    },
+    "static": {
+      "raw_sha256": "3a1a7ef531ed32a19e2c820c2340d7f6ba37ae7ca9baadb93aa1a92af1166a70",
+      "sanitized_sha256": "0dee90184fac8a7625dd9f2e2a1cd55d5ac61798d28583e52b4260395b8e69fc"
+    }
+  },
+  "full_pr95_status": "HOLD; no global DAG, membership race, full financial or device acceptance"
+}
