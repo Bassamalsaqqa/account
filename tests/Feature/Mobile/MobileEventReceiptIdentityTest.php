@@ -1090,7 +1090,7 @@ final class MobileEventReceiptIdentityTest extends TestCase
         }
     }
 
-    public function test_sessionless_context_cleared_in_finally_on_all_failures(): void
+    public function test_sessionless_context_restored_in_finally_on_all_failures(): void
     {
         $context = app(CompanyContext::class);
         $context->setCompany($this->companyA, $this->user);
@@ -1109,7 +1109,8 @@ final class MobileEventReceiptIdentityTest extends TestCase
         } catch (InvalidArgumentException) {
             // expected
         }
-        $this->assertFalse($context->hasCompany());
+        $this->assertSame($this->companyA->id, $context->companyId());
+        $this->assertSame($this->user->id, $context->user()?->id);
 
         // 2. SupportViewContext active
         $context->setCompany($this->companyA, $this->user);
@@ -1130,7 +1131,8 @@ final class MobileEventReceiptIdentityTest extends TestCase
         } finally {
             $support->clear();
         }
-        $this->assertFalse($context->hasCompany());
+        $this->assertSame($this->companyA->id, $context->companyId());
+        $this->assertSame($this->user->id, $context->user()?->id);
     }
 
     public function test_payload_context_binding_mismatch_rejected_before_admission(): void

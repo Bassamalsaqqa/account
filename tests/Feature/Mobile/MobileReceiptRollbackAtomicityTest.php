@@ -368,14 +368,14 @@ final class MobileReceiptRollbackAtomicityTest extends TestCase
         $this->assertNotNull($result['customer_payment_id']);
 
         // Assert exact database counts
-        $this->assertDatabaseCount('sales_invoices', 1);
-        $this->assertDatabaseCount('customer_payments', 1);
-        $this->assertDatabaseCount('mobile_event_receipts', 1);
+        $this->assertSame(1, DB::table('sales_invoices')->where('company_id', $this->company->id)->count());
+        $this->assertSame(1, DB::table('customer_payments')->where('company_id', $this->company->id)->count());
+        $this->assertSame(1, DB::table('mobile_event_receipts')->where('company_id', $this->company->id)->count());
 
         // Opening stock batch + invoice batch + payment batch = 3 batches
-        $this->assertDatabaseCount('posting_batches', 3);
+        $this->assertSame(3, DB::table('posting_batches')->where('company_id', $this->company->id)->count());
         // Opening stock movement (10) + sale movement (-2) = 2 movements
-        $this->assertDatabaseCount('stock_movements', 2);
+        $this->assertSame(2, DB::table('stock_movements')->where('company_id', $this->company->id)->count());
 
         // Balance updated from 10 to 8
         $this->assertDatabaseHas('inventory_balances', [
@@ -417,11 +417,11 @@ final class MobileReceiptRollbackAtomicityTest extends TestCase
             $this->assertStringContainsString('Simulated fault immediately after numbering', $e->getMessage());
         }
 
-        $this->assertDatabaseCount('sales_invoices', 0);
-        $this->assertDatabaseCount('customer_payments', 0);
-        $this->assertDatabaseCount('mobile_event_receipts', 0);
-        $this->assertDatabaseCount('posting_batches', 1); // only opening stock
-        $this->assertDatabaseCount('stock_movements', 1); // only opening stock
+        $this->assertSame(0, DB::table('sales_invoices')->where('company_id', $this->company->id)->count());
+        $this->assertSame(0, DB::table('customer_payments')->where('company_id', $this->company->id)->count());
+        $this->assertSame(0, DB::table('mobile_event_receipts')->where('company_id', $this->company->id)->count());
+        $this->assertSame(1, DB::table('posting_batches')->where('company_id', $this->company->id)->count()); // only opening stock
+        $this->assertSame(1, DB::table('stock_movements')->where('company_id', $this->company->id)->count()); // only opening stock
     }
 
     public function test_fault_after_posting_and_stock_movement_rolls_back_inventory_and_invoices(): void
@@ -447,11 +447,11 @@ final class MobileReceiptRollbackAtomicityTest extends TestCase
             $this->assertStringContainsString('Simulated fault after invoice posting', $e->getMessage());
         }
 
-        $this->assertDatabaseCount('sales_invoices', 0);
-        $this->assertDatabaseCount('customer_payments', 0);
-        $this->assertDatabaseCount('mobile_event_receipts', 0);
-        $this->assertDatabaseCount('posting_batches', 1); // only opening stock
-        $this->assertDatabaseCount('stock_movements', 1); // only opening stock
+        $this->assertSame(0, DB::table('sales_invoices')->where('company_id', $this->company->id)->count());
+        $this->assertSame(0, DB::table('customer_payments')->where('company_id', $this->company->id)->count());
+        $this->assertSame(0, DB::table('mobile_event_receipts')->where('company_id', $this->company->id)->count());
+        $this->assertSame(1, DB::table('posting_batches')->where('company_id', $this->company->id)->count()); // only opening stock
+        $this->assertSame(1, DB::table('stock_movements')->where('company_id', $this->company->id)->count()); // only opening stock
         $this->assertDatabaseHas('inventory_balances', [
             'company_id' => $this->company->id,
             'product_id' => $this->product->id,
@@ -482,11 +482,11 @@ final class MobileReceiptRollbackAtomicityTest extends TestCase
             $this->assertStringContainsString('Simulated fault after payment creation', $e->getMessage());
         }
 
-        $this->assertDatabaseCount('sales_invoices', 0);
-        $this->assertDatabaseCount('customer_payments', 0);
-        $this->assertDatabaseCount('mobile_event_receipts', 0);
-        $this->assertDatabaseCount('posting_batches', 1);
-        $this->assertDatabaseCount('stock_movements', 1);
+        $this->assertSame(0, DB::table('sales_invoices')->where('company_id', $this->company->id)->count());
+        $this->assertSame(0, DB::table('customer_payments')->where('company_id', $this->company->id)->count());
+        $this->assertSame(0, DB::table('mobile_event_receipts')->where('company_id', $this->company->id)->count());
+        $this->assertSame(1, DB::table('posting_batches')->where('company_id', $this->company->id)->count());
+        $this->assertSame(1, DB::table('stock_movements')->where('company_id', $this->company->id)->count());
     }
 
     public function test_fault_before_receipt_commit_leaves_zero_partial_state(): void
@@ -513,11 +513,11 @@ final class MobileReceiptRollbackAtomicityTest extends TestCase
         }
 
         // NO invoice without receipt, NO cash or stock partial!
-        $this->assertDatabaseCount('sales_invoices', 0);
-        $this->assertDatabaseCount('customer_payments', 0);
-        $this->assertDatabaseCount('mobile_event_receipts', 0);
-        $this->assertDatabaseCount('posting_batches', 1);
-        $this->assertDatabaseCount('stock_movements', 1);
+        $this->assertSame(0, DB::table('sales_invoices')->where('company_id', $this->company->id)->count());
+        $this->assertSame(0, DB::table('customer_payments')->where('company_id', $this->company->id)->count());
+        $this->assertSame(0, DB::table('mobile_event_receipts')->where('company_id', $this->company->id)->count());
+        $this->assertSame(1, DB::table('posting_batches')->where('company_id', $this->company->id)->count());
+        $this->assertSame(1, DB::table('stock_movements')->where('company_id', $this->company->id)->count());
         $this->assertDatabaseHas('inventory_balances', [
             'company_id' => $this->company->id,
             'product_id' => $this->product->id,
@@ -553,11 +553,11 @@ final class MobileReceiptRollbackAtomicityTest extends TestCase
         }
 
         // Complete atomicity: everything rolled back, including receipt, invoice, payment, movements
-        $this->assertDatabaseCount('sales_invoices', 0);
-        $this->assertDatabaseCount('customer_payments', 0);
-        $this->assertDatabaseCount('mobile_event_receipts', 0);
-        $this->assertDatabaseCount('posting_batches', 1); // only opening stock
-        $this->assertDatabaseCount('stock_movements', 1); // only opening stock
+        $this->assertSame(0, DB::table('sales_invoices')->where('company_id', $this->company->id)->count());
+        $this->assertSame(0, DB::table('customer_payments')->where('company_id', $this->company->id)->count());
+        $this->assertSame(0, DB::table('mobile_event_receipts')->where('company_id', $this->company->id)->count());
+        $this->assertSame(1, DB::table('posting_batches')->where('company_id', $this->company->id)->count()); // only opening stock
+        $this->assertSame(1, DB::table('stock_movements')->where('company_id', $this->company->id)->count()); // only opening stock
         $this->assertDatabaseHas('inventory_balances', [
             'company_id' => $this->company->id,
             'product_id' => $this->product->id,

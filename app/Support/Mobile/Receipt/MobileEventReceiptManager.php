@@ -203,8 +203,7 @@ final class MobileEventReceiptManager
                         if ($token === null || ! $token->isValid()) {
                             throw new MobileEventAuthenticationException('The Bearer token has been revoked or expired.');
                         }
-                        if ($token->device_id !== $device->device_id || (int) $token->user_id !== (int) $user->id
-                            || ($token->company_id !== null && (int) $token->company_id !== $companyId)) {
+                        if ($token->device_id !== $device->device_id || (int) $token->user_id !== (int) $user->id) {
                             throw new MobileEventAuthenticationException('Device has been revoked or does not match token owner.');
                         }
 
@@ -517,8 +516,7 @@ final class MobileEventReceiptManager
                 if ($token === null || ! $token->isValid()) {
                     throw new MobileEventAuthenticationException('The Bearer token has been revoked or expired.');
                 }
-                if ($token->device_id !== $device->device_id || (int) $token->user_id !== (int) $user->id
-                    || ($token->company_id !== null && (int) $token->company_id !== $companyId)) {
+                if ($token->device_id !== $device->device_id || (int) $token->user_id !== (int) $user->id) {
                     throw new MobileEventAuthenticationException('Device has been revoked or does not match token owner.');
                 }
 
