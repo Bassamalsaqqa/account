@@ -21,6 +21,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\MySqlConnection;
 use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Facade;
+use ReleaseAudit\Budget;
 use ReleaseAudit\Fingerprint;
 use ReleaseAudit\Guard;
 
@@ -31,10 +32,18 @@ try {
     $root = dirname(__DIR__, 2);
     $c = Guard::preflight($argv, $root);
     $limits = $c['limits'];
+
+    // Single shared cumulative budget across metadata + initial scan + canonical services + final scan
+    $budget = new Budget($limits);
+
     $pdo = new PDO('mysql:host='.$c['host'].';port='.$c['port'].';dbname='.$c['schema'].';charset=utf8mb4', (string) $c['user'], (string) $c['password'], [
         PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
         PDO::ATTR_EMULATE_PREPARES => false,
     ]);
+
+    // Hard statement timeout configuration with unsupported-workload refusal
+    Fingerprint::configureStatementTimeout($pdo, $budget->remainingExecutionSeconds());
+
     $pdo->exec('SET SESSION TRANSACTION ISOLATION LEVEL REPEATABLE READ');
     $pdo->exec('START TRANSACTION WITH CONSISTENT SNAPSHOT, READ ONLY');
     $identity = $pdo->query('SELECT DATABASE(), @@hostname, @@server_id')->fetch(PDO::FETCH_NUM);
@@ -44,7 +53,8 @@ try {
         || (int) $identity[2] !== (int) $c['server_id']) {
         Guard::refuse();
     }
-    $before = Fingerprint::capture($pdo, $limits);
+
+    $before = Fingerprint::capture($pdo, $budget);
     $metricsBefore = Fingerprint::lastMetrics();
 
     // Minimal isolated container: no application providers, .env, sessions or auth.
@@ -58,8 +68,11 @@ try {
     $app->instance('db', $manager);
     Facade::setFacadeApplication($app);
     Model::setConnectionResolver($manager);
+
     $domains = [];
     $healthy = true;
+
+    $budget->assertWithinLimits();
     foreach (Company::orderBy('id')->get() as $company) {
         foreach ([
             'accounting' => AccountingReconciliationService::class,
@@ -69,6 +82,9 @@ try {
             'money' => MoneyReconciliationService::class,
             'phase7' => Phase7ReconciliationService::class,
         ] as $domain => $class) {
+            $budget->assertWithinLimits();
+            Fingerprint::configureStatementTimeout($pdo, $budget->remainingExecutionSeconds());
+
             $service = $app->make($class);
             $report = $domain === 'inventory' ? $service->auditCompany($company, true) : $service->reconcile($company, true);
             $findings = $domain === 'inventory' ? $report->discrepancies : $report->violations;
@@ -81,14 +97,19 @@ try {
                 'count' => count($findings),
                 'digest' => hash('sha256', serialize($findings)),
             ];
+            $budget->assertWithinLimits();
         }
     }
-    $after = Fingerprint::capture($pdo, $limits);
+
+    Fingerprint::configureStatementTimeout($pdo, $budget->remainingExecutionSeconds());
+    $after = Fingerprint::capture($pdo, $budget);
     $metricsAfter = Fingerprint::lastMetrics();
+
     if ($before !== $after) {
         Guard::refuse();
     }
     $pdo->rollBack();
+
     $result = [
         'version' => 1,
         'healthy' => $healthy && $domains !== [],
@@ -102,6 +123,7 @@ try {
         'metrics' => [
             'initial_scan' => $metricsBefore,
             'final_scan' => $metricsAfter,
+            'cumulative' => $budget->metrics(),
         ],
         'domains' => $domains,
         'tables' => $before,
@@ -116,9 +138,8 @@ try {
     }
     exit($healthy && $domains !== [] ? 0 : 2);
 } catch (Throwable) {
-    if ($pdo instanceof PDO && $pdo->inTransaction()) {
-        $pdo->rollBack();
-    }
+    // Immediately drop PDO so socket aborts without draining unread packets
+    $pdo = null;
     fwrite(STDERR, "AUDIT_REFUSED\n");
     exit(1);
 }

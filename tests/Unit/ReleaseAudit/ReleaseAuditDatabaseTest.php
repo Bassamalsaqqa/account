@@ -540,4 +540,30 @@ final class ReleaseAuditDatabaseTest extends TestCase
         $testQuery = DB::select('SELECT count(*) as count FROM users');
         self::assertNotEmpty($testQuery);
     }
+
+    public function test_prior_buffering_attribute_is_preserved_and_cumulative_budget_enforced(): void
+    {
+        $pdo = DB::connection()->getPdo();
+
+        // 1. Prior buffering attribute false is preserved
+        $pdo->setAttribute(PDO::MYSQL_ATTR_USE_BUFFERED_QUERY, false);
+        Fingerprint::capture($pdo, ['max_total_rows' => 100000]);
+        self::assertFalse((bool) $pdo->getAttribute(PDO::MYSQL_ATTR_USE_BUFFERED_QUERY));
+
+        // 2. Prior buffering attribute true is preserved
+        $pdo->setAttribute(PDO::MYSQL_ATTR_USE_BUFFERED_QUERY, true);
+        Fingerprint::capture($pdo, ['max_total_rows' => 100000]);
+        self::assertTrue((bool) $pdo->getAttribute(PDO::MYSQL_ATTR_USE_BUFFERED_QUERY));
+
+        // 3. Shared cumulative budget across two captures with single budget instance
+        $budget = new \ReleaseAudit\Budget(['max_total_rows' => 100000]);
+        $fp1 = Fingerprint::capture($pdo, $budget);
+        $rowsAfterFirst = $budget->totalRows();
+        self::assertGreaterThan(0, $rowsAfterFirst);
+
+        $fp2 = Fingerprint::capture($pdo, $budget);
+        $rowsAfterSecond = $budget->totalRows();
+        self::assertSame($rowsAfterFirst * 2, $rowsAfterSecond, 'Cumulative budget must accumulate rows across captures without reset');
+        self::assertSame($fp1, $fp2);
+    }
 }

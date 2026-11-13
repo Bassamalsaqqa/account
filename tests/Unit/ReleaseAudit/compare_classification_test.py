@@ -18,11 +18,15 @@ class ClassificationTest(unittest.TestCase):
             str(ROOT / "tools/release-audit/Guard.php"),
         ], text=True).strip()
 
-    def compare(self, name, classification, *, after_classification=None, accept=False, missing=False):
+    def compare(self, name, classification, *, after_classification=None, accept=False, missing=False, auto_increment=None, after_auto_increment=None):
         before = dict(rows=1, schema_sha256="a" * 64, normalized_schema_sha256="a" * 64,
                       rows_sha256="a" * 64, classification=classification)
+        if auto_increment is not None:
+            before["auto_increment"] = auto_increment
         after = dict(before, rows=2, rows_sha256="b" * 64,
                      classification=after_classification or classification)
+        if after_auto_increment is not None:
+            after["auto_increment"] = after_auto_increment
         if missing:
             del after["normalized_schema_sha256"]
         paths = []
@@ -51,10 +55,83 @@ class ClassificationTest(unittest.TestCase):
         self.assertEqual(3, self.compare("sessions", "operational_mutable").returncode)
 
     def test_explicit_disposition_can_accept_only_operational_changes(self):
-        self.assertEqual(0, self.compare("sessions", "operational_mutable", accept=True).returncode)
+        result = self.compare("sessions", "operational_mutable", accept=True)
+        self.assertEqual(0, result.returncode)
+        self.assertIn("Operational churn accepted", result.stderr)
+        self.assertIn("comparison disposition only; it is NOT a release approval", result.stderr)
 
     def test_missing_required_fingerprint_is_refused(self):
         self.assertEqual(1, self.compare("posting_lines", "preservation", missing=True).returncode)
+
+    def test_large_counter_exact_string_above_php_int_max_accepted_and_compared(self):
+        large_counter = "18446744073709551615"
+        result = self.compare("sessions", "operational_mutable", auto_increment=large_counter, accept=True)
+        self.assertEqual(0, result.returncode)
+
+    def test_invalid_counter_type_is_refused(self):
+        result = self.compare("sessions", "operational_mutable", auto_increment="invalid_counter_nan", accept=True)
+        self.assertEqual(1, result.returncode)
+        self.assertEqual("AUDIT_REFUSED\n", result.stderr)
+
+    def test_ddl_normalization_preserves_comments_and_defaults_with_auto_increment(self):
+        php_script = (
+            "require $argv[1]; require $argv[2];\n"
+            "$ddl = \"CREATE TABLE `ledger` (\\n\" .\n"
+            "       \"  `id` bigint(20) unsigned NOT NULL,\\n\" .\n"
+            "       \"  `desc` varchar(255) DEFAULT 'AUTO_INCREMENT=999' COMMENT 'AUTO_INCREMENT=100',\\n\" .\n"
+            "       \"  PRIMARY KEY (`id`)\\n\" .\n"
+            "       \") ENGINE=InnoDB AUTO_INCREMENT=18446744073709551615 DEFAULT CHARSET=utf8mb4 COMMENT='tbl with AUTO_INCREMENT=42 inside';\";\n"
+            "$info = \\ReleaseAudit\\Fingerprint::normalizeDdl($ddl);\n"
+            "echo json_encode($info);\n"
+        )
+        proc = subprocess.run([
+            "php", "-r", php_script,
+            str(ROOT / "tools/release-audit/Guard.php"),
+            str(ROOT / "tools/release-audit/Fingerprint.php"),
+        ], capture_output=True, text=True, check=True)
+        data = json.loads(proc.stdout)
+        self.assertEqual("18446744073709551615", data["auto_increment"])
+        self.assertIsInstance(data["normalized_schema_sha256"], str)
+        self.assertEqual(64, len(data["normalized_schema_sha256"]))
+
+    def test_budget_cumulative_tracking_and_refusal_across_phases(self):
+        php_script = (
+            "require $argv[1]; require $argv[2];\n"
+            "$budget = new \\ReleaseAudit\\Budget(['max_total_rows' => 500, 'max_execution_seconds' => 60]);\n"
+            "for ($i = 0; $i < 300; $i++) { $budget->recordRow(10); }\n"
+            "assert($budget->totalRows() === 300);\n"
+            "$budget->assertWithinLimits();\n"
+            "try {\n"
+            "    for ($i = 0; $i < 300; $i++) { $budget->recordRow(10); }\n"
+            "    echo 'FAILED';\n"
+            "} catch (\\RuntimeException $e) {\n"
+            "    echo $e->getMessage();\n"
+            "}\n"
+        )
+        proc = subprocess.run([
+            "php", "-r", php_script,
+            str(ROOT / "tools/release-audit/Guard.php"),
+            str(ROOT / "tools/release-audit/Fingerprint.php"),
+        ], capture_output=True, text=True, check=True)
+        self.assertEqual("AUDIT_REFUSED", proc.stdout)
+
+    def test_statement_timeout_unsupported_refusal(self):
+        php_script = (
+            "require $argv[1]; require $argv[2];\n"
+            "$pdo = new PDO('sqlite::memory:');\n"
+            "try {\n"
+            "    \\ReleaseAudit\\Fingerprint::configureStatementTimeout($pdo, 30);\n"
+            "    echo 'FAILED';\n"
+            "} catch (\\RuntimeException $e) {\n"
+            "    echo $e->getMessage();\n"
+            "}\n"
+        )
+        proc = subprocess.run([
+            "php", "-r", php_script,
+            str(ROOT / "tools/release-audit/Guard.php"),
+            str(ROOT / "tools/release-audit/Fingerprint.php"),
+        ], capture_output=True, text=True, check=True)
+        self.assertEqual("AUDIT_REFUSED", proc.stdout)
 
 
 if __name__ == "__main__":

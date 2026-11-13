@@ -398,5 +398,71 @@ final class RefusalTest extends TestCase
             }
         }
     }
+
+    public function test_ddl_normalization_preserves_quoted_text_and_exact_counters(): void
+    {
+        require_once dirname(__DIR__, 3).'/tools/release-audit/Guard.php';
+        require_once dirname(__DIR__, 3).'/tools/release-audit/Fingerprint.php';
+
+        $ddl = "CREATE TABLE `posting_lines` (\n"
+            ."  `id` bigint(20) unsigned NOT NULL,\n"
+            ."  `description` varchar(255) DEFAULT 'AUTO_INCREMENT=999' COMMENT 'AUTO_INCREMENT=100',\n"
+            ."  PRIMARY KEY (`id`)\n"
+            .") ENGINE=InnoDB AUTO_INCREMENT=18446744073709551615 DEFAULT CHARSET=utf8mb4 COMMENT='table with AUTO_INCREMENT=42 inside';";
+
+        $result = Fingerprint::normalizeDdl($ddl);
+        self::assertSame('18446744073709551615', $result['auto_increment']);
+        self::assertMatchesRegularExpression('/^[a-f0-9]{64}$/D', $result['normalized_schema_sha256']);
+
+        // Normal counter fits in integer
+        $ddlNormal = "CREATE TABLE `accounts` (`id` int) ENGINE=InnoDB AUTO_INCREMENT=42;";
+        $resultNormal = Fingerprint::normalizeDdl($ddlNormal);
+        self::assertSame(42, $resultNormal['auto_increment']);
+
+        // No auto increment
+        $ddlNone = "CREATE TABLE `accounts` (`id` int) ENGINE=InnoDB;";
+        $resultNone = Fingerprint::normalizeDdl($ddlNone);
+        self::assertNull($resultNone['auto_increment']);
+        self::assertSame(hash('sha256', $ddlNone), $resultNone['normalized_schema_sha256']);
+    }
+
+    public function test_cumulative_budget_enforces_across_all_phases_without_reset(): void
+    {
+        require_once dirname(__DIR__, 3).'/tools/release-audit/Guard.php';
+        require_once dirname(__DIR__, 3).'/tools/release-audit/Fingerprint.php';
+
+        $budget = new \ReleaseAudit\Budget(['max_total_rows' => 500, 'max_execution_seconds' => 60]);
+
+        // Phase 1: initial scan records 300 rows
+        for ($i = 0; $i < 300; $i++) {
+            $budget->recordRow(10);
+        }
+        self::assertSame(300, $budget->totalRows());
+
+        // Phase 2: services run, budget is checked
+        $budget->assertWithinLimits();
+
+        // Phase 3: final scan records another 300 rows without resetting counters
+        $refused = false;
+        try {
+            for ($i = 0; $i < 300; $i++) {
+                $budget->recordRow(10);
+            }
+        } catch (RuntimeException $e) {
+            $refused = ($e->getMessage() === 'AUDIT_REFUSED');
+        }
+        self::assertTrue($refused, 'Cumulative budget must refuse when combined row count across phases exceeds limit');
+    }
+
+    public function test_statement_timeout_refuses_when_database_cannot_bound_execution(): void
+    {
+        require_once dirname(__DIR__, 3).'/tools/release-audit/Guard.php';
+        require_once dirname(__DIR__, 3).'/tools/release-audit/Fingerprint.php';
+
+        $pdo = new \PDO('sqlite::memory:');
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('AUDIT_REFUSED');
+        Fingerprint::configureStatementTimeout($pdo, 30);
+    }
 }
 

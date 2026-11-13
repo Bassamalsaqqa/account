@@ -31,6 +31,7 @@ try {
     }
     [$a, $b] = $reports;
     if (($a['version'] ?? null) !== 1 || ($b['version'] ?? null) !== 1 || ! isset($a['implementation_sha256'], $a['tables'], $b['tables'])
+        || ! is_array($a['tables']) || ! is_array($b['tables']) || empty($a['tables']) || empty($b['tables'])
         || ! is_string($a['implementation_sha256']) || ! hash_equals($argv[3], $a['implementation_sha256'])
         || $a['implementation_sha256'] !== ($b['implementation_sha256'] ?? null)) {
         Guard::refuse();
@@ -59,6 +60,20 @@ try {
             }
             foreach (['schema_sha256', 'normalized_schema_sha256', 'rows_sha256'] as $field) {
                 if (! is_string($tableReport[$field] ?? null) || ! preg_match('/^[a-f0-9]{64}$/D', $tableReport[$field])) {
+                    Guard::refuse();
+                }
+            }
+            if (array_key_exists('auto_increment', $tableReport) && $tableReport['auto_increment'] !== null) {
+                $ai = $tableReport['auto_increment'];
+                if (is_int($ai)) {
+                    if ($ai < 0) {
+                        Guard::refuse();
+                    }
+                } elseif (is_string($ai)) {
+                    if (! preg_match('/^\d+$/D', $ai)) {
+                        Guard::refuse();
+                    }
+                } else {
                     Guard::refuse();
                 }
             }
@@ -126,6 +141,7 @@ try {
     if ($disposition === '--accept-operational-volatility') {
         fwrite(STDOUT, "OPERATIONAL_VOLATILITY_ACCEPTED\n");
         fwrite(STDERR, "Operational churn accepted in: {$churnList}\n");
+        fwrite(STDERR, "NOTICE: Operational volatility acceptance is a comparison disposition only; it is NOT a release approval or production certification.\n");
         exit(0);
     }
 
