@@ -1,0 +1,6 @@
+PHPUnit 12.5.36 by Sebastian Bergmann and contributors.
+
+Available tests:
+ - Tests\Feature\Phase5B\PurchaseDraftDeletionConcurrencyTest::test_missing_holder_is_rejected_by_the_real_contention_observer
+ - Tests\Feature\Phase5B\PurchaseDraftDeletionConcurrencyTest::test_concurrency_race_post_wins_delete_blocked
+ - Tests\Feature\Phase5B\PurchaseDraftDeletionConcurrencyTest::test_concurrency_race_delete_wins_post_aborts_not_found
