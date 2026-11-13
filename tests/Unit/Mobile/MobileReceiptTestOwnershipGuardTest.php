@@ -430,6 +430,93 @@ final class MobileReceiptTestOwnershipGuardTest extends TestCase
     }
 
     #[DataProvider('affectedClassesProvider')]
+    public function test_schema_switch_diagnostic_preserves_both_names_and_refuses_cleanup(string $testClass): void
+    {
+        $schema = 'accounting_p8_tmp_333344445555';
+        $nonce = bin2hex(random_bytes(16));
+        $proof = $this->createProofFile($schema, '127.0.0.1', '3342', $nonce);
+
+        $this->setupConfigAndEnv([
+            'env' => [
+                'DB_HOST' => '127.0.0.1',
+                'PHASE8_TEST_DB_HOST' => '127.0.0.1',
+                'DB_PORT' => '3342',
+                'PHASE8_TEST_DB_PORT' => '3342',
+                'DB_DATABASE' => $schema,
+                'PHASE8_DISPOSABLE_DB_PROOF' => $proof,
+                'PHASE8_DISPOSABLE_DB_NONCE' => $nonce,
+            ],
+        ]);
+
+        $mockPdo = $this->createMockPdoWithSelectedDatabase($schema);
+
+        $instance = new $testClass('test_dummy');
+        $instance->afterApplicationCreated(function () use ($mockPdo) {
+            DB::connection()->setPdo($mockPdo);
+            DB::connection()->setReadPdo($mockPdo);
+        });
+
+        $reflector = new ReflectionClass($instance);
+
+        // Boot test environment on instance
+        $setupEnv = $reflector->getMethod('setUpTheTestEnvironment');
+        $setupEnv->setAccessible(true);
+        $setupEnv->invoke($instance);
+
+        // Admit initial setup
+        $guardMethod = $reflector->getMethod('assertOwnedDisposableDatabase');
+        $guardMethod->setAccessible(true);
+        $guardMethod->invoke($instance);
+
+        $isAdmittedMethod = $reflector->getMethod('isDisposableDatabaseOwnershipAdmitted');
+        $isAdmittedMethod->setAccessible(true);
+        $this->assertTrue($isAdmittedMethod->invoke($instance));
+
+        $newSchema = 'accounting_p8_tmp_666677778888';
+        $newNonce = bin2hex(random_bytes(16));
+        $newProof = $this->createProofFile($newSchema, '127.0.0.1', '3342', $newNonce);
+        config(['database.connections.mysql.database' => $newSchema]);
+        putenv('PHASE8_DISPOSABLE_DB_PROOF='.$newProof);
+        putenv('PHASE8_DISPOSABLE_DB_NONCE='.$newNonce);
+        DB::connection()->setDatabaseName($newSchema);
+        $newPdo = $this->createMockPdoWithSelectedDatabase($newSchema);
+        DB::connection()->setPdo($newPdo);
+        DB::connection()->setReadPdo($newPdo);
+
+        $queries = [];
+        DB::listen(function ($query) use (&$queries) {
+            $queries[] = $query->sql;
+        });
+
+        $thrown = null;
+        try {
+            $tearDownMethod = $reflector->getMethod('tearDown');
+            $tearDownMethod->setAccessible(true);
+            $tearDownMethod->invoke($instance);
+        } catch (\Throwable $e) {
+            $thrown = $e instanceof \ReflectionException ? $e->getPrevious() : $e;
+        }
+
+        $this->assertNotNull($thrown, 'Expected tearDown to throw when config switched midtest.');
+        $this->assertInstanceOf(RuntimeException::class, $thrown);
+        $this->assertSame("Disposable database ownership refused: database changed mid-test from '{$schema}' to '{$newSchema}'.", $thrown->getMessage());
+        $this->assertFalse($isAdmittedMethod->invoke($instance));
+        $this->assertNull($reflector->getProperty('admittedDatabaseName')->getValue($instance));
+
+        $destructiveQueries = array_filter($queries, function (string $sql): bool {
+            return str_contains(strtoupper($sql), 'DELETE')
+                || str_contains(strtoupper($sql), 'DROP')
+                || str_contains(strtoupper($sql), 'UPDATE')
+                || str_contains(strtoupper($sql), 'INSERT')
+                || str_contains(strtoupper($sql), 'FOREIGN_KEY_CHECKS');
+        });
+
+        $this->assertEmpty($destructiveQueries, 'Teardown after mid-test drift must produce ZERO destructive queries.');
+
+        $this->refreshApplication();
+    }
+
+    #[DataProvider('affectedClassesProvider')]
     public function test_partial_setup_failure_teardown_executes_safely_without_destructive_cleanup(string $testClass): void
     {
         $schema = 'accounting_p8_tmp_999988887777';

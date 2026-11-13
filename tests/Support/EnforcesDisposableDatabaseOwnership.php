@@ -138,10 +138,11 @@ trait EnforcesDisposableDatabaseOwnership
 
         $this->assertOwnedDisposableDatabase();
 
-        if ($priorAdmitted !== null && $this->admittedDatabaseName !== $priorAdmitted) {
+        $newlyAdmitted = $this->admittedDatabaseName;
+        if ($priorAdmitted !== null && $newlyAdmitted !== $priorAdmitted) {
             $this->disposableDatabaseOwnershipAdmitted = false;
             $this->admittedDatabaseName = null;
-            throw new RuntimeException("Disposable database ownership refused: database changed mid-test from '{$priorAdmitted}' to '{$this->admittedDatabaseName}'.");
+            throw new RuntimeException("Disposable database ownership refused: database changed mid-test from '{$priorAdmitted}' to '{$newlyAdmitted}'.");
         }
     }
 
