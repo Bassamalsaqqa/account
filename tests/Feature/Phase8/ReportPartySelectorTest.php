@@ -26,12 +26,12 @@ final class ReportPartySelectorTest extends Phase8TestCase
 {
     use EnforcesDisposableDatabaseOwnership;
 
-    protected function setUp(): void
+    /** Guard after application bootstrap, before RefreshDatabase traits or parent fixtures. */
+    protected function setUpTraits(): array
     {
-        if (getenv('PHASE8_ALLOW_DISPOSABLE_DB') === '1') {
-            $this->assertOwnedDisposableDatabase();
-        }
-        parent::setUp();
+        $this->assertOwnedDisposableDatabase();
+
+        return parent::setUpTraits();
     }
 
     protected function tearDown(): void
