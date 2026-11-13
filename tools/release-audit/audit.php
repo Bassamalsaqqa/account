@@ -37,7 +37,10 @@ try {
     $pdo->exec('SET SESSION TRANSACTION ISOLATION LEVEL REPEATABLE READ');
     $pdo->exec('START TRANSACTION WITH CONSISTENT SNAPSHOT, READ ONLY');
     $identity = $pdo->query('SELECT DATABASE(), @@hostname, @@server_id')->fetch(PDO::FETCH_NUM);
-    if ($identity !== [$c['schema'], $c['server_hostname'], (string) $c['server_id']]) {
+    if (! is_array($identity) || count($identity) !== 3
+        || $identity[0] !== $c['schema']
+        || $identity[1] !== $c['server_hostname']
+        || (int) $identity[2] !== (int) $c['server_id']) {
         Guard::refuse();
     }
     $before = Fingerprint::capture($pdo);
