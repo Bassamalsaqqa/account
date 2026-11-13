@@ -1,4 +1,9 @@
 <div class="space-y-6">
+    @error('deleteDraft') <p role="alert" class="text-danger text-sm">{{ $message }}</p> @enderror
+@if($purchase->isDraft() && auth()->user()->hasRole('Owner') && auth()->user()->can('purchasing.purchase.edit_draft') && auth()->user()->can('purchasing.cost.view'))
+    <x-danger-button class="touch-action" type="button" wire:click="deleteDraft('{{ $purchase->public_id }}')" wire:confirm="{{ __('purchase_draft_delete.confirm') }}" wire:loading.attr="disabled">{{ __('purchase_draft_delete.delete') }}</x-danger-button>
+@endif
+
     <!-- Header Card -->
     <div class="bg-surface rounded-card border border-border shadow-xs p-6 space-y-4">
         <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">

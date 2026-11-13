@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Livewire\Pages\Purchasing;
 
+use App\Actions\Purchasing\DeletePurchaseDraftAction;
 use App\Actions\Purchasing\PostPurchaseAction;
 use App\Exceptions\NoActiveCompanyException;
 use App\Livewire\Concerns\HasTablePageSize;
@@ -43,6 +44,16 @@ class PurchaseIndex extends Component
 
     #[On('close-payment-modal')]
     #[On('vendor-payment-recorded')]
+    public function deleteDraft(string $publicId): void
+    {
+        $company = $this->authorizePurchasing('purchasing.purchase.edit_draft');
+        $this->authorizePurchasing('purchasing.cost.view');
+        $purchase = Purchase::where('company_id', $company->id)->where('public_id', $publicId)->firstOrFail();
+        app(DeletePurchaseDraftAction::class)->execute($purchase, auth()->user());
+        session()->flash('success', __('purchase_draft_delete.deleted'));
+        $this->redirectRoute('purchases.index', navigate: true);
+    }
+
     public function closePaymentModal(): void
     {
         $this->payingPurchaseId = null;
