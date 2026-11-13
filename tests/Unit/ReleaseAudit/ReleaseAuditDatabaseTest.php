@@ -34,6 +34,7 @@ use PDOException;
 use ReleaseAudit\Fingerprint;
 use ReleaseAudit\Guard;
 use Symfony\Component\Process\Process;
+use Tests\Support\DisposableMariaDbSchema;
 use Tests\Support\EnforcesDisposableDatabaseOwnership;
 use Tests\TestCase;
 
@@ -70,6 +71,37 @@ final class ReleaseAuditDatabaseTest extends TestCase
         }
 
         parent::tearDown();
+    }
+
+    public function test_empty_company_scope_is_not_a_healthy_audit(): void
+    {
+        $owned = DisposableMariaDbSchema::createFromSource(DB::connection()->getDatabaseName());
+        try {
+            $owned->switchLaravelConnection();
+            self::assertSame(0, DB::table('companies')->count());
+            $identity = DB::selectOne('SELECT @@hostname AS hostname, @@server_id AS server_id');
+            $control = $this->tempDir.'/empty-control.json';
+            file_put_contents($control, json_encode([
+                'mode' => 'disposable-test', 'host' => '127.0.0.1', 'port' => 3342,
+                'user' => 'test_runner', 'password' => '', 'schema' => $owned->schemaName(),
+                'server_hostname' => $identity->hostname, 'server_id' => (int) $identity->server_id,
+            ], JSON_THROW_ON_ERROR));
+            chmod($control, 0600);
+            $root = dirname(__DIR__, 3);
+            $head = trim((string) shell_exec('git -C '.escapeshellarg($root).' rev-parse HEAD'));
+            $output = $this->tempDir.'/audit-'.bin2hex(random_bytes(12)).'.json';
+            $process = new Process([PHP_BINARY, $root.'/tools/release-audit/audit.php', '--disposable-test', $control, hash_file('sha256', $control), $head, $output], $root, array_replace(getenv(), $owned->environment()));
+            $process->setTimeout(60)->run();
+            self::assertSame(2, $process->getExitCode(), $process->getErrorOutput());
+            $report = json_decode((string) file_get_contents($output), true, flags: JSON_THROW_ON_ERROR);
+            self::assertFalse($report['healthy']);
+            self::assertTrue($report['scope_empty']);
+            self::assertSame(0, $report['companies']);
+            self::assertSame([], $report['domains']);
+        } finally {
+            $owned->restoreLaravelConnection();
+            $owned->drop();
+        }
     }
 
     public function test_engine_readonly_snapshot_enforces_no_dml(): void
