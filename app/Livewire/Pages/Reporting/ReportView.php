@@ -20,6 +20,7 @@ use Illuminate\Database\Eloquent\ModelNotFoundException;
 use InvalidArgumentException;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Locked;
+use Livewire\Attributes\Renderless;
 use Livewire\Attributes\Url;
 use Livewire\Component;
 
@@ -35,6 +36,22 @@ final class ReportView extends Component
 
     /** @var array<string,string> */
     public array $selectorSearch = [];
+
+    /** @return list<array{id:string,label:string}> */
+    #[Renderless]
+    public function lookupParty(string $field, string $term): array
+    {
+        abort_unless(in_array($field, ['customer_id', 'vendor_id', 'employee_id'], true), 422);
+        abort_unless(mb_strlen($term) <= 100, 422);
+        $registry = app(ReportRegistry::class);
+        $company = app(ReportingGuard::class)->company(app(CompanyContext::class)->company());
+        abort_unless($registry->allows($company, $this->reportKey), 403);
+        $definition = app(ReportPresentationPolicy::class)->definition($company, $registry->definition($this->reportKey));
+        abort_unless(in_array($field, $definition['filters'], true), 422);
+        $definition['filters'] = [$field];
+
+        return app(ReportFilterOptions::class)->forReport($company, $definition, $this->filters, [$field => $term])[$field] ?? [];
+    }
 
     public function mount(string $reportKey): void
     {

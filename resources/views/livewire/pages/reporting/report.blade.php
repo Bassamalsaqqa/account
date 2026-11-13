@@ -54,8 +54,10 @@
                     <label for="report-{{ $field }}" class="block text-sm font-bold text-text-secondary mb-1.5">
                         {{ __('reports.'.$field) }}@if(in_array($field,$definition['required'],true)) <span class="text-danger" aria-hidden="true">*</span>@endif
                     </label>
-                    @if($field !== 'currency_code')
-                        <x-report-party-selector :field="$field" :values="$values" :required="in_array($field, $definition['required'], true)" />
+                    @if(in_array($field, ['customer_id', 'vendor_id', 'employee_id'], true))
+                        <x-report-party-selector :field="$field" :values="$values" :selected="$filters[$field] ?? ''" :required="in_array($field, $definition['required'], true)" />
+                    @elseif($field !== 'currency_code')
+                        <x-report-filter-selector :field="$field" :values="$values" :required="in_array($field, $definition['required'], true)" />
                     @else
                         <select id="report-{{ $field }}" wire:model="filters.{{ $field }}" class="min-h-[44px] sm:min-h-10 w-full rounded-control border border-border bg-surface px-3 py-0 text-sm sm:text-sm box-border focus:border-primary focus:ring-1 focus:ring-primary">
                             <option value="">{{ __('reports.all') }}</option>

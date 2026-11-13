@@ -51,3 +51,5 @@ if (typeof window !== 'undefined') {
         }
     });
 }
+
+import './report-party-combobox';
