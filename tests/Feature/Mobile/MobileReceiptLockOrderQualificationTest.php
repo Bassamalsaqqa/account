@@ -81,8 +81,10 @@ final class MobileReceiptLockOrderQualificationTest extends TestCase
                 CompanyUser::create(['company_id' => $company->id, 'user_id' => $staff->id, 'status' => 'active', 'is_owner' => false]);
             }
             if ($allRevoked) {
+                app(CompanyContext::class)->setCompany($companyA, $owner);
                 app(\App\Actions\Company\ToggleCompanyMemberStatusAction::class)->execute($companyA, CompanyUser::where('company_id', $companyA->id)->where('user_id', $staff->id)->firstOrFail(), $owner);
             }
+            app(CompanyContext::class)->setCompany($companyB, $owner);
             $device->update(['user_id' => $staff->id]);
             $nonce = bin2hex(random_bytes(32));
             $challengeId = (string) Str::uuid();
@@ -113,7 +115,14 @@ final class MobileReceiptLockOrderQualificationTest extends TestCase
             $contender = $adminFirst ? $login : $toggle;
             $slot = $adminFirst ? 'worker-a' : 'worker-b';
             StrictBarrier::await(function () use ($directory, $schema, $slot): bool {
-                $id = trim((string) file_get_contents($directory.'/'.$slot.'.connection'));
+                $connectionPath = $directory.'/'.$slot.'.connection';
+                if (! is_file($connectionPath)) {
+                    return false;
+                }
+                $id = trim((string) file_get_contents($connectionPath));
+                if (! ctype_digit($id)) {
+                    return false;
+                }
                 foreach (DB::select('SHOW FULL PROCESSLIST') as $row) {
                     $sql = strtolower((string) $row->Info);
                     if ((string) $row->Id === $id && $row->db === $schema->schemaName()
