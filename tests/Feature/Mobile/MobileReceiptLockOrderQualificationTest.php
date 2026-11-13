@@ -267,9 +267,12 @@ final class MobileReceiptLockOrderQualificationTest extends TestCase
     {
         $attemptFile = $directory.'/worker-a.attempt';
         if (! is_file($attemptFile)) {
+            $attemptFile = $directory.'/worker-a.connection';
+        }
+        if (! is_file($attemptFile)) {
             return false;
         }
-        $connectionId = file_get_contents($attemptFile);
+        $connectionId = trim((string) file_get_contents($attemptFile));
         foreach (DB::select('SHOW FULL PROCESSLIST') as $row) {
             if ((string) $row->Id === $connectionId
                 && $row->db === $schema->schemaName()
@@ -280,6 +283,44 @@ final class MobileReceiptLockOrderQualificationTest extends TestCase
         }
 
         return false;
+    }
+
+    /**
+     * @param  list<string>  $tables
+     */
+    private function awaitContenderPendingLock(
+        DisposableMariaDbSchema $schema,
+        string $directory,
+        string $slot,
+        array $tables,
+        Closure $alive
+    ): void {
+        StrictBarrier::await(function () use ($directory, $schema, $slot, $tables): bool {
+            $connectionPath = $directory.'/'.$slot.'.connection';
+            if (! is_file($connectionPath)) {
+                return false;
+            }
+            $id = trim((string) file_get_contents($connectionPath));
+            if (! ctype_digit($id)) {
+                return false;
+            }
+            foreach (DB::select('SHOW FULL PROCESSLIST') as $row) {
+                if ((string) $row->Id !== $id || $row->db !== $schema->schemaName()) {
+                    continue;
+                }
+                $sql = strtolower((string) ($row->Info ?? ''));
+                if (! str_contains($sql, 'for update')) {
+                    continue;
+                }
+                foreach ($tables as $table) {
+                    if (str_contains($sql, 'from `'.$table.'`') || str_contains($sql, 'from '.$table)) {
+                        return true;
+                    }
+                }
+            }
+
+            return false;
+        }, $alive);
     }
 
     protected function setUp(): void
@@ -440,23 +481,30 @@ final class MobileReceiptLockOrderQualificationTest extends TestCase
     /**
      * Barrier Test 1: Real production login vs receipt intake with owned device.
      * Both workers acquire locks on User, Company, and Device concurrently.
-     * Uses forced held-lock interleaving on MariaDB to test actual critical row contention.
-     * Verifies clean serialization, zero deadlocks, and both operations succeed.
+     * Uses forced held-lock interleaving on MariaDB with canonical row-held explicit release ACK protocol.
+     * Verifies clean serialization, zero deadlocks, and both operations succeed in both winner orders.
      */
     public function test_concurrent_workers_login_vs_receipt_intake_converge_without_deadlock(): void
     {
+        $this->qualifyLoginVsReceipt(true);
+        $this->qualifyLoginVsReceipt(false);
+    }
+
+    private function qualifyLoginVsReceipt(bool $loginFirst): void
+    {
+        DisposableMariaDbSchema::assertPrimarySchema((string) DB::selectOne('SELECT DATABASE() AS db')->db);
         $schema = DisposableMariaDbSchema::create();
+        $workers = [];
+        $directory = sys_get_temp_dir().'/mobile_receipt_race_'.bin2hex(random_bytes(8));
+        mkdir($directory, 0700);
+
         try {
-            $this->assertTrue($schema->isOwned());
-            $this->assertMatchesRegularExpression('/^accounting_p8_tmp_[a-f0-9]{12}$/D', $schema->schemaName());
             $schema->migrate();
             $schema->switchLaravelConnection();
-            $actualDb = DB::selectOne('SELECT DATABASE() AS db')->db;
-            $this->assertSame($schema->schemaName(), $actualDb);
+            $this->assertSame($schema->schemaName(), DB::selectOne('SELECT DATABASE() AS db')->db);
 
-            [$user, $password, $companyA, $companyB, $device, $token, $rawToken] = $this->setupMultiCompanyFixture('LoginRace');
+            [$user, $password, $companyA, $companyB, $device, $token, $rawToken] = $this->setupMultiCompanyFixture('LoginRace'.($loginFirst ? 'A' : 'B'));
 
-            // Pre-create valid challenge for worker A (login)
             $challengeId = (string) Str::uuid();
             $nonce = bin2hex(random_bytes(32));
             MobileAuthChallenge::create([
@@ -468,84 +516,102 @@ final class MobileReceiptLockOrderQualificationTest extends TestCase
                 'expires_at' => now()->addMinutes(5),
             ]);
 
-            $directory = sys_get_temp_dir().'/mobile_receipt_race_'.bin2hex(random_bytes(8));
-            mkdir($directory, 0700);
-            $a = $b = null;
+            $payload = '{"action":"race_sale","amount":"25.000000"}';
 
-            try {
-                // Worker A holds lock on users table for 150ms to force MariaDB lock wait
-                $inputA = [
-                    'mode' => 'login',
-                    'email' => $user->email,
-                    'password' => $password,
-                    'device_id' => $device->device_id,
-                    'device_name' => 'Race Multi-Company Device',
-                    'challenge_id' => $challengeId,
-                    'nonce' => $nonce,
-                    'hold_lock_table' => 'users',
-                    'hold_ms' => 150,
-                ];
+            $inputLogin = [
+                'mode' => 'login',
+                'email' => $user->email,
+                'password' => $password,
+                'device_id' => $device->device_id,
+                'device_name' => 'Race Multi-Company Device',
+                'challenge_id' => $challengeId,
+                'nonce' => $nonce,
+                'hold_lock_table' => $loginFirst ? 'users' : null,
+                'wait_for_file' => $loginFirst ? 'release-login' : null,
+            ];
 
-                $payload = '{"action":"race_sale","amount":"25.000000"}';
-                // Worker B starts with a slight offset to establish real InnoDB lock wait on User row
-                $inputB = [
-                    'mode' => 'receipt',
-                    'company_id' => $companyA->id,
-                    'client_event_id' => '00000000-0000-4000-8000-000000000201',
-                    'token_hash' => $token->token_hash,
-                    'event_version' => 2,
-                    'representation' => 'v2_intent',
-                    'canonical_bytes' => $payload,
-                    'executor_mode' => 'canonical',
-                    'start_delay_ms' => 30,
-                ];
+            $inputReceipt = [
+                'mode' => 'receipt',
+                'company_id' => $companyA->id,
+                'client_event_id' => '00000000-0000-4000-8000-000000000201',
+                'token_hash' => $token->token_hash,
+                'event_version' => 2,
+                'representation' => 'v2_intent',
+                'canonical_bytes' => $payload,
+                'executor_mode' => 'canonical',
+                'hold_lock_table' => $loginFirst ? null : 'users',
+                'wait_for_file' => $loginFirst ? null : 'release-receipt',
+            ];
 
-                $a = $this->startWorker($schema, $directory, 'worker-a', $inputA);
-                $b = $this->startWorker($schema, $directory, 'worker-b', $inputB);
-
-                // Release barrier simultaneously
+            if ($loginFirst) {
+                $login = $workers[] = $this->startWorker($schema, $directory, 'worker-a', $inputLogin);
                 touch($directory.'/go');
+                StrictBarrier::await(fn (): bool => is_file($directory.'/worker-a.locked'), fn (): bool => $login->isRunning());
 
-                $this->assertSame(0, $a->wait(), 'Worker A stderr: '.$a->getErrorOutput());
-                $this->assertSame(0, $b->wait(), 'Worker B stderr: '.$b->getErrorOutput());
+                $receipt = $workers[] = $this->startWorker($schema, $directory, 'worker-b', $inputReceipt);
+                $this->awaitContenderPendingLock(
+                    $schema,
+                    $directory,
+                    'worker-b',
+                    ['companies', 'users'],
+                    fn (): bool => $login->isRunning() && $receipt->isRunning()
+                );
+                touch($directory.'/release-login');
+            } else {
+                $receipt = $workers[] = $this->startWorker($schema, $directory, 'worker-b', $inputReceipt);
+                touch($directory.'/go');
+                StrictBarrier::await(fn (): bool => is_file($directory.'/worker-b.locked'), fn (): bool => $receipt->isRunning());
 
-                $resA = json_decode($a->getOutput(), true, 512, JSON_THROW_ON_ERROR);
-                $resB = json_decode($b->getOutput(), true, 512, JSON_THROW_ON_ERROR);
-
-                // Worker A (Login) must succeed with 200 and return a fresh token
-                $this->assertSame(200, $resA['status'], 'Worker A (Login) failed: '.json_encode($resA));
-                $this->assertSame('logged_in', $resA['outcome']);
-                $this->assertNotEmpty($resA['token']);
-                $this->assertGreaterThanOrEqual(2, $resA['companies_count']);
-
-                // Worker B (Receipt intake) must succeed with 200 and create receipt
-                $this->assertSame(200, $resB['status'], 'Worker B (Receipt) failed: '.json_encode($resB));
-                $this->assertSame('created', $resB['outcome']);
-                $this->assertNotEmpty($resB['receipt_id']);
-
-                // Exactly 1 receipt in DB, exactly 1 invoice, exactly 1 customer payment
-                $this->assertDatabaseCount('mobile_event_receipts', 1);
-                $this->assertDatabaseCount('sales_invoices', 1);
-                $this->assertDatabaseCount('customer_payments', 1);
-
-                // Reconciliations pass cleanly on Company A
-                app(CompanyContext::class)->setCompany($companyA, $user);
-                $this->assertTrue(app(AccountingReconciliationService::class)->reconcile($companyA)->isHealthy);
-                $this->assertTrue(app(SalesReconciliationService::class)->reconcile($companyA)->isHealthy);
-                $this->assertTrue(app(InventoryReconciliationService::class)->auditCompany($companyA)->isHealthy);
-                $this->assertTrue(app(MoneyReconciliationService::class)->reconcile($companyA)->isHealthy);
-            } finally {
-                $a?->stop();
-                $b?->stop();
-                foreach (glob($directory.'/*') ?: [] as $file) {
-                    unlink($file);
-                }
-                rmdir($directory);
+                $login = $workers[] = $this->startWorker($schema, $directory, 'worker-a', $inputLogin);
+                $this->awaitContenderPendingLock(
+                    $schema,
+                    $directory,
+                    'worker-a',
+                    ['companies', 'users'],
+                    fn (): bool => $login->isRunning() && $receipt->isRunning()
+                );
+                touch($directory.'/release-receipt');
             }
+
+            $this->assertSame(0, $login->wait(), 'Worker A stderr: '.$login->getErrorOutput());
+            $this->assertSame(0, $receipt->wait(), 'Worker B stderr: '.$receipt->getErrorOutput());
+
+            $resA = json_decode($login->getOutput(), true, 512, JSON_THROW_ON_ERROR);
+            $resB = json_decode($receipt->getOutput(), true, 512, JSON_THROW_ON_ERROR);
+
+            $this->assertSame(200, $resA['status'], 'Worker A (Login) failed: '.json_encode($resA));
+            $this->assertSame('logged_in', $resA['outcome']);
+            $this->assertNotEmpty($resA['token']);
+            $this->assertGreaterThanOrEqual(2, $resA['companies_count']);
+            $this->assertSame(0, $resA['retries']);
+
+            $this->assertSame(200, $resB['status'], 'Worker B (Receipt) failed: '.json_encode($resB));
+            $this->assertSame('created', $resB['outcome']);
+            $this->assertNotEmpty($resB['receipt_id']);
+            $this->assertSame(0, $resB['retries']);
+
+            $this->assertDatabaseCount('mobile_event_receipts', 1);
+            $this->assertDatabaseCount('sales_invoices', 1);
+            $this->assertDatabaseCount('customer_payments', 1);
+
+            app(CompanyContext::class)->setCompany($companyA, $user);
+            $this->assertTrue(app(AccountingReconciliationService::class)->reconcile($companyA)->isHealthy);
+            $this->assertTrue(app(SalesReconciliationService::class)->reconcile($companyA)->isHealthy);
+            $this->assertTrue(app(InventoryReconciliationService::class)->auditCompany($companyA)->isHealthy);
+            $this->assertTrue(app(MoneyReconciliationService::class)->reconcile($companyA)->isHealthy);
         } finally {
+            foreach ($workers as $w) {
+                if ($w->isRunning()) {
+                    $w->stop();
+                }
+            }
             if (DB::transactionLevel() > 0) {
                 DB::rollBack(0);
             }
+            foreach (glob($directory.'/*') ?: [] as $file) {
+                unlink($file);
+            }
+            rmdir($directory);
             $schema->restoreLaravelConnection();
             $schema->drop();
         }
@@ -554,99 +620,132 @@ final class MobileReceiptLockOrderQualificationTest extends TestCase
     /**
      * Barrier Test 2: Device revocation vs receipt intake.
      * Worker A revokes the device via HTTP Kernel; Worker B attempts receipt intake with a token on that device.
-     * Uses forced held-lock interleaving on mobile_devices row.
+     * Uses forced held-lock interleaving on mobile_devices row with canonical row-held explicit release ACK protocol.
      * Asserts:
-     * - Revoke succeeds with 200.
-     * - Receipt intake either succeeds with 200 (if receipt locks held first) OR cleanly fails with 401
-     *   auth_error (if revoke committed first).
+     * - Both winner orders: revoke first (401 auth_error fail-closed, zero mutations) and receipt first (200 created, device revoked).
      * - Never partial commits, never duplicate numbers, zero deadlocks.
      */
     public function test_concurrent_workers_device_revoke_vs_receipt_intake_reconciles_safely(): void
     {
+        $this->qualifyRevokeVsReceipt(true);
+        $this->qualifyRevokeVsReceipt(false);
+    }
+
+    private function qualifyRevokeVsReceipt(bool $revokeFirst): void
+    {
+        DisposableMariaDbSchema::assertPrimarySchema((string) DB::selectOne('SELECT DATABASE() AS db')->db);
         $schema = DisposableMariaDbSchema::create();
+        $workers = [];
+        $directory = sys_get_temp_dir().'/mobile_receipt_race_'.bin2hex(random_bytes(8));
+        mkdir($directory, 0700);
+
         try {
-            $this->assertTrue($schema->isOwned());
-            $this->assertMatchesRegularExpression('/^accounting_p8_tmp_[a-f0-9]{12}$/D', $schema->schemaName());
             $schema->migrate();
             $schema->switchLaravelConnection();
-            $actualDb = DB::selectOne('SELECT DATABASE() AS db')->db;
-            $this->assertSame($schema->schemaName(), $actualDb);
+            $this->assertSame($schema->schemaName(), DB::selectOne('SELECT DATABASE() AS db')->db);
 
-            [$user, $password, $companyA, $companyB, $device, $token, $rawToken] = $this->setupMultiCompanyFixture('RevokeRace');
+            [$user, $password, $companyA, $companyB, $device, $token, $rawToken] = $this->setupMultiCompanyFixture('RevokeRace'.($revokeFirst ? 'A' : 'B'));
 
-            $directory = sys_get_temp_dir().'/mobile_receipt_race_'.bin2hex(random_bytes(8));
-            mkdir($directory, 0700);
-            $a = $b = null;
+            $payload = '{"action":"race_sale","amount":"25.000000"}';
 
-            try {
-                // Worker A holds lock on mobile_devices row to establish deterministic interleaving
-                $inputA = [
-                    'mode' => 'revoke',
-                    'device_id' => $device->device_id,
-                    'raw_token' => $rawToken,
-                    'reason' => 'Lost device reported during intake',
-                    'hold_lock_table' => 'mobile_devices',
-                    'hold_ms' => 150,
-                ];
+            $inputRevoke = [
+                'mode' => 'revoke',
+                'device_id' => $device->device_id,
+                'raw_token' => $rawToken,
+                'reason' => 'Lost device reported during intake',
+                'hold_lock_table' => $revokeFirst ? 'mobile_devices' : null,
+                'wait_for_file' => $revokeFirst ? 'release-revoke' : null,
+            ];
 
-                $payload = '{"action":"race_sale","amount":"25.000000"}';
-                $inputB = [
-                    'mode' => 'receipt',
-                    'company_id' => $companyA->id,
-                    'client_event_id' => '00000000-0000-4000-8000-000000000202',
-                    'token_hash' => $token->token_hash,
-                    'event_version' => 2,
-                    'representation' => 'v2_intent',
-                    'canonical_bytes' => $payload,
-                    'executor_mode' => 'canonical',
-                    'start_delay_ms' => 30,
-                ];
+            $inputReceipt = [
+                'mode' => 'receipt',
+                'company_id' => $companyA->id,
+                'client_event_id' => '00000000-0000-4000-8000-000000000202',
+                'token_hash' => $token->token_hash,
+                'event_version' => 2,
+                'representation' => 'v2_intent',
+                'canonical_bytes' => $payload,
+                'executor_mode' => 'canonical',
+                'hold_lock_table' => $revokeFirst ? null : 'mobile_devices',
+                'wait_for_file' => $revokeFirst ? null : 'release-receipt',
+            ];
 
-                $a = $this->startWorker($schema, $directory, 'worker-a', $inputA);
-                $b = $this->startWorker($schema, $directory, 'worker-b', $inputB);
-
+            if ($revokeFirst) {
+                $revoke = $workers[] = $this->startWorker($schema, $directory, 'worker-a', $inputRevoke);
                 touch($directory.'/go');
+                StrictBarrier::await(fn (): bool => is_file($directory.'/worker-a.locked'), fn (): bool => $revoke->isRunning());
 
-                $this->assertSame(0, $a->wait(), 'Worker A stderr: '.$a->getErrorOutput());
-                $this->assertSame(0, $b->wait(), 'Worker B stderr: '.$b->getErrorOutput());
+                $receipt = $workers[] = $this->startWorker($schema, $directory, 'worker-b', $inputReceipt);
+                $this->awaitContenderPendingLock(
+                    $schema,
+                    $directory,
+                    'worker-b',
+                    ['mobile_devices', 'users'],
+                    fn (): bool => $revoke->isRunning() && $receipt->isRunning()
+                );
+                touch($directory.'/release-revoke');
+            } else {
+                $receipt = $workers[] = $this->startWorker($schema, $directory, 'worker-b', $inputReceipt);
+                touch($directory.'/go');
+                StrictBarrier::await(fn (): bool => is_file($directory.'/worker-b.locked'), fn (): bool => $receipt->isRunning());
 
-                $resA = json_decode($a->getOutput(), true, 512, JSON_THROW_ON_ERROR);
-                $resB = json_decode($b->getOutput(), true, 512, JSON_THROW_ON_ERROR);
-
-                // Revoke must always succeed with 200
-                $this->assertSame(200, $resA['status'], 'Worker A (Revoke) failed: '.json_encode($resA));
-                $this->assertSame('revoked', $resA['outcome']);
-
-                // Receipt worker must either succeed (200) or reject with 401 (auth_error)
-                $this->assertContains($resB['status'], [200, 401], 'Worker B returned unexpected status: '.json_encode($resB));
-
-                if ($resB['status'] === 200) {
-                    $this->assertSame('created', $resB['outcome']);
-                    $this->assertDatabaseCount('mobile_event_receipts', 1);
-                    $this->assertDatabaseCount('sales_invoices', 1);
-                } else {
-                    $this->assertSame('auth_error', $resB['outcome']);
-                    // Zero financial mutations leaked when revoked first
-                    $this->assertDatabaseCount('mobile_event_receipts', 0);
-                    $this->assertDatabaseCount('sales_invoices', 0);
-                    $this->assertDatabaseCount('customer_payments', 0);
-                }
-
-                // In all outcomes, device is now revoked in database
-                $device->refresh();
-                $this->assertTrue($device->isRevoked());
-            } finally {
-                $a?->stop();
-                $b?->stop();
-                foreach (glob($directory.'/*') ?: [] as $file) {
-                    unlink($file);
-                }
-                rmdir($directory);
+                $revoke = $workers[] = $this->startWorker($schema, $directory, 'worker-a', $inputRevoke);
+                $this->awaitContenderPendingLock(
+                    $schema,
+                    $directory,
+                    'worker-a',
+                    ['mobile_devices', 'users'],
+                    fn (): bool => $revoke->isRunning() && $receipt->isRunning()
+                );
+                touch($directory.'/release-receipt');
             }
+
+            $this->assertSame(0, $revoke->wait(), 'Worker A stderr: '.$revoke->getErrorOutput());
+            $this->assertSame(0, $receipt->wait(), 'Worker B stderr: '.$receipt->getErrorOutput());
+
+            $resA = json_decode($revoke->getOutput(), true, 512, JSON_THROW_ON_ERROR);
+            $resB = json_decode($receipt->getOutput(), true, 512, JSON_THROW_ON_ERROR);
+
+            // Revoke must always succeed with 200
+            $this->assertSame(200, $resA['status'], 'Worker A (Revoke) failed: '.json_encode($resA));
+            $this->assertSame('revoked', $resA['outcome']);
+
+            if ($revokeFirst) {
+                // When revoke wins first, receipt intake fails closed with 401 auth_error
+                $this->assertSame(401, $resB['status'], 'Worker B (Receipt) should fail closed: '.json_encode($resB));
+                $this->assertSame('auth_error', $resB['outcome']);
+                $this->assertDatabaseCount('mobile_event_receipts', 0);
+                $this->assertDatabaseCount('sales_invoices', 0);
+                $this->assertDatabaseCount('customer_payments', 0);
+            } else {
+                // When receipt wins first, receipt intake succeeds with 200
+                $this->assertSame(200, $resB['status'], 'Worker B (Receipt) should succeed: '.json_encode($resB));
+                $this->assertSame('created', $resB['outcome']);
+                $this->assertNotEmpty($resB['receipt_id']);
+                $this->assertDatabaseCount('mobile_event_receipts', 1);
+                $this->assertDatabaseCount('sales_invoices', 1);
+                $this->assertDatabaseCount('customer_payments', 1);
+
+                app(CompanyContext::class)->setCompany($companyA, $user);
+                $this->assertTrue(app(AccountingReconciliationService::class)->reconcile($companyA)->isHealthy);
+                $this->assertTrue(app(SalesReconciliationService::class)->reconcile($companyA)->isHealthy);
+            }
+
+            $device->refresh();
+            $this->assertTrue($device->isRevoked());
         } finally {
+            foreach ($workers as $w) {
+                if ($w->isRunning()) {
+                    $w->stop();
+                }
+            }
             if (DB::transactionLevel() > 0) {
                 DB::rollBack(0);
             }
+            foreach (glob($directory.'/*') ?: [] as $file) {
+                unlink($file);
+            }
+            rmdir($directory);
             $schema->restoreLaravelConnection();
             $schema->drop();
         }
@@ -656,23 +755,31 @@ final class MobileReceiptLockOrderQualificationTest extends TestCase
      * Barrier Test 3: Tenant membership toggle vs receipt intake.
      * Worker A deactivates the staff user's company membership under Company lock.
      * Worker B attempts receipt intake on that company with the staff user's token.
-     * Verifies clean convergence without deadlock:
+     * Verifies clean convergence without deadlock in both winner orders:
      * - If deactivation commits first, receipt rejects with 403 foreign_scope.
      * - If receipt commits first, receipt succeeds with 200, then deactivation succeeds.
      * - Zero deadlocks, 403 semantics strictly preserved.
      */
     public function test_concurrent_workers_membership_deactivation_vs_receipt_intake_reconciles_safely(): void
     {
+        $this->qualifyMembershipVsReceipt(true);
+        $this->qualifyMembershipVsReceipt(false);
+    }
+
+    private function qualifyMembershipVsReceipt(bool $toggleFirst): void
+    {
+        DisposableMariaDbSchema::assertPrimarySchema((string) DB::selectOne('SELECT DATABASE() AS db')->db);
         $schema = DisposableMariaDbSchema::create();
+        $workers = [];
+        $directory = sys_get_temp_dir().'/mobile_receipt_race_'.bin2hex(random_bytes(8));
+        mkdir($directory, 0700);
+
         try {
-            $this->assertTrue($schema->isOwned());
-            $this->assertMatchesRegularExpression('/^accounting_p8_tmp_[a-f0-9]{12}$/D', $schema->schemaName());
             $schema->migrate();
             $schema->switchLaravelConnection();
-            $actualDb = DB::selectOne('SELECT DATABASE() AS db')->db;
-            $this->assertSame($schema->schemaName(), $actualDb);
+            $this->assertSame($schema->schemaName(), DB::selectOne('SELECT DATABASE() AS db')->db);
 
-            [$owner, $password, $companyA, $companyB, $deviceOwner, $tokenOwner] = $this->setupMultiCompanyFixture('MemberRace');
+            [$owner, $password, $companyA, $companyB, $deviceOwner, $tokenOwner] = $this->setupMultiCompanyFixture('MemberRace'.($toggleFirst ? 'A' : 'B'));
 
             // Create a staff user in Company A
             $staff = User::factory()->create([
@@ -708,72 +815,105 @@ final class MobileReceiptLockOrderQualificationTest extends TestCase
                 'expires_at' => now()->addDays(7),
             ]);
 
-            $directory = sys_get_temp_dir().'/mobile_receipt_race_'.bin2hex(random_bytes(8));
-            mkdir($directory, 0700);
-            $a = $b = null;
+            $payload = '{"action":"race_sale","amount":"25.000000"}';
 
-            try {
-                $inputA = [
-                    'mode' => 'toggle_member',
-                    'company_id' => $companyA->id,
-                    'target_user_id' => $staff->id,
-                    'actor_id' => $owner->id,
-                    'hold_lock_table' => 'companies',
-                    'hold_ms' => 150,
-                ];
+            $inputToggle = [
+                'mode' => 'toggle_member',
+                'company_id' => $companyA->id,
+                'target_user_id' => $staff->id,
+                'actor_id' => $owner->id,
+                'hold_lock_table' => $toggleFirst ? 'companies' : null,
+                'wait_for_file' => $toggleFirst ? 'release-toggle' : null,
+            ];
 
-                $payload = '{"action":"race_sale","amount":"25.000000"}';
-                $inputB = [
-                    'mode' => 'receipt',
-                    'company_id' => $companyA->id,
-                    'client_event_id' => '00000000-0000-4000-8000-000000000203',
-                    'token_hash' => $staffToken->token_hash,
-                    'event_version' => 2,
-                    'representation' => 'v2_intent',
-                    'canonical_bytes' => $payload,
-                    'executor_mode' => 'canonical',
-                    'start_delay_ms' => 30,
-                ];
+            $inputReceipt = [
+                'mode' => 'receipt',
+                'company_id' => $companyA->id,
+                'client_event_id' => '00000000-0000-4000-8000-000000000203',
+                'token_hash' => $staffToken->token_hash,
+                'event_version' => 2,
+                'representation' => 'v2_intent',
+                'canonical_bytes' => $payload,
+                'executor_mode' => 'canonical',
+                'hold_lock_table' => $toggleFirst ? null : 'companies',
+                'wait_for_file' => $toggleFirst ? null : 'release-receipt',
+            ];
 
-                $a = $this->startWorker($schema, $directory, 'worker-a', $inputA);
-                $b = $this->startWorker($schema, $directory, 'worker-b', $inputB);
-
+            if ($toggleFirst) {
+                $toggle = $workers[] = $this->startWorker($schema, $directory, 'worker-a', $inputToggle);
                 touch($directory.'/go');
+                StrictBarrier::await(fn (): bool => is_file($directory.'/worker-a.locked'), fn (): bool => $toggle->isRunning());
 
-                $this->assertSame(0, $a->wait(), 'Worker A stderr: '.$a->getErrorOutput());
-                $this->assertSame(0, $b->wait(), 'Worker B stderr: '.$b->getErrorOutput());
+                $receipt = $workers[] = $this->startWorker($schema, $directory, 'worker-b', $inputReceipt);
+                $this->awaitContenderPendingLock(
+                    $schema,
+                    $directory,
+                    'worker-b',
+                    ['companies'],
+                    fn (): bool => $toggle->isRunning() && $receipt->isRunning()
+                );
+                touch($directory.'/release-toggle');
+            } else {
+                $receipt = $workers[] = $this->startWorker($schema, $directory, 'worker-b', $inputReceipt);
+                touch($directory.'/go');
+                StrictBarrier::await(fn (): bool => is_file($directory.'/worker-b.locked'), fn (): bool => $receipt->isRunning());
 
-                $resA = json_decode($a->getOutput(), true, 512, JSON_THROW_ON_ERROR);
-                $resB = json_decode($b->getOutput(), true, 512, JSON_THROW_ON_ERROR);
-
-                $this->assertSame(200, $resA['status'], 'Worker A (Toggle) failed: '.json_encode($resA));
-                $this->assertSame('inactive', $resA['new_status']);
-
-                $this->assertContains($resB['status'], [200, 403], 'Worker B returned unexpected status: '.json_encode($resB));
-
-                if ($resB['status'] === 200) {
-                    $this->assertSame('created', $resB['outcome']);
-                    $this->assertDatabaseCount('mobile_event_receipts', 1);
-                } else {
-                    $this->assertSame('foreign_scope', $resB['outcome']);
-                    $this->assertDatabaseCount('mobile_event_receipts', 0);
-                }
-
-                // Final state: membership is inactive
-                $staffMembership->refresh();
-                $this->assertSame('inactive', $staffMembership->status);
-            } finally {
-                $a?->stop();
-                $b?->stop();
-                foreach (glob($directory.'/*') ?: [] as $file) {
-                    unlink($file);
-                }
-                rmdir($directory);
+                $toggle = $workers[] = $this->startWorker($schema, $directory, 'worker-a', $inputToggle);
+                $this->awaitContenderPendingLock(
+                    $schema,
+                    $directory,
+                    'worker-a',
+                    ['companies'],
+                    fn (): bool => $toggle->isRunning() && $receipt->isRunning()
+                );
+                touch($directory.'/release-receipt');
             }
+
+            $this->assertSame(0, $toggle->wait(), 'Worker A stderr: '.$toggle->getErrorOutput());
+            $this->assertSame(0, $receipt->wait(), 'Worker B stderr: '.$receipt->getErrorOutput());
+
+            $resA = json_decode($toggle->getOutput(), true, 512, JSON_THROW_ON_ERROR);
+            $resB = json_decode($receipt->getOutput(), true, 512, JSON_THROW_ON_ERROR);
+
+            $this->assertSame(200, $resA['status'], 'Worker A (Toggle) failed: '.json_encode($resA));
+            $this->assertSame('inactive', $resA['new_status']);
+
+            if ($toggleFirst) {
+                // When toggle deactivates first, receipt intake fails closed with 403 foreign_scope
+                $this->assertSame(403, $resB['status'], 'Worker B (Receipt) should fail closed: '.json_encode($resB));
+                $this->assertSame('foreign_scope', $resB['outcome']);
+                $this->assertDatabaseCount('mobile_event_receipts', 0);
+                $this->assertDatabaseCount('sales_invoices', 0);
+                $this->assertDatabaseCount('customer_payments', 0);
+            } else {
+                // When receipt wins first, receipt succeeds with 200
+                $this->assertSame(200, $resB['status'], 'Worker B (Receipt) should succeed: '.json_encode($resB));
+                $this->assertSame('created', $resB['outcome']);
+                $this->assertNotEmpty($resB['receipt_id']);
+                $this->assertDatabaseCount('mobile_event_receipts', 1);
+                $this->assertDatabaseCount('sales_invoices', 1);
+                $this->assertDatabaseCount('customer_payments', 1);
+
+                app(CompanyContext::class)->setCompany($companyA, $owner);
+                $this->assertTrue(app(AccountingReconciliationService::class)->reconcile($companyA)->isHealthy);
+                $this->assertTrue(app(SalesReconciliationService::class)->reconcile($companyA)->isHealthy);
+            }
+
+            $staffMembership->refresh();
+            $this->assertSame('inactive', $staffMembership->status);
         } finally {
+            foreach ($workers as $w) {
+                if ($w->isRunning()) {
+                    $w->stop();
+                }
+            }
             if (DB::transactionLevel() > 0) {
                 DB::rollBack(0);
             }
+            foreach (glob($directory.'/*') ?: [] as $file) {
+                unlink($file);
+            }
+            rmdir($directory);
             $schema->restoreLaravelConnection();
             $schema->drop();
         }
@@ -783,81 +923,86 @@ final class MobileReceiptLockOrderQualificationTest extends TestCase
      * Barrier Test 4: Password change (advancing password epoch) vs receipt intake.
      * Worker A changes user password via Fortify ResetUserPassword, invalidating existing mobile tokens.
      * Worker B attempts receipt intake with existing token.
-     * Verifies clean convergence:
-     * - If password change commits first, receipt rejects with 401 auth_error fail-closed.
+     * Verifies clean convergence in both winner orders:
+     * - Intake first: Receipt holds User lock, Fortify update blocks on UPDATE users, receipt completes, update commits, stale token fails.
+     * - Reset first: Password change commits first, receipt rejects with 401 auth_error fail-closed.
      * - Clearly verifies repeat stale token rejected even if revoked_at not persisted in DB.
      * - Zero deadlocks.
      */
     public function test_concurrent_workers_password_epoch_change_vs_receipt_intake_reconciles_safely(): void
     {
+        $this->qualifyPasswordVsReceipt(false);
+        $this->qualifyPasswordVsReceipt(true);
+    }
+
+    private function qualifyPasswordVsReceipt(bool $resetFirst): void
+    {
+        DisposableMariaDbSchema::assertPrimarySchema((string) DB::selectOne('SELECT DATABASE() AS db')->db);
         $schema = DisposableMariaDbSchema::create();
+        $workers = [];
+        $directory = sys_get_temp_dir().'/mobile_receipt_race_'.bin2hex(random_bytes(8));
+        mkdir($directory, 0700);
+
         try {
-            $this->assertTrue($schema->isOwned());
-            $this->assertMatchesRegularExpression('/^accounting_p8_tmp_[a-f0-9]{12}$/D', $schema->schemaName());
             $schema->migrate();
             $schema->switchLaravelConnection();
-            $actualDb = DB::selectOne('SELECT DATABASE() AS db')->db;
-            $this->assertSame($schema->schemaName(), $actualDb);
+            $this->assertSame($schema->schemaName(), DB::selectOne('SELECT DATABASE() AS db')->db);
 
-            [$user, $password, $companyA, $companyB, $device, $token, $rawToken] = $this->setupMultiCompanyFixture('EpochRace');
+            [$user, $password, $companyA, $companyB, $device, $token, $rawToken] = $this->setupMultiCompanyFixture('EpochRace'.($resetFirst ? 'A' : 'B'));
 
-            $directory = sys_get_temp_dir().'/mobile_receipt_race_'.bin2hex(random_bytes(8));
-            mkdir($directory, 0700);
-            $a = $b = null;
+            $payload = '{"action":"race_sale","amount":"25.000000"}';
 
-            try {
-                $inputA = [
-                    'mode' => 'password_change',
-                    'user_id' => $user->id,
-                    'new_password' => 'NewFreshSecured!Pass999',
-                    'hold_lock_table' => 'users',
-                    'hold_ms' => 150,
-                ];
+            $inputPassword = [
+                'mode' => 'password_change',
+                'user_id' => $user->id,
+                'new_password' => 'NewFreshSecured!Pass999',
+            ];
 
-                $payload = '{"action":"race_sale","amount":"25.000000"}';
-                $inputB = [
-                    'mode' => 'receipt',
-                    'company_id' => $companyA->id,
-                    'client_event_id' => '00000000-0000-4000-8000-000000000204',
-                    'token_hash' => $token->token_hash,
-                    'event_version' => 2,
-                    'representation' => 'v2_intent',
-                    'canonical_bytes' => $payload,
-                    'executor_mode' => 'canonical',
-                    'start_delay_ms' => 30,
-                ];
+            $inputReceipt = [
+                'mode' => 'receipt',
+                'company_id' => $companyA->id,
+                'client_event_id' => '00000000-0000-4000-8000-000000000204',
+                'token_hash' => $token->token_hash,
+                'event_version' => 2,
+                'representation' => 'v2_intent',
+                'canonical_bytes' => $payload,
+                'executor_mode' => 'canonical',
+                'hold_lock_table' => $resetFirst ? null : 'users',
+                'wait_for_file' => $resetFirst ? null : 'release-receipt',
+            ];
 
-                $a = $this->startWorker($schema, $directory, 'worker-a', $inputA);
-                $b = $this->startWorker($schema, $directory, 'worker-b', $inputB);
-
+            if (! $resetFirst) {
+                // Receipt intake holds User lock first, Fortify update blocks on UPDATE users
+                $receipt = $workers[] = $this->startWorker($schema, $directory, 'worker-b', $inputReceipt);
                 touch($directory.'/go');
+                StrictBarrier::await(fn (): bool => is_file($directory.'/worker-b.locked'), fn (): bool => $receipt->isRunning());
 
-                $this->assertSame(0, $a->wait(), 'Worker A stderr: '.$a->getErrorOutput());
-                $this->assertSame(0, $b->wait(), 'Worker B stderr: '.$b->getErrorOutput());
+                $passwordWorker = $workers[] = $this->startWorker($schema, $directory, 'worker-a', $inputPassword);
+                StrictBarrier::await(
+                    fn (): bool => $this->isFortifyUpdatePending($schema, $directory),
+                    fn (): bool => $passwordWorker->isRunning() && $receipt->isRunning()
+                );
+                touch($directory.'/release-receipt');
 
-                $resA = json_decode($a->getOutput(), true, 512, JSON_THROW_ON_ERROR);
-                $resB = json_decode($b->getOutput(), true, 512, JSON_THROW_ON_ERROR);
+                $this->assertSame(0, $receipt->wait(), 'Worker B stderr: '.$receipt->getErrorOutput());
+                $this->assertSame(0, $passwordWorker->wait(), 'Worker A stderr: '.$passwordWorker->getErrorOutput());
 
-                $this->assertSame(200, $resA['status'], 'Worker A (Password) failed: '.json_encode($resA));
+                $resB = json_decode($receipt->getOutput(), true, 512, JSON_THROW_ON_ERROR);
+                $resA = json_decode($passwordWorker->getOutput(), true, 512, JSON_THROW_ON_ERROR);
+
+                $this->assertSame(200, $resB['status'], 'Worker B (Receipt) should succeed: '.json_encode($resB));
+                $this->assertSame('created', $resB['outcome']);
+                $this->assertNotEmpty($resB['receipt_id']);
+                $this->assertSame(200, $resA['status'], 'Worker A (Password) should succeed: '.json_encode($resA));
                 $this->assertSame('password_updated', $resA['outcome']);
 
-                $this->assertContains($resB['status'], [200, 401], 'Worker B returned unexpected status: '.json_encode($resB));
+                $this->assertDatabaseCount('mobile_event_receipts', 1);
+                $this->assertDatabaseCount('sales_invoices', 1);
+                $this->assertDatabaseCount('customer_payments', 1);
 
-                if ($resB['status'] === 200) {
-                    $this->assertSame('created', $resB['outcome']);
-                    $this->assertDatabaseCount('mobile_event_receipts', 1);
-                } else {
-                    $this->assertSame('auth_error', $resB['outcome']);
-                    $this->assertDatabaseCount('mobile_event_receipts', 0);
-                    // Clearly test repeat stale token rejected even if revoked_at not persisted in DB
-                    $tokenRow = DB::table('mobile_access_tokens')->where('token_hash', $token->token_hash)->first();
-                    $this->assertNotNull($tokenRow);
-                    $this->assertNull($tokenRow->revoked_at, 'revoked_at must NOT be persisted by exception autocommit');
-
-                    $manager = app(MobileEventReceiptManager::class);
-                    $this->expectException(MobileEventAuthenticationException::class);
-                    $this->expectExceptionMessage('User credentials have changed since token establishment.');
-
+                // Subsequent intake with stale token must reject with MobileEventAuthenticationException
+                $manager = app(MobileEventReceiptManager::class);
+                try {
                     $manager->recordOrReplay(
                         companyId: $companyA->id,
                         clientEventId: '00000000-0000-4000-8000-000000000299',
@@ -866,19 +1011,57 @@ final class MobileReceiptLockOrderQualificationTest extends TestCase
                         representation: 'v2_intent',
                         canonicalBytes: $payload
                     );
+                    $this->fail('Expected MobileEventAuthenticationException for stale token not thrown.');
+                } catch (MobileEventAuthenticationException $e) {
+                    $this->assertStringContainsString('User credentials have changed', $e->getMessage());
                 }
-            } finally {
-                $a?->stop();
-                $b?->stop();
-                foreach (glob($directory.'/*') ?: [] as $file) {
-                    unlink($file);
+            } else {
+                // Password change commits first, invalidating password epoch
+                $passwordWorker = $workers[] = $this->startWorker($schema, $directory, 'worker-a', $inputPassword);
+                touch($directory.'/go');
+                $this->assertSame(0, $passwordWorker->wait(), 'Worker A stderr: '.$passwordWorker->getErrorOutput());
+                $resA = json_decode($passwordWorker->getOutput(), true, 512, JSON_THROW_ON_ERROR);
+                $this->assertSame(200, $resA['status'], 'Worker A (Password) failed: '.json_encode($resA));
+                $this->assertSame('password_updated', $resA['outcome']);
+
+                // Receipt intake with old token must fail closed with 401 auth_error
+                $receipt = $workers[] = $this->startWorker($schema, $directory, 'worker-b', $inputReceipt);
+                touch($directory.'/go');
+                $this->assertSame(0, $receipt->wait(), 'Worker B stderr: '.$receipt->getErrorOutput());
+                $resB = json_decode($receipt->getOutput(), true, 512, JSON_THROW_ON_ERROR);
+
+                $this->assertSame(401, $resB['status'], 'Worker B (Receipt) should reject stale epoch: '.json_encode($resB));
+                $this->assertSame('auth_error', $resB['outcome']);
+                $this->assertDatabaseCount('mobile_event_receipts', 0);
+                $this->assertDatabaseCount('sales_invoices', 0);
+                $this->assertDatabaseCount('customer_payments', 0);
+
+                // Token revoked_at remains null in DB (no autocommit side effect)
+                $tokenRow = DB::table('mobile_access_tokens')->where('token_hash', $token->token_hash)->first();
+                $this->assertNotNull($tokenRow);
+                $this->assertNull($tokenRow->revoked_at, 'revoked_at must NOT be persisted by exception autocommit');
+
+                // Lookup also throws MobileEventAuthenticationException
+                try {
+                    app(MobileEventReceiptManager::class)->lookup($companyA->id, '00000000-0000-4000-8000-000000000999', $token->token_hash);
+                    $this->fail('Expected MobileEventAuthenticationException for stale token lookup not thrown.');
+                } catch (MobileEventAuthenticationException $e) {
+                    $this->assertStringContainsString('User credentials have changed', $e->getMessage());
                 }
-                rmdir($directory);
             }
         } finally {
+            foreach ($workers as $w) {
+                if ($w->isRunning()) {
+                    $w->stop();
+                }
+            }
             if (DB::transactionLevel() > 0) {
                 DB::rollBack(0);
             }
+            foreach (glob($directory.'/*') ?: [] as $file) {
+                unlink($file);
+            }
+            rmdir($directory);
             $schema->restoreLaravelConnection();
             $schema->drop();
         }

@@ -90,7 +90,11 @@ if (($input['pause_before_company_lock'] ?? false) === true) {
     });
 }
 
-// Signal readiness at the barrier
+// Signal connection ID and readiness at the barrier
+file_put_contents($directory.'/'.$slot.'.connection', (string) DB::selectOne('SELECT CONNECTION_ID() AS id')->id);
+if ($mode === 'password_change') {
+    file_put_contents($directory.'/'.$slot.'.attempt', (string) DB::selectOne('SELECT CONNECTION_ID() AS id')->id);
+}
 file_put_contents($directory.'/'.$slot.'.ready', 'ready');
 
 // Wait for go signal
@@ -116,8 +120,6 @@ if (isset($input['wait_before_start_file'])) {
 if (isset($input['start_delay_ms'])) {
     usleep(((int) $input['start_delay_ms']) * 1000);
 }
-
-file_put_contents($directory.'/'.$slot.'.connection', (string) DB::selectOne('SELECT CONNECTION_ID() AS id')->id);
 
 $startTime = microtime(true);
 $retries = 0;
@@ -163,6 +165,9 @@ try {
         }
         $status = $response->getStatusCode();
         $body = json_decode((string) $response->getContent(), true) ?? [];
+        if ($status >= 500) {
+            fwrite(STDERR, 'Worker '.$slot.' login HTTP '.$status.': '.json_encode($body).PHP_EOL);
+        }
         $httpKernel->terminate($request, $response);
 
         echo json_encode([
@@ -206,6 +211,9 @@ try {
         $response = $httpKernel->handle($request);
         $status = $response->getStatusCode();
         $body = json_decode((string) $response->getContent(), true) ?? [];
+        if ($status >= 500) {
+            fwrite(STDERR, 'Worker '.$slot.' revoke HTTP '.$status.': '.json_encode($body).PHP_EOL);
+        }
         $httpKernel->terminate($request, $response);
 
         echo json_encode([
@@ -486,7 +494,12 @@ try {
 }
 
 if ($holdTable !== null) {
-    $barrier->requireHeld();
+    try {
+        $barrier->requireHeld();
+    } catch (Throwable $barrierEx) {
+        fwrite(STDERR, $barrierEx->getMessage().PHP_EOL);
+        exit(1);
+    }
 }
 if (isset($e) && $e instanceof Throwable && ! ($e instanceof MobileEventAuthenticationException)) {
     exit(1);
