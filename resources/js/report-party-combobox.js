@@ -7,12 +7,14 @@ export function reportPartyCombobox(config) {
         selected: '', label: '', term: '', options: [],
         init() {
             this.sync(config.initialSelected ?? '', config.initialValues ?? []);
-            unwatch = config.watch?.(id => this.sync(id, [...this.options, ...(config.initialValues ?? [])]));
+            unwatch = config.watch?.(id => this.sync(id, [...this.options, ...(config.initialValues ?? [])], true));
             this.$cleanup?.(() => this.destroy());
         },
-        sync(id, values) {
+        sync(id, values, preserveKnownLabel = false) {
             id = String(id ?? '');
-            const label = id === '' ? '' : (values.find(item => String(item.id) === id)?.label ?? '');
+            const found = values.find(item => String(item.id) === id)?.label;
+            // A client watcher has identity only; server hydration remains authoritative.
+            const label = id === '' ? '' : (found ?? (preserveKnownLabel && id === this.selected ? this.label : ''));
             // Hydration/reset/back navigation must refresh authorized identity, even after revocation.
             if (id !== this.selected || label !== this.label || this.busy || this.open) {
                 this.dismiss(); this.options = []; this.selected = id; this.label = label; this.term = label;

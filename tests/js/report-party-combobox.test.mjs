@@ -200,3 +200,22 @@ test('Blade markup strictly enforces accessibility, deferred commit, and hash-de
     assert.ok(blade.includes('class="min-h-[44px] sm:min-h-10'), 'must enforce 44px mobile touch target');
     assert.ok(blade.includes('text-base sm:text-sm'), 'must use 16px text-base on mobile to prevent iOS auto-zoom');
 });
+
+
+test('identity watcher retains an on-demand label but authoritative hydration can clear it', async () => {
+    let notify;
+    const s = reportPartyCombobox({initialValues: [], emptyLabel: 'All',
+        lookup: async () => [{id: '7', label: 'On-demand customer'}], commit: () => {},
+        watch: listener => { notify = listener; }});
+    s.init(); await s.search(); s.choose(1);
+    // An in-flight lookup clears options before the identity-only watcher runs.
+    const pending = s.search();
+    notify('7');
+    await pending;
+    assert.equal(s.selected, '7'); assert.equal(s.term, 'On-demand customer');
+    assert.deepEqual(s.options, []);
+    s.sync('7', []);
+    assert.equal(s.label, ''); assert.equal(s.term, '');
+    notify(''); assert.equal(s.selected, '');
+    s.destroy();
+});

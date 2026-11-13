@@ -26,7 +26,11 @@ final class ReportPartySelectorTest extends Phase8TestCase
 {
     use EnforcesDisposableDatabaseOwnership;
 
-    /** Guard after application bootstrap, before RefreshDatabase traits or parent fixtures. */
+    /**
+     * Guard after application bootstrap, before RefreshDatabase traits or parent fixtures.
+     *
+     * @return array<class-string, class-string>
+     */
     protected function setUpTraits(): array
     {
         $this->assertOwnedDisposableDatabase();
@@ -92,6 +96,9 @@ final class ReportPartySelectorTest extends Phase8TestCase
         $customerComponent = Livewire::test(ReportView::class, ['reportKey' => 'customers.statement']);
         $customerComponent->assertSee('report-customer_id', false);
         $customerResults = $customerComponent->instance()->lookupParty('customer_id', 'Test Customer');
+        $customerComponent->call('lookupParty', 'customer_id', 'Test Customer')
+            ->assertStatus(200)
+            ->assertReturned($customerResults);
         $this->assertNotEmpty($customerResults);
         $this->assertSame((string) $customer->id, $customerResults[0]['id']);
         $this->assertStringContainsString('Test Customer', $customerResults[0]['label']);
@@ -100,6 +107,9 @@ final class ReportPartySelectorTest extends Phase8TestCase
         $vendorComponent = Livewire::test(ReportView::class, ['reportKey' => 'vendors.statement']);
         $vendorComponent->assertSee('report-vendor_id', false);
         $vendorResults = $vendorComponent->instance()->lookupParty('vendor_id', 'Test Vendor');
+        $vendorComponent->call('lookupParty', 'vendor_id', 'Test Vendor')
+            ->assertStatus(200)
+            ->assertReturned($vendorResults);
         $this->assertNotEmpty($vendorResults);
         $this->assertSame((string) $vendor->id, $vendorResults[0]['id']);
         $this->assertStringContainsString('Test Vendor', $vendorResults[0]['label']);
@@ -108,6 +118,9 @@ final class ReportPartySelectorTest extends Phase8TestCase
         $payrollComponent = Livewire::test(ReportView::class, ['reportKey' => 'payroll.summary']);
         $payrollComponent->assertSee('report-employee_id', false);
         $payrollResults = $payrollComponent->instance()->lookupParty('employee_id', 'Test Employee');
+        $payrollComponent->call('lookupParty', 'employee_id', 'Test Employee')
+            ->assertStatus(200)
+            ->assertReturned($payrollResults);
         $this->assertNotEmpty($payrollResults);
         $this->assertSame((string) $employee->id, $payrollResults[0]['id']);
         $this->assertStringContainsString('Test Employee', $payrollResults[0]['label']);
