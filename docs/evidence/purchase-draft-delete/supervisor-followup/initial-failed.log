@@ -1,0 +1,29 @@
+Owned primary test schema: accounting_p8_tmp_0bf69f52e953
+PHPUnit 12.5.36 by Sebastian Bergmann and contributors.
+
+Runtime:       PHP 8.4.27
+Configuration: /tmp/p8_phpunit_c10oe3os4d8s1ShhLYK
+
+FF                                                                  2 / 2 (100%)
+
+Time: 00:27.838, Memory: 67.00 MB
+
+There were 2 failures:
+
+1) Tests\Feature\Phase5B\PurchaseDraftDeletionConcurrencyTest::test_concurrency_race_post_wins_delete_blocked
+Exact contender must be executing the Company FOR UPDATE while the winner holds it.
+Failed asserting that false is true.
+
+<WORKTREE>/tests/Feature/Phase5B/PurchaseDraftDeletionConcurrencyTest.php:363
+<WORKTREE>/tests/Feature/Phase5B/PurchaseDraftDeletionConcurrencyTest.php:418
+
+2) Tests\Feature\Phase5B\PurchaseDraftDeletionConcurrencyTest::test_concurrency_race_delete_wins_post_aborts_not_found
+Exact contender must be executing the Company FOR UPDATE while the winner holds it.
+Failed asserting that false is true.
+
+<WORKTREE>/tests/Feature/Phase5B/PurchaseDraftDeletionConcurrencyTest.php:363
+<WORKTREE>/tests/Feature/Phase5B/PurchaseDraftDeletionConcurrencyTest.php:449
+
+FAILURES!
+Tests: 2, Assertions: 20, Failures: 2.
+Owned primary schema cleaned.

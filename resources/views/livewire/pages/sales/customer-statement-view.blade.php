@@ -24,11 +24,13 @@
         <div class="flex flex-wrap items-center gap-4 pt-4 border-t border-border text-xs">
             <div class="flex items-center gap-2">
                 <label class="font-bold text-text-primary">{{ __('sales.from_date') }}:</label>
-                <input type="date" wire:model.live="fromDate" class="h-8 px-2.5 rounded-control border border-border bg-canvas text-sm text-text-primary" />
+                <input type="date" wire:model.live="fromDate" class="min-h-[44px] sm:min-h-9 px-2.5 rounded-control border border-border bg-canvas text-sm text-text-primary" />
+                @error('fromDate')<p class="text-sm text-danger" role="alert">{{ $message }}</p>@enderror
             </div>
             <div class="flex items-center gap-2">
                 <label class="font-bold text-text-primary">{{ __('sales.to_date') }}:</label>
-                <input type="date" wire:model.live="toDate" class="h-8 px-2.5 rounded-control border border-border bg-canvas text-sm text-text-primary" />
+                <input type="date" wire:model.live="toDate" class="min-h-[44px] sm:min-h-9 px-2.5 rounded-control border border-border bg-canvas text-sm text-text-primary" />
+                @error('toDate')<p class="text-sm text-danger" role="alert">{{ $message }}</p>@enderror
             </div>
         </div>
     </div>

@@ -110,7 +110,7 @@ final class ReportFilterOptions
                 });
             }
 
-            $rows = (clone $query)->select($selectColumns)->orderBy('id')->limit(25)->get();
+            $rows = (clone $query)->select($selectColumns)->orderBy(in_array($field, ['customer_id', 'vendor_id', 'employee_id'], true) ? $nameColumns[app()->getLocale() === 'ar' ? 0 : count($nameColumns) - 1] : 'id')->orderBy('id')->limit(25)->get();
 
             // Retain selected authorized identity even if beyond search page or archived with financial history
             $selectedId = $selected[$field] ?? null;

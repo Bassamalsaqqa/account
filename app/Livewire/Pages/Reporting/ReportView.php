@@ -16,6 +16,7 @@ use App\Application\Reporting\Security\ReportingGuard;
 use App\Support\TablePageSize;
 use App\Support\Tenancy\CompanyContext;
 use Illuminate\Contracts\View\View;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use InvalidArgumentException;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Locked;
@@ -96,7 +97,7 @@ final class ReportView extends Component
                 try {
                     $validated = ReportFilters::fromArray($company, ['period' => $periodRaw]);
                     $period = $validated->period;
-                } catch (InvalidArgumentException|ReportingException $exception) {
+                } catch (InvalidArgumentException|ReportingException|ModelNotFoundException $exception) {
                     $this->addError('filters', __('reports.error'));
 
                     return;
@@ -148,6 +149,16 @@ final class ReportView extends Component
         $company = app(ReportingGuard::class)->company(app(CompanyContext::class)->company());
         abort_unless($registry->allows($company, $this->reportKey), 403);
         $definition = app(ReportPresentationPolicy::class)->definition($company, $registry->definition($this->reportKey));
+        $this->resetValidation(['filters.from', 'filters.to']);
+        if (($this->filters['preset'] ?? '') === 'custom') {
+            $validator = validator($this->filters, [
+                'from' => ['required', 'date_format:Y-m-d'],
+                'to' => ['required', 'date_format:Y-m-d', 'after_or_equal:from'],
+            ]);
+            foreach ($validator->errors()->messages() as $field => $messages) {
+                $this->addError('filters.'.$field, __('reports.date_range_error'));
+            }
+        }
         $result = null;
         $columns = [];
         $totals = [];
@@ -158,13 +169,13 @@ final class ReportView extends Component
                 $missing = true;
             }
         }
-        if (! $missing && ! $this->getErrorBag()->has('filters')) {
+        if (! $missing && ! $this->getErrorBag()->hasAny(['filters', 'filters.from', 'filters.to'])) {
             try {
                 $result = $registry->execute($company, $this->reportKey, $this->filters);
                 $sourceLinks = app(ReportSourceNavigation::class)->forRows($company, $this->reportKey, $result);
                 $columns = app(ReportPresenter::class)->columns($definition['columns'], $result);
                 $totals = app(ReportPresenter::class)->totals($result->totals, (string) $company->base_currency_code);
-            } catch (InvalidArgumentException|ReportingException $exception) {
+            } catch (InvalidArgumentException|ReportingException|ModelNotFoundException $exception) {
                 $this->addError('filters', __('reports.error'));
             }
         }
