@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Feature\Mobile;
 
 use App\Actions\Company\CreateCompanyAction;
+use App\Actions\Company\ToggleCompanyMemberStatusAction;
 use App\Actions\Inventory\PostOpeningStockAction;
 use App\Actions\Sales\CreateMoneyAccountAction;
 use App\Domain\Inventory\ValueObjects\Quantity;
@@ -82,7 +83,7 @@ final class MobileReceiptLockOrderQualificationTest extends TestCase
             }
             if ($allRevoked) {
                 app(CompanyContext::class)->setCompany($companyA, $owner);
-                app(\App\Actions\Company\ToggleCompanyMemberStatusAction::class)->execute($companyA, CompanyUser::where('company_id', $companyA->id)->where('user_id', $staff->id)->firstOrFail(), $owner);
+                app(ToggleCompanyMemberStatusAction::class)->execute($companyA, CompanyUser::where('company_id', $companyA->id)->where('user_id', $staff->id)->firstOrFail(), $owner);
             }
             app(CompanyContext::class)->setCompany($companyB, $owner);
             $device->update(['user_id' => $staff->id]);
