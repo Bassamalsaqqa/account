@@ -67,6 +67,13 @@
                         {{ __('purchasing.edit_purchase') }}
                     </a>
                 @endif
+                @if($purchase->isDraft() && auth()->user()->hasRole('Owner') && auth()->user()->can('purchasing.purchase.edit_draft') && auth()->user()->can('purchasing.cost.view'))
+                    <button type="button" wire:click="deleteDraft" wire:confirm="{{ __('purchase_draft_delete.confirm') }}" wire:loading.attr="disabled"
+                            class="min-h-11 px-3 py-1.5 rounded-control border border-border text-sm font-semibold text-danger hover:bg-danger-bg focus-visible:ring-2 focus-visible:ring-primary">
+                        {{ __('purchase_draft_delete.delete') }}
+                    </button>
+                @endif
+                @error('deleteDraft') <p role="alert" class="text-sm text-danger">{{ $message }}</p> @enderror
                 @if($canCreatePurchase)
                     <a href="{{ route('purchases.create') }}" class="touch-action inline-flex items-center gap-1.5 px-3 py-1.5 rounded-control border border-border text-sm font-bold text-text-secondary hover:text-text-primary hover:bg-surface-soft transition-colors focus-visible:ring-2 focus-visible:ring-primary">
                         <x-icon name="plus" class="w-3.5 h-3.5 text-primary" />

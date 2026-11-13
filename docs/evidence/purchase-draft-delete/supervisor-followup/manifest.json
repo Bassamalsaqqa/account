@@ -1,0 +1,66 @@
+{
+  "baseline": "b9b72abcce73e59ddffd4ba58357edc472dd24c4",
+  "executableCommit": "51f1486be9919843de649ef94602d4be75e1e4ed",
+  "executor": "root Codex supervisor",
+  "runtimeSourceQualification": "Composed release executable source 085d9196704c8fa36c709724363abd62861b51d2 passed 143/780. Concurrency source blobs match executableCommit; source SHA mapping must be independently checked.",
+  "runtimeResult": {
+    "tests": 3,
+    "assertions": 84,
+    "ownedPrimarySchema": "accounting_p8_tmp_ff44b12ca59c",
+    "runnerReportedCleanup": true
+  },
+  "failedAttempts": [
+    {
+      "tests": 2,
+      "assertions": 20,
+      "failures": 2,
+      "schema": "accounting_p8_tmp_0bf69f52e953"
+    },
+    {
+      "tests": 1,
+      "assertions": 10,
+      "failures": 1,
+      "schema": "accounting_p8_tmp_d22cf821d239"
+    }
+  ],
+  "observerLimit": "Restricted test identity cannot read INNODB_LOCK_WAITS. Exact contender connection prepared Execute/Query running Company FOR UPDATE for >=1 second while canonical holder is paused; not a general lock graph or browser proof.",
+  "logs": {
+    "initial-failed.log": {
+      "rawSha256": "b496ad41d661aea73905aa2642b9d991ffe39747a1c3d8b18ead1dab4837da96",
+      "publishedSha256": "754b92191644eedab5cb68d9360a3354049895707d1df91bf169765c50a45b16"
+    },
+    "diagnostic-failed.log": {
+      "rawSha256": "22b5ab70d63ca54b49ab3b8023f5a975b63ad3b28165b5438557624dd39f2fb9",
+      "publishedSha256": "df6e1f4f6635de5027b178bb8b1f7834eacc35d638c789aa715ec95a627c9f5f"
+    },
+    "canonical-contention-pass.log": {
+      "rawSha256": "2a18483da0f8b004a5959ba579d62b43857b29ec6b0e93e6866917c9491f30f2",
+      "publishedSha256": "5aae08be707c64e6f22c8b3fb18ec5760e213358268c68062f9ee3114574416f"
+    },
+    "phpstan.log": {
+      "rawSha256": "82eddf2c26d7dd4d40dc40f94e65b522ba960fa7cac9c0a9fcee40cc3aaa215e",
+      "publishedSha256": "5a14e20736b665e2fa2804d41750897fb8f246bb9e1fb120f5ee03c5ce6a6614"
+    },
+    "pint.log": {
+      "rawSha256": "cd1a94fc2cf6a965b86e1a4809d6c7fb9148b1ee374e1010ed2ac96ff4876ec2",
+      "publishedSha256": "cd1a94fc2cf6a965b86e1a4809d6c7fb9148b1ee374e1010ed2ac96ff4876ec2"
+    }
+  },
+  "commands": {
+    "concurrency": "php tests/Support/run-phase8-disposable.php -- tests/Feature/Phase5B/PurchaseDraftDeletionConcurrencyTest.php",
+    "composed": "php tests/Support/run-phase8-disposable.php -- --filter=/(PurchaseDraftDeletionTest|PurchaseDraftDeletionConcurrencyTest|ReportPartySelectorTest)::/ tests/Feature",
+    "environment": "APP_ENV=testing; PHASE8_ALLOW_DISPOSABLE_DB=1; PHASE8_TEST_DB_HOST=127.0.0.1; PHASE8_TEST_DB_PORT=3342; PHASE8_TEST_DB_USERNAME=test_runner; explicitly empty test password with PHASE8_TEST_DB_EMPTY_PASSWORD=1; synthetic APP_KEY. No persistent database."
+  },
+  "composedResult": {
+    "executableSha": "085d9196704c8fa36c709724363abd62861b51d2",
+    "tests": 143,
+    "assertions": 780,
+    "schema": "accounting_p8_tmp_1882b0779bf6",
+    "runnerReportedCleanup": true,
+    "breakdown": {
+      "deletionIncludingInherited": 130,
+      "newConcurrency": 3,
+      "reports": 10
+    }
+  }
+}
