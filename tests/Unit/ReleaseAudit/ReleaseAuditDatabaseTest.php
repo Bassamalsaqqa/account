@@ -282,7 +282,8 @@ final class ReleaseAuditDatabaseTest extends TestCase
         ], $root, getenv());
         $proc1->run();
 
-        self::assertSame(0, $proc1->getExitCode(), 'Healthy audit exited with non-zero: '.$proc1->getErrorOutput());
+        $content = is_file($out1) ? (string) file_get_contents($out1) : '';
+        self::assertSame(0, $proc1->getExitCode(), 'Healthy audit exited with non-zero: '.$proc1->getErrorOutput().' Content: '.$content);
         self::assertFileExists($out1);
         self::assertSame(0600, fileperms($out1) & 0777);
 
