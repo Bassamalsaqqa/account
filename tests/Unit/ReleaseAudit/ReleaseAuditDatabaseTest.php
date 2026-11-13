@@ -313,9 +313,10 @@ final class ReleaseAuditDatabaseTest extends TestCase
             'posting_batch_id' => 1,
             'company_id' => $company->id,
             'ledger_account_id' => $cashAccount->ledger_account_id,
-            'entry_type' => 'debit',
-            'amount' => '99999.000000',
-            'line_order' => 999,
+            'line_number' => 999,
+            'debit_base' => '99999.000000',
+            'credit_base' => '0.000000',
+            'created_at' => now(),
         ]);
 
         $out2 = $this->tempDir.'/audit-'.bin2hex(random_bytes(12)).'.json';
