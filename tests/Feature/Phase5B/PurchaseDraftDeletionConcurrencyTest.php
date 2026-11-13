@@ -224,12 +224,12 @@ class PurchaseDraftDeletionConcurrencyTest extends TestCase
 
     /**
      * Executes a real two-process race with strict barrier synchronization.
-     * Worker 0 acquires and holds the purchase row lock, Worker 1 attempts and blocks
+     * Worker 0 pauses after its canonical Company lock, Worker 1 attempts and blocks
      * behind the held row, and Worker 0 commits before Worker 1 is allowed to proceed.
      *
      * @return array{array<string, mixed>, array<string, mixed>}
      */
-    private function executeRace(Purchase $draft, string $op0, string $op1): array
+    private function executeRace(Purchase $draft, string $op0, string $op1, bool $holdWinner = true): array
     {
         $directory = sys_get_temp_dir().DIRECTORY_SEPARATOR.'purchase-delete-race-'.bin2hex(random_bytes(8));
         if (! mkdir($directory, 0700)) {
@@ -286,7 +286,7 @@ class PurchaseDraftDeletionConcurrencyTest extends TestCase
                 'ready' => $ready0,
                 'attempting' => $attempt0,
                 'release' => $release0,
-                'hold_before_commit' => true,
+                'hold_before_commit' => $holdWinner,
                 'locked_barrier' => $locked0,
                 'proceed_barrier' => $proceed0,
             ], JSON_THROW_ON_ERROR));
@@ -321,16 +321,21 @@ class PurchaseDraftDeletionConcurrencyTest extends TestCase
                 usleep(5000);
             }
 
-            // Release Worker 0 so it acquires the purchase row lock
+            // Release Worker 0 so its canonical action acquires the Company lock
             file_put_contents($release0, 'release');
 
             // Wait until Worker 0 acquires the row lock
             $deadline = microtime(true) + 20;
-            while (! is_file($locked0)) {
+            while ($holdWinner && ! is_file($locked0)) {
                 if (microtime(true) > $deadline) {
                     throw new \RuntimeException('Worker 0 failed to acquire row lock: '.$p0->getErrorOutput());
                 }
                 usleep(5000);
+            }
+
+            if (! $holdWinner) {
+                $p0->wait();
+                $this->assertSame(0, $p0->getExitCode(), $p0->getErrorOutput());
             }
 
             // Now release Worker 1 (the contender) while Worker 0 holds the lock
@@ -345,13 +350,24 @@ class PurchaseDraftDeletionConcurrencyTest extends TestCase
                 usleep(5000);
             }
 
-            // Allow Worker 1 time to block on the held row lock
-            usleep(100000);
-
-            // Assert Worker 1 is running and blocked waiting for Worker 0's lock
-            $this->assertTrue($p1->isRunning(), 'Worker 1 must be running and blocked waiting for the row lock.');
-            $blockedOutput = $p1->getOutput();
-            $this->assertSame('', $blockedOutput, 'Worker 1 must produce no output while blocked.');
+            // Observe the actual contender connection executing the canonical locking read.
+            // A merely running process or an empty output buffer is not contention evidence.
+            $connectionId = (int) file_get_contents($ready1);
+            $this->assertGreaterThan(0, $connectionId);
+            $deadline = microtime(true) + 10;
+            $observed = false;
+            do {
+                $observed = $this->isWaitingForCompanyLock($connectionId);
+                if (! $observed && (! $p0->isRunning() || ! $p1->isRunning())) {
+                    throw new \RuntimeException('A race worker exited before contention was observed.');
+                }
+                if (! $observed) {
+                    usleep(5000);
+                }
+            } while (! $observed && microtime(true) < $deadline);
+            $diagnostic = array_values(array_filter(DB::select('SHOW FULL PROCESSLIST'),
+                fn (object $row): bool => (int) $row->Id === $connectionId));
+            $this->assertTrue($observed, 'Exact contender must be executing the Company FOR UPDATE while the winner holds it. '.json_encode($diagnostic, JSON_THROW_ON_ERROR));
 
             // Release Worker 0 to complete its action and commit
             file_put_contents($proceed0, 'proceed');
@@ -384,6 +400,33 @@ class PurchaseDraftDeletionConcurrencyTest extends TestCase
                 rmdir($directory);
             }
         }
+    }
+
+    private function isWaitingForCompanyLock(int $connectionId): bool
+    {
+        foreach (DB::select('SHOW FULL PROCESSLIST') as $row) {
+            if ((int) $row->Id !== $connectionId || ! in_array($row->Command, ['Query', 'Execute'], true)) {
+                continue;
+            }
+            $sql = strtolower((string) $row->Info);
+
+            return (int) $row->Time >= 1 && str_contains($sql, 'from `companies`') && str_contains($sql, 'for update');
+        }
+
+        return false;
+    }
+
+    public function test_missing_holder_is_rejected_by_the_real_contention_observer(): void
+    {
+        $draft = $this->createDraft('INV-RACE-NO-HOLDER');
+        try {
+            $this->executeRace($draft, 'post', 'delete', holdWinner: false);
+            $this->fail('A completed winner cannot provide held-lock contention evidence.');
+        } catch (\RuntimeException $e) {
+            $this->assertSame('A race worker exited before contention was observed.', $e->getMessage());
+        }
+        $this->assertSame(Purchase::STATUS_POSTED, $draft->fresh()->status);
+        $this->assertHealthyAndControlUnchanged();
     }
 
     public function test_concurrency_race_post_wins_delete_blocked(): void
