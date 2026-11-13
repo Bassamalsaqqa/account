@@ -3,16 +3,14 @@
 declare(strict_types=1);
 
 use App\Actions\Company\ToggleCompanyMemberStatusAction;
+use App\Actions\Fortify\ResetUserPassword;
 use App\Actions\Sales\CreateSalesInvoiceDraftAction;
 use App\Actions\Sales\PostCustomerPaymentAction;
 use App\Actions\Sales\PostSalesInvoiceAction;
-use App\Http\Controllers\Api\Mobile\V1\AuthController;
-use App\Http\Controllers\Api\Mobile\V1\DeviceController;
 use App\Models\Company;
 use App\Models\CompanyUser;
 use App\Models\Customer;
 use App\Models\DocumentSequence;
-use App\Models\MobileAccessToken;
 use App\Models\MobileDevice;
 use App\Models\MoneyAccount;
 use App\Models\Product;
@@ -28,9 +26,9 @@ use App\Support\Mobile\Receipt\FinancialExecutionAdapterInterface;
 use App\Support\Mobile\Receipt\MobileEventReceiptManager;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Contracts\Console\Kernel;
+use Illuminate\Database\QueryException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Hash;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 use Tests\Support\DisposableMariaDbSchema;
 
@@ -45,11 +43,39 @@ if (! preg_match('/^worker-[ab]$/D', $slot) || ! str_starts_with(basename($direc
 require dirname(__DIR__, 2).'/vendor/autoload.php';
 $app = require dirname(__DIR__, 2).'/bootstrap/app.php';
 $app->make(Kernel::class)->bootstrap();
+config(['mobile.enabled' => true]);
 
 DisposableMariaDbSchema::assertPrimarySchema((string) DB::connection()->getDatabaseName());
 
 $input = json_decode((string) file_get_contents($directory.'/'.$slot.'.json'), true, 512, JSON_THROW_ON_ERROR);
 $mode = (string) ($input['mode'] ?? 'receipt');
+
+// Setup observable query event listener for forced held-lock interleavings
+$holdTable = $input['hold_lock_table'] ?? null;
+$holdMs = (int) ($input['hold_ms'] ?? 0);
+$waitForFile = $input['wait_for_file'] ?? null;
+$lockSignaled = false;
+
+if ($holdTable !== null) {
+    DB::listen(function ($query) use ($holdTable, $directory, $slot, $waitForFile, $holdMs, &$lockSignaled) {
+        $sql = strtolower($query->sql);
+        if (! $lockSignaled && str_contains($sql, 'for update') && str_contains($sql, strtolower($holdTable))) {
+            $lockSignaled = true;
+            file_put_contents($directory.'/'.$slot.'.locked', 'locked');
+            if ($waitForFile !== null) {
+                $timeout = microtime(true) + 15;
+                while (! is_file($directory.'/'.$waitForFile)) {
+                    if (microtime(true) > $timeout) {
+                        break;
+                    }
+                    usleep(1000);
+                }
+            } elseif ($holdMs > 0) {
+                usleep($holdMs * 1000);
+            }
+        }
+    });
+}
 
 // Signal readiness at the barrier
 file_put_contents($directory.'/'.$slot.'.ready', 'ready');
@@ -61,6 +87,21 @@ while (! is_file($directory.'/go')) {
         throw new RuntimeException('Mobile identity race barrier timeout waiting for go.');
     }
     usleep(1000);
+}
+
+// Optional delay or wait before starting operation
+if (isset($input['wait_before_start_file'])) {
+    $waitFile = $directory.'/'.$input['wait_before_start_file'];
+    $waitDeadline = microtime(true) + 15;
+    while (! is_file($waitFile)) {
+        if (microtime(true) > $waitDeadline) {
+            break;
+        }
+        usleep(1000);
+    }
+}
+if (isset($input['start_delay_ms'])) {
+    usleep(((int) $input['start_delay_ms']) * 1000);
 }
 
 $startTime = microtime(true);
@@ -98,9 +139,13 @@ try {
             json_encode($loginData, JSON_THROW_ON_ERROR)
         );
 
-        $response = app(AuthController::class)->login($request);
+        // Production HTTP Kernel execution through MobileApiBoundary
+        /** @var Illuminate\Contracts\Http\Kernel $httpKernel */
+        $httpKernel = $app->make(Illuminate\Contracts\Http\Kernel::class);
+        $response = $httpKernel->handle($request);
         $status = $response->getStatusCode();
         $body = json_decode((string) $response->getContent(), true) ?? [];
+        $httpKernel->terminate($request, $response);
 
         echo json_encode([
             'mode' => 'login',
@@ -116,11 +161,16 @@ try {
 
     } elseif ($mode === 'revoke') {
         $deviceId = (string) $input['device_id'];
-        $tokenHash = (string) $input['token_hash'];
+        $rawToken = (string) ($input['raw_token'] ?? '');
         $reason = (string) ($input['reason'] ?? 'Concurrent security test revocation');
 
-        $tokenRecord = MobileAccessToken::where('token_hash', $tokenHash)->firstOrFail();
-        $user = User::findOrFail($tokenRecord->user_id);
+        $headers = [
+            'CONTENT_TYPE' => 'application/json',
+            'HTTP_ACCEPT' => 'application/json',
+        ];
+        if ($rawToken !== '') {
+            $headers['HTTP_AUTHORIZATION'] = 'Bearer '.$rawToken;
+        }
 
         $request = Request::create(
             '/api/mobile/v1/devices/'.$deviceId.'/revoke',
@@ -128,18 +178,17 @@ try {
             [],
             [],
             [],
-            [
-                'CONTENT_TYPE' => 'application/json',
-                'HTTP_ACCEPT' => 'application/json',
-            ],
+            $headers,
             json_encode(['reason' => $reason], JSON_THROW_ON_ERROR)
         );
-        $request->attributes->set('mobile_token', $tokenRecord);
-        $request->attributes->set('mobile_user', $user);
 
-        $response = app(DeviceController::class)->revoke($request, $deviceId);
+        // Production HTTP Kernel execution through MobileApiBoundary and MobileAuthenticate
+        /** @var Illuminate\Contracts\Http\Kernel $httpKernel */
+        $httpKernel = $app->make(Illuminate\Contracts\Http\Kernel::class);
+        $response = $httpKernel->handle($request);
         $status = $response->getStatusCode();
         $body = json_decode((string) $response->getContent(), true) ?? [];
+        $httpKernel->terminate($request, $response);
 
         echo json_encode([
             'mode' => 'revoke',
@@ -157,11 +206,34 @@ try {
         $targetUserId = (int) $input['target_user_id'];
         $actorId = (int) $input['actor_id'];
 
-        $company = Company::findOrFail($companyId);
-        $membership = CompanyUser::where('company_id', $companyId)->where('user_id', $targetUserId)->firstOrFail();
-        $actor = User::findOrFail($actorId);
+        $attempts = 0;
+        $maxAttempts = 5;
+        $updated = null;
 
-        $updated = app(ToggleCompanyMemberStatusAction::class)->execute($company, $membership, $actor);
+        while ($attempts < $maxAttempts) {
+            $attempts++;
+            try {
+                $company = Company::findOrFail($companyId);
+                $membership = CompanyUser::where('company_id', $companyId)->where('user_id', $targetUserId)->firstOrFail();
+                $actor = User::findOrFail($actorId);
+
+                $updated = app(ToggleCompanyMemberStatusAction::class)->execute($company, $membership, $actor);
+                break;
+            } catch (QueryException $e) {
+                if (MobileEventReceiptManager::isDeadlockError($e) && $attempts < $maxAttempts) {
+                    $deadlocks++;
+                    $retries++;
+                    usleep(random_int(10000, 50000));
+
+                    continue;
+                }
+                throw $e;
+            }
+        }
+
+        if ($updated === null) {
+            throw new RuntimeException('Failed to toggle membership within retry bound.');
+        }
 
         echo json_encode([
             'mode' => 'toggle_member',
@@ -178,9 +250,11 @@ try {
         $newPassword = (string) $input['new_password'];
 
         $user = User::findOrFail($userId);
-        $user->forceFill([
-            'password' => Hash::make($newPassword),
-        ])->save();
+        app(ResetUserPassword::class)->reset($user, [
+            'password' => $newPassword,
+            'password_confirmation' => $newPassword,
+        ]);
+        $user->refresh();
 
         echo json_encode([
             'mode' => 'password_change',

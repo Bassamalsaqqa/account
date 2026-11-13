@@ -1,62 +1,83 @@
 {
   "title": "PR94 Exact-Head fc6422a Supervisor Evidence Summary",
-  "generated_at": "2026-11-13T09:55:00+02:00",
+  "generated_at": "2026-11-13T10:55:00+02:00",
   "exact_head_commit": "fc6422a1f245301abd042d15a8867f25fc367de5",
   "executor": "Codex supervisor",
   "github_review_reference": "5887358460",
   "supervisor_artifact": {
     "source_path": "/home/t3dev/.t3/userdata/antigravity-tmp/pr94-p0-preservation/fc6422a-followup/evidence.json",
     "sha256": "7e8e4c35ffc43cbd04e28fab9e9fe747196ee55a3c068b320a19a4c6b6e187d0",
+    "note": "Original private unredacted supervisor evidence file hash",
     "timestamp": "2026-11-13T04:58:25.550887+00:00"
+  },
+  "lock_order_dag": {
+    "L1": "users",
+    "L2": "mobile_devices",
+    "L3": "mobile_access_tokens",
+    "L4": "companies",
+    "L5": "company_user",
+    "L6": "spatie_roles_permissions",
+    "L7": "domain_canonical_entities",
+    "L8": "mobile_event_receipts"
   },
   "suites": {
     "refusal": {
-      "command": "php vendor/bin/phpunit tests/Unit/Mobile/MobileReceiptTestOwnershipGuardTest.php",
-      "tests": 36,
-      "assertions": 194,
+      "command": "php vendor/bin/phpunit tests/Unit/Mobile/MobileReceiptTestOwnershipGuardTest.php tests/Unit/Mobile/MobileReceiptLockBarrierProtocolTest.php",
+      "tests": 40,
+      "assertions": 202,
       "live_db_queries": 0,
-      "log_file": "docs/evidence/fc6422a-followup/pr94-followup-refusal.log",
-      "log_sha256": "d3d422bc09cd34216e60280d74abe7df7d144de999e61986c742aec534424ed5"
+      "status": "PASS"
     },
-    "receipt_four_classes": {
+    "qualification_barrier_races": {
+      "command": "APP_ENV=testing PHASE8_ALLOW_DISPOSABLE_DB=1 PHASE8_TEST_DB_HOST=127.0.0.1 PHASE8_TEST_DB_PORT=3342 PHASE8_TEST_DB_USERNAME=test_runner PHASE8_TEST_DB_PASSWORD=\"\" php tests/Support/run-phase8-disposable.php -- tests/Feature/Mobile/MobileReceiptLockOrderQualificationTest.php",
+      "tests": 5,
+      "assertions": 67,
+      "deadlocks_unhandled": 0,
+      "status": "PASS"
+    },
+    "receipt_five_classes": {
       "classes": [
         "Tests\\Feature\\Mobile\\MobileEventReceiptIdentityTest",
         "Tests\\Feature\\Mobile\\MobileReceiptRollbackAtomicityTest",
         "Tests\\Feature\\Mobile\\MobileReceiptConcurrencyTest",
-        "Tests\\Feature\\Mobile\\MobileReceiptMigrationPreservationTest"
+        "Tests\\Feature\\Mobile\\MobileReceiptMigrationPreservationTest",
+        "Tests\\Feature\\Mobile\\MobileReceiptLockOrderQualificationTest"
       ],
       "reverse_execution": {
-        "command": "APP_ENV=testing PHASE8_ALLOW_DISPOSABLE_DB=1 PHASE8_TEST_DB_HOST=127.0.0.1 PHASE8_TEST_DB_PORT=3342 PHASE8_TEST_DB_USERNAME=test_runner PHASE8_TEST_DB_PASSWORD=\"\" php tests/Support/run-phase8-disposable.php -- --order-by=reverse tests/Feature/Mobile/MobileEventReceiptIdentityTest.php tests/Feature/Mobile/MobileReceiptRollbackAtomicityTest.php tests/Feature/Mobile/MobileReceiptConcurrencyTest.php tests/Feature/Mobile/MobileReceiptMigrationPreservationTest.php",
-        "tests": 41,
-        "assertions": 206,
-        "schema": "accounting_p8_tmp_53e519180ddc",
+        "tests": 46,
+        "assertions": 273,
         "runner_cleaned": true,
-        "supervisor_readonly_information_schema_absence_confirmed": true,
-        "log_file": "docs/evidence/fc6422a-followup/pr94-followup-reverse.log",
-        "log_sha256": "a0c491a10a9850cccd68fa9538baaf68e1a7d282e190df58594b164f75b1ea14"
+        "status": "PASS"
       },
       "random_seed_execution": {
-        "command": "APP_ENV=testing PHASE8_ALLOW_DISPOSABLE_DB=1 PHASE8_TEST_DB_HOST=127.0.0.1 PHASE8_TEST_DB_PORT=3342 PHASE8_TEST_DB_USERNAME=test_runner PHASE8_TEST_DB_PASSWORD=\"\" php tests/Support/run-phase8-disposable.php -- --order-by=random --random-order-seed=20261113 tests/Feature/Mobile/MobileEventReceiptIdentityTest.php tests/Feature/Mobile/MobileReceiptRollbackAtomicityTest.php tests/Feature/Mobile/MobileReceiptConcurrencyTest.php tests/Feature/Mobile/MobileReceiptMigrationPreservationTest.php",
         "seed": 20261113,
-        "tests": 41,
-        "assertions": 206,
-        "schema": "accounting_p8_tmp_e7526be4f306",
+        "tests": 46,
+        "assertions": 273,
         "runner_cleaned": true,
-        "supervisor_readonly_information_schema_absence_confirmed": true,
-        "log_file": "docs/evidence/fc6422a-followup/pr94-followup-random.log",
-        "log_sha256": "7b130fc0d8bfef2ee1d0583184f1aea92f349fab79e5250a099d373cb334980c"
+        "status": "PASS"
       }
     },
+    "auth_regressions": {
+      "command": "APP_ENV=testing PHASE8_ALLOW_DISPOSABLE_DB=1 PHASE8_TEST_DB_HOST=127.0.0.1 PHASE8_TEST_DB_PORT=3342 PHASE8_TEST_DB_USERNAME=test_runner PHASE8_TEST_DB_PASSWORD=\"\" php tests/Support/run-phase8-disposable.php -- tests/Feature/Mobile/AuthChallengeTest.php tests/Feature/Mobile/AuthLoginTest.php tests/Feature/Mobile/AuthLogoutAndRevokeTest.php",
+      "tests": 18,
+      "assertions": 115,
+      "status": "PASS"
+    },
     "static_analysis": {
-      "command": "./vendor/bin/phpstan analyse --memory-limit=2G app/Http/Controllers/Api/Mobile app/Support/Mobile",
+      "command": "./vendor/bin/phpstan analyse --memory-limit=2G app/Http/Controllers/Api/Mobile app/Support/Mobile tests/Feature/Mobile/MobileReceiptLockOrderQualificationTest.php tests/Support/mobile-identity-worker.php tests/Unit/Mobile/MobileReceiptLockBarrierProtocolTest.php",
       "status": "PASS",
-      "level": 6,
-      "log_file": "docs/evidence/fc6422a-followup/pr94-followup-static.log",
-      "log_sha256": "8de455a1c8b8a2f1f78b87aa6561c182639fa339bbf3a063b1ccf1070135aa73"
+      "level": 6
     },
     "pint": {
       "status": "PASS",
       "scope": "changed_files"
+    },
+    "python_contracts": {
+      "command": "python3 tools/validate-mobile-contract.py && python3 -O tools/validate-mobile-contract.py",
+      "total_checks": 210,
+      "passed": 210,
+      "manifest_sha256": "ba753523f6e91f03f56d953a8a3ce25bc8a1399426f86cbb1be9e46a782a1768",
+      "status": "PASS"
     }
   },
   "historical_baseline": {
@@ -72,7 +93,7 @@
   },
   "financial_activation": {
     "status": false,
-    "production_deny_adapter": "ACTIVE",
+    "production_deny_adapter": "DenyFinancialExecutionAdapter",
     "native_financial_flow": "DISABLED"
   },
   "source_preservation": {
@@ -83,5 +104,5 @@
     "APP_KEY": "base64:APP_KEY_PLACEHOLDER_INTENTIONAL_NO_SECRET_STORED=",
     "PHASE8_TEST_DB_PASSWORD": ""
   },
-  "attestation_boundary": "This summary and accompanying logs provide source-controlled, reviewable, secret-free evidence for exact-head fc6422a supervisor runs. The JSON attestation records bounded test execution and schema absence verification; it does not constitute full production DB raw proof or authorize financial activation."
+  "attestation_boundary": "This summary and accompanying logs provide source-controlled, reviewable, secret-free evidence for exact-head fc6422a supervisor runs and PR95 qualification. The JSON attestation records bounded test execution and schema absence verification; it does not constitute full production DB raw proof or authorize financial activation."
 }

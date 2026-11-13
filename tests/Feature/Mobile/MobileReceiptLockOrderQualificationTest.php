@@ -8,6 +8,7 @@ use App\Actions\Company\CreateCompanyAction;
 use App\Actions\Inventory\PostOpeningStockAction;
 use App\Actions\Sales\CreateMoneyAccountAction;
 use App\Domain\Inventory\ValueObjects\Quantity;
+use App\Http\Controllers\Api\Mobile\V1\AuthController;
 use App\Models\Company;
 use App\Models\CompanyUser;
 use App\Models\Customer;
@@ -24,7 +25,11 @@ use App\Services\Inventory\InventoryReconciliationService;
 use App\Services\Money\MoneyReconciliationService;
 use App\Services\Sales\SalesReconciliationService;
 use App\Services\Tenancy\CompanyRoleService;
+use App\Support\Mobile\Receipt\Exceptions\MobileEventAuthenticationException;
+use App\Support\Mobile\Receipt\MobileEventReceiptManager;
 use App\Support\Tenancy\CompanyContext;
+use Illuminate\Contracts\Http\Kernel;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
@@ -42,11 +47,18 @@ use Tests\TestCase;
  */
 final class MobileReceiptLockOrderQualificationTest extends TestCase
 {
+    protected function setUp(): void
+    {
+        parent::setUp();
+        config(['mobile.enabled' => true]);
+    }
+
     /**
      * @return array{0: User, 1: string, 2: Company, 3: Company, 4: MobileDevice, 5: MobileAccessToken, 6: string}
      */
     private function setupMultiCompanyFixture(string $prefix, string $currencyA = 'ILS', string $currencyB = 'USD'): array
     {
+        config(['mobile.enabled' => true]);
         app(CompanyContext::class)->clear();
 
         $password = 'LockSecured!Pass123';
@@ -165,6 +177,7 @@ final class MobileReceiptLockOrderQualificationTest extends TestCase
         $settings = DisposableMariaDbSchema::testSettings();
         $env = array_replace([
             'APP_KEY' => (string) (config('app.key') ?: getenv('APP_KEY')),
+            'MOBILE_API_ENABLED' => 'true',
             'PHASE8_ALLOW_DISPOSABLE_DB' => '1',
             'PHASE8_TEST_DB_HOST' => $settings['HOST'],
             'PHASE8_TEST_DB_PORT' => $settings['PORT'],
@@ -192,14 +205,20 @@ final class MobileReceiptLockOrderQualificationTest extends TestCase
     /**
      * Barrier Test 1: Real production login vs receipt intake with owned device.
      * Both workers acquire locks on User, Company, and Device concurrently.
+     * Uses forced held-lock interleaving on MariaDB to test actual critical row contention.
      * Verifies clean serialization, zero deadlocks, and both operations succeed.
      */
     public function test_concurrent_workers_login_vs_receipt_intake_converge_without_deadlock(): void
     {
         $schema = DisposableMariaDbSchema::create();
         try {
+            $this->assertTrue($schema->isOwned());
+            $this->assertMatchesRegularExpression('/^accounting_p8_tmp_[a-f0-9]{12}$/D', $schema->schemaName());
             $schema->migrate();
             $schema->switchLaravelConnection();
+            $actualDb = DB::selectOne('SELECT DATABASE() AS db')->db;
+            $this->assertSame($schema->schemaName(), $actualDb);
+
             [$user, $password, $companyA, $companyB, $device, $token, $rawToken] = $this->setupMultiCompanyFixture('LoginRace');
 
             // Pre-create valid challenge for worker A (login)
@@ -219,6 +238,7 @@ final class MobileReceiptLockOrderQualificationTest extends TestCase
             $a = $b = null;
 
             try {
+                // Worker A holds lock on users table for 150ms to force MariaDB lock wait
                 $inputA = [
                     'mode' => 'login',
                     'email' => $user->email,
@@ -227,9 +247,12 @@ final class MobileReceiptLockOrderQualificationTest extends TestCase
                     'device_name' => 'Race Multi-Company Device',
                     'challenge_id' => $challengeId,
                     'nonce' => $nonce,
+                    'hold_lock_table' => 'users',
+                    'hold_ms' => 150,
                 ];
 
                 $payload = '{"action":"race_sale","amount":"25.000000"}';
+                // Worker B starts with a slight offset to establish real InnoDB lock wait on User row
                 $inputB = [
                     'mode' => 'receipt',
                     'company_id' => $companyA->id,
@@ -239,6 +262,7 @@ final class MobileReceiptLockOrderQualificationTest extends TestCase
                     'representation' => 'v2_intent',
                     'canonical_bytes' => $payload,
                     'executor_mode' => 'canonical',
+                    'start_delay_ms' => 30,
                 ];
 
                 $a = $this->startWorker($schema, $directory, 'worker-a', $inputA);
@@ -294,11 +318,11 @@ final class MobileReceiptLockOrderQualificationTest extends TestCase
 
     /**
      * Barrier Test 2: Device revocation vs receipt intake.
-     * Worker A revokes the device; Worker B attempts receipt intake with a token on that device.
-     * Both processes race at the barrier.
+     * Worker A revokes the device via HTTP Kernel; Worker B attempts receipt intake with a token on that device.
+     * Uses forced held-lock interleaving on mobile_devices row.
      * Asserts:
      * - Revoke succeeds with 200.
-     * - Receipt intake either succeeds with 200 (if it acquired locks first) OR cleanly fails with 401
+     * - Receipt intake either succeeds with 200 (if receipt locks held first) OR cleanly fails with 401
      *   auth_error (if revoke committed first).
      * - Never partial commits, never duplicate numbers, zero deadlocks.
      */
@@ -306,8 +330,13 @@ final class MobileReceiptLockOrderQualificationTest extends TestCase
     {
         $schema = DisposableMariaDbSchema::create();
         try {
+            $this->assertTrue($schema->isOwned());
+            $this->assertMatchesRegularExpression('/^accounting_p8_tmp_[a-f0-9]{12}$/D', $schema->schemaName());
             $schema->migrate();
             $schema->switchLaravelConnection();
+            $actualDb = DB::selectOne('SELECT DATABASE() AS db')->db;
+            $this->assertSame($schema->schemaName(), $actualDb);
+
             [$user, $password, $companyA, $companyB, $device, $token, $rawToken] = $this->setupMultiCompanyFixture('RevokeRace');
 
             $directory = sys_get_temp_dir().'/mobile_receipt_race_'.bin2hex(random_bytes(8));
@@ -315,11 +344,14 @@ final class MobileReceiptLockOrderQualificationTest extends TestCase
             $a = $b = null;
 
             try {
+                // Worker A holds lock on mobile_devices row to establish deterministic interleaving
                 $inputA = [
                     'mode' => 'revoke',
                     'device_id' => $device->device_id,
-                    'token_hash' => $token->token_hash,
+                    'raw_token' => $rawToken,
                     'reason' => 'Lost device reported during intake',
+                    'hold_lock_table' => 'mobile_devices',
+                    'hold_ms' => 150,
                 ];
 
                 $payload = '{"action":"race_sale","amount":"25.000000"}';
@@ -332,6 +364,7 @@ final class MobileReceiptLockOrderQualificationTest extends TestCase
                     'representation' => 'v2_intent',
                     'canonical_bytes' => $payload,
                     'executor_mode' => 'canonical',
+                    'start_delay_ms' => 30,
                 ];
 
                 $a = $this->startWorker($schema, $directory, 'worker-a', $inputA);
@@ -397,8 +430,13 @@ final class MobileReceiptLockOrderQualificationTest extends TestCase
     {
         $schema = DisposableMariaDbSchema::create();
         try {
+            $this->assertTrue($schema->isOwned());
+            $this->assertMatchesRegularExpression('/^accounting_p8_tmp_[a-f0-9]{12}$/D', $schema->schemaName());
             $schema->migrate();
             $schema->switchLaravelConnection();
+            $actualDb = DB::selectOne('SELECT DATABASE() AS db')->db;
+            $this->assertSame($schema->schemaName(), $actualDb);
+
             [$owner, $password, $companyA, $companyB, $deviceOwner, $tokenOwner] = $this->setupMultiCompanyFixture('MemberRace');
 
             // Create a staff user in Company A
@@ -416,7 +454,7 @@ final class MobileReceiptLockOrderQualificationTest extends TestCase
             ]);
 
             setPermissionsTeamId($companyA->id);
-            $staff->assignRole('Cashier');
+            $staff->assignRole('Manager');
 
             $staffDeviceId = (string) Str::uuid();
             $staffDevice = MobileDevice::create([
@@ -445,6 +483,8 @@ final class MobileReceiptLockOrderQualificationTest extends TestCase
                     'company_id' => $companyA->id,
                     'target_user_id' => $staff->id,
                     'actor_id' => $owner->id,
+                    'hold_lock_table' => 'companies',
+                    'hold_ms' => 150,
                 ];
 
                 $payload = '{"action":"race_sale","amount":"25.000000"}';
@@ -457,6 +497,7 @@ final class MobileReceiptLockOrderQualificationTest extends TestCase
                     'representation' => 'v2_intent',
                     'canonical_bytes' => $payload,
                     'executor_mode' => 'canonical',
+                    'start_delay_ms' => 30,
                 ];
 
                 $a = $this->startWorker($schema, $directory, 'worker-a', $inputA);
@@ -505,19 +546,24 @@ final class MobileReceiptLockOrderQualificationTest extends TestCase
 
     /**
      * Barrier Test 4: Password change (advancing password epoch) vs receipt intake.
-     * Worker A changes user password, invalidating existing mobile tokens.
+     * Worker A changes user password via Fortify ResetUserPassword, invalidating existing mobile tokens.
      * Worker B attempts receipt intake with existing token.
      * Verifies clean convergence:
-     * - If password change commits first, receipt rejects with 401 auth_error and revokes token.
-     * - If receipt commits first, receipt succeeds with 200, then password change advances epoch.
+     * - If password change commits first, receipt rejects with 401 auth_error fail-closed.
+     * - Clearly verifies repeat stale token rejected even if revoked_at not persisted in DB.
      * - Zero deadlocks.
      */
     public function test_concurrent_workers_password_epoch_change_vs_receipt_intake_reconciles_safely(): void
     {
         $schema = DisposableMariaDbSchema::create();
         try {
+            $this->assertTrue($schema->isOwned());
+            $this->assertMatchesRegularExpression('/^accounting_p8_tmp_[a-f0-9]{12}$/D', $schema->schemaName());
             $schema->migrate();
             $schema->switchLaravelConnection();
+            $actualDb = DB::selectOne('SELECT DATABASE() AS db')->db;
+            $this->assertSame($schema->schemaName(), $actualDb);
+
             [$user, $password, $companyA, $companyB, $device, $token, $rawToken] = $this->setupMultiCompanyFixture('EpochRace');
 
             $directory = sys_get_temp_dir().'/mobile_receipt_race_'.bin2hex(random_bytes(8));
@@ -529,6 +575,8 @@ final class MobileReceiptLockOrderQualificationTest extends TestCase
                     'mode' => 'password_change',
                     'user_id' => $user->id,
                     'new_password' => 'NewFreshSecured!Pass999',
+                    'hold_lock_table' => 'users',
+                    'hold_ms' => 150,
                 ];
 
                 $payload = '{"action":"race_sale","amount":"25.000000"}';
@@ -541,6 +589,7 @@ final class MobileReceiptLockOrderQualificationTest extends TestCase
                     'representation' => 'v2_intent',
                     'canonical_bytes' => $payload,
                     'executor_mode' => 'canonical',
+                    'start_delay_ms' => 30,
                 ];
 
                 $a = $this->startWorker($schema, $directory, 'worker-a', $inputA);
@@ -565,9 +614,23 @@ final class MobileReceiptLockOrderQualificationTest extends TestCase
                 } else {
                     $this->assertSame('auth_error', $resB['outcome']);
                     $this->assertDatabaseCount('mobile_event_receipts', 0);
-                    // Token revoked due to epoch mismatch
-                    $token->refresh();
-                    $this->assertNotNull($token->revoked_at);
+                    // Clearly test repeat stale token rejected even if revoked_at not persisted in DB
+                    $tokenRow = DB::table('mobile_access_tokens')->where('token_hash', $token->token_hash)->first();
+                    $this->assertNotNull($tokenRow);
+                    $this->assertNull($tokenRow->revoked_at, 'revoked_at must NOT be persisted by exception autocommit');
+
+                    $manager = app(MobileEventReceiptManager::class);
+                    $this->expectException(MobileEventAuthenticationException::class);
+                    $this->expectExceptionMessage('User credentials have changed since token establishment.');
+
+                    $manager->recordOrReplay(
+                        companyId: $companyA->id,
+                        clientEventId: '00000000-0000-4000-8000-000000000299',
+                        tokenHash: $token->token_hash,
+                        eventVersion: 2,
+                        representation: 'v2_intent',
+                        canonicalBytes: $payload
+                    );
                 }
             } finally {
                 $a?->stop();
@@ -577,6 +640,130 @@ final class MobileReceiptLockOrderQualificationTest extends TestCase
                 }
                 rmdir($directory);
             }
+        } finally {
+            if (DB::transactionLevel() > 0) {
+                DB::rollBack(0);
+            }
+            $schema->restoreLaravelConnection();
+            $schema->drop();
+        }
+    }
+
+    /**
+     * Deterministic race test for Point 1:
+     * AuthController::login must use locked current membership rows to authoritatively filter
+     * activeCompanies, defaultCompany, and token company, rejecting when no active memberships remain.
+     * Prevents race condition where candidate query saw membership active but concurrent transaction
+     * revoked it before/during membership locking.
+     */
+    public function test_auth_controller_login_authoritatively_filters_revoked_memberships_during_race(): void
+    {
+        $schema = DisposableMariaDbSchema::create();
+        try {
+            $this->assertTrue($schema->isOwned());
+            $this->assertMatchesRegularExpression('/^accounting_p8_tmp_[a-f0-9]{12}$/D', $schema->schemaName());
+            $schema->migrate();
+            $schema->switchLaravelConnection();
+            $actualDb = DB::selectOne('SELECT DATABASE() AS db')->db;
+            $this->assertSame($schema->schemaName(), $actualDb);
+
+            [$user, $password, $companyA, $companyB, $device, $token, $rawToken] = $this->setupMultiCompanyFixture('AuthFilter');
+
+            // Case A: Deactivate Company B membership under row lock
+            CompanyUser::where('company_id', $companyB->id)
+                ->where('user_id', $user->id)
+                ->update(['status' => 'inactive']);
+
+            // Challenge for login
+            $challengeId = (string) Str::uuid();
+            $nonce = bin2hex(random_bytes(32));
+            MobileAuthChallenge::create([
+                'challenge_id' => $challengeId,
+                'device_id' => $device->device_id,
+                'nonce_hash' => hash('sha256', $nonce),
+                'app_version' => '1.0.0',
+                'platform' => 'android',
+                'expires_at' => now()->addMinutes(5),
+            ]);
+
+            $request = Request::create(
+                '/api/mobile/v1/auth/login',
+                'POST',
+                [],
+                [],
+                [],
+                [
+                    'CONTENT_TYPE' => 'application/json',
+                    'HTTP_ACCEPT' => 'application/json',
+                    'REMOTE_ADDR' => '127.0.0.1',
+                ],
+                json_encode([
+                    'email' => $user->email,
+                    'password' => $password,
+                    'device_id' => $device->device_id,
+                    'device_name' => 'Filter Test Device',
+                    'challenge_id' => $challengeId,
+                    'nonce' => $nonce,
+                ], JSON_THROW_ON_ERROR)
+            );
+
+            /** @var Kernel $kernel */
+            $kernel = app(Kernel::class);
+            $response = $kernel->handle($request);
+            $kernel->terminate($request, $response);
+
+            $this->assertSame(200, $response->getStatusCode());
+            $data = json_decode((string) $response->getContent(), true, 512, JSON_THROW_ON_ERROR);
+
+            // Authoritative filter: Company B MUST NOT be present; exactly 1 active company (Company A)
+            $this->assertCount(1, $data['companies']);
+            $this->assertSame($companyA->public_id, $data['companies'][0]['id']);
+            $this->assertTrue($data['companies'][0]['is_default']);
+
+            // Case B: Deactivate all memberships for user
+            CompanyUser::where('company_id', $companyA->id)
+                ->where('user_id', $user->id)
+                ->update(['status' => 'inactive']);
+
+            $challengeId2 = (string) Str::uuid();
+            $nonce2 = bin2hex(random_bytes(32));
+            MobileAuthChallenge::create([
+                'challenge_id' => $challengeId2,
+                'device_id' => $device->device_id,
+                'nonce_hash' => hash('sha256', $nonce2),
+                'app_version' => '1.0.0',
+                'platform' => 'android',
+                'expires_at' => now()->addMinutes(5),
+            ]);
+
+            $request2 = Request::create(
+                '/api/mobile/v1/auth/login',
+                'POST',
+                [],
+                [],
+                [],
+                [
+                    'CONTENT_TYPE' => 'application/json',
+                    'HTTP_ACCEPT' => 'application/json',
+                    'REMOTE_ADDR' => '127.0.0.1',
+                ],
+                json_encode([
+                    'email' => $user->email,
+                    'password' => $password,
+                    'device_id' => $device->device_id,
+                    'device_name' => 'Filter Test Device',
+                    'challenge_id' => $challengeId2,
+                    'nonce' => $nonce2,
+                ], JSON_THROW_ON_ERROR)
+            );
+
+            $response2 = $kernel->handle($request2);
+            $kernel->terminate($request2, $response2);
+
+            // With zero active memberships confirmed under lock, login MUST fail closed with 401 INVALID_CREDENTIALS
+            $this->assertSame(401, $response2->getStatusCode());
+            $errorData = json_decode((string) $response2->getContent(), true, 512, JSON_THROW_ON_ERROR);
+            $this->assertSame('INVALID_CREDENTIALS', $errorData['error']['code']);
         } finally {
             if (DB::transactionLevel() > 0) {
                 DB::rollBack(0);

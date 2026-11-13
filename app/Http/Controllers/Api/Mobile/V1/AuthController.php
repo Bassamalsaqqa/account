@@ -142,7 +142,18 @@ final class AuthController extends Controller
                 );
             }
 
-            // Resolve candidate active company IDs for this user
+            // 2. Lock & validate MobileDevice (hardware binding to user)
+            $device = MobileDevice::where('device_id', $payload['device_id'])->lockForUpdate()->first();
+            if ($device !== null && ($device->isRevoked() || (int) $device->user_id !== (int) $user->id)) {
+                RateLimiter::hit($actorKey, 60);
+
+                return MobileApiBoundary::buildErrorResponse(code: 'INVALID_CREDENTIALS', message: 'Invalid credentials or challenge expired.', status: 401);
+            }
+            if ($challenge->user_id !== null && (int) $challenge->user_id !== (int) $user->id) {
+                return MobileApiBoundary::buildErrorResponse(code: 'INVALID_CREDENTIALS', message: 'Invalid credentials or challenge expired.', status: 401);
+            }
+
+            // 3. Resolve candidate active company IDs for this user
             /** @var list<int> $candidateCompanyIds */
             $candidateCompanyIds = DB::table('company_user')
                 ->where('user_id', $user->id)
@@ -153,23 +164,31 @@ final class AuthController extends Controller
                 ->values()
                 ->all();
 
-            // 1. Lock active Company rows in strictly ascending ID order (tenant boundary)
-            $activeCompanies = Company::whereIn('id', $candidateCompanyIds)
+            // Lock active Company rows in strictly ascending ID order (tenant boundary)
+            $candidateCompanies = Company::whereIn('id', $candidateCompanyIds)
                 ->where('status', 'active')
                 ->orderBy('id', 'asc')
                 ->lockForUpdate()
                 ->get();
 
-            // 2. Lock active CompanyUser membership rows in matching company ID order
-            if ($activeCompanies->isNotEmpty()) {
-                DB::table('company_user')
+            // 4. Lock active CompanyUser membership rows in matching company ID order and authoritative filter
+            $lockedActiveCompanyIds = [];
+            if ($candidateCompanies->isNotEmpty()) {
+                $lockedActiveCompanyIds = DB::table('company_user')
                     ->where('user_id', $user->id)
-                    ->whereIn('company_id', $activeCompanies->pluck('id'))
+                    ->whereIn('company_id', $candidateCompanies->pluck('id'))
                     ->where('status', 'active')
                     ->orderBy('company_id', 'asc')
                     ->lockForUpdate()
-                    ->get();
+                    ->pluck('company_id')
+                    ->map(fn ($id): int => (int) $id)
+                    ->all();
             }
+
+            // Authoritative filter: only keep companies with confirmed active locked membership
+            $activeCompanies = $candidateCompanies
+                ->filter(fn (Company $c) => in_array((int) $c->id, $lockedActiveCompanyIds, true))
+                ->values();
 
             if ($activeCompanies->isEmpty()) {
                 RateLimiter::hit($ipKey, 60);
@@ -180,16 +199,6 @@ final class AuthController extends Controller
                     message: 'Invalid credentials or challenge expired.',
                     status: 401
                 );
-            }
-
-            $device = MobileDevice::where('device_id', $payload['device_id'])->lockForUpdate()->first();
-            if ($device !== null && ($device->isRevoked() || (int) $device->user_id !== (int) $user->id)) {
-                RateLimiter::hit($actorKey, 60);
-
-                return MobileApiBoundary::buildErrorResponse(code: 'INVALID_CREDENTIALS', message: 'Invalid credentials or challenge expired.', status: 401);
-            }
-            if ($challenge->user_id !== null && (int) $challenge->user_id !== (int) $user->id) {
-                return MobileApiBoundary::buildErrorResponse(code: 'INVALID_CREDENTIALS', message: 'Invalid credentials or challenge expired.', status: 401);
             }
 
             // 5. Check Fortify Two-Factor Authentication
