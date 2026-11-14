@@ -67,17 +67,19 @@ final class CustomerDirectoryTest extends TestCase
         ]);
     }
 
-    private function issueToken(): string
+    private function issueToken(?int $companyId = null, bool $bindToCompany = true): string
     {
         $raw = 'st_m_'.bin2hex(random_bytes(32));
         $deviceId = (string) Str::uuid();
         MobileDevice::create(['device_id' => $deviceId, 'device_name' => 'Tablet', 'user_id' => $this->user->id]);
 
+        $effectiveCompanyId = $bindToCompany ? ($companyId ?? $this->company->id) : null;
+
         MobileAccessToken::create([
             'token_hash' => hash('sha256', $raw),
             'device_id' => $deviceId,
             'user_id' => $this->user->id,
-            'company_id' => $this->company->id,
+            'company_id' => $effectiveCompanyId,
             'password_epoch' => 'epoch-'.substr(hash('sha256', (string) $this->user->password), 0, 16),
             'expires_at' => now()->addDays(7),
         ]);
@@ -246,4 +248,83 @@ final class CustomerDirectoryTest extends TestCase
         $this->assertCount(30, $response->json('customers'));
         $this->assertTrue($response->json('has_more'));
     }
+
+    public function test_v1_bound_token_for_company_a_rejected_with_403_on_company_b_when_user_active_in_both(): void
+    {
+        $companyB = Company::factory()->create([
+            'base_currency_code' => 'USD',
+            'status' => 'active',
+        ]);
+
+        app(CompanyRoleService::class)->seedCompanyRoles($companyB);
+        $this->user->companies()->attach($companyB->id, ['status' => 'active', 'is_owner' => false]);
+        setPermissionsTeamId($companyB->id);
+        $this->user->assignRole('Cashier');
+
+        Customer::create([
+            'company_id' => $companyB->id,
+            'code' => 'CUST-B-001',
+            'name_ar' => 'عميل شركة ب',
+            'status' => 'active',
+            'created_by' => $this->user->id,
+        ]);
+
+        // Token explicitly bound to Company A ($this->company)
+        $tokenBoundA = $this->issueToken(companyId: $this->company->id, bindToCompany: true);
+
+        // Attempting to access Company B with token bound to Company A returns 403 FORBIDDEN_TENANT_MISMATCH
+        $response = $this->withHeader('Authorization', "Bearer {$tokenBoundA}")
+            ->getJson("/api/mobile/v1/companies/{$companyB->public_id}/customers");
+
+        $response->assertStatus(403)
+            ->assertHeader('Cache-Control', 'must-revalidate, no-cache, no-store, private')
+            ->assertJson([
+                'error' => [
+                    'code' => 'FORBIDDEN_TENANT_MISMATCH',
+                    'message' => 'User does not possess active authorized membership in the requested company context.',
+                ],
+            ]);
+
+        // Accessing bound Company A with the same token succeeds (200)
+        $responseOk = $this->withHeader('Authorization', "Bearer {$tokenBoundA}")
+            ->getJson("/api/mobile/v1/companies/{$this->company->public_id}/customers");
+
+        $responseOk->assertStatus(200)
+            ->assertHeader('Cache-Control', 'must-revalidate, no-cache, no-store, private');
+    }
+
+    public function test_v1_null_staff_token_accepted_across_both_active_member_companies(): void
+    {
+        $companyB = Company::factory()->create([
+            'base_currency_code' => 'USD',
+            'status' => 'active',
+        ]);
+
+        app(CompanyRoleService::class)->seedCompanyRoles($companyB);
+        $this->user->companies()->attach($companyB->id, ['status' => 'active', 'is_owner' => false]);
+        setPermissionsTeamId($companyB->id);
+        $this->user->assignRole('Cashier');
+
+        Customer::create([
+            'company_id' => $companyB->id,
+            'code' => 'CUST-B-002',
+            'name_ar' => 'عميل شركة ب الثاني',
+            'status' => 'active',
+            'created_by' => $this->user->id,
+        ]);
+
+        // Token with company_id = null (standard staff+device token)
+        $tokenNullStaff = $this->issueToken(bindToCompany: false);
+
+        // Accessing Company A succeeds
+        $resA = $this->withHeader('Authorization', "Bearer {$tokenNullStaff}")
+            ->getJson("/api/mobile/v1/companies/{$this->company->public_id}/customers");
+        $resA->assertStatus(200);
+
+        // Accessing Company B also succeeds
+        $resB = $this->withHeader('Authorization', "Bearer {$tokenNullStaff}")
+            ->getJson("/api/mobile/v1/companies/{$companyB->public_id}/customers");
+        $resB->assertStatus(200);
+    }
 }
+
