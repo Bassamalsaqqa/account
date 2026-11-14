@@ -10,27 +10,27 @@ use Illuminate\Console\Command;
  * Minimal CLI harness driver for the Mobile V2 paired HTTPS integration backend.
  * Placed under tests/Support/Harness (not app/Console/Commands) to prevent production auto-discovery.
  *
- * Three phases:
+ * Command lifecycle:
  *   --prepare   Source-only validation: asserts invariants, generates TLS config source.
  *               Default mode (zero sockets, zero DB connections, zero listeners).
- *   --provision  Creates and seeds a disposable MariaDB schema on 127.0.0.1:3342.
- *               Requires PHASE8_ALLOW_DISPOSABLE_DB=1 and MOBILE_V2_HARNESS_ENABLE=1.
+ *   --provision  Self-test provision: provisions schema, verifies @@port 3342, and cleans up.
+ *   --run       Foreground paired lifecycle: provisions schema, launches supervised
+ *               backend & Caddy TLS proxy, maintains supervision loop, and runs guaranteed cleanup on exit.
  *   --start     Launches the supervised PHP HTTP backend and Caddy TLS proxy.
- *               Requires --provision to have run first AND MOBILE_V2_HARNESS_START_LISTENER=1.
- *               Gate held until Android thread 83e6a721 is ready and Root grants QA lease.
  *
  * Usage examples:
  *   php tests/Support/Harness/mobile-v2-harness-cli.php --prepare
  *   php tests/Support/Harness/mobile-v2-harness-cli.php --provision --backend-head=<40hex>
- *   php tests/Support/Harness/mobile-v2-harness-cli.php --start --android-head=<40hex> --backend-head=<40hex>
+ *   php tests/Support/Harness/mobile-v2-harness-cli.php --run --backend-head=<40hex> --android-head=<40hex>
  */
 class MobileV2HarnessCommand extends Command
 {
     protected $signature = 'mobile:v2-harness
-        {--prepare         : Source-only phase: validate invariants and emit TLS config source (no sockets)}
-        {--provision       : Provision disposable schema and seed fixtures on 127.0.0.1:3342}
-        {--start           : Start supervised PHP HTTP backend and Caddy TLS proxy (Root gate required)}
-        {--backend-head=   : Full 40-hex SHA of the current backend worktree HEAD}
+        {--prepare         : Source-only phase: validate invariants and emit TLS config source (no sockets, no framework boot)}
+        {--provision       : Self-test provision: provision disposable schema, assert PDO 3342, and clean up}
+        {--start           : Start transport lifecycle (requires existing live harness owner)}
+        {--run             : Foreground paired lifecycle: provision schema, start supervised transport, wait for shutdown, guaranteed cleanup}
+        {--backend-head=   : Full 40-hex SHA of the current backend worktree HEAD (mandatory)}
         {--android-head=   : Full 40-hex SHA of the peer Android integration HEAD}';
 
     protected $description = 'Drive the Mobile V2 paired HTTPS integration harness (source-only by default)';
@@ -40,27 +40,37 @@ class MobileV2HarnessCommand extends Command
         $prepare = (bool) $this->option('prepare');
         $provision = (bool) $this->option('provision');
         $start = (bool) $this->option('start');
+        $run = (bool) $this->option('run');
 
-        // Default to --prepare if no phase flag given
-        if (! $prepare && ! $provision && ! $start) {
+        if (! $prepare && ! $provision && ! $start && ! $run) {
             $prepare = true;
         }
 
         $backendHead = (string) ($this->option('backend-head') ?? '');
         $androidHead = (string) ($this->option('android-head') ?? '');
 
+        if ($prepare) {
+            return $this->handlePrepare();
+        }
+
+        if ($backendHead === '') {
+            $this->error('Mandatory option --backend-head=<40hex> is required.');
+
+            return self::FAILURE;
+        }
+
+        if ($run) {
+            return $this->handleRun($backendHead, $androidHead);
+        }
+
         if ($start) {
             return $this->handleStart($backendHead, $androidHead);
         }
 
         if ($provision) {
-            return $this->handleProvision(
-                $backendHead !== '' ? $backendHead : null,
-                $androidHead !== '' ? $androidHead : null,
-            );
+            return $this->handleProvision($backendHead, $androidHead !== '' ? $androidHead : null);
         }
 
-        // --prepare: source-only validation, zero sockets
         return $this->handlePrepare();
     }
 
@@ -79,23 +89,20 @@ class MobileV2HarnessCommand extends Command
         $this->line('TLS certificate will cover SAN: localhost, 127.0.0.1, 10.0.2.2 (Android emulator)');
         $this->line('Android base URL (emulator):   https://10.0.2.2:'.DisposableMobileV2BackendHarness::TLS_PROXY_PORT.'/api/mobile/v2/');
         $this->newLine();
-        $this->line('To provision: MOBILE_V2_HARNESS_ENABLE=1 PHASE8_ALLOW_DISPOSABLE_DB=1 \\');
-        $this->line('  PHASE8_TEST_DB_HOST=127.0.0.1 PHASE8_TEST_DB_PORT=3342 \\');
-        $this->line('  PHASE8_TEST_DB_USERNAME=<user> PHASE8_TEST_DB_PASSWORD=<pass> \\');
-        $this->line('  php tests/Support/Harness/mobile-v2-harness-cli.php --provision --backend-head=<40hex>');
-        $this->newLine();
-        $this->line('To start (Root coordination required, peer candidate 39fea rejected as known bad):');
-        $this->line('  MOBILE_V2_HARNESS_START_LISTENER=1 \\');
-        $this->line('  php tests/Support/Harness/mobile-v2-harness-cli.php --start --backend-head=<40hex> --android-head=<40hex>');
+        $this->line('To run foreground lifecycle (Root coordination required):');
+        $this->line('  MOBILE_V2_HARNESS_ENABLE=1 MOBILE_V2_HARNESS_START_LISTENER=1 PHASE8_ALLOW_DISPOSABLE_DB=1 \\');
+        $this->line('    PHASE8_TEST_DB_HOST=127.0.0.1 PHASE8_TEST_DB_PORT=3342 \\');
+        $this->line('    PHASE8_TEST_DB_USERNAME=<user> PHASE8_TEST_DB_PASSWORD=<pass> \\');
+        $this->line('    php tests/Support/Harness/mobile-v2-harness-cli.php --run --backend-head=<40hex> --android-head=<40hex>');
         $this->newLine();
         $this->info('Prepare phase complete. Zero listeners started.');
 
         return self::SUCCESS;
     }
 
-    private function handleProvision(?string $backendHead, ?string $androidHead): int
+    private function handleProvision(string $backendHead, ?string $androidHead): int
     {
-        $this->line('Mobile V2 Harness — Provision Phase');
+        $this->line('Mobile V2 Harness — Provision Self-Test');
 
         if (getenv('MOBILE_V2_HARNESS_ENABLE') !== '1') {
             $this->error('Refused: MOBILE_V2_HARNESS_ENABLE must be 1.');
@@ -110,35 +117,34 @@ class MobileV2HarnessCommand extends Command
                 expectedBackendHead: $backendHead,
                 peerAndroidHead: $androidHead,
             );
+
+            $manifest = $result['manifest'];
+            $this->info('Provision self-test succeeded.');
+            $this->line('  Schema       : '.$manifest['schema_name']);
+            $this->line('  Company      : '.$manifest['company_public_id']);
+            $this->line('  Staff actor  : '.$manifest['staff_actor_public_id']);
+            $this->line('  Device ID    : '.$manifest['device_id']);
+            $this->line('  Credentials  : '.$result['credentials_path'].' (chmod 0600)');
+            $this->newLine();
+            $this->line('Self-test complete. Running automatic bounded cleanup of disposable schema...');
         } catch (\Throwable $e) {
             $this->error('Provision failed: '.$e->getMessage());
 
             return self::FAILURE;
+        } finally {
+            $harness->cleanup();
+            $this->line('Cleanup completed.');
         }
-
-        $manifest = $result['manifest'];
-        $this->info('Provision succeeded.');
-        $this->line('  Schema       : '.$manifest['schema_name']);
-        $this->line('  Company      : '.$manifest['company_public_id']);
-        $this->line('  Staff actor  : '.$manifest['staff_actor_public_id']);
-        $this->line('  Device ID    : '.$manifest['device_id']);
-        $this->line('  Credentials  : '.$result['credentials_path'].' (chmod 0600)');
-        $this->newLine();
-        $this->warn('Credentials file contains raw token — do not print or share.');
-        $this->line('Schema is live. Call --start with MOBILE_V2_HARNESS_START_LISTENER=1 when Root coordinates.');
-
-        $this->newLine();
-        $this->warn('Note: Disposable schema will be dropped when this process exits via harness->cleanup().');
 
         return self::SUCCESS;
     }
 
-    private function handleStart(string $backendHead, string $androidHead): int
+    private function handleRun(string $backendHead, string $androidHead): int
     {
-        $this->line('Mobile V2 Harness — Start Phase (transport lifecycle)');
+        $this->line('Mobile V2 Harness — Foreground Paired Lifecycle (--run)');
 
-        if ($backendHead === '' || $androidHead === '') {
-            $this->error('--start requires both --backend-head and --android-head.');
+        if ($androidHead === '') {
+            $this->error('--run requires --android-head=<40hex>.');
 
             return self::FAILURE;
         }
@@ -163,6 +169,12 @@ class MobileV2HarnessCommand extends Command
             return self::FAILURE;
         }
 
+        if (! function_exists('pcntl_signal')) {
+            $this->error('Harness run refused: pcntl extension is required for safe supervised process signal management.');
+
+            return self::FAILURE;
+        }
+
         $harness = new DisposableMobileV2BackendHarness;
 
         try {
@@ -176,40 +188,47 @@ class MobileV2HarnessCommand extends Command
                 peerAndroidHead: $androidHead,
                 backendHead: $backendHead,
             );
+
+            $this->info('Supervised transport active.');
+            $this->line('  Backend loopback : http://127.0.0.1:'.$transport['backend_loopback_port']);
+            $this->line('  TLS proxy port   : https://127.0.0.1:'.$transport['tls_proxy_port']);
+            $this->line('  Android URL      : https://10.0.2.2:'.$transport['tls_proxy_port'].'/api/mobile/v2/');
+            $this->line('  Test CA cert     : '.$transport['ca_cert_path'].' (import into Android trust store)');
+            $this->line('  Credentials      : '.$transport['credentials_path'].' (chmod 0600)');
+            $this->newLine();
+            $this->warn('Press Ctrl+C to stop supervised session and trigger bounded cleanup.');
+
+            $running = true;
+            pcntl_signal(SIGINT, function () use (&$running): void {
+                $running = false;
+            });
+            pcntl_signal(SIGTERM, function () use (&$running): void {
+                $running = false;
+            });
+
+            while ($running) {
+                pcntl_signal_dispatch();
+                usleep(500_000);
+            }
         } catch (\Throwable $e) {
-            $this->error('Start failed: '.$e->getMessage());
+            $this->error('Run failed: '.$e->getMessage());
 
             return self::FAILURE;
-        }
-
-        $this->info('Transport started.');
-        $this->line('  Backend loopback : http://127.0.0.1:'.$transport['backend_loopback_port']);
-        $this->line('  TLS proxy port   : https://127.0.0.1:'.$transport['tls_proxy_port']);
-        $this->line('  Android URL      : https://10.0.2.2:'.$transport['tls_proxy_port'].'/api/mobile/v2/');
-        $this->line('  Test CA cert     : '.$transport['ca_cert_path'].' (import into Android trust store)');
-        $this->line('  Credentials      : '.$transport['credentials_path'].' (chmod 0600)');
-        $this->newLine();
-        $this->warn('Press Ctrl+C to terminate and trigger cleanup (owned schema + processes only).');
-
-        // Supervised wait loop — only terminates on SIGINT/SIGTERM (owned PIDs only)
-        if (function_exists('pcntl_signal')) {
-            pcntl_signal(SIGINT, function () use ($harness): void {
-                $this->newLine();
-                $this->line('SIGINT received — running cleanup...');
-                $harness->cleanup();
-                exit(0);
-            });
-            pcntl_signal(SIGTERM, function () use ($harness): void {
-                $harness->cleanup();
-                exit(0);
-            });
-
-            while (true) {
-                pcntl_signal_dispatch();
-                sleep(1);
-            }
+        } finally {
+            $this->newLine();
+            $this->line('Shutting down and cleaning up owned processes, files, and schemas...');
+            $harness->cleanup();
+            $this->line('Cleanup completed.');
         }
 
         return self::SUCCESS;
+    }
+
+    private function handleStart(string $backendHead, string $androidHead): int
+    {
+        $this->warn('Note: Standalone --start should be used within an active harness lifecycle.');
+        $this->line('For full paired integration, use --run which provisions and starts under a single supervised owner.');
+
+        return $this->handleRun($backendHead, $androidHead);
     }
 }

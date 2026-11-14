@@ -13,8 +13,8 @@ use Tests\Support\Harness\DisposableMobileV2BackendHarness;
  * Pure Source-Only No-Socket Guard Tests for Backend Harness.
  *
  * Verifies pre-socket failure invariants, fail-closed assertions, transport guard
- * semantics, candidate rejection, and cleanup semantics with zero database sockets,
- * zero background processes, and zero network calls.
+ * semantics, candidate rejection, Caddy security config, and cleanup semantics
+ * with zero database sockets, zero background processes, and zero network calls.
  *
  * All tests run as plain PHPUnit (no Laravel boot). APP_ENV=testing is provided
  * by phpunit.xml; PHASE8_ALLOW_DISPOSABLE_DB and PHASE8_TEST_DB_* are explicitly
@@ -43,7 +43,9 @@ final class DisposableMobileV2BackendHarnessGuardTest extends TestCase
         $this->expectException(RuntimeException::class);
         $this->expectExceptionMessage('Harness refused: defaults to no-execute');
 
-        DisposableMobileV2BackendHarness::assertPreSocketInvariants();
+        DisposableMobileV2BackendHarness::assertPreSocketInvariants(
+            expectedBackendHead: DisposableMobileV2BackendHarness::QUALIFIED_EXECUTION_HEAD
+        );
     }
 
     #[Test]
@@ -56,7 +58,9 @@ final class DisposableMobileV2BackendHarnessGuardTest extends TestCase
         $this->expectException(RuntimeException::class);
         $this->expectExceptionMessage('Harness refused: DB host must be explicitly 127.0.0.1');
 
-        DisposableMobileV2BackendHarness::assertPreSocketInvariants();
+        DisposableMobileV2BackendHarness::assertPreSocketInvariants(
+            expectedBackendHead: DisposableMobileV2BackendHarness::QUALIFIED_EXECUTION_HEAD
+        );
     }
 
     #[Test]
@@ -69,7 +73,9 @@ final class DisposableMobileV2BackendHarnessGuardTest extends TestCase
         $this->expectException(RuntimeException::class);
         $this->expectExceptionMessage('Harness refused: DB port must be explicitly 3342');
 
-        DisposableMobileV2BackendHarness::assertPreSocketInvariants();
+        DisposableMobileV2BackendHarness::assertPreSocketInvariants(
+            expectedBackendHead: DisposableMobileV2BackendHarness::QUALIFIED_EXECUTION_HEAD
+        );
     }
 
     #[Test]
@@ -98,12 +104,13 @@ final class DisposableMobileV2BackendHarnessGuardTest extends TestCase
         $this->expectExceptionMessage('Harness refused: peerAndroidHead must be a valid 40-hex SHA');
 
         DisposableMobileV2BackendHarness::assertPreSocketInvariants(
+            expectedBackendHead: DisposableMobileV2BackendHarness::QUALIFIED_EXECUTION_HEAD,
             peerAndroidHead: 'not-a-valid-sha'
         );
     }
 
     // -------------------------------------------------------------------------
-    // Transport lifecycle guard tests
+    // Transport lifecycle & dual manifest guard tests
     // -------------------------------------------------------------------------
 
     #[Test]
@@ -161,9 +168,35 @@ final class DisposableMobileV2BackendHarnessGuardTest extends TestCase
     }
 
     #[Test]
+    public function test_dual_manifest_pin_refuses_when_no_approved_android_head_provided(): void
+    {
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessageMatches('/no approved peer Android HEAD provided/');
+
+        DisposableMobileV2BackendHarness::assertDualManifestPin(
+            backendHead: DisposableMobileV2BackendHarness::QUALIFIED_EXECUTION_HEAD,
+            peerAndroidHead: '1111111111111111111111111111111111111111',
+            approvedAndroidHead: null,
+        );
+    }
+
+    #[Test]
+    public function test_dual_manifest_pin_refuses_mismatched_approved_android_head(): void
+    {
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessageMatches('/does not match Root-approved HEAD/');
+
+        DisposableMobileV2BackendHarness::assertDualManifestPin(
+            backendHead: DisposableMobileV2BackendHarness::QUALIFIED_EXECUTION_HEAD,
+            peerAndroidHead: '1111111111111111111111111111111111111111',
+            approvedAndroidHead: '2222222222222222222222222222222222222222',
+        );
+    }
+
+    #[Test]
     public function test_start_listener_gate_refuses_without_env_flag(): void
     {
-        putenv('MOBILE_V2_HARNESS_START_LISTENER'); // ensure unset
+        putenv('MOBILE_V2_HARNESS_START_LISTENER');
 
         $harness = new DisposableMobileV2BackendHarness;
 
@@ -220,12 +253,41 @@ final class DisposableMobileV2BackendHarnessGuardTest extends TestCase
     }
 
     #[Test]
-    public function test_cleanup_is_idempotent_when_nothing_provisioned(): void
+    public function test_caddy_config_generation_includes_admin_off_and_auto_https_off(): void
+    {
+        $caddyfile = DisposableMobileV2BackendHarness::buildCaddyConfig(
+            serverCertPath: '/test/cert.pem',
+            serverKeyPath: '/test/key.pem',
+            backendPort: 18080,
+            tlsPort: 18443
+        );
+
+        $this->assertStringContainsString('admin off', $caddyfile);
+        $this->assertStringContainsString('auto_https off', $caddyfile);
+        $this->assertStringContainsString('bind 127.0.0.1', $caddyfile);
+        $this->assertStringContainsString('10.0.2.2:18443', $caddyfile);
+        $this->assertStringContainsString('reverse_proxy 127.0.0.1:18080', $caddyfile);
+        $this->assertStringNotContainsString('0.0.0.0', $caddyfile);
+    }
+
+    #[Test]
+    public function test_assert_ports_available_passes_when_ports_unbound(): void
+    {
+        // Port 59876 is an unassigned dynamic port; calling assertPortsAvailable on it should succeed
+        DisposableMobileV2BackendHarness::assertPortsAvailable(59876);
+        $this->assertTrue(true);
+    }
+
+    #[Test]
+    public function test_cleanup_is_idempotent_and_destructor_cleans_up(): void
     {
         $harness = new DisposableMobileV2BackendHarness;
-        $harness->cleanup(); // first call
-        $harness->cleanup(); // second call (idempotent)
+        $harness->cleanup();
+        $harness->cleanup();
 
-        $this->assertTrue(true); // reached without exception
+        $this->assertNull($harness->getSchema());
+        $this->assertNull($harness->getBackendProcess());
+        $this->assertNull($harness->getCaddyProcess());
+        $this->assertFalse($harness->isProvisioned());
     }
 }

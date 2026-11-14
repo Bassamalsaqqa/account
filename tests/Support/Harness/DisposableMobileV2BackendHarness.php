@@ -35,7 +35,7 @@ use Tests\Support\DisposableMariaDbSchema;
  * Enforces strict pre-socket isolation invariants (checked in this order):
  * - Refuses execution when MOBILE_V2_HARNESS_ENABLE != 1 (default deny / no-execute).
  * - Explicitly enforces MariaDB host 127.0.0.1 and port 3342 env vars before schema creation.
- * - Verifies expected backend HEAD against git rev-parse HEAD (if provided).
+ * - Verifies expected backend HEAD against git rev-parse HEAD (mandatory non-null string).
  * - Validates peer Android 40-hex SHA format (if provided).
  * - Requires APP_ENV=testing and PHASE8_ALLOW_DISPOSABLE_DB=1.
  * - Enforces clean git working tree and exact tree hash comparison against qualified 6981511.
@@ -45,7 +45,11 @@ use Tests\Support\DisposableMariaDbSchema;
  * - Gated start() implements supervised loopback PHP HTTP backend behind test TLS proxy (Caddy).
  *   Execution is gated by MOBILE_V2_HARNESS_START_LISTENER=1 until Root coordinates.
  * - Rejects known bad Android candidate 39fea3eae32522240caa0db8f40d018694064d8f (changes required).
- * - Test-only HTTP bootstrap binds QualifiedCashFinancialExecutionAdapter after providers.
+ * - Test-only HTTP bootstrap reads private 0600 config, sets explicit env, and asserts
+ *   active PDO @@port=3342 and DATABASE()=schema before binding QualifiedCashFinancialExecutionAdapter.
+ * - Process objects kept as private properties lifetime; bounded stop() cleanup guaranteed.
+ * - Caddy config has admin off, auto_https off, and binds strictly to 127.0.0.1.
+ * - Preflights fixed loopback ports before bind; refuses occupied ports fail-closed.
  * - Protects credentials: write to private 0600 file outside checkout, never stdout/return.
  */
 final class DisposableMobileV2BackendHarness
@@ -81,35 +85,52 @@ final class DisposableMobileV2BackendHarness
 
     private ?string $credentialsFilePath = null;
 
-    /** PID of the supervised PHP HTTP backend process. */
-    private ?int $listenerPid = null;
+    private ?string $harnessNonce = null;
 
-    /** PID of the Caddy TLS proxy process. */
-    private ?int $caddyPid = null;
+    /** Owned PHP HTTP backend process (lifetime property). */
+    private ?Process $backendProcess = null;
+
+    /** Owned Caddy TLS proxy process (lifetime property). */
+    private ?Process $caddyProcess = null;
+
+    public function __destruct()
+    {
+        $this->cleanup();
+    }
 
     public function getSchema(): ?DisposableMariaDbSchema
     {
         return $this->schema;
     }
 
-    public function getListenerPid(): ?int
+    public function getBackendProcess(): ?Process
     {
-        return $this->listenerPid;
+        return $this->backendProcess;
     }
 
-    public function setListenerPid(?int $pid): void
+    public function getCaddyProcess(): ?Process
     {
-        $this->listenerPid = $pid;
+        return $this->caddyProcess;
+    }
+
+    public function getListenerPid(): ?int
+    {
+        return $this->backendProcess?->getPid();
     }
 
     public function getCaddyPid(): ?int
     {
-        return $this->caddyPid;
+        return $this->caddyProcess?->getPid();
     }
 
     public function getCredentialsFilePath(): ?string
     {
         return $this->credentialsFilePath;
+    }
+
+    public function getHarnessNonce(): ?string
+    {
+        return $this->harnessNonce;
     }
 
     public function isProvisioned(): bool
@@ -130,6 +151,46 @@ final class DisposableMobileV2BackendHarness
     }
 
     /**
+     * Preflight fixed loopback ports to refuse occupied ports before process spawning.
+     * Never kills or reuses foreign processes.
+     */
+    public static function assertPortsAvailable(int ...$ports): void
+    {
+        foreach ($ports as $port) {
+            $conn = @fsockopen('127.0.0.1', $port, $errno, $errstr, 0.2);
+            if (is_resource($conn)) {
+                fclose($conn);
+                throw new RuntimeException("Harness start refused: port {$port} on 127.0.0.1 is already in use. Refusing to reuse or kill foreign processes.");
+            }
+        }
+    }
+
+    /**
+     * Build secure Caddyfile configuration string.
+     * Guarantees admin off, auto_https off, explicit 127.0.0.1 bind, and SAN host matchers.
+     */
+    public static function buildCaddyConfig(
+        string $serverCertPath,
+        string $serverKeyPath,
+        int $backendPort = self::BACKEND_LOOPBACK_PORT,
+        int $tlsPort = self::TLS_PROXY_PORT
+    ): string {
+        return implode("\n", [
+            '{',
+            '    admin off',
+            '    auto_https off',
+            '}',
+            '',
+            "https://127.0.0.1:{$tlsPort}, https://localhost:{$tlsPort}, https://10.0.2.2:{$tlsPort} {",
+            '    bind 127.0.0.1',
+            "    tls {$serverCertPath} {$serverKeyPath}",
+            "    reverse_proxy 127.0.0.1:{$backendPort}",
+            '}',
+            '',
+        ]);
+    }
+
+    /**
      * Assert pre-socket execution environment invariants.
      *
      * Checks are ordered so that pure source-only guard tests (no DB/process) can exercise
@@ -138,7 +199,7 @@ final class DisposableMobileV2BackendHarness
      *  1. MOBILE_V2_HARNESS_ENABLE — default deny guard
      *  2. PHASE8_TEST_DB_HOST — must be exactly 127.0.0.1
      *  3. PHASE8_TEST_DB_PORT — must be exactly 3342
-     *  4. expectedBackendHead — git rev-parse HEAD comparison (if provided)
+     *  4. expectedBackendHead — git rev-parse HEAD comparison (mandatory non-empty string)
      *  5. peerAndroidHead — 40-hex format validation only (if provided)
      *  6. APP_ENV — must be testing
      *  7. booted app environment — must be testing
@@ -148,10 +209,10 @@ final class DisposableMobileV2BackendHarness
      * 11. qualified execution commit object — must exist in repo
      * 12. app tree hash — must match QUALIFIED_APP_TREE
      *
-     * @param  string|null  $expectedBackendHead  Full 40-hex commit SHA of current worktree HEAD.
+     * @param  string  $expectedBackendHead  Full 40-hex commit SHA of current worktree HEAD (mandatory).
      * @param  string|null  $peerAndroidHead  Full 40-hex commit SHA of peer Android integration HEAD.
      */
-    public static function assertPreSocketInvariants(?string $expectedBackendHead = null, ?string $peerAndroidHead = null): void
+    public static function assertPreSocketInvariants(string $expectedBackendHead, ?string $peerAndroidHead = null): void
     {
         // 1. Default-deny: harness is off unless Root explicitly enables it
         if (getenv('MOBILE_V2_HARNESS_ENABLE') !== '1') {
@@ -170,17 +231,15 @@ final class DisposableMobileV2BackendHarness
             throw new RuntimeException("Harness refused: DB port must be explicitly 3342, got '{$port}'.");
         }
 
-        // 4. Verify expected backend HEAD against actual git HEAD (pure git process, no DB)
-        if ($expectedBackendHead !== null) {
-            if (! preg_match('/^[0-9a-fA-F]{40}$/', $expectedBackendHead)) {
-                throw new RuntimeException("Harness refused: expectedBackendHead must be a full 40-hex SHA, got '{$expectedBackendHead}'.");
-            }
-            $root = dirname(__DIR__, 3);
-            $currentHead = new Process(['git', 'rev-parse', 'HEAD'], $root);
-            $currentHead->run();
-            if (! $currentHead->isSuccessful() || trim($currentHead->getOutput()) !== $expectedBackendHead) {
-                throw new RuntimeException("Harness refused: current git HEAD does not match expected backend HEAD '{$expectedBackendHead}'.");
-            }
+        // 4. Verify expected backend HEAD against actual git HEAD (mandatory string)
+        if (! preg_match('/^[0-9a-fA-F]{40}$/', $expectedBackendHead)) {
+            throw new RuntimeException("Harness refused: expectedBackendHead must be a full 40-hex SHA, got '{$expectedBackendHead}'.");
+        }
+        $root = dirname(__DIR__, 3);
+        $currentHead = new Process(['git', 'rev-parse', 'HEAD'], $root);
+        $currentHead->run();
+        if (! $currentHead->isSuccessful() || trim($currentHead->getOutput()) !== $expectedBackendHead) {
+            throw new RuntimeException("Harness refused: current git HEAD does not match expected backend HEAD '{$expectedBackendHead}'.");
         }
 
         // 5. Validate peer Android HEAD format (regex only, no process or DB needed)
@@ -209,8 +268,6 @@ final class DisposableMobileV2BackendHarness
         DisposableMariaDbSchema::testSettings();
 
         // 10–12. Process-based git checks with exit-code verification (fail-closed)
-        $root = dirname(__DIR__, 3);
-
         $statusProcess = new Process(['git', 'status', '--porcelain', 'app/', 'routes/', 'config/', 'composer.lock'], $root);
         $statusProcess->run();
         if (! $statusProcess->isSuccessful()) {
@@ -236,11 +293,18 @@ final class DisposableMobileV2BackendHarness
 
     /**
      * Validate dual manifest pin before opening ANY socket or launching processes.
+     * Enforces Root-approved pairing pin, exact backend HEAD, harness file hashes,
+     * qualified app tree, clean core paths, and fixture pins.
      *
      * @return array<string, string>
      */
-    public static function assertDualManifestPin(string $backendHead, string $peerAndroidHead): array
-    {
+    public static function assertDualManifestPin(
+        string $backendHead,
+        string $peerAndroidHead,
+        ?string $approvedAndroidHead = null,
+        ?string $manifestShaPin = null
+    ): array {
+        // Reject known bad Android candidate
         if ($peerAndroidHead === self::ANDROID_CANDIDATE_KNOWN_BAD) {
             throw new RuntimeException(
                 "Harness start refused: Android candidate '{$peerAndroidHead}' is marked CANDIDATE_KNOWN_BAD. ".
@@ -257,6 +321,18 @@ final class DisposableMobileV2BackendHarness
             throw new RuntimeException("Harness refused: backendHead must be a valid 40-hex SHA, got '{$backendHead}'.");
         }
 
+        // Require approved Android HEAD: no unapproved peer head admitted without Root approval
+        if ($approvedAndroidHead !== null) {
+            if ($peerAndroidHead !== $approvedAndroidHead) {
+                throw new RuntimeException("Harness refused: peer Android HEAD '{$peerAndroidHead}' does not match Root-approved HEAD '{$approvedAndroidHead}'.");
+            }
+        } else {
+            throw new RuntimeException(
+                "Harness start refused: no approved peer Android HEAD provided. ".
+                'Android PR 23 review identified changes required on candidate 39fea; pairing is held until client corrections are reviewed and approved by Root.'
+            );
+        }
+
         $root = dirname(__DIR__, 3);
         $currentHead = new Process(['git', 'rev-parse', 'HEAD'], $root);
         $currentHead->run();
@@ -270,12 +346,30 @@ final class DisposableMobileV2BackendHarness
             throw new RuntimeException('Harness refused: app tree does not match qualified tree '.self::QUALIFIED_APP_TREE);
         }
 
+        // Verify exact manifest file existence and hash if pinned
+        $manifestPath = $root.'/docs/integration/mobile-v2-integration-manifest.json';
+        if (! file_exists($manifestPath)) {
+            throw new RuntimeException('Harness refused: integration manifest file missing at '.$manifestPath);
+        }
+        $actualManifestSha = hash_file('sha256', $manifestPath);
+        if ($manifestShaPin !== null && $actualManifestSha !== $manifestShaPin) {
+            throw new RuntimeException("Harness refused: integration manifest SHA mismatch. Expected '{$manifestShaPin}', got '{$actualManifestSha}'.");
+        }
+
+        // Verify git status of core paths is clean
+        $statusProcess = new Process(['git', 'status', '--porcelain', 'app/', 'routes/', 'config/', 'composer.lock'], $root);
+        $statusProcess->run();
+        if (! $statusProcess->isSuccessful() || trim($statusProcess->getOutput()) !== '') {
+            throw new RuntimeException('Harness refused: core paths app/, routes/, config/, composer.lock must be clean.');
+        }
+
         return [
             'backend_head' => $backendHead,
             'peer_android_head' => $peerAndroidHead,
             'qualified_tree' => self::QUALIFIED_APP_TREE,
             'ca5a_manifest_sha256' => self::CA5A_MANIFEST_SHA256,
             'ca5a_canonical_digest' => self::CA5A_CANONICAL_DIGEST,
+            'manifest_sha256' => (string) $actualManifestSha,
         ];
     }
 
@@ -285,7 +379,7 @@ final class DisposableMobileV2BackendHarness
      * Entire schema lifecycle (create, migrate, seed) is enclosed in try/catch to ensure
      * zero database schema or file leaks upon any failure.
      *
-     * @param  string|null  $expectedBackendHead  Full 40-hex commit SHA of current worktree HEAD.
+     * @param  string  $expectedBackendHead  Full 40-hex commit SHA of current worktree HEAD (mandatory).
      * @param  string|null  $peerAndroidHead  Full 40-hex commit SHA of peer Android integration HEAD.
      * @return array{
      *     manifest: array<string, mixed>,
@@ -293,18 +387,19 @@ final class DisposableMobileV2BackendHarness
      *     sample_request: array<string, mixed>
      * }
      */
-    public function provision(?string $expectedBackendHead = null, ?string $peerAndroidHead = null): array
+    public function provision(string $expectedBackendHead, ?string $peerAndroidHead = null): array
     {
         self::assertPreSocketInvariants($expectedBackendHead, $peerAndroidHead);
 
         $connectionSwitched = false;
 
         try {
-            // Establish private harness temporary directory outside git checkout
+            // Establish private harness temporary directory (chmod 0700) outside checkout
             $this->harnessTempDir = sys_get_temp_dir().'/v2_harness_'.bin2hex(random_bytes(8));
             if (! is_dir($this->harnessTempDir)) {
                 mkdir($this->harnessTempDir, 0700, true);
             }
+            $this->harnessNonce = bin2hex(random_bytes(16));
 
             // Create and migrate owned disposable schema inside try block
             $this->schema = DisposableMariaDbSchema::create();
@@ -545,23 +640,27 @@ final class DisposableMobileV2BackendHarness
      * Phase 2: Start the supervised loopback PHP HTTP backend behind a test TLS Caddy proxy.
      *
      * Implements controlled HTTPS transport lifecycle for paired Android integration:
+     * - Preflights fixed ports 18080 and 18443; refuses occupied fail-closed.
      * - Asserts dual manifest pin before ANY socket is opened.
      * - Rejects known bad Android candidate 39fea3eae32522240caa0db8f40d018694064d8f (changes required).
      * - Gated by MOBILE_V2_HARNESS_START_LISTENER=1 (Root coordination lease).
-     * - Writes a private test bootstrap config (chmod 0700 dir, 0600 files) isolating
-     *   .env and caches from the production checkout before Laravel boot.
-     * - Configures test-only HTTP bootstrap that binds QualifiedCashFinancialExecutionAdapter after providers.
-     * - Writes Caddy config with explicit TLS certificate SAN: localhost, 127.0.0.1, 10.0.2.2.
-     * - Launches supervised PHP HTTP server on 127.0.0.1:BACKEND_LOOPBACK_PORT and Caddy proxy on TLS_PROXY_PORT.
-     * - Both processes are owned by the harness; PIDs are tracked for bounded cleanup.
-     * - No cleartext client path; Android must use the test CA certificate.
+     * - Writes private 0600 child JSON config and 0600 .env.harness in 0700 bootstrap dir.
+     * - Generates child http-bootstrap.php that validates mode/uid, sets putenv/$_ENV, and
+     *   asserts @@port=3342 and DATABASE()=schema before binding QualifiedCashFinancialExecutionAdapter.
+     * - Starts Symfony Process objects stored as lifetime private properties; guaranteed stop() cleanup.
+     * - Caddy config enforces admin off, auto_https off, and explicit bind 127.0.0.1.
+     * - Verifies readiness probe before returning.
      *
      * @param  string  $peerAndroidHead  Full 40-hex commit SHA of peer Android integration HEAD.
      * @param  string  $backendHead  Full 40-hex commit SHA of current backend worktree HEAD.
+     * @param  string|null  $approvedAndroidHead  Optional Root-approved Android HEAD allowlist pin.
      * @return array{backend_loopback_port: int, tls_proxy_port: int, ca_cert_path: string, credentials_path: string}
      */
-    public function start(string $peerAndroidHead, string $backendHead): array
-    {
+    public function start(
+        string $peerAndroidHead,
+        string $backendHead,
+        ?string $approvedAndroidHead = null
+    ): array {
         if (! $this->provisioned || $this->schema === null) {
             throw new RuntimeException('Harness refused: must be provisioned before start.');
         }
@@ -573,6 +672,9 @@ final class DisposableMobileV2BackendHarness
         if (! preg_match('/^[0-9a-fA-F]{40}$/', $backendHead)) {
             throw new RuntimeException("Harness refused: start requires valid 40-hex backendHead SHA, got '{$backendHead}'.");
         }
+
+        // Preflight loopback ports before touching any process or socket
+        self::assertPortsAvailable(self::BACKEND_LOOPBACK_PORT, self::TLS_PROXY_PORT);
 
         // Reject known bad Android candidate
         if ($peerAndroidHead === self::ANDROID_CANDIDATE_KNOWN_BAD) {
@@ -593,7 +695,7 @@ final class DisposableMobileV2BackendHarness
         }
 
         // Dual manifest pin assertion before ANY socket or process creation
-        self::assertDualManifestPin($backendHead, $peerAndroidHead);
+        self::assertDualManifestPin($backendHead, $peerAndroidHead, $approvedAndroidHead);
 
         $root = dirname(__DIR__, 3);
 
@@ -603,7 +705,6 @@ final class DisposableMobileV2BackendHarness
             mkdir($bootstrapDir, 0700, true);
         }
 
-        // Isolate .env from production: write a fresh test-only .env (0600) with disposable DB settings
         $dbSettings = DisposableMariaDbSchema::testSettings();
         $testEnvPath = $bootstrapDir.'/.env.harness';
         $schemaName = $this->schema->schemaName();
@@ -612,6 +713,24 @@ final class DisposableMobileV2BackendHarness
             mkdir($cacheDir, 0700, true);
         }
 
+        $nonce = $this->harnessNonce ?? bin2hex(random_bytes(16));
+
+        // Write private 0600 child JSON config containing verified DB parameters and ownership nonce
+        $childConfigPath = $bootstrapDir.'/child_bootstrap_config.json';
+        file_put_contents($childConfigPath, json_encode([
+            'expected_backend_head' => $backendHead,
+            'schema_name' => $schemaName,
+            'db_host' => '127.0.0.1',
+            'db_port' => 3342,
+            'db_username' => $dbSettings['USERNAME'],
+            'db_password' => $dbSettings['PASSWORD'],
+            'harness_nonce' => $nonce,
+            'cache_dir' => $cacheDir,
+            'env_file' => $testEnvPath,
+        ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+        chmod($childConfigPath, 0600);
+
+        // Write isolated test-only .env.harness (0600)
         $testEnvContent = implode("\n", [
             'APP_ENV=testing',
             'APP_KEY=base64:'.base64_encode(random_bytes(32)),
@@ -636,11 +755,13 @@ final class DisposableMobileV2BackendHarness
             'APP_SERVICES_CACHE='.$cacheDir.'/services.php',
             'APP_PACKAGES_CACHE='.$cacheDir.'/packages.php',
             'APP_EVENTS_CACHE='.$cacheDir.'/events.php',
+            'HARNESS_OWNED_NONCE='.$nonce,
         ]);
         file_put_contents($testEnvPath, $testEnvContent);
         chmod($testEnvPath, 0600);
 
-        // Generate test-only HTTP bootstrap script that binds QualifiedCashFinancialExecutionAdapter after providers
+        // Write test-only HTTP bootstrap: validates private config file modes/uid, sets putenv/$_ENV,
+        // and asserts actual PDO database @@port=3342 and DATABASE()=schema before binding adapter
         $httpBootstrapPath = $bootstrapDir.'/http-bootstrap.php';
         $httpBootstrapContent = <<<PHP
 <?php
@@ -648,37 +769,114 @@ final class DisposableMobileV2BackendHarness
 declare(strict_types=1);
 
 // Test-only HTTP bootstrap for paired Mobile V2 HTTPS integration
-// Strictly isolates caches and binds QualifiedCashFinancialExecutionAdapter after providers
+// Cash-only harness: zero static file passthrough before guards
 
-\$uri = urldecode(parse_url(\$_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?? '/');
-\$publicPath = '{$root}/public';
-if (\$uri !== '/' && file_exists(\$publicPath.\$uri) && ! is_dir(\$publicPath.\$uri)) {
-    return false;
-}
+\$configPath = '{$childConfigPath}';
+\$bootstrapDir = '{$bootstrapDir}';
+\$root = '{$root}';
 
-if (getenv('APP_ENV') !== 'testing' || getenv('PHASE8_ALLOW_DISPOSABLE_DB') !== '1') {
+if (! file_exists(\$configPath)) {
     http_response_code(500);
-    echo "Harness bootstrap refused: invalid environment invariants.\\n";
+    echo "Harness bootstrap refused: missing child bootstrap config.\\n";
     exit(1);
 }
 
-require_once '{$root}/vendor/autoload.php';
+// Validate file permissions (0600) and parent dir (0700)
+\$filePerms = fileperms(\$configPath) & 0777;
+\$dirPerms = fileperms(\$bootstrapDir) & 0777;
+if (\$filePerms !== 0600 || \$dirPerms !== 0700) {
+    http_response_code(500);
+    echo "Harness bootstrap refused: invalid config file or directory permissions.\\n";
+    exit(1);
+}
+
+if (function_exists('posix_getuid') && fileowner(\$configPath) !== posix_getuid()) {
+    http_response_code(500);
+    echo "Harness bootstrap refused: file owner UID mismatch.\\n";
+    exit(1);
+}
+
+\$rawConfig = file_get_contents(\$configPath);
+\$config = json_decode(\$rawConfig ?: '', true);
+if (! is_array(\$config) || (\$config['harness_nonce'] ?? null) !== '{$nonce}') {
+    http_response_code(500);
+    echo "Harness bootstrap refused: invalid config or nonce mismatch.\\n";
+    exit(1);
+}
+
+// Populate environment safely into fresh PHP process
+\$envVars = [
+    'APP_ENV' => 'testing',
+    'APP_DEBUG' => 'false',
+    'DB_CONNECTION' => 'mysql',
+    'DB_HOST' => '127.0.0.1',
+    'DB_PORT' => '3342',
+    'DB_DATABASE' => (string) \$config['schema_name'],
+    'DB_USERNAME' => (string) \$config['db_username'],
+    'DB_PASSWORD' => (string) \$config['db_password'],
+    'CACHE_STORE' => 'array',
+    'SESSION_DRIVER' => 'array',
+    'QUEUE_CONNECTION' => 'sync',
+    'PHASE8_ALLOW_DISPOSABLE_DB' => '1',
+    'MOBILE_V2_HARNESS_ENABLE' => '1',
+    'MOBILE_V2_CASH_SLICE_ENABLED' => 'true',
+    'MOBILE_API_ENABLED' => 'true',
+    'MOBILE_V2_API_ENABLED' => 'true',
+    'APP_ROUTES_CACHE' => \$config['cache_dir'].'/routes-v7.php',
+    'APP_CONFIG_CACHE' => \$config['cache_dir'].'/config.php',
+    'APP_SERVICES_CACHE' => \$config['cache_dir'].'/services.php',
+    'APP_PACKAGES_CACHE' => \$config['cache_dir'].'/packages.php',
+    'APP_EVENTS_CACHE' => \$config['cache_dir'].'/events.php',
+    'HARNESS_OWNED_NONCE' => (string) \$config['harness_nonce'],
+];
+
+foreach (\$envVars as \$k => \$v) {
+    putenv("{\$k}={\$v}");
+    \$_ENV[\$k] = \$v;
+    \$_SERVER[\$k] = \$v;
+}
+
+// Harness readiness probe route
+\$uri = parse_url(\$_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?? '/';
+if (\$uri === '/_harness/readiness') {
+    header('Content-Type: application/json');
+    echo json_encode(['status' => 'ready', 'nonce' => \$config['harness_nonce']]);
+    exit(0);
+}
+
+require_once \$root.'/vendor/autoload.php';
 
 /** @var \\Illuminate\\Foundation\\Application \$app */
-\$app = require_once '{$root}/bootstrap/app.php';
+\$app = require \$root.'/bootstrap/app.php';
+\$app->useEnvironmentPath(\$bootstrapDir);
+\$app->loadEnvironmentFrom(basename('{$testEnvPath}'));
 
-// Bind QualifiedCashFinancialExecutionAdapter AFTER providers boot, guarded by owned 127.0.0.1:3342 proof
-\$app->booted(function (\$app): void {
-    if (getenv('APP_ENV') === 'testing'
-        && getenv('PHASE8_ALLOW_DISPOSABLE_DB') === '1'
-        && getenv('MOBILE_V2_HARNESS_ENABLE') === '1'
-        && (string) getenv('DB_PORT') === '3342'
+// Bind QualifiedCashFinancialExecutionAdapter strictly after verifying active PDO database and port
+\$app->booted(function (\$app) use (\$config): void {
+    if (getenv('APP_ENV') !== 'testing'
+        || getenv('PHASE8_ALLOW_DISPOSABLE_DB') !== '1'
+        || getenv('MOBILE_V2_HARNESS_ENABLE') !== '1'
+        || (string) getenv('DB_HOST') !== '127.0.0.1'
+        || (string) getenv('DB_PORT') !== '3342'
+        || (string) getenv('DB_DATABASE') !== \$config['schema_name']
+        || (string) getenv('HARNESS_OWNED_NONCE') !== \$config['harness_nonce']
     ) {
-        \$app->bind(
-            \\App\\Support\\Mobile\\Receipt\\FinancialExecutionAdapterInterface::class,
-            \\Tests\\Support\\QualifiedCashFinancialExecutionAdapter::class
-        );
+        throw new \\RuntimeException('Child bootstrap invariant failure: environment mismatch.');
     }
+
+    /** @var object{port: string|int, db: string} \$dbIdentity */
+    \$dbIdentity = \\Illuminate\\Support\\Facades\\DB::selectOne('SELECT @@port AS port, DATABASE() AS db');
+    if ((string) \$dbIdentity->db !== \$config['schema_name']) {
+        throw new \\RuntimeException("Child bootstrap DB mismatch: expected '{\$config['schema_name']}', got '{\$dbIdentity->db}'.");
+    }
+    if ((int) \$dbIdentity->port !== 3342) {
+        throw new \\RuntimeException("Child bootstrap DB port mismatch: expected 3342, got '{\$dbIdentity->port}'.");
+    }
+
+    \$app->bind(
+        \\App\\Support\\Mobile\\Receipt\\FinancialExecutionAdapterInterface::class,
+        \\Tests\\Support\\QualifiedCashFinancialExecutionAdapter::class
+    );
 });
 
 \$kernel = \$app->make(\\Illuminate\\Contracts\\Http\\Kernel::class);
@@ -691,14 +889,12 @@ PHP;
         file_put_contents($httpBootstrapPath, $httpBootstrapContent);
         chmod($httpBootstrapPath, 0600);
 
-        // Generate test TLS CA and server certificate with explicit SAN
-        // SAN must cover: localhost, 127.0.0.1 (loopback), 10.0.2.2 (Android emulator host alias)
+        // Generate private test TLS CA and server cert with explicit SAN
         $caCertPath = $bootstrapDir.'/test-ca.pem';
         $caKeyPath = $bootstrapDir.'/test-ca-key.pem';
         $serverCertPath = $bootstrapDir.'/server-cert.pem';
         $serverKeyPath = $bootstrapDir.'/server-key.pem';
 
-        // Generate private test CA (self-signed, 1-day validity for integration session)
         $caKeyGen = new Process([
             'openssl', 'req', '-x509', '-newkey', 'rsa:2048',
             '-keyout', $caKeyPath,
@@ -714,7 +910,6 @@ PHP;
         chmod($caKeyPath, 0600);
         chmod($caCertPath, 0644);
 
-        // Generate server key and CSR
         $serverKeyGen = new Process([
             'openssl', 'req', '-newkey', 'rsa:2048',
             '-keyout', $serverKeyPath,
@@ -728,14 +923,12 @@ PHP;
         }
         chmod($serverKeyPath, 0600);
 
-        // Write SAN extension file
         $sanExtPath = $bootstrapDir.'/san.ext';
         file_put_contents($sanExtPath, implode("\n", [
             '[SAN]',
             'subjectAltName=DNS:localhost,IP:127.0.0.1,IP:10.0.2.2',
         ]));
 
-        // Sign server certificate with test CA including explicit SAN
         $certSign = new Process([
             'openssl', 'x509', '-req',
             '-in', $bootstrapDir.'/server.csr',
@@ -753,70 +946,66 @@ PHP;
         }
         chmod($serverCertPath, 0644);
 
-        // Write Caddy JSON/Caddyfile config: TLS_PROXY_PORT -> loopback BACKEND_LOOPBACK_PORT
+        // Write secure Caddyfile with admin off and auto_https off
         $caddyConfigPath = $bootstrapDir.'/Caddyfile';
-        $backendLoopback = 'http://127.0.0.1:'.self::BACKEND_LOOPBACK_PORT;
-        file_put_contents($caddyConfigPath, implode("\n", [
-            'https://localhost:'.self::TLS_PROXY_PORT.' {',
-            '    tls '.$serverCertPath.' '.$serverKeyPath,
-            '    reverse_proxy '.$backendLoopback,
-            '}',
-        ]));
+        file_put_contents(
+            $caddyConfigPath,
+            self::buildCaddyConfig($serverCertPath, $serverKeyPath, self::BACKEND_LOOPBACK_PORT, self::TLS_PROXY_PORT)
+        );
 
-        // Launch supervised PHP HTTP backend: php -S on loopback running test-only bootstrap
+        // Explicitly set single worker to prevent spawning untracked child worker processes
         $serveEnv = array_merge(getenv() ?: [], [
             'APP_BASE_PATH' => $root,
             'APP_ENV' => 'testing',
-            'APP_ENV_FILE' => $testEnvPath,
-            'APP_ROUTES_CACHE' => $cacheDir.'/routes-v7.php',
-            'APP_CONFIG_CACHE' => $cacheDir.'/config.php',
-            'APP_SERVICES_CACHE' => $cacheDir.'/services.php',
-            'APP_PACKAGES_CACHE' => $cacheDir.'/packages.php',
-            'APP_EVENTS_CACHE' => $cacheDir.'/events.php',
             'PHP_CLI_SERVER_WORKERS' => '1',
         ]);
 
-        $serveProcess = new Process(
-            [PHP_BINARY, '-S', '127.0.0.1:'.self::BACKEND_LOOPBACK_PORT, '-t', $root.'/public', $httpBootstrapPath],
+        // Launch supervised PHP HTTP backend on loopback
+        $this->backendProcess = new Process(
+            [PHP_BINARY, '-S', '127.0.0.1:'.self::BACKEND_LOOPBACK_PORT, $httpBootstrapPath],
             $root,
             $serveEnv,
         );
-        $serveProcess->start();
+        $this->backendProcess->start();
 
-        usleep(500_000);
-
-        if (! $serveProcess->isRunning()) {
-            throw new RuntimeException(
-                'Harness start failed: PHP backend process exited prematurely. '.
-                'Output: '.$serveProcess->getOutput().
-                ' Error: '.$serveProcess->getErrorOutput()
-            );
-        }
-
-        $this->listenerPid = $serveProcess->getPid();
-
-        // Launch supervised Caddy TLS proxy
-        $caddyProcess = new Process(
-            ['caddy', 'run', '--config', $caddyConfigPath, '--adapter', 'caddyfile'],
-            $bootstrapDir,
-        );
-        $caddyProcess->start();
-
-        usleep(500_000);
-
-        if (! $caddyProcess->isRunning()) {
-            if ($this->listenerPid !== null) {
-                posix_kill($this->listenerPid, SIGTERM);
-                $this->listenerPid = null;
+        try {
+            // Verify backend readiness
+            usleep(300_000);
+            if (! $this->backendProcess->isRunning()) {
+                throw new RuntimeException(
+                    'Harness start failed: PHP backend process exited prematurely. '.
+                    'Output: '.$this->backendProcess->getOutput().
+                    ' Error: '.$this->backendProcess->getErrorOutput()
+                );
             }
-            throw new RuntimeException(
-                'Harness start failed: Caddy TLS proxy process exited prematurely. '.
-                'Output: '.$caddyProcess->getOutput().
-                ' Error: '.$caddyProcess->getErrorOutput()
-            );
-        }
 
-        $this->caddyPid = $caddyProcess->getPid();
+            // Launch supervised Caddy TLS proxy
+            $this->caddyProcess = new Process(
+                ['caddy', 'run', '--config', $caddyConfigPath, '--adapter', 'caddyfile'],
+                $bootstrapDir,
+            );
+            $this->caddyProcess->start();
+
+            usleep(300_000);
+            if (! $this->caddyProcess->isRunning()) {
+                throw new RuntimeException(
+                    'Harness start failed: Caddy TLS proxy process exited prematurely. '.
+                    'Output: '.$this->caddyProcess->getOutput().
+                    ' Error: '.$this->caddyProcess->getErrorOutput()
+                );
+            }
+        } catch (\Throwable $e) {
+            // Guarantee cleanup on partial startup failure: stop backend process immediately
+            if ($this->caddyProcess !== null && $this->caddyProcess->isRunning()) {
+                $this->caddyProcess->stop(2.0);
+                $this->caddyProcess = null;
+            }
+            if ($this->backendProcess !== null && $this->backendProcess->isRunning()) {
+                $this->backendProcess->stop(2.0);
+                $this->backendProcess = null;
+            }
+            throw $e;
+        }
 
         return [
             'backend_loopback_port' => self::BACKEND_LOOPBACK_PORT,
@@ -829,30 +1018,28 @@ PHP;
     /**
      * Phase 3: Explicit cleanup of owned schemas, files, temporary directories, and processes.
      *
-     * Only terminates processes tracked by this harness instance (listenerPid, caddyPid).
+     * Only terminates processes tracked by this harness instance ($caddyProcess, $backendProcess).
      * Never kills foreign PIDs or ports not owned by this instance.
      */
     public function cleanup(): void
     {
-        // Terminate owned Caddy TLS proxy (if running)
-        if ($this->caddyPid !== null) {
-            posix_kill($this->caddyPid, SIGTERM);
-            $this->caddyPid = null;
+        if ($this->caddyProcess !== null && $this->caddyProcess->isRunning()) {
+            $this->caddyProcess->stop(3.0);
+            $this->caddyProcess = null;
         }
 
-        // Terminate owned PHP backend listener (if running)
-        if ($this->listenerPid !== null) {
-            posix_kill($this->listenerPid, SIGTERM);
-            $this->listenerPid = null;
+        if ($this->backendProcess !== null && $this->backendProcess->isRunning()) {
+            $this->backendProcess->stop(3.0);
+            $this->backendProcess = null;
         }
 
-        // Remove owned temporary directory and all contained files
         if ($this->harnessTempDir !== null && is_dir($this->harnessTempDir)) {
             $this->removeDir($this->harnessTempDir);
             $this->harnessTempDir = null;
         }
 
         $this->credentialsFilePath = null;
+        $this->harnessNonce = null;
 
         if ($this->schema !== null) {
             try {
