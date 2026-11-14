@@ -1,0 +1,19 @@
+PHPUnit 12.5.36 by Sebastian Bergmann and contributors.
+
+Runtime:       PHP 8.4.27
+Configuration: /home/t3dev/.t3/worktrees/account/integration-mobile-backend-supervision/phpunit.xml
+
+................................................................. 65 / 74 ( 87%)
+[41;37mF[0m
+
+Time: 00:02.975, Memory: 30.50 MB
+
+There was 1 failure:
+
+1) Tests\Unit\Mobile\Harness\DisposableMobileV2BackendHarnessGuardTest::test_financial_post_run_inspector_refuses_malformed_or_unproven_disposable_schema
+Failed asserting that 'Explicit disposable test administrative connection is required.' [ASCII](length: 63) contains "Disposable schema ownership proof is required" [ASCII](length: 45).
+
+/home/t3dev/.t3/worktrees/account/integration-mobile-backend-supervision/tests/Unit/Mobile/Harness/DisposableMobileV2BackendHarnessGuardTest.php:2326
+
+[37;41mFAILURES![0m
+[37;41mTests: 66[0m[37;41m, Assertions: 288[0m[37;41m, Failures: 1[0m[37;41m.[0m
