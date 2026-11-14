@@ -98,67 +98,69 @@ final class MobileCompanyBindingHttpTest extends TestCase
 
     private function seedCompanyV1Fixtures(Company $company): void
     {
-        $customer = Customer::create([
-            'company_id' => $company->id,
-            'code' => 'CUST-'.Str::random(6),
-            'name_ar' => 'عميل '.$company->name_ar,
-            'status' => 'active',
-            'created_by' => $this->user->id,
-        ]);
+        \App\Support\Tenancy\CompanyScope::executeWithoutScope(function () use ($company): void {
+            $customer = Customer::create([
+                'company_id' => $company->id,
+                'code' => 'CUST-'.Str::random(6),
+                'name_ar' => 'عميل '.$company->name_ar,
+                'status' => 'active',
+                'created_by' => $this->user->id,
+            ]);
 
-        $warehouse = Warehouse::create([
-            'company_id' => $company->id,
-            'name_ar' => 'مستودع '.$company->name_ar,
-            'is_default' => true,
-            'active' => true,
-        ]);
+            $warehouse = Warehouse::create([
+                'company_id' => $company->id,
+                'name_ar' => 'مستودع '.$company->name_ar,
+                'is_default' => true,
+                'active' => true,
+            ]);
 
-        $ledgerAccount = LedgerAccount::create([
-            'company_id' => $company->id,
-            'code' => '101-'.Str::random(4),
-            'name_ar' => 'صندوق',
-            'type' => 'asset',
-            'is_active' => true,
-            'currency_code' => $company->base_currency_code,
-        ]);
+            $ledgerAccount = LedgerAccount::create([
+                'company_id' => $company->id,
+                'code' => '101-'.Str::random(4),
+                'name_ar' => 'صندوق',
+                'type' => 'asset',
+                'is_active' => true,
+                'currency_code' => $company->base_currency_code,
+            ]);
 
-        $cashAccount = MoneyAccount::create([
-            'company_id' => $company->id,
-            'account_type' => 'cash',
-            'name_ar' => 'صندوق نقاط البيع',
-            'currency_code' => $company->base_currency_code,
-            'ledger_account_id' => $ledgerAccount->id,
-            'is_active' => true,
-            'created_by' => $this->user->id,
-        ]);
+            $cashAccount = MoneyAccount::create([
+                'company_id' => $company->id,
+                'account_type' => 'cash',
+                'name_ar' => 'صندوق نقاط البيع',
+                'currency_code' => $company->base_currency_code,
+                'ledger_account_id' => $ledgerAccount->id,
+                'is_active' => true,
+                'created_by' => $this->user->id,
+            ]);
 
-        $unit = Unit::create([
-            'company_id' => $company->id,
-            'code' => 'PCS-'.Str::random(3),
-            'name_ar' => 'قطعة',
-            'allows_fraction' => false,
-            'decimal_places' => 0,
-            'active' => true,
-        ]);
+            $unit = Unit::create([
+                'company_id' => $company->id,
+                'code' => 'PCS-'.Str::random(3),
+                'name_ar' => 'قطعة',
+                'allows_fraction' => false,
+                'decimal_places' => 0,
+                'active' => true,
+            ]);
 
-        $taxRate = TaxRate::create([
-            'company_id' => $company->id,
-            'code' => 'VAT-'.Str::random(3),
-            'name_ar' => 'ضريبة',
-            'rate' => '16.000000',
-            'calculation' => 'exclusive',
-            'active' => true,
-            'created_by' => $this->user->id,
-        ]);
+            $taxRate = TaxRate::create([
+                'company_id' => $company->id,
+                'code' => 'VAT-'.Str::random(3),
+                'name_ar' => 'ضريبة',
+                'rate' => '16.000000',
+                'calculation' => 'exclusive',
+                'active' => true,
+                'created_by' => $this->user->id,
+            ]);
 
-        CompanyMobileSetting::create([
-            'company_id' => $company->id,
-            'walk_in_customer_id' => $customer->id,
-            'approved_cash_account_id' => $cashAccount->id,
-            'default_warehouse_id' => $warehouse->id,
-            'default_tax_rate_id' => $taxRate->id,
-            'catalog_snapshot_version' => 'snap-test',
-        ]);
+            CompanyMobileSetting::create([
+                'company_id' => $company->id,
+                'walk_in_customer_id' => $customer->id,
+                'approved_cash_account_id' => $cashAccount->id,
+                'default_warehouse_id' => $warehouse->id,
+                'default_tax_rate_id' => $taxRate->id,
+                'catalog_snapshot_version' => 'snap-test',
+            ]);
+        });
     }
 
     private function registerV2HarnessRoute(): void
