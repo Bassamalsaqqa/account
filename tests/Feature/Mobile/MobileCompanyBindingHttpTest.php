@@ -37,6 +37,11 @@ final class MobileCompanyBindingHttpTest extends TestCase
 
     private string $password = 'BindingTest!Pass123';
 
+    public function getJson($uri, array $headers = [], $options = 0)
+    {
+        return $this->get($uri, array_merge(['Accept' => 'application/json'], $headers));
+    }
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -223,7 +228,7 @@ final class MobileCompanyBindingHttpTest extends TestCase
             ]);
 
         // Verify context is clean and not contaminated with Company B
-        $this->assertNull(app(CompanyContext::class)->company());
+        $this->assertFalse(app(CompanyContext::class)->hasCompany());
     }
 
     public function test_v1_bound_token_matching_company_succeeds(): void
@@ -289,7 +294,7 @@ final class MobileCompanyBindingHttpTest extends TestCase
                 ],
             ]);
 
-        $this->assertNull(app(CompanyContext::class)->company());
+        $this->assertFalse(app(CompanyContext::class)->hasCompany());
     }
 
     public function test_v2_bound_token_matching_company_succeeds(): void
