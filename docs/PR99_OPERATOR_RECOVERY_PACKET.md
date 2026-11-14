@@ -247,20 +247,42 @@ php bin/verify-backup-import.php \
 
 ---
 
-## 5. Phase D: Read-Only Pre-Release Snapshot & Reconcile Contracts
+## 5. Phase D: Read-Only Pre-Release Snapshot & Reconciliation Verification
 
-Before modifying production code, Root captures a deterministic baseline database fingerprint and verifies service contracts:
+Before modifying production code, Root verifies service contracts, runs the 6 core reconciliation services context-free, and captures a deterministic baseline database fingerprint:
 
 ```bash
 cd /home/u556956644/domains/palsync.net/accounting
 
-# 1. Verify reconciliation service contracts across all companies
+# 1. Zero-socket / zero-connection dry-run preflight (default without --execute)
+php bin/final-release-check.php \
+    --mode=snapshot \
+    --app-dir=/home/u556956644/domains/palsync.net/accounting \
+    --public-dir=/home/u556956644/domains/palsync.net/public_html/account \
+    --expected-source-sha=f8a0cf7012c4875bec7320d42e0f8dde58593b52 \
+    --expected-build-sha=4f7ea5b3a956aca1eaf120c0ee67d499b9fc91854f672c0db32bdceee4ac96ab \
+    --expected-htaccess-sha=071652f64ad14f324544e95317aed883e59a9337acb5e1b3519bf0e71a36bdcc
+
+# 2. Verify reflection signatures of all 6 reconciliation services
 php bin/final-release-check.php \
     --mode=reconcile-contracts \
     --app-dir=/home/u556956644/domains/palsync.net/accounting \
     --public-dir=/home/u556956644/domains/palsync.net/public_html/account
 
-# 2. Capture read-only baseline database fingerprint (PK-ordered, length-framed, normalized DDL)
+# 3. Execute all 6 reconciliation services context-free across all companies on SAME read-only PDO
+# (Runs within START TRANSACTION WITH CONSISTENT SNAPSHOT, READ ONLY; rolls back cleanly)
+php bin/final-release-check.php \
+    --mode=reconcile \
+    --app-dir=/home/u556956644/domains/palsync.net/accounting \
+    --public-dir=/home/u556956644/domains/palsync.net/public_html/account \
+    --expected-source-sha=f8a0cf7012c4875bec7320d42e0f8dde58593b52 \
+    --expected-build-sha=4f7ea5b3a956aca1eaf120c0ee67d499b9fc91854f672c0db32bdceee4ac96ab \
+    --expected-htaccess-sha=071652f64ad14f324544e95317aed883e59a9337acb5e1b3519bf0e71a36bdcc \
+    --output-file=/home/u556956644/domains/palsync.net/accounting-backups/baseline_reconcile_report.json \
+    --execute
+
+# 4. Capture read-only baseline database fingerprint (PK-ordered, length-framed, normalized DDL)
+# (Preserves AUTO_INCREMENT on preservation tables; MariaDB max_statement_time=5s)
 php bin/final-release-check.php \
     --mode=snapshot \
     --app-dir=/home/u556956644/domains/palsync.net/accounting \

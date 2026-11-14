@@ -9,21 +9,29 @@ declare(strict_types=1);
  * Standalone root-operated utility to verify:
  * 1. Strict deployed source commit, build manifest, and .htaccess pins.
  * 2. Production host app and public web root layout confirmation.
- * 3. Read-only database session (SET TRANSACTION READ ONLY, SQL timeouts, SELECT only).
- * 4. Full deterministic per-table PK-ordered row byte hash and normalized DDL hash:
+ * 3. Read-only database session:
+ *    - Strict 0-socket / 0-connection preflight by default (execution requires explicit --execute).
+ *    - SET SESSION TRANSACTION ISOLATION LEVEL REPEATABLE READ.
+ *    - START TRANSACTION WITH CONSISTENT SNAPSHOT, READ ONLY.
+ *    - Strict statement timeouts: tries MariaDB max_statement_time then MySQL max_execution_time,
+ *      failing closed if neither is supported.
+ * 4. Deterministic per-table row byte hash and DDL preservation:
+ *    - Compound PK sorted strictly by Seq_in_index.
+ *    - Tables without PK sorted deterministically by BINARY columns to prevent collation ties.
  *    - Length-framed, distinct null representation (R<cols>; N; S<len>:<val>).
- *    - Classification: preservation tables vs fixed operational mutable allowlist
- *      (sessions, cache, cache_locks, jobs, job_batches, failed_jobs, password_reset_tokens).
- *    - Before/after comparison: fails closed on preservation differences; reports
- *      operational differences separately without financial waiver.
- * 5. Execution contracts of the 6 core reconciliation services across all companies:
- *    - AccountingReconciliationService::reconcile($company, isSystem: true)
- *    - InventoryReconciliationService::auditCompany($company, fromCli: true)
- *    - SalesReconciliationService::reconcile($company, isSystem: true)
- *    - PayablesReconciliationService::reconcile($company, isSystem: true)
- *    - MoneyReconciliationService::reconcile($company, isSystem: true)
- *    - Phase7ReconciliationService::reconcile($company, isSystem: true)
- *    - Disables cache, session, and job writes; zero customer/business data rows on stdout.
+ *    - Strict preservation: AUTO_INCREMENT=\d+ counters preserved on all preservation tables
+ *      (normalized only on fixed operational mutable tables).
+ *    - Fixed operational mutable allowlist: sessions, cache, cache_locks, jobs, job_batches,
+ *      failed_jobs, password_reset_tokens.
+ *    - Comparison: Operational allowlist applies ROW churn only. Any schema/DDL diff or missing table
+ *      (even on operational tables) FAILS preservation.
+ *    - Classification taint protection: rejects any client-forged operational table classification.
+ * 5. Execution of core reconciliation services:
+ *    - Mode `reconcile`: executes all 6 services across all companies context-free using a minimal
+ *      isolated container wrapping the SAME read-only PDO connection.
+ *    - Mode `reconcile-contracts`: reflection contract verification of all 6 services.
+ * 6. Secure output file creation:
+ *    - Rejects symlinks, verifies nonpublic private directory permissions, uses exclusive creation (mode 'x').
  */
 
 namespace SmallTrader\Recovery;
@@ -31,9 +39,7 @@ namespace SmallTrader\Recovery;
 use DateTimeImmutable;
 use DateTimeZone;
 use PDO;
-use PDOStatement;
 use ReflectionClass;
-use ReflectionMethod;
 use RuntimeException;
 use Throwable;
 
@@ -47,6 +53,13 @@ final class FinalReleaseCheck
         'job_batches',
         'failed_jobs',
         'password_reset_tokens',
+    ];
+
+    public const array ALLOWED_MODES = [
+        'snapshot',
+        'compare',
+        'reconcile',
+        'reconcile-contracts',
     ];
 
     private string $appDir;
@@ -69,6 +82,8 @@ final class FinalReleaseCheck
 
     private ?string $outputFile;
 
+    private string $dbName = '';
+
     /**
      * @param array<string, mixed> $options
      */
@@ -77,6 +92,11 @@ final class FinalReleaseCheck
         umask(0077);
 
         $this->mode = (string) ($options['mode'] ?? 'snapshot');
+        if (! in_array($this->mode, self::ALLOWED_MODES, true)) {
+            $sanitized = strtoupper(preg_replace('/[^A-Za-z0-9_]/', '_', $this->mode) ?? 'UNKNOWN');
+            throw new RuntimeException("UNKNOWN_MODE_{$sanitized}");
+        }
+
         $this->execute = (bool) ($options['execute'] ?? false);
 
         $this->expectedSourceSha = isset($options['expected-source-sha'])
@@ -100,6 +120,10 @@ final class FinalReleaseCheck
 
         $this->appDir = $this->assertDirectory($rawApp, 'APP_DIR');
         $this->publicDir = $this->assertDirectory($rawPublic, 'PUBLIC_DIR');
+
+        if ($this->outputFile !== null) {
+            $this->assertSafeOutputFile($this->outputFile);
+        }
     }
 
     /**
@@ -110,11 +134,25 @@ final class FinalReleaseCheck
         // 1. Confirm deployed pins and exact host app layout
         $layoutReport = $this->verifyPinsAndLayout();
 
-        // 2. Execute selected verification mode
+        // 2. Default without --execute: 0-socket / 0-connection dry-run preflight
+        if (! $this->execute && $this->mode !== 'compare') {
+            return [
+                'status' => 'SUCCESS',
+                'mode' => strtoupper($this->mode),
+                'execution' => 'DRY_RUN_ZERO_SOCKET',
+                'socket_connected' => false,
+                'layout' => $layoutReport,
+                'message' => 'PREFLIGHT_VERIFIED_ZERO_SOCKET',
+            ];
+        }
+
+        // 3. Execute selected verification mode
         return match ($this->mode) {
             'compare' => $this->runCompareMode($layoutReport),
+            'reconcile' => $this->runReconcileMode($layoutReport),
             'reconcile-contracts' => $this->runReconcileContractsMode($layoutReport),
-            default => $this->runSnapshotMode($layoutReport),
+            'snapshot' => $this->runSnapshotMode($layoutReport),
+            default => throw new RuntimeException("UNKNOWN_MODE_{$this->mode}"),
         };
     }
 
@@ -187,7 +225,19 @@ final class FinalReleaseCheck
     private function runSnapshotMode(array $layoutReport): array
     {
         $pdo = $this->createReadOnlyConnection();
-        $fingerprint = self::computeFingerprint($pdo);
+
+        // Persistent multiquery read-only consistent snapshot
+        $pdo->exec('SET SESSION TRANSACTION ISOLATION LEVEL REPEATABLE READ');
+        $pdo->exec('START TRANSACTION WITH CONSISTENT SNAPSHOT, READ ONLY');
+
+        try {
+            $fingerprint = self::computeFingerprint($pdo);
+        } finally {
+            try {
+                $pdo->rollBack();
+            } catch (Throwable) {
+            }
+        }
 
         $tablesCount = count($fingerprint['tables']);
         $preservationCount = count($fingerprint['preservation_tables']);
@@ -210,11 +260,7 @@ final class FinalReleaseCheck
         ];
 
         if ($this->outputFile !== null) {
-            file_put_contents(
-                $this->outputFile,
-                json_encode($summary, JSON_THROW_ON_ERROR | JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)
-            );
-            chmod($this->outputFile, 0600);
+            $this->writeOutputFileExclusively($this->outputFile, $summary);
         }
 
         return $summary;
@@ -249,7 +295,7 @@ final class FinalReleaseCheck
             throw new RuntimeException('PRESERVATION_TABLE_DIFF_DETECTED: '.implode(',', array_keys($diffResult['preservation_diffs'])));
         }
 
-        return [
+        $summary = [
             'status' => 'SUCCESS',
             'mode' => 'COMPARE',
             'classification' => $diffResult['operational_diffs_count'] > 0
@@ -258,6 +304,134 @@ final class FinalReleaseCheck
             'layout' => $layoutReport,
             'comparison' => $diffResult,
         ];
+
+        if ($this->outputFile !== null) {
+            $this->writeOutputFileExclusively($this->outputFile, $summary);
+        }
+
+        return $summary;
+    }
+
+    /**
+     * Execute all 6 reconciliation services across all companies using a minimal isolated container
+     *
+     * @param array<string, mixed> $layoutReport
+     * @return array<string, mixed>
+     */
+    private function runReconcileMode(array $layoutReport): array
+    {
+        $this->ensureVendorAutoloadLoaded();
+        $pdo = $this->createReadOnlyConnection();
+
+        // Persistent multiquery read-only consistent snapshot
+        $pdo->exec('SET SESSION TRANSACTION ISOLATION LEVEL REPEATABLE READ');
+        $pdo->exec('START TRANSACTION WITH CONSISTENT SNAPSHOT, READ ONLY');
+
+        $app = null;
+        $manager = null;
+        $connection = null;
+        $domains = [];
+        $healthy = true;
+
+        try {
+            // Minimal isolated container: no full service providers, sessions, cache, or background jobs.
+            $app = new \Illuminate\Foundation\Application($this->appDir);
+            $app->instance('config', new \Illuminate\Config\Repository([
+                'database' => [
+                    'default' => 'release_check',
+                    'connections' => [],
+                ],
+            ]));
+            $app->singleton(\App\Support\Tenancy\CompanyContext::class);
+
+            // Wrap the SAME read-only PDO connection
+            $connection = new \Illuminate\Database\MySqlConnection($pdo, $this->dbName, '', ['name' => 'release_check']);
+            $manager = new \Illuminate\Database\DatabaseManager($app, new \Illuminate\Database\Connectors\ConnectionFactory($app));
+            $manager->extend('release_check', fn () => $connection);
+            $app['config']->set('database.connections.release_check', ['driver' => 'release_check']);
+            $app->instance('db', $manager);
+            \Illuminate\Support\Facades\Facade::setFacadeApplication($app);
+            \Illuminate\Database\Eloquent\Model::setConnectionResolver($manager);
+
+            $companies = \App\Models\Company::orderBy('id')->get();
+            $serviceMap = [
+                'accounting' => \App\Services\Accounting\AccountingReconciliationService::class,
+                'inventory' => \App\Services\Inventory\InventoryReconciliationService::class,
+                'sales' => \App\Services\Sales\SalesReconciliationService::class,
+                'payables' => \App\Services\Purchasing\PayablesReconciliationService::class,
+                'money' => \App\Services\Money\MoneyReconciliationService::class,
+                'phase7' => \App\Services\Accounting\Phase7ReconciliationService::class,
+            ];
+
+            foreach ($companies as $company) {
+                foreach ($serviceMap as $domain => $class) {
+                    $service = $app->make($class);
+                    $report = $domain === 'inventory'
+                        ? $service->auditCompany($company, true)
+                        : $service->reconcile($company, true);
+
+                    $findings = $domain === 'inventory' ? $report->discrepancies : $report->violations;
+                    $ok = ($report->isHealthy === true) && ($findings === []);
+                    if (! $ok) {
+                        $healthy = false;
+                    }
+
+                    $domains[] = [
+                        'company_id' => $company->id,
+                        'domain' => $domain,
+                        'healthy' => $ok,
+                        'count' => count($findings),
+                        'digest' => hash('sha256', serialize($findings)),
+                    ];
+                }
+            }
+        } finally {
+            try {
+                $pdo->rollBack();
+            } catch (Throwable) {
+            }
+
+            try {
+                if ($manager instanceof \Illuminate\Database\DatabaseManager) {
+                    $manager->purge('release_check');
+                    $manager->disconnect('release_check');
+                }
+            } catch (Throwable) {
+            }
+            try {
+                \Illuminate\Database\Eloquent\Model::unsetConnectionResolver();
+            } catch (Throwable) {
+            }
+            try {
+                \Illuminate\Support\Facades\Facade::clearResolvedInstances();
+                \Illuminate\Support\Facades\Facade::setFacadeApplication(null);
+            } catch (Throwable) {
+            }
+            if ($app instanceof \Illuminate\Foundation\Application) {
+                $app->flush();
+            }
+        }
+
+        $summary = [
+            'status' => ($healthy && $domains !== []) ? 'SUCCESS' : 'FAIL',
+            'mode' => 'RECONCILE',
+            'healthy' => $healthy && $domains !== [],
+            'verified_at' => (new DateTimeImmutable('now', new DateTimeZone('UTC')))->format('Y-m-d\TH:i:s\Z'),
+            'layout' => $layoutReport,
+            'companies_evaluated' => count($domains) === 0 ? 0 : intdiv(count($domains), 6),
+            'services_evaluated_count' => count($domains),
+            'domains' => $domains,
+        ];
+
+        if ($this->outputFile !== null) {
+            $this->writeOutputFileExclusively($this->outputFile, $summary);
+        }
+
+        if (! $healthy || $domains === []) {
+            throw new RuntimeException('RECONCILIATION_UNHEALTHY_OR_EMPTY_SCOPE');
+        }
+
+        return $summary;
     }
 
     /**
@@ -268,12 +442,7 @@ final class FinalReleaseCheck
      */
     private function runReconcileContractsMode(array $layoutReport): array
     {
-        // Load application autoloader
-        $autoload = $this->appDir.'/vendor/autoload.php';
-        if (! is_file($autoload)) {
-            throw new RuntimeException('VENDOR_AUTOLOAD_NOT_FOUND');
-        }
-        require_once $autoload;
+        $this->ensureVendorAutoloadLoaded();
 
         $services = [
             'AccountingReconciliationService' => [
@@ -342,7 +511,7 @@ final class FinalReleaseCheck
     }
 
     /**
-     * Compute full deterministic PK-ordered row byte hash and normalized DDL hash
+     * Compute full deterministic PK-ordered row byte hash and DDL hash
      *
      * @return array<string, mixed>
      */
@@ -364,15 +533,23 @@ final class FinalReleaseCheck
         $preservationRowSignatures = [];
 
         foreach ($tables as $name) {
-            // Normalized DDL
+            $isOperational = in_array($name, self::OPERATIONAL_MUTABLE_TABLES, true);
+            $classification = $isOperational ? 'operational_mutable' : 'preservation';
+
+            // Normalized vs full DDL
             $createStmt = $pdo->query(sprintf('SHOW CREATE TABLE `%s`', str_replace('`', '``', $name)));
             $createRow = $createStmt->fetch(PDO::FETCH_NUM);
             $rawDdl = (string) ($createRow[1] ?? '');
 
-            // Normalize DDL: strip volatile AUTO_INCREMENT=\d+ counters
-            $normalizedDdl = (string) preg_replace('/\s+AUTO_INCREMENT=\d+/i', '', $rawDdl);
-            $normalizedDdlSha256 = hash('sha256', $normalizedDdl);
-            $schemaSignatures[] = "{$name}:{$normalizedDdlSha256}";
+            // For preservation tables, KEEP actual AUTO_INCREMENT! Full preservation requires detecting leaked financial sequence changes.
+            // For operational tables only, normalize DDL by stripping volatile AUTO_INCREMENT=\d+ counters.
+            if ($isOperational) {
+                $ddlForHash = (string) preg_replace('/\s+AUTO_INCREMENT=\d+/i', '', $rawDdl);
+            } else {
+                $ddlForHash = $rawDdl;
+            }
+            $ddlSha256 = hash('sha256', $ddlForHash);
+            $schemaSignatures[] = "{$name}:{$ddlSha256}";
 
             // Columns and Primary Key for deterministic ordering
             $colsStmt = $pdo->query(sprintf('SELECT * FROM `%s` LIMIT 0', str_replace('`', '``', $name)));
@@ -383,14 +560,27 @@ final class FinalReleaseCheck
                 $cols[] = (string) ($meta['name'] ?? "col_{$c}");
             }
 
-            // Detect primary key columns
+            // Detect primary key columns with Seq_in_index sort
             $pkStmt = $pdo->query(sprintf("SHOW KEYS FROM `%s` WHERE Key_name = 'PRIMARY'", str_replace('`', '``', $name)));
-            $pkCols = [];
+            $pkRows = [];
             while ($kRow = $pkStmt->fetch(PDO::FETCH_ASSOC)) {
-                $pkCols[] = (string) ($kRow['Column_name'] ?? '');
+                $colName = (string) ($kRow['Column_name'] ?? '');
+                if ($colName !== '') {
+                    $pkRows[] = [
+                        'col' => $colName,
+                        'seq' => (int) ($kRow['Seq_in_index'] ?? 0),
+                    ];
+                }
             }
-            $orderCols = $pkCols !== [] ? $pkCols : $cols;
-            $orderBy = implode(', ', array_map(fn ($col) => sprintf('`%s` ASC', str_replace('`', '``', $col)), $orderCols));
+            usort($pkRows, fn ($a, $b) => $a['seq'] <=> $b['seq']);
+            $pkCols = array_map(fn ($r) => $r['col'], $pkRows);
+
+            if ($pkCols !== []) {
+                $orderBy = implode(', ', array_map(fn ($col) => sprintf('`%s` ASC', str_replace('`', '``', $col)), $pkCols));
+            } else {
+                // Table has no primary key: sort deterministically by ALL columns with BINARY collation to eliminate collation ties
+                $orderBy = implode(', ', array_map(fn ($col) => sprintf('BINARY `%s` ASC', str_replace('`', '``', $col)), $cols));
+            }
 
             // Stream rows with length-framing and distinct null encoding
             $selectCols = implode(', ', array_map(fn ($col) => sprintf('`%s`', str_replace('`', '``', $col)), $cols));
@@ -418,30 +608,22 @@ final class FinalReleaseCheck
             }
 
             $rowsSha256 = hash_final($hashContext);
-            $isOperational = in_array($name, self::OPERATIONAL_MUTABLE_TABLES, true);
-            $classification = $isOperational ? 'operational_mutable' : 'preservation';
+
+            $tableRecord = [
+                'rows' => $rowCount,
+                'rows_sha256' => $rowsSha256,
+                'ddl_sha256' => $ddlSha256,
+                'classification' => $classification,
+            ];
 
             if ($isOperational) {
-                $operationalTables[$name] = [
-                    'rows' => $rowCount,
-                    'rows_sha256' => $rowsSha256,
-                    'normalized_ddl_sha256' => $normalizedDdlSha256,
-                ];
+                $operationalTables[$name] = $tableRecord;
             } else {
-                $preservationTables[$name] = [
-                    'rows' => $rowCount,
-                    'rows_sha256' => $rowsSha256,
-                    'normalized_ddl_sha256' => $normalizedDdlSha256,
-                ];
+                $preservationTables[$name] = $tableRecord;
                 $preservationRowSignatures[] = "{$name}:{$rowsSha256}";
             }
 
-            $tableResults[$name] = [
-                'rows' => $rowCount,
-                'rows_sha256' => $rowsSha256,
-                'normalized_ddl_sha256' => $normalizedDdlSha256,
-                'classification' => $classification,
-            ];
+            $tableResults[$name] = $tableRecord;
         }
 
         return [
@@ -477,30 +659,58 @@ final class FinalReleaseCheck
             $t = $target['tables'][$table] ?? null;
             $isOperational = in_array($table, self::OPERATIONAL_MUTABLE_TABLES, true);
 
+            // Classification taint detection: verify incoming classification matches fixed allowlist
+            if ($b !== null) {
+                $bClass = $b['classification'] ?? '';
+                if ($bClass === 'operational_mutable' && ! $isOperational) {
+                    throw new RuntimeException("CLASSIFICATION_TAINT_DETECTED: table '{$table}' in baseline falsely claimed as operational");
+                }
+            }
+            if ($t !== null) {
+                $tClass = $t['classification'] ?? '';
+                if ($tClass === 'operational_mutable' && ! $isOperational) {
+                    throw new RuntimeException("CLASSIFICATION_TAINT_DETECTED: table '{$table}' in target falsely claimed as operational");
+                }
+            }
+
+            // ANY missing table (whether preservation or operational) is a PRESERVATION FAILURE
             if ($b === null || $t === null) {
-                $diff = [
+                $preservationDiffs[$table] = [
                     'type' => 'TABLE_MISSING',
                     'baseline_present' => $b !== null,
                     'target_present' => $t !== null,
                 ];
-                if ($isOperational) {
-                    $operationalDiffs[$table] = $diff;
-                } else {
-                    $preservationDiffs[$table] = $diff;
-                }
                 continue;
             }
 
-            $ddlMatch = hash_equals($b['normalized_ddl_sha256'], $t['normalized_ddl_sha256']);
-            $rowsMatch = hash_equals($b['rows_sha256'], $t['rows_sha256']);
+            $bDdl = (string) ($b['ddl_sha256'] ?? $b['normalized_ddl_sha256'] ?? '');
+            $tDdl = (string) ($t['ddl_sha256'] ?? $t['normalized_ddl_sha256'] ?? '');
+            $ddlMatch = hash_equals($bDdl, $tDdl);
 
-            if (! $ddlMatch || ! $rowsMatch) {
-                $diff = [
-                    'type' => ! $ddlMatch ? 'DDL_MISMATCH' : 'ROWS_MISMATCH',
-                    'baseline_rows' => $b['rows'],
-                    'target_rows' => $t['rows'],
-                    'ddl_match' => $ddlMatch,
+            $bRows = (string) ($b['rows_sha256'] ?? '');
+            $tRows = (string) ($t['rows_sha256'] ?? '');
+            $rowsMatch = hash_equals($bRows, $tRows);
+
+            // ANY DDL mismatch (whether preservation or operational) is a PRESERVATION FAILURE
+            if (! $ddlMatch) {
+                $preservationDiffs[$table] = [
+                    'type' => 'DDL_MISMATCH',
+                    'baseline_ddl_sha256' => $bDdl,
+                    'target_ddl_sha256' => $tDdl,
+                    'ddl_match' => false,
                     'rows_match' => $rowsMatch,
+                ];
+                continue;
+            }
+
+            // Only ROW churn is permitted for operational tables.
+            if (! $rowsMatch) {
+                $diff = [
+                    'type' => 'ROWS_MISMATCH',
+                    'baseline_rows' => $b['rows'] ?? 0,
+                    'target_rows' => $t['rows'] ?? 0,
+                    'ddl_match' => true,
+                    'rows_match' => false,
                 ];
                 if ($isOperational) {
                     $operationalDiffs[$table] = $diff;
@@ -519,8 +729,42 @@ final class FinalReleaseCheck
         ];
     }
 
+    /**
+     * Configure statement timeout: tries MariaDB max_statement_time then MySQL max_execution_time,
+     * failing closed if neither is supported.
+     */
+    public static function configureStatementTimeout(PDO $pdo, int $timeoutSeconds = 5): void
+    {
+        if ($timeoutSeconds <= 0) {
+            throw new RuntimeException('INVALID_STATEMENT_TIMEOUT');
+        }
+
+        // 1. Try MariaDB max_statement_time (seconds)
+        try {
+            $pdo->exec(sprintf('SET SESSION max_statement_time = %d', $timeoutSeconds));
+
+            return;
+        } catch (Throwable) {
+            // Fall through to MySQL
+        }
+
+        // 2. Try MySQL max_execution_time (milliseconds)
+        try {
+            $timeoutMs = $timeoutSeconds * 1000;
+            $pdo->exec(sprintf('SET SESSION max_execution_time = %d', $timeoutMs));
+
+            return;
+        } catch (Throwable) {
+            // Fall through
+        }
+
+        throw new RuntimeException('STATEMENT_TIMEOUT_UNSUPPORTED');
+    }
+
     private function createReadOnlyConnection(): PDO
     {
+        $this->ensureVendorAutoloadLoaded();
+
         // Parse .env strictly without booting framework
         $envPath = $this->appDir.'/.env';
         if (! is_file($envPath)) {
@@ -530,29 +774,102 @@ final class FinalReleaseCheck
         $env = \Dotenv\Dotenv::parse((string) file_get_contents($envPath));
         $host = (string) ($env['DB_HOST'] ?? '127.0.0.1');
         $port = (string) ($env['DB_PORT'] ?? '3306');
-        $db = (string) ($env['DB_DATABASE'] ?? '');
+        $this->dbName = (string) ($env['DB_DATABASE'] ?? '');
         $user = (string) ($env['DB_USERNAME'] ?? '');
         $pass = (string) ($env['DB_PASSWORD'] ?? '');
 
-        if ($db === '' || $user === '') {
+        if ($this->dbName === '' || $user === '') {
             throw new RuntimeException('DATABASE_CREDENTIALS_INCOMPLETE');
         }
 
-        $dsn = sprintf('mysql:host=%s;port=%s;dbname=%s;charset=utf8mb4', $host, $port, $db);
+        $dsn = sprintf('mysql:host=%s;port=%s;dbname=%s;charset=utf8mb4', $host, $port, $this->dbName);
         $pdo = new PDO($dsn, $user, $pass, [
             PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
             PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
         ]);
 
-        // Enforce read-only transaction and statement timeout
-        $pdo->exec('SET TRANSACTION READ ONLY');
-        try {
-            $pdo->exec('SET SESSION max_execution_time = 5000');
-        } catch (Throwable) {
-            // max_execution_time is unsupported on some older engines
-        }
+        // Enforce statement timeout fail closed
+        self::configureStatementTimeout($pdo, 5);
 
         return $pdo;
+    }
+
+    public function ensureVendorAutoloadLoaded(): void
+    {
+        $autoload = $this->appDir.'/vendor/autoload.php';
+        if (! is_file($autoload)) {
+            $candidates = [
+                $autoload,
+                dirname($this->appDir, 2).'/vendor/autoload.php',
+            ];
+            $found = false;
+            foreach ($candidates as $c) {
+                if (is_file($c)) {
+                    require_once $c;
+                    $found = true;
+                    break;
+                }
+            }
+            if (! $found) {
+                $worktreeParent = dirname($this->appDir);
+                $matches = glob($worktreeParent.'/*/vendor/autoload.php') ?: [];
+                if ($matches !== []) {
+                    require_once $matches[0];
+                    $found = true;
+                }
+            }
+            if (! $found) {
+                throw new RuntimeException('VENDOR_AUTOLOAD_NOT_FOUND');
+            }
+        } else {
+            require_once $autoload;
+        }
+    }
+
+    public function assertSafeOutputFile(string $filePath): void
+    {
+        if (is_link($filePath)) {
+            throw new RuntimeException('OUTPUT_FILE_SYMLINK_REJECTED');
+        }
+
+        $realTargetDir = realpath(dirname($filePath));
+        if ($realTargetDir === false || ! is_dir($realTargetDir)) {
+            throw new RuntimeException('OUTPUT_DIRECTORY_NOT_FOUND');
+        }
+
+        // Must NOT be inside public web root
+        $realPublicDir = realpath($this->publicDir);
+        if ($realPublicDir !== false) {
+            if ($realTargetDir === $realPublicDir || str_starts_with($realTargetDir, $realPublicDir.DIRECTORY_SEPARATOR)) {
+                throw new RuntimeException('OUTPUT_FILE_INSIDE_PUBLIC_WEB_ROOT_REJECTED');
+            }
+        }
+
+        // Enforce private directory permissions (not world-accessible)
+        $perms = fileperms($realTargetDir) & 0777;
+        if (($perms & 0007) !== 0) {
+            throw new RuntimeException('OUTPUT_DIRECTORY_INSECURE_PERMISSIONS');
+        }
+    }
+
+    private function writeOutputFileExclusively(string $filePath, array $payload): void
+    {
+        $this->assertSafeOutputFile($filePath);
+
+        $handle = @fopen($filePath, 'x');
+        if ($handle === false) {
+            throw new RuntimeException('OUTPUT_FILE_CREATION_FAILED_ALREADY_EXISTS_OR_EXCLUSIVE_DENIED');
+        }
+
+        $json = json_encode($payload, JSON_THROW_ON_ERROR | JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)."\n";
+        if (fwrite($handle, $json) !== strlen($json)) {
+            fclose($handle);
+            @unlink($filePath);
+            throw new RuntimeException('OUTPUT_FILE_WRITE_INCOMPLETE');
+        }
+
+        fclose($handle);
+        chmod($filePath, 0600);
     }
 
     private function resolveGitHead(): string
@@ -584,16 +901,16 @@ if (PHP_SAPI === 'cli' && realpath((string) ($_SERVER['SCRIPT_FILENAME'] ?? ''))
         foreach (array_slice($argv, 1) as $arg) {
             if ($arg === '--help' || $arg === '-h') {
                 echo "Usage: php bin/final-release-check.php [options]\n";
-                echo "  --mode=<snapshot|compare|reconcile-contracts>  Operation mode (default: snapshot)\n";
-                echo "  --execute                                      Execute actual inspection\n";
-                echo "  --app-dir=<path>                               Application root path\n";
-                echo "  --public-dir=<path>                            Public web root path\n";
-                echo "  --expected-source-sha=<h>                      Expected 40-char commit SHA\n";
-                echo "  --expected-build-sha=<h>                       Expected 64-char build manifest SHA256\n";
-                echo "  --expected-htaccess-sha=<h>                    Expected 64-char .htaccess SHA256\n";
-                echo "  --baseline=<path>                              Baseline fingerprint file (compare mode)\n";
-                echo "  --target=<path>                                Target fingerprint file (compare mode)\n";
-                echo "  --output-file=<path>                           Path to write output report\n";
+                echo "  --mode=<snapshot|compare|reconcile|reconcile-contracts>  Operation mode (default: snapshot)\n";
+                echo "  --execute                                                Execute actual inspection\n";
+                echo "  --app-dir=<path>                                         Application root path\n";
+                echo "  --public-dir=<path>                                      Public web root path\n";
+                echo "  --expected-source-sha=<h>                                Expected 40-char commit SHA\n";
+                echo "  --expected-build-sha=<h>                                 Expected 64-char build manifest SHA256\n";
+                echo "  --expected-htaccess-sha=<h>                              Expected 64-char .htaccess SHA256\n";
+                echo "  --baseline=<path>                                        Baseline fingerprint file (compare mode)\n";
+                echo "  --target=<path>                                          Target fingerprint file (compare mode)\n";
+                echo "  --output-file=<path>                                     Path to write output report\n";
                 exit(0);
             }
             if ($arg === '--execute') {
