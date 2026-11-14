@@ -157,35 +157,36 @@ final class OnlineCashSaleQualificationTest extends TestCase
 
         $this->customer = Customer::create([
             'company_id' => $this->company->id,
-            'name' => 'عميل نقدي مؤهل',
-            'currency_code' => 'ILS',
+            'name_ar' => 'عميل نقدي مؤهل',
+            'name_en' => 'Qualified Cash Customer',
+            'default_currency_code' => 'ILS',
             'preferred_locale' => 'ar',
-            'active' => true,
+            'status' => 'active',
+            'created_by' => $this->owner->id,
         ]);
 
         $this->warehouse = Warehouse::where('company_id', $this->company->id)->where('is_default', true)->firstOrFail();
 
-        $baseUnit = Unit::firstOrCreate(
-            ['code' => 'PCS'],
-            ['name' => 'Piece', 'symbol' => 'pcs', 'category' => 'count', 'decimal_places' => 0]
-        );
+        $baseUnit = Unit::where('company_id', $this->company->id)->where('code', 'piece')->firstOrFail();
 
         $this->product = Product::create([
             'company_id' => $this->company->id,
             'base_unit_id' => $baseUnit->id,
-            'name' => 'منتج نقدي تجريبي',
+            'name_ar' => 'منتج نقدي تجريبي',
+            'name_en' => 'Online Cash Test Product',
             'sku' => 'CASH-PROD-'.Str::random(4),
-            'type' => 'storable',
+            'product_type' => 'stock',
             'track_stock' => true,
             'active' => true,
+            'created_by' => $this->owner->id,
         ]);
 
         $this->unit = ProductUnit::create([
             'company_id' => $this->company->id,
             'product_id' => $this->product->id,
             'unit_id' => $baseUnit->id,
-            'name' => 'حبة',
             'conversion_to_base' => '1.000000',
+            'is_base' => true,
             'is_default_sale' => true,
             'active' => true,
             'default_sale_price_base' => '50.000000',
@@ -193,32 +194,30 @@ final class OnlineCashSaleQualificationTest extends TestCase
 
         $this->taxRate = TaxRate::create([
             'company_id' => $this->company->id,
-            'name' => 'ضريبة القيمة المضافة 16%',
+            'code' => 'VAT16',
+            'name_ar' => 'ضريبة القيمة المضافة 16%',
+            'name_en' => 'VAT 16%',
             'rate' => '16.000000',
-            'is_default' => true,
-            'is_active' => true,
+            'calculation' => 'exclusive',
+            'active' => true,
         ]);
 
         // Post opening stock so product has lots available
-        app(PostOpeningStockAction::class)->execute($this->company, $this->owner, [
-            'warehouse_id' => $this->warehouse->id,
-            'date' => now()->toDateString(),
-            'notes' => 'Opening stock for online cash tests',
-            'lines' => [
-                [
-                    'product_id' => $this->product->id,
-                    'quantity' => '100.000000',
-                    'unit_cost' => '20.000000',
-                ],
-            ],
-        ]);
+        app(CompanyContext::class)->setCompany($this->company, $this->owner);
+        app(PostOpeningStockAction::class)->execute(
+            company: $this->company,
+            product: $this->product,
+            warehouse: $this->warehouse,
+            quantity: \App\Domain\Inventory\ValueObjects\Quantity::of('100.000000'),
+            unitCostBase: '20.000000',
+            user: $this->owner,
+            idempotencyKey: 'opening-'.Str::ulid(),
+        );
 
-        $this->cashAccount = app(CreateMoneyAccountAction::class)->execute($this->company, [
-            'name' => 'صندوق نقاط البيع',
-            'type' => 'cash',
-            'currency_code' => 'ILS',
-            'is_active' => true,
-        ]);
+        $this->cashAccount = MoneyAccount::where('company_id', $this->company->id)
+            ->where('account_type', MoneyAccount::TYPE_CASH)
+            ->where('currency_code', $this->company->base_currency_code)
+            ->firstOrFail();
     }
 
     private function validSalePayload(string $eventId, string $amount = '58.000000', string $unitPrice = '50.000000'): array
@@ -232,7 +231,7 @@ final class OnlineCashSaleQualificationTest extends TestCase
             'lines' => [
                 [
                     'product_id' => $this->product->public_id,
-                    'product_unit_id' => $this->unit->public_id,
+                    'product_unit_id' => $this->unit->id,
                     'conversion_to_base' => '1.000000',
                     'quantity' => '1.000000',
                     'unit_price' => $unitPrice,
