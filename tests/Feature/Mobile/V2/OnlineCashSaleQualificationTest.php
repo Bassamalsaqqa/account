@@ -1551,7 +1551,8 @@ final class OnlineCashSaleQualificationTest extends TestCase
 
         // 5. Status lookup through HTTP endpoint must return 403 Forbidden under production deny binding
         $httpStatusResponse = $this->withHeader('Authorization', 'Bearer '.$this->rawToken)
-            ->getJson("/api/mobile/v2/companies/{$this->company->public_id}/offline-events/{$existingEventId}/status");
+            ->withHeader('Accept', 'application/json')
+            ->get("/api/mobile/v2/companies/{$this->company->public_id}/offline-events/{$existingEventId}/status");
         $httpStatusResponse->assertStatus(403);
         $httpStatusResponse->assertJson([
             'error' => [
@@ -1571,7 +1572,8 @@ final class OnlineCashSaleQualificationTest extends TestCase
         // When cash slice flag is disabled, status endpoint returns 404 NOT_FOUND
         config(['mobile.v2_cash_slice_enabled' => false]);
         $disabledStatusResponse = $this->withHeader('Authorization', 'Bearer '.$this->rawToken)
-            ->getJson("/api/mobile/v2/companies/{$this->company->public_id}/offline-events/{$existingEventId}/status");
+            ->withHeader('Accept', 'application/json')
+            ->get("/api/mobile/v2/companies/{$this->company->public_id}/offline-events/{$existingEventId}/status");
         $disabledStatusResponse->assertStatus(404);
         $disabledStatusResponse->assertJson([
             'error' => [
@@ -1697,7 +1699,8 @@ final class OnlineCashSaleQualificationTest extends TestCase
         $this->assertNull($lookupResult);
 
         $statusResponse = $this->withHeader('Authorization', 'Bearer '.$this->rawToken)
-            ->getJson("/api/mobile/v2/companies/{$this->company->public_id}/offline-events/{$eventId}/status");
+            ->withHeader('Accept', 'application/json')
+            ->get("/api/mobile/v2/companies/{$this->company->public_id}/offline-events/{$eventId}/status");
         $statusResponse->assertStatus(200)
             ->assertJson([
                 'client_event_id' => $eventId,
@@ -1712,17 +1715,18 @@ final class OnlineCashSaleQualificationTest extends TestCase
     public function test_executor_returning_foreign_company_invoice_fails_and_rolls_back(): void
     {
         $foreignCompany = Company::factory()->create(['status' => 'active', 'base_currency_code' => 'ILS']);
-        $foreignCustomer = Customer::create([
+        $foreignCustomer = CompanyScope::executeWithoutScope(fn () => Customer::create([
             'company_id' => $foreignCompany->id,
             'name_ar' => 'عميل أجنبي',
             'name_en' => 'Foreign Customer',
             'currency_code' => 'ILS',
             'active' => true,
-        ]);
-        $foreignInvoice = SalesInvoice::create([
+            'created_by' => $this->owner->id,
+        ]));
+        $foreignInvoiceId = DB::table('sales_invoices')->insertGetId([
             'company_id' => $foreignCompany->id,
             'customer_id' => $foreignCustomer->id,
-            'public_id' => '01JCV8X9MEFOREIGNINV00000000',
+            'public_id' => (string) Str::ulid(),
             'invoice_number' => 'INV-FOREIGN-001',
             'issue_date' => now()->toDateString(),
             'due_date' => now()->toDateString(),
@@ -1731,12 +1735,14 @@ final class OnlineCashSaleQualificationTest extends TestCase
             'exchange_rate' => '1.0000000000',
             'subtotal_base' => '50.000000',
             'tax_total_base' => '8.000000',
-            'total_base' => '58.000000',
-            'balance_due_base' => '0.000000',
+            'grand_total_base' => '58.000000',
             'grand_total_currency' => '58.000000',
+            'created_by' => $this->owner->id,
+            'created_at' => now(),
+            'updated_at' => now(),
         ]);
 
-        $foreignExecutor = new class($foreignInvoice->id) implements FinancialExecutionAdapterInterface
+        $foreignExecutor = new class($foreignInvoiceId) implements FinancialExecutionAdapterInterface
         {
             private QualifiedCashFinancialExecutionAdapter $delegate;
 
@@ -1805,7 +1811,8 @@ final class OnlineCashSaleQualificationTest extends TestCase
         $unknownEventId = (string) Str::uuid();
 
         $response = $this->withHeader('Authorization', 'Bearer '.$this->rawToken)
-            ->getJson("/api/mobile/v2/companies/{$this->company->public_id}/offline-events/{$unknownEventId}/status");
+            ->withHeader('Accept', 'application/json')
+            ->get("/api/mobile/v2/companies/{$this->company->public_id}/offline-events/{$unknownEventId}/status");
 
         $response->assertStatus(200);
         $data = $response->json();
@@ -1834,7 +1841,8 @@ final class OnlineCashSaleQualificationTest extends TestCase
 
         // Query status endpoint for the committed event
         $statusResponse = $this->withHeader('Authorization', 'Bearer '.$this->rawToken)
-            ->getJson("/api/mobile/v2/companies/{$this->company->public_id}/offline-events/{$eventId}/status");
+            ->withHeader('Accept', 'application/json')
+            ->get("/api/mobile/v2/companies/{$this->company->public_id}/offline-events/{$eventId}/status");
 
         $statusResponse->assertStatus(200);
         $statusData = $statusResponse->json();
@@ -1866,12 +1874,14 @@ final class OnlineCashSaleQualificationTest extends TestCase
         $eventId = (string) Str::uuid();
 
         // Without Bearer token
-        $response = $this->getJson("/api/mobile/v2/companies/{$this->company->public_id}/offline-events/{$eventId}/status");
+        $response = $this->withHeader('Accept', 'application/json')
+            ->get("/api/mobile/v2/companies/{$this->company->public_id}/offline-events/{$eventId}/status");
         $response->assertStatus(401);
 
         // With invalid Bearer token
         $response2 = $this->withHeader('Authorization', 'Bearer st_m_invalid_token_9999')
-            ->getJson("/api/mobile/v2/companies/{$this->company->public_id}/offline-events/{$eventId}/status");
+            ->withHeader('Accept', 'application/json')
+            ->get("/api/mobile/v2/companies/{$this->company->public_id}/offline-events/{$eventId}/status");
         $response2->assertStatus(401);
     }
 
@@ -1879,15 +1889,23 @@ final class OnlineCashSaleQualificationTest extends TestCase
     {
         $eventId = (string) Str::uuid();
 
-        // Revoke sales.invoice.view from Cashier role in this company
+        // Revoke sales.invoice.view from staff actor and any roles in this company
         setPermissionsTeamId($this->company->id);
         app(PermissionRegistrar::class)->setPermissionsTeamId($this->company->id);
-        $cashierRole = Role::where('name', 'Cashier')->where('company_id', $this->company->id)->firstOrFail();
-        $cashierRole->revokePermissionTo('sales.invoice.view');
+        $this->staff->revokePermissionTo('sales.invoice.view');
+        $salesRole = Role::where('name', 'Sales')->where('company_id', $this->company->id)->first();
+        if ($salesRole !== null && $salesRole->hasPermissionTo('sales.invoice.view')) {
+            $salesRole->revokePermissionTo('sales.invoice.view');
+        }
+        $cashierRole = Role::where('name', 'Cashier')->where('company_id', $this->company->id)->first();
+        if ($cashierRole !== null && $cashierRole->hasPermissionTo('sales.invoice.view')) {
+            $cashierRole->revokePermissionTo('sales.invoice.view');
+        }
         app(PermissionRegistrar::class)->forgetCachedPermissions();
 
         $response = $this->withHeader('Authorization', 'Bearer '.$this->rawToken)
-            ->getJson("/api/mobile/v2/companies/{$this->company->public_id}/offline-events/{$eventId}/status");
+            ->withHeader('Accept', 'application/json')
+            ->get("/api/mobile/v2/companies/{$this->company->public_id}/offline-events/{$eventId}/status");
 
         $response->assertStatus(403);
         $response->assertJson([
@@ -1900,7 +1918,8 @@ final class OnlineCashSaleQualificationTest extends TestCase
     public function test_status_endpoint_rejects_invalid_uuid_client_event_id(): void
     {
         $response = $this->withHeader('Authorization', 'Bearer '.$this->rawToken)
-            ->getJson("/api/mobile/v2/companies/{$this->company->public_id}/offline-events/not-a-valid-uuid/status");
+            ->withHeader('Accept', 'application/json')
+            ->get("/api/mobile/v2/companies/{$this->company->public_id}/offline-events/not-a-valid-uuid/status");
 
         $response->assertStatus(422);
         $response->assertJson([

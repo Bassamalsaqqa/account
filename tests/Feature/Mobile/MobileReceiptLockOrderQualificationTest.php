@@ -1182,6 +1182,9 @@ final class MobileReceiptLockOrderQualificationTest extends TestCase
             $payload = $this->buildNormativePayload($companyA, $staff, $staffDevice, $clientEventId);
 
             // Seed an existing posted receipt row via qualified cash adapter
+            auth()->forgetUser();
+            app(CompanyContext::class)->clearSessionless();
+
             $receiptManager = new MobileEventReceiptManager(new QualifiedCashFinancialExecutionAdapter);
             $receiptManager->recordOrReplay(
                 companyId: $companyA->id,
