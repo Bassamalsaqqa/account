@@ -623,9 +623,9 @@ final class OnlineCashSaleQualificationTest extends TestCase
         $this->assertSame('58.000000', (string) $allocation->allocated_amount);
 
         // Verify stock movements were created
-        $stockMovement = StockMovement::where('company_id', $this->company->id)
-            ->where('reference_type', 'sales_invoice')
-            ->where('reference_id', $invoiceId)
+        $stockMovement = StockMovement::withoutGlobalScopes()->where('company_id', $this->company->id)
+            ->where('source_type', 'sales_invoice')
+            ->where('source_id', $invoiceId)
             ->first();
         $this->assertNotNull($stockMovement);
 
@@ -638,23 +638,23 @@ final class OnlineCashSaleQualificationTest extends TestCase
 
         // Run all 6 accounting reconciliations with company context
         app(CompanyContext::class)->setCompany($this->company, $this->owner);
-        $reconciliation = app(AccountingReconciliationService::class)->reconcileCompany($this->company);
-        $this->assertTrue($reconciliation['is_balanced'] ?? true, 'Accounting reconciliation must be balanced');
+        $reconciliation = app(AccountingReconciliationService::class)->reconcile($this->company);
+        $this->assertTrue($reconciliation->isHealthy, 'Accounting reconciliation must be balanced');
 
-        $salesRecon = app(SalesReconciliationService::class)->reconcileCompany($this->company);
-        $this->assertTrue($salesRecon['is_balanced'] ?? true, 'Sales reconciliation must be balanced');
+        $salesRecon = app(SalesReconciliationService::class)->reconcile($this->company);
+        $this->assertTrue($salesRecon->isHealthy, 'Sales reconciliation must be balanced');
 
-        $moneyRecon = app(MoneyReconciliationService::class)->reconcileCompany($this->company);
-        $this->assertTrue($moneyRecon['is_balanced'] ?? true, 'Money reconciliation must be balanced');
+        $moneyRecon = app(MoneyReconciliationService::class)->reconcile($this->company);
+        $this->assertTrue($moneyRecon->isHealthy, 'Money reconciliation must be balanced');
 
-        $invRecon = app(InventoryReconciliationService::class)->reconcileCompany($this->company);
-        $this->assertTrue($invRecon['is_balanced'] ?? true, 'Inventory reconciliation must be balanced');
+        $invRecon = app(InventoryReconciliationService::class)->auditCompany($this->company);
+        $this->assertTrue($invRecon->isHealthy, 'Inventory reconciliation must be balanced');
 
-        $phase7Recon = app(Phase7ReconciliationService::class)->reconcileCompany($this->company);
-        $this->assertTrue($phase7Recon['is_balanced'] ?? true, 'Phase 7 reconciliation must be balanced');
+        $phase7Recon = app(Phase7ReconciliationService::class)->reconcile($this->company);
+        $this->assertTrue($phase7Recon->isHealthy, 'Phase 7 reconciliation must be balanced');
 
-        $payablesRecon = app(PayablesReconciliationService::class)->reconcileCompany($this->company);
-        $this->assertTrue($payablesRecon['is_balanced'] ?? true, 'Payables reconciliation must be balanced');
+        $payablesRecon = app(PayablesReconciliationService::class)->reconcile($this->company);
+        $this->assertTrue($payablesRecon->isHealthy, 'Payables reconciliation must be balanced');
     }
 
     /**
@@ -815,8 +815,8 @@ final class OnlineCashSaleQualificationTest extends TestCase
 
             // Reconciliations pass cleanly
             app(CompanyContext::class)->setCompany($this->company, $this->owner);
-            $reconciliation = app(AccountingReconciliationService::class)->reconcileCompany($this->company);
-            $this->assertTrue($reconciliation['is_balanced'] ?? true);
+            $reconciliation = app(AccountingReconciliationService::class)->reconcile($this->company);
+            $this->assertTrue($reconciliation->isHealthy);
         } finally {
             if (isset($directory) && is_dir($directory)) {
                 @array_map('unlink', glob($directory.'/*') ?: []);
