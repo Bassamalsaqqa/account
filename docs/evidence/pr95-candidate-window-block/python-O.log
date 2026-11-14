@@ -1,0 +1,110 @@
+======================================================================
+Small Trader Mobile V1 Contract Validation Suite
+======================================================================
+
+[Step 1] Validating JSON Schemas with Draft 2020-12...
+  OK: auth-challenge-request.json (Draft 2020-12 verified)
+  OK: auth-challenge-response.json (Draft 2020-12 verified)
+  OK: auth-login-request.json (Draft 2020-12 verified)
+  OK: auth-login-response.json (Draft 2020-12 verified)
+  OK: auth-logout-request.json (Draft 2020-12 verified)
+  OK: auth-logout-response.json (Draft 2020-12 verified)
+  OK: bootstrap-response.json (Draft 2020-12 verified)
+  OK: customer-directory-response.json (Draft 2020-12 verified)
+  OK: device-revoke-request.json (Draft 2020-12 verified)
+  OK: device-revoke-response.json (Draft 2020-12 verified)
+  OK: error-response.json (Draft 2020-12 verified)
+  OK: offline-sale-intake-request.json (Draft 2020-12 verified)
+  OK: offline-sale-intake-response.json (Draft 2020-12 verified)
+  OK: product-catalog-response.json (Draft 2020-12 verified)
+  OK: sale-commit-request.json (Draft 2020-12 verified)
+  OK: sale-commit-response.json (Draft 2020-12 verified)
+  OK: sale-event-status-response.json (Draft 2020-12 verified)
+  OK: sale-preview-request.json (Draft 2020-12 verified)
+  OK: sale-preview-response.json (Draft 2020-12 verified)
+  Total schemas validated: 19
+
+[Step 2] Validating OpenAPI 3.1 Specification...
+  OK: OpenAPI 3.1 meta-schema validation passed
+  OK: Endpoint semantically verified: /api/mobile/v1/auth/challenge
+  OK: Endpoint semantically verified: /api/mobile/v1/auth/login
+  OK: Endpoint semantically verified: /api/mobile/v1/auth/logout
+  OK: Endpoint semantically verified: /api/mobile/v1/devices/{deviceId}/revoke
+  OK: Endpoint semantically verified: /api/mobile/v1/companies/{companyId}/bootstrap
+  OK: Endpoint semantically verified: /api/mobile/v1/companies/{companyId}/products
+  OK: Endpoint semantically verified: /api/mobile/v1/companies/{companyId}/customers
+  OK: Endpoint semantically verified: /api/mobile/v1/companies/{companyId}/sales/preview
+  OK: Endpoint semantically verified: /api/mobile/v1/companies/{companyId}/sales/commit
+  OK: Endpoint semantically verified: /api/mobile/v1/companies/{companyId}/offline-events
+  OK: Endpoint semantically verified: /api/mobile/v1/companies/{companyId}/offline-events/{clientEventId}/status
+
+[Step 3] Validating Golden Fixtures...
+  OK: golden-auth-challenge.json [request] conforms to auth-challenge-request.json
+  OK: golden-auth-challenge.json [response] conforms to auth-challenge-response.json
+  OK: golden-auth-login.json [request] conforms to auth-login-request.json
+  OK: golden-auth-login.json [response] conforms to auth-login-response.json
+  OK: golden-auth-logout.json [request] conforms to auth-logout-request.json
+  OK: golden-auth-logout.json [response] conforms to auth-logout-response.json
+  OK: golden-device-revoke.json [request] conforms to device-revoke-request.json
+  OK: golden-device-revoke.json [response] conforms to device-revoke-response.json
+  OK: golden-bootstrap.json [root] conforms to bootstrap-response.json
+  OK: golden-product-catalog.json [root] conforms to product-catalog-response.json
+  OK: golden-customer-directory.json [root] conforms to customer-directory-response.json
+  OK: golden-sale-preview.json [request] conforms to sale-preview-request.json
+  OK: golden-sale-preview.json [response] conforms to sale-preview-response.json
+  OK: golden-sale-commit.json [request] conforms to sale-commit-request.json
+  OK: golden-sale-commit.json [response] conforms to sale-commit-response.json
+  OK: golden-offline-sale-intake.json [request] conforms to offline-sale-intake-request.json
+  OK: golden-offline-sale-intake.json [response] conforms to offline-sale-intake-response.json
+  OK: golden-sale-event-status.json [root] conforms to sale-event-status-response.json
+  OK: Offline intake golden event matches payload_digest: sha256:d442ce49a7609a9a42bb5165990d481d1c7c563cb8030403487099a9919728d9
+
+[Step 4] Validating Golden Canonical JSON and SHA-256 Digest Vectors...
+  OK: Vector 'primitive_sorting' verified: sha256:e81412a748b809981b56c60308332c03ce554771f754178efccce2081209f131
+  OK: Vector 'currency_total' verified: sha256:3ed9a38a923c28c5152850bdc48db9ee942a2b634220fe5d4ee1370498aa7a3c
+  OK: Vector 'arabic_fractions' verified: sha256:0c96a975675ae6c6b393837e4df5f01a7221abffbac9d12287019a4b552de487
+  OK: Vector 'utf16_surrogate_key_ordering' verified: sha256:0f6e2a5ec50588eebe12034a62dba2dea312e7419a3b4b35b07642405cc2fb06
+  OK: Vector 'control_char_escaping' verified: sha256:0468796dc39483b190fca87ef8328eec7fea550efcdd53ac9aaaf117fd041244
+
+[Step 5] Validating Regression Fixtures (Contract Schema & Policy Parity)...
+  OK: Altered payload conflict fixture verified (digest mismatch -> 409 Conflict schema)
+  OK: Decimal exact arithmetic regression verified (Laravel RoundingMode::HALF_UP & TaxPercentage parity)
+  OK: Lost-ACK replay fixture verified (identical digest -> canonical outcome schema)
+  OK: Tenant mismatch fixture verified (cross-tenant access -> 403 error schema)
+  OK: Offline staff revocation verified (revoked token -> 401 error schema, queue locked)
+
+[Step 6] Running Meaningful Negative & Contract Validation Tests...
+  OK: Negative 1 passed (unresolvable $ref properly rejected)
+  OK: Negative 2 passed (undeclared path parameter caught)
+  OK: Negative 3 passed (undefined security scheme caught)
+  OK: Negative 4 passed (negative quantity rejected by schema)
+  OK: Negative 5 passed (negative unit price rejected by schema)
+  OK: Negative 6 passed (float unit price rejected by schema type constraint)
+  OK: Negative 7 passed (additional unauthorized property rejected)
+  OK: Negative 8 passed (envelope vs event client_event_id mismatch caught)
+  OK: Negative 9 passed (tampered payload digest caught)
+  OK: Negative 10a passed (canonical serializer rejected float)
+  OK: Negative 10b passed (duplicate JSON key rejected)
+  OK: Negative 11 passed (401 error response shape conforms to error-response.json)
+  OK: Check 12a passed (strict Crockford ULID accepted for server entity public IDs)
+  OK: Check 12b passed (UUID rejected for server company_id by ULID schema constraint)
+  OK: Check 12c passed (malformed Crockford ULID character strictly rejected)
+  OK: Check 13 passed (Tax percentage > 100 strictly rejected by schema)
+  OK: Check 14a passed (six-place trailing zero quantity '0.100000' accepted)
+  OK: Check 14b passed (all-zero quantity '0.000000' rejected by positive quantity schema)
+  OK: Check 14c passed (over-scale quantity > 6 decimals rejected)
+  OK: Check 15 passed (product packaging unit id required on line items)
+  OK: Check 16 passed (preview token digest binding mismatch caught)
+  OK: Check 17 passed (mfa_code and recovery_code mutually exclusive constraint enforced)
+  OK: 89 revision 2 positive/negative fixture validations
+
+  [Contract Isolation Notice] These validation checks verify contract schemas, OpenAPI invariants,
+  exact decimal arithmetic, and JCS digests. Database row locks, tenant middlewares, and ledger
+  postings are authoritative in Laravel account PHPUnit suites.
+
+[Step 7] Verifying Reproducible SHA-256 Manifest...
+  OK: All 39 contract files match manifest.sha256 exactly
+
+======================================================================
+SUCCESS: All 210 contract, schema, fixture, regression, and negative tests passed!
+======================================================================

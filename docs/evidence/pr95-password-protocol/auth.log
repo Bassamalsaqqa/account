@@ -1,0 +1,14 @@
+Owned schema created: accounting_p8_tmp_be3c2294c93f
+Owned primary test schema: accounting_p8_tmp_be3c2294c93f
+PHPUnit 12.5.36 by Sebastian Bergmann and contributors.
+
+Runtime:       PHP 8.4.27
+Configuration: <private-runner-config>
+
+.........                                                           9 / 9 (100%)
+
+Time: 00:05.658, Memory: 79.00 MB
+
+OK (9 tests, 26 assertions)
+Owned schema dropped: accounting_p8_tmp_be3c2294c93f
+Owned primary schema cleaned.

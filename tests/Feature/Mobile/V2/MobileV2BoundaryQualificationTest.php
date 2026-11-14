@@ -264,7 +264,7 @@ final class MobileV2BoundaryQualificationTest extends TestCase
             });
     }
 
-    private function issueToken(?string $deviceId = null, ?User $user = null): string
+    private function issueToken(?string $deviceId = null, ?User $user = null, ?int $companyId = null): string
     {
         $targetUser = $user ?? $this->user;
         $devId = $deviceId ?? (string) Str::uuid();
@@ -279,7 +279,7 @@ final class MobileV2BoundaryQualificationTest extends TestCase
             'token_hash' => hash('sha256', $raw),
             'device_id' => $devId,
             'user_id' => $targetUser->id,
-            'company_id' => null,
+            'company_id' => $companyId,
             'password_epoch' => 'epoch-'.substr(hash('sha256', (string) $targetUser->password), 0, 16),
             'expires_at' => now()->addDays(7),
         ]);
@@ -1100,6 +1100,59 @@ final class MobileV2BoundaryQualificationTest extends TestCase
                     'message' => 'User does not possess active authorized membership in the requested company context.',
                 ],
             ]);
+    }
+
+    public function test_v2_bound_token_for_company_a_rejected_with_403_on_company_b_when_user_active_in_both(): void
+    {
+        // Attach user to Company B with active status and Cashier role (which has product.viewAny)
+        $this->user->companies()->attach($this->companyB->id, ['status' => 'active', 'is_owner' => false]);
+        setPermissionsTeamId($this->companyB->id);
+        $this->user->assignRole('Cashier');
+
+        // Token explicitly bound to Company A
+        $tokenBoundA = $this->issueToken(companyId: $this->companyA->id);
+
+        // Attempting to access Company B with token bound to Company A returns 403 FORBIDDEN_TENANT_MISMATCH
+        $response = $this->withHeader('Authorization', "Bearer {$tokenBoundA}")
+            ->getJson('/api/mobile/v2/test-harness/companies/'.$this->companyB->public_id.'/read-probe');
+
+        $response->assertStatus(403)
+            ->assertJson([
+                'error' => [
+                    'code' => 'FORBIDDEN_TENANT_MISMATCH',
+                    'message' => 'User does not possess active authorized membership in the requested company context.',
+                ],
+            ]);
+
+        // Attempting to access Company A with the same token succeeds (200)
+        $responseOk = $this->withHeader('Authorization', "Bearer {$tokenBoundA}")
+            ->getJson('/api/mobile/v2/test-harness/companies/'.$this->companyA->public_id.'/read-probe');
+
+        $responseOk->assertStatus(200)
+            ->assertJson(['status' => 'ok', 'scope' => 'company-read']);
+    }
+
+    public function test_v2_null_staff_token_accepted_across_both_active_member_companies(): void
+    {
+        // Attach user to Company B with active status and Cashier role
+        $this->user->companies()->attach($this->companyB->id, ['status' => 'active', 'is_owner' => false]);
+        setPermissionsTeamId($this->companyB->id);
+        $this->user->assignRole('Cashier');
+
+        // Token with company_id = null (standard staff+device token)
+        $tokenNullStaff = $this->issueToken(companyId: null);
+
+        // Accessing Company A succeeds
+        $resA = $this->withHeader('Authorization', "Bearer {$tokenNullStaff}")
+            ->getJson('/api/mobile/v2/test-harness/companies/'.$this->companyA->public_id.'/read-probe');
+        $resA->assertStatus(200)
+            ->assertJson(['status' => 'ok', 'scope' => 'company-read']);
+
+        // Accessing Company B also succeeds
+        $resB = $this->withHeader('Authorization', "Bearer {$tokenNullStaff}")
+            ->getJson('/api/mobile/v2/test-harness/companies/'.$this->companyB->public_id.'/read-probe');
+        $resB->assertStatus(200)
+            ->assertJson(['status' => 'ok', 'scope' => 'company-read']);
     }
 
     public function test_actual_permission_checking_without_role_bypass_and_custom_grant(): void

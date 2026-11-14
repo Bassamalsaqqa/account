@@ -138,6 +138,13 @@ class CompanyContext
         }
     }
 
+    /** Restore an already established ambient context without reauthorizing mutable history. */
+    public function restoreSessionless(self $snapshot): void
+    {
+        $this->activeCompany = $snapshot->activeCompany;
+        $this->explicitUser = $snapshot->explicitUser;
+    }
+
     /**
      * Resolve the active company for the given user using deliberate rules.
      * Does NOT accept ambient request parameters.

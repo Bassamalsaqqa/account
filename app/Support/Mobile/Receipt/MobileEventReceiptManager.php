@@ -116,6 +116,8 @@ final class MobileEventReceiptManager
         string $canonicalBytes
     ): array {
         $context = app(CompanyContext::class);
+        $priorContext = clone $context;
+        $priorTeamId = getPermissionsTeamId();
         $guard = auth()->guard();
         $priorHadUser = $guard->hasUser();
         $priorGuardUser = $priorHadUser ? $guard->user() : null;
@@ -163,11 +165,29 @@ final class MobileEventReceiptManager
                         $priorGuardUser,
                         $tentativeToken
                     ): array {
-                        // 1. Root canonical company lock establishes global consistent lock order
+                        // Tenant root then membership, principal, device and token; bounded mobile paths only.
                         /** @var Company|null $company */
                         $company = Company::whereKey($companyId)->lockForUpdate()->first();
                         if ($company === null || $company->status !== 'active') {
                             throw new MobileEventForeignScopeException('Target company not found or inactive.');
+                        }
+
+                        $membership = DB::table('company_user')
+                            ->where('company_id', $companyId)
+                            ->where('user_id', $tentativeToken->user_id)
+                            ->where('status', 'active')
+                            ->lockForUpdate()
+                            ->first();
+
+                        if ($membership === null) {
+                            throw new MobileEventForeignScopeException('User does not possess active authorized membership in the requested company.');
+                        }
+
+                        // 1. Lock & revalidate user (principal)
+                        /** @var User|null $user */
+                        $user = User::whereKey($tentativeToken->user_id)->lockForUpdate()->first();
+                        if ($user === null) {
+                            throw new MobileEventAuthenticationException('User not found.');
                         }
 
                         // 2. Lock & revalidate device status and strict ownership
@@ -177,14 +197,7 @@ final class MobileEventReceiptManager
                             throw new MobileEventAuthenticationException('Device has been revoked or does not match token owner.');
                         }
 
-                        // 3. Lock & revalidate user
-                        /** @var User|null $user */
-                        $user = User::whereKey($tentativeToken->user_id)->lockForUpdate()->first();
-                        if ($user === null) {
-                            throw new MobileEventAuthenticationException('User not found.');
-                        }
-
-                        // 4. Lock & revalidate bearer token under lock
+                        // 3. Lock & revalidate bearer token under lock
                         /** @var MobileAccessToken|null $token */
                         $token = MobileAccessToken::where('token_hash', $tokenHash)->lockForUpdate()->first();
                         if ($token === null || ! $token->isValid()) {
@@ -193,23 +206,13 @@ final class MobileEventReceiptManager
                         if ($token->device_id !== $device->device_id || (int) $token->user_id !== (int) $user->id) {
                             throw new MobileEventAuthenticationException('Device has been revoked or does not match token owner.');
                         }
+                        if ($token->company_id !== null && (int) $token->company_id !== $companyId) {
+                            throw new MobileEventForeignScopeException('Token is bound to a different company.');
+                        }
 
                         $expectedEpoch = 'epoch-'.substr(hash('sha256', (string) $user->password), 0, 16);
                         if (! hash_equals($expectedEpoch, $token->password_epoch)) {
-                            $token->update(['revoked_at' => now()]);
                             throw new MobileEventAuthenticationException('User credentials have changed since token establishment.');
-                        }
-
-                        // 5. Revalidate active company membership with row lock
-                        $membership = DB::table('company_user')
-                            ->where('company_id', $companyId)
-                            ->where('user_id', $user->id)
-                            ->where('status', 'active')
-                            ->lockForUpdate()
-                            ->first();
-
-                        if ($membership === null) {
-                            throw new MobileEventForeignScopeException('User does not possess active authorized membership in the requested company.');
                         }
 
                         if ($priorHadUser && $priorGuardUser !== null && (int) $priorGuardUser->getAuthIdentifier() !== (int) $user->id) {
@@ -415,8 +418,9 @@ final class MobileEventReceiptManager
             }
         } finally {
             $context->clearSessionless();
-            setPermissionsTeamId(null);
-            app(PermissionRegistrar::class)->setPermissionsTeamId(null);
+            $context->restoreSessionless($priorContext);
+            setPermissionsTeamId($priorTeamId);
+            app(PermissionRegistrar::class)->setPermissionsTeamId($priorTeamId);
 
             if ($priorHadUser && $priorGuardUser !== null) {
                 $guard->setUser($priorGuardUser);
@@ -446,7 +450,13 @@ final class MobileEventReceiptManager
         string $clientEventId,
         string $tokenHash
     ): ?array {
+        if (DB::transactionLevel() > 0) {
+            throw new RuntimeException('Mobile event receipt manager requires root database transaction level.');
+        }
+
         $context = app(CompanyContext::class);
+        $priorContext = clone $context;
+        $priorTeamId = getPermissionsTeamId();
         $guard = auth()->guard();
         $priorHadUser = $guard->hasUser();
         $priorGuardUser = $priorHadUser ? $guard->user() : null;
@@ -478,23 +488,34 @@ final class MobileEventReceiptManager
                 $priorGuardUser,
                 $tentativeToken
             ): ?array {
-                // Consistent lock order: Company root -> Device -> User -> Token -> Membership
+                // Tenant root then membership, principal, device and token; bounded mobile paths only.
                 /** @var Company|null $company */
                 $company = Company::whereKey($companyId)->lockForUpdate()->first();
                 if ($company === null || $company->status !== 'active') {
                     throw new MobileEventForeignScopeException('Target company not found or inactive.');
                 }
 
-                /** @var MobileDevice|null $device */
-                $device = MobileDevice::where('device_id', $tentativeToken->device_id)->lockForUpdate()->first();
-                if ($device === null || $device->isRevoked() || (int) $device->user_id !== (int) $tentativeToken->user_id) {
-                    throw new MobileEventAuthenticationException('Device has been revoked or does not match token owner.');
+                $membership = DB::table('company_user')
+                    ->where('company_id', $companyId)
+                    ->where('user_id', $tentativeToken->user_id)
+                    ->where('status', 'active')
+                    ->lockForUpdate()
+                    ->first();
+
+                if ($membership === null) {
+                    throw new MobileEventForeignScopeException('User does not possess active authorized membership in the requested company.');
                 }
 
                 /** @var User|null $user */
                 $user = User::whereKey($tentativeToken->user_id)->lockForUpdate()->first();
                 if ($user === null) {
                     throw new MobileEventAuthenticationException('User not found.');
+                }
+
+                /** @var MobileDevice|null $device */
+                $device = MobileDevice::where('device_id', $tentativeToken->device_id)->lockForUpdate()->first();
+                if ($device === null || $device->isRevoked() || (int) $device->user_id !== (int) $tentativeToken->user_id) {
+                    throw new MobileEventAuthenticationException('Device has been revoked or does not match token owner.');
                 }
 
                 /** @var MobileAccessToken|null $token */
@@ -505,22 +526,13 @@ final class MobileEventReceiptManager
                 if ($token->device_id !== $device->device_id || (int) $token->user_id !== (int) $user->id) {
                     throw new MobileEventAuthenticationException('Device has been revoked or does not match token owner.');
                 }
+                if ($token->company_id !== null && (int) $token->company_id !== $companyId) {
+                    throw new MobileEventForeignScopeException('Token is bound to a different company.');
+                }
 
                 $expectedEpoch = 'epoch-'.substr(hash('sha256', (string) $user->password), 0, 16);
                 if (! hash_equals($expectedEpoch, $token->password_epoch)) {
-                    $token->update(['revoked_at' => now()]);
                     throw new MobileEventAuthenticationException('User credentials have changed since token establishment.');
-                }
-
-                $membership = DB::table('company_user')
-                    ->where('company_id', $companyId)
-                    ->where('user_id', $user->id)
-                    ->where('status', 'active')
-                    ->lockForUpdate()
-                    ->first();
-
-                if ($membership === null) {
-                    throw new MobileEventForeignScopeException('User does not possess active authorized membership in the requested company.');
                 }
 
                 if ($priorHadUser && $priorGuardUser !== null && (int) $priorGuardUser->getAuthIdentifier() !== (int) $user->id) {
@@ -565,8 +577,9 @@ final class MobileEventReceiptManager
             });
         } finally {
             $context->clearSessionless();
-            setPermissionsTeamId(null);
-            app(PermissionRegistrar::class)->setPermissionsTeamId(null);
+            $context->restoreSessionless($priorContext);
+            setPermissionsTeamId($priorTeamId);
+            app(PermissionRegistrar::class)->setPermissionsTeamId($priorTeamId);
 
             if ($priorHadUser && $priorGuardUser !== null) {
                 $guard->setUser($priorGuardUser);

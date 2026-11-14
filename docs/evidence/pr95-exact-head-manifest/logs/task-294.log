@@ -1,0 +1,42 @@
+Owned schema created: accounting_p8_tmp_0ff15eff4cec
+Owned primary test schema: accounting_p8_tmp_0ff15eff4cec
+PHPUnit 12.5.36 by Sebastian Bergmann and contributors.
+
+Runtime:       PHP 8.4.27
+Configuration: /home/t3dev/.t3/userdata/antigravity-tmp/98fdbd5a1187/run-37TH6j/p8_phpunit_268gi30642co3osQmDc
+
+Owned schema created: accounting_p8_tmp_0d267c8fb630
+Owned schema dropped: accounting_p8_tmp_0d267c8fb630
+.Owned schema created: accounting_p8_tmp_be20bb12f753
+Owned schema dropped: accounting_p8_tmp_be20bb12f753
+.Owned schema created: accounting_p8_tmp_1c9ad0c3edcd
+Owned schema dropped: accounting_p8_tmp_1c9ad0c3edcd
+.Owned schema created: accounting_p8_tmp_b537231103c3
+Owned schema dropped: accounting_p8_tmp_b537231103c3
+.Owned schema created: accounting_p8_tmp_d537ecb18983
+Owned schema dropped: accounting_p8_tmp_d537ecb18983
+.Owned schema created: accounting_p8_tmp_7b781fed2752
+Owned schema dropped: accounting_p8_tmp_7b781fed2752
+Owned schema created: accounting_p8_tmp_4462fe9f7dad
+Owned schema dropped: accounting_p8_tmp_4462fe9f7dad
+.Owned schema created: accounting_p8_tmp_e221a23b983d
+Owned schema dropped: accounting_p8_tmp_e221a23b983d
+Owned schema created: accounting_p8_tmp_18ed91796b8b
+Owned schema dropped: accounting_p8_tmp_18ed91796b8b
+.Owned schema created: accounting_p8_tmp_251b8b1f45a3
+Owned schema dropped: accounting_p8_tmp_251b8b1f45a3
+Owned schema created: accounting_p8_tmp_7aa4fb016d70
+Owned schema dropped: accounting_p8_tmp_7aa4fb016d70
+.Owned schema created: accounting_p8_tmp_d8ff418e5561
+Owned schema dropped: accounting_p8_tmp_d8ff418e5561
+Owned schema created: accounting_p8_tmp_8a2fa5bb10c5
+Owned schema dropped: accounting_p8_tmp_8a2fa5bb10c5
+.Owned schema created: accounting_p8_tmp_47c3a4ffc2cd
+Owned schema dropped: accounting_p8_tmp_47c3a4ffc2cd
+.                                                        10 / 10 (100%)
+
+Time: 01:05.517, Memory: 71.00 MB
+
+OK (10 tests, 161 assertions)
+Owned schema dropped: accounting_p8_tmp_0ff15eff4cec
+Owned primary schema cleaned.

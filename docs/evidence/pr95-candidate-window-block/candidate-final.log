@@ -1,0 +1,4 @@
+Owned schema created: accounting_p8_tmp_cfbf08c70281
+The process "'/usr/bin/php8.4' 'artisan' 'migrate' '--database=mysql' '--force'" exceeded the timeout of 120 seconds.
+Owned schema dropped: accounting_p8_tmp_cfbf08c70281
+Owned primary schema cleaned.

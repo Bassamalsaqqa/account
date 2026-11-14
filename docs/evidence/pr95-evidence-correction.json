@@ -1,0 +1,39 @@
+{
+  "status": "HOLD \u2014 incomplete lock qualification",
+  "executor": "Codex implementation worker, no children",
+  "tested_executable_source_commit": "75228efb5bfbb56a7e5497dbae52ea5ab3a674f2",
+  "scope": "Evidence correction only; executable source unchanged",
+  "no_live_database_access": true,
+  "fresh_db_races_run": false,
+  "refusal": {
+    "command": "vendor/bin/phpunit --no-configuration --bootstrap vendor/autoload.php tests/Unit/Mobile/MobileReceiptLockBarrierProtocolTest.php tests/Unit/Mobile/MobileReceiptTestOwnershipGuardTest.php",
+    "tests": 40,
+    "assertions": 202,
+    "log": "pr95-source-refusal.log",
+    "log_sha256": "df736eb0955c8b46c187348e2c27c876a5940b162ce6313277f629170c7874ee"
+  },
+  "contract": {
+    "commands": [
+      "python3 tools/validate-mobile-contract.py",
+      "python3 -O tools/validate-mobile-contract.py"
+    ],
+    "tests_each": 210,
+    "manifest_sha256": "ba75352349e552f53b02ad7159570171f88943dc26e5bdf2a4b013386b0d0659",
+    "logs_sha256": {
+      "pr95-contract-normal.log": "cb94e29cd750ee253b8e3da14f2d11c829f1a1d6a59ca1960500eef496c6b65c",
+      "pr95-contract-optimized.log": "cb94e29cd750ee253b8e3da14f2d11c829f1a1d6a59ca1960500eef496c6b65c"
+    }
+  },
+  "source_sha256": {
+    "tests/Support/mobile-identity-worker.php": "757ac6c64b0da3f9799fe8ce95d26dd09f6bc94a17c521a2dc1650abfe25dc6d",
+    "tests/Feature/Mobile/MobileReceiptLockOrderQualificationTest.php": "ab6ffa51f4c75577e1beff0e953879a31efaf6f4bb8564f7cd64d117d77719d5",
+    "tests/Unit/Mobile/MobileReceiptLockBarrierProtocolTest.php": "1a07fe5ca2fd0714e4f3ea3fd5ca0fe8542f27199f286f4da8b7990a1d518280",
+    "tests/Unit/Mobile/MobileReceiptTestOwnershipGuardTest.php": "8deb95640a225acf6396cf04737ed6fb82f9923e9e32f2f49e5bba5d1ef085c1"
+  },
+  "limitations": [
+    "No forced-race qualification, PHPStan, Pint, or fresh database suites were run by this worker.",
+    "40/202 is the existing PR95 refusal suite; it does not qualify missing-hook, peer-crash, or database barrier behavior.",
+    "Ancestor report restored independently; inherited counts are not current-head runs.",
+    "No production changes or financial acceptance."
+  ]
+}

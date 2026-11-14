@@ -59,6 +59,7 @@ final class DisposableMariaDbSchema
         $instance->getAdminPdo()->exec("CREATE DATABASE `{$name}` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
         $instance->schemaName = $name;
         $instance->owned = true;
+        fwrite(STDERR, 'Owned schema created: '.$name.PHP_EOL);
 
         return $instance;
     }
@@ -178,6 +179,7 @@ final class DisposableMariaDbSchema
 
     public function migrate(): void
     {
+        $this->runApplicationCode('Tests\\Support\\DisposableMariaDbSchema::assertPrimarySchema((string) Illuminate\\Support\\Facades\\DB::selectOne("SELECT DATABASE() AS db")->db);');
         $process = new Process([PHP_BINARY, 'artisan', 'migrate', '--database=mysql', '--force'], dirname(__DIR__, 2), $this->environment());
         // Windows full-suite fixture migration exceeded the former two-minute
         // limit. Keep a finite setup bound; SQL/lock and test assertion deadlines
@@ -206,6 +208,12 @@ final class DisposableMariaDbSchema
         ]);
         config(['database.connections.'.$name => $config]);
         DB::setDefaultConnection($name);
+        $proof = $this->environment();
+        $actual = DB::selectOne('SELECT DATABASE() AS db')->db;
+        if ($actual !== $name || ! is_string($this->proofNonce)
+            || (json_decode((string) file_get_contents($proof['PHASE8_DISPOSABLE_DB_PROOF']), true, flags: JSON_THROW_ON_ERROR)['nonce'] ?? null) !== $this->proofNonce) {
+            throw new RuntimeException('Owned schema selection/nonce mismatch before fixtures.');
+        }
     }
 
     public function restoreLaravelConnection(): void
@@ -311,6 +319,7 @@ final class DisposableMariaDbSchema
         }
         try {
             $this->getAdminPdo()->exec("DROP DATABASE `{$name}`");
+            fwrite(STDERR, 'Owned schema dropped: '.$name.PHP_EOL);
             $this->owned = false;
             $this->schemaName = null;
         } finally {

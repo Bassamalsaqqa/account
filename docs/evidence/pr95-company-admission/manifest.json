@@ -1,0 +1,61 @@
+{
+  "executableSource": "dc01e1bc3d6a5f63eb5e2b773bb70c7157477e32",
+  "priorSource": "efa69852fa55d4a3062add57a44b054afd1c9fda",
+  "executor": "root Codex supervisor",
+  "membership": {
+    "tests": 3,
+    "assertions": 25,
+    "command": "php tests/Support/run-phase8-disposable.php -- --filter='test_admin_first|test_login_first' tests/Feature/Mobile/MobileReceiptLockOrderQualificationTest.php",
+    "primarySchema": "accounting_p8_tmp_87a23ad8c421",
+    "childSchemas": [
+      "accounting_p8_tmp_137d981d9b1c",
+      "accounting_p8_tmp_9b3915242f04",
+      "accounting_p8_tmp_87612606f4fa"
+    ],
+    "runnerCleanupReported": true
+  },
+  "earlierFailedMembership": {
+    "source": "efa69852fa55d4a3062add57a44b054afd1c9fda",
+    "tests": 3,
+    "assertions": 11,
+    "errors": 2,
+    "causes": [
+      "Incorrect ambient company during all-revoked fixture",
+      "Contender identity file observed before creation"
+    ]
+  },
+  "refusal": {
+    "source": "efa69852fa55d4a3062add57a44b054afd1c9fda",
+    "tests": 36,
+    "assertions": 194
+  },
+  "build": {
+    "source": "efa69852fa55d4a3062add57a44b054afd1c9fda",
+    "seconds": 19.71,
+    "note": "Only a test file changed at dc01; app/assets unchanged."
+  },
+  "limits": [
+    "Broader final-source mobile regression and static analysis are in progress, not passed.",
+    "Independent source review at efa ran syntax checks only; suggested Spatie duplicate call unnecessary because helper already delegates to registrar (same composer.lock).",
+    "No global DAG/financial authority acceptance; production Deny/V2OFF unchanged.",
+    "No production operations or mobile contract readiness."
+  ],
+  "logs": {
+    "efa-membership-errors": {
+      "rawSha256": "4ada5ccf9a0b305c94967b6b25acac15442e242307f20a76e43b96c4f44a2cdd",
+      "publishedSha256": "efaa854c02dacea89253edb835204b0c6ad2b69caeb7ff7d9c57c11ed377f18a"
+    },
+    "dc01-membership-pass": {
+      "rawSha256": "409783e6fe8a35d7b5e7ed62d566a1f2bb3d0d57188bc39fb7ed0102b498f2cc",
+      "publishedSha256": "2d77b4997d9d2d9ece2861a3855f439635b403b95622e7d6fca39b8bdc771c33"
+    },
+    "efa-refusal-pass": {
+      "rawSha256": "b62e64d8a89bf04d25e607afa17a28bd90ca48bd289ab2f079b060e540ac8ec2",
+      "publishedSha256": "f808475a06b84eed5003ae8b3d82b85462cb53e233bc6b2afd79f61965bc1510"
+    },
+    "efa-build": {
+      "rawSha256": "14ebd36375a687d57a48d32adad61ad3f65d1536f049b459940f072f324aba9a",
+      "publishedSha256": "14ebd36375a687d57a48d32adad61ad3f65d1536f049b459940f072f324aba9a"
+    }
+  }
+}

@@ -1,0 +1,34 @@
+{
+  "head": "fc6422a1f245301abd042d15a8867f25fc367de5",
+  "review": "5886330102",
+  "executor": "Codex supervisor",
+  "refusal": {
+    "tests": 36,
+    "assertions": 194,
+    "liveDb": false
+  },
+  "reverse": {
+    "tests": 41,
+    "assertions": 206,
+    "schema": "accounting_p8_tmp_53e519180ddc",
+    "cleanedAndAbsenceVerified": true
+  },
+  "random": {
+    "seed": 20261113,
+    "tests": 41,
+    "assertions": 206,
+    "schema": "accounting_p8_tmp_e7526be4f306",
+    "cleanedAndAbsenceVerified": true
+  },
+  "phpstan": "scoped level6 PASS",
+  "pint": "changedfiles PASS",
+  "logsSha256": {
+    "pr94-followup-refusal.log": "d3d422bc09cd34216e60280d74abe7df7d144de999e61986c742aec534424ed5",
+    "pr94-followup-reverse.log": "a0c491a10a9850cccd68fa9538baaf68e1a7d282e190df58594b164f75b1ea14",
+    "pr94-followup-random.log": "7b130fc0d8bfef2ee1d0583184f1aea92f349fab79e5250a099d373cb334980c",
+    "pr94-followup-static.log": "8de455a1c8b8a2f1f78b87aa6561c182639fa339bbf3a063b1ccf1070135aa73"
+  },
+  "at": "2026-11-13T04:58:25.550887+00:00",
+  "financialAcceptance": false,
+  "frozenPilotUnchanged": "e111f83bc740e9590142869b30428eaa220eab6f"
+}

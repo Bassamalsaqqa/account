@@ -135,6 +135,15 @@ final class MobileAuthenticate
                 );
             }
 
+            if ($token->company_id !== null && (int) $token->company_id !== (int) $company->id) {
+                return MobileApiBoundary::buildErrorResponse(
+                    code: 'FORBIDDEN_TENANT_MISMATCH',
+                    message: 'User does not possess active authorized membership in the requested company context.',
+                    status: 403,
+                    details: ['requested_company_id' => $companyId]
+                );
+            }
+
             // Sessionless CompanyContext activation
             app(CompanyContext::class)->setCompany($company, $user);
 

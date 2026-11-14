@@ -1,0 +1,65 @@
+{
+  "baseline": "b8943252f014be0785c38660765677fd88c4695c",
+  "executable_source": "0f4e504c48efd5e0fbe0d94ce095922e587c2666",
+  "earlier_candidate_log_source": "0896706",
+  "results": {
+    "earlier_candidate_and_sequential": "2 tests / 17 assertions passed",
+    "initial_candidate_reproduction": "1 test / 8 assertions passed on 0896706",
+    "final_source_candidate": "two migration timeouts; no feature execution",
+    "protocol": "40 tests / 202 assertions passed",
+    "regressions": "75 tests / 443 assertions; 2 errors / 12 failures; NOT passed",
+    "phpstan": "app and both changed PHP files passed",
+    "pint": "both changed files passed",
+    "python": "210 each normal and -O passed",
+    "build": "not run; owned npm ci stopped after resource exhaustion"
+  },
+  "logs": {
+    "python-O.log": {
+      "raw_sha256": "cb94e29cd750ee253b8e3da14f2d11c829f1a1d6a59ca1960500eef496c6b65c",
+      "published_sha256": "cb94e29cd750ee253b8e3da14f2d11c829f1a1d6a59ca1960500eef496c6b65c"
+    },
+    "npm-ci.log": {
+      "raw_sha256": "b96b2054dfaefb31ef43bcb709d1ee1f32784c5e91db66d3781f57be0f9377df",
+      "published_sha256": "b96b2054dfaefb31ef43bcb709d1ee1f32784c5e91db66d3781f57be0f9377df"
+    },
+    "regressions.log": {
+      "raw_sha256": "2354aa873c1308bd2cb47c3a4773c2e56728dec0f3b50455f33d9d70d7c7f769",
+      "published_sha256": "423ba0d4925a96141807a88a4dfecc223cf9640b5f9bb7180e682e8511fc3773"
+    },
+    "candidate.log": {
+      "raw_sha256": "88cbdcfb2277ff88b252ed45af1ba3e163802d80db835531b7f40e139802fe11",
+      "published_sha256": "cadda73dbde4bdd1135aed166a660e7c833f109a144fe5bea82c3dfa23e382eb"
+    },
+    "candidate-final-retry.log": {
+      "raw_sha256": "ea89292785a64ba21ee8ceced2d986baadc6b2c5d300ca305591e2bb2021011a",
+      "published_sha256": "ea89292785a64ba21ee8ceced2d986baadc6b2c5d300ca305591e2bb2021011a"
+    },
+    "python.log": {
+      "raw_sha256": "cb94e29cd750ee253b8e3da14f2d11c829f1a1d6a59ca1960500eef496c6b65c",
+      "published_sha256": "cb94e29cd750ee253b8e3da14f2d11c829f1a1d6a59ca1960500eef496c6b65c"
+    },
+    "candidate-final.log": {
+      "raw_sha256": "7fcb329c8d5506d84788832e41882f849cf7885bd708c2c646fd6e363703bf8f",
+      "published_sha256": "7fcb329c8d5506d84788832e41882f849cf7885bd708c2c646fd6e363703bf8f"
+    },
+    "phpstan.log": {
+      "raw_sha256": "16f2900ad1bc5f7131c175714653707d25bea8851aa7e31e26d57896c591e17c",
+      "published_sha256": "ad321b4b0a5f016ba9ca5e4aa5df1d9bce871f5d55fb60dfb02d7f8cd1e9da99"
+    },
+    "protocol.log": {
+      "raw_sha256": "727e0521241145739107eb78710aefc213134875f7dcccfc3b1051b310b5b93a",
+      "published_sha256": "727e0521241145739107eb78710aefc213134875f7dcccfc3b1051b310b5b93a"
+    },
+    "pint.log": {
+      "raw_sha256": "cd1a94fc2cf6a965b86e1a4809d6c7fb9148b1ee374e1010ed2ac96ff4876ec2",
+      "published_sha256": "cd1a94fc2cf6a965b86e1a4809d6c7fb9148b1ee374e1010ed2ac96ff4876ec2"
+    }
+  },
+  "private_raw_artifacts": "/tmp/pr95-candidate-raw-5058d473404d",
+  "financial_activation": false,
+  "independent_review": "required; not performed",
+  "source_files_sha256": {
+    "tests/Support/mobile-identity-worker.php": "a1aff0550b12055221700a22fb61f619bcfccde43a5bced166360bb50ab56e31",
+    "tests/Feature/Mobile/MobileReceiptLockOrderQualificationTest.php": "846997fa711f4b5a957a7ac8a32d7d1998423d7e166ac4d769c0a0a7763dbe24"
+  }
+}

@@ -1,0 +1,14 @@
+Owned schema created: accounting_p8_tmp_a4248ec0e35e
+Owned primary test schema: accounting_p8_tmp_a4248ec0e35e
+PHPUnit 12.5.36 by Sebastian Bergmann and contributors.
+
+Runtime:       PHP 8.4.27
+Configuration: /home/t3dev/.t3/userdata/antigravity-tmp/aaa9f510728a/run-AYrNeP/p8_phpunit_16p5o35ko9t0fTI37Na
+
+.......................................                           39 / 39 (100%)
+
+Time: 00:14.547, Memory: 79.00 MB
+
+[30;42mOK (39 tests, 486 assertions)[0m
+Owned schema dropped: accounting_p8_tmp_a4248ec0e35e
+Owned primary schema cleaned.

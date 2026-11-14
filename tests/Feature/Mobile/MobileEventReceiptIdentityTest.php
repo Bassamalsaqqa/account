@@ -148,7 +148,7 @@ final class MobileEventReceiptIdentityTest extends TestCase
             'token_hash' => hash('sha256', $this->rawToken),
             'device_id' => $deviceId,
             'user_id' => $this->user->id,
-            'company_id' => $this->companyA->id,
+            'company_id' => null, // Staff + device token; tenant selected and checked per request.
             'password_epoch' => 'epoch-'.substr(hash('sha256', (string) $this->user->password), 0, 16),
             'expires_at' => now()->addDays(7),
         ]);
@@ -772,6 +772,22 @@ final class MobileEventReceiptIdentityTest extends TestCase
         });
     }
 
+    public function test_lookup_root_transaction_guard_rejects_nested_transaction(): void
+    {
+        $manager = new MobileEventReceiptManager($this->createTestExecutor());
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('Mobile event receipt manager requires root database transaction level.');
+
+        DB::transaction(function () use ($manager) {
+            $manager->lookup(
+                companyId: (int) $this->companyA->id,
+                clientEventId: (string) Str::uuid(),
+                tokenHash: $this->token->token_hash
+            );
+        });
+    }
+
     public function test_model_immutability_guards_prevent_update_and_delete(): void
     {
         app(CompanyContext::class)->setCompany($this->companyA, $this->user);
@@ -1090,7 +1106,7 @@ final class MobileEventReceiptIdentityTest extends TestCase
         }
     }
 
-    public function test_sessionless_context_cleared_in_finally_on_all_failures(): void
+    public function test_sessionless_context_restored_in_finally_on_all_failures(): void
     {
         $context = app(CompanyContext::class);
         $context->setCompany($this->companyA, $this->user);
@@ -1109,7 +1125,8 @@ final class MobileEventReceiptIdentityTest extends TestCase
         } catch (InvalidArgumentException) {
             // expected
         }
-        $this->assertFalse($context->hasCompany());
+        $this->assertSame($this->companyA->id, $context->companyId());
+        $this->assertSame($this->user->id, $context->user()?->id);
 
         // 2. SupportViewContext active
         $context->setCompany($this->companyA, $this->user);
@@ -1130,7 +1147,8 @@ final class MobileEventReceiptIdentityTest extends TestCase
         } finally {
             $support->clear();
         }
-        $this->assertFalse($context->hasCompany());
+        $this->assertSame($this->companyA->id, $context->companyId());
+        $this->assertSame($this->user->id, $context->user()?->id);
     }
 
     public function test_payload_context_binding_mismatch_rejected_before_admission(): void
@@ -1176,5 +1194,99 @@ final class MobileEventReceiptIdentityTest extends TestCase
 
         $row = MobileEventReceipt::withoutGlobalScopes()->where('client_event_id', $uuid)->firstOrFail();
         $this->assertSame($arabicPayload, $row->original_canonical_bytes);
+    }
+
+    public function test_company_bound_token_rejected_for_different_company_in_record_or_replay(): void
+    {
+        $boundRawToken = 'st_m_bound_'.bin2hex(random_bytes(32));
+        $boundToken = MobileAccessToken::create([
+            'token_hash' => hash('sha256', $boundRawToken),
+            'device_id' => $this->device->device_id,
+            'user_id' => $this->user->id,
+            'company_id' => $this->companyA->id,
+            'password_epoch' => 'epoch-'.substr(hash('sha256', (string) $this->user->password), 0, 16),
+            'expires_at' => now()->addDays(7),
+        ]);
+
+        $payload = '{"amount":"10.000000"}';
+        $uuid = (string) Str::uuid();
+
+        $manager = new MobileEventReceiptManager($this->createTestExecutor());
+
+        $this->expectException(MobileEventForeignScopeException::class);
+        $this->expectExceptionMessage('Token is bound to a different company.');
+
+        $manager->recordOrReplay(
+            companyId: (int) $this->companyB->id,
+            clientEventId: $uuid,
+            tokenHash: $boundToken->token_hash,
+            eventVersion: 2,
+            representation: 'v2_intent',
+            canonicalBytes: $payload
+        );
+    }
+
+    public function test_company_bound_token_rejected_for_different_company_in_lookup(): void
+    {
+        $boundRawToken = 'st_m_bound_lookup_'.bin2hex(random_bytes(32));
+        $boundToken = MobileAccessToken::create([
+            'token_hash' => hash('sha256', $boundRawToken),
+            'device_id' => $this->device->device_id,
+            'user_id' => $this->user->id,
+            'company_id' => $this->companyA->id,
+            'password_epoch' => 'epoch-'.substr(hash('sha256', (string) $this->user->password), 0, 16),
+            'expires_at' => now()->addDays(7),
+        ]);
+
+        $uuid = (string) Str::uuid();
+        $manager = new MobileEventReceiptManager($this->createTestExecutor());
+
+        $this->expectException(MobileEventForeignScopeException::class);
+        $this->expectExceptionMessage('Token is bound to a different company.');
+
+        $manager->lookup(
+            companyId: (int) $this->companyB->id,
+            clientEventId: $uuid,
+            tokenHash: $boundToken->token_hash
+        );
+    }
+
+    public function test_company_bound_token_accepted_for_bound_company(): void
+    {
+        $boundRawToken = 'st_m_bound_ok_'.bin2hex(random_bytes(32));
+        $boundToken = MobileAccessToken::create([
+            'token_hash' => hash('sha256', $boundRawToken),
+            'device_id' => $this->device->device_id,
+            'user_id' => $this->user->id,
+            'company_id' => $this->companyA->id,
+            'password_epoch' => 'epoch-'.substr(hash('sha256', (string) $this->user->password), 0, 16),
+            'expires_at' => now()->addDays(7),
+        ]);
+
+        $payload = '{"amount":"10.000000"}';
+        $uuid = (string) Str::uuid();
+
+        $manager = new MobileEventReceiptManager($this->createTestExecutor());
+
+        $res = $manager->recordOrReplay(
+            companyId: (int) $this->companyA->id,
+            clientEventId: $uuid,
+            tokenHash: $boundToken->token_hash,
+            eventVersion: 2,
+            representation: 'v2_intent',
+            canonicalBytes: $payload
+        );
+
+        $this->assertSame('created', $res['outcome']);
+
+        // And lookup also succeeds for bound company
+        $lookupRes = $manager->lookup(
+            companyId: (int) $this->companyA->id,
+            clientEventId: $uuid,
+            tokenHash: $boundToken->token_hash
+        );
+
+        $this->assertNotNull($lookupRes);
+        $this->assertSame($res['receipt_id'], $lookupRes['receipt_id']);
     }
 }
