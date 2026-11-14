@@ -25,6 +25,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 use RuntimeException;
+use Symfony\Component\Process\Process;
 use Tests\Support\DisposableMariaDbSchema;
 
 /**
@@ -34,10 +35,12 @@ use Tests\Support\DisposableMariaDbSchema;
  * Enforces strict pre-socket isolation invariants:
  * - Refuses execution without APP_ENV=testing and PHASE8_ALLOW_DISPOSABLE_DB=1.
  * - Explicitly enforces MariaDB host 127.0.0.1 and port 3342 before schema creation.
- * - Enforces clean git working tree and exact commit object verification.
- * - Refuses start() with explicit NOT_IMPLEMENTED until live lifecycle coordination.
- * - Guaranteed database connection switching to fresh owned schema via switchLaravelConnection()
- *   before any model creation, with restoration in finally cleanup block.
+ * - Enforces clean git working tree and exact tree hash comparison against qualified 6981511.
+ * - Requires exact 40-hex Android commit SHA when pairing is activated.
+ * - Encapsulates all owned DB lifecycle (create, migrate, seed) within guaranteed try/catch.
+ * - Asserts actual @@port = 3342 and DATABASE() before and during fixture seeding.
+ * - Sets explicit test authentication context (auth()->setUser($owner)) before opening stock.
+ * - Prepared router/bootstrap source with explicit startup refusal until Root coordination grant.
  * - Protects credentials: write to private 0600 file outside checkout, never stdout/return.
  */
 final class DisposableMobileV2BackendHarness
@@ -45,6 +48,8 @@ final class DisposableMobileV2BackendHarness
     public const string REQUIRED_BASE_BRANCH = 't3/recover-cash-writer';
 
     public const string QUALIFIED_EXECUTION_HEAD = '6981511405d7bcd04cd8f8a09e64443ce0aaf47e';
+
+    public const string QUALIFIED_APP_TREE = '34d1da0ae82b182fa2c0adafd785416a86834a20';
 
     public const string EVIDENCE_PUBLICATION_COMMIT = '717c3da2829792a5ec4f11597905a17dbb8e7cd9';
 
@@ -57,6 +62,16 @@ final class DisposableMobileV2BackendHarness
     private ?string $credentialsFilePath = null;
 
     /**
+     * Optional listener process PID when live listener is bound.
+     */
+    private ?int $listenerPid = null;
+
+    public function setListenerPid(?int $pid): void
+    {
+        $this->listenerPid = $pid;
+    }
+
+    /**
      * Tracked synthetic fixture state (sanitized public IDs).
      *
      * @var array<string, mixed>|null
@@ -65,8 +80,11 @@ final class DisposableMobileV2BackendHarness
 
     /**
      * Assert pre-socket execution environment invariants.
+     *
+     * @param  string|null  $expectedBackendHead  Full 40-hex commit SHA of current worktree HEAD.
+     * @param  string|null  $peerAndroidHead  Full 40-hex commit SHA of peer Android integration HEAD.
      */
-    public static function assertPreSocketInvariants(): void
+    public static function assertPreSocketInvariants(?string $expectedBackendHead = null, ?string $peerAndroidHead = null): void
     {
         // 1. Strict environment checks
         if (getenv('APP_ENV') !== 'testing') {
@@ -99,39 +117,71 @@ final class DisposableMobileV2BackendHarness
 
         DisposableMariaDbSchema::testSettings();
 
-        // 3. Verify clean git working tree and executable source tree invariance
+        // 3. Process-based git checks with exit code verification (fail-closed)
         $root = dirname(__DIR__, 3);
-        $gitStatus = trim((string) shell_exec("cd {$root} && git status --porcelain app/ tests/ routes/ config/ composer.lock"));
+
+        // Check git status
+        $statusProcess = new Process(['git', 'status', '--porcelain', 'app/', 'routes/', 'config/', 'composer.lock'], $root);
+        $statusProcess->run();
+        if (! $statusProcess->isSuccessful()) {
+            throw new RuntimeException('Harness refused: git status check failed with exit code '.$statusProcess->getExitCode());
+        }
+        $gitStatus = trim($statusProcess->getOutput());
         if ($gitStatus !== '') {
             throw new RuntimeException("Harness refused: modified working tree detected in core paths:\n{$gitStatus}");
         }
 
-        // Verify qualified commit object exists in local git repository
-        $catCommit = trim((string) shell_exec("cd {$root} && git cat-file -t ".self::QUALIFIED_EXECUTION_HEAD.' 2>/dev/null'));
-        if ($catCommit !== 'commit') {
+        // Verify qualified commit object exists
+        $catCommit = new Process(['git', 'cat-file', '-t', self::QUALIFIED_EXECUTION_HEAD], $root);
+        $catCommit->run();
+        if (! $catCommit->isSuccessful() || trim($catCommit->getOutput()) !== 'commit') {
             throw new RuntimeException('Harness refused: qualified execution commit '.self::QUALIFIED_EXECUTION_HEAD.' not found in git repository.');
+        }
+
+        // Verify core app tree matches qualified execution head tree
+        $revParseApp = new Process(['git', 'rev-parse', 'HEAD:app'], $root);
+        $revParseApp->run();
+        if (! $revParseApp->isSuccessful() || trim($revParseApp->getOutput()) !== self::QUALIFIED_APP_TREE) {
+            throw new RuntimeException('Harness refused: app tree hash does not match qualified execution head tree '.self::QUALIFIED_APP_TREE);
+        }
+
+        // Verify expected backend HEAD if provided
+        if ($expectedBackendHead !== null) {
+            if (! preg_match('/^[0-9a-fA-F]{40}$/', $expectedBackendHead)) {
+                throw new RuntimeException("Harness refused: expectedBackendHead must be a full 40-hex SHA, got '{$expectedBackendHead}'.");
+            }
+            $currentHead = new Process(['git', 'rev-parse', 'HEAD'], $root);
+            $currentHead->run();
+            if (! $currentHead->isSuccessful() || trim($currentHead->getOutput()) !== $expectedBackendHead) {
+                throw new RuntimeException("Harness refused: current git HEAD does not match expected backend HEAD '{$expectedBackendHead}'.");
+            }
+        }
+
+        // Verify exact peer Android 40-hex HEAD when provided
+        if ($peerAndroidHead !== null) {
+            if (! preg_match('/^[0-9a-fA-F]{40}$/', $peerAndroidHead)) {
+                throw new RuntimeException("Harness refused: peerAndroidHead must be a valid 40-hex SHA, got '{$peerAndroidHead}'.");
+            }
         }
     }
 
     /**
      * Phase 1: Provision disposable schema and seed synthetic qualification fixtures.
      *
-     * Explicitly switches Laravel connection to the owned disposable schema
-     * BEFORE any model creation or action execution, ensuring zero contamination.
-     * Restores connection and environment in guaranteed finally block upon failure.
+     * Entire schema lifecycle (create, migrate, seed) is enclosed in try/catch to ensure
+     * zero database schema or file leaks upon any failure.
      *
+     * @param  string|null  $expectedBackendHead  Full 40-hex commit SHA of current worktree HEAD.
+     * @param  string|null  $peerAndroidHead  Full 40-hex commit SHA of peer Android integration HEAD.
      * @return array{
      *     manifest: array<string, mixed>,
      *     credentials_path: string,
      *     sample_request: array<string, mixed>
      * }
      */
-    public function provision(): array
+    public function provision(?string $expectedBackendHead = null, ?string $peerAndroidHead = null): array
     {
-        self::assertPreSocketInvariants();
-
-        $this->schema = DisposableMariaDbSchema::create();
-        $this->schema->migrate();
+        self::assertPreSocketInvariants($expectedBackendHead, $peerAndroidHead);
 
         $connectionSwitched = false;
 
@@ -142,14 +192,25 @@ final class DisposableMobileV2BackendHarness
                 mkdir($this->harnessTempDir, 0700, true);
             }
 
+            // Create and migrate owned disposable schema inside try block
+            $this->schema = DisposableMariaDbSchema::create();
+            $this->schema->migrate();
+
             // Explicitly switch Laravel DB connection manager to the fresh owned schema
             $this->schema->switchLaravelConnection();
             $connectionSwitched = true;
 
-            // Assert actual selected database matches fresh owned schema name
-            $currentDb = (string) DB::selectOne('SELECT DATABASE() AS db')->db;
+            // Assert actual selected database matches fresh owned schema name AND port is 3342
+            /** @var object{port: string|int, db: string} $dbIdentity */
+            $dbIdentity = DB::selectOne('SELECT @@port AS port, DATABASE() AS db');
+            $currentDb = (string) $dbIdentity->db;
+            $currentPort = (int) $dbIdentity->port;
+
             if ($currentDb !== $this->schema->schemaName()) {
-                throw new RuntimeException("Connection verification failed: expected '{$this->schema->schemaName()}', got '{$currentDb}'.");
+                throw new RuntimeException("Connection verification failed: expected database '{$this->schema->schemaName()}', got '{$currentDb}'.");
+            }
+            if ($currentPort !== 3342) {
+                throw new RuntimeException("Connection verification failed: expected port 3342, got '{$currentPort}'.");
             }
 
             // Seed domain fixtures using standard actions and services under owned schema
@@ -172,6 +233,8 @@ final class DisposableMobileV2BackendHarness
                 'base_currency_code' => 'ILS',
             ]);
 
+            // Set explicit owner authentication context and tenant context
+            auth()->setUser($owner);
             app(CompanyContext::class)->setCompany($company, $owner);
 
             // Seed roles & permissions
@@ -268,8 +331,7 @@ final class DisposableMobileV2BackendHarness
                 'active' => true,
             ]);
 
-            // Post opening stock
-            app(CompanyContext::class)->setCompany($company, $owner);
+            // Post opening stock under explicit owner authentication context
             app(PostOpeningStockAction::class)->execute(
                 company: $company,
                 product: $product,
@@ -286,6 +348,7 @@ final class DisposableMobileV2BackendHarness
                 ->where('currency_code', $company->base_currency_code)
                 ->firstOrFail();
 
+            // Clear authentication and sessionless context so subsequent mobile requests rely solely on token
             auth()->forgetUser();
             app(CompanyContext::class)->clearSessionless();
 
@@ -354,7 +417,7 @@ final class DisposableMobileV2BackendHarness
                 'sample_request' => $sampleRequest,
             ];
         } catch (\Throwable $e) {
-            // Guarantee cleanup on provision failure
+            // Guarantee full cleanup on any provisioning failure
             $this->cleanup();
             throw $e;
         } finally {
@@ -365,21 +428,32 @@ final class DisposableMobileV2BackendHarness
     }
 
     /**
-     * Phase 2: Start phase.
+     * Phase 2: Prepared start phase.
      *
-     * Explicitly refuses execution with NOT_IMPLEMENTED until live lifecycle coordination
-     * and Android test readiness are confirmed.
+     * Prepares router bootstrap configuration and asserts execution prerequisites.
+     * Explicitly refuses socket startup with NOT_IMPLEMENTED until live lifecycle coordination
+     * and Android test readiness are confirmed. Zero background listeners are launched.
+     *
+     * @param  string  $peerAndroidHead  Full 40-hex commit SHA of peer Android integration HEAD.
      */
-    public function start(): void
+    public function start(string $peerAndroidHead): void
     {
-        if (! $this->provisioned) {
+        if (! $this->provisioned || $this->schema === null) {
             throw new RuntimeException('Harness refused: must be provisioned before start.');
         }
 
-        // Explicit refusal: no claim of server readiness or background daemon execution
-        throw new RuntimeException(
-            'NOT_IMPLEMENTED: Paired HTTPS listener startup is held pending Android test readiness and explicit Root coordination. Zero background servers or network sockets started.'
-        );
+        if (! preg_match('/^[0-9a-fA-F]{40}$/', $peerAndroidHead)) {
+            throw new RuntimeException("Harness refused: start requires valid 40-hex peerAndroidHead SHA, got '{$peerAndroidHead}'.");
+        }
+
+        if (getenv('MOBILE_V2_HARNESS_START_LISTENER') !== '1') {
+            throw new RuntimeException(
+                'NOT_IMPLEMENTED: Paired HTTPS listener startup is held pending Android test readiness and explicit Root coordination grant. Zero background servers or network sockets started.'
+            );
+        }
+
+        // Future live listener entrypoint (never executed during preparation)
+        throw new RuntimeException('NOT_IMPLEMENTED: Listener execution held.');
     }
 
     /**
@@ -387,6 +461,11 @@ final class DisposableMobileV2BackendHarness
      */
     public function cleanup(): void
     {
+        if ($this->listenerPid !== null) {
+            posix_kill($this->listenerPid, SIGTERM);
+            $this->listenerPid = null;
+        }
+
         if ($this->harnessTempDir !== null && is_dir($this->harnessTempDir)) {
             $files = glob($this->harnessTempDir.'/*');
             if (is_array($files)) {
