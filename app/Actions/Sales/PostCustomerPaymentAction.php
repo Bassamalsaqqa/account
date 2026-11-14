@@ -22,6 +22,7 @@ use App\Models\MoneyAccount;
 use App\Models\SalesInvoice;
 use App\Models\User;
 use App\Services\Money\CheckPaymentSource;
+use App\Services\Money\CurrencyMinorUnitsResolver;
 use App\Services\Money\CustomerPaymentHistory;
 use App\Services\Money\MoneyAccountLedger;
 use App\Services\Money\MoneyEventScope;
@@ -35,6 +36,7 @@ use App\Services\Sales\SalesDocumentRules;
 use App\Services\Sales\SalesPostingLines;
 use App\Support\Tenancy\CompanyContext;
 use Brick\Math\BigDecimal;
+use Brick\Math\Exception\RoundingNecessaryException;
 use Brick\Math\RoundingMode;
 use Carbon\Carbon;
 use Illuminate\Auth\Access\AuthorizationException;
@@ -202,9 +204,13 @@ class PostCustomerPaymentAction
             if ($currency === $lockedCompany->base_currency_code && ! BigDecimal::of($data['exchange_rate'])->isEqualTo(1)) {
                 throw new InvalidArgumentException('Base currency rate must equal one.');
             }
-            $minorUnits = in_array($currency, ['JOD', 'KWD', 'BHD', 'OMR'], true) ? 3 : 2;
+            $minorUnits = app(CurrencyMinorUnitsResolver::class)->resolveForCompany((int) $lockedCompany->id, $currency);
 
-            $totalAmount = BigDecimal::of((string) $data['amount'])->toScale($minorUnits, RoundingMode::UNNECESSARY);
+            try {
+                $totalAmount = BigDecimal::of((string) $data['amount'])->toScale($minorUnits, RoundingMode::UNNECESSARY);
+            } catch (RoundingNecessaryException $exception) {
+                throw new InvalidArgumentException("Receipt amount precision exceeds {$minorUnits} decimals.", previous: $exception);
+            }
             if ($totalAmount->isLessThanOrEqualTo(0)) {
                 throw new InvalidArgumentException('Receipt amount must be strictly positive.');
             }

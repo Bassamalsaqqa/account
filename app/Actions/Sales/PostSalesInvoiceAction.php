@@ -27,6 +27,7 @@ use App\Services\Inventory\FefoAllocationService;
 use App\Services\Inventory\InventoryMovementService;
 use App\Services\Inventory\OwnsStockEvent;
 use App\Services\Inventory\StockEventOwner;
+use App\Services\Money\CurrencyMinorUnitsResolver;
 use App\Services\Posting\AccountingPostingService;
 use App\Services\Sales\DocumentSequenceService;
 use App\Services\Sales\DraftInvoiceIntegrity;
@@ -102,6 +103,7 @@ class PostSalesInvoiceAction implements StockEventOwner
             $lockedInvoice->customer_snapshot = $customer->only(['name_ar', 'name_en', 'business_name_ar', 'business_name_en', 'business_name', 'address_ar', 'address_en', 'phone', 'email', 'address_line_1_ar', 'address_line_1_en', 'tax_number']);
             $lockedInvoice->company_snapshot = $company->only(['name_ar', 'name_en', 'phone', 'email', 'address_ar', 'address_en', 'tax_number', 'registration_number']);
             $lockedInvoice->save();
+            $minorUnits = app(CurrencyMinorUnitsResolver::class)->resolveForCompany((int) $lockedInvoice->company_id, $lockedInvoice->currency_code);
             $lines = $lockedInvoice->lines()->lockForUpdate()->get();
             app(DraftInvoiceIntegrity::class)->validate($lockedInvoice, $lines);
             foreach ($lines as $line) {
@@ -113,7 +115,7 @@ class PostSalesInvoiceAction implements StockEventOwner
                         throw new InvalidArgumentException('Draft unit conversion changed; edit and verify the draft before posting.');
                     }
                     app(SalesDocumentRules::class)->price($product, $unit, $user,
-                        BigDecimal::of((string) $lockedInvoice->exchange_rate), $lockedInvoice->currency_code, BigDecimal::of((string) $line->unit_price));
+                        BigDecimal::of((string) $lockedInvoice->exchange_rate), $lockedInvoice->currency_code, BigDecimal::of((string) $line->unit_price), $minorUnits);
                 } elseif (! $user->hasPermissionTo('sales.invoice.change_price')) {
                     throw new AuthorizationException('Manual service price requires price-change permission.');
                 }
