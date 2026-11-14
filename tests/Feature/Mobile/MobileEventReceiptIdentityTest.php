@@ -772,6 +772,22 @@ final class MobileEventReceiptIdentityTest extends TestCase
         });
     }
 
+    public function test_lookup_root_transaction_guard_rejects_nested_transaction(): void
+    {
+        $manager = new MobileEventReceiptManager($this->createTestExecutor());
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('Mobile event receipt manager requires root database transaction level.');
+
+        DB::transaction(function () use ($manager) {
+            $manager->lookup(
+                companyId: (int) $this->companyA->id,
+                clientEventId: (string) Str::uuid(),
+                tokenHash: $this->token->token_hash
+            );
+        });
+    }
+
     public function test_model_immutability_guards_prevent_update_and_delete(): void
     {
         app(CompanyContext::class)->setCompany($this->companyA, $this->user);

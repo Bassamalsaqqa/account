@@ -450,6 +450,10 @@ final class MobileEventReceiptManager
         string $clientEventId,
         string $tokenHash
     ): ?array {
+        if (DB::transactionLevel() > 0) {
+            throw new RuntimeException('Mobile event receipt manager requires root database transaction level.');
+        }
+
         $context = app(CompanyContext::class);
         $priorContext = clone $context;
         $priorTeamId = getPermissionsTeamId();
