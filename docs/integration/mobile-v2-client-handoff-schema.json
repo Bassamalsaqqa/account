@@ -31,8 +31,7 @@
       "enum": [
         "ROOT_AUTHORIZED_LOCAL_PROVISION_ONLY",
         "ROOT_AUTHORIZED_READINESS_ONLY",
-        "ROOT_AUTHORIZED_PAIRED_EXECUTION",
-        "mobile_v2_online_cash_sale"
+        "ROOT_AUTHORIZED_PAIRED_EXECUTION"
       ]
     },
     "lifecycle_phase": {
@@ -341,26 +340,18 @@
                 "settlement_mode": {
                   "type": "string",
                   "enum": [
-                    "full",
-                    "split",
-                    "unpaid"
+                    "full"
                   ]
                 },
                 "payment_method": {
-                  "type": [
-                    "string",
-                    "null"
-                  ],
+                  "type": "string",
                   "enum": [
-                    "cash",
-                    null
+                    "cash"
                   ]
                 },
                 "cash_account_id": {
-                  "type": [
-                    "string",
-                    "null"
-                  ]
+                  "type": "string",
+                  "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$"
                 },
                 "amount": {
                   "type": "string"
@@ -429,6 +420,7 @@
         "ca_cert_path",
         "ca_cert_sha256",
         "readiness_url",
+        "android_readiness_url",
         "readiness_nonce"
       ],
       "properties": {
@@ -456,7 +448,15 @@
           "type": [
             "string",
             "null"
-          ]
+          ],
+          "description": "Host loopback readiness probe URL (127.0.0.1)"
+        },
+        "android_readiness_url": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Android emulator loopback readiness probe URL (10.0.2.2)"
         },
         "readiness_nonce": {
           "type": [

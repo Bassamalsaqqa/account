@@ -21,8 +21,10 @@ use App\Models\User;
 use App\Models\Warehouse;
 use App\Services\Money\CurrencyMinorUnitsResolver;
 use App\Services\Tenancy\CompanyRoleService;
+use App\Support\Mobile\Contract\CanonicalJsonSerializer;
 use App\Support\Mobile\Contract\Revision3\OnlineSaleIntentProfile;
 use App\Support\Tenancy\CompanyContext;
+use InvalidArgumentException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
@@ -551,36 +553,116 @@ final class DisposableMobileV2BackendHarness
      *
      * @return array<string, mixed>
      */
-    public static function assertReadinessScope(?string $manifestPath, ?string $manifestShaPin): array
-    {
+    /**
+     * Validates requested lifecycle execution mode against pairing manifest status.
+     * Fails closed before kernel boot, schema migration, or socket startup.
+     *
+     * @param  string  $requestedMode  'provision' | 'readiness' | 'start'
+     * @return array<string, mixed>
+     *
+     * @throws RuntimeException
+     */
+    public static function assertLifecycleScope(
+        ?string $manifestPath,
+        ?string $manifestShaPin,
+        string $requestedMode
+    ): array {
         if ($manifestPath === null || $manifestPath === '' || ! file_exists($manifestPath)) {
-            throw new RuntimeException('Harness readiness scope refused: pairing manifest missing.');
+            throw new RuntimeException("Harness {$requestedMode} scope refused: pairing manifest missing.");
         }
 
         if ($manifestShaPin === null || $manifestShaPin === '') {
-            throw new RuntimeException('Harness readiness scope refused: mandatory manifest SHA-256 pin required.');
+            throw new RuntimeException("Harness {$requestedMode} scope refused: mandatory manifest SHA-256 pin required.");
         }
 
         $actualSha = (string) hash_file('sha256', $manifestPath);
         if (! hash_equals($manifestShaPin, $actualSha)) {
-            throw new RuntimeException("Harness readiness scope refused: manifest SHA mismatch. Expected '{$manifestShaPin}', got '{$actualSha}'.");
+            throw new RuntimeException("Harness {$requestedMode} scope refused: manifest SHA mismatch. Expected '{$manifestShaPin}', got '{$actualSha}'.");
         }
 
         $manifestData = json_decode((string) file_get_contents($manifestPath), true);
         if (! is_array($manifestData)) {
-            throw new RuntimeException('Harness readiness scope refused: manifest is malformed JSON.');
+            throw new RuntimeException("Harness {$requestedMode} scope refused: manifest is malformed JSON.");
         }
 
         $status = (string) ($manifestData['status'] ?? '');
-        if ($status === self::SCOPE_PROVISION_ONLY || str_contains($status, 'PROVISION_ONLY')) {
-            throw new RuntimeException("Harness readiness scope refused: pairing manifest status is '{$status}'. Readiness probe requires explicit '".self::SCOPE_READINESS_ONLY."' scope.");
-        }
 
-        if ($status !== self::SCOPE_READINESS_ONLY && $status !== self::SCOPE_PAIRED_EXECUTION) {
-            throw new RuntimeException("Harness readiness scope refused: unapproved manifest status '{$status}'. Readiness probe requires explicit '".self::SCOPE_READINESS_ONLY."' or '".self::SCOPE_PAIRED_EXECUTION."' scope.");
+        if ($requestedMode === 'start') {
+            if ($status === self::SCOPE_PROVISION_ONLY || str_contains($status, 'PROVISION_ONLY')) {
+                throw new RuntimeException("Harness start refused: pairing manifest status is '{$status}'. Provision-only manifests are strictly forbidden from starting listeners or TLS proxies.");
+            }
+            if ($status === self::SCOPE_READINESS_ONLY) {
+                throw new RuntimeException("Harness start refused: pairing manifest status is '{$status}'. Non-readiness start requires exact '".self::SCOPE_PAIRED_EXECUTION."' scope.");
+            }
+            if ($status !== self::SCOPE_PAIRED_EXECUTION) {
+                throw new RuntimeException("Harness start refused: unapproved manifest status '{$status}'. Non-readiness start requires exact '".self::SCOPE_PAIRED_EXECUTION."' scope.");
+            }
+        } elseif ($requestedMode === 'readiness') {
+            if ($status === self::SCOPE_PROVISION_ONLY || str_contains($status, 'PROVISION_ONLY')) {
+                throw new RuntimeException("Harness readiness scope refused: pairing manifest status is '{$status}'. Provision-only manifests are strictly forbidden from starting listeners or TLS proxies.");
+            }
+            if ($status !== self::SCOPE_READINESS_ONLY && $status !== self::SCOPE_PAIRED_EXECUTION) {
+                throw new RuntimeException("Harness readiness scope refused: unapproved manifest status '{$status}'. Readiness start requires exact '".self::SCOPE_READINESS_ONLY."' or '".self::SCOPE_PAIRED_EXECUTION."' scope.");
+            }
+        } elseif ($requestedMode === 'provision') {
+            if ($status !== self::SCOPE_PROVISION_ONLY && $status !== self::SCOPE_READINESS_ONLY && $status !== self::SCOPE_PAIRED_EXECUTION) {
+                throw new RuntimeException("Harness provision scope refused: unapproved manifest status '{$status}'.");
+            }
+        } else {
+            throw new InvalidArgumentException("Unknown requested lifecycle mode '{$requestedMode}'.");
         }
 
         return $manifestData;
+    }
+
+    /**
+     * Validates that runtime pairing manifest authorizes readiness probing.
+     * Fails closed if manifest scope is provision-only or unrecognized.
+     *
+     * @return array<string, mixed>
+     */
+    public static function assertReadinessScope(?string $manifestPath, ?string $manifestShaPin): array
+    {
+        return self::assertLifecycleScope($manifestPath, $manifestShaPin, 'readiness');
+    }
+
+    /**
+     * Authoritative handler for child process readiness probe route.
+     * Enforces GET-only access (returning 405 for all other HTTP methods).
+     * Enforces readiness-only boundary pre-framework (returning 403 for non-readiness routes).
+     *
+     * @return array{status_code: int, headers: array<int, string>, body: array<string, mixed>}|null
+     */
+    public static function handleChildReadinessRoute(string $uri, string $method, string $nonce, bool $readinessOnly): ?array
+    {
+        if ($uri === '/_harness/readiness') {
+            if ($method !== 'GET') {
+                return [
+                    'status_code' => 405,
+                    'headers' => ['Allow: GET', 'Content-Type: application/json'],
+                    'body' => ['error' => 'method_not_allowed', 'message' => 'Readiness probe strictly requires GET'],
+                ];
+            }
+
+            return [
+                'status_code' => 200,
+                'headers' => ['Content-Type: application/json'],
+                'body' => ['status' => 'ready', 'nonce' => $nonce],
+            ];
+        }
+
+        if ($readinessOnly) {
+            return [
+                'status_code' => 403,
+                'headers' => ['Content-Type: application/json'],
+                'body' => [
+                    'error' => 'forbidden',
+                    'message' => 'Harness is running in READINESS-ONLY mode. Financial endpoints and paired requests are strictly blocked.',
+                ],
+            ];
+        }
+
+        return null;
     }
 
     /**
@@ -630,32 +712,45 @@ final class DisposableMobileV2BackendHarness
         array $rawWireSample,
         array $serverContext,
         string $canonicalDigest,
-        string $handoffScope = self::SCOPE_READINESS_ONLY,
-        string $lifecyclePhase = 'PROVISIONED_AWAITING_TLS_START',
-        ?string $createdAt = null,
-        ?string $expiresAt = null,
+        string $handoffScope,
+        string $lifecyclePhase,
+        string $createdAt,
+        string $expiresAt,
         ?array $historicalCa5a = null,
         ?array $startupTls = null
     ): array {
+        if ($createdAt === '' || $expiresAt === '') {
+            throw new InvalidArgumentException('Created at and expires at timestamps are strictly required with no defaults.');
+        }
+
+        $pinKeys = [
+            'qualified_core_head_sha',
+            'backend_execution_head_sha',
+            'qualified_app_tree_sha',
+            'peer_android_approved_head_sha',
+            'peer_android_executable_head_sha',
+            'client_handoff_schema_sha256',
+            'source_fixture_sha256',
+            'guard_test_sha256',
+            'cli_command_sha256',
+            'cli_runner_sha256',
+            'pairing_manifest_sha256',
+        ];
+        $pins = [];
+        foreach ($pinKeys as $pk) {
+            if (! isset($runtimePins[$pk]) || (string) $runtimePins[$pk] === '') {
+                throw new InvalidArgumentException("Missing mandatory runtime pin '{$pk}' with zero defaults.");
+            }
+            $pins[$pk] = (string) $runtimePins[$pk];
+        }
+
         return [
             'schema_version' => '1.0.0',
             'handoff_scope' => $handoffScope,
             'lifecycle_phase' => $lifecyclePhase,
-            'created_at' => $createdAt ?? now()->toIso8601String(),
-            'expires_at' => $expiresAt ?? now()->addHours(1)->toIso8601String(),
-            'backend_runtime_pins' => [
-                'qualified_core_head_sha' => (string) ($runtimePins['qualified_core_head_sha'] ?? self::QUALIFIED_EXECUTION_HEAD),
-                'backend_execution_head_sha' => (string) ($runtimePins['backend_execution_head_sha'] ?? ''),
-                'qualified_app_tree_sha' => (string) ($runtimePins['qualified_app_tree_sha'] ?? self::QUALIFIED_APP_TREE),
-                'peer_android_approved_head_sha' => (string) ($runtimePins['peer_android_approved_head_sha'] ?? self::APPROVED_ANDROID_HEAD),
-                'peer_android_executable_head_sha' => (string) ($runtimePins['peer_android_executable_head_sha'] ?? self::APPROVED_ANDROID_EXECUTABLE_HEAD),
-                'client_handoff_schema_sha256' => (string) ($runtimePins['client_handoff_schema_sha256'] ?? ''),
-                'source_fixture_sha256' => (string) ($runtimePins['source_fixture_sha256'] ?? ''),
-                'guard_test_sha256' => (string) ($runtimePins['guard_test_sha256'] ?? ''),
-                'cli_command_sha256' => (string) ($runtimePins['cli_command_sha256'] ?? ''),
-                'cli_runner_sha256' => (string) ($runtimePins['cli_runner_sha256'] ?? ''),
-                'pairing_manifest_sha256' => (string) ($runtimePins['pairing_manifest_sha256'] ?? ''),
-            ],
+            'created_at' => $createdAt,
+            'expires_at' => $expiresAt,
+            'backend_runtime_pins' => $pins,
             'endpoints' => [
                 'base_url' => 'https://10.0.2.2:'.self::TLS_PROXY_PORT.'/api/mobile/v2',
                 'loopback_base_url' => 'https://127.0.0.1:'.self::TLS_PROXY_PORT.'/api/mobile/v2',
@@ -679,6 +774,7 @@ final class DisposableMobileV2BackendHarness
                 'ca_cert_path' => null,
                 'ca_cert_sha256' => null,
                 'readiness_url' => null,
+                'android_readiness_url' => null,
                 'readiness_nonce' => null,
             ],
         ];
@@ -833,6 +929,19 @@ final class DisposableMobileV2BackendHarness
         ) {
             throw new RuntimeException('Malformed client handoff artifact: historical_ca5a_reference missing or invalid.');
         }
+        $payment = $rawWire['parsed_request']['payment'] ?? null;
+        if (! is_array($payment)
+            || ($payment['settlement_mode'] ?? null) !== 'full'
+            || ($payment['payment_method'] ?? null) !== 'cash'
+            || empty($payment['cash_account_id'])
+            || ! is_string($payment['cash_account_id'])
+            || preg_match('/^[0-7][0-9A-HJKMNP-TV-Z]{25}$/', $payment['cash_account_id']) !== 1
+            || empty($payment['amount'])
+            || ! is_string($payment['amount'])
+        ) {
+            throw new RuntimeException('Malformed client handoff artifact: payment must restrict to settlement_mode=full, payment_method=cash, non-null cash_account_id ULID, and valid amount.');
+        }
+
         $tls = $handoff['startup_tls'];
         if (! is_array($tls) || empty($tls['status'])) {
             throw new RuntimeException('Malformed client handoff artifact: startup_tls missing or status unset.');
@@ -842,7 +951,12 @@ final class DisposableMobileV2BackendHarness
             throw new RuntimeException("Malformed client handoff artifact: unknown or invalid startup_tls status '{$tls['status']}'.");
         }
         if ($tls['status'] === 'UNAVAILABLE_AWAITING_TLS_START') {
-            if ($tls['ca_cert_path'] !== null || $tls['ca_cert_sha256'] !== null || $tls['readiness_url'] !== null || $tls['readiness_nonce'] !== null) {
+            if ($tls['ca_cert_path'] !== null
+                || $tls['ca_cert_sha256'] !== null
+                || $tls['readiness_url'] !== null
+                || ($tls['android_readiness_url'] ?? null) !== null
+                || $tls['readiness_nonce'] !== null
+            ) {
                 throw new RuntimeException('Malformed client handoff artifact: startup_tls fields must be null when awaiting start.');
             }
         } elseif ($tls['status'] === 'ACTIVE_TLS_READY' || $tls['status'] === 'READINESS_ONLY_VERIFIED') {
@@ -852,12 +966,15 @@ final class DisposableMobileV2BackendHarness
                 || preg_match('/^[0-9a-f]{64}$/', $tls['ca_cert_sha256']) !== 1
                 || empty($tls['readiness_url'])
                 || ! is_string($tls['readiness_url'])
-                || ! str_starts_with($tls['readiness_url'], 'https://')
+                || ! str_starts_with($tls['readiness_url'], 'https://127.0.0.1:')
+                || empty($tls['android_readiness_url'])
+                || ! is_string($tls['android_readiness_url'])
+                || ! str_starts_with($tls['android_readiness_url'], 'https://10.0.2.2:')
                 || empty($tls['readiness_nonce'])
                 || ! is_string($tls['readiness_nonce'])
                 || preg_match('/^[0-9a-f]{32,64}$/', $tls['readiness_nonce']) !== 1
             ) {
-                throw new RuntimeException('Malformed client handoff artifact: active startup_tls requires valid ca_cert_path, ca_cert_sha256, readiness_url, and readiness_nonce.');
+                throw new RuntimeException('Malformed client handoff artifact: active startup_tls requires valid ca_cert_path, ca_cert_sha256, readiness_url (127.0.0.1), android_readiness_url (10.0.2.2), and readiness_nonce.');
             }
         } else {
             throw new RuntimeException("Malformed client handoff artifact: unhandled startup_tls status '{$tls['status']}'.");
@@ -896,6 +1013,7 @@ final class DisposableMobileV2BackendHarness
         // Enforce pre-socket invariants and dual manifest pin BEFORE creating any database schema
         self::assertPreSocketInvariants($expectedBackendHead, $peerAndroidHead);
         $manifestInfo = self::assertDualManifestPin($expectedBackendHead, $peerAndroidHead, $manifestPath, $manifestShaPin);
+        self::assertLifecycleScope($manifestPath, $manifestShaPin, 'provision');
 
         $connectionSwitched = false;
 
@@ -1274,23 +1392,9 @@ final class DisposableMobileV2BackendHarness
             );
         }
 
-        // Dual manifest pin assertion before ANY socket or process creation
-        // Dual manifest pin assertion before ANY socket or process creation
+        // Dual manifest pin and lifecycle scope assertion before ANY socket or process creation
         $manifestInfo = self::assertDualManifestPin($backendHead, $peerAndroidHead, $manifestPath, $manifestShaPin);
-        $manifestStatus = (string) ($manifestInfo['status'] ?? '');
-        if ($manifestStatus === self::SCOPE_PROVISION_ONLY || str_contains($manifestStatus, 'PROVISION_ONLY')) {
-            throw new RuntimeException(
-                "Harness start refused: pairing manifest status is '{$manifestStatus}'. ".
-                'Provision-only manifests are strictly forbidden from starting listeners or TLS proxies.'
-            );
-        }
-        if ($this->readinessOnly) {
-            self::assertReadinessScope($manifestPath, $manifestShaPin);
-        } elseif ($manifestStatus !== self::SCOPE_PAIRED_EXECUTION) {
-            throw new RuntimeException(
-                "Harness start refused: paired execution requires manifest status '" . self::SCOPE_PAIRED_EXECUTION . "', got '{$manifestStatus}'."
-            );
-        }
+        self::assertLifecycleScope($manifestPath, $manifestShaPin, $this->readinessOnly ? 'readiness' : 'start');
 
         // Preflight loopback ports ONLY AFTER ALL gates and manifest assertions have passed
         self::assertPortsAvailable(self::BACKEND_LOOPBACK_PORT, self::TLS_PROXY_PORT);
@@ -1450,19 +1554,19 @@ foreach (\$envVars as \$k => \$v) {
 
 // Harness readiness probe route
 \$uri = parse_url(\$_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?? '/';
-if (\$uri === '/_harness/readiness') {
-    header('Content-Type: application/json');
-    echo json_encode(['status' => 'ready', 'nonce' => \$config['harness_nonce']]);
-    exit(0);
-}
-
-if (! empty(\$config['readiness_only'])) {
-    http_response_code(403);
-    header('Content-Type: application/json');
-    echo json_encode([
-        'error' => 'forbidden',
-        'message' => 'Harness is running in READINESS-ONLY mode. Financial endpoints and paired requests are strictly blocked.',
-    ]);
+\$method = \$_SERVER['REQUEST_METHOD'] ?? 'GET';
+\$routeResult = \Tests\Support\Harness\DisposableMobileV2BackendHarness::handleChildReadinessRoute(
+    uri: \$uri,
+    method: \$method,
+    nonce: (string) \$config['harness_nonce'],
+    readinessOnly: ! empty(\$config['readiness_only'])
+);
+if (\$routeResult !== null) {
+    http_response_code(\$routeResult['status_code']);
+    foreach (\$routeResult['headers'] as \$hdr) {
+        header(\$hdr);
+    }
+    echo json_encode(\$routeResult['body']);
     exit(0);
 }
 
@@ -1652,6 +1756,7 @@ PHP;
                 'ca_cert_path' => $caCertPath,
                 'ca_cert_sha256' => (string) hash_file('sha256', $caCertPath),
                 'readiness_url' => 'https://127.0.0.1:'.self::TLS_PROXY_PORT.'/_harness/readiness',
+                'android_readiness_url' => 'https://10.0.2.2:'.self::TLS_PROXY_PORT.'/_harness/readiness',
                 'readiness_nonce' => $nonce,
             ];
             self::validateClientHandoff($this->clientHandoff);

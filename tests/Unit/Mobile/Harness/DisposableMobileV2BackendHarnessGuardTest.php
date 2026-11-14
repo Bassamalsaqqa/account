@@ -628,6 +628,8 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
             canonicalDigest: 'sha256:0847e10d89777e103252ebfa2d27f89a95832a5d70e01af57afe6423f703c630',
             handoffScope: DisposableMobileV2BackendHarness::SCOPE_READINESS_ONLY,
             lifecyclePhase: 'PROVISIONED_AWAITING_TLS_START',
+            createdAt: '2026-11-14T17:00:00+02:00',
+            expiresAt: '2026-11-14T18:00:00+02:00',
         );
 
         $this->assertSame('1.0.0', $handoff['schema_version']);
@@ -639,6 +641,7 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
         $this->assertNull($handoff['startup_tls']['ca_cert_path']);
         $this->assertNull($handoff['startup_tls']['ca_cert_sha256']);
         $this->assertNull($handoff['startup_tls']['readiness_url']);
+        $this->assertNull($handoff['startup_tls']['android_readiness_url']);
         $this->assertNull($handoff['startup_tls']['readiness_nonce']);
 
         // Assert valid handoff passes strict validateClientHandoff
@@ -807,6 +810,10 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
             rawWireSample: $rawWireSample,
             serverContext: $serverContext,
             canonicalDigest: 'sha256:0847e10d89777e103252ebfa2d27f89a95832a5d70e01af57afe6423f703c630',
+            handoffScope: DisposableMobileV2BackendHarness::SCOPE_READINESS_ONLY,
+            lifecyclePhase: 'PROVISIONED_AWAITING_TLS_START',
+            createdAt: '2026-11-14T17:00:00+02:00',
+            expiresAt: '2026-11-14T18:00:00+02:00',
         );
 
         $this->expectException(RuntimeException::class);
@@ -950,6 +957,10 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
             rawWireSample: $rawWireSample,
             serverContext: $serverContext,
             canonicalDigest: 'sha256:0847e10d89777e103252ebfa2d27f89a95832a5d70e01af57afe6423f703c630',
+            handoffScope: DisposableMobileV2BackendHarness::SCOPE_READINESS_ONLY,
+            lifecyclePhase: 'PROVISIONED_AWAITING_TLS_START',
+            createdAt: '2026-11-14T17:00:00+02:00',
+            expiresAt: '2026-11-14T18:00:00+02:00',
         );
 
         $this->expectException(RuntimeException::class);
@@ -1090,6 +1101,10 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
             rawWireSample: $rawWireSample,
             serverContext: $serverContext,
             canonicalDigest: 'sha256:0847e10d89777e103252ebfa2d27f89a95832a5d70e01af57afe6423f703c630',
+            handoffScope: DisposableMobileV2BackendHarness::SCOPE_READINESS_ONLY,
+            lifecyclePhase: 'PROVISIONED_AWAITING_TLS_START',
+            createdAt: '2026-11-14T17:00:00+02:00',
+            expiresAt: '2026-11-14T18:00:00+02:00',
         );
 
         $handoff['startup_tls']['status'] = 'UNKNOWN_TLS_STATUS';
@@ -1144,5 +1159,311 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
             putenv('MOBILE_V2_HARNESS_START_LISTENER');
             @unlink($tempPath);
         }
+    }
+
+    #[Test]
+    public function test_assert_lifecycle_scope_table_matrix_negative_combinations(): void
+    {
+        $root = dirname(__DIR__, 4);
+        $actualHead = self::getCurrentGitHead();
+        $approvedPeer = '1111111111111111111111111111111111111111';
+
+        $matrix = [
+            [
+                'mode' => 'start',
+                'status' => DisposableMobileV2BackendHarness::SCOPE_PROVISION_ONLY,
+                'expectedExceptionMessage' => "Harness start refused: pairing manifest status is 'ROOT_AUTHORIZED_LOCAL_PROVISION_ONLY'. Provision-only manifests are strictly forbidden from starting listeners or TLS proxies.",
+            ],
+            [
+                'mode' => 'start',
+                'status' => DisposableMobileV2BackendHarness::SCOPE_READINESS_ONLY,
+                'expectedExceptionMessage' => "Harness start refused: pairing manifest status is 'ROOT_AUTHORIZED_READINESS_ONLY'. Non-readiness start requires exact 'ROOT_AUTHORIZED_PAIRED_EXECUTION' scope.",
+            ],
+            [
+                'mode' => 'start',
+                'status' => 'MALFORMED_UNAPPROVED_SCOPE',
+                'expectedExceptionMessage' => "Harness start refused: unapproved manifest status 'MALFORMED_UNAPPROVED_SCOPE'. Non-readiness start requires exact 'ROOT_AUTHORIZED_PAIRED_EXECUTION' scope.",
+            ],
+            [
+                'mode' => 'readiness',
+                'status' => DisposableMobileV2BackendHarness::SCOPE_PROVISION_ONLY,
+                'expectedExceptionMessage' => "Harness readiness scope refused: pairing manifest status is 'ROOT_AUTHORIZED_LOCAL_PROVISION_ONLY'. Provision-only manifests are strictly forbidden from starting listeners or TLS proxies.",
+            ],
+            [
+                'mode' => 'readiness',
+                'status' => 'MALFORMED_UNAPPROVED_SCOPE',
+                'expectedExceptionMessage' => "Harness readiness scope refused: unapproved manifest status 'MALFORMED_UNAPPROVED_SCOPE'. Readiness start requires exact 'ROOT_AUTHORIZED_READINESS_ONLY' or 'ROOT_AUTHORIZED_PAIRED_EXECUTION' scope.",
+            ],
+            [
+                'mode' => 'provision',
+                'status' => 'MALFORMED_UNAPPROVED_SCOPE',
+                'expectedExceptionMessage' => "Harness provision scope refused: unapproved manifest status 'MALFORMED_UNAPPROVED_SCOPE'.",
+            ],
+        ];
+
+        foreach ($matrix as $case) {
+            $manifest = [
+                'contract_name' => 'Mobile V2 Online Cash Sale Integration Dual-Manifest',
+                'qualified_core_head_sha' => DisposableMobileV2BackendHarness::QUALIFIED_EXECUTION_HEAD,
+                'backend_execution_head_sha' => $actualHead,
+                'peer_android_approved_head_sha' => $approvedPeer,
+                'peer_android_executable_head_sha' => '2222222222222222222222222222222222222222',
+                'status' => $case['status'],
+                'source_fixture_sha256' => hash_file('sha256', $root.'/tests/Support/Harness/DisposableMobileV2BackendHarness.php'),
+                'cli_command_sha256' => hash_file('sha256', $root.'/tests/Support/Harness/MobileV2HarnessCommand.php'),
+                'cli_runner_sha256' => hash_file('sha256', $root.'/tests/Support/Harness/mobile-v2-harness-cli.php'),
+            ];
+
+            $tempPath = tempnam(sys_get_temp_dir(), 'test_matrix_manifest_');
+            file_put_contents($tempPath, json_encode($manifest, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+            $manifestSha = (string) hash_file('sha256', $tempPath);
+
+            try {
+                DisposableMobileV2BackendHarness::assertLifecycleScope($tempPath, $manifestSha, $case['mode']);
+                $this->fail("Expected assertLifecycleScope to fail for mode '{$case['mode']}' and status '{$case['status']}'.");
+            } catch (RuntimeException $e) {
+                $this->assertSame($case['expectedExceptionMessage'], $e->getMessage());
+            } finally {
+                @unlink($tempPath);
+            }
+        }
+    }
+
+    #[Test]
+    public function test_validate_client_handoff_fails_closed_on_invalid_payment_settlement_or_method(): void
+    {
+        $runtimePins = [
+            'qualified_core_head_sha' => DisposableMobileV2BackendHarness::QUALIFIED_EXECUTION_HEAD,
+            'backend_execution_head_sha' => str_repeat('b', 40),
+            'qualified_app_tree_sha' => DisposableMobileV2BackendHarness::QUALIFIED_APP_TREE,
+            'peer_android_approved_head_sha' => DisposableMobileV2BackendHarness::APPROVED_ANDROID_HEAD,
+            'peer_android_executable_head_sha' => DisposableMobileV2BackendHarness::APPROVED_ANDROID_EXECUTABLE_HEAD,
+            'client_handoff_schema_sha256' => str_repeat('6', 64),
+            'source_fixture_sha256' => str_repeat('1', 64),
+            'guard_test_sha256' => str_repeat('2', 64),
+            'cli_command_sha256' => str_repeat('3', 64),
+            'cli_runner_sha256' => str_repeat('4', 64),
+            'pairing_manifest_sha256' => str_repeat('5', 64),
+        ];
+
+        $fixture = [
+            'schema_name' => 'harness_test_db',
+            'company_public_id' => '01M7CZPF6TP283F3ZRXF5P8GT2',
+            'company_base_currency' => 'ILS',
+            'currency_minor_units' => 2,
+            'staff_actor_public_id' => '01M7CZPF6TP283F3ZRXF5P8GT1',
+            'device_id' => 'f81d4fae-7dec-11d0-a765-00a0c91e6bf6',
+            'customer_public_id' => '01M7CZPF6TP283F3ZRXF5P8GT3',
+            'warehouse_public_id' => '01M7CZPF6TP283F3ZRXF5P8GT4',
+            'product_public_id' => '01M7CZPF6TP283F3ZRXF5P8GT5',
+            'product_unit_public_id' => '01M7CZPF6TP283F3ZRXF5P8GT6',
+            'tax_rate_public_id' => '01M7CZPF6TP283F3ZRXF5P8GT7',
+            'cash_account_public_id' => '01M7CZPF6TP283F3ZRXF5P8GT8',
+            'sample_event_id' => 'c0686be5-888f-4890-90bf-1f05f416a19a',
+        ];
+
+        $sampleRequest = [
+            'client_event_id' => 'c0686be5-888f-4890-90bf-1f05f416a19a',
+            'device_id' => 'f81d4fae-7dec-11d0-a765-00a0c91e6bf6',
+            'customer_id' => '01M7CZPF6TP283F3ZRXF5P8GT3',
+            'warehouse_id' => '01M7CZPF6TP283F3ZRXF5P8GT4',
+            'currency' => 'ILS',
+            'lines' => [
+                [
+                    'product_id' => '01M7CZPF6TP283F3ZRXF5P8GT5',
+                    'product_unit_id' => '01M7CZPF6TP283F3ZRXF5P8GT6',
+                    'conversion_to_base' => '1.000000',
+                    'quantity' => '1.000000',
+                    'unit_price' => '50.000000',
+                    'tax_rate_id' => '01M7CZPF6TP283F3ZRXF5P8GT7',
+                    'tax_rate' => '16.000000',
+                    'tax_inclusive' => false,
+                ],
+            ],
+            'payment' => [
+                'settlement_mode' => 'split', // Invalid: must be full
+                'payment_method' => 'cash',
+                'cash_account_id' => '01M7CZPF6TP283F3ZRXF5P8GT8',
+                'amount' => '58.000000',
+            ],
+        ];
+
+        $rawWireJson = CanonicalJsonSerializer::serialize($sampleRequest);
+        $rawWireSample = [
+            'raw_wire_payload_json' => $rawWireJson,
+            'raw_wire_payload_sha256' => hash('sha256', $rawWireJson),
+            'parsed_request' => $sampleRequest,
+        ];
+
+        $serverContext = [
+            'company_id' => '01M7CZPF6TP283F3ZRXF5P8GT2',
+            'actor_id' => '01M7CZPF6TP283F3ZRXF5P8GT1',
+            'currency_minor_units' => 2,
+        ];
+
+        $handoff = DisposableMobileV2BackendHarness::buildClientHandoff(
+            runtimePins: $runtimePins,
+            fixture: $fixture,
+            credentialsPath: '/tmp/test/credentials.json',
+            rawWireSample: $rawWireSample,
+            serverContext: $serverContext,
+            canonicalDigest: 'sha256:0847e10d89777e103252ebfa2d27f89a95832a5d70e01af57afe6423f703c630',
+            handoffScope: DisposableMobileV2BackendHarness::SCOPE_READINESS_ONLY,
+            lifecyclePhase: 'PROVISIONED_AWAITING_TLS_START',
+            createdAt: '2026-11-14T17:00:00+02:00',
+            expiresAt: '2026-11-14T18:00:00+02:00',
+        );
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('Malformed client handoff artifact: payment must restrict to settlement_mode=full, payment_method=cash, non-null cash_account_id ULID, and valid amount.');
+        DisposableMobileV2BackendHarness::validateClientHandoff($handoff);
+    }
+
+    #[Test]
+    public function test_handle_child_readiness_route_enforces_get_only_and_readiness_boundary(): void
+    {
+        $nonce = 'test-owned-nonce-1234567890abcdef';
+
+        // 1. Valid GET /_harness/readiness returns 200 with nonce
+        $getRes = DisposableMobileV2BackendHarness::handleChildReadinessRoute(
+            uri: '/_harness/readiness',
+            method: 'GET',
+            nonce: $nonce,
+            readinessOnly: false
+        );
+        $this->assertNotNull($getRes);
+        $this->assertSame(200, $getRes['status_code']);
+        $this->assertSame(['Content-Type: application/json'], $getRes['headers']);
+        $this->assertSame(['status' => 'ready', 'nonce' => $nonce], $getRes['body']);
+
+        // 2. Non-GET methods return 405 Method Not Allowed with Allow: GET header
+        foreach (['POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'] as $badMethod) {
+            $badRes = DisposableMobileV2BackendHarness::handleChildReadinessRoute(
+                uri: '/_harness/readiness',
+                method: $badMethod,
+                nonce: $nonce,
+                readinessOnly: false
+            );
+            $this->assertNotNull($badRes);
+            $this->assertSame(405, $badRes['status_code']);
+            $this->assertSame(['Allow: GET', 'Content-Type: application/json'], $badRes['headers']);
+            $this->assertSame('method_not_allowed', $badRes['body']['error']);
+        }
+
+        // 3. Readiness-only mode returns 403 Forbidden for non-readiness paths
+        $forbiddenRes = DisposableMobileV2BackendHarness::handleChildReadinessRoute(
+            uri: '/api/mobile/v2/companies/01M7CZPF6TP283F3ZRXF5P8GT2/sales/online-cash',
+            method: 'POST',
+            nonce: $nonce,
+            readinessOnly: true
+        );
+        $this->assertNotNull($forbiddenRes);
+        $this->assertSame(403, $forbiddenRes['status_code']);
+        $this->assertSame(['Content-Type: application/json'], $forbiddenRes['headers']);
+        $this->assertSame('forbidden', $forbiddenRes['body']['error']);
+
+        // 4. Non-readiness-only mode returns null to delegate to application framework
+        $delegatedRes = DisposableMobileV2BackendHarness::handleChildReadinessRoute(
+            uri: '/api/mobile/v2/companies/01M7CZPF6TP283F3ZRXF5P8GT2/sales/online-cash',
+            method: 'POST',
+            nonce: $nonce,
+            readinessOnly: false
+        );
+        $this->assertNull($delegatedRes);
+    }
+
+    #[Test]
+    public function test_validate_client_handoff_executes_pure_canonical_serializer_and_profile_digest(): void
+    {
+        $runtimePins = [
+            'qualified_core_head_sha' => DisposableMobileV2BackendHarness::QUALIFIED_EXECUTION_HEAD,
+            'backend_execution_head_sha' => str_repeat('b', 40),
+            'qualified_app_tree_sha' => DisposableMobileV2BackendHarness::QUALIFIED_APP_TREE,
+            'peer_android_approved_head_sha' => DisposableMobileV2BackendHarness::APPROVED_ANDROID_HEAD,
+            'peer_android_executable_head_sha' => DisposableMobileV2BackendHarness::APPROVED_ANDROID_EXECUTABLE_HEAD,
+            'client_handoff_schema_sha256' => str_repeat('6', 64),
+            'source_fixture_sha256' => str_repeat('1', 64),
+            'guard_test_sha256' => str_repeat('2', 64),
+            'cli_command_sha256' => str_repeat('3', 64),
+            'cli_runner_sha256' => str_repeat('4', 64),
+            'pairing_manifest_sha256' => str_repeat('5', 64),
+        ];
+
+        $fixture = [
+            'schema_name' => 'harness_test_db',
+            'company_public_id' => '01M7CZPF6TP283F3ZRXF5P8GT2',
+            'company_base_currency' => 'ILS',
+            'currency_minor_units' => 2,
+            'staff_actor_public_id' => '01M7CZPF6TP283F3ZRXF5P8GT1',
+            'device_id' => 'f81d4fae-7dec-11d0-a765-00a0c91e6bf6',
+            'customer_public_id' => '01M7CZPF6TP283F3ZRXF5P8GT3',
+            'warehouse_public_id' => '01M7CZPF6TP283F3ZRXF5P8GT4',
+            'product_public_id' => '01M7CZPF6TP283F3ZRXF5P8GT5',
+            'product_unit_public_id' => '01M7CZPF6TP283F3ZRXF5P8GT6',
+            'tax_rate_public_id' => '01M7CZPF6TP283F3ZRXF5P8GT7',
+            'cash_account_public_id' => '01M7CZPF6TP283F3ZRXF5P8GT8',
+            'sample_event_id' => 'c0686be5-888f-4890-90bf-1f05f416a19a',
+        ];
+
+        $sampleRequest = [
+            'client_event_id' => 'c0686be5-888f-4890-90bf-1f05f416a19a',
+            'device_id' => 'f81d4fae-7dec-11d0-a765-00a0c91e6bf6',
+            'customer_id' => '01M7CZPF6TP283F3ZRXF5P8GT3',
+            'warehouse_id' => '01M7CZPF6TP283F3ZRXF5P8GT4',
+            'currency' => 'ILS',
+            'lines' => [
+                [
+                    'product_id' => '01M7CZPF6TP283F3ZRXF5P8GT5',
+                    'product_unit_id' => '01M7CZPF6TP283F3ZRXF5P8GT6',
+                    'conversion_to_base' => '1.000000',
+                    'quantity' => '1.000000',
+                    'unit_price' => '50.000000',
+                    'tax_rate_id' => '01M7CZPF6TP283F3ZRXF5P8GT7',
+                    'tax_rate' => '16.000000',
+                    'tax_inclusive' => false,
+                ],
+            ],
+            'payment' => [
+                'settlement_mode' => 'full',
+                'payment_method' => 'cash',
+                'cash_account_id' => '01M7CZPF6TP283F3ZRXF5P8GT8',
+                'amount' => '58.000000',
+            ],
+        ];
+
+        $serverContext = [
+            'company_id' => '01M7CZPF6TP283F3ZRXF5P8GT2',
+            'actor_id' => '01M7CZPF6TP283F3ZRXF5P8GT1',
+            'currency_minor_units' => 2,
+        ];
+
+        // Authoritatively serialize wire JSON using CanonicalJsonSerializer
+        $rawWireJson = CanonicalJsonSerializer::serialize($sampleRequest);
+        $rawWireSample = [
+            'raw_wire_payload_json' => $rawWireJson,
+            'raw_wire_payload_sha256' => hash('sha256', $rawWireJson),
+            'parsed_request' => $sampleRequest,
+        ];
+
+        // Authoritatively compute canonical intent profile digest
+        $profile = \App\Support\Mobile\Contract\Revision3\OnlineSaleIntentProfile::construct($serverContext, $sampleRequest);
+        $canonicalDigest = \App\Support\Mobile\Contract\Revision3\OnlineSaleIntentProfile::computeDigest($profile);
+
+        $handoff = DisposableMobileV2BackendHarness::buildClientHandoff(
+            runtimePins: $runtimePins,
+            fixture: $fixture,
+            credentialsPath: '/tmp/test/runtime_credentials.json',
+            rawWireSample: $rawWireSample,
+            serverContext: $serverContext,
+            canonicalDigest: $canonicalDigest,
+            handoffScope: DisposableMobileV2BackendHarness::SCOPE_READINESS_ONLY,
+            lifecyclePhase: 'PROVISIONED_AWAITING_TLS_START',
+            createdAt: '2026-11-14T17:00:00+02:00',
+            expiresAt: '2026-11-14T18:00:00+02:00',
+        );
+
+        // This call must complete with ZERO exceptions, verifying CanonicalJsonSerializer and OnlineSaleIntentProfile runtime resolution
+        DisposableMobileV2BackendHarness::validateClientHandoff($handoff);
+        $this->assertSame('1.0.0', $handoff['schema_version']);
     }
 }

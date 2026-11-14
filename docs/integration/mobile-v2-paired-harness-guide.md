@@ -374,18 +374,38 @@ The formal JSON Schema is located at [`docs/integration/mobile-v2-client-handoff
      - `offline_event_status`: `/companies/{companyId}/offline-events/{clientEventId}/status`
      - `readiness_probe`: `/_harness/readiness`
 
-4. **Authoritative Fixture & Context (No Hardcoded Defaults)**:
-   - `fixture`: Schema name, tenant company public ID, staff actor public ID, device ID, customer, warehouse, product, unit, tax rate, and cash money account public IDs. Includes fresh resolved `currency_minor_units`.
+4. **Authoritative Fixture & Context (Exact 13 Fixture Fields, No Defaults)**:
+   - `fixture`:
+     - `schema_name`: Disposable MariaDB schema name.
+     - `company_public_id`: Tenant company public ULID (`^[0-7][0-9A-HJKMNP-TV-Z]{25}$`).
+     - `company_base_currency`: 3-character ISO currency code (e.g. `"ILS"`).
+     - `currency_minor_units`: Dynamically resolved scale via `CurrencyMinorUnitsResolver::resolve($currencyCode)` (integer 0..6, no static fallbacks).
+     - `staff_actor_public_id`: Staff actor public ULID (`^[0-7][0-9A-HJKMNP-TV-Z]{25}$`).
+     - `device_id`: Enrolled mobile device UUIDv4 string.
+     - `customer_public_id`: Customer public ULID (`^[0-7][0-9A-HJKMNP-TV-Z]{25}$`).
+     - `warehouse_public_id`: Warehouse public ULID (`^[0-7][0-9A-HJKMNP-TV-Z]{25}$`).
+     - `product_public_id`: Product public ULID (`^[0-7][0-9A-HJKMNP-TV-Z]{25}$`).
+     - `product_unit_public_id`: Product base unit public ULID (`^[0-7][0-9A-HJKMNP-TV-Z]{25}$`).
+     - `tax_rate_public_id`: Tax rate public ULID (`^[0-7][0-9A-HJKMNP-TV-Z]{25}$`).
+     - `cash_account_public_id`: Cash money account public ULID (`^[0-7][0-9A-HJKMNP-TV-Z]{25}$`).
+     - `sample_event_id`: Sample client event UUIDv4 string.
    - `server_synthesized_context`:
      - `company_id`: Company public ULID
      - `actor_id`: Staff actor public ULID
-     - `currency_minor_units`: Dynamically resolved from company base currency via `App\Services\Money\CurrencyMinorUnitsResolver::resolve($currencyCode)` (integer 0..6, no static fallbacks).
+     - `currency_minor_units`: Dynamically resolved from company base currency via `App\Services\Money\CurrencyMinorUnitsResolver::resolve($currencyCode)` (integer 0..6).
 
-5. **Lossless Raw Wire Sample Bytes (Wire-Byte Integrity ONLY)**:
+5. **Lossless Raw Wire Sample Bytes (Canonical JCS Wire Integrity ONLY)**:
    - `raw_wire_sample`:
      - `raw_wire_payload_json`: Exact serialized wire string bytes of the raw 7-key request (`client_event_id`, `device_id`, `customer_id`, `warehouse_id`, `currency`, `lines`, `payment`) serialized using RFC 8785 JSON Canonicalization Scheme (JCS) via `CanonicalJsonSerializer::serialize($sampleRequest)`. Unindented canonical JCS bytes guarantee byte-for-byte fidelity with strict Android JCS parsers.
      - `raw_wire_payload_sha256`: SHA-256 hash of `raw_wire_payload_json` for wire-byte integrity verification ONLY.
-     - `parsed_request`: Normative structured JSON object preserving exact decimal lexemes.
+     - `parsed_request`: Normative structured JSON object preserving exact decimal lexemes:
+       - `client_event_id`: UUIDv4 string
+       - `device_id`: UUIDv4 string
+       - `customer_id`: ULID string
+       - `warehouse_id`: ULID string
+       - `currency`: 3-character ISO currency code
+       - `lines`: Array containing `product_id`, `product_unit_id`, `conversion_to_base`, `quantity`, `unit_price`, `tax_rate_id`, `tax_rate`, and `tax_inclusive`.
+       - `payment`: Restricted strictly to `settlement_mode: "full"`, `payment_method: "cash"`, `cash_account_id: non-null ULID`, and `amount` (zero split/unpaid support).
 
 6. **Canonical OnlineSaleIntentProfile Digest**:
    - The digest is computed authoritatively using `App\Support\Mobile\Contract\Revision3\OnlineSaleIntentProfile::construct($serverContext, $sampleRequest)` and `OnlineSaleIntentProfile::computeDigest($profile)`.
@@ -396,24 +416,26 @@ The formal JSON Schema is located at [`docs/integration/mobile-v2-client-handoff
    - `historical_ca5a_reference`:
      - `ca5a_manifest_sha256`: `3248b9721c3e2a09e84ae478ddb0171c3ea576fd0cbdd70b3606e4cdda4ff3e7`
      - `ca5a_canonical_digest`: `0847e10d89777e103252ebfa2d27f89a95832a5d70e01af57afe6423f703c630`
-   - Preserved purely for historical fixture audit; never substituted for the fresh runtime digest.
+   - Preserved purely for historical fixture audit; never substituted for the fresh dynamic runtime digest.
 
 8. **Private Credentials Path**:
-   - `credentials_path`: Points to `runtime_credentials.json` (chmod `0600`), storing `raw_token`, `token_hash`, `device_id`, `staff_email`, and `schema`.
+   - `credentials_path`: Points to `<harnessTempDir>/runtime_credentials.json` (chmod `0600`, no `/credentials` subdirectory), storing `raw_token`, `token_hash`, `device_id`, `staff_email`, and `schema`.
    - Raw tokens are never outputted to stdout, logs, or public command arrays.
 
-9. **Lifecycle-Governed Startup TLS**:
+9. **Lifecycle-Governed Startup TLS (Distinct Host & Android Readiness URLs)**:
    - During `provision()` (`"PROVISIONED_AWAITING_TLS_START"`):
      - `status`: `"UNAVAILABLE_AWAITING_TLS_START"`
      - `ca_cert_path`: `null`
      - `ca_cert_sha256`: `null`
      - `readiness_url`: `null`
+     - `android_readiness_url`: `null`
      - `readiness_nonce`: `null`
    - Upon `start()` (`"ACTIVE_TLS_READY"` or `"READINESS_ONLY_VERIFIED"`):
      - `status`: `"ACTIVE_TLS_READY"`
      - `ca_cert_path`: `<harnessTempDir>/bootstrap/test-ca.pem`
      - `ca_cert_sha256`: SHA-256 of generated test CA certificate
-     - `readiness_url`: `https://127.0.0.1:18443/_harness/readiness`
+     - `readiness_url`: `https://127.0.0.1:18443/_harness/readiness` (host loopback)
+     - `android_readiness_url`: `https://10.0.2.2:18443/_harness/readiness` (Android emulator loopback)
      - `readiness_nonce`: Active 128-bit hex harness nonce
 
 10. **Fail-Closed Artifact Validation**:
@@ -421,7 +443,7 @@ The formal JSON Schema is located at [`docs/integration/mobile-v2-client-handoff
       - 11 mandatory pins with strict hex regex (`/^[0-9a-f]{40}$/` for git SHAs, `/^[0-9a-f]{64}$/` for sha256 checksums).
       - Crossfield invariance checks: `qualified_core_head_sha === 698151...`, `qualified_app_tree_sha === 34d1da...`, and publication SHA != executable SHA.
       - Strict ISO 8601 timestamps and TTL ordering (`strtotime($expires_at) > strtotime($created_at)`).
-      - Strict `startup_tls` validation: status in `['UNAVAILABLE_AWAITING_TLS_START', 'ACTIVE_TLS_READY', 'READINESS_ONLY_VERIFIED']`; all 4 TLS fields must be null when awaiting start; all 4 must be non-null and formatted when active.
+      - Strict `startup_tls` validation: status in `['UNAVAILABLE_AWAITING_TLS_START', 'ACTIVE_TLS_READY', 'READINESS_ONLY_VERIFIED']`; all 5 TLS fields must be null when awaiting start; all 5 must be non-null and formatted when active.
       - Wire integrity cross-check: `raw_wire_payload_json` must match `CanonicalJsonSerializer::serialize($parsed_request)` and hash equals `raw_wire_payload_sha256`.
       - Intent profile recomputation: `OnlineSaleIntentProfile::construct($context, $parsed_request)` must compute a digest matching `canonical_intent_profile_digest`.
 
