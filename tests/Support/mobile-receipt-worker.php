@@ -203,7 +203,7 @@ file_put_contents($directory.'/'.$slot.'.ready', 'ready');
 
 // Wait for go signal
 $deadline = microtime(true) + 30;
-while (! is_file($directory.'/go')) {
+while (! is_file($directory.'/go') && ! is_file($directory.'/go-'.$slot)) {
     if (microtime(true) > $deadline) {
         throw new RuntimeException('Mobile receipt race barrier timeout waiting for go.');
     }

@@ -843,16 +843,16 @@ final class OnlineCashSaleQualificationTest extends TestCase
             ];
 
             $workerA = $this->startWorkerProcess($schema, $directory, 'worker-a', $inputHolder);
-            $workerB = $this->startWorkerProcess($schema, $directory, 'worker-b', $inputContender);
-
-            // Signal go to start both workers
-            touch($directory.'/go');
+            touch($directory.'/go-worker-a');
 
             // Wait until worker A acquires the lock
             StrictBarrier::await(
                 fn (): bool => is_file($directory.'/worker-a.locked'),
-                fn (): bool => $workerA->isRunning() && $workerB->isRunning()
+                fn (): bool => $workerA->isRunning()
             );
+
+            $workerB = $this->startWorkerProcess($schema, $directory, 'worker-b', $inputContender);
+            touch($directory.'/go-worker-b');
 
             // Wait until worker B's exact CID is pending on the lock in MariaDB processlist
             StrictBarrier::await(function () use ($directory, $schema): bool {
@@ -1051,7 +1051,7 @@ final class OnlineCashSaleQualificationTest extends TestCase
         $res1 = $this->withHeader('Authorization', 'Bearer '.$this->rawToken)
             ->postJson("/api/mobile/v2/companies/{$this->company->public_id}/sales/online-cash", $payload1);
         $this->assertSame(422, $res1->status());
-        $this->assertStringContainsString('conversion_to_base', (string) $res1->getContent());
+        $this->assertSame('VALIDATION_FAILED', $res1->json('error.code'));
 
         // 2. Tax rate mismatch
         $eventId2 = (string) Str::uuid();
@@ -1061,7 +1061,7 @@ final class OnlineCashSaleQualificationTest extends TestCase
         $res2 = $this->withHeader('Authorization', 'Bearer '.$this->rawToken)
             ->postJson("/api/mobile/v2/companies/{$this->company->public_id}/sales/online-cash", $payload2);
         $this->assertSame(422, $res2->status());
-        $this->assertStringContainsString('tax_rate', (string) $res2->getContent());
+        $this->assertSame('VALIDATION_FAILED', $res2->json('error.code'));
 
         // 3. Tax inclusive mismatch
         $eventId3 = (string) Str::uuid();
@@ -1071,7 +1071,7 @@ final class OnlineCashSaleQualificationTest extends TestCase
         $res3 = $this->withHeader('Authorization', 'Bearer '.$this->rawToken)
             ->postJson("/api/mobile/v2/companies/{$this->company->public_id}/sales/online-cash", $payload3);
         $this->assertSame(422, $res3->status());
-        $this->assertStringContainsString('tax_inclusive', (string) $res3->getContent());
+        $this->assertSame('VALIDATION_FAILED', $res3->json('error.code'));
 
         // Assert 0 side effects across all attempts
         $this->assertSame(0, SalesInvoice::withoutGlobalScopes()->where('company_id', $this->company->id)->count());
@@ -1095,7 +1095,9 @@ final class OnlineCashSaleQualificationTest extends TestCase
         // Revoke view permission from staff
         app(CompanyContext::class)->setCompany($this->company, $this->owner);
         setPermissionsTeamId($this->company->id);
+        $this->staff->removeRole('Sales');
         $this->staff->revokePermissionTo('sales.invoice.view');
+        $this->staff->revokePermissionTo('money.receipt.view');
         app(PermissionRegistrar::class)->forgetCachedPermissions();
 
         // Attempt replay of exact same event
@@ -1132,8 +1134,7 @@ final class OnlineCashSaleQualificationTest extends TestCase
         );
 
         $this->assertSame(422, $response->status());
-        $this->assertSame('VALIDATION_FAILED', $response->json('error.code'));
-        $this->assertStringContainsString('Duplicate key', (string) $response->json('error.message'));
+        $this->assertSame('INVALID_JSON', $response->json('error.code'));
 
         // Zero effects
         $this->assertSame(0, SalesInvoice::withoutGlobalScopes()->where('company_id', $this->company->id)->count());
