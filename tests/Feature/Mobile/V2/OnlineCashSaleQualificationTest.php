@@ -648,7 +648,7 @@ final class OnlineCashSaleQualificationTest extends TestCase
         $this->assertTrue($moneyRecon->isHealthy, 'Money reconciliation must be balanced');
 
         $invRecon = app(InventoryReconciliationService::class)->auditCompany($this->company);
-        $this->assertTrue($invRecon->isHealthy, 'Inventory reconciliation must be balanced');
+        $this->assertTrue($invRecon->isHealthy, 'Inventory reconciliation must be balanced: '.json_encode($invRecon->discrepancies));
 
         $phase7Recon = app(Phase7ReconciliationService::class)->reconcile($this->company);
         $this->assertTrue($phase7Recon->isHealthy, 'Phase 7 reconciliation must be balanced');
