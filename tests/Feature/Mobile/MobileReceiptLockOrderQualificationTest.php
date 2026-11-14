@@ -39,6 +39,7 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 use Symfony\Component\Process\Process;
 use Tests\Support\DisposableMariaDbSchema;
+use Tests\Support\QualifiedCashFinancialExecutionAdapter;
 use Tests\Support\StrictBarrier;
 use Tests\TestCase;
 
@@ -1103,6 +1104,144 @@ final class MobileReceiptLockOrderQualificationTest extends TestCase
                 app(CompanyContext::class)->setCompany($companyA, $owner);
                 $this->assertTrue(app(AccountingReconciliationService::class)->reconcile($companyA)->isHealthy);
                 $this->assertTrue(app(SalesReconciliationService::class)->reconcile($companyA)->isHealthy);
+            }
+        } finally {
+            foreach ($workers as $w) {
+                if ($w->isRunning()) {
+                    $w->stop();
+                }
+            }
+            if (DB::transactionLevel() > 0) {
+                DB::rollBack(0);
+            }
+            foreach (glob($directory.'/*') ?: [] as $file) {
+                unlink($file);
+            }
+            rmdir($directory);
+            $schema->restoreLaravelConnection();
+            $schema->drop();
+        }
+    }
+
+    public function test_concurrent_workers_role_permission_revocation_vs_status_http_reconciles_safely(): void
+    {
+        $this->qualifyRoleRevokeVsStatusHttp(true);
+        $this->qualifyRoleRevokeVsStatusHttp(false);
+    }
+
+    private function qualifyRoleRevokeVsStatusHttp(bool $revokeFirst): void
+    {
+        DisposableMariaDbSchema::assertPrimarySchema((string) DB::selectOne('SELECT DATABASE() AS db')->db);
+        $schema = DisposableMariaDbSchema::create();
+        $workers = [];
+        $directory = sys_get_temp_dir().'/mobile_receipt_race_'.bin2hex(random_bytes(8));
+        mkdir($directory, 0700);
+
+        try {
+            $schema->migrate();
+            $schema->switchLaravelConnection();
+            $this->assertSame($schema->schemaName(), DB::selectOne('SELECT DATABASE() AS db')->db);
+
+            [$owner, $password, $companyA, $companyB, $deviceOwner, $tokenOwner] = $this->setupMultiCompanyFixture('RoleStatusRace'.($revokeFirst ? 'A' : 'B'));
+
+            // Create a staff user in Company A
+            $staff = User::factory()->create([
+                'email' => 'staff_role_status_'.Str::random(8).'@example.com',
+                'password' => Hash::make('StaffSecured!Pass123'),
+            ]);
+
+            CompanyUser::create([
+                'company_id' => $companyA->id,
+                'user_id' => $staff->id,
+                'status' => 'active',
+                'is_owner' => false,
+                'joined_at' => now(),
+            ]);
+
+            setPermissionsTeamId($companyA->id);
+            $staff->assignRole('Manager');
+
+            $staffDeviceId = (string) Str::uuid();
+            $staffDevice = MobileDevice::create([
+                'device_id' => $staffDeviceId,
+                'device_name' => 'Staff Role Status Race Device',
+                'user_id' => $staff->id,
+            ]);
+
+            $staffRawToken = 'st_m_staff_role_status_'.bin2hex(random_bytes(32));
+            $staffToken = MobileAccessToken::create([
+                'token_hash' => hash('sha256', $staffRawToken),
+                'device_id' => $staffDeviceId,
+                'user_id' => $staff->id,
+                'company_id' => $companyA->id,
+                'password_epoch' => 'epoch-'.substr(hash('sha256', (string) $staff->password), 0, 16),
+                'expires_at' => now()->addDays(7),
+            ]);
+
+            $clientEventId = '00000000-0000-4000-8000-000000000206';
+            $payload = $this->buildNormativePayload($companyA, $staff, $staffDevice, $clientEventId);
+
+            // Seed an existing posted receipt row via qualified cash adapter
+            $receiptManager = new MobileEventReceiptManager(new QualifiedCashFinancialExecutionAdapter);
+            $receiptManager->recordOrReplay(
+                companyId: $companyA->id,
+                clientEventId: $clientEventId,
+                tokenHash: $staffToken->token_hash,
+                eventVersion: 2,
+                representation: 'v2_online_sale_intent',
+                canonicalBytes: $payload
+            );
+            $this->assertDatabaseCount('mobile_event_receipts', 1);
+
+            $inputRevoke = [
+                'mode' => 'update_role_permission',
+                'company_id' => $companyA->id,
+                'role_name' => 'Manager',
+                'permission_name' => 'sales.invoice.view',
+                'enable' => false,
+                'actor_id' => $owner->id,
+            ];
+
+            $inputStatus = [
+                'mode' => 'status_http',
+                'company_id' => (string) $companyA->public_id,
+                'client_event_id' => $clientEventId,
+                'raw_token' => $staffRawToken,
+                'executor_mode' => 'canonical',
+            ];
+
+            if ($revokeFirst) {
+                $roleWorker = $workers[] = $this->startWorker($schema, $directory, 'worker-a', $inputRevoke);
+                touch($directory.'/go');
+                $this->assertSame(0, $roleWorker->wait(), 'Worker A stderr: '.$roleWorker->getErrorOutput());
+                $resA = json_decode($roleWorker->getOutput(), true, 512, JSON_THROW_ON_ERROR);
+                $this->assertSame(200, $resA['status'], 'Worker A (Role Revoke) failed: '.json_encode($resA));
+                $this->assertSame('permission_updated', $resA['outcome']);
+
+                $statusWorker = $workers[] = $this->startWorker($schema, $directory, 'worker-b', $inputStatus);
+                touch($directory.'/go-worker-b');
+                $this->assertSame(0, $statusWorker->wait(), 'Worker B stderr: '.$statusWorker->getErrorOutput());
+                $resB = json_decode($statusWorker->getOutput(), true, 512, JSON_THROW_ON_ERROR);
+
+                $this->assertSame(403, $resB['status'], 'Worker B (Status HTTP) should fail closed: '.json_encode($resB));
+                $this->assertSame('unauthorized', $resB['outcome']);
+            } else {
+                $statusWorker = $workers[] = $this->startWorker($schema, $directory, 'worker-b', $inputStatus);
+                touch($directory.'/go');
+                $this->assertSame(0, $statusWorker->wait(), 'Worker B stderr: '.$statusWorker->getErrorOutput());
+                $resB = json_decode($statusWorker->getOutput(), true, 512, JSON_THROW_ON_ERROR);
+
+                $this->assertSame(200, $resB['status'], 'Worker B (Status HTTP) should succeed: '.json_encode($resB));
+                $this->assertSame('status_retrieved', $resB['outcome']);
+                $this->assertSame('posted', $resB['body']['status']);
+                $this->assertNotNull($resB['body']['official_invoice']);
+
+                $roleWorker = $workers[] = $this->startWorker($schema, $directory, 'worker-a', $inputRevoke);
+                touch($directory.'/go-worker-a');
+                $this->assertSame(0, $roleWorker->wait(), 'Worker A stderr: '.$roleWorker->getErrorOutput());
+                $resA = json_decode($roleWorker->getOutput(), true, 512, JSON_THROW_ON_ERROR);
+                $this->assertSame(200, $resA['status'], 'Worker A (Role Revoke) failed: '.json_encode($resA));
+                $this->assertSame('permission_updated', $resA['outcome']);
             }
         } finally {
             foreach ($workers as $w) {

@@ -297,6 +297,45 @@ try {
             'duration' => microtime(true) - $startTime,
         ], JSON_THROW_ON_ERROR);
 
+    } elseif ($mode === 'status_http') {
+        $companyId = (string) $input['company_id'];
+        $clientEventId = (string) $input['client_event_id'];
+        $rawToken = (string) $input['raw_token'];
+        $executorMode = (string) ($input['executor_mode'] ?? 'canonical');
+
+        if ($executorMode === 'canonical' || $executorMode === 'qualified_cash') {
+            $app->instance(FinancialExecutionAdapterInterface::class, new QualifiedCashFinancialExecutionAdapter);
+        }
+
+        $request = Request::create(
+            "/api/mobile/v2/companies/{$companyId}/offline-events/{$clientEventId}/status",
+            'GET',
+            [],
+            [],
+            [],
+            [
+                'HTTP_ACCEPT' => 'application/json',
+                'HTTP_AUTHORIZATION' => 'Bearer '.$rawToken,
+            ]
+        );
+
+        /** @var Illuminate\Contracts\Http\Kernel $httpKernel */
+        $httpKernel = $app->make(Illuminate\Contracts\Http\Kernel::class);
+        $response = $httpKernel->handle($request);
+        $status = $response->getStatusCode();
+        $body = json_decode((string) $response->getContent(), true) ?? [];
+        $httpKernel->terminate($request, $response);
+
+        echo json_encode([
+            'mode' => 'status_http',
+            'outcome' => $status === 200 ? 'status_retrieved' : ($status === 403 ? 'unauthorized' : 'error'),
+            'status' => $status,
+            'body' => $body,
+            'deadlocks' => $deadlocks,
+            'retries' => $retries,
+            'duration' => microtime(true) - $startTime,
+        ], JSON_THROW_ON_ERROR);
+
     } else {
         // Receipt intake mode (default)
         $companyId = (int) $input['company_id'];

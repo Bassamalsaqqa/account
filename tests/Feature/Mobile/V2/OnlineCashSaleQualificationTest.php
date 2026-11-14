@@ -1549,10 +1549,35 @@ final class OnlineCashSaleQualificationTest extends TestCase
             ],
         ]);
 
-        // 5. Status lookup through MobileEventReceiptManager lookup must throw FinancialExecutionDeniedException
-        $manager = app(MobileEventReceiptManager::class);
-        $this->expectException(FinancialExecutionDeniedException::class);
-        $manager->lookup((int) $this->company->id, $existingEventId, $this->token->token_hash);
+        // 5. Status lookup through HTTP endpoint must return 403 Forbidden under production deny binding
+        $httpStatusResponse = $this->withHeader('Authorization', 'Bearer '.$this->rawToken)
+            ->getJson("/api/mobile/v2/companies/{$this->company->public_id}/offline-events/{$existingEventId}/status");
+        $httpStatusResponse->assertStatus(403);
+        $httpStatusResponse->assertJson([
+            'error' => [
+                'code' => 'FORBIDDEN',
+            ],
+        ]);
+
+        // Direct manager lookup must also throw FinancialExecutionDeniedException
+        try {
+            $manager = app(MobileEventReceiptManager::class);
+            $manager->lookup((int) $this->company->id, $existingEventId, $this->token->token_hash);
+            $this->fail('Expected FinancialExecutionDeniedException for direct manager lookup');
+        } catch (FinancialExecutionDeniedException $e) {
+            $this->assertStringContainsString('Financial authority is unresolved on Mobile V2', $e->getMessage());
+        }
+
+        // When cash slice flag is disabled, status endpoint returns 404 NOT_FOUND
+        config(['mobile.v2_cash_slice_enabled' => false]);
+        $disabledStatusResponse = $this->withHeader('Authorization', 'Bearer '.$this->rawToken)
+            ->getJson("/api/mobile/v2/companies/{$this->company->public_id}/offline-events/{$existingEventId}/status");
+        $disabledStatusResponse->assertStatus(404);
+        $disabledStatusResponse->assertJson([
+            'error' => [
+                'code' => 'NOT_FOUND',
+            ],
+        ]);
     }
 
     /**
@@ -1666,6 +1691,223 @@ final class OnlineCashSaleQualificationTest extends TestCase
         $this->assertDatabaseCount('mobile_event_receipts', 0);
         $this->assertDatabaseCount('sales_invoices', 0);
         $this->assertDatabaseCount('customer_payments', 0);
+
+        // Qualify replay and status parity: replay fails to find an existing receipt, status returns 'unknown'
+        $lookupResult = $manager->lookup((int) $this->company->id, $eventId, $this->token->token_hash);
+        $this->assertNull($lookupResult);
+
+        $statusResponse = $this->withHeader('Authorization', 'Bearer '.$this->rawToken)
+            ->getJson("/api/mobile/v2/companies/{$this->company->public_id}/offline-events/{$eventId}/status");
+        $statusResponse->assertStatus(200)
+            ->assertJson([
+                'client_event_id' => $eventId,
+                'company_id' => (string) $this->company->public_id,
+                'status' => 'unknown',
+                'payload_digest' => null,
+                'official_invoice' => null,
+                'conflict' => null,
+            ]);
+    }
+
+    public function test_executor_returning_foreign_company_invoice_fails_and_rolls_back(): void
+    {
+        $foreignCompany = Company::factory()->create(['status' => 'active', 'base_currency_code' => 'ILS']);
+        $foreignCustomer = Customer::create([
+            'company_id' => $foreignCompany->id,
+            'name_ar' => 'عميل أجنبي',
+            'name_en' => 'Foreign Customer',
+            'currency_code' => 'ILS',
+            'active' => true,
+        ]);
+        $foreignInvoice = SalesInvoice::create([
+            'company_id' => $foreignCompany->id,
+            'customer_id' => $foreignCustomer->id,
+            'public_id' => '01JCV8X9MEFOREIGNINV00000000',
+            'invoice_number' => 'INV-FOREIGN-001',
+            'issue_date' => now()->toDateString(),
+            'due_date' => now()->toDateString(),
+            'status' => 'posted',
+            'currency_code' => 'ILS',
+            'exchange_rate' => '1.0000000000',
+            'subtotal_base' => '50.000000',
+            'tax_total_base' => '8.000000',
+            'total_base' => '58.000000',
+            'balance_due_base' => '0.000000',
+            'grand_total_currency' => '58.000000',
+        ]);
+
+        $foreignExecutor = new class($foreignInvoice->id) implements FinancialExecutionAdapterInterface
+        {
+            private QualifiedCashFinancialExecutionAdapter $delegate;
+
+            public function __construct(private int $foreignInvId)
+            {
+                $this->delegate = new QualifiedCashFinancialExecutionAdapter;
+            }
+
+            public function authorize(Company $company, User $actor, MobileDevice $device, string $operation, ?array $payload = null): void
+            {
+                $this->delegate->authorize($company, $actor, $device, $operation, $payload);
+            }
+
+            public function execute(
+                Company $company,
+                User $actor,
+                MobileDevice $device,
+                array $payload,
+                string $idempotencySuffix,
+                ?NativeFinancialExecutionCapability $capability = null
+            ): array {
+                $res = $this->delegate->execute($company, $actor, $device, $payload, $idempotencySuffix, $capability);
+                $res['sales_invoice_id'] = $this->foreignInvId;
+                $res['sales_invoice_public_id'] = '01JCV8X9MEFOREIGNINV00000000';
+
+                return $res;
+            }
+        };
+
+        $manager = new MobileEventReceiptManager($foreignExecutor);
+        $eventId = (string) Str::uuid();
+        $payload = $this->validSalePayload($eventId);
+        $normativeBytes = OnlineSaleIntentProfile::serialize(
+            OnlineSaleIntentProfile::construct([
+                'actor_id' => (string) $this->staff->public_id,
+                'company_id' => (string) $this->company->public_id,
+                'currency_minor_units' => 2,
+            ], json_encode($payload, JSON_THROW_ON_ERROR))
+        );
+
+        try {
+            $manager->recordOrReplay(
+                companyId: (int) $this->company->id,
+                clientEventId: $eventId,
+                tokenHash: $this->token->token_hash,
+                eventVersion: 2,
+                representation: 'v2_online_sale_intent',
+                canonicalBytes: $normativeBytes
+            );
+            $this->fail('Expected SecurityException/RuntimeException for foreign company invoice');
+        } catch (\Throwable $e) {
+            $this->assertTrue(
+                str_contains($e->getMessage(), 'Financial entity IDs do not match closed composite completion') ||
+                str_contains($e->getMessage(), 'Financial executor returned sales invoice not belonging to target company') ||
+                str_contains($e->getMessage(), 'does not belong to company')
+            );
+        }
+
+        $this->assertDatabaseCount('mobile_event_receipts', 0);
+        $this->assertSame(0, SalesInvoice::where('company_id', $this->company->id)->count());
+        $this->assertSame(0, CustomerPayment::where('company_id', $this->company->id)->count());
+    }
+
+    public function test_status_endpoint_returns_unknown_status_for_unrecorded_event(): void
+    {
+        $unknownEventId = (string) Str::uuid();
+
+        $response = $this->withHeader('Authorization', 'Bearer '.$this->rawToken)
+            ->getJson("/api/mobile/v2/companies/{$this->company->public_id}/offline-events/{$unknownEventId}/status");
+
+        $response->assertStatus(200);
+        $data = $response->json();
+        $this->assertSame($unknownEventId, $data['client_event_id']);
+        $this->assertSame((string) $this->company->public_id, $data['company_id']);
+        $this->assertSame('unknown', $data['status']);
+        $this->assertNull($data['payload_digest']);
+        $this->assertNull($data['official_invoice']);
+        $this->assertNull($data['conflict']);
+        $this->assertNotEmpty($data['queried_at']);
+
+        // Assert wire response conforms to schema
+        $obj = json_decode((string) json_encode($data));
+        $this->assertTrue(WireResponse::accepts($obj, 'sale-event-status-response'));
+    }
+
+    public function test_status_endpoint_returns_posted_official_invoice_after_successful_commit(): void
+    {
+        $eventId = (string) Str::uuid();
+        $payload = $this->validSalePayload($eventId);
+
+        $commitResponse = $this->withHeader('Authorization', 'Bearer '.$this->rawToken)
+            ->postJson("/api/mobile/v2/companies/{$this->company->public_id}/sales/online-cash", $payload);
+        $commitResponse->assertStatus(201);
+        $commitData = $commitResponse->json();
+
+        // Query status endpoint for the committed event
+        $statusResponse = $this->withHeader('Authorization', 'Bearer '.$this->rawToken)
+            ->getJson("/api/mobile/v2/companies/{$this->company->public_id}/offline-events/{$eventId}/status");
+
+        $statusResponse->assertStatus(200);
+        $statusData = $statusResponse->json();
+
+        $this->assertSame($eventId, $statusData['client_event_id']);
+        $this->assertSame((string) $this->company->public_id, $statusData['company_id']);
+        $this->assertSame('posted', $statusData['status']);
+        $this->assertNotNull($statusData['payload_digest']);
+        $this->assertStringStartsWith('sha256:', $statusData['payload_digest']);
+        $this->assertNull($statusData['conflict']);
+
+        // Assert official_invoice exact parity with commit wire DTO
+        $official = $statusData['official_invoice'];
+        $this->assertNotNull($official);
+        $this->assertSame($commitData['invoice_id'], $official['invoice_id']);
+        $this->assertSame($commitData['invoice_number'], $official['invoice_number']);
+        $this->assertSame($commitData['payment_id'], $official['payment_id']);
+        $this->assertSame($commitData['payment_receipt_number'], $official['payment_receipt_number']);
+        $this->assertSame($commitData['grand_total'], $official['grand_total']);
+        $this->assertSame($commitData['posted_at'], $official['posted_at']);
+
+        // Assert wire response conforms to schema
+        $obj = json_decode((string) json_encode($statusData));
+        $this->assertTrue(WireResponse::accepts($obj, 'sale-event-status-response'));
+    }
+
+    public function test_status_endpoint_rejects_unauthenticated_or_expired_token(): void
+    {
+        $eventId = (string) Str::uuid();
+
+        // Without Bearer token
+        $response = $this->getJson("/api/mobile/v2/companies/{$this->company->public_id}/offline-events/{$eventId}/status");
+        $response->assertStatus(401);
+
+        // With invalid Bearer token
+        $response2 = $this->withHeader('Authorization', 'Bearer st_m_invalid_token_9999')
+            ->getJson("/api/mobile/v2/companies/{$this->company->public_id}/offline-events/{$eventId}/status");
+        $response2->assertStatus(401);
+    }
+
+    public function test_status_endpoint_rejects_actor_missing_view_permission(): void
+    {
+        $eventId = (string) Str::uuid();
+
+        // Revoke sales.invoice.view from Cashier role in this company
+        setPermissionsTeamId($this->company->id);
+        app(PermissionRegistrar::class)->setPermissionsTeamId($this->company->id);
+        $cashierRole = Role::where('name', 'Cashier')->where('company_id', $this->company->id)->firstOrFail();
+        $cashierRole->revokePermissionTo('sales.invoice.view');
+        app(PermissionRegistrar::class)->forgetCachedPermissions();
+
+        $response = $this->withHeader('Authorization', 'Bearer '.$this->rawToken)
+            ->getJson("/api/mobile/v2/companies/{$this->company->public_id}/offline-events/{$eventId}/status");
+
+        $response->assertStatus(403);
+        $response->assertJson([
+            'error' => [
+                'code' => 'FORBIDDEN',
+            ],
+        ]);
+    }
+
+    public function test_status_endpoint_rejects_invalid_uuid_client_event_id(): void
+    {
+        $response = $this->withHeader('Authorization', 'Bearer '.$this->rawToken)
+            ->getJson("/api/mobile/v2/companies/{$this->company->public_id}/offline-events/not-a-valid-uuid/status");
+
+        $response->assertStatus(422);
+        $response->assertJson([
+            'error' => [
+                'code' => 'VALIDATION_FAILED',
+            ],
+        ]);
     }
 
     /**

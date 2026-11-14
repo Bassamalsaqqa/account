@@ -219,4 +219,37 @@ final class OnlineSaleWireResponseProjectionTest extends TestCase
 
         $this->assertSame($expectedResponse, $projected);
     }
+
+    public function test_project_status_wire_dto_unknown_and_null_schema_parity(): void
+    {
+        $statusDto = OnlineSaleWireResponseProjection::projectStatusWireDto(
+            self::VALID_UUID,
+            self::VALID_COMPANY_ULID,
+            null,
+            null,
+            '2026-11-10T12:05:00Z'
+        );
+
+        $expectedKeys = [
+            'client_event_id',
+            'company_id',
+            'status',
+            'payload_digest',
+            'official_invoice',
+            'conflict',
+            'queried_at',
+        ];
+        $this->assertSame($expectedKeys, array_keys($statusDto));
+        $this->assertSame(self::VALID_UUID, $statusDto['client_event_id']);
+        $this->assertSame(self::VALID_COMPANY_ULID, $statusDto['company_id']);
+        $this->assertSame('unknown', $statusDto['status']);
+        $this->assertNull($statusDto['payload_digest']);
+        $this->assertNull($statusDto['official_invoice']);
+        $this->assertNull($statusDto['conflict']);
+        $this->assertSame('2026-11-10T12:05:00Z', $statusDto['queried_at']);
+
+        // Conforms to sale-event-status-response.json
+        $obj = json_decode((string) json_encode($statusDto));
+        $this->assertTrue(WireResponse::accepts($obj, 'sale-event-status-response'));
+    }
 }

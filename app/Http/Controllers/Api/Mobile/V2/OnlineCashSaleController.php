@@ -15,7 +15,9 @@ use App\Services\Money\CurrencyMinorUnitsResolver;
 use App\Support\Mobile\Contract\Revision3\OnlineSaleIntentProfile;
 use App\Support\Mobile\Contract\Revision3\OnlineSaleWireResponseProjection;
 use App\Support\Mobile\Receipt\Exceptions\FinancialExecutionDeniedException;
+use App\Support\Mobile\Receipt\Exceptions\MobileEventAuthenticationException;
 use App\Support\Mobile\Receipt\Exceptions\MobileEventDuplicatePayloadException;
+use App\Support\Mobile\Receipt\Exceptions\MobileEventForeignScopeException;
 use App\Support\Mobile\Receipt\MobileEventReceiptManager;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Http\JsonResponse;
@@ -139,5 +141,89 @@ final class OnlineCashSaleController extends Controller
         );
 
         return response()->json($projectedResponse, $httpStatus);
+    }
+
+    public function status(
+        Request $request,
+        string $companyId,
+        string $clientEventId,
+        MobileEventReceiptManager $manager
+    ): JsonResponse {
+        if (! (bool) config('mobile.v2_cash_slice_enabled', false)) {
+            return MobileV2ApiBoundary::buildErrorResponse(
+                code: 'NOT_FOUND',
+                message: 'The requested resource was not found.',
+                status: 404
+            );
+        }
+
+        /** @var Company|null $company */
+        $company = $request->attributes->get('mobile_company');
+        /** @var User|null $user */
+        $user = $request->attributes->get('mobile_user');
+        /** @var MobileDevice|null $device */
+        $device = $request->attributes->get('mobile_device');
+        /** @var MobileAccessToken|null $token */
+        $token = $request->attributes->get('mobile_token');
+
+        if ($company === null || $user === null || $device === null || $token === null) {
+            return MobileV2ApiBoundary::buildErrorResponse(
+                code: 'UNAUTHENTICATED',
+                message: 'Authentication required or token expired.',
+                status: 401
+            );
+        }
+
+        if (preg_match('/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/', $clientEventId) !== 1) {
+            return MobileV2ApiBoundary::buildErrorResponse(
+                code: 'VALIDATION_FAILED',
+                message: 'Client event ID must be a valid UUID string.',
+                status: 422
+            );
+        }
+
+        try {
+            $result = $manager->lookup(
+                (int) $company->id,
+                $clientEventId,
+                (string) $token->token_hash
+            );
+        } catch (AuthorizationException|FinancialExecutionDeniedException $e) {
+            return MobileV2ApiBoundary::buildErrorResponse(
+                code: 'FORBIDDEN',
+                message: $e->getMessage(),
+                status: 403
+            );
+        } catch (MobileEventAuthenticationException $e) {
+            return MobileV2ApiBoundary::buildErrorResponse(
+                code: 'UNAUTHENTICATED',
+                message: $e->getMessage(),
+                status: 401
+            );
+        } catch (MobileEventForeignScopeException $e) {
+            return MobileV2ApiBoundary::buildErrorResponse(
+                code: 'FORBIDDEN',
+                message: $e->getMessage(),
+                status: 403
+            );
+        } catch (InvalidArgumentException $e) {
+            return MobileV2ApiBoundary::buildErrorResponse(
+                code: 'VALIDATION_FAILED',
+                message: $e->getMessage(),
+                status: 422
+            );
+        }
+
+        $canonicalResult = $result !== null ? $result['terminal_canonical_result'] : null;
+        $payloadDigest = $result !== null ? ($result['payload_digest'] ?? null) : null;
+
+        $projectedResponse = OnlineSaleWireResponseProjection::projectStatusWireDto(
+            $clientEventId,
+            (string) $company->public_id,
+            $payloadDigest,
+            $canonicalResult
+        );
+
+        return response()->json($projectedResponse, 200);
     }
 }

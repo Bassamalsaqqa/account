@@ -527,6 +527,7 @@ final class MobileEventReceiptManager
      * @return array{
      *     outcome: string,
      *     status: string,
+     *     payload_digest: string|null,
      *     sales_invoice_id: int|null,
      *     sales_invoice_public_id: string|null,
      *     customer_payment_id: int|null,
@@ -660,6 +661,7 @@ final class MobileEventReceiptManager
                 return [
                     'outcome' => 'lookup',
                     'status' => $receipt->status,
+                    'payload_digest' => $receipt->payload_digest,
                     'sales_invoice_id' => $receipt->sales_invoice_id,
                     'sales_invoice_public_id' => $receipt->sales_invoice_public_id,
                     'customer_payment_id' => $receipt->customer_payment_id,

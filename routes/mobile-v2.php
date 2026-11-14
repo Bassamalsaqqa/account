@@ -16,7 +16,13 @@ use Illuminate\Support\Facades\Route;
 
 Route::prefix('companies/{companyId}')
     ->group(function (): void {
-        Route::post('/sales/online-cash', [OnlineCashSaleController::class, 'store'])
-            ->middleware('mobile.v2.auth')
-            ->name('mobile.v2.sales.online-cash');
+        if ((bool) config('mobile.v2_cash_slice_enabled', false)) {
+            Route::post('/sales/online-cash', [OnlineCashSaleController::class, 'store'])
+                ->middleware('mobile.v2.auth')
+                ->name('mobile.v2.sales.online-cash');
+
+            Route::get('/offline-events/{clientEventId}/status', [OnlineCashSaleController::class, 'status'])
+                ->middleware('mobile.v2.auth')
+                ->name('mobile.v2.offline-events.status');
+        }
     });

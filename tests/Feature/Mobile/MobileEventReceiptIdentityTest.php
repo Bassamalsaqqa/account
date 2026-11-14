@@ -4,15 +4,25 @@ declare(strict_types=1);
 
 namespace Tests\Feature\Mobile;
 
+use App\Actions\Inventory\PostOpeningStockAction;
+use App\Actions\Sales\CreateMoneyAccountAction;
 use App\Application\Platform\SupportViewContext;
+use App\Domain\Inventory\ValueObjects\Quantity;
 use App\Models\Company;
 use App\Models\Customer;
+use App\Models\CustomerPayment;
 use App\Models\MobileAccessToken;
 use App\Models\MobileDevice;
 use App\Models\MobileEventReceipt;
+use App\Models\MoneyAccount;
+use App\Models\Product;
+use App\Models\ProductUnit;
 use App\Models\SalesInvoice;
+use App\Models\Unit;
 use App\Models\User;
+use App\Models\Warehouse;
 use App\Services\Tenancy\CompanyRoleService;
+use App\Support\Mobile\Contract\Revision3\OnlineSaleIntentProfile;
 use App\Support\Mobile\Receipt\DenyFinancialExecutionAdapter;
 use App\Support\Mobile\Receipt\Exceptions\FinancialExecutionDeniedException;
 use App\Support\Mobile\Receipt\Exceptions\MobileEventAuthenticationException;
@@ -33,6 +43,7 @@ use InvalidArgumentException;
 use PDOException;
 use RuntimeException;
 use Tests\Support\EnforcesDisposableDatabaseOwnership;
+use Tests\Support\QualifiedCashFinancialExecutionAdapter;
 use Tests\TestCase;
 
 final class MobileEventReceiptIdentityTest extends TestCase
@@ -48,6 +59,14 @@ final class MobileEventReceiptIdentityTest extends TestCase
     private Company $companyB;
 
     private Customer $customerA;
+
+    private Warehouse $warehouseA;
+
+    private Product $productA;
+
+    private Unit $unitA;
+
+    private MoneyAccount $cashA;
 
     private MobileDevice $device;
 
@@ -119,13 +138,19 @@ final class MobileEventReceiptIdentityTest extends TestCase
 
         setPermissionsTeamId($this->companyA->id);
         $this->user->assignRole('Cashier');
+        $this->user->givePermissionTo('sales.invoice.create');
         $this->user->givePermissionTo('sales.invoice.post');
+        $this->user->givePermissionTo('money.receipt.create');
+        $this->user->givePermissionTo('money.receipt.allocate');
         $this->user->givePermissionTo('sales.invoice.view');
         $this->user->givePermissionTo('money.receipt.view');
 
         setPermissionsTeamId($this->companyB->id);
         $this->user->assignRole('Cashier');
+        $this->user->givePermissionTo('sales.invoice.create');
         $this->user->givePermissionTo('sales.invoice.post');
+        $this->user->givePermissionTo('money.receipt.create');
+        $this->user->givePermissionTo('money.receipt.allocate');
         $this->user->givePermissionTo('sales.invoice.view');
         $this->user->givePermissionTo('money.receipt.view');
 
@@ -137,6 +162,52 @@ final class MobileEventReceiptIdentityTest extends TestCase
             'active' => true,
             'created_by' => $this->user->id,
         ]));
+
+        $this->unitA = Unit::withoutGlobalScopes()->where('company_id', $this->companyA->id)->where('code', 'piece')->firstOrFail();
+        $this->warehouseA = Warehouse::withoutGlobalScopes()->where('company_id', $this->companyA->id)->where('is_default', true)->firstOrFail();
+
+        $this->productA = Product::create([
+            'company_id' => $this->companyA->id,
+            'name_ar' => 'منتج المقبوضات أ',
+            'name_en' => 'Receipt Product A',
+            'base_unit_id' => $this->unitA->id,
+            'product_type' => 'stock',
+            'track_stock' => true,
+            'track_expiry' => false,
+            'active' => true,
+            'created_by' => $this->user->id,
+        ]);
+
+        ProductUnit::create([
+            'company_id' => $this->companyA->id,
+            'product_id' => $this->productA->id,
+            'unit_id' => $this->unitA->id,
+            'conversion_to_base' => '1.000000',
+            'is_base' => true,
+            'is_default_sale' => true,
+            'is_default_purchase' => true,
+            'active' => true,
+            'created_by' => $this->user->id,
+        ]);
+
+        app(PostOpeningStockAction::class)->execute(
+            company: $this->companyA,
+            product: $this->productA,
+            warehouse: $this->warehouseA,
+            quantity: Quantity::of('10'),
+            unitCostBase: '15.000000',
+            user: $this->user,
+            idempotencyKey: 'receipt-identity-opening-stock',
+            unitId: $this->unitA->id,
+            movementDate: '2026-11-12'
+        );
+
+        $this->cashA = app(CreateMoneyAccountAction::class)->execute($this->companyA, $this->user, [
+            'account_type' => 'cash',
+            'name_ar' => 'صندوق ILS',
+            'name_en' => 'Cash Account ILS',
+            'currency_code' => 'ILS',
+        ]);
 
         $deviceId = (string) Str::uuid();
         $this->device = MobileDevice::create([
@@ -156,6 +227,44 @@ final class MobileEventReceiptIdentityTest extends TestCase
         ]);
 
         $this->manager = new MobileEventReceiptManager;
+    }
+
+    private function buildNormativePayload(string $clientEventId): string
+    {
+        $serverContext = [
+            'actor_id' => (string) $this->user->public_id,
+            'company_id' => (string) $this->companyA->public_id,
+            'currency_minor_units' => 2,
+        ];
+
+        $raw = [
+            'client_event_id' => $clientEventId,
+            'currency' => 'ILS',
+            'customer_id' => (string) $this->customerA->public_id,
+            'device_id' => (string) $this->device->device_id,
+            'lines' => [
+                [
+                    'conversion_to_base' => '1.000000',
+                    'product_id' => (string) $this->productA->public_id,
+                    'product_unit_id' => (string) $this->unitA->public_id,
+                    'quantity' => '2.000000',
+                    'tax_inclusive' => false,
+                    'tax_rate' => '0.000000',
+                    'tax_rate_id' => null,
+                    'unit_price' => '50.000000',
+                ],
+            ],
+            'payment' => [
+                'amount' => '100.000000',
+                'cash_account_id' => (string) $this->cashA->public_id,
+                'payment_method' => 'cash',
+                'settlement_mode' => 'full',
+            ],
+        ];
+
+        return OnlineSaleIntentProfile::serialize(
+            OnlineSaleIntentProfile::construct($serverContext, json_encode($raw, JSON_THROW_ON_ERROR))
+        );
     }
 
     /**
@@ -827,6 +936,89 @@ final class MobileEventReceiptIdentityTest extends TestCase
 
     public function test_entity_ownership_verification_rejects_foreign_company_invoice(): void
     {
+        $foreignCustomer = Customer::create([
+            'company_id' => $this->companyB->id,
+            'name_ar' => 'عميل الشركة ب',
+            'name_en' => 'Company B Customer',
+            'currency_code' => 'USD',
+            'active' => true,
+        ]);
+        $foreignInvoice = SalesInvoice::create([
+            'company_id' => $this->companyB->id,
+            'customer_id' => $foreignCustomer->id,
+            'public_id' => '01JCV8X9MEFOREIGN00000000000',
+            'invoice_number' => 'INV-FOREIGN-B-001',
+            'issue_date' => now()->toDateString(),
+            'due_date' => now()->toDateString(),
+            'status' => 'posted',
+            'currency_code' => 'USD',
+            'exchange_rate' => '1.0000000000',
+            'subtotal_base' => '50.000000',
+            'tax_total_base' => '0.000000',
+            'total_base' => '50.000000',
+            'balance_due_base' => '0.000000',
+            'grand_total_currency' => '50.000000',
+        ]);
+
+        $foreignExecutor = new class($foreignInvoice->id) implements FinancialExecutionAdapterInterface
+        {
+            private QualifiedCashFinancialExecutionAdapter $delegate;
+
+            public function __construct(private int $foreignInvId)
+            {
+                $this->delegate = new QualifiedCashFinancialExecutionAdapter;
+            }
+
+            public function authorize(Company $company, User $actor, MobileDevice $device, string $operation, ?array $payload = null): void
+            {
+                $this->delegate->authorize($company, $actor, $device, $operation, $payload);
+            }
+
+            public function execute(
+                Company $company,
+                User $actor,
+                MobileDevice $device,
+                array $payload,
+                string $idempotencySuffix,
+                ?NativeFinancialExecutionCapability $capability = null
+            ): array {
+                $res = $this->delegate->execute($company, $actor, $device, $payload, $idempotencySuffix, $capability);
+                $res['sales_invoice_id'] = $this->foreignInvId;
+                $res['sales_invoice_public_id'] = '01JCV8X9MEFOREIGN00000000000';
+
+                return $res;
+            }
+        };
+
+        $manager = new MobileEventReceiptManager($foreignExecutor);
+        $eventId = (string) Str::uuid();
+        $payload = $this->buildNormativePayload($eventId);
+
+        try {
+            $manager->recordOrReplay(
+                companyId: (int) $this->companyA->id,
+                clientEventId: $eventId,
+                tokenHash: $this->token->token_hash,
+                eventVersion: 2,
+                representation: 'v2_online_sale_intent',
+                canonicalBytes: $payload
+            );
+            $this->fail('Expected SecurityException/RuntimeException for foreign company invoice');
+        } catch (\Throwable $e) {
+            $this->assertTrue(
+                str_contains($e->getMessage(), 'Financial entity IDs do not match closed composite completion') ||
+                str_contains($e->getMessage(), 'Financial executor returned sales invoice not belonging to target company') ||
+                str_contains($e->getMessage(), 'does not belong to company')
+            );
+        }
+
+        $this->assertDatabaseCount('mobile_event_receipts', 0);
+        $this->assertSame(0, SalesInvoice::where('company_id', $this->companyA->id)->count());
+        $this->assertSame(0, CustomerPayment::where('company_id', $this->companyA->id)->count());
+    }
+
+    public function test_unadmitted_v2_intent_producing_financial_entities_fails_closed(): void
+    {
         $payload = '{"amount":"10.000000"}';
 
         // Fake executor returning financial entities under unadmitted v2_intent representation
@@ -1025,41 +1217,60 @@ final class MobileEventReceiptIdentityTest extends TestCase
 
     public function test_public_id_mismatch_between_executor_and_database_fails_and_rolls_back(): void
     {
-        // Create actual sales invoice in companyA
-        $invoice = CompanyScope::executeWithoutScope(fn () => SalesInvoice::create([
-            'company_id' => $this->companyA->id,
-            'customer_id' => $this->customerA->id,
-            'public_id' => 'INV_ACTUAL_DB_PUBLIC_ID',
-            'invoice_number' => 'INV-MISMATCH-001',
-            'issue_date' => '2026-11-12',
-            'due_date' => '2026-11-12',
-            'status' => 'draft',
-            'currency_code' => 'ILS',
-            'exchange_rate' => '1.0000000000',
-            'subtotal_base' => '100.000000',
-            'tax_total_base' => '0.000000',
-            'total_base' => '100.000000',
-            'balance_due_base' => '100.000000',
-            'created_by' => $this->user->id,
-        ]));
+        $tamperedExecutor = new class implements FinancialExecutionAdapterInterface
+        {
+            private QualifiedCashFinancialExecutionAdapter $delegate;
 
-        $manager = new MobileEventReceiptManager($this->createTestExecutor([
-            'sales_invoice_id' => $invoice->id,
-            'sales_invoice_public_id' => 'INV_FAKE_MISMATCH_PUBLIC_ID',
-        ]));
+            public function __construct()
+            {
+                $this->delegate = new QualifiedCashFinancialExecutionAdapter;
+            }
 
-        // Under unadmitted representation v2_intent, fails closed before reaching entity ownership query
-        $this->expectException(SecurityException::class);
-        $this->expectExceptionMessage('Unsupported financial representation [v2_intent] produced financial entities.');
+            public function authorize(Company $company, User $actor, MobileDevice $device, string $operation, ?array $payload = null): void
+            {
+                $this->delegate->authorize($company, $actor, $device, $operation, $payload);
+            }
 
-        $manager->recordOrReplay(
-            companyId: (int) $this->companyA->id,
-            clientEventId: (string) Str::uuid(),
-            tokenHash: $this->token->token_hash,
-            eventVersion: 2,
-            representation: 'v2_intent',
-            canonicalBytes: '{"amount":"100.000000"}'
-        );
+            public function execute(
+                Company $company,
+                User $actor,
+                MobileDevice $device,
+                array $payload,
+                string $idempotencySuffix,
+                ?NativeFinancialExecutionCapability $capability = null
+            ): array {
+                $res = $this->delegate->execute($company, $actor, $device, $payload, $idempotencySuffix, $capability);
+                $res['sales_invoice_public_id'] = 'INV_MISMATCH_TAMPERED_001';
+
+                return $res;
+            }
+        };
+
+        $manager = new MobileEventReceiptManager($tamperedExecutor);
+        $eventId = (string) Str::uuid();
+        $payload = $this->buildNormativePayload($eventId);
+
+        try {
+            $manager->recordOrReplay(
+                companyId: (int) $this->companyA->id,
+                clientEventId: $eventId,
+                tokenHash: $this->token->token_hash,
+                eventVersion: 2,
+                representation: 'v2_online_sale_intent',
+                canonicalBytes: $payload
+            );
+            $this->fail('Expected RuntimeException for sales invoice public ID mismatch');
+        } catch (RuntimeException $e) {
+            $this->assertStringContainsString('Sales invoice public ID mismatch between executor and database row.', $e->getMessage());
+        }
+
+        $this->assertDatabaseCount('mobile_event_receipts', 0);
+        $this->assertSame(0, SalesInvoice::where('company_id', $this->companyA->id)->count());
+        $this->assertSame(0, CustomerPayment::where('company_id', $this->companyA->id)->count());
+
+        // Replay and status parity: lookup returns null, no receipt exists
+        $lookupResult = $manager->lookup((int) $this->companyA->id, $eventId, $this->token->token_hash);
+        $this->assertNull($lookupResult);
     }
 
     public function test_terminal_canonical_result_rejects_unknown_keys_and_forbidden_credentials(): void
