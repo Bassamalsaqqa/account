@@ -2,7 +2,7 @@
 
 **PR**: [#102](https://github.com/Bassamalsaqqa/account/pull/102) (`t3/recover-cash-writer`)  
 **Repository**: `Bassamalsaqqa/account`  
-**Review Context**: OWNER Review `5905683371` personally fetched PR #102 at commit `6e8c01cbfed9d11fd79e50699ff1a51ae8f4e72e` (2026-11-14 16:06:33Z).  
+**Review Context**: OWNER Review `5905683371` submitted at `2026-11-14T16:06:33Z` on commit `6e8c01cbfed9d11fd79e50699ff1a51ae8f4e72e`.  
 **Operational Scope**: Sole writer lane, documentation and evidence publication only. Zero database connections, zero listening sockets, zero background jobs, zero child subagents.  
 **Accepted Core Foundation**: Prior core qualification (187 tests, 1,440 assertions, route cache DAG, and company-root serialization invariants at `6981511405d7bcd04cd8f8a09e64443ce0aaf47e`) is **accepted** and not redone.
 
@@ -12,10 +12,10 @@
 
 All digests below are deterministic SHA-256 hashes computed directly from disk:
 
-| Component / File Path | SHA-256 Digest | Status / Purpose |
+| Component / File Path | SHA-256 Digest | Status & Role |
 |---|---|---|
 | `docs/integration/mobile-v2-client-handoff-schema.json` | `edaef0309765e10d6462b36b5c660eb02f65c057c810ab72f756f7664e3ca275` | **Frozen**: JSON Schema enforcing full cash restriction, ULID format, startup TLS structure, and strict TTL |
-| `tests/Support/Harness/DisposableMobileV2BackendHarness.php` | `c84162a7d20e231f4cf41e13de665b5ee8c220caf379225d62f2cfcc01bfce17` | **Source Fixture**: Autoload-only require sequenced before child readiness route handler, extracted template generator |
+| `tests/Support/Harness/DisposableMobileV2BackendHarness.php` | `c84162a7d20e231f4cf41e13de665b5ee8c220caf379225d62f2cfcc01bfce17` | **Source Fixture**: Autoload-only require sequenced before child readiness route handler, extracted child bootstrap generator |
 | `tests/Unit/Mobile/Harness/DisposableMobileV2BackendHarnessGuardTest.php` | `bc2f388eb4c889e2088728bceb5d4d1fb1acb07c2828fc84ed7d980a5833ce08` | **Pure Guard Suite**: 44 tests, 163 assertions, zero DB sockets, zero listeners, includes fresh subprocess router test |
 | `tests/Support/Harness/MobileV2HarnessCommand.php` | `bb951b183ba2249cf76b43a18638d78fb27829fa3dfa948ea515c4ad8d1e8d92` | **CLI Command**: Bounded `--readiness-only` and paired `--run` dispatching |
 | `tests/Support/Harness/mobile-v2-harness-cli.php` | `3de792b8b584e69a202248976885e4c5cc819e53707f0462d3e4c6dc1330400e` | **CLI Runner**: Pre-framework lifecycle scope validation and isolated environment configuration |
@@ -43,27 +43,49 @@ All changes on branch `t3/recover-cash-writer` since `6981511405d7bcd04cd8f8a09e
 
 ---
 
-## 3. Current Harness Execution Provenance (`6e8c01cbfed9d11fd79e50699ff1a51ae8f4e72e`)
+## 3. Harness Execution Provenance & Guard Test History
 
-### 3.1 Pure Guard Test Suite
-- **Command**: `php vendor/bin/phpunit -c phpunit.xml tests/Unit/Mobile/Harness/DisposableMobileV2BackendHarnessGuardTest.php`
-- **Result**: `OK (44 tests, 163 assertions)`
-- **Duration**: `0.277s - 0.345s`
-- **Resources**: 0 database connections, 0 listening ports, 0 external network calls.
-- **Coverage Highlights**:
-  - Pre-socket invariant refusals (missing listener gate, host/port deviations, unapproved Android candidates).
-  - Lifecycle scope matrix enforcement (`ROOT_AUTHORIZED_LOCAL_PROVISION_ONLY`, `ROOT_AUTHORIZED_READINESS_ONLY`, `ROOT_AUTHORIZED_PAIRED_EXECUTION`).
-  - Strict JCS canonical serialization and wire byte SHA-256 integrity.
-  - Recomputed `OnlineSaleIntentProfile` digest mismatch detection.
-  - Fresh unprimed PHP subprocess router test verifying classloader isolation pre-framework (GET 200, POST 405 Method Not Allowed, non-readiness 403 Forbidden).
+### 3.1 Pure Guard Test Suite Execution History
+- **Prior Root Run on `31140e4`**:
+  - Result: 43 tests, 145 assertions, **3 errors, 3 failures** (82ms, zero DB).
+  - Identified issues:
+    1. Error: `buildClientHandoff` argument count errors in tests 732, 888, 1027 (missing mandatory scope, lifecycle, and timestamps).
+    2. Failure: Stale exception message expectation in `test_assert_readiness_scope_fails_closed_on_provision_only_status`.
+    3. Failure: Unprovisioned guard early exit before manifest scope assertion in `test_start_fails_closed_on_provision_only_manifest_status`.
+    4. Failure: `OnlineSaleIntentProfile::construct` throwing `Unsupported settlement_mode: "split"` before handoff validation in `test_validate_client_handoff_fails_closed_on_invalid_payment_settlement_or_method`.
+    5. Reached fatal: Child process autoload required before readiness route in generated HTTP bootstrap.
+- **Current Head Execution (`6e8c01cbfed9d11fd79e50699ff1a51ae8f4e72e`)**:
+  - **Root Guard Run**: `0.281s` (`OK (44 tests, 163 assertions)`).
+  - **Worker Guard Run**: `0.277s` (`OK (44 tests, 163 assertions)`).
+  - All 6 prior failures/errors resolved; child process autoload sequenced before readiness route; new subprocess router execution test added.
+  - Resources: 0 database connections, 0 listening ports, 0 external network calls.
 
 ### 3.2 Historical vs Current Execution Context
 - **Prior Standalone Provision Run**: Performed at commit `4a2e0b28f8b4a4bced4a4aed3e7f69abaf7c3ac1` (recorded in prior audit notes).
 - **Current Head Execution (`6e8c01cbfed9d11fd79e50699ff1a51ae8f4e72e`)**: Executed via foreground bounded `--run --readiness-only` under isolated environment `env -i`.
-  - **Duration**: `8.236` seconds (well within the finite <= 60s constraint).
+  - **Worker Execution Duration**: `8.236` seconds.
   - **Exit Code**: `0`.
-  - **Transient Schema**: `accounting_p8_tmp_ad42c06ee92a` (created on MariaDB port 3342, migrated, seeded, and verified dropped).
-  - **Retained Log Source**: Extracted from `/tmp/private_harness_readiness/sanitized_readiness_report.json`.
+  - **Transient Owned Schema**: `accounting_p8_tmp_ad42c06ee92a` (created, migrated, seeded, and verified dropped).
+  - **Retained Report Digest**: `ad1f7cc1bf82a6a7353f6b1b898065ccc9ce10ec1882ea178f270091200c35cb` (from `/tmp/private_harness_readiness/sanitized_readiness_report.json`).
+
+### 3.3 Retained Actual Sanitized CLI Logs
+```
+[Stdout]
+Mobile V2 Harness — Readiness-Only Probe Test (--readiness-only)
+  Provision OK — schema: accounting_p8_tmp_ad42c06ee92a
+Readiness probe test succeeded.
+  TLS proxy port   : https://127.0.0.1:18443
+  Readiness probe  : verified HTTP 200 and matching nonce via CA-trusted TLS.
+  Client handoff   : /tmp/v2_harness_b7e49acec0d73267/runtime_client_handoff.json
+  Financial routes : strictly blocked (HTTP 403) in child router.
+
+Shutting down and cleaning up owned processes, files, and schemas...
+Cleanup completed.
+
+[Stderr]
+Owned schema created: accounting_p8_tmp_ad42c06ee92a
+Owned schema dropped: accounting_p8_tmp_ad42c06ee92a
+```
 
 ---
 
@@ -73,7 +95,7 @@ Live artifacts were inspected and qualified prior to automatic cleanup:
 
 | Property | Value / Hash | Security & Integrity Note |
 |---|---|---|
-| **Lifecycle Phase** | `PROVISIONED_AWAITING_TLS_START` | Captured at provision phase before TLS listener start |
+| **Lifecycle Phase** | `PROVISIONED_AWAITING_TLS_START` | Captured at provision phase before TLS proxy start |
 | **Captured Handoff SHA-256** | `964e7bcfe6b8a140f043e921e99da6020258434b6649a47dcf9225c7ddcad6d3` | **Pre-start only**: strictly the provisioned handoff artifact, NOT an `ACTIVE_TLS_READY` or Root-approved ready file hash |
 | **Startup TLS Status** | `UNAVAILABLE_AWAITING_TLS_START` | Nonce and URLs are null at provision; proxy starts downstream |
 | **Generated Test CA Cert SHA-256** | `478a81b5dc2b3e7ac34abf365d82c1ada3d8cfe53c63289d40daec58ac7cd9e2` | Generated in private bootstrap directory; attached separately |
@@ -86,9 +108,9 @@ Live artifacts were inspected and qualified prior to automatic cleanup:
 
 ## 5. Cleanup Scope & Verification
 
-Following execution completion, cleanup was verified independently:
-- **MariaDB Schemas**: Exactly `0` test schemas remaining (`SHOW DATABASES LIKE 'accounting_p8_tmp_%'` returned empty).
-- **Temporary Directories**: All `/tmp/v2_harness_*` directories fully deleted.
+Following execution completion, cleanup was verified independently for exact owned resources:
+- **Owned MariaDB Schema**: Exact owned schema `accounting_p8_tmp_ad42c06ee92a` dropped (verified absent; not a global wildcard purge).
+- **Owned Temporary Directory**: Exact owned directory `/tmp/v2_harness_b7e49acec0d73267` deleted (not a global wildcard purge).
 - **Network Sockets**: Ports `127.0.0.1:18080` (HTTP loopback) and `127.0.0.1:18443` (TLS proxy) verified closed and free via `ss -tulpn`.
 - **Processes**: Zero orphan `php -S` or `caddy` child processes remaining.
 - **Working Tree**: `git status` clean.
@@ -98,7 +120,7 @@ Following execution completion, cleanup was verified independently:
 
 ## 6. Record of Unexecuted Gaps & Review Requests
 
-In strict adherence to reporting integrity, the following items from ongoing reviews were **not executed** in this pass and remain open gaps:
+In strict adherence to reporting integrity, the following review items were **not executed** in this pass and remain open gaps:
 
 1. **Readiness TLS Negative Test Cases**:
    - Negative CA certificate validation (connecting with an untrusted CA cert to verify TLS handshake rejection).
@@ -119,11 +141,11 @@ In strict adherence to reporting integrity, the following items from ongoing rev
 |---|---|---|
 | Core 187/1440 qualification & route cache DAG invariance | **ACCEPTED** | Verified 100% byte-identical against `6981511405d7bcd04cd8f8a09e64443ce0aaf47e` |
 | Child process autoload sequencing before readiness route | **ACCEPTED** | Verified in `DisposableMobileV2BackendHarness.php` lines 749-756 |
-| Pure guard test suite passing | **ACCEPTED** | 44 tests, 163 assertions, 0 errors, 0 failures in `0.277s` |
+| Pure guard test suite passing | **ACCEPTED** | 44 tests, 163 assertions, 0 errors, 0 failures (Worker: `0.277s`, Root: `0.281s`) |
 | Subprocess router execution test | **ACCEPTED** | `test_child_bootstrap_template_execution_in_fresh_subprocess` passes in fresh `php` process |
 | Lifecycle scope assertions | **ACCEPTED** | `assertLifecycleScope` enforces `ROOT_AUTHORIZED_READINESS_ONLY` fail-closed |
 | Worker TLS readiness probe | **ACCEPTED** | Worker-side bounded attestation: HTTP 200 with matching nonce verified via Caddy TLS |
-| Bounded cleanup on shutdown | **ACCEPTED** | Root-verified: schemas=0, temp dirs absent, ports free, worktree clean |
+| Bounded cleanup on shutdown | **ACCEPTED** | Root-verified: exact owned schema dropped, exact owned dir deleted, ports free, worktree clean |
 | Live TLS negative cases on live proxy | **PENDING** | Negative CA cert and live proxy nonce mismatch drills not yet executed |
 | Intermediate process failure recovery | **PENDING** | Crash/kill transport recovery drill not yet executed |
 | Android candidate qualification | **PENDING** | Android candidate `ad10` P1 fix underway; no approved new runner; no TLS start grant |
@@ -133,19 +155,26 @@ In strict adherence to reporting integrity, the following items from ongoing rev
 
 ## 8. Guide to Financial Acceptance Criteria
 
-Any future live paired execution must strictly require and verify the following 5-point transaction graph:
+Any future live paired execution must strictly require and verify the canonical financial models, public DTOs, and settlement rules:
 
-1. **Canonical Invoice**: An `Invoice` record persisted with matching tenant company ID, customer ID, currency, and line items.
-2. **Payment**: A `Payment` record persisted strictly with `payment_method = 'cash'`, status `completed`, and non-null cash account ID.
-3. **Allocation**: An `InvoicePaymentAllocation` record binding the payment to the invoice, ensuring net balance consistency.
-4. **Stock Ledger Entry**: A `StockMovement` recorded in base inventory units matching line item quantities.
-5. **Receipt**: A `MobileEventReceipt` record with an authoritative ULID public ID, idempotently deduplicating on `client_event_id`.
+### 8.1 Canonical Domain Entities & Public Identity
+1. **SalesInvoice**: Model `SalesInvoice` persisted with status `posted` (tenant company, customer, currency, line items). Public ID in wire DTOs is a ULID (`invoice_id`).
+2. **CustomerPayment**: Model `CustomerPayment` persisted with status `posted` (method `cash`, non-null `cash_account_id`). Public ID in wire DTOs is a ULID (`payment_id`).
+3. **CustomerPaymentAllocation**: Model `CustomerPaymentAllocation` binding `CustomerPayment` to `SalesInvoice`, reconciling invoice balance.
+4. **StockMovement**: Model `StockMovement` recording physical ledger deduction in base inventory units.
+5. **MobileEventReceipt**: Model `MobileEventReceipt` recording execution receipt. In the public wire contract, receipt identity is strictly the client UUID (`client_event_id`). There is **no public ULID receipt contract**.
 
-### Financial Parity & Edge-Case Rules
-- **Status & Replay Parity**: Fresh commit (HTTP 201), exact replay (HTTP 200), and status inquiry (`/offline-events/{clientEventId}/status`) must return identical canonical receipt IDs and totals.
-- **Rejection of Unsettled States**: A receipt marked `PostedWithoutPaymentReference` or lacking allocation is **never** accepted as a successful full cash settlement.
-- **Overtender Change Calculation**: Expected paid and net total amounts must strictly reflect overtender change (`change_amount = tendered_amount - net_total`). Naive client-side math assumptions that equate tendered cash directly to invoice net without change reconciliation are forbidden.
-- **Client Semantics**: The backend remains the sole authority on tax computation, line item extension, currency minor units, and inventory valuation; client-submitted figures are validated, never blindly trusted.
+### 8.2 DTO Structure & Parity Rules
+- **Commit Wire DTO (10 keys)**: Returns `client_event_id` (UUID), `status` (`'posted'`), `invoice_id` (ULID), `invoice_number`, `payment_id` (ULID), `payment_receipt_number`, `grand_total`, `amount_paid`, `change_returned`, `posted_at`.
+- **Status Wire DTO**: Returns `client_event_id`, `company_id`, `status` (`'posted'` or `'unknown'`), `payload_digest`, `official_invoice`, `conflict`, `queried_at`.
+  - The `official_invoice` field is a **6-field subset** (`invoice_id`, `invoice_number`, `payment_id`, `payment_receipt_number`, `grand_total`, `posted_at`).
+  - Parity assertions must compare matching invoice/payment public ULIDs, invoice numbers, and totals across the shared fields; do **not** claim identical 10-key receipt structures between commit and status.
+- **Rejection of Unsettled States**: A receipt marked `PostedWithoutPaymentReference` or lacking allocation is **never** accepted as a full cash settlement success.
+
+### 8.3 Overtender & Wire Settlement Semantics
+- **Backend Full Cash Wire Contract**: At the backend financial slice, the request `payment.amount` is the exact settlement amount applied to the invoice (`change_returned` = `0.000000` on the wire).
+- **Client Tender Calculation**: Overtender and customer change calculation is managed durably on the Android client (`OfflineSaleV2` local tender/change state where `tender_amount >= net_total` and `local_change = tender_amount - net_total`).
+- **No Unsupported Backend Fields**: Do not impose non-existent or unsupported tender/change fields onto the backend cash slice request payload.
 
 ---
 

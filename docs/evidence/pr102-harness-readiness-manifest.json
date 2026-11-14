@@ -3,7 +3,7 @@
     "review_context": {
         "review_id": "5905683371",
         "fetched_head_sha": "6e8c01cbfed9d11fd79e50699ff1a51ae8f4e72e",
-        "fetched_at": "2026-11-14T16:06:33Z",
+        "review_submitted_at": "2026-11-14T16:06:33Z",
         "review_scope": "SOURCE_ONLY_EVIDENCE_PUBLICATION",
         "existing_core_status": "ACCEPTED_DO_NOT_REDO",
         "qualified_core_sha": "6981511405d7bcd04cd8f8a09e64443ce0aaf47e",
@@ -20,6 +20,30 @@
         "peer_android_approved_head_sha": "019ea39af09558c2622356cb22235572747e3ddc",
         "peer_android_executable_head_sha": "ddfc75536e647c65a6a7e8868c9336cee93769ec"
     },
+    "guard_execution_history": {
+        "prior_run_commit_31140e4": {
+            "result": "3_ERRORS_3_FAILURES",
+            "tests": 43,
+            "assertions": 145,
+            "failure_details": [
+                "Too few arguments on buildClientHandoff (tests 732, 888, 1027)",
+                "Stale exception message expectation in test_assert_readiness_scope_fails_closed_on_provision_only_status",
+                "Start unprovisioned guard hit before scope check in test_start_fails_closed_on_provision_only_manifest_status",
+                "Unsupported settlement_mode thrown by OnlineSaleIntentProfile::construct before validateClientHandoff in payment test"
+            ]
+        },
+        "current_head_execution_6e8c01c": {
+            "root_guard_run_seconds": 0.281,
+            "worker_guard_run_seconds": 0.277,
+            "tests": 44,
+            "assertions": 163,
+            "errors": 0,
+            "failures": 0,
+            "database_sockets": 0,
+            "network_sockets": 0,
+            "subprocess_router_test_added": true
+        }
+    },
     "historical_vs_current_execution": {
         "prior_standalone_provision_head": "4a2e0b28f8b4a4bced4a4aed3e7f69abaf7c3ac1",
         "current_head_execution": {
@@ -27,16 +51,9 @@
             "command": "mobile-v2-harness-cli.php --run --readiness-only",
             "duration_seconds": 8.236,
             "exit_code": 0,
-            "pure_guard_tests": {
-                "tests": 44,
-                "assertions": 163,
-                "errors": 0,
-                "failures": 0,
-                "database_sockets": 0,
-                "network_sockets": 0
-            },
-            "disposable_schema_name": "accounting_p8_tmp_ad42c06ee92a",
-            "disposable_schema_dropped": true
+            "owned_disposable_schema": "accounting_p8_tmp_ad42c06ee92a",
+            "owned_disposable_schema_dropped": true,
+            "sanitized_report_digest_sha256": "ad1f7cc1bf82a6a7353f6b1b898065ccc9ce10ec1882ea178f270091200c35cb"
         }
     },
     "captured_artifact_qualification": {
@@ -50,10 +67,10 @@
         "credentials_or_tokens_published": false
     },
     "cleanup_verification": {
-        "root_verified": true,
-        "schemas_remaining": 0,
-        "temp_directories_remaining": 0,
-        "ports_listening": [],
+        "scope": "EXACT_OWNED_RESOURCES_ONLY",
+        "exact_owned_schema_dropped": "accounting_p8_tmp_ad42c06ee92a",
+        "exact_owned_temp_dir_deleted": "/tmp/v2_harness_b7e49acec0d73267",
+        "ports_closed": [18080, 18443],
         "worktree_clean": true
     },
     "unexecuted_gaps_record": [
@@ -71,7 +88,7 @@
             "Lifecycle scope assertions (assertLifecycleScope) enforcing ROOT_AUTHORIZED_READINESS_ONLY",
             "Pure source invariance maintained against 6981511405d7bcd04cd8f8a09e64443ce0aaf47e",
             "Worker TLS readiness probe verified HTTP 200 with matching nonce over CA-trusted TLS",
-            "Bounded cleanup verified (schemas=0, temp dirs=0, ports free, lease released)"
+            "Bounded cleanup verified for exact owned schema and directory"
         ],
         "pending": [
             "Live TLS negative cases (untrusted CA, corrupted nonce) on live proxy",
