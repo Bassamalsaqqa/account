@@ -13,13 +13,15 @@ use Tests\TestCase;
  *
  * Verifies that:
  * 1. Route compilation executes in an isolated fresh PHP bootstrap with cache paths outside checkout.
- * 2. When mobile.v2_cash_slice_enabled is OFF, routes are strictly absent from compiled route cache
- *    and HTTP requests hit MobileV2ApiBoundary 404 fallback.
- * 3. When mobile.v2_cash_slice_enabled is ON, both POST /sales/online-cash and GET /offline-events/{id}/status
- *    are compiled into the route cache and route into the mobile.v2 pipeline.
+ * 2. When mobile.v2_cash_slice_enabled is OFF (with master flags ON), routes are strictly absent
+ *    from compiled route cache and HTTP requests hit MobileV2ApiBoundary fallback returning 404 (NOT_FOUND).
+ * 3. When mobile.v2_cash_slice_enabled is ON (with master flags ON), both POST /sales/online-cash
+ *    and GET /offline-events/{id}/status are compiled into route cache and reach mobile.v2.auth (401 UNAUTHENTICATED).
  * 4. Stale cache invariant: Changing the runtime environment flag does NOT activate routes without
  *    an explicit cache regeneration ceremony (route:clear -> route:cache).
- * 5. Uses fake/testing sqlite in-memory connection with zero persistent MariaDB database sockets.
+ * 5. Master flags fail-closed: When MOBILE_API_ENABLED or MOBILE_V2_API_ENABLED is OFF, outer
+ *    MobileV2ApiBoundary returns 404 (MOBILE_API_DISABLED) even if cash slice flag is ON.
+ * 6. Uses fake/testing sqlite in-memory connection with zero persistent MariaDB database sockets.
  */
 final class MobileV2RouteCacheBootstrapProofTest extends TestCase
 {
@@ -81,7 +83,7 @@ final class MobileV2RouteCacheBootstrapProofTest extends TestCase
     /**
      * @return array<string, string>
      */
-    private function isolatedEnv(bool $cashSliceEnabled): array
+    private function isolatedEnv(bool $cashSliceEnabled, bool $masterFlagsEnabled = true): array
     {
         return [
             'APP_ENV' => 'testing',
@@ -93,8 +95,8 @@ final class MobileV2RouteCacheBootstrapProofTest extends TestCase
             'APP_EVENTS_CACHE' => $this->eventsCacheFile,
             'DB_CONNECTION' => 'sqlite',
             'DB_DATABASE' => ':memory:',
-            'MOBILE_API_ENABLED' => 'false',
-            'MOBILE_V2_API_ENABLED' => 'false',
+            'MOBILE_API_ENABLED' => $masterFlagsEnabled ? 'true' : 'false',
+            'MOBILE_V2_API_ENABLED' => $masterFlagsEnabled ? 'true' : 'false',
             'MOBILE_V2_CASH_SLICE_ENABLED' => $cashSliceEnabled ? 'true' : 'false',
         ];
     }
@@ -178,7 +180,7 @@ PHP;
     #[Test]
     public function test_route_cache_flag_off_excludes_financial_endpoints_and_returns_boundary_404(): void
     {
-        $envOff = $this->isolatedEnv(cashSliceEnabled: false);
+        $envOff = $this->isolatedEnv(cashSliceEnabled: false, masterFlagsEnabled: true);
 
         // 1. Clear any prior cache
         $this->runArtisanProcess(['route:clear'], $envOff);
@@ -219,7 +221,7 @@ PHP;
     #[Test]
     public function test_route_cache_flag_on_includes_both_cash_and_status_endpoints(): void
     {
-        $envOn = $this->isolatedEnv(cashSliceEnabled: true);
+        $envOn = $this->isolatedEnv(cashSliceEnabled: true, masterFlagsEnabled: true);
 
         // 1. Clear prior cache
         $this->runArtisanProcess(['route:clear'], $envOn);
@@ -246,18 +248,21 @@ PHP;
         $this->assertNotEmpty($statusRoutes, 'Route cache compiled with flag ON must include GET offline-events/status.');
 
         // 4. Probe HTTP endpoints in fresh bootstrap process using compiled route cache
-        // With routes registered, unauthenticated requests enter mobile.v2.auth middleware and receive 401
+        // With routes registered and master flags ON, unauthenticated requests enter mobile.v2.auth middleware and receive 401 UNAUTHENTICATED
         $probe = $this->dispatchIsolatedHttpProbe($envOn);
 
         $this->assertSame(401, $probe['post_cash']['status'], 'Registered cash route must enter auth pipeline and yield 401.');
+        $this->assertSame('UNAUTHENTICATED', $probe['post_cash']['body']['error']['code'] ?? null);
+
         $this->assertSame(401, $probe['get_status']['status'], 'Registered status route must enter auth pipeline and yield 401.');
+        $this->assertSame('UNAUTHENTICATED', $probe['get_status']['body']['error']['code'] ?? null);
     }
 
     #[Test]
     public function test_stale_cache_requires_explicit_rebuild_ceremony_on_flag_toggle(): void
     {
-        $envOff = $this->isolatedEnv(cashSliceEnabled: false);
-        $envOn = $this->isolatedEnv(cashSliceEnabled: true);
+        $envOff = $this->isolatedEnv(cashSliceEnabled: false, masterFlagsEnabled: true);
+        $envOn = $this->isolatedEnv(cashSliceEnabled: true, masterFlagsEnabled: true);
 
         // 1. Warm cache with flag OFF
         $this->runArtisanProcess(['route:clear'], $envOff);
@@ -267,9 +272,12 @@ PHP;
         // 2. Attempt to invoke with environment flag toggled ON, but WITHOUT clearing or rebuilding cache
         $probeStale = $this->dispatchIsolatedHttpProbe($envOn);
 
-        // Stale compiled route cache does not reflect the new environment variable; endpoints remain 404
+        // Stale compiled route cache does not reflect the new environment variable; endpoints remain 404 NOT_FOUND
         $this->assertSame(404, $probeStale['post_cash']['status'], 'Stale route cache without rebuild must keep cash endpoint 404.');
+        $this->assertSame('NOT_FOUND', $probeStale['post_cash']['body']['error']['code'] ?? null);
+
         $this->assertSame(404, $probeStale['get_status']['status'], 'Stale route cache without rebuild must keep status endpoint 404.');
+        $this->assertSame('NOT_FOUND', $probeStale['get_status']['body']['error']['code'] ?? null);
 
         // 3. Perform the mandatory route cache regeneration ceremony: route:clear then route:cache
         $this->runArtisanProcess(['route:clear'], $envOn);
@@ -278,6 +286,28 @@ PHP;
         // 4. Probe again after regeneration ceremony
         $probeFresh = $this->dispatchIsolatedHttpProbe($envOn);
         $this->assertSame(401, $probeFresh['post_cash']['status'], 'Rebuilt route cache must now route cash endpoint to 401.');
+        $this->assertSame('UNAUTHENTICATED', $probeFresh['post_cash']['body']['error']['code'] ?? null);
+
         $this->assertSame(401, $probeFresh['get_status']['status'], 'Rebuilt route cache must now route status endpoint to 401.');
+        $this->assertSame('UNAUTHENTICATED', $probeFresh['get_status']['body']['error']['code'] ?? null);
+    }
+
+    #[Test]
+    public function test_master_flags_off_fail_closed_even_when_cash_slice_flag_is_on(): void
+    {
+        // When master flags are OFF, outer MobileV2ApiBoundary rejects requests with 404 MOBILE_API_DISABLED
+        $envMasterOff = $this->isolatedEnv(cashSliceEnabled: true, masterFlagsEnabled: false);
+
+        $this->runArtisanProcess(['route:clear'], $envMasterOff);
+        $this->runArtisanProcess(['route:cache'], $envMasterOff);
+        $this->assertFileExists($this->routesCacheFile);
+
+        $probe = $this->dispatchIsolatedHttpProbe($envMasterOff);
+
+        $this->assertSame(404, $probe['post_cash']['status'], 'Master flags OFF must yield 404.');
+        $this->assertSame('MOBILE_API_DISABLED', $probe['post_cash']['body']['error']['code'] ?? null);
+
+        $this->assertSame(404, $probe['get_status']['status'], 'Master flags OFF must yield 404.');
+        $this->assertSame('MOBILE_API_DISABLED', $probe['get_status']['body']['error']['code'] ?? null);
     }
 }

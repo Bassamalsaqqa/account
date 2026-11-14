@@ -8,9 +8,10 @@ declare(strict_types=1);
  * Runs an out-of-process verification of route caching behavior:
  * - Isolated cache paths outside checkout (sys_get_temp_dir).
  * - Fake/testing sqlite in-memory DB (no persistent DB sockets).
- * - Cycle 1 (Flag OFF): route:clear -> route:cache -> route:list -> assert absent -> probe HTTP (404).
- * - Cycle 2 (Flag ON without rebuild): probe HTTP (stale 404 invariant).
- * - Cycle 3 (Flag ON with rebuild ceremony): route:clear -> route:cache -> assert present -> probe HTTP (401 auth pipeline).
+ * - Cycle 1 (Cash OFF, Master ON): route:clear -> route:cache -> route:list -> assert absent -> probe HTTP (404 NOT_FOUND).
+ * - Cycle 2 (Cash ON without rebuild): probe HTTP (stale 404 NOT_FOUND invariant).
+ * - Cycle 3 (Cash ON with rebuild ceremony): route:clear -> route:cache -> assert present -> probe HTTP (401 UNAUTHENTICATED auth pipeline).
+ * - Cycle 4 (Master OFF fail-closed): probe HTTP (404 MOBILE_API_DISABLED).
  * - Cleanup: deletes all temporary files and directories.
  */
 
@@ -42,7 +43,7 @@ $cleanup = function () use ($tmpDir, $routesCacheFile, $configCacheFile, $servic
 
 register_shutdown_function($cleanup);
 
-$getEnv = function (bool $cashSliceEnabled) use ($routesCacheFile, $configCacheFile, $servicesCacheFile, $packagesCacheFile, $eventsCacheFile): array {
+$getEnv = function (bool $cashSliceEnabled, bool $masterFlagsEnabled = true) use ($routesCacheFile, $configCacheFile, $servicesCacheFile, $packagesCacheFile, $eventsCacheFile): array {
     return [
         'APP_ENV' => 'testing',
         'APP_KEY' => 'base64:'.base64_encode(str_repeat('r', 32)),
@@ -53,8 +54,8 @@ $getEnv = function (bool $cashSliceEnabled) use ($routesCacheFile, $configCacheF
         'APP_EVENTS_CACHE' => $eventsCacheFile,
         'DB_CONNECTION' => 'sqlite',
         'DB_DATABASE' => ':memory:',
-        'MOBILE_API_ENABLED' => 'false',
-        'MOBILE_V2_API_ENABLED' => 'false',
+        'MOBILE_API_ENABLED' => $masterFlagsEnabled ? 'true' : 'false',
+        'MOBILE_V2_API_ENABLED' => $masterFlagsEnabled ? 'true' : 'false',
         'MOBILE_V2_CASH_SLICE_ENABLED' => $cashSliceEnabled ? 'true' : 'false',
     ];
 };
@@ -105,9 +106,9 @@ PHP;
 echo "=== ROUTE CACHE BOOTSTRAP PROOF ===\n";
 echo "Isolated cache directory: {$tmpDir}\n";
 
-// Cycle 1: Flag OFF
-echo "\n--- Cycle 1: Flag OFF ---\n";
-$envOff = $getEnv(false);
+// Cycle 1: Cash OFF, Master ON
+echo "\n--- Cycle 1: Cash OFF, Master ON ---\n";
+$envOff = $getEnv(false, true);
 $runArtisan(['route:clear'], $envOff);
 $runArtisan(['route:cache'], $envOff);
 if (! file_exists($routesCacheFile)) {
@@ -128,19 +129,25 @@ $probeOff = $dispatchHttp($envOff);
 if ($probeOff['post_cash']['status'] !== 404 || $probeOff['get_status']['status'] !== 404) {
     throw new RuntimeException('FAILURE: HTTP probe did not return 404 when flag is OFF!');
 }
-echo "PASS: HTTP probe returns boundary 404 for both endpoints.\n";
+if (($probeOff['post_cash']['body']['error']['code'] ?? null) !== 'NOT_FOUND' || ($probeOff['get_status']['body']['error']['code'] ?? null) !== 'NOT_FOUND') {
+    throw new RuntimeException('FAILURE: Expected error code NOT_FOUND on fallback 404!');
+}
+echo "PASS: HTTP probe returns boundary 404 with code NOT_FOUND for both endpoints.\n";
 
-// Cycle 2: Stale Cache Invariant (Flag ON without rebuild)
-echo "\n--- Cycle 2: Stale Cache Invariant (Flag ON without rebuild) ---\n";
-$envOn = $getEnv(true);
+// Cycle 2: Stale Cache Invariant (Cash ON without rebuild)
+echo "\n--- Cycle 2: Stale Cache Invariant (Cash ON without rebuild) ---\n";
+$envOn = $getEnv(true, true);
 $probeStale = $dispatchHttp($envOn);
 if ($probeStale['post_cash']['status'] !== 404 || $probeStale['get_status']['status'] !== 404) {
     throw new RuntimeException('FAILURE: Stale cache incorrectly exposed routes without rebuild ceremony!');
 }
-echo "PASS: Stale cache preserves 404 boundary; flag change does not bypass compiled cache.\n";
+if (($probeStale['post_cash']['body']['error']['code'] ?? null) !== 'NOT_FOUND' || ($probeStale['get_status']['body']['error']['code'] ?? null) !== 'NOT_FOUND') {
+    throw new RuntimeException('FAILURE: Expected error code NOT_FOUND on stale 404!');
+}
+echo "PASS: Stale cache preserves 404 boundary (NOT_FOUND); flag change does not bypass compiled cache.\n";
 
-// Cycle 3: Flag ON with rebuild ceremony
-echo "\n--- Cycle 3: Flag ON with Rebuild Ceremony ---\n";
+// Cycle 3: Cash ON with rebuild ceremony
+echo "\n--- Cycle 3: Cash ON with Rebuild Ceremony ---\n";
 $runArtisan(['route:clear'], $envOn);
 $runArtisan(['route:cache'], $envOn);
 
@@ -158,6 +165,21 @@ $probeOn = $dispatchHttp($envOn);
 if ($probeOn['post_cash']['status'] !== 401 || $probeOn['get_status']['status'] !== 401) {
     throw new RuntimeException("FAILURE: HTTP probe did not enter auth pipeline! Got: post_cash={$probeOn['post_cash']['status']}, get_status={$probeOn['get_status']['status']}");
 }
-echo "PASS: HTTP probe reaches mobile.v2.auth middleware and returns 401 (routes registered).\n";
+if (($probeOn['post_cash']['body']['error']['code'] ?? null) !== 'UNAUTHENTICATED' || ($probeOn['get_status']['body']['error']['code'] ?? null) !== 'UNAUTHENTICATED') {
+    throw new RuntimeException('FAILURE: Expected error code UNAUTHENTICATED on 401! Got post_cash code: '.(string) ($probeOn['post_cash']['body']['error']['code'] ?? 'null'));
+}
+echo "PASS: HTTP probe reaches mobile.v2.auth middleware and returns 401 (UNAUTHENTICATED).\n";
+
+// Cycle 4: Master Flags OFF Fail-Closed
+echo "\n--- Cycle 4: Master Flags OFF Fail-Closed ---\n";
+$envMasterOff = $getEnv(true, false);
+$probeMasterOff = $dispatchHttp($envMasterOff);
+if ($probeMasterOff['post_cash']['status'] !== 404 || $probeMasterOff['get_status']['status'] !== 404) {
+    throw new RuntimeException('FAILURE: Master flags OFF did not fail closed!');
+}
+if (($probeMasterOff['post_cash']['body']['error']['code'] ?? null) !== 'MOBILE_API_DISABLED') {
+    throw new RuntimeException('FAILURE: Expected error code MOBILE_API_DISABLED when master flags are OFF!');
+}
+echo "PASS: Master flags OFF fail closed with 404 (MOBILE_API_DISABLED) even when cash flag is ON.\n";
 
 echo "\nAll route cache isolation and bootstrap invariants verified successfully.\n";

@@ -55,8 +55,8 @@ Your branch is up to date with 'origin/t3/recover-cash-writer'.
 | `tests/Feature/Mobile/MobileEventReceiptIdentityTest.php` | `1ecbf44b2b995a03d4ae382f43ec976f4be84605fbbfe92f040aef8d70d81138` | Modified (34 methods) |
 | `tests/Unit/Mobile/Contract/Revision3/OnlineSaleWireResponseProjectionTest.php` | `40424f0d43abdd776602b9b765903845712ba784d1e9c3dd3a4fba65bfa0d7ac` | Modified (8 methods) |
 | `tests/Support/mobile-identity-worker.php` | `e4b94a407dd978150a69d3c5b1c92202cd4bb22d2bab222adc5fc53f75803aa6` | Modified (fresh lookup under CompanyContext) |
-| `tests/Feature/Mobile/V2/MobileV2RouteCacheBootstrapProofTest.php` | `24ce77fa92574422f6fd228c407f8c817693da4bb617937f165ea721a97cfaa7` | Added (route cache bootstrap proof test) |
-| `tests/Support/verify-route-cache-bootstrap.php` | `e4e164c48a50a696315a243140c07bdac082564ca525d9c8b260726fcefda901` | Added (standalone CLI proof script) |
+| `tests/Feature/Mobile/V2/MobileV2RouteCacheBootstrapProofTest.php` | `7efc1d414cdf4b844d0a58f96a42185e8c5f80fe05b2f9039e2684c9e28f8f06` | Added (route cache bootstrap proof test) |
+| `tests/Support/verify-route-cache-bootstrap.php` | `2d67132293554c4d9f4b5f7dab50f163e67d46965c831a27328671dfa48feb07` | Added (standalone CLI proof script) |
 
 ---
 
@@ -108,18 +108,20 @@ The route cache proof is implemented in:
    Uses `DB_CONNECTION=sqlite` and `DB_DATABASE=:memory:`, opening zero persistent MariaDB database sockets and avoiding any port 3342 connections.
 3. **Fresh Process Execution**:
    Each Artisan command (`route:clear`, `route:cache`, `route:list --json`) and HTTP request dispatch is executed via `Symfony\Component\Process\Process` in an isolated child PHP process.
-4. **Three-Phase Cycle Verification**:
-   - **Cycle 1 (Flag OFF)**:
-     - `route:cache` compiles routes with `mobile.v2_cash_slice_enabled = false`.
+4. **Four-Phase Cycle Verification**:
+   - **Cycle 1 (Cash OFF, Master ON)**:
+     - `route:cache` compiles routes with `mobile.v2_cash_slice_enabled = false` (while `mobile.enabled = true` and `mobile.v2_enabled = true`).
      - `route:list` confirms neither `POST sales/online-cash` nor `GET offline-events/{id}/status` exists in the route table.
-     - HTTP request probe dispatches to both endpoints and confirms `MobileV2ApiBoundary` returns HTTP 404 with standard code `NOT_FOUND`.
+     - HTTP request probe dispatches to both endpoints and confirms `MobileV2ApiBoundary` returns HTTP 404 with standard boundary code `NOT_FOUND`.
    - **Cycle 2 (Stale Cache Invariant)**:
      - Environment flag is toggled to `true`, but `route:clear` is NOT executed.
-     - HTTP probe confirms the compiled cache continues to serve the prior route collection, returning HTTP 404.
-   - **Cycle 3 (Flag ON with Rebuild Ceremony)**:
+     - HTTP probe confirms the compiled cache continues to serve the prior route collection, returning HTTP 404 with code `NOT_FOUND`.
+   - **Cycle 3 (Cash ON with Rebuild Ceremony)**:
      - Mandatory regeneration ceremony runs: `artisan route:clear && artisan route:cache` with flag `true`.
-     - `route:list` confirms both `mobile.v2.sales.online-cash` and `mobile.v2.offline-events.status` are present.
-     - HTTP request probe dispatches to both endpoints and confirms the requests enter the `mobile.v2.auth` middleware pipeline, yielding HTTP 401 (`UNAUTHORIZED`) rather than the 404 boundary fallback.
+     - `route:list` confirms both `mobile.v2.sales.online-cash` and `mobile.v2.offline-events.status` are present in compiled routes.
+     - HTTP request probe dispatches to both endpoints and confirms the requests enter the `mobile.v2.auth` middleware pipeline, yielding HTTP 401 with standard code `UNAUTHENTICATED` (proving routes are registered and active).
+   - **Cycle 4 (Master Flags Fail-Closed Negative)**:
+     - When master flags (`MOBILE_API_ENABLED` or `MOBILE_V2_API_ENABLED`) are `false`, the outer `MobileV2ApiBoundary` immediately rejects all requests with HTTP 404 and code `MOBILE_API_DISABLED`, even if `mobile.v2_cash_slice_enabled` is set to `true`.
 5. **Mandatory Cache Rebuild Ceremony**:
    Documented rule: Whenever `mobile.v2_cash_slice_enabled` (or any routing configuration flag) is altered in production or staging, the route cache must be explicitly rebuilt (`php artisan route:clear && php artisan route:cache`). Changing configuration alone without cache regeneration has zero effect on compiled routes.
 
@@ -148,6 +150,7 @@ The full 11-suite test matrix was contemporaneously executed on MariaDB port 334
 ### Execution Log Provenance
 - **Raw Log Path**: `.system_generated/tasks/task-3197.log`
 - **Raw Log SHA-256**: `3380e145966ce166040368909fcb47c3b6383df5afdee03429689a46906fce8b`
+- **Raw Log Note**: Raw log `task-3197.log` is retained per raw content for Root independent verification, documenting the 11-suite execution run at historical ancestor `fb4c1496d4440cae38bf93f5f794e23b5cc20b18` (183 tests, 1,408 assertions, 0 leaks). Root will verify per raw content. Final re-execution on the current head is strictly deferred pending explicit ROOT heavy lease grant due to active ROOT web cutover priority.
 - **PHP Runtime**: PHP 8.4.27, PHPUnit 12.5.36
 - **Database Port**: 127.0.0.1:3342 (`accounting_p8_tmp_*`)
 
