@@ -146,11 +146,11 @@ final class MobileReceiptConcurrencyTest extends TestCase
         string $unitPrice = '25.000000',
         string $quantity = '1.000000'
     ): string {
-        $customer = Customer::where('company_id', $company->id)->firstOrFail();
-        $warehouse = Warehouse::where('company_id', $company->id)->where('is_default', true)->firstOrFail();
-        $product = Product::where('company_id', $company->id)->where('track_stock', true)->firstOrFail();
-        $unit = Unit::where('company_id', $company->id)->where('code', 'piece')->firstOrFail();
-        $cash = MoneyAccount::where('company_id', $company->id)->where('account_type', 'cash')->firstOrFail();
+        $customer = Customer::withoutGlobalScopes()->where('company_id', $company->id)->firstOrFail();
+        $warehouse = Warehouse::withoutGlobalScopes()->where('company_id', $company->id)->where('is_default', true)->firstOrFail();
+        $product = Product::withoutGlobalScopes()->where('company_id', $company->id)->where('track_stock', true)->firstOrFail();
+        $unit = Unit::withoutGlobalScopes()->where('company_id', $company->id)->where('code', 'piece')->firstOrFail();
+        $cash = MoneyAccount::withoutGlobalScopes()->where('company_id', $company->id)->where('account_type', 'cash')->firstOrFail();
 
         $serverContext = [
             'actor_id' => (string) $owner->public_id,
