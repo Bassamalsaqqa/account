@@ -751,21 +751,114 @@ final class ReleaseAuditDatabaseTest extends TestCase
         self::assertCount($queriesCompleted + 1, $executedQueries, 'The failing query must be intercepted by beforeExecuting hook before completing');
     }
 
-    private function createChildConfigFile(string $schema): string
+    private function createChildConfigFile(string $schema, array $overrides = []): string
     {
         $configFile = $this->tempDir.'/child_cfg_'.bin2hex(random_bytes(6)).'.json';
-        $config = [
+        $config = array_merge([
             'repo_root' => dirname(__DIR__, 3),
+            'env' => 'testing',
             'host' => (string) config('database.connections.mysql.host', '127.0.0.1'),
             'port' => (int) config('database.connections.mysql.port', '3342'),
             'schema' => $schema,
             'user' => (string) config('database.connections.mysql.username', 'test_runner'),
             'password' => (string) config('database.connections.mysql.password', ''),
-        ];
+        ], $overrides);
         file_put_contents($configFile, json_encode($config, JSON_THROW_ON_ERROR));
         chmod($configFile, 0600);
 
         return $configFile;
+    }
+
+    public function test_child_pre_socket_guard_refuses_wrong_host_port_and_missing_proof_before_socket(): void
+    {
+        $schema = DB::connection()->getDatabaseName();
+
+        $scriptPath = $this->tempDir.'/guard_probe_child_'.bin2hex(random_bytes(6)).'.php';
+        $childCode = <<<'PHP'
+<?php
+declare(strict_types=1);
+$cfgPath = $argv[1] ?? '';
+if (!is_file($cfgPath) || (fileperms($cfgPath) & 0777) !== 0600 || fileowner($cfgPath) !== posix_geteuid()) {
+    fwrite(STDERR, "INVALID_CONFIG_FILE_PERMISSIONS\n");
+    exit(2);
+}
+$cfgDir = dirname($cfgPath);
+if (!is_dir($cfgDir) || (fileperms($cfgDir) & 0777) !== 0700 || fileowner($cfgDir) !== posix_geteuid()) {
+    fwrite(STDERR, "INVALID_CONFIG_DIR_PERMISSIONS\n");
+    exit(2);
+}
+$cfg = json_decode((string) file_get_contents($cfgPath), true, flags: JSON_THROW_ON_ERROR);
+$repoRoot = (string) ($cfg['repo_root'] ?? '');
+if (!is_dir($repoRoot) || !is_file($repoRoot.'/tools/release-audit/Guard.php') || !is_file($repoRoot.'/vendor/autoload.php')) {
+    fwrite(STDERR, "INVALID_REPO_ROOT\n");
+    exit(2);
+}
+
+require $repoRoot.'/vendor/autoload.php';
+require $repoRoot.'/tools/release-audit/Guard.php';
+
+// Strict pre-socket validation
+if (getenv('APP_ENV') !== 'testing' || ($cfg['env'] ?? '') !== 'testing') {
+    fwrite(STDERR, "REFUSED_NOT_TESTING_ENV\n");
+    exit(2);
+}
+if (($cfg['host'] ?? '') !== '127.0.0.1' || (int) ($cfg['port'] ?? 0) !== 3342) {
+    fwrite(STDERR, "REFUSED_INVALID_TEST_HOST_OR_PORT\n");
+    exit(2);
+}
+$schema = (string) ($cfg['schema'] ?? '');
+if (!preg_match('/^accounting_p8_tmp_[a-f0-9]{12}$/D', $schema)) {
+    fwrite(STDERR, "REFUSED_INVALID_SCHEMA_NAME\n");
+    exit(2);
+}
+
+// Mandatory cryptographic nonce capability assertion BEFORE opening any socket
+try {
+    \Tests\Support\DisposableMariaDbSchema::assertPrimarySchema($schema);
+} catch (\Throwable $e) {
+    fwrite(STDERR, "REFUSED_PROOF_CHECK:".$e->getMessage()."\n");
+    exit(2);
+}
+
+fwrite(STDOUT, "PRE_SOCKET_GUARD_PASSED\n");
+exit(0);
+PHP;
+
+        file_put_contents($scriptPath, $childCode);
+        chmod($scriptPath, 0600);
+
+        try {
+            $baseEnv = [
+                'APP_ENV' => 'testing',
+                'PHASE8_DISPOSABLE_DB_PROOF' => (string) getenv('PHASE8_DISPOSABLE_DB_PROOF'),
+                'PHASE8_DISPOSABLE_DB_NONCE' => (string) getenv('PHASE8_DISPOSABLE_DB_NONCE'),
+            ];
+
+            // 1. Wrong host refuses before socket
+            $cfgWrongHost = $this->createChildConfigFile($schema, ['host' => '10.0.0.1']);
+            $procWrongHost = new Process([PHP_BINARY, $scriptPath, $cfgWrongHost], dirname(__DIR__, 3), $baseEnv);
+            $procWrongHost->run();
+            self::assertSame(2, $procWrongHost->getExitCode(), 'Child must reject wrong host before socket');
+            self::assertStringContainsString('REFUSED_INVALID_TEST_HOST_OR_PORT', $procWrongHost->getErrorOutput());
+
+            // 2. Wrong port refuses before socket
+            $cfgWrongPort = $this->createChildConfigFile($schema, ['port' => 3306]);
+            $procWrongPort = new Process([PHP_BINARY, $scriptPath, $cfgWrongPort], dirname(__DIR__, 3), $baseEnv);
+            $procWrongPort->run();
+            self::assertSame(2, $procWrongPort->getExitCode(), 'Child must reject wrong port before socket');
+            self::assertStringContainsString('REFUSED_INVALID_TEST_HOST_OR_PORT', $procWrongPort->getErrorOutput());
+
+            // 3. Missing nonce proof capability refuses before socket
+            $cfgValid = $this->createChildConfigFile($schema);
+            $procNoProof = new Process([PHP_BINARY, $scriptPath, $cfgValid], dirname(__DIR__, 3), ['APP_ENV' => 'testing']);
+            $procNoProof->run();
+            self::assertSame(2, $procNoProof->getExitCode(), 'Child must reject missing nonce proof before socket');
+            self::assertStringContainsString('REFUSED_PROOF_CHECK', $procNoProof->getErrorOutput());
+        } finally {
+            if (is_file($scriptPath)) {
+                unlink($scriptPath);
+            }
+        }
     }
 
     public function test_forced_child_process_termination_engine_pruning_negative_control(): void
@@ -774,7 +867,6 @@ final class ReleaseAuditDatabaseTest extends TestCase
         $observerPdo = DB::connection()->getPdo();
         $configFile = $this->createChildConfigFile($schema);
 
-        // Write private 0600 owned script file taking only config path (no credentials in ps)
         $scriptPath = $this->tempDir.'/forced_abort_child_'.bin2hex(random_bytes(6)).'.php';
         $childCode = <<<'PHP'
 <?php
@@ -790,6 +882,23 @@ if (!is_dir($cfgDir) || (fileperms($cfgDir) & 0777) !== 0700 || fileowner($cfgDi
     exit(2);
 }
 $cfg = json_decode((string) file_get_contents($cfgPath), true, flags: JSON_THROW_ON_ERROR);
+$repoRoot = (string) ($cfg['repo_root'] ?? '');
+if (!is_dir($repoRoot) || !is_file($repoRoot.'/tools/release-audit/Guard.php') || !is_file($repoRoot.'/vendor/autoload.php')) {
+    fwrite(STDERR, "INVALID_REPO_ROOT\n");
+    exit(2);
+}
+
+require $repoRoot.'/vendor/autoload.php';
+require $repoRoot.'/tools/release-audit/Guard.php';
+
+// Pre-socket capability guard
+if (getenv('APP_ENV') !== 'testing' || ($cfg['env'] ?? '') !== 'testing'
+    || ($cfg['host'] ?? '') !== '127.0.0.1' || (int) ($cfg['port'] ?? 0) !== 3342
+    || !preg_match('/^accounting_p8_tmp_[a-f0-9]{12}$/D', (string) ($cfg['schema'] ?? ''))) {
+    fwrite(STDERR, "PRE_SOCKET_GUARD_FAILED\n");
+    exit(2);
+}
+\Tests\Support\DisposableMariaDbSchema::assertPrimarySchema((string) $cfg['schema']);
 
 $pdo = new PDO("mysql:host={$cfg['host']};port={$cfg['port']};dbname={$cfg['schema']};charset=utf8mb4", (string) $cfg['user'], (string) $cfg['password'], [
     PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
@@ -810,7 +919,12 @@ PHP;
         $childConnectionId = null;
 
         try {
-            $child = new Process([PHP_BINARY, $scriptPath, $configFile], dirname(__DIR__, 3), null, null, 20.0);
+            $childEnv = [
+                'APP_ENV' => 'testing',
+                'PHASE8_DISPOSABLE_DB_PROOF' => (string) getenv('PHASE8_DISPOSABLE_DB_PROOF'),
+                'PHASE8_DISPOSABLE_DB_NONCE' => (string) getenv('PHASE8_DISPOSABLE_DB_NONCE'),
+            ];
+            $child = new Process([PHP_BINARY, $scriptPath, $configFile], dirname(__DIR__, 3), $childEnv, null, 20.0);
             $child->start();
 
             $startTime = microtime(true);
@@ -893,16 +1007,26 @@ if (!is_dir($cfgDir) || (fileperms($cfgDir) & 0777) !== 0700 || fileowner($cfgDi
 }
 $cfg = json_decode((string) file_get_contents($cfgPath), true, flags: JSON_THROW_ON_ERROR);
 $repoRoot = (string) ($cfg['repo_root'] ?? '');
-if (!is_dir($repoRoot) || !is_file($repoRoot.'/tools/release-audit/Guard.php')) {
+if (!is_dir($repoRoot) || !is_file($repoRoot.'/tools/release-audit/Guard.php') || !is_file($repoRoot.'/vendor/autoload.php')) {
     fwrite(STDERR, "INVALID_REPO_ROOT\n");
     exit(2);
 }
 
+require $repoRoot.'/vendor/autoload.php';
 require $repoRoot.'/tools/release-audit/Guard.php';
 require $repoRoot.'/tools/release-audit/Fingerprint.php';
 
 use ReleaseAudit\Budget;
 use ReleaseAudit\Fingerprint;
+
+// Pre-socket capability guard
+if (getenv('APP_ENV') !== 'testing' || ($cfg['env'] ?? '') !== 'testing'
+    || ($cfg['host'] ?? '') !== '127.0.0.1' || (int) ($cfg['port'] ?? 0) !== 3342
+    || !preg_match('/^accounting_p8_tmp_[a-f0-9]{12}$/D', (string) ($cfg['schema'] ?? ''))) {
+    fwrite(STDERR, "PRE_SOCKET_GUARD_FAILED\n");
+    exit(2);
+}
+\Tests\Support\DisposableMariaDbSchema::assertPrimarySchema((string) $cfg['schema']);
 
 $pdo = new PDO("mysql:host={$cfg['host']};port={$cfg['port']};dbname={$cfg['schema']};charset=utf8mb4", (string) $cfg['user'], (string) $cfg['password'], [
     PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
@@ -935,7 +1059,12 @@ PHP;
         $childConnectionId = null;
 
         try {
-            $child = new Process([PHP_BINARY, $scriptPath, $configFile], dirname(__DIR__, 3), null, null, 15.0);
+            $childEnv = [
+                'APP_ENV' => 'testing',
+                'PHASE8_DISPOSABLE_DB_PROOF' => (string) getenv('PHASE8_DISPOSABLE_DB_PROOF'),
+                'PHASE8_DISPOSABLE_DB_NONCE' => (string) getenv('PHASE8_DISPOSABLE_DB_NONCE'),
+            ];
+            $child = new Process([PHP_BINARY, $scriptPath, $configFile], dirname(__DIR__, 3), $childEnv, null, 15.0);
             $child->start();
 
             $startTime = microtime(true);
@@ -984,7 +1113,21 @@ PHP;
     {
         $schema = DB::connection()->getDatabaseName();
         $observerPdo = DB::connection()->getPdo();
-        $configFile = $this->createChildConfigFile($schema);
+
+        // Create dedicated fixture table with 5 rows so at least 4 rows remain unread when abort trips
+        $fixtureTable = 'test_phase_b_abort_cursor_fixture';
+        $observerPdo->exec("CREATE TABLE `{$fixtureTable}` (
+            `id` INT PRIMARY KEY,
+            `val` VARCHAR(50) NOT NULL
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+        $observerPdo->exec("INSERT INTO `{$fixtureTable}` (`id`, `val`) VALUES
+            (1, 'row_one'),
+            (2, 'row_two'),
+            (3, 'row_three'),
+            (4, 'row_four'),
+            (5, 'row_five')");
+
+        $configFile = $this->createChildConfigFile($schema, ['target_table' => $fixtureTable]);
 
         $scriptPath = $this->tempDir.'/phase_b_abort_child_'.bin2hex(random_bytes(6)).'.php';
         $childCode = <<<'PHP'
@@ -1002,32 +1145,57 @@ if (!is_dir($cfgDir) || (fileperms($cfgDir) & 0777) !== 0700 || fileowner($cfgDi
 }
 $cfg = json_decode((string) file_get_contents($cfgPath), true, flags: JSON_THROW_ON_ERROR);
 $repoRoot = (string) ($cfg['repo_root'] ?? '');
-if (!is_dir($repoRoot) || !is_file($repoRoot.'/tools/release-audit/Guard.php')) {
+if (!is_dir($repoRoot) || !is_file($repoRoot.'/tools/release-audit/Guard.php') || !is_file($repoRoot.'/vendor/autoload.php')) {
     fwrite(STDERR, "INVALID_REPO_ROOT\n");
     exit(2);
 }
 
+require $repoRoot.'/vendor/autoload.php';
 require $repoRoot.'/tools/release-audit/Guard.php';
 require $repoRoot.'/tools/release-audit/Fingerprint.php';
 
 use ReleaseAudit\Budget;
 use ReleaseAudit\Fingerprint;
 
-// Test-only statement observer that intercepts fetch during active Phase B unbuffered streaming
+// Pre-socket capability guard
+if (getenv('APP_ENV') !== 'testing' || ($cfg['env'] ?? '') !== 'testing'
+    || ($cfg['host'] ?? '') !== '127.0.0.1' || (int) ($cfg['port'] ?? 0) !== 3342
+    || !preg_match('/^accounting_p8_tmp_[a-f0-9]{12}$/D', (string) ($cfg['schema'] ?? ''))) {
+    fwrite(STDERR, "PRE_SOCKET_GUARD_FAILED\n");
+    exit(2);
+}
+\Tests\Support\DisposableMariaDbSchema::assertPrimarySchema((string) $cfg['schema']);
+
+// Test-only statement observer that intercepts fetch during active Phase B unbuffered streaming of target fixture
 class PhaseBObserverStatement extends PDOStatement
 {
+    public static string $targetTable = '';
+    public static bool $phaseBStarted = false;
+    public static int $phaseBRowsFetched = 0;
+
     protected function __construct() {}
 
     public function fetch(int $mode = PDO::FETCH_DEFAULT, int $cursorOrientation = PDO::FETCH_ORI_NEXT, int $cursorOffset = 0): mixed
     {
         $row = parent::fetch($mode, $cursorOrientation, $cursorOffset);
-        if ($row !== false && ($this->queryString ?? '') !== '' && str_contains($this->queryString, 'ORDER BY')) {
-            static $firstPhaseBRow = true;
-            if ($firstPhaseBRow) {
-                $firstPhaseBRow = false;
-                fwrite(STDOUT, "PHASE_B_FETCHED_ROW:1\n");
+        $q = $this->queryString ?? '';
+        $target = self::$targetTable;
+
+        // Strictly match target table payload streaming query and exclude all metadata/aggregates
+        if ($row !== false && $target !== ''
+            && str_contains($q, "FROM `{$target}`")
+            && str_contains($q, 'ORDER BY')
+            && !str_contains($q, 'COUNT(*)')
+            && !str_contains($q, 'information_schema')
+            && !str_contains($q, 'SHOW ')) {
+            self::$phaseBStarted = true;
+            self::$phaseBRowsFetched++;
+            if (self::$phaseBRowsFetched === 1) {
+                // Exactly first row fetched: emit marker with target table proof
+                fwrite(STDOUT, "PHASE_B_FETCHED_ROW:1:TABLE:{$target}\n");
                 fflush(STDOUT);
                 // Advance execution time past 1.0s budget deadline while cursor is actively streaming
+                // At this point, 4 rows remain unread in the MariaDB engine (unexhausted active cursor)
                 usleep(1100000);
             }
         }
@@ -1035,6 +1203,8 @@ class PhaseBObserverStatement extends PDOStatement
         return $row;
     }
 }
+
+PhaseBObserverStatement::$targetTable = (string) ($cfg['target_table'] ?? '');
 
 $pdo = new PDO("mysql:host={$cfg['host']};port={$cfg['port']};dbname={$cfg['schema']};charset=utf8mb4", (string) $cfg['user'], (string) $cfg['password'], [
     PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
@@ -1069,7 +1239,12 @@ PHP;
         $childConnectionId = null;
 
         try {
-            $child = new Process([PHP_BINARY, $scriptPath, $configFile], dirname(__DIR__, 3), null, null, 15.0);
+            $childEnv = [
+                'APP_ENV' => 'testing',
+                'PHASE8_DISPOSABLE_DB_PROOF' => (string) getenv('PHASE8_DISPOSABLE_DB_PROOF'),
+                'PHASE8_DISPOSABLE_DB_NONCE' => (string) getenv('PHASE8_DISPOSABLE_DB_NONCE'),
+            ];
+            $child = new Process([PHP_BINARY, $scriptPath, $configFile], dirname(__DIR__, 3), $childEnv, null, 15.0);
             $child->start();
 
             $startTime = microtime(true);
@@ -1094,7 +1269,7 @@ PHP;
             $child->wait();
 
             self::assertSame(1, $child->getExitCode(), 'Child process must exit with code 1 upon AUDIT_REFUSED during Phase B');
-            self::assertStringContainsString('PHASE_B_FETCHED_ROW:1', $child->getOutput(), 'Phase B unbuffered query must have started and fetched at least one row');
+            self::assertStringContainsString("PHASE_B_FETCHED_ROW:1:TABLE:{$fixtureTable}", $child->getOutput(), 'Phase B target payload query must have started and fetched at least one row');
             self::assertStringContainsString('PHASE_B_REFUSED_DURING_CURSOR:AUDIT_REFUSED', $child->getErrorOutput(), 'Refusal must be triggered during active unbuffered cursor');
             self::assertStringNotContainsString('COMPLETED_UNEXPECTEDLY', $child->getOutput(), 'Refused streaming child must not emit completed payload');
 
@@ -1121,6 +1296,7 @@ PHP;
             if (is_file($configFile)) {
                 unlink($configFile);
             }
+            $observerPdo->exec("DROP TABLE IF EXISTS `{$fixtureTable}`");
         }
     }
 
