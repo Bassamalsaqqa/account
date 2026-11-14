@@ -29,6 +29,7 @@ class MobileV2HarnessCommand extends Command
         {--prepare               : Source-only phase: validate invariants and emit TLS config source (no sockets, no framework boot)}
         {--provision             : Self-test provision: provision disposable schema, assert PDO 3342, and clean up}
         {--readiness-only        : Strictly bounded readiness self-test: checks only /_harness/readiness nonce, financial endpoints blocked}
+        {--readiness-hold-seconds=0 : Number of seconds (0..120) to hold readiness state before cleanup}
         {--start                 : Start transport lifecycle (requires existing live harness owner)}
         {--run                   : Foreground paired lifecycle: provision schema, start supervised transport, wait for shutdown, guaranteed cleanup}
         {--backend-head=         : Full 40-hex SHA of the current backend worktree HEAD (mandatory)}
@@ -45,6 +46,21 @@ class MobileV2HarnessCommand extends Command
         $readinessOnly = (bool) $this->option('readiness-only');
         $start = (bool) $this->option('start');
         $run = (bool) $this->option('run');
+
+        $rawHoldSeconds = $this->option('readiness-hold-seconds');
+        try {
+            $holdSeconds = DisposableMobileV2BackendHarness::assertReadinessHoldBounds($rawHoldSeconds ?? 0);
+        } catch (\InvalidArgumentException $e) {
+            $this->error('Invalid --readiness-hold-seconds: '.$e->getMessage());
+
+            return self::FAILURE;
+        }
+
+        if ($holdSeconds > 0 && ! $readinessOnly) {
+            $this->error('Option --readiness-hold-seconds is strictly restricted to --readiness-only mode.');
+
+            return self::FAILURE;
+        }
 
         if (! $prepare && ! $provision && ! $readinessOnly && ! $start && ! $run) {
             $prepare = true;
@@ -66,7 +82,7 @@ class MobileV2HarnessCommand extends Command
         }
 
         if ($readinessOnly) {
-            return $this->handleReadinessOnly($backendHead, $androidHead, $pairingManifest, $pairingManifestSha);
+            return $this->handleReadinessOnly($backendHead, $androidHead, $pairingManifest, $pairingManifestSha, $holdSeconds);
         }
 
         if ($run) {
@@ -174,7 +190,8 @@ class MobileV2HarnessCommand extends Command
         string $backendHead,
         string $androidHead,
         ?string $pairingManifest = null,
-        ?string $pairingManifestSha = null
+        ?string $pairingManifestSha = null,
+        int $holdSeconds = 0
     ): int {
         $this->line('Mobile V2 Harness — Readiness-Only Probe Test (--readiness-only)');
 
@@ -230,6 +247,32 @@ class MobileV2HarnessCommand extends Command
             $this->line('  Readiness probe  : verified HTTP 200 and matching nonce via CA-trusted TLS.');
             $this->line('  Client handoff   : '.$transport['handoff_path']);
             $this->line('  Financial routes : strictly blocked (HTTP 403) in child router.');
+
+            if ($holdSeconds > 0) {
+                $this->line("Holding readiness state for {$holdSeconds}s (PID ".getmypid().'). Press Ctrl+C to terminate early.');
+                $stop = false;
+                if (function_exists('pcntl_signal')) {
+                    $handler = function () use (&$stop) {
+                        $stop = true;
+                    };
+                    pcntl_signal(SIGINT, $handler);
+                    pcntl_signal(SIGTERM, $handler);
+                }
+
+                $elapsedMs = 0;
+                $totalMs = $holdSeconds * 1000;
+                while ($elapsedMs < $totalMs && ! $stop) {
+                    if (function_exists('pcntl_signal_dispatch')) {
+                        pcntl_signal_dispatch();
+                    }
+                    if ($stop) {
+                        $this->line('Received interrupt signal, terminating readiness hold early.');
+                        break;
+                    }
+                    usleep(100000); // 100ms
+                    $elapsedMs += 100;
+                }
+            }
         } catch (\Throwable $e) {
             $this->error('Readiness test failed: '.$e->getMessage());
 

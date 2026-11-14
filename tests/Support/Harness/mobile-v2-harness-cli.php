@@ -23,6 +23,7 @@ $backendHead = null;
 $androidHead = null;
 $pairingManifest = null;
 $pairingManifestSha = null;
+$readinessHoldSeconds = null;
 
 foreach ($argvList as $arg) {
     if ($arg === '--prepare') {
@@ -35,6 +36,8 @@ foreach ($argvList as $arg) {
         $isStart = true;
     } elseif ($arg === '--run') {
         $isRun = true;
+    } elseif (str_starts_with($arg, '--readiness-hold-seconds=')) {
+        $readinessHoldSeconds = substr($arg, 25);
     } elseif (str_starts_with($arg, '--backend-head=')) {
         $backendHead = substr($arg, 15);
     } elseif (str_starts_with($arg, '--android-head=')) {
@@ -53,6 +56,19 @@ if (! $isProvision && ! $isReadinessOnly && ! $isStart && ! $isRun) {
 
 // SAFE AUTOLOAD ONLY (no bootstrap/app.php, no Laravel kernel, zero repo .env loading)
 require __DIR__.'/../../../vendor/autoload.php';
+
+if ($readinessHoldSeconds !== null) {
+    try {
+        $parsedHold = DisposableMobileV2BackendHarness::assertReadinessHoldBounds($readinessHoldSeconds);
+        if ($parsedHold > 0 && ! $isReadinessOnly) {
+            fwrite(STDERR, "Error: --readiness-hold-seconds is strictly restricted to --readiness-only mode.\n");
+            exit(1);
+        }
+    } catch (\InvalidArgumentException $e) {
+        fwrite(STDERR, "Error: {$e->getMessage()}\n");
+        exit(1);
+    }
+}
 
 if ($isPrepare) {
     echo "Mobile V2 Harness — Source-Only Prepare (zero sockets, zero DB, zero framework boot)\n";

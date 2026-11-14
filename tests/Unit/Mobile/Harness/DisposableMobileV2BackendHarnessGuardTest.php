@@ -4,11 +4,13 @@ declare(strict_types=1);
 
 namespace Tests\Unit\Mobile\Harness;
 
+use InvalidArgumentException;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use RuntimeException;
 use Symfony\Component\Process\Process;
 use Tests\Support\Harness\DisposableMobileV2BackendHarness;
+use Tests\Support\Harness\MobileV2HarnessCommand;
 use App\Support\Mobile\Contract\CanonicalJsonSerializer;
 use App\Support\Mobile\Contract\Revision3\OnlineSaleIntentProfile;
 
@@ -1568,4 +1570,90 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
             @rmdir($tempDir);
         }
     }
+
+    #[Test]
+    public function test_assert_readiness_hold_bounds_accepts_valid_integers_and_strings(): void
+    {
+        $validCases = [0, 1, 5, 30, 60, 120];
+        foreach ($validCases as $val) {
+            $this->assertSame($val, DisposableMobileV2BackendHarness::assertReadinessHoldBounds($val));
+            $this->assertSame($val, DisposableMobileV2BackendHarness::assertReadinessHoldBounds((string) $val));
+        }
+    }
+
+    #[Test]
+    public function test_assert_readiness_hold_bounds_rejects_out_of_bounds_values(): void
+    {
+        $invalidCases = [-1, -50, 121, 300, '-1', '121', '999'];
+        foreach ($invalidCases as $val) {
+            try {
+                DisposableMobileV2BackendHarness::assertReadinessHoldBounds($val);
+                $this->fail("Expected InvalidArgumentException for value: {$val}");
+            } catch (InvalidArgumentException $e) {
+                $this->assertStringContainsString('Readiness hold seconds must be between 0 and 120', $e->getMessage());
+            }
+        }
+    }
+
+    #[Test]
+    public function test_assert_readiness_hold_bounds_rejects_non_integers_and_malformed_values(): void
+    {
+        $malformedCases = ['abc', '1.5', '', ' 10 ', '12a', null, 1.5, [], true, false];
+        foreach ($malformedCases as $val) {
+            try {
+                DisposableMobileV2BackendHarness::assertReadinessHoldBounds($val);
+                $this->fail('Expected InvalidArgumentException for malformed value: '.var_export($val, true));
+            } catch (InvalidArgumentException $e) {
+                $this->assertTrue(
+                    str_contains($e->getMessage(), 'Readiness hold seconds must be an integer string')
+                    || str_contains($e->getMessage(), 'Readiness hold seconds must be an integer or integer string')
+                );
+            }
+        }
+    }
+
+    #[Test]
+    public function test_cli_runner_rejects_readiness_hold_without_readiness_only_mode(): void
+    {
+        $root = dirname(__DIR__, 4);
+        $cliScript = $root.'/tests/Support/Harness/mobile-v2-harness-cli.php';
+
+        $proc = new Process([PHP_BINARY, $cliScript, '--prepare', '--readiness-hold-seconds=10'], $root);
+        $proc->run();
+
+        $this->assertSame(1, $proc->getExitCode());
+        $this->assertStringContainsString(
+            'Error: --readiness-hold-seconds is strictly restricted to --readiness-only mode.',
+            $proc->getErrorOutput()
+        );
+    }
+
+    #[Test]
+    public function test_cli_runner_rejects_out_of_bounds_readiness_hold_seconds(): void
+    {
+        $root = dirname(__DIR__, 4);
+        $cliScript = $root.'/tests/Support/Harness/mobile-v2-harness-cli.php';
+
+        $proc = new Process([PHP_BINARY, $cliScript, '--readiness-only', '--readiness-hold-seconds=999'], $root);
+        $proc->run();
+
+        $this->assertSame(1, $proc->getExitCode());
+        $this->assertStringContainsString(
+            'Readiness hold seconds must be between 0 and 120',
+            $proc->getErrorOutput()
+        );
+    }
+
+    #[Test]
+    public function test_harness_command_signature_contains_readiness_hold_seconds_option(): void
+    {
+        $command = new MobileV2HarnessCommand;
+        $definition = $command->getDefinition();
+
+        $this->assertTrue($definition->hasOption('readiness-hold-seconds'));
+        $option = $definition->getOption('readiness-hold-seconds');
+        $this->assertSame('0', $option->getDefault());
+        $this->assertStringContainsString('0..120', $option->getDescription());
+    }
 }
+

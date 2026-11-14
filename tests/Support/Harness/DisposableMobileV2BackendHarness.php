@@ -90,6 +90,10 @@ final class DisposableMobileV2BackendHarness
 
     public const string SCOPE_PAIRED_EXECUTION = 'ROOT_AUTHORIZED_PAIRED_EXECUTION';
 
+    public const int DEFAULT_READINESS_HOLD_SECONDS = 0;
+
+    public const int MAX_READINESS_HOLD_SECONDS = 120;
+
     private bool $provisioned = false;
 
     private ?DisposableMariaDbSchema $schema = null;
@@ -624,6 +628,40 @@ final class DisposableMobileV2BackendHarness
     public static function assertReadinessScope(?string $manifestPath, ?string $manifestShaPin): array
     {
         return self::assertLifecycleScope($manifestPath, $manifestShaPin, 'readiness');
+    }
+
+    /**
+     * Asserts that readiness hold duration is an integer within bounds (0..120 seconds).
+     *
+     * @param  mixed  $seconds
+     * @return int
+     *
+     * @throws InvalidArgumentException
+     */
+    public static function assertReadinessHoldBounds(mixed $seconds): int
+    {
+        if (is_int($seconds)) {
+            if ($seconds < 0 || $seconds > self::MAX_READINESS_HOLD_SECONDS) {
+                throw new InvalidArgumentException("Readiness hold seconds must be between 0 and ".self::MAX_READINESS_HOLD_SECONDS.", got {$seconds}.");
+            }
+
+            return $seconds;
+        }
+
+        if (is_string($seconds)) {
+            $isIntegerString = $seconds !== '' && (ctype_digit($seconds) || (str_starts_with($seconds, '-') && ctype_digit(substr($seconds, 1))));
+            if (! $isIntegerString) {
+                throw new InvalidArgumentException("Readiness hold seconds must be an integer string, got '{$seconds}'.");
+            }
+            $val = (int) $seconds;
+            if ($val < 0 || $val > self::MAX_READINESS_HOLD_SECONDS) {
+                throw new InvalidArgumentException("Readiness hold seconds must be between 0 and ".self::MAX_READINESS_HOLD_SECONDS.", got {$val}.");
+            }
+
+            return $val;
+        }
+
+        throw new InvalidArgumentException('Readiness hold seconds must be an integer or integer string.');
     }
 
     /**
