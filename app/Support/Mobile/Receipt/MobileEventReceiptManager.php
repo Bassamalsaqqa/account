@@ -206,6 +206,9 @@ final class MobileEventReceiptManager
                         if ($token->device_id !== $device->device_id || (int) $token->user_id !== (int) $user->id) {
                             throw new MobileEventAuthenticationException('Device has been revoked or does not match token owner.');
                         }
+                        if ($token->company_id !== null && (int) $token->company_id !== $companyId) {
+                            throw new MobileEventForeignScopeException('Token is bound to a different company.');
+                        }
 
                         $expectedEpoch = 'epoch-'.substr(hash('sha256', (string) $user->password), 0, 16);
                         if (! hash_equals($expectedEpoch, $token->password_epoch)) {
@@ -518,6 +521,9 @@ final class MobileEventReceiptManager
                 }
                 if ($token->device_id !== $device->device_id || (int) $token->user_id !== (int) $user->id) {
                     throw new MobileEventAuthenticationException('Device has been revoked or does not match token owner.');
+                }
+                if ($token->company_id !== null && (int) $token->company_id !== $companyId) {
+                    throw new MobileEventForeignScopeException('Token is bound to a different company.');
                 }
 
                 $expectedEpoch = 'epoch-'.substr(hash('sha256', (string) $user->password), 0, 16);
