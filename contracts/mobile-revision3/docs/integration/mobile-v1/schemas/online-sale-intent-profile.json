@@ -1,0 +1,197 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.smalltrader.app/mobile/v1/online-sale-intent-profile.json",
+  "title": "OnlineSaleIntentProfile",
+  "description": "Normative canonical economic intent profile for online sale preview and commit binding. Combines authoritative route company and token actor context with client request parameters. Restricted JCS UTF-16 code unit ordering, strict string decimal lexemes, zero floats.",
+  "type": "object",
+  "required": [
+    "actor_id",
+    "client_event_id",
+    "company_id",
+    "currency",
+    "currency_minor_units",
+    "customer_id",
+    "device_id",
+    "lines",
+    "payment",
+    "warehouse_id"
+  ],
+  "properties": {
+    "actor_id": {
+      "type": "string",
+      "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$",
+      "description": "Authoritative staff actor ULID from validated Bearer session context."
+    },
+    "client_event_id": {
+      "type": "string",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+      "description": "Client-generated UUID for the sales transaction event."
+    },
+    "company_id": {
+      "type": "string",
+      "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$",
+      "description": "Authoritative company tenant ULID bound from URL route parameter."
+    },
+    "currency": {
+      "type": "string",
+      "pattern": "^[A-Z]{3}$"
+    },
+    "currency_minor_units": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 6,
+      "description": "Server-qualified decimal scale for base currency calculations."
+    },
+    "customer_id": {
+      "type": "string",
+      "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$"
+    },
+    "device_id": {
+      "type": "string",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+    },
+    "lines": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": [
+          "product_id",
+          "product_unit_id",
+          "conversion_to_base",
+          "quantity",
+          "unit_price",
+          "tax_rate_id",
+          "tax_rate",
+          "tax_inclusive"
+        ],
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$"
+          },
+          "product_unit_id": {
+            "type": "string",
+            "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$"
+          },
+          "conversion_to_base": {
+            "type": "string",
+            "pattern": "^(?:0\\.(?=[0-9]{1,6}$)[0-9]*[1-9][0-9]*|[1-9][0-9]{0,13}(?:\\.[0-9]{1,6})?)$"
+          },
+          "quantity": {
+            "type": "string",
+            "pattern": "^(?:0\\.(?=[0-9]{1,6}$)[0-9]*[1-9][0-9]*|[1-9][0-9]{0,13}(?:\\.[0-9]{1,6})?)$"
+          },
+          "unit_price": {
+            "type": "string",
+            "pattern": "^(?:0|[1-9][0-9]{0,13})(?:\\.[0-9]{1,6})?$"
+          },
+          "tax_rate_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$"
+          },
+          "tax_rate": {
+            "type": "string",
+            "pattern": "^(?:100(?:\\.0{1,6})?|(?:0|[1-9][0-9]?)(?:\\.[0-9]{1,6})?)$"
+          },
+          "tax_inclusive": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "payment": {
+      "type": "object",
+      "required": [
+        "settlement_mode",
+        "payment_method",
+        "cash_account_id",
+        "amount"
+      ],
+      "properties": {
+        "settlement_mode": {
+          "type": "string",
+          "enum": [
+            "full",
+            "unpaid",
+            "partial"
+          ]
+        },
+        "payment_method": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "cash",
+            null
+          ]
+        },
+        "cash_account_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$"
+        },
+        "amount": {
+          "type": "string",
+          "pattern": "^(?:0|[1-9][0-9]{0,13})(?:\\.[0-9]{1,6})?$"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "settlement_mode": {
+                "const": "unpaid"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "payment_method": {
+                "type": "null"
+              },
+              "cash_account_id": {
+                "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "settlement_mode": {
+                "enum": [
+                  "full",
+                  "partial"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "payment_method": {
+                "const": "cash"
+              },
+              "cash_account_id": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      ],
+      "additionalProperties": false
+    },
+    "warehouse_id": {
+      "type": "string",
+      "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$"
+    }
+  },
+  "additionalProperties": false
+}

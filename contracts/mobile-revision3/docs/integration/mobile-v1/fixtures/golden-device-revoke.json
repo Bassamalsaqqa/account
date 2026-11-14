@@ -1,0 +1,10 @@
+{
+  "request": {
+    "reason": "Lost tablet reported by cashier"
+  },
+  "response": {
+    "device_id": "8e2b8bc6-f80c-4034-8c88-59368d1f2e10",
+    "status": "revoked",
+    "revoked_at": "2026-11-10T12:35:00Z"
+  }
+}

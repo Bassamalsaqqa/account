@@ -1,0 +1,1300 @@
+[
+  {
+    "name": "rev3 taxpairNoTax preview explicit no-tax accepted",
+    "schema": "sale-preview-request.json",
+    "instance": {
+      "client_event_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+      "device_id": "8e2b8bc6-f80c-4034-8c88-59368d1f2e10",
+      "customer_id": "01JCV8X9M4K1P2Q3R4S5T6V7W8",
+      "warehouse_id": "01JCV8X9M9A2B3C4D5E6F7G8H9",
+      "currency": "ILS",
+      "lines": [
+        {
+          "product_id": "01JCV8X9M6A1B2C3D4E5F6G7H8",
+          "product_unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+          "conversion_to_base": "1.000000",
+          "quantity": "2.000000",
+          "unit_price": "25.000000",
+          "tax_rate_id": null,
+          "tax_rate": "0.000000",
+          "tax_inclusive": false
+        }
+      ],
+      "payment": {
+        "settlement_mode": "full",
+        "payment_method": "cash",
+        "cash_account_id": "01JCV8X9MAJ3K4M5N6P7Q8R9S0",
+        "amount": "50.000000"
+      }
+    },
+    "valid": true
+  },
+  {
+    "name": "rev3 taxpairNoTax preview null tax_rate_id with non-zero tax_rate rejected",
+    "schema": "sale-preview-request.json",
+    "instance": {
+      "client_event_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+      "device_id": "8e2b8bc6-f80c-4034-8c88-59368d1f2e10",
+      "customer_id": "01JCV8X9M4K1P2Q3R4S5T6V7W8",
+      "warehouse_id": "01JCV8X9M9A2B3C4D5E6F7G8H9",
+      "currency": "ILS",
+      "lines": [
+        {
+          "product_id": "01JCV8X9M6A1B2C3D4E5F6G7H8",
+          "product_unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+          "conversion_to_base": "1.000000",
+          "quantity": "2.000000",
+          "unit_price": "25.000000",
+          "tax_rate_id": null,
+          "tax_rate": "16.000000",
+          "tax_inclusive": false
+        }
+      ],
+      "payment": {
+        "settlement_mode": "full",
+        "payment_method": "cash",
+        "cash_account_id": "01JCV8X9MAJ3K4M5N6P7Q8R9S0",
+        "amount": "50.000000"
+      }
+    },
+    "valid": false
+  },
+  {
+    "name": "rev3 taxpairNoTax preview null tax_rate_id with tax_inclusive true rejected",
+    "schema": "sale-preview-request.json",
+    "instance": {
+      "client_event_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+      "device_id": "8e2b8bc6-f80c-4034-8c88-59368d1f2e10",
+      "customer_id": "01JCV8X9M4K1P2Q3R4S5T6V7W8",
+      "warehouse_id": "01JCV8X9M9A2B3C4D5E6F7G8H9",
+      "currency": "ILS",
+      "lines": [
+        {
+          "product_id": "01JCV8X9M6A1B2C3D4E5F6G7H8",
+          "product_unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+          "conversion_to_base": "1.000000",
+          "quantity": "2.000000",
+          "unit_price": "25.000000",
+          "tax_rate_id": null,
+          "tax_rate": "0.000000",
+          "tax_inclusive": true
+        }
+      ],
+      "payment": {
+        "settlement_mode": "full",
+        "payment_method": "cash",
+        "cash_account_id": "01JCV8X9MAJ3K4M5N6P7Q8R9S0",
+        "amount": "50.000000"
+      }
+    },
+    "valid": false
+  },
+  {
+    "name": "rev3 taxpairNoTax offline intake explicit no-tax accepted",
+    "schema": "offline-sale-intake-request.json",
+    "instance": {
+      "client_event_id": "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
+      "device_id": "a0000000-0000-0000-0000-000000000001",
+      "captured_at": "2026-11-11T14:30:00Z",
+      "payload_digest": "sha256:18f0403bbda6e05eab2805eb20c9c9f9e22d86fb922eda1482db85d24dba30a3",
+      "event": {
+        "client_event_id": "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
+        "event_version": 2,
+        "company_id": "01J9Z5K3MN0000000000000001",
+        "actor_id": "01J9Z5K3MN0000000000000002",
+        "device_id": "a0000000-0000-0000-0000-000000000001",
+        "device_lease_id": "b0000000-0000-0000-0000-000000000001",
+        "captured_at": "2026-11-11T14:30:00Z",
+        "customer_id": "01J9Z5K3MN0000000000000003",
+        "currency": "ILS",
+        "warehouse_id": "01J9Z5K3MN0000000000000004",
+        "cash_account_id": "01J9Z5K3MN0000000000000005",
+        "catalog_snapshot_version": "v2026.11.11.01",
+        "local_receipt_number": "REC-20261111-0001",
+        "lines": [
+          {
+            "product_id": "01J9Z5K3MN0000000000000010",
+            "product_unit_id": "01J9Z5K3MN0000000000000020",
+            "unit_id": "01J9Z5K3MN0000000000000020",
+            "conversion_to_base": "1.000000",
+            "quantity": "2.000000",
+            "unit_price": "25.000000",
+            "tax_rate_id": null,
+            "tax_rate": "0.000000",
+            "tax_inclusive": false,
+            "tax_amount": "0.000000",
+            "line_total": "50.000000"
+          }
+        ],
+        "payment": {
+          "mode": "full",
+          "payment_method": "cash",
+          "cash_account_id": "01J9Z5K3MN0000000000000005",
+          "amount_tendered": "50.000000",
+          "amount_settled": "50.000000",
+          "change_returned": "0.000000"
+        }
+      }
+    },
+    "valid": true
+  },
+  {
+    "name": "rev3 taxpairNoTax offline intake null tax_rate_id with non-zero tax_rate rejected",
+    "schema": "offline-sale-intake-request.json",
+    "instance": {
+      "client_event_id": "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
+      "device_id": "a0000000-0000-0000-0000-000000000001",
+      "captured_at": "2026-11-11T14:30:00Z",
+      "payload_digest": "sha256:18f0403bbda6e05eab2805eb20c9c9f9e22d86fb922eda1482db85d24dba30a3",
+      "event": {
+        "client_event_id": "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
+        "event_version": 2,
+        "company_id": "01J9Z5K3MN0000000000000001",
+        "actor_id": "01J9Z5K3MN0000000000000002",
+        "device_id": "a0000000-0000-0000-0000-000000000001",
+        "device_lease_id": "b0000000-0000-0000-0000-000000000001",
+        "captured_at": "2026-11-11T14:30:00Z",
+        "customer_id": "01J9Z5K3MN0000000000000003",
+        "currency": "ILS",
+        "warehouse_id": "01J9Z5K3MN0000000000000004",
+        "cash_account_id": "01J9Z5K3MN0000000000000005",
+        "catalog_snapshot_version": "v2026.11.11.01",
+        "local_receipt_number": "REC-20261111-0001",
+        "lines": [
+          {
+            "product_id": "01J9Z5K3MN0000000000000010",
+            "product_unit_id": "01J9Z5K3MN0000000000000020",
+            "unit_id": "01J9Z5K3MN0000000000000020",
+            "conversion_to_base": "1.000000",
+            "quantity": "2.000000",
+            "unit_price": "25.000000",
+            "tax_rate_id": null,
+            "tax_rate": "16.000000",
+            "tax_inclusive": false,
+            "tax_amount": "6.900000",
+            "line_total": "50.000000"
+          }
+        ],
+        "payment": {
+          "mode": "full",
+          "payment_method": "cash",
+          "cash_account_id": "01J9Z5K3MN0000000000000005",
+          "amount_tendered": "50.000000",
+          "amount_settled": "50.000000",
+          "change_returned": "0.000000"
+        }
+      }
+    },
+    "valid": false
+  },
+  {
+    "name": "rev3 ULIDbounds tax_rate_id valid Crockford ULID accepted",
+    "schema": "sale-preview-request.json",
+    "instance": {
+      "client_event_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+      "device_id": "8e2b8bc6-f80c-4034-8c88-59368d1f2e10",
+      "customer_id": "01JCV8X9M4K1P2Q3R4S5T6V7W8",
+      "warehouse_id": "01JCV8X9M9A2B3C4D5E6F7G8H9",
+      "currency": "ILS",
+      "lines": [
+        {
+          "product_id": "01JCV8X9M6A1B2C3D4E5F6G7H8",
+          "product_unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+          "conversion_to_base": "1.000000",
+          "quantity": "2.000000",
+          "unit_price": "25.000000",
+          "tax_rate_id": "01JCV8X9M2NQW3TYZ4R5S6789A",
+          "tax_rate": "16.000000",
+          "tax_inclusive": true
+        }
+      ],
+      "payment": {
+        "settlement_mode": "full",
+        "payment_method": "cash",
+        "cash_account_id": "01JCV8X9MAJ3K4M5N6P7Q8R9S0",
+        "amount": "50.000000"
+      }
+    },
+    "valid": true
+  },
+  {
+    "name": "rev3 ULIDbounds tax_rate_id character I rejected",
+    "schema": "sale-preview-request.json",
+    "instance": {
+      "client_event_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+      "device_id": "8e2b8bc6-f80c-4034-8c88-59368d1f2e10",
+      "customer_id": "01JCV8X9M4K1P2Q3R4S5T6V7W8",
+      "warehouse_id": "01JCV8X9M9A2B3C4D5E6F7G8H9",
+      "currency": "ILS",
+      "lines": [
+        {
+          "product_id": "01JCV8X9M6A1B2C3D4E5F6G7H8",
+          "product_unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+          "conversion_to_base": "1.000000",
+          "quantity": "2.000000",
+          "unit_price": "25.000000",
+          "tax_rate_id": "01JCV8X9M2NQW3TYZ4R5S6789I",
+          "tax_rate": "16.000000",
+          "tax_inclusive": true
+        }
+      ],
+      "payment": {
+        "settlement_mode": "full",
+        "payment_method": "cash",
+        "cash_account_id": "01JCV8X9MAJ3K4M5N6P7Q8R9S0",
+        "amount": "50.000000"
+      }
+    },
+    "valid": false
+  },
+  {
+    "name": "rev3 ULIDbounds tax_rate_id character L rejected",
+    "schema": "sale-preview-request.json",
+    "instance": {
+      "client_event_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+      "device_id": "8e2b8bc6-f80c-4034-8c88-59368d1f2e10",
+      "customer_id": "01JCV8X9M4K1P2Q3R4S5T6V7W8",
+      "warehouse_id": "01JCV8X9M9A2B3C4D5E6F7G8H9",
+      "currency": "ILS",
+      "lines": [
+        {
+          "product_id": "01JCV8X9M6A1B2C3D4E5F6G7H8",
+          "product_unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+          "conversion_to_base": "1.000000",
+          "quantity": "2.000000",
+          "unit_price": "25.000000",
+          "tax_rate_id": "01JCV8X9M2NQW3TYZ4R5S6789L",
+          "tax_rate": "16.000000",
+          "tax_inclusive": true
+        }
+      ],
+      "payment": {
+        "settlement_mode": "full",
+        "payment_method": "cash",
+        "cash_account_id": "01JCV8X9MAJ3K4M5N6P7Q8R9S0",
+        "amount": "50.000000"
+      }
+    },
+    "valid": false
+  },
+  {
+    "name": "rev3 ULIDbounds tax_rate_id character O rejected",
+    "schema": "sale-preview-request.json",
+    "instance": {
+      "client_event_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+      "device_id": "8e2b8bc6-f80c-4034-8c88-59368d1f2e10",
+      "customer_id": "01JCV8X9M4K1P2Q3R4S5T6V7W8",
+      "warehouse_id": "01JCV8X9M9A2B3C4D5E6F7G8H9",
+      "currency": "ILS",
+      "lines": [
+        {
+          "product_id": "01JCV8X9M6A1B2C3D4E5F6G7H8",
+          "product_unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+          "conversion_to_base": "1.000000",
+          "quantity": "2.000000",
+          "unit_price": "25.000000",
+          "tax_rate_id": "01JCV8X9M2NQW3TYZ4R5S6789O",
+          "tax_rate": "16.000000",
+          "tax_inclusive": true
+        }
+      ],
+      "payment": {
+        "settlement_mode": "full",
+        "payment_method": "cash",
+        "cash_account_id": "01JCV8X9MAJ3K4M5N6P7Q8R9S0",
+        "amount": "50.000000"
+      }
+    },
+    "valid": false
+  },
+  {
+    "name": "rev3 ULIDbounds tax_rate_id character U rejected",
+    "schema": "sale-preview-request.json",
+    "instance": {
+      "client_event_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+      "device_id": "8e2b8bc6-f80c-4034-8c88-59368d1f2e10",
+      "customer_id": "01JCV8X9M4K1P2Q3R4S5T6V7W8",
+      "warehouse_id": "01JCV8X9M9A2B3C4D5E6F7G8H9",
+      "currency": "ILS",
+      "lines": [
+        {
+          "product_id": "01JCV8X9M6A1B2C3D4E5F6G7H8",
+          "product_unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+          "conversion_to_base": "1.000000",
+          "quantity": "2.000000",
+          "unit_price": "25.000000",
+          "tax_rate_id": "01JCV8X9M2NQW3TYZ4R5S6789U",
+          "tax_rate": "16.000000",
+          "tax_inclusive": true
+        }
+      ],
+      "payment": {
+        "settlement_mode": "full",
+        "payment_method": "cash",
+        "cash_account_id": "01JCV8X9MAJ3K4M5N6P7Q8R9S0",
+        "amount": "50.000000"
+      }
+    },
+    "valid": false
+  },
+  {
+    "name": "rev3 ULIDbounds tax_rate_id lowercase rejected",
+    "schema": "sale-preview-request.json",
+    "instance": {
+      "client_event_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+      "device_id": "8e2b8bc6-f80c-4034-8c88-59368d1f2e10",
+      "customer_id": "01JCV8X9M4K1P2Q3R4S5T6V7W8",
+      "warehouse_id": "01JCV8X9M9A2B3C4D5E6F7G8H9",
+      "currency": "ILS",
+      "lines": [
+        {
+          "product_id": "01JCV8X9M6A1B2C3D4E5F6G7H8",
+          "product_unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+          "conversion_to_base": "1.000000",
+          "quantity": "2.000000",
+          "unit_price": "25.000000",
+          "tax_rate_id": "01jcv8x9m2nqw3tyz4r5s6789a",
+          "tax_rate": "16.000000",
+          "tax_inclusive": true
+        }
+      ],
+      "payment": {
+        "settlement_mode": "full",
+        "payment_method": "cash",
+        "cash_account_id": "01JCV8X9MAJ3K4M5N6P7Q8R9S0",
+        "amount": "50.000000"
+      }
+    },
+    "valid": false
+  },
+  {
+    "name": "rev3 ULIDbounds tax_rate_id UUID rejected",
+    "schema": "sale-preview-request.json",
+    "instance": {
+      "client_event_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+      "device_id": "8e2b8bc6-f80c-4034-8c88-59368d1f2e10",
+      "customer_id": "01JCV8X9M4K1P2Q3R4S5T6V7W8",
+      "warehouse_id": "01JCV8X9M9A2B3C4D5E6F7G8H9",
+      "currency": "ILS",
+      "lines": [
+        {
+          "product_id": "01JCV8X9M6A1B2C3D4E5F6G7H8",
+          "product_unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+          "conversion_to_base": "1.000000",
+          "quantity": "2.000000",
+          "unit_price": "25.000000",
+          "tax_rate_id": "c1a2b3c4-d5e6-4f7a-8b9c-0d1e2f3a4b5c",
+          "tax_rate": "16.000000",
+          "tax_inclusive": true
+        }
+      ],
+      "payment": {
+        "settlement_mode": "full",
+        "payment_method": "cash",
+        "cash_account_id": "01JCV8X9MAJ3K4M5N6P7Q8R9S0",
+        "amount": "50.000000"
+      }
+    },
+    "valid": false
+  },
+  {
+    "name": "rev3 taxmode tax_inclusive false accepted",
+    "schema": "sale-preview-request.json",
+    "instance": {
+      "client_event_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+      "device_id": "8e2b8bc6-f80c-4034-8c88-59368d1f2e10",
+      "customer_id": "01JCV8X9M4K1P2Q3R4S5T6V7W8",
+      "warehouse_id": "01JCV8X9M9A2B3C4D5E6F7G8H9",
+      "currency": "ILS",
+      "lines": [
+        {
+          "product_id": "01JCV8X9M6A1B2C3D4E5F6G7H8",
+          "product_unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+          "conversion_to_base": "1.000000",
+          "quantity": "2.000000",
+          "unit_price": "25.000000",
+          "tax_rate_id": "01J9Z5K3MN0000000000000030",
+          "tax_rate": "16.000000",
+          "tax_inclusive": false
+        }
+      ],
+      "payment": {
+        "settlement_mode": "full",
+        "payment_method": "cash",
+        "cash_account_id": "01JCV8X9MAJ3K4M5N6P7Q8R9S0",
+        "amount": "50.000000"
+      }
+    },
+    "valid": true
+  },
+  {
+    "name": "rev3 taxmode tax_inclusive string rejected",
+    "schema": "sale-preview-request.json",
+    "instance": {
+      "client_event_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+      "device_id": "8e2b8bc6-f80c-4034-8c88-59368d1f2e10",
+      "customer_id": "01JCV8X9M4K1P2Q3R4S5T6V7W8",
+      "warehouse_id": "01JCV8X9M9A2B3C4D5E6F7G8H9",
+      "currency": "ILS",
+      "lines": [
+        {
+          "product_id": "01JCV8X9M6A1B2C3D4E5F6G7H8",
+          "product_unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+          "conversion_to_base": "1.000000",
+          "quantity": "2.000000",
+          "unit_price": "25.000000",
+          "tax_rate_id": "01J9Z5K3MN0000000000000030",
+          "tax_rate": "16.000000",
+          "tax_inclusive": "true"
+        }
+      ],
+      "payment": {
+        "settlement_mode": "full",
+        "payment_method": "cash",
+        "cash_account_id": "01JCV8X9MAJ3K4M5N6P7Q8R9S0",
+        "amount": "50.000000"
+      }
+    },
+    "valid": false
+  },
+  {
+    "name": "rev3 taxmode missing tax_inclusive rejected",
+    "schema": "sale-preview-request.json",
+    "instance": {
+      "client_event_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+      "device_id": "8e2b8bc6-f80c-4034-8c88-59368d1f2e10",
+      "customer_id": "01JCV8X9M4K1P2Q3R4S5T6V7W8",
+      "warehouse_id": "01JCV8X9M9A2B3C4D5E6F7G8H9",
+      "currency": "ILS",
+      "lines": [
+        {
+          "product_id": "01JCV8X9M6A1B2C3D4E5F6G7H8",
+          "product_unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+          "conversion_to_base": "1.000000",
+          "quantity": "2.000000",
+          "unit_price": "25.000000",
+          "tax_rate_id": "01J9Z5K3MN0000000000000030",
+          "tax_rate": "16.000000"
+        }
+      ],
+      "payment": {
+        "settlement_mode": "full",
+        "payment_method": "cash",
+        "cash_account_id": "01JCV8X9MAJ3K4M5N6P7Q8R9S0",
+        "amount": "50.000000"
+      }
+    },
+    "valid": false
+  },
+  {
+    "name": "rev3 conversionpositive 1.000000 accepted",
+    "schema": "sale-preview-request.json",
+    "instance": {
+      "client_event_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+      "device_id": "8e2b8bc6-f80c-4034-8c88-59368d1f2e10",
+      "customer_id": "01JCV8X9M4K1P2Q3R4S5T6V7W8",
+      "warehouse_id": "01JCV8X9M9A2B3C4D5E6F7G8H9",
+      "currency": "ILS",
+      "lines": [
+        {
+          "product_id": "01JCV8X9M6A1B2C3D4E5F6G7H8",
+          "product_unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+          "conversion_to_base": "1.000000",
+          "quantity": "2.000000",
+          "unit_price": "25.000000",
+          "tax_rate_id": "01J9Z5K3MN0000000000000030",
+          "tax_rate": "16.000000",
+          "tax_inclusive": true
+        }
+      ],
+      "payment": {
+        "settlement_mode": "full",
+        "payment_method": "cash",
+        "cash_account_id": "01JCV8X9MAJ3K4M5N6P7Q8R9S0",
+        "amount": "50.000000"
+      }
+    },
+    "valid": true
+  },
+  {
+    "name": "rev3 conversionpositive 0.500000 accepted",
+    "schema": "sale-preview-request.json",
+    "instance": {
+      "client_event_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+      "device_id": "8e2b8bc6-f80c-4034-8c88-59368d1f2e10",
+      "customer_id": "01JCV8X9M4K1P2Q3R4S5T6V7W8",
+      "warehouse_id": "01JCV8X9M9A2B3C4D5E6F7G8H9",
+      "currency": "ILS",
+      "lines": [
+        {
+          "product_id": "01JCV8X9M6A1B2C3D4E5F6G7H8",
+          "product_unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+          "conversion_to_base": "0.500000",
+          "quantity": "2.000000",
+          "unit_price": "25.000000",
+          "tax_rate_id": "01J9Z5K3MN0000000000000030",
+          "tax_rate": "16.000000",
+          "tax_inclusive": true
+        }
+      ],
+      "payment": {
+        "settlement_mode": "full",
+        "payment_method": "cash",
+        "cash_account_id": "01JCV8X9MAJ3K4M5N6P7Q8R9S0",
+        "amount": "50.000000"
+      }
+    },
+    "valid": true
+  },
+  {
+    "name": "rev3 conversionpositive zero conversion rejected",
+    "schema": "sale-preview-request.json",
+    "instance": {
+      "client_event_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+      "device_id": "8e2b8bc6-f80c-4034-8c88-59368d1f2e10",
+      "customer_id": "01JCV8X9M4K1P2Q3R4S5T6V7W8",
+      "warehouse_id": "01JCV8X9M9A2B3C4D5E6F7G8H9",
+      "currency": "ILS",
+      "lines": [
+        {
+          "product_id": "01JCV8X9M6A1B2C3D4E5F6G7H8",
+          "product_unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+          "conversion_to_base": "0.000000",
+          "quantity": "2.000000",
+          "unit_price": "25.000000",
+          "tax_rate_id": "01J9Z5K3MN0000000000000030",
+          "tax_rate": "16.000000",
+          "tax_inclusive": true
+        }
+      ],
+      "payment": {
+        "settlement_mode": "full",
+        "payment_method": "cash",
+        "cash_account_id": "01JCV8X9MAJ3K4M5N6P7Q8R9S0",
+        "amount": "50.000000"
+      }
+    },
+    "valid": false
+  },
+  {
+    "name": "rev3 conversionpositive negative conversion rejected",
+    "schema": "sale-preview-request.json",
+    "instance": {
+      "client_event_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+      "device_id": "8e2b8bc6-f80c-4034-8c88-59368d1f2e10",
+      "customer_id": "01JCV8X9M4K1P2Q3R4S5T6V7W8",
+      "warehouse_id": "01JCV8X9M9A2B3C4D5E6F7G8H9",
+      "currency": "ILS",
+      "lines": [
+        {
+          "product_id": "01JCV8X9M6A1B2C3D4E5F6G7H8",
+          "product_unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+          "conversion_to_base": "-1.000000",
+          "quantity": "2.000000",
+          "unit_price": "25.000000",
+          "tax_rate_id": "01J9Z5K3MN0000000000000030",
+          "tax_rate": "16.000000",
+          "tax_inclusive": true
+        }
+      ],
+      "payment": {
+        "settlement_mode": "full",
+        "payment_method": "cash",
+        "cash_account_id": "01JCV8X9MAJ3K4M5N6P7Q8R9S0",
+        "amount": "50.000000"
+      }
+    },
+    "valid": false
+  },
+  {
+    "name": "rev3 conversionpositive float conversion rejected",
+    "schema": "sale-preview-request.json",
+    "instance": {
+      "client_event_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+      "device_id": "8e2b8bc6-f80c-4034-8c88-59368d1f2e10",
+      "customer_id": "01JCV8X9M4K1P2Q3R4S5T6V7W8",
+      "warehouse_id": "01JCV8X9M9A2B3C4D5E6F7G8H9",
+      "currency": "ILS",
+      "lines": [
+        {
+          "product_id": "01JCV8X9M6A1B2C3D4E5F6G7H8",
+          "product_unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+          "conversion_to_base": 1.0,
+          "quantity": "2.000000",
+          "unit_price": "25.000000",
+          "tax_rate_id": "01J9Z5K3MN0000000000000030",
+          "tax_rate": "16.000000",
+          "tax_inclusive": true
+        }
+      ],
+      "payment": {
+        "settlement_mode": "full",
+        "payment_method": "cash",
+        "cash_account_id": "01JCV8X9MAJ3K4M5N6P7Q8R9S0",
+        "amount": "50.000000"
+      }
+    },
+    "valid": false
+  },
+  {
+    "name": "rev3 conversionpositive overscale conversion rejected",
+    "schema": "sale-preview-request.json",
+    "instance": {
+      "client_event_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+      "device_id": "8e2b8bc6-f80c-4034-8c88-59368d1f2e10",
+      "customer_id": "01JCV8X9M4K1P2Q3R4S5T6V7W8",
+      "warehouse_id": "01JCV8X9M9A2B3C4D5E6F7G8H9",
+      "currency": "ILS",
+      "lines": [
+        {
+          "product_id": "01JCV8X9M6A1B2C3D4E5F6G7H8",
+          "product_unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+          "conversion_to_base": "1.0000001",
+          "quantity": "2.000000",
+          "unit_price": "25.000000",
+          "tax_rate_id": "01J9Z5K3MN0000000000000030",
+          "tax_rate": "16.000000",
+          "tax_inclusive": true
+        }
+      ],
+      "payment": {
+        "settlement_mode": "full",
+        "payment_method": "cash",
+        "cash_account_id": "01JCV8X9MAJ3K4M5N6P7Q8R9S0",
+        "amount": "50.000000"
+      }
+    },
+    "valid": false
+  },
+  {
+    "name": "rev3 conversionpositive missing conversion rejected",
+    "schema": "sale-preview-request.json",
+    "instance": {
+      "client_event_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+      "device_id": "8e2b8bc6-f80c-4034-8c88-59368d1f2e10",
+      "customer_id": "01JCV8X9M4K1P2Q3R4S5T6V7W8",
+      "warehouse_id": "01JCV8X9M9A2B3C4D5E6F7G8H9",
+      "currency": "ILS",
+      "lines": [
+        {
+          "product_id": "01JCV8X9M6A1B2C3D4E5F6G7H8",
+          "product_unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+          "quantity": "2.000000",
+          "unit_price": "25.000000",
+          "tax_rate_id": "01J9Z5K3MN0000000000000030",
+          "tax_rate": "16.000000",
+          "tax_inclusive": true
+        }
+      ],
+      "payment": {
+        "settlement_mode": "full",
+        "payment_method": "cash",
+        "cash_account_id": "01JCV8X9MAJ3K4M5N6P7Q8R9S0",
+        "amount": "50.000000"
+      }
+    },
+    "valid": false
+  },
+  {
+    "name": "rev3 v1unsupported intake rejects event_version 1",
+    "schema": "offline-sale-intake-request.json",
+    "instance": {
+      "client_event_id": "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
+      "device_id": "a0000000-0000-0000-0000-000000000001",
+      "captured_at": "2026-11-11T14:30:00Z",
+      "payload_digest": "sha256:18f0403bbda6e05eab2805eb20c9c9f9e22d86fb922eda1482db85d24dba30a3",
+      "event": {
+        "client_event_id": "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
+        "event_version": 1,
+        "company_id": "01J9Z5K3MN0000000000000001",
+        "actor_id": "01J9Z5K3MN0000000000000002",
+        "device_id": "a0000000-0000-0000-0000-000000000001",
+        "device_lease_id": "b0000000-0000-0000-0000-000000000001",
+        "captured_at": "2026-11-11T14:30:00Z",
+        "customer_id": "01J9Z5K3MN0000000000000003",
+        "currency": "ILS",
+        "warehouse_id": "01J9Z5K3MN0000000000000004",
+        "cash_account_id": "01J9Z5K3MN0000000000000005",
+        "catalog_snapshot_version": "v2026.11.11.01",
+        "local_receipt_number": "REC-20261111-0001",
+        "lines": [
+          {
+            "product_id": "01J9Z5K3MN0000000000000010",
+            "product_unit_id": "01J9Z5K3MN0000000000000020",
+            "unit_id": "01J9Z5K3MN0000000000000020",
+            "conversion_to_base": "1.000000",
+            "quantity": "2.000000",
+            "unit_price": "25.000000",
+            "tax_rate_id": "01J9Z5K3MN0000000000000030",
+            "tax_rate": "16.000000",
+            "tax_inclusive": true,
+            "tax_amount": "6.900000",
+            "line_total": "50.000000"
+          }
+        ],
+        "payment": {
+          "mode": "full",
+          "payment_method": "cash",
+          "cash_account_id": "01J9Z5K3MN0000000000000005",
+          "amount_tendered": "50.000000",
+          "amount_settled": "50.000000",
+          "change_returned": "0.000000"
+        }
+      }
+    },
+    "valid": false
+  },
+  {
+    "name": "rev3 v1unsupported intake accepts event_version 2",
+    "schema": "offline-sale-intake-request.json",
+    "instance": {
+      "client_event_id": "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
+      "device_id": "a0000000-0000-0000-0000-000000000001",
+      "captured_at": "2026-11-11T14:30:00Z",
+      "payload_digest": "sha256:18f0403bbda6e05eab2805eb20c9c9f9e22d86fb922eda1482db85d24dba30a3",
+      "event": {
+        "client_event_id": "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
+        "event_version": 2,
+        "company_id": "01J9Z5K3MN0000000000000001",
+        "actor_id": "01J9Z5K3MN0000000000000002",
+        "device_id": "a0000000-0000-0000-0000-000000000001",
+        "device_lease_id": "b0000000-0000-0000-0000-000000000001",
+        "captured_at": "2026-11-11T14:30:00Z",
+        "customer_id": "01J9Z5K3MN0000000000000003",
+        "currency": "ILS",
+        "warehouse_id": "01J9Z5K3MN0000000000000004",
+        "cash_account_id": "01J9Z5K3MN0000000000000005",
+        "catalog_snapshot_version": "v2026.11.11.01",
+        "local_receipt_number": "REC-20261111-0001",
+        "lines": [
+          {
+            "product_id": "01J9Z5K3MN0000000000000010",
+            "product_unit_id": "01J9Z5K3MN0000000000000020",
+            "unit_id": "01J9Z5K3MN0000000000000020",
+            "conversion_to_base": "1.000000",
+            "quantity": "2.000000",
+            "unit_price": "25.000000",
+            "tax_rate_id": "01J9Z5K3MN0000000000000030",
+            "tax_rate": "16.000000",
+            "tax_inclusive": true,
+            "tax_amount": "6.900000",
+            "line_total": "50.000000"
+          }
+        ],
+        "payment": {
+          "mode": "full",
+          "payment_method": "cash",
+          "cash_account_id": "01J9Z5K3MN0000000000000005",
+          "amount_tendered": "50.000000",
+          "amount_settled": "50.000000",
+          "change_returned": "0.000000"
+        }
+      }
+    },
+    "valid": true
+  },
+  {
+    "name": "rev3 v1unsupported intake rejects event_version 3",
+    "schema": "offline-sale-intake-request.json",
+    "instance": {
+      "client_event_id": "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
+      "device_id": "a0000000-0000-0000-0000-000000000001",
+      "captured_at": "2026-11-11T14:30:00Z",
+      "payload_digest": "sha256:18f0403bbda6e05eab2805eb20c9c9f9e22d86fb922eda1482db85d24dba30a3",
+      "event": {
+        "client_event_id": "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
+        "event_version": 3,
+        "company_id": "01J9Z5K3MN0000000000000001",
+        "actor_id": "01J9Z5K3MN0000000000000002",
+        "device_id": "a0000000-0000-0000-0000-000000000001",
+        "device_lease_id": "b0000000-0000-0000-0000-000000000001",
+        "captured_at": "2026-11-11T14:30:00Z",
+        "customer_id": "01J9Z5K3MN0000000000000003",
+        "currency": "ILS",
+        "warehouse_id": "01J9Z5K3MN0000000000000004",
+        "cash_account_id": "01J9Z5K3MN0000000000000005",
+        "catalog_snapshot_version": "v2026.11.11.01",
+        "local_receipt_number": "REC-20261111-0001",
+        "lines": [
+          {
+            "product_id": "01J9Z5K3MN0000000000000010",
+            "product_unit_id": "01J9Z5K3MN0000000000000020",
+            "unit_id": "01J9Z5K3MN0000000000000020",
+            "conversion_to_base": "1.000000",
+            "quantity": "2.000000",
+            "unit_price": "25.000000",
+            "tax_rate_id": "01J9Z5K3MN0000000000000030",
+            "tax_rate": "16.000000",
+            "tax_inclusive": true,
+            "tax_amount": "6.900000",
+            "line_total": "50.000000"
+          }
+        ],
+        "payment": {
+          "mode": "full",
+          "payment_method": "cash",
+          "cash_account_id": "01J9Z5K3MN0000000000000005",
+          "amount_tendered": "50.000000",
+          "amount_settled": "50.000000",
+          "change_returned": "0.000000"
+        }
+      }
+    },
+    "valid": false
+  },
+  {
+    "name": "rev3 missingcurrencyminorunits missing rejected",
+    "schema": "bootstrap-response.json",
+    "instance": {
+      "company_id": "01JCV8X9M2NQW3TYZ4R5S6789A",
+      "company_name": "Al-Amal Retail Company",
+      "base_currency": "ILS",
+      "walk_in_customer_id": "01JCV8X9M4K1P2Q3R4S5T6V7W8",
+      "staff": {
+        "id": "01JCV8X9M8T1V2W3X4Y5Z67890",
+        "name": "Ahmad Cashier",
+        "role": "cashier",
+        "permissions": [
+          "sales.create",
+          "sales.read",
+          "customers.read",
+          "products.read"
+        ]
+      },
+      "device_lease": null,
+      "default_warehouse": {
+        "id": "01JCV8X9M9A2B3C4D5E6F7G8H9",
+        "code": "WH-MAIN",
+        "name": "Main Store Warehouse"
+      },
+      "approved_cash_account": {
+        "id": "01JCV8X9MAJ3K4M5N6P7Q8R9S0",
+        "code": "CASH-REG-01",
+        "name": "Cash Register 01 (ILS)",
+        "currency": "ILS"
+      },
+      "units": [
+        {
+          "id": "01JCV8X9MBV4W5X6Y7Z8012345",
+          "code": "PCS",
+          "name": "Piece",
+          "symbol": "pc",
+          "allows_fraction": false,
+          "decimal_places": 0
+        },
+        {
+          "id": "01JCV8X9MC6789ABCDEFGHJKMN",
+          "code": "KG",
+          "name": "Kilogram",
+          "symbol": "kg",
+          "allows_fraction": true,
+          "decimal_places": 3
+        }
+      ],
+      "taxes": [
+        {
+          "id": "01JCV8X9MDPTRSVWXYZ0123456",
+          "code": "VAT16",
+          "name": "Standard VAT (16%)",
+          "rate": "16.000000",
+          "calculation": "exclusive",
+          "is_default": true
+        },
+        {
+          "id": "01JCV8X9MDZER0000000000000",
+          "code": "ZERO",
+          "name": "Zero-Rated (0%)",
+          "rate": "0.000000",
+          "calculation": "exclusive",
+          "is_default": false
+        }
+      ],
+      "offline_policy": {
+        "enabled": false,
+        "availability": "unavailable"
+      },
+      "catalog_snapshot_version": "snap-20261110-v1"
+    },
+    "valid": false
+  },
+  {
+    "name": "rev3 missingcurrencyminorunits over 6 rejected",
+    "schema": "bootstrap-response.json",
+    "instance": {
+      "company_id": "01JCV8X9M2NQW3TYZ4R5S6789A",
+      "company_name": "Al-Amal Retail Company",
+      "base_currency": "ILS",
+      "base_currency_minor_units": 7,
+      "walk_in_customer_id": "01JCV8X9M4K1P2Q3R4S5T6V7W8",
+      "staff": {
+        "id": "01JCV8X9M8T1V2W3X4Y5Z67890",
+        "name": "Ahmad Cashier",
+        "role": "cashier",
+        "permissions": [
+          "sales.create",
+          "sales.read",
+          "customers.read",
+          "products.read"
+        ]
+      },
+      "device_lease": null,
+      "default_warehouse": {
+        "id": "01JCV8X9M9A2B3C4D5E6F7G8H9",
+        "code": "WH-MAIN",
+        "name": "Main Store Warehouse"
+      },
+      "approved_cash_account": {
+        "id": "01JCV8X9MAJ3K4M5N6P7Q8R9S0",
+        "code": "CASH-REG-01",
+        "name": "Cash Register 01 (ILS)",
+        "currency": "ILS"
+      },
+      "units": [
+        {
+          "id": "01JCV8X9MBV4W5X6Y7Z8012345",
+          "code": "PCS",
+          "name": "Piece",
+          "symbol": "pc",
+          "allows_fraction": false,
+          "decimal_places": 0
+        },
+        {
+          "id": "01JCV8X9MC6789ABCDEFGHJKMN",
+          "code": "KG",
+          "name": "Kilogram",
+          "symbol": "kg",
+          "allows_fraction": true,
+          "decimal_places": 3
+        }
+      ],
+      "taxes": [
+        {
+          "id": "01JCV8X9MDPTRSVWXYZ0123456",
+          "code": "VAT16",
+          "name": "Standard VAT (16%)",
+          "rate": "16.000000",
+          "calculation": "exclusive",
+          "is_default": true
+        },
+        {
+          "id": "01JCV8X9MDZER0000000000000",
+          "code": "ZERO",
+          "name": "Zero-Rated (0%)",
+          "rate": "0.000000",
+          "calculation": "exclusive",
+          "is_default": false
+        }
+      ],
+      "offline_policy": {
+        "enabled": false,
+        "availability": "unavailable"
+      },
+      "catalog_snapshot_version": "snap-20261110-v1"
+    },
+    "valid": false
+  },
+  {
+    "name": "rev3 missingcurrencyminorunits negative rejected",
+    "schema": "bootstrap-response.json",
+    "instance": {
+      "company_id": "01JCV8X9M2NQW3TYZ4R5S6789A",
+      "company_name": "Al-Amal Retail Company",
+      "base_currency": "ILS",
+      "base_currency_minor_units": -1,
+      "walk_in_customer_id": "01JCV8X9M4K1P2Q3R4S5T6V7W8",
+      "staff": {
+        "id": "01JCV8X9M8T1V2W3X4Y5Z67890",
+        "name": "Ahmad Cashier",
+        "role": "cashier",
+        "permissions": [
+          "sales.create",
+          "sales.read",
+          "customers.read",
+          "products.read"
+        ]
+      },
+      "device_lease": null,
+      "default_warehouse": {
+        "id": "01JCV8X9M9A2B3C4D5E6F7G8H9",
+        "code": "WH-MAIN",
+        "name": "Main Store Warehouse"
+      },
+      "approved_cash_account": {
+        "id": "01JCV8X9MAJ3K4M5N6P7Q8R9S0",
+        "code": "CASH-REG-01",
+        "name": "Cash Register 01 (ILS)",
+        "currency": "ILS"
+      },
+      "units": [
+        {
+          "id": "01JCV8X9MBV4W5X6Y7Z8012345",
+          "code": "PCS",
+          "name": "Piece",
+          "symbol": "pc",
+          "allows_fraction": false,
+          "decimal_places": 0
+        },
+        {
+          "id": "01JCV8X9MC6789ABCDEFGHJKMN",
+          "code": "KG",
+          "name": "Kilogram",
+          "symbol": "kg",
+          "allows_fraction": true,
+          "decimal_places": 3
+        }
+      ],
+      "taxes": [
+        {
+          "id": "01JCV8X9MDPTRSVWXYZ0123456",
+          "code": "VAT16",
+          "name": "Standard VAT (16%)",
+          "rate": "16.000000",
+          "calculation": "exclusive",
+          "is_default": true
+        },
+        {
+          "id": "01JCV8X9MDZER0000000000000",
+          "code": "ZERO",
+          "name": "Zero-Rated (0%)",
+          "rate": "0.000000",
+          "calculation": "exclusive",
+          "is_default": false
+        }
+      ],
+      "offline_policy": {
+        "enabled": false,
+        "availability": "unavailable"
+      },
+      "catalog_snapshot_version": "snap-20261110-v1"
+    },
+    "valid": false
+  },
+  {
+    "name": "rev3 missingcurrencyminorunits 0 accepted",
+    "schema": "bootstrap-response.json",
+    "instance": {
+      "company_id": "01JCV8X9M2NQW3TYZ4R5S6789A",
+      "company_name": "Al-Amal Retail Company",
+      "base_currency": "ILS",
+      "base_currency_minor_units": 0,
+      "walk_in_customer_id": "01JCV8X9M4K1P2Q3R4S5T6V7W8",
+      "staff": {
+        "id": "01JCV8X9M8T1V2W3X4Y5Z67890",
+        "name": "Ahmad Cashier",
+        "role": "cashier",
+        "permissions": [
+          "sales.create",
+          "sales.read",
+          "customers.read",
+          "products.read"
+        ]
+      },
+      "device_lease": null,
+      "default_warehouse": {
+        "id": "01JCV8X9M9A2B3C4D5E6F7G8H9",
+        "code": "WH-MAIN",
+        "name": "Main Store Warehouse"
+      },
+      "approved_cash_account": {
+        "id": "01JCV8X9MAJ3K4M5N6P7Q8R9S0",
+        "code": "CASH-REG-01",
+        "name": "Cash Register 01 (ILS)",
+        "currency": "ILS"
+      },
+      "units": [
+        {
+          "id": "01JCV8X9MBV4W5X6Y7Z8012345",
+          "code": "PCS",
+          "name": "Piece",
+          "symbol": "pc",
+          "allows_fraction": false,
+          "decimal_places": 0
+        },
+        {
+          "id": "01JCV8X9MC6789ABCDEFGHJKMN",
+          "code": "KG",
+          "name": "Kilogram",
+          "symbol": "kg",
+          "allows_fraction": true,
+          "decimal_places": 3
+        }
+      ],
+      "taxes": [
+        {
+          "id": "01JCV8X9MDPTRSVWXYZ0123456",
+          "code": "VAT16",
+          "name": "Standard VAT (16%)",
+          "rate": "16.000000",
+          "calculation": "exclusive",
+          "is_default": true
+        },
+        {
+          "id": "01JCV8X9MDZER0000000000000",
+          "code": "ZERO",
+          "name": "Zero-Rated (0%)",
+          "rate": "0.000000",
+          "calculation": "exclusive",
+          "is_default": false
+        }
+      ],
+      "offline_policy": {
+        "enabled": false,
+        "availability": "unavailable"
+      },
+      "catalog_snapshot_version": "snap-20261110-v1"
+    },
+    "valid": true
+  },
+  {
+    "name": "rev3 missingcurrencyminorunits 3 JOD accepted",
+    "schema": "bootstrap-response.json",
+    "instance": {
+      "company_id": "01JCV8X9M2NQW3TYZ4R5S6789A",
+      "company_name": "Al-Amal Retail Company",
+      "base_currency": "ILS",
+      "base_currency_minor_units": 3,
+      "walk_in_customer_id": "01JCV8X9M4K1P2Q3R4S5T6V7W8",
+      "staff": {
+        "id": "01JCV8X9M8T1V2W3X4Y5Z67890",
+        "name": "Ahmad Cashier",
+        "role": "cashier",
+        "permissions": [
+          "sales.create",
+          "sales.read",
+          "customers.read",
+          "products.read"
+        ]
+      },
+      "device_lease": null,
+      "default_warehouse": {
+        "id": "01JCV8X9M9A2B3C4D5E6F7G8H9",
+        "code": "WH-MAIN",
+        "name": "Main Store Warehouse"
+      },
+      "approved_cash_account": {
+        "id": "01JCV8X9MAJ3K4M5N6P7Q8R9S0",
+        "code": "CASH-REG-01",
+        "name": "Cash Register 01 (ILS)",
+        "currency": "ILS"
+      },
+      "units": [
+        {
+          "id": "01JCV8X9MBV4W5X6Y7Z8012345",
+          "code": "PCS",
+          "name": "Piece",
+          "symbol": "pc",
+          "allows_fraction": false,
+          "decimal_places": 0
+        },
+        {
+          "id": "01JCV8X9MC6789ABCDEFGHJKMN",
+          "code": "KG",
+          "name": "Kilogram",
+          "symbol": "kg",
+          "allows_fraction": true,
+          "decimal_places": 3
+        }
+      ],
+      "taxes": [
+        {
+          "id": "01JCV8X9MDPTRSVWXYZ0123456",
+          "code": "VAT16",
+          "name": "Standard VAT (16%)",
+          "rate": "16.000000",
+          "calculation": "exclusive",
+          "is_default": true
+        },
+        {
+          "id": "01JCV8X9MDZER0000000000000",
+          "code": "ZERO",
+          "name": "Zero-Rated (0%)",
+          "rate": "0.000000",
+          "calculation": "exclusive",
+          "is_default": false
+        }
+      ],
+      "offline_policy": {
+        "enabled": false,
+        "availability": "unavailable"
+      },
+      "catalog_snapshot_version": "snap-20261110-v1"
+    },
+    "valid": true
+  },
+  {
+    "name": "rev3 missingcurrencyminorunits 6 max scale accepted",
+    "schema": "bootstrap-response.json",
+    "instance": {
+      "company_id": "01JCV8X9M2NQW3TYZ4R5S6789A",
+      "company_name": "Al-Amal Retail Company",
+      "base_currency": "ILS",
+      "base_currency_minor_units": 6,
+      "walk_in_customer_id": "01JCV8X9M4K1P2Q3R4S5T6V7W8",
+      "staff": {
+        "id": "01JCV8X9M8T1V2W3X4Y5Z67890",
+        "name": "Ahmad Cashier",
+        "role": "cashier",
+        "permissions": [
+          "sales.create",
+          "sales.read",
+          "customers.read",
+          "products.read"
+        ]
+      },
+      "device_lease": null,
+      "default_warehouse": {
+        "id": "01JCV8X9M9A2B3C4D5E6F7G8H9",
+        "code": "WH-MAIN",
+        "name": "Main Store Warehouse"
+      },
+      "approved_cash_account": {
+        "id": "01JCV8X9MAJ3K4M5N6P7Q8R9S0",
+        "code": "CASH-REG-01",
+        "name": "Cash Register 01 (ILS)",
+        "currency": "ILS"
+      },
+      "units": [
+        {
+          "id": "01JCV8X9MBV4W5X6Y7Z8012345",
+          "code": "PCS",
+          "name": "Piece",
+          "symbol": "pc",
+          "allows_fraction": false,
+          "decimal_places": 0
+        },
+        {
+          "id": "01JCV8X9MC6789ABCDEFGHJKMN",
+          "code": "KG",
+          "name": "Kilogram",
+          "symbol": "kg",
+          "allows_fraction": true,
+          "decimal_places": 3
+        }
+      ],
+      "taxes": [
+        {
+          "id": "01JCV8X9MDPTRSVWXYZ0123456",
+          "code": "VAT16",
+          "name": "Standard VAT (16%)",
+          "rate": "16.000000",
+          "calculation": "exclusive",
+          "is_default": true
+        },
+        {
+          "id": "01JCV8X9MDZER0000000000000",
+          "code": "ZERO",
+          "name": "Zero-Rated (0%)",
+          "rate": "0.000000",
+          "calculation": "exclusive",
+          "is_default": false
+        }
+      ],
+      "offline_policy": {
+        "enabled": false,
+        "availability": "unavailable"
+      },
+      "catalog_snapshot_version": "snap-20261110-v1"
+    },
+    "valid": true
+  }
+]
