@@ -3,9 +3,14 @@
 **PR**: [#102](https://github.com/Bassamalsaqqa/account/pull/102) (`t3/recover-cash-writer`)  
 **Repository**: `Bassamalsaqqa/account`  
 **Document Status**: **SOURCE-ONLY PLAN** (No implementation, no listeners, no DB sockets, no heavy QA, no financial network requests).  
-**Execution Target**: Disposable MariaDB (Port 3342) under exclusive QA lease when authorized.  
-**Accepted Core Invariant**: `6981511405d7bcd04cd8f8a09e64443ce0aaf47e` (0-byte diff on core paths).  
-**Lifecycle Scope Prerequisite**: `ROOT_AUTHORIZED_FINANCIAL_PILOT`.
+**Execution Target**: Disposable MariaDB (Port 3342) under exclusive heavy QA lease when explicitly granted.  
+**Accepted Core Invariant Base**: `6981511405d7bcd04cd8f8a09e64443ce0aaf47e` (0-byte diff on `app/`, `routes/`, `config/`, `composer.lock`).  
+**Client Handoff Schema Digest**: `edaef0309765e10d6462b36b5c660eb02f65c057c810ab72f756f7664e3ca275`.  
+**Future Pairing Manifest Target Pins**:
+- Backend Baseline HEAD: `3b49d7dfd4c6300e70920f6a68600d132e4cdfcc` (or latest documentation commit)
+- Peer Android Publication HEAD: `6bc22542500ecb0dae5ad99246e82982dcef680f`
+- Peer Android Executable HEAD: `78ac4437e4010b68408278788dc82eb826fe8014`
+- Authorized Scope: Existing **`ROOT_AUTHORIZED_PAIRED_EXECUTION`** (`DisposableMobileV2BackendHarness::SCOPE_PAIRED_EXECUTION`) via existing CLI command flag **`--run`**. Zero invented scopes or flags.
 
 ---
 
@@ -20,9 +25,10 @@ In strict adherence to the Outer Financial Acceptance Criteria:
   2. Idempotent exact replay (200).
   3. Status query parity (200 with 6-field official invoice subset).
   4. Client event ID tamper conflict rejection (409).
-  5. **Lost ACK Recovery**: Actual server response-drop-after-commit (server completes transaction, drops HTTP response, client recovers via replay/status).
-  6. **Atomicity & Rollback**: Named throw-only fault injection verifying zero orphaned records.
+  5. **Lost ACK Recovery**: Verified response suppression after commit with client reconnection and status reconciliation.
+  6. **Atomicity & Rollback**: Named throw-only fault injection verifying zero delta against baseline.
   7. **Negative Boundaries**: Tenant mismatch, missing permissions, revoked tokens, insufficient inventory.
+- Next minimal basic financial case is separate from pending lost ACK / rollback; zero claims of complete core qualification without bounded execution proof.
 
 ---
 
@@ -36,7 +42,7 @@ Inspection of the codebase confirms that all core financial execution primitives
 | `ExecuteImmediateOnlineCashSaleAction` | `app/Actions/Sales/ExecuteImmediateOnlineCashSaleAction.php` | Atomically executes Leg 1 (draft), Leg 2 (post + numbering + FEFO lot deduction + GL), Leg 3 (payment + numbering + 100% allocation). Locks Company root row (`lockForUpdate`), verifies permissions under lock, enforces strict stock. |
 | `QualifiedCashFinancialExecutionAdapter` | `tests/Support/QualifiedCashFinancialExecutionAdapter.php` | Test-only adapter implementing `FinancialExecutionAdapterInterface`. Scopes Spatie permissions to tenant team, asserts granular permissions (`sales.invoice.create`, `sales.invoice.post`, `money.receipt.create`, `money.receipt.allocate`), requires `NativeFinancialExecutionCapability`. Production binding remains `DenyFinancialExecutionAdapter`. |
 | Existing Named Fault Injection Stages | `ExecuteImmediateOnlineCashSaleAction::$simulatedFaultStage` (lines 56–70) | Throw-only named stage mechanism: `after_draft` (line 414), `after_posting` (line 418), `after_payment` (line 456), `after_composite_completion` (line 467). Strictly throw-only in `testing` environment; no caller code or arbitrary callbacks. |
-| Child HTTP Bootstrap Binding | `DisposableMobileV2BackendHarness.php` (lines 964–990) | Child `php -S` process already binds `QualifiedCashFinancialExecutionAdapter::class` upon framework boot when MariaDB port 3342 is verified. In readiness-only mode, the child router returns 403; in financial mode, requests flow to Laravel kernel. |
+| Child HTTP Bootstrap Binding | `DisposableMobileV2BackendHarness.php` (lines 964–990) | Child `php -S` process already binds `QualifiedCashFinancialExecutionAdapter::class` upon framework boot when MariaDB port 3342 is verified. When authorized under existing scope `ROOT_AUTHORIZED_PAIRED_EXECUTION`, financial routes flow directly to the Laravel kernel. |
 
 ---
 
@@ -45,24 +51,23 @@ Inspection of the codebase confirms that all core financial execution primitives
 | Area | Already Exists in Codebase | Minimal Test-Only Implementation Needed |
 |---|---|---|
 | **Domain Logic** | Full 3-leg cash sale execution, FEFO inventory ledger, GL transactions, Company-root row lock. | **None**. Production/core domain code is complete and frozen. |
-| **Fault Injection** | `ExecuteImmediateOnlineCashSaleAction::$simulatedFaultStage` with 4 throw stages. | Minor CLI flag (`--simulate-fault-stage=<stage>`) in `mobile-v2-harness-cli.php` to wire to child env. |
-| **Lost ACK Control** | In-memory unit test in `OnlineCashSaleQualificationTest.php`. | **Actual response drop control**: CLI flag `--drop-response-after-commit=<clientEventId>` in harness child router to close HTTP connection immediately after DB commit, triggering realistic client network drop. |
-| **Lifecycle Scope** | `ROOT_AUTHORIZED_READINESS_ONLY` enforced fail-closed. | Add `ROOT_AUTHORIZED_FINANCIAL_PILOT` to `DisposableMobileV2BackendHarness::assertLifecycleScope()`. |
-| **Harness CLI** | Standalone `--prepare`, `--provision`, `--run --readiness-only`. | Add `--financial-pilot` flag to `MobileV2HarnessCommand` and `mobile-v2-harness-cli.php`. |
-| **Pure Guard Tests** | 57 pure tests verifying readiness router, pcntl, certs, permissions. | Add pure tests asserting financial scope validation, drop-response flag validation, and fault-stage gating. |
+| **Transport & CLI** | Existing `--run` command and existing scope `ROOT_AUTHORIZED_PAIRED_EXECUTION`. | **None**. Transport and scope primitives already exist in `DisposableMobileV2BackendHarness.php`. |
+| **Fault Injection** | `ExecuteImmediateOnlineCashSaleAction::$simulatedFaultStage` with 4 throw stages (`after_draft`, `after_posting`, `after_payment`, `after_composite_completion`). | Wire CLI parameter `--simulate-fault-stage=<stage>` to child env in test harness. |
+| **Lost ACK Control** | Unit-level replay test in `OnlineCashSaleQualificationTest.php`. | **Reviewable Test Proxy Filter**: `php -S` behind Caddy cannot promise clean TCP termination from PHP `exit` (Caddy may return 502 Bad Gateway or empty body, which alone is not proof). Harness requires a test proxy control that suppresses the completed client ACK **after independently verifying that the commit transaction succeeded in MariaDB**. Control must be **consume-once on the targeted client event ID**, so subsequent recovery replays/status queries succeed without being dropped. |
+| **Pure Guard Tests** | 57 pure tests verifying readiness router, pcntl, certs, permissions. | Add pure guard tests asserting validation of fault stage parameter and consume-once drop control. |
 
 ---
 
 ## 4. Finite Test Scenarios Specification
 
 ### Scenario 1: Minimal Next Concrete Case — Basic Financial Slice
-This is the minimal next concrete scenario to qualify before multi-client concurrency.
+This is the minimal next concrete scenario to qualify before executing lost ACK and rollback drills.
 
 #### Step 1.1: Fresh Online Cash Sale Commit (HTTP 201)
 - **Endpoint**: `POST /api/mobile/v2/companies/{companyId}/sales/online-cash`
 - **Headers**: `Authorization: Bearer <mobile_access_token>`, `Content-Type: application/json`
 - **Payload**: Authoritative synthetic request template matching canonical JCS wire digest:
-  - `client_event_id`: Fresh UUIDv4 (`c0686be5-...`)
+  - `client_event_id`: Normative version-agnostic UUID layout (`[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}`); fixture generates v4.
   - `device_id`: Enrolled mobile device UUID
   - `customer_id`: Seeded customer ULID
   - `warehouse_id`: Seeded warehouse ULID
@@ -115,65 +120,67 @@ This is the minimal next concrete scenario to qualify before multi-client concur
 
 #### Step 1.4: Tamper Conflict Rejection (HTTP 409)
 - **Action**: Submit duplicate `client_event_id` with modified payment amount (`59.000000`) or altered product ID.
-- **Expected Response**: HTTP 409 Conflict with error code `event_payload_conflict`. Zero state modification.
+- **Expected Response**: HTTP 409 Conflict with error code `CONFLICT` (`DuplicateEventException` mapped in `OnlineCashSaleController.php:117-121`). Zero state modification.
 
-#### Step 1.5: Six Read-Only Domain Reconciliations
-Following commit, verify directly in MariaDB under the owned schema:
-1. **SalesInvoice**: Record exists with status `posted`, matching tenant `company_id`, customer, currency, total `58.000000`, and sequential numbering.
-2. **CustomerPayment**: Record exists with status `posted`, `payment_method = 'cash'`, non-null `cash_account_id`, amount `58.000000`.
-3. **CustomerPaymentAllocation**: Exactly 1 allocation binding the payment to the invoice with allocated amount `58.000000` (100% reconciliation; zero remaining balance).
-4. **StockMovement**: Physical inventory ledger deduction in base units recorded for product and warehouse. Inventory balance correctly reduced.
-5. **MobileEventReceipt**: Single receipt record with client UUID identity (`client_event_id`), verified sequentially numbered without duplicates.
-6. **General Ledger Journal**: Balanced double-entry transactions posted (Debit Cash Account 58.00, Credit Sales Revenue 50.00, Credit Tax Liability 8.00).
+#### Step 1.5: Six Read-Only Reconciliation Services & Methods
+Following commit, invoke the 6 canonical read-only reconciliation services directly from the reviewed helper (`tests/Support/Phase7/financial-scenarios.php:103-105`):
+1. `App\Services\Accounting\AccountingReconciliationService::reconcile(Company $company)`: Verifies double-entry balanced batches and ledger consistency.
+2. `App\Services\Inventory\InventoryReconciliationService::auditCompany(Company $company)`: Verifies inventory lot balances, warehouse stock, and reports 0 discrepancies.
+3. `App\Services\Sales\SalesReconciliationService::reconcile(Company $company)`: Verifies sales invoice line integrity and payment allocations.
+4. `App\Services\Purchasing\PayablesReconciliationService::reconcile(Company $company)`: Verifies purchase ledger remains unaffected.
+5. `App\Services\Money\MoneyReconciliationService::reconcile(Company $company)`: Verifies customer payments, receipts, and cash money accounts.
+6. `App\Services\Accounting\Phase7ReconciliationService::reconcile(Company $company)`: Verifies multi-ledger integration rules.
 
 ---
 
-### Scenario 2: Critical Scenario — Lost ACK Response Drop Recovery
-- **Failure Model**: The backend successfully commits all 3 legs and receipt in MariaDB, but a network disconnect occurs before the HTTP response reaches the client.
-- **Harness Control**: Set `--drop-response-after-commit=c0686be5-...`. The harness child router executes the full commit transaction, then closes the TCP connection immediately without writing response bytes.
-- **Client Behavior**: Client catches `SocketException` / `IOException`, marks event in local state as pending reconciliation, and triggers recovery query via GET status (or replay POST).
-- **Assertion**: Client recovers official invoice and payment public ULIDs from status endpoint; backend verifies zero duplicated invoices or payments in database.
+### Scenario 2: Critical Scenario — Lost ACK Response Suppression Recovery
+- **Failure Model**: The backend successfully commits all 3 legs and receipt in MariaDB, but the network disconnects before the HTTP 201 response reaches the client.
+- **Harness Control**: Test proxy control intercepts response for targeted `client_event_id`. It verifies that the `MobileEventReceipt` exists in MariaDB with status `posted`, then suppresses the response bytes.
+- **Consume-Once Invariant**: The suppression rule triggers exactly once for that `client_event_id` and is immediately consumed.
+- **Client Recovery**: Client encounters connection timeout/drop, marks transaction as pending, and issues status query `GET /.../offline-events/{clientEventId}/status` (or idempotent replay POST).
+- **Assertions**:
+  - Client receives HTTP 200 with matching official invoice/payment public ULIDs.
+  - MariaDB verification: Zero duplicate invoices, payments, or receipts created.
 
 ---
 
 ### Scenario 3: Critical Scenario — Atomicity & Rollback via Named Throw Stages
 - **Failure Model**: Mid-transaction failure occurs during multi-leg financial execution.
-- **Harness Control**: Set `--simulate-fault-stage=after_posting`.
-- **Execution Flow**:
-  1. Leg 1 (draft) succeeds.
-  2. Leg 2 (invoice posting & inventory lot allocation) executes.
-  3. `triggerStageFault('after_posting')` throws `RuntimeException`.
-  4. Root transaction catches exception, initiates database rollback.
+- **Harness Control**: Set `--simulate-fault-stage=after_posting` (or `after_payment`).
+- **Baseline Invariant**: The seeded MariaDB schema already contains baseline `StockMovement` records from initial inventory lot creation.
 - **Verification Assertions**:
-  - Response returns HTTP 500 (or internal error envelope).
-  - Database verification under owned schema:
-    - Zero `sales_invoices` persisted.
-    - Zero `customer_payments` persisted.
-    - Zero `stock_movements` persisted (inventory balance untouched).
-    - Zero `mobile_event_receipts` persisted.
+  - Endpoint returns HTTP 500 (handled via transaction failure).
+  - **StockMovement Delta = 0**: Pre-run and post-rollback `StockMovement` counts and row fingerprints are identical (zero new movements created).
+  - Sequential invoice and receipt numbering counters roll back to pre-test baseline.
+  - GL posting batches and lines roll back to pre-test baseline.
+  - FEFO lot allocations, customer payments, sales invoices, and receipts roll back to pre-test baseline.
   - Zero leaked locks on Company root or inventory balance rows.
 
 ---
 
-### Scenario 4: Permission & Negative Boundary Cases
-1. **Missing Create Permission**: Actor stripped of `sales.invoice.create` -> returns HTTP 403 Forbidden.
-2. **Missing Post Permission**: Actor stripped of `sales.invoice.post` -> returns HTTP 403 Forbidden.
-3. **Tenant Boundary Violation**: Actor attempting commit for foreign company ID -> returns HTTP 403 Forbidden.
-4. **Revoked Device Session**: Mobile device marked inactive or un-enrolled -> returns HTTP 401 Unauthenticated.
-5. **Negative Stock Prevention**: Requesting quantity exceeding available inventory -> returns HTTP 422 Unprocessable Entity (no negative stock allowed).
+### Scenario 4: Negative Boundary Cases & Isolation Safeguards
+To ensure that negative permission drills do not contaminate remaining test cases, negative boundary cases run against an **isolated fresh owned fixture / baseline**:
+
+1. **Role Fixture Assignment**:
+   - The test actor receives Manager permissions canonically via role assignment (`$actor->assignRole('Manager')` via `CompanyRoleService::seedCompanyRoles($company)`).
+   - Negative permission drills test the removal of the inherited role grant (`$actor->removeRole('Manager')`), rather than relying solely on direct permission overrides.
+2. **Missing Create Permission**: Actor without `sales.invoice.create` -> returns HTTP 403 Forbidden (`AuthorizationException` mapped in `OnlineCashSaleController.php:128-133`).
+3. **Foreign Tenant Access**: Actor attempting commit for foreign company ID -> returns HTTP 403 Forbidden (`AuthorizationException`).
+4. **Revoked Device Session**: Mobile device marked inactive or un-enrolled -> returns HTTP 401 Unauthenticated via Sanctum authentication guard.
+5. **Negative Stock Prevention**: Requesting quantity exceeding available inventory -> returns HTTP 422 Unprocessable Entity (`InvalidInventoryMovementException` mapped in `OnlineCashSaleController.php:122-127`).
 
 ---
 
-## 5. Execution Prerequisites & Security Safeguards
+## 5. Execution Prerequisites & Safeguards
 
 Before any live financial execution can be authorized:
 1. **Exclusive Heavy QA Lease**: Exclusive lease must be granted on MariaDB port 3342.
-2. **Root-Authorized Scope**: Runtime pairing manifest must declare `ROOT_AUTHORIZED_FINANCIAL_PILOT` (signed with fresh SHA-256).
+2. **Root-Authorized Scope**: Runtime pairing manifest must declare existing `ROOT_AUTHORIZED_PAIRED_EXECUTION` pinned with deterministic SHA-256 digest (not a signature).
 3. **Fresh Ephemeral Schema**: Dedicated disposable schema `accounting_p8_tmp_<hex12>` created with fresh migrations and canonical seed data.
 4. **Guaranteed Bounded Cleanup**:
    - Schema dropped in `finally` block.
    - Temporary directory deleted.
-   - Loopback and TLS proxy ports closed (verified via Python `socket.connect_ex`).
+   - Loopback (`18080`) and TLS proxy (`18443`) ports closed (verified via Python `socket.connect_ex`).
 5. **Core Application Invariance Preserved**: Zero changes to `app/`, `routes/`, `config/`, or `composer.lock`.
 
 ---
@@ -182,11 +189,11 @@ Before any live financial execution can be authorized:
 
 ```mermaid
 flowchart TD
-    A["Review & Approval of Financial Test Plan"] --> B["Minimal Test-Only Harness Extensions<br>(--drop-response, --simulate-fault, scope check)"]
-    B --> C["Pure Guard Test Verification<br>(Validate new flags & scopes without DB/sockets)"]
+    A["Review & Approval of Financial Test Plan"] --> B["Minimal Test-Only Harness Extensions<br>(Consume-once proxy drop, fault stage wiring)"]
+    B --> C["Pure Guard Test Verification<br>(Validate flags and consume-once drop rules without DB/sockets)"]
     C --> D["Grant Exclusive Heavy QA Lease<br>(MariaDB Port 3342)"]
     D --> E["Execute Scenario 1: Basic Financial Slice<br>(201 Fresh, 200 Replay, Status, 409 Tamper)"]
-    E --> F["Execute Scenario 2: Lost ACK Response Drop<br>(Actual connection termination & recovery)"]
-    F --> G["Execute Scenario 3: Rollback Atomicity<br>(Throw stage fault & zero-leak proof)"]
-    G --> H["Verify 6 Read-Only Reconciliations & Cleanup<br>(Drop schema, close ports, release lease)"]
+    E --> F["Execute Scenario 2: Lost ACK Response Suppression<br>(Actual connection drop & recovery query)"]
+    F --> G["Execute Scenario 3: Rollback Atomicity<br>(Throw stage fault & Delta 0 stock check)"]
+    G --> H["Verify 6 Read-Only Reconciliation Services & Cleanup<br>(Drop schema, close ports, release lease)"]
 ```
