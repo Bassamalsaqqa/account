@@ -456,16 +456,22 @@ final class ExecuteImmediateOnlineCashSaleAction
 
             $this->triggerStageFault('after_composite_completion');
 
+            $postedAt = $postedInvoice->created_at?->toIso8601ZuluString() ?? now()->toIso8601ZuluString();
+            $paymentReceiptNumber = ! empty($customerPayment->payment_number) ? (string) $customerPayment->payment_number : null;
+
             // Assemble and return terminal canonical result
             $terminalResult = [
-                'status' => 'completed',
+                'status' => 'posted',
                 'sales_invoice_id' => (int) $postedInvoice->id,
                 'sales_invoice_public_id' => (string) $postedInvoice->public_id,
+                'invoice_id' => (string) $postedInvoice->public_id,
                 'invoice_public_id' => (string) $postedInvoice->public_id,
                 'invoice_number' => (string) $postedInvoice->invoice_number,
                 'customer_payment_id' => (int) $customerPayment->id,
                 'customer_payment_public_id' => (string) $customerPayment->public_id,
+                'payment_id' => (string) $customerPayment->public_id,
                 'payment_public_id' => (string) $customerPayment->public_id,
+                'payment_receipt_number' => $paymentReceiptNumber,
                 'command_receipt_id' => null,
                 'customer_id' => (int) $postedInvoice->customer_id,
                 'customer_public_id' => (string) $customer->public_id,
@@ -474,6 +480,9 @@ final class ExecuteImmediateOnlineCashSaleAction
                 'grand_total' => (string) $postedInvoice->grand_total_currency,
                 'paid_amount' => (string) $customerPayment->amount,
                 'amount' => (string) $customerPayment->amount,
+                'amount_paid' => (string) $customerPayment->amount,
+                'change_returned' => '0.000000',
+                'posted_at' => $postedAt,
                 'lines_count' => count($postedInvoice->lines),
             ];
 

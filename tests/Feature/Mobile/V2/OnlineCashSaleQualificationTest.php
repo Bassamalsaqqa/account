@@ -36,11 +36,14 @@ use App\Services\Purchasing\PayablesReconciliationService;
 use App\Services\Sales\SalesReconciliationService;
 use App\Services\Tenancy\CompanyRoleService;
 use App\Support\Mobile\Contract\Revision3\OnlineSaleIntentProfile;
+use App\Support\Mobile\Receipt\DenyFinancialExecutionAdapter;
+use App\Support\Mobile\Receipt\Exceptions\FinancialExecutionDeniedException;
 use App\Support\Mobile\Receipt\Exceptions\IllegalStateException;
 use App\Support\Mobile\Receipt\Exceptions\SecurityException;
 use App\Support\Mobile\Receipt\FinancialExecutionAdapterInterface;
 use App\Support\Mobile\Receipt\MobileEventReceiptManager;
 use App\Support\Mobile\Receipt\NativeFinancialExecutionCapability;
+use App\Support\Mobile\WireResponse;
 use App\Support\Tenancy\CompanyContext;
 use App\Support\Tenancy\CompanyScope;
 use Closure;
@@ -599,37 +602,46 @@ final class OnlineCashSaleQualificationTest extends TestCase
 
         $response->assertStatus(201);
         $response->assertJson([
-            'outcome' => 'created',
-            'status' => 'completed',
-            'currency' => 'ILS',
+            'client_event_id' => $eventId,
+            'status' => 'posted',
             'grand_total' => '58.000000',
-            'paid_amount' => '58.000000',
-            'lines_count' => 1,
+            'amount_paid' => '58.000000',
+            'change_returned' => '0.000000',
         ]);
 
         $data = $response->json();
-        $invoiceId = $data['sales_invoice_id'];
-        $paymentId = $data['customer_payment_id'];
+        $this->assertArrayNotHasKey('outcome', $data);
+        $this->assertArrayNotHasKey('sales_invoice_id', $data);
+        $this->assertArrayNotHasKey('customer_payment_id', $data);
+        $this->assertArrayNotHasKey('customer_id', $data);
+        $this->assertArrayNotHasKey('currency', $data);
+        $this->assertArrayNotHasKey('paid_amount', $data);
+        $this->assertArrayNotHasKey('lines_count', $data);
 
-        $this->assertNotNull($invoiceId);
-        $this->assertNotNull($paymentId);
+        $this->assertTrue(WireResponse::accepts(json_decode((string) $response->getContent()), 'sale-commit-response'));
+
+        $invoicePublicId = $data['invoice_id'];
+        $paymentPublicId = $data['payment_id'];
+
+        $this->assertNotNull($invoicePublicId);
+        $this->assertNotNull($paymentPublicId);
 
         // Verify database state: invoice is posted
-        $invoice = SalesInvoice::withoutGlobalScopes()->find($invoiceId);
+        $invoice = SalesInvoice::withoutGlobalScopes()->where('company_id', $this->company->id)->where('public_id', $invoicePublicId)->first();
         $this->assertNotNull($invoice);
         $this->assertSame('posted', $invoice->status);
         $this->assertSame('58.000000', (string) $invoice->grand_total_currency);
 
         // Verify payment is posted and allocated
-        $payment = CustomerPayment::withoutGlobalScopes()->find($paymentId);
+        $payment = CustomerPayment::withoutGlobalScopes()->where('company_id', $this->company->id)->where('public_id', $paymentPublicId)->first();
         $this->assertNotNull($payment);
         $this->assertFalse($payment->is_reversed);
         $this->assertNotNull($payment->posting_batch_id);
         $this->assertSame('58.000000', (string) $payment->amount);
 
         $allocation = DB::table('customer_payment_allocations')
-            ->where('customer_payment_id', $paymentId)
-            ->where('sales_invoice_id', $invoiceId)
+            ->where('customer_payment_id', $payment->id)
+            ->where('sales_invoice_id', $invoice->id)
             ->first();
         $this->assertNotNull($allocation);
         $this->assertSame('58.000000', (string) $allocation->allocated_amount);
@@ -637,7 +649,7 @@ final class OnlineCashSaleQualificationTest extends TestCase
         // Verify stock movements were created
         $stockMovement = StockMovement::withoutGlobalScopes()->where('company_id', $this->company->id)
             ->where('source_type', 'sales_invoice')
-            ->where('source_id', $invoiceId)
+            ->where('source_id', $invoice->id)
             ->first();
         $this->assertNotNull($stockMovement);
 
@@ -694,10 +706,15 @@ final class OnlineCashSaleQualificationTest extends TestCase
         $second->assertStatus(200);
         $data2 = $second->json();
 
-        $this->assertSame('replayed', $data2['outcome']);
-        $this->assertSame($data1['sales_invoice_id'], $data2['sales_invoice_id']);
-        $this->assertSame($data1['customer_payment_id'], $data2['customer_payment_id']);
+        $this->assertSame($data1, $data2);
+        $this->assertSame($data1['invoice_id'], $data2['invoice_id']);
+        $this->assertSame($data1['payment_id'], $data2['payment_id']);
         $this->assertSame($data1['invoice_number'], $data2['invoice_number']);
+        $this->assertArrayNotHasKey('sales_invoice_id', $data2);
+        $this->assertArrayNotHasKey('customer_payment_id', $data2);
+        $this->assertArrayNotHasKey('customer_id', $data2);
+        $this->assertArrayNotHasKey('outcome', $data2);
+        $this->assertTrue(WireResponse::accepts(json_decode((string) $second->getContent()), 'sale-commit-response'));
 
         // Zero sequence or record duplication
         $this->assertSame($invoiceCountBefore, SalesInvoice::withoutGlobalScopes()->where('company_id', $this->company->id)->count());
@@ -1438,6 +1455,143 @@ final class OnlineCashSaleQualificationTest extends TestCase
             'v2_online_sale_intent',
             $canonicalBytes
         );
+    }
+
+    /**
+     * T-23: Explicit production binding negative test:
+     * Asserts container binding resolves strictly to DenyFinancialExecutionAdapter.
+     * When all 3 feature flags are enabled (mobile.enabled, mobile.v2_enabled, mobile.v2_cash_slice_enabled),
+     * DenyFinancialExecutionAdapter strictly denies both initial commit attempts and replay/status of existing receipts.
+     * Asserts zero side effects and zero test-adapter leakage in production configuration.
+     */
+    public function test_production_deny_binding_denies_initial_and_existing_receipt_replay_and_status_when_all_flags_true(): void
+    {
+        // 1. Rebind production DenyFinancialExecutionAdapter exactly as registered in AppServiceProvider
+        $this->app->bind(
+            FinancialExecutionAdapterInterface::class,
+            DenyFinancialExecutionAdapter::class
+        );
+
+        // Assert container binding class
+        $binding = $this->app->make(FinancialExecutionAdapterInterface::class);
+        $this->assertInstanceOf(DenyFinancialExecutionAdapter::class, $binding);
+        $this->assertSame(DenyFinancialExecutionAdapter::class, get_class($binding));
+
+        // 2. Set all 3 feature flags to true
+        config([
+            'mobile.enabled' => true,
+            'mobile.v2_enabled' => true,
+            'mobile.v2_cash_slice_enabled' => true,
+        ]);
+
+        $eventId = (string) Str::uuid();
+        $payload = $this->validSalePayload($eventId);
+
+        // 3. Initial commit attempt must fail with 403 Forbidden
+        $response = $this->withHeader('Authorization', 'Bearer '.$this->rawToken)
+            ->postJson("/api/mobile/v2/companies/{$this->company->public_id}/sales/online-cash", $payload);
+
+        $response->assertStatus(403);
+        $response->assertJson([
+            'error' => [
+                'code' => 'FORBIDDEN',
+            ],
+        ]);
+
+        // Zero database effects
+        $this->assertSame(0, SalesInvoice::withoutGlobalScopes()->where('company_id', $this->company->id)->count());
+        $this->assertSame(0, CustomerPayment::withoutGlobalScopes()->where('company_id', $this->company->id)->count());
+        $this->assertSame(0, MobileEventReceipt::withoutGlobalScopes()->where('company_id', $this->company->id)->count());
+
+        // 4. Existing receipt replay attempt: insert seeded receipt row directly
+        $existingEventId = (string) Str::uuid();
+        $existingPayload = $this->validSalePayload($existingEventId);
+        $canonicalBytes = OnlineSaleIntentProfile::serialize(
+            OnlineSaleIntentProfile::construct([
+                'actor_id' => (string) $this->staff->public_id,
+                'company_id' => (string) $this->company->public_id,
+                'currency_minor_units' => 2,
+            ], json_encode($existingPayload, JSON_THROW_ON_ERROR))
+        );
+        $digest = hash('sha256', $canonicalBytes);
+
+        DB::table('mobile_event_receipts')->insert([
+            'company_id' => $this->company->id,
+            'client_event_id' => $existingEventId,
+            'actor_id' => $this->staff->id,
+            'device_id' => $this->device->device_id,
+            'event_version' => 2,
+            'representation' => 'v2_online_sale_intent',
+            'payload_digest' => $digest,
+            'original_canonical_bytes' => $canonicalBytes,
+            'status' => 'completed',
+            'terminal_canonical_result' => json_encode(['status' => 'completed'], JSON_THROW_ON_ERROR),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        // Replay attempt must also be strictly denied (403 Forbidden)
+        $replayResponse = $this->withHeader('Authorization', 'Bearer '.$this->rawToken)
+            ->postJson("/api/mobile/v2/companies/{$this->company->public_id}/sales/online-cash", $existingPayload);
+
+        $replayResponse->assertStatus(403);
+        $replayResponse->assertJson([
+            'error' => [
+                'code' => 'FORBIDDEN',
+            ],
+        ]);
+
+        // 5. Status lookup through MobileEventReceiptManager lookup must throw FinancialExecutionDeniedException
+        $manager = app(MobileEventReceiptManager::class);
+        $this->expectException(FinancialExecutionDeniedException::class);
+        $manager->lookup((int) $this->company->id, $existingEventId, $this->token->token_hash);
+    }
+
+    /**
+     * T-24: Public Wire DTO strict whole keys, ULID regex, null handling, and real Kotlin fixture mapping.
+     */
+    public function test_public_wire_dto_strict_whole_keys_and_schema_parity(): void
+    {
+        $eventId = (string) Str::uuid();
+        $payload = $this->validSalePayload($eventId);
+
+        $response = $this->withHeader('Authorization', 'Bearer '.$this->rawToken)
+            ->postJson("/api/mobile/v2/companies/{$this->company->public_id}/sales/online-cash", $payload);
+
+        $response->assertStatus(201);
+        $data = $response->json();
+
+        // Strict whole keys check
+        $expectedKeys = [
+            'client_event_id',
+            'status',
+            'invoice_id',
+            'invoice_number',
+            'payment_id',
+            'payment_receipt_number',
+            'grand_total',
+            'amount_paid',
+            'change_returned',
+            'posted_at',
+        ];
+        $this->assertSame($expectedKeys, array_keys($data));
+
+        // Absence of internal SQL IDs
+        $this->assertArrayNotHasKey('sales_invoice_id', $data);
+        $this->assertArrayNotHasKey('customer_payment_id', $data);
+        $this->assertArrayNotHasKey('customer_id', $data);
+        $this->assertArrayNotHasKey('outcome', $data);
+
+        // Regex checks
+        $this->assertMatchesRegularExpression('/\A[0-7][0-9A-HJKMNP-TV-Z]{25}\z/', $data['invoice_id']);
+        $this->assertMatchesRegularExpression('/\A[0-7][0-9A-HJKMNP-TV-Z]{25}\z/', $data['payment_id']);
+        $this->assertMatchesRegularExpression('/\A(?:0\.(?=[0-9]{1,6}\z)[0-9]*[1-9][0-9]*|[1-9][0-9]{0,13}(?:\.[0-9]{1,6})?)\z/', $data['grand_total']);
+        $this->assertMatchesRegularExpression('/\A(?:0|[1-9][0-9]{0,13})(?:\.[0-9]{1,6})?\z/', $data['amount_paid']);
+        $this->assertMatchesRegularExpression('/\A(?:0|[1-9][0-9]{0,13})(?:\.[0-9]{1,6})?\z/', $data['change_returned']);
+        $this->assertMatchesRegularExpression('/\A\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})\z/', $data['posted_at']);
+
+        // WireResponse schema verification
+        $this->assertTrue(WireResponse::accepts(json_decode((string) $response->getContent()), 'sale-commit-response'));
     }
 
     /**

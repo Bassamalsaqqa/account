@@ -13,6 +13,7 @@ use App\Models\MobileDevice;
 use App\Models\User;
 use App\Services\Money\CurrencyMinorUnitsResolver;
 use App\Support\Mobile\Contract\Revision3\OnlineSaleIntentProfile;
+use App\Support\Mobile\Contract\Revision3\OnlineSaleWireResponseProjection;
 use App\Support\Mobile\Receipt\Exceptions\FinancialExecutionDeniedException;
 use App\Support\Mobile\Receipt\Exceptions\MobileEventDuplicatePayloadException;
 use App\Support\Mobile\Receipt\MobileEventReceiptManager;
@@ -130,12 +131,13 @@ final class OnlineCashSaleController extends Controller
             );
         }
 
-        $outcome = $result['outcome'] === 'replay' ? 'replayed' : 'created';
         $httpStatus = $result['outcome'] === 'replay' ? 200 : 201;
 
-        return response()->json([
-            'outcome' => $outcome,
-            ...$result['terminal_canonical_result'],
-        ], $httpStatus);
+        $projectedResponse = OnlineSaleWireResponseProjection::projectCommitWireDto(
+            $clientEventId,
+            $result['terminal_canonical_result']
+        );
+
+        return response()->json($projectedResponse, $httpStatus);
     }
 }

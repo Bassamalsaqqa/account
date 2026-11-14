@@ -60,11 +60,14 @@ final class MobileEventReceiptManager
         'status',
         'sales_invoice_id',
         'sales_invoice_public_id',
+        'invoice_id',
         'invoice_public_id',
         'invoice_number',
         'customer_payment_id',
         'customer_payment_public_id',
+        'payment_id',
         'payment_public_id',
+        'payment_receipt_number',
         'command_receipt_id',
         'customer_id',
         'customer_public_id',
@@ -73,6 +76,9 @@ final class MobileEventReceiptManager
         'grand_total',
         'paid_amount',
         'amount',
+        'amount_paid',
+        'change_returned',
+        'posted_at',
         'lines_count',
     ];
 
@@ -240,40 +246,7 @@ final class MobileEventReceiptManager
                         // Cooperative row locks on model assignments serialize against concurrent assignment updates.
                         // In addition, lock assigned roles and role_has_permissions definitions and forget registrar cache
                         // for fresh DB linearity.
-                        $teamKey = (string) config('permission.column_names.team_foreign_key', 'company_id');
-                        $rolePivotRows = DB::table('model_has_roles')
-                            ->where('model_type', User::class)
-                            ->where('model_id', $user->id)
-                            ->where($teamKey, $companyId)
-                            ->lockForUpdate()
-                            ->get();
-
-                        DB::table('model_has_permissions')
-                            ->where('model_type', User::class)
-                            ->where('model_id', $user->id)
-                            ->where($teamKey, $companyId)
-                            ->lockForUpdate()
-                            ->get();
-
-                        $assignedRoleIds = $rolePivotRows->pluck('role_id')->filter()->map(fn ($id) => (int) $id)->values()->all();
-                        if (! empty($assignedRoleIds)) {
-                            sort($assignedRoleIds);
-                            DB::table('roles')
-                                ->whereIn('id', $assignedRoleIds)
-                                ->where('company_id', $companyId)
-                                ->orderBy('id')
-                                ->lockForUpdate()
-                                ->get();
-
-                            DB::table('role_has_permissions')
-                                ->whereIn('role_id', $assignedRoleIds)
-                                ->orderBy('role_id')
-                                ->orderBy('permission_id')
-                                ->lockForUpdate()
-                                ->get();
-                        }
-
-                        app(PermissionRegistrar::class)->forgetCachedPermissions();
+                        $this->verifyAndLockFreshRolePermissions($companyId, $user);
 
                         // 6. Verify payload context binding before admission when known context keys are present
                         $this->verifyPayloadContextBinding($decodedPayload, $company, $user, $device, $clientEventId);
@@ -664,6 +637,9 @@ final class MobileEventReceiptManager
                 app(PermissionRegistrar::class)->setPermissionsTeamId($companyId);
                 $user->unsetRelation('roles')->unsetRelation('permissions');
 
+                // Enforce fresh role definition & permission concurrency locking on lookup path
+                $this->verifyAndLockFreshRolePermissions($companyId, $user);
+
                 // Check lookup authority through adapter (default deny denies lookup)
                 $this->getExecutor()->authorize($company, $user, $device, 'lookup', null);
 
@@ -784,6 +760,48 @@ final class MobileEventReceiptManager
     }
 
     /**
+     * Fresh role definition and permission table verification under lock.
+     * Enforces serial concurrency against concurrent permission or role definition alterations.
+     */
+    private function verifyAndLockFreshRolePermissions(int $companyId, User $user): void
+    {
+        $teamKey = (string) config('permission.column_names.team_foreign_key', 'company_id');
+        $rolePivotRows = DB::table('model_has_roles')
+            ->where('model_type', User::class)
+            ->where('model_id', $user->id)
+            ->where($teamKey, $companyId)
+            ->lockForUpdate()
+            ->get();
+
+        DB::table('model_has_permissions')
+            ->where('model_type', User::class)
+            ->where('model_id', $user->id)
+            ->where($teamKey, $companyId)
+            ->lockForUpdate()
+            ->get();
+
+        $assignedRoleIds = $rolePivotRows->pluck('role_id')->filter()->map(fn ($id) => (int) $id)->values()->all();
+        if (! empty($assignedRoleIds)) {
+            sort($assignedRoleIds);
+            DB::table('roles')
+                ->whereIn('id', $assignedRoleIds)
+                ->where('company_id', $companyId)
+                ->orderBy('id')
+                ->lockForUpdate()
+                ->get();
+
+            DB::table('role_has_permissions')
+                ->whereIn('role_id', $assignedRoleIds)
+                ->orderBy('role_id')
+                ->orderBy('permission_id')
+                ->lockForUpdate()
+                ->get();
+        }
+
+        app(PermissionRegistrar::class)->forgetCachedPermissions();
+    }
+
+    /**
      * @param  array<string, mixed>  $payload
      */
     private function verifyPayloadContextBinding(
@@ -859,6 +877,9 @@ final class MobileEventReceiptManager
             if (isset($rawTerminal['invoice_public_id']) && ! hash_equals($canonicalInvPublicId, (string) $rawTerminal['invoice_public_id'])) {
                 throw new RuntimeException('Terminal canonical result invoice public ID mismatch.');
             }
+            if (isset($rawTerminal['invoice_id']) && ! hash_equals($canonicalInvPublicId, (string) $rawTerminal['invoice_id'])) {
+                throw new RuntimeException('Terminal canonical result invoice ID mismatch.');
+            }
         }
 
         if ($canonicalPayPublicId !== null) {
@@ -867,6 +888,9 @@ final class MobileEventReceiptManager
             }
             if (isset($rawTerminal['payment_public_id']) && ! hash_equals($canonicalPayPublicId, (string) $rawTerminal['payment_public_id'])) {
                 throw new RuntimeException('Terminal canonical result payment public ID mismatch.');
+            }
+            if (isset($rawTerminal['payment_id']) && ! hash_equals($canonicalPayPublicId, (string) $rawTerminal['payment_id'])) {
+                throw new RuntimeException('Terminal canonical result payment ID mismatch.');
             }
         }
 
