@@ -1,0 +1,24 @@
+Note: Using configuration file phpstan.neon.
+tests/Unit/ReleaseAudit/OwnershipLifecycleRefusalTest.php
+tests/Unit/ReleaseAudit/RefusalTest.php
+tests/Unit/ReleaseAudit/ReleaseAuditDatabaseTest.php
+tools/release-audit/Fingerprint.php
+tools/release-audit/Guard.php
+tools/release-audit/audit.php
+tools/release-audit/compare.php
+tools/release-audit/manifest.php
+ ------ ----------------------------------------------------------------------- 
+  Line   tests/Unit/ReleaseAudit/ReleaseAuditDatabaseTest.php                   
+ ------ ----------------------------------------------------------------------- 
+  754    Method                                                                 
+         Tests\Unit\ReleaseAudit\ReleaseAuditDatabaseTest::createChildConfigFi  
+         le() has parameter $overrides with no value type specified in          
+         iterable type array.                                                   
+         🪪  missingType.iterableValue                                          
+         💡  See:                                                               
+         https://phpstan.org/blog/solving-phpstan-no-value-type-specified-in-i  
+         terable-type                                                           
+ ------ ----------------------------------------------------------------------- 
+
+
+ [ERROR] Found 1 error                                                          

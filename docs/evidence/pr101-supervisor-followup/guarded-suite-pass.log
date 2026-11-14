@@ -1,0 +1,12 @@
+Owned primary test schema: accounting_p8_tmp_553b0dcbe895
+PHPUnit 12.5.36 by Sebastian Bergmann and contributors.
+
+Runtime:       PHP 8.4.27
+Configuration: /tmp/p8_phpunit_6p6894bii8oj849e7M2
+
+..................                                                18 / 18 (100%)
+
+Time: 00:11.714, Memory: 69.00 MB
+
+OK (18 tests, 144 assertions)
+Owned primary schema cleaned.

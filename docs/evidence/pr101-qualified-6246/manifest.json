@@ -1,0 +1,134 @@
+{
+  "qualifiedHead": "6246b3f337264d47b6fcd9345d7400461c2b9bda",
+  "reviewedPriorHead": "26af8735ab06240baa0eb7186b90cafa9b6e3669",
+  "intermediateHeads": [
+    {
+      "commit": "9fd24180e46472d183a9acd84650a12bcdf49458",
+      "summary": "test: explicitly clear nonce proof environment in child pre-socket negative probe"
+    },
+    {
+      "commit": "e7d1f7e233b2c6987d30e6a162ca5e29d585d160",
+      "summary": "test: bound engine sleep to 1.5s for socket pruning probe and assert unbuffered PDO attribute in Phase B observer"
+    },
+    {
+      "commit": "e147e04050337717d32e515e499dba485aeb2e20",
+      "summary": "style: add phpstan docblock type for child config overrides"
+    },
+    {
+      "commit": "6246b3f337264d47b6fcd9345d7400461c2b9bda",
+      "summary": "docs: record executed qualification results, lease release, and wire-drain limitations"
+    }
+  ],
+  "runtimeEnvironment": {
+    "phpVersion": "8.4.27",
+    "mariaDbPort": 3342,
+    "mariaDbHost": "127.0.0.1",
+    "operatingSystem": "Linux",
+    "qaLeaseStatus": "Released after bounded disposable execution"
+  },
+  "sourceAttestationGapDisclosure": "Contemporaneous source-attestation note: Individual focused tests (01 through 08) were executed sequentially under the QA lease across commits 26af873, 9fd2418, and e7d1f7e as iterative diagnostics and fixes were applied. The full suite re-runs (10, 11, 12, 13, and 14) were executed on clean commit e147e04050337717d32e515e499dba485aeb2e20. While per-run manifests were printed during execution, per-command git tree commit pins for intermediate diagnostic iterations are recorded from Git history rather than retroactively reconstructed.",
+  "disposableSchemasVerified": [
+    "accounting_p8_tmp_38f60c9ef564",
+    "accounting_p8_tmp_c7d6f7ac63c7",
+    "accounting_p8_tmp_727b238aa375",
+    "accounting_p8_tmp_750d5bb256b5",
+    "accounting_p8_tmp_47ff0769a847",
+    "accounting_p8_tmp_7684c21d3da8",
+    "accounting_p8_tmp_ac84b50b052d",
+    "accounting_p8_tmp_06a27a8b4b68",
+    "accounting_p8_tmp_8b251713fc8d",
+    "accounting_p8_tmp_4fb2c1152d20"
+  ],
+  "limits": [
+    "5-row Phase B active cursor abort proves closeCursor() is skipped during active streaming and unbuffered mode is active; not accepted as wire-drain saturation proof for multi-GB production datasets.",
+    "Representative 3,000-row / ~3MB table fixture bounds client memory (<8MB peak) and Phase A byte refusal, but does not simulate multi-tenant host stress.",
+    "Deadline ceiling permits <1s setting overshoot; engine cancellation backed by OS socket closure detected upon MariaDB return, not instantaneous PHP destructor guarantees.",
+    "Production mode remains unconditionally refused via Guard::refuse(). No live DB, SSH, Hostinger, merge, or activation performed."
+  ],
+  "logs": {
+    "01-pre-socket-guard-negative-initial-fail": {
+      "command": "APP_ENV=testing PHASE8_ALLOW_DISPOSABLE_DB=1 php tests/Support/run-phase8-disposable.php -- tests/Unit/ReleaseAudit/ReleaseAuditDatabaseTest.php --filter test_child_pre_socket_guard_refuses_wrong_host_port_and_missing_proof_before_socket",
+      "exitCode": 1,
+      "schema": "accounting_p8_tmp_38f60c9ef564",
+      "sha256": "1d9c3f6337d73fc7ea4ad390fbdda0b05e1104e44e585d2650499443417daeaf"
+    },
+    "02-pre-socket-guard-negative-pass": {
+      "command": "APP_ENV=testing PHASE8_ALLOW_DISPOSABLE_DB=1 php tests/Support/run-phase8-disposable.php -- tests/Unit/ReleaseAudit/ReleaseAuditDatabaseTest.php --filter test_child_pre_socket_guard_refuses_wrong_host_port_and_missing_proof_before_socket",
+      "exitCode": 0,
+      "schema": "accounting_p8_tmp_c7d6f7ac63c7",
+      "sha256": "55e6fa612fed1d347dfea4aba4df0ee8c1e943adec32872ac37af05bccd0e838"
+    },
+    "03-phase-a-budget-refusal-pass": {
+      "command": "APP_ENV=testing PHASE8_ALLOW_DISPOSABLE_DB=1 php tests/Support/run-phase8-disposable.php -- tests/Unit/ReleaseAudit/ReleaseAuditDatabaseTest.php --filter test_phase_a_aggregate_budget_refusal_child_control",
+      "exitCode": 0,
+      "schema": "accounting_p8_tmp_727b238aa375",
+      "sha256": "ac570b21c9fa133fc796eb63f3cb156e41c65b2b882c7a29baf3c6b4a79997b5"
+    },
+    "04-forced-kill-pruning-initial-fail": {
+      "command": "APP_ENV=testing PHASE8_ALLOW_DISPOSABLE_DB=1 php tests/Support/run-phase8-disposable.php -- tests/Unit/ReleaseAudit/ReleaseAuditDatabaseTest.php --filter test_forced_child_process_termination_engine_pruning_negative_control",
+      "exitCode": 1,
+      "schema": "accounting_p8_tmp_750d5bb256b5",
+      "sha256": "4a886c603bb5b22008449c6510ee1c6bebefdde6d4d8d6796ad14d34a683ab09"
+    },
+    "05-forced-kill-pruning-corrected-pass": {
+      "command": "APP_ENV=testing PHASE8_ALLOW_DISPOSABLE_DB=1 php tests/Support/run-phase8-disposable.php -- tests/Unit/ReleaseAudit/ReleaseAuditDatabaseTest.php --filter test_forced_child_process_termination_engine_pruning_negative_control",
+      "exitCode": 0,
+      "schema": "accounting_p8_tmp_47ff0769a847",
+      "sha256": "df09cc8571ed2e6cc2fda130d59510c50a7370073d9f4ca9da5cf8ea69e5fd7f"
+    },
+    "06-phase-b-active-cursor-abort-pass": {
+      "command": "APP_ENV=testing PHASE8_ALLOW_DISPOSABLE_DB=1 php tests/Support/run-phase8-disposable.php -- tests/Unit/ReleaseAudit/ReleaseAuditDatabaseTest.php --filter test_phase_b_unbuffered_stream_active_cursor_abort_child",
+      "exitCode": 0,
+      "schema": "accounting_p8_tmp_7684c21d3da8",
+      "sha256": "d76bd4c6c55e9865f423e773f7b870243339df6298cea8c76e949747a4590b75"
+    },
+    "07-representative-3mb-streaming-pass": {
+      "command": "APP_ENV=testing PHASE8_ALLOW_DISPOSABLE_DB=1 php tests/Support/run-phase8-disposable.php -- tests/Unit/ReleaseAudit/ReleaseAuditDatabaseTest.php --filter test_representative_bounded_multi_mb_streaming_with_memory_ceiling_and_phase_a_refusal",
+      "exitCode": 0,
+      "schema": "accounting_p8_tmp_ac84b50b052d",
+      "sha256": "6a9b749145e5fed699af0d3441d60472634a6df62916e68523d9234986adaa7e"
+    },
+    "08-multiquery-deadline-hook-pass": {
+      "command": "APP_ENV=testing PHASE8_ALLOW_DISPOSABLE_DB=1 php tests/Support/run-phase8-disposable.php -- tests/Unit/ReleaseAudit/ReleaseAuditDatabaseTest.php --filter test_multiquery_service_deadline_enforced_across_engine_queries_via_before_executing_hook",
+      "exitCode": 0,
+      "schema": "accounting_p8_tmp_06a27a8b4b68",
+      "sha256": "21dbd2b9e6b421253b97e89e8468a783ac70fa99634fb2fb595754662a0982fa"
+    },
+    "09-phpstan-initial-fail": {
+      "command": "vendor/bin/phpstan analyse --debug tools/release-audit tests/Unit/ReleaseAudit",
+      "exitCode": 1,
+      "sha256": "cb6872eed18847f63768792ab49b5bcc38242cb05a2eb6755edfc2fe316a11a0"
+    },
+    "10-phpstan-corrected-pass": {
+      "command": "vendor/bin/phpstan analyse --debug tools/release-audit tests/Unit/ReleaseAudit",
+      "exitCode": 0,
+      "sha256": "d42b233ff9a1f63af15e7e93cd8446b5d7511d15cf7938a93300b0a53c838281"
+    },
+    "11-pint-pass": {
+      "command": "vendor/bin/pint --test tools/release-audit tests/Unit/ReleaseAudit",
+      "exitCode": 0,
+      "sha256": "9fa3c401d4d7dcf9d616a4e847f09d73bafe2397e5f1b5b77531e2516436ed5a"
+    },
+    "12-refusal-and-lifecycle-suites-pass": {
+      "command": "vendor/bin/phpunit tests/Unit/ReleaseAudit/RefusalTest.php tests/Unit/ReleaseAudit/OwnershipLifecycleRefusalTest.php",
+      "exitCode": 0,
+      "tests": 22,
+      "assertions": 136,
+      "sha256": "4702d1c5e5d1020955ca51d3ece2910b0d6b328a3716362b60abe8ddea9ca385"
+    },
+    "13-compare-classification-cli-pass": {
+      "command": "python3 tests/Unit/ReleaseAudit/compare_classification_test.py",
+      "exitCode": 0,
+      "tests": 15,
+      "sha256": "75672b3a8453490ebe909552202f0f6fc8cc3af5d846d5dc79ee961f44aa7ef7"
+    },
+    "14-database-full-suite-pass": {
+      "command": "APP_ENV=testing PHASE8_ALLOW_DISPOSABLE_DB=1 php tests/Support/run-phase8-disposable.php -- tests/Unit/ReleaseAudit/ReleaseAuditDatabaseTest.php",
+      "exitCode": 0,
+      "tests": 15,
+      "assertions": 141,
+      "schema": "accounting_p8_tmp_4fb2c1152d20",
+      "sha256": "de1eeaf48dae07f9caf35bd68a581877903b5950f1cb2b75d262ab084b4ef6e2"
+    }
+  }
+}

@@ -1,0 +1,21 @@
+Owned primary test schema: accounting_p8_tmp_750d5bb256b5
+PHPUnit 12.5.36 by Sebastian Bergmann and contributors.
+
+Runtime:       PHP 8.4.27
+Configuration: [REDACTED_TMP]/p8_phpunit_9n8jv6sbp47kaeyuE73
+
+F                                                                   1 / 1 (100%)
+
+Time: 00:05.283, Memory: 50.50 MB
+
+There was 1 failure:
+
+1) Tests\Unit\ReleaseAudit\ReleaseAuditDatabaseTest::test_forced_child_process_termination_engine_pruning_negative_control
+MariaDB engine must prune connection and terminate query upon socket closure from client abort
+Failed asserting that false is true.
+
+tests/Unit/ReleaseAudit/ReleaseAuditDatabaseTest.php:978
+
+FAILURES!
+Tests: 1, Assertions: 7, Failures: 1.
+Owned primary schema cleaned.

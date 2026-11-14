@@ -1,0 +1,21 @@
+Owned primary test schema: accounting_p8_tmp_38f60c9ef564
+PHPUnit 12.5.36 by Sebastian Bergmann and contributors.
+
+Runtime:       PHP 8.4.27
+Configuration: [REDACTED_TMP]/p8_phpunit_no0pstiqff9c6HpLet7
+
+F                                                                   1 / 1 (100%)
+
+Time: 00:00.384, Memory: 50.50 MB
+
+There was 1 failure:
+
+1) Tests\Unit\ReleaseAudit\ReleaseAuditDatabaseTest::test_child_pre_socket_guard_refuses_wrong_host_port_and_missing_proof_before_socket
+Child must reject missing nonce proof before socket
+Failed asserting that 0 is identical to 2.
+
+tests/Unit/ReleaseAudit/ReleaseAuditDatabaseTest.php:855
+
+FAILURES!
+Tests: 1, Assertions: 5, Failures: 1.
+Owned primary schema cleaned.

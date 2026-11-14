@@ -1,0 +1,40 @@
+PHPUnit 12.5.36 by Sebastian Bergmann and contributors.
+
+Runtime:       PHP 8.4.27
+Configuration: <WORKTREE>/phpunit.xml
+
+.......EF                                                           9 / 9 (100%)
+
+Time: 00:00.861, Memory: 56.50 MB
+
+There was 1 error:
+
+1) Tests\Unit\ReleaseAudit\OwnershipLifecycleRefusalTest::test_actual_setup_and_partial_teardown_refuse_without_queries@read splitting with data ([['example.invalid']], true, 'read/write')
+ErrorException: Undefined array key "write"
+
+<WORKTREE>/vendor/laravel/framework/src/Illuminate/Foundation/Bootstrap/HandleExceptions.php:265
+<WORKTREE>/vendor/laravel/framework/src/Illuminate/Database/Connectors/ConnectionFactory.php:164
+<WORKTREE>/vendor/laravel/framework/src/Illuminate/Database/Connectors/ConnectionFactory.php:149
+<WORKTREE>/vendor/laravel/framework/src/Illuminate/Database/Connectors/ConnectionFactory.php:102
+<WORKTREE>/vendor/laravel/framework/src/Illuminate/Database/Connectors/ConnectionFactory.php:54
+<WORKTREE>/vendor/laravel/framework/src/Illuminate/Database/DatabaseManager.php:208
+<WORKTREE>/vendor/laravel/framework/src/Illuminate/Database/DatabaseManager.php:103
+<WORKTREE>/vendor/laravel/framework/src/Illuminate/Database/DatabaseManager.php:502
+<WORKTREE>/vendor/laravel/framework/src/Illuminate/Support/Facades/Facade.php:364
+<WORKTREE>/tests/Unit/ReleaseAudit/OwnershipLifecycleRefusalTest.php:48
+<WORKTREE>/vendor/laravel/framework/src/Illuminate/Foundation/Testing/Concerns/InteractsWithTestCaseLifecycle.php:109
+<WORKTREE>/vendor/laravel/framework/src/Illuminate/Foundation/Testing/TestCase.php:75
+<WORKTREE>/tests/Unit/ReleaseAudit/ReleaseAuditDatabaseTest.php:51
+<WORKTREE>/tests/Unit/ReleaseAudit/OwnershipLifecycleRefusalTest.php:58
+
+--
+
+There was 1 failure:
+
+1) Tests\Unit\ReleaseAudit\OwnershipLifecycleRefusalTest::test_actual_setup_and_partial_teardown_refuse_without_queries@proof absent with data ([], true, 'proof')
+Failed asserting that 'Explicit disposable test administrative connection is required.' [ASCII](length: 63) contains "proof" [ASCII](length: 5).
+
+<WORKTREE>/tests/Unit/ReleaseAudit/OwnershipLifecycleRefusalTest.php:65
+
+ERRORS!
+Tests: 9, Assertions: 23, Errors: 1, Failures: 1.
