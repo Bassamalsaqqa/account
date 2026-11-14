@@ -16,6 +16,7 @@ use App\Support\Mobile\Receipt\Exceptions\MobileEventForeignScopeException;
 use App\Support\Mobile\Receipt\FinancialExecutionAdapterInterface;
 use App\Support\Mobile\Receipt\MobileEventReceiptManager;
 use App\Support\Mobile\Receipt\NativeFinancialExecutionCapability;
+use App\Support\Tenancy\CompanyContext;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Http\Request;
@@ -256,6 +257,8 @@ try {
         file_put_contents($directory.'/'.$slot.'.connection', (string) DB::selectOne('SELECT CONNECTION_ID() AS id')->id);
         $company = Company::findOrFail($companyId);
         $actor = User::findOrFail($actorId);
+        auth()->login($actor);
+        app(CompanyContext::class)->setCompany($company, $actor);
         setPermissionsTeamId($companyId);
         $role = Role::where('company_id', $companyId)->where('name', $roleName)->firstOrFail();
         app(UpdateRolePermissionsAction::class)->execute($company, $role, $permissionName, $enable, $actor);
