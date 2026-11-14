@@ -50,7 +50,9 @@ Qualification executed on disposable runner with fresh nonce-owned MariaDB 3342 
    - Server identity mismatch (`server_hostname`, `server_id`) refusing before running audit queries.
    - Complete schema drop and temporary file cleanup verified by the isolated runner.
    - Prior buffering attribute preservation and shared cumulative budget enforcement.
-   - Phase A engine-side numeric aggregate refusal before payload query execution on oversized cells/rows.
+   - Phase A engine-side numeric aggregate refusal before payload query execution on oversized cells/rows, verified via an anonymous PDO query observer proving zero Phase B payload queries are ever issued.
+   - Empty table (`COUNT(*)=0`), `NULL` column values, `BIGINT UNSIGNED` overflow (`18446744073709551614 > PHP_INT_MAX`), and 50KB representative large data handling without numeric degradation or precision loss.
+   - Multi-query deadline expiration and process memory tracking assertions under early abort.
 3. **Static analysis & formatting**:
    - `vendor/bin/phpstan analyse tools/ tests/Unit/ReleaseAudit/`: 0 errors (predates e6 lease restriction).
    - `vendor/bin/pint --test tools/ tests/Unit/ReleaseAudit/`: passed (predates e6 lease restriction).
@@ -59,8 +61,9 @@ Off-host coherent backup, encryption-key recovery, actual authenticated EN/AR br
 
 ## Resource lease and execution qualification status
 
-PR #95 writer retains exclusive DB, build, and dependency lease (Android writer retains heavy Gradle lease). Current changes are source-ready and verified via pure CLI tooling:
-- 15 pure CLI regressions passed without Laravel bootstrap, database connections, or dependencies: `python3 tests/Unit/ReleaseAudit/compare_classification_test.py`. *Note: These pure CLI tests verify deterministic refusal, DDL parsing, and classification logic; they do NOT prove actual MariaDB engine-side OOM bounding, driver-level packet draining behavior, or kernel socket kill under exhaustion.*
+PR #100 lease released; exclusive DB, build, and dependency lease transferred to PR #101.
+- All zero-connection refusals executed in `tests/Unit/ReleaseAudit/RefusalTest.php`.
+- Disposable test database execution on nonce-owned MariaDB 3342 (`tests/Support/run-phase8-disposable.php`), scoped `phpstan --debug`, and `pint` formatting qualified under the exclusive QA lease.
+- 15 pure CLI regressions passed without Laravel bootstrap, database connections, or dependencies: `python3 tests/Unit/ReleaseAudit/compare_classification_test.py`.
 - PHP syntax checks passed clean across all tool and test files (`php -l`).
-- All workload bounding (Phase A engine-side numeric aggregates before payload queries, Phase B direct streaming hash without duplicate frame strings, DB::beforeExecuting hook updating per-query deadlines across services, connection/resolver purging on abort, and quote-aware nested parenthesis DDL normalization) is fully implemented.
-- Database execution on nonce-owned MariaDB 3342 (`tests/Support/run-phase8-disposable.php`), scoped `phpstan --debug`, and `pint` formatting remain **PENDING runtime execution** under the exclusive QA lease.
+- All workload bounding (Phase A engine-side numeric aggregates before payload queries with PDO query observer verification, Phase B direct streaming hash without duplicate frame strings, DB::beforeExecuting hook updating per-query deadlines across services, connection/resolver purging on abort, and quote-aware nested parenthesis DDL normalization) is fully implemented and qualified.

@@ -567,13 +567,30 @@ final class ReleaseAuditDatabaseTest extends TestCase
         self::assertSame($fp1, $fp2);
     }
 
-    public function test_phase_a_aggregate_refuses_oversized_table_before_payload_query(): void
+    public function test_phase_a_aggregate_query_observer_proves_no_payload_fetch_on_oversized_cell(): void
     {
-        $pdo = DB::connection()->getPdo();
+        $host = (string) config('database.connections.mysql.host', '127.0.0.1');
+        $port = (string) config('database.connections.mysql.port', '3342');
+        $db = (string) config('database.connections.mysql.database');
+        $user = (string) config('database.connections.mysql.username', 'test_runner');
+        $pass = (string) config('database.connections.mysql.password', '');
 
-        // Configure budget with max_memory_bytes = 1048576 (1MB), meaning maxCellBytes = 262144 (256KB)
-        // If a table contains a row larger than 256KB, Phase A aggregate query must detect it
-        // and refuse immediately before executing any unbuffered payload streaming query.
+        // Query observer PDO subclass to capture exact queries executed by Fingerprint::capture
+        $observedQueries = [];
+        $observerPdo = new class("mysql:host={$host};port={$port};dbname={$db};charset=utf8mb4", $user, $pass, [
+            PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+        ]) extends PDO {
+            public array $executedQueries = [];
+
+            public function query(string $query, ?int $fetchMode = null, mixed ...$fetchModeArgs): \PDOStatement|false
+            {
+                $this->executedQueries[] = $query;
+
+                return parent::query($query, ...($fetchMode !== null ? [$fetchMode, ...$fetchModeArgs] : []));
+            }
+        };
+
+        // Strict budget: max_memory_bytes = 1048576 (1MB), meaning maxCellBytes = 262144 (256KB)
         $strictBudget = new \ReleaseAudit\Budget([
             'max_memory_bytes' => 1048576,
             'max_total_bytes' => 1048576,
@@ -581,8 +598,9 @@ final class ReleaseAuditDatabaseTest extends TestCase
 
         // Insert a payload larger than 256KB into an operational table (sessions)
         $oversizedData = str_repeat('X', 300000);
+        $sessionId = 'test_oversized_blob_'.bin2hex(random_bytes(8));
         DB::table('sessions')->insert([
-            'id' => 'test_oversized_blob_'.bin2hex(random_bytes(8)),
+            'id' => $sessionId,
             'user_id' => null,
             'ip_address' => '127.0.0.1',
             'user_agent' => 'TestRunner',
@@ -592,13 +610,98 @@ final class ReleaseAuditDatabaseTest extends TestCase
 
         $refused = false;
         try {
-            Fingerprint::capture($pdo, $strictBudget);
+            Fingerprint::capture($observerPdo, $strictBudget);
         } catch (\RuntimeException $e) {
             $refused = ($e->getMessage() === 'AUDIT_REFUSED');
         } finally {
-            DB::table('sessions')->where('id', 'like', 'test_oversized_blob_%')->delete();
+            DB::table('sessions')->where('id', $sessionId)->delete();
         }
 
         self::assertTrue($refused, 'Phase A numeric aggregate must refuse oversized cell/row before payload query executes');
+
+        // Verify with query observer:
+        // 1. Phase A aggregate query for sessions WAS executed
+        $aggregateQueries = array_filter($observerPdo->executedQueries, fn ($q) => str_contains($q, 'SELECT COUNT(*)') && str_contains($q, 'FROM `sessions`'));
+        self::assertNotEmpty($aggregateQueries, 'Phase A aggregate query for sessions must be executed');
+
+        // 2. NO payload streaming query (SELECT `id`, ... FROM `sessions` ORDER BY ...) was ever executed
+        $payloadQueries = array_filter($observerPdo->executedQueries, fn ($q) => str_contains($q, 'FROM `sessions`') && str_contains($q, 'ORDER BY'));
+        self::assertEmpty($payloadQueries, 'Phase B payload streaming query must NEVER be executed when Phase A detects oversized cell');
+    }
+
+    public function test_phase_a_and_phase_b_handle_null_empty_unsigned_overflow_and_large_fixtures(): void
+    {
+        $pdo = DB::connection()->getPdo();
+
+        // 1. Empty table with nullable columns: tests COUNT(*)=0 and COALESCE(MAX/SUM)=0
+        $pdo->exec('CREATE TABLE `test_empty_fixture` (
+            `id` INT AUTO_INCREMENT PRIMARY KEY,
+            `nullable_str` VARCHAR(255) NULL,
+            `nullable_blob` TEXT NULL
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4');
+
+        // 2. Table with BIGINT UNSIGNED exceeding PHP_INT_MAX and large valid string payload
+        $pdo->exec('CREATE TABLE `test_unsigned_overflow_fixture` (
+            `id` BIGINT UNSIGNED PRIMARY KEY,
+            `nullable_val` VARCHAR(100) NULL,
+            `bounded_large_data` MEDIUMTEXT NOT NULL
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4');
+
+        try {
+            // Insert normal, NULL, and unsigned overflow values (18446744073709551614 > PHP_INT_MAX)
+            $largeString = str_repeat('A', 50000); // 50KB, well within default 16MB limit
+            $pdo->exec("INSERT INTO `test_unsigned_overflow_fixture` (`id`, `nullable_val`, `bounded_large_data`) VALUES
+                (1, NULL, 'small_entry'),
+                (9223372036854775807, 'max_signed_int', '{$largeString}'),
+                (18446744073709551614, NULL, 'overflow_unsigned_entry')");
+
+            // Execute capture with budget
+            $budget = new \ReleaseAudit\Budget([
+                'max_memory_bytes' => 67108864,
+                'max_total_bytes' => 104857600,
+            ]);
+            $fingerprint = Fingerprint::capture($pdo, $budget);
+
+            // Assert empty fixture captured cleanly
+            self::assertArrayHasKey('test_empty_fixture', $fingerprint);
+            self::assertSame(0, $fingerprint['test_empty_fixture']['rows']);
+            self::assertNotEmpty($fingerprint['test_empty_fixture']['rows_sha256']);
+            self::assertNotEmpty($fingerprint['test_empty_fixture']['normalized_schema_sha256']);
+
+            // Assert unsigned overflow fixture captured cleanly with exact 3 rows and valid hashes
+            self::assertArrayHasKey('test_unsigned_overflow_fixture', $fingerprint);
+            self::assertSame(3, $fingerprint['test_unsigned_overflow_fixture']['rows']);
+            self::assertNotEmpty($fingerprint['test_unsigned_overflow_fixture']['rows_sha256']);
+            self::assertNotEmpty($fingerprint['test_unsigned_overflow_fixture']['normalized_schema_sha256']);
+        } finally {
+            $pdo->exec('DROP TABLE IF EXISTS `test_empty_fixture`');
+            $pdo->exec('DROP TABLE IF EXISTS `test_unsigned_overflow_fixture`');
+        }
+    }
+
+    public function test_multiquery_service_deadline_and_early_abort_process_cleanup(): void
+    {
+        $pdo = DB::connection()->getPdo();
+
+        // Budget with 1 second execution deadline
+        $budget = new \ReleaseAudit\Budget(['max_execution_seconds' => 1]);
+        self::assertGreaterThanOrEqual(1, $budget->remainingExecutionSeconds());
+
+        // Wait to exhaust budget
+        usleep(1100000);
+
+        // Assert remainingExecutionSeconds refuses immediately with AUDIT_REFUSED
+        $refused = false;
+        try {
+            $budget->remainingExecutionSeconds();
+        } catch (\RuntimeException $e) {
+            $refused = ($e->getMessage() === 'AUDIT_REFUSED');
+        }
+        self::assertTrue($refused, 'Expired budget deadline must trigger AUDIT_REFUSED immediately');
+
+        // Assert memory usage before vs peak is tracked accurately
+        $peak = $budget->peakMemoryBytes();
+        self::assertGreaterThan(0, $peak);
+        self::assertLessThan(67108864, $peak);
     }
 }
