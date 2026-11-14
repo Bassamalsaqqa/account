@@ -18,8 +18,10 @@ use App\Support\Mobile\Receipt\Exceptions\FinancialExecutionDeniedException;
 use App\Support\Mobile\Receipt\Exceptions\MobileEventAuthenticationException;
 use App\Support\Mobile\Receipt\Exceptions\MobileEventDuplicatePayloadException;
 use App\Support\Mobile\Receipt\Exceptions\MobileEventForeignScopeException;
+use App\Support\Mobile\Receipt\Exceptions\SecurityException;
 use App\Support\Mobile\Receipt\FinancialExecutionAdapterInterface;
 use App\Support\Mobile\Receipt\MobileEventReceiptManager;
+use App\Support\Mobile\Receipt\NativeFinancialExecutionCapability;
 use App\Support\Tenancy\CompanyContext;
 use App\Support\Tenancy\CompanyScope;
 use Illuminate\Auth\Access\AuthorizationException;
@@ -195,7 +197,7 @@ final class MobileEventReceiptIdentityTest extends TestCase
                 MobileDevice $device,
                 array $payload,
                 string $idempotencySuffix,
-                ?\App\Support\Mobile\Receipt\NativeFinancialExecutionCapability $capability = null
+                ?NativeFinancialExecutionCapability $capability = null
             ): array {
                 return [
                     'sales_invoice_id' => $this->result['sales_invoice_id'] ?? null,
@@ -827,13 +829,14 @@ final class MobileEventReceiptIdentityTest extends TestCase
     {
         $payload = '{"amount":"10.000000"}';
 
-        // Fake executor returns non-existent or foreign invoice
+        // Fake executor returning financial entities under unadmitted v2_intent representation
+        // must fail closed at financial representation boundary before any database persistence
         $manager = new MobileEventReceiptManager($this->createTestExecutor([
             'sales_invoice_id' => 999999,
         ]));
 
-        $this->expectException(RuntimeException::class);
-        $this->expectExceptionMessage('Financial executor returned sales invoice not belonging to target company.');
+        $this->expectException(SecurityException::class);
+        $this->expectExceptionMessage('Unsupported financial representation [v2_intent] produced financial entities.');
 
         $manager->recordOrReplay(
             companyId: (int) $this->companyA->id,
@@ -972,7 +975,7 @@ final class MobileEventReceiptIdentityTest extends TestCase
                 $this->observedGuardUser = auth()->guard()->user();
             }
 
-            public function execute(Company $c, User $a, MobileDevice $d, array $p, string $s, ?\App\Support\Mobile\Receipt\NativeFinancialExecutionCapability $cap = null): array
+            public function execute(Company $c, User $a, MobileDevice $d, array $p, string $s, ?NativeFinancialExecutionCapability $cap = null): array
             {
                 return [
                     'sales_invoice_id' => null,
@@ -1045,8 +1048,9 @@ final class MobileEventReceiptIdentityTest extends TestCase
             'sales_invoice_public_id' => 'INV_FAKE_MISMATCH_PUBLIC_ID',
         ]));
 
-        $this->expectException(RuntimeException::class);
-        $this->expectExceptionMessage('Sales invoice public ID mismatch between executor and database row.');
+        // Under unadmitted representation v2_intent, fails closed before reaching entity ownership query
+        $this->expectException(SecurityException::class);
+        $this->expectExceptionMessage('Unsupported financial representation [v2_intent] produced financial entities.');
 
         $manager->recordOrReplay(
             companyId: (int) $this->companyA->id,

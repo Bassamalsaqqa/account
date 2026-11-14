@@ -2,28 +2,15 @@
 
 declare(strict_types=1);
 
-use App\Actions\Sales\CreateSalesInvoiceDraftAction;
-use App\Actions\Sales\PostCustomerPaymentAction;
-use App\Actions\Sales\PostSalesInvoiceAction;
 use App\Models\Company;
-use App\Models\Customer;
-use App\Models\DocumentSequence;
 use App\Models\MobileAccessToken;
-use App\Models\MobileDevice;
-use App\Models\MoneyAccount;
-use App\Models\Product;
-use App\Models\ProductUnit;
 use App\Models\User;
-use App\Models\Warehouse;
-use App\Services\Sales\DocumentSequenceService;
 use App\Support\Mobile\Receipt\Exceptions\FinancialExecutionDeniedException;
 use App\Support\Mobile\Receipt\Exceptions\MobileEventAuthenticationException;
 use App\Support\Mobile\Receipt\Exceptions\MobileEventDuplicatePayloadException;
 use App\Support\Mobile\Receipt\Exceptions\MobileEventForeignScopeException;
 use App\Support\Mobile\Receipt\FinancialExecutionAdapterInterface;
 use App\Support\Mobile\Receipt\MobileEventReceiptManager;
-use App\Support\Mobile\Receipt\NativeFinancialExecutionCapability;
-use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Support\Facades\DB;
 use Symfony\Component\HttpKernel\Exception\HttpException;
@@ -59,115 +46,8 @@ $actor = User::findOrFail($tokenRecord->user_id);
 $companyRecord = Company::findOrFail($companyId);
 // Define executor based on input mode
 $executor = null;
-if ($executorMode === 'qualified_cash') {
+if ($executorMode === 'qualified_cash' || $executorMode === 'canonical') {
     $executor = new QualifiedCashFinancialExecutionAdapter;
-    $app->instance(FinancialExecutionAdapterInterface::class, $executor);
-} elseif ($executorMode === 'canonical') {
-    $executor = new class implements FinancialExecutionAdapterInterface
-    {
-        public function authorize(
-            Company $company,
-            User $actor,
-            MobileDevice $device,
-            string $operation,
-            ?array $payload = null
-        ): void {
-            // Test fixture: verify actual canonical Spatie permissions
-            if ($operation === 'execute') {
-                foreach ([
-                    'sales.invoice.create',
-                    'sales.invoice.post',
-                    'money.receipt.create',
-                    'money.receipt.allocate',
-                ] as $perm) {
-                    if (! $actor->hasPermissionTo($perm)) {
-                        throw new AuthorizationException("Missing permission [{$perm}]");
-                    }
-                }
-            } elseif (in_array($operation, ['replay', 'lookup'], true)) {
-                foreach (['sales.invoice.view', 'money.receipt.view'] as $perm) {
-                    if (! $actor->hasPermissionTo($perm)) {
-                        throw new AuthorizationException("Missing read permission [{$perm}]");
-                    }
-                }
-            }
-        }
-
-        public function execute(
-            Company $company,
-            User $actor,
-            MobileDevice $device,
-            array $payload,
-            string $idempotencySuffix,
-            ?NativeFinancialExecutionCapability $capability = null
-        ): array {
-            $customer = Customer::where('company_id', $company->id)->firstOrFail();
-            $warehouse = Warehouse::where('company_id', $company->id)->where('is_default', true)->firstOrFail();
-            $product = Product::where('company_id', $company->id)->where('track_stock', true)->firstOrFail();
-            $productUnit = ProductUnit::where('company_id', $company->id)->where('product_id', $product->id)->firstOrFail();
-            $cash = MoneyAccount::where('company_id', $company->id)->where('account_type', 'cash')->firstOrFail();
-
-            $docNumber = app(DocumentSequenceService::class)->generateNextNumber(
-                (int) $company->id,
-                DocumentSequence::TYPE_SALES_INVOICE
-            );
-
-            $invoice = app(CreateSalesInvoiceDraftAction::class)->execute($company, $actor, [
-                'customer_id' => $customer->id,
-                'warehouse_id' => $warehouse->id,
-                'currency_code' => $company->base_currency_code,
-                'exchange_rate' => '1.0000000000',
-                'issue_date' => '2026-11-12',
-                'document_locale' => 'en',
-                'lines' => [
-                    [
-                        'product_id' => $product->id,
-                        'product_unit_id' => $productUnit->id,
-                        'item_description' => 'Worker concurrent item',
-                        'quantity' => '1.000000',
-                        'unit_price' => '25.000000',
-                        'discount_type' => 'none',
-                        'discount_value' => '0',
-                        'tax_rate_id' => null,
-                    ],
-                ],
-            ]);
-
-            $posted = app(PostSalesInvoiceAction::class)->execute($invoice, $actor);
-
-            $payment = app(PostCustomerPaymentAction::class)->execute($company, $actor, [
-                'customer_id' => $customer->id,
-                'money_account_id' => $cash->id,
-                'payment_method' => 'cash',
-                'payment_date' => '2026-11-12',
-                'amount' => '25.000000',
-                'exchange_rate' => '1.0000000000',
-                'idempotency_key' => 'worker-pay-'.$idempotencySuffix,
-                'allocations' => [
-                    [
-                        'sales_invoice_id' => (int) $posted->id,
-                        'allocated_amount' => '25.000000',
-                    ],
-                ],
-            ]);
-
-            return [
-                'sales_invoice_id' => (int) $posted->id,
-                'sales_invoice_public_id' => $posted->public_id,
-                'customer_payment_id' => (int) $payment->id,
-                'customer_payment_public_id' => $payment->public_id,
-                'command_receipt_id' => null,
-                'terminal_canonical_result' => [
-                    'status' => 'completed',
-                    'invoice_number' => $docNumber,
-                    'invoice_public_id' => $posted->public_id,
-                    'payment_public_id' => $payment->public_id,
-                    'grand_total' => '25.000000',
-                    'paid_amount' => '25.000000',
-                ],
-            ];
-        }
-    };
     $app->instance(FinancialExecutionAdapterInterface::class, $executor);
 }
 

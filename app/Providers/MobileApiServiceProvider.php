@@ -46,7 +46,7 @@ final class MobileApiServiceProvider extends ServiceProvider
         Route::prefix('api/mobile/v2')
             ->middleware(MobileV2ApiBoundary::class)
             ->group(function (): void {
-                if (file_exists(base_path('routes/mobile-v2.php'))) {
+                if ((bool) config('mobile.v2_cash_slice_enabled', false) && file_exists(base_path('routes/mobile-v2.php'))) {
                     require base_path('routes/mobile-v2.php');
                 }
 

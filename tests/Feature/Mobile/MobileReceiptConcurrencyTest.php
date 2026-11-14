@@ -12,6 +12,7 @@ use App\Models\Company;
 use App\Models\Customer;
 use App\Models\MobileAccessToken;
 use App\Models\MobileDevice;
+use App\Models\MoneyAccount;
 use App\Models\Product;
 use App\Models\ProductUnit;
 use App\Models\Unit;
@@ -24,6 +25,7 @@ use App\Services\Money\MoneyReconciliationService;
 use App\Services\Purchasing\PayablesReconciliationService;
 use App\Services\Sales\SalesReconciliationService;
 use App\Services\Tenancy\CompanyRoleService;
+use App\Support\Mobile\Contract\Revision3\OnlineSaleIntentProfile;
 use App\Support\Tenancy\CompanyContext;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
@@ -34,6 +36,9 @@ use Tests\TestCase;
 
 final class MobileReceiptConcurrencyTest extends TestCase
 {
+    /**
+     * @return array{0: Company, 1: User, 2: MobileDevice, 3: MobileAccessToken}
+     */
     private function setupCompanyFixture(string $name, string $currency): array
     {
         app(CompanyContext::class)->clear();
@@ -132,6 +137,62 @@ final class MobileReceiptConcurrencyTest extends TestCase
         return [$company, $owner, $device, $token];
     }
 
+    private function buildNormativePayload(
+        Company $company,
+        User $owner,
+        MobileDevice $device,
+        string $clientEventId,
+        string $amount = '25.000000',
+        string $unitPrice = '25.000000',
+        string $quantity = '1.000000'
+    ): string {
+        $customer = Customer::where('company_id', $company->id)->firstOrFail();
+        $warehouse = Warehouse::where('company_id', $company->id)->where('is_default', true)->firstOrFail();
+        $product = Product::where('company_id', $company->id)->where('track_stock', true)->firstOrFail();
+        $unit = Unit::where('company_id', $company->id)->where('code', 'piece')->firstOrFail();
+        $cash = MoneyAccount::where('company_id', $company->id)->where('account_type', 'cash')->firstOrFail();
+
+        $serverContext = [
+            'actor_id' => (string) $owner->public_id,
+            'company_id' => (string) $company->public_id,
+            'currency_minor_units' => 2,
+        ];
+
+        $raw = [
+            'client_event_id' => $clientEventId,
+            'currency' => $company->base_currency_code,
+            'customer_id' => (string) $customer->public_id,
+            'device_id' => (string) $device->device_id,
+            'lines' => [
+                [
+                    'conversion_to_base' => '1.000000',
+                    'product_id' => (string) $product->public_id,
+                    'product_unit_id' => (string) $unit->public_id,
+                    'quantity' => $quantity,
+                    'tax_inclusive' => false,
+                    'tax_rate' => '0.000000',
+                    'tax_rate_id' => null,
+                    'unit_price' => $unitPrice,
+                ],
+            ],
+            'payment' => [
+                'amount' => $amount,
+                'cash_account_id' => (string) $cash->public_id,
+                'payment_method' => 'cash',
+                'settlement_mode' => 'full',
+            ],
+            'warehouse_id' => (string) $warehouse->public_id,
+        ];
+
+        $rawJson = (string) json_encode($raw, JSON_THROW_ON_ERROR);
+        $profile = OnlineSaleIntentProfile::construct($serverContext, $rawJson);
+
+        return OnlineSaleIntentProfile::serialize($profile);
+    }
+
+    /**
+     * @param  array<string, mixed>  $input
+     */
     private function startWorker(DisposableMariaDbSchema $schema, string $directory, string $slot, array $input): Process
     {
         file_put_contents($directory.'/'.$slot.'.json', json_encode($input, JSON_THROW_ON_ERROR));
@@ -140,6 +201,9 @@ final class MobileReceiptConcurrencyTest extends TestCase
         $settings = DisposableMariaDbSchema::testSettings();
         $env = array_replace([
             'APP_KEY' => (string) (config('app.key') ?: getenv('APP_KEY')),
+            'MOBILE_API_ENABLED' => 'true',
+            'MOBILE_V2_API_ENABLED' => 'true',
+            'MOBILE_V2_CASH_SLICE_ENABLED' => 'true',
             'PHASE8_ALLOW_DISPOSABLE_DB' => '1',
             'PHASE8_TEST_DB_HOST' => $settings['HOST'],
             'PHASE8_TEST_DB_PORT' => $settings['PORT'],
@@ -174,13 +238,13 @@ final class MobileReceiptConcurrencyTest extends TestCase
             mkdir($directory, 0700);
             $a = $b = null;
             try {
-                $payload = '{"action":"race_sale","amount":"25.000000"}';
+                $payload = $this->buildNormativePayload($company, $owner, $device, '00000000-0000-4000-8000-000000000101', '25.000000', '25.000000', '1.000000');
                 $input = [
                     'company_id' => $company->id,
                     'client_event_id' => '00000000-0000-4000-8000-000000000101',
                     'token_hash' => $token->token_hash,
                     'event_version' => 2,
-                    'representation' => 'v2_intent',
+                    'representation' => 'v2_online_sale_intent',
                     'canonical_bytes' => $payload,
                     'executor_mode' => 'canonical',
                 ];
@@ -254,15 +318,15 @@ final class MobileReceiptConcurrencyTest extends TestCase
             $a = $b = null;
 
             try {
-                $payload1 = '{"action":"race_sale","amount":"10.000000"}';
-                $payload2 = '{"action":"race_sale","amount":"20.000000"}';
+                $payload1 = $this->buildNormativePayload($company, $owner, $device, '00000000-0000-4000-8000-000000000102', '10.000000', '10.000000', '1.000000');
+                $payload2 = $this->buildNormativePayload($company, $owner, $device, '00000000-0000-4000-8000-000000000102', '20.000000', '20.000000', '1.000000');
 
                 $inputA = [
                     'company_id' => $company->id,
                     'client_event_id' => '00000000-0000-4000-8000-000000000102',
                     'token_hash' => $token->token_hash,
                     'event_version' => 2,
-                    'representation' => 'v2_intent',
+                    'representation' => 'v2_online_sale_intent',
                     'canonical_bytes' => $payload1,
                     'executor_mode' => 'canonical',
                 ];
@@ -272,7 +336,7 @@ final class MobileReceiptConcurrencyTest extends TestCase
                     'client_event_id' => '00000000-0000-4000-8000-000000000102',
                     'token_hash' => $token->token_hash,
                     'event_version' => 2,
-                    'representation' => 'v2_intent',
+                    'representation' => 'v2_online_sale_intent',
                     'canonical_bytes' => $payload2,
                     'executor_mode' => 'canonical',
                 ];
@@ -328,15 +392,16 @@ final class MobileReceiptConcurrencyTest extends TestCase
             $a = $b = null;
 
             try {
-                $payload = '{"action":"race_sale","amount":"25.000000"}';
+                $payloadA = $this->buildNormativePayload($companyA, $ownerA, $deviceA, '00000000-0000-4000-8000-000000000103', '25.000000', '25.000000', '1.000000');
+                $payloadB = $this->buildNormativePayload($companyB, $ownerB, $deviceB, '00000000-0000-4000-8000-000000000103', '25.000000', '25.000000', '1.000000');
 
                 $inputA = [
                     'company_id' => $companyA->id,
                     'client_event_id' => '00000000-0000-4000-8000-000000000103',
                     'token_hash' => $tokenA->token_hash,
                     'event_version' => 2,
-                    'representation' => 'v2_intent',
-                    'canonical_bytes' => $payload,
+                    'representation' => 'v2_online_sale_intent',
+                    'canonical_bytes' => $payloadA,
                     'executor_mode' => 'canonical',
                 ];
 
@@ -345,8 +410,8 @@ final class MobileReceiptConcurrencyTest extends TestCase
                     'client_event_id' => '00000000-0000-4000-8000-000000000103',
                     'token_hash' => $tokenB->token_hash,
                     'event_version' => 2,
-                    'representation' => 'v2_intent',
-                    'canonical_bytes' => $payload,
+                    'representation' => 'v2_online_sale_intent',
+                    'canonical_bytes' => $payloadB,
                     'executor_mode' => 'canonical',
                 ];
 
@@ -398,14 +463,14 @@ final class MobileReceiptConcurrencyTest extends TestCase
             $a = $b = null;
 
             try {
-                $payload = '{"action":"race_sale","amount":"25.000000"}';
+                $payload = $this->buildNormativePayload($company, $owner, $device, '00000000-0000-4000-8000-000000000104', '25.000000', '25.000000', '1.000000');
 
                 $inputA = [
                     'company_id' => $company->id,
                     'client_event_id' => '00000000-0000-4000-8000-000000000104',
                     'token_hash' => $token->token_hash,
                     'event_version' => 2,
-                    'representation' => 'v2_intent',
+                    'representation' => 'v2_online_sale_intent',
                     'canonical_bytes' => $payload,
                     'executor_mode' => 'canonical',
                 ];
@@ -415,7 +480,7 @@ final class MobileReceiptConcurrencyTest extends TestCase
                     'client_event_id' => '00000000-0000-4000-8000-000000000104',
                     'token_hash' => $token->token_hash,
                     'event_version' => 2,
-                    'representation' => 'v2_intent',
+                    'representation' => 'v2_online_sale_intent',
                     'canonical_bytes' => $payload,
                     'executor_mode' => 'canonical',
                 ];

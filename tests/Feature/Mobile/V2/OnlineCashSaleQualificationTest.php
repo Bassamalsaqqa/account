@@ -12,6 +12,7 @@ use App\Actions\Sales\ExecuteImmediateOnlineCashSaleAction;
 use App\Actions\Sales\PostCustomerPaymentAction;
 use App\Actions\Sales\PostSalesInvoiceAction;
 use App\Domain\Inventory\ValueObjects\Quantity;
+use App\Http\Middleware\MobileV2ApiBoundary;
 use App\Models\Company;
 use App\Models\CompanyUser;
 use App\Models\Customer;
@@ -51,6 +52,7 @@ use Error;
 use Illuminate\Contracts\Container\BindingResolutionException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Str;
 use ReflectionClass;
 use RuntimeException;
@@ -101,6 +103,12 @@ final class OnlineCashSaleQualificationTest extends TestCase
             'mobile.v2_enabled' => true,
             'mobile.v2_cash_slice_enabled' => true,
         ]);
+
+        if (! Route::has('mobile.v2.sales.online-cash')) {
+            Route::prefix('api/mobile/v2')
+                ->middleware(MobileV2ApiBoundary::class)
+                ->group(base_path('routes/mobile-v2.php'));
+        }
 
         $this->app->bind(FinancialExecutionAdapterInterface::class, QualifiedCashFinancialExecutionAdapter::class);
 
@@ -1592,6 +1600,72 @@ final class OnlineCashSaleQualificationTest extends TestCase
 
         // WireResponse schema verification
         $this->assertTrue(WireResponse::accepts(json_decode((string) $response->getContent()), 'sale-commit-response'));
+    }
+
+    public function test_executor_tampered_sales_invoice_public_id_fails_and_rolls_back(): void
+    {
+        $tamperedExecutor = new class implements FinancialExecutionAdapterInterface
+        {
+            private QualifiedCashFinancialExecutionAdapter $delegate;
+
+            public function __construct()
+            {
+                $this->delegate = new QualifiedCashFinancialExecutionAdapter;
+            }
+
+            public function authorize(
+                Company $company,
+                User $actor,
+                MobileDevice $device,
+                string $operation,
+                ?array $payload = null
+            ): void {
+                $this->delegate->authorize($company, $actor, $device, $operation, $payload);
+            }
+
+            public function execute(
+                Company $company,
+                User $actor,
+                MobileDevice $device,
+                array $payload,
+                string $idempotencySuffix,
+                ?NativeFinancialExecutionCapability $capability = null
+            ): array {
+                $res = $this->delegate->execute($company, $actor, $device, $payload, $idempotencySuffix, $capability);
+                $res['sales_invoice_public_id'] = 'INV_TAMPERED_PUBLIC_ID_000';
+
+                return $res;
+            }
+        };
+
+        $manager = new MobileEventReceiptManager($tamperedExecutor);
+        $eventId = (string) Str::uuid();
+        $payload = $this->validSalePayload($eventId);
+        $normativeBytes = OnlineSaleIntentProfile::serialize(
+            OnlineSaleIntentProfile::construct([
+                'actor_id' => (string) $this->staff->public_id,
+                'company_id' => (string) $this->company->public_id,
+                'currency_minor_units' => 2,
+            ], json_encode($payload, JSON_THROW_ON_ERROR))
+        );
+
+        try {
+            $manager->recordOrReplay(
+                companyId: (int) $this->company->id,
+                clientEventId: $eventId,
+                tokenHash: $this->token->token_hash,
+                eventVersion: 2,
+                representation: 'v2_online_sale_intent',
+                canonicalBytes: $normativeBytes
+            );
+            $this->fail('Expected RuntimeException for sales invoice public ID mismatch');
+        } catch (RuntimeException $e) {
+            $this->assertStringContainsString('Sales invoice public ID mismatch between executor and database row.', $e->getMessage());
+        }
+
+        $this->assertDatabaseCount('mobile_event_receipts', 0);
+        $this->assertDatabaseCount('sales_invoices', 0);
+        $this->assertDatabaseCount('customer_payments', 0);
     }
 
     /**
