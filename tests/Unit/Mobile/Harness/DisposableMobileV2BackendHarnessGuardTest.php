@@ -2305,25 +2305,86 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
     #[Test]
     public function test_financial_post_run_inspector_refuses_malformed_or_unproven_disposable_schema(): void
     {
-        putenv('MOBILE_V2_HARNESS_ENABLE=1');
-        putenv('PHASE8_ALLOW_DISPOSABLE_DB=1');
+        $backupEnv = [
+            'MOBILE_V2_HARNESS_ENABLE' => getenv('MOBILE_V2_HARNESS_ENABLE'),
+            'PHASE8_ALLOW_DISPOSABLE_DB' => getenv('PHASE8_ALLOW_DISPOSABLE_DB'),
+            'PHASE8_TEST_DB_HOST' => getenv('PHASE8_TEST_DB_HOST'),
+            'PHASE8_TEST_DB_PORT' => getenv('PHASE8_TEST_DB_PORT'),
+            'PHASE8_TEST_DB_USERNAME' => getenv('PHASE8_TEST_DB_USERNAME'),
+            'PHASE8_TEST_DB_PASSWORD' => getenv('PHASE8_TEST_DB_PASSWORD'),
+            'PHASE8_TEST_DB_EMPTY_PASSWORD' => getenv('PHASE8_TEST_DB_EMPTY_PASSWORD'),
+            'PHASE8_DISPOSABLE_DB_PROOF' => getenv('PHASE8_DISPOSABLE_DB_PROOF'),
+            'PHASE8_DISPOSABLE_DB_NONCE' => getenv('PHASE8_DISPOSABLE_DB_NONCE'),
+        ];
 
-        // 1. Refuse malformed schema name
         try {
-            \Tests\Support\Harness\DisposableFinancialPostRunInspector::assertExecutionGates('production_db');
-            $this->fail('Expected RuntimeException for non-disposable schema name');
-        } catch (\RuntimeException $e) {
-            $this->assertStringContainsString('Inspector refused: invalid disposable schema name', $e->getMessage());
+            putenv('MOBILE_V2_HARNESS_ENABLE=1');
+            putenv('PHASE8_ALLOW_DISPOSABLE_DB=1');
+
+            // 1. Refuse malformed schema name
+            try {
+                \Tests\Support\Harness\DisposableFinancialPostRunInspector::assertExecutionGates('production_db');
+                $this->fail('Expected RuntimeException for non-disposable schema name');
+            } catch (\RuntimeException $e) {
+                $this->assertStringContainsString('Inspector refused: invalid disposable schema name', $e->getMessage());
+            }
+
+            // 2. Refuse when ownership proof is missing - provide local dummy test admin settings to reach ownership proof branch
+            putenv('PHASE8_TEST_DB_HOST=127.0.0.1');
+            putenv('PHASE8_TEST_DB_PORT=3342');
+            putenv('PHASE8_TEST_DB_USERNAME=disposable_test_user');
+            putenv('PHASE8_TEST_DB_PASSWORD=disposable_test_pass');
+            putenv('PHASE8_DISPOSABLE_DB_PROOF');
+            putenv('PHASE8_DISPOSABLE_DB_NONCE');
+            try {
+                \Tests\Support\Harness\DisposableFinancialPostRunInspector::assertExecutionGates('accounting_p8_tmp_deadbeef0000');
+                $this->fail('Expected RuntimeException for missing proof');
+            } catch (\RuntimeException $e) {
+                $this->assertStringContainsString('Disposable schema ownership proof is required', $e->getMessage());
+            }
+        } finally {
+            foreach ($backupEnv as $key => $val) {
+                if ($val === false) {
+                    putenv($key);
+                } else {
+                    putenv("{$key}={$val}");
+                }
+            }
         }
+    }
 
-        // 2. Refuse when ownership proof is missing
-        putenv('PHASE8_DISPOSABLE_DB_PROOF');
-        putenv('PHASE8_DISPOSABLE_DB_NONCE');
+    #[Test]
+    public function test_financial_post_run_inspector_fails_closed_when_test_admin_credentials_missing(): void
+    {
+        $backupEnv = [
+            'MOBILE_V2_HARNESS_ENABLE' => getenv('MOBILE_V2_HARNESS_ENABLE'),
+            'PHASE8_ALLOW_DISPOSABLE_DB' => getenv('PHASE8_ALLOW_DISPOSABLE_DB'),
+            'PHASE8_TEST_DB_HOST' => getenv('PHASE8_TEST_DB_HOST'),
+            'PHASE8_TEST_DB_PORT' => getenv('PHASE8_TEST_DB_PORT'),
+            'PHASE8_TEST_DB_USERNAME' => getenv('PHASE8_TEST_DB_USERNAME'),
+            'PHASE8_TEST_DB_PASSWORD' => getenv('PHASE8_TEST_DB_PASSWORD'),
+        ];
+
         try {
+            putenv('MOBILE_V2_HARNESS_ENABLE=1');
+            putenv('PHASE8_ALLOW_DISPOSABLE_DB=1');
+            putenv('PHASE8_TEST_DB_HOST=127.0.0.1');
+            putenv('PHASE8_TEST_DB_PORT=3342');
+            putenv('PHASE8_TEST_DB_USERNAME');
+            putenv('PHASE8_TEST_DB_PASSWORD');
+
             \Tests\Support\Harness\DisposableFinancialPostRunInspector::assertExecutionGates('accounting_p8_tmp_deadbeef0000');
-            $this->fail('Expected RuntimeException for missing proof');
+            $this->fail('Expected RuntimeException for missing test administrative connection credentials');
         } catch (\RuntimeException $e) {
-            $this->assertStringContainsString('Disposable schema ownership proof is required', $e->getMessage());
+            $this->assertStringContainsString('Explicit disposable test administrative connection is required', $e->getMessage());
+        } finally {
+            foreach ($backupEnv as $key => $val) {
+                if ($val === false) {
+                    putenv($key);
+                } else {
+                    putenv("{$key}={$val}");
+                }
+            }
         }
     }
 

@@ -115,16 +115,23 @@ if ($evidenceFile !== null) {
     }
 
     $rawEvidence = (string) file_get_contents($evidenceFile);
-    if ($expectedEvidenceSha !== null && $expectedEvidenceSha !== '') {
-        $actualEvidenceSha = hash('sha256', $rawEvidence);
-        if (! hash_equals($expectedEvidenceSha, $actualEvidenceSha)) {
-            fwrite(STDERR, "Error: Evidence file SHA256 mismatch: expected '{$expectedEvidenceSha}', got '{$actualEvidenceSha}'.\n");
-            exit(1);
-        }
+    if ($expectedEvidenceSha === null || $expectedEvidenceSha === '') {
+        fwrite(STDERR, "Error: --expected-evidence-sha=<sha256> is mandatory for outer evidence validation.\n");
+        exit(1);
+    }
+    $actualEvidenceSha = hash('sha256', $rawEvidence);
+    if (! hash_equals($expectedEvidenceSha, $actualEvidenceSha)) {
+        fwrite(STDERR, "Error: Evidence file SHA256 mismatch: expected '{$expectedEvidenceSha}', got '{$actualEvidenceSha}'.\n");
+        exit(1);
     }
 
     if ($runId === null || $runId === '') {
         fwrite(STDERR, "Error: --run-id=<uuid> is mandatory and cannot be omitted for evidence validation.\n");
+        exit(1);
+    }
+
+    if ($expectedBaselineHash === null || $expectedBaselineHash === '') {
+        fwrite(STDERR, "Error: --expected-baseline-hash=<sha256> is mandatory and cannot fall back to trusted DB report.\n");
         exit(1);
     }
 
@@ -164,7 +171,7 @@ if ($evidenceFile !== null) {
         'expectedSchemaName' => $schemaName ?? '',
         'companyId' => $companyId ?? 0,
         'expectedRunId' => $runId,
-        'expectedBaselineHash' => $expectedBaselineHash ?? ($trustedDbReport['baseline_hash'] ?? ''),
+        'expectedBaselineHash' => $expectedBaselineHash,
     ];
 
     if ($expectedEventId !== null && $expectedEventId !== '') {
