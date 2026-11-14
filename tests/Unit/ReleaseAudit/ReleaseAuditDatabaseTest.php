@@ -751,28 +751,47 @@ final class ReleaseAuditDatabaseTest extends TestCase
         self::assertCount($queriesCompleted + 1, $executedQueries, 'The failing query must be intercepted by beforeExecuting hook before completing');
     }
 
+    private function createChildConfigFile(string $schema): string
+    {
+        $configFile = $this->tempDir.'/child_cfg_'.bin2hex(random_bytes(6)).'.json';
+        $config = [
+            'repo_root' => dirname(__DIR__, 3),
+            'host' => (string) config('database.connections.mysql.host', '127.0.0.1'),
+            'port' => (int) config('database.connections.mysql.port', '3342'),
+            'schema' => $schema,
+            'user' => (string) config('database.connections.mysql.username', 'test_runner'),
+            'password' => (string) config('database.connections.mysql.password', ''),
+        ];
+        file_put_contents($configFile, json_encode($config, JSON_THROW_ON_ERROR));
+        chmod($configFile, 0600);
+
+        return $configFile;
+    }
+
     public function test_forced_child_process_termination_engine_pruning_negative_control(): void
     {
         $schema = DB::connection()->getDatabaseName();
         $observerPdo = DB::connection()->getPdo();
+        $configFile = $this->createChildConfigFile($schema);
 
-        $host = (string) config('database.connections.mysql.host', '127.0.0.1');
-        $port = (string) config('database.connections.mysql.port', '3342');
-        $user = (string) config('database.connections.mysql.username', 'test_runner');
-        $pass = (string) config('database.connections.mysql.password', '');
-
-        // Write private 0600 owned script file to avoid PHP -r parse error and shell escaping
+        // Write private 0600 owned script file taking only config path (no credentials in ps)
         $scriptPath = $this->tempDir.'/forced_abort_child_'.bin2hex(random_bytes(6)).'.php';
         $childCode = <<<'PHP'
 <?php
 declare(strict_types=1);
-$host = $argv[1];
-$port = (int) $argv[2];
-$schema = $argv[3];
-$user = $argv[4];
-$pass = $argv[5];
+$cfgPath = $argv[1] ?? '';
+if (!is_file($cfgPath) || (fileperms($cfgPath) & 0777) !== 0600 || fileowner($cfgPath) !== posix_geteuid()) {
+    fwrite(STDERR, "INVALID_CONFIG_FILE_PERMISSIONS\n");
+    exit(2);
+}
+$cfgDir = dirname($cfgPath);
+if (!is_dir($cfgDir) || (fileperms($cfgDir) & 0777) !== 0700 || fileowner($cfgDir) !== posix_geteuid()) {
+    fwrite(STDERR, "INVALID_CONFIG_DIR_PERMISSIONS\n");
+    exit(2);
+}
+$cfg = json_decode((string) file_get_contents($cfgPath), true, flags: JSON_THROW_ON_ERROR);
 
-$pdo = new PDO("mysql:host={$host};port={$port};dbname={$schema};charset=utf8mb4", $user, $pass, [
+$pdo = new PDO("mysql:host={$cfg['host']};port={$cfg['port']};dbname={$cfg['schema']};charset=utf8mb4", (string) $cfg['user'], (string) $cfg['password'], [
     PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
     PDO::MYSQL_ATTR_USE_BUFFERED_QUERY => false,
 ]);
@@ -791,7 +810,7 @@ PHP;
         $childConnectionId = null;
 
         try {
-            $child = new Process([PHP_BINARY, $scriptPath, $host, $port, $schema, $user, $pass], dirname(__DIR__, 3), null, null, 20.0);
+            $child = new Process([PHP_BINARY, $scriptPath, $configFile], dirname(__DIR__, 3), null, null, 20.0);
             $child->start();
 
             $startTime = microtime(true);
@@ -802,6 +821,12 @@ PHP;
                     break;
                 }
                 usleep(20000);
+            }
+            if ($childConnectionId === null) {
+                $fullOutput = $child->getOutput();
+                if (preg_match('/CID:(\d+)/', $fullOutput, $matches)) {
+                    $childConnectionId = (int) $matches[1];
+                }
             }
 
             self::assertNotNull($childConnectionId, 'Child process must establish connection and emit owned CONNECTION_ID');
@@ -840,36 +865,46 @@ PHP;
             if (is_file($scriptPath)) {
                 unlink($scriptPath);
             }
+            if (is_file($configFile)) {
+                unlink($configFile);
+            }
         }
     }
 
-    public function test_budget_refusal_unbuffered_streaming_child_aborts_cleanly_with_exact_cid(): void
+    public function test_phase_a_aggregate_budget_refusal_child_control(): void
     {
         $schema = DB::connection()->getDatabaseName();
         $observerPdo = DB::connection()->getPdo();
+        $configFile = $this->createChildConfigFile($schema);
 
-        $host = (string) config('database.connections.mysql.host', '127.0.0.1');
-        $port = (string) config('database.connections.mysql.port', '3342');
-        $user = (string) config('database.connections.mysql.username', 'test_runner');
-        $pass = (string) config('database.connections.mysql.password', '');
-
-        $scriptPath = $this->tempDir.'/budget_refusal_child_'.bin2hex(random_bytes(6)).'.php';
+        $scriptPath = $this->tempDir.'/phase_a_refusal_child_'.bin2hex(random_bytes(6)).'.php';
         $childCode = <<<'PHP'
 <?php
 declare(strict_types=1);
-require dirname(__DIR__, 2).'/tools/release-audit/Guard.php';
-require dirname(__DIR__, 2).'/tools/release-audit/Fingerprint.php';
+$cfgPath = $argv[1] ?? '';
+if (!is_file($cfgPath) || (fileperms($cfgPath) & 0777) !== 0600 || fileowner($cfgPath) !== posix_geteuid()) {
+    fwrite(STDERR, "INVALID_CONFIG_FILE_PERMISSIONS\n");
+    exit(2);
+}
+$cfgDir = dirname($cfgPath);
+if (!is_dir($cfgDir) || (fileperms($cfgDir) & 0777) !== 0700 || fileowner($cfgDir) !== posix_geteuid()) {
+    fwrite(STDERR, "INVALID_CONFIG_DIR_PERMISSIONS\n");
+    exit(2);
+}
+$cfg = json_decode((string) file_get_contents($cfgPath), true, flags: JSON_THROW_ON_ERROR);
+$repoRoot = (string) ($cfg['repo_root'] ?? '');
+if (!is_dir($repoRoot) || !is_file($repoRoot.'/tools/release-audit/Guard.php')) {
+    fwrite(STDERR, "INVALID_REPO_ROOT\n");
+    exit(2);
+}
+
+require $repoRoot.'/tools/release-audit/Guard.php';
+require $repoRoot.'/tools/release-audit/Fingerprint.php';
 
 use ReleaseAudit\Budget;
 use ReleaseAudit\Fingerprint;
 
-$host = $argv[1];
-$port = (int) $argv[2];
-$schema = $argv[3];
-$user = $argv[4];
-$pass = $argv[5];
-
-$pdo = new PDO("mysql:host={$host};port={$port};dbname={$schema};charset=utf8mb4", $user, $pass, [
+$pdo = new PDO("mysql:host={$cfg['host']};port={$cfg['port']};dbname={$cfg['schema']};charset=utf8mb4", (string) $cfg['user'], (string) $cfg['password'], [
     PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
 ]);
 
@@ -877,7 +912,7 @@ $cid = (int) $pdo->query("SELECT CONNECTION_ID()")->fetchColumn();
 fwrite(STDOUT, "CID:{$cid}\n");
 fflush(STDOUT);
 
-// Exceedingly tight row budget to force immediate Phase A refusal on existing tables
+// Exceedingly tight row budget to force immediate Phase A numeric aggregate refusal on existing tables
 $budget = new Budget([
     'max_total_rows' => 1,
     'max_total_bytes' => 1024,
@@ -888,7 +923,7 @@ try {
     fwrite(STDOUT, "COMPLETED_UNEXPECTEDLY\n");
     exit(0);
 } catch (\RuntimeException $e) {
-    fwrite(STDERR, $e->getMessage()."\n");
+    fwrite(STDERR, "PHASE_A_REFUSED:".$e->getMessage()."\n");
     exit(1);
 }
 PHP;
@@ -900,7 +935,7 @@ PHP;
         $childConnectionId = null;
 
         try {
-            $child = new Process([PHP_BINARY, $scriptPath, $host, $port, $schema, $user, $pass], dirname(__DIR__, 3), null, null, 15.0);
+            $child = new Process([PHP_BINARY, $scriptPath, $configFile], dirname(__DIR__, 3), null, null, 15.0);
             $child->start();
 
             $startTime = microtime(true);
@@ -912,14 +947,20 @@ PHP;
                 }
                 usleep(20000);
             }
+            if ($childConnectionId === null) {
+                $fullOutput = $child->getOutput();
+                if (preg_match('/CID:(\d+)/', $fullOutput, $matches)) {
+                    $childConnectionId = (int) $matches[1];
+                }
+            }
 
             self::assertNotNull($childConnectionId, 'Child process must establish connection and emit owned CONNECTION_ID');
 
-            // Wait for tool's own budget refusal to complete
+            // Wait for tool's Phase A budget refusal to complete
             $child->wait();
 
             self::assertSame(1, $child->getExitCode(), 'Child process must exit with code 1 upon AUDIT_REFUSED');
-            self::assertStringContainsString('AUDIT_REFUSED', $child->getErrorOutput(), 'Child stderr must report AUDIT_REFUSED');
+            self::assertStringContainsString('PHASE_A_REFUSED:AUDIT_REFUSED', $child->getErrorOutput(), 'Child stderr must report Phase A AUDIT_REFUSED');
             self::assertStringNotContainsString('COMPLETED_UNEXPECTEDLY', $child->getOutput(), 'Refused child must not emit completed payload');
 
             // Verify connection was closed cleanly by child upon refusal exit
@@ -932,6 +973,153 @@ PHP;
             }
             if (is_file($scriptPath)) {
                 unlink($scriptPath);
+            }
+            if (is_file($configFile)) {
+                unlink($configFile);
+            }
+        }
+    }
+
+    public function test_phase_b_unbuffered_stream_active_cursor_abort_child(): void
+    {
+        $schema = DB::connection()->getDatabaseName();
+        $observerPdo = DB::connection()->getPdo();
+        $configFile = $this->createChildConfigFile($schema);
+
+        $scriptPath = $this->tempDir.'/phase_b_abort_child_'.bin2hex(random_bytes(6)).'.php';
+        $childCode = <<<'PHP'
+<?php
+declare(strict_types=1);
+$cfgPath = $argv[1] ?? '';
+if (!is_file($cfgPath) || (fileperms($cfgPath) & 0777) !== 0600 || fileowner($cfgPath) !== posix_geteuid()) {
+    fwrite(STDERR, "INVALID_CONFIG_FILE_PERMISSIONS\n");
+    exit(2);
+}
+$cfgDir = dirname($cfgPath);
+if (!is_dir($cfgDir) || (fileperms($cfgDir) & 0777) !== 0700 || fileowner($cfgDir) !== posix_geteuid()) {
+    fwrite(STDERR, "INVALID_CONFIG_DIR_PERMISSIONS\n");
+    exit(2);
+}
+$cfg = json_decode((string) file_get_contents($cfgPath), true, flags: JSON_THROW_ON_ERROR);
+$repoRoot = (string) ($cfg['repo_root'] ?? '');
+if (!is_dir($repoRoot) || !is_file($repoRoot.'/tools/release-audit/Guard.php')) {
+    fwrite(STDERR, "INVALID_REPO_ROOT\n");
+    exit(2);
+}
+
+require $repoRoot.'/tools/release-audit/Guard.php';
+require $repoRoot.'/tools/release-audit/Fingerprint.php';
+
+use ReleaseAudit\Budget;
+use ReleaseAudit\Fingerprint;
+
+// Test-only statement observer that intercepts fetch during active Phase B unbuffered streaming
+class PhaseBObserverStatement extends PDOStatement
+{
+    protected function __construct() {}
+
+    public function fetch(int $mode = PDO::FETCH_DEFAULT, int $cursorOrientation = PDO::FETCH_ORI_NEXT, int $cursorOffset = 0): mixed
+    {
+        $row = parent::fetch($mode, $cursorOrientation, $cursorOffset);
+        if ($row !== false && ($this->queryString ?? '') !== '' && str_contains($this->queryString, 'ORDER BY')) {
+            static $firstPhaseBRow = true;
+            if ($firstPhaseBRow) {
+                $firstPhaseBRow = false;
+                fwrite(STDOUT, "PHASE_B_FETCHED_ROW:1\n");
+                fflush(STDOUT);
+                // Advance execution time past 1.0s budget deadline while cursor is actively streaming
+                usleep(1100000);
+            }
+        }
+
+        return $row;
+    }
+}
+
+$pdo = new PDO("mysql:host={$cfg['host']};port={$cfg['port']};dbname={$cfg['schema']};charset=utf8mb4", (string) $cfg['user'], (string) $cfg['password'], [
+    PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+    PDO::ATTR_STATEMENT_CLASS => [PhaseBObserverStatement::class],
+]);
+
+$cid = (int) $pdo->query("SELECT CONNECTION_ID()")->fetchColumn();
+fwrite(STDOUT, "CID:{$cid}\n");
+fflush(STDOUT);
+
+// Budget with 1s execution deadline, but generous row/byte limits so Phase A numeric aggregates pass
+$budget = new Budget([
+    'max_execution_seconds' => 1,
+    'max_total_rows' => 500000,
+    'max_total_bytes' => 104857600,
+]);
+
+try {
+    Fingerprint::capture($pdo, $budget);
+    fwrite(STDOUT, "COMPLETED_UNEXPECTEDLY\n");
+    exit(0);
+} catch (\RuntimeException $e) {
+    fwrite(STDERR, "PHASE_B_REFUSED_DURING_CURSOR:".$e->getMessage()."\n");
+    exit(1);
+}
+PHP;
+
+        file_put_contents($scriptPath, $childCode);
+        chmod($scriptPath, 0600);
+
+        $child = null;
+        $childConnectionId = null;
+
+        try {
+            $child = new Process([PHP_BINARY, $scriptPath, $configFile], dirname(__DIR__, 3), null, null, 15.0);
+            $child->start();
+
+            $startTime = microtime(true);
+            while ($child->isRunning() && microtime(true) - $startTime < 4.0) {
+                $output = $child->getIncrementalOutput();
+                if (preg_match('/CID:(\d+)/', $output, $matches)) {
+                    $childConnectionId = (int) $matches[1];
+                    break;
+                }
+                usleep(20000);
+            }
+            if ($childConnectionId === null) {
+                $fullOutput = $child->getOutput();
+                if (preg_match('/CID:(\d+)/', $fullOutput, $matches)) {
+                    $childConnectionId = (int) $matches[1];
+                }
+            }
+
+            self::assertNotNull($childConnectionId, 'Child process must establish connection and emit owned CONNECTION_ID');
+
+            // Wait for tool's Phase B active cursor budget refusal to complete
+            $child->wait();
+
+            self::assertSame(1, $child->getExitCode(), 'Child process must exit with code 1 upon AUDIT_REFUSED during Phase B');
+            self::assertStringContainsString('PHASE_B_FETCHED_ROW:1', $child->getOutput(), 'Phase B unbuffered query must have started and fetched at least one row');
+            self::assertStringContainsString('PHASE_B_REFUSED_DURING_CURSOR:AUDIT_REFUSED', $child->getErrorOutput(), 'Refusal must be triggered during active unbuffered cursor');
+            self::assertStringNotContainsString('COMPLETED_UNEXPECTEDLY', $child->getOutput(), 'Refused streaming child must not emit completed payload');
+
+            // Observer connection polls PROCESSLIST to verify MariaDB pruned the severed connection
+            $isGone = false;
+            $checkStmt = $observerPdo->prepare('SELECT ID FROM INFORMATION_SCHEMA.PROCESSLIST WHERE ID = ?');
+            for ($i = 0; $i < 50; $i++) {
+                $checkStmt->execute([$childConnectionId]);
+                if ($checkStmt->fetch(PDO::FETCH_ASSOC) === false) {
+                    $isGone = true;
+                    break;
+                }
+                usleep(100000);
+            }
+
+            self::assertTrue($isGone, 'Refused child connection must be absent from MariaDB processlist upon termination');
+        } finally {
+            if ($child !== null && $child->isRunning()) {
+                $child->stop(0.1, SIGKILL);
+            }
+            if (is_file($scriptPath)) {
+                unlink($scriptPath);
+            }
+            if (is_file($configFile)) {
+                unlink($configFile);
             }
         }
     }
