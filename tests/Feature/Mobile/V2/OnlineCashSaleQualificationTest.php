@@ -235,6 +235,7 @@ final class OnlineCashSaleQualificationTest extends TestCase
             'conversion_to_base' => '1.000000',
             'is_base' => true,
             'is_default_sale' => true,
+            'is_default_purchase' => true,
             'active' => true,
             'default_sale_price_base' => '50.000000',
         ]);
