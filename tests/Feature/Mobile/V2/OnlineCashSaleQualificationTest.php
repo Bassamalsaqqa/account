@@ -46,7 +46,8 @@ use Brick\Math\BigDecimal;
 use Closure;
 use Error;
 use Illuminate\Auth\Access\AuthorizationException;
-use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\Support\EnforcesDisposableDatabaseOwnership;
+use App\Support\Tenancy\CompanyScope;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
@@ -58,7 +59,7 @@ use Tests\TestCase;
 
 final class OnlineCashSaleQualificationTest extends TestCase
 {
-    use RefreshDatabase;
+    use EnforcesDisposableDatabaseOwnership;
 
     private User $owner;
     private User $staff;
@@ -76,6 +77,7 @@ final class OnlineCashSaleQualificationTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        $this->assertOwnedDisposableDatabase();
 
         config([
             'mobile.enabled' => true,
@@ -86,6 +88,48 @@ final class OnlineCashSaleQualificationTest extends TestCase
         $this->app->bind(FinancialExecutionAdapterInterface::class, QualifiedCashFinancialExecutionAdapter::class);
 
         $this->setupQualificationFixture();
+    }
+
+    protected function tearDown(): void
+    {
+        if (! $this->isDisposableDatabaseOwnershipAdmitted()) {
+            parent::tearDown();
+
+            return;
+        }
+
+        try {
+            $this->revalidateOwnedDisposableDatabase();
+
+            if (DB::transactionLevel() > 0) {
+                DB::rollBack(0);
+            }
+
+            CompanyScope::executeWithoutScope(function () {
+                if (isset($this->company)) {
+                    $companyId = $this->company->id;
+                    DB::table('mobile_event_receipts')->where('company_id', $companyId)->delete();
+                    DB::table('customer_payment_allocations')->where('company_id', $companyId)->delete();
+                    DB::table('customer_payments')->where('company_id', $companyId)->delete();
+                    DB::table('sales_invoice_lot_allocations')->where('company_id', $companyId)->delete();
+                    DB::table('sales_invoice_lines')->where('company_id', $companyId)->delete();
+                    DB::table('sales_invoices')->where('company_id', $companyId)->delete();
+                    DB::table('inventory_lot_balances')->where('company_id', $companyId)->delete();
+                    DB::table('inventory_balances')->where('company_id', $companyId)->delete();
+                    DB::table('inventory_lots')->where('company_id', $companyId)->delete();
+                    DB::table('stock_movements')->where('company_id', $companyId)->delete();
+                    DB::table('posting_lines')->where('company_id', $companyId)->delete();
+                    DB::table('posting_batches')->where('company_id', $companyId)->delete();
+                }
+            });
+
+            app(CompanyContext::class)->clear();
+        } finally {
+            $this->disposableDatabaseOwnershipAdmitted = false;
+            $this->admittedDatabaseName = null;
+            auth()->forgetUser();
+            parent::tearDown();
+        }
     }
 
     private function setupQualificationFixture(): void
@@ -126,12 +170,14 @@ final class OnlineCashSaleQualificationTest extends TestCase
         ]);
 
         $this->staff->assignRole('Sales');
-        // Grant staff required permissions for cash sale
+        // Grant staff required permissions for cash sale and read replays
         $this->staff->givePermissionTo([
             'sales.invoice.create',
             'sales.invoice.post',
+            'sales.invoice.view',
             'money.receipt.create',
             'money.receipt.allocate',
+            'money.receipt.view',
         ]);
 
         $deviceId = (string) Str::uuid();
@@ -218,6 +264,10 @@ final class OnlineCashSaleQualificationTest extends TestCase
             ->where('account_type', MoneyAccount::TYPE_CASH)
             ->where('currency_code', $this->company->base_currency_code)
             ->firstOrFail();
+
+        // Forget ambient owner from guard so mobile requests rely solely on token
+        auth()->forgetUser();
+        app(CompanyContext::class)->clearSessionless();
     }
 
     private function validSalePayload(string $eventId, string $amount = '58.000000', string $unitPrice = '50.000000'): array
@@ -283,12 +333,20 @@ final class OnlineCashSaleQualificationTest extends TestCase
      */
     public function test_unregistered_capability_throws_security_exception(): void
     {
+        $companyId = $this->company->id;
+        $companyPublicId = (string) $this->company->public_id;
+        $staffId = $this->staff->id;
+        $staffPublicId = (string) $this->staff->public_id;
+        $deviceId = $this->device->device_id;
+        $passwordEpoch = $this->token->password_epoch;
+        $eventId = (string) Str::uuid();
+
         $fake = (Closure::bind(
-            fn () => new NativeFinancialExecutionCapability(
-                $this->company->id, (string) $this->company->public_id,
-                $this->staff->id, (string) $this->staff->public_id,
-                $this->device->device_id, $this->token->password_epoch,
-                (string) Str::uuid(), 'fake-digest', 2, 'mysql', 1, 'fake-scope'
+            static fn () => new NativeFinancialExecutionCapability(
+                $companyId, $companyPublicId,
+                $staffId, $staffPublicId,
+                $deviceId, $passwordEpoch,
+                $eventId, 'fake-digest', 2, 'mysql', 1, 'fake-scope'
             ),
             null,
             NativeFinancialExecutionCapability::class
@@ -324,31 +382,39 @@ final class OnlineCashSaleQualificationTest extends TestCase
         $this->expectException(IllegalStateException::class);
         $this->expectExceptionMessage('depth 1');
 
+        $companyId = $this->company->id;
+        $companyPublicId = (string) $this->company->public_id;
+        $staffId = $this->staff->id;
+        $staffPublicId = (string) $this->staff->public_id;
+        $deviceId = $this->device->device_id;
+        $passwordEpoch = $this->token->password_epoch;
+        $connName = DB::connection()->getName();
+
         // Create capability through private admission simulation
         $capability = (Closure::bind(
-            fn () => new NativeFinancialExecutionCapability(
-                $this->company->id, (string) $this->company->public_id,
-                $this->staff->id, (string) $this->staff->public_id,
-                $this->device->device_id, $this->token->password_epoch,
-                $eventId, $digest, 2, DB::connection()->getName(), 1, 'test-scope'
+            static fn () => new NativeFinancialExecutionCapability(
+                $companyId, $companyPublicId,
+                $staffId, $staffPublicId,
+                $deviceId, $passwordEpoch,
+                $eventId, $digest, 2, $connName, 1, 'test-scope'
             ),
             null,
             NativeFinancialExecutionCapability::class
         ))();
 
         // Register in manager
-        (Closure::bind(function () use ($capability, $eventId, $digest) {
+        (Closure::bind(static function () use ($capability, $companyId, $staffId, $deviceId, $passwordEpoch, $eventId, $digest, $connName) {
             self::$capabilityRegistry = new \WeakMap;
             self::$currentInvocationScopeId = 'test-scope';
             self::$capabilityRegistry[$capability] = [
-                'company_id' => $this->company->id,
-                'actor_id' => $this->staff->id,
-                'device_id' => $this->device->device_id,
-                'token_password_epoch' => $this->token->password_epoch,
+                'company_id' => $companyId,
+                'actor_id' => $staffId,
+                'device_id' => $deviceId,
+                'token_password_epoch' => $passwordEpoch,
                 'client_event_id' => $eventId,
                 'event_hash' => $digest,
                 'currency_minor_units' => 2,
-                'connection_name' => DB::connection()->getName(),
+                'connection_name' => $connName,
                 'root_transaction_level' => 1,
                 'invocation_scope_id' => 'test-scope',
                 'active' => true,
@@ -369,29 +435,37 @@ final class OnlineCashSaleQualificationTest extends TestCase
         $eventId = (string) Str::uuid();
         $digest = hash('sha256', 'test-payload');
 
+        $companyId = $this->company->id;
+        $companyPublicId = (string) $this->company->public_id;
+        $staffId = $this->staff->id;
+        $staffPublicId = (string) $this->staff->public_id;
+        $deviceId = $this->device->device_id;
+        $passwordEpoch = $this->token->password_epoch;
+        $connName = DB::connection()->getName();
+
         $capability = (Closure::bind(
-            fn () => new NativeFinancialExecutionCapability(
-                $this->company->id, (string) $this->company->public_id,
-                $this->staff->id, (string) $this->staff->public_id,
-                $this->device->device_id, $this->token->password_epoch,
-                $eventId, $digest, 2, DB::connection()->getName(), 1, 'scope-1'
+            static fn () => new NativeFinancialExecutionCapability(
+                $companyId, $companyPublicId,
+                $staffId, $staffPublicId,
+                $deviceId, $passwordEpoch,
+                $eventId, $digest, 2, $connName, 1, 'scope-1'
             ),
             null,
             NativeFinancialExecutionCapability::class
         ))();
 
-        (Closure::bind(function () use ($capability, $eventId, $digest) {
+        (Closure::bind(static function () use ($capability, $companyId, $staffId, $deviceId, $passwordEpoch, $eventId, $digest, $connName) {
             self::$capabilityRegistry = new \WeakMap;
             self::$currentInvocationScopeId = 'scope-1';
             self::$capabilityRegistry[$capability] = [
-                'company_id' => $this->company->id,
-                'actor_id' => $this->staff->id,
-                'device_id' => $this->device->device_id,
-                'token_password_epoch' => $this->token->password_epoch,
+                'company_id' => $companyId,
+                'actor_id' => $staffId,
+                'device_id' => $deviceId,
+                'token_password_epoch' => $passwordEpoch,
                 'client_event_id' => $eventId,
                 'event_hash' => $digest,
                 'currency_minor_units' => 2,
-                'connection_name' => DB::connection()->getName(),
+                'connection_name' => $connName,
                 'root_transaction_level' => 1,
                 'invocation_scope_id' => 'scope-1',
                 'active' => true,
@@ -423,29 +497,37 @@ final class OnlineCashSaleQualificationTest extends TestCase
         $eventId = (string) Str::uuid();
         $digest = hash('sha256', 'digest-A');
 
+        $companyId = $this->company->id;
+        $companyPublicId = (string) $this->company->public_id;
+        $staffId = $this->staff->id;
+        $staffPublicId = (string) $this->staff->public_id;
+        $deviceId = $this->device->device_id;
+        $passwordEpoch = $this->token->password_epoch;
+        $connName = DB::connection()->getName();
+
         $capability = (Closure::bind(
-            fn () => new NativeFinancialExecutionCapability(
-                $this->company->id, (string) $this->company->public_id,
-                $this->staff->id, (string) $this->staff->public_id,
-                $this->device->device_id, $this->token->password_epoch,
-                $eventId, $digest, 2, DB::connection()->getName(), 1, 'scope-hash'
+            static fn () => new NativeFinancialExecutionCapability(
+                $companyId, $companyPublicId,
+                $staffId, $staffPublicId,
+                $deviceId, $passwordEpoch,
+                $eventId, $digest, 2, $connName, 1, 'scope-hash'
             ),
             null,
             NativeFinancialExecutionCapability::class
         ))();
 
-        (Closure::bind(function () use ($capability, $eventId, $digest) {
+        (Closure::bind(static function () use ($capability, $companyId, $staffId, $deviceId, $passwordEpoch, $eventId, $digest, $connName) {
             self::$capabilityRegistry = new \WeakMap;
             self::$currentInvocationScopeId = 'scope-hash';
             self::$capabilityRegistry[$capability] = [
-                'company_id' => $this->company->id,
-                'actor_id' => $this->staff->id,
-                'device_id' => $this->device->device_id,
-                'token_password_epoch' => $this->token->password_epoch,
+                'company_id' => $companyId,
+                'actor_id' => $staffId,
+                'device_id' => $deviceId,
+                'token_password_epoch' => $passwordEpoch,
                 'client_event_id' => $eventId,
                 'event_hash' => $digest,
                 'currency_minor_units' => 2,
-                'connection_name' => DB::connection()->getName(),
+                'connection_name' => $connName,
                 'root_transaction_level' => 1,
                 'invocation_scope_id' => 'scope-hash',
                 'active' => true,
@@ -580,9 +662,9 @@ final class OnlineCashSaleQualificationTest extends TestCase
         $first->assertStatus(201);
         $data1 = $first->json();
 
-        $invoiceCountBefore = SalesInvoice::count();
-        $paymentCountBefore = CustomerPayment::count();
-        $receiptCountBefore = MobileEventReceipt::count();
+        $invoiceCountBefore = SalesInvoice::withoutGlobalScopes()->where('company_id', $this->company->id)->count();
+        $paymentCountBefore = CustomerPayment::withoutGlobalScopes()->where('company_id', $this->company->id)->count();
+        $receiptCountBefore = MobileEventReceipt::withoutGlobalScopes()->where('company_id', $this->company->id)->count();
 
         // Second attempt: simulated client reconnect / lost ACK replay (HTTP 200)
         $second = $this->withHeader('Authorization', 'Bearer '.$this->rawToken)
@@ -597,9 +679,9 @@ final class OnlineCashSaleQualificationTest extends TestCase
         $this->assertSame($data1['invoice_number'], $data2['invoice_number']);
 
         // Zero sequence or record duplication
-        $this->assertSame($invoiceCountBefore, SalesInvoice::count());
-        $this->assertSame($paymentCountBefore, CustomerPayment::count());
-        $this->assertSame($receiptCountBefore, MobileEventReceipt::count());
+        $this->assertSame($invoiceCountBefore, SalesInvoice::withoutGlobalScopes()->where('company_id', $this->company->id)->count());
+        $this->assertSame($paymentCountBefore, CustomerPayment::withoutGlobalScopes()->where('company_id', $this->company->id)->count());
+        $this->assertSame($receiptCountBefore, MobileEventReceipt::withoutGlobalScopes()->where('company_id', $this->company->id)->count());
     }
 
     /**
@@ -637,10 +719,10 @@ final class OnlineCashSaleQualificationTest extends TestCase
         // Reduce warehouse stock to 0 to trigger InsufficientStockException during allocation
         InventoryBalance::where('company_id', $this->company->id)->update(['quantity_base' => '0.000000']);
 
-        $invoicesBefore = SalesInvoice::count();
-        $paymentsBefore = CustomerPayment::count();
-        $receiptsBefore = MobileEventReceipt::count();
-        $movementsBefore = StockMovement::count();
+        $invoicesBefore = SalesInvoice::withoutGlobalScopes()->where('company_id', $this->company->id)->count();
+        $paymentsBefore = CustomerPayment::withoutGlobalScopes()->where('company_id', $this->company->id)->count();
+        $receiptsBefore = MobileEventReceipt::withoutGlobalScopes()->where('company_id', $this->company->id)->count();
+        $movementsBefore = StockMovement::withoutGlobalScopes()->where('company_id', $this->company->id)->count();
 
         $eventId = (string) Str::uuid();
         $payload = $this->validSalePayload($eventId);
@@ -652,10 +734,10 @@ final class OnlineCashSaleQualificationTest extends TestCase
         $this->assertTrue($response->status() >= 400);
 
         // Verify zero leakage of any partial state
-        $this->assertSame($invoicesBefore, SalesInvoice::count());
-        $this->assertSame($paymentsBefore, CustomerPayment::count());
-        $this->assertSame($receiptsBefore, MobileEventReceipt::count());
-        $this->assertSame($movementsBefore, StockMovement::count());
+        $this->assertSame($invoicesBefore, SalesInvoice::withoutGlobalScopes()->where('company_id', $this->company->id)->count());
+        $this->assertSame($paymentsBefore, CustomerPayment::withoutGlobalScopes()->where('company_id', $this->company->id)->count());
+        $this->assertSame($receiptsBefore, MobileEventReceipt::withoutGlobalScopes()->where('company_id', $this->company->id)->count());
+        $this->assertSame($movementsBefore, StockMovement::withoutGlobalScopes()->where('company_id', $this->company->id)->count());
     }
 
     /**
@@ -685,7 +767,7 @@ final class OnlineCashSaleQualificationTest extends TestCase
                 'event_version' => 2,
                 'representation' => 'v2_online_sale_intent',
                 'canonical_bytes' => $canonicalBytes,
-                'executor_mode' => 'canonical',
+                'executor_mode' => 'qualified_cash',
             ];
 
             $workerA = $this->startWorkerProcess($schema, $directory, 'worker-a', $input);
