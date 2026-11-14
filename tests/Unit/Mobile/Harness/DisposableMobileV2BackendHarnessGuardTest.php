@@ -522,7 +522,7 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
 
         try {
             $this->expectException(RuntimeException::class);
-            $this->expectExceptionMessage("Harness readiness scope refused: pairing manifest status is '".DisposableMobileV2BackendHarness::SCOPE_PROVISION_ONLY."'. Readiness probe requires explicit '".DisposableMobileV2BackendHarness::SCOPE_READINESS_ONLY."' scope.");
+            $this->expectExceptionMessage("Harness readiness scope refused: pairing manifest status is '".DisposableMobileV2BackendHarness::SCOPE_PROVISION_ONLY."'. Provision-only manifests are strictly forbidden from starting listeners or TLS proxies.");
             DisposableMobileV2BackendHarness::assertReadinessScope($tmp, $sha);
         } finally {
             @unlink($tmp);
@@ -738,6 +738,8 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
             canonicalDigest: 'sha256:0847e10d89777e103252ebfa2d27f89a95832a5d70e01af57afe6423f703c630',
             handoffScope: DisposableMobileV2BackendHarness::SCOPE_READINESS_ONLY,
             lifecyclePhase: 'PROVISIONED_AWAITING_TLS_START',
+            createdAt: '2026-11-14T17:00:00+02:00',
+            expiresAt: '2026-11-14T18:00:00+02:00',
         );
 
         $handoff['startup_tls']['ca_cert_path'] = '/fake/ca.pem'; // Fabricated before start!
@@ -884,6 +886,8 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
             rawWireSample: $rawWireSample,
             serverContext: $serverContext,
             canonicalDigest: 'sha256:0847e10d89777e103252ebfa2d27f89a95832a5d70e01af57afe6423f703c630',
+            handoffScope: DisposableMobileV2BackendHarness::SCOPE_READINESS_ONLY,
+            lifecyclePhase: 'PROVISIONED_AWAITING_TLS_START',
             createdAt: '2026-11-14T15:00:00Z',
             expiresAt: '2026-11-14T14:00:00Z', // Expires BEFORE created!
         );
@@ -1031,6 +1035,10 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
             rawWireSample: $rawWireSample,
             serverContext: $serverContext,
             canonicalDigest: 'sha256:'.str_repeat('f', 64), // Deliberate mismatch
+            handoffScope: DisposableMobileV2BackendHarness::SCOPE_READINESS_ONLY,
+            lifecyclePhase: 'PROVISIONED_AWAITING_TLS_START',
+            createdAt: '2026-11-14T17:00:00+02:00',
+            expiresAt: '2026-11-14T18:00:00+02:00',
         );
 
         $this->expectException(RuntimeException::class);
@@ -1123,6 +1131,12 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
         $provProp->setValue($harness, true);
         $nonceProp = $ref->getProperty('harnessNonce');
         $nonceProp->setValue($harness, 'test-nonce-1234');
+        $schemaProp = $ref->getProperty('schema');
+        $schemaProp->setValue($harness, (new \ReflectionClass(\Tests\Support\DisposableMariaDbSchema::class))->newInstanceWithoutConstructor());
+        $proofPathProp = $ref->getProperty('proofPath');
+        $proofPathProp->setValue($harness, '/tmp/proof');
+        $proofNonceProp = $ref->getProperty('proofNonce');
+        $proofNonceProp->setValue($harness, 'test-nonce');
 
         putenv('MOBILE_V2_HARNESS_START_LISTENER=1');
 
@@ -1465,5 +1479,93 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
         // This call must complete with ZERO exceptions, verifying CanonicalJsonSerializer and OnlineSaleIntentProfile runtime resolution
         DisposableMobileV2BackendHarness::validateClientHandoff($handoff);
         $this->assertSame('1.0.0', $handoff['schema_version']);
+    }
+
+    #[Test]
+    public function test_child_bootstrap_template_execution_in_fresh_subprocess(): void
+    {
+        $root = dirname(__DIR__, 4);
+        $tempDir = sys_get_temp_dir().'/harness_subproc_test_'.bin2hex(random_bytes(6));
+        mkdir($tempDir, 0700, true);
+
+        $nonce = 'test-subproc-nonce-'.bin2hex(random_bytes(16));
+        $configPath = $tempDir.'/child_bootstrap_config.json';
+        $cacheDir = $tempDir.'/cache';
+        mkdir($cacheDir, 0700, true);
+        $envPath = $tempDir.'/.env.harness';
+
+        $configData = [
+            'expected_backend_head' => str_repeat('a', 40),
+            'schema_name' => 'subproc_test_db',
+            'proof_path' => $tempDir.'/proof.txt',
+            'proof_nonce' => 'proof-nonce-123',
+            'db_host' => '127.0.0.1',
+            'db_port' => 3342,
+            'db_username' => 'test_user',
+            'db_password' => 'test_pass',
+            'harness_nonce' => $nonce,
+            'cache_dir' => $cacheDir,
+            'env_file' => $envPath,
+            'readiness_only' => false,
+        ];
+        file_put_contents($configPath, json_encode($configData));
+        chmod($configPath, 0600);
+
+        $scriptContent = DisposableMobileV2BackendHarness::generateChildBootstrapScript(
+            configPath: $configPath,
+            bootstrapDir: $tempDir,
+            nonce: $nonce,
+            root: $root,
+            testEnvPath: $envPath,
+        );
+
+        $scriptPath = $tempDir.'/http-bootstrap.php';
+        file_put_contents($scriptPath, $scriptContent);
+        chmod($scriptPath, 0600);
+
+        try {
+            // 1. GET /_harness/readiness -> HTTP 200 with JSON {"status":"ready","nonce":"..."}
+            $procGet = new Process([PHP_BINARY, $scriptPath], $root, [
+                'REQUEST_URI' => '/_harness/readiness',
+                'REQUEST_METHOD' => 'GET',
+            ]);
+            $procGet->run();
+            $this->assertSame(0, $procGet->getExitCode(), 'GET readiness failed: '.$procGet->getErrorOutput());
+            $getBody = json_decode($procGet->getOutput(), true);
+            $this->assertIsArray($getBody);
+            $this->assertSame('ready', $getBody['status'] ?? null);
+            $this->assertSame($nonce, $getBody['nonce'] ?? null);
+
+            // 2. POST /_harness/readiness -> HTTP 405 Method Not Allowed
+            $procPost = new Process([PHP_BINARY, $scriptPath], $root, [
+                'REQUEST_URI' => '/_harness/readiness',
+                'REQUEST_METHOD' => 'POST',
+            ]);
+            $procPost->run();
+            $this->assertSame(0, $procPost->getExitCode(), 'POST readiness failed: '.$procPost->getErrorOutput());
+            $postBody = json_decode($procPost->getOutput(), true);
+            $this->assertIsArray($postBody);
+            $this->assertSame('method_not_allowed', $postBody['error'] ?? null);
+            $this->assertSame('Readiness probe strictly requires GET', $postBody['message'] ?? null);
+
+            // 3. Non-readiness route with readiness_only => true -> HTTP 403 Forbidden
+            $configData['readiness_only'] = true;
+            file_put_contents($configPath, json_encode($configData));
+            $procForbidden = new Process([PHP_BINARY, $scriptPath], $root, [
+                'REQUEST_URI' => '/api/v2/mobile/receipt/sync',
+                'REQUEST_METHOD' => 'GET',
+            ]);
+            $procForbidden->run();
+            $this->assertSame(0, $procForbidden->getExitCode(), 'Readiness-only guard failed: '.$procForbidden->getErrorOutput());
+            $forbidBody = json_decode($procForbidden->getOutput(), true);
+            $this->assertIsArray($forbidBody);
+            $this->assertSame('forbidden', $forbidBody['error'] ?? null);
+            $this->assertStringContainsString('READINESS-ONLY', $forbidBody['message'] ?? '');
+        } finally {
+            @unlink($scriptPath);
+            @unlink($configPath);
+            @rmdir($cacheDir);
+            @rmdir($tempDir);
+        }
     }
 }

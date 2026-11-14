@@ -666,6 +666,169 @@ final class DisposableMobileV2BackendHarness
     }
 
     /**
+     * Generates the child HTTP bootstrap script for php -S subprocess.
+     * Enforces:
+     * - Config existence, permissions (0600 file, 0700 dir, UID match) and nonce validation
+     * - Safe environment population
+     * - Autoload-only require BEFORE handleChildReadinessRoute
+     * - Pre-framework child readiness probe route (GET-only 200/405, readiness-only 403)
+     * - Disposable schema ownership proof assertPrimarySchema BEFORE framework or PDO
+     * - Isolated DB and port invariant assertions
+     */
+    public static function generateChildBootstrapScript(
+        string $configPath,
+        string $bootstrapDir,
+        string $nonce,
+        string $root,
+        string $testEnvPath
+    ): string {
+        $envBasename = basename($testEnvPath);
+
+        return <<<PHP
+<?php
+
+declare(strict_types=1);
+
+// Test-only HTTP bootstrap for paired Mobile V2 HTTPS integration
+// Cash-only harness: zero static file passthrough before guards
+
+\$configPath = '{$configPath}';
+\$bootstrapDir = '{$bootstrapDir}';
+\$root = '{$root}';
+
+if (! file_exists(\$configPath)) {
+    http_response_code(500);
+    echo "Harness bootstrap refused: missing child bootstrap config.\n";
+    exit(1);
+}
+
+// Validate file permissions (0600) and parent dir (0700)
+\$filePerms = fileperms(\$configPath) & 0777;
+\$dirPerms = fileperms(\$bootstrapDir) & 0777;
+if (\$filePerms !== 0600 || \$dirPerms !== 0700) {
+    http_response_code(500);
+    echo "Harness bootstrap refused: invalid config file or directory permissions.\n";
+    exit(1);
+}
+
+if (function_exists('posix_getuid') && fileowner(\$configPath) !== posix_getuid()) {
+    http_response_code(500);
+    echo "Harness bootstrap refused: file owner UID mismatch.\n";
+    exit(1);
+}
+
+\$rawConfig = file_get_contents(\$configPath);
+\$config = json_decode(\$rawConfig ?: '', true);
+if (! is_array(\$config) || (\$config['harness_nonce'] ?? null) !== '{$nonce}') {
+    http_response_code(500);
+    echo "Harness bootstrap refused: invalid config or nonce mismatch.\n";
+    exit(1);
+}
+
+// Populate environment safely into fresh PHP process
+\$envVars = [
+    'APP_ENV' => 'testing',
+    'APP_DEBUG' => 'false',
+    'DB_CONNECTION' => 'mysql',
+    'DB_HOST' => '127.0.0.1',
+    'DB_PORT' => '3342',
+    'DB_DATABASE' => (string) \$config['schema_name'],
+    'DB_USERNAME' => (string) \$config['db_username'],
+    'DB_PASSWORD' => (string) \$config['db_password'],
+    'CACHE_STORE' => 'array',
+    'SESSION_DRIVER' => 'array',
+    'QUEUE_CONNECTION' => 'sync',
+    'PHASE8_ALLOW_DISPOSABLE_DB' => '1',
+    'PHASE8_TEST_DB_HOST' => '127.0.0.1',
+    'PHASE8_TEST_DB_PORT' => '3342',
+    'PHASE8_TEST_DB_USERNAME' => (string) \$config['db_username'],
+    'PHASE8_TEST_DB_PASSWORD' => (string) \$config['db_password'],
+    'PHASE8_DISPOSABLE_DB_PROOF' => (string) \$config['proof_path'],
+    'PHASE8_DISPOSABLE_DB_NONCE' => (string) \$config['proof_nonce'],
+    'MOBILE_V2_HARNESS_ENABLE' => '1',
+    'MOBILE_V2_CASH_SLICE_ENABLED' => 'true',
+    'MOBILE_API_ENABLED' => 'true',
+    'MOBILE_V2_API_ENABLED' => 'true',
+    'APP_ROUTES_CACHE' => \$config['cache_dir'].'/routes-v7.php',
+    'APP_CONFIG_CACHE' => \$config['cache_dir'].'/config.php',
+    'APP_SERVICES_CACHE' => \$config['cache_dir'].'/services.php',
+    'APP_PACKAGES_CACHE' => \$config['cache_dir'].'/packages.php',
+    'APP_EVENTS_CACHE' => \$config['cache_dir'].'/events.php',
+    'HARNESS_OWNED_NONCE' => (string) \$config['harness_nonce'],
+];
+
+foreach (\$envVars as \$k => \$v) {
+    putenv("{\$k}={\$v}");
+    \$_ENV[\$k] = \$v;
+    \$_SERVER[\$k] = \$v;
+}
+
+require_once \$root.'/vendor/autoload.php';
+
+// Harness readiness probe route
+\$uri = parse_url(\$_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?? '/';
+\$method = \$_SERVER['REQUEST_METHOD'] ?? 'GET';
+\$routeResult = \\Tests\\Support\\Harness\\DisposableMobileV2BackendHarness::handleChildReadinessRoute(
+    uri: \$uri,
+    method: \$method,
+    nonce: (string) \$config['harness_nonce'],
+    readinessOnly: ! empty(\$config['readiness_only'])
+);
+if (\$routeResult !== null) {
+    http_response_code(\$routeResult['status_code']);
+    foreach (\$routeResult['headers'] as \$hdr) {
+        header(\$hdr);
+    }
+    echo json_encode(\$routeResult['body']);
+    exit(0);
+}
+
+// Assert real disposable MariaDB schema ownership proof BEFORE framework or PDO!
+\\Tests\\Support\\DisposableMariaDbSchema::assertPrimarySchema((string) \$config['schema_name']);
+
+/** @var \\Illuminate\\Foundation\\Application \$app */
+\$app = require \$root.'/bootstrap/app.php';
+\$app->useEnvironmentPath(\$bootstrapDir);
+\$app->loadEnvironmentFrom('{$envBasename}');
+
+// Bind QualifiedCashFinancialExecutionAdapter strictly after verifying active PDO database and port
+\$app->booted(function (\$app) use (\$config): void {
+    if (getenv('APP_ENV') !== 'testing'
+        || getenv('PHASE8_ALLOW_DISPOSABLE_DB') !== '1'
+        || getenv('MOBILE_V2_HARNESS_ENABLE') !== '1'
+        || (string) getenv('DB_HOST') !== '127.0.0.1'
+        || (string) getenv('DB_PORT') !== '3342'
+        || (string) getenv('DB_DATABASE') !== \$config['schema_name']
+        || (string) getenv('HARNESS_OWNED_NONCE') !== \$config['harness_nonce']
+    ) {
+        throw new \\RuntimeException('Child bootstrap invariant failure: environment mismatch.');
+    }
+
+    /** @var object{port: string|int, db: string} \$dbIdentity */
+    \$dbIdentity = \\Illuminate\\Support\\Facades\\DB::selectOne('SELECT @@port AS port, DATABASE() AS db');
+    if ((string) \$dbIdentity->db !== \$config['schema_name']) {
+        throw new \\RuntimeException("Child bootstrap DB mismatch: expected '{\$config['schema_name']}', got '{\$dbIdentity->db}'.");
+    }
+    if ((int) \$dbIdentity->port !== 3342) {
+        throw new \\RuntimeException("Child bootstrap DB port mismatch: expected 3342, got '{\$dbIdentity->port}'.");
+    }
+
+    \$app->bind(
+        \\App\\Support\\Mobile\\Receipt\\FinancialExecutionAdapterInterface::class,
+        \\Tests\\Support\\QualifiedCashFinancialExecutionAdapter::class
+    );
+});
+
+\$kernel = \$app->make(\\Illuminate\\Contracts\\Http\\Kernel::class);
+\$response = \$kernel->handle(
+    \$request = \\Illuminate\\Http\\Request::capture()
+);
+\$response->send();
+\$kernel->terminate(\$request, \$response);
+PHP;
+    }
+
+    /**
      * Validates readiness probe response:
      * 1. Must have valid HTTP response headers with status code 200.
      * 2. Body must be non-false and valid JSON object with {"status": "ready", "nonce": "<matching_nonce>"}.
@@ -912,6 +1075,19 @@ final class DisposableMobileV2BackendHarness
         ) {
             throw new RuntimeException('Malformed client handoff artifact: server_synthesized_context missing or invalid.');
         }
+        $payment = $rawWire['parsed_request']['payment'] ?? null;
+        if (! is_array($payment)
+            || ($payment['settlement_mode'] ?? null) !== 'full'
+            || ($payment['payment_method'] ?? null) !== 'cash'
+            || empty($payment['cash_account_id'])
+            || ! is_string($payment['cash_account_id'])
+            || preg_match('/^[0-7][0-9A-HJKMNP-TV-Z]{25}$/', $payment['cash_account_id']) !== 1
+            || empty($payment['amount'])
+            || ! is_string($payment['amount'])
+        ) {
+            throw new RuntimeException('Malformed client handoff artifact: payment must restrict to settlement_mode=full, payment_method=cash, non-null cash_account_id ULID, and valid amount.');
+        }
+
         if (! is_string($handoff['canonical_intent_profile_digest'])
             || ! preg_match('/^sha256:[0-9a-f]{64}$/', $handoff['canonical_intent_profile_digest'])
         ) {
@@ -929,19 +1105,6 @@ final class DisposableMobileV2BackendHarness
         ) {
             throw new RuntimeException('Malformed client handoff artifact: historical_ca5a_reference missing or invalid.');
         }
-        $payment = $rawWire['parsed_request']['payment'] ?? null;
-        if (! is_array($payment)
-            || ($payment['settlement_mode'] ?? null) !== 'full'
-            || ($payment['payment_method'] ?? null) !== 'cash'
-            || empty($payment['cash_account_id'])
-            || ! is_string($payment['cash_account_id'])
-            || preg_match('/^[0-7][0-9A-HJKMNP-TV-Z]{25}$/', $payment['cash_account_id']) !== 1
-            || empty($payment['amount'])
-            || ! is_string($payment['amount'])
-        ) {
-            throw new RuntimeException('Malformed client handoff artifact: payment must restrict to settlement_mode=full, payment_method=cash, non-null cash_account_id ULID, and valid amount.');
-        }
-
         $tls = $handoff['startup_tls'];
         if (! is_array($tls) || empty($tls['status'])) {
             throw new RuntimeException('Malformed client handoff artifact: startup_tls missing or status unset.');
@@ -1473,148 +1636,13 @@ final class DisposableMobileV2BackendHarness
         // asserts schema ownership proof via assertPrimarySchema BEFORE framework or PDO,
         // and asserts active PDO database @@port=3342 and DATABASE()=schema in app->booted()
         $httpBootstrapPath = $bootstrapDir.'/http-bootstrap.php';
-        $httpBootstrapContent = <<<PHP
-<?php
-
-declare(strict_types=1);
-
-// Test-only HTTP bootstrap for paired Mobile V2 HTTPS integration
-// Cash-only harness: zero static file passthrough before guards
-
-\$configPath = '{$childConfigPath}';
-\$bootstrapDir = '{$bootstrapDir}';
-\$root = '{$root}';
-
-if (! file_exists(\$configPath)) {
-    http_response_code(500);
-    echo "Harness bootstrap refused: missing child bootstrap config.\\n";
-    exit(1);
-}
-
-// Validate file permissions (0600) and parent dir (0700)
-\$filePerms = fileperms(\$configPath) & 0777;
-\$dirPerms = fileperms(\$bootstrapDir) & 0777;
-if (\$filePerms !== 0600 || \$dirPerms !== 0700) {
-    http_response_code(500);
-    echo "Harness bootstrap refused: invalid config file or directory permissions.\\n";
-    exit(1);
-}
-
-if (function_exists('posix_getuid') && fileowner(\$configPath) !== posix_getuid()) {
-    http_response_code(500);
-    echo "Harness bootstrap refused: file owner UID mismatch.\\n";
-    exit(1);
-}
-
-\$rawConfig = file_get_contents(\$configPath);
-\$config = json_decode(\$rawConfig ?: '', true);
-if (! is_array(\$config) || (\$config['harness_nonce'] ?? null) !== '{$nonce}') {
-    http_response_code(500);
-    echo "Harness bootstrap refused: invalid config or nonce mismatch.\\n";
-    exit(1);
-}
-
-// Populate environment safely into fresh PHP process
-\$envVars = [
-    'APP_ENV' => 'testing',
-    'APP_DEBUG' => 'false',
-    'DB_CONNECTION' => 'mysql',
-    'DB_HOST' => '127.0.0.1',
-    'DB_PORT' => '3342',
-    'DB_DATABASE' => (string) \$config['schema_name'],
-    'DB_USERNAME' => (string) \$config['db_username'],
-    'DB_PASSWORD' => (string) \$config['db_password'],
-    'CACHE_STORE' => 'array',
-    'SESSION_DRIVER' => 'array',
-    'QUEUE_CONNECTION' => 'sync',
-    'PHASE8_ALLOW_DISPOSABLE_DB' => '1',
-    'PHASE8_TEST_DB_HOST' => '127.0.0.1',
-    'PHASE8_TEST_DB_PORT' => '3342',
-    'PHASE8_TEST_DB_USERNAME' => (string) \$config['db_username'],
-    'PHASE8_TEST_DB_PASSWORD' => (string) \$config['db_password'],
-    'PHASE8_DISPOSABLE_DB_PROOF' => (string) \$config['proof_path'],
-    'PHASE8_DISPOSABLE_DB_NONCE' => (string) \$config['proof_nonce'],
-    'MOBILE_V2_HARNESS_ENABLE' => '1',
-    'MOBILE_V2_CASH_SLICE_ENABLED' => 'true',
-    'MOBILE_API_ENABLED' => 'true',
-    'MOBILE_V2_API_ENABLED' => 'true',
-    'APP_ROUTES_CACHE' => \$config['cache_dir'].'/routes-v7.php',
-    'APP_CONFIG_CACHE' => \$config['cache_dir'].'/config.php',
-    'APP_SERVICES_CACHE' => \$config['cache_dir'].'/services.php',
-    'APP_PACKAGES_CACHE' => \$config['cache_dir'].'/packages.php',
-    'APP_EVENTS_CACHE' => \$config['cache_dir'].'/events.php',
-    'HARNESS_OWNED_NONCE' => (string) \$config['harness_nonce'],
-];
-
-foreach (\$envVars as \$k => \$v) {
-    putenv("{\$k}={\$v}");
-    \$_ENV[\$k] = \$v;
-    \$_SERVER[\$k] = \$v;
-}
-
-// Harness readiness probe route
-\$uri = parse_url(\$_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?? '/';
-\$method = \$_SERVER['REQUEST_METHOD'] ?? 'GET';
-\$routeResult = \Tests\Support\Harness\DisposableMobileV2BackendHarness::handleChildReadinessRoute(
-    uri: \$uri,
-    method: \$method,
-    nonce: (string) \$config['harness_nonce'],
-    readinessOnly: ! empty(\$config['readiness_only'])
-);
-if (\$routeResult !== null) {
-    http_response_code(\$routeResult['status_code']);
-    foreach (\$routeResult['headers'] as \$hdr) {
-        header(\$hdr);
-    }
-    echo json_encode(\$routeResult['body']);
-    exit(0);
-}
-
-require_once \$root.'/vendor/autoload.php';
-
-// Assert real disposable MariaDB schema ownership proof BEFORE framework or PDO!
-\\Tests\\Support\\DisposableMariaDbSchema::assertPrimarySchema((string) \$config['schema_name']);
-
-/** @var \\Illuminate\\Foundation\\Application \$app */
-\$app = require \$root.'/bootstrap/app.php';
-\$app->useEnvironmentPath(\$bootstrapDir);
-\$app->loadEnvironmentFrom(basename('{$testEnvPath}'));
-
-// Bind QualifiedCashFinancialExecutionAdapter strictly after verifying active PDO database and port
-\$app->booted(function (\$app) use (\$config): void {
-    if (getenv('APP_ENV') !== 'testing'
-        || getenv('PHASE8_ALLOW_DISPOSABLE_DB') !== '1'
-        || getenv('MOBILE_V2_HARNESS_ENABLE') !== '1'
-        || (string) getenv('DB_HOST') !== '127.0.0.1'
-        || (string) getenv('DB_PORT') !== '3342'
-        || (string) getenv('DB_DATABASE') !== \$config['schema_name']
-        || (string) getenv('HARNESS_OWNED_NONCE') !== \$config['harness_nonce']
-    ) {
-        throw new \\RuntimeException('Child bootstrap invariant failure: environment mismatch.');
-    }
-
-    /** @var object{port: string|int, db: string} \$dbIdentity */
-    \$dbIdentity = \\Illuminate\\Support\\Facades\\DB::selectOne('SELECT @@port AS port, DATABASE() AS db');
-    if ((string) \$dbIdentity->db !== \$config['schema_name']) {
-        throw new \\RuntimeException("Child bootstrap DB mismatch: expected '{\$config['schema_name']}', got '{\$dbIdentity->db}'.");
-    }
-    if ((int) \$dbIdentity->port !== 3342) {
-        throw new \\RuntimeException("Child bootstrap DB port mismatch: expected 3342, got '{\$dbIdentity->port}'.");
-    }
-
-    \$app->bind(
-        \\App\\Support\\Mobile\\Receipt\\FinancialExecutionAdapterInterface::class,
-        \\Tests\\Support\\QualifiedCashFinancialExecutionAdapter::class
-    );
-});
-
-\$kernel = \$app->make(\\Illuminate\\Contracts\\Http\\Kernel::class);
-\$response = \$kernel->handle(
-    \$request = \\Illuminate\\Http\\Request::capture()
-);
-\$response->send();
-\$kernel->terminate(\$request, \$response);
-PHP;
+        $httpBootstrapContent = self::generateChildBootstrapScript(
+            configPath: $childConfigPath,
+            bootstrapDir: $bootstrapDir,
+            nonce: $nonce,
+            root: $root,
+            testEnvPath: $testEnvPath,
+        );
         file_put_contents($httpBootstrapPath, $httpBootstrapContent);
         chmod($httpBootstrapPath, 0600);
 
