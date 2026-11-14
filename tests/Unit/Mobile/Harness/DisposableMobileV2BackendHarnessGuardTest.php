@@ -3070,16 +3070,34 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
         $this->assertFalse($resMismatch['is_valid']);
         $this->assertTrue(collect($resMismatch['errors'])->contains(fn ($e) => str_contains($e, 'event_id mismatch')));
 
-        // 4. Ambiguous identity: expectedRunId and expectedEventId must not be identical
-        $ambiguousPins = $fixture['expectedPins'];
-        $ambiguousPins['expectedRunId'] = $ambiguousPins['expectedEventId'];
-        $resAmbiguous = \Tests\Support\Harness\DisposableFinancialPostRunInspector::validateOuterEvidenceJson(
+        // 4. Mutated external expectedRunId vs unchanged evidence/report fails for actual run_id mismatch
+        $mismatchedRunPins = $fixture['expectedPins'];
+        $mismatchedRunPins['expectedRunId'] = '00000000-0000-0000-0000-000000000001';
+        $resMismatchRun = \Tests\Support\Harness\DisposableFinancialPostRunInspector::validateOuterEvidenceJson(
             $goldenData,
-            $ambiguousPins,
+            $mismatchedRunPins,
             $fixture['report']
         );
-        $this->assertFalse($resAmbiguous['is_valid']);
-        $this->assertTrue(collect($resAmbiguous['errors'])->contains(fn ($e) => str_contains($e, 'Ambiguous identity')));
+        $this->assertFalse($resMismatchRun['is_valid']);
+        $this->assertTrue(collect($resMismatchRun['errors'])->contains(fn ($e) => str_contains($e, 'run_id mismatch') || str_contains($e, 'runId mismatch')));
+
+        // 5. Legitimate equal run/event UUID regression: when BOTH externally expected pins + evidence runId + composer metadata consistently match, validation succeeds
+        $sharedUuid = 'c0686be5-888f-4890-90bf-1f05f416a19a';
+        $equalUuidEvidence = $goldenData;
+        $equalUuidEvidence['runId'] = $sharedUuid;
+        $equalUuidFixture = $this->createSyntheticTrustedDbReportFixture([
+            'metadata' => [
+                'runId' => $sharedUuid,
+                'eventId' => $sharedUuid,
+            ],
+        ]);
+        $resEqualUuid = \Tests\Support\Harness\DisposableFinancialPostRunInspector::validateOuterEvidenceJson(
+            $equalUuidEvidence,
+            $equalUuidFixture['expectedPins'],
+            $equalUuidFixture['report']
+        );
+        $this->assertTrue($resEqualUuid['is_valid'], 'Legitimate equal run/event UUIDs must be accepted when consistently bound: '.implode('; ', $resEqualUuid['errors']));
+        $this->assertSame([], $resEqualUuid['errors']);
     }
 
     #[Test]
