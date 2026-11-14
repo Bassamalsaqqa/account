@@ -51,7 +51,7 @@ final class MobileReceiptRollbackAtomicityTest extends TestCase
 
     protected function tearDown(): void
     {
-        ExecuteImmediateOnlineCashSaleAction::$stageFaultHook = null;
+        ExecuteImmediateOnlineCashSaleAction::$simulatedFaultStage = null;
         self::$failAfterReceiptCreation = false;
 
         if (! $this->isDisposableDatabaseOwnershipAdmitted()) {
@@ -121,7 +121,7 @@ final class MobileReceiptRollbackAtomicityTest extends TestCase
 
         $this->assertOwnedDisposableDatabase();
 
-        ExecuteImmediateOnlineCashSaleAction::$stageFaultHook = null;
+        ExecuteImmediateOnlineCashSaleAction::$simulatedFaultStage = null;
         self::$failAfterReceiptCreation = false;
 
         $this->owner = User::create([
@@ -349,11 +349,7 @@ final class MobileReceiptRollbackAtomicityTest extends TestCase
 
     public function test_fault_after_invoice_draft_rolls_back_entire_state_and_preserves_reconciliations(): void
     {
-        ExecuteImmediateOnlineCashSaleAction::$stageFaultHook = function (string $stage): void {
-            if ($stage === 'after_draft') {
-                throw new RuntimeException('Simulated fault after invoice draft creation');
-            }
-        };
+        ExecuteImmediateOnlineCashSaleAction::$simulatedFaultStage = 'after_draft';
 
         $eventId = (string) Str::uuid();
         $payload = $this->buildNormativePayload($eventId);
@@ -369,7 +365,7 @@ final class MobileReceiptRollbackAtomicityTest extends TestCase
             );
             $this->fail('Expected RuntimeException');
         } catch (RuntimeException $e) {
-            $this->assertStringContainsString('Simulated fault after invoice draft creation', $e->getMessage());
+            $this->assertStringContainsString('Simulated fault at stage [after_draft]', $e->getMessage());
         }
 
         $this->assertFullFingerprintAndReconciliationRollback();
@@ -377,11 +373,7 @@ final class MobileReceiptRollbackAtomicityTest extends TestCase
 
     public function test_fault_after_posting_and_stock_rolls_back_inventory_and_preserves_reconciliations(): void
     {
-        ExecuteImmediateOnlineCashSaleAction::$stageFaultHook = function (string $stage): void {
-            if ($stage === 'after_posting') {
-                throw new RuntimeException('Simulated fault after invoice posting and inventory decrement');
-            }
-        };
+        ExecuteImmediateOnlineCashSaleAction::$simulatedFaultStage = 'after_posting';
 
         $eventId = (string) Str::uuid();
         $payload = $this->buildNormativePayload($eventId);
@@ -397,7 +389,7 @@ final class MobileReceiptRollbackAtomicityTest extends TestCase
             );
             $this->fail('Expected RuntimeException');
         } catch (RuntimeException $e) {
-            $this->assertStringContainsString('Simulated fault after invoice posting and inventory decrement', $e->getMessage());
+            $this->assertStringContainsString('Simulated fault at stage [after_posting]', $e->getMessage());
         }
 
         $this->assertFullFingerprintAndReconciliationRollback();
@@ -405,11 +397,7 @@ final class MobileReceiptRollbackAtomicityTest extends TestCase
 
     public function test_fault_after_customer_payment_rolls_back_entire_state_and_preserves_reconciliations(): void
     {
-        ExecuteImmediateOnlineCashSaleAction::$stageFaultHook = function (string $stage): void {
-            if ($stage === 'after_payment') {
-                throw new RuntimeException('Simulated fault after customer payment creation');
-            }
-        };
+        ExecuteImmediateOnlineCashSaleAction::$simulatedFaultStage = 'after_payment';
 
         $eventId = (string) Str::uuid();
         $payload = $this->buildNormativePayload($eventId);
@@ -425,7 +413,7 @@ final class MobileReceiptRollbackAtomicityTest extends TestCase
             );
             $this->fail('Expected RuntimeException');
         } catch (RuntimeException $e) {
-            $this->assertStringContainsString('Simulated fault after customer payment creation', $e->getMessage());
+            $this->assertStringContainsString('Simulated fault at stage [after_payment]', $e->getMessage());
         }
 
         $this->assertFullFingerprintAndReconciliationRollback();
@@ -433,11 +421,7 @@ final class MobileReceiptRollbackAtomicityTest extends TestCase
 
     public function test_fault_after_composite_completion_rolls_back_entire_state_and_preserves_reconciliations(): void
     {
-        ExecuteImmediateOnlineCashSaleAction::$stageFaultHook = function (string $stage): void {
-            if ($stage === 'after_composite_completion') {
-                throw new RuntimeException('Simulated fault after composite completion registration');
-            }
-        };
+        ExecuteImmediateOnlineCashSaleAction::$simulatedFaultStage = 'after_composite_completion';
 
         $eventId = (string) Str::uuid();
         $payload = $this->buildNormativePayload($eventId);
@@ -453,7 +437,7 @@ final class MobileReceiptRollbackAtomicityTest extends TestCase
             );
             $this->fail('Expected RuntimeException');
         } catch (RuntimeException $e) {
-            $this->assertStringContainsString('Simulated fault after composite completion registration', $e->getMessage());
+            $this->assertStringContainsString('Simulated fault at stage [after_composite_completion]', $e->getMessage());
         }
 
         $this->assertFullFingerprintAndReconciliationRollback();

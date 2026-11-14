@@ -28,6 +28,7 @@ use Closure;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
+use RuntimeException;
 use Spatie\Permission\PermissionRegistrar;
 
 /**
@@ -49,11 +50,10 @@ use Spatie\Permission\PermissionRegistrar;
 final class ExecuteImmediateOnlineCashSaleAction
 {
     /**
-     * @internal Narrow test hook for fault injection testing of canonical pipeline stages.
-     *
-     * @var (Closure(string, array<string, mixed>): void)|null
+     * Constrained throw-only named stage test fault injection mechanism.
+     * Cannot execute caller code or callbacks; strictly limited to testing environment only.
      */
-    public static ?Closure $stageFaultHook = null;
+    public static ?string $simulatedFaultStage = null;
 
     public function __construct(
         private readonly CreateSalesInvoiceDraftAction $createDraftAction,
@@ -61,6 +61,13 @@ final class ExecuteImmediateOnlineCashSaleAction
         private readonly PostCustomerPaymentAction $postPaymentAction,
         private readonly CurrencyMinorUnitsResolver $currencyResolver,
     ) {}
+
+    private function triggerStageFault(string $stage): void
+    {
+        if (app()->environment('testing') && self::$simulatedFaultStage === $stage) {
+            throw new RuntimeException("Simulated fault at stage [{$stage}].");
+        }
+    }
 
     private function openCompositePermit(
         NativeFinancialExecutionCapability $capability,
@@ -80,6 +87,48 @@ final class ExecuteImmediateOnlineCashSaleAction
             static fn () => CompositeFinancialExecutionScope::deactivatePermit(),
             null,
             CompositeFinancialExecutionScope::class
+        ))();
+    }
+
+    private function consumeCapability(
+        NativeFinancialExecutionCapability $capability,
+        int $companyId,
+        int $actorId,
+        string $deviceId,
+        string $clientEventId,
+        string $eventHash
+    ): void {
+        (Closure::bind(
+            static fn () => MobileEventReceiptManager::verifyAndConsumeCapabilityPrivately(
+                $capability,
+                $companyId,
+                $actorId,
+                $deviceId,
+                $clientEventId,
+                $eventHash
+            ),
+            null,
+            MobileEventReceiptManager::class
+        ))();
+    }
+
+    private function recordClosedCompositeCompletion(
+        NativeFinancialExecutionCapability $capability,
+        int $companyId,
+        int $actorId,
+        int $invoiceId,
+        int $paymentId
+    ): void {
+        (Closure::bind(
+            static fn () => MobileEventReceiptManager::markCompositeCompletedPrivately(
+                $capability,
+                $companyId,
+                $actorId,
+                $invoiceId,
+                $paymentId
+            ),
+            null,
+            MobileEventReceiptManager::class
         ))();
     }
 
@@ -136,7 +185,7 @@ final class ExecuteImmediateOnlineCashSaleAction
         $computedEventHash = hash('sha256', $canonicalBytes);
 
         // 2. Inseparable capability consumption: validates opaque identity against private scoped registry
-        MobileEventReceiptManager::verifyAndConsumeCapability(
+        $this->consumeCapability(
             $capability,
             (int) $company->id,
             (int) $actor->id,
@@ -352,15 +401,11 @@ final class ExecuteImmediateOnlineCashSaleAction
             ];
 
             $draft = $this->createDraftAction->execute($company, $actor, $draftData);
-            if (self::$stageFaultHook !== null) {
-                (self::$stageFaultHook)('after_draft', ['draft' => $draft]);
-            }
+            $this->triggerStageFault('after_draft');
 
             // Leg 2: Post sales invoice (sequence reservation, FEFO lot allocation, GL posting batch)
             $postedInvoice = $this->postInvoiceAction->execute($draft, $actor);
-            if (self::$stageFaultHook !== null) {
-                (self::$stageFaultHook)('after_posting', ['invoice' => $postedInvoice]);
-            }
+            $this->triggerStageFault('after_posting');
 
             // Verify payment amount matches posted grand total exactly
             $expectedGrandTotal = (string) $postedInvoice->grand_total_currency;
@@ -398,12 +443,10 @@ final class ExecuteImmediateOnlineCashSaleAction
                 $actor,
                 $paymentData
             );
-            if (self::$stageFaultHook !== null) {
-                (self::$stageFaultHook)('after_payment', ['payment' => $customerPayment]);
-            }
+            $this->triggerStageFault('after_payment');
 
             // Mark closed composite completion in MobileEventReceiptManager registry
-            MobileEventReceiptManager::markCompositeCompleted(
+            $this->recordClosedCompositeCompletion(
                 $capability,
                 (int) $company->id,
                 (int) $actor->id,
@@ -411,12 +454,7 @@ final class ExecuteImmediateOnlineCashSaleAction
                 (int) $customerPayment->id
             );
 
-            if (self::$stageFaultHook !== null) {
-                (self::$stageFaultHook)('after_composite_completion', [
-                    'invoice' => $postedInvoice,
-                    'payment' => $customerPayment,
-                ]);
-            }
+            $this->triggerStageFault('after_composite_completion');
 
             // Assemble and return terminal canonical result
             $terminalResult = [

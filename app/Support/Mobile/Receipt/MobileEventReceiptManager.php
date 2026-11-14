@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Support\Mobile\Receipt;
 
+use App\Actions\Sales\ExecuteImmediateOnlineCashSaleAction;
 use App\Application\Platform\SupportViewContext;
 use App\Models\Company;
 use App\Models\MobileAccessToken;
@@ -920,12 +921,28 @@ final class MobileEventReceiptManager
         return self::$currentInvocationScopeId !== null;
     }
 
+    private static function assertClosedActionCaller(): void
+    {
+        $trace = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 6);
+        $callerFound = false;
+        foreach ($trace as $frame) {
+            if (($frame['class'] ?? null) === ExecuteImmediateOnlineCashSaleAction::class) {
+                $callerFound = true;
+                break;
+            }
+        }
+
+        if (! $callerFound) {
+            throw new SecurityException('Financial capability operations are restricted strictly to closed canonical action execution.');
+        }
+    }
+
     /**
-     * Verifies that the supplied capability was issued by an active admission inside recordOrReplay,
-     * matches the current active database connection, root transaction level, and economic scope,
-     * and has not yet been consumed. Consumes the capability immediately.
+     * Internal private capability consumption, strictly restricted to ExecuteImmediateOnlineCashSaleAction.
+     *
+     * @phpstan-ignore method.unused
      */
-    public static function verifyAndConsumeCapability(
+    private static function verifyAndConsumeCapabilityPrivately(
         NativeFinancialExecutionCapability $capability,
         int $companyId,
         int $actorId,
@@ -933,6 +950,8 @@ final class MobileEventReceiptManager
         string $clientEventId,
         string $eventHash
     ): void {
+        self::assertClosedActionCaller();
+
         if (self::$capabilityRegistry === null || ! self::$capabilityRegistry->offsetExists($capability)) {
             throw new SecurityException('Unauthorized financial capability: capability was not minted by an active admission.');
         }
@@ -986,15 +1005,23 @@ final class MobileEventReceiptManager
 
     /**
      * Records closed composite completion for an attested capability.
-     * Accessible exclusively to canonical multi-leg composite action boundaries.
+     * Strictly restricted to ExecuteImmediateOnlineCashSaleAction under active composite permit.
+     *
+     * @phpstan-ignore method.unused
      */
-    public static function markCompositeCompleted(
+    private static function markCompositeCompletedPrivately(
         NativeFinancialExecutionCapability $capability,
         int $companyId,
         int $actorId,
         int $invoiceId,
         int $paymentId
     ): void {
+        self::assertClosedActionCaller();
+
+        if (! CompositeFinancialExecutionScope::isActive($companyId, $actorId)) {
+            throw new SecurityException('Composite completion can only be recorded while composite execution permit is actively held.');
+        }
+
         if (self::$capabilityRegistry === null || ! self::$capabilityRegistry->offsetExists($capability)) {
             throw new SecurityException('Unauthorized financial capability: capability was not minted by an active admission.');
         }
@@ -1011,6 +1038,40 @@ final class MobileEventReceiptManager
 
         if ((int) ($record['company_id'] ?? 0) !== $companyId || (int) ($record['actor_id'] ?? 0) !== $actorId) {
             throw new SecurityException('Scope mismatch on composite completion registration.');
+        }
+
+        // Freshness & tenant isolation validation: entities must not have pre-existing receipts
+        $existingInvoiceReceipt = DB::table('mobile_event_receipts')
+            ->where('company_id', $companyId)
+            ->where('sales_invoice_id', $invoiceId)
+            ->exists();
+        if ($existingInvoiceReceipt) {
+            throw new SecurityException("Sales invoice [{$invoiceId}] is already associated with an existing event receipt.");
+        }
+
+        $existingPaymentReceipt = DB::table('mobile_event_receipts')
+            ->where('company_id', $companyId)
+            ->where('customer_payment_id', $paymentId)
+            ->exists();
+        if ($existingPaymentReceipt) {
+            throw new SecurityException("Customer payment [{$paymentId}] is already associated with an existing event receipt.");
+        }
+
+        // Entity tenant verification
+        $invoiceValid = DB::table('sales_invoices')
+            ->where('id', $invoiceId)
+            ->where('company_id', $companyId)
+            ->exists();
+        if (! $invoiceValid) {
+            throw new SecurityException("Sales invoice [{$invoiceId}] does not belong to company [{$companyId}].");
+        }
+
+        $paymentValid = DB::table('customer_payments')
+            ->where('id', $paymentId)
+            ->where('company_id', $companyId)
+            ->exists();
+        if (! $paymentValid) {
+            throw new SecurityException("Customer payment [{$paymentId}] does not belong to company [{$companyId}].");
         }
 
         $record['composite_completed'] = true;

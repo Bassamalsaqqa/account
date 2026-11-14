@@ -9,6 +9,8 @@ use App\Actions\Company\UpdateRolePermissionsAction;
 use App\Actions\Inventory\PostOpeningStockAction;
 use App\Actions\Sales\CreateSalesInvoiceDraftAction;
 use App\Actions\Sales\ExecuteImmediateOnlineCashSaleAction;
+use App\Actions\Sales\PostCustomerPaymentAction;
+use App\Actions\Sales\PostSalesInvoiceAction;
 use App\Domain\Inventory\ValueObjects\Quantity;
 use App\Models\Company;
 use App\Models\CompanyUser;
@@ -387,16 +389,12 @@ final class OnlineCashSaleQualificationTest extends TestCase
         // 1. Transaction level 0 (outside transaction)
         $this->assertSame(0, DB::transactionLevel());
 
-        // Mint a test-registered capability
         $eventId = (string) Str::uuid();
         $payload = $this->validSalePayload($eventId);
-        $digest = hash('sha256', 'canonical-bytes');
+        $canonicalBytes = OnlineSaleIntentProfile::serialize($payload);
+        $digest = hash('sha256', $canonicalBytes);
 
-        // Attempting to consume outside transaction throws IllegalStateException
-        $manager = app(MobileEventReceiptManager::class);
-
-        $this->expectException(IllegalStateException::class);
-        $this->expectExceptionMessage('depth 1');
+        $action = app(ExecuteImmediateOnlineCashSaleAction::class);
 
         $companyId = $this->company->id;
         $companyPublicId = (string) $this->company->public_id;
@@ -406,7 +404,6 @@ final class OnlineCashSaleQualificationTest extends TestCase
         $passwordEpoch = $this->token->password_epoch;
         $connName = DB::connection()->getName();
 
-        // Create capability through private admission simulation
         $capability = (Closure::bind(
             static fn () => new NativeFinancialExecutionCapability(
                 $companyId, $companyPublicId,
@@ -418,7 +415,6 @@ final class OnlineCashSaleQualificationTest extends TestCase
             NativeFinancialExecutionCapability::class
         ))();
 
-        // Register in manager
         (Closure::bind(static function () use ($capability, $companyId, $staffId, $deviceId, $passwordEpoch, $eventId, $digest, $connName) {
             self::$capabilityRegistry = new \WeakMap;
             self::$currentInvocationScopeId = 'test-scope';
@@ -435,12 +431,14 @@ final class OnlineCashSaleQualificationTest extends TestCase
                 'invocation_scope_id' => 'test-scope',
                 'active' => true,
                 'consumed' => false,
+                'composite_completed' => false,
             ];
         }, null, MobileEventReceiptManager::class))();
 
-        MobileEventReceiptManager::verifyAndConsumeCapability(
-            $capability, $this->company->id, $this->staff->id, $this->device->device_id, $eventId, $digest
-        );
+        $this->expectException(IllegalStateException::class);
+        $this->expectExceptionMessage('root database transaction level');
+
+        $action->execute($capability, $this->company, $this->staff, $this->device, $payload, 'depth-suffix');
     }
 
     /**
@@ -449,7 +447,11 @@ final class OnlineCashSaleQualificationTest extends TestCase
     public function test_reused_capability_throws_security_exception(): void
     {
         $eventId = (string) Str::uuid();
-        $digest = hash('sha256', 'test-payload');
+        $payload = $this->validSalePayload($eventId);
+        $canonicalBytes = OnlineSaleIntentProfile::serialize($payload);
+        $digest = hash('sha256', $canonicalBytes);
+
+        $action = app(ExecuteImmediateOnlineCashSaleAction::class);
 
         $companyId = $this->company->id;
         $companyPublicId = (string) $this->company->public_id;
@@ -484,24 +486,17 @@ final class OnlineCashSaleQualificationTest extends TestCase
                 'connection_name' => $connName,
                 'root_transaction_level' => 1,
                 'invocation_scope_id' => 'scope-1',
-                'active' => true,
-                'consumed' => false,
+                'active' => false,
+                'consumed' => true,
+                'composite_completed' => false,
             ];
         }, null, MobileEventReceiptManager::class))();
 
-        DB::transaction(function () use ($capability, $eventId, $digest) {
-            // First consumption succeeds
-            MobileEventReceiptManager::verifyAndConsumeCapability(
-                $capability, $this->company->id, $this->staff->id, $this->device->device_id, $eventId, $digest
-            );
+        $this->expectException(SecurityException::class);
+        $this->expectExceptionMessage('already been consumed');
 
-            // Second consumption on same capability must throw SecurityException
-            $this->expectException(SecurityException::class);
-            $this->expectExceptionMessage('already been consumed');
-
-            MobileEventReceiptManager::verifyAndConsumeCapability(
-                $capability, $this->company->id, $this->staff->id, $this->device->device_id, $eventId, $digest
-            );
+        DB::transaction(function () use ($action, $capability, $payload) {
+            $action->execute($capability, $this->company, $this->staff, $this->device, $payload, 'reuse-suffix');
         });
     }
 
@@ -511,7 +506,10 @@ final class OnlineCashSaleQualificationTest extends TestCase
     public function test_stale_or_mismatched_event_hash_throws_security_exception(): void
     {
         $eventId = (string) Str::uuid();
+        $payload = $this->validSalePayload($eventId);
         $digest = hash('sha256', 'digest-A');
+
+        $action = app(ExecuteImmediateOnlineCashSaleAction::class);
 
         $companyId = $this->company->id;
         $companyPublicId = (string) $this->company->public_id;
@@ -548,16 +546,15 @@ final class OnlineCashSaleQualificationTest extends TestCase
                 'invocation_scope_id' => 'scope-hash',
                 'active' => true,
                 'consumed' => false,
+                'composite_completed' => false,
             ];
         }, null, MobileEventReceiptManager::class))();
 
-        DB::transaction(function () use ($capability, $eventId) {
+        DB::transaction(function () use ($action, $capability, $payload) {
             $this->expectException(SecurityException::class);
             $this->expectExceptionMessage('event hash mismatch');
 
-            MobileEventReceiptManager::verifyAndConsumeCapability(
-                $capability, $this->company->id, $this->staff->id, $this->device->device_id, $eventId, 'tampered-hash-B'
-            );
+            $action->execute($capability, $this->company, $this->staff, $this->device, $payload, 'mismatch-suffix');
         });
     }
 
@@ -1269,6 +1266,156 @@ final class OnlineCashSaleQualificationTest extends TestCase
 
         $this->expectException(SecurityException::class);
         $this->expectExceptionMessage('Financial execution failed to consume required capability.');
+
+        $manager = new MobileEventReceiptManager;
+        $eventId = (string) Str::uuid();
+        $payload = $this->validSalePayload($eventId);
+        $canonicalBytes = OnlineSaleIntentProfile::serialize($payload);
+
+        $manager->recordOrReplay(
+            (int) $this->company->id,
+            $eventId,
+            $this->token->token_hash,
+            2,
+            'v2_online_sale_intent',
+            $canonicalBytes
+        );
+    }
+
+    /**
+     * T-21: Constrained stage fault injection mechanism cannot execute caller code or inject extra invoices.
+     */
+    public function test_stage_fault_mechanism_cannot_execute_caller_code_or_inject_extra_invoice(): void
+    {
+        // Assert that arbitrary callback fault hook API does not exist on the action
+        $ref = new ReflectionClass(ExecuteImmediateOnlineCashSaleAction::class);
+        $this->assertFalse($ref->hasProperty('stageFaultHook'), 'stageFaultHook arbitrary callback API must not exist');
+
+        $this->assertTrue($ref->hasProperty('simulatedFaultStage'), 'simulatedFaultStage string mechanism must exist');
+        $prop = $ref->getProperty('simulatedFaultStage');
+        $this->assertSame('?string', (string) $prop->getType());
+
+        ExecuteImmediateOnlineCashSaleAction::$simulatedFaultStage = 'after_draft';
+
+        $eventId = (string) Str::uuid();
+        $payload = $this->validSalePayload($eventId);
+
+        $response = $this->withHeader('Authorization', 'Bearer '.$this->rawToken)
+            ->postJson("/api/mobile/v2/companies/{$this->company->public_id}/sales/online-cash", $payload);
+
+        $this->assertTrue($response->status() >= 400);
+
+        // Entire transaction rolled back: zero invoices, zero payments, zero receipts
+        $this->assertSame(0, SalesInvoice::withoutGlobalScopes()->where('company_id', $this->company->id)->count());
+        $this->assertSame(0, CustomerPayment::withoutGlobalScopes()->where('company_id', $this->company->id)->count());
+        $this->assertSame(0, MobileEventReceipt::withoutGlobalScopes()->where('company_id', $this->company->id)->count());
+
+        ExecuteImmediateOnlineCashSaleAction::$simulatedFaultStage = null;
+    }
+
+    /**
+     * T-22: Malicious executor cannot consume real capability or forge completion with existing allocated pair.
+     */
+    public function test_malicious_executor_cannot_consume_real_cap_and_mark_existing_allocated_pair(): void
+    {
+        // 1. Create a legitimate existing invoice and customer payment in the company
+        $draftInvoice = app(CreateSalesInvoiceDraftAction::class)->execute($this->company, $this->owner, [
+            'customer_id' => $this->customer->id,
+            'warehouse_id' => $this->warehouse->id,
+            'currency_code' => 'ILS',
+            'exchange_rate' => '1.0000000000',
+            'issue_date' => now()->toDateString(),
+            'due_date' => now()->toDateString(),
+            'document_locale' => 'ar',
+            'lines' => [
+                [
+                    'product_id' => $this->product->id,
+                    'product_unit_id' => $this->baseUnit->id,
+                    'item_description' => 'Existing line item',
+                    'quantity' => '1.000000',
+                    'unit_price' => '58.000000',
+                    'discount_value' => '0',
+                    'discount_type' => null,
+                    'tax_rate_id' => null,
+                ],
+            ],
+        ]);
+
+        $existingInvoice = app(PostSalesInvoiceAction::class)->execute($draftInvoice, $this->owner);
+
+        $existingPayment = app(PostCustomerPaymentAction::class)->execute($this->company, $this->owner, [
+            'customer_id' => $this->customer->id,
+            'money_account_id' => $this->cashAccount->id,
+            'payment_date' => now()->toDateString(),
+            'payment_method' => 'cash',
+            'document_locale' => 'ar',
+            'amount' => '58.000000',
+            'exchange_rate' => '1.0000000000',
+            'reference_number' => null,
+            'notes' => 'Existing payment',
+            'idempotency_key' => 'existing-pay-'.Str::ulid(),
+            'allocations' => [
+                [
+                    'sales_invoice_id' => $existingInvoice->id,
+                    'allocated_amount' => '58.000000',
+                ],
+            ],
+        ]);
+
+        $existingInvId = (int) $existingInvoice->id;
+        $existingPayId = (int) $existingPayment->id;
+
+        // 2. Malicious executor that receives real capability and attempts to forge completion
+        $maliciousExecutor = new class($existingInvId, $existingPayId) implements FinancialExecutionAdapterInterface
+        {
+            public function __construct(
+                private readonly int $invId,
+                private readonly int $payId
+            ) {}
+
+            public function authorize(Company $company, User $actor, MobileDevice $device, string $operation, ?array $payload = null): void {}
+
+            public function execute(
+                Company $company,
+                User $actor,
+                MobileDevice $device,
+                array $payload,
+                string $idempotencySuffix,
+                ?NativeFinancialExecutionCapability $capability = null
+            ): array {
+                $forgedInvId = $this->invId;
+                $forgedPayId = $this->payId;
+                // Attempt to call private completion method via Closure::bind fails closed via caller assertion
+                try {
+                    (Closure::bind(
+                        static fn () => MobileEventReceiptManager::markCompositeCompletedPrivately(
+                            $capability,
+                            (int) $company->id,
+                            (int) $actor->id,
+                            $forgedInvId,
+                            $forgedPayId
+                        ),
+                        null,
+                        MobileEventReceiptManager::class
+                    ))();
+                } catch (\Throwable) {
+                    // Blocked!
+                }
+
+                return [
+                    'sales_invoice_id' => $this->invId,
+                    'sales_invoice_public_id' => 'sinv_fake',
+                    'customer_payment_id' => $this->payId,
+                    'customer_payment_public_id' => 'cpay_fake',
+                    'command_receipt_id' => null,
+                    'terminal_canonical_result' => ['status' => 'completed'],
+                ];
+            }
+        };
+
+        $this->app->instance(FinancialExecutionAdapterInterface::class, $maliciousExecutor);
+
+        $this->expectException(SecurityException::class);
 
         $manager = new MobileEventReceiptManager;
         $eventId = (string) Str::uuid();
