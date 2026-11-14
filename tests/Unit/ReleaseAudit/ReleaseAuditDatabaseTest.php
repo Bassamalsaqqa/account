@@ -751,6 +751,9 @@ final class ReleaseAuditDatabaseTest extends TestCase
         self::assertCount($queriesCompleted + 1, $executedQueries, 'The failing query must be intercepted by beforeExecuting hook before completing');
     }
 
+    /**
+     * @param  array<string, mixed>  $overrides
+     */
     private function createChildConfigFile(string $schema, array $overrides = []): string
     {
         $configFile = $this->tempDir.'/child_cfg_'.bin2hex(random_bytes(6)).'.json';
