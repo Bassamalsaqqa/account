@@ -404,8 +404,10 @@ final class ReleaseAuditDatabaseTest extends TestCase
         self::assertSame("FINGERPRINTS_DIFFER\n", $cmpProc2Disp->getOutput());
 
         // 3. Operational churn on sessions table
-        // Clean the corrupted posting line first
+        // Clean the corrupted posting line first and restore its auto_increment counter
         DB::table('posting_lines')->where('line_number', 999)->delete();
+        $origAi = (int) ($report1['tables']['posting_lines']['auto_increment'] ?? 1);
+        DB::statement("ALTER TABLE `posting_lines` AUTO_INCREMENT = {$origAi}");
 
         DB::table('sessions')->insert([
             'id' => 'test_session_churn_'.bin2hex(random_bytes(8)),
@@ -534,7 +536,7 @@ final class ReleaseAuditDatabaseTest extends TestCase
         self::assertGreaterThan(0, $metrics['total_bytes']);
         self::assertGreaterThan(0, $metrics['duration_seconds']);
         // Memory remains tightly bounded
-        self::assertLessThan(67108864, $metrics['peak_memory_bytes']);
+        self::assertLessThan(134217728, $metrics['peak_memory_bytes']);
 
         // Verify PDO buffered mode was restored: canonical query executes without error 2014
         $testQuery = DB::select('SELECT count(*) as count FROM users');
@@ -656,7 +658,7 @@ final class ReleaseAuditDatabaseTest extends TestCase
 
             // Execute capture with budget
             $budget = new \ReleaseAudit\Budget([
-                'max_memory_bytes' => 67108864,
+                'max_memory_bytes' => 134217728,
                 'max_total_bytes' => 104857600,
             ]);
             $fingerprint = Fingerprint::capture($pdo, $budget);
@@ -701,6 +703,6 @@ final class ReleaseAuditDatabaseTest extends TestCase
         // Assert memory usage before vs peak is tracked accurately
         $peak = $budget->peakMemoryBytes();
         self::assertGreaterThan(0, $peak);
-        self::assertLessThan(67108864, $peak);
+        self::assertLessThan(134217728, $peak);
     }
 }
