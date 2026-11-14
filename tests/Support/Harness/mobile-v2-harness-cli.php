@@ -64,7 +64,15 @@ if ($readinessHoldSeconds !== null) {
             fwrite(STDERR, "Error: --readiness-hold-seconds is strictly restricted to --readiness-only mode.\n");
             exit(1);
         }
-    } catch (\InvalidArgumentException $e) {
+        DisposableMobileV2BackendHarness::assertPcntlAvailableForHold($parsedHold);
+        if ($parsedHold > 0) {
+            $regOk = DisposableMobileV2BackendHarness::registerEarlyHoldSignalHandlers(static function () {});
+            if (! $regOk) {
+                fwrite(STDERR, "Error: Harness refused: failed to verify early signal registration for SIGINT/SIGTERM.\n");
+                exit(1);
+            }
+        }
+    } catch (\InvalidArgumentException|\RuntimeException $e) {
         fwrite(STDERR, "Error: {$e->getMessage()}\n");
         exit(1);
     }

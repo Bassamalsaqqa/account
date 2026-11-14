@@ -1670,10 +1670,11 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
             $this->assertFileExists($certs['server_cert_path']);
             $this->assertFileExists($certs['server_key_path']);
 
+            $this->assertSame('0700', substr(sprintf('%o', fileperms($tempDir)), -4));
             $this->assertSame('0600', substr(sprintf('%o', fileperms($certs['ca_key_path'])), -4));
-            $this->assertSame('0644', substr(sprintf('%o', fileperms($certs['ca_cert_path'])), -4));
+            $this->assertSame('0600', substr(sprintf('%o', fileperms($certs['ca_cert_path'])), -4));
             $this->assertSame('0600', substr(sprintf('%o', fileperms($certs['server_key_path'])), -4));
-            $this->assertSame('0644', substr(sprintf('%o', fileperms($certs['server_cert_path'])), -4));
+            $this->assertSame('0600', substr(sprintf('%o', fileperms($certs['server_cert_path'])), -4));
 
             // Inspect CA cert extensions
             $procCaText = new Process(['openssl', 'x509', '-in', $certs['ca_cert_path'], '-text', '-noout']);
@@ -1809,6 +1810,128 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
                     @unlink($file);
                 }
             }
+            @rmdir($tempDir);
+        }
+    }
+
+    #[Test]
+    public function test_assert_pcntl_available_for_hold_allows_zero_and_rejects_missing_functions(): void
+    {
+        // 1. Hold seconds 0 requires no pcntl
+        DisposableMobileV2BackendHarness::assertPcntlAvailableForHold(0, fn (string $fn) => false);
+        $this->assertTrue(true);
+
+        // 2. Missing pcntl_signal throws
+        try {
+            DisposableMobileV2BackendHarness::assertPcntlAvailableForHold(10, fn (string $fn) => $fn !== 'pcntl_signal');
+            $this->fail('Expected RuntimeException when pcntl_signal is missing');
+        } catch (RuntimeException $e) {
+            $this->assertStringContainsString("requires pcntl extension function 'pcntl_signal'", $e->getMessage());
+        }
+
+        // 3. Missing pcntl_signal_dispatch throws
+        try {
+            DisposableMobileV2BackendHarness::assertPcntlAvailableForHold(10, fn (string $fn) => $fn !== 'pcntl_signal_dispatch');
+            $this->fail('Expected RuntimeException when pcntl_signal_dispatch is missing');
+        } catch (RuntimeException $e) {
+            $this->assertStringContainsString("requires pcntl extension function 'pcntl_signal_dispatch'", $e->getMessage());
+        }
+
+        // 4. Default checker passes on current runtime
+        DisposableMobileV2BackendHarness::assertPcntlAvailableForHold(10);
+        $this->assertTrue(true);
+    }
+
+    #[Test]
+    public function test_cli_runner_pre_socket_refuses_when_pcntl_unavailable_subprocess(): void
+    {
+        $root = dirname(__DIR__, 4);
+        $cliScript = $root.'/tests/Support/Harness/mobile-v2-harness-cli.php';
+
+        // Disabling pcntl_signal at CLI invocation via -d disable_functions
+        $proc = new Process([PHP_BINARY, '-d', 'disable_functions=pcntl_signal', $cliScript, '--readiness-only', '--readiness-hold-seconds=10'], $root);
+        $proc->run();
+
+        $this->assertSame(1, $proc->getExitCode(), 'CLI runner should exit 1 when pcntl is disabled: '.$proc->getErrorOutput().' '.$proc->getOutput());
+        $this->assertStringContainsString(
+            "Harness refused: --readiness-hold-seconds requires pcntl extension function 'pcntl_signal'",
+            $proc->getErrorOutput()
+        );
+    }
+
+    #[Test]
+    public function test_register_early_hold_signal_handlers_seam_and_live(): void
+    {
+        // Seam failure returns false
+        $this->assertFalse(DisposableMobileV2BackendHarness::registerEarlyHoldSignalHandlers(fn () => null, fn () => false));
+
+        // Seam success returns true
+        $this->assertTrue(DisposableMobileV2BackendHarness::registerEarlyHoldSignalHandlers(fn () => null, fn () => true));
+
+        // Live registration returns true on standard runtime
+        $this->assertTrue(DisposableMobileV2BackendHarness::registerEarlyHoldSignalHandlers(fn () => null));
+    }
+
+    #[Test]
+    public function test_readiness_hold_signal_aborted_marks_failure_and_cleans_up_in_subprocess(): void
+    {
+        $root = dirname(__DIR__, 4);
+        $tempDir = sys_get_temp_dir().'/pure_signal_abort_'.bin2hex(random_bytes(6));
+        mkdir($tempDir, 0700, true);
+        $markerPath = $tempDir.'/cleaned_up.txt';
+
+        $subScript = implode("\n", [
+            '<?php',
+            'declare(strict_types=1);',
+            'require "'.addslashes($root.'/vendor/autoload.php').'";',
+            'use Tests\Support\Harness\DisposableMobileV2BackendHarness;',
+            '',
+            'function runHarnessMock(): int {',
+            '    $aborted = false;',
+            '    $signalReceived = null;',
+            '    $handler = function (int $signo) use (&$aborted, &$signalReceived) {',
+            '        $aborted = true;',
+            '        $signalReceived = $signo;',
+            '    };',
+            '    $reg = DisposableMobileV2BackendHarness::registerEarlyHoldSignalHandlers($handler);',
+            '    if (! $reg) {',
+            '        echo "REG_FAILED\n";',
+            '        return 2;',
+            '    }',
+            '',
+            '    try {',
+            '        // Trigger SIGTERM to self to simulate external signal arrival during hold',
+            '        posix_kill(getmypid(), SIGTERM);',
+            '        pcntl_signal_dispatch();',
+            '        if ($aborted) {',
+            '            $sigName = $signalReceived === SIGINT ? "SIGINT" : ($signalReceived === SIGTERM ? "SIGTERM" : (string) $signalReceived);',
+            '            echo "Readiness hold ABORTED by interrupt signal {$sigName}.\n";',
+            '            return 1;',
+            '        }',
+            '        return 0;',
+            '    } finally {',
+            '        file_put_contents("'.$markerPath.'", "CLEANUP_CALLED");',
+            '    }',
+            '}',
+            '',
+            'exit(runHarnessMock());',
+        ]);
+
+        $scriptPath = $tempDir.'/test_abort_flow.php';
+        file_put_contents($scriptPath, $subScript);
+        chmod($scriptPath, 0600);
+
+        try {
+            $proc = new Process([PHP_BINARY, $scriptPath], $root);
+            $proc->run();
+
+            $this->assertSame(1, $proc->getExitCode(), 'Subprocess should exit with code 1 upon signal abort: '.$proc->getErrorOutput().' '.$proc->getOutput());
+            $this->assertStringContainsString('Readiness hold ABORTED by interrupt signal SIGTERM.', $proc->getOutput());
+            $this->assertFileExists($markerPath, 'Finally cleanup block must execute and create marker file');
+            $this->assertSame('CLEANUP_CALLED', file_get_contents($markerPath));
+        } finally {
+            @unlink($markerPath);
+            @unlink($scriptPath);
             @rmdir($tempDir);
         }
     }

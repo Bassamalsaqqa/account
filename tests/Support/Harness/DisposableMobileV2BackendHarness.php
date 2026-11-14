@@ -281,7 +281,7 @@ final class DisposableMobileV2BackendHarness
             throw new RuntimeException('Failed to generate test CA certificate: '.$caKeyGen->getErrorOutput());
         }
         chmod($caKeyPath, 0600);
-        chmod($caCertPath, 0644);
+        chmod($caCertPath, 0600);
 
         $serverKeyGen = new Process([
             'openssl', 'req', '-newkey', 'rsa:2048',
@@ -322,7 +322,7 @@ final class DisposableMobileV2BackendHarness
         if (! $certSign->isSuccessful()) {
             throw new RuntimeException('Failed to sign server certificate: '.$certSign->getErrorOutput());
         }
-        chmod($serverCertPath, 0644);
+        chmod($serverCertPath, 0600);
 
         return [
             'ca_cert_path' => $caCertPath,
@@ -747,6 +747,53 @@ final class DisposableMobileV2BackendHarness
         }
 
         throw new InvalidArgumentException('Readiness hold seconds must be an integer or integer string.');
+    }
+
+    /**
+     * Asserts that pcntl signal handling functions are available for readiness hold.
+     * Fails closed before framework boot, database connection, or socket opening.
+     *
+     * @param  int  $holdSeconds
+     * @param  (callable(string): bool)|null  $functionExistsChecker  Optional seam for testing
+     *
+     * @throws RuntimeException
+     */
+    public static function assertPcntlAvailableForHold(int $holdSeconds, ?callable $functionExistsChecker = null): void
+    {
+        if ($holdSeconds <= 0) {
+            return;
+        }
+
+        $checker = $functionExistsChecker ?? 'function_exists';
+        $required = ['pcntl_signal', 'pcntl_signal_dispatch'];
+        foreach ($required as $fn) {
+            if (! $checker($fn)) {
+                throw new RuntimeException("Harness refused: --readiness-hold-seconds requires pcntl extension function '{$fn}'.");
+            }
+        }
+    }
+
+    /**
+     * Registers early signal handlers for SIGINT and SIGTERM before starting transport or provision.
+     *
+     * @param  callable(int): void  $handler
+     * @param  (callable(callable(int): void): bool)|null  $registrationSeam  Optional seam for testing
+     * @return bool True if both signals registered successfully
+     */
+    public static function registerEarlyHoldSignalHandlers(callable $handler, ?callable $registrationSeam = null): bool
+    {
+        if ($registrationSeam !== null) {
+            return (bool) $registrationSeam($handler);
+        }
+
+        if (! function_exists('pcntl_signal')) {
+            return false;
+        }
+
+        $intOk = @pcntl_signal(SIGINT, $handler);
+        $termOk = @pcntl_signal(SIGTERM, $handler);
+
+        return $intOk && $termOk;
     }
 
     /**

@@ -50,7 +50,8 @@ class MobileV2HarnessCommand extends Command
         $rawHoldSeconds = $this->option('readiness-hold-seconds');
         try {
             $holdSeconds = DisposableMobileV2BackendHarness::assertReadinessHoldBounds($rawHoldSeconds ?? 0);
-        } catch (\InvalidArgumentException $e) {
+            DisposableMobileV2BackendHarness::assertPcntlAvailableForHold($holdSeconds);
+        } catch (\InvalidArgumentException|\RuntimeException $e) {
             $this->error('Invalid --readiness-hold-seconds: '.$e->getMessage());
 
             return self::FAILURE;
@@ -223,6 +224,21 @@ class MobileV2HarnessCommand extends Command
             return self::FAILURE;
         }
 
+        $aborted = false;
+        $signalReceived = null;
+        if ($holdSeconds > 0) {
+            DisposableMobileV2BackendHarness::assertPcntlAvailableForHold($holdSeconds);
+            $handler = function (int $signo) use (&$aborted, &$signalReceived) {
+                $aborted = true;
+                $signalReceived = $signo;
+            };
+            if (! DisposableMobileV2BackendHarness::registerEarlyHoldSignalHandlers($handler)) {
+                $this->error('Harness refused: failed to register early signal handlers for SIGINT/SIGTERM.');
+
+                return self::FAILURE;
+            }
+        }
+
         $harness = new DisposableMobileV2BackendHarness;
         $harness->setReadinessOnly(true);
 
@@ -250,28 +266,23 @@ class MobileV2HarnessCommand extends Command
 
             if ($holdSeconds > 0) {
                 $this->line("Holding readiness state for {$holdSeconds}s (PID ".getmypid().'). Press Ctrl+C to terminate early.');
-                $stop = false;
-                if (function_exists('pcntl_signal')) {
-                    $handler = function () use (&$stop) {
-                        $stop = true;
-                    };
-                    pcntl_signal(SIGINT, $handler);
-                    pcntl_signal(SIGTERM, $handler);
-                }
-
                 $elapsedMs = 0;
                 $totalMs = $holdSeconds * 1000;
-                while ($elapsedMs < $totalMs && ! $stop) {
-                    if (function_exists('pcntl_signal_dispatch')) {
-                        pcntl_signal_dispatch();
-                    }
-                    if ($stop) {
-                        $this->line('Received interrupt signal, terminating readiness hold early.');
+                while ($elapsedMs < $totalMs && ! $aborted) {
+                    pcntl_signal_dispatch();
+                    if ($aborted) {
                         break;
                     }
                     usleep(100000); // 100ms
                     $elapsedMs += 100;
                 }
+            }
+
+            if ($aborted) {
+                $sigName = $signalReceived === SIGINT ? 'SIGINT' : ($signalReceived === SIGTERM ? 'SIGTERM' : (string) $signalReceived);
+                $this->error("Readiness hold ABORTED by interrupt signal {$sigName}.");
+
+                return self::FAILURE;
             }
         } catch (\Throwable $e) {
             $this->error('Readiness test failed: '.$e->getMessage());
