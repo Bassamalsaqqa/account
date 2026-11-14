@@ -2,13 +2,13 @@
 
 declare(strict_types=1);
 
-namespace App\Console\Commands;
+namespace Tests\Support\Harness;
 
 use Illuminate\Console\Command;
-use Tests\Support\Harness\DisposableMobileV2BackendHarness;
 
 /**
  * Minimal CLI harness driver for the Mobile V2 paired HTTPS integration backend.
+ * Placed under tests/Support/Harness (not app/Console/Commands) to prevent production auto-discovery.
  *
  * Three phases:
  *   --prepare   Source-only validation: asserts invariants, generates TLS config source.
@@ -20,9 +20,9 @@ use Tests\Support\Harness\DisposableMobileV2BackendHarness;
  *               Gate held until Android thread 83e6a721 is ready and Root grants QA lease.
  *
  * Usage examples:
- *   php artisan mobile:v2-harness --prepare
- *   php artisan mobile:v2-harness --provision --backend-head=<40hex>
- *   php artisan mobile:v2-harness --start --android-head=<40hex> --backend-head=<40hex>
+ *   php tests/Support/Harness/mobile-v2-harness-cli.php --prepare
+ *   php tests/Support/Harness/mobile-v2-harness-cli.php --provision --backend-head=<40hex>
+ *   php tests/Support/Harness/mobile-v2-harness-cli.php --start --android-head=<40hex> --backend-head=<40hex>
  */
 class MobileV2HarnessCommand extends Command
 {
@@ -67,11 +67,14 @@ class MobileV2HarnessCommand extends Command
     private function handlePrepare(): int
     {
         $this->line('Mobile V2 Harness — Source-Only Prepare (zero sockets, zero DB)');
-        $this->line('  QUALIFIED_EXECUTION_HEAD : '.DisposableMobileV2BackendHarness::QUALIFIED_EXECUTION_HEAD);
-        $this->line('  QUALIFIED_APP_TREE       : '.DisposableMobileV2BackendHarness::QUALIFIED_APP_TREE);
-        $this->line('  REQUIRED_BASE_BRANCH     : '.DisposableMobileV2BackendHarness::REQUIRED_BASE_BRANCH);
-        $this->line('  BACKEND_LOOPBACK_PORT    : '.DisposableMobileV2BackendHarness::BACKEND_LOOPBACK_PORT);
-        $this->line('  TLS_PROXY_PORT           : '.DisposableMobileV2BackendHarness::TLS_PROXY_PORT);
+        $this->line('  QUALIFIED_EXECUTION_HEAD   : '.DisposableMobileV2BackendHarness::QUALIFIED_EXECUTION_HEAD);
+        $this->line('  QUALIFIED_APP_TREE         : '.DisposableMobileV2BackendHarness::QUALIFIED_APP_TREE);
+        $this->line('  REQUIRED_BASE_BRANCH       : '.DisposableMobileV2BackendHarness::REQUIRED_BASE_BRANCH);
+        $this->line('  BACKEND_LOOPBACK_PORT      : '.DisposableMobileV2BackendHarness::BACKEND_LOOPBACK_PORT);
+        $this->line('  TLS_PROXY_PORT             : '.DisposableMobileV2BackendHarness::TLS_PROXY_PORT);
+        $this->line('  ANDROID_CANDIDATE_KNOWN_BAD: '.DisposableMobileV2BackendHarness::ANDROID_CANDIDATE_KNOWN_BAD);
+        $this->line('  CA5A_MANIFEST_SHA256       : '.DisposableMobileV2BackendHarness::CA5A_MANIFEST_SHA256);
+        $this->line('  CA5A_CANONICAL_DIGEST      : '.DisposableMobileV2BackendHarness::CA5A_CANONICAL_DIGEST);
         $this->newLine();
         $this->line('TLS certificate will cover SAN: localhost, 127.0.0.1, 10.0.2.2 (Android emulator)');
         $this->line('Android base URL (emulator):   https://10.0.2.2:'.DisposableMobileV2BackendHarness::TLS_PROXY_PORT.'/api/mobile/v2/');
@@ -79,11 +82,11 @@ class MobileV2HarnessCommand extends Command
         $this->line('To provision: MOBILE_V2_HARNESS_ENABLE=1 PHASE8_ALLOW_DISPOSABLE_DB=1 \\');
         $this->line('  PHASE8_TEST_DB_HOST=127.0.0.1 PHASE8_TEST_DB_PORT=3342 \\');
         $this->line('  PHASE8_TEST_DB_USERNAME=<user> PHASE8_TEST_DB_PASSWORD=<pass> \\');
-        $this->line('  php artisan mobile:v2-harness --provision --backend-head=<40hex>');
+        $this->line('  php tests/Support/Harness/mobile-v2-harness-cli.php --provision --backend-head=<40hex>');
         $this->newLine();
-        $this->line('To start (Root coordination required):');
+        $this->line('To start (Root coordination required, peer candidate 39fea rejected as known bad):');
         $this->line('  MOBILE_V2_HARNESS_START_LISTENER=1 \\');
-        $this->line('  php artisan mobile:v2-harness --start --backend-head=<40hex> --android-head=<40hex>');
+        $this->line('  php tests/Support/Harness/mobile-v2-harness-cli.php --start --backend-head=<40hex> --android-head=<40hex>');
         $this->newLine();
         $this->info('Prepare phase complete. Zero listeners started.');
 
@@ -124,8 +127,6 @@ class MobileV2HarnessCommand extends Command
         $this->warn('Credentials file contains raw token — do not print or share.');
         $this->line('Schema is live. Call --start with MOBILE_V2_HARNESS_START_LISTENER=1 when Root coordinates.');
 
-        // Note: schema stays alive for --start phase; cleanup is caller's responsibility
-        // In a real paired session the caller holds the harness object across phases.
         $this->newLine();
         $this->warn('Note: Disposable schema will be dropped when this process exits via harness->cleanup().');
 
@@ -138,6 +139,16 @@ class MobileV2HarnessCommand extends Command
 
         if ($backendHead === '' || $androidHead === '') {
             $this->error('--start requires both --backend-head and --android-head.');
+
+            return self::FAILURE;
+        }
+
+        if ($androidHead === DisposableMobileV2BackendHarness::ANDROID_CANDIDATE_KNOWN_BAD) {
+            $this->error(
+                "Harness start refused: Android candidate '{$androidHead}' is marked CANDIDATE_KNOWN_BAD.".PHP_EOL.
+                'Android PR 23 review identified changes required (gateway 15-field durable OfflineSaleV2 direct POST to 7-key online cash).'.PHP_EOL.
+                'Zero background servers, TLS sockets, or DB listeners started.'
+            );
 
             return self::FAILURE;
         }
@@ -159,7 +170,7 @@ class MobileV2HarnessCommand extends Command
                 expectedBackendHead: $backendHead,
                 peerAndroidHead: $androidHead,
             );
-            $this->line('  Provision OK  — schema: '.$provision['manifest']['schema_name']);
+            $this->line('  Provision OK — schema: '.$provision['manifest']['schema_name']);
 
             $transport = $harness->start(
                 peerAndroidHead: $androidHead,
@@ -181,20 +192,24 @@ class MobileV2HarnessCommand extends Command
         $this->warn('Press Ctrl+C to terminate and trigger cleanup (owned schema + processes only).');
 
         // Supervised wait loop — only terminates on SIGINT/SIGTERM (owned PIDs only)
-        pcntl_signal(SIGINT, function () use ($harness): void {
-            $this->newLine();
-            $this->line('SIGINT received — running cleanup...');
-            $harness->cleanup();
-            exit(0);
-        });
-        pcntl_signal(SIGTERM, function () use ($harness): void {
-            $harness->cleanup();
-            exit(0);
-        });
+        if (function_exists('pcntl_signal')) {
+            pcntl_signal(SIGINT, function () use ($harness): void {
+                $this->newLine();
+                $this->line('SIGINT received — running cleanup...');
+                $harness->cleanup();
+                exit(0);
+            });
+            pcntl_signal(SIGTERM, function () use ($harness): void {
+                $harness->cleanup();
+                exit(0);
+            });
 
-        while (true) {
-            pcntl_signal_dispatch();
-            sleep(1);
+            while (true) {
+                pcntl_signal_dispatch();
+                sleep(1);
+            }
         }
+
+        return self::SUCCESS;
     }
 }

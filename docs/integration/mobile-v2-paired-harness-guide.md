@@ -152,3 +152,52 @@ To test network drops and retry behavior without financial backdoors:
 - **Owned Processes & Sockets**: On test completion or interruption, any spawned listener PID is terminated immediately.
 - **Owned Database Schemas**: The disposable schema (`accounting_p8_tmp_*`) on 127.0.0.1:3342 is dropped via `DisposableMariaDbSchema::drop()`. Foreign schemas are never touched.
 - **Temporary Files & Nonces**: Temporary directories in `sys_get_temp_dir()` containing proof nonces and runtime credentials (`chmod 0600`) are completely unlinked.
+
+---
+
+## 7. Critical Contract Handoff & Kotlin Fixture Parity Guidance
+
+### A. Raw Online 7 Keys vs Durable Offline Envelope
+The upstream Android client must maintain strict separation between the internal durable offline envelope (15 fields) and the raw online wire request (7 keys):
+
+```
+RAW ONLINE WIRE REQUEST (7 KEYS ONLY)
+-------------------------------------
+1. client_event_id   (UUID v4 string, RFC 4122 format)
+2. device_id         (UUID v4 string, RFC 4122 format)
+3. customer_id       (ULID 26-char string)
+4. warehouse_id      (ULID 26-char string)
+5. currency          (ISO 4217 3-letter currency code, e.g. "ILS")
+6. lines             (Array of line items: product_id, product_unit_id, conversion_to_base, quantity, unit_price, tax_rate_id, tax_rate, tax_inclusive)
+7. payment           (Payment object: settlement_mode, payment_method, cash_account_id, amount)
+```
+
+**Distinct Server-Synthesized Context (Resolved Server-Side, NEVER on Wire)**:
+- `company_id`: resolved from route parameter `/companies/{companyId}/`
+- `actor_id`: resolved from Bearer token user
+- `currency_minor_units`: resolved from `CurrencyMinorUnitsResolver`
+
+**Distinct Durable Offline Envelope (15 Fields)**:
+- Do not blindly serialize the offline envelope to the online cash POST route.
+- Lossless explicit semantic mapping and snapshot checks are required on the client.
+- Do **not** silently strip offline fields and label mapping valid.
+
+### B. Canonical Intent Profile Digest vs Wire Hash
+The canonical payload digest:
+```
+sha256:0847e10d89777e103252ebfa2d27f89a95832a5d70e01af57afe6423f703c630
+```
+is derived from `OnlineSaleIntentProfile(context, RAWrequest)` serialized under Canonical JSON (RFC 8785) rules. It is **NOT** a raw SHA-256 hash of the incoming HTTP POST wire bytes.
+Existing validated fixture `ca5a` (`manifest_sha256: 3248b9721c3e2a09e84ae478ddb0171c3ea576fd0cbdd70b3606e4cdda4ff3e7`, digest: `0847e10d89777e103252ebfa2d27f89a95832a5d70e01af57afe6423f703c630`) is authoritative.
+
+### C. Kotlin Fixture Parity Rules
+1. **No Invented Protocol Fields or Versions**: Do not introduce synthetic wrapper keys, schema version headers, or non-spec wire fields.
+2. **No Payment ULID Fabrication**: Client must not fabricate ULID identifiers for payments.
+3. **Mirror DTO Nullable Values Preserved**: Nullable fields in mirror DTOs must be preserved as nullable even though the full cash fixture has non-null expected payment.
+4. **No Retired V1 Harness Fallback**: Use only the new owned V2 admitted private TLS manifest.
+5. **Zero Live Web Changes / Financial Deny OFF**: Production financial deny remains active; zero changes to web accounting routes or live production code.
+
+### D. Peer Android Status & Review Hold
+- Candidate commit `39fea3eae32522240caa0db8f40d018694064d8f` (Android PR 23) reports unit 76 PASS but is marked **`CANDIDATE_KNOWN_BAD`** (changes required on client gateway).
+- The harness refuses start with commit `39fea3eae32522240caa0db8f40d018694064d8f`.
+- No HTTPS pairing or listener startup will occur until client corrections are reviewed and an approved head is provided by Root.
