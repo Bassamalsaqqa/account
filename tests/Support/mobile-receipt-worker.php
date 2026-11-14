@@ -56,7 +56,10 @@ $actor = User::findOrFail($tokenRecord->user_id);
 $companyRecord = Company::findOrFail($companyId);
 // Define executor based on input mode
 $executor = null;
-if ($executorMode === 'canonical') {
+if ($executorMode === 'qualified_cash') {
+    $executor = new \Tests\Support\QualifiedCashFinancialExecutionAdapter;
+    $app->instance(FinancialExecutionAdapterInterface::class, $executor);
+} elseif ($executorMode === 'canonical') {
     $executor = new class implements FinancialExecutionAdapterInterface
     {
         public function authorize(
@@ -92,7 +95,8 @@ if ($executorMode === 'canonical') {
             User $actor,
             MobileDevice $device,
             array $payload,
-            string $idempotencySuffix
+            string $idempotencySuffix,
+            ?\App\Support\Mobile\Receipt\NativeFinancialExecutionCapability $capability = null
         ): array {
             $customer = Customer::where('company_id', $company->id)->firstOrFail();
             $warehouse = Warehouse::where('company_id', $company->id)->where('is_default', true)->firstOrFail();

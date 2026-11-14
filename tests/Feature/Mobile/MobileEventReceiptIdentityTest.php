@@ -194,7 +194,8 @@ final class MobileEventReceiptIdentityTest extends TestCase
                 User $actor,
                 MobileDevice $device,
                 array $payload,
-                string $idempotencySuffix
+                string $idempotencySuffix,
+                ?\App\Support\Mobile\Receipt\NativeFinancialExecutionCapability $capability = null
             ): array {
                 return [
                     'sales_invoice_id' => $this->result['sales_invoice_id'] ?? null,
@@ -971,7 +972,7 @@ final class MobileEventReceiptIdentityTest extends TestCase
                 $this->observedGuardUser = auth()->guard()->user();
             }
 
-            public function execute(Company $c, User $a, MobileDevice $d, array $p, string $s): array
+            public function execute(Company $c, User $a, MobileDevice $d, array $p, string $s, ?\App\Support\Mobile\Receipt\NativeFinancialExecutionCapability $cap = null): array
             {
                 return [
                     'sales_invoice_id' => null,

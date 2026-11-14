@@ -255,7 +255,8 @@ final class MobileReceiptRollbackAtomicityTest extends TestCase
                 User $actor,
                 MobileDevice $device,
                 array $payload,
-                string $idempotencySuffix
+                string $idempotencySuffix,
+                ?\App\Support\Mobile\Receipt\NativeFinancialExecutionCapability $capability = null
             ): array {
                 // 1. Advance numbering
                 $docNumber = app(DocumentSequenceService::class)->generateNextNumber(

@@ -319,7 +319,8 @@ try {
                     User $actor,
                     MobileDevice $device,
                     array $payload,
-                    string $idempotencySuffix
+                    string $idempotencySuffix,
+                    ?\App\Support\Mobile\Receipt\NativeFinancialExecutionCapability $capability = null
                 ): array {
                     if ($this->required) {
                         $this->barrier->requireHeld();

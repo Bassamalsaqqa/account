@@ -33,6 +33,7 @@ interface FinancialExecutionAdapterInterface
      * @param  MobileDevice  $device  Authenticated mobile device
      * @param  array<string, mixed>  $payload  Decoded economic payload
      * @param  string  $idempotencySuffix  Deterministic idempotency suffix
+     * @param  NativeFinancialExecutionCapability|null  $capability  Validated single-use native capability
      * @return array{
      *     sales_invoice_id: int|null,
      *     sales_invoice_public_id: string|null,
@@ -47,6 +48,7 @@ interface FinancialExecutionAdapterInterface
         User $actor,
         MobileDevice $device,
         array $payload,
-        string $idempotencySuffix
+        string $idempotencySuffix,
+        ?NativeFinancialExecutionCapability $capability = null
     ): array;
 }
