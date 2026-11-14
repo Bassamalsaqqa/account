@@ -12,7 +12,12 @@
 >   Manifest SHA-256: `5d9dd7208c876a626b4ea13708b6ba2d89d3a8078edb748eb8b4bb8068e0ba02`  
 >   All 7 components verified (`database.sql` 736,679 bytes, `complete_recovery_bundle.tar` 76,277,760 bytes).  
 > - **Off-Host Custody**: Transferred to Owner custody at `/home/t3dev/.secure-recovery/account-palsync/` (0700 dir, 0600 files).  
-> - **Restoration Status**: **DATABASE RESTORE NOT YET EXECUTED/VERIFIED.** Copied backup != restore proof. No PR 99 deployment occurs until isolated disposable restore verification succeeds.  
+> - **Actual Restore Verification**: **VERIFIED SUCCESSFUL AT 08:22:07Z** by Root on source `c4e6e6d5fcb6f7c9ea98e37455eeaf3877dc78cd`.  
+>   - Owned disposable schema: `accounting_p8_tmp_6f912f8371f0` via schema-restricted ephemeral user.  
+>   - Restored metrics: 104 tables, 79 migrations, 2,681 rows, structure SHA: `2fb72ba50815240d10099e6b8f2a2c9c34d86cb1518ae16dc5630badf699cdc6`.  
+>   - Independent cleanup: Completed at 08:22:17Z (0 exact owned schemas or restore accounts remaining).  
+>   - Private restore report: Stored at `~/.secure-recovery/account-palsync/restore-c4e6-report.json`.  
+>   - Attestation Notice: Contemporaneous QA evidence is recorded as limited root attestation. PR 101 is **DISPOSABLE-ONLY** and is never run live or approved as production tooling.  
 > - **Symlink Containment Notice**: Existing `public_assets ./storage` symlink targets `/home/u556956644/domains/palsync.net/accounting/storage/app/public`. It is preserved as metadata only and MUST NOT be followed or activated during isolated restore (actual data is preserved in `private_storage.tar.gz`).  
 > - **Preserved Live Untracked Assets**: `storage/framework/asset-stage.Rod9Vi`, `storage/framework/deepseek-assets.cCmzPJ`, `storage/framework/deepseek-assets.fYgzxl`, `storage/framework/deploy.lock`. Strictly retain; do not prune or clean up.  
 
@@ -209,57 +214,69 @@ tar -tf complete_recovery_bundle.tar | grep -E '^/|\.\./' && {
 
 ---
 
-## 4. Phase C: Bounded Restore Verification (Loopback MariaDB 3342)
+## 4. Phase C: Bounded Restore Verification (Executed & Passed)
 
-> **RESTORATION PROOF CONTRACT**  
-> - Copied backup is NOT proof of restore capability.  
-> - Verification runs in an **isolated disposable schema** on `127.0.0.1:3342`.  
-> - Strictly NO Laravel application bootstrap, NO production database connections, NO migrations run.  
-> - **Pre-Import SQL Safety Scanner**: Fails closed if dump contains `CREATE DATABASE`, `USE`, `DROP DATABASE`, external `DEFINER`, or privileged statements.  
-> - Fresh owned nonce schema: `accounting_p8_tmp_[a-f0-9]{12}`.  
-> - Ephemeral user: `u_p8_[a-f0-9]{10}` restricted exclusively to the disposable schema.  
-> - Strict cleanup: drops ONLY the owned schema and owned ephemeral user in a `finally` block.  
+> **RESTORATION PROOF ATTESTATION**  
+> - Executed by Root on 2026-11-14 at 08:22:07Z.  
+> - Verified on MariaDB loopback socket `127.0.0.1:3342`.  
+> - Disposable Schema: `accounting_p8_tmp_6f912f8371f0` with ephemeral user.  
+> - Imported dump verified: 104 tables, 79 migrations, 2,681 rows, structure SHA: `2fb72ba50815240d10099e6b8f2a2c9c34d86cb1518ae16dc5630badf699cdc6`.  
+> - Cleanup: Fully dropped and verified absent at 08:22:17Z.  
 
+For subsequent verification runs:
 ```bash
-# Executed on QA / Validation host with MariaDB 3342 loopback server:
 export APP_ENV=testing
 export PHASE8_ALLOW_DISPOSABLE_DB=1
 export PHASE8_TEST_DB_HOST=127.0.0.1
 export PHASE8_TEST_DB_PORT=3342
-export PHASE8_TEST_DB_USERNAME="test_admin"
-export PHASE8_TEST_DB_PASSWORD="[ADMIN_PASSWORD]"
+export PHASE8_TEST_DB_USERNAME="root"
+export PHASE8_TEST_DB_PASSWORD=""
 
-# Step 1: Preflight Dry-Run (validates point perms, SQL safety, manifest hashes, 0 mutations)
+# Preflight dry-run (validates point perms, SQL safety, manifest hashes, 0 mutations)
 php bin/verify-backup-import.php \
     --point-dir="$LOCAL_STORE" \
+    --expected-manifest-sha=5d9dd7208c876a626b4ea13708b6ba2d89d3a8078edb748eb8b4bb8068e0ba02 \
     --dry-run
 
-# Step 2: Execute Disposable Schema Import & Sanitized Metric Verification
-# (Requires root review of admin user creation capability)
+# Execute disposable schema import & sanitized metric verification
 php bin/verify-backup-import.php \
     --point-dir="$LOCAL_STORE" \
+    --expected-manifest-sha=5d9dd7208c876a626b4ea13708b6ba2d89d3a8078edb748eb8b4bb8068e0ba02 \
     --execute
-```
-
-Expected Output Format:
-```json
-{
-    "status": "SUCCESS",
-    "mode": "EXECUTE",
-    "disposable_schema": "accounting_p8_tmp_9a8b7c6d5e4f",
-    "tables_count": 104,
-    "total_rows_aggregate": 8412,
-    "migrations_count": 79,
-    "schema_structure_sha256": "...",
-    "containment": "SANITIZED_METRICS_ONLY_NO_DATA_LEAK"
-}
 ```
 
 ---
 
-## 5. Phase D: Candidate 8cd4322 Deployment (Maintenance Held)
+## 5. Phase D: Read-Only Pre-Release Snapshot & Reconcile Contracts
 
-Once off-host backup custody and restore verification have both passed, Root proceeds to deploy candidate `8cd4322`:
+Before modifying production code, Root captures a deterministic baseline database fingerprint and verifies service contracts:
+
+```bash
+cd /home/u556956644/domains/palsync.net/accounting
+
+# 1. Verify reconciliation service contracts across all companies
+php bin/final-release-check.php \
+    --mode=reconcile-contracts \
+    --app-dir=/home/u556956644/domains/palsync.net/accounting \
+    --public-dir=/home/u556956644/domains/palsync.net/public_html/account
+
+# 2. Capture read-only baseline database fingerprint (PK-ordered, length-framed, normalized DDL)
+php bin/final-release-check.php \
+    --mode=snapshot \
+    --app-dir=/home/u556956644/domains/palsync.net/accounting \
+    --public-dir=/home/u556956644/domains/palsync.net/public_html/account \
+    --expected-source-sha=f8a0cf7012c4875bec7320d42e0f8dde58593b52 \
+    --expected-build-sha=4f7ea5b3a956aca1eaf120c0ee67d499b9fc91854f672c0db32bdceee4ac96ab \
+    --expected-htaccess-sha=071652f64ad14f324544e95317aed883e59a9337acb5e1b3519bf0e71a36bdcc \
+    --output-file=/home/u556956644/domains/palsync.net/accounting-backups/baseline_fingerprint.json \
+    --execute
+```
+
+---
+
+## 6. Phase E: Candidate 8cd4322 Deployment & Fingerprint Verification (Maintenance Held)
+
+Root executes candidate deployment while maintenance mode is held:
 
 ```bash
 set -euo pipefail
@@ -282,7 +299,6 @@ tar -xzf "$STAGING_DIR/build.tar.gz" -C "$BUILD_STAGE"
 find "$BUILD_STAGE" -type d -exec chmod 0755 {} +
 find "$BUILD_STAGE" -type f -exec chmod 0644 {} +
 
-# Inspect unpacked layout: if tar already contains build/, use inner directory
 if [ -d "$BUILD_STAGE/build" ] && [ -f "$BUILD_STAGE/build/manifest.json" ]; then
     CANDIDATE_BUILD_DIR="$BUILD_STAGE/build"
 else
@@ -329,7 +345,31 @@ PHP_BIN=/opt/alt/php84/usr/bin/php ./bin/deploy.sh
 /opt/alt/php84/usr/bin/php artisan route:cache
 /opt/alt/php84/usr/bin/php artisan view:cache
 
-# 6. Verify Down Marker Hash Before Bringing Application Back Online
+# 6. Post-Deployment Fingerprint Snapshot & Preservation Comparison
+POST_FINGERPRINT="/home/u556956644/domains/palsync.net/accounting-backups/post_fingerprint.json"
+php bin/final-release-check.php \
+    --mode=snapshot \
+    --app-dir=/home/u556956644/domains/palsync.net/accounting \
+    --public-dir=/home/u556956644/domains/palsync.net/public_html/account \
+    --expected-source-sha=8cd432220801b08b10b6f25f9ee9a215de94d44c \
+    --expected-build-sha=12cee9f9dc2213615ff19d48060308c1a89030f255e694c530083538bd15fedd \
+    --expected-htaccess-sha=071652f64ad14f324544e95317aed883e59a9337acb5e1b3519bf0e71a36bdcc \
+    --output-file="$POST_FINGERPRINT" \
+    --execute
+
+# Compare baseline vs post-deployment fingerprint (must have 0 preservation diffs)
+php bin/final-release-check.php \
+    --mode=compare \
+    --baseline=/home/u556956644/domains/palsync.net/accounting-backups/baseline_fingerprint.json \
+    --target="$POST_FINGERPRINT" \
+    --app-dir=/home/u556956644/domains/palsync.net/accounting \
+    --public-dir=/home/u556956644/domains/palsync.net/public_html/account \
+    --expected-source-sha=8cd432220801b08b10b6f25f9ee9a215de94d44c \
+    --expected-build-sha=12cee9f9dc2213615ff19d48060308c1a89030f255e694c530083538bd15fedd \
+    --expected-htaccess-sha=071652f64ad14f324544e95317aed883e59a9337acb5e1b3519bf0e71a36bdcc \
+    --execute
+
+# 7. Verify Down Marker Hash Before Bringing Application Back Online
 CURRENT_DOWN_HASH=$(sha256sum storage/framework/down | awk '{print $1}')
 if [ "$CURRENT_DOWN_HASH" != "$EXPECTED_DOWN_HASH" ]; then
     echo "ERROR: Maintenance marker hash modified during deployment; aborting unguided release" >&2
@@ -339,7 +379,7 @@ fi
 # Bring application back online
 /opt/alt/php84/usr/bin/php artisan up
 
-# 7. Post-Deployment Verification (Strictly non-destructive TLS check)
+# 8. Post-Deployment Verification (Strictly non-destructive TLS check)
 curl -fsS https://account.palsync.net/up
 echo "RELEASE DEPLOYMENT AND VERIFICATION COMPLETED SUCCESSFULLY"
 ```
