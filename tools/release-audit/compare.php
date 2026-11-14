@@ -47,6 +47,7 @@ try {
     foreach ($allTableNames as $name) {
         if (! array_key_exists($name, $a['tables']) || ! array_key_exists($name, $b['tables'])) {
             $schemaDiffs[$name] = ['type' => 'table_membership_changed'];
+
             continue;
         }
 
@@ -87,6 +88,7 @@ try {
                 'schema_before' => $normA,
                 'schema_after' => $normB,
             ];
+
             continue;
         }
 
@@ -128,10 +130,10 @@ try {
     if ($preservationDiffs !== [] || $schemaDiffs !== []) {
         fwrite(STDOUT, "FINGERPRINTS_DIFFER\n");
         if ($schemaDiffs !== []) {
-            fwrite(STDERR, "Schema differences detected in: ".implode(', ', array_keys($schemaDiffs))."\n");
+            fwrite(STDERR, 'Schema differences detected in: '.implode(', ', array_keys($schemaDiffs))."\n");
         }
         if ($preservationDiffs !== []) {
-            fwrite(STDERR, "Preservation differences detected in: ".implode(', ', array_keys($preservationDiffs))."\n");
+            fwrite(STDERR, 'Preservation differences detected in: '.implode(', ', array_keys($preservationDiffs))."\n");
         }
         exit(2);
     }

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace ReleaseAudit;
 
+use Brick\Math\BigInteger;
 use RuntimeException;
 use Tests\Support\DisposableMariaDbSchema;
 
@@ -124,7 +125,7 @@ final class Guard
             self::refuse();
         }
         require_once $root.'/vendor/autoload.php';
-        if (! class_exists(\Brick\Math\BigInteger::class) && ! function_exists('bccomp')) {
+        if (! class_exists(BigInteger::class) && ! function_exists('bccomp')) {
             self::refuse();
         }
         DisposableMariaDbSchema::assertPrimarySchema($c['schema']);

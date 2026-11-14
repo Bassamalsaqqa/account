@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Unit\ReleaseAudit;
 
 use PHPUnit\Framework\TestCase;
+use ReleaseAudit\Budget;
 use ReleaseAudit\Fingerprint;
 use ReleaseAudit\Guard;
 use RuntimeException;
@@ -415,12 +416,12 @@ final class RefusalTest extends TestCase
         self::assertMatchesRegularExpression('/^[a-f0-9]{64}$/D', $result['normalized_schema_sha256']);
 
         // Normal counter fits in integer
-        $ddlNormal = "CREATE TABLE `accounts` (`id` int) ENGINE=InnoDB AUTO_INCREMENT=42;";
+        $ddlNormal = 'CREATE TABLE `accounts` (`id` int) ENGINE=InnoDB AUTO_INCREMENT=42;';
         $resultNormal = Fingerprint::normalizeDdl($ddlNormal);
         self::assertSame(42, $resultNormal['auto_increment']);
 
         // No auto increment
-        $ddlNone = "CREATE TABLE `accounts` (`id` int) ENGINE=InnoDB;";
+        $ddlNone = 'CREATE TABLE `accounts` (`id` int) ENGINE=InnoDB;';
         $resultNone = Fingerprint::normalizeDdl($ddlNone);
         self::assertNull($resultNone['auto_increment']);
         self::assertSame(hash('sha256', $ddlNone), $resultNone['normalized_schema_sha256']);
@@ -431,7 +432,7 @@ final class RefusalTest extends TestCase
         require_once dirname(__DIR__, 3).'/tools/release-audit/Guard.php';
         require_once dirname(__DIR__, 3).'/tools/release-audit/Fingerprint.php';
 
-        $budget = new \ReleaseAudit\Budget(['max_total_rows' => 500, 'max_execution_seconds' => 60]);
+        $budget = new Budget(['max_total_rows' => 500, 'max_execution_seconds' => 60]);
 
         // Phase 1: initial scan records 300 rows
         for ($i = 0; $i < 300; $i++) {
@@ -486,7 +487,7 @@ final class RefusalTest extends TestCase
         require_once dirname(__DIR__, 3).'/tools/release-audit/Guard.php';
         require_once dirname(__DIR__, 3).'/tools/release-audit/Fingerprint.php';
 
-        $budget = new \ReleaseAudit\Budget(['max_execution_seconds' => 1]);
+        $budget = new Budget(['max_execution_seconds' => 1]);
         usleep(1100000);
         $this->expectException(RuntimeException::class);
         $this->expectExceptionMessage('AUDIT_REFUSED');
@@ -498,7 +499,7 @@ final class RefusalTest extends TestCase
         require_once dirname(__DIR__, 3).'/tools/release-audit/Guard.php';
         require_once dirname(__DIR__, 3).'/tools/release-audit/Fingerprint.php';
 
-        $budget = new \ReleaseAudit\Budget(['max_memory_bytes' => 67108864]);
+        $budget = new Budget(['max_memory_bytes' => 67108864]);
         $this->expectException(RuntimeException::class);
         $this->expectExceptionMessage('AUDIT_REFUSED');
         $budget->checkCellBytes('20000000');
@@ -509,7 +510,7 @@ final class RefusalTest extends TestCase
         require_once dirname(__DIR__, 3).'/tools/release-audit/Guard.php';
         require_once dirname(__DIR__, 3).'/tools/release-audit/Fingerprint.php';
 
-        $budget = new \ReleaseAudit\Budget(['max_execution_seconds' => 2]);
+        $budget = new Budget(['max_execution_seconds' => 2]);
         $d1 = $budget->remainingExecutionSeconds();
         self::assertLessThanOrEqual(2, $d1);
         self::assertGreaterThanOrEqual(1, $d1);
@@ -523,4 +524,3 @@ final class RefusalTest extends TestCase
         $budget->remainingExecutionSeconds();
     }
 }
-

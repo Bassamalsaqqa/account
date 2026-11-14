@@ -31,6 +31,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use PDO;
 use PDOException;
+use ReleaseAudit\Budget;
 use ReleaseAudit\Fingerprint;
 use ReleaseAudit\Guard;
 use Symfony\Component\Process\Process;
@@ -558,7 +559,7 @@ final class ReleaseAuditDatabaseTest extends TestCase
         self::assertTrue((bool) $pdo->getAttribute(PDO::MYSQL_ATTR_USE_BUFFERED_QUERY));
 
         // 3. Shared cumulative budget across two captures with single budget instance
-        $budget = new \ReleaseAudit\Budget(['max_total_rows' => 100000]);
+        $budget = new Budget(['max_total_rows' => 100000]);
         $fp1 = Fingerprint::capture($pdo, $budget);
         $rowsAfterFirst = $budget->totalRows();
         self::assertGreaterThan(0, $rowsAfterFirst);
@@ -579,9 +580,9 @@ final class ReleaseAuditDatabaseTest extends TestCase
 
         // Query observer PDO subclass to capture exact queries executed by Fingerprint::capture
         $observedQueries = [];
-        $observerPdo = new class("mysql:host={$host};port={$port};dbname={$db};charset=utf8mb4", $user, $pass, [
-            PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
-        ]) extends PDO {
+        $observerPdo = new class("mysql:host={$host};port={$port};dbname={$db};charset=utf8mb4", $user, $pass, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]) extends PDO
+        {
+            /** @var list<string> */
             public array $executedQueries = [];
 
             public function query(string $query, ?int $fetchMode = null, mixed ...$fetchModeArgs): \PDOStatement|false
@@ -593,7 +594,7 @@ final class ReleaseAuditDatabaseTest extends TestCase
         };
 
         // Strict budget: max_cell_bytes = 100000 (100KB)
-        $strictBudget = new \ReleaseAudit\Budget([
+        $strictBudget = new Budget([
             'max_cell_bytes' => 100000,
         ]);
 
@@ -657,7 +658,7 @@ final class ReleaseAuditDatabaseTest extends TestCase
                 (18446744073709551614, NULL, 'overflow_unsigned_entry')");
 
             // Execute capture with budget
-            $budget = new \ReleaseAudit\Budget([
+            $budget = new Budget([
                 'max_memory_bytes' => 134217728,
                 'max_total_bytes' => 104857600,
             ]);
@@ -685,7 +686,7 @@ final class ReleaseAuditDatabaseTest extends TestCase
         $pdo = DB::connection()->getPdo();
 
         // Budget with 1 second execution deadline
-        $budget = new \ReleaseAudit\Budget(['max_execution_seconds' => 1]);
+        $budget = new Budget(['max_execution_seconds' => 1]);
         self::assertGreaterThanOrEqual(1, $budget->remainingExecutionSeconds());
 
         // Wait to exhaust budget

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace ReleaseAudit;
 
+use Brick\Math\BigInteger;
 use PDO;
 use PDOStatement;
 
@@ -59,8 +60,8 @@ final class Budget
 
     public static function compareExact(int|string $a, int|string $b): int
     {
-        if (class_exists(\Brick\Math\BigInteger::class)) {
-            return \Brick\Math\BigInteger::of((string) $a)->compareTo(\Brick\Math\BigInteger::of((string) $b));
+        if (class_exists(BigInteger::class)) {
+            return BigInteger::of((string) $a)->compareTo(BigInteger::of((string) $b));
         }
         if (function_exists('bccomp')) {
             return bccomp((string) $a, (string) $b);
@@ -84,8 +85,8 @@ final class Budget
 
     public static function addExact(int|string $a, int|string $b): string
     {
-        if (class_exists(\Brick\Math\BigInteger::class)) {
-            return (string) \Brick\Math\BigInteger::of((string) $a)->plus(\Brick\Math\BigInteger::of((string) $b));
+        if (class_exists(BigInteger::class)) {
+            return (string) BigInteger::of((string) $a)->plus(BigInteger::of((string) $b));
         }
         if (function_exists('bcadd')) {
             return bcadd((string) $a, (string) $b);
@@ -492,105 +493,105 @@ final class Fingerprint
                 $maxRowBytes = $aggRow[1] !== null ? (string) $aggRow[1] : '0';
                 $sumTableBytes = $aggRow[2] !== null ? (string) $aggRow[2] : '0';
 
-            // Verify row count bounds with overflow safety
-            if (Budget::compareExact($tableRowCount, (string) $budget->maxTotalRows()) > 0) {
-                Guard::refuse();
-            }
-            if (Budget::compareExact(Budget::addExact((string) $budget->totalRows(), $tableRowCount), (string) $budget->maxTotalRows()) > 0) {
-                Guard::refuse();
-            }
-
-            // Verify single row memory limit: a single row's raw bytes cannot exceed maxMemoryBytes / 4
-            if (Budget::compareExact($maxRowBytes, (string) $budget->maxCellBytes()) > 0) {
-                Guard::refuse();
-            }
-
-            // Verify total bytes sum against cumulative budget
-            if (Budget::compareExact($sumTableBytes, (string) $budget->maxTotalBytes()) > 0) {
-                Guard::refuse();
-            }
-            if (Budget::compareExact(Budget::addExact((string) $budget->totalBytes(), $sumTableBytes), (string) $budget->maxTotalBytes()) > 0) {
-                Guard::refuse();
-            }
-
-            // Verify each column's max cell byte size against maxCellBytes limit
-            for ($c = 0; $c < $numCols; $c++) {
-                $maxCell = $aggRow[3 + $c];
-                if ($maxCell !== null) {
-                    $budget->checkCellBytes((string) $maxCell);
+                // Verify row count bounds with overflow safety
+                if (Budget::compareExact($tableRowCount, (string) $budget->maxTotalRows()) > 0) {
+                    Guard::refuse();
                 }
-            }
+                if (Budget::compareExact(Budget::addExact((string) $budget->totalRows(), $tableRowCount), (string) $budget->maxTotalRows()) > 0) {
+                    Guard::refuse();
+                }
 
-            // -------------------------------------------------------------
-            // PHASE B: Stream ONLY values, incremental hash without doubled frame.
-            // Workload is now PROVEN within bounded limits BEFORE payload query runs.
-            // -------------------------------------------------------------
-            $valExprs = array_map(fn ($c) => "`{$c}`", $cols);
-            $streamingSql = 'SELECT '.implode(', ', $valExprs)." FROM `{$name}` ORDER BY ".implode(',', $order);
+                // Verify single row memory limit: a single row's raw bytes cannot exceed maxMemoryBytes / 4
+                if (Budget::compareExact($maxRowBytes, (string) $budget->maxCellBytes()) > 0) {
+                    Guard::refuse();
+                }
 
-            $hash = hash_init('sha256');
+                // Verify total bytes sum against cumulative budget
+                if (Budget::compareExact($sumTableBytes, (string) $budget->maxTotalBytes()) > 0) {
+                    Guard::refuse();
+                }
+                if (Budget::compareExact(Budget::addExact((string) $budget->totalBytes(), $sumTableBytes), (string) $budget->maxTotalBytes()) > 0) {
+                    Guard::refuse();
+                }
 
-            // Unbuffered streaming: explicitly scope unbuffered attribute for row fetching
-            $pdo->setAttribute(PDO::MYSQL_ATTR_USE_BUFFERED_QUERY, false);
-            self::configureStatementTimeout($pdo, $budget->remainingExecutionSeconds());
+                // Verify each column's max cell byte size against maxCellBytes limit
+                for ($c = 0; $c < $numCols; $c++) {
+                    $maxCell = $aggRow[3 + $c];
+                    if ($maxCell !== null) {
+                        $budget->checkCellBytes((string) $maxCell);
+                    }
+                }
 
-            $rowsStmt = null;
-            $count = 0;
-            $completedNormally = false;
+                // -------------------------------------------------------------
+                // PHASE B: Stream ONLY values, incremental hash without doubled frame.
+                // Workload is now PROVEN within bounded limits BEFORE payload query runs.
+                // -------------------------------------------------------------
+                $valExprs = array_map(fn ($c) => "`{$c}`", $cols);
+                $streamingSql = 'SELECT '.implode(', ', $valExprs)." FROM `{$name}` ORDER BY ".implode(',', $order);
 
-            try {
-                $rowsStmt = $pdo->query($streamingSql);
-                while (($row = $rowsStmt->fetch(PDO::FETCH_NUM)) !== false) {
-                    $rowHeader = "R{$numCols};";
-                    hash_update($hash, $rowHeader);
-                    $rowBytes = strlen($rowHeader);
+                $hash = hash_init('sha256');
 
-                    foreach ($row as $val) {
-                        if ($val === null) {
-                            hash_update($hash, 'N;');
-                            $rowBytes += 2;
-                        } else {
-                            $strVal = (string) $val;
-                            $strLen = strlen($strVal);
-                            hash_update($hash, "S{$strLen}:");
-                            hash_update($hash, $strVal);
-                            $rowBytes += (strlen((string) $strLen) + 2 + $strLen);
+                // Unbuffered streaming: explicitly scope unbuffered attribute for row fetching
+                $pdo->setAttribute(PDO::MYSQL_ATTR_USE_BUFFERED_QUERY, false);
+                self::configureStatementTimeout($pdo, $budget->remainingExecutionSeconds());
+
+                $rowsStmt = null;
+                $count = 0;
+                $completedNormally = false;
+
+                try {
+                    $rowsStmt = $pdo->query($streamingSql);
+                    while (($row = $rowsStmt->fetch(PDO::FETCH_NUM)) !== false) {
+                        $rowHeader = "R{$numCols};";
+                        hash_update($hash, $rowHeader);
+                        $rowBytes = strlen($rowHeader);
+
+                        foreach ($row as $val) {
+                            if ($val === null) {
+                                hash_update($hash, 'N;');
+                                $rowBytes += 2;
+                            } else {
+                                $strVal = (string) $val;
+                                $strLen = strlen($strVal);
+                                hash_update($hash, "S{$strLen}:");
+                                hash_update($hash, $strVal);
+                                $rowBytes += (strlen((string) $strLen) + 2 + $strLen);
+                            }
                         }
-                    }
 
-                    $budget->recordRow($rowBytes);
-                    $captureRows++;
-                    $captureBytes += $rowBytes;
-                    $count++;
-                }
-                $completedNormally = true;
-            } finally {
-                if ($completedNormally) {
-                    if ($rowsStmt instanceof PDOStatement) {
-                        $rowsStmt->closeCursor();
+                        $budget->recordRow($rowBytes);
+                        $captureRows++;
+                        $captureBytes += $rowBytes;
+                        $count++;
                     }
-                    $pdo->setAttribute(PDO::MYSQL_ATTR_USE_BUFFERED_QUERY, $previousBuffered);
-                } else {
-                    // Early abort: do NOT call closeCursor()! Under mysqlnd, closeCursor() drains
-                    // unread network packets over the wire, defeating time and byte limits.
-                    // Instead, leave undrained and ensure caller drops the connection.
+                    $completedNormally = true;
+                } finally {
+                    if ($completedNormally) {
+                        if ($rowsStmt instanceof PDOStatement) {
+                            $rowsStmt->closeCursor();
+                        }
+                        $pdo->setAttribute(PDO::MYSQL_ATTR_USE_BUFFERED_QUERY, $previousBuffered);
+                    } else {
+                        // Early abort: do NOT call closeCursor()! Under mysqlnd, closeCursor() drains
+                        // unread network packets over the wire, defeating time and byte limits.
+                        // Instead, leave undrained and ensure caller drops the connection.
+                    }
                 }
+
+                $budget->assertWithinLimits();
+
+                $result[$name] = [
+                    'rows' => $count,
+                    'schema_sha256' => hash('sha256', $ddl),
+                    'normalized_schema_sha256' => $ddlInfo['normalized_schema_sha256'],
+                    'auto_increment' => $ddlInfo['auto_increment'],
+                    'rows_sha256' => hash_final($hash),
+                    'classification' => in_array($name, self::OPERATIONAL_MUTABLE_TABLES, true) ? 'operational_mutable' : 'preservation',
+                ];
             }
-
-            $budget->assertWithinLimits();
-
-            $result[$name] = [
-                'rows' => $count,
-                'schema_sha256' => hash('sha256', $ddl),
-                'normalized_schema_sha256' => $ddlInfo['normalized_schema_sha256'],
-                'auto_increment' => $ddlInfo['auto_increment'],
-                'rows_sha256' => hash_final($hash),
-                'classification' => in_array($name, self::OPERATIONAL_MUTABLE_TABLES, true) ? 'operational_mutable' : 'preservation',
-            ];
+        } finally {
+            $pdo->setAttribute(PDO::MYSQL_ATTR_USE_BUFFERED_QUERY, $previousBuffered);
         }
-    } finally {
-        $pdo->setAttribute(PDO::MYSQL_ATTR_USE_BUFFERED_QUERY, $previousBuffered);
-    }
 
         self::$lastMetrics = [
             'total_rows' => $captureRows,
