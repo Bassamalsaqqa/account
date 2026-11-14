@@ -1,12 +1,42 @@
-Owned primary test schema: accounting_p8_tmp_82b17d6747be
+Owned schema created: accounting_p8_tmp_f20f6be716eb
+Owned primary test schema: accounting_p8_tmp_f20f6be716eb
 PHPUnit 12.5.36 by Sebastian Bergmann and contributors.
 
 Runtime:       PHP 8.4.27
-Configuration: /home/t3dev/.t3/userdata/antigravity-tmp/98fdbd5a1187/run-37TH6j/p8_phpunit_vfjub63je3s22uvrICk
+Configuration: /home/t3dev/.t3/userdata/antigravity-tmp/aaa9f510728a/run-AYrNeP/p8_phpunit_aknl8fah053o5kZP1P6
 
-..........                                                        10 / 10 (100%)
+Owned schema created: accounting_p8_tmp_25fbffeeb0ec
+Owned schema dropped: accounting_p8_tmp_25fbffeeb0ec
+.Owned schema created: accounting_p8_tmp_60c3e18d07f1
+Owned schema dropped: accounting_p8_tmp_60c3e18d07f1
+.Owned schema created: accounting_p8_tmp_b44989deeae6
+Owned schema dropped: accounting_p8_tmp_b44989deeae6
+.Owned schema created: accounting_p8_tmp_b43565aa4a27
+Owned schema dropped: accounting_p8_tmp_b43565aa4a27
+.Owned schema created: accounting_p8_tmp_c324502a9d11
+Owned schema dropped: accounting_p8_tmp_c324502a9d11
+.Owned schema created: accounting_p8_tmp_e36d08aa8fd4
+Owned schema dropped: accounting_p8_tmp_e36d08aa8fd4
+Owned schema created: accounting_p8_tmp_c7e81385c850
+Owned schema dropped: accounting_p8_tmp_c7e81385c850
+.Owned schema created: accounting_p8_tmp_d3a926012712
+Owned schema dropped: accounting_p8_tmp_d3a926012712
+Owned schema created: accounting_p8_tmp_8d14d7ba645a
+Owned schema dropped: accounting_p8_tmp_8d14d7ba645a
+.Owned schema created: accounting_p8_tmp_3fde10acc70b
+Owned schema dropped: accounting_p8_tmp_3fde10acc70b
+Owned schema created: accounting_p8_tmp_6decb0b5c03f
+Owned schema dropped: accounting_p8_tmp_6decb0b5c03f
+.Owned schema created: accounting_p8_tmp_6609125fe2b4
+Owned schema dropped: accounting_p8_tmp_6609125fe2b4
+Owned schema created: accounting_p8_tmp_a205e3b83570
+Owned schema dropped: accounting_p8_tmp_a205e3b83570
+.Owned schema created: accounting_p8_tmp_ce23ee424883
+Owned schema dropped: accounting_p8_tmp_ce23ee424883
+.                                                        10 / 10 (100%)
 
-Time: 01:02.036, Memory: 71.00 MB
+Time: 01:01.045, Memory: 71.00 MB
 
 [30;42mOK (10 tests, 161 assertions)[0m
+Owned schema dropped: accounting_p8_tmp_f20f6be716eb
 Owned primary schema cleaned.

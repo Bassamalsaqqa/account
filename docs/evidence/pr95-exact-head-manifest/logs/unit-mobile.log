@@ -1,11 +1,11 @@
 PHPUnit 12.5.36 by Sebastian Bergmann and contributors.
 
 Runtime:       PHP 8.4.27
-Configuration: /home/t3dev/.t3/worktrees/account/t3-ed584db5-4a17f36a21ecd2fc/phpunit.xml
+Configuration: /home/t3dev/.t3/worktrees/account/t3-e57ef9c7-639ffe81839f322d/phpunit.xml
 
 ................................................................. 65 / 80 ( 81%)
 ...............                                                   80 / 80 (100%)
 
-Time: 00:02.666, Memory: 63.00 MB
+Time: 00:02.585, Memory: 63.00 MB
 
 [30;42mOK (80 tests, 462 assertions)[0m

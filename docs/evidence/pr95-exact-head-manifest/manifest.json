@@ -1,16 +1,17 @@
 {
-  "manifestVersion": "2.0.0",
+  "manifestVersion": "2.1.0",
   "branch": "t3/mobile-receipt-identity-lock-qualification",
-  "qualificationStatus": "WORKER_EXECUTION_LOGS_PASS_SOURCE_ATTRIBUTION_REQUIRES_CONFIRMATION",
+  "qualificationStatus": "VERIFIED_CONTEMPORANEOUS_ATTESTED_QA_ALL_PASS",
   "qaLease": {
-    "holder": "PR95 Sole Writer",
+    "holder": "PR95 Verification Sub-Agent",
     "status": "EXCLUSIVE_LEASE_EXECUTED_ALL_SUITES_PASSED_RELEASED_NOW",
     "permittedActions": [
-      "source_edits",
-      "pure_lint_php_l",
-      "git_operations",
-      "bounded_serial_owned_3342_qa"
-    ]
+      "source_readonly_verification",
+      "bounded_serial_owned_3342_qa",
+      "git_rev_parse_attestation",
+      "docs_only_evidence_append"
+    ],
+    "leaseState": "RELEASED"
   },
   "sourceEvolution": [
     {
@@ -44,108 +45,128 @@
     {
       "sha": "311fc750becf32743eba47f531c482fc8766897e",
       "summary": "Pint code formatting cleanups in CustomerDirectoryTest and MobileCompanyBindingHttpTest"
+    },
+    {
+      "sha": "4453e025af64559c43448f65081d82fbb0198408",
+      "summary": "docs(evidence): record full exact-head execution logs and manifest for PR 95 qualification"
+    },
+    {
+      "sha": "d5420c4f77bf9e0e3169b59c09f7e29a5053ee8f",
+      "summary": "docs(evidence): correct PR95 commit identities and qualify source attribution"
     }
   ],
   "disclosedSourceGapResolution": {
-    "statement": "The earlier 218 test / 1649 assertion execution passes recorded on dca5be5 and 8ac6ab9 were explicitly not inherited. Following Android Gradle lease release and the grant of exclusive QA lease on disposable MariaDB 3342, all mobile test suites were executed anew on exact HEAD. Every suite passed with zero errors, zero failures, and clean schema drops, bringing total verified coverage to 231 tests and 1,691 assertions plus PHPStan and Pint clean.",
-    "historicalCommits": [
-      "dca5be57a50e30c249c3514d55842ee4b62ab5b8",
-      "8ac6ab910cb1a57e0cf7e0285f08c9ce6a639775"
-    ],
-    "newExecutableCommitsQualified": [
-      "8f51daff780cf9af9ff869e1f91a8e8dd818e689",
-      "da76f64b2971434f487d01caa8a73d35de7d592d",
-      "086dea5a4976696496edf9a5f0d9f994f35639c5",
-      "311fc750becf32743eba47f531c482fc8766897e"
-    ]
+    "statement": "The earlier 218 test / 1649 assertion execution passes recorded on dca5be5 and 8ac6ab9 were explicitly not inherited. Furthermore, root review identified an evidence gap in commit 4453e02 where four full commit references were constructed invalidly. Commit d5420c4 resolved the object references against local Git objects. In the current attested QA cycle, exclusive heavy DB/build lease was held on disposable MariaDB 127.0.0.1:3342 with zero app/test edits on verified base d5420c4f77bf9e0e3169b59c09f7e29a5053ee8f. Every command automatically verified clean working tree and identical source tree hashes before and after execution. All 11 suites passed with 0 errors, 0 failures, and complete disposable schema cleanup.",
+    "attestedBaseSha": "d5420c4f77bf9e0e3169b59c09f7e29a5053ee8f",
+    "verifiedGitObject": true,
+    "sourceAppTestsTreeSha256": "be7063f7a21c9d6e897c3d2c2819bb076adff2213ddbadc0849ada63a93850b5",
+    "composerLockSha256": "849adbe58bcb9638b819b32291d83a4fb2e19bacd3a9a7e11bc40810b50e7af9"
   },
-  "exactHeadExecutionMatrix": {
+  "attestedExecutionMatrix": {
     "suite-binding-http": {
       "file": "tests/Feature/Mobile/MobileCompanyBindingHttpTest.php",
       "command": "APP_ENV=testing PHASE8_ALLOW_DISPOSABLE_DB=1 PHASE8_TEST_DB_HOST=127.0.0.1 PHASE8_TEST_DB_PORT=3342 PHASE8_TEST_DB_USERNAME=test_runner PHASE8_TEST_DB_EMPTY_PASSWORD=1 php tests/Support/run-phase8-disposable.php -- tests/Feature/Mobile/MobileCompanyBindingHttpTest.php",
-      "primarySchema": "accounting_p8_tmp_aa3f17ee6556",
+      "primarySchema": "accounting_p8_tmp_43d0f978101f",
       "childSchemas": [],
       "tests": 8,
       "assertions": 23,
-      "durationSeconds": 5.494,
+      "durationSeconds": 7.985,
       "result": "OK",
       "logFile": "docs/evidence/pr95-exact-head-manifest/logs/binding-http.log",
-      "logSha256": "db5b4b785389a0fe8608e1326210e9240bf1a05afa87a206aa3043ccc857873a"
+      "logSha256": "01dc3f3f43c56d9baa2a684299a5a202c2756d88113fba6eafbb214b715f3646",
+      "preCommandHead": "d5420c4f77bf9e0e3169b59c09f7e29a5053ee8f",
+      "postCommandHead": "d5420c4f77bf9e0e3169b59c09f7e29a5053ee8f",
+      "schemaCleaned": true
     },
     "suite-customer-directory": {
       "file": "tests/Feature/Mobile/CustomerDirectoryTest.php",
       "command": "APP_ENV=testing PHASE8_ALLOW_DISPOSABLE_DB=1 PHASE8_TEST_DB_HOST=127.0.0.1 PHASE8_TEST_DB_PORT=3342 PHASE8_TEST_DB_USERNAME=test_runner PHASE8_TEST_DB_EMPTY_PASSWORD=1 php tests/Support/run-phase8-disposable.php -- tests/Feature/Mobile/CustomerDirectoryTest.php",
-      "primarySchema": "accounting_p8_tmp_069d605d1de2",
+      "primarySchema": "accounting_p8_tmp_b2b6fbda3903",
       "childSchemas": [],
       "tests": 7,
       "assertions": 48,
-      "durationSeconds": 4.096,
+      "durationSeconds": 5.742,
       "result": "OK",
       "logFile": "docs/evidence/pr95-exact-head-manifest/logs/customer-directory.log",
-      "logSha256": "3c2d39685c7b0cee02484b052263fcf15fb93ea406d632355193ffee9216709a"
+      "logSha256": "840ce552f94d926421ef3b30a1d4c56c28d7a4f10fe2b01521fbbe69a75b640d",
+      "preCommandHead": "d5420c4f77bf9e0e3169b59c09f7e29a5053ee8f",
+      "postCommandHead": "d5420c4f77bf9e0e3169b59c09f7e29a5053ee8f",
+      "schemaCleaned": true
     },
     "suite-event-receipt-identity": {
       "file": "tests/Feature/Mobile/MobileEventReceiptIdentityTest.php",
       "command": "APP_ENV=testing PHASE8_ALLOW_DISPOSABLE_DB=1 PHASE8_TEST_DB_HOST=127.0.0.1 PHASE8_TEST_DB_PORT=3342 PHASE8_TEST_DB_USERNAME=test_runner PHASE8_TEST_DB_EMPTY_PASSWORD=1 php tests/Support/run-phase8-disposable.php -- tests/Feature/Mobile/MobileEventReceiptIdentityTest.php",
-      "primarySchema": "accounting_p8_tmp_120aec066115",
+      "primarySchema": "accounting_p8_tmp_2c512ff4a86e",
       "childSchemas": [],
       "tests": 34,
       "assertions": 103,
-      "durationSeconds": 37.405,
+      "durationSeconds": 36.851,
       "result": "OK",
       "logFile": "docs/evidence/pr95-exact-head-manifest/logs/event-receipt-identity.log",
-      "logSha256": "9236b5af1944b16a1c7ec93e8e4c8e9438cad863dc4668eaf38698dcc8b2fe46"
+      "logSha256": "c716a1e59b21fe2ce33742ff9ba4f4cbd73b54ecbcd1db124ecb1dca1ddeb8f9",
+      "preCommandHead": "d5420c4f77bf9e0e3169b59c09f7e29a5053ee8f",
+      "postCommandHead": "d5420c4f77bf9e0e3169b59c09f7e29a5053ee8f",
+      "schemaCleaned": true
     },
     "suite-v2-boundary": {
       "file": "tests/Feature/Mobile/V2/MobileV2BoundaryQualificationTest.php",
       "command": "APP_ENV=testing PHASE8_ALLOW_DISPOSABLE_DB=1 PHASE8_TEST_DB_HOST=127.0.0.1 PHASE8_TEST_DB_PORT=3342 PHASE8_TEST_DB_USERNAME=test_runner PHASE8_TEST_DB_EMPTY_PASSWORD=1 php tests/Support/run-phase8-disposable.php -- tests/Feature/Mobile/V2/MobileV2BoundaryQualificationTest.php",
-      "primarySchema": "accounting_p8_tmp_0552dd73ca85",
+      "primarySchema": "accounting_p8_tmp_a4248ec0e35e",
       "childSchemas": [],
       "tests": 39,
       "assertions": 486,
-      "durationSeconds": 15.844,
+      "durationSeconds": 14.547,
       "result": "OK",
       "logFile": "docs/evidence/pr95-exact-head-manifest/logs/v2-boundary.log",
-      "logSha256": "448ff3917f07f59cc584602ab53513f59216a522f50ebb2a6a6a049d8e07bb01"
+      "logSha256": "5714f391d82eb34dd0d37701e046023b1111d10643b35130ed0d249222c4d7e4",
+      "preCommandHead": "d5420c4f77bf9e0e3169b59c09f7e29a5053ee8f",
+      "postCommandHead": "d5420c4f77bf9e0e3169b59c09f7e29a5053ee8f",
+      "schemaCleaned": true
     },
     "suite-lock-order": {
       "file": "tests/Feature/Mobile/MobileReceiptLockOrderQualificationTest.php",
       "command": "APP_ENV=testing PHASE8_ALLOW_DISPOSABLE_DB=1 PHASE8_TEST_DB_HOST=127.0.0.1 PHASE8_TEST_DB_PORT=3342 PHASE8_TEST_DB_USERNAME=test_runner PHASE8_TEST_DB_EMPTY_PASSWORD=1 php tests/Support/run-phase8-disposable.php -- tests/Feature/Mobile/MobileReceiptLockOrderQualificationTest.php",
-      "primarySchema": "accounting_p8_tmp_82b17d6747be",
+      "primarySchema": "accounting_p8_tmp_f20f6be716eb",
       "childSchemas": [
-        "accounting_p8_tmp_5b7c3661a0e6",
-        "accounting_p8_tmp_e70724d6d5fb",
-        "accounting_p8_tmp_efb4829d56b5",
-        "accounting_p8_tmp_f55e84f188c4",
-        "accounting_p8_tmp_dbae8a21c0ec",
-        "accounting_p8_tmp_41889641da67",
-        "accounting_p8_tmp_82b60eb6adbc",
-        "accounting_p8_tmp_7cc85bfd6f5e",
-        "accounting_p8_tmp_ce2f5ab94100",
-        "accounting_p8_tmp_a8c3b53764c0",
-        "accounting_p8_tmp_f3f94708533a",
-        "accounting_p8_tmp_1926238b5322",
-        "accounting_p8_tmp_5291a6758181",
-        "accounting_p8_tmp_03fc9ebc339d"
+        "accounting_p8_tmp_25fbffeeb0ec",
+        "accounting_p8_tmp_60c3e18d07f1",
+        "accounting_p8_tmp_b44989deeae6",
+        "accounting_p8_tmp_b43565aa4a27",
+        "accounting_p8_tmp_c324502a9d11",
+        "accounting_p8_tmp_e36d08aa8fd4",
+        "accounting_p8_tmp_c7e81385c850",
+        "accounting_p8_tmp_d3a926012712",
+        "accounting_p8_tmp_8d14d7ba645a",
+        "accounting_p8_tmp_3fde10acc70b",
+        "accounting_p8_tmp_6decb0b5c03f",
+        "accounting_p8_tmp_6609125fe2b4",
+        "accounting_p8_tmp_a205e3b83570",
+        "accounting_p8_tmp_ce23ee424883"
       ],
       "tests": 10,
       "assertions": 161,
-      "durationSeconds": 62.036,
+      "durationSeconds": 61.045,
       "result": "OK",
       "logFile": "docs/evidence/pr95-exact-head-manifest/logs/lock-order.log",
-      "logSha256": "511ec8cd56b43ee5f178c02e965974fc3f9d819c0a366a58959a915f42aa34be"
+      "logSha256": "0a358621d4e7e78bff590ba00ab278d20317c2d08193737c0c29543cd3d4d8f2",
+      "preCommandHead": "d5420c4f77bf9e0e3169b59c09f7e29a5053ee8f",
+      "postCommandHead": "d5420c4f77bf9e0e3169b59c09f7e29a5053ee8f",
+      "schemaCleaned": true
     },
     "suite-rollback-atomicity": {
       "file": "tests/Feature/Mobile/MobileReceiptRollbackAtomicityTest.php",
       "command": "APP_ENV=testing PHASE8_ALLOW_DISPOSABLE_DB=1 PHASE8_TEST_DB_HOST=127.0.0.1 PHASE8_TEST_DB_PORT=3342 PHASE8_TEST_DB_USERNAME=test_runner PHASE8_TEST_DB_EMPTY_PASSWORD=1 php tests/Support/run-phase8-disposable.php -- tests/Feature/Mobile/MobileReceiptRollbackAtomicityTest.php",
-      "primarySchema": "accounting_p8_tmp_b9aa0e45ff9f",
+      "primarySchema": "accounting_p8_tmp_b51bcf429381",
       "childSchemas": [],
       "tests": 6,
       "assertions": 55,
-      "durationSeconds": 7.389,
+      "durationSeconds": 7.143,
       "result": "OK",
       "logFile": "docs/evidence/pr95-exact-head-manifest/logs/rollback-atomicity.log",
-      "logSha256": "91e2661a5335ff1397f80e78544b3b2e262edcc6284d8b2f6f889ff6bea6ca96"
+      "logSha256": "1d11043ad5e8688621ecc9ebeae895d461b3f64e1dea7298c9ac6836faac851c",
+      "preCommandHead": "d5420c4f77bf9e0e3169b59c09f7e29a5053ee8f",
+      "postCommandHead": "d5420c4f77bf9e0e3169b59c09f7e29a5053ee8f",
+      "schemaCleaned": true
     },
     "suite-regression-catalog-migration": {
       "files": [
@@ -155,17 +176,20 @@
         "tests/Feature/Mobile/MobileReceiptMigrationPreservationTest.php"
       ],
       "command": "APP_ENV=testing PHASE8_ALLOW_DISPOSABLE_DB=1 PHASE8_TEST_DB_HOST=127.0.0.1 PHASE8_TEST_DB_PORT=3342 PHASE8_TEST_DB_USERNAME=test_runner PHASE8_TEST_DB_EMPTY_PASSWORD=1 php tests/Support/run-phase8-disposable.php -- tests/Feature/Mobile/CatalogConsistencyTest.php tests/Feature/Mobile/ProductCatalogTest.php tests/Feature/Mobile/MigrationRollbackTest.php tests/Feature/Mobile/MobileReceiptMigrationPreservationTest.php",
-      "primarySchema": "accounting_p8_tmp_66eb6b85b303",
+      "primarySchema": "accounting_p8_tmp_25ff2497cfbc",
       "childSchemas": [
-        "accounting_p8_tmp_2fe64a0e7926",
-        "accounting_p8_tmp_31b843940fa7"
+        "accounting_p8_tmp_97c7746e4e07",
+        "accounting_p8_tmp_d870e9b4e2c2"
       ],
       "tests": 16,
       "assertions": 142,
-      "durationSeconds": 12.902,
+      "durationSeconds": 12.804,
       "result": "OK",
       "logFile": "docs/evidence/pr95-exact-head-manifest/logs/regression-catalog-migration.log",
-      "logSha256": "a865bf741f7a75c09dc8ef2f731eef4b22a524fb7b38608258220bc8807eeffa"
+      "logSha256": "222d038938ce06e44571d9031a0ba71bae584d4a545f50a6109ce68de69e79a1",
+      "preCommandHead": "d5420c4f77bf9e0e3169b59c09f7e29a5053ee8f",
+      "postCommandHead": "d5420c4f77bf9e0e3169b59c09f7e29a5053ee8f",
+      "schemaCleaned": true
     },
     "suite-auth-security": {
       "files": [
@@ -177,38 +201,47 @@
         "tests/Feature/Mobile/RecoveryConcurrencyTest.php"
       ],
       "command": "APP_ENV=testing PHASE8_ALLOW_DISPOSABLE_DB=1 PHASE8_TEST_DB_HOST=127.0.0.1 PHASE8_TEST_DB_PORT=3342 PHASE8_TEST_DB_USERNAME=test_runner PHASE8_TEST_DB_EMPTY_PASSWORD=1 php tests/Support/run-phase8-disposable.php -- tests/Feature/Mobile/SecurityCorrectionsTest.php tests/Feature/Mobile/AuthLoginTest.php tests/Feature/Mobile/AuthLogoutAndRevokeTest.php tests/Feature/Mobile/AuthChallengeTest.php tests/Feature/Mobile/SessionSecurityAndRevalidationTest.php tests/Feature/Mobile/RecoveryConcurrencyTest.php",
-      "primarySchema": "accounting_p8_tmp_6a3373afada4",
+      "primarySchema": "accounting_p8_tmp_40a7c16f2115",
       "childSchemas": [
-        "accounting_p8_tmp_39b5be350d83"
+        "accounting_p8_tmp_f15fce972c80"
       ],
       "tests": 31,
       "assertions": 211,
-      "durationSeconds": 11.318,
+      "durationSeconds": 11.169,
       "result": "OK",
       "logFile": "docs/evidence/pr95-exact-head-manifest/logs/auth-security.log",
-      "logSha256": "3993d27ab9f821f939a5d7e66a4b086ab87ae7c8aad8d4f8b09ba3554c849341"
+      "logSha256": "9884544424f5765cadf672db9d2dc9f1a8727640715632541c474909f3a5461e",
+      "preCommandHead": "d5420c4f77bf9e0e3169b59c09f7e29a5053ee8f",
+      "postCommandHead": "d5420c4f77bf9e0e3169b59c09f7e29a5053ee8f",
+      "schemaCleaned": true
     },
     "suite-unit-mobile": {
       "directory": "tests/Unit/Mobile",
       "command": "./vendor/bin/phpunit tests/Unit/Mobile",
       "tests": 80,
       "assertions": 462,
-      "durationSeconds": 2.666,
+      "durationSeconds": 2.585,
       "result": "OK",
       "logFile": "docs/evidence/pr95-exact-head-manifest/logs/unit-mobile.log",
-      "logSha256": "c6285f7ed4d6b41326f6bf0b13b323cd1310396908bc7deb6a2be90c2e2a551e"
+      "logSha256": "971703e3ef3e24e691f0315ffced5bf30274dc3e4ea857dc2e0f764dcda85168",
+      "preCommandHead": "d5420c4f77bf9e0e3169b59c09f7e29a5053ee8f",
+      "postCommandHead": "d5420c4f77bf9e0e3169b59c09f7e29a5053ee8f"
     },
     "static-phpstan": {
-      "command": "./vendor/bin/phpstan analyse --no-progress",
+      "command": "./vendor/bin/phpstan analyse --no-progress --debug",
       "result": "OK (0 errors)",
       "logFile": "docs/evidence/pr95-exact-head-manifest/logs/phpstan.log",
-      "logSha256": "9dd3eeb023e498eff4ab6e14af3d76d6e6c7672da330c9e3edf35753590df0d7"
+      "logSha256": "4589120d50d4de48be2114f7a860b8cfe29ce910b9b4ee9616d90ae9da4f4f31",
+      "preCommandHead": "d5420c4f77bf9e0e3169b59c09f7e29a5053ee8f",
+      "postCommandHead": "d5420c4f77bf9e0e3169b59c09f7e29a5053ee8f"
     },
     "static-pint": {
       "command": "./vendor/bin/pint --test",
       "result": "PASSED",
       "logFile": "docs/evidence/pr95-exact-head-manifest/logs/pint.log",
-      "logSha256": "cd1a94fc2cf6a965b86e1a4809d6c7fb9148b1ee374e1010ed2ac96ff4876ec2"
+      "logSha256": "cd1a94fc2cf6a965b86e1a4809d6c7fb9148b1ee374e1010ed2ac96ff4876ec2",
+      "preCommandHead": "d5420c4f77bf9e0e3169b59c09f7e29a5053ee8f",
+      "postCommandHead": "d5420c4f77bf9e0e3169b59c09f7e29a5053ee8f"
     }
   },
   "summaryTotals": {
@@ -226,8 +259,9 @@
   "constraintsAndBoundaries": [
     "No claim of universal global lock DAG; locking strictly follows bounded tenant hierarchy (Company -> CompanyUser -> User -> MobileDevice -> MobileAccessToken).",
     "Production DenyFinancialExecutionAdapter and default-OFF V2 boundary strictly maintained.",
-    "Zero financial cash intake or accounting activation.",
+    "Zero financial cash intake or accounting activation; root requirement for working default-OFF cash after qualified locks is deferred to subsequent implementation, attested QA scope only.",
     "No production, SSH, or Hostinger deployments.",
+    "Independent source review is source/log inspection, not independent DB execution.",
     "Exclusive QA lease fully released upon qualification completion."
   ],
   "supervisorCorrection": {
@@ -238,6 +272,6 @@
       "086dea519e984a9235e80fa540608fa8bf0e6080": "086dea5a4976696496edf9a5f0d9f994f35639c5",
       "311fc755c3c0ca238a0cbe44cae9933fa769eb07": "311fc750becf32743eba47f531c482fc8766897e"
     },
-    "limits": "Invalid full commit references were corrected by resolving unique seven-character prefixes against local Git objects. This repairs references only; it does not prove which source was present during any historical execution. Published runner logs report passing counts, but no contemporaneous per-run source attestation is supplied in this matrix. Independent review is source/log inspection, not independent test execution. No financial, build or production qualification follows."
+    "limits": "Invalid full commit references were corrected by resolving unique seven-character prefixes against local Git objects. Contemporaneous execution on d5420c4f77bf9e0e3169b59c09f7e29a5053ee8f was fully recorded and attested with before/after tree hashes, clean status, and zero test/assertion discrepancies."
   }
 }
