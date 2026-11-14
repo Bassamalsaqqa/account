@@ -120,10 +120,11 @@ final class MobileCompanyBindingHttpTest extends TestCase
                 'company_id' => $company->id,
                 'code' => '101-'.Str::random(4),
                 'name_ar' => 'صندوق',
-                'type' => 'asset',
-                'is_active' => true,
-                'currency_code' => $company->base_currency_code,
-                'created_by' => $this->user->id,
+                'account_type' => LedgerAccount::TYPE_ASSET,
+                'normal_balance' => LedgerAccount::BALANCE_DEBIT,
+                'is_control' => false,
+                'is_system' => false,
+                'active' => true,
             ]);
 
             $cashAccount = MoneyAccount::create([
