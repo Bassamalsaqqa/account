@@ -327,4 +327,3 @@ final class CustomerDirectoryTest extends TestCase
         $resB->assertStatus(200);
     }
 }
-

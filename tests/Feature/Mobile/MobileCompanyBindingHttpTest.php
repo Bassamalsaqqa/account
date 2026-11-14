@@ -17,8 +17,8 @@ use App\Models\User;
 use App\Models\Warehouse;
 use App\Services\Tenancy\CompanyRoleService;
 use App\Support\Tenancy\CompanyContext;
+use App\Support\Tenancy\CompanyScope;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 use Tests\TestCase;
@@ -103,7 +103,7 @@ final class MobileCompanyBindingHttpTest extends TestCase
 
     private function seedCompanyV1Fixtures(Company $company): void
     {
-        \App\Support\Tenancy\CompanyScope::executeWithoutScope(function () use ($company): void {
+        CompanyScope::executeWithoutScope(function () use ($company): void {
             $customer = Customer::create([
                 'company_id' => $company->id,
                 'code' => 'CUST-'.Str::random(6),
