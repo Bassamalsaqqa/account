@@ -109,6 +109,7 @@ final class MobileCompanyBindingHttpTest extends TestCase
 
             $warehouse = Warehouse::create([
                 'company_id' => $company->id,
+                'code' => 'WH-'.Str::random(4),
                 'name_ar' => 'مستودع '.$company->name_ar,
                 'is_default' => true,
                 'active' => true,
