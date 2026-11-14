@@ -219,3 +219,17 @@ test('identity watcher retains an on-demand label but authoritative hydration ca
     notify(''); assert.equal(s.selected, '');
     s.destroy();
 });
+
+
+test('assistive click activates an option and pointer plus click commits only once', async () => {
+    const blade = readFileSync(new URL('../../resources/views/components/report-party-selector.blade.php', import.meta.url), 'utf8');
+    assert.ok(blade.includes('@click="choose(index)"'));
+    const {state: s, commits} = setup();
+    await s.search();
+    s.choose(1); // Synthetic accessibility click without any pointer event.
+    assert.deepEqual(commits, ['7']);
+    await s.search();
+    s.choose(1); // Pointer-down commits and dismisses.
+    s.choose(1); // Subsequent click cannot commit a second time.
+    assert.deepEqual(commits, ['7', '7']);
+});

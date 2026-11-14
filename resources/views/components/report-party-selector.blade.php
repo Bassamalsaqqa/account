@@ -15,7 +15,7 @@
         <ul x-ref="list" :id="$id('party-list')" role="listbox" aria-label="{{ __('reports.'.$field) }}" class="max-h-64 overflow-y-auto">
             <template x-for="(option, index) in options" :key="option.id">
                 <li role="option" :id="$id('party-list') + '-' + index" :aria-selected="selected === String(option.id)"
-                    @pointerdown.prevent="choose(index)" @pointermove="active = index"
+                    @pointerdown.prevent="choose(index)" @click="choose(index)" @pointermove="active = index"
                     :class="active === index ? 'bg-surface-soft' : ''"
                     class="min-h-[44px] sm:min-h-10 px-3 py-2 text-base sm:text-sm cursor-pointer hover:bg-surface-soft">
                     <bdi dir="auto" x-text="option.label"></bdi>

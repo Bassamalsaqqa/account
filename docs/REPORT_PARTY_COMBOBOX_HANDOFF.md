@@ -58,3 +58,6 @@ Under the exclusive DB/build/dependency lease, the implementation sub-agent comp
 6. **Production frontend build**: `npm run build` executed successfully in 2.53s; sourcemaps disabled (`0` `.map` files).
 7. **Browser preview**: `preview_status` returned `available:false`. NOT VERIFIED; no fallback daemon or unapproved server started.
 8. **Lease release**: EXCLUSIVE DB/build/dependency lease released upon completion.
+
+
+Supervisor accessibility follow-up: options now accept synthetic click activation as well as pointer-down. The existing open-popup guard deduplicates the click following pointer-down. Pure Node suite: 18 passed; diff check passed. No PHP/DB/static/build/browser run on this follow-up; prior 18 PHP/115 assertions are worker evidence on the earlier source and do not verify browser or screen-reader behavior. Browser acceptance remains pending.
