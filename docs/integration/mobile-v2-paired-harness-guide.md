@@ -201,3 +201,133 @@ Existing validated fixture `ca5a` (`manifest_sha256: 3248b9721c3e2a09e84ae478ddb
 - Candidate commit `39fea3eae32522240caa0db8f40d018694064d8f` (Android PR 23) reports unit 76 PASS but is marked **`CANDIDATE_KNOWN_BAD`** (changes required on client gateway).
 - The harness refuses start with commit `39fea3eae32522240caa0db8f40d018694064d8f`.
 - No HTTPS pairing or listener startup will occur until client corrections are reviewed and an approved head is provided by Root.
+
+---
+
+## 8. Retained Guard QA Evidence & Command Attestation (Commit 11def9bc3c26f9eeb2d261c73835088d8f68d8c1)
+
+> **Notice**: Core harness source files (`tests/Support/Harness/*`, `tests/Unit/Mobile/Harness/*`) are strictly **SOURCE-FROZEN** at commit `11def9bc3c26f9eeb2d261c73835088d8f68d8c1`. The following attestations document the captured execution evidence produced during the short backend guard QA lease.
+
+### A. Execution State & Tree Hash Verification
+- **Exact Execution HEAD**: `11def9bc3c26f9eeb2d261c73835088d8f68d8c1`
+- **Parent Commit (Before)**: `4babf9420d5711ed5a2d0fa244b3f1219f978738`
+- **Base Qualification Commit**: `6981511405d7bcd04cd8f8a09e64443ce0aaf47e`
+- **Core Tree Invariance**:
+  - `git rev-parse HEAD:app`: `34d1da0ae82b182fa2c0adafd785416a86834a20` (identical to 698)
+  - `git diff 6981511405d7bcd04cd8f8a09e64443ce0aaf47e HEAD -- app/ routes/ config/ composer.lock`: **0 bytes / 0 lines diff (100% clean)**
+- **Tracked Template Manifest & Pins**:
+  - `docs/integration/mobile-v2-integration-manifest.json` SHA-256: `5bfb4b06ae33ddf0084a3d2d99a41e714f0c64d97fa810b4ecdddf6f8e5f16c1`
+  - In accordance with architectural rules, runtime execution pins in the tracked manifest are intentionally set to `UNSET_...` templates to prevent circular self-referential hash commits prior to code freeze.
+  - Concrete runtime pairing parameters are pinned via the Root-reviewed private runtime pairing manifest:
+    - Path: `/home/t3dev/.t3/userdata/attachments/private-runtime-pairing-manifest.json`
+    - SHA-256: `c2839437f9a2b538cb919e9d98866565a492de048a4e5d2503a008cf65a31adc`
+    - Approved Peer Android HEAD: `019ea39af09558c2622356cb22235572747e3ddc` (Implementation qualified executable: `ddfc75536e647c65a6a7e8868c9336cee93769ec`)
+    - Backend Execution HEAD: `11def9bc3c26f9eeb2d261c73835088d8f68d8c1`
+
+### B. Core Harness File SHA-256 Digest Inventory
+| File | Path | SHA-256 Digest |
+|---|---|---|
+| Harness Fixture | `tests/Support/Harness/DisposableMobileV2BackendHarness.php` | `7f78c49df4fc28540d2d01a528183a8db5fa18bae4df3c998191322ba9c89d68` |
+| CLI Runner | `tests/Support/Harness/mobile-v2-harness-cli.php` | `34b9176af6c4cb183cce8f1b8b41cd27f9fb934f47917d4b752df0b6694e503d` |
+| Guard Test | `tests/Unit/Mobile/Harness/DisposableMobileV2BackendHarnessGuardTest.php` | `f5ce3974cd8edfb3aa4bf4fd9826a4c397b21dce611ecf5058026a0d8703d9f0` |
+| Harness Command | `tests/Support/Harness/MobileV2HarnessCommand.php` | `0b51e19e94ef9892f82c8f7d471d186f9f75c0fd9a08eb57f4fd7d08e58e8e99` |
+
+### C. Pure Guard PHPUnit Suite (23 Tests, 64 Assertions — 100% PASS)
+- **Command**:
+  ```bash
+  DB_CONNECTION=mysql DB_HOST=127.0.0.1 DB_PORT=3342 DB_DATABASE=unconnectable_qa_lease_guard \
+    php /home/t3dev/.t3/worktrees/account/t3-9723058c-3d0a7ebb15fba29a/vendor/bin/phpunit \
+    --configuration /home/t3dev/.t3/worktrees/account/t3-9723058c-3d0a7ebb15fba29a/phpunit.xml \
+    /home/t3dev/.t3/worktrees/account/t3-9723058c-3d0a7ebb15fba29a/tests/Unit/Mobile/Harness/DisposableMobileV2BackendHarnessGuardTest.php
+  ```
+- **Raw Execution Log**:
+  ```text
+  PHPUnit 12.5.36 by Sebastian Bergmann and contributors.
+
+  Runtime:       PHP 8.4.27
+  Configuration: /home/t3dev/.t3/worktrees/account/t3-9723058c-3d0a7ebb15fba29a/phpunit.xml
+
+  .......................                                           23 / 23 (100%)
+
+  Time: 00:00.026, Memory: 24.50 MB
+
+  OK (23 tests, 64 assertions)
+  ```
+- **Attestation**:
+  Executed against unconnectable database configuration (`DB_DATABASE=unconnectable_qa_lease_guard`). Zero database queries executed, zero framework kernels booted, zero socket listeners opened.
+
+### D. Scoped Pint Style Verification (0 Violations)
+- **Command**:
+  ```bash
+  vendor/bin/pint --test \
+    tests/Support/Harness/DisposableMobileV2BackendHarness.php \
+    tests/Support/Harness/MobileV2HarnessCommand.php \
+    tests/Support/Harness/mobile-v2-harness-cli.php \
+    tests/Unit/Mobile/Harness/DisposableMobileV2BackendHarnessGuardTest.php
+  ```
+- **Raw Output**:
+  ```json
+  {"tool":"pint","result":"passed"}
+  ```
+
+### E. PHPStan Static Analysis (Level 5 — 0 Errors)
+- **Command**:
+  ```bash
+  php vendor/bin/phpstan analyse --configuration=phpstan.neon \
+    tests/Support/Harness/DisposableMobileV2BackendHarness.php \
+    tests/Support/Harness/MobileV2HarnessCommand.php \
+    tests/Support/Harness/mobile-v2-harness-cli.php \
+    tests/Unit/Mobile/Harness/DisposableMobileV2BackendHarnessGuardTest.php
+  ```
+- **Raw Output**:
+  ```text
+   0/4 [░░░░░░░░░░░░░░░░░░░░░░░░░░░░]   0% 4/4 [▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓] 100%
+
+   [OK] No errors
+  ```
+
+### F. CLI Runner Source-Only `--prepare` Verification
+- **Command**:
+  ```bash
+  php tests/Support/Harness/mobile-v2-harness-cli.php --prepare
+  ```
+- **Raw Output**:
+  ```text
+  Mobile V2 Harness — Source-Only Prepare (zero sockets, zero DB, zero framework boot)
+    QUALIFIED_EXECUTION_HEAD   : 6981511405d7bcd04cd8f8a09e64443ce0aaf47e
+    QUALIFIED_APP_TREE         : 34d1da0ae82b182fa2c0adafd785416a86834a20
+    REQUIRED_BASE_BRANCH       : t3/recover-cash-writer
+    BACKEND_LOOPBACK_PORT      : 18080
+    TLS_PROXY_PORT             : 18443
+    ANDROID_CANDIDATE_KNOWN_BAD: 39fea3eae32522240caa0db8f40d018694064d8f
+    CA5A_MANIFEST_SHA256       : 3248b9721c3e2a09e84ae478ddb0171c3ea576fd0cbdd70b3606e4cdda4ff3e7
+    CA5A_CANONICAL_DIGEST      : 0847e10d89777e103252ebfa2d27f89a95832a5d70e01af57afe6423f703c630
+
+  TLS certificate covers SAN: localhost, 127.0.0.1, 10.0.2.2 (Android emulator)
+  Android base URL (emulator):   https://10.0.2.2:18443/api/mobile/v2/
+
+  To run foreground lifecycle (requires Root coordination & approved Android HEAD):
+    MOBILE_V2_HARNESS_ENABLE=1 MOBILE_V2_HARNESS_START_LISTENER=1 PHASE8_ALLOW_DISPOSABLE_DB=1 \
+      PHASE8_TEST_DB_HOST=127.0.0.1 PHASE8_TEST_DB_PORT=3342 \
+      PHASE8_TEST_DB_USERNAME=<user> PHASE8_TEST_DB_PASSWORD=<pass> \
+      php tests/Support/Harness/mobile-v2-harness-cli.php --run --backend-head=<40hex> --android-head=<40hex> \
+        --pairing-manifest-sha=<64hex>
+
+  Prepare phase complete. Zero framework booted. Zero listeners started.
+  ```
+
+### G. Database Isolation & Nonce Proof Trace Analysis
+- **Harness & CLI Boundary Verification**:
+  - `mobile-v2-harness-cli.php` isolates the environment before booting Laravel by purging global DB settings and explicitly overriding:
+    - `DB_CONNECTION=mysql`
+    - `DB_HOST=127.0.0.1`
+    - `DB_PORT=3342`
+    - `DB_DATABASE=v2_harness_unprovisioned`
+    - `DB_URL=''`
+  - **Child Process Isolation**:
+    When the child backend server process is spawned by `DisposableMobileV2BackendHarness::startBackendServer()`, Symfony Process explicitly unsets parent database and security environment variables via `false` entries in the environment map (`DB_DATABASE => false`, `DB_USERNAME => false`, `DB_PASSWORD => false`, `DATABASE_URL => false`).
+  - **Ownership Proof Requirement**:
+    Before framework boot or PDO connection, the child process verifies `DisposableMariaDbSchema::assertPrimarySchema()`, ensuring the temporary schema ownership proof nonce (`PHASE8_DISPOSABLE_DB_NONCE`) matches the private file at `PHASE8_DISPOSABLE_DB_PROOF` (mode `0600`).
+  - **Disclosed Limitation**:
+    In `--provision` and `--run` modes, Laravel's service providers initialize configuration on kernel bootstrap. Therefore, strict dual manifest validation (`assertDualManifestPin`) and pre-socket format/branch invariants (`assertPreSocketInvariants`) run **strictly before** `Kernel::bootstrap()` and before `DisposableMariaDbSchema::create()`, ensuring that any pin mismatch, unapproved peer HEAD, or dirty core tree aborts execution at exit code 1 with zero database interactions.
+
