@@ -95,6 +95,9 @@ final class MobileV2RouteCacheBootstrapProofTest extends TestCase
             'APP_EVENTS_CACHE' => $this->eventsCacheFile,
             'DB_CONNECTION' => 'sqlite',
             'DB_DATABASE' => ':memory:',
+            'CACHE_STORE' => 'array',
+            'CACHE_DRIVER' => 'array',
+            'SESSION_DRIVER' => 'array',
             'MOBILE_API_ENABLED' => $masterFlagsEnabled ? 'true' : 'false',
             'MOBILE_V2_API_ENABLED' => $masterFlagsEnabled ? 'true' : 'false',
             'MOBILE_V2_CASH_SLICE_ENABLED' => $cashSliceEnabled ? 'true' : 'false',
@@ -132,10 +135,25 @@ require __DIR__.'/vendor/autoload.php';
 $app = require __DIR__.'/bootstrap/app.php';
 $kernel = $app->make(Illuminate\Contracts\Http\Kernel::class);
 
-$postCashReq = Illuminate\Http\Request::create('/api/mobile/v2/companies/COM-TEST/sales/online-cash', 'POST');
+$postCashReq = Illuminate\Http\Request::create(
+    '/api/mobile/v2/companies/COM-TEST/sales/online-cash',
+    'POST',
+    [],
+    [],
+    [],
+    ['CONTENT_TYPE' => 'application/json', 'HTTP_ACCEPT' => 'application/json'],
+    '{}'
+);
 $postCashRes = $kernel->handle($postCashReq);
 
-$getStatusReq = Illuminate\Http\Request::create('/api/mobile/v2/companies/COM-TEST/offline-events/01JTEST00000000000000000000/status', 'GET');
+$getStatusReq = Illuminate\Http\Request::create(
+    '/api/mobile/v2/companies/COM-TEST/offline-events/01JTEST00000000000000000000/status',
+    'GET',
+    [],
+    [],
+    [],
+    ['HTTP_ACCEPT' => 'application/json']
+);
 $getStatusRes = $kernel->handle($getStatusReq);
 
 echo json_encode([
