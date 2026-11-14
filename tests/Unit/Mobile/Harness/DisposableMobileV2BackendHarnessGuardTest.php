@@ -2614,6 +2614,91 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
         $this->assertSame(1, $process->getExitCode());
         $this->assertStringContainsString('Inspector defaults to NO-EXECUTE', $process->getErrorOutput());
     }
+
+    #[Test]
+    public function test_cross_repo_kotlin_golden_fixture_parity_and_mutation_gates(): void
+    {
+        $fixturePath = dirname(__DIR__, 3).'/Support/Harness/fixtures/synthetic-financial-golden-wire.json';
+        $this->assertFileExists($fixturePath);
+
+        // 1. Assert exact byte hash of the actual Kotlin golden export
+        $expectedHash = '25ae020de247d03c5aa57538592cd82574d62d6e4041e845ad11ea835c7f6aa6';
+        $actualHash = hash_file('sha256', $fixturePath);
+        $this->assertSame($expectedHash, $actualHash, 'Synthetic golden wire fixture SHA mismatch');
+
+        $rawJson = (string) file_get_contents($fixturePath);
+        $goldenData = json_decode($rawJson, true);
+        $this->assertIsArray($goldenData);
+
+        // Expected fixture pins corresponding to the golden export environment
+        $fixturePins = [
+            'clientPublicationHead' => 'c00aedb70ea06f28ae42282149c030df76dc300d',
+            'clientExecutableHead' => 'b7e61eb4ed0aed2f5040d9fc44f9764b310be530',
+            'backendExecutionHead' => 'cfc28baaaaf52521ecbc88f1ba4c621afee17221',
+            'handoffDigest' => '8e48f3692a88f5ac3f333f81536d70eb3541228959968697fda03f68df44befc',
+            'expectedLifecycle' => 'FINANCIAL_PAIRED_RUN',
+            'expectedScope' => 'ROOT_AUTHORIZED_PAIRED_EXECUTION',
+        ];
+
+        // Separate, clearly synthetic trusted DB inspection report for the parity test
+        $syntheticTrustedDbReport = [
+            'scope' => 'ROOT_AUTHORIZED_PAIRED_EXECUTION',
+            'run_id' => '019ea456-0000-7000-8000-000000000001',
+            'source_head' => 'cfc28baaaaf52521ecbc88f1ba4c621afee17221',
+            'handoff_digest' => '8e48f3692a88f5ac3f333f81536d70eb3541228959968697fda03f68df44befc',
+            'is_canonical_delta_valid' => true,
+            'gl_batches_balanced' => true,
+            'all_healthy' => true,
+            'reconciler_results' => [
+                'AccountingReconciliationService' => ['healthy' => true, 'issue_count' => 0],
+                'InventoryReconciliationService' => ['healthy' => true, 'issue_count' => 0],
+                'SalesReconciliationService' => ['healthy' => true, 'issue_count' => 0],
+                'PayablesReconciliationService' => ['healthy' => true, 'issue_count' => 0],
+                'MoneyReconciliationService' => ['healthy' => true, 'issue_count' => 0],
+                'Phase7ReconciliationService' => ['healthy' => true, 'issue_count' => 0],
+            ],
+        ];
+
+        // 2. Pure parity acceptance on unaltered golden wire JSON
+        $result = \Tests\Support\Harness\DisposableFinancialPostRunInspector::validateOuterEvidenceJson(
+            $goldenData,
+            $fixturePins,
+            $syntheticTrustedDbReport
+        );
+        $this->assertTrue($result['is_valid'], 'Golden fixture failed validation: '.implode('; ', $result['errors']));
+        $this->assertSame([], $result['errors']);
+
+        // 3. Mutation negative: mutated httpStatusCode in scenario (201 -> 200)
+        $mutatedCode = $goldenData;
+        $mutatedCode['scenarios'][1]['httpStatusCode'] = 200;
+        $resMutatedCode = \Tests\Support\Harness\DisposableFinancialPostRunInspector::validateOuterEvidenceJson(
+            $mutatedCode,
+            $fixturePins,
+            $syntheticTrustedDbReport
+        );
+        $this->assertFalse($resMutatedCode['is_valid']);
+        $this->assertTrue(collect($resMutatedCode['errors'])->contains(fn ($e) => str_contains($e, 'HTTP status code mismatch')));
+
+        // 4. Mutation negative: corrupted trusted DB report (issue_count = 1)
+        $corruptDb = $syntheticTrustedDbReport;
+        $corruptDb['reconciler_results']['AccountingReconciliationService']['issue_count'] = 1;
+        $resCorruptDb = \Tests\Support\Harness\DisposableFinancialPostRunInspector::validateOuterEvidenceJson(
+            $goldenData,
+            $fixturePins,
+            $corruptDb
+        );
+        $this->assertFalse($resCorruptDb['is_valid']);
+        $this->assertTrue(collect($resCorruptDb['errors'])->contains(fn ($e) => str_contains($e, 'issue_count must be exactly 0')));
+
+        // 5. Mutation negative: missing trusted DB report
+        $resNoDb = \Tests\Support\Harness\DisposableFinancialPostRunInspector::validateOuterEvidenceJson(
+            $goldenData,
+            $fixturePins,
+            null
+        );
+        $this->assertFalse($resNoDb['is_valid']);
+        $this->assertTrue(collect($resNoDb['errors'])->contains(fn ($e) => str_contains($e, 'Separate REQUIRED trusted owned DB inspection report is mandatory')));
+    }
 }
 
 

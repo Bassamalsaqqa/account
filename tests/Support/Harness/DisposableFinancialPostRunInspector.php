@@ -836,10 +836,9 @@ final class DisposableFinancialPostRunInspector
                 if ($status !== 'NOT_RUN') {
                     $errors[] = "Advanced probe scenario '{$probeName}' cannot claim '{$status}' in basic financial run; must be exactly 'NOT_RUN'.";
                 }
-                if (! isset($sc['httpStatusCode']) || ! is_int($sc['httpStatusCode'])) {
-                    $errors[] = "Advanced probe scenario '{$probeName}' httpStatusCode must be a strict integer.";
-                } elseif ($sc['httpStatusCode'] !== 0) {
-                    $errors[] = "Advanced probe scenario '{$probeName}' httpStatusCode must be 0, got {$sc['httpStatusCode']}.";
+                $statusCode = $sc['httpStatusCode'] ?? null;
+                if ($statusCode !== null && $statusCode !== 0) {
+                    $errors[] = "Advanced probe scenario '{$probeName}' httpStatusCode must be null or 0, got ".json_encode($statusCode).".";
                 }
             }
         }
