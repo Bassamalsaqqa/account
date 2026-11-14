@@ -81,4 +81,5 @@ Off-host coherent backup, encryption-key recovery, actual authenticated EN/AR br
 - PHPStan analyse (`--debug`): 0 errors.
 - Pint style check: passed.
 - Automated manifest extraction tool confirmed in `tools/release-audit/manifest.php`.
+- Committed sanitized qualification evidence and SHA-256 log manifest: [`docs/evidence/pr101-qualified-6246/`](file:///home/t3dev/.t3/worktrees/account/t3-3181ca75-bda79e69ac85af7a/docs/evidence/pr101-qualified-6246/).
 - Production mode remains unconditionally refused. No live DB, SSH, Hostinger, merge, or activation performed.

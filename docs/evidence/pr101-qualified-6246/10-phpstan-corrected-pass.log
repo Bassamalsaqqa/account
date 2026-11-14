@@ -1,0 +1,11 @@
+Note: Using configuration file phpstan.neon.
+tests/Unit/ReleaseAudit/OwnershipLifecycleRefusalTest.php
+tests/Unit/ReleaseAudit/RefusalTest.php
+tests/Unit/ReleaseAudit/ReleaseAuditDatabaseTest.php
+tools/release-audit/Fingerprint.php
+tools/release-audit/Guard.php
+tools/release-audit/audit.php
+tools/release-audit/compare.php
+tools/release-audit/manifest.php
+
+ [OK] No errors                                                                 
