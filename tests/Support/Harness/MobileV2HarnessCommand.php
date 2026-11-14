@@ -28,6 +28,7 @@ class MobileV2HarnessCommand extends Command
     protected $signature = 'mobile:v2-harness
         {--prepare               : Source-only phase: validate invariants and emit TLS config source (no sockets, no framework boot)}
         {--provision             : Self-test provision: provision disposable schema, assert PDO 3342, and clean up}
+        {--readiness-only        : Strictly bounded readiness self-test: checks only /_harness/readiness nonce, financial endpoints blocked}
         {--start                 : Start transport lifecycle (requires existing live harness owner)}
         {--run                   : Foreground paired lifecycle: provision schema, start supervised transport, wait for shutdown, guaranteed cleanup}
         {--backend-head=         : Full 40-hex SHA of the current backend worktree HEAD (mandatory)}
@@ -41,10 +42,11 @@ class MobileV2HarnessCommand extends Command
     {
         $prepare = (bool) $this->option('prepare');
         $provision = (bool) $this->option('provision');
+        $readinessOnly = (bool) $this->option('readiness-only');
         $start = (bool) $this->option('start');
         $run = (bool) $this->option('run');
 
-        if (! $prepare && ! $provision && ! $start && ! $run) {
+        if (! $prepare && ! $provision && ! $readinessOnly && ! $start && ! $run) {
             $prepare = true;
         }
 
@@ -61,6 +63,10 @@ class MobileV2HarnessCommand extends Command
             $this->error('Mandatory option --backend-head=<40hex> is required.');
 
             return self::FAILURE;
+        }
+
+        if ($readinessOnly) {
+            return $this->handleReadinessOnly($backendHead, $androidHead, $pairingManifest, $pairingManifestSha);
         }
 
         if ($run) {
@@ -143,11 +149,13 @@ class MobileV2HarnessCommand extends Command
 
             $manifest = $result['manifest'];
             $this->info('Provision self-test succeeded.');
-            $this->line('  Schema       : '.$manifest['schema_name']);
-            $this->line('  Company      : '.$manifest['company_public_id']);
-            $this->line('  Staff actor  : '.$manifest['staff_actor_public_id']);
-            $this->line('  Device ID    : '.$manifest['device_id']);
-            $this->line('  Credentials  : '.$result['credentials_path'].' (chmod 0600)');
+            $this->line('  Schema           : '.$manifest['schema_name']);
+            $this->line('  Company          : '.$manifest['company_public_id']);
+            $this->line('  Staff actor      : '.$manifest['staff_actor_public_id']);
+            $this->line('  Device ID        : '.$manifest['device_id']);
+            $this->line('  Credentials      : '.$result['credentials_path'].' (chmod 0600)');
+            $this->line('  Client handoff   : '.$result['handoff_path'].' (chmod 0600)');
+            $this->line('  Canonical digest : '.$result['canonical_digest']);
             $this->newLine();
             $this->line('Self-test complete. Running automatic bounded cleanup of disposable schema...');
         } catch (\Throwable $e) {
@@ -155,6 +163,80 @@ class MobileV2HarnessCommand extends Command
 
             return self::FAILURE;
         } finally {
+            $harness->cleanup();
+            $this->line('Cleanup completed.');
+        }
+
+        return self::SUCCESS;
+    }
+
+    private function handleReadinessOnly(
+        string $backendHead,
+        string $androidHead,
+        ?string $pairingManifest = null,
+        ?string $pairingManifestSha = null
+    ): int {
+        $this->line('Mobile V2 Harness — Readiness-Only Probe Test (--readiness-only)');
+
+        if (getenv('MOBILE_V2_HARNESS_ENABLE') !== '1') {
+            $this->error('Refused: MOBILE_V2_HARNESS_ENABLE must be 1.');
+
+            return self::FAILURE;
+        }
+
+        if (getenv('MOBILE_V2_HARNESS_START_LISTENER') !== '1') {
+            $this->error(
+                'Harness readiness probe refused: MOBILE_V2_HARNESS_START_LISTENER is not set.'.PHP_EOL.
+                'Readiness listener startup requires explicit coordination grant.'.PHP_EOL.
+                'Zero background servers or TLS sockets started.'
+            );
+
+            return self::FAILURE;
+        }
+
+        if ($androidHead === '') {
+            $this->error('--readiness-only requires --android-head=<40hex>.');
+
+            return self::FAILURE;
+        }
+
+        if ($pairingManifestSha === null || $pairingManifestSha === '') {
+            $this->error('--readiness-only requires --pairing-manifest-sha=<64hex>.');
+
+            return self::FAILURE;
+        }
+
+        $harness = new DisposableMobileV2BackendHarness;
+        $harness->setReadinessOnly(true);
+
+        try {
+            $provision = $harness->provision(
+                expectedBackendHead: $backendHead,
+                peerAndroidHead: $androidHead,
+                manifestPath: $pairingManifest,
+                manifestShaPin: $pairingManifestSha,
+            );
+            $this->line('  Provision OK — schema: '.$provision['manifest']['schema_name']);
+
+            $transport = $harness->start(
+                peerAndroidHead: $androidHead,
+                backendHead: $backendHead,
+                manifestPath: $pairingManifest,
+                manifestShaPin: $pairingManifestSha,
+            );
+
+            $this->info('Readiness probe test succeeded.');
+            $this->line('  TLS proxy port   : https://127.0.0.1:'.$transport['tls_proxy_port']);
+            $this->line('  Readiness probe  : verified HTTP 200 and matching nonce via CA-trusted TLS.');
+            $this->line('  Client handoff   : '.$transport['handoff_path']);
+            $this->line('  Financial routes : strictly blocked (HTTP 403) in child router.');
+        } catch (\Throwable $e) {
+            $this->error('Readiness test failed: '.$e->getMessage());
+
+            return self::FAILURE;
+        } finally {
+            $this->newLine();
+            $this->line('Shutting down and cleaning up owned processes, files, and schemas...');
             $harness->cleanup();
             $this->line('Cleanup completed.');
         }

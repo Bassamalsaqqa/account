@@ -331,3 +331,73 @@ Existing validated fixture `ca5a` (`manifest_sha256: 3248b9721c3e2a09e84ae478ddb
   - **Disclosed Limitation**:
     In `--provision` and `--run` modes, Laravel's service providers initialize configuration on kernel bootstrap. Therefore, strict dual manifest validation (`assertDualManifestPin`) and pre-socket format/branch invariants (`assertPreSocketInvariants`) run **strictly before** `Kernel::bootstrap()` and before `DisposableMariaDbSchema::create()`, ensuring that any pin mismatch, unapproved peer HEAD, or dirty core tree aborts execution at exit code 1 with zero database interactions.
 
+
+
+---
+
+## 9. Runtime Client Handoff JSON Artifact & Schema Specification
+
+### A. Minimal Runtime Artifact Overview
+To eliminate prose-only handoffs and provide a machine-verifiable contract for the Android client pairing thread, the harness generates a concrete private JSON artifact (`runtime_client_handoff.json`, mode `0600`) located within the harness private temporary directory (`/tmp/v2_harness_<nonce>/`).
+
+The formal JSON Schema is located at [`docs/integration/mobile-v2-client-handoff-schema.json`](file:///home/t3dev/.t3/worktrees/account/t3-9723058c-3d0a7ebb15fba29a/docs/integration/mobile-v2-client-handoff-schema.json).
+
+### B. Core Artifact Fields
+1. **Schema & Scope**:
+   - `schema_version`: `"1.0.0"`
+   - `handoff_scope`: `"mobile_v2_online_cash_sale"`
+2. **Backend Runtime Pins**:
+   - `qualified_core_head_sha`: Qualified core commit SHA (`6981511405d7bcd04cd8f8a09e64443ce0aaf47e`).
+   - `backend_execution_head_sha`: Current worktree HEAD SHA.
+   - `qualified_app_tree_sha`: Qualified app tree hash (`34d1da0ae82b182fa2c0adafd785416a86834a20`).
+   - `peer_android_approved_head_sha`: Root-approved Android candidate HEAD (`019ea39af09558c2622356cb22235572747e3ddc`).
+   - `peer_android_executable_head_sha`: Peer Android implementation qualified executable SHA (`ddfc75536e647c65a6a7e8868c9336cee93769ec`).
+3. **Endpoints**:
+   - `base_url`: `https://10.0.2.2:18443/api/mobile/v2` (Android emulator loopback)
+   - `loopback_base_url`: `https://127.0.0.1:18443/api/mobile/v2`
+   - `routes`:
+     - `online_cash_sale`: `/companies/{companyId}/sales/online-cash`
+     - `offline_event_status`: `/companies/{companyId}/offline-events/{clientEventId}/status`
+     - `readiness_probe`: `/_harness/readiness`
+4. **Authoritative Fixture & Context**:
+   - `fixture`: Schema name, tenant company public ID, staff actor public ID, device ID, customer, warehouse, product, unit, tax rate, and cash money account public IDs.
+   - `server_synthesized_context`:
+     - `company_id`: Company public ULID
+     - `actor_id`: Staff actor public ULID
+     - `currency_minor_units`: Standard minor unit integer (`2` for ILS)
+   - `sample_raw_wire_request`: Canonical 7-key client request wire payload (`client_event_id`, `device_id`, `customer_id`, `warehouse_id`, `currency`, `lines`, `payment`).
+5. **Canonical OnlineSaleIntentProfile Digest**:
+   - The digest is computed authoritatively using `App\Support\Mobile\Contract\Revision3\OnlineSaleIntentProfile::construct($serverContext, $sampleRequest)` and `OnlineSaleIntentProfile::computeDigest($profile)`.
+   - Never computed from raw HTTP wire body SHA-256. Follows RFC 8785 JSON Canonicalization Scheme (JCS).
+   - Formatted as `sha256:<64hex>`.
+6. **Private Credentials Path**:
+   - `credentials_path`: Points to `runtime_credentials.json` (chmod `0600`), storing `raw_token`, `token_hash`, `device_id`, `staff_email`, and `schema`.
+   - Raw tokens are never outputted to stdout, logs, or public command arrays.
+7. **Lifecycle-Governed Startup TLS**:
+   - During `provision()`, TLS is not yet started:
+     - `status`: `"UNAVAILABLE_AWAITING_TLS_START"`
+     - `ca_cert_path`: `null`
+     - `ca_cert_sha256`: `null`
+     - `readiness_url`: `null`
+     - `readiness_nonce`: `null`
+   - Upon `start()`, TLS is generated and supervised:
+     - `status`: `"ACTIVE_TLS_READY"`
+     - `ca_cert_path`: `<harnessTempDir>/bootstrap/test-ca.pem`
+     - `ca_cert_sha256`: SHA-256 of generated test CA certificate
+     - `readiness_url`: `https://127.0.0.1:18443/_harness/readiness`
+     - `readiness_nonce`: Active 128-bit hex harness nonce
+
+---
+
+## 10. Strictly Bounded Readiness-Only Mode (`--readiness-only`)
+
+### A. Operational Boundary
+The `--readiness-only` mode provides a strictly isolated verification step that validates TLS CA trust, loopback routing, and the `/_harness/readiness` nonce probe without opening financial or tenant endpoints to traffic:
+- **Financial Endpoints Blocked**: Child router strictly returns `HTTP 403 Forbidden` (`{"error": "forbidden", "message": "Harness is running in READINESS-ONLY mode..."}`) for any non-readiness endpoint, aborting before framework routing.
+- **Fail-Closed Scope Gate**: Fails closed before framework boot if the runtime manifest specifies `ROOT_AUTHORIZED_LOCAL_PROVISION_ONLY` or an unapproved scope. Requires explicit `ROOT_AUTHORIZED_READINESS_ONLY` or `ROOT_AUTHORIZED_PAIRED_EXECUTION`.
+
+### B. HTTP 200 Status Code Verification
+In `DisposableMobileV2BackendHarness::validateReadinessResponse(?array $httpHeaders, string|false $responseBody, string $expectedNonce): bool`:
+- Explicitly tests `$httpHeaders[0]` against `#^HTTP/\S+\s+200\b#`.
+- Rejects responses with non-200 HTTP status (e.g. 500, 403, 404, or 302).
+- Validates that the body is non-false and parses as a valid JSON object containing `status === "ready"` and `hash_equals($expectedNonce, $data["nonce"])`.

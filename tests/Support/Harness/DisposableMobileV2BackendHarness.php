@@ -20,6 +20,7 @@ use App\Models\Unit;
 use App\Models\User;
 use App\Models\Warehouse;
 use App\Services\Tenancy\CompanyRoleService;
+use App\Support\Mobile\Contract\Revision3\OnlineSaleIntentProfile;
 use App\Support\Tenancy\CompanyContext;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
@@ -61,6 +62,12 @@ final class DisposableMobileV2BackendHarness
     /** Known peer Android integration candidate commit; marked CANDIDATE_KNOWN_BAD (changes required, unit 76 PASS but not Root accepted). */
     public const string ANDROID_CANDIDATE_KNOWN_BAD = '39fea3eae32522240caa0db8f40d018694064d8f';
 
+    /** Root-approved Android candidate HEAD (docs qualification). */
+    public const string APPROVED_ANDROID_HEAD = '019ea39af09558c2622356cb22235572747e3ddc';
+
+    /** Peer Android implementation qualified executable SHA. */
+    public const string APPROVED_ANDROID_EXECUTABLE_HEAD = 'ddfc75536e647c65a6a7e8868c9336cee93769ec';
+
     /** Historical validated ca5a dual-manifest SHA-256 hash (for historical audit / reference). */
     public const string CA5A_MANIFEST_SHA256 = '3248b9721c3e2a09e84ae478ddb0171c3ea576fd0cbdd70b3606e4cdda4ff3e7';
 
@@ -73,6 +80,13 @@ final class DisposableMobileV2BackendHarness
     /** TLS port exposed by Caddy for Android emulator access on 10.0.2.2. */
     public const int TLS_PROXY_PORT = 18443;
 
+    /** Bounded execution scopes. */
+    public const string SCOPE_PROVISION_ONLY = 'ROOT_AUTHORIZED_LOCAL_PROVISION_ONLY';
+
+    public const string SCOPE_READINESS_ONLY = 'ROOT_AUTHORIZED_READINESS_ONLY';
+
+    public const string SCOPE_PAIRED_EXECUTION = 'ROOT_AUTHORIZED_PAIRED_EXECUTION';
+
     private bool $provisioned = false;
 
     private ?DisposableMariaDbSchema $schema = null;
@@ -80,6 +94,15 @@ final class DisposableMobileV2BackendHarness
     private ?string $harnessTempDir = null;
 
     private ?string $credentialsFilePath = null;
+
+    private ?string $handoffFilePath = null;
+
+    /**
+     * @var array<string, mixed>|null
+     */
+    private ?array $clientHandoff = null;
+
+    private bool $readinessOnly = false;
 
     private ?string $harnessNonce = null;
 
@@ -126,6 +149,29 @@ final class DisposableMobileV2BackendHarness
     public function getCredentialsFilePath(): ?string
     {
         return $this->credentialsFilePath;
+    }
+
+    public function getHandoffFilePath(): ?string
+    {
+        return $this->handoffFilePath;
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    public function getClientHandoff(): ?array
+    {
+        return $this->clientHandoff;
+    }
+
+    public function isReadinessOnly(): bool
+    {
+        return $this->readinessOnly;
+    }
+
+    public function setReadinessOnly(bool $readinessOnly): void
+    {
+        $this->readinessOnly = $readinessOnly;
     }
 
     public function getHarnessNonce(): ?string
@@ -489,6 +535,126 @@ final class DisposableMobileV2BackendHarness
     }
 
     /**
+     * Validates that runtime pairing manifest authorizes readiness probing.
+     * Fails closed if manifest scope is provision-only or unrecognized.
+     *
+     * @return array<string, mixed>
+     */
+    public static function assertReadinessScope(?string $manifestPath, ?string $manifestShaPin): array
+    {
+        if ($manifestPath === null || $manifestPath === '' || ! file_exists($manifestPath)) {
+            throw new RuntimeException('Harness readiness scope refused: pairing manifest missing.');
+        }
+
+        if ($manifestShaPin === null || $manifestShaPin === '') {
+            throw new RuntimeException('Harness readiness scope refused: mandatory manifest SHA-256 pin required.');
+        }
+
+        $actualSha = (string) hash_file('sha256', $manifestPath);
+        if (! hash_equals($manifestShaPin, $actualSha)) {
+            throw new RuntimeException("Harness readiness scope refused: manifest SHA mismatch. Expected '{$manifestShaPin}', got '{$actualSha}'.");
+        }
+
+        $manifestData = json_decode((string) file_get_contents($manifestPath), true);
+        if (! is_array($manifestData)) {
+            throw new RuntimeException('Harness readiness scope refused: manifest is malformed JSON.');
+        }
+
+        $status = (string) ($manifestData['status'] ?? '');
+        if ($status === self::SCOPE_PROVISION_ONLY || str_contains($status, 'PROVISION_ONLY')) {
+            throw new RuntimeException("Harness readiness scope refused: pairing manifest status is '{$status}'. Readiness probe requires explicit '".self::SCOPE_READINESS_ONLY."' scope.");
+        }
+
+        if ($status !== self::SCOPE_READINESS_ONLY && $status !== self::SCOPE_PAIRED_EXECUTION) {
+            throw new RuntimeException("Harness readiness scope refused: unapproved manifest status '{$status}'. Readiness probe requires explicit '".self::SCOPE_READINESS_ONLY."' or '".self::SCOPE_PAIRED_EXECUTION."' scope.");
+        }
+
+        return $manifestData;
+    }
+
+    /**
+     * Validates readiness probe response:
+     * 1. Must have valid HTTP response headers with status code 200.
+     * 2. Body must be non-false and valid JSON object with {"status": "ready", "nonce": "<matching_nonce>"}.
+     *
+     * @param  array<int, string>|null  $httpHeaders
+     */
+    public static function validateReadinessResponse(?array $httpHeaders, string|false $responseBody, string $expectedNonce): bool
+    {
+        if ($responseBody === false || $httpHeaders === null || $httpHeaders === [] || ! isset($httpHeaders[0])) {
+            return false;
+        }
+
+        if (! preg_match('#^HTTP/\S+\s+200\b#', $httpHeaders[0])) {
+            return false;
+        }
+
+        $data = json_decode($responseBody, true);
+        if (! is_array($data)) {
+            return false;
+        }
+
+        if (($data['status'] ?? null) !== 'ready') {
+            return false;
+        }
+
+        return hash_equals($expectedNonce, (string) ($data['nonce'] ?? ''));
+    }
+
+    /**
+     * Builds client handoff manifest structure conforming to mobile-v2-client-handoff-schema.json.
+     *
+     * @param  array<string, mixed>  $runtimePins
+     * @param  array<string, mixed>  $fixture
+     * @param  array<string, mixed>  $sampleRequest
+     * @param  array<string, mixed>  $serverContext
+     * @param  array<string, mixed>|null  $startupTls
+     * @return array<string, mixed>
+     */
+    public static function buildClientHandoff(
+        array $runtimePins,
+        array $fixture,
+        string $credentialsPath,
+        array $sampleRequest,
+        array $serverContext,
+        string $canonicalDigest,
+        ?array $startupTls = null
+    ): array {
+        return [
+            'schema_version' => '1.0.0',
+            'handoff_scope' => 'mobile_v2_online_cash_sale',
+            'backend_runtime_pins' => [
+                'qualified_core_head_sha' => (string) ($runtimePins['qualified_core_head_sha'] ?? self::QUALIFIED_EXECUTION_HEAD),
+                'backend_execution_head_sha' => (string) ($runtimePins['backend_execution_head_sha'] ?? ''),
+                'qualified_app_tree_sha' => (string) ($runtimePins['qualified_app_tree_sha'] ?? self::QUALIFIED_APP_TREE),
+                'peer_android_approved_head_sha' => (string) ($runtimePins['peer_android_approved_head_sha'] ?? ''),
+                'peer_android_executable_head_sha' => (string) ($runtimePins['peer_android_executable_head_sha'] ?? ''),
+            ],
+            'endpoints' => [
+                'base_url' => 'https://10.0.2.2:'.self::TLS_PROXY_PORT.'/api/mobile/v2',
+                'loopback_base_url' => 'https://127.0.0.1:'.self::TLS_PROXY_PORT.'/api/mobile/v2',
+                'routes' => [
+                    'online_cash_sale' => '/companies/{companyId}/sales/online-cash',
+                    'offline_event_status' => '/companies/{companyId}/offline-events/{clientEventId}/status',
+                    'readiness_probe' => '/_harness/readiness',
+                ],
+            ],
+            'fixture' => $fixture,
+            'credentials_path' => $credentialsPath,
+            'sample_raw_wire_request' => $sampleRequest,
+            'server_synthesized_context' => $serverContext,
+            'canonical_intent_profile_digest' => $canonicalDigest,
+            'startup_tls' => $startupTls ?? [
+                'status' => 'UNAVAILABLE_AWAITING_TLS_START',
+                'ca_cert_path' => null,
+                'ca_cert_sha256' => null,
+                'readiness_url' => null,
+                'readiness_nonce' => null,
+            ],
+        ];
+    }
+
+    /**
      * Phase 1: Provision disposable schema and seed synthetic qualification fixtures.
      *
      * Mandatory pins enforced across ALL execution modes (including provision) before Schema::create.
@@ -502,7 +668,10 @@ final class DisposableMobileV2BackendHarness
      * @return array{
      *     manifest: array<string, mixed>,
      *     credentials_path: string,
-     *     sample_request: array<string, mixed>
+     *     handoff_path: string,
+     *     handoff: array<string, mixed>,
+     *     sample_request: array<string, mixed>,
+     *     canonical_digest: string
      * }
      */
     public function provision(
@@ -752,12 +921,48 @@ final class DisposableMobileV2BackendHarness
             );
             chmod($this->credentialsFilePath, 0600);
 
+            $serverContext = [
+                'company_id' => (string) $company->public_id,
+                'actor_id' => (string) $staff->public_id,
+                'currency_minor_units' => 2,
+            ];
+
+            $profile = OnlineSaleIntentProfile::construct($serverContext, $sampleRequest);
+            $canonicalDigest = OnlineSaleIntentProfile::computeDigest($profile);
+
+            $runtimePins = [
+                'qualified_core_head_sha' => self::QUALIFIED_EXECUTION_HEAD,
+                'backend_execution_head_sha' => $expectedBackendHead,
+                'qualified_app_tree_sha' => self::QUALIFIED_APP_TREE,
+                'peer_android_approved_head_sha' => self::APPROVED_ANDROID_HEAD,
+                'peer_android_executable_head_sha' => $peerAndroidHead,
+            ];
+
+            $this->clientHandoff = self::buildClientHandoff(
+                $runtimePins,
+                $this->fixtureManifest,
+                $this->credentialsFilePath,
+                $sampleRequest,
+                $serverContext,
+                $canonicalDigest
+            );
+
+            $this->handoffFilePath = $this->harnessTempDir.'/runtime_client_handoff.json';
+            file_put_contents(
+                $this->handoffFilePath,
+                json_encode($this->clientHandoff, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)
+            );
+            chmod($this->handoffFilePath, 0600);
+
             $this->provisioned = true;
 
             return [
                 'manifest' => $this->fixtureManifest,
                 'credentials_path' => $this->credentialsFilePath,
+                'handoff_path' => $this->handoffFilePath,
+                'handoff' => $this->clientHandoff,
                 'sample_request' => $sampleRequest,
+                'canonical_digest' => $canonicalDigest,
             ];
         } catch (\Throwable $e) {
             // Guarantee full cleanup on any provisioning failure
@@ -787,7 +992,7 @@ final class DisposableMobileV2BackendHarness
      * @param  string  $backendHead  Full 40-hex commit SHA of current backend worktree HEAD.
      * @param  string|null  $manifestPath  Path to pairing manifest.
      * @param  string|null  $manifestShaPin  Mandatory 64-hex SHA-256 hash pin of the pairing manifest.
-     * @return array{backend_loopback_port: int, tls_proxy_port: int, ca_cert_path: string, credentials_path: string}
+     * @return array{backend_loopback_port: int, tls_proxy_port: int, ca_cert_path: string, credentials_path: string, handoff_path: string}
      */
     public function start(
         string $peerAndroidHead,
@@ -831,6 +1036,10 @@ final class DisposableMobileV2BackendHarness
         // Dual manifest pin assertion before ANY socket or process creation
         self::assertDualManifestPin($backendHead, $peerAndroidHead, $manifestPath, $manifestShaPin);
 
+        if ($this->readinessOnly) {
+            self::assertReadinessScope($manifestPath, $manifestShaPin);
+        }
+
         // Preflight loopback ports ONLY AFTER ALL gates and manifest assertions have passed
         self::assertPortsAvailable(self::BACKEND_LOOPBACK_PORT, self::TLS_PROXY_PORT);
 
@@ -864,6 +1073,7 @@ final class DisposableMobileV2BackendHarness
             'harness_nonce' => $nonce,
             'cache_dir' => $cacheDir,
             'env_file' => $testEnvPath,
+            'readiness_only' => $this->readinessOnly,
         ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
         chmod($childConfigPath, 0600);
 
@@ -991,6 +1201,16 @@ foreach (\$envVars as \$k => \$v) {
 if (\$uri === '/_harness/readiness') {
     header('Content-Type: application/json');
     echo json_encode(['status' => 'ready', 'nonce' => \$config['harness_nonce']]);
+    exit(0);
+}
+
+if (! empty(\$config['readiness_only'])) {
+    http_response_code(403);
+    header('Content-Type: application/json');
+    echo json_encode([
+        'error' => 'forbidden',
+        'message' => 'Harness is running in READINESS-ONLY mode. Financial endpoints and paired requests are strictly blocked.',
+    ]);
     exit(0);
 }
 
@@ -1162,11 +1382,29 @@ PHP;
             throw $e;
         }
 
+        if ($this->clientHandoff !== null) {
+            $this->clientHandoff['startup_tls'] = [
+                'status' => 'ACTIVE_TLS_READY',
+                'ca_cert_path' => $caCertPath,
+                'ca_cert_sha256' => (string) hash_file('sha256', $caCertPath),
+                'readiness_url' => 'https://127.0.0.1:'.self::TLS_PROXY_PORT.'/_harness/readiness',
+                'readiness_nonce' => $nonce,
+            ];
+            if ($this->handoffFilePath !== null) {
+                file_put_contents(
+                    $this->handoffFilePath,
+                    json_encode($this->clientHandoff, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)
+                );
+                chmod($this->handoffFilePath, 0600);
+            }
+        }
+
         return [
             'backend_loopback_port' => self::BACKEND_LOOPBACK_PORT,
             'tls_proxy_port' => self::TLS_PROXY_PORT,
             'ca_cert_path' => $caCertPath,
             'credentials_path' => $this->credentialsFilePath ?? '',
+            'handoff_path' => $this->handoffFilePath ?? '',
         ];
     }
 
@@ -1195,15 +1433,10 @@ PHP;
                 );
             }
 
+            $http_response_header = null;
             $response = @file_get_contents($url, false, $ctx);
-            if ($response !== false) {
-                $data = json_decode($response, true);
-                if (is_array($data)
-                    && ($data['status'] ?? null) === 'ready'
-                    && hash_equals($expectedNonce, (string) ($data['nonce'] ?? ''))
-                ) {
-                    return;
-                }
+            if (self::validateReadinessResponse($http_response_header, $response, $expectedNonce)) {
+                return;
             }
             usleep(50_000);
         }
@@ -1244,15 +1477,10 @@ PHP;
                 );
             }
 
+            $http_response_header = null;
             $response = @file_get_contents($url, false, $ctx);
-            if ($response !== false) {
-                $data = json_decode($response, true);
-                if (is_array($data)
-                    && ($data['status'] ?? null) === 'ready'
-                    && hash_equals($expectedNonce, (string) ($data['nonce'] ?? ''))
-                ) {
-                    return;
-                }
+            if (self::validateReadinessResponse($http_response_header, $response, $expectedNonce)) {
+                return;
             }
             usleep(50_000);
         }
@@ -1286,6 +1514,9 @@ PHP;
         }
 
         $this->credentialsFilePath = null;
+        $this->handoffFilePath = null;
+        $this->clientHandoff = null;
+        $this->readinessOnly = false;
         $this->harnessNonce = null;
         $this->proofPath = null;
         $this->proofNonce = null;

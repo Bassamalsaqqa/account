@@ -364,6 +364,12 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
         $this->assertSame(40, strlen(DisposableMobileV2BackendHarness::ANDROID_CANDIDATE_KNOWN_BAD));
         $this->assertMatchesRegularExpression('/^[0-9a-f]{40}$/', DisposableMobileV2BackendHarness::ANDROID_CANDIDATE_KNOWN_BAD);
 
+        $this->assertSame(40, strlen(DisposableMobileV2BackendHarness::APPROVED_ANDROID_HEAD));
+        $this->assertMatchesRegularExpression('/^[0-9a-f]{40}$/', DisposableMobileV2BackendHarness::APPROVED_ANDROID_HEAD);
+
+        $this->assertSame(40, strlen(DisposableMobileV2BackendHarness::APPROVED_ANDROID_EXECUTABLE_HEAD));
+        $this->assertMatchesRegularExpression('/^[0-9a-f]{40}$/', DisposableMobileV2BackendHarness::APPROVED_ANDROID_EXECUTABLE_HEAD);
+
         $this->assertSame('t3/recover-cash-writer', DisposableMobileV2BackendHarness::REQUIRED_BASE_BRANCH);
     }
 
@@ -429,5 +435,176 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
         $this->assertNull($harness->getBackendProcess());
         $this->assertNull($harness->getCaddyProcess());
         $this->assertFalse($harness->isProvisioned());
+    }
+
+    #[Test]
+    public function test_validate_readiness_response_accepts_valid_200_and_matching_nonce(): void
+    {
+        $headers = ['HTTP/1.1 200 OK', 'Content-Type: application/json'];
+        $body = json_encode(['status' => 'ready', 'nonce' => 'test-nonce-12345']);
+
+        $result = DisposableMobileV2BackendHarness::validateReadinessResponse($headers, $body, 'test-nonce-12345');
+        $this->assertTrue($result);
+    }
+
+    #[Test]
+    public function test_validate_readiness_response_rejects_non_200_status(): void
+    {
+        $headers = ['HTTP/1.1 500 Internal Server Error', 'Content-Type: application/json'];
+        $body = json_encode(['status' => 'ready', 'nonce' => 'test-nonce-12345']);
+
+        $result = DisposableMobileV2BackendHarness::validateReadinessResponse($headers, $body, 'test-nonce-12345');
+        $this->assertFalse($result);
+
+        $headers403 = ['HTTP/1.1 403 Forbidden', 'Content-Type: application/json'];
+        $this->assertFalse(DisposableMobileV2BackendHarness::validateReadinessResponse($headers403, $body, 'test-nonce-12345'));
+    }
+
+    #[Test]
+    public function test_validate_readiness_response_rejects_mismatched_nonce_or_bad_json(): void
+    {
+        $headers = ['HTTP/1.1 200 OK'];
+
+        // Mismatched nonce
+        $body = json_encode(['status' => 'ready', 'nonce' => 'wrong-nonce']);
+        $this->assertFalse(DisposableMobileV2BackendHarness::validateReadinessResponse($headers, $body, 'expected-nonce'));
+
+        // Wrong status
+        $bodyWrongStatus = json_encode(['status' => 'error', 'nonce' => 'expected-nonce']);
+        $this->assertFalse(DisposableMobileV2BackendHarness::validateReadinessResponse($headers, $bodyWrongStatus, 'expected-nonce'));
+
+        // Bad JSON
+        $this->assertFalse(DisposableMobileV2BackendHarness::validateReadinessResponse($headers, '{malformed', 'expected-nonce'));
+
+        // False body
+        $this->assertFalse(DisposableMobileV2BackendHarness::validateReadinessResponse($headers, false, 'expected-nonce'));
+
+        // Empty/null headers
+        $this->assertFalse(DisposableMobileV2BackendHarness::validateReadinessResponse(null, $body, 'expected-nonce'));
+        $this->assertFalse(DisposableMobileV2BackendHarness::validateReadinessResponse([], $body, 'expected-nonce'));
+    }
+
+    #[Test]
+    public function test_assert_readiness_scope_rejects_missing_file_or_empty_pin(): void
+    {
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('Harness readiness scope refused: pairing manifest missing.');
+        DisposableMobileV2BackendHarness::assertReadinessScope('/nonexistent/manifest.json', 'pin');
+    }
+
+    #[Test]
+    public function test_assert_readiness_scope_rejects_mismatched_manifest_sha(): void
+    {
+        $tmp = tempnam(sys_get_temp_dir(), 'manifest_');
+        file_put_contents($tmp, json_encode(['status' => DisposableMobileV2BackendHarness::SCOPE_READINESS_ONLY]));
+
+        try {
+            $this->expectException(RuntimeException::class);
+            $this->expectExceptionMessage('Harness readiness scope refused: manifest SHA mismatch');
+            DisposableMobileV2BackendHarness::assertReadinessScope($tmp, str_repeat('a', 64));
+        } finally {
+            @unlink($tmp);
+        }
+    }
+
+    #[Test]
+    public function test_assert_readiness_scope_fails_closed_on_provision_only_status(): void
+    {
+        $tmp = tempnam(sys_get_temp_dir(), 'manifest_');
+        file_put_contents($tmp, json_encode(['status' => DisposableMobileV2BackendHarness::SCOPE_PROVISION_ONLY]));
+        $sha = hash_file('sha256', $tmp);
+
+        try {
+            $this->expectException(RuntimeException::class);
+            $this->expectExceptionMessage("Harness readiness scope refused: pairing manifest status is '".DisposableMobileV2BackendHarness::SCOPE_PROVISION_ONLY."'. Readiness probe requires explicit '".DisposableMobileV2BackendHarness::SCOPE_READINESS_ONLY."' scope.");
+            DisposableMobileV2BackendHarness::assertReadinessScope($tmp, $sha);
+        } finally {
+            @unlink($tmp);
+        }
+    }
+
+    #[Test]
+    public function test_assert_readiness_scope_accepts_readiness_only_status(): void
+    {
+        $tmp = tempnam(sys_get_temp_dir(), 'manifest_');
+        file_put_contents($tmp, json_encode([
+            'status' => DisposableMobileV2BackendHarness::SCOPE_READINESS_ONLY,
+            'scope' => 'readiness_probe',
+        ]));
+        $sha = hash_file('sha256', $tmp);
+
+        try {
+            $data = DisposableMobileV2BackendHarness::assertReadinessScope($tmp, $sha);
+            $this->assertSame(DisposableMobileV2BackendHarness::SCOPE_READINESS_ONLY, $data['status']);
+        } finally {
+            @unlink($tmp);
+        }
+    }
+
+    #[Test]
+    public function test_build_client_handoff_structure_and_unavailable_tls_initial_state(): void
+    {
+        $runtimePins = [
+            'qualified_core_head_sha' => DisposableMobileV2BackendHarness::QUALIFIED_EXECUTION_HEAD,
+            'backend_execution_head_sha' => str_repeat('b', 40),
+            'qualified_app_tree_sha' => DisposableMobileV2BackendHarness::QUALIFIED_APP_TREE,
+            'peer_android_approved_head_sha' => DisposableMobileV2BackendHarness::APPROVED_ANDROID_HEAD,
+            'peer_android_executable_head_sha' => 'ddfc75536e647c65a6a7e8868c9336cee93769ec',
+        ];
+
+        $fixture = [
+            'schema_name' => 'harness_test_db',
+            'company_public_id' => '01M7CZPF6TP283F3ZRXF5P8GT2',
+            'company_base_currency' => 'ILS',
+            'staff_actor_public_id' => '01M7CZPF6TP283F3ZRXF5P8GT1',
+            'device_id' => 'f81d4fae-7dec-11d0-a765-00a0c91e6bf6',
+            'customer_public_id' => '01M7CZPF6TP283F3ZRXF5P8GT3',
+            'warehouse_public_id' => '01M7CZPF6TP283F3ZRXF5P8GT4',
+            'product_public_id' => '01M7CZPF6TP283F3ZRXF5P8GT5',
+            'product_unit_public_id' => '01M7CZPF6TP283F3ZRXF5P8GT6',
+            'tax_rate_public_id' => '01M7CZPF6TP283F3ZRXF5P8GT7',
+            'cash_account_public_id' => '01M7CZPF6TP283F3ZRXF5P8GT8',
+            'sample_event_id' => 'c0686be5-888f-4890-90bf-1f05f416a19a',
+        ];
+
+        $sampleRequest = [
+            'client_event_id' => 'c0686be5-888f-4890-90bf-1f05f416a19a',
+            'device_id' => 'f81d4fae-7dec-11d0-a765-00a0c91e6bf6',
+            'customer_id' => '01M7CZPF6TP283F3ZRXF5P8GT3',
+            'warehouse_id' => '01M7CZPF6TP283F3ZRXF5P8GT4',
+            'currency' => 'ILS',
+            'lines' => [],
+            'payment' => [
+                'settlement_mode' => 'full',
+                'payment_method' => 'cash',
+                'cash_account_id' => '01M7CZPF6TP283F3ZRXF5P8GT8',
+                'amount' => '58.000000',
+            ],
+        ];
+
+        $serverContext = [
+            'company_id' => '01M7CZPF6TP283F3ZRXF5P8GT2',
+            'actor_id' => '01M7CZPF6TP283F3ZRXF5P8GT1',
+            'currency_minor_units' => 2,
+        ];
+
+        $handoff = DisposableMobileV2BackendHarness::buildClientHandoff(
+            runtimePins: $runtimePins,
+            fixture: $fixture,
+            credentialsPath: '/tmp/test/runtime_credentials.json',
+            sampleRequest: $sampleRequest,
+            serverContext: $serverContext,
+            canonicalDigest: 'sha256:0847e10d89777e103252ebfa2d27f89a95832a5d70e01af57afe6423f703c630',
+        );
+
+        $this->assertSame('1.0.0', $handoff['schema_version']);
+        $this->assertSame('mobile_v2_online_cash_sale', $handoff['handoff_scope']);
+        $this->assertSame('/tmp/test/runtime_credentials.json', $handoff['credentials_path']);
+        $this->assertSame('sha256:0847e10d89777e103252ebfa2d27f89a95832a5d70e01af57afe6423f703c630', $handoff['canonical_intent_profile_digest']);
+        $this->assertSame('UNAVAILABLE_AWAITING_TLS_START', $handoff['startup_tls']['status']);
+        $this->assertNull($handoff['startup_tls']['ca_cert_path']);
+        $this->assertNull($handoff['startup_tls']['ca_cert_sha256']);
+        $this->assertNull($handoff['startup_tls']['readiness_url']);
+        $this->assertNull($handoff['startup_tls']['readiness_nonce']);
     }
 }

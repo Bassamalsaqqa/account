@@ -11,17 +11,18 @@
   "peer_android_corrected_candidate_status": "ZERO_NEW_QA_ACCEPTANCE_UNDER_REVIEW",
   "status": "SOURCE_ONLY_PREPARATION_TEMPLATE",
   "source_fixture_class": "Tests\\Support\\Harness\\DisposableMobileV2BackendHarness",
-  "source_fixture_sha256": "7f78c49df4fc28540d2d01a528183a8db5fa18bae4df3c998191322ba9c89d68",
+  "source_fixture_sha256": "0b7d651cae40837b72a1bb146813289cb1e6df73a6afcb5cd3992ed3656c538a",
   "guard_test_class": "Tests\\Unit\\Mobile\\Harness\\DisposableMobileV2BackendHarnessGuardTest",
-  "guard_test_sha256": "f5ce3974cd8edfb3aa4bf4fd9826a4c397b21dce611ecf5058026a0d8703d9f0",
+  "guard_test_sha256": "b2e5ba3175bdbc7caeec0fc7b1c6dc3a3d23b1f6351c4c6b3643a8689de92409",
   "cli_command_class": "Tests\\Support\\Harness\\MobileV2HarnessCommand",
-  "cli_command_sha256": "0b51e19e94ef9892f82c8f7d471d186f9f75c0fd9a08eb57f4fd7d08e58e8e99",
+  "cli_command_sha256": "bb951b183ba2249cf76b43a18638d78fb27829fa3dfa948ea515c4ad8d1e8d92",
   "cli_runner_script": "tests/Support/Harness/mobile-v2-harness-cli.php",
-  "cli_runner_sha256": "34b9176af6c4cb183cce8f1b8b41cd27f9fb934f47917d4b752df0b6694e503d",
+  "cli_runner_sha256": "06faceb6fcfa61455deea3fe78c324e35ce920e7056375ce994e38ab4caf4f49",
   "schema_manifest_digests": {
     "sale-commit-response.json": "401dbb3c2528a30edfb6beaa5065e89bf225c348a4d88eba9d47d7f93cff543a",
     "sale-event-status-response.json": "25e6c6173d646ee4b1dc8dbb0d26d20f0311535863e3d73836af7474c6714591",
-    "offline-sale-intake-request.json": "0af62ee5058b0dc9da0c8a52c905112de1ff37a9bc040b3740543264c9a2c142"
+    "offline-sale-intake-request.json": "0af62ee5058b0dc9da0c8a52c905112de1ff37a9bc040b3740543264c9a2c142",
+    "client-handoff-schema.json": "b333ce9d89c0b6cd1437e01d51fa74c2c85e79a7b50e6f6e27d9f100d159da2a"
   },
   "authoritative_synthetic_request_template": {
     "description": "Validated against Revision 3 OnlineSaleIntentProfile and canonical JCS digest rules",

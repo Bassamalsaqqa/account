@@ -16,6 +16,7 @@ $argvList = $_SERVER['argv'] ?? [];
 
 $isPrepare = false;
 $isProvision = false;
+$isReadinessOnly = false;
 $isStart = false;
 $isRun = false;
 $backendHead = null;
@@ -28,6 +29,8 @@ foreach ($argvList as $arg) {
         $isPrepare = true;
     } elseif ($arg === '--provision') {
         $isProvision = true;
+    } elseif ($arg === '--readiness-only') {
+        $isReadinessOnly = true;
     } elseif ($arg === '--start') {
         $isStart = true;
     } elseif ($arg === '--run') {
@@ -44,7 +47,7 @@ foreach ($argvList as $arg) {
 }
 
 // Default to --prepare if no execution action flag given
-if (! $isProvision && ! $isStart && ! $isRun) {
+if (! $isProvision && ! $isReadinessOnly && ! $isStart && ! $isRun) {
     $isPrepare = true;
 }
 
@@ -73,14 +76,14 @@ if ($isPrepare) {
     exit(0);
 }
 
-// Early precondition guards across ALL execution modes (--provision, --start, --run)
+// Early precondition guards across ALL execution modes (--provision, --readiness-only, --start, --run)
 if ($backendHead === null || $backendHead === '') {
-    fwrite(STDERR, "Error: --backend-head=<40hex> is required for --provision, --start, or --run.\n");
+    fwrite(STDERR, "Error: --backend-head=<40hex> is required for --provision, --readiness-only, --start, or --run.\n");
     exit(1);
 }
 
 if ($androidHead === null || $androidHead === '') {
-    fwrite(STDERR, "Error: --android-head=<40hex> is required for --provision, --start, or --run.\n");
+    fwrite(STDERR, "Error: --android-head=<40hex> is required for --provision, --readiness-only, --start, or --run.\n");
     exit(1);
 }
 
@@ -91,7 +94,7 @@ if ($androidHead === DisposableMobileV2BackendHarness::ANDROID_CANDIDATE_KNOWN_B
     exit(1);
 }
 
-if (($isStart || $isRun) && getenv('MOBILE_V2_HARNESS_START_LISTENER') !== '1') {
+if (($isStart || $isRun || $isReadinessOnly) && getenv('MOBILE_V2_HARNESS_START_LISTENER') !== '1') {
     fwrite(STDERR, "Harness start refused: MOBILE_V2_HARNESS_START_LISTENER is not set.\n".
         "Listener startup is held pending Android thread 83e6a721 readiness and Root coordination grant.\n".
         "Zero background servers, TLS sockets, or DB listeners started.\n");
@@ -99,7 +102,7 @@ if (($isStart || $isRun) && getenv('MOBILE_V2_HARNESS_START_LISTENER') !== '1') 
 }
 
 if ($pairingManifestSha === null || $pairingManifestSha === '') {
-    fwrite(STDERR, "Harness refused: --pairing-manifest-sha=<64hex> is mandatory for --provision, --start, or --run.\n");
+    fwrite(STDERR, "Harness refused: --pairing-manifest-sha=<64hex> is mandatory for --provision, --readiness-only, --start, or --run.\n");
     exit(1);
 }
 
@@ -112,6 +115,9 @@ try {
         manifestPath: $pairingManifest,
         manifestShaPin: $pairingManifestSha,
     );
+    if ($isReadinessOnly) {
+        DisposableMobileV2BackendHarness::assertReadinessScope($pairingManifest, $pairingManifestSha);
+    }
 } catch (Throwable $e) {
     fwrite(STDERR, "Harness refused before framework boot: {$e->getMessage()}\n");
     exit(1);
