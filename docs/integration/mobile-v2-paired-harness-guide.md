@@ -38,7 +38,9 @@ Both public Mobile V2 endpoints are defined and handled as follows:
   - `HTTP 401 Unauthorized`: Missing or malformed `Authorization: Bearer` header, revoked or expired token ([MobileV2Authenticate.php:92, 169](../../app/Http/Middleware/MobileV2Authenticate.php#L92)).
   - `HTTP 403 Forbidden`: Actor missing required financial permissions, non-member, or tenant mismatch ([MobileV2Authenticate.php:267, 280, 289, 306, 332](../../app/Http/Middleware/MobileV2Authenticate.php#L267)).
   - `HTTP 404 Not Found`: Gating flag OFF (`mobile.v2_cash_slice_enabled = false`) or master mobile API disabled ([OnlineCashSaleController.php:36-41](../../app/Http/Controllers/Api/Mobile/V2/OnlineCashSaleController.php#L36-L41)).
+  - `HTTP 408 Request Timeout`: Bounded transport disconnect or socket read timeout.
   - `HTTP 415 Unsupported Media Type`: Non-JSON `Content-Type` on mutating POST request ([MobileV2ApiBoundary.php:218-222](../../app/Http/Middleware/MobileV2ApiBoundary.php#L218-L222)).
+  - `HTTP 429 Too Many Requests`: Actor or IP rate limit exceeded ([MobileV2ApiBoundary.php:159](../../app/Http/Middleware/MobileV2ApiBoundary.php#L159), [MobileV2Authenticate.php:248](../../app/Http/Middleware/MobileV2Authenticate.php#L248)).
 
 ### B. Offline Event Status Query Endpoint
 - **Route Definition**: [routes/mobile-v2.php](../../routes/mobile-v2.php#L28-L32)
@@ -55,6 +57,7 @@ Both public Mobile V2 endpoints are defined and handled as follows:
   - `HTTP 401 Unauthorized`: Missing or invalid bearer token ([MobileV2Authenticate.php:92](../../app/Http/Middleware/MobileV2Authenticate.php#L92)).
   - `HTTP 403 Forbidden`: Actor missing view permissions, non-member, or foreign tenant ([MobileV2Authenticate.php:267, 332](../../app/Http/Middleware/MobileV2Authenticate.php#L267)).
   - `HTTP 404 Not Found`: Cash slice disabled or master mobile API disabled ([OnlineCashSaleController.php:152-157](../../app/Http/Controllers/Api/Mobile/V2/OnlineCashSaleController.php#L152-L157)).
+  - `HTTP 429 Too Many Requests`: Actor or IP rate limit exceeded ([MobileV2ApiBoundary.php:159](../../app/Http/Middleware/MobileV2ApiBoundary.php#L159)).
 
 ---
 
@@ -75,6 +78,35 @@ payment { settlement_mode, payment_method, cash_account_id, amount }
 ```
 
 Client requests **must never** submit `actor_id` or `currency_minor_units` on the wire; these are resolved authoritatively by backend controllers from session and company state.
+
+Authoritative synthetic request example with valid Crockford Base32 ULIDs (26 characters):
+```json
+{
+  "client_event_id": "c0686be5-888f-4890-90bf-1f05f416a19a",
+  "device_id": "f81d4fae-7dec-11d0-a765-00a0c91e6bf6",
+  "customer_id": "01M7CZPF6TP283F3ZRXF5P8GT3",
+  "warehouse_id": "01M7CZPF6TP283F3ZRXF5P8GT4",
+  "currency": "ILS",
+  "lines": [
+    {
+      "product_id": "01M7CZPF6TP283F3ZRXF5P8GT5",
+      "product_unit_id": "01M7CZPF6TP283F3ZRXF5P8GT6",
+      "conversion_to_base": "1.000000",
+      "quantity": "1.000000",
+      "unit_price": "50.000000",
+      "tax_rate_id": "01M7CZPF6TP283F3ZRXF5P8GT7",
+      "tax_rate": "16.000000",
+      "tax_inclusive": false
+    }
+  ],
+  "payment": {
+    "settlement_mode": "full",
+    "payment_method": "cash",
+    "cash_account_id": "01M7CZPF6TP283F3ZRXF5P8GT8",
+    "amount": "58.000000"
+  }
+}
+```
 
 ---
 

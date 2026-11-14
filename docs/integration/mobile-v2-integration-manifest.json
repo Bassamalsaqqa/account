@@ -1,9 +1,10 @@
 {
-  "contract_name": "Mobile V2 Online Cash Sale Integration Handoff",
+  "contract_name": "Mobile V2 Online Cash Sale Integration Dual-Manifest",
   "base_branch": "t3/recover-cash-writer",
   "backend_execution_head_sha": "6981511405d7bcd04cd8f8a09e64443ce0aaf47e",
   "evidence_publication_commit_sha": "717c3da2829792a5ec4f11597905a17dbb8e7cd9",
   "peer_android_pr_base_sha": "0ccce244",
+  "peer_android_pr_head_sha": "UNSET_AWAITING_ANDROID_PAIRING",
   "status": "SOURCE_ONLY_PREPARATION_NO_EXECUTE",
   "source_fixture_class": "Tests\\Support\\Harness\\DisposableMobileV2BackendHarness",
   "schema_manifest_digests": {
@@ -11,15 +12,39 @@
     "sale-event-status-response.json": "25e6c6173d646ee4b1dc8dbb0d26d20f0311535863e3d73836af7474c6714591",
     "offline-sale-intake-request.json": "0af62ee5058b0dc9da0c8a52c905112de1ff37a9bc040b3740543264c9a2c142"
   },
-  "runtime_fixture_template": {
-    "company_base_currency": "ILS",
-    "currency_minor_units": 2,
-    "unit_price_base": "50.000000",
-    "tax_rate_percentage": "16.000000",
-    "tax_inclusive": false,
-    "calculated_grand_total": "58.000000",
-    "payment_method": "cash",
-    "settlement_mode": "full"
+  "authoritative_synthetic_request_template": {
+    "description": "Validated against Revision 3 OnlineSaleIntentProfile and canonical JCS digest rules",
+    "raw_wire_payload": {
+      "client_event_id": "c0686be5-888f-4890-90bf-1f05f416a19a",
+      "device_id": "f81d4fae-7dec-11d0-a765-00a0c91e6bf6",
+      "customer_id": "01M7CZPF6TP283F3ZRXF5P8GT3",
+      "warehouse_id": "01M7CZPF6TP283F3ZRXF5P8GT4",
+      "currency": "ILS",
+      "lines": [
+        {
+          "product_id": "01M7CZPF6TP283F3ZRXF5P8GT5",
+          "product_unit_id": "01M7CZPF6TP283F3ZRXF5P8GT6",
+          "conversion_to_base": "1.000000",
+          "quantity": "1.000000",
+          "unit_price": "50.000000",
+          "tax_rate_id": "01M7CZPF6TP283F3ZRXF5P8GT7",
+          "tax_rate": "16.000000",
+          "tax_inclusive": false
+        }
+      ],
+      "payment": {
+        "settlement_mode": "full",
+        "payment_method": "cash",
+        "cash_account_id": "01M7CZPF6TP283F3ZRXF5P8GT8",
+        "amount": "58.000000"
+      }
+    },
+    "server_synthesized_context": {
+      "company_id": "01M7CZPF6TP283F3ZRXF5P8GT2",
+      "actor_id": "01M7CZPF6TP283F3ZRXF5P8GT1",
+      "currency_minor_units": 2
+    },
+    "canonical_intent_profile_digest": "sha256:0847e10d89777e103252ebfa2d27f89a95832a5d70e01af57afe6423f703c630"
   },
   "authoritative_endpoints": {
     "commit": {
@@ -34,7 +59,10 @@
         "422": "Validation failed on payload format, numbers, or domain entities",
         "401": "Unauthenticated / token revoked / expired",
         "403": "Forbidden / non-member / foreign tenant / missing permission",
-        "404": "Cash slice disabled or master mobile API disabled"
+        "404": "Cash slice disabled or master mobile API disabled",
+        "408": "Request timeout on bounded read if timeout occurs",
+        "415": "Unsupported media type when Content-Type is not application/json",
+        "429": "Too many requests when actor or IP rate limit exceeded"
       }
     },
     "status": {
@@ -45,8 +73,9 @@
         "200": "Event posted or unknown",
         "422": "Validation failed on malformed clientEventId UUID pattern",
         "401": "Unauthenticated",
-        "403": "Forbidden",
-        "404": "Cash slice disabled or master mobile API disabled"
+        "403": "Forbidden / non-member / tenant mismatch / revoked view permission",
+        "404": "Cash slice disabled or master mobile API disabled",
+        "429": "Too many requests when actor or IP rate limit exceeded"
       }
     }
   }
