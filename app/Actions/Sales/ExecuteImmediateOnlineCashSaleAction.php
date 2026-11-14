@@ -182,7 +182,14 @@ final class ExecuteImmediateOnlineCashSaleAction
             /** @var ProductUnit $unit */
             $unit = is_numeric($unitLookup)
                 ? ProductUnit::where('company_id', $company->id)->where('product_id', $product->id)->where('id', (int) $unitLookup)->lockForUpdate()->firstOrFail()
-                : ProductUnit::where('company_id', $company->id)->where('product_id', $product->id)->where('public_id', (string) $unitLookup)->lockForUpdate()->firstOrFail();
+                : ProductUnit::join('units', 'units.id', '=', 'product_units.unit_id')
+                    ->where('product_units.company_id', $company->id)
+                    ->where('units.company_id', $company->id)
+                    ->where('product_units.product_id', $product->id)
+                    ->where('units.public_id', (string) $unitLookup)
+                    ->select('product_units.*')
+                    ->lockForUpdate()
+                    ->firstOrFail();
 
             if (! $unit->active) {
                 throw new InvalidArgumentException("Product unit [{$unitLookup}] is inactive.");

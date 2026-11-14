@@ -69,6 +69,7 @@ final class OnlineCashSaleQualificationTest extends TestCase
     private string $rawToken;
     private Customer $customer;
     private Warehouse $warehouse;
+    private Unit $baseUnit;
     private Product $product;
     private ProductUnit $unit;
     private TaxRate $taxRate;
@@ -213,11 +214,11 @@ final class OnlineCashSaleQualificationTest extends TestCase
 
         $this->warehouse = Warehouse::where('company_id', $this->company->id)->where('is_default', true)->firstOrFail();
 
-        $baseUnit = Unit::where('company_id', $this->company->id)->where('code', 'piece')->firstOrFail();
+        $this->baseUnit = Unit::where('company_id', $this->company->id)->where('code', 'piece')->firstOrFail();
 
         $this->product = Product::create([
             'company_id' => $this->company->id,
-            'base_unit_id' => $baseUnit->id,
+            'base_unit_id' => $this->baseUnit->id,
             'name_ar' => 'منتج نقدي تجريبي',
             'name_en' => 'Online Cash Test Product',
             'sku' => 'CASH-PROD-'.Str::random(4),
@@ -230,7 +231,7 @@ final class OnlineCashSaleQualificationTest extends TestCase
         $this->unit = ProductUnit::create([
             'company_id' => $this->company->id,
             'product_id' => $this->product->id,
-            'unit_id' => $baseUnit->id,
+            'unit_id' => $this->baseUnit->id,
             'conversion_to_base' => '1.000000',
             'is_base' => true,
             'is_default_sale' => true,
@@ -281,7 +282,7 @@ final class OnlineCashSaleQualificationTest extends TestCase
             'lines' => [
                 [
                     'product_id' => $this->product->public_id,
-                    'product_unit_id' => $this->unit->id,
+                    'product_unit_id' => $this->baseUnit->public_id,
                     'conversion_to_base' => '1.000000',
                     'quantity' => '1.000000',
                     'unit_price' => $unitPrice,
@@ -551,11 +552,17 @@ final class OnlineCashSaleQualificationTest extends TestCase
     public function test_fresh_role_definition_revocation_refuses_execution(): void
     {
         // Revoke sales.invoice.post permission from the Sales role definition in DB
+        $this->actingAs($this->owner);
+        app(CompanyContext::class)->setCompany($this->company, $this->owner);
         $salesRole = Role::where('company_id', $this->company->id)->where('name', 'Sales')->firstOrFail();
         app(UpdateRolePermissionsAction::class)->execute($this->company, $salesRole, 'sales.invoice.post', false, $this->owner);
 
         // Also revoke direct permission from staff user
         $this->staff->revokePermissionTo('sales.invoice.post');
+
+        // Clear owner from guard and context before mobile API request
+        auth()->forgetUser();
+        app(CompanyContext::class)->clearSessionless();
 
         $eventId = (string) Str::uuid();
         $payload = $this->validSalePayload($eventId);

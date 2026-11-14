@@ -898,12 +898,12 @@ final class MobileEventReceiptManager
 
         $record = self::$capabilityRegistry[$capability];
 
-        if (! ($record['active'] ?? false)) {
-            throw new SecurityException('Native financial capability is expired or inactive.');
-        }
-
         if ($record['consumed'] ?? false) {
             throw new SecurityException('Native financial capability has already been consumed.');
+        }
+
+        if (! ($record['active'] ?? false)) {
+            throw new SecurityException('Native financial capability is expired or inactive.');
         }
 
         if (DB::transactionLevel() !== 1) {
