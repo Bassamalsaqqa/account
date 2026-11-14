@@ -2278,5 +2278,144 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
             @rmdir($tempDir);
         }
     }
+
+    #[Test]
+    public function test_financial_post_run_inspector_defaults_to_no_execute_when_flags_missing(): void
+    {
+        putenv('MOBILE_V2_HARNESS_ENABLE');
+        putenv('PHASE8_ALLOW_DISPOSABLE_DB');
+
+        try {
+            \Tests\Support\Harness\DisposableFinancialPostRunInspector::assertExecutionGates();
+            $this->fail('Expected RuntimeException for missing harness enable flag');
+        } catch (\RuntimeException $e) {
+            $this->assertStringContainsString('Inspector refused: defaults to NO-EXECUTE', $e->getMessage());
+        }
+
+        try {
+            \Tests\Support\Harness\DisposableFinancialPostRunInspector::captureBaseline(1);
+            $this->fail('Expected RuntimeException for captureBaseline without flags');
+        } catch (\RuntimeException $e) {
+            $this->assertStringContainsString('Inspector refused: defaults to NO-EXECUTE', $e->getMessage());
+        }
+    }
+
+    #[Test]
+    public function test_financial_outer_validator_accepts_valid_evidence_and_enforces_approved_pins(): void
+    {
+        $validPayload = [
+            'clientPublicationHead' => \Tests\Support\Harness\DisposableFinancialPostRunInspector::APPROVED_ANDROID_PUBLICATION_SHA,
+            'clientExecutableHead' => \Tests\Support\Harness\DisposableFinancialPostRunInspector::APPROVED_ANDROID_EXECUTABLE_SHA,
+            'backendExecutionHead' => 'cfc28baaaaf52521ecbc88f1ba4c621afee17221',
+            'handoffDigest' => '11223344556677889900aabbccddeeff11223344556677889900aabbccddeeff',
+            'lifecycle' => 'FINANCIAL_PAIRED_RUN',
+            'scenarios' => [
+                'fresh_online_cash_commit_201' => 'PASS',
+                'idempotent_exact_replay_200' => 'PASS',
+                'event_status_query_parity_200' => 'PASS',
+                'tamper_conflict_rejection_409' => 'PASS',
+            ],
+            'lost_ack_recovery' => 'NOT_RUN',
+            'rollback_fault_injection' => 'NOT_RUN',
+            'side_effects' => [
+                'event_count_delta' => 1,
+                'reconciliations_healthy_count' => 6,
+            ],
+        ];
+
+        $expectedPins = [
+            'clientPublicationHead' => \Tests\Support\Harness\DisposableFinancialPostRunInspector::APPROVED_ANDROID_PUBLICATION_SHA,
+            'clientExecutableHead' => \Tests\Support\Harness\DisposableFinancialPostRunInspector::APPROVED_ANDROID_EXECUTABLE_SHA,
+            'backendExecutionHead' => 'cfc28baaaaf52521ecbc88f1ba4c621afee17221',
+            'handoffDigest' => '11223344556677889900aabbccddeeff11223344556677889900aabbccddeeff',
+        ];
+
+        $result = \Tests\Support\Harness\DisposableFinancialPostRunInspector::validateOuterEvidenceJson($validPayload, $expectedPins);
+
+        $this->assertTrue($result['is_valid']);
+        $this->assertSame([], $result['errors']);
+    }
+
+    #[Test]
+    public function test_financial_outer_validator_strictly_rejects_unadmitted_wrong_owner_publication_sha(): void
+    {
+        $payloadWithBadPub = [
+            'clientPublicationHead' => \Tests\Support\Harness\DisposableFinancialPostRunInspector::UNADMITTED_ANDROID_PUBLICATION_SHA,
+            'clientExecutableHead' => \Tests\Support\Harness\DisposableFinancialPostRunInspector::APPROVED_ANDROID_EXECUTABLE_SHA,
+            'backendExecutionHead' => 'cfc28baaaaf52521ecbc88f1ba4c621afee17221',
+            'handoffDigest' => '11223344556677889900aabbccddeeff11223344556677889900aabbccddeeff',
+            'lifecycle' => 'FINANCIAL_PAIRED_RUN',
+            'scenarios' => [
+                'fresh_online_cash_commit_201' => 'PASS',
+                'idempotent_exact_replay_200' => 'PASS',
+                'event_status_query_parity_200' => 'PASS',
+                'tamper_conflict_rejection_409' => 'PASS',
+            ],
+            'lost_ack_recovery' => 'NOT_RUN',
+            'rollback_fault_injection' => 'NOT_RUN',
+        ];
+
+        $expectedPins = [
+            'clientPublicationHead' => \Tests\Support\Harness\DisposableFinancialPostRunInspector::APPROVED_ANDROID_PUBLICATION_SHA,
+            'clientExecutableHead' => \Tests\Support\Harness\DisposableFinancialPostRunInspector::APPROVED_ANDROID_EXECUTABLE_SHA,
+            'backendExecutionHead' => 'cfc28baaaaf52521ecbc88f1ba4c621afee17221',
+            'handoffDigest' => '11223344556677889900aabbccddeeff11223344556677889900aabbccddeeff',
+        ];
+
+        $result = \Tests\Support\Harness\DisposableFinancialPostRunInspector::validateOuterEvidenceJson($payloadWithBadPub, $expectedPins);
+
+        $this->assertFalse($result['is_valid']);
+        $this->assertTrue(collect($result['errors'])->contains(fn ($err) => str_contains($err, 'unadmitted wrong-owner publication pin')));
+    }
+
+    #[Test]
+    public function test_financial_outer_validator_rejects_swapped_or_mismatched_pins_and_overclaims(): void
+    {
+        $expectedPins = [
+            'clientPublicationHead' => \Tests\Support\Harness\DisposableFinancialPostRunInspector::APPROVED_ANDROID_PUBLICATION_SHA,
+            'clientExecutableHead' => \Tests\Support\Harness\DisposableFinancialPostRunInspector::APPROVED_ANDROID_EXECUTABLE_SHA,
+            'backendExecutionHead' => 'cfc28baaaaf52521ecbc88f1ba4c621afee17221',
+            'handoffDigest' => '11223344556677889900aabbccddeeff11223344556677889900aabbccddeeff',
+        ];
+
+        // 1. Swapped pub and exe pins rejected
+        $swappedPayload = [
+            'clientPublicationHead' => \Tests\Support\Harness\DisposableFinancialPostRunInspector::APPROVED_ANDROID_EXECUTABLE_SHA,
+            'clientExecutableHead' => \Tests\Support\Harness\DisposableFinancialPostRunInspector::APPROVED_ANDROID_PUBLICATION_SHA,
+            'backendExecutionHead' => 'cfc28baaaaf52521ecbc88f1ba4c621afee17221',
+            'handoffDigest' => '11223344556677889900aabbccddeeff11223344556677889900aabbccddeeff',
+            'lifecycle' => 'FINANCIAL_PAIRED_RUN',
+            'scenarios' => [
+                'fresh_online_cash_commit_201' => 'PASS',
+                'idempotent_exact_replay_200' => 'PASS',
+                'event_status_query_parity_200' => 'PASS',
+                'tamper_conflict_rejection_409' => 'PASS',
+            ],
+            'lost_ack_recovery' => 'NOT_RUN',
+            'rollback_fault_injection' => 'NOT_RUN',
+        ];
+        $resultSwapped = \Tests\Support\Harness\DisposableFinancialPostRunInspector::validateOuterEvidenceJson($swappedPayload, $expectedPins);
+        $this->assertFalse($resultSwapped['is_valid']);
+
+        // 2. Over-claiming full pilot when lost_ack was claimed PASS rejected
+        $overclaimPayload = [
+            'clientPublicationHead' => \Tests\Support\Harness\DisposableFinancialPostRunInspector::APPROVED_ANDROID_PUBLICATION_SHA,
+            'clientExecutableHead' => \Tests\Support\Harness\DisposableFinancialPostRunInspector::APPROVED_ANDROID_EXECUTABLE_SHA,
+            'backendExecutionHead' => 'cfc28baaaaf52521ecbc88f1ba4c621afee17221',
+            'handoffDigest' => '11223344556677889900aabbccddeeff11223344556677889900aabbccddeeff',
+            'lifecycle' => 'FINANCIAL_PAIRED_RUN',
+            'scenarios' => [
+                'fresh_online_cash_commit_201' => 'PASS',
+                'idempotent_exact_replay_200' => 'PASS',
+                'event_status_query_parity_200' => 'PASS',
+                'tamper_conflict_rejection_409' => 'PASS',
+            ],
+            'lost_ack_recovery' => 'PASS',
+            'rollback_fault_injection' => 'NOT_RUN',
+        ];
+        $resultOverclaim = \Tests\Support\Harness\DisposableFinancialPostRunInspector::validateOuterEvidenceJson($overclaimPayload, $expectedPins);
+        $this->assertFalse($resultOverclaim['is_valid']);
+        $this->assertTrue(collect($resultOverclaim['errors'])->contains(fn ($err) => str_contains($err, 'cannot claim Lost ACK or Rollback passed')));
+    }
 }
 
