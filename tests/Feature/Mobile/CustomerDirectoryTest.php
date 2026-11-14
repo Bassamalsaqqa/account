@@ -261,13 +261,13 @@ final class CustomerDirectoryTest extends TestCase
         setPermissionsTeamId($companyB->id);
         $this->user->assignRole('Cashier');
 
-        Customer::create([
+        CompanyScope::executeWithoutScope(fn () => Customer::create([
             'company_id' => $companyB->id,
             'code' => 'CUST-B-001',
             'name_ar' => 'عميل شركة ب',
             'status' => 'active',
             'created_by' => $this->user->id,
-        ]);
+        ]));
 
         // Token explicitly bound to Company A ($this->company)
         $tokenBoundA = $this->issueToken(companyId: $this->company->id, bindToCompany: true);
@@ -305,13 +305,13 @@ final class CustomerDirectoryTest extends TestCase
         setPermissionsTeamId($companyB->id);
         $this->user->assignRole('Cashier');
 
-        Customer::create([
+        CompanyScope::executeWithoutScope(fn () => Customer::create([
             'company_id' => $companyB->id,
             'code' => 'CUST-B-002',
             'name_ar' => 'عميل شركة ب الثاني',
             'status' => 'active',
             'created_by' => $this->user->id,
-        ]);
+        ]));
 
         // Token with company_id = null (standard staff+device token)
         $tokenNullStaff = $this->issueToken(bindToCompany: false);
