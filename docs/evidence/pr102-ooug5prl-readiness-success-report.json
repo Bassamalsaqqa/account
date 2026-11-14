@@ -1,0 +1,271 @@
+{
+  "report_version": "1.0.0",
+  "evidence_id": "root-readiness-ooug5prl",
+  "root_outcome_sha256": "dd267bc4f3a505d1558020758545ac1e40159114eca0b9538fb9f37839aeffe7",
+  "review_context": {
+    "backend_execution_head_sha": "d7c7324535b1e6586140ab1e3561966342d625d6",
+    "peer_android_approved_head_sha": "653327243b2f5a4541c5fcf8cbe9520769e6be50",
+    "peer_android_executable_head_sha": "78ac4437e4010b68408278788dc82eb826fe8014",
+    "qualified_core_sha": "6981511405d7bcd04cd8f8a09e64443ce0aaf47e",
+    "core_invariance_verified": true,
+    "client_handoff_schema_sha256": "edaef0309765e10d6462b36b5c660eb02f65c057c810ab72f756f7664e3ca275"
+  },
+  "runtime_pairing_manifest": {
+    "manifest_path": "/tmp/root-readiness-ooug5prl/manifest.json",
+    "manifest_sha256": "88c8c2e2389f7486e73c74f4f660aa0621bf3c8486a85590b6c4bbb44bb83f5f",
+    "status": "ROOT_AUTHORIZED_READINESS_ONLY",
+    "source_fixture_sha256": "ccb8c9f3852b4736675253d094659c8629d197df1c35a3caa7c99ba519da8152",
+    "guard_test_sha256": "cb601109631bd7c7899d3093fae079e0c8a5b8cb4f31582f016bc5cbf4bdd4fe",
+    "cli_command_sha256": "9bf4f389a034c52c62ea6aad796b20c06051f87dbf5a33b683572c4bff9bfd97",
+    "cli_runner_sha256": "5836790dcc58a9956868c1fcc1e6a0cc979a989d0bcf82a2a197b2787c548690"
+  },
+  "backend_hold_execution": {
+    "command": [
+      "php",
+      "tests/Support/Harness/mobile-v2-harness-cli.php",
+      "--readiness-only",
+      "--readiness-hold-seconds=120",
+      "--backend-head=d7c7324535b1e6586140ab1e3561966342d625d6",
+      "--android-head=653327243b2f5a4541c5fcf8cbe9520769e6be50",
+      "--pairing-manifest=/tmp/root-readiness-ooug5prl/manifest.json",
+      "--pairing-manifest-sha=88c8c2e2389f7486e73c74f4f660aa0621bf3c8486a85590b6c4bbb44bb83f5f"
+    ],
+    "pid": 1204264,
+    "started_at": 1794683554.0084455,
+    "interrupted_by_signal": "SIGTERM",
+    "abort_logged": "Readiness hold ABORTED by interrupt signal SIGTERM.",
+    "exit_code": 1,
+    "owned_schema": "accounting_p8_tmp_84fa14fb4cb2",
+    "owned_temp_dir": "/tmp/v2_harness_c8253786b061d82a"
+  },
+  "root_tls_verification": {
+    "live_handoff_sha256": "8e48f3692a88f5ac3f333f81536d70eb3541228959968697fda03f68df44befc",
+    "ca_sha256": "9dde86450a9ccef026bb1ff4c2d6d75cb46ff61729cc008994c5a0d0ac725f72",
+    "tls_proxy_endpoint": "https://127.0.0.1:18443",
+    "probes": [
+      {
+        "method": "GET",
+        "path": "/_harness/readiness",
+        "status": 200,
+        "nonce_verified": true,
+        "ca_trusted": true,
+        "description": "Readiness probe verified HTTP 200 with matching nonce via CA-trusted TLS"
+      },
+      {
+        "method": "POST",
+        "path": "/_harness/readiness",
+        "status": 405,
+        "description": "HTTP 405 Method Not Allowed strictly enforced on probe route"
+      },
+      {
+        "method": "GET",
+        "path": "/_readiness_forbidden_probe",
+        "status": 403,
+        "description": "Safe non-readiness probe path returning HTTP 403 (readiness-only barrier strictly blocks non-readiness routes; zero financial routes called)"
+      }
+    ],
+    "wrong_ca_rejected": true,
+    "wrong_ca_verification_mode": "ACTUAL_TLS_NEGATIVE_PASS",
+    "verified_at": 1794683562.1636267
+  },
+  "android_client_execution": {
+    "jvm_invocations": 1,
+    "duration_seconds": 13.337527751922607,
+    "exit_code": 0,
+    "command": [
+      "./gradlew",
+      "cleanTestDebugUnitTest",
+      "testDebugUnitTest",
+      "--no-build-cache",
+      "--tests",
+      "com.example.data.mobile.readclient.pilot.SmallTraderOnlineCashPilotSmokeTest.executePairedOnlineCashPilotSmoke",
+      "--tests",
+      "com.example.data.mobile.readclient.pilot.SmallTraderOnlineCashPilotSmokeTest.testCashPilotFinancialAcceptanceEnforcement",
+      "--max-workers=1",
+      "-Dorg.gradle.workers.max=1",
+      "-Dorg.gradle.jvmargs=-XX:ActiveProcessorCount=2 -XX:+UseSerialGC -Xmx1536m",
+      "-Pkotlin.compiler.execution.strategy=in-process",
+      "--no-daemon"
+    ],
+    "env_pins": {
+      "SMALL_TRADER_CASH_PILOT_HANDOFF": "/tmp/v2_harness_c8253786b061d82a/runtime_client_handoff.json",
+      "SMALL_TRADER_EXPECTED_BACKEND_SHA": "d7c7324535b1e6586140ab1e3561966342d625d6",
+      "SMALL_TRADER_EXPECTED_CLIENT_SHA": "653327243b2f5a4541c5fcf8cbe9520769e6be50",
+      "SMALL_TRADER_EXPECTED_CLIENT_EXECUTABLE_SHA": "78ac4437e4010b68408278788dc82eb826fe8014",
+      "SMALL_TRADER_EXPECTED_HANDOFF_SHA": "8e48f3692a88f5ac3f333f81536d70eb3541228959968697fda03f68df44befc",
+      "SMALL_TRADER_EXPECTED_LIFECYCLE": "READINESS_ONLY",
+      "SMALL_TRADER_ROOT_APPROVED_HANDOFF_SHA": "8e48f3692a88f5ac3f333f81536d70eb3541228959968697fda03f68df44befc"
+    },
+    "tests_total": 2,
+    "tests_passed": 2,
+    "tests_failed": 0,
+    "tests_skipped": 0,
+    "tests_errors": 0,
+    "test_results": [
+      {
+        "name": "executePairedOnlineCashPilotSmoke",
+        "status": "PASSED",
+        "time_seconds": 0.643
+      },
+      {
+        "name": "testCashPilotFinancialAcceptanceEnforcement",
+        "status": "PASSED",
+        "time_seconds": 0.002
+      }
+    ],
+    "fresh_evidence_json": {
+      "preserved_path": "/tmp/root-readiness-ooug5prl/1-paired-online-cash-pilot-evidence.json",
+      "preserved_sha256": "0bfaba51e8ab55ae49ab5bf05f374fe4091d48c2a694dd4b810e120049246c5d",
+      "run_id": "60c64b1d-c720-4998-a655-3c148256f31d",
+      "timestamp": "2026-11-14T19:12:54Z",
+      "backend_head": "d7c7324535b1e6586140ab1e3561966342d625d6",
+      "client_head": "78ac4437e4010b68408278788dc82eb826fe8014",
+      "manifest_digest": "8e48f3692a88f5ac3f333f81536d70eb3541228959968697fda03f68df44befc",
+      "base_url": "https://127.0.0.1:18443/api/mobile/v2",
+      "lifecycle_grant": "READINESS_ONLY",
+      "ttl_expires_at": "2026-11-14T20:12:41+00:00",
+      "overall_status": "PASS",
+      "scenarios": {
+        "readiness_probe": {
+          "status": "PASS",
+          "http_status_code": 200,
+          "latency_ms": 306,
+          "details": "Host loopback HTTPS GET probe verified HTTP 200 with matching nonce (JVM runner avoided emulator alias)"
+        },
+        "financial_cash_fresh_commit_201": {
+          "status": "NOT_RUN",
+          "details": "Financial execution not authorized under current lifecycle grant; readiness only verified"
+        },
+        "financial_cash_idempotent_replay_200": {
+          "status": "NOT_RUN",
+          "details": "Financial execution not authorized under current lifecycle grant; readiness only verified"
+        },
+        "financial_cash_event_status_posted": {
+          "status": "NOT_RUN",
+          "details": "Financial execution not authorized under current lifecycle grant; readiness only verified"
+        },
+        "financial_cash_tamper_409": {
+          "status": "NOT_RUN",
+          "details": "Financial execution not authorized under current lifecycle grant; readiness only verified"
+        },
+        "transport_lost_ack_recovery": {
+          "status": "NOT_RUN",
+          "details": "Financial execution not authorized under current lifecycle grant"
+        },
+        "stock_permission_rollback_probes": {
+          "status": "NOT_RUN",
+          "details": "Financial execution not authorized under current lifecycle grant"
+        }
+      },
+      "serialization_disclosure": "Original Android fresh evidence JSON (0bfaba...) toJson serializes only clientHead: 78ac4437e4010b68408278788dc82eb826fe8014 and omits separate publication pin field. We DO NOT rewrite or re-serialize original JSON or its hash. Wrapper independently records root-verified publication 653327243b2f5a4541c5fcf8cbe9520769e6be50 and execution 78ac4437e4010b68408278788dc82eb826fe8014."
+    },
+    "pre_execution_state_json_sha256": "3f948f6cfcc23bef892c96430326447a094f3a272b6ee4c605406b726415a1aa",
+    "post_execution_state_json_sha256": "1fee9e7b4278b0904013d8f7eba38d7097b72bcaa3d93740ecf1261530e4d657",
+    "state_json_note": "SHA-256 of android_pre.json and android_post.json tracking HEAD 6533272..., status, and source file hashmap. Both contain 197 identical source file hashes (zero source mutations); post status reflects untracked ?? app/docs/ where generated evidence JSON was created.",
+    "financial_requests_sent": false
+  },
+  "overall_run_outcome": {
+    "verdict": "READINESS_JVM_TESTS_PASS",
+    "financial_pilot_claim": "NOT_CLAIMED_READINESS_ONLY",
+    "failure_first_stop_honored": true,
+    "live_handoff_lifecycle": "TRANSIENT_RUNTIME_SNAPSHOT_DELETED",
+    "endpoint_reusable": false
+  },
+  "cleanup_verification": {
+    "scope": "EXACT_OWNED_RESOURCES_ONLY",
+    "schema_name": "accounting_p8_tmp_84fa14fb4cb2",
+    "schema_dropped": true,
+    "temp_dir": "/tmp/v2_harness_c8253786b061d82a",
+    "temp_dir_deleted": true,
+    "ports_closed": [18080, 18443],
+    "ports_verification_method": "Python socket.connect_ex non-zero (connection refused)"
+  },
+  "retained_evidence_artifacts": {
+    "0-TEST-com.example.data.mobile.readclient.pilot.SmallTraderOnlineCashPilotSmokeTest.xml": {
+      "sha256": "51e834a7f5d358e0e6544eb03b355e40130e0455d0d2c8de9b7099390b07c6eb",
+      "bytes": 691
+    },
+    "1-paired-online-cash-pilot-evidence.json": {
+      "sha256": "0bfaba51e8ab55ae49ab5bf05f374fe4091d48c2a694dd4b810e120049246c5d",
+      "bytes": 2184
+    },
+    "android.log": {
+      "sha256": "be9aa06a8259901b324f0e7d90a3999ef0e6f52272fbcbc4b0f44e326068c283",
+      "bytes": 2379
+    },
+    "android_command.json": {
+      "sha256": "72219dce6bd6be895b6c45c8c8211cef0881b2ebfa108f43726c9d0d4dbe7f93",
+      "bytes": 1206
+    },
+    "android_post.json": {
+      "sha256": "1fee9e7b4278b0904013d8f7eba38d7097b72bcaa3d93740ecf1261530e4d657",
+      "bytes": 27155
+    },
+    "android_pre.json": {
+      "sha256": "3f948f6cfcc23bef892c96430326447a094f3a272b6ee4c605406b726415a1aa",
+      "bytes": 27141
+    },
+    "android_result.json": {
+      "sha256": "8f9da64aa1645666d9ecba248a216e1774879017bfcac0d1b6b3333cccebf623",
+      "bytes": 1041
+    },
+    "backend.log": {
+      "sha256": "fd7eedd59cd0b334a4d9305b8c65ec0697d8cff0c9d792602466f462202c5ebc",
+      "bytes": 756
+    },
+    "backend_command.json": {
+      "sha256": "a47fac07e5deeabbac9b810abab17047c81004a3f55f3307de0ba214b359120b",
+      "bytes": 428
+    },
+    "live_handoff_snapshot.json": {
+      "sha256": "8e48f3692a88f5ac3f333f81536d70eb3541228959968697fda03f68df44befc",
+      "bytes": 5457
+    },
+    "live_verified.json": {
+      "sha256": "42528b2ead0e60c3bb1e35b727044e6e0ca9b7ad19dab180012527057ab76704",
+      "bytes": 728
+    },
+    "manifest.json": {
+      "sha256": "88c8c2e2389f7486e73c74f4f660aa0621bf3c8486a85590b6c4bbb44bb83f5f",
+      "bytes": 5118
+    },
+    "root_outcome.json": {
+      "sha256": "dd267bc4f3a505d1558020758545ac1e40159114eca0b9538fb9f37839aeffe7",
+      "bytes": 3525
+    }
+  },
+  "historical_run_distinction": {
+    "run_3_eb_1btu5": {
+      "commit": "9589edaa55531a2bfa2b2deb06ca9ca82f222e3a",
+      "cause": "OpenSSL / Python 3.13 strict CA certificate keyUsage extension validation failure",
+      "jvm_invocations": 0,
+      "backend_exit": 1,
+      "cleanup_verified": "accounting_p8_tmp_a5057b7ce693 dropped"
+    },
+    "run_4_bar7pq1o": {
+      "commit": "a8540ff83513b49988d90c77cf284831cfd5b2de",
+      "cause": "Android client parser publication vs executable HEAD pin mismatch before HTTP",
+      "jvm_invocations": 1,
+      "backend_exit": 1,
+      "cleanup_verified": "accounting_p8_tmp_3a598a57cc05 dropped"
+    },
+    "run_5_ooug5prl": {
+      "commit": "d7c7324535b1e6586140ab1e3561966342d625d6",
+      "verdict": "READINESS_JVM_TESTS_PASS",
+      "jvm_invocations": 1,
+      "jvm_exit": 0,
+      "tests_passed": 2,
+      "tests_failed": 0,
+      "backend_exit": 1,
+      "backend_exit_mode": "INTENTIONAL_SIGTERM_AFTER_EVIDENCE_CAPTURE",
+      "cleanup_verified": "accounting_p8_tmp_84fa14fb4cb2 dropped"
+    }
+  },
+  "confidential_data_protection": {
+    "zero_credentials_published": true,
+    "zero_tokens_published": true,
+    "zero_private_keys_published": true,
+    "zero_raw_nonces_published": true,
+    "all_evidence_sanitized": true
+  }
+}

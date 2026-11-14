@@ -1,15 +1,11 @@
 {
-    "manifest_version": "1.1.1",
+    "manifest_version": "1.2.0",
     "review_context": {
         "latest_review_id": "5906317848",
         "latest_review_submitted_at": "2026-11-14T18:21:45Z",
-        "prior_review_id": "5905683371",
-        "prior_review_submitted_at": "2026-11-14T16:06:33Z",
-        "peer_android_review_id": "5906183761",
-        "peer_android_review_submitted_at": "2026-11-14T17:53:49Z",
-        "backend_execution_head_sha": "a8540ff83513b49988d90c77cf284831cfd5b2de",
-        "peer_android_approved_head_sha": "824cb7dac1f17a3530f178134f9d9168e7e50b94",
-        "peer_android_executable_head_sha": "753fb5133e28acb1284370dd7a84e3929e7b1a7d",
+        "backend_execution_head_sha": "d7c7324535b1e6586140ab1e3561966342d625d6",
+        "peer_android_approved_head_sha": "653327243b2f5a4541c5fcf8cbe9520769e6be50",
+        "peer_android_executable_head_sha": "78ac4437e4010b68408278788dc82eb826fe8014",
         "existing_core_status": "ACCEPTED_DO_NOT_REDO",
         "qualified_core_sha": "6981511405d7bcd04cd8f8a09e64443ce0aaf47e",
         "core_invariance_verified": true
@@ -21,10 +17,10 @@
         "cli_command_sha256": "9bf4f389a034c52c62ea6aad796b20c06051f87dbf5a33b683572c4bff9bfd97",
         "cli_runner_sha256": "5836790dcc58a9956868c1fcc1e6a0cc979a989d0bcf82a2a197b2787c548690",
         "integration_manifest_sha256": "471240f132901eacef39ff1acea44f4b4802f775edb81e6e8c6a151d2b56ac92",
-        "runtime_pairing_manifest_sha256": "76a7326baa90c2dc43d89d75998518bded17856d5ad2752e0a7a676237456f3b",
+        "runtime_pairing_manifest_sha256": "88c8c2e2389f7486e73c74f4f660aa0621bf3c8486a85590b6c4bbb44bb83f5f",
         "runtime_pairing_scope": "ROOT_AUTHORIZED_READINESS_ONLY",
-        "peer_android_approved_head_sha": "824cb7dac1f17a3530f178134f9d9168e7e50b94",
-        "peer_android_executable_head_sha": "753fb5133e28acb1284370dd7a84e3929e7b1a7d"
+        "peer_android_approved_head_sha": "653327243b2f5a4541c5fcf8cbe9520769e6be50",
+        "peer_android_executable_head_sha": "78ac4437e4010b68408278788dc82eb826fe8014"
     },
     "guard_execution_history": {
         "commit_31140e4": {
@@ -105,16 +101,6 @@
             "runtime_pairing_manifest_sha256": "76a7326baa90c2dc43d89d75998518bded17856d5ad2752e0a7a676237456f3b",
             "live_handoff_sha256": "3c51b313c8307e85f2e1e4d9d8bc940b8d3ead5bb7999730859520d2c0805253",
             "ca_sha256": "b5f7f5b100a2d40c8746eba466e569178f988ea61a470a4906152738556c4066",
-            "root_tls_probes": {
-                "strict_ca_san_get_200": true,
-                "readiness_post_405_rejected": true,
-                "non_readiness_get_403_blocked": true,
-                "safe_get_403_path": "/_readiness_forbidden_probe",
-                "wrong_ca_rejected": true,
-                "wrong_ca_verification_mode": "ACTUAL_TLS_NEGATIVE_PASS",
-                "nonce_comparison_check_passed": true,
-                "nonce_comparison_detail": "Local comparison check json_nonce != '0'*32 passed; live corrupted nonce over network / client path negative remains UNPROVEN"
-            },
             "android_client_execution": {
                 "jvm_invocations": 1,
                 "duration_seconds": 27.16,
@@ -122,26 +108,51 @@
                 "tests_total": 2,
                 "tests_passed": 1,
                 "tests_failed": 1,
-                "tests_skipped": 0,
-                "tests_errors": 0,
-                "passed_test": "testCashPilotFinancialAcceptanceEnforcement",
                 "failed_test": "executePairedOnlineCashPilotSmoke",
-                "failure_type": "java.lang.IllegalArgumentException",
-                "failure_detail": "Peer Android executable HEAD pin mismatch: expected 824cb7dac1f17a3530f178134f9d9168e7e50b94, got 753fb5133e28acb1284370dd7a84e3929e7b1a7d at CashPilotHandoffConfig.kt:603",
-                "failure_phase": "CONFIG_PARSING_BEFORE_CLIENT_HTTP",
-                "fresh_readiness_json": false,
-                "pre_execution_state_json_sha256": "7280a75fcd482b311a15ed4f9996537b523423c666f3956a5ee64d5101ac72a8",
-                "post_execution_state_json_sha256": "7280a75fcd482b311a15ed4f9996537b523423c666f3956a5ee64d5101ac72a8",
-                "state_json_note": "SHA-256 of android_pre.json and android_post.json tracking HEAD, status, and source file hashmap; NOT a git object tree hash",
-                "git_tree_mutations": 0
+                "failure_detail": "Peer Android executable HEAD pin mismatch: expected 824cb7dac1f17a3530f178134f9d9168e7e50b94, got 753fb5133e28acb1284370dd7a84e3929e7b1a7d at CashPilotHandoffConfig.kt:603"
             },
             "backend_sigterm_drill": {
                 "pid": 1185016,
+                "exit_code": 1,
+                "exact_owned_schema_dropped": "accounting_p8_tmp_3a598a57cc05"
+            }
+        },
+        "run_5_root_coordinated_success": {
+            "head_sha": "d7c7324535b1e6586140ab1e3561966342d625d6",
+            "evidence_dir": "/tmp/root-readiness-ooug5prl",
+            "dedicated_report": "docs/evidence/pr102-ooug5prl-readiness-success-report.json",
+            "runtime_pairing_manifest_sha256": "88c8c2e2389f7486e73c74f4f660aa0621bf3c8486a85590b6c4bbb44bb83f5f",
+            "live_handoff_sha256": "8e48f3692a88f5ac3f333f81536d70eb3541228959968697fda03f68df44befc",
+            "ca_sha256": "9dde86450a9ccef026bb1ff4c2d6d75cb46ff61729cc008994c5a0d0ac725f72",
+            "root_outcome_sha256": "dd267bc4f3a505d1558020758545ac1e40159114eca0b9538fb9f37839aeffe7",
+            "verdict": "READINESS_JVM_TESTS_PASS",
+            "android_client_execution": {
+                "jvm_invocations": 1,
+                "duration_seconds": 13.3375,
+                "exit_code": 0,
+                "tests_total": 2,
+                "tests_passed": 2,
+                "tests_failed": 0,
+                "tests_skipped": 0,
+                "tests_errors": 0,
+                "passed_tests": [
+                    "executePairedOnlineCashPilotSmoke (0.643s)",
+                    "testCashPilotFinancialAcceptanceEnforcement (0.002s)"
+                ],
+                "fresh_evidence_json_sha256": "0bfaba51e8ab55ae49ab5bf05f374fe4091d48c2a694dd4b810e120049246c5d",
+                "overall_status": "PASS",
+                "readiness_probe_status": "PASS",
+                "financial_scenarios_status": "ALL_6_NOT_RUN",
+                "serialization_disclosure": "Original Android fresh evidence JSON (0bfaba...) toJson serializes only clientHead: 78ac4437e4010b68408278788dc82eb826fe8014 and omits separate publication pin field. Original JSON and hash are preserved unaltered; wrapper independently records publication 653327243b2f5a4541c5fcf8cbe9520769e6be50 and execution 78ac4437e4010b68408278788dc82eb826fe8014."
+            },
+            "backend_sigterm_drill": {
+                "pid": 1204264,
                 "signal": "SIGTERM",
                 "exit_code": 1,
+                "exit_mode": "INTENTIONAL_SIGTERM_AFTER_EVIDENCE_CAPTURE",
                 "abort_logged": "Readiness hold ABORTED by interrupt signal SIGTERM.",
-                "exact_owned_schema_dropped": "accounting_p8_tmp_3a598a57cc05",
-                "exact_owned_temp_dir_deleted": "/tmp/v2_harness_a7c718c045489fbb",
+                "exact_owned_schema_dropped": "accounting_p8_tmp_84fa14fb4cb2",
+                "exact_owned_temp_dir_deleted": "/tmp/v2_harness_c8253786b061d82a",
                 "ports_closed": [18080, 18443],
                 "ports_verification_method": "Python socket.connect_ex non-zero (connection refused)"
             }
@@ -149,17 +160,16 @@
     },
     "cleanup_verification": {
         "scope": "EXACT_OWNED_RESOURCES_ONLY",
-        "latest_owned_schema_dropped": "accounting_p8_tmp_3a598a57cc05",
-        "latest_owned_temp_dir_deleted": "/tmp/v2_harness_a7c718c045489fbb",
+        "latest_owned_schema_dropped": "accounting_p8_tmp_84fa14fb4cb2",
+        "latest_owned_temp_dir_deleted": "/tmp/v2_harness_c8253786b061d82a",
         "ports_closed": [18080, 18443],
         "ports_verification_method": "Python socket.connect_ex non-zero (connection refused)",
         "worktree_clean": true
     },
     "unexecuted_gaps_record": [
-        "Live corrupted nonce over network / client path negative (only local comparison json_nonce != '0'*32 executed; live transport negative unproven)",
-        "Live SIGINT abort drill (only SIGTERM exercised on PID 1185016)",
-        "Intermediate transport process failure cleanup (simulated killed child / crashed caddy during active transport) not exercised live",
-        "Financial pilot execution (strictly NOT RUN; readiness-only lifecycle scope forbids financial network requests)"
+        "Financial pilot execution (strictly NOT RUN; readiness-only lifecycle scope forbids financial network requests)",
+        "Live SIGINT abort drill (only SIGTERM exercised on PID 1185016 and PID 1204264)",
+        "Intermediate transport process failure recovery (simulated killed child / crashed caddy during active transport) not exercised live"
     ],
     "gate_checklist_review_5906317848": {
         "accepted": [
@@ -170,15 +180,14 @@
             "File permission policy enforced (0600 certs, 0600 keys, 0700 dir)",
             "Root TLS probe verified strict CA/SAN GET 200 with nonce, POST 405 refusal, safe GET 403 refusal on /_readiness_forbidden_probe",
             "Root actual live TLS negative PASS on wrong CA cert rejection",
-            "Root SIGTERM abort drill verified: handler marks ABORTED, exits 1, drops exact owned schema accounting_p8_tmp_3a598a57cc05, closes ports",
-            "Failure first stop honored; no automated restart loops"
+            "Root paired readiness execution PASS: 2 tests, 2 PASS, 0 failure, 0 error, exit 0 in 13.3375s",
+            "Root SIGTERM abort drill verified: handler marks ABORTED, exits 1, drops exact owned schema accounting_p8_tmp_84fa14fb4cb2, closes ports",
+            "Failure first stop honored across all runs; no automated restart loops"
         ],
         "pending": [
-            "Android client pin validation fix in CashPilotHandoffConfig.kt:603 (sole Android writer track; no backend client edits)",
-            "Live corrupted nonce over network / client path negative drill (local comparison check only so far; live transport negative unproven)",
+            "Full financial pilot execution (all 6 financial scenarios are NOT_RUN; basic readiness smoke alone does not qualify financial pilot)",
             "Live SIGINT drill on active hold",
-            "Intermediate transport crash/recovery drill during active client traffic",
-            "Live paired execution grant (requires approved Android runner commit with parser fix and fresh Root-verified ACTIVE_TLS_READY handoff hash)"
+            "Intermediate transport crash/recovery drill during active client traffic"
         ]
     }
 }

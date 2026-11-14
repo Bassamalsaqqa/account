@@ -2,7 +2,7 @@
 
 **PR**: [#102](https://github.com/Bassamalsaqqa/account/pull/102) (`t3/recover-cash-writer`)  
 **Repository**: `Bassamalsaqqa/account`  
-**Review Context**: OWNER Review `5906317848` submitted at `2026-11-14T18:21:45Z` on commit `a8540ff83513b49988d90c77cf284831cfd5b2de` (carrying prior Review `5905683371` and peer Android Review `5906183761` submitted at `2026-11-14T17:53:49Z` on `753fb5133e28acb1284370dd7a84e3929e7b1a7d`).  
+**Review Context**: OWNER Review `5906317848` submitted at `2026-11-14T18:21:45Z` on commit `a8540ff83513b49988d90c77cf284831cfd5b2de` and subsequent execution commits through `d7c7324535b1e6586140ab1e3561966342d625d6`.  
 **Operational Scope**: Sole writer lane, documentation and evidence publication only. Zero database connections, zero listening sockets, zero background jobs, zero child subagents. Lease FREE.  
 **Accepted Core Foundation**: Prior core qualification (187 tests, 1,440 assertions, route cache DAG, and company-root serialization invariants at `6981511405d7bcd04cd8f8a09e64443ce0aaf47e`) is **accepted** and not redone.
 
@@ -20,7 +20,7 @@ All digests below are deterministic SHA-256 hashes computed directly from disk:
 | `tests/Unit/Mobile/Harness/DisposableMobileV2BackendHarnessGuardTest.php` | `cb601109631bd7c7899d3093fae079e0c8a5b8cb4f31582f016bc5cbf4bdd4fe` | **Pure Guard Suite**: 57 tests, 241 assertions, zero DB sockets, zero listeners, includes pcntl enforcement & strict cert tests |
 | `tests/Support/Harness/MobileV2HarnessCommand.php` | `9bf4f389a034c52c62ea6aad796b20c06051f87dbf5a33b683572c4bff9bfd97` | **CLI Command**: Bounded readiness hold (`--readiness-hold-seconds`), CLI signal trap, and nonzero exit on interrupt |
 | `tests/Support/Harness/mobile-v2-harness-cli.php` | `5836790dcc58a9956868c1fcc1e6a0cc979a989d0bcf82a2a197b2787c548690` | **CLI Runner**: Pre-framework pcntl check, signal registration, and fail-closed readiness hold loop |
-| `runtime-pairing-manifest.json` *(Run `bar7pq1o`)* | `76a7326baa90c2dc43d89d75998518bded17856d5ad2752e0a7a676237456f3b` | **Pairing Manifest**: Authorized scope `ROOT_AUTHORIZED_READINESS_ONLY`, pub `824cb7d`, exec `753fb51` |
+| `runtime-pairing-manifest.json` *(Run `ooug5prl`)* | `88c8c2e2389f7486e73c74f4f660aa0621bf3c8486a85590b6c4bbb44bb83f5f` | **Pairing Manifest**: Authorized scope `ROOT_AUTHORIZED_READINESS_ONLY`, pub `6533272`, exec `78ac443` |
 
 ---
 
@@ -56,7 +56,7 @@ All changes on branch `t3/recover-cash-writer` since `6981511405d7bcd04cd8f8a09e
 - **Commit `815db269ba5ec1348553b9931f76ae91fb36578d`**:
   - Root: `0.965s` (`OK (53 tests, 227 assertions)`).
   - Configured X.509 v3 CA (`basicConstraints=CA:TRUE`, `keyUsage=critical,keyCertSign,cRLSign`) and server (`basicConstraints=CA:FALSE`, `keyUsage=digitalSignature,keyEncipherment`, `extendedKeyUsage=serverAuth`, `SAN=IP:127.0.0.1,IP:10.0.2.2`) extensions for strict Python 3.13 and OpenSSL verification.
-- **Current Head Execution (`a8540ff83513b49988d90c77cf284831cfd5b2de`)**:
+- **Commit `a8540ff83513b49988d90c77cf284831cfd5b2de` & Current HEAD**:
   - **Root Guard Run**: `1.180s` (`OK (57 tests, 241 assertions)`).
   - **Worker Guard Run**: `1.116s` (`OK (57 tests, 241 assertions)`).
   - Enforced pre-socket `pcntl` extension availability, early signal handler registration before DB/sockets, `0600` permissions on CA/server certs and private keys, and `0700` parent directory permissions.
@@ -65,7 +65,7 @@ All changes on branch `t3/recover-cash-writer` since `6981511405d7bcd04cd8f8a09e
 
 ## 4. Historical vs Root-Coordinated Execution Runs
 
-Four distinct execution runs are documented with exact provenance:
+Five distinct execution runs are documented with exact provenance:
 
 ### 4.1 Run 1: Standalone Provision (Commit `4a2e0b28`)
 - **Status**: `PROVISIONED_AWAITING_TLS_START_ONLY`.
@@ -83,119 +83,94 @@ Four distinct execution runs are documented with exact provenance:
 - **JVM Invocations**: Exactly **0** (first-failure stop honored; client JVM never launched).
 - **SIGTERM Abort Drill**: Root sent SIGTERM; schema `accounting_p8_tmp_a5057b7ce693` dropped cleanly, ports closed.
 
-### 4.4 Run 4: Root-Coordinated Paired Run (Commit `a8540ff8`, Dir `/tmp/root-readiness-bar7pq1o`)
-- **Backend Execution HEAD**: `a8540ff83513b49988d90c77cf284831cfd5b2de`
-- **Peer Android Publication HEAD**: `824cb7dac1f17a3530f178134f9d9168e7e50b94`
-- **Peer Android Executable HEAD**: `753fb5133e28acb1284370dd7a84e3929e7b1a7d`
-- **Runtime Pairing Manifest SHA-256**: `76a7326baa90c2dc43d89d75998518bded17856d5ad2752e0a7a676237456f3b`
-- **Runtime Pairing Scope**: `ROOT_AUTHORIZED_READINESS_ONLY`
-- **Live Handoff Snapshot SHA-256**: `3c51b313c8307e85f2e1e4d9d8bc940b8d3ead5bb7999730859520d2c0805253` (transient runtime file, now deleted; never a reusable endpoint)
-- **Live CA Certificate SHA-256**: `b5f7f5b100a2d40c8746eba466e569178f988ea61a470a4906152738556c4066`
+### 4.4 Run 4: Root-Coordinated Paired Run Pin Parser Mismatch (Commit `a8540ff8`, Dir `/tmp/root-readiness-bar7pq1o`)
+- **Execution Cause**: Android client parser compared executable HEAD against publication pin (`expected 824..., got 753...`) in `CashPilotHandoffConfig.kt:603` before client HTTP.
+- **JVM Invocations**: 1 (duration `27.16s`, exit code `1`).
+- **Test Results**: 2 tests (1 PASS, 1 FAIL, 0 SKIP, 0 error).
+- **Outcome**: Zero fresh readiness JSON produced. Zero financial requests sent.
+- **SIGTERM Abort Drill**: PID 1185016 aborted by SIGTERM, exited 1, schema `accounting_p8_tmp_3a598a57cc05` dropped.
 
-#### Root TLS Probe Verification
+### 4.5 Run 5: Root-Coordinated Paired Run Readiness SUCCESS (Commit `d7c7324`, Dir `/tmp/root-readiness-ooug5prl`)
+- **Backend Execution HEAD**: `d7c7324535b1e6586140ab1e3561966342d625d6`
+- **Peer Android Publication HEAD**: `653327243b2f5a4541c5fcf8cbe9520769e6be50`
+- **Peer Android Executable HEAD**: `78ac4437e4010b68408278788dc82eb826fe8014`
+- **Runtime Pairing Manifest SHA-256**: `88c8c2e2389f7486e73c74f4f660aa0621bf3c8486a85590b6c4bbb44bb83f5f`
+- **Runtime Pairing Scope**: `ROOT_AUTHORIZED_READINESS_ONLY`
+- **Live Handoff Snapshot SHA-256**: `8e48f3692a88f5ac3f333f81536d70eb3541228959968697fda03f68df44befc` (transient runtime file, now deleted; never a reusable endpoint)
+- **Live CA Certificate SHA-256**: `9dde86450a9ccef026bb1ff4c2d6d75cb46ff61729cc008994c5a0d0ac725f72`
+- **Root Outcome SHA-256**: `dd267bc4f3a505d1558020758545ac1e40159114eca0b9538fb9f37839aeffe7`
+
+#### Root TLS Probe Verification (All Passed)
 1. **Strict CA/SAN GET 200**: Verified HTTP 200 and matching nonce via CA-trusted TLS on `https://127.0.0.1:18443/_harness/readiness`.
 2. **Readiness Probe POST 405**: Verified HTTP 405 Method Not Allowed enforced on readiness route `/_harness/readiness`.
 3. **Safe Non-Readiness Route GET 403**: Verified HTTP 403 Forbidden on safe probe path `/_readiness_forbidden_probe`. Readiness-only boundary strictly blocks non-readiness routes; zero financial network routes called.
 4. **Untrusted / Wrong CA Rejection**: **ACTUAL LIVE TLS NEGATIVE PASS**. Verified strict TLS handshake rejection when connecting with an untrusted CA.
-5. **Nonce Mismatch Check**: **LOCAL COMPARISON CHECK**. In-memory comparison check (`json_nonce != '0'*32`) passed; live corrupted nonce over network / client path negative remains **UNPROVEN**.
 
-#### Android Client JVM Execution & Parser Pin Failure
-- **Invocations**: Exactly **1 JVM invocation** (`./gradlew cleanTestDebugUnitTest testDebugUnitTest ...`, duration `27.16s`, exit code `1`).
-- **JUnit Test XML** (`0-TEST-...SmallTraderOnlineCashPilotSmokeTest.xml`, SHA `dc2340a...`):
-  - Total tests: 2. Passed: 1. Failed: 1. Skipped: 0. Errors: 0.
-  - `testCashPilotFinancialAcceptanceEnforcement`: **PASSED** (`0.011s`).
-  - `executePairedOnlineCashPilotSmoke`: **FAILED** (`0.069s`).
-- **Failure Cause**:
-  ```
-  java.lang.IllegalArgumentException: Peer Android executable HEAD pin mismatch: expected 824cb7dac1f17a3530f178134f9d9168e7e50b94, got 753fb5133e28acb1284370dd7a84e3929e7b1a7d
-      at com.example.data.mobile.readclient.pilot.CashPilotHandoffConfig$Companion.parseBytes(CashPilotHandoffConfig.kt:603)
-      at com.example.data.mobile.readclient.pilot.CashPilotHandoffConfig$Companion.fromFile(CashPilotHandoffConfig.kt:488)
-      at com.example.data.mobile.readclient.pilot.SmallTraderOnlineCashPilotSmokeTest.executePairedOnlineCashPilotSmoke(SmallTraderOnlineCashPilotSmokeTest.kt:85)
-  ```
-- **Execution Timing**: Failed during configuration parsing in Kotlin **before any client HTTP request was sent**.
-- **Client Output**: Zero fresh client readiness JSON was generated.
-- **Financial Boundary**: Zero financial requests dispatched; strictly `NOT_RUN`.
-- **Pre/Post State JSON SHA-256**: Both `android_pre.json` and `android_post.json` are verified identical at SHA-256 `7280a75fcd482b311a15ed4f9996537b523423c666f3956a5ee64d5101ac72a8` (this is the digest of the JSON file recording HEAD, git status, and source file hashmap; NOT a git object tree hash). Zero mutations occurred.
+#### Android Client JVM Execution & Full Readiness PASS
+- **Invocations**: Exactly **1 JVM invocation** (`./gradlew cleanTestDebugUnitTest testDebugUnitTest ...`, duration `13.3375s`, exit code `0`).
+- **JUnit Test XML** (`0-TEST-...SmallTraderOnlineCashPilotSmokeTest.xml`, SHA `51e834a7f5d358e0e6544eb03b355e40130e0455d0d2c8de9b7099390b07c6eb`):
+  - Total tests: 2 | Passed: 2 | Failed: 0 | Skipped: 0 | Errors: 0
+  - `executePairedOnlineCashPilotSmoke`: **PASSED** (`0.643s`).
+  - `testCashPilotFinancialAcceptanceEnforcement`: **PASSED** (`0.002s`).
+- **Fresh Evidence JSON** (`1-paired-online-cash-pilot-evidence.json`, SHA `0bfaba51e8ab55ae49ab5bf05f374fe4091d48c2a694dd4b810e120049246c5d`):
+  - Overall status: **`PASS`**.
+  - `readiness_probe`: **`PASS`** (HTTP 200, latency 306ms, Host loopback HTTPS GET probe verified HTTP 200 with matching nonce).
+  - All 6 Financial Scenarios: **`NOT_RUN`** (`financial_cash_fresh_commit_201`, `financial_cash_idempotent_replay_200`, `financial_cash_event_status_posted`, `financial_cash_tamper_409`, `transport_lost_ack_recovery`, `stock_permission_rollback_probes`).
+  - **No Full Pilot Claim**: Readiness-only pass is strictly bounded; zero financial execution claimed.
+- **Serialization Omission Disclosure**:
+  - The original Android fresh JSON (`0bfaba...`) `toJson` method serialized only `clientHead: 78ac4437e4010b68408278788dc82eb826fe8014` and omitted a separate `clientPublicationHead` property.
+  - The original JSON content and hash are preserved unaltered (no rewriting).
+  - This report and the wrapper manifest independently record the Root-verified publication HEAD `653327243b2f5a4541c5fcf8cbe9520769e6be50` alongside execution HEAD `78ac4437e4010b68408278788dc82eb826fe8014` without requiring a rerun.
+- **Android Repository Integrity**:
+  - `android_pre.json`: `3f948f6cfcc23bef892c96430326447a094f3a272b6ee4c605406b726415a1aa` (HEAD `6533272...`, status clean, 197 files).
+  - `android_post.json`: `1fee9e7b4278b0904013d8f7eba38d7097b72bcaa3d93740ecf1261530e4d657` (HEAD `6533272...`, status `?? app/docs/`, 197 files identical).
+  - Both pre and post contain 197 identical source file hashes (zero source mutations). The untracked `app/docs/` contains only the generated evidence JSON.
 
-#### Backend Hold Interruption & SIGTERM Drill
-- **Process PID**: `1185016`
-- **Interrupt Signal**: SIGTERM issued by Root during readiness hold.
-- **Early Signal Handler Response**: Caught SIGTERM, logged `Readiness hold ABORTED by interrupt signal SIGTERM.`, and exited with code **1** (`FAILURE`, non-zero).
-- **Cleanup Guarantee**: Verified via MariaDB and Python `socket.connect_ex`:
-  - Exact owned MariaDB schema `accounting_p8_tmp_3a598a57cc05` dropped.
-  - Exact owned directory `/tmp/v2_harness_a7c718c045489fbb` absent.
+#### Backend Hold Interruption & Intentional SIGTERM Drill
+- **Process PID**: `1204264`
+- **Interrupt Signal**: SIGTERM issued intentionally by Root following evidence capture.
+- **Signal Handler Response**: Caught SIGTERM, logged `Readiness hold ABORTED by interrupt signal SIGTERM.`, and exited with code **1** (`FAILURE`, non-zero).
+- **Cleanup Guarantee**:
+  - Exact owned MariaDB schema `accounting_p8_tmp_84fa14fb4cb2` dropped (verified absent).
+  - Exact owned directory `/tmp/v2_harness_c8253786b061d82a` absent (verified deleted).
   - Loopback port `18080` and TLS proxy port `18443` verified closed via Python `socket.connect_ex` non-zero (connection refused).
 
 ---
 
-## 5. Retained Evidence Artifacts Matrix (`/tmp/root-readiness-bar7pq1o`)
+## 5. Retained Evidence Artifacts Matrix (`/tmp/root-readiness-ooug5prl`)
 
-All 14 artifacts verified against private files:
+All 13 artifacts verified against private files:
 
 | File Name | SHA-256 Digest | Bytes | Description |
 |---|---|---|---|
-| `0-TEST-...SmallTraderOnlineCashPilotSmokeTest.xml` | `dc2340af6bfabddcef4fd1793a334de2ca5d47686e26b62d9fed1beaaa702e9d` | 5,392 | JUnit test report: 2 tests, 1 PASS, 1 FAIL (pin mismatch at line 603) |
-| `android_command.json` | `be6ca6ec0995080dc155528ee55f08e7aac0f39bdc66ddeb29e4b7afe14317f9` | 1,124 | Gradle command-line arguments and sanitized nonsecret environment |
-| `android.log` | `d0cc29dcc956a8c2f80b3ada823e15fe8deccab599dc6983fd6b8b04d3b955b6` | 3,296 | Raw Gradle test task execution output (BUILD FAILED in 26s) |
-| `android_pre.json` | `7280a75fcd482b311a15ed4f9996537b523423c666f3956a5ee64d5101ac72a8` | 27,141 | Pre-execution state JSON (HEAD, status, and source file hashmap) |
-| `android_post.json` | `7280a75fcd482b311a15ed4f9996537b523423c666f3956a5ee64d5101ac72a8` | 27,141 | Post-execution state JSON (identical to pre; zero mutations) |
-| `android_result.json` | `89469c9e6b8652a074e4dcac9b662f0920a2d157f4dc1394551b32b8a0991cec` | 616 | Android test run metadata (duration 27.16s, exit 1, artifacts mapping) |
-| `backend_exit.json` | `cb8cd4906b5e40e60c90b877f8767d77fd9217bba6ab7e6ff490d024de788ea5` | 46 | Backend harness process exit status (`{"exit": 1, "finished_at": ...}`) |
-| `backend.log` | `65110f2352ec6a2979cf87766a6fa7203147f41cb98635655346fb81ab971304` | 756 | Backend harness execution log with SIGTERM abort and cleanup |
-| `live_handoff_snapshot.json` | `3c51b313c8307e85f2e1e4d9d8bc940b8d3ead5bb7999730859520d2c0805253` | 5,457 | Transient runtime handoff artifact snapshot (now deleted) |
-| `live_verified.json` | `928b08e700b1ecbd1febc9ca8b947a3467097a1b94aa55df463110ac89907716` | 654 | Root TLS probe outcomes (GET 200, POST 405, safe GET 403, wrong CA rejection) |
-| `manifest.json` | `76a7326baa90c2dc43d89d75998518bded17856d5ad2752e0a7a676237456f3b` | 5,118 | Pairing manifest defining authorized scope `ROOT_AUTHORIZED_READINESS_ONLY` |
-| `operator.json` | `cf79dea8480ad890380916335efab393420d0db63e85b2c8592c832ee3d9677c` | 515 | Root harness command invocation arguments and manifest SHA pin |
-| `pid` | `68eb480291680e36768324c8a4f24a5f3b889e47a558ac7687ac97618ea21f1c` | 7 | Backend harness PID recording file (`1185016`) |
-| `root_outcome.json` | `edc41299370fadfd6b633b022f5778e5e5953a8a18c449e9c0bcff6339b950d8` | 700 | Root structured run verdict: `JVM_PIN_VALIDATION_FAILED_BEFORE_CLIENT_HTTP` |
-
-### Sanitized Backend Execution Log Excerpt
-```
-Mobile V2 Harness — Readiness-Only Probe Test (--readiness-only)
-Owned schema created: accounting_p8_tmp_3a598a57cc05
-  Provision OK — schema: accounting_p8_tmp_3a598a57cc05
-Readiness probe test succeeded.
-  TLS proxy port   : https://127.0.0.1:18443
-  Readiness probe  : verified HTTP 200 and matching nonce via CA-trusted TLS.
-  Client handoff   : /tmp/v2_harness_a7c718c045489fbb/runtime_client_handoff.json
-  Financial routes : strictly blocked (HTTP 403) in child router.
-Holding readiness state for 120s (PID 1185016). Press Ctrl+C to terminate early.
-Readiness hold ABORTED by interrupt signal SIGTERM.
-
-Shutting down and cleaning up owned processes, files, and schemas...
-Owned schema dropped: accounting_p8_tmp_3a598a57cc05
-Cleanup completed.
-```
+| `0-TEST-...SmallTraderOnlineCashPilotSmokeTest.xml` | `51e834a7f5d358e0e6544eb03b355e40130e0455d0d2c8de9b7099390b07c6eb` | 691 | JUnit test report: 2 tests, 2 PASS, 0 FAIL, 0 SKIP, 0 error |
+| `1-paired-online-cash-pilot-evidence.json` | `0bfaba51e8ab55ae49ab5bf05f374fe4091d48c2a694dd4b810e120049246c5d` | 2,184 | Fresh client evidence JSON: readiness PASS, all 6 financial NOT_RUN |
+| `android.log` | `be9aa06a8259901b324f0e7d90a3999ef0e6f52272fbcbc4b0f44e326068c283` | 2,379 | Raw Gradle test task execution output (BUILD SUCCESSFUL in 13s) |
+| `android_command.json` | `72219dce6bd6be895b6c45c8c8211cef0881b2ebfa108f43726c9d0d4dbe7f93` | 1,206 | Gradle command-line arguments and runtime environment pins |
+| `android_post.json` | `1fee9e7b4278b0904013d8f7eba38d7097b72bcaa3d93740ecf1261530e4d657` | 27,155 | Post-execution state JSON (197 files identical to pre; untracked app/docs/) |
+| `android_pre.json` | `3f948f6cfcc23bef892c96430326447a094f3a272b6ee4c605406b726415a1aa` | 27,141 | Pre-execution state JSON (HEAD 6533272..., 197 source file hashes) |
+| `android_result.json` | `8f9da64aa1645666d9ecba248a216e1774879017bfcac0d1b6b3333cccebf623` | 1,041 | Android execution result metadata (exit 0, duration 13.3375s) |
+| `backend.log` | `fd7eedd59cd0b334a4d9305b8c65ec0697d8cff0c9d792602466f462202c5ebc` | 756 | Backend harness execution log with SIGTERM abort and cleanup |
+| `backend_command.json` | `a47fac07e5deeabbac9b810abab17047c81004a3f55f3307de0ba214b359120b` | 428 | Backend harness command invocation arguments |
+| `live_handoff_snapshot.json` | `8e48f3692a88f5ac3f333f81536d70eb3541228959968697fda03f68df44befc` | 5,457 | Transient runtime handoff artifact snapshot (now deleted) |
+| `live_verified.json` | `42528b2ead0e60c3bb1e35b727044e6e0ca9b7ad19dab180012527057ab76704` | 728 | Root TLS probe outcomes (GET 200, POST 405, safe GET 403, wrong CA rejection) |
+| `manifest.json` | `88c8c2e2389f7486e73c74f4f660aa0621bf3c8486a85590b6c4bbb44bb83f5f` | 5,118 | Pairing manifest defining authorized scope `ROOT_AUTHORIZED_READINESS_ONLY` |
+| `root_outcome.json` | `dd267bc4f3a505d1558020758545ac1e40159114eca0b9538fb9f37839aeffe7` | 3,525 | Root structured run verdict: `READINESS_JVM_TESTS_PASS` |
 
 ---
 
 ## 6. Cleanup Scope & Verification
 
 Cleanup was independently verified for exact owned resources:
-- **Owned MariaDB Schema**: Exact owned schema `accounting_p8_tmp_3a598a57cc05` dropped (verified absent via MariaDB information schema; no wildcard drops).
-- **Owned Temporary Directory**: Exact owned directory `/tmp/v2_harness_a7c718c045489fbb` absent (verified deleted).
+- **Owned MariaDB Schema**: Exact owned schema `accounting_p8_tmp_84fa14fb4cb2` dropped (verified absent via MariaDB information schema; no wildcard drops).
+- **Owned Temporary Directory**: Exact owned directory `/tmp/v2_harness_c8253786b061d82a` absent (verified deleted).
 - **Network Sockets**: Ports `127.0.0.1:18080` (HTTP loopback) and `127.0.0.1:18443` (TLS proxy) verified closed via Python `socket.connect_ex` non-zero (connection refused).
 - **Working Tree**: `git status` clean (zero uncommitted edits).
 - **Lease Status**: Explicitly **FREE / RELEASED**.
 
 ---
 
-## 7. Record of Unexecuted Gaps & Review Requests
-
-In strict adherence to reporting integrity, the following review items were **not executed** in this pass and remain open gaps:
-
-1. **Live Corrupted Nonce over Network / Client Path Negative**:
-   - The nonce mismatch check in Run 4 was an in-memory comparison check (`json_nonce != '0'*32`), NOT an actual client validator or failed HTTP request. Corrupted nonce validation over the live TLS proxy stream remains **unproven**.
-2. **Live SIGINT Abort Drill**:
-   - The readiness hold was interrupted live via **SIGTERM** (exercising signal handler, abortion exit code 1, and schema cleanup). A live **SIGINT** (Ctrl+C) drill on the running hold was not executed.
-3. **Intermediate Transport Process Failure Recovery**:
-   - Simulated ungraceful transport failure (e.g. killing `php -S` or crashing Caddy while client HTTP traffic is active) was not exercised live on actual transport.
-4. **Financial Pilot Execution**:
-   - Strictly **NOT RUN**. Readiness-only lifecycle scope strictly forbids network calls to financial routes.
-
----
-
-## 8. Review 5906317848 Gate Checklist
+## 7. Review 5906317848 Gate Checklist Status
 
 | Item | Status | Verification & Evidence |
 |---|---|---|
@@ -207,36 +182,34 @@ In strict adherence to reporting integrity, the following review items were **no
 | Root strict CA/SAN TLS GET 200 with nonce | **VERIFIED** | Live Root probe verified HTTP 200 with matching nonce over CA-trusted TLS |
 | Readiness POST 405 & safe GET 403 barriers | **VERIFIED** | Live Root probes verified POST 405 and safe GET 403 on `/_readiness_forbidden_probe` enforced |
 | Root wrong CA refusal (live TLS negative) | **VERIFIED** | Live Root probe verified strict TLS handshake failure on untrusted CA cert |
-| Nonce mismatch negative check | **LOCAL CHECK** | Local comparison check passed; live network client path negative remains unproven |
-| Root SIGTERM abort drill & schema drop | **VERIFIED** | PID 1185016 aborted by SIGTERM, exited 1, dropped schema `accounting_p8_tmp_3a598a57cc05` |
-| Failure first stop honored (no autorestart) | **VERIFIED** | First failure stopped immediately; 0 automatic retries |
-| Android client pin parser fix | **PENDING** | Bug in `CashPilotHandoffConfig.kt:603` assigned to Android sole writer lane |
-| Live corrupted nonce client path negative drill | **PENDING** | Pending live network drill |
+| Android paired client execution (Run 5) | **VERIFIED** | 1 JVM invocation, exit 0, 2 tests PASS in 13.3375s; readiness PASS |
+| Root SIGTERM abort drill & schema drop | **VERIFIED** | PID 1204264 aborted by SIGTERM, exited 1, dropped schema `accounting_p8_tmp_84fa14fb4cb2`, closed ports |
+| Failure first stop honored across all runs | **VERIFIED** | Honored across all 5 runs; zero automatic retries |
+| Outer financial pilot qualification | **PENDING** | All 6 financial scenarios are `NOT_RUN`; requires reviewable disposable financial plan and individual pass of critical scenarios |
 | Live SIGINT drill on active hold | **PENDING** | SIGTERM verified; SIGINT drill pending future pass |
 | Intermediate transport crash drill during active traffic | **PENDING** | Pending future coordinated drill |
-| Paired execution authorization | **PENDING** | Requires reviewed Android runner with parser fix and fresh Root-verified `ACTIVE_TLS_READY` handoff hash |
 
 ---
 
-## 9. Guide to Financial Acceptance Criteria
+## 8. Guide to Financial Acceptance Criteria
 
 Any future live paired execution must strictly require and verify the canonical financial models, public DTOs, and settlement rules:
 
-### 9.1 Canonical Domain Entities & Public Identity
+### 8.1 Canonical Domain Entities & Public Identity
 1. **SalesInvoice**: Model `SalesInvoice` persisted with status `posted` (tenant company, customer, currency, line items). Public ID in wire DTOs is a ULID (`invoice_id`).
 2. **CustomerPayment**: Model `CustomerPayment` persisted with status `posted` (method `cash`, non-null `cash_account_id`). Public ID in wire DTOs is a ULID (`payment_id`).
 3. **CustomerPaymentAllocation**: Model `CustomerPaymentAllocation` binding `CustomerPayment` to `SalesInvoice`, reconciling invoice balance.
 4. **StockMovement**: Model `StockMovement` recording physical ledger deduction in base inventory units.
 5. **MobileEventReceipt**: Model `MobileEventReceipt` recording execution receipt. In the public wire contract, receipt identity is strictly the client UUID (`client_event_id`). There is **no public ULID receipt contract**.
 
-### 9.2 DTO Structure & Parity Rules
+### 8.2 DTO Structure & Parity Rules
 - **Commit Wire DTO (10 keys)**: Returns `client_event_id` (UUID), `status` (`'posted'`), `invoice_id` (ULID), `invoice_number`, `payment_id` (ULID), `payment_receipt_number`, `grand_total`, `amount_paid`, `change_returned`, `posted_at`.
 - **Status Wire DTO**: Returns `client_event_id`, `company_id`, `status` (`'posted'` or `'unknown'`), `payload_digest`, `official_invoice`, `conflict`, `queried_at`.
   - The `official_invoice` field is a **6-field subset** (`invoice_id`, `invoice_number`, `payment_id`, `payment_receipt_number`, `grand_total`, `posted_at`).
   - Parity assertions must compare matching invoice/payment public ULIDs, invoice numbers, and totals across the shared fields; do **not** claim identical 10-key receipt structures between commit and status.
 - **Rejection of Unsettled States**: A receipt marked `PostedWithoutPaymentReference` or lacking allocation is **never** accepted as a full cash settlement success.
 
-### 9.3 Outer Financial Pilot Acceptance Criteria
+### 8.3 Outer Financial Pilot Acceptance Criteria
 - Full pilot acceptance **must require each required critical scenario to PASS separately**:
   1. Fresh online cash sale commit and status query verification.
   2. Idempotent exact replay verification.
@@ -244,24 +217,7 @@ Any future live paired execution must strictly require and verify the canonical 
   4. Conflict rejection on client event ID reuse with altered payload.
 - A basic smoke PASS with lost ACK / rollback NOT RUN is **never** a full pilot PASS.
 
-### 9.4 Overtender & Wire Settlement Semantics
+### 8.4 Overtender & Wire Settlement Semantics
 - **Backend Full Cash Wire Contract**: At the backend financial slice, the request `payment.amount` is the exact settlement amount applied to the invoice (`change_returned` = `0.000000` on the wire).
 - **Client Tender Calculation**: Overtender and customer change calculation is managed durably on the Android client (`OfflineSaleV2` local tender/change state where `tender_amount >= net_total` and `local_change = tender_amount - net_total`).
 - **No Unsupported Backend Fields**: Do not impose non-existent or unsupported tender/change fields onto the backend cash slice request payload.
-
----
-
-## 10. Android Track Coordination Status
-
-- **Peer Candidates**:
-  - Publication HEAD: `824cb7dac1f17a3530f178134f9d9168e7e50b94`
-  - Executable HEAD: `753fb5133e28acb1284370dd7a84e3929e7b1a7d`
-- **Identified Client Defect**:
-  - `CashPilotHandoffConfig.kt:603` in `SmallTraderOnlineCashPilotSmokeTest` compares the worktree executable HEAD against the publication pin (`expected 824..., got 753...`), failing in-process before HTTP dispatch.
-- **Sole Android Writer Track**:
-  - The Android client fix belongs strictly to the Android sole writer lane. The backend assistant does **not** edit Android client source code.
-- **Authorization Boundary**:
-  - Lease remains **FREE / RELEASED**.
-  - There is **no TLS start grant**, **no DB start grant**, and **no financial execution grant**.
-- **Next Paired Run Requirement**:
-  - Live paired execution requires an approved Android runner commit with the parser fix, a fresh Root-verified `ACTIVE_TLS_READY` handoff hash, and explicit paired execution authorization.
