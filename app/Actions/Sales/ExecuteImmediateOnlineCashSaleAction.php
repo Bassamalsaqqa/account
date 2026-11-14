@@ -264,26 +264,13 @@ final class ExecuteImmediateOnlineCashSaleAction
             ? Product::where('company_id', $company->id)->whereIn('id', array_map('intval', $productLookups))->orderBy('id')->lockForUpdate()->get()->keyBy('id')
             : Product::where('company_id', $company->id)->whereIn('public_id', $productLookups)->orderBy('id')->lockForUpdate()->get()->keyBy('public_id');
 
-        // Cash money account locking
+        // Payment intent pre-validation
         $paymentIntent = (array) ($payload['payment'] ?? []);
         if (($paymentIntent['payment_method'] ?? null) !== 'cash') {
             throw new InvalidArgumentException("Payment method must be 'cash'.");
         }
         if (($paymentIntent['settlement_mode'] ?? null) !== 'full') {
             throw new InvalidArgumentException("Settlement mode must be 'full'.");
-        }
-
-        $cashAccountId = $paymentIntent['cash_account_id'] ?? null;
-        /** @var MoneyAccount $cashAccount */
-        $cashAccount = is_numeric($cashAccountId)
-            ? MoneyAccount::where('company_id', $company->id)->where('id', (int) $cashAccountId)->lockForUpdate()->firstOrFail()
-            : MoneyAccount::where('company_id', $company->id)->where('public_id', (string) $cashAccountId)->lockForUpdate()->firstOrFail();
-
-        if (! $cashAccount->is_active) {
-            throw new InvalidArgumentException("Cash account [{$cashAccount->id}] is inactive.");
-        }
-        if ($cashAccount->currency_code !== $currency) {
-            throw new InvalidArgumentException("Cash account currency [{$cashAccount->currency_code}] must match sale currency [{$currency}].");
         }
 
         // 6. Strict stock check and draft lines preparation
@@ -385,7 +372,21 @@ final class ExecuteImmediateOnlineCashSaleAction
             ];
         }
 
-        // 7. Execute all financial legs under closed composite-scope permit
+        // 7. Canonical cash money account locking (strictly after Products, Units, and Tax Rates)
+        $cashAccountId = $paymentIntent['cash_account_id'] ?? null;
+        /** @var MoneyAccount $cashAccount */
+        $cashAccount = is_numeric($cashAccountId)
+            ? MoneyAccount::where('company_id', $company->id)->where('id', (int) $cashAccountId)->lockForUpdate()->firstOrFail()
+            : MoneyAccount::where('company_id', $company->id)->where('public_id', (string) $cashAccountId)->lockForUpdate()->firstOrFail();
+
+        if (! $cashAccount->is_active) {
+            throw new InvalidArgumentException("Cash account [{$cashAccount->id}] is inactive.");
+        }
+        if ($cashAccount->currency_code !== $currency) {
+            throw new InvalidArgumentException("Cash account currency [{$cashAccount->currency_code}] must match sale currency [{$currency}].");
+        }
+
+        // 8. Execute all financial legs under closed composite-scope permit
         $this->openCompositePermit($capability, (int) $company->id, (int) $actor->id);
         try {
             // Leg 1: Create sales invoice draft

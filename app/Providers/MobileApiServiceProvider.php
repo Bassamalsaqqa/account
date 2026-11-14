@@ -45,19 +45,7 @@ final class MobileApiServiceProvider extends ServiceProvider
 
         Route::prefix('api/mobile/v2')
             ->middleware(MobileV2ApiBoundary::class)
-            ->group(function (): void {
-                if (file_exists(base_path('routes/mobile-v2.php'))) {
-                    require base_path('routes/mobile-v2.php');
-                }
-
-                Route::match(['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'HEAD'], '{fallbackPlaceholder?}', function () {
-                    return MobileV2ApiBoundary::buildErrorResponse(
-                        code: 'NOT_FOUND',
-                        message: 'The requested resource was not found.',
-                        status: 404
-                    );
-                })->where('fallbackPlaceholder', '.*')->fallback();
-            });
+            ->group(base_path('routes/mobile-v2.php'));
     }
 
     /**
