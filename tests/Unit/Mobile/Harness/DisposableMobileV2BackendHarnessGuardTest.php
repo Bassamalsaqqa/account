@@ -2403,6 +2403,7 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
             'company_id' => 1,
             'source_head' => 'cfc28baaaaf52521ecbc88f1ba4c621afee17221',
             'handoff_digest' => '11223344556677889900aabbccddeeff11223344556677889900aabbccddeeff',
+            'baseline_hash' => 'baseline-hash-0123456789abcdef0123456789abcdef0123456789abcdef01234567',
             'is_canonical_delta_valid' => true,
             'gl_batches_balanced' => true,
             'all_healthy' => true,
@@ -2423,6 +2424,9 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
             'handoffDigest' => '11223344556677889900aabbccddeeff11223344556677889900aabbccddeeff',
             'expectedSchemaName' => 'accounting_p8_tmp_0123456789ab',
             'companyId' => 1,
+            'expectedRunId' => 'run-financial-20261114-001',
+            'expectedBaselineHash' => 'baseline-hash-0123456789abcdef0123456789abcdef0123456789abcdef01234567',
+            'expectedScope' => 'ROOT_AUTHORIZED_PAIRED_EXECUTION',
         ];
 
         $result = \Tests\Support\Harness\DisposableFinancialPostRunInspector::validateOuterEvidenceJson(
@@ -2504,13 +2508,21 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
             'clientExecutableHead' => \Tests\Support\Harness\DisposableFinancialPostRunInspector::APPROVED_ANDROID_EXECUTABLE_SHA,
             'backendExecutionHead' => 'cfc28baaaaf52521ecbc88f1ba4c621afee17221',
             'handoffDigest' => '11223344556677889900aabbccddeeff11223344556677889900aabbccddeeff',
+            'expectedSchemaName' => 'accounting_p8_tmp_0123456789ab',
+            'companyId' => 1,
+            'expectedRunId' => 'run-swapped',
+            'expectedBaselineHash' => 'baseline-hash-0123456789abcdef0123456789abcdef0123456789abcdef01234567',
+            'expectedScope' => 'ROOT_AUTHORIZED_PAIRED_EXECUTION',
         ];
 
         $trustedDbReport = [
             'scope' => 'ROOT_AUTHORIZED_PAIRED_EXECUTION',
             'run_id' => 'run-swapped',
+            'schema_name' => 'accounting_p8_tmp_0123456789ab',
+            'company_id' => 1,
             'source_head' => 'cfc28baaaaf52521ecbc88f1ba4c621afee17221',
             'handoff_digest' => '11223344556677889900aabbccddeeff11223344556677889900aabbccddeeff',
+            'baseline_hash' => 'baseline-hash-0123456789abcdef0123456789abcdef0123456789abcdef01234567',
             'is_canonical_delta_valid' => true,
             'gl_batches_balanced' => true,
             'all_healthy' => true,
@@ -2552,6 +2564,7 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
 
         // 2. Over-claiming full pilot when lost_ack was claimed PASS rejected
         $trustedDbReport['run_id'] = 'run-overclaim';
+        $expectedPins['expectedRunId'] = 'run-overclaim';
         $overclaimPayload = [
             'runId' => 'run-overclaim',
             'timestamp' => '2026-11-14T20:00:00Z',
@@ -2638,14 +2651,21 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
             'handoffDigest' => '8e48f3692a88f5ac3f333f81536d70eb3541228959968697fda03f68df44befc',
             'expectedLifecycle' => 'FINANCIAL_PAIRED_RUN',
             'expectedScope' => 'ROOT_AUTHORIZED_PAIRED_EXECUTION',
+            'expectedSchemaName' => 'accounting_p8_tmp_0123456789ab',
+            'companyId' => 1,
+            'expectedRunId' => '019ea456-0000-7000-8000-000000000001',
+            'expectedBaselineHash' => 'synthetic-golden-baseline-hash-64chars0000000000000000000000000000',
         ];
 
         // Separate, clearly synthetic trusted DB inspection report for the parity test
         $syntheticTrustedDbReport = [
             'scope' => 'ROOT_AUTHORIZED_PAIRED_EXECUTION',
             'run_id' => '019ea456-0000-7000-8000-000000000001',
+            'schema_name' => 'accounting_p8_tmp_0123456789ab',
+            'company_id' => 1,
             'source_head' => 'cfc28baaaaf52521ecbc88f1ba4c621afee17221',
             'handoff_digest' => '8e48f3692a88f5ac3f333f81536d70eb3541228959968697fda03f68df44befc',
+            'baseline_hash' => 'synthetic-golden-baseline-hash-64chars0000000000000000000000000000',
             'is_canonical_delta_valid' => true,
             'gl_batches_balanced' => true,
             'all_healthy' => true,
@@ -2698,6 +2718,104 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
         );
         $this->assertFalse($resNoDb['is_valid']);
         $this->assertTrue(collect($resNoDb['errors'])->contains(fn ($e) => str_contains($e, 'Separate REQUIRED trusted owned DB inspection report is mandatory')));
+    }
+
+    #[Test]
+    public function test_compose_trusted_db_report_generates_deterministic_pinnable_digest(): void
+    {
+        $metadata = [
+            'scope' => 'ROOT_AUTHORIZED_PAIRED_EXECUTION',
+            'runId' => '019ea456-0000-7000-8000-000000000001',
+            'schemaName' => 'accounting_p8_tmp_0123456789ab',
+            'companyId' => 1,
+            'sourceHead' => 'cfc28baaaaf52521ecbc88f1ba4c621afee17221',
+            'handoffDigest' => '8e48f3692a88f5ac3f333f81536d70eb3541228959968697fda03f68df44befc',
+        ];
+
+        $baseline = [
+            'company_id' => 1,
+            'schema_name' => 'accounting_p8_tmp_0123456789ab',
+            'sales_invoices' => 10,
+            'sales_invoices_max_id' => 10,
+            'sales_invoice_lines' => 10,
+            'sales_invoice_lines_max_id' => 10,
+            'sales_invoice_lot_allocations' => 0,
+            'sales_invoice_lot_allocations_max_id' => 0,
+            'customer_payments' => 5,
+            'customer_payments_max_id' => 5,
+            'customer_payment_allocations' => 5,
+            'customer_payment_allocations_max_id' => 5,
+            'mobile_event_receipts' => 0,
+            'mobile_event_receipts_max_id' => 0,
+            'stock_movements' => 20,
+            'stock_movements_max_id' => 20,
+            'stock_movements_qty_sum' => '100.000000',
+            'posting_batches' => 15,
+            'posting_batches_max_id' => 15,
+            'posting_lines' => 30,
+            'posting_lines_max_id' => 30,
+            'document_sequences' => ['sales_invoice:2026' => 11, 'customer_payment:2026' => 6],
+        ];
+
+        $deltaResult = [
+            'is_canonical_delta_valid' => true,
+            'expected_delta_one_event' => true,
+            'deltas' => [
+                'sales_invoices' => 1,
+                'customer_payments' => 1,
+            ],
+            'errors' => [],
+            'gl_batches_balanced' => true,
+            'canonical_graph' => [
+                'sales_invoice_id' => 11,
+                'sales_invoice_public_id' => '01INVTEST0001',
+                'customer_payment_id' => 6,
+                'customer_payment_public_id' => '01PAYTEST0001',
+                'stock_movement_quantity_delta' => '-1.000000',
+                'customer_payment_allocation_amount' => '58.000000',
+                'customer_payment_allocation_payment_currency_amount' => '58.000000',
+                'receipt_status' => 'completed',
+            ],
+        ];
+
+        $reconcileResult = [
+            'all_healthy' => true,
+            'reconciler_results' => [
+                'AccountingReconciliationService' => ['healthy' => true, 'issue_count' => 0],
+                'InventoryReconciliationService' => ['healthy' => true, 'issue_count' => 0],
+                'SalesReconciliationService' => ['healthy' => true, 'issue_count' => 0],
+                'PayablesReconciliationService' => ['healthy' => true, 'issue_count' => 0],
+                'MoneyReconciliationService' => ['healthy' => true, 'issue_count' => 0],
+                'Phase7ReconciliationService' => ['healthy' => true, 'issue_count' => 0],
+            ],
+        ];
+
+        $report = \Tests\Support\Harness\DisposableFinancialPostRunInspector::composeTrustedDbReport(
+            $metadata,
+            $baseline,
+            $deltaResult,
+            $reconcileResult
+        );
+
+        $this->assertSame('ROOT_AUTHORIZED_PAIRED_EXECUTION', $report['scope']);
+        $this->assertSame('019ea456-0000-7000-8000-000000000001', $report['run_id']);
+        $this->assertSame('accounting_p8_tmp_0123456789ab', $report['schema_name']);
+        $this->assertSame(1, $report['company_id']);
+        $this->assertTrue($report['is_canonical_delta_valid']);
+        $this->assertTrue($report['gl_batches_balanced']);
+        $this->assertTrue($report['all_healthy']);
+        $this->assertNotEmpty($report['baseline_hash']);
+        $this->assertMatchesRegularExpression('/^[a-f0-9]{64}$/D', $report['report_digest']);
+
+        // Verify deterministic report digest stability
+        $report2 = \Tests\Support\Harness\DisposableFinancialPostRunInspector::composeTrustedDbReport(
+            $metadata,
+            $baseline,
+            $deltaResult,
+            $reconcileResult
+        );
+        $this->assertSame($report['report_digest'], $report2['report_digest']);
+        $this->assertSame($report['baseline_hash'], $report2['baseline_hash']);
     }
 }
 

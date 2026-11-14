@@ -6,24 +6,31 @@ use Tests\Support\Harness\DisposableFinancialPostRunInspector;
 
 // CLI entrypoint for Mobile V2 Financial Inspector and Outer Evidence Validator.
 // Defaults to NO-EXECUTE; fails closed on missing flags or validation failure.
-// Does NOT touch production code or console commands.
+// Autoload only: does NOT perform full framework/kernel bootstrap.
+// Does NOT touch production code, routes, or console commands.
 
 $argvList = $_SERVER['argv'] ?? [];
 
 $isBaseline = false;
 $isInspectDelta = false;
 $isReconcile = false;
+$isComposeTrustedReport = false;
 $evidenceFile = null;
 $trustedDbReportFile = null;
 $outputFile = null;
 $baselineFile = null;
+$deltaFile = null;
+$reconcileFile = null;
+$credentialsFile = null;
 $schemaName = null;
 $companyId = null;
+$runId = null;
 $expectedEventId = null;
 $expectedBackendHead = null;
 $expectedAndroidPub = null;
 $expectedAndroidExe = null;
 $expectedHandoffDigest = null;
+$expectedBaselineHash = null;
 $expectedScope = null;
 
 foreach ($argvList as $arg) {
@@ -33,6 +40,8 @@ foreach ($argvList as $arg) {
         $isInspectDelta = true;
     } elseif ($arg === '--reconcile') {
         $isReconcile = true;
+    } elseif ($arg === '--compose-trusted-report') {
+        $isComposeTrustedReport = true;
     } elseif (str_starts_with($arg, '--validate-evidence=')) {
         $evidenceFile = substr($arg, 20);
     } elseif (str_starts_with($arg, '--trusted-db-report=')) {
@@ -41,8 +50,16 @@ foreach ($argvList as $arg) {
         $schemaName = substr($arg, 9);
     } elseif (str_starts_with($arg, '--company-id=')) {
         $companyId = (int) substr($arg, 13);
+    } elseif (str_starts_with($arg, '--run-id=')) {
+        $runId = substr($arg, 9);
     } elseif (str_starts_with($arg, '--baseline-file=')) {
         $baselineFile = substr($arg, 16);
+    } elseif (str_starts_with($arg, '--delta-file=')) {
+        $deltaFile = substr($arg, 13);
+    } elseif (str_starts_with($arg, '--reconcile-file=')) {
+        $reconcileFile = substr($arg, 17);
+    } elseif (str_starts_with($arg, '--credentials-file=')) {
+        $credentialsFile = substr($arg, 19);
     } elseif (str_starts_with($arg, '--output=')) {
         $outputFile = substr($arg, 9);
     } elseif (str_starts_with($arg, '--expected-event-id=')) {
@@ -55,6 +72,8 @@ foreach ($argvList as $arg) {
         $expectedAndroidExe = substr($arg, 23);
     } elseif (str_starts_with($arg, '--expected-handoff-digest=')) {
         $expectedHandoffDigest = substr($arg, 26);
+    } elseif (str_starts_with($arg, '--expected-baseline-hash=')) {
+        $expectedBaselineHash = substr($arg, 25);
     } elseif (str_starts_with($arg, '--expected-scope=')) {
         $expectedScope = substr($arg, 17);
     }
@@ -63,9 +82,36 @@ foreach ($argvList as $arg) {
 // SAFE AUTOLOAD ONLY
 require __DIR__.'/../../../vendor/autoload.php';
 
+// Safe extraction of private proof credentials if provided (no secret stdout)
+if ($credentialsFile !== null && is_file($credentialsFile)) {
+    $content = (string) file_get_contents($credentialsFile);
+    $parsed = json_decode($content, true);
+    if (! is_array($parsed)) {
+        $parsed = [];
+        $lines = explode("\n", $content);
+        foreach ($lines as $line) {
+            $line = trim($line);
+            if ($line === '' || str_starts_with($line, '#')) {
+                continue;
+            }
+            if (str_contains($line, '=')) {
+                [$k, $v] = explode('=', $line, 2);
+                $parsed[trim($k)] = trim($v, " \t\n\r\0\x0B\"'");
+            }
+        }
+    }
+    foreach ($parsed as $k => $v) {
+        if (in_array($k, ['HOST', 'PORT', 'USERNAME', 'PASSWORD', 'EMPTY_PASSWORD'], true)) {
+            putenv("PHASE8_TEST_DB_{$k}={$v}");
+        } elseif (str_starts_with($k, 'PHASE8_TEST_DB_') || in_array($k, ['PHASE8_ALLOW_DISPOSABLE_DB', 'MOBILE_V2_HARNESS_ENABLE', 'APP_ENV'], true)) {
+            putenv("{$k}={$v}");
+        }
+    }
+}
+
 // Default NO-EXECUTE: If no valid action flag is provided, exit non-zero without touching DB.
-if (! $isBaseline && ! $isInspectDelta && ! $isReconcile && $evidenceFile === null) {
-    fwrite(STDERR, "Error: Inspector defaults to NO-EXECUTE. Specify --baseline, --inspect-delta, --reconcile, or --validate-evidence=<file>.\n");
+if (! $isBaseline && ! $isInspectDelta && ! $isReconcile && ! $isComposeTrustedReport && $evidenceFile === null) {
+    fwrite(STDERR, "Error: Inspector defaults to NO-EXECUTE. Specify --baseline, --inspect-delta, --reconcile, --compose-trusted-report, or --validate-evidence=<file>.\n");
     exit(1);
 }
 
@@ -101,14 +147,12 @@ if ($evidenceFile !== null) {
         'backendExecutionHead' => $expectedBackendHead ?? '',
         'handoffDigest' => $expectedHandoffDigest ?? '',
         'expectedScope' => $expectedScope ?? 'ROOT_AUTHORIZED_PAIRED_EXECUTION',
+        'expectedSchemaName' => $schemaName ?? '',
+        'companyId' => $companyId ?? 0,
+        'expectedRunId' => $runId ?? '',
+        'expectedBaselineHash' => $expectedBaselineHash ?? ($trustedDbReport['baseline_hash'] ?? ''),
     ];
 
-    if ($schemaName !== null && $schemaName !== '') {
-        $expectedPins['expectedSchemaName'] = $schemaName;
-    }
-    if ($companyId !== null && $companyId > 0) {
-        $expectedPins['companyId'] = $companyId;
-    }
     if ($expectedEventId !== null && $expectedEventId !== '') {
         $expectedPins['expectedEventId'] = $expectedEventId;
     }
@@ -125,6 +169,85 @@ if ($evidenceFile !== null) {
     exit($validation['is_valid'] ? 0 : 1);
 }
 
+// Action 2: Compose Trusted DB Report from verified components
+if ($isComposeTrustedReport) {
+    if ($baselineFile === null || ! is_file($baselineFile)) {
+        fwrite(STDERR, "Error: --compose-trusted-report requires --baseline-file=<path>.\n");
+        exit(1);
+    }
+    if ($deltaFile === null || ! is_file($deltaFile)) {
+        fwrite(STDERR, "Error: --compose-trusted-report requires --delta-file=<path>.\n");
+        exit(1);
+    }
+    if ($reconcileFile === null || ! is_file($reconcileFile)) {
+        fwrite(STDERR, "Error: --compose-trusted-report requires --reconcile-file=<path>.\n");
+        exit(1);
+    }
+    if ($schemaName === null || $schemaName === '') {
+        fwrite(STDERR, "Error: --compose-trusted-report requires --schema=<accounting_p8_tmp_...>.\n");
+        exit(1);
+    }
+    if ($companyId === null || $companyId <= 0) {
+        fwrite(STDERR, "Error: --compose-trusted-report requires --company-id=<int>.\n");
+        exit(1);
+    }
+    if ($runId === null || $runId === '') {
+        fwrite(STDERR, "Error: --compose-trusted-report requires --run-id=<uuid>.\n");
+        exit(1);
+    }
+    if ($expectedBackendHead === null || $expectedBackendHead === '') {
+        fwrite(STDERR, "Error: --compose-trusted-report requires --expected-backend-head=<sha>.\n");
+        exit(1);
+    }
+    if ($expectedHandoffDigest === null || $expectedHandoffDigest === '') {
+        fwrite(STDERR, "Error: --compose-trusted-report requires --expected-handoff-digest=<sha>.\n");
+        exit(1);
+    }
+
+    $baselineData = json_decode((string) file_get_contents($baselineFile), true);
+    $deltaData = json_decode((string) file_get_contents($deltaFile), true);
+    $reconcileData = json_decode((string) file_get_contents($reconcileFile), true);
+
+    if (! is_array($baselineData) || ! is_array($deltaData) || ! is_array($reconcileData)) {
+        fwrite(STDERR, "Error: Invalid JSON in input report files.\n");
+        exit(1);
+    }
+
+    try {
+        $metadata = [
+            'scope' => $expectedScope ?? 'ROOT_AUTHORIZED_PAIRED_EXECUTION',
+            'runId' => $runId,
+            'schemaName' => $schemaName,
+            'companyId' => $companyId,
+            'sourceHead' => $expectedBackendHead,
+            'handoffDigest' => $expectedHandoffDigest,
+        ];
+
+        $report = DisposableFinancialPostRunInspector::composeTrustedDbReport(
+            $metadata,
+            $baselineData,
+            $deltaData,
+            $reconcileData
+        );
+
+        $outJson = json_encode($report, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+        if ($outputFile !== null) {
+            file_put_contents($outputFile, $outJson."\n");
+        } else {
+            fwrite(STDOUT, $outJson."\n");
+        }
+
+        $ok = ($report['is_canonical_delta_valid'] ?? false)
+            && ($report['gl_batches_balanced'] ?? false)
+            && ($report['all_healthy'] ?? false);
+
+        exit($ok ? 0 : 1);
+    } catch (\Throwable $e) {
+        fwrite(STDERR, "Report composition failed: {$e->getMessage()}\n");
+        exit(1);
+    }
+}
+
 // Database actions require explicit schema and company ID
 if ($schemaName === null || $schemaName === '') {
     fwrite(STDERR, "Error: Database inspection requires explicit non-empty --schema=<accounting_p8_tmp_...>.\n");
@@ -136,7 +259,7 @@ if ($companyId === null || $companyId <= 0) {
     exit(1);
 }
 
-// Action 2: Capture Baseline
+// Action 3: Capture Baseline
 if ($isBaseline) {
     try {
         $baseline = DisposableFinancialPostRunInspector::captureBaseline($companyId, $schemaName);
@@ -153,7 +276,7 @@ if ($isBaseline) {
     }
 }
 
-// Action 3: Inspect Delta vs Baseline
+// Action 4: Inspect Delta vs Baseline
 if ($isInspectDelta) {
     if ($baselineFile === null || ! is_file($baselineFile)) {
         fwrite(STDERR, "Error: --inspect-delta requires valid --baseline-file=<path>.\n");
@@ -188,13 +311,9 @@ if ($isInspectDelta) {
     }
 }
 
-// Action 4: Run 6 Reconciliations (requires minimal console app bootstrap)
+// Action 5: Run 6 Reconciliations (Safe isolated container, autoload only, NO Kernel bootstrap)
 if ($isReconcile) {
     try {
-        $app = require __DIR__.'/../../../bootstrap/app.php';
-        $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
-
-        // runSixReconciliations binds the verified read-only PDO before resolving Company
         $reconcileResult = DisposableFinancialPostRunInspector::runSixReconciliations($companyId, $schemaName);
 
         $outJson = json_encode($reconcileResult, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);

@@ -89,6 +89,9 @@ final class DisposableFinancialPostRunInspector
             PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
         ]);
 
+        // Enforce statement timeout fail closed
+        self::configureStatementTimeout($pdo, 5);
+
         // Assert that active connected database and port strictly match expected disposable schema
         $verified = $pdo->query('SELECT DATABASE() AS db, @@port AS port')->fetch(PDO::FETCH_ASSOC);
         if (! is_array($verified) || ($verified['db'] ?? '') !== $expectedSchemaName) {
@@ -98,11 +101,39 @@ final class DisposableFinancialPostRunInspector
             throw new RuntimeException("Inspector connection mismatch: expected port 3342, got '".($verified['port'] ?? 'null')."'.");
         }
 
-        // Enforce read-only transaction on this dedicated inspector connection
-        $pdo->exec('SET TRANSACTION READ ONLY');
-        $pdo->beginTransaction();
-
         return $pdo;
+    }
+
+    /**
+     * Configures a finite statement timeout on a dedicated PDO connection,
+     * failing closed if neither MariaDB nor MySQL syntax is supported.
+     */
+    public static function configureStatementTimeout(PDO $pdo, int $timeoutSeconds = 5): void
+    {
+        if ($timeoutSeconds <= 0) {
+            throw new InvalidArgumentException('INVALID_STATEMENT_TIMEOUT');
+        }
+
+        // 1. Try MariaDB max_statement_time (seconds)
+        try {
+            $pdo->exec(sprintf('SET SESSION max_statement_time = %d', $timeoutSeconds));
+
+            return;
+        } catch (\Throwable) {
+            // Fall through to MySQL
+        }
+
+        // 2. Try MySQL max_execution_time (milliseconds)
+        try {
+            $timeoutMs = $timeoutSeconds * 1000;
+            $pdo->exec(sprintf('SET SESSION max_execution_time = %d', $timeoutMs));
+
+            return;
+        } catch (\Throwable) {
+            // Fall through
+        }
+
+        throw new RuntimeException('STATEMENT_TIMEOUT_UNSUPPORTED');
     }
 
     /**
@@ -117,8 +148,17 @@ final class DisposableFinancialPostRunInspector
     public static function captureBaseline(int $companyId, string $expectedSchemaName): array
     {
         $db = self::assertExecutionGates($expectedSchemaName);
+        $db->exec('SET SESSION TRANSACTION ISOLATION LEVEL REPEATABLE READ');
+        $db->exec('START TRANSACTION WITH CONSISTENT SNAPSHOT, READ ONLY');
 
-        return self::captureMetricsWithVerifiedPdo($companyId, $expectedSchemaName, $db);
+        try {
+            return self::captureMetricsWithVerifiedPdo($companyId, $expectedSchemaName, $db);
+        } finally {
+            try {
+                $db->rollBack();
+            } catch (\Throwable) {
+            }
+        }
     }
 
     /**
@@ -205,8 +245,11 @@ final class DisposableFinancialPostRunInspector
         string $expectedSchemaName
     ): array {
         $db = self::assertExecutionGates($expectedSchemaName);
+        $db->exec('SET SESSION TRANSACTION ISOLATION LEVEL REPEATABLE READ');
+        $db->exec('START TRANSACTION WITH CONSISTENT SNAPSHOT, READ ONLY');
 
-        // Fail-closed checks on baseline integrity: company and schema must match exactly
+        try {
+            // Fail-closed checks on baseline integrity: company and schema must match exactly
         if (($baseline['company_id'] ?? null) !== $companyId) {
             throw new RuntimeException("Baseline company_id mismatch: expected {$companyId}, got ".($baseline['company_id'] ?? 'null').'.');
         }
@@ -510,30 +553,37 @@ final class DisposableFinancialPostRunInspector
             }
         }
 
-        return [
-            'is_canonical_delta_valid' => $errors === [],
-            'expected_delta_one_event' => true,
-            'deltas' => $deltas,
-            'errors' => $errors,
-            'gl_batches_balanced' => $allBatchesBalanced && $hasInvoiceBatch && $hasPaymentBatch,
-            'canonical_graph' => [
-                'sales_invoice_id' => $newInvoiceId,
-                'sales_invoice_public_id' => $newInvoicePublicId,
-                'customer_payment_id' => $newPaymentId,
-                'customer_payment_public_id' => $newPaymentPublicId,
-                'stock_movement_quantity_delta' => '-1.000000',
-                'customer_payment_allocation_amount' => '58.000000',
-                'customer_payment_allocation_payment_currency_amount' => '58.000000',
-                'receipt_status' => $newReceipt['status'] ?? null,
-            ],
-        ];
+            return [
+                'is_canonical_delta_valid' => $errors === [],
+                'expected_delta_one_event' => true,
+                'deltas' => $deltas,
+                'errors' => $errors,
+                'gl_batches_balanced' => $allBatchesBalanced && $hasInvoiceBatch && $hasPaymentBatch,
+                'canonical_graph' => [
+                    'sales_invoice_id' => $newInvoiceId,
+                    'sales_invoice_public_id' => $newInvoicePublicId,
+                    'customer_payment_id' => $newPaymentId,
+                    'customer_payment_public_id' => $newPaymentPublicId,
+                    'stock_movement_quantity_delta' => '-1.000000',
+                    'customer_payment_allocation_amount' => '58.000000',
+                    'customer_payment_allocation_payment_currency_amount' => '58.000000',
+                    'receipt_status' => $newReceipt['status'] ?? null,
+                ],
+            ];
+        } finally {
+            try {
+                $db->rollBack();
+            } catch (\Throwable) {
+            }
+        }
     }
 
     /**
-     * Executes the 6 canonical read-only reconciliation services in context-free system mode.
-     * Binds the application database connection to the EXACT verified read-only PDO instance
-     * so that all models and services execute against the owned disposable schema,
-     * restoring previous connection state in finally.
+     * Executes the 6 canonical read-only reconciliation services in context-free system mode
+     * using the minimal isolated container pattern from bin/final-release-check.php.
+     * Binds all models and services to the EXACT verified read-only PDO instance
+     * so that all operations execute strictly against the owned disposable schema,
+     * restoring previous connection/facade state in finally without calling getPdo() of ambient.
      *
      * @param  Company|int  $companyOrId
      * @param  string  $expectedSchemaName
@@ -542,113 +592,241 @@ final class DisposableFinancialPostRunInspector
     public static function runSixReconciliations(Company|int $companyOrId, string $expectedSchemaName): array
     {
         $pdo = self::assertExecutionGates($expectedSchemaName);
+        $pdo->exec('SET SESSION TRANSACTION ISOLATION LEVEL REPEATABLE READ');
+        $pdo->exec('START TRANSACTION WITH CONSISTENT SNAPSHOT, READ ONLY');
 
+        $previousApp = function_exists('app') ? \Illuminate\Support\Facades\Facade::getFacadeApplication() : null;
+        $previousResolver = \Illuminate\Database\Eloquent\Model::getConnectionResolver();
+
+        $app = null;
+        $manager = null;
+        $connection = null;
         $results = [];
         $allHealthy = true;
 
-        $connection = null;
-        $previousPdo = null;
-        $previousReadPdo = null;
-
-        if (function_exists('app') && app()->bound('db')) {
-            $connection = app('db')->connection();
-            try {
-                $previousPdo = $connection->getPdo();
-                $previousReadPdo = $connection->getReadPdo();
-            } catch (\Throwable) {
-                // No existing active PDO
-            }
-            $connection->setPdo($pdo);
-            $connection->setReadPdo($pdo);
-        }
-
         try {
-            if (function_exists('app') && app()->bound(CompanyContext::class)) {
-                app(CompanyContext::class)->clear(sessionless: true);
-            }
+            // Minimal isolated container: autoload only, no full service providers, sessions, cache, or background jobs.
+            $appDir = dirname(__DIR__, 3);
+            $app = new \Illuminate\Foundation\Application($appDir);
+            $app['env'] = 'testing';
+            $app->instance('config', new \Illuminate\Config\Repository([
+                'database' => [
+                    'default' => 'disposable_inspector',
+                    'connections' => [],
+                ],
+            ]));
+            $app->singleton(CompanyContext::class);
 
-            $company = is_int($companyOrId) ? Company::findOrFail($companyOrId) : $companyOrId;
+            // Wrap the SAME verified read-only PDO connection
+            $connection = new \Illuminate\Database\MySqlConnection($pdo, $expectedSchemaName, '', [
+                'name' => 'disposable_inspector',
+                'database' => $expectedSchemaName,
+                'host' => '127.0.0.1',
+                'port' => 3342,
+                'url' => null,
+            ]);
+            $manager = new \Illuminate\Database\DatabaseManager($app, new \Illuminate\Database\Connectors\ConnectionFactory($app));
+            $manager->extend('disposable_inspector', fn () => $connection);
+            $app['config']->set('database.connections.disposable_inspector', [
+                'driver' => 'disposable_inspector',
+                'database' => $expectedSchemaName,
+                'host' => '127.0.0.1',
+                'port' => 3342,
+                'url' => null,
+            ]);
+            $app->instance('db', $manager);
+            \Illuminate\Support\Facades\Facade::setFacadeApplication($app);
+            \Illuminate\Database\Eloquent\Model::setConnectionResolver($manager);
 
-            // 1. Accounting Reconciliation
-            $accReport = app(AccountingReconciliationService::class)->reconcile($company, isSystem: true);
-            $results['AccountingReconciliationService'] = [
-                'healthy' => $accReport->isHealthy,
-                'issue_count' => count($accReport->violations),
+            $companyId = is_int($companyOrId) ? $companyOrId : $companyOrId->id;
+            $company = Company::where('id', $companyId)->firstOrFail();
+
+            $context = $app->make(CompanyContext::class);
+
+            $serviceMap = [
+                'AccountingReconciliationService' => [
+                    'class' => AccountingReconciliationService::class,
+                    'isAudit' => false,
+                ],
+                'InventoryReconciliationService' => [
+                    'class' => InventoryReconciliationService::class,
+                    'isAudit' => true,
+                ],
+                'SalesReconciliationService' => [
+                    'class' => SalesReconciliationService::class,
+                    'isAudit' => false,
+                ],
+                'PayablesReconciliationService' => [
+                    'class' => PayablesReconciliationService::class,
+                    'isAudit' => false,
+                ],
+                'MoneyReconciliationService' => [
+                    'class' => MoneyReconciliationService::class,
+                    'isAudit' => false,
+                ],
+                'Phase7ReconciliationService' => [
+                    'class' => Phase7ReconciliationService::class,
+                    'isAudit' => false,
+                ],
             ];
-            $allHealthy = $allHealthy && $accReport->isHealthy && count($accReport->violations) === 0;
 
-            if (app()->bound(CompanyContext::class)) {
-                app(CompanyContext::class)->clear(sessionless: true);
+            foreach ($serviceMap as $recName => $spec) {
+                $context->clear(sessionless: true);
+
+                $service = $app->make($spec['class']);
+                $report = $spec['isAudit']
+                    ? $service->auditCompany($company, fromCli: true)
+                    : $service->reconcile($company, isSystem: true);
+
+                $findings = $spec['isAudit'] ? $report->discrepancies : $report->violations;
+                $ok = ($report->isHealthy === true) && ($findings === []);
+
+                $results[$recName] = [
+                    'healthy' => $ok,
+                    'issue_count' => count($findings),
+                ];
+
+                if (! $ok) {
+                    $allHealthy = false;
+                }
+
+                $context->clear(sessionless: true);
             }
-
-            // 2. Inventory Audit
-            $invReport = app(InventoryReconciliationService::class)->auditCompany($company, fromCli: true);
-            $results['InventoryReconciliationService'] = [
-                'healthy' => $invReport->isHealthy,
-                'issue_count' => count($invReport->discrepancies),
-            ];
-            $allHealthy = $allHealthy && $invReport->isHealthy && count($invReport->discrepancies) === 0;
-
-            if (app()->bound(CompanyContext::class)) {
-                app(CompanyContext::class)->clear(sessionless: true);
-            }
-
-            // 3. Sales Reconciliation
-            $salesReport = app(SalesReconciliationService::class)->reconcile($company, isSystem: true);
-            $results['SalesReconciliationService'] = [
-                'healthy' => $salesReport->isHealthy,
-                'issue_count' => count($salesReport->violations),
-            ];
-            $allHealthy = $allHealthy && $salesReport->isHealthy && count($salesReport->violations) === 0;
-
-            if (app()->bound(CompanyContext::class)) {
-                app(CompanyContext::class)->clear(sessionless: true);
-            }
-
-            // 4. Payables Reconciliation
-            $payReport = app(PayablesReconciliationService::class)->reconcile($company, isSystem: true);
-            $results['PayablesReconciliationService'] = [
-                'healthy' => $payReport->isHealthy,
-                'issue_count' => count($payReport->violations),
-            ];
-            $allHealthy = $allHealthy && $payReport->isHealthy && count($payReport->violations) === 0;
-
-            if (app()->bound(CompanyContext::class)) {
-                app(CompanyContext::class)->clear(sessionless: true);
-            }
-
-            // 5. Money Reconciliation
-            $moneyReport = app(MoneyReconciliationService::class)->reconcile($company, isSystem: true);
-            $results['MoneyReconciliationService'] = [
-                'healthy' => $moneyReport->isHealthy,
-                'issue_count' => count($moneyReport->violations),
-            ];
-            $allHealthy = $allHealthy && $moneyReport->isHealthy && count($moneyReport->violations) === 0;
-
-            if (app()->bound(CompanyContext::class)) {
-                app(CompanyContext::class)->clear(sessionless: true);
-            }
-
-            // 6. Phase 7 Multi-Ledger Reconciliation
-            $phase7Report = app(Phase7ReconciliationService::class)->reconcile($company, isSystem: true);
-            $results['Phase7ReconciliationService'] = [
-                'healthy' => $phase7Report->isHealthy,
-                'issue_count' => count($phase7Report->violations),
-            ];
-            $allHealthy = $allHealthy && $phase7Report->isHealthy && count($phase7Report->violations) === 0;
         } finally {
-            if ($connection !== null && $previousPdo !== null) {
-                $connection->setPdo($previousPdo);
-                $connection->setReadPdo($previousReadPdo);
+            try {
+                $pdo->rollBack();
+            } catch (\Throwable) {
             }
-            if (function_exists('app') && app()->bound(CompanyContext::class)) {
-                app(CompanyContext::class)->clear(sessionless: true);
+
+            try {
+                if ($manager instanceof \Illuminate\Database\DatabaseManager) {
+                    $manager->purge('disposable_inspector');
+                    $manager->disconnect('disposable_inspector');
+                }
+            } catch (\Throwable) {
+            }
+
+            try {
+                if ($previousResolver !== null) {
+                    \Illuminate\Database\Eloquent\Model::setConnectionResolver($previousResolver);
+                } else {
+                    \Illuminate\Database\Eloquent\Model::unsetConnectionResolver();
+                }
+            } catch (\Throwable) {
+            }
+
+            try {
+                \Illuminate\Support\Facades\Facade::clearResolvedInstances();
+                \Illuminate\Support\Facades\Facade::setFacadeApplication($previousApp);
+            } catch (\Throwable) {
+            }
+
+            if ($app instanceof \Illuminate\Foundation\Application) {
+                $app->flush();
             }
         }
 
         return [
             'all_healthy' => $allHealthy,
             'reconciler_results' => $results,
+        ];
+    }
+
+    /**
+     * Composes a complete, bounded, deterministic Trusted DB Inspection Report
+     * from verified baseline, delta, and reconciliation results.
+     * Generates a root-pinnable canonical report digest over deterministic metrics.
+     *
+     * @param  array{
+     *     scope: string,
+     *     runId: string,
+     *     schemaName: string,
+     *     companyId: int,
+     *     sourceHead: string,
+     *     handoffDigest: string,
+     * }  $metadata
+     * @param  array<string, mixed>  $baseline
+     * @param  array<string, mixed>  $deltaResult
+     * @param  array<string, mixed>  $reconcileResult
+     * @return array<string, mixed>
+     */
+    public static function composeTrustedDbReport(
+        array $metadata,
+        array $baseline,
+        array $deltaResult,
+        array $reconcileResult
+    ): array {
+        foreach (['scope', 'runId', 'schemaName', 'companyId', 'sourceHead', 'handoffDigest'] as $mKey) {
+            if (! isset($metadata[$mKey]) || $metadata[$mKey] === '' || $metadata[$mKey] === 0) {
+                throw new InvalidArgumentException("Missing required metadata field '{$mKey}' for trusted DB report composition.");
+            }
+        }
+
+        // Canonical baseline metrics hash
+        $canonicalBaseline = [
+            'company_id' => (int) $metadata['companyId'],
+            'schema_name' => (string) $metadata['schemaName'],
+            'sales_invoices' => (int) ($baseline['sales_invoices'] ?? 0),
+            'sales_invoices_max_id' => (int) ($baseline['sales_invoices_max_id'] ?? 0),
+            'sales_invoice_lines' => (int) ($baseline['sales_invoice_lines'] ?? 0),
+            'sales_invoice_lines_max_id' => (int) ($baseline['sales_invoice_lines_max_id'] ?? 0),
+            'sales_invoice_lot_allocations' => (int) ($baseline['sales_invoice_lot_allocations'] ?? 0),
+            'sales_invoice_lot_allocations_max_id' => (int) ($baseline['sales_invoice_lot_allocations_max_id'] ?? 0),
+            'customer_payments' => (int) ($baseline['customer_payments'] ?? 0),
+            'customer_payments_max_id' => (int) ($baseline['customer_payments_max_id'] ?? 0),
+            'customer_payment_allocations' => (int) ($baseline['customer_payment_allocations'] ?? 0),
+            'customer_payment_allocations_max_id' => (int) ($baseline['customer_payment_allocations_max_id'] ?? 0),
+            'mobile_event_receipts' => (int) ($baseline['mobile_event_receipts'] ?? 0),
+            'mobile_event_receipts_max_id' => (int) ($baseline['mobile_event_receipts_max_id'] ?? 0),
+            'stock_movements' => (int) ($baseline['stock_movements'] ?? 0),
+            'stock_movements_max_id' => (int) ($baseline['stock_movements_max_id'] ?? 0),
+            'stock_movements_qty_sum' => (string) ($baseline['stock_movements_qty_sum'] ?? '0.000000'),
+            'posting_batches' => (int) ($baseline['posting_batches'] ?? 0),
+            'posting_batches_max_id' => (int) ($baseline['posting_batches_max_id'] ?? 0),
+            'posting_lines' => (int) ($baseline['posting_lines'] ?? 0),
+            'posting_lines_max_id' => (int) ($baseline['posting_lines_max_id'] ?? 0),
+            'document_sequences' => $baseline['document_sequences'] ?? [],
+        ];
+        $baselineHash = hash('sha256', (string) json_encode($canonicalBaseline, JSON_UNESCAPED_SLASHES));
+
+        $isDeltaValid = (bool) ($deltaResult['is_canonical_delta_valid'] ?? false);
+        $glBalanced = (bool) ($deltaResult['gl_batches_balanced'] ?? false);
+        $allHealthy = (bool) ($reconcileResult['all_healthy'] ?? false);
+
+        // Core deterministic payload for root-pinnable report digest
+        $coreDeterministicPayload = [
+            'scope' => (string) $metadata['scope'],
+            'run_id' => (string) $metadata['runId'],
+            'schema_name' => (string) $metadata['schemaName'],
+            'company_id' => (int) $metadata['companyId'],
+            'source_head' => (string) $metadata['sourceHead'],
+            'handoff_digest' => (string) $metadata['handoffDigest'],
+            'baseline_hash' => $baselineHash,
+            'is_canonical_delta_valid' => $isDeltaValid,
+            'gl_batches_balanced' => $glBalanced,
+            'all_healthy' => $allHealthy,
+            'reconciler_results' => $reconcileResult['reconciler_results'] ?? [],
+        ];
+
+        $reportDigest = hash('sha256', (string) json_encode($coreDeterministicPayload, JSON_UNESCAPED_SLASHES));
+
+        return [
+            'scope' => (string) $metadata['scope'],
+            'run_id' => (string) $metadata['runId'],
+            'schema_name' => (string) $metadata['schemaName'],
+            'company_id' => (int) $metadata['companyId'],
+            'source_head' => (string) $metadata['sourceHead'],
+            'handoff_digest' => (string) $metadata['handoffDigest'],
+            'baseline_hash' => $baselineHash,
+            'baseline_metrics' => $canonicalBaseline,
+            'deltas' => $deltaResult['deltas'] ?? [],
+            'canonical_graph' => $deltaResult['canonical_graph'] ?? [],
+            'is_canonical_delta_valid' => $isDeltaValid,
+            'gl_batches_balanced' => $glBalanced,
+            'all_healthy' => $allHealthy,
+            'reconciler_results' => $reconcileResult['reconciler_results'] ?? [],
+            'report_digest' => $reportDigest,
+            'generated_at' => (new DateTimeImmutable('now', new DateTimeZone('UTC')))->format('Y-m-d\TH:i:s\Z'),
         ];
     }
 
@@ -854,25 +1032,49 @@ final class DisposableFinancialPostRunInspector
                 $errors[] = "Trusted DB report scope mismatch: expected '{$expectedScope}', got '{$actualScope}'.";
             }
 
-            $runId = (string) ($data['runId'] ?? '');
-            if ($runId !== '' && (string) ($trustedDbReport['run_id'] ?? '') !== $runId) {
-                $errors[] = "Trusted DB report run_id mismatch: expected '{$runId}', got '".($trustedDbReport['run_id'] ?? 'null')."'.";
+            $expectedRunId = (string) ($expectedPins['expectedRunId'] ?? ($data['runId'] ?? ''));
+            if ($expectedRunId === '') {
+                $errors[] = 'Expected runId is required for trusted DB binding.';
+            } elseif ((string) ($trustedDbReport['run_id'] ?? '') !== $expectedRunId) {
+                $errors[] = "Trusted DB report run_id mismatch: expected '{$expectedRunId}', got '".($trustedDbReport['run_id'] ?? 'null')."'.";
+            }
+            if ((string) ($data['runId'] ?? '') !== '' && (string) ($trustedDbReport['run_id'] ?? '') !== (string) $data['runId']) {
+                $errors[] = 'Evidence runId does not match trusted DB report run_id.';
             }
 
-            if (isset($expectedPins['expectedSchemaName']) && (string) ($trustedDbReport['schema_name'] ?? '') !== $expectedPins['expectedSchemaName']) {
-                $errors[] = "Trusted DB report schema_name mismatch: expected '{$expectedPins['expectedSchemaName']}', got '".($trustedDbReport['schema_name'] ?? 'null')."'.";
+            $expectedSchema = (string) ($expectedPins['expectedSchemaName'] ?? '');
+            if ($expectedSchema === '') {
+                $errors[] = 'Expected schema_name is required for trusted DB binding.';
+            } elseif ((string) ($trustedDbReport['schema_name'] ?? '') !== $expectedSchema) {
+                $errors[] = "Trusted DB report schema_name mismatch: expected '{$expectedSchema}', got '".($trustedDbReport['schema_name'] ?? 'null')."'.";
             }
 
-            if (isset($expectedPins['companyId']) && (int) ($trustedDbReport['company_id'] ?? 0) !== $expectedPins['companyId']) {
-                $errors[] = "Trusted DB report company_id mismatch: expected {$expectedPins['companyId']}, got ".($trustedDbReport['company_id'] ?? 'null').'.';
+            $expectedCompanyId = (int) ($expectedPins['companyId'] ?? 0);
+            if ($expectedCompanyId <= 0) {
+                $errors[] = 'Expected company_id is required for trusted DB binding.';
+            } elseif ((int) ($trustedDbReport['company_id'] ?? 0) !== $expectedCompanyId) {
+                $errors[] = "Trusted DB report company_id mismatch: expected {$expectedCompanyId}, got ".($trustedDbReport['company_id'] ?? 'null').'.';
             }
 
-            if ((string) ($trustedDbReport['source_head'] ?? '') !== $expectedPins['backendExecutionHead']) {
-                $errors[] = "Trusted DB report source_head mismatch: expected '{$expectedPins['backendExecutionHead']}', got '".($trustedDbReport['source_head'] ?? 'null')."'.";
+            $expectedSourceHead = (string) ($expectedPins['backendExecutionHead'] ?? '');
+            if ($expectedSourceHead === '') {
+                $errors[] = 'Expected backendExecutionHead is required for trusted DB binding.';
+            } elseif ((string) ($trustedDbReport['source_head'] ?? '') !== $expectedSourceHead) {
+                $errors[] = "Trusted DB report source_head mismatch: expected '{$expectedSourceHead}', got '".($trustedDbReport['source_head'] ?? 'null')."'.";
             }
 
-            if ((string) ($trustedDbReport['handoff_digest'] ?? '') !== $expectedPins['handoffDigest']) {
-                $errors[] = "Trusted DB report handoff_digest mismatch: expected '{$expectedPins['handoffDigest']}', got '".($trustedDbReport['handoff_digest'] ?? 'null')."'.";
+            $expectedHandoff = (string) ($expectedPins['handoffDigest'] ?? '');
+            if ($expectedHandoff === '') {
+                $errors[] = 'Expected handoffDigest is required for trusted DB binding.';
+            } elseif ((string) ($trustedDbReport['handoff_digest'] ?? '') !== $expectedHandoff) {
+                $errors[] = "Trusted DB report handoff_digest mismatch: expected '{$expectedHandoff}', got '".($trustedDbReport['handoff_digest'] ?? 'null')."'.";
+            }
+
+            $expectedBaselineHash = (string) ($expectedPins['expectedBaselineHash'] ?? '');
+            if ($expectedBaselineHash === '') {
+                $errors[] = 'Expected baseline_hash is required for trusted DB binding.';
+            } elseif ((string) ($trustedDbReport['baseline_hash'] ?? '') !== $expectedBaselineHash) {
+                $errors[] = "Trusted DB report baseline_hash mismatch: expected '{$expectedBaselineHash}', got '".($trustedDbReport['baseline_hash'] ?? 'null')."'.";
             }
 
             // Verify canonical graph and batch balance
