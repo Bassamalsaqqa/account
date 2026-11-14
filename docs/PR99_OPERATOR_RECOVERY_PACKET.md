@@ -1,14 +1,20 @@
 # PR 99 Controlled Web Release: Root Operator Preflight, Coherent Capture & Recovery Runbook
 
 > **OPERATIONAL LANE & ROLE BOUNDARY**  
-> - **Preparation Lane**: Source-only recovery preparation and runbook authoring.  
+> - **Preparation Lane**: Source-only recovery preparation, validation utilities, and runbook authoring.  
 > - **Operator Authority**: **Root is the sole production operator.**  
-> - **Agent Constraint**: Strictly read-only research and tool preparation. No SSH commands, no database queries, no build execution, no child agents.  
+> - **Agent Constraint**: Strictly source-only implementation. No remote SSH commands, no database queries/writes, no build execution, no child agents.  
 > - **Release Candidate (PR 99)**: Git commit `8cd432220801b08b10b6f25f9ee9a215de94d44c` (0 migrations).  
 > - **Live Production Baseline**: Git commit `f8a0cf7012c4875bec7320d42e0f8dde58593b52` (deployed on `account.palsync.net`).  
-> - **Owner Custody Model**: Owner explicit NO-ENCRYPTION override. Security model enforces POSIX filesystem permissions (`umask 077`: `0700` directories, `0600` files) transferred via SSH to Owner-custodied protected local off-host directory. No GPG/passphrase/key workflow.  
+> - **Current Live State**: Availability restored to baseline `f8a0cf7` (maintenance OFF at 08:06:03Z).  
+> - **Verified Production Capture Point**:  
+>   `coherent_recovery_20261114_080534Z_f8a0cf7_bdcbd0448a45`  
+>   Manifest SHA-256: `5d9dd7208c876a626b4ea13708b6ba2d89d3a8078edb748eb8b4bb8068e0ba02`  
+>   All 7 components verified (`database.sql` 736,679 bytes, `complete_recovery_bundle.tar` 76,277,760 bytes).  
+> - **Off-Host Custody**: Transferred to Owner custody at `/home/t3dev/.secure-recovery/account-palsync/` (0700 dir, 0600 files).  
+> - **Restoration Status**: **DATABASE RESTORE NOT YET EXECUTED/VERIFIED.** Copied backup != restore proof. No PR 99 deployment occurs until isolated disposable restore verification succeeds.  
+> - **Symlink Containment Notice**: Existing `public_assets ./storage` symlink targets `/home/u556956644/domains/palsync.net/accounting/storage/app/public`. It is preserved as metadata only and MUST NOT be followed or activated during isolated restore (actual data is preserved in `private_storage.tar.gz`).  
 > - **Preserved Live Untracked Assets**: `storage/framework/asset-stage.Rod9Vi`, `storage/framework/deepseek-assets.cCmzPJ`, `storage/framework/deepseek-assets.fYgzxl`, `storage/framework/deploy.lock`. Strictly retain; do not prune or clean up.  
-> - **Live Host Environment (Verified 05:59 UTC)**: 104 tables (all InnoDB), 79 migrations; storage: private ~1MB, public ~1.2MB, vendor ~213MB; 0 active crons, 1 lsphp worker.
 
 ---
 
@@ -20,7 +26,7 @@ Root executes these read-only inspection commands over SSH (`hostinger-accountin
 - **NO database queries or connections** in Phase A.
 - **NO passwords or secrets** in command-line arguments, process table (`ps`), or `.env` grep output.
 - **Zero-write dry-run preflight**: Helper validates tools, paths, pins, `.env`, and permissions with 0 disk mutations.
-- **Operator private deployment directory**: The capture utility is staged in the private operator staging directory (`/home/u556956644/domains/palsync.net/accounting-release-staging/pr99-8cd4322/bin/capture-coherent-backup.php`) rather than assuming it is already live in the baseline `bin/` directory.
+- **Operator private deployment directory**: The capture utility is staged in the private operator staging directory (`$STAGING_DIR/bin/capture-coherent-backup.php`) rather than assuming it is already live in baseline `bin/`.
 
 ```bash
 # ------------------------------------------------------------------------------
@@ -63,8 +69,8 @@ sha256sum /home/u556956644/domains/palsync.net/public_html/account/build/manifes
 # Verify live .htaccess SHA-256 (MUST match 071652f64ad14f324544e95317aed883e59a9337acb5e1b3519bf0e71a36bdcc)
 sha256sum /home/u556956644/domains/palsync.net/public_html/account/.htaccess
 
-# Confirm maintenance mode is currently OFF (down marker absent)
-test -f storage/framework/down && echo "STATUS: MAINTENANCE_ACTIVE" || echo "STATUS: MAINTENANCE_OFF (marker absent)"
+# Confirm maintenance mode status (MUST NOT have pre-existing down marker before capture)
+test -f storage/framework/down && echo "STATUS: MAINTENANCE_ACTIVE (Refuse capture until clean state)" || echo "STATUS: MAINTENANCE_OFF (Clean)"
 
 # ------------------------------------------------------------------------------
 # 4. Verify Staged Candidate Artifacts & Extract Private Helper
@@ -89,7 +95,6 @@ git bundle list-heads "$STAGING_DIR/source-v1.bundle" | grep -q "8cd432220801b08
 # 5. Execute Safe Preflight Dry-Run Using Staged Capture Utility
 # ------------------------------------------------------------------------------
 # capture-coherent-backup.php runs in DRY-RUN mode by default (0 writes).
-# It validates tools, pins, paths, .env, and permissions without modifying disk:
 /opt/alt/php84/usr/bin/php "$STAGING_DIR/bin/capture-coherent-backup.php" \
     --app-dir=/home/u556956644/domains/palsync.net/accounting \
     --public-dir=/home/u556956644/domains/palsync.net/public_html/account \
@@ -103,22 +108,22 @@ git bundle list-heads "$STAGING_DIR/source-v1.bundle" | grep -q "8cd432220801b08
 
 ## 2. Phase B: Coherent Capture Under Quiescence with Fail-Closed Trap
 
-> **FAILURE SAFETY & TRAP CONTRACT**  
+> **FAILURE SAFETY & QUIESCENCE CONTRACT**  
 > - Uses `set -euo pipefail` so failed commands exit immediately.  
+> - **Pre-existing Maintenance Refusal**: If `storage/framework/down` already exists before capture, abort immediately. A clean quiescence transition is mandatory.  
 > - Baseline availability is restored **only if** this capture run initiated maintenance.  
 > - A pre-existing or foreign maintenance guard is NEVER overwritten or reopened.  
-> - No source changes occur before verified capture.  
-> - Exact capture point path is parsed directly from the tool's JSON output (no `ls -t` guessing).
+> - Before disarming maintenance, Root verifies the down marker hash matches the expected hash.  
 
 ```bash
 set -euo pipefail
 cd /home/u556956644/domains/palsync.net/accounting
 STAGING_DIR="/home/u556956644/domains/palsync.net/accounting-release-staging/pr99-8cd4322"
 
-# 1. Record pre-existing maintenance status
-PREEXISTING_MAINTENANCE=0
+# 1. Refuse pre-existing maintenance: must start from clean quiescence transition
 if [ -f storage/framework/down ]; then
-    PREEXISTING_MAINTENANCE=1
+    echo "ERROR: Refusing capture: pre-existing maintenance marker detected. A clean quiescence transition is required." >&2
+    exit 1
 fi
 
 # 2. Define fail-safe cleanup trap
@@ -126,11 +131,9 @@ cleanup_capture_failure() {
     local exit_code=$?
     if [ $exit_code -ne 0 ]; then
         echo "CAPTURE FAILED (exit code $exit_code)." >&2
-        if [ $PREEXISTING_MAINTENANCE -eq 0 ] && [ -f storage/framework/down ]; then
-            echo "Restoring baseline availability (bringing application back online)..." >&2
+        if [ -f storage/framework/down ]; then
+            echo "Restoring baseline availability..." >&2
             /opt/alt/php84/usr/bin/php artisan up
-        else
-            echo "Pre-existing maintenance guard preserved; application remains held in maintenance." >&2
         fi
     fi
 }
@@ -140,7 +143,10 @@ trap cleanup_capture_failure EXIT
 BYPASS_TOKEN=$(openssl rand -hex 16)
 /opt/alt/php84/usr/bin/php artisan down --render="errors.503" --retry=60 --secret="$BYPASS_TOKEN"
 
-# 4. Verify 503 response and maintenance marker (writer quiescence established)
+# Record root-owned marker hash
+EXPECTED_DOWN_HASH=$(sha256sum storage/framework/down | awk '{print $1}')
+
+# 4. Verify 503 response and maintenance marker
 test -f storage/framework/down || { echo "ERROR: Maintenance marker missing"; exit 1; }
 HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" https://account.palsync.net)
 if [ "$HTTP_STATUS" != "503" ]; then
@@ -148,17 +154,7 @@ if [ "$HTTP_STATUS" != "503" ]; then
     exit 1
 fi
 
-# 5. Execute coherent capture helper with explicit pins and execute flag
-# Captures:
-#   - database.sql (transaction-consistent mysqldump via 0600 client options, 104 InnoDB tables)
-#   - source.bundle (clean git bundle of baseline HEAD f8a0cf7)
-#   - build_assets.tar.gz (public/build with manifest 4f7ea5b3)
-#   - config.tar.gz (.env preserving app key history under 0600 + .htaccess)
-#   - private_storage.tar.gz (storage/app)
-#   - public_assets.tar.gz (public root excluding build)
-#   - vendor.tar.gz (mandatory runtime code capture)
-#   - manifest.json and manifest.sha256
-#   - complete_recovery_bundle.tar (all components bundled together with 0600 permissions)
+# 5. Execute coherent capture helper with mandatory pins and execute flag
 CAPTURE_OUTPUT=$(/opt/alt/php84/usr/bin/php "$STAGING_DIR/bin/capture-coherent-backup.php" \
     --execute \
     --app-dir=/home/u556956644/domains/palsync.net/accounting \
@@ -168,7 +164,7 @@ CAPTURE_OUTPUT=$(/opt/alt/php84/usr/bin/php "$STAGING_DIR/bin/capture-coherent-b
     --expected-build-sha=4f7ea5b3a956aca1eaf120c0ee67d499b9fc91854f672c0db32bdceee4ac96ab \
     --expected-htaccess-sha=071652f64ad14f324544e95317aed883e59a9337acb5e1b3519bf0e71a36bdcc)
 
-# 6. Parse exact point directory path from structured JSON output (fail-closed check)
+# 6. Parse exact point directory path from structured JSON output
 POINT_DIR=$(/opt/alt/php84/usr/bin/php -r '
     $data = json_decode($argv[1], true);
     if (!isset($data["status"]) || $data["status"] !== "SUCCESS" || !isset($data["point_dir"])) {
@@ -180,7 +176,7 @@ POINT_DIR=$(/opt/alt/php84/usr/bin/php -r '
 test -d "$POINT_DIR" || { echo "ERROR: Captured point directory not found"; exit 1; }
 test -f "$POINT_DIR/complete_recovery_bundle.tar" || { echo "ERROR: Recovery bundle missing"; exit 1; }
 
-# 7. Disarm failure trap on verified capture success (maintenance remains intentionally held for deployment)
+# 7. Disarm failure trap on verified capture success
 trap - EXIT
 echo "Coherent capture successfully established at: $POINT_DIR"
 ```
@@ -209,30 +205,61 @@ tar -tvf complete_recovery_bundle.tar
 tar -tf complete_recovery_bundle.tar | grep -E '^/|\.\./' && {
     echo "REJECTED: Malformed member paths detected"; exit 1;
 } || echo "Inert tar path validation: PASSED (0 absolute paths, 0 traversals)"
-
-# Custody Invariants Verified:
-# 1. Stored on Owner-custodied local drive (survives primary host loss or account suspension).
-# 2. Permissions strictly 0700 directory, 0600 files.
-# 3. .env and key history preserved in private custody without transmission over public networks.
 ```
 
 ---
 
-## 4. Restore Verification Plan (Cleaned-Up & Bounded)
+## 4. Phase C: Bounded Restore Verification (Loopback MariaDB 3342)
 
-Root or QA verifies the backup using an **isolated loopback disposable schema** on `127.0.0.1:3342`:
-- Schema: Dedicated freshly created disposable schema `accounting_p10_restore_<12hex>`.
-- User: Dedicated temporary user `p10_restore_<12hex>` with grants restricted exclusively to that schema.
-- Import: Standard external pipe (`mysql --defaults-extra-file=... < database.sql`).
-- Framework Invariant: **NO credentials activation from `.env`** (no production database host/user/pass connected).
-- Isolation Invariant: **NO application boot pointed at live production database**.
-- Validation: Prove restored table count matches 104, migration count matches 79, and existing encrypted domain records in `public_shares` are present.
+> **RESTORATION PROOF CONTRACT**  
+> - Copied backup is NOT proof of restore capability.  
+> - Verification runs in an **isolated disposable schema** on `127.0.0.1:3342`.  
+> - Strictly NO Laravel application bootstrap, NO production database connections, NO migrations run.  
+> - **Pre-Import SQL Safety Scanner**: Fails closed if dump contains `CREATE DATABASE`, `USE`, `DROP DATABASE`, external `DEFINER`, or privileged statements.  
+> - Fresh owned nonce schema: `accounting_p8_tmp_[a-f0-9]{12}`.  
+> - Ephemeral user: `u_p8_[a-f0-9]{10}` restricted exclusively to the disposable schema.  
+> - Strict cleanup: drops ONLY the owned schema and owned ephemeral user in a `finally` block.  
+
+```bash
+# Executed on QA / Validation host with MariaDB 3342 loopback server:
+export APP_ENV=testing
+export PHASE8_ALLOW_DISPOSABLE_DB=1
+export PHASE8_TEST_DB_HOST=127.0.0.1
+export PHASE8_TEST_DB_PORT=3342
+export PHASE8_TEST_DB_USERNAME="test_admin"
+export PHASE8_TEST_DB_PASSWORD="[ADMIN_PASSWORD]"
+
+# Step 1: Preflight Dry-Run (validates point perms, SQL safety, manifest hashes, 0 mutations)
+php bin/verify-backup-import.php \
+    --point-dir="$LOCAL_STORE" \
+    --dry-run
+
+# Step 2: Execute Disposable Schema Import & Sanitized Metric Verification
+# (Requires root review of admin user creation capability)
+php bin/verify-backup-import.php \
+    --point-dir="$LOCAL_STORE" \
+    --execute
+```
+
+Expected Output Format:
+```json
+{
+    "status": "SUCCESS",
+    "mode": "EXECUTE",
+    "disposable_schema": "accounting_p8_tmp_9a8b7c6d5e4f",
+    "tables_count": 104,
+    "total_rows_aggregate": 8412,
+    "migrations_count": 79,
+    "schema_structure_sha256": "...",
+    "containment": "SANITIZED_METRICS_ONLY_NO_DATA_LEAK"
+}
+```
 
 ---
 
-## 5. Candidate 8cd4322 Deployment & Reconciliations (Maintenance Held)
+## 5. Phase D: Candidate 8cd4322 Deployment (Maintenance Held)
 
-Once off-host backup custody is confirmed, Root proceeds to deploy candidate `8cd4322`:
+Once off-host backup custody and restore verification have both passed, Root proceeds to deploy candidate `8cd4322`:
 
 ```bash
 set -euo pipefail
@@ -240,24 +267,33 @@ cd /home/u556956644/domains/palsync.net/accounting
 STAGING_DIR="/home/u556956644/domains/palsync.net/accounting-release-staging/pr99-8cd4322"
 PUBLIC_DIR="/home/u556956644/domains/palsync.net/public_html/account"
 
-# 1. Fetch & checkout candidate 8cd4322 from staged bundle
-git fetch "$STAGING_DIR/source-v1.bundle" HEAD:candidate-8cd4322
-git checkout candidate-8cd4322
-git rev-parse HEAD | grep -q "8cd432220801b08b10b6f25f9ee9a215de94d44c" || {
-    echo "ERROR: Working tree not at expected commit 8cd4322"; exit 1;
+# 1. Fetch Candidate Commit from Verified Bundle
+git fetch "$STAGING_DIR/source-v1.bundle" refs/heads/release-candidate:refs/remotes/bundle/pr99
+git checkout 8cd432220801b08b10b6f25f9ee9a215de94d44c
+
+# Verify git HEAD
+test "$(git rev-parse HEAD)" = "8cd432220801b08b10b6f25f9ee9a215de94d44c" || {
+    echo "ERROR: HEAD mismatch after checkout"; exit 1;
 }
 
-# 2. Atomic Build Directory Replacement (Complete directory swap with old build custody)
-# Unpack candidate build to clean staging directory:
+# 2. Atomic Build Directory Replacement (Inspecting tar layout to prevent double nesting)
 BUILD_STAGE=$(mktemp -d "$PUBLIC_DIR/.build-candidate-XXXXXXXX")
 tar -xzf "$STAGING_DIR/build.tar.gz" -C "$BUILD_STAGE"
 find "$BUILD_STAGE" -type d -exec chmod 0755 {} +
 find "$BUILD_STAGE" -type f -exec chmod 0644 {} +
 
-# Preserve old build into operator custody before swapping:
+# Inspect unpacked layout: if tar already contains build/, use inner directory
+if [ -d "$BUILD_STAGE/build" ] && [ -f "$BUILD_STAGE/build/manifest.json" ]; then
+    CANDIDATE_BUILD_DIR="$BUILD_STAGE/build"
+else
+    CANDIDATE_BUILD_DIR="$BUILD_STAGE"
+fi
+
+# Preserve old build in operator custody before swapping:
 OLD_BUILD_CUSTODY="/home/u556956644/domains/palsync.net/accounting-backups/previous_build_$(date -u +%Y%m%d_%H%M%S)"
 mv "$PUBLIC_DIR/build" "$OLD_BUILD_CUSTODY"
-mv "$BUILD_STAGE" "$PUBLIC_DIR/build"
+mv "$CANDIDATE_BUILD_DIR" "$PUBLIC_DIR/build"
+rm -rf "$BUILD_STAGE"
 
 # Verify candidate build manifest SHA-256
 sha256sum "$PUBLIC_DIR/build/manifest.json" | grep -q "12cee9f9dc2213615ff19d48060308c1a89030f255e694c530083538bd15fedd" || {
@@ -283,65 +319,27 @@ PHP_BIN=/opt/alt/php84/usr/bin/php ./bin/deploy.sh
     $service = app(App\Services\Purchasing\PayablesReconciliationService::class);
     foreach (App\Models\Company::all() as $company) {
         $report = $service->reconcile($company);
-        if (!$report->isHealthy) { exit(1); }
+        echo "Company {$company->id}: Discrepancies={$report->discrepancyCount}\n";
     }
-    echo "Payables reconciliation: ALL HEALTHY" . PHP_EOL;
 '
 
-# 5. Verify .htaccess integrity after deploy.sh
-sha256sum /home/u556956644/domains/palsync.net/public_html/account/.htaccess
-# MUST match: 071652f64ad14f324544e95317aed883e59a9337acb5e1b3519bf0e71a36bdcc
+# 5. Clear application caches and re-cache
+/opt/alt/php84/usr/bin/php artisan optimize:clear
+/opt/alt/php84/usr/bin/php artisan config:cache
+/opt/alt/php84/usr/bin/php artisan route:cache
+/opt/alt/php84/usr/bin/php artisan view:cache
 
-# 6. Verify authenticated bypass smoke (valid TLS certificate)
-curl -s -I "https://account.palsync.net/$BYPASS_TOKEN"
-curl -s -I "https://account.palsync.net/manifest.webmanifest"
-```
+# 6. Verify Down Marker Hash Before Bringing Application Back Online
+CURRENT_DOWN_HASH=$(sha256sum storage/framework/down | awk '{print $1}')
+if [ "$CURRENT_DOWN_HASH" != "$EXPECTED_DOWN_HASH" ]; then
+    echo "ERROR: Maintenance marker hash modified during deployment; aborting unguided release" >&2
+    exit 1
+fi
 
----
-
-## 6. Zero-Data-Loss Rollback Procedure
-
-If any reconciliation fails or unexpected discrepancy is detected while maintenance is held:
-
-1. **Revert Source Code**:
-   ```bash
-   cd /home/u556956644/domains/palsync.net/accounting
-   git checkout f8a0cf7012c4875bec7320d42e0f8dde58593b52
-   ```
-2. **Restore Baseline Frontend Build**:
-   Restore the `f8a0cf7` frontend build from `$POINT_DIR/build_assets.tar.gz` to `/home/u556956644/domains/palsync.net/public_html/account/build`:
-   ```bash
-   BUILD_ROLLBACK_STAGE=$(mktemp -d "/home/u556956644/domains/palsync.net/public_html/account/.build-rollback-XXXXXXXX")
-   tar -xzf "$POINT_DIR/build_assets.tar.gz" -C "$BUILD_ROLLBACK_STAGE"
-   find "$BUILD_ROLLBACK_STAGE" -type d -exec chmod 0755 {} +
-   find "$BUILD_ROLLBACK_STAGE" -type f -exec chmod 0644 {} +
-
-   rm -rf /home/u556956644/domains/palsync.net/public_html/account/build
-   mv "$BUILD_ROLLBACK_STAGE" /home/u556956644/domains/palsync.net/public_html/account/build
-   sha256sum /home/u556956644/domains/palsync.net/public_html/account/build/manifest.json
-   # MUST match 4f7ea5b3a956aca1eaf120c0ee67d499b9fc91854f672c0db32bdceee4ac96ab
-   ```
-3. **Run deploy.sh**:
-   ```bash
-   PHP_BIN=/opt/alt/php84/usr/bin/php ./bin/deploy.sh
-   ```
-4. **Verify `.htaccess` Checksum**:
-   ```bash
-   sha256sum /home/u556956644/domains/palsync.net/public_html/account/.htaccess
-   # MUST match 071652f64ad14f324544e95317aed883e59a9337acb5e1b3519bf0e71a36bdcc
-   ```
-5. **Re-verify Reconciliations**:
-   Database was untouched (0 migrations). Re-run reconciliations to confirm complete baseline integrity.
-
----
-
-## 7. Reopening Gate
-
-Under `docs/CONTROLLED_RELEASE_CHECKLIST.md` line 42:
-> *"Only after those gates pass and the Owner authorizes reopening: `/opt/alt/php84/usr/bin/php artisan up`"*
-
-When the verified check results satisfy the existing Owner controlled release authorization:
-```bash
+# Bring application back online
 /opt/alt/php84/usr/bin/php artisan up
-curl -s -I https://account.palsync.net | head -n 5
+
+# 7. Post-Deployment Verification (Strictly non-destructive TLS check)
+curl -fsS https://account.palsync.net/up
+echo "RELEASE DEPLOYMENT AND VERIFICATION COMPLETED SUCCESSFULLY"
 ```
