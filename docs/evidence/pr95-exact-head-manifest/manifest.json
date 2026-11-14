@@ -1,11 +1,16 @@
 {
   "manifestVersion": "2.0.0",
   "branch": "t3/mobile-receipt-identity-lock-qualification",
-  "qualificationStatus": "FULLY_QUALIFIED_ALL_TESTS_PASS",
+  "qualificationStatus": "WORKER_EXECUTION_LOGS_PASS_SOURCE_ATTRIBUTION_REQUIRES_CONFIRMATION",
   "qaLease": {
     "holder": "PR95 Sole Writer",
     "status": "EXCLUSIVE_LEASE_EXECUTED_ALL_SUITES_PASSED_RELEASED_NOW",
-    "permittedActions": ["source_edits", "pure_lint_php_l", "git_operations", "bounded_serial_owned_3342_qa"]
+    "permittedActions": [
+      "source_edits",
+      "pure_lint_php_l",
+      "git_operations",
+      "bounded_serial_owned_3342_qa"
+    ]
   },
   "sourceEvolution": [
     {
@@ -21,7 +26,7 @@
       "summary": "Fix worker fatal error flag on domain exceptions; import Closure"
     },
     {
-      "sha": "8ac6ab9564177d61b585fb20b8ec5d1b3ea595d2",
+      "sha": "8ac6ab910cb1a57e0cf7e0285f08c9ce6a639775",
       "summary": "Enforce token company binding across middleware and receipt manager under row lock with regression suite"
     },
     {
@@ -29,26 +34,29 @@
       "summary": "Root push: require root transaction admission for receipt lookup; add nested lookup rejection test"
     },
     {
-      "sha": "da76f64243ee7d21b066d7e008d531d0449910d6",
+      "sha": "da76f64b2971434f487d01caa8a73d35de7d592d",
       "summary": "Add HTTP kernel integration tests for token company binding in V1 and V2"
     },
     {
-      "sha": "086dea519e984a9235e80fa540608fa8bf0e6080",
+      "sha": "086dea5a4976696496edf9a5f0d9f994f35639c5",
       "summary": "Fix tenant scoping and model fixture creation in MobileCompanyBindingHttpTest and CustomerDirectoryTest"
     },
     {
-      "sha": "311fc755c3c0ca238a0cbe44cae9933fa769eb07",
+      "sha": "311fc750becf32743eba47f531c482fc8766897e",
       "summary": "Pint code formatting cleanups in CustomerDirectoryTest and MobileCompanyBindingHttpTest"
     }
   ],
   "disclosedSourceGapResolution": {
     "statement": "The earlier 218 test / 1649 assertion execution passes recorded on dca5be5 and 8ac6ab9 were explicitly not inherited. Following Android Gradle lease release and the grant of exclusive QA lease on disposable MariaDB 3342, all mobile test suites were executed anew on exact HEAD. Every suite passed with zero errors, zero failures, and clean schema drops, bringing total verified coverage to 231 tests and 1,691 assertions plus PHPStan and Pint clean.",
-    "historicalCommits": ["dca5be57a50e30c249c3514d55842ee4b62ab5b8", "8ac6ab9564177d61b585fb20b8ec5d1b3ea595d2"],
+    "historicalCommits": [
+      "dca5be57a50e30c249c3514d55842ee4b62ab5b8",
+      "8ac6ab910cb1a57e0cf7e0285f08c9ce6a639775"
+    ],
     "newExecutableCommitsQualified": [
       "8f51daff780cf9af9ff869e1f91a8e8dd818e689",
-      "da76f64243ee7d21b066d7e008d531d0449910d6",
-      "086dea519e984a9235e80fa540608fa8bf0e6080",
-      "311fc755c3c0ca238a0cbe44cae9933fa769eb07"
+      "da76f64b2971434f487d01caa8a73d35de7d592d",
+      "086dea5a4976696496edf9a5f0d9f994f35639c5",
+      "311fc750becf32743eba47f531c482fc8766897e"
     ]
   },
   "exactHeadExecutionMatrix": {
@@ -148,7 +156,10 @@
       ],
       "command": "APP_ENV=testing PHASE8_ALLOW_DISPOSABLE_DB=1 PHASE8_TEST_DB_HOST=127.0.0.1 PHASE8_TEST_DB_PORT=3342 PHASE8_TEST_DB_USERNAME=test_runner PHASE8_TEST_DB_EMPTY_PASSWORD=1 php tests/Support/run-phase8-disposable.php -- tests/Feature/Mobile/CatalogConsistencyTest.php tests/Feature/Mobile/ProductCatalogTest.php tests/Feature/Mobile/MigrationRollbackTest.php tests/Feature/Mobile/MobileReceiptMigrationPreservationTest.php",
       "primarySchema": "accounting_p8_tmp_66eb6b85b303",
-      "childSchemas": ["accounting_p8_tmp_2fe64a0e7926", "accounting_p8_tmp_31b843940fa7"],
+      "childSchemas": [
+        "accounting_p8_tmp_2fe64a0e7926",
+        "accounting_p8_tmp_31b843940fa7"
+      ],
       "tests": 16,
       "assertions": 142,
       "durationSeconds": 12.902,
@@ -167,7 +178,9 @@
       ],
       "command": "APP_ENV=testing PHASE8_ALLOW_DISPOSABLE_DB=1 PHASE8_TEST_DB_HOST=127.0.0.1 PHASE8_TEST_DB_PORT=3342 PHASE8_TEST_DB_USERNAME=test_runner PHASE8_TEST_DB_EMPTY_PASSWORD=1 php tests/Support/run-phase8-disposable.php -- tests/Feature/Mobile/SecurityCorrectionsTest.php tests/Feature/Mobile/AuthLoginTest.php tests/Feature/Mobile/AuthLogoutAndRevokeTest.php tests/Feature/Mobile/AuthChallengeTest.php tests/Feature/Mobile/SessionSecurityAndRevalidationTest.php tests/Feature/Mobile/RecoveryConcurrencyTest.php",
       "primarySchema": "accounting_p8_tmp_6a3373afada4",
-      "childSchemas": ["accounting_p8_tmp_39b5be350d83"],
+      "childSchemas": [
+        "accounting_p8_tmp_39b5be350d83"
+      ],
       "tests": 31,
       "assertions": 211,
       "durationSeconds": 11.318,
@@ -216,5 +229,15 @@
     "Zero financial cash intake or accounting activation.",
     "No production, SSH, or Hostinger deployments.",
     "Exclusive QA lease fully released upon qualification completion."
-  ]
+  ],
+  "supervisorCorrection": {
+    "reviewedEvidenceHead": "4453e025af64559c43448f65081d82fbb0198408",
+    "correctedInvalidCommitReferences": {
+      "8ac6ab9564177d61b585fb20b8ec5d1b3ea595d2": "8ac6ab910cb1a57e0cf7e0285f08c9ce6a639775",
+      "da76f64243ee7d21b066d7e008d531d0449910d6": "da76f64b2971434f487d01caa8a73d35de7d592d",
+      "086dea519e984a9235e80fa540608fa8bf0e6080": "086dea5a4976696496edf9a5f0d9f994f35639c5",
+      "311fc755c3c0ca238a0cbe44cae9933fa769eb07": "311fc750becf32743eba47f531c482fc8766897e"
+    },
+    "limits": "Invalid full commit references were corrected by resolving unique seven-character prefixes against local Git objects. This repairs references only; it does not prove which source was present during any historical execution. Published runner logs report passing counts, but no contemporaneous per-run source attestation is supplied in this matrix. Independent review is source/log inspection, not independent test execution. No financial, build or production qualification follows."
+  }
 }
