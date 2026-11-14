@@ -1,0 +1,53 @@
+{
+  "contract_name": "Mobile V2 Online Cash Sale Integration Handoff",
+  "base_branch": "t3/recover-cash-writer",
+  "backend_execution_head_sha": "6981511405d7bcd04cd8f8a09e64443ce0aaf47e",
+  "evidence_publication_commit_sha": "717c3da2829792a5ec4f11597905a17dbb8e7cd9",
+  "peer_android_pr_base_sha": "0ccce244",
+  "status": "SOURCE_ONLY_PREPARATION_NO_EXECUTE",
+  "source_fixture_class": "Tests\\Support\\Harness\\DisposableMobileV2BackendHarness",
+  "schema_manifest_digests": {
+    "sale-commit-response.json": "401dbb3c2528a30edfb6beaa5065e89bf225c348a4d88eba9d47d7f93cff543a",
+    "sale-event-status-response.json": "25e6c6173d646ee4b1dc8dbb0d26d20f0311535863e3d73836af7474c6714591",
+    "offline-sale-intake-request.json": "0af62ee5058b0dc9da0c8a52c905112de1ff37a9bc040b3740543264c9a2c142"
+  },
+  "runtime_fixture_template": {
+    "company_base_currency": "ILS",
+    "currency_minor_units": 2,
+    "unit_price_base": "50.000000",
+    "tax_rate_percentage": "16.000000",
+    "tax_inclusive": false,
+    "calculated_grand_total": "58.000000",
+    "payment_method": "cash",
+    "settlement_mode": "full"
+  },
+  "authoritative_endpoints": {
+    "commit": {
+      "method": "POST",
+      "path_pattern": "/api/mobile/v2/companies/{companyId}/sales/online-cash",
+      "auth": "Bearer <mobile_access_token>",
+      "content_type": "application/json",
+      "status_codes": {
+        "201": "Fresh commit success",
+        "200": "Idempotent exact replay",
+        "409": "Conflict on payload modification with duplicate event ID",
+        "422": "Validation failed on payload format, numbers, or domain entities",
+        "401": "Unauthenticated / token revoked / expired",
+        "403": "Forbidden / non-member / foreign tenant / missing permission",
+        "404": "Cash slice disabled or master mobile API disabled"
+      }
+    },
+    "status": {
+      "method": "GET",
+      "path_pattern": "/api/mobile/v2/companies/{companyId}/offline-events/{clientEventId}/status",
+      "auth": "Bearer <mobile_access_token>",
+      "status_codes": {
+        "200": "Event posted or unknown",
+        "422": "Validation failed on malformed clientEventId UUID pattern",
+        "401": "Unauthenticated",
+        "403": "Forbidden",
+        "404": "Cash slice disabled or master mobile API disabled"
+      }
+    }
+  }
+}
