@@ -35,7 +35,9 @@ use Tests\Support\DisposableMariaDbSchema;
  * - Listener startup is held until MOBILE_V2_HARNESS_START_LISTENER=1.
  * - Exact loopback host 127.0.0.1 and exact MariaDB port 3342.
  * - Rejects candidate 39fea (marked CANDIDATE_KNOWN_BAD; changes required on Android PR 23).
- * - Enforces mandatory pairing manifest SHA-256 pin and Root-approved peer Android HEAD.
+ * - Enforces mandatory pairing manifest SHA-256 pin and Root-approved peer Android HEAD across ALL execution modes.
+ * - Separates QUALIFIED_EXECUTION_HEAD (698) from actual backend execution HEAD.
+ * - Pure format regex validation occurs strictly before any external git process execution.
  * - Child process environment isolation with Symfony Process false-unset removals to deny parent DB secrets.
  * - Child verifies DisposableMariaDbSchema::assertPrimarySchema ownership proof BEFORE Laravel or PDO boot.
  * - Additional active PDO assertion (@@port=3342, DATABASE()=schema) executed in app->booted().
@@ -158,6 +160,22 @@ final class DisposableMobileV2BackendHarness
     }
 
     /**
+     * Test seam: inject simulated provisioned state and ownership proof for unit testing gate logic.
+     * Pure in-memory state; zero sockets, zero DB connections.
+     */
+    public function injectTestProvisionedState(
+        string $nonce = '0123456789abcdef0123456789abcdef',
+        string $proofPath = '/tmp/test_proof.json',
+        string $proofNonce = '0123456789abcdef0123456789abcdef'
+    ): void {
+        $this->provisioned = true;
+        $this->harnessNonce = $nonce;
+        $this->proofPath = $proofPath;
+        $this->proofNonce = $proofNonce;
+        $this->schema = (new \ReflectionClass(DisposableMariaDbSchema::class))->newInstanceWithoutConstructor();
+    }
+
+    /**
      * Preflight fixed loopback ports to refuse occupied ports before process spawning.
      * Never kills or reuses foreign processes.
      */
@@ -198,7 +216,7 @@ final class DisposableMobileV2BackendHarness
     }
 
     /**
-     * Validate argument formats for transport lifecycle (test seam).
+     * Validate argument formats for transport lifecycle (pure regex test seam).
      */
     public static function validateStartArgs(string $peerAndroidHead, string $backendHead): void
     {
@@ -214,21 +232,21 @@ final class DisposableMobileV2BackendHarness
     /**
      * Assert pre-socket execution environment invariants.
      *
-     * Checks are ordered so that pure source-only guard tests (no DB/process) can exercise
-     * each failure point without depending on subsequent prerequisites:
+     * Pure format validation (regex) occurs strictly before any external git process execution:
      *
      *  1. MOBILE_V2_HARNESS_ENABLE — default deny guard
      *  2. PHASE8_TEST_DB_HOST — must be exactly 127.0.0.1
      *  3. PHASE8_TEST_DB_PORT — must be exactly 3342
-     *  4. expectedBackendHead — git rev-parse HEAD comparison (mandatory non-empty string)
-     *  5. peerAndroidHead — 40-hex format validation only (if provided)
-     *  6. APP_ENV — must be testing
-     *  7. booted app environment — must be testing
-     *  8. PHASE8_ALLOW_DISPOSABLE_DB — must be 1
-     *  9. DisposableMariaDbSchema::testSettings() — full settings validation
-     * 10. git status porcelain — clean app/routes/config/composer.lock
-     * 11. qualified execution commit object — must exist in repo
-     * 12. app tree hash — must match QUALIFIED_APP_TREE
+     *  4. expectedBackendHead format — 40-hex regex check (pure format, no process)
+     *  5. peerAndroidHead format — 40-hex regex check if provided (pure format, no process)
+     *  6. expectedBackendHead — git rev-parse HEAD comparison (git process)
+     *  7. APP_ENV — must be testing
+     *  8. booted app environment — must be testing
+     *  9. PHASE8_ALLOW_DISPOSABLE_DB — must be 1
+     * 10. DisposableMariaDbSchema::testSettings() — full settings validation
+     * 11. git status porcelain — clean app/routes/config/composer.lock
+     * 12. qualified execution commit object — must exist in repo
+     * 13. app tree hash — must match QUALIFIED_APP_TREE
      *
      * @param  string  $expectedBackendHead  Full 40-hex commit SHA of current worktree HEAD (mandatory).
      * @param  string|null  $peerAndroidHead  Full 40-hex commit SHA of peer Android integration HEAD.
@@ -252,10 +270,19 @@ final class DisposableMobileV2BackendHarness
             throw new RuntimeException("Harness refused: DB port must be explicitly 3342, got '{$port}'.");
         }
 
-        // 4. Verify expected backend HEAD against actual git HEAD (mandatory string)
+        // 4. Validate backend HEAD format (pure regex check, before any external git process)
         if (! preg_match('/^[0-9a-fA-F]{40}$/', $expectedBackendHead)) {
             throw new RuntimeException("Harness refused: expectedBackendHead must be a full 40-hex SHA, got '{$expectedBackendHead}'.");
         }
+
+        // 5. Validate peer Android HEAD format (pure regex check, before any external git process)
+        if ($peerAndroidHead !== null) {
+            if (! preg_match('/^[0-9a-fA-F]{40}$/', $peerAndroidHead)) {
+                throw new RuntimeException("Harness refused: peerAndroidHead must be a valid 40-hex SHA, got '{$peerAndroidHead}'.");
+            }
+        }
+
+        // 6. Verify expected backend HEAD against actual git HEAD (git process)
         $root = dirname(__DIR__, 3);
         $currentHead = new Process(['git', 'rev-parse', 'HEAD'], $root);
         $currentHead->run();
@@ -263,48 +290,41 @@ final class DisposableMobileV2BackendHarness
             throw new RuntimeException("Harness refused: current git HEAD does not match expected backend HEAD '{$expectedBackendHead}'.");
         }
 
-        // 5. Validate peer Android HEAD format (regex only, no process or DB needed)
-        if ($peerAndroidHead !== null) {
-            if (! preg_match('/^[0-9a-fA-F]{40}$/', $peerAndroidHead)) {
-                throw new RuntimeException("Harness refused: peerAndroidHead must be a valid 40-hex SHA, got '{$peerAndroidHead}'.");
-            }
-        }
-
-        // 6. Enforce testing environment (pre-boot env check)
+        // 7. Enforce testing environment (pre-boot env check)
         if (getenv('APP_ENV') !== 'testing') {
             throw new RuntimeException("Harness refused: APP_ENV must be testing, got '".(string) getenv('APP_ENV')."'.");
         }
 
-        // 7. Enforce booted app environment if container is booted
+        // 8. Enforce booted app environment if container is booted
         if (function_exists('app') && app()->bound('env')) {
             if (! app()->environment('testing')) {
                 throw new RuntimeException("Harness refused: booted application environment is not testing, got '".app()->environment()."'.");
             }
         }
 
-        // 8. Enforce disposable DB opt-in flag
+        // 9. Enforce disposable DB opt-in flag
         if (getenv('PHASE8_ALLOW_DISPOSABLE_DB') !== '1') {
             throw new RuntimeException('Harness refused: PHASE8_ALLOW_DISPOSABLE_DB opt-in flag is missing or not 1.');
         }
 
-        // 9. Validate full disposable MariaDB settings
+        // 10. Validate full disposable MariaDB settings
         DisposableMariaDbSchema::testSettings();
 
-        // 10. Check that app/, routes/, config/, and composer.lock have zero uncommitted changes
+        // 11. Check that app/, routes/, config/, and composer.lock have zero uncommitted changes
         $statusProcess = new Process(['git', 'status', '--porcelain', 'app/', 'routes/', 'config/', 'composer.lock'], $root);
         $statusProcess->run();
         if (! $statusProcess->isSuccessful() || trim($statusProcess->getOutput()) !== '') {
             throw new RuntimeException('Harness refused: core paths app/, routes/, config/, composer.lock must be clean.');
         }
 
-        // 11. Verify qualified execution commit exists in repository
+        // 12. Verify qualified execution commit exists in repository
         $catFile = new Process(['git', 'cat-file', '-e', self::QUALIFIED_EXECUTION_HEAD], $root);
         $catFile->run();
         if (! $catFile->isSuccessful()) {
             throw new RuntimeException('Harness refused: qualified execution commit '.self::QUALIFIED_EXECUTION_HEAD.' not found in repository.');
         }
 
-        // 12. Enforce qualified app tree match (app/ must be 100% byte-identical to 34d1da0a...)
+        // 13. Enforce qualified app tree match (app/ must be 100% byte-identical to 34d1da0a...)
         $revParseApp = new Process(['git', 'rev-parse', 'HEAD:app'], $root);
         $revParseApp->run();
         if (! $revParseApp->isSuccessful() || trim($revParseApp->getOutput()) !== self::QUALIFIED_APP_TREE) {
@@ -313,10 +333,11 @@ final class DisposableMobileV2BackendHarness
     }
 
     /**
-     * Assert dual manifest pin before ANY socket or process creation.
+     * Assert dual manifest pin before ANY socket, DB schema creation, or process execution.
      * Requires mandatory external pairing manifest SHA-256 pin to prevent circularity.
+     * Separates QUALIFIED_EXECUTION_HEAD (698) from the actual runtime backend execution HEAD.
      * Enforces that peer Android HEAD matches Root-approved HEAD in manifest (rejects UNSET_).
-     * Enforces that backend HEAD matches manifest backend HEAD.
+     * Enforces that backend HEAD matches manifest backend HEAD (rejects UNSET_ in source template).
      * Enforces source fixture, CLI command, and CLI runner SHA-256 hashes.
      * Enforces qualified app tree and clean core files.
      *
@@ -370,7 +391,25 @@ final class DisposableMobileV2BackendHarness
             throw new RuntimeException('Harness refused: integration manifest is malformed JSON.');
         }
 
-        // Check peer Android approved HEAD
+        // 1. Verify qualified core head (698) matches QUALIFIED_EXECUTION_HEAD constant
+        $qualifiedCoreHead = $manifestData['qualified_core_head_sha'] ?? $manifestData['base_execution_head_sha'] ?? null;
+        if ($qualifiedCoreHead !== self::QUALIFIED_EXECUTION_HEAD) {
+            throw new RuntimeException("Harness refused: qualified core head '{$qualifiedCoreHead}' does not match qualified base constant ".self::QUALIFIED_EXECUTION_HEAD);
+        }
+
+        // 2. Verify backend execution HEAD matches provided args AND is set (not template UNSET_)
+        $manifestBackendHead = $manifestData['backend_execution_head_sha'] ?? null;
+        if (! is_string($manifestBackendHead) || str_starts_with($manifestBackendHead, 'UNSET_') || strlen($manifestBackendHead) !== 40) {
+            throw new RuntimeException(
+                "Harness refused: pairing manifest has unset runtime backend execution HEAD ('".((string) $manifestBackendHead)."'). ".
+                'The tracked manifest is a source template. Root-approved private runtime pairing manifest must specify the actual backend execution HEAD.'
+            );
+        }
+        if ($manifestBackendHead !== $backendHead) {
+            throw new RuntimeException("Harness refused: backend HEAD '{$backendHead}' does not match manifest backend HEAD '{$manifestBackendHead}'.");
+        }
+
+        // 3. Verify peer Android approved HEAD
         $approvedHead = $manifestData['peer_android_approved_head_sha'] ?? $manifestData['peer_android_pr_head_sha'] ?? null;
         if (! is_string($approvedHead) || str_starts_with($approvedHead, 'UNSET_') || strlen($approvedHead) !== 40) {
             throw new RuntimeException(
@@ -382,13 +421,7 @@ final class DisposableMobileV2BackendHarness
             throw new RuntimeException("Harness refused: peer Android HEAD '{$peerAndroidHead}' does not match manifest approved HEAD '{$approvedHead}'.");
         }
 
-        // Check backend execution HEAD
-        $manifestBackendHead = $manifestData['backend_execution_head_sha'] ?? null;
-        if ($manifestBackendHead !== $backendHead) {
-            throw new RuntimeException("Harness refused: backend HEAD '{$backendHead}' does not match manifest backend HEAD '{$manifestBackendHead}'.");
-        }
-
-        // Check source fixture SHA if present
+        // 4. Check source fixture SHA if present in manifest
         if (isset($manifestData['source_fixture_sha256'])) {
             $fixturePath = $root.'/tests/Support/Harness/DisposableMobileV2BackendHarness.php';
             if (file_exists($fixturePath)) {
@@ -399,7 +432,7 @@ final class DisposableMobileV2BackendHarness
             }
         }
 
-        // Check CLI command SHA if present
+        // 5. Check CLI command SHA if present in manifest
         if (isset($manifestData['cli_command_sha256'])) {
             $commandPath = $root.'/tests/Support/Harness/MobileV2HarnessCommand.php';
             if (file_exists($commandPath)) {
@@ -410,7 +443,7 @@ final class DisposableMobileV2BackendHarness
             }
         }
 
-        // Check CLI runner SHA if present
+        // 6. Check CLI runner SHA if present in manifest
         if (isset($manifestData['cli_runner_sha256'])) {
             $runnerPath = $root.'/tests/Support/Harness/mobile-v2-harness-cli.php';
             if (file_exists($runnerPath)) {
@@ -441,6 +474,7 @@ final class DisposableMobileV2BackendHarness
         }
 
         return [
+            'qualified_core_head' => self::QUALIFIED_EXECUTION_HEAD,
             'backend_head' => $backendHead,
             'peer_android_head' => $peerAndroidHead,
             'qualified_tree' => self::QUALIFIED_APP_TREE,
@@ -453,13 +487,14 @@ final class DisposableMobileV2BackendHarness
     /**
      * Phase 1: Provision disposable schema and seed synthetic qualification fixtures.
      *
+     * Mandatory pins enforced across ALL execution modes (including provision) before Schema::create.
      * Entire schema lifecycle (create, migrate, seed) is enclosed in try/catch to ensure
      * zero database schema or file leaks upon any failure.
      *
      * @param  string  $expectedBackendHead  Full 40-hex commit SHA of current worktree HEAD (mandatory).
-     * @param  string|null  $peerAndroidHead  Full 40-hex commit SHA of peer Android integration HEAD.
+     * @param  string  $peerAndroidHead  Full 40-hex commit SHA of peer Android integration HEAD (mandatory).
      * @param  string|null  $manifestPath  Path to pairing manifest.
-     * @param  string|null  $manifestShaPin  Mandatory 64-hex SHA-256 hash pin if manifest check requested.
+     * @param  string|null  $manifestShaPin  Mandatory 64-hex SHA-256 hash pin of pairing manifest.
      * @return array{
      *     manifest: array<string, mixed>,
      *     credentials_path: string,
@@ -468,15 +503,17 @@ final class DisposableMobileV2BackendHarness
      */
     public function provision(
         string $expectedBackendHead,
-        ?string $peerAndroidHead = null,
+        string $peerAndroidHead,
         ?string $manifestPath = null,
         ?string $manifestShaPin = null
     ): array {
-        self::assertPreSocketInvariants($expectedBackendHead, $peerAndroidHead);
-
-        if ($manifestShaPin !== null && $peerAndroidHead !== null) {
-            self::assertDualManifestPin($expectedBackendHead, $peerAndroidHead, $manifestPath, $manifestShaPin);
+        if ($manifestShaPin === null || $manifestShaPin === '') {
+            throw new RuntimeException('Harness provision refused: mandatory external pairing manifest SHA-256 pin is required.');
         }
+
+        // Enforce pre-socket invariants and dual manifest pin BEFORE creating any database schema
+        self::assertPreSocketInvariants($expectedBackendHead, $peerAndroidHead);
+        self::assertDualManifestPin($expectedBackendHead, $peerAndroidHead, $manifestPath, $manifestShaPin);
 
         $connectionSwitched = false;
 

@@ -70,18 +70,18 @@ if ($isPrepare) {
     exit(0);
 }
 
-// Early precondition guards before booting Laravel framework
+// Early precondition guards across ALL execution modes (--provision, --start, --run)
 if ($backendHead === null || $backendHead === '') {
     fwrite(STDERR, "Error: --backend-head=<40hex> is required for --provision, --start, or --run.\n");
     exit(1);
 }
 
-if (($isStart || $isRun) && ($androidHead === null || $androidHead === '')) {
-    fwrite(STDERR, "Error: --android-head=<40hex> is required for --start or --run.\n");
+if ($androidHead === null || $androidHead === '') {
+    fwrite(STDERR, "Error: --android-head=<40hex> is required for --provision, --start, or --run.\n");
     exit(1);
 }
 
-if (($isStart || $isRun) && $androidHead === DisposableMobileV2BackendHarness::ANDROID_CANDIDATE_KNOWN_BAD) {
+if ($androidHead === DisposableMobileV2BackendHarness::ANDROID_CANDIDATE_KNOWN_BAD) {
     fwrite(STDERR, "Harness start refused: Android candidate '{$androidHead}' is marked CANDIDATE_KNOWN_BAD.\n".
         "Android PR 23 review identified changes required (gateway 15-field durable OfflineSaleV2 direct POST to 7-key online cash).\n".
         "Zero background servers, TLS sockets, or DB listeners started.\n");
@@ -95,22 +95,20 @@ if (($isStart || $isRun) && getenv('MOBILE_V2_HARNESS_START_LISTENER') !== '1') 
     exit(1);
 }
 
-if (($isStart || $isRun) && ($pairingManifestSha === null || $pairingManifestSha === '')) {
-    fwrite(STDERR, "Harness start refused: --pairing-manifest-sha=<64hex> is mandatory for --start or --run.\n");
+if ($pairingManifestSha === null || $pairingManifestSha === '') {
+    fwrite(STDERR, "Harness refused: --pairing-manifest-sha=<64hex> is mandatory for --provision, --start, or --run.\n");
     exit(1);
 }
 
-// Enforce pre-socket invariant checks BEFORE loading Laravel framework or repo .env
+// Enforce pre-socket invariant checks and manifest pin BEFORE loading Laravel framework or repo .env
 try {
     DisposableMobileV2BackendHarness::assertPreSocketInvariants($backendHead, $androidHead);
-    if ($isStart || $isRun) {
-        DisposableMobileV2BackendHarness::assertDualManifestPin(
-            backendHead: $backendHead,
-            peerAndroidHead: (string) $androidHead,
-            manifestPath: $pairingManifest,
-            manifestShaPin: $pairingManifestSha,
-        );
-    }
+    DisposableMobileV2BackendHarness::assertDualManifestPin(
+        backendHead: $backendHead,
+        peerAndroidHead: $androidHead,
+        manifestPath: $pairingManifest,
+        manifestShaPin: $pairingManifestSha,
+    );
 } catch (\Throwable $e) {
     fwrite(STDERR, "Harness refused before framework boot: {$e->getMessage()}\n");
     exit(1);

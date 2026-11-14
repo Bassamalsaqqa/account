@@ -20,7 +20,7 @@ use Illuminate\Console\Command;
  *
  * Usage examples:
  *   php tests/Support/Harness/mobile-v2-harness-cli.php --prepare
- *   php tests/Support/Harness/mobile-v2-harness-cli.php --provision --backend-head=<40hex>
+ *   php tests/Support/Harness/mobile-v2-harness-cli.php --provision --backend-head=<40hex> --android-head=<40hex> --pairing-manifest-sha=<64hex>
  *   php tests/Support/Harness/mobile-v2-harness-cli.php --run --backend-head=<40hex> --android-head=<40hex> --pairing-manifest-sha=<64hex>
  */
 class MobileV2HarnessCommand extends Command
@@ -72,7 +72,7 @@ class MobileV2HarnessCommand extends Command
         }
 
         if ($provision) {
-            return $this->handleProvision($backendHead, $androidHead !== '' ? $androidHead : null, $pairingManifest, $pairingManifestSha);
+            return $this->handleProvision($backendHead, $androidHead, $pairingManifest, $pairingManifestSha);
         }
 
         return $this->handlePrepare();
@@ -107,7 +107,7 @@ class MobileV2HarnessCommand extends Command
 
     private function handleProvision(
         string $backendHead,
-        ?string $androidHead,
+        string $androidHead,
         ?string $pairingManifest = null,
         ?string $pairingManifestSha = null
     ): int {
@@ -115,6 +115,18 @@ class MobileV2HarnessCommand extends Command
 
         if (getenv('MOBILE_V2_HARNESS_ENABLE') !== '1') {
             $this->error('Refused: MOBILE_V2_HARNESS_ENABLE must be 1.');
+
+            return self::FAILURE;
+        }
+
+        if ($androidHead === '') {
+            $this->error('--provision requires --android-head=<40hex>.');
+
+            return self::FAILURE;
+        }
+
+        if ($pairingManifestSha === null || $pairingManifestSha === '') {
+            $this->error('--provision requires --pairing-manifest-sha=<64hex>.');
 
             return self::FAILURE;
         }
