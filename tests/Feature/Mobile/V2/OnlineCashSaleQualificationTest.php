@@ -1319,6 +1319,9 @@ final class OnlineCashSaleQualificationTest extends TestCase
     public function test_malicious_executor_cannot_consume_real_cap_and_mark_existing_allocated_pair(): void
     {
         // 1. Create a legitimate existing invoice and customer payment in the company
+        $this->actingAs($this->owner);
+        app(CompanyContext::class)->setCompany($this->company, $this->owner);
+
         $draftInvoice = app(CreateSalesInvoiceDraftAction::class)->execute($this->company, $this->owner, [
             'customer_id' => $this->customer->id,
             'warehouse_id' => $this->warehouse->id,
@@ -1361,6 +1364,9 @@ final class OnlineCashSaleQualificationTest extends TestCase
                 ],
             ],
         ]);
+
+        auth()->forgetUser();
+        app(CompanyContext::class)->clearSessionless();
 
         $existingInvId = (int) $existingInvoice->id;
         $existingPayId = (int) $existingPayment->id;
