@@ -112,6 +112,7 @@ final class MobileCompanyBindingHttpTest extends TestCase
                 'name_ar' => 'مستودع '.$company->name_ar,
                 'is_default' => true,
                 'active' => true,
+                'created_by' => $this->user->id,
             ]);
 
             $ledgerAccount = LedgerAccount::create([
@@ -121,6 +122,7 @@ final class MobileCompanyBindingHttpTest extends TestCase
                 'type' => 'asset',
                 'is_active' => true,
                 'currency_code' => $company->base_currency_code,
+                'created_by' => $this->user->id,
             ]);
 
             $cashAccount = MoneyAccount::create([
