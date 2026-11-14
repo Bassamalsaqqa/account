@@ -1,0 +1,167 @@
+{
+  "manifestVersion": "1.0.0",
+  "branch": "t3/mobile-receipt-identity-lock-qualification",
+  "currentHead": "da76f64243ee7d21b066d7e008d531d0449910d6",
+  "qualificationStatus": "SOURCE_READY_QA_PENDING_LEASE",
+  "qaLease": {
+    "holder": "Android build (heavy Gradle lease)",
+    "status": "DB_BUILD_WORKLOAD_BLOCKED",
+    "permittedActions": ["source_edits", "pure_lint_php_l", "git_operations"]
+  },
+  "sourceEvolution": [
+    {
+      "sha": "d22bcf6b9b6ec4b031aae0d6ca1da755d18575e2",
+      "summary": "Base commit reviewed in GitHub Review 5897988814 (dc01 membership 3/25 accepted; overall HOLD)"
+    },
+    {
+      "sha": "37ea2ad023e43bc1bffbe038133f40b28c996144",
+      "summary": "Two-winner-order held row lock qualification and explicit release ACK contention tests"
+    },
+    {
+      "sha": "dca5be57a50e30c249c3514d55842ee4b62ab5b8",
+      "summary": "Fix worker fatal error flag on domain exceptions; import Closure"
+    },
+    {
+      "sha": "8ac6ab9564177d61b585fb20b8ec5d1b3ea595d2",
+      "summary": "Enforce token company binding across middleware and receipt manager under row lock with regression suite"
+    },
+    {
+      "sha": "8f51daff780cf9af9ff869e1f91a8e8dd818e689",
+      "summary": "Root push: require root transaction admission for receipt lookup; add nested lookup rejection test"
+    },
+    {
+      "sha": "da76f64243ee7d21b066d7e008d531d0449910d6",
+      "summary": "Add HTTP kernel integration tests for token company binding in V1 and V2"
+    }
+  ],
+  "disclosedSourceGap": {
+    "statement": "The earlier 218 test / 1649 assertion execution passes were recorded on commits dca5be5 and 8ac6ab9. Because commits 8f51daf (lookup root transaction guard) and da76f64 (HTTP kernel token binding tests) altered executable application and test source, the historical test logs cannot and do not attest to the current head da76f64. Full disposable MariaDB 3342 execution must be re-run once the QA lease is released.",
+    "qualifiedCommits": ["dca5be57a50e30c249c3514d55842ee4b62ab5b8", "8ac6ab9564177d61b585fb20b8ec5d1b3ea595d2"],
+    "unqualifiedCommitsPendingLease": ["8f51daff780cf9af9ff869e1f91a8e8dd818e689", "da76f64243ee7d21b066d7e008d531d0449910d6"]
+  },
+  "historicalExecutionAudit": {
+    "task-290": {
+      "executableCommit": "dca5be57a50e30c249c3514d55842ee4b62ab5b8",
+      "command": "APP_ENV=testing PHASE8_ALLOW_DISPOSABLE_DB=1 PHASE8_TEST_DB_HOST=127.0.0.1 PHASE8_TEST_DB_PORT=3342 PHASE8_TEST_DB_USERNAME=test_runner PHASE8_TEST_DB_EMPTY_PASSWORD=1 php tests/Support/run-phase8-disposable.php -- tests/Feature/Mobile/CatalogConsistencyTest.php tests/Feature/Mobile/CustomerDirectoryTest.php tests/Feature/Mobile/ProductCatalogTest.php tests/Feature/Mobile/V2/MobileV2BoundaryQualificationTest.php tests/Feature/Mobile/MigrationRollbackTest.php tests/Feature/Mobile/MobileReceiptMigrationPreservationTest.php",
+      "primarySchema": "accounting_p8_tmp_cbd353537b25",
+      "childSchemas": ["accounting_p8_tmp_c8d77c4fa4db", "accounting_p8_tmp_d11fffb470cf"],
+      "tests": 58,
+      "assertions": 659,
+      "durationSeconds": 32.853,
+      "result": "OK",
+      "logSha256": "9c2badeb68bf89bdd036c45359fae7a86a19098e7cb8901053ed643f8bfbd5c2"
+    },
+    "task-294": {
+      "executableCommit": "dca5be57a50e30c249c3514d55842ee4b62ab5b8",
+      "command": "APP_ENV=testing PHASE8_ALLOW_DISPOSABLE_DB=1 PHASE8_TEST_DB_HOST=127.0.0.1 PHASE8_TEST_DB_PORT=3342 PHASE8_TEST_DB_USERNAME=test_runner PHASE8_TEST_DB_EMPTY_PASSWORD=1 php tests/Support/run-phase8-disposable.php -- tests/Feature/Mobile/MobileReceiptLockOrderQualificationTest.php",
+      "primarySchema": "accounting_p8_tmp_0ff15eff4cec",
+      "childSchemas": [
+        "accounting_p8_tmp_0d267c8fb630",
+        "accounting_p8_tmp_be20bb12f753",
+        "accounting_p8_tmp_1c9ad0c3edcd",
+        "accounting_p8_tmp_b537231103c3",
+        "accounting_p8_tmp_d537ecb18983",
+        "accounting_p8_tmp_7b781fed2752",
+        "accounting_p8_tmp_4462fe9f7dad",
+        "accounting_p8_tmp_e221a23b983d",
+        "accounting_p8_tmp_18ed91796b8b",
+        "accounting_p8_tmp_251b8b1f45a3",
+        "accounting_p8_tmp_7aa4fb016d70",
+        "accounting_p8_tmp_d8ff418e5561",
+        "accounting_p8_tmp_8a2fa5bb10c5",
+        "accounting_p8_tmp_47c3a4ffc2cd"
+      ],
+      "tests": 10,
+      "assertions": 161,
+      "durationSeconds": 65.517,
+      "result": "OK",
+      "logSha256": "e880eff1f7fe8746d63ff0c6ae112f5ea28f50811597cc59e1585e1107eb1e9d"
+    },
+    "task-382": {
+      "executableCommit": "dca5be57a50e30c249c3514d55842ee4b62ab5b8 (+ uncommitted company binding changes)",
+      "command": "APP_ENV=testing PHASE8_ALLOW_DISPOSABLE_DB=1 PHASE8_TEST_DB_HOST=127.0.0.1 PHASE8_TEST_DB_PORT=3342 PHASE8_TEST_DB_USERNAME=test_runner PHASE8_TEST_DB_EMPTY_PASSWORD=1 php tests/Support/run-phase8-disposable.php -- tests/Feature/Mobile/MobileEventReceiptIdentityTest.php",
+      "primarySchema": "accounting_p8_tmp_be67ea1e8667",
+      "childSchemas": [],
+      "tests": 33,
+      "assertions": 101,
+      "durationSeconds": 36.241,
+      "result": "OK",
+      "logSha256": "7559d0e38fc65b4dbc04d3041aec2ad4523e2c999c7608957f13afbb0103451a"
+    },
+    "task-386": {
+      "executableCommit": "dca5be57a50e30c249c3514d55842ee4b62ab5b8 (+ uncommitted company binding changes)",
+      "command": "APP_ENV=testing PHASE8_ALLOW_DISPOSABLE_DB=1 PHASE8_TEST_DB_HOST=127.0.0.1 PHASE8_TEST_DB_PORT=3342 PHASE8_TEST_DB_USERNAME=test_runner PHASE8_TEST_DB_EMPTY_PASSWORD=1 php tests/Support/run-phase8-disposable.php -- tests/Feature/Mobile/MobileReceiptRollbackAtomicityTest.php",
+      "primarySchema": "accounting_p8_tmp_8f7157f74053",
+      "childSchemas": [],
+      "tests": 6,
+      "assertions": 55,
+      "durationSeconds": 7.405,
+      "result": "OK",
+      "logSha256": "96d771f3db7baca435968b1e5e7e7ca57d1f23edab3160a8c06c0af70e95d8a9"
+    },
+    "task-397": {
+      "executableCommit": "8ac6ab9564177d61b585fb20b8ec5d1b3ea595d2",
+      "command": "APP_ENV=testing PHASE8_ALLOW_DISPOSABLE_DB=1 PHASE8_TEST_DB_HOST=127.0.0.1 PHASE8_TEST_DB_PORT=3342 PHASE8_TEST_DB_USERNAME=test_runner PHASE8_TEST_DB_EMPTY_PASSWORD=1 php tests/Support/run-phase8-disposable.php -- tests/Feature/Mobile/MobileReceiptLockOrderQualificationTest.php",
+      "primarySchema": "accounting_p8_tmp_cccfbcb9e792",
+      "childSchemas": [
+        "accounting_p8_tmp_98cc44c2c99a",
+        "accounting_p8_tmp_ee0cdb2cb219",
+        "accounting_p8_tmp_68e211595d32",
+        "accounting_p8_tmp_99b8d224d04b",
+        "accounting_p8_tmp_425dcde29ee4",
+        "accounting_p8_tmp_6344080ee6a2",
+        "accounting_p8_tmp_2715e3b42d18",
+        "accounting_p8_tmp_1904117b1a53",
+        "accounting_p8_tmp_0b107a505ae8",
+        "accounting_p8_tmp_2e051d40efee",
+        "accounting_p8_tmp_f27122f94c84",
+        "accounting_p8_tmp_7c8f4dbdfdde",
+        "accounting_p8_tmp_bb567b83097c",
+        "accounting_p8_tmp_f800b7bdfce3"
+      ],
+      "tests": 10,
+      "assertions": 161,
+      "durationSeconds": 63.677,
+      "result": "OK",
+      "logSha256": "06b79eb3c2b36b3c16eb37cda921e16f767ff80302f2f727c792a6513ef79b3b"
+    },
+    "task-401": {
+      "executableCommit": "8ac6ab9564177d61b585fb20b8ec5d1b3ea595d2",
+      "command": "APP_ENV=testing PHASE8_ALLOW_DISPOSABLE_DB=1 PHASE8_TEST_DB_HOST=127.0.0.1 PHASE8_TEST_DB_PORT=3342 PHASE8_TEST_DB_USERNAME=test_runner PHASE8_TEST_DB_EMPTY_PASSWORD=1 php tests/Support/run-phase8-disposable.php -- tests/Feature/Mobile/SecurityCorrectionsTest.php tests/Feature/Mobile/AuthLoginTest.php tests/Feature/Mobile/AuthLogoutAndRevokeTest.php tests/Feature/Mobile/AuthChallengeTest.php tests/Feature/Mobile/SessionSecurityAndRevalidationTest.php tests/Feature/Mobile/RecoveryConcurrencyTest.php",
+      "primarySchema": "accounting_p8_tmp_c6852081b0bb",
+      "childSchemas": ["accounting_p8_tmp_8e599959b280"],
+      "tests": 31,
+      "assertions": 211,
+      "durationSeconds": 11.509,
+      "result": "OK",
+      "logSha256": "afc3ab807844f4e259749038b12646457f2248cd21ad310ffa3f11ae8a8ee2ef"
+    },
+    "unit-mobile": {
+      "executableCommit": "8ac6ab9564177d61b585fb20b8ec5d1b3ea595d2",
+      "command": "./vendor/bin/phpunit tests/Unit/Mobile",
+      "tests": 80,
+      "assertions": 462,
+      "durationSeconds": 2.642,
+      "result": "OK"
+    },
+    "task-407": {
+      "executableCommit": "8ac6ab9564177d61b585fb20b8ec5d1b3ea595d2",
+      "command": "./vendor/bin/phpstan analyse --no-progress",
+      "result": "OK (0 errors)",
+      "logSha256": "fdfd93cae938ed19a2bff2411815936fb4c45733ddb2e4bb1bdc83781f743de5"
+    },
+    "task-411": {
+      "executableCommit": "8ac6ab9564177d61b585fb20b8ec5d1b3ea595d2",
+      "command": "./vendor/bin/pint --test",
+      "result": "PASSED",
+      "logSha256": "cd1a94fc2cf6a965b86e1a4809d6c7fb9148b1ee374e1010ed2ac96ff4876ec2"
+    }
+  },
+  "constraintsAndBoundaries": [
+    "No claim of universal global lock DAG; locking strictly follows bounded tenant hierarchy (Company -> CompanyUser -> User -> MobileDevice -> MobileAccessToken).",
+    "Production DenyFinancialExecutionAdapter and default-OFF V2 boundary strictly maintained.",
+    "Zero financial cash intake or accounting activation.",
+    "No production, SSH, or Hostinger deployments.",
+    "Source-ready status published pending exclusive QA lease availability."
+  ]
+}
