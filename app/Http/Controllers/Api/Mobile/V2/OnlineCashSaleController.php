@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api\Mobile\V2;
 
+use App\Domain\Inventory\Exceptions\InvalidInventoryMovementException;
 use App\Http\Controllers\Controller;
 use App\Http\Middleware\MobileV2ApiBoundary;
 use App\Models\Company;
@@ -12,10 +13,13 @@ use App\Models\MobileDevice;
 use App\Models\User;
 use App\Services\Money\CurrencyMinorUnitsResolver;
 use App\Support\Mobile\Contract\Revision3\OnlineSaleIntentProfile;
+use App\Support\Mobile\Receipt\Exceptions\FinancialExecutionDeniedException;
 use App\Support\Mobile\Receipt\Exceptions\MobileEventDuplicatePayloadException;
 use App\Support\Mobile\Receipt\MobileEventReceiptManager;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use InvalidArgumentException;
 use Throwable;
 
 final class OnlineCashSaleController extends Controller
@@ -111,6 +115,18 @@ final class OnlineCashSaleController extends Controller
                 code: 'CONFLICT',
                 message: 'Resource state conflict.',
                 status: 409
+            );
+        } catch (InvalidArgumentException|InvalidInventoryMovementException $e) {
+            return MobileV2ApiBoundary::buildErrorResponse(
+                code: 'VALIDATION_FAILED',
+                message: $e->getMessage(),
+                status: 422
+            );
+        } catch (AuthorizationException|FinancialExecutionDeniedException $e) {
+            return MobileV2ApiBoundary::buildErrorResponse(
+                code: 'FORBIDDEN',
+                message: $e->getMessage(),
+                status: 403
             );
         }
 

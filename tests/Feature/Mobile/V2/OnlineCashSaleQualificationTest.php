@@ -1132,8 +1132,8 @@ final class OnlineCashSaleQualificationTest extends TestCase
         );
 
         $this->assertSame(422, $response->status());
-        $this->assertSame('VALIDATION_FAILED', $response->json('code'));
-        $this->assertStringContainsString('Duplicate key', (string) $response->json('message'));
+        $this->assertSame('VALIDATION_FAILED', $response->json('error.code'));
+        $this->assertStringContainsString('Duplicate key', (string) $response->json('error.message'));
 
         // Zero effects
         $this->assertSame(0, SalesInvoice::withoutGlobalScopes()->where('company_id', $this->company->id)->count());

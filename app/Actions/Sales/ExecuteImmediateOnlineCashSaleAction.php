@@ -20,6 +20,7 @@ use App\Support\Mobile\Contract\Revision3\OnlineSaleIntentProfile;
 use App\Support\Mobile\Contract\Revision3\PaymentSettlementValidator;
 use App\Support\Mobile\Receipt\CompositeFinancialExecutionScope;
 use App\Support\Mobile\Receipt\Exceptions\IllegalStateException;
+use App\Support\Mobile\Receipt\Exceptions\SecurityException;
 use App\Support\Mobile\Receipt\MobileEventReceiptManager;
 use App\Support\Mobile\Receipt\NativeFinancialExecutionCapability;
 use Brick\Math\BigDecimal;
@@ -72,31 +73,40 @@ final class ExecuteImmediateOnlineCashSaleAction
         array $payload,
         string $idempotencySuffix
     ): array {
-        // 1. Strict root transaction level assertion
-        if (DB::transactionLevel() !== 1) {
-            throw new IllegalStateException('Immediate online cash sale requires root database transaction level.');
-        }
+        // 1. Resolve minor units and normative canonical profile from executed payload
+        $minorUnits = isset($payload['currency_minor_units']) && is_int($payload['currency_minor_units'])
+            ? $payload['currency_minor_units']
+            : $capability->currencyMinorUnits;
 
-        // 2. Currency lock ordering and base currency validation
-        $currency = (string) ($payload['currency'] ?? '');
-        if ($currency === '' || $currency !== $company->base_currency_code) {
-            throw new InvalidArgumentException("Immediate cash sale is restricted to company base currency [{$company->base_currency_code}].");
-        }
-
-        $this->currencyResolver->resolveCurrenciesForCompanyWrite((int) $company->id, [$currency], lockForUpdate: true);
-        $minorUnits = $this->currencyResolver->resolveForCompany((int) $company->id, $currency);
-
-        // 3. Compute actual canonical profile bytes & SHA-256 event hash from executed payload
         $serverContext = [
             'actor_id' => (string) $actor->public_id,
             'company_id' => (string) $company->public_id,
             'currency_minor_units' => $minorUnits,
         ];
-        $canonicalProfile = OnlineSaleIntentProfile::construct($serverContext, $payload);
+
+        /** @var array<string, mixed> $canonicalProfile */
+        $canonicalProfile = isset($payload['actor_id'])
+            ? $payload
+            : OnlineSaleIntentProfile::construct($serverContext, $payload);
+
+        OnlineSaleIntentProfile::validateNormativeProfile($canonicalProfile);
+
+        // Compare bound context before consume
+        if ((string) $canonicalProfile['actor_id'] !== (string) $actor->public_id) {
+            throw new SecurityException('Bound actor mismatch.');
+        }
+        if ((string) $canonicalProfile['company_id'] !== (string) $company->public_id) {
+            throw new SecurityException('Bound company mismatch.');
+        }
+        if ((string) $canonicalProfile['device_id'] !== (string) $device->device_id) {
+            throw new SecurityException('Bound device mismatch.');
+        }
+
+        // Compute actual canonical profile bytes & SHA-256 event hash from executed payload
         $canonicalBytes = OnlineSaleIntentProfile::serialize($canonicalProfile);
         $computedEventHash = hash('sha256', $canonicalBytes);
 
-        // 4. Inseparable capability consumption: validates opaque identity against private scoped registry
+        // 2. Inseparable capability consumption: validates opaque identity against private scoped registry
         MobileEventReceiptManager::verifyAndConsumeCapability(
             $capability,
             (int) $company->id,
@@ -106,7 +116,12 @@ final class ExecuteImmediateOnlineCashSaleAction
             $computedEventHash
         );
 
-        // 5. Fresh cooperative role definition & permission verification under lock
+        // 3. Strict root transaction level assertion
+        if (DB::transactionLevel() !== 1) {
+            throw new IllegalStateException('Immediate online cash sale requires root database transaction level.');
+        }
+
+        // 4. Fresh cooperative role definition & permission verification under lock
         setPermissionsTeamId($company->id);
         app(PermissionRegistrar::class)->setPermissionsTeamId($company->id);
         app(PermissionRegistrar::class)->forgetCachedPermissions();
@@ -122,6 +137,20 @@ final class ExecuteImmediateOnlineCashSaleAction
                 throw new AuthorizationException("Actor missing required permission [{$perm}] for immediate cash sale.");
             }
         }
+
+        // 5. Currency lock ordering and base currency validation
+        $currency = (string) ($canonicalProfile['currency'] ?? '');
+        if ($currency === '' || $currency !== $company->base_currency_code) {
+            throw new InvalidArgumentException("Immediate cash sale is restricted to company base currency [{$company->base_currency_code}].");
+        }
+
+        $this->currencyResolver->resolveCurrenciesForCompanyWrite((int) $company->id, [$currency], lockForUpdate: true);
+        $authoritativeMinorUnits = $this->currencyResolver->resolveForCompany((int) $company->id, $currency);
+        if ((int) $canonicalProfile['currency_minor_units'] !== (int) $authoritativeMinorUnits) {
+            throw new InvalidArgumentException('Admitted currency minor units mismatch authoritative resolver.');
+        }
+
+        $payload = $canonicalProfile;
 
         // 5. Canonical entity locking in acyclic order:
         // Warehouse -> Customer -> Products (ordered by ID) -> Units -> Cash Account
