@@ -911,8 +911,8 @@ $pdo = new PDO("mysql:host={$cfg['host']};port={$cfg['port']};dbname={$cfg['sche
 $cid = (int) $pdo->query("SELECT CONNECTION_ID()")->fetchColumn();
 fwrite(STDOUT, "CID:{$cid}\n");
 fflush(STDOUT);
-// Engine long sleep to test forced external kill negative control
-$stmt = $pdo->query("SELECT SLEEP(15)");
+// Engine sleep (1.5s fractional) to test forced external kill negative control and socket-close pruning
+$stmt = $pdo->query("SELECT SLEEP(1.5)");
 fwrite(STDOUT, "COMPLETED\n");
 PHP;
 
@@ -1173,6 +1173,7 @@ if (getenv('APP_ENV') !== 'testing' || ($cfg['env'] ?? '') !== 'testing'
 // Test-only statement observer that intercepts fetch during active Phase B unbuffered streaming of target fixture
 class PhaseBObserverStatement extends PDOStatement
 {
+    public static ?PDO $pdo = null;
     public static string $targetTable = '';
     public static bool $phaseBStarted = false;
     public static int $phaseBRowsFetched = 0;
@@ -1192,6 +1193,11 @@ class PhaseBObserverStatement extends PDOStatement
             && !str_contains($q, 'COUNT(*)')
             && !str_contains($q, 'information_schema')
             && !str_contains($q, 'SHOW ')) {
+            // Assert PDO unbuffered query attribute in observer as claimed
+            if (self::$pdo !== null && (bool) self::$pdo->getAttribute(PDO::MYSQL_ATTR_USE_BUFFERED_QUERY) !== false) {
+                fwrite(STDERR, "OBSERVER_FAILED:BUFFERED_QUERY_NOT_FALSE\n");
+                exit(2);
+            }
             self::$phaseBStarted = true;
             self::$phaseBRowsFetched++;
             if (self::$phaseBRowsFetched === 1) {
@@ -1214,6 +1220,7 @@ $pdo = new PDO("mysql:host={$cfg['host']};port={$cfg['port']};dbname={$cfg['sche
     PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
     PDO::ATTR_STATEMENT_CLASS => [PhaseBObserverStatement::class],
 ]);
+PhaseBObserverStatement::$pdo = $pdo;
 
 $cid = (int) $pdo->query("SELECT CONNECTION_ID()")->fetchColumn();
 fwrite(STDOUT, "CID:{$cid}\n");
