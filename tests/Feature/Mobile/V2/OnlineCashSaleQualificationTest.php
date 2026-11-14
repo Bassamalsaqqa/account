@@ -7,14 +7,12 @@ namespace Tests\Feature\Mobile\V2;
 use App\Actions\Company\CreateCompanyAction;
 use App\Actions\Company\UpdateRolePermissionsAction;
 use App\Actions\Inventory\PostOpeningStockAction;
-use App\Actions\Sales\CreateMoneyAccountAction;
 use App\Actions\Sales\ExecuteImmediateOnlineCashSaleAction;
 use App\Domain\Inventory\ValueObjects\Quantity;
 use App\Models\Company;
 use App\Models\CompanyUser;
 use App\Models\Customer;
 use App\Models\CustomerPayment;
-use App\Models\InventoryBalance;
 use App\Models\MobileAccessToken;
 use App\Models\MobileDevice;
 use App\Models\MobileEventReceipt;
@@ -30,7 +28,6 @@ use App\Models\Warehouse;
 use App\Services\Accounting\AccountingReconciliationService;
 use App\Services\Accounting\Phase7ReconciliationService;
 use App\Services\Inventory\InventoryReconciliationService;
-use App\Services\Money\CurrencyMinorUnitsResolver;
 use App\Services\Money\MoneyReconciliationService;
 use App\Services\Purchasing\PayablesReconciliationService;
 use App\Services\Sales\SalesReconciliationService;
@@ -42,18 +39,18 @@ use App\Support\Mobile\Receipt\FinancialExecutionAdapterInterface;
 use App\Support\Mobile\Receipt\MobileEventReceiptManager;
 use App\Support\Mobile\Receipt\NativeFinancialExecutionCapability;
 use App\Support\Tenancy\CompanyContext;
-use Brick\Math\BigDecimal;
+use App\Support\Tenancy\CompanyScope;
 use Closure;
 use Error;
-use Illuminate\Auth\Access\AuthorizationException;
-use Tests\Support\EnforcesDisposableDatabaseOwnership;
-use App\Support\Tenancy\CompanyScope;
+use Illuminate\Contracts\Container\BindingResolutionException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 use ReflectionClass;
 use Spatie\Permission\Models\Role;
+use Symfony\Component\Process\Process;
 use Tests\Support\DisposableMariaDbSchema;
+use Tests\Support\EnforcesDisposableDatabaseOwnership;
 use Tests\Support\QualifiedCashFinancialExecutionAdapter;
 use Tests\TestCase;
 
@@ -62,17 +59,27 @@ final class OnlineCashSaleQualificationTest extends TestCase
     use EnforcesDisposableDatabaseOwnership;
 
     private User $owner;
+
     private User $staff;
+
     private Company $company;
+
     private MobileDevice $device;
+
     private MobileAccessToken $token;
+
     private string $rawToken;
+
     private Customer $customer;
+
     private Warehouse $warehouse;
+
     private Unit $baseUnit;
+
     private Product $product;
-    private ProductUnit $unit;
+
     private TaxRate $taxRate;
+
     private MoneyAccount $cashAccount;
 
     protected function setUp(): void
@@ -228,7 +235,7 @@ final class OnlineCashSaleQualificationTest extends TestCase
             'created_by' => $this->owner->id,
         ]);
 
-        $this->unit = ProductUnit::create([
+        ProductUnit::create([
             'company_id' => $this->company->id,
             'product_id' => $this->product->id,
             'unit_id' => $this->baseUnit->id,
@@ -256,7 +263,7 @@ final class OnlineCashSaleQualificationTest extends TestCase
             company: $this->company,
             product: $this->product,
             warehouse: $this->warehouse,
-            quantity: \App\Domain\Inventory\ValueObjects\Quantity::of('100.000000'),
+            quantity: Quantity::of('100.000000'),
             unitCostBase: '20.000000',
             user: $this->owner,
             idempotencyKey: 'opening-'.Str::ulid(),
@@ -272,6 +279,9 @@ final class OnlineCashSaleQualificationTest extends TestCase
         app(CompanyContext::class)->clearSessionless();
     }
 
+    /**
+     * @return array<string, mixed>
+     */
     private function validSalePayload(string $eventId, string $amount = '58.000000', string $unitPrice = '50.000000'): array
     {
         return [
@@ -326,7 +336,7 @@ final class OnlineCashSaleQualificationTest extends TestCase
      */
     public function test_container_cannot_mint_capability(): void
     {
-        $this->expectException(\Illuminate\Contracts\Container\BindingResolutionException::class);
+        $this->expectException(BindingResolutionException::class);
         app()->make(NativeFinancialExecutionCapability::class);
     }
 
@@ -827,7 +837,10 @@ final class OnlineCashSaleQualificationTest extends TestCase
         }
     }
 
-    private function startWorkerProcess(DisposableMariaDbSchema $schema, string $directory, string $slot, array $input): \Symfony\Component\Process\Process
+    /**
+     * @param  array<string, mixed>  $input
+     */
+    private function startWorkerProcess(DisposableMariaDbSchema $schema, string $directory, string $slot, array $input): Process
     {
         file_put_contents($directory.'/'.$slot.'.json', json_encode($input, JSON_THROW_ON_ERROR));
         chmod($directory.'/'.$slot.'.json', 0600);
@@ -843,7 +856,7 @@ final class OnlineCashSaleQualificationTest extends TestCase
             'PHASE8_TEST_DB_EMPTY_PASSWORD' => $settings['PASSWORD'] === '' ? '1' : '0',
         ], $schema->environment());
 
-        $process = new \Symfony\Component\Process\Process([PHP_BINARY, base_path('tests/Support/mobile-receipt-worker.php'), $directory, $slot], base_path(), $env);
+        $process = new Process([PHP_BINARY, base_path('tests/Support/mobile-receipt-worker.php'), $directory, $slot], base_path(), $env);
         $process->setTimeout(90)->start();
 
         $deadline = microtime(true) + 30;

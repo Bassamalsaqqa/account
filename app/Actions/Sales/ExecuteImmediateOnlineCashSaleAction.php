@@ -21,7 +21,6 @@ use App\Support\Mobile\Receipt\Exceptions\IllegalStateException;
 use App\Support\Mobile\Receipt\MobileEventReceiptManager;
 use App\Support\Mobile\Receipt\NativeFinancialExecutionCapability;
 use Brick\Math\BigDecimal;
-use DomainException;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
@@ -141,7 +140,7 @@ final class ExecuteImmediateOnlineCashSaleAction
             $productLookups[] = (string) ($line['product_id'] ?? '');
         }
 
-        $isNumericProducts = ! empty($productLookups) && ctype_digit((string) $productLookups[0]);
+        $isNumericProducts = ctype_digit((string) $productLookups[0]);
         $lockedProducts = $isNumericProducts
             ? Product::where('company_id', $company->id)->whereIn('id', array_map('intval', $productLookups))->orderBy('id')->lockForUpdate()->get()->keyBy('id')
             : Product::where('company_id', $company->id)->whereIn('public_id', $productLookups)->orderBy('id')->lockForUpdate()->get()->keyBy('public_id');
@@ -227,7 +226,7 @@ final class ExecuteImmediateOnlineCashSaleAction
             $draftLines[] = [
                 'product_id' => (int) $product->id,
                 'product_unit_id' => (int) $unit->id,
-                'item_description' => method_exists($product, 'displayName') ? $product->displayName() : $product->name,
+                'item_description' => $product->displayName(),
                 'quantity' => $qtyStr,
                 'unit_price' => (string) ($line['unit_price'] ?? '0'),
                 'tax_rate_id' => $resolvedTaxId,

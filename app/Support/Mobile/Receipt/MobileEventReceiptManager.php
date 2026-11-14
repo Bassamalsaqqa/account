@@ -14,10 +14,10 @@ use App\Support\Mobile\Contract\CanonicalJsonSerializer;
 use App\Support\Mobile\Contract\Exceptions\CanonicalSerializationException;
 use App\Support\Mobile\Contract\StrictJsonObject;
 use App\Support\Mobile\Contract\StrictJsonParser;
+use App\Support\Mobile\Receipt\Exceptions\IllegalStateException;
 use App\Support\Mobile\Receipt\Exceptions\MobileEventAuthenticationException;
 use App\Support\Mobile\Receipt\Exceptions\MobileEventDuplicatePayloadException;
 use App\Support\Mobile\Receipt\Exceptions\MobileEventForeignScopeException;
-use App\Support\Mobile\Receipt\Exceptions\IllegalStateException;
 use App\Support\Mobile\Receipt\Exceptions\SecurityException;
 use App\Support\Tenancy\CompanyContext;
 use Closure;
@@ -366,7 +366,7 @@ final class MobileEventReceiptManager
                         try {
                             $financialResult = $activeExecutor->execute($company, $user, $device, $decodedPayload, $suffix, $capability);
                         } finally {
-                            if (isset($capability) && self::$capabilityRegistry !== null && self::$capabilityRegistry->offsetExists($capability)) {
+                            if (self::$capabilityRegistry->offsetExists($capability)) {
                                 $capRec = self::$capabilityRegistry[$capability];
                                 $capRec['active'] = false;
                                 self::$capabilityRegistry[$capability] = $capRec;
