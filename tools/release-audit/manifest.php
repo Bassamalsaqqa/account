@@ -20,14 +20,22 @@ $manifestFiles = [
 ];
 
 $hashes = [];
+$missing = false;
 foreach ($manifestFiles as $f) {
     $full = $root.'/'.$f;
-    $hashes[$f] = is_file($full) ? hash_file('sha256', $full) : 'MISSING';
+    if (is_file($full)) {
+        $hashes[$f] = hash_file('sha256', $full);
+    } else {
+        $hashes[$f] = 'MISSING';
+        $missing = true;
+    }
 }
+
+$isClean = ($status === '' && ! $missing && preg_match('/^[a-f0-9]{40}$/D', $head) === 1);
 
 $output = [
     'git_head' => $head,
-    'clean' => $status === '',
+    'clean' => $isClean,
     'git_status' => $status,
     'files' => $hashes,
 ];
@@ -42,3 +50,10 @@ if (in_array('--json', $argv, true)) {
         printf("%-64s  %s\n", $h, $f);
     }
 }
+
+if (! $isClean) {
+    fwrite(STDERR, "MANIFEST_ERROR: working directory is dirty, files missing, or invalid HEAD SHA\n");
+    exit(1);
+}
+
+exit(0);
