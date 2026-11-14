@@ -1322,6 +1322,8 @@ final class OnlineCashSaleQualificationTest extends TestCase
         $this->actingAs($this->owner);
         app(CompanyContext::class)->setCompany($this->company, $this->owner);
 
+        $prodUnit = ProductUnit::where('product_id', $this->product->id)->firstOrFail();
+
         $draftInvoice = app(CreateSalesInvoiceDraftAction::class)->execute($this->company, $this->owner, [
             'customer_id' => $this->customer->id,
             'warehouse_id' => $this->warehouse->id,
@@ -1333,7 +1335,7 @@ final class OnlineCashSaleQualificationTest extends TestCase
             'lines' => [
                 [
                     'product_id' => $this->product->id,
-                    'product_unit_id' => $this->baseUnit->id,
+                    'product_unit_id' => $prodUnit->id,
                     'item_description' => 'Existing line item',
                     'quantity' => '1.000000',
                     'unit_price' => '58.000000',
