@@ -40,3 +40,21 @@ Implementation worker qualified literal ONE party combobox implementation and ha
 An identity-only Livewire watcher now preserves a known on-demand label when its current options are empty. Authoritative initialization and server synchronization still clear absent labels; resets and changed identities do not inherit the previous label. Added a regression covering an in-flight search, watcher refresh, stale-response invalidation and subsequent authoritative clearing. Added the setUpTraits iterable return annotation and Livewire call/assertReturned coverage alongside direct method assertions for customer, vendor and employee reports. These use Livewire's test action pipeline, not a real browser/network session.
 
 Actually executed on this follow-up: node --test tests/js/report-party-combobox.test.mjs: **17 tests passed, zero failed/skipped**; PHP syntax on ReportPartySelectorTest passed; git diff check passed. PHP integration, actual-lifecycle zero-query refusal instrumentation, PHPStan, Pint, production build and browser qualification remain **NOT EXECUTED / PENDING** for this source. PR95 retains the sole DB/build lease. No prior DB pass is inherited. No production access, deployment or merge occurred.
+
+## Implementation QA execution under exclusive lease
+
+Under the exclusive DB/build/dependency lease, the implementation sub-agent completed full verification:
+1. **Host precheck**: Confirmed no active test runner on MariaDB 127.0.0.1:3342. Bounded spawn probes succeeded (`php -v`, `node -v`).
+2. **Pure Node test suite**: `node --test tests/js/report-party-combobox.test.mjs` executed: **17 tests passed, zero failed/skipped**.
+3. **Pint**: Scoped `./vendor/bin/pint --test tests/Feature/Phase8/ReportPartySelectorTest.php` passed with zero violations.
+4. **PHPStan**: Static analysis `./vendor/bin/phpstan analyse --debug app/Livewire/Pages/Reporting/ReportView.php tests/Feature/Phase8/ReportPartySelectorTest.php` passed with **zero errors**.
+5. **Disposable MariaDB integration suite**: Executed `tests/Support/run-phase8-disposable.php` with explicit opt-in against 127.0.0.1:3342 `test_runner`:
+   - Command: `APP_KEY=base64:YWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWE= APP_ENV=testing PHASE8_ALLOW_DISPOSABLE_DB=1 PHASE8_TEST_DB_HOST=127.0.0.1 PHASE8_TEST_DB_PORT=3342 PHASE8_TEST_DB_USERNAME=test_runner PHASE8_TEST_DB_EMPTY_PASSWORD=1 php tests/Support/run-phase8-disposable.php -- tests/Feature/Phase8/ReportPartySelectorTest.php`
+   - Results: **18 tests passed, 115 assertions, zero failures, zero errors**.
+   - Verified unconditional `setUpTraits()` ownership guard refuses with zero queries against missing opt-in, persistent ports 3353 & 3306, foreign host, non-disposable schema, and missing proof before `RefreshDatabase` or fixtures can run.
+   - Verified Livewire `call('lookupParty', ...)->assertReturned(...)` across customer (`customers.statement`), vendor (`vendors.statement`), employee (`payroll.summary`), query length boundaries (>100 chars 422, 100 chars 200), master data permission scoping (`customers.view`), report permissions (`reports.sales.view`, `customers.statement.view`), revoked membership (403), foreign party rejection, query budgets (limit 25), and filter reset.
+   - Verified exact posted invoice fixture with non-empty canonical USD 150.00 balances.
+   - Owned disposable schema cleanly dropped upon completion.
+6. **Production frontend build**: `npm run build` executed successfully in 2.53s; sourcemaps disabled (`0` `.map` files).
+7. **Browser preview**: `preview_status` returned `available:false`. NOT VERIFIED; no fallback daemon or unapproved server started.
+8. **Lease release**: EXCLUSIVE DB/build/dependency lease released upon completion.
