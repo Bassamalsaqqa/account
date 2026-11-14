@@ -460,9 +460,9 @@ final class DisposableMobileV2BackendHarness
             throw new RuntimeException("Harness refused: backend HEAD '{$backendHead}' does not match manifest backend HEAD '{$manifestBackendHead}'.");
         }
 
-        // 3. Verify peer Android approved HEAD
+        // 3. Verify peer Android approved HEAD and peer Android executable HEAD
         $approvedHead = $manifestData['peer_android_approved_head_sha'] ?? $manifestData['peer_android_pr_head_sha'] ?? null;
-        if (! is_string($approvedHead) || str_starts_with($approvedHead, 'UNSET_') || strlen($approvedHead) !== 40) {
+        if (! is_string($approvedHead) || str_starts_with($approvedHead, 'UNSET_') || preg_match('/^[0-9a-fA-F]{40}$/', $approvedHead) !== 1) {
             throw new RuntimeException(
                 "Harness refused: pairing manifest has unapproved peer Android HEAD ('".((string) $approvedHead)."'). ".
                 'Pairing is held until client corrections are reviewed and approved by Root.'
@@ -470,6 +470,13 @@ final class DisposableMobileV2BackendHarness
         }
         if ($approvedHead !== $peerAndroidHead) {
             throw new RuntimeException("Harness refused: peer Android HEAD '{$peerAndroidHead}' does not match manifest approved HEAD '{$approvedHead}'.");
+        }
+        $executableHead = $manifestData['peer_android_executable_head_sha'] ?? null;
+        if (! is_string($executableHead) || str_starts_with($executableHead, 'UNSET_') || preg_match('/^[0-9a-fA-F]{40}$/', $executableHead) !== 1) {
+            throw new RuntimeException(
+                "Harness refused: pairing manifest has unset or invalid peer Android executable HEAD ('".((string) $executableHead)."'). ".
+                'The tracked manifest is a source template. Root-approved private runtime pairing manifest must specify the actual peer Android executable HEAD.'
+            );
         }
 
         // 4. Check source fixture SHA if present in manifest
@@ -528,10 +535,13 @@ final class DisposableMobileV2BackendHarness
             'qualified_core_head' => self::QUALIFIED_EXECUTION_HEAD,
             'backend_head' => $backendHead,
             'peer_android_head' => $peerAndroidHead,
+            'peer_android_approved_head_sha' => $approvedHead,
+            'peer_android_executable_head_sha' => $executableHead,
             'qualified_tree' => self::QUALIFIED_APP_TREE,
             'ca5a_manifest_sha256' => self::CA5A_MANIFEST_SHA256,
             'ca5a_canonical_digest' => self::CA5A_CANONICAL_DIGEST,
             'manifest_sha256' => $actualManifestSha,
+            'status' => (string) ($manifestData['status'] ?? ''),
         ];
     }
 
@@ -639,6 +649,7 @@ final class DisposableMobileV2BackendHarness
                 'qualified_app_tree_sha' => (string) ($runtimePins['qualified_app_tree_sha'] ?? self::QUALIFIED_APP_TREE),
                 'peer_android_approved_head_sha' => (string) ($runtimePins['peer_android_approved_head_sha'] ?? self::APPROVED_ANDROID_HEAD),
                 'peer_android_executable_head_sha' => (string) ($runtimePins['peer_android_executable_head_sha'] ?? self::APPROVED_ANDROID_EXECUTABLE_HEAD),
+                'client_handoff_schema_sha256' => (string) ($runtimePins['client_handoff_schema_sha256'] ?? ''),
                 'source_fixture_sha256' => (string) ($runtimePins['source_fixture_sha256'] ?? ''),
                 'guard_test_sha256' => (string) ($runtimePins['guard_test_sha256'] ?? ''),
                 'cli_command_sha256' => (string) ($runtimePins['cli_command_sha256'] ?? ''),
@@ -689,57 +700,109 @@ final class DisposableMobileV2BackendHarness
             'raw_wire_sample', 'server_synthesized_context',
             'canonical_intent_profile_digest', 'historical_ca5a_reference', 'startup_tls',
         ];
-
         foreach ($requiredTop as $field) {
             if (! array_key_exists($field, $handoff)) {
                 throw new RuntimeException("Malformed client handoff artifact: missing top-level field '{$field}'.");
             }
         }
-
         if ($handoff['schema_version'] !== '1.0.0') {
             throw new RuntimeException("Malformed client handoff artifact: unsupported schema_version '{$handoff['schema_version']}'.");
         }
-
+        $validScopes = [
+            self::SCOPE_PROVISION_ONLY,
+            self::SCOPE_READINESS_ONLY,
+            self::SCOPE_PAIRED_EXECUTION,
+            'mobile_v2_online_cash_sale',
+        ];
+        if (! in_array($handoff['handoff_scope'], $validScopes, true)) {
+            throw new RuntimeException("Malformed client handoff artifact: invalid handoff_scope '{$handoff['handoff_scope']}'.");
+        }
         $validPhases = ['PROVISIONED_AWAITING_TLS_START', 'ACTIVE_TLS_READY', 'READINESS_ONLY_VERIFIED'];
         if (! in_array($handoff['lifecycle_phase'], $validPhases, true)) {
             throw new RuntimeException("Malformed client handoff artifact: invalid lifecycle_phase '{$handoff['lifecycle_phase']}'.");
         }
-
-        // Validate pins (10 required pins)
+        $isoPattern = '/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/';
+        if (! is_string($handoff['created_at']) || preg_match($isoPattern, $handoff['created_at']) !== 1) {
+            throw new RuntimeException('Malformed client handoff artifact: created_at must be valid ISO 8601 timestamp.');
+        }
+        if (! is_string($handoff['expires_at']) || preg_match($isoPattern, $handoff['expires_at']) !== 1) {
+            throw new RuntimeException('Malformed client handoff artifact: expires_at must be valid ISO 8601 timestamp.');
+        }
+        $createdTs = strtotime($handoff['created_at']);
+        $expiresTs = strtotime($handoff['expires_at']);
+        if ($createdTs === false || $expiresTs === false || $expiresTs <= $createdTs) {
+            throw new RuntimeException('Malformed client handoff artifact: expires_at must be strictly after created_at.');
+        }
         $pins = $handoff['backend_runtime_pins'];
         if (! is_array($pins)) {
             throw new RuntimeException('Malformed client handoff artifact: backend_runtime_pins must be an array.');
         }
-
-        $requiredPins = [
-            'qualified_core_head_sha', 'backend_execution_head_sha', 'qualified_app_tree_sha',
-            'peer_android_approved_head_sha', 'peer_android_executable_head_sha',
-            'source_fixture_sha256', 'guard_test_sha256', 'cli_command_sha256',
-            'cli_runner_sha256', 'pairing_manifest_sha256',
+        $sha40Pins = [
+            'qualified_core_head_sha',
+            'backend_execution_head_sha',
+            'qualified_app_tree_sha',
+            'peer_android_approved_head_sha',
+            'peer_android_executable_head_sha',
         ];
-
-        foreach ($requiredPins as $pin) {
-            if (empty($pins[$pin]) || ! is_string($pins[$pin])) {
-                throw new RuntimeException("Malformed client handoff artifact: missing or empty pin '{$pin}'.");
+        $sha256Pins = [
+            'client_handoff_schema_sha256',
+            'source_fixture_sha256',
+            'guard_test_sha256',
+            'cli_command_sha256',
+            'cli_runner_sha256',
+            'pairing_manifest_sha256',
+        ];
+        foreach ($sha40Pins as $pin) {
+            if (! isset($pins[$pin]) || ! is_string($pins[$pin]) || preg_match('/^[0-9a-f]{40}$/', $pins[$pin]) !== 1) {
+                throw new RuntimeException("Malformed client handoff artifact: pin '{$pin}' must be a valid lowercase 40-hex SHA.");
             }
         }
-
-        // Validate raw wire sample
+        foreach ($sha256Pins as $pin) {
+            if (! isset($pins[$pin]) || ! is_string($pins[$pin]) || preg_match('/^[0-9a-f]{64}$/', $pins[$pin]) !== 1) {
+                throw new RuntimeException("Malformed client handoff artifact: pin '{$pin}' must be a valid lowercase 64-hex SHA-256.");
+            }
+        }
+        if ($pins['qualified_core_head_sha'] !== self::QUALIFIED_EXECUTION_HEAD) {
+            throw new RuntimeException('Malformed client handoff artifact: qualified_core_head_sha mismatch vs constant.');
+        }
+        if ($pins['qualified_app_tree_sha'] !== self::QUALIFIED_APP_TREE) {
+            throw new RuntimeException('Malformed client handoff artifact: qualified_app_tree_sha mismatch vs constant.');
+        }
+        if ($pins['peer_android_approved_head_sha'] === $pins['peer_android_executable_head_sha']) {
+            throw new RuntimeException('Malformed client handoff artifact: peer_android_approved_head_sha and peer_android_executable_head_sha must be distinct publication vs executable SHAs.');
+        }
+        $endpoints = $handoff['endpoints'];
+        if (! is_array($endpoints) || empty($endpoints['base_url']) || empty($endpoints['loopback_base_url']) || ! is_array($endpoints['routes'] ?? null)) {
+            throw new RuntimeException('Malformed client handoff artifact: endpoints structure missing or invalid.');
+        }
+        if (! filter_var($endpoints['base_url'], FILTER_VALIDATE_URL) || ! filter_var($endpoints['loopback_base_url'], FILTER_VALIDATE_URL)) {
+            throw new RuntimeException('Malformed client handoff artifact: endpoint URLs must be valid URIs.');
+        }
+        if (! is_string($handoff['credentials_path']) || preg_match('/^\/.+\.json$/', $handoff['credentials_path']) !== 1) {
+            throw new RuntimeException('Malformed client handoff artifact: credentials_path must be an absolute json path outside checkout.');
+        }
         $rawWire = $handoff['raw_wire_sample'];
         if (! is_array($rawWire)
             || empty($rawWire['raw_wire_payload_json'])
             || empty($rawWire['raw_wire_payload_sha256'])
             || empty($rawWire['parsed_request'])
+            || ! is_array($rawWire['parsed_request'])
         ) {
             throw new RuntimeException('Malformed client handoff artifact: raw_wire_sample must contain raw_wire_payload_json, raw_wire_payload_sha256, and parsed_request.');
         }
-
-        $calculatedSha = hash('sha256', (string) $rawWire['raw_wire_payload_json']);
-        if (! hash_equals($calculatedSha, (string) $rawWire['raw_wire_payload_sha256'])) {
-            throw new RuntimeException("Malformed client handoff artifact: raw_wire_sample SHA-256 mismatch. Expected '{$calculatedSha}', got '{$rawWire['raw_wire_payload_sha256']}'.");
+        $wireJson = (string) $rawWire['raw_wire_payload_json'];
+        $wireSha = (string) $rawWire['raw_wire_payload_sha256'];
+        if (preg_match('/^[0-9a-f]{64}$/', $wireSha) !== 1) {
+            throw new RuntimeException('Malformed client handoff artifact: raw_wire_payload_sha256 must be a 64-hex SHA-256.');
         }
-
-        // Validate server synthesized context
+        $calculatedWireSha = hash('sha256', $wireJson);
+        if (! hash_equals($calculatedWireSha, $wireSha)) {
+            throw new RuntimeException("Malformed client handoff artifact: raw_wire_sample SHA-256 mismatch. Expected '{$calculatedWireSha}', got '{$wireSha}'.");
+        }
+        $canonicalWireExpected = CanonicalJsonSerializer::serialize($rawWire['parsed_request']);
+        if ($wireJson !== $canonicalWireExpected) {
+            throw new RuntimeException('Malformed client handoff artifact: raw_wire_payload_json must be strictly serialized in authoritative RFC 8785 JCS canonical JSON.');
+        }
         $ctx = $handoff['server_synthesized_context'];
         if (! is_array($ctx)
             || empty($ctx['company_id'])
@@ -748,34 +811,58 @@ final class DisposableMobileV2BackendHarness
             || ! is_int($ctx['currency_minor_units'])
             || $ctx['currency_minor_units'] < 0
             || $ctx['currency_minor_units'] > 6
+            || preg_match('/^[0-7][0-9A-HJKMNP-TV-Z]{25}$/', (string) $ctx['company_id']) !== 1
+            || preg_match('/^[0-7][0-9A-HJKMNP-TV-Z]{25}$/', (string) $ctx['actor_id']) !== 1
         ) {
             throw new RuntimeException('Malformed client handoff artifact: server_synthesized_context missing or invalid.');
         }
-
-        // Validate digest format
         if (! is_string($handoff['canonical_intent_profile_digest'])
             || ! preg_match('/^sha256:[0-9a-f]{64}$/', $handoff['canonical_intent_profile_digest'])
         ) {
             throw new RuntimeException('Malformed client handoff artifact: canonical_intent_profile_digest must match sha256:<64hex>.');
         }
-
-        // Validate startup_tls
+        $recomputedProfile = OnlineSaleIntentProfile::construct($ctx, $rawWire['parsed_request']);
+        $recomputedDigest = OnlineSaleIntentProfile::computeDigest($recomputedProfile);
+        if (! hash_equals($recomputedDigest, $handoff['canonical_intent_profile_digest'])) {
+            throw new RuntimeException("Malformed client handoff artifact: canonical_intent_profile_digest mismatch vs recomputed intent profile digest. Expected '{$recomputedDigest}', got '{$handoff['canonical_intent_profile_digest']}'.");
+        }
+        $hist = $handoff['historical_ca5a_reference'];
+        if (! is_array($hist)
+            || ($hist['ca5a_manifest_sha256'] ?? null) !== self::CA5A_MANIFEST_SHA256
+            || ($hist['ca5a_canonical_digest'] ?? null) !== self::CA5A_CANONICAL_DIGEST
+        ) {
+            throw new RuntimeException('Malformed client handoff artifact: historical_ca5a_reference missing or invalid.');
+        }
         $tls = $handoff['startup_tls'];
         if (! is_array($tls) || empty($tls['status'])) {
             throw new RuntimeException('Malformed client handoff artifact: startup_tls missing or status unset.');
         }
-
+        $allowedTlsStatuses = ['UNAVAILABLE_AWAITING_TLS_START', 'ACTIVE_TLS_READY', 'READINESS_ONLY_VERIFIED'];
+        if (! in_array($tls['status'], $allowedTlsStatuses, true)) {
+            throw new RuntimeException("Malformed client handoff artifact: unknown or invalid startup_tls status '{$tls['status']}'.");
+        }
         if ($tls['status'] === 'UNAVAILABLE_AWAITING_TLS_START') {
             if ($tls['ca_cert_path'] !== null || $tls['ca_cert_sha256'] !== null || $tls['readiness_url'] !== null || $tls['readiness_nonce'] !== null) {
                 throw new RuntimeException('Malformed client handoff artifact: startup_tls fields must be null when awaiting start.');
             }
-        } elseif ($tls['status'] === 'ACTIVE_TLS_READY' || $tls['status'] === 'ACTIVE') {
-            if (empty($tls['ca_cert_path']) || empty($tls['ca_cert_sha256']) || empty($tls['readiness_url']) || empty($tls['readiness_nonce'])) {
-                throw new RuntimeException('Malformed client handoff artifact: active startup_tls requires ca_cert_path, ca_cert_sha256, readiness_url, and readiness_nonce.');
+        } elseif ($tls['status'] === 'ACTIVE_TLS_READY' || $tls['status'] === 'READINESS_ONLY_VERIFIED') {
+            if (empty($tls['ca_cert_path'])
+                || empty($tls['ca_cert_sha256'])
+                || ! is_string($tls['ca_cert_sha256'])
+                || preg_match('/^[0-9a-f]{64}$/', $tls['ca_cert_sha256']) !== 1
+                || empty($tls['readiness_url'])
+                || ! is_string($tls['readiness_url'])
+                || ! str_starts_with($tls['readiness_url'], 'https://')
+                || empty($tls['readiness_nonce'])
+                || ! is_string($tls['readiness_nonce'])
+                || preg_match('/^[0-9a-f]{32,64}$/', $tls['readiness_nonce']) !== 1
+            ) {
+                throw new RuntimeException('Malformed client handoff artifact: active startup_tls requires valid ca_cert_path, ca_cert_sha256, readiness_url, and readiness_nonce.');
             }
+        } else {
+            throw new RuntimeException("Malformed client handoff artifact: unhandled startup_tls status '{$tls['status']}'.");
         }
     }
-
     /**
      * Phase 1: Provision disposable schema and seed synthetic qualification fixtures.
      *
@@ -808,7 +895,7 @@ final class DisposableMobileV2BackendHarness
 
         // Enforce pre-socket invariants and dual manifest pin BEFORE creating any database schema
         self::assertPreSocketInvariants($expectedBackendHead, $peerAndroidHead);
-        self::assertDualManifestPin($expectedBackendHead, $peerAndroidHead, $manifestPath, $manifestShaPin);
+        $manifestInfo = self::assertDualManifestPin($expectedBackendHead, $peerAndroidHead, $manifestPath, $manifestShaPin);
 
         $connectionSwitched = false;
 
@@ -1056,28 +1143,37 @@ final class DisposableMobileV2BackendHarness
             $profile = OnlineSaleIntentProfile::construct($serverContext, $sampleRequest);
             $canonicalDigest = OnlineSaleIntentProfile::computeDigest($profile);
 
-            $rawWireJson = json_encode($sampleRequest, JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT);
-            $rawWireSha256 = hash('sha256', (string) $rawWireJson);
+            $rawWireJson = CanonicalJsonSerializer::serialize($sampleRequest);
+            $rawWireSha256 = hash('sha256', $rawWireJson);
             $rawWireSample = [
-                'raw_wire_payload_json' => (string) $rawWireJson,
-                'raw_wire_payload_sha256' => (string) $rawWireSha256,
+                'raw_wire_payload_json' => $rawWireJson,
+                'raw_wire_payload_sha256' => $rawWireSha256,
                 'parsed_request' => $sampleRequest,
             ];
-
             $root = dirname(__DIR__, 3);
             $runtimePins = [
                 'qualified_core_head_sha' => self::QUALIFIED_EXECUTION_HEAD,
                 'backend_execution_head_sha' => $expectedBackendHead,
                 'qualified_app_tree_sha' => self::QUALIFIED_APP_TREE,
-                'peer_android_approved_head_sha' => self::APPROVED_ANDROID_HEAD,
-                'peer_android_executable_head_sha' => $peerAndroidHead,
+                'peer_android_approved_head_sha' => $manifestInfo['peer_android_approved_head_sha'],
+                'peer_android_executable_head_sha' => $manifestInfo['peer_android_executable_head_sha'],
+                'client_handoff_schema_sha256' => (string) hash_file('sha256', $root.'/docs/integration/mobile-v2-client-handoff-schema.json'),
                 'source_fixture_sha256' => (string) hash_file('sha256', __FILE__),
                 'guard_test_sha256' => (string) hash_file('sha256', $root.'/tests/Unit/Mobile/Harness/DisposableMobileV2BackendHarnessGuardTest.php'),
                 'cli_command_sha256' => (string) hash_file('sha256', __DIR__.'/MobileV2HarnessCommand.php'),
                 'cli_runner_sha256' => (string) hash_file('sha256', __DIR__.'/mobile-v2-harness-cli.php'),
                 'pairing_manifest_sha256' => (string) $manifestShaPin,
             ];
-
+            $manifestStatus = (string) ($manifestInfo['status'] ?? '');
+            if ($manifestStatus === self::SCOPE_PROVISION_ONLY || str_contains($manifestStatus, 'PROVISION_ONLY')) {
+                $authorizedScope = self::SCOPE_PROVISION_ONLY;
+            } elseif ($this->readinessOnly || $manifestStatus === self::SCOPE_READINESS_ONLY) {
+                $authorizedScope = self::SCOPE_READINESS_ONLY;
+            } elseif ($manifestStatus === self::SCOPE_PAIRED_EXECUTION) {
+                $authorizedScope = self::SCOPE_PAIRED_EXECUTION;
+            } else {
+                $authorizedScope = self::SCOPE_PROVISION_ONLY;
+            }
             $this->clientHandoff = self::buildClientHandoff(
                 runtimePins: $runtimePins,
                 fixture: $this->fixtureManifest,
@@ -1085,12 +1181,11 @@ final class DisposableMobileV2BackendHarness
                 rawWireSample: $rawWireSample,
                 serverContext: $serverContext,
                 canonicalDigest: $canonicalDigest,
-                handoffScope: $this->readinessOnly ? self::SCOPE_READINESS_ONLY : self::SCOPE_PAIRED_EXECUTION,
+                handoffScope: $authorizedScope,
                 lifecyclePhase: 'PROVISIONED_AWAITING_TLS_START',
                 createdAt: now()->toIso8601String(),
                 expiresAt: now()->addHours(1)->toIso8601String(),
             );
-
             self::validateClientHandoff($this->clientHandoff);
 
             $this->handoffFilePath = $this->harnessTempDir.'/runtime_client_handoff.json';
@@ -1180,10 +1275,21 @@ final class DisposableMobileV2BackendHarness
         }
 
         // Dual manifest pin assertion before ANY socket or process creation
-        self::assertDualManifestPin($backendHead, $peerAndroidHead, $manifestPath, $manifestShaPin);
-
+        // Dual manifest pin assertion before ANY socket or process creation
+        $manifestInfo = self::assertDualManifestPin($backendHead, $peerAndroidHead, $manifestPath, $manifestShaPin);
+        $manifestStatus = (string) ($manifestInfo['status'] ?? '');
+        if ($manifestStatus === self::SCOPE_PROVISION_ONLY || str_contains($manifestStatus, 'PROVISION_ONLY')) {
+            throw new RuntimeException(
+                "Harness start refused: pairing manifest status is '{$manifestStatus}'. ".
+                'Provision-only manifests are strictly forbidden from starting listeners or TLS proxies.'
+            );
+        }
         if ($this->readinessOnly) {
             self::assertReadinessScope($manifestPath, $manifestShaPin);
+        } elseif ($manifestStatus !== self::SCOPE_PAIRED_EXECUTION) {
+            throw new RuntimeException(
+                "Harness start refused: paired execution requires manifest status '" . self::SCOPE_PAIRED_EXECUTION . "', got '{$manifestStatus}'."
+            );
         }
 
         // Preflight loopback ports ONLY AFTER ALL gates and manifest assertions have passed
@@ -1529,9 +1635,20 @@ PHP;
         }
 
         if ($this->clientHandoff !== null) {
+            $root = dirname(__DIR__, 3);
+            $runtimePins = $this->clientHandoff['backend_runtime_pins'];
+            $runtimePins['client_handoff_schema_sha256'] = (string) hash_file('sha256', $root.'/docs/integration/mobile-v2-client-handoff-schema.json');
+            $runtimePins['source_fixture_sha256'] = (string) hash_file('sha256', __FILE__);
+            $runtimePins['guard_test_sha256'] = (string) hash_file('sha256', $root.'/tests/Unit/Mobile/Harness/DisposableMobileV2BackendHarnessGuardTest.php');
+            $runtimePins['cli_command_sha256'] = (string) hash_file('sha256', __DIR__.'/MobileV2HarnessCommand.php');
+            $runtimePins['cli_runner_sha256'] = (string) hash_file('sha256', __DIR__.'/mobile-v2-harness-cli.php');
+            $runtimePins['pairing_manifest_sha256'] = (string) $manifestShaPin;
+            $runtimePins['peer_android_approved_head_sha'] = $manifestInfo['peer_android_approved_head_sha'];
+            $runtimePins['peer_android_executable_head_sha'] = $manifestInfo['peer_android_executable_head_sha'];
+            $this->clientHandoff['backend_runtime_pins'] = $runtimePins;
             $this->clientHandoff['lifecycle_phase'] = $this->readinessOnly ? 'READINESS_ONLY_VERIFIED' : 'ACTIVE_TLS_READY';
             $this->clientHandoff['startup_tls'] = [
-                'status' => 'ACTIVE_TLS_READY',
+                'status' => $this->readinessOnly ? 'READINESS_ONLY_VERIFIED' : 'ACTIVE_TLS_READY',
                 'ca_cert_path' => $caCertPath,
                 'ca_cert_sha256' => (string) hash_file('sha256', $caCertPath),
                 'readiness_url' => 'https://127.0.0.1:'.self::TLS_PROXY_PORT.'/_harness/readiness',

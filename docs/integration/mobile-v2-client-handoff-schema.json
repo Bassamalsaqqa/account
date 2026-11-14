@@ -22,11 +22,14 @@
   "properties": {
     "schema_version": {
       "type": "string",
-      "enum": ["1.0.0"]
+      "enum": [
+        "1.0.0"
+      ]
     },
     "handoff_scope": {
       "type": "string",
       "enum": [
+        "ROOT_AUTHORIZED_LOCAL_PROVISION_ONLY",
         "ROOT_AUTHORIZED_READINESS_ONLY",
         "ROOT_AUTHORIZED_PAIRED_EXECUTION",
         "mobile_v2_online_cash_sale"
@@ -56,6 +59,7 @@
         "qualified_app_tree_sha",
         "peer_android_approved_head_sha",
         "peer_android_executable_head_sha",
+        "client_handoff_schema_sha256",
         "source_fixture_sha256",
         "guard_test_sha256",
         "cli_command_sha256",
@@ -102,6 +106,11 @@
         "pairing_manifest_sha256": {
           "type": "string",
           "pattern": "^[0-9a-f]{64}$"
+        },
+        "client_handoff_schema_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "SHA-256 hash of mobile-v2-client-handoff-schema.json"
         }
       },
       "additionalProperties": false
@@ -234,7 +243,7 @@
       "properties": {
         "raw_wire_payload_json": {
           "type": "string",
-          "description": "Exact wire JSON string bytes of the raw 7-key request"
+          "description": "Exact RFC 8785 JCS canonical JSON serialization bytes of the raw 7-key request"
         },
         "raw_wire_payload_sha256": {
           "type": "string",
@@ -297,15 +306,25 @@
                     "type": "string",
                     "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$"
                   },
-                  "conversion_to_base": { "type": "string" },
-                  "quantity": { "type": "string" },
-                  "unit_price": { "type": "string" },
+                  "conversion_to_base": {
+                    "type": "string"
+                  },
+                  "quantity": {
+                    "type": "string"
+                  },
+                  "unit_price": {
+                    "type": "string"
+                  },
                   "tax_rate_id": {
                     "type": "string",
                     "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$"
                   },
-                  "tax_rate": { "type": "string" },
-                  "tax_inclusive": { "type": "boolean" }
+                  "tax_rate": {
+                    "type": "string"
+                  },
+                  "tax_inclusive": {
+                    "type": "boolean"
+                  }
                 },
                 "additionalProperties": false
               }
@@ -319,10 +338,33 @@
                 "amount"
               ],
               "properties": {
-                "settlement_mode": { "type": "string", "enum": ["full", "split", "unpaid"] },
-                "payment_method": { "type": ["string", "null"], "enum": ["cash", null] },
-                "cash_account_id": { "type": ["string", "null"] },
-                "amount": { "type": "string" }
+                "settlement_mode": {
+                  "type": "string",
+                  "enum": [
+                    "full",
+                    "split",
+                    "unpaid"
+                  ]
+                },
+                "payment_method": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "enum": [
+                    "cash",
+                    null
+                  ]
+                },
+                "cash_account_id": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "amount": {
+                  "type": "string"
+                }
               },
               "additionalProperties": false
             }
@@ -392,19 +434,35 @@
       "properties": {
         "status": {
           "type": "string",
-          "enum": ["UNAVAILABLE_AWAITING_TLS_START", "ACTIVE_TLS_READY", "ACTIVE"]
+          "enum": [
+            "UNAVAILABLE_AWAITING_TLS_START",
+            "ACTIVE_TLS_READY",
+            "READINESS_ONLY_VERIFIED"
+          ]
         },
         "ca_cert_path": {
-          "type": ["string", "null"]
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "ca_cert_sha256": {
-          "type": ["string", "null"]
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "readiness_url": {
-          "type": ["string", "null"]
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "readiness_nonce": {
-          "type": ["string", "null"]
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "additionalProperties": false

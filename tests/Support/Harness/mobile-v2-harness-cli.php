@@ -109,14 +109,20 @@ if ($pairingManifestSha === null || $pairingManifestSha === '') {
 // Enforce pre-socket invariant checks and manifest pin BEFORE loading Laravel framework or repo .env
 try {
     DisposableMobileV2BackendHarness::assertPreSocketInvariants($backendHead, $androidHead);
-    DisposableMobileV2BackendHarness::assertDualManifestPin(
+    $manifestInfo = DisposableMobileV2BackendHarness::assertDualManifestPin(
         backendHead: $backendHead,
         peerAndroidHead: $androidHead,
         manifestPath: $pairingManifest,
         manifestShaPin: $pairingManifestSha,
     );
+    $manifestStatus = (string) ($manifestInfo['status'] ?? '');
+    if (($isStart || $isRun) && ($manifestStatus === DisposableMobileV2BackendHarness::SCOPE_PROVISION_ONLY || str_contains($manifestStatus, 'PROVISION_ONLY'))) {
+        throw new RuntimeException("Harness start refused: pairing manifest status is '{$manifestStatus}'. Provision-only manifests are strictly forbidden from starting listeners or TLS proxies.");
+    }
     if ($isReadinessOnly) {
         DisposableMobileV2BackendHarness::assertReadinessScope($pairingManifest, $pairingManifestSha);
+    } elseif (($isStart || $isRun) && $manifestStatus !== DisposableMobileV2BackendHarness::SCOPE_PAIRED_EXECUTION) {
+        throw new RuntimeException("Harness start refused: paired execution requires manifest status '" . DisposableMobileV2BackendHarness::SCOPE_PAIRED_EXECUTION . "', got '{$manifestStatus}'.");
     }
 } catch (Throwable $e) {
     fwrite(STDERR, "Harness refused before framework boot: {$e->getMessage()}\n");

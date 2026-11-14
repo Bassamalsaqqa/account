@@ -9,6 +9,8 @@ use PHPUnit\Framework\TestCase;
 use RuntimeException;
 use Symfony\Component\Process\Process;
 use Tests\Support\Harness\DisposableMobileV2BackendHarness;
+use App\Support\Mobile\Contract\CanonicalJsonSerializer;
+use App\Support\Mobile\Contract\Revision3\OnlineSaleIntentProfile;
 
 /**
  * Pure source-only guard tests for DisposableMobileV2BackendHarness.
@@ -273,6 +275,8 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
             'qualified_core_head_sha' => DisposableMobileV2BackendHarness::QUALIFIED_EXECUTION_HEAD,
             'backend_execution_head_sha' => $actualHead,
             'peer_android_approved_head_sha' => $approvedPeer,
+            'peer_android_executable_head_sha' => '2222222222222222222222222222222222222222',
+            'status' => DisposableMobileV2BackendHarness::SCOPE_PROVISION_ONLY,
             'source_fixture_sha256' => hash_file('sha256', $root.'/tests/Support/Harness/DisposableMobileV2BackendHarness.php'),
             'cli_command_sha256' => hash_file('sha256', $root.'/tests/Support/Harness/MobileV2HarnessCommand.php'),
             'cli_runner_sha256' => hash_file('sha256', $root.'/tests/Support/Harness/mobile-v2-harness-cli.php'),
@@ -294,6 +298,8 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
             $this->assertSame(DisposableMobileV2BackendHarness::QUALIFIED_EXECUTION_HEAD, $result['qualified_core_head']);
             $this->assertSame($actualHead, $result['backend_head']);
             $this->assertSame($approvedPeer, $result['peer_android_head']);
+            $this->assertSame('2222222222222222222222222222222222222222', $result['peer_android_executable_head_sha']);
+            $this->assertSame(DisposableMobileV2BackendHarness::SCOPE_PROVISION_ONLY, $result['status']);
         } finally {
             @unlink($tempManifestPath);
         }
@@ -550,6 +556,7 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
             'qualified_app_tree_sha' => DisposableMobileV2BackendHarness::QUALIFIED_APP_TREE,
             'peer_android_approved_head_sha' => DisposableMobileV2BackendHarness::APPROVED_ANDROID_HEAD,
             'peer_android_executable_head_sha' => DisposableMobileV2BackendHarness::APPROVED_ANDROID_EXECUTABLE_HEAD,
+            'client_handoff_schema_sha256' => str_repeat('6', 64),
             'source_fixture_sha256' => str_repeat('1', 64),
             'guard_test_sha256' => str_repeat('2', 64),
             'cli_command_sha256' => str_repeat('3', 64),
@@ -599,10 +606,10 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
             ],
         ];
 
-        $rawWireJson = json_encode($sampleRequest, JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT);
+        $rawWireJson = CanonicalJsonSerializer::serialize($sampleRequest);
         $rawWireSample = [
-            'raw_wire_payload_json' => (string) $rawWireJson,
-            'raw_wire_payload_sha256' => hash('sha256', (string) $rawWireJson),
+            'raw_wire_payload_json' => $rawWireJson,
+            'raw_wire_payload_sha256' => hash('sha256', $rawWireJson),
             'parsed_request' => $sampleRequest,
         ];
 
@@ -647,7 +654,7 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
             'lifecycle_phase' => 'PROVISIONED_AWAITING_TLS_START',
             'created_at' => now()->toIso8601String(),
             'expires_at' => now()->addHours(1)->toIso8601String(),
-            'backend_runtime_pins' => ['qualified_core_head_sha' => str_repeat('a', 40)], // Missing remaining 9 pins
+            'backend_runtime_pins' => ['qualified_core_head_sha' => str_repeat('a', 40)], // Missing remaining 10 pins
             'endpoints' => [],
             'fixture' => [],
             'credentials_path' => '/tmp/credentials.json',
@@ -659,57 +666,483 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
         ];
 
         $this->expectException(RuntimeException::class);
-        $this->expectExceptionMessage("Malformed client handoff artifact: missing or empty pin 'backend_execution_head_sha'.");
+        $this->expectExceptionMessage("Malformed client handoff artifact: pin 'backend_execution_head_sha' must be a valid lowercase 40-hex SHA.");
         DisposableMobileV2BackendHarness::validateClientHandoff($handoff);
     }
 
     #[Test]
     public function test_validate_client_handoff_fails_closed_on_fabricated_tls_during_awaiting(): void
     {
-        $handoff = [
-            'schema_version' => '1.0.0',
-            'handoff_scope' => DisposableMobileV2BackendHarness::SCOPE_READINESS_ONLY,
-            'lifecycle_phase' => 'PROVISIONED_AWAITING_TLS_START',
-            'created_at' => now()->toIso8601String(),
-            'expires_at' => now()->addHours(1)->toIso8601String(),
-            'backend_runtime_pins' => [
-                'qualified_core_head_sha' => str_repeat('a', 40),
-                'backend_execution_head_sha' => str_repeat('b', 40),
-                'qualified_app_tree_sha' => str_repeat('c', 40),
-                'peer_android_approved_head_sha' => str_repeat('d', 40),
-                'peer_android_executable_head_sha' => str_repeat('e', 40),
-                'source_fixture_sha256' => str_repeat('1', 64),
-                'guard_test_sha256' => str_repeat('2', 64),
-                'cli_command_sha256' => str_repeat('3', 64),
-                'cli_runner_sha256' => str_repeat('4', 64),
-                'pairing_manifest_sha256' => str_repeat('5', 64),
+        $sampleRequest = [
+            'client_event_id' => 'c0686be5-888f-4890-90bf-1f05f416a19a',
+            'device_id' => 'f81d4fae-7dec-11d0-a765-00a0c91e6bf6',
+            'customer_id' => '01M7CZPF6TP283F3ZRXF5P8GT3',
+            'warehouse_id' => '01M7CZPF6TP283F3ZRXF5P8GT4',
+            'currency' => 'ILS',
+            'lines' => [
+                [
+                    'product_id' => '01M7CZPF6TP283F3ZRXF5P8GT5',
+                    'product_unit_id' => '01M7CZPF6TP283F3ZRXF5P8GT6',
+                    'conversion_to_base' => '1.000000',
+                    'quantity' => '1.000000',
+                    'unit_price' => '50.000000',
+                    'tax_rate_id' => '01M7CZPF6TP283F3ZRXF5P8GT7',
+                    'tax_rate' => '16.000000',
+                    'tax_inclusive' => false,
+                ],
             ],
-            'endpoints' => [],
-            'fixture' => [],
-            'credentials_path' => '/tmp/credentials.json',
-            'raw_wire_sample' => [
-                'raw_wire_payload_json' => '{}',
-                'raw_wire_payload_sha256' => hash('sha256', '{}'),
-                'parsed_request' => ['valid' => true],
-            ],
-            'server_synthesized_context' => [
-                'company_id' => '01M7CZPF6TP283F3ZRXF5P8GT2',
-                'actor_id' => '01M7CZPF6TP283F3ZRXF5P8GT1',
-                'currency_minor_units' => 2,
-            ],
-            'canonical_intent_profile_digest' => 'sha256:'.str_repeat('a', 64),
-            'historical_ca5a_reference' => [],
-            'startup_tls' => [
-                'status' => 'UNAVAILABLE_AWAITING_TLS_START',
-                'ca_cert_path' => '/fake/ca.pem', // Fabricated before start!
-                'ca_cert_sha256' => null,
-                'readiness_url' => null,
-                'readiness_nonce' => null,
+            'payment' => [
+                'settlement_mode' => 'full',
+                'payment_method' => 'cash',
+                'cash_account_id' => '01M7CZPF6TP283F3ZRXF5P8GT8',
+                'amount' => '58.000000',
             ],
         ];
+
+        $rawWireJson = CanonicalJsonSerializer::serialize($sampleRequest);
+        $rawWireSample = [
+            'raw_wire_payload_json' => $rawWireJson,
+            'raw_wire_payload_sha256' => hash('sha256', $rawWireJson),
+            'parsed_request' => $sampleRequest,
+        ];
+
+        $serverContext = [
+            'company_id' => '01M7CZPF6TP283F3ZRXF5P8GT2',
+            'actor_id' => '01M7CZPF6TP283F3ZRXF5P8GT1',
+            'currency_minor_units' => 2,
+        ];
+
+        $runtimePins = [
+            'qualified_core_head_sha' => DisposableMobileV2BackendHarness::QUALIFIED_EXECUTION_HEAD,
+            'backend_execution_head_sha' => str_repeat('b', 40),
+            'qualified_app_tree_sha' => DisposableMobileV2BackendHarness::QUALIFIED_APP_TREE,
+            'peer_android_approved_head_sha' => DisposableMobileV2BackendHarness::APPROVED_ANDROID_HEAD,
+            'peer_android_executable_head_sha' => DisposableMobileV2BackendHarness::APPROVED_ANDROID_EXECUTABLE_HEAD,
+            'client_handoff_schema_sha256' => str_repeat('6', 64),
+            'source_fixture_sha256' => str_repeat('1', 64),
+            'guard_test_sha256' => str_repeat('2', 64),
+            'cli_command_sha256' => str_repeat('3', 64),
+            'cli_runner_sha256' => str_repeat('4', 64),
+            'pairing_manifest_sha256' => str_repeat('5', 64),
+        ];
+
+        $handoff = DisposableMobileV2BackendHarness::buildClientHandoff(
+            runtimePins: $runtimePins,
+            fixture: ['schema_name' => 'test'],
+            credentialsPath: '/tmp/test/credentials.json',
+            rawWireSample: $rawWireSample,
+            serverContext: $serverContext,
+            canonicalDigest: 'sha256:0847e10d89777e103252ebfa2d27f89a95832a5d70e01af57afe6423f703c630',
+            handoffScope: DisposableMobileV2BackendHarness::SCOPE_READINESS_ONLY,
+            lifecyclePhase: 'PROVISIONED_AWAITING_TLS_START',
+        );
+
+        $handoff['startup_tls']['ca_cert_path'] = '/fake/ca.pem'; // Fabricated before start!
 
         $this->expectException(RuntimeException::class);
         $this->expectExceptionMessage('Malformed client handoff artifact: startup_tls fields must be null when awaiting start.');
         DisposableMobileV2BackendHarness::validateClientHandoff($handoff);
+    }
+
+    #[Test]
+    public function test_validate_client_handoff_fails_closed_on_invalid_pin_regex(): void
+    {
+        $sampleRequest = [
+            'client_event_id' => 'c0686be5-888f-4890-90bf-1f05f416a19a',
+            'device_id' => 'f81d4fae-7dec-11d0-a765-00a0c91e6bf6',
+            'customer_id' => '01M7CZPF6TP283F3ZRXF5P8GT3',
+            'warehouse_id' => '01M7CZPF6TP283F3ZRXF5P8GT4',
+            'currency' => 'ILS',
+            'lines' => [
+                [
+                    'product_id' => '01M7CZPF6TP283F3ZRXF5P8GT5',
+                    'product_unit_id' => '01M7CZPF6TP283F3ZRXF5P8GT6',
+                    'conversion_to_base' => '1.000000',
+                    'quantity' => '1.000000',
+                    'unit_price' => '50.000000',
+                    'tax_rate_id' => '01M7CZPF6TP283F3ZRXF5P8GT7',
+                    'tax_rate' => '16.000000',
+                    'tax_inclusive' => false,
+                ],
+            ],
+            'payment' => [
+                'settlement_mode' => 'full',
+                'payment_method' => 'cash',
+                'cash_account_id' => '01M7CZPF6TP283F3ZRXF5P8GT8',
+                'amount' => '58.000000',
+            ],
+        ];
+
+        $rawWireJson = CanonicalJsonSerializer::serialize($sampleRequest);
+        $rawWireSample = [
+            'raw_wire_payload_json' => $rawWireJson,
+            'raw_wire_payload_sha256' => hash('sha256', $rawWireJson),
+            'parsed_request' => $sampleRequest,
+        ];
+
+        $serverContext = [
+            'company_id' => '01M7CZPF6TP283F3ZRXF5P8GT2',
+            'actor_id' => '01M7CZPF6TP283F3ZRXF5P8GT1',
+            'currency_minor_units' => 2,
+        ];
+
+        $runtimePins = [
+            'qualified_core_head_sha' => DisposableMobileV2BackendHarness::QUALIFIED_EXECUTION_HEAD,
+            'backend_execution_head_sha' => 'NOT_VALID_HEX_39_CHARS_SHORT',
+            'qualified_app_tree_sha' => DisposableMobileV2BackendHarness::QUALIFIED_APP_TREE,
+            'peer_android_approved_head_sha' => DisposableMobileV2BackendHarness::APPROVED_ANDROID_HEAD,
+            'peer_android_executable_head_sha' => DisposableMobileV2BackendHarness::APPROVED_ANDROID_EXECUTABLE_HEAD,
+            'client_handoff_schema_sha256' => str_repeat('6', 64),
+            'source_fixture_sha256' => str_repeat('1', 64),
+            'guard_test_sha256' => str_repeat('2', 64),
+            'cli_command_sha256' => str_repeat('3', 64),
+            'cli_runner_sha256' => str_repeat('4', 64),
+            'pairing_manifest_sha256' => str_repeat('5', 64),
+        ];
+
+        $handoff = DisposableMobileV2BackendHarness::buildClientHandoff(
+            runtimePins: $runtimePins,
+            fixture: ['schema_name' => 'test'],
+            credentialsPath: '/tmp/test/credentials.json',
+            rawWireSample: $rawWireSample,
+            serverContext: $serverContext,
+            canonicalDigest: 'sha256:0847e10d89777e103252ebfa2d27f89a95832a5d70e01af57afe6423f703c630',
+        );
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage("Malformed client handoff artifact: pin 'backend_execution_head_sha' must be a valid lowercase 40-hex SHA.");
+        DisposableMobileV2BackendHarness::validateClientHandoff($handoff);
+    }
+
+    #[Test]
+    public function test_validate_client_handoff_fails_closed_when_expiry_not_after_created(): void
+    {
+        $sampleRequest = [
+            'client_event_id' => 'c0686be5-888f-4890-90bf-1f05f416a19a',
+            'device_id' => 'f81d4fae-7dec-11d0-a765-00a0c91e6bf6',
+            'customer_id' => '01M7CZPF6TP283F3ZRXF5P8GT3',
+            'warehouse_id' => '01M7CZPF6TP283F3ZRXF5P8GT4',
+            'currency' => 'ILS',
+            'lines' => [
+                [
+                    'product_id' => '01M7CZPF6TP283F3ZRXF5P8GT5',
+                    'product_unit_id' => '01M7CZPF6TP283F3ZRXF5P8GT6',
+                    'conversion_to_base' => '1.000000',
+                    'quantity' => '1.000000',
+                    'unit_price' => '50.000000',
+                    'tax_rate_id' => '01M7CZPF6TP283F3ZRXF5P8GT7',
+                    'tax_rate' => '16.000000',
+                    'tax_inclusive' => false,
+                ],
+            ],
+            'payment' => [
+                'settlement_mode' => 'full',
+                'payment_method' => 'cash',
+                'cash_account_id' => '01M7CZPF6TP283F3ZRXF5P8GT8',
+                'amount' => '58.000000',
+            ],
+        ];
+
+        $rawWireJson = CanonicalJsonSerializer::serialize($sampleRequest);
+        $rawWireSample = [
+            'raw_wire_payload_json' => $rawWireJson,
+            'raw_wire_payload_sha256' => hash('sha256', $rawWireJson),
+            'parsed_request' => $sampleRequest,
+        ];
+
+        $serverContext = [
+            'company_id' => '01M7CZPF6TP283F3ZRXF5P8GT2',
+            'actor_id' => '01M7CZPF6TP283F3ZRXF5P8GT1',
+            'currency_minor_units' => 2,
+        ];
+
+        $runtimePins = [
+            'qualified_core_head_sha' => DisposableMobileV2BackendHarness::QUALIFIED_EXECUTION_HEAD,
+            'backend_execution_head_sha' => str_repeat('b', 40),
+            'qualified_app_tree_sha' => DisposableMobileV2BackendHarness::QUALIFIED_APP_TREE,
+            'peer_android_approved_head_sha' => DisposableMobileV2BackendHarness::APPROVED_ANDROID_HEAD,
+            'peer_android_executable_head_sha' => DisposableMobileV2BackendHarness::APPROVED_ANDROID_EXECUTABLE_HEAD,
+            'client_handoff_schema_sha256' => str_repeat('6', 64),
+            'source_fixture_sha256' => str_repeat('1', 64),
+            'guard_test_sha256' => str_repeat('2', 64),
+            'cli_command_sha256' => str_repeat('3', 64),
+            'cli_runner_sha256' => str_repeat('4', 64),
+            'pairing_manifest_sha256' => str_repeat('5', 64),
+        ];
+
+        $handoff = DisposableMobileV2BackendHarness::buildClientHandoff(
+            runtimePins: $runtimePins,
+            fixture: ['schema_name' => 'test'],
+            credentialsPath: '/tmp/test/credentials.json',
+            rawWireSample: $rawWireSample,
+            serverContext: $serverContext,
+            canonicalDigest: 'sha256:0847e10d89777e103252ebfa2d27f89a95832a5d70e01af57afe6423f703c630',
+            createdAt: '2026-11-14T15:00:00Z',
+            expiresAt: '2026-11-14T14:00:00Z', // Expires BEFORE created!
+        );
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('Malformed client handoff artifact: expires_at must be strictly after created_at.');
+        DisposableMobileV2BackendHarness::validateClientHandoff($handoff);
+    }
+
+    #[Test]
+    public function test_validate_client_handoff_fails_closed_on_non_canonical_jcs_wire_payload(): void
+    {
+        $sampleRequest = [
+            'client_event_id' => 'c0686be5-888f-4890-90bf-1f05f416a19a',
+            'device_id' => 'f81d4fae-7dec-11d0-a765-00a0c91e6bf6',
+            'customer_id' => '01M7CZPF6TP283F3ZRXF5P8GT3',
+            'warehouse_id' => '01M7CZPF6TP283F3ZRXF5P8GT4',
+            'currency' => 'ILS',
+            'lines' => [
+                [
+                    'product_id' => '01M7CZPF6TP283F3ZRXF5P8GT5',
+                    'product_unit_id' => '01M7CZPF6TP283F3ZRXF5P8GT6',
+                    'conversion_to_base' => '1.000000',
+                    'quantity' => '1.000000',
+                    'unit_price' => '50.000000',
+                    'tax_rate_id' => '01M7CZPF6TP283F3ZRXF5P8GT7',
+                    'tax_rate' => '16.000000',
+                    'tax_inclusive' => false,
+                ],
+            ],
+            'payment' => [
+                'settlement_mode' => 'full',
+                'payment_method' => 'cash',
+                'cash_account_id' => '01M7CZPF6TP283F3ZRXF5P8GT8',
+                'amount' => '58.000000',
+            ],
+        ];
+
+        // Pretty-printed non-canonical JCS serialization
+        $nonCanonicalWire = json_encode($sampleRequest, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+        $rawWireSample = [
+            'raw_wire_payload_json' => (string) $nonCanonicalWire,
+            'raw_wire_payload_sha256' => hash('sha256', (string) $nonCanonicalWire),
+            'parsed_request' => $sampleRequest,
+        ];
+
+        $serverContext = [
+            'company_id' => '01M7CZPF6TP283F3ZRXF5P8GT2',
+            'actor_id' => '01M7CZPF6TP283F3ZRXF5P8GT1',
+            'currency_minor_units' => 2,
+        ];
+
+        $runtimePins = [
+            'qualified_core_head_sha' => DisposableMobileV2BackendHarness::QUALIFIED_EXECUTION_HEAD,
+            'backend_execution_head_sha' => str_repeat('b', 40),
+            'qualified_app_tree_sha' => DisposableMobileV2BackendHarness::QUALIFIED_APP_TREE,
+            'peer_android_approved_head_sha' => DisposableMobileV2BackendHarness::APPROVED_ANDROID_HEAD,
+            'peer_android_executable_head_sha' => DisposableMobileV2BackendHarness::APPROVED_ANDROID_EXECUTABLE_HEAD,
+            'client_handoff_schema_sha256' => str_repeat('6', 64),
+            'source_fixture_sha256' => str_repeat('1', 64),
+            'guard_test_sha256' => str_repeat('2', 64),
+            'cli_command_sha256' => str_repeat('3', 64),
+            'cli_runner_sha256' => str_repeat('4', 64),
+            'pairing_manifest_sha256' => str_repeat('5', 64),
+        ];
+
+        $handoff = DisposableMobileV2BackendHarness::buildClientHandoff(
+            runtimePins: $runtimePins,
+            fixture: ['schema_name' => 'test'],
+            credentialsPath: '/tmp/test/credentials.json',
+            rawWireSample: $rawWireSample,
+            serverContext: $serverContext,
+            canonicalDigest: 'sha256:0847e10d89777e103252ebfa2d27f89a95832a5d70e01af57afe6423f703c630',
+        );
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('Malformed client handoff artifact: raw_wire_payload_json must be strictly serialized in authoritative RFC 8785 JCS canonical JSON.');
+        DisposableMobileV2BackendHarness::validateClientHandoff($handoff);
+    }
+
+    #[Test]
+    public function test_validate_client_handoff_fails_closed_on_recomputed_profile_digest_mismatch(): void
+    {
+        $sampleRequest = [
+            'client_event_id' => 'c0686be5-888f-4890-90bf-1f05f416a19a',
+            'device_id' => 'f81d4fae-7dec-11d0-a765-00a0c91e6bf6',
+            'customer_id' => '01M7CZPF6TP283F3ZRXF5P8GT3',
+            'warehouse_id' => '01M7CZPF6TP283F3ZRXF5P8GT4',
+            'currency' => 'ILS',
+            'lines' => [
+                [
+                    'product_id' => '01M7CZPF6TP283F3ZRXF5P8GT5',
+                    'product_unit_id' => '01M7CZPF6TP283F3ZRXF5P8GT6',
+                    'conversion_to_base' => '1.000000',
+                    'quantity' => '1.000000',
+                    'unit_price' => '50.000000',
+                    'tax_rate_id' => '01M7CZPF6TP283F3ZRXF5P8GT7',
+                    'tax_rate' => '16.000000',
+                    'tax_inclusive' => false,
+                ],
+            ],
+            'payment' => [
+                'settlement_mode' => 'full',
+                'payment_method' => 'cash',
+                'cash_account_id' => '01M7CZPF6TP283F3ZRXF5P8GT8',
+                'amount' => '58.000000',
+            ],
+        ];
+
+        $rawWireJson = CanonicalJsonSerializer::serialize($sampleRequest);
+        $rawWireSample = [
+            'raw_wire_payload_json' => $rawWireJson,
+            'raw_wire_payload_sha256' => hash('sha256', $rawWireJson),
+            'parsed_request' => $sampleRequest,
+        ];
+
+        $serverContext = [
+            'company_id' => '01M7CZPF6TP283F3ZRXF5P8GT2',
+            'actor_id' => '01M7CZPF6TP283F3ZRXF5P8GT1',
+            'currency_minor_units' => 2,
+        ];
+
+        $runtimePins = [
+            'qualified_core_head_sha' => DisposableMobileV2BackendHarness::QUALIFIED_EXECUTION_HEAD,
+            'backend_execution_head_sha' => str_repeat('b', 40),
+            'qualified_app_tree_sha' => DisposableMobileV2BackendHarness::QUALIFIED_APP_TREE,
+            'peer_android_approved_head_sha' => DisposableMobileV2BackendHarness::APPROVED_ANDROID_HEAD,
+            'peer_android_executable_head_sha' => DisposableMobileV2BackendHarness::APPROVED_ANDROID_EXECUTABLE_HEAD,
+            'client_handoff_schema_sha256' => str_repeat('6', 64),
+            'source_fixture_sha256' => str_repeat('1', 64),
+            'guard_test_sha256' => str_repeat('2', 64),
+            'cli_command_sha256' => str_repeat('3', 64),
+            'cli_runner_sha256' => str_repeat('4', 64),
+            'pairing_manifest_sha256' => str_repeat('5', 64),
+        ];
+
+        $handoff = DisposableMobileV2BackendHarness::buildClientHandoff(
+            runtimePins: $runtimePins,
+            fixture: ['schema_name' => 'test'],
+            credentialsPath: '/tmp/test/credentials.json',
+            rawWireSample: $rawWireSample,
+            serverContext: $serverContext,
+            canonicalDigest: 'sha256:'.str_repeat('f', 64), // Deliberate mismatch
+        );
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('Malformed client handoff artifact: canonical_intent_profile_digest mismatch vs recomputed intent profile digest.');
+        DisposableMobileV2BackendHarness::validateClientHandoff($handoff);
+    }
+
+    #[Test]
+    public function test_validate_client_handoff_fails_closed_on_unknown_tls_status(): void
+    {
+        $sampleRequest = [
+            'client_event_id' => 'c0686be5-888f-4890-90bf-1f05f416a19a',
+            'device_id' => 'f81d4fae-7dec-11d0-a765-00a0c91e6bf6',
+            'customer_id' => '01M7CZPF6TP283F3ZRXF5P8GT3',
+            'warehouse_id' => '01M7CZPF6TP283F3ZRXF5P8GT4',
+            'currency' => 'ILS',
+            'lines' => [
+                [
+                    'product_id' => '01M7CZPF6TP283F3ZRXF5P8GT5',
+                    'product_unit_id' => '01M7CZPF6TP283F3ZRXF5P8GT6',
+                    'conversion_to_base' => '1.000000',
+                    'quantity' => '1.000000',
+                    'unit_price' => '50.000000',
+                    'tax_rate_id' => '01M7CZPF6TP283F3ZRXF5P8GT7',
+                    'tax_rate' => '16.000000',
+                    'tax_inclusive' => false,
+                ],
+            ],
+            'payment' => [
+                'settlement_mode' => 'full',
+                'payment_method' => 'cash',
+                'cash_account_id' => '01M7CZPF6TP283F3ZRXF5P8GT8',
+                'amount' => '58.000000',
+            ],
+        ];
+
+        $rawWireJson = CanonicalJsonSerializer::serialize($sampleRequest);
+        $rawWireSample = [
+            'raw_wire_payload_json' => $rawWireJson,
+            'raw_wire_payload_sha256' => hash('sha256', $rawWireJson),
+            'parsed_request' => $sampleRequest,
+        ];
+
+        $serverContext = [
+            'company_id' => '01M7CZPF6TP283F3ZRXF5P8GT2',
+            'actor_id' => '01M7CZPF6TP283F3ZRXF5P8GT1',
+            'currency_minor_units' => 2,
+        ];
+
+        $runtimePins = [
+            'qualified_core_head_sha' => DisposableMobileV2BackendHarness::QUALIFIED_EXECUTION_HEAD,
+            'backend_execution_head_sha' => str_repeat('b', 40),
+            'qualified_app_tree_sha' => DisposableMobileV2BackendHarness::QUALIFIED_APP_TREE,
+            'peer_android_approved_head_sha' => DisposableMobileV2BackendHarness::APPROVED_ANDROID_HEAD,
+            'peer_android_executable_head_sha' => DisposableMobileV2BackendHarness::APPROVED_ANDROID_EXECUTABLE_HEAD,
+            'client_handoff_schema_sha256' => str_repeat('6', 64),
+            'source_fixture_sha256' => str_repeat('1', 64),
+            'guard_test_sha256' => str_repeat('2', 64),
+            'cli_command_sha256' => str_repeat('3', 64),
+            'cli_runner_sha256' => str_repeat('4', 64),
+            'pairing_manifest_sha256' => str_repeat('5', 64),
+        ];
+
+        $handoff = DisposableMobileV2BackendHarness::buildClientHandoff(
+            runtimePins: $runtimePins,
+            fixture: ['schema_name' => 'test'],
+            credentialsPath: '/tmp/test/credentials.json',
+            rawWireSample: $rawWireSample,
+            serverContext: $serverContext,
+            canonicalDigest: 'sha256:0847e10d89777e103252ebfa2d27f89a95832a5d70e01af57afe6423f703c630',
+        );
+
+        $handoff['startup_tls']['status'] = 'UNKNOWN_TLS_STATUS';
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage("Malformed client handoff artifact: unknown or invalid startup_tls status 'UNKNOWN_TLS_STATUS'.");
+        DisposableMobileV2BackendHarness::validateClientHandoff($handoff);
+    }
+
+    #[Test]
+    public function test_start_fails_closed_on_provision_only_manifest_status(): void
+    {
+        $harness = new DisposableMobileV2BackendHarness;
+        $ref = new \ReflectionClass($harness);
+        $provProp = $ref->getProperty('provisioned');
+        $provProp->setValue($harness, true);
+        $nonceProp = $ref->getProperty('harnessNonce');
+        $nonceProp->setValue($harness, 'test-nonce-1234');
+
+        putenv('MOBILE_V2_HARNESS_START_LISTENER=1');
+
+        $root = dirname(__DIR__, 4);
+        $actualHead = self::getCurrentGitHead();
+        $approvedPeer = '1111111111111111111111111111111111111111';
+
+        $provisionOnlyManifest = [
+            'contract_name' => 'Mobile V2 Online Cash Sale Integration Dual-Manifest',
+            'qualified_core_head_sha' => DisposableMobileV2BackendHarness::QUALIFIED_EXECUTION_HEAD,
+            'backend_execution_head_sha' => $actualHead,
+            'peer_android_approved_head_sha' => $approvedPeer,
+            'peer_android_executable_head_sha' => '2222222222222222222222222222222222222222',
+            'status' => DisposableMobileV2BackendHarness::SCOPE_PROVISION_ONLY,
+            'source_fixture_sha256' => hash_file('sha256', $root.'/tests/Support/Harness/DisposableMobileV2BackendHarness.php'),
+            'cli_command_sha256' => hash_file('sha256', $root.'/tests/Support/Harness/MobileV2HarnessCommand.php'),
+            'cli_runner_sha256' => hash_file('sha256', $root.'/tests/Support/Harness/mobile-v2-harness-cli.php'),
+        ];
+
+        $tempPath = tempnam(sys_get_temp_dir(), 'test_prov_manifest_');
+        file_put_contents($tempPath, json_encode($provisionOnlyManifest, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+        $manifestSha = hash_file('sha256', $tempPath);
+
+        try {
+            $this->expectException(RuntimeException::class);
+            $this->expectExceptionMessage("Harness start refused: pairing manifest status is 'ROOT_AUTHORIZED_LOCAL_PROVISION_ONLY'.");
+            $harness->start(
+                backendHead: $actualHead,
+                peerAndroidHead: $approvedPeer,
+                manifestPath: $tempPath,
+                manifestShaPin: (string) $manifestSha,
+            );
+        } finally {
+            putenv('MOBILE_V2_HARNESS_START_LISTENER');
+            @unlink($tempPath);
+        }
     }
 }

@@ -345,7 +345,7 @@ The formal JSON Schema is located at [`docs/integration/mobile-v2-client-handoff
 ### B. Core Artifact Fields & Authoritative Rules
 1. **Schema, Scope & Lifecycle Phase**:
    - `schema_version`: Strict `"1.0.0"`.
-   - `handoff_scope`: `"ROOT_AUTHORIZED_READINESS_ONLY"` or `"ROOT_AUTHORIZED_PAIRED_EXECUTION"`.
+   - `handoff_scope`: `"ROOT_AUTHORIZED_LOCAL_PROVISION_ONLY"`, `"ROOT_AUTHORIZED_READINESS_ONLY"`, or `"ROOT_AUTHORIZED_PAIRED_EXECUTION"`.
    - `lifecycle_phase`: Explicitly declares harness readiness state:
      - `"PROVISIONED_AWAITING_TLS_START"`: Prepared disposable schema and fixture seeded; TLS proxy not yet launched (not execution success).
      - `"ACTIVE_TLS_READY"`: Supervised TLS proxy running, certificate generated, readiness probe verified.
@@ -353,16 +353,17 @@ The formal JSON Schema is located at [`docs/integration/mobile-v2-client-handoff
    - `created_at`: Strict ISO 8601 creation timestamp (e.g. `"2026-11-14T17:00:00+02:00"`).
    - `expires_at`: Strict ISO 8601 expiration timestamp (e.g. `"2026-11-14T18:00:00+02:00"`).
 
-2. **Complete Mandatory Backend Runtime Pins (10 Pins, Zero Optional)**:
+2. **Complete Mandatory Backend Runtime Pins (11 Pins, Zero Optional)**:
    - `qualified_core_head_sha`: Qualified core commit SHA (`6981511405d7bcd04cd8f8a09e64443ce0aaf47e`).
    - `backend_execution_head_sha`: Current worktree HEAD SHA.
    - `qualified_app_tree_sha`: Qualified app tree hash (`34d1da0ae82b182fa2c0adafd785416a86834a20`).
-   - `peer_android_approved_head_sha`: Root-approved Android candidate HEAD (`019ea39af09558c2622356cb22235572747e3ddc`).
+   - `peer_android_approved_head_sha`: Root-approved Android candidate publication HEAD (`019ea39af09558c2622356cb22235572747e3ddc`).
    - `peer_android_executable_head_sha`: Peer Android implementation qualified executable SHA (`ddfc75536e647c65a6a7e8868c9336cee93769ec`).
    - `source_fixture_sha256`: SHA-256 of `tests/Support/Harness/DisposableMobileV2BackendHarness.php`.
    - `guard_test_sha256`: SHA-256 of `tests/Unit/Mobile/Harness/DisposableMobileV2BackendHarnessGuardTest.php`.
    - `cli_command_sha256`: SHA-256 of `tests/Support/Harness/MobileV2HarnessCommand.php`.
    - `cli_runner_sha256`: SHA-256 of `tests/Support/Harness/mobile-v2-harness-cli.php`.
+   - `client_handoff_schema_sha256`: SHA-256 of `docs/integration/mobile-v2-client-handoff-schema.json`.
    - `pairing_manifest_sha256`: SHA-256 pin of the pairing manifest.
 
 3. **Endpoints**:
@@ -382,7 +383,7 @@ The formal JSON Schema is located at [`docs/integration/mobile-v2-client-handoff
 
 5. **Lossless Raw Wire Sample Bytes (Wire-Byte Integrity ONLY)**:
    - `raw_wire_sample`:
-     - `raw_wire_payload_json`: Exact serialized wire string bytes of the raw 7-key request (`client_event_id`, `device_id`, `customer_id`, `warehouse_id`, `currency`, `lines`, `payment`).
+     - `raw_wire_payload_json`: Exact serialized wire string bytes of the raw 7-key request (`client_event_id`, `device_id`, `customer_id`, `warehouse_id`, `currency`, `lines`, `payment`) serialized using RFC 8785 JSON Canonicalization Scheme (JCS) via `CanonicalJsonSerializer::serialize($sampleRequest)`. Unindented canonical JCS bytes guarantee byte-for-byte fidelity with strict Android JCS parsers.
      - `raw_wire_payload_sha256`: SHA-256 hash of `raw_wire_payload_json` for wire-byte integrity verification ONLY.
      - `parsed_request`: Normative structured JSON object preserving exact decimal lexemes.
 
@@ -416,7 +417,13 @@ The formal JSON Schema is located at [`docs/integration/mobile-v2-client-handoff
      - `readiness_nonce`: Active 128-bit hex harness nonce
 
 10. **Fail-Closed Artifact Validation**:
-    - `DisposableMobileV2BackendHarness::validateClientHandoff(array $handoff)` strictly validates all required keys, pin counts, SHA-256 checksums, and non-fabricated TLS fields before artifact emission. Any malformed artifact throws `RuntimeException` and fails closed immediately.
+    - `DisposableMobileV2BackendHarness::validateClientHandoff(array $handoff)` strictly enforces all contract requirements before artifact emission:
+      - 11 mandatory pins with strict hex regex (`/^[0-9a-f]{40}$/` for git SHAs, `/^[0-9a-f]{64}$/` for sha256 checksums).
+      - Crossfield invariance checks: `qualified_core_head_sha === 698151...`, `qualified_app_tree_sha === 34d1da...`, and publication SHA != executable SHA.
+      - Strict ISO 8601 timestamps and TTL ordering (`strtotime($expires_at) > strtotime($created_at)`).
+      - Strict `startup_tls` validation: status in `['UNAVAILABLE_AWAITING_TLS_START', 'ACTIVE_TLS_READY', 'READINESS_ONLY_VERIFIED']`; all 4 TLS fields must be null when awaiting start; all 4 must be non-null and formatted when active.
+      - Wire integrity cross-check: `raw_wire_payload_json` must match `CanonicalJsonSerializer::serialize($parsed_request)` and hash equals `raw_wire_payload_sha256`.
+      - Intent profile recomputation: `OnlineSaleIntentProfile::construct($context, $parsed_request)` must compute a digest matching `canonical_intent_profile_digest`.
 
 ---
 
