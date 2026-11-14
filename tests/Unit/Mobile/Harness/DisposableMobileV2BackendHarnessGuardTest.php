@@ -2330,6 +2330,7 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
     #[Test]
     public function test_financial_outer_validator_accepts_valid_golden_android_evidence_and_trusted_db_report(): void
     {
+        // Explicitly labeled synthetic fixture pending actual Android Kotlin export candidate 88d40664272305a0505a4f262e8c47b3d99a80ac
         $validPayload = [
             'runId' => 'run-financial-20261114-001',
             'timestamp' => '2026-11-14T20:00:00Z',
@@ -2396,9 +2397,23 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
         ];
 
         $trustedDbReport = [
+            'scope' => 'ROOT_AUTHORIZED_PAIRED_EXECUTION',
+            'run_id' => 'run-financial-20261114-001',
+            'schema_name' => 'accounting_p8_tmp_0123456789ab',
+            'company_id' => 1,
+            'source_head' => 'cfc28baaaaf52521ecbc88f1ba4c621afee17221',
+            'handoff_digest' => '11223344556677889900aabbccddeeff11223344556677889900aabbccddeeff',
             'is_canonical_delta_valid' => true,
             'gl_batches_balanced' => true,
             'all_healthy' => true,
+            'reconciler_results' => [
+                'AccountingReconciliationService' => ['healthy' => true, 'issue_count' => 0],
+                'InventoryReconciliationService' => ['healthy' => true, 'issue_count' => 0],
+                'SalesReconciliationService' => ['healthy' => true, 'issue_count' => 0],
+                'PayablesReconciliationService' => ['healthy' => true, 'issue_count' => 0],
+                'MoneyReconciliationService' => ['healthy' => true, 'issue_count' => 0],
+                'Phase7ReconciliationService' => ['healthy' => true, 'issue_count' => 0],
+            ],
         ];
 
         $expectedPins = [
@@ -2406,6 +2421,8 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
             'clientExecutableHead' => \Tests\Support\Harness\DisposableFinancialPostRunInspector::APPROVED_ANDROID_EXECUTABLE_SHA,
             'backendExecutionHead' => 'cfc28baaaaf52521ecbc88f1ba4c621afee17221',
             'handoffDigest' => '11223344556677889900aabbccddeeff11223344556677889900aabbccddeeff',
+            'expectedSchemaName' => 'accounting_p8_tmp_0123456789ab',
+            'companyId' => 1,
         ];
 
         $result = \Tests\Support\Harness\DisposableFinancialPostRunInspector::validateOuterEvidenceJson(
@@ -2445,9 +2462,21 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
         ];
 
         $trustedDbReport = [
+            'scope' => 'ROOT_AUTHORIZED_PAIRED_EXECUTION',
+            'run_id' => 'run-bad-pub',
+            'source_head' => 'cfc28baaaaf52521ecbc88f1ba4c621afee17221',
+            'handoff_digest' => '11223344556677889900aabbccddeeff11223344556677889900aabbccddeeff',
             'is_canonical_delta_valid' => true,
             'gl_batches_balanced' => true,
             'all_healthy' => true,
+            'reconciler_results' => [
+                'AccountingReconciliationService' => ['healthy' => true, 'issue_count' => 0],
+                'InventoryReconciliationService' => ['healthy' => true, 'issue_count' => 0],
+                'SalesReconciliationService' => ['healthy' => true, 'issue_count' => 0],
+                'PayablesReconciliationService' => ['healthy' => true, 'issue_count' => 0],
+                'MoneyReconciliationService' => ['healthy' => true, 'issue_count' => 0],
+                'Phase7ReconciliationService' => ['healthy' => true, 'issue_count' => 0],
+            ],
         ];
 
         $expectedPins = [
@@ -2478,9 +2507,21 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
         ];
 
         $trustedDbReport = [
+            'scope' => 'ROOT_AUTHORIZED_PAIRED_EXECUTION',
+            'run_id' => 'run-swapped',
+            'source_head' => 'cfc28baaaaf52521ecbc88f1ba4c621afee17221',
+            'handoff_digest' => '11223344556677889900aabbccddeeff11223344556677889900aabbccddeeff',
             'is_canonical_delta_valid' => true,
             'gl_batches_balanced' => true,
             'all_healthy' => true,
+            'reconciler_results' => [
+                'AccountingReconciliationService' => ['healthy' => true, 'issue_count' => 0],
+                'InventoryReconciliationService' => ['healthy' => true, 'issue_count' => 0],
+                'SalesReconciliationService' => ['healthy' => true, 'issue_count' => 0],
+                'PayablesReconciliationService' => ['healthy' => true, 'issue_count' => 0],
+                'MoneyReconciliationService' => ['healthy' => true, 'issue_count' => 0],
+                'Phase7ReconciliationService' => ['healthy' => true, 'issue_count' => 0],
+            ],
         ];
 
         // 1. Swapped pub and exe pins rejected
@@ -2510,6 +2551,7 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
         $this->assertFalse($resultSwapped['is_valid']);
 
         // 2. Over-claiming full pilot when lost_ack was claimed PASS rejected
+        $trustedDbReport['run_id'] = 'run-overclaim';
         $overclaimPayload = [
             'runId' => 'run-overclaim',
             'timestamp' => '2026-11-14T20:00:00Z',
@@ -2528,7 +2570,7 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
                 ['name' => 'financial_cash_idempotent_replay_200', 'status' => 'PASS', 'httpStatusCode' => 200, 'latencyMs' => 10, 'details' => ''],
                 ['name' => 'financial_cash_event_status_posted', 'status' => 'PASS', 'httpStatusCode' => 200, 'latencyMs' => 10, 'details' => ''],
                 ['name' => 'financial_cash_tamper_409', 'status' => 'PASS', 'httpStatusCode' => 409, 'latencyMs' => 10, 'details' => ''],
-                ['name' => 'transport_lost_ack_recovery', 'status' => 'PASS', 'httpStatusCode' => 200, 'latencyMs' => 10, 'details' => ''],
+                ['name' => 'transport_lost_ack_recovery', 'status' => 'PASS', 'httpStatusCode' => 0, 'latencyMs' => 10, 'details' => ''],
                 ['name' => 'stock_permission_rollback_probes', 'status' => 'NOT_RUN', 'httpStatusCode' => 0, 'latencyMs' => 0, 'details' => ''],
             ],
         ];
@@ -2536,10 +2578,28 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
         $this->assertFalse($resultOverclaim['is_valid']);
         $this->assertTrue(collect($resultOverclaim['errors'])->contains(fn ($err) => str_contains($err, 'cannot claim \'PASS\' in basic financial run')));
 
-        // 3. Rejects missing separate trusted DB report
-        $resultNoDb = \Tests\Support\Harness\DisposableFinancialPostRunInspector::validateOuterEvidenceJson($validPayload ?? $overclaimPayload, $expectedPins, null);
+        // 3. Rejects missing separate trusted DB report (MANDATORY)
+        $resultNoDb = \Tests\Support\Harness\DisposableFinancialPostRunInspector::validateOuterEvidenceJson($swappedPayload, $expectedPins, null);
         $this->assertFalse($resultNoDb['is_valid']);
-        $this->assertTrue(collect($resultNoDb['errors'])->contains(fn ($err) => str_contains($err, 'Separate REQUIRED trusted owned DB inspection report is missing')));
+        $this->assertTrue(collect($resultNoDb['errors'])->contains(fn ($err) => str_contains($err, 'Separate REQUIRED trusted owned DB inspection report is mandatory')));
+
+        // 4. Rejects associative map in scenarios
+        $mapPayload = $swappedPayload;
+        $mapPayload['scenarios'] = [
+            'readiness_probe' => ['status' => 'PASS', 'httpStatusCode' => 200],
+        ];
+        $resultMap = \Tests\Support\Harness\DisposableFinancialPostRunInspector::validateOuterEvidenceJson($mapPayload, $expectedPins, $trustedDbReport);
+        $this->assertFalse($resultMap['is_valid']);
+        $this->assertTrue(collect($resultMap['errors'])->contains(fn ($err) => str_contains($err, 'Scenarios must be a sequential array list')));
+
+        // 5. Rejects non-strict integer httpStatusCode
+        $stringCodePayload = $swappedPayload;
+        $stringCodePayload['scenarios'] = [
+            ['name' => 'readiness_probe', 'status' => 'PASS', 'httpStatusCode' => '200', 'latencyMs' => 10, 'details' => ''],
+        ];
+        $resultStringCode = \Tests\Support\Harness\DisposableFinancialPostRunInspector::validateOuterEvidenceJson($stringCodePayload, $expectedPins, $trustedDbReport);
+        $this->assertFalse($resultStringCode['is_valid']);
+        $this->assertTrue(collect($resultStringCode['errors'])->contains(fn ($err) => str_contains($err, 'httpStatusCode must be a strict integer')));
     }
 
     #[Test]
@@ -2555,4 +2615,5 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
         $this->assertStringContainsString('Inspector defaults to NO-EXECUTE', $process->getErrorOutput());
     }
 }
+
 

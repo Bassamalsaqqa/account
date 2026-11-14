@@ -24,6 +24,7 @@ $expectedBackendHead = null;
 $expectedAndroidPub = null;
 $expectedAndroidExe = null;
 $expectedHandoffDigest = null;
+$expectedScope = null;
 
 foreach ($argvList as $arg) {
     if ($arg === '--baseline' || $arg === '--capture-baseline') {
@@ -54,6 +55,8 @@ foreach ($argvList as $arg) {
         $expectedAndroidExe = substr($arg, 23);
     } elseif (str_starts_with($arg, '--expected-handoff-digest=')) {
         $expectedHandoffDigest = substr($arg, 26);
+    } elseif (str_starts_with($arg, '--expected-scope=')) {
+        $expectedScope = substr($arg, 17);
     }
 }
 
@@ -86,6 +89,10 @@ if ($evidenceFile !== null) {
             exit(1);
         }
         $trustedDbReport = json_decode((string) file_get_contents($trustedDbReportFile), true);
+        if (! is_array($trustedDbReport)) {
+            fwrite(STDERR, "Error: Trusted DB report file contains invalid JSON.\n");
+            exit(1);
+        }
     }
 
     $expectedPins = [
@@ -93,8 +100,18 @@ if ($evidenceFile !== null) {
         'clientExecutableHead' => $expectedAndroidExe ?? DisposableFinancialPostRunInspector::APPROVED_ANDROID_EXECUTABLE_SHA,
         'backendExecutionHead' => $expectedBackendHead ?? '',
         'handoffDigest' => $expectedHandoffDigest ?? '',
-        'requireTrustedDbReport' => ($trustedDbReportFile !== null),
+        'expectedScope' => $expectedScope ?? 'ROOT_AUTHORIZED_PAIRED_EXECUTION',
     ];
+
+    if ($schemaName !== null && $schemaName !== '') {
+        $expectedPins['expectedSchemaName'] = $schemaName;
+    }
+    if ($companyId !== null && $companyId > 0) {
+        $expectedPins['companyId'] = $companyId;
+    }
+    if ($expectedEventId !== null && $expectedEventId !== '') {
+        $expectedPins['expectedEventId'] = $expectedEventId;
+    }
 
     $validation = DisposableFinancialPostRunInspector::validateOuterEvidenceJson($rawEvidence, $expectedPins, $trustedDbReport);
 
@@ -177,8 +194,8 @@ if ($isReconcile) {
         $app = require __DIR__.'/../../../bootstrap/app.php';
         $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
 
-        $company = \App\Models\Company::findOrFail($companyId);
-        $reconcileResult = DisposableFinancialPostRunInspector::runSixReconciliations($company, $schemaName);
+        // runSixReconciliations binds the verified read-only PDO before resolving Company
+        $reconcileResult = DisposableFinancialPostRunInspector::runSixReconciliations($companyId, $schemaName);
 
         $outJson = json_encode($reconcileResult, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
         if ($outputFile !== null) {

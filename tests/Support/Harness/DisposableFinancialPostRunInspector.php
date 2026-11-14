@@ -13,7 +13,6 @@ use App\Services\Purchasing\PayablesReconciliationService;
 use App\Services\Sales\SalesReconciliationService;
 use App\Support\Tenancy\CompanyContext;
 use Brick\Math\BigDecimal;
-use InvalidArgumentException;
 use PDO;
 use RuntimeException;
 use Tests\Support\DisposableMariaDbSchema;
@@ -24,7 +23,7 @@ use Tests\Support\DisposableMariaDbSchema;
  * Enforces strict default NO-EXECUTE boundaries:
  * - Refused unless MOBILE_V2_HARNESS_ENABLE=1 and PHASE8_ALLOW_DISPOSABLE_DB=1.
  * - Asserts DisposableMariaDbSchema::assertPrimarySchema on exact MariaDB port 3342.
- * - Binds a dedicated read-only PDO directly to the verified owned disposable schema.
+ * - Binds a dedicated read-only PDO connection directly to the verified owned disposable schema.
  * - Read-only queries only; aggregate health metrics without leaking sensitive business rows.
  * - Pure validator for CashPilotEvidenceJSON asserting 5 PASS + 2 NOT_RUN scenarios,
  *   exact pub/exe pins, and requiring separate trusted owned DB inspection report.
@@ -51,7 +50,7 @@ final class DisposableFinancialPostRunInspector
      * and binds a dedicated read-only PDO connection directly to MariaDB port 3342.
      * Default NO-EXECUTE: fails closed if harness or disposable DB flags are missing.
      *
-     * @param  string  $expectedSchemaName  Mandatory non-empty schema name matching DisposableMariaDbSchema::REGEX
+     * @param  string  $expectedSchemaName  Mandatory non-empty schema name matching SCHEMA_REGEX
      * @return PDO Dedicated read-only PDO connection bound to the verified schema
      *
      * @throws RuntimeException
@@ -109,16 +108,29 @@ final class DisposableFinancialPostRunInspector
     /**
      * Captures pre-run baseline counts and metrics on canonical financial tables
      * using a dedicated, verified PDO connection.
+     * Always verifies gates and proof; foreign unverified PDO injection is strictly rejected.
      *
      * @param  int  $companyId
      * @param  string  $expectedSchemaName
-     * @param  PDO|null  $pdo
      * @return array<string, mixed>
      */
-    public static function captureBaseline(int $companyId, string $expectedSchemaName, ?PDO $pdo = null): array
+    public static function captureBaseline(int $companyId, string $expectedSchemaName): array
     {
-        $db = $pdo ?? self::assertExecutionGates($expectedSchemaName);
+        $db = self::assertExecutionGates($expectedSchemaName);
 
+        return self::captureMetricsWithVerifiedPdo($companyId, $expectedSchemaName, $db);
+    }
+
+    /**
+     * Private internal metric capture on a verified read-only PDO instance.
+     *
+     * @param  int  $companyId
+     * @param  string  $expectedSchemaName
+     * @param  PDO  $db
+     * @return array<string, mixed>
+     */
+    private static function captureMetricsWithVerifiedPdo(int $companyId, string $expectedSchemaName, PDO $db): array
+    {
         $count = static function (PDO $conn, string $table, int $cid): int {
             $stmt = $conn->prepare("SELECT COUNT(*) AS c FROM `{$table}` WHERE `company_id` = ?");
             $stmt->execute([$cid]);
@@ -176,35 +188,63 @@ final class DisposableFinancialPostRunInspector
     /**
      * Inspects post-run state against pre-run baseline, asserting exact delta = 1 event side-effects
      * and complete canonical graph integrity using a dedicated, verified PDO connection.
+     * Fails closed on any baseline company/schema mismatch or missing baseline keys.
      *
      * @param  int  $companyId
      * @param  array<string, mixed>  $baseline
      * @param  string|null  $expectedClientEventId
      * @param  string  $expectedSchemaName
-     * @param  PDO|null  $pdo
      * @return array<string, mixed>
+     *
+     * @throws RuntimeException
      */
     public static function inspectDelta(
         int $companyId,
         array $baseline,
         ?string $expectedClientEventId,
-        string $expectedSchemaName,
-        ?PDO $pdo = null
+        string $expectedSchemaName
     ): array {
-        $db = $pdo ?? self::assertExecutionGates($expectedSchemaName);
+        $db = self::assertExecutionGates($expectedSchemaName);
 
-        $current = self::captureBaseline($companyId, $expectedSchemaName, $db);
+        // Fail-closed checks on baseline integrity: company and schema must match exactly
+        if (($baseline['company_id'] ?? null) !== $companyId) {
+            throw new RuntimeException("Baseline company_id mismatch: expected {$companyId}, got ".($baseline['company_id'] ?? 'null').'.');
+        }
+        if (($baseline['schema_name'] ?? null) !== $expectedSchemaName) {
+            throw new RuntimeException("Baseline schema_name mismatch: expected '{$expectedSchemaName}', got '".($baseline['schema_name'] ?? 'null')."'.");
+        }
+
+        $requiredBaselineKeys = [
+            'company_id', 'schema_name',
+            'sales_invoices', 'sales_invoices_max_id',
+            'sales_invoice_lines', 'sales_invoice_lines_max_id',
+            'sales_invoice_lot_allocations', 'sales_invoice_lot_allocations_max_id',
+            'customer_payments', 'customer_payments_max_id',
+            'customer_payment_allocations', 'customer_payment_allocations_max_id',
+            'mobile_event_receipts', 'mobile_event_receipts_max_id',
+            'stock_movements', 'stock_movements_max_id', 'stock_movements_qty_sum',
+            'posting_batches', 'posting_batches_max_id',
+            'posting_lines', 'posting_lines_max_id',
+            'document_sequences',
+        ];
+        foreach ($requiredBaselineKeys as $reqKey) {
+            if (! array_key_exists($reqKey, $baseline)) {
+                throw new RuntimeException("Baseline missing required key '{$reqKey}'. Cannot default to 0.");
+            }
+        }
+
+        $current = self::captureMetricsWithVerifiedPdo($companyId, $expectedSchemaName, $db);
 
         $deltas = [
-            'sales_invoices' => $current['sales_invoices'] - ($baseline['sales_invoices'] ?? 0),
-            'sales_invoice_lines' => $current['sales_invoice_lines'] - ($baseline['sales_invoice_lines'] ?? 0),
-            'sales_invoice_lot_allocations' => $current['sales_invoice_lot_allocations'] - ($baseline['sales_invoice_lot_allocations'] ?? 0),
-            'customer_payments' => $current['customer_payments'] - ($baseline['customer_payments'] ?? 0),
-            'customer_payment_allocations' => $current['customer_payment_allocations'] - ($baseline['customer_payment_allocations'] ?? 0),
-            'mobile_event_receipts' => $current['mobile_event_receipts'] - ($baseline['mobile_event_receipts'] ?? 0),
-            'stock_movements' => $current['stock_movements'] - ($baseline['stock_movements'] ?? 0),
-            'posting_batches' => $current['posting_batches'] - ($baseline['posting_batches'] ?? 0),
-            'posting_lines' => $current['posting_lines'] - ($baseline['posting_lines'] ?? 0),
+            'sales_invoices' => $current['sales_invoices'] - $baseline['sales_invoices'],
+            'sales_invoice_lines' => $current['sales_invoice_lines'] - $baseline['sales_invoice_lines'],
+            'sales_invoice_lot_allocations' => $current['sales_invoice_lot_allocations'] - $baseline['sales_invoice_lot_allocations'],
+            'customer_payments' => $current['customer_payments'] - $baseline['customer_payments'],
+            'customer_payment_allocations' => $current['customer_payment_allocations'] - $baseline['customer_payment_allocations'],
+            'mobile_event_receipts' => $current['mobile_event_receipts'] - $baseline['mobile_event_receipts'],
+            'stock_movements' => $current['stock_movements'] - $baseline['stock_movements'],
+            'posting_batches' => $current['posting_batches'] - $baseline['posting_batches'],
+            'posting_lines' => $current['posting_lines'] - $baseline['posting_lines'],
         ];
 
         $errors = [];
@@ -240,7 +280,7 @@ final class DisposableFinancialPostRunInspector
 
         // 2. Query and inspect the newly created Sales Invoice
         $stmtInv = $db->prepare('SELECT `id`, `public_id`, `status`, `grand_total_base`, `posting_batch_id` FROM `sales_invoices` WHERE `company_id` = ? AND `id` > ? ORDER BY `id` ASC LIMIT 1');
-        $stmtInv->execute([$companyId, (int) ($baseline['sales_invoices_max_id'] ?? 0)]);
+        $stmtInv->execute([$companyId, (int) $baseline['sales_invoices_max_id']]);
         $newInvoice = $stmtInv->fetch(PDO::FETCH_ASSOC);
 
         $newInvoiceId = null;
@@ -258,9 +298,10 @@ final class DisposableFinancialPostRunInspector
             }
         }
 
-        // 3. Query and inspect the newly created Customer Payment
-        $stmtPay = $db->prepare('SELECT `id`, `public_id`, `is_reversed`, `amount`, `posting_batch_id` FROM `customer_payments` WHERE `company_id` = ? AND `id` > ? ORDER BY `id` ASC LIMIT 1');
-        $stmtPay->execute([$companyId, (int) ($baseline['customer_payments_max_id'] ?? 0)]);
+        // 3. Query and inspect the newly created Customer Payment using actual migration columns
+        // (is_reversed = 0, reversed_at IS NULL, payment_method = 'cash', money_account_id non-null, amount = 58.000000, amount_base = 58.000000, non-null posting_batch_id)
+        $stmtPay = $db->prepare('SELECT `id`, `public_id`, `payment_method`, `money_account_id`, `is_reversed`, `reversed_at`, `amount`, `amount_base`, `posting_batch_id` FROM `customer_payments` WHERE `company_id` = ? AND `id` > ? ORDER BY `id` ASC LIMIT 1');
+        $stmtPay->execute([$companyId, (int) $baseline['customer_payments_max_id']]);
         $newPayment = $stmtPay->fetch(PDO::FETCH_ASSOC);
 
         $newPaymentId = null;
@@ -271,16 +312,32 @@ final class DisposableFinancialPostRunInspector
             $newPaymentId = (int) $newPayment['id'];
             $newPaymentPublicId = (string) $newPayment['public_id'];
             if ((int) ($newPayment['is_reversed'] ?? 1) !== 0) {
-                $errors[] = 'Newly created customer payment must not be reversed.';
+                $errors[] = 'Newly created customer payment must not be reversed (is_reversed must be 0).';
+            }
+            if ($newPayment['reversed_at'] !== null) {
+                $errors[] = "Newly created customer payment must have null reversed_at, got '{$newPayment['reversed_at']}'.";
+            }
+            if (($newPayment['payment_method'] ?? '') !== 'cash') {
+                $errors[] = "Newly created customer payment payment_method must be 'cash', got '".($newPayment['payment_method'] ?? 'null')."'.";
+            }
+            if (empty($newPayment['money_account_id'])) {
+                $errors[] = 'Newly created customer payment must have non-null money_account_id.';
+            }
+            if (empty($newPayment['posting_batch_id'])) {
+                $errors[] = 'Newly created customer payment must have valid non-null posting_batch_id.';
             }
             if (BigDecimal::of((string) ($newPayment['amount'] ?? '0'))->toScale(6)->compareTo(BigDecimal::of('58.000000')) !== 0) {
                 $errors[] = "Newly created customer payment amount must be '58.000000', got '".($newPayment['amount'] ?? 'null')."'.";
             }
+            if (BigDecimal::of((string) ($newPayment['amount_base'] ?? '0'))->toScale(6)->compareTo(BigDecimal::of('58.000000')) !== 0) {
+                $errors[] = "Newly created customer payment amount_base must be '58.000000', got '".($newPayment['amount_base'] ?? 'null')."'.";
+            }
         }
 
         // 4. Query and inspect the newly created Customer Payment Allocation
-        $stmtAlloc = $db->prepare('SELECT `id`, `customer_payment_id`, `sales_invoice_id`, `allocated_amount`, `base_amount_applied_to_receivable` FROM `customer_payment_allocations` WHERE `company_id` = ? AND `id` > ? ORDER BY `id` ASC LIMIT 1');
-        $stmtAlloc->execute([$companyId, (int) ($baseline['customer_payment_allocations_max_id'] ?? 0)]);
+        // Both allocated_amount AND payment_currency_amount must be 58.000000
+        $stmtAlloc = $db->prepare('SELECT `id`, `customer_payment_id`, `sales_invoice_id`, `allocated_amount`, `payment_currency_amount`, `base_amount_applied_to_receivable` FROM `customer_payment_allocations` WHERE `company_id` = ? AND `id` > ? ORDER BY `id` ASC LIMIT 1');
+        $stmtAlloc->execute([$companyId, (int) $baseline['customer_payment_allocations_max_id']]);
         $newPaymentAlloc = $stmtAlloc->fetch(PDO::FETCH_ASSOC);
 
         if (! $newPaymentAlloc) {
@@ -295,11 +352,14 @@ final class DisposableFinancialPostRunInspector
             if (BigDecimal::of((string) ($newPaymentAlloc['allocated_amount'] ?? '0'))->toScale(6)->compareTo(BigDecimal::of('58.000000')) !== 0) {
                 $errors[] = "Customer payment allocation allocated_amount must be '58.000000', got '".($newPaymentAlloc['allocated_amount'] ?? 'null')."'.";
             }
+            if (BigDecimal::of((string) ($newPaymentAlloc['payment_currency_amount'] ?? '0'))->toScale(6)->compareTo(BigDecimal::of('58.000000')) !== 0) {
+                $errors[] = "Customer payment allocation payment_currency_amount must be '58.000000', got '".($newPaymentAlloc['payment_currency_amount'] ?? 'null')."'.";
+            }
         }
 
         // 5. Query and inspect the newly created Stock Movement
         $stmtSm = $db->prepare('SELECT `id`, `quantity_delta_base`, `unit_cost_base`, `value_delta_base`, `source_type`, `source_id` FROM `stock_movements` WHERE `company_id` = ? AND `id` > ? ORDER BY `id` ASC LIMIT 1');
-        $stmtSm->execute([$companyId, (int) ($baseline['stock_movements_max_id'] ?? 0)]);
+        $stmtSm->execute([$companyId, (int) $baseline['stock_movements_max_id']]);
         $newSm = $stmtSm->fetch(PDO::FETCH_ASSOC);
 
         if (! $newSm) {
@@ -317,8 +377,8 @@ final class DisposableFinancialPostRunInspector
         }
 
         // Net stock quantity delta across company must be exactly -1.000000
-        $qtyDelta = BigDecimal::of((string) ($current['stock_movements_qty_sum'] ?? '0'))
-            ->minus(BigDecimal::of((string) ($baseline['stock_movements_qty_sum'] ?? '0')))
+        $qtyDelta = BigDecimal::of((string) $current['stock_movements_qty_sum'])
+            ->minus(BigDecimal::of((string) $baseline['stock_movements_qty_sum']))
             ->toScale(6);
         if ($qtyDelta->compareTo(BigDecimal::of('-1.000000')) !== 0) {
             $errors[] = "Net stock quantity delta must be '-1.000000', got '{$qtyDelta}'.";
@@ -326,7 +386,7 @@ final class DisposableFinancialPostRunInspector
 
         // 6. Query and inspect the newly created Lot Allocation
         $stmtLot = $db->prepare('SELECT `id`, `sales_invoice_id`, `quantity_allocated_base` FROM `sales_invoice_lot_allocations` WHERE `company_id` = ? AND `id` > ? ORDER BY `id` ASC LIMIT 1');
-        $stmtLot->execute([$companyId, (int) ($baseline['sales_invoice_lot_allocations_max_id'] ?? 0)]);
+        $stmtLot->execute([$companyId, (int) $baseline['sales_invoice_lot_allocations_max_id']]);
         $newLotAlloc = $stmtLot->fetch(PDO::FETCH_ASSOC);
 
         if (! $newLotAlloc) {
@@ -342,7 +402,7 @@ final class DisposableFinancialPostRunInspector
 
         // 7. Inspect GL Posting Batches: verify source provenance and per-batch balance at scale 6
         $stmtBatches = $db->prepare('SELECT `id`, `source_type`, `source_id`, `status` FROM `posting_batches` WHERE `company_id` = ? AND `id` > ? ORDER BY `id` ASC');
-        $stmtBatches->execute([$companyId, (int) ($baseline['posting_batches_max_id'] ?? 0)]);
+        $stmtBatches->execute([$companyId, (int) $baseline['posting_batches_max_id']]);
         $newBatches = $stmtBatches->fetchAll(PDO::FETCH_ASSOC);
 
         $hasInvoiceBatch = false;
@@ -403,8 +463,8 @@ final class DisposableFinancialPostRunInspector
         }
 
         // 8. Inspect Document Sequences increment
-        $baseSeqs = $baseline['document_sequences'] ?? [];
-        $currSeqs = $current['document_sequences'] ?? [];
+        $baseSeqs = $baseline['document_sequences'];
+        $currSeqs = $current['document_sequences'];
         $foundInvoiceSeqIncrement = false;
         $foundPaymentSeqIncrement = false;
 
@@ -430,7 +490,7 @@ final class DisposableFinancialPostRunInspector
 
         // 9. Inspect Mobile Event Receipt (status must be 'completed', NOT 'posted')
         $stmtReceipt = $db->prepare('SELECT `id`, `client_event_id`, `status`, `sales_invoice_public_id`, `customer_payment_public_id` FROM `mobile_event_receipts` WHERE `company_id` = ? AND `id` > ? ORDER BY `id` ASC LIMIT 1');
-        $stmtReceipt->execute([$companyId, (int) ($baseline['mobile_event_receipts_max_id'] ?? 0)]);
+        $stmtReceipt->execute([$companyId, (int) $baseline['mobile_event_receipts_max_id']]);
         $newReceipt = $stmtReceipt->fetch(PDO::FETCH_ASSOC);
 
         if (! $newReceipt) {
@@ -463,6 +523,7 @@ final class DisposableFinancialPostRunInspector
                 'customer_payment_public_id' => $newPaymentPublicId,
                 'stock_movement_quantity_delta' => '-1.000000',
                 'customer_payment_allocation_amount' => '58.000000',
+                'customer_payment_allocation_payment_currency_amount' => '58.000000',
                 'receipt_status' => $newReceipt['status'] ?? null,
             ],
         ];
@@ -470,31 +531,43 @@ final class DisposableFinancialPostRunInspector
 
     /**
      * Executes the 6 canonical read-only reconciliation services in context-free system mode.
-     * Guarantees CompanyContext isolation before and after running each service.
+     * Binds the application database connection to the EXACT verified read-only PDO instance
+     * so that all models and services execute against the owned disposable schema,
+     * restoring previous connection state in finally.
      *
-     * @param  Company  $company
+     * @param  Company|int  $companyOrId
      * @param  string  $expectedSchemaName
      * @return array{all_healthy: bool, reconciler_results: array<string, array{healthy: bool, issue_count: int}>}
      */
-    public static function runSixReconciliations(Company $company, string $expectedSchemaName): array
+    public static function runSixReconciliations(Company|int $companyOrId, string $expectedSchemaName): array
     {
-        self::assertExecutionGates($expectedSchemaName);
+        $pdo = self::assertExecutionGates($expectedSchemaName);
 
         $results = [];
         $allHealthy = true;
 
-        $clearContext = static function (): void {
-            if (app()->bound(CompanyContext::class)) {
-                try {
-                    app(CompanyContext::class)->clear(sessionless: true);
-                } catch (\Throwable) {
-                    // Ignore transient cleanup issues
-                }
+        $connection = null;
+        $previousPdo = null;
+        $previousReadPdo = null;
+
+        if (function_exists('app') && app()->bound('db')) {
+            $connection = app('db')->connection();
+            try {
+                $previousPdo = $connection->getPdo();
+                $previousReadPdo = $connection->getReadPdo();
+            } catch (\Throwable) {
+                // No existing active PDO
             }
-        };
+            $connection->setPdo($pdo);
+            $connection->setReadPdo($pdo);
+        }
 
         try {
-            $clearContext();
+            if (function_exists('app') && app()->bound(CompanyContext::class)) {
+                app(CompanyContext::class)->clear(sessionless: true);
+            }
+
+            $company = is_int($companyOrId) ? Company::findOrFail($companyOrId) : $companyOrId;
 
             // 1. Accounting Reconciliation
             $accReport = app(AccountingReconciliationService::class)->reconcile($company, isSystem: true);
@@ -502,9 +575,11 @@ final class DisposableFinancialPostRunInspector
                 'healthy' => $accReport->isHealthy,
                 'issue_count' => count($accReport->violations),
             ];
-            $allHealthy = $allHealthy && $accReport->isHealthy;
+            $allHealthy = $allHealthy && $accReport->isHealthy && count($accReport->violations) === 0;
 
-            $clearContext();
+            if (app()->bound(CompanyContext::class)) {
+                app(CompanyContext::class)->clear(sessionless: true);
+            }
 
             // 2. Inventory Audit
             $invReport = app(InventoryReconciliationService::class)->auditCompany($company, fromCli: true);
@@ -512,9 +587,11 @@ final class DisposableFinancialPostRunInspector
                 'healthy' => $invReport->isHealthy,
                 'issue_count' => count($invReport->discrepancies),
             ];
-            $allHealthy = $allHealthy && $invReport->isHealthy;
+            $allHealthy = $allHealthy && $invReport->isHealthy && count($invReport->discrepancies) === 0;
 
-            $clearContext();
+            if (app()->bound(CompanyContext::class)) {
+                app(CompanyContext::class)->clear(sessionless: true);
+            }
 
             // 3. Sales Reconciliation
             $salesReport = app(SalesReconciliationService::class)->reconcile($company, isSystem: true);
@@ -522,9 +599,11 @@ final class DisposableFinancialPostRunInspector
                 'healthy' => $salesReport->isHealthy,
                 'issue_count' => count($salesReport->violations),
             ];
-            $allHealthy = $allHealthy && $salesReport->isHealthy;
+            $allHealthy = $allHealthy && $salesReport->isHealthy && count($salesReport->violations) === 0;
 
-            $clearContext();
+            if (app()->bound(CompanyContext::class)) {
+                app(CompanyContext::class)->clear(sessionless: true);
+            }
 
             // 4. Payables Reconciliation
             $payReport = app(PayablesReconciliationService::class)->reconcile($company, isSystem: true);
@@ -532,9 +611,11 @@ final class DisposableFinancialPostRunInspector
                 'healthy' => $payReport->isHealthy,
                 'issue_count' => count($payReport->violations),
             ];
-            $allHealthy = $allHealthy && $payReport->isHealthy;
+            $allHealthy = $allHealthy && $payReport->isHealthy && count($payReport->violations) === 0;
 
-            $clearContext();
+            if (app()->bound(CompanyContext::class)) {
+                app(CompanyContext::class)->clear(sessionless: true);
+            }
 
             // 5. Money Reconciliation
             $moneyReport = app(MoneyReconciliationService::class)->reconcile($company, isSystem: true);
@@ -542,9 +623,11 @@ final class DisposableFinancialPostRunInspector
                 'healthy' => $moneyReport->isHealthy,
                 'issue_count' => count($moneyReport->violations),
             ];
-            $allHealthy = $allHealthy && $moneyReport->isHealthy;
+            $allHealthy = $allHealthy && $moneyReport->isHealthy && count($moneyReport->violations) === 0;
 
-            $clearContext();
+            if (app()->bound(CompanyContext::class)) {
+                app(CompanyContext::class)->clear(sessionless: true);
+            }
 
             // 6. Phase 7 Multi-Ledger Reconciliation
             $phase7Report = app(Phase7ReconciliationService::class)->reconcile($company, isSystem: true);
@@ -552,9 +635,15 @@ final class DisposableFinancialPostRunInspector
                 'healthy' => $phase7Report->isHealthy,
                 'issue_count' => count($phase7Report->violations),
             ];
-            $allHealthy = $allHealthy && $phase7Report->isHealthy;
+            $allHealthy = $allHealthy && $phase7Report->isHealthy && count($phase7Report->violations) === 0;
         } finally {
-            $clearContext();
+            if ($connection !== null && $previousPdo !== null) {
+                $connection->setPdo($previousPdo);
+                $connection->setReadPdo($previousReadPdo);
+            }
+            if (function_exists('app') && app()->bound(CompanyContext::class)) {
+                app(CompanyContext::class)->clear(sessionless: true);
+            }
         }
 
         return [
@@ -570,18 +659,22 @@ final class DisposableFinancialPostRunInspector
      * Enforces authoritative Android b7 wire keys and strict scenario outcomes:
      * - Top-level keys: runId, timestamp, backendHead, clientHead, clientPublicationHead,
      *   clientExecutableHead, manifestDigest, baseUrl, lifecycleGrant, ttlExpiresAt, overallStatus, scenarios.
-     * - Scenarios array entries: {name, status, httpStatusCode, latencyMs, details}
+     * - Scenarios MUST be a 0-indexed sequential ARRAY LIST of objects with UNIQUE names (no associative maps or duplicates).
+     *   Each item: {name: string, status: string, httpStatusCode: int, latencyMs: int, details: string}
+     *   Status codes must be strict integers. Status must be exact 'PASS' (not 'SUCCESS').
      *   1. readiness_probe: PASS (200)
      *   2. financial_cash_fresh_commit_201: PASS (201)
      *   3. financial_cash_idempotent_replay_200: PASS (200)
      *   4. financial_cash_event_status_posted: PASS (200)
      *   5. financial_cash_tamper_409: PASS (409)
-     *   6. transport_lost_ack_recovery: explicit NOT_RUN
-     *   7. stock_permission_rollback_probes: explicit NOT_RUN
+     *   6. transport_lost_ack_recovery: explicit NOT_RUN (0)
+     *   7. stock_permission_rollback_probes: explicit NOT_RUN (0)
      * - Approved publication pin: c00aedb70ea06f28ae42282149c030df76dc300d
      * - Strictly rejects unadmitted wrong-owner publication pin: c00aedbb2c24097f5ef6ba297d287bc3b34b7f73
      * - Approved executable pin: b7e61eb4ed0aed2f5040d9fc44f9764b310be530
-     * - Requires separate trusted owned DB inspection report matching canonical graph + 6 healthy reconcilers.
+     * - Separate trusted owned DB inspection report is ALWAYS MANDATORY (no opt-out bypass):
+     *   Requires matching scope, schema, company, runId, source head, handoff digest,
+     *   valid canonical delta, balanced GL batches, and ALL 6 named reconcilers healthy with issue_count = 0.
      *
      * @param  array<string, mixed>|string  $evidenceJson
      * @param  array{
@@ -590,9 +683,12 @@ final class DisposableFinancialPostRunInspector
      *     backendExecutionHead: string,
      *     handoffDigest: string,
      *     expectedLifecycle?: string,
-     *     requireTrustedDbReport?: bool
+     *     expectedSchemaName?: string,
+     *     companyId?: int,
+     *     expectedEventId?: string,
+     *     expectedScope?: string
      * }  $expectedPins
-     * @param  array<string, mixed>|null  $trustedDbReport  Separate trusted DB inspection report
+     * @param  array<string, mixed>|null  $trustedDbReport  Separate trusted DB inspection report (MANDATORY)
      * @return array{is_valid: bool, errors: array<string>}
      */
     public static function validateOuterEvidenceJson(
@@ -665,31 +761,35 @@ final class DisposableFinancialPostRunInspector
             $errors[] = "Lifecycle grant mismatch. Expected '{$expectedLifecycle}', got '{$actualLifecycle}'.";
         }
 
-        // 7. Validate overallStatus
-        $overallStatus = strtoupper((string) ($data['overallStatus'] ?? ''));
-        if ($overallStatus !== 'PASS' && $overallStatus !== 'SUCCESS') {
-            $errors[] = "Overall status must be PASS, got '".($data['overallStatus'] ?? 'null')."'.";
+        // 7. Validate overallStatus: must be exact 'PASS' (no 'SUCCESS' or lowercase)
+        $rawStatus = (string) ($data['overallStatus'] ?? '');
+        if ($rawStatus !== 'PASS') {
+            $errors[] = "Overall status must be exactly 'PASS', got '{$rawStatus}'.";
         }
 
-        // 8. Validate scenarios array structure and exact required scenarios
-        $scenariosRaw = $data['scenarios'] ?? [];
-        if (! is_array($scenariosRaw) || empty($scenariosRaw)) {
-            $errors[] = 'Evidence missing individual scenario execution results.';
+        // 8. Validate scenarios: MUST be a 0-indexed sequential ARRAY LIST with UNIQUE names
+        $scenariosRaw = $data['scenarios'] ?? null;
+        if (! is_array($scenariosRaw) || ! array_is_list($scenariosRaw)) {
+            $errors[] = 'Scenarios must be a sequential array list, associative map or invalid type rejected.';
         } else {
-            // Index scenarios by name
             $scenariosMap = [];
             foreach ($scenariosRaw as $idx => $item) {
-                if (is_array($item) && isset($item['name'])) {
-                    $scenariosMap[(string) $item['name']] = $item;
-                } elseif (is_string($idx) && (is_array($item) || is_string($item))) {
-                    // Normalized support for associative format if present
-                    $entry = is_array($item) ? $item : ['status' => $item];
-                    $entry['name'] = $idx;
-                    $scenariosMap[$idx] = $entry;
+                if (! is_array($item) || ! isset($item['name']) || ! is_string($item['name'])) {
+                    $errors[] = "Scenario at index {$idx} must be an object with a string 'name'.";
+
+                    continue;
                 }
+
+                $sName = $item['name'];
+                if (isset($scenariosMap[$sName])) {
+                    $errors[] = "Duplicate scenario name '{$sName}' detected in scenarios list.";
+
+                    continue;
+                }
+                $scenariosMap[$sName] = $item;
             }
 
-            // Required 5 active PASS scenarios with exact HTTP status codes
+            // Required 5 active PASS scenarios with exact strict integer HTTP status codes
             $requiredActiveScenarios = [
                 'readiness_probe' => 200,
                 'financial_cash_fresh_commit_201' => 201,
@@ -706,18 +806,19 @@ final class DisposableFinancialPostRunInspector
                 }
 
                 $sc = $scenariosMap[$name];
-                $status = strtoupper((string) ($sc['status'] ?? ''));
+                $status = (string) ($sc['status'] ?? '');
                 if ($status !== 'PASS') {
-                    $errors[] = "Required active scenario '{$name}' must be PASS, got '{$status}'.";
+                    $errors[] = "Required active scenario '{$name}' status must be exactly 'PASS', got '{$status}'.";
                 }
 
-                $httpCode = (int) ($sc['httpStatusCode'] ?? $sc['statusCode'] ?? 0);
-                if ($httpCode !== $expectedHttpCode) {
-                    $errors[] = "Scenario '{$name}' HTTP status code mismatch: expected {$expectedHttpCode}, got {$httpCode}.";
+                if (! isset($sc['httpStatusCode']) || ! is_int($sc['httpStatusCode'])) {
+                    $errors[] = "Scenario '{$name}' httpStatusCode must be a strict integer.";
+                } elseif ($sc['httpStatusCode'] !== $expectedHttpCode) {
+                    $errors[] = "Scenario '{$name}' HTTP status code mismatch: expected {$expectedHttpCode}, got {$sc['httpStatusCode']}.";
                 }
             }
 
-            // Required 2 probe scenarios: MUST be explicitly marked NOT_RUN for basic financial run
+            // Required 2 probe scenarios: MUST be explicitly present and marked 'NOT_RUN' with statusCode 0
             $requiredProbeScenarios = [
                 'transport_lost_ack_recovery',
                 'stock_permission_rollback_probes',
@@ -731,28 +832,86 @@ final class DisposableFinancialPostRunInspector
                 }
 
                 $sc = $scenariosMap[$probeName];
-                $status = strtoupper((string) ($sc['status'] ?? ''));
+                $status = (string) ($sc['status'] ?? '');
                 if ($status !== 'NOT_RUN') {
-                    $errors[] = "Advanced probe scenario '{$probeName}' cannot claim '{$status}' in basic financial run; must be explicitly marked NOT_RUN.";
+                    $errors[] = "Advanced probe scenario '{$probeName}' cannot claim '{$status}' in basic financial run; must be exactly 'NOT_RUN'.";
+                }
+                if (! isset($sc['httpStatusCode']) || ! is_int($sc['httpStatusCode'])) {
+                    $errors[] = "Advanced probe scenario '{$probeName}' httpStatusCode must be a strict integer.";
+                } elseif ($sc['httpStatusCode'] !== 0) {
+                    $errors[] = "Advanced probe scenario '{$probeName}' httpStatusCode must be 0, got {$sc['httpStatusCode']}.";
                 }
             }
         }
 
-        // 9. Separate REQUIRED trusted owned DB inspection report verification
-        $requireDbReport = $expectedPins['requireTrustedDbReport'] ?? true;
+        // 9. Separate REQUIRED trusted owned DB inspection report (MANDATORY, NO OPT-OUT)
         if ($trustedDbReport === null) {
-            if ($requireDbReport) {
-                $errors[] = 'Separate REQUIRED trusted owned DB inspection report is missing.';
-            }
+            $errors[] = 'Separate REQUIRED trusted owned DB inspection report is mandatory; cannot be omitted.';
         } else {
+            // Verify context matching
+            $expectedScope = $expectedPins['expectedScope'] ?? 'ROOT_AUTHORIZED_PAIRED_EXECUTION';
+            $actualScope = (string) ($trustedDbReport['scope'] ?? '');
+            if ($actualScope !== $expectedScope) {
+                $errors[] = "Trusted DB report scope mismatch: expected '{$expectedScope}', got '{$actualScope}'.";
+            }
+
+            $runId = (string) ($data['runId'] ?? '');
+            if ($runId !== '' && (string) ($trustedDbReport['run_id'] ?? '') !== $runId) {
+                $errors[] = "Trusted DB report run_id mismatch: expected '{$runId}', got '".($trustedDbReport['run_id'] ?? 'null')."'.";
+            }
+
+            if (isset($expectedPins['expectedSchemaName']) && (string) ($trustedDbReport['schema_name'] ?? '') !== $expectedPins['expectedSchemaName']) {
+                $errors[] = "Trusted DB report schema_name mismatch: expected '{$expectedPins['expectedSchemaName']}', got '".($trustedDbReport['schema_name'] ?? 'null')."'.";
+            }
+
+            if (isset($expectedPins['companyId']) && (int) ($trustedDbReport['company_id'] ?? 0) !== $expectedPins['companyId']) {
+                $errors[] = "Trusted DB report company_id mismatch: expected {$expectedPins['companyId']}, got ".($trustedDbReport['company_id'] ?? 'null').'.';
+            }
+
+            if ((string) ($trustedDbReport['source_head'] ?? '') !== $expectedPins['backendExecutionHead']) {
+                $errors[] = "Trusted DB report source_head mismatch: expected '{$expectedPins['backendExecutionHead']}', got '".($trustedDbReport['source_head'] ?? 'null')."'.";
+            }
+
+            if ((string) ($trustedDbReport['handoff_digest'] ?? '') !== $expectedPins['handoffDigest']) {
+                $errors[] = "Trusted DB report handoff_digest mismatch: expected '{$expectedPins['handoffDigest']}', got '".($trustedDbReport['handoff_digest'] ?? 'null')."'.";
+            }
+
+            // Verify canonical graph and batch balance
             if (! ($trustedDbReport['is_canonical_delta_valid'] ?? false)) {
                 $errors[] = 'Trusted DB inspection report failed canonical delta validity.';
             }
             if (! ($trustedDbReport['gl_batches_balanced'] ?? false)) {
                 $errors[] = 'Trusted DB inspection report detected unbalanced GL posting batches.';
             }
-            if (isset($trustedDbReport['all_healthy']) && ! $trustedDbReport['all_healthy']) {
-                $errors[] = 'Trusted DB inspection report reported unhealthy reconciliations.';
+
+            // Verify ALL 6 named reconcilers healthy with issue_count = 0
+            if (! ($trustedDbReport['all_healthy'] ?? false)) {
+                $errors[] = 'Trusted DB inspection report reported all_healthy is not true.';
+            }
+
+            $reconcilers = $trustedDbReport['reconciler_results'] ?? [];
+            $requiredReconcilers = [
+                'AccountingReconciliationService',
+                'InventoryReconciliationService',
+                'SalesReconciliationService',
+                'PayablesReconciliationService',
+                'MoneyReconciliationService',
+                'Phase7ReconciliationService',
+            ];
+
+            foreach ($requiredReconcilers as $recName) {
+                if (! isset($reconcilers[$recName]) || ! is_array($reconcilers[$recName])) {
+                    $errors[] = "Trusted DB report missing named reconciliation result for '{$recName}'.";
+
+                    continue;
+                }
+                $rec = $reconcilers[$recName];
+                if (! ($rec['healthy'] ?? false)) {
+                    $errors[] = "Trusted DB report: '{$recName}' is not healthy.";
+                }
+                if (($rec['issue_count'] ?? -1) !== 0) {
+                    $errors[] = "Trusted DB report: '{$recName}' issue_count must be exactly 0, got ".($rec['issue_count'] ?? 'null').'.';
+                }
             }
         }
 
