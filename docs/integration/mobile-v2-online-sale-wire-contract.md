@@ -11,8 +11,8 @@
 This document defines the **public wire response projections** and HTTP interaction contracts for the Mobile V2 Online Cash Sale slice.
 
 - **Normative Request Authority**: Request payloads, economic intent validation, currency minor unit rules, canonical JCS serialization, and event hashing remain governed by the PR #91 Revision 3 specifications:
-  - Specification: [`ADR-0001-mobile-v1-contract.md`](file:///home/t3dev/.t3/worktrees/account/t3-9723058c-3d0a7ebb15fba29a/docs/integration/mobile-v1/ADR-0001-mobile-v1-contract.md)
-  - Mirrored JSON Schemas: [`docs/integration/mobile-v1/schemas/`](file:///home/t3dev/.t3/worktrees/account/t3-9723058c-3d0a7ebb15fba29a/docs/integration/mobile-v1/schemas/)
+  - Specification: [ADR-0001-mobile-v1-contract.md](mobile-v1/ADR-0001-mobile-v1-contract.md)
+  - Mirrored JSON Schemas: [mobile-v1/schemas/](mobile-v1/schemas/)
 - **Zero Field Invention**: No new fields, aliases, or schema versions are introduced beyond the mirrored Revision 3 contracts.
 
 ---
@@ -36,36 +36,44 @@ This document defines the **public wire response projections** and HTTP interact
 
 ---
 
-## 3. Qualified HTTP Endpoints & Status Matrix
+## 3. Qualified HTTP Endpoints & Route Behavior Matrix
 
 ### A. Online Cash Sale Commit Endpoint
 - **Method & Path**: `POST /api/mobile/v2/companies/{companyId}/sales/online-cash`
 - **Authentication**: `Authorization: Bearer <mobile_access_token>` (native bearer token bound to verified user and device)
 - **Tenancy**: `companyId` path parameter must match token company binding and active user membership.
 - **Request Content-Type**: `application/json` (strictly valid canonical JSON payload conforming to Revision 3 intent profile)
-- **Response Status Codes**:
-  - **`HTTP 201 Created`**: Fresh execution. All financial legs (invoice, payment, stock ledger) committed atomically under Company-root serialization. Returns `SaleCommitResponse`.
-  - **`HTTP 200 OK`**: Idempotent replay of previously committed event. Returns byte-for-byte identical `SaleCommitResponse`.
-  - **`HTTP 409 Conflict`**: Altered payload resubmitted under an existing `client_event_id`. Returns standard `CONFLICT` error response with conflict diagnostics.
-  - **`HTTP 401 Unauthorized`**: Missing, expired, or revoked bearer token (`UNAUTHENTICATED`).
-  - **`HTTP 403 Forbidden`**: Inactive membership, tenant mismatch, or missing required actor permissions.
-  - **`HTTP 404 Not Found`**: Cash slice disabled (`v2_cash_slice_enabled = false`) or master API disabled.
+
+| Status | Condition | Error Code | Response Schema / Body Details |
+|---|---|---|---|
+| **201 Created** | Fresh execution of valid cash sale | None | `SaleCommitResponse` ([sale-commit-response.json](mobile-v1/schemas/sale-commit-response.json)) |
+| **200 OK** | Idempotent replay of previously committed event | None | Byte-for-byte identical `SaleCommitResponse` |
+| **409 Conflict** | Altered payload resubmitted under existing `client_event_id` | `CONFLICT` | Generic standard error: `{"error":{"code":"CONFLICT","message":"Resource state conflict."}}` |
+| **422 Unprocessable** | Empty request body, invalid JSON syntax, domain/intent validation failure, decimal format mismatch, inactive entity, or insufficient stock | `VALIDATION_FAILED` | `{"error":{"code":"VALIDATION_FAILED","message":"<diagnostic_message>"}}` |
+| **401 Unauthorized** | Missing or malformed `Authorization: Bearer` header, revoked or expired token, unknown user, password revision epoch mismatch, or mixed ambient session | `UNAUTHENTICATED` | Standard sanitized error: `{"error":{"code":"UNAUTHENTICATED","message":"..."}}` with optional machine reason details |
+| **403 Forbidden** | Inactive company membership, tenant scope mismatch, token bound to foreign company, or missing required actor permissions (`sales.invoice.create`, `sales.invoice.post`, `money.receipt.create`, `money.receipt.allocate`) | `FORBIDDEN` or `FORBIDDEN_TENANT_MISMATCH` | Privacy-safe error without existence oracle: `{"error":{"code":"FORBIDDEN","message":"..."}}` |
+| **404 Not Found** | Gating flag OFF (`v2_cash_slice_enabled = false`), master API disabled (`MOBILE_API_ENABLED=false` or `MOBILE_V2_API_ENABLED=false`), or unknown URL | `NOT_FOUND` or `MOBILE_API_DISABLED` | Standard fallback error |
+| **415 Unsupported Media Type** | Missing or incorrect `Content-Type: application/json` on mutating request | `UNSUPPORTED_MEDIA_TYPE` | `{"error":{"code":"UNSUPPORTED_MEDIA_TYPE","message":"The request Content-Type must be application/json."}}` |
 
 ### B. Offline Event Status Endpoint
 - **Method & Path**: `GET /api/mobile/v2/companies/{companyId}/offline-events/{clientEventId}/status`
 - **Authentication**: `Authorization: Bearer <mobile_access_token>`
-- **Response Status Codes**:
-  - **`HTTP 200 OK`**: Returns `SaleEventStatusResponse`.
-    - If event is posted: `status = "posted"`, `official_invoice` contains posted invoice ULID, sequence number, payment ULID, receipt number, grand total, and posted timestamp.
-    - If event is unknown: `status = "unknown"`, `official_invoice = null`.
-  - **`HTTP 401 Unauthorized`**: Unauthenticated request (`UNAUTHENTICATED`).
-  - **`HTTP 404 Not Found`**: Cash slice disabled, unknown route, or master API disabled.
+- **Tenancy**: `companyId` path parameter must match token company binding and active user membership.
+
+| Status | Condition | Error Code | Response Schema / Body Details |
+|---|---|---|---|
+| **200 OK** | Previously committed event found | None | `SaleEventStatusResponse` with `status: "posted"`, `official_invoice` populated, `conflict: null` |
+| **200 OK** | Unknown event (never processed by company) | None | `SaleEventStatusResponse` with `status: "unknown"`, `official_invoice: null`, `conflict: null` |
+| **422 Unprocessable** | Malformed `clientEventId` path parameter failing UUID layout regex | `VALIDATION_FAILED` | `{"error":{"code":"VALIDATION_FAILED","message":"Client event ID must be a valid UUID string."}}` |
+| **401 Unauthorized** | Missing or invalid bearer token, revoked actor/device, or expired session | `UNAUTHENTICATED` | `{"error":{"code":"UNAUTHENTICATED","message":"..."}}` |
+| **403 Forbidden** | Non-member user, foreign company context, or revoked permissions (`sales.invoice.view`, `money.receipt.view`) | `FORBIDDEN` or `FORBIDDEN_TENANT_MISMATCH` | Privacy-safe error preventing tenant existence oracle |
+| **404 Not Found** | Cash slice disabled (`v2_cash_slice_enabled = false`) or master mobile API disabled | `NOT_FOUND` or `MOBILE_API_DISABLED` | Standard fallback error |
 
 ---
 
 ## 4. Sale Commit Wire DTO (`sale-commit-response.json`)
 
-Mirrored schema reference: [`docs/integration/mobile-v1/schemas/sale-commit-response.json`](file:///home/t3dev/.t3/worktrees/account/t3-9723058c-3d0a7ebb15fba29a/docs/integration/mobile-v1/schemas/sale-commit-response.json)
+Mirrored schema reference: [mobile-v1/schemas/sale-commit-response.json](mobile-v1/schemas/sale-commit-response.json)
 
 All fields are required in the root object. `additionalProperties` is `false`.
 
@@ -86,7 +94,7 @@ All fields are required in the root object. `additionalProperties` is `false`.
 
 ## 5. Sale Event Status Wire DTO (`sale-event-status-response.json`)
 
-Mirrored schema reference: [`docs/integration/mobile-v1/schemas/sale-event-status-response.json`](file:///home/t3dev/.t3/worktrees/account/t3-9723058c-3d0a7ebb15fba29a/docs/integration/mobile-v1/schemas/sale-event-status-response.json)
+Mirrored schema reference: [mobile-v1/schemas/sale-event-status-response.json](mobile-v1/schemas/sale-event-status-response.json)
 
 | Wire Field | Wire Type | Pattern / Constraints | Nullable | Description |
 |---|---|---|---|---|
