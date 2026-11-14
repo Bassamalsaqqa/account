@@ -118,12 +118,11 @@ final class OnlineCashSaleController extends Controller
                 $canonicalBytes
             );
         } catch (MobileEventDuplicatePayloadException) {
-            return response()->json([
-                'error' => [
-                    'code' => 'IDEMPOTENCY_CONFLICT',
-                    'message' => 'Sale retry differs from original payload.',
-                ],
-            ], 409);
+            return MobileV2ApiBoundary::buildErrorResponse(
+                code: 'CONFLICT',
+                message: 'Resource state conflict.',
+                status: 409
+            );
         }
 
         $outcome = $result['outcome'] === 'replay' ? 'replayed' : 'created';

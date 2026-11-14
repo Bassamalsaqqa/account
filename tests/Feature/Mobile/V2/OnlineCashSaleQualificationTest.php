@@ -603,13 +603,13 @@ final class OnlineCashSaleQualificationTest extends TestCase
         $this->assertNotNull($paymentId);
 
         // Verify database state: invoice is posted
-        $invoice = SalesInvoice::find($invoiceId);
+        $invoice = SalesInvoice::withoutGlobalScopes()->find($invoiceId);
         $this->assertNotNull($invoice);
         $this->assertSame('posted', $invoice->status);
         $this->assertSame('58.000000', (string) $invoice->grand_total_currency);
 
         // Verify payment is posted and allocated
-        $payment = CustomerPayment::find($paymentId);
+        $payment = CustomerPayment::withoutGlobalScopes()->find($paymentId);
         $this->assertNotNull($payment);
         $this->assertSame('posted', $payment->status);
         $this->assertSame('58.000000', (string) $payment->amount);
@@ -635,7 +635,8 @@ final class OnlineCashSaleQualificationTest extends TestCase
         $this->assertSame((int) $this->staff->id, (int) $receipt->actor_id);
         $this->assertSame($this->device->device_id, $receipt->device_id);
 
-        // Run all 6 accounting reconciliations
+        // Run all 6 accounting reconciliations with company context
+        app(CompanyContext::class)->setCompany($this->company, $this->owner);
         $reconciliation = app(AccountingReconciliationService::class)->reconcileCompany($this->company);
         $this->assertTrue($reconciliation['is_balanced'] ?? true, 'Accounting reconciliation must be balanced');
 
@@ -712,8 +713,8 @@ final class OnlineCashSaleQualificationTest extends TestCase
         $tampered->assertStatus(409);
         $tampered->assertJson([
             'error' => [
-                'code' => 'IDEMPOTENCY_CONFLICT',
-                'message' => 'Sale retry differs from original payload.',
+                'code' => 'CONFLICT',
+                'message' => 'Resource state conflict.',
             ],
         ]);
     }
@@ -723,8 +724,9 @@ final class OnlineCashSaleQualificationTest extends TestCase
      */
     public function test_all_fault_rollback_restores_pre_event_database_fingerprint(): void
     {
-        // Reduce warehouse stock to 0 to trigger InsufficientStockException during allocation
-        InventoryBalance::where('company_id', $this->company->id)->update(['quantity_base' => '0.000000']);
+        // Reduce warehouse stock and lots to 0 to trigger InsufficientStockException during allocation
+        DB::table('inventory_balances')->where('company_id', $this->company->id)->update(['quantity_base' => '0.000000']);
+        DB::table('inventory_lots')->where('company_id', $this->company->id)->update(['quantity_remaining_base' => '0.000000']);
 
         $invoicesBefore = SalesInvoice::withoutGlobalScopes()->where('company_id', $this->company->id)->count();
         $paymentsBefore = CustomerPayment::withoutGlobalScopes()->where('company_id', $this->company->id)->count();
@@ -765,7 +767,13 @@ final class OnlineCashSaleQualificationTest extends TestCase
 
             $eventId = (string) Str::uuid();
             $payload = $this->validSalePayload($eventId);
-            $canonicalBytes = json_encode($payload, JSON_THROW_ON_ERROR);
+            $serverContext = [
+                'actor_id' => (string) $this->staff->public_id,
+                'company_id' => (string) $this->company->public_id,
+                'currency_minor_units' => 2,
+            ];
+            $profile = OnlineSaleIntentProfile::construct($serverContext, $payload);
+            $canonicalBytes = OnlineSaleIntentProfile::serialize($profile);
 
             $input = [
                 'company_id' => $this->company->id,
@@ -794,18 +802,19 @@ final class OnlineCashSaleQualificationTest extends TestCase
 
             $outcomes = [$outA['outcome'], $outB['outcome']];
             sort($outcomes);
-            $this->assertSame(['created', 'replay'], $outcomes, 'Concurrent workers must converge to one created and one replay.');
+            $this->assertSame(['created', 'replay'], $outcomes, 'Concurrent workers must converge to one created and one replay. OutA: '.json_encode($outA).' OutB: '.json_encode($outB));
 
             // Both workers returned identical invoice and payment identifiers
             $this->assertSame($outA['sales_invoice_id'], $outB['sales_invoice_id']);
             $this->assertSame($outA['customer_payment_id'], $outB['customer_payment_id']);
 
             // Database has exactly 1 invoice, 1 payment, 1 receipt
-            $this->assertSame(1, SalesInvoice::where('company_id', $this->company->id)->count());
-            $this->assertSame(1, CustomerPayment::where('company_id', $this->company->id)->count());
+            $this->assertSame(1, SalesInvoice::withoutGlobalScopes()->where('company_id', $this->company->id)->count());
+            $this->assertSame(1, CustomerPayment::withoutGlobalScopes()->where('company_id', $this->company->id)->count());
             $this->assertSame(1, MobileEventReceipt::where('company_id', $this->company->id)->where('client_event_id', $eventId)->count());
 
             // Reconciliations pass cleanly
+            app(CompanyContext::class)->setCompany($this->company, $this->owner);
             $reconciliation = app(AccountingReconciliationService::class)->reconcileCompany($this->company);
             $this->assertTrue($reconciliation['is_balanced'] ?? true);
         } finally {
