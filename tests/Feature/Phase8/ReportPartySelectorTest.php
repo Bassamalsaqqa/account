@@ -5,20 +5,57 @@ declare(strict_types=1);
 namespace Tests\Feature\Phase8;
 
 use App\Actions\Company\CreateCompanyAction;
+use App\Actions\Sales\CreateSalesInvoiceDraftAction;
+use App\Actions\Sales\PostSalesInvoiceAction;
 use App\Application\Reporting\Presentation\ReportFilterOptions;
 use App\Application\Reporting\Presentation\ReportRegistry;
 use App\Domain\Sales\Queries\CustomerStatementQuery;
 use App\Livewire\Pages\Reporting\ReportView;
 use App\Livewire\Pages\Sales\CustomerStatementView;
 use App\Models\Customer;
+use App\Models\Employee;
 use App\Models\User;
+use App\Models\Vendor;
 use App\Support\Tenancy\CompanyContext;
 use Carbon\Carbon;
+use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Support\Facades\DB;
+use Livewire\Features\SupportTesting\Testable;
 use Livewire\Livewire;
+use ReflectionMethod;
+use RuntimeException;
+use Tests\Support\EnforcesDisposableDatabaseOwnership;
 
 final class ReportPartySelectorTest extends Phase8TestCase
 {
+    use EnforcesDisposableDatabaseOwnership;
+
+    /**
+     * Guard after application bootstrap, before RefreshDatabase traits or parent fixtures.
+     *
+     * @return array<class-string, class-string>
+     */
+    protected function setUpTraits(): array
+    {
+        $this->assertOwnedDisposableDatabase();
+
+        return parent::setUpTraits();
+    }
+
+    protected function tearDown(): void
+    {
+        if ($this->isDisposableDatabaseOwnershipAdmitted()) {
+            $this->revalidateOwnedDisposableDatabase();
+        }
+        parent::tearDown();
+    }
+
+    /** @param Testable<ReportView> $component */
+    private function reportView(Testable $component): ReportView
+    {
+        return $component->instance();
+    }
+
     public function test_custom_statement_dates_show_inline_errors_and_recover(): void
     {
         $component = Livewire::test(ReportView::class, ['reportKey' => 'customers.statement'])
@@ -35,11 +72,78 @@ final class ReportPartySelectorTest extends Phase8TestCase
             app()->setLocale($locale);
             foreach (['customers.statement' => 'customer_id', 'vendors.statement' => 'vendor_id'] as $key => $field) {
                 Livewire::test(ReportView::class, ['reportKey' => $key])
-                    ->assertSee('report-selector-'.$field, false)
+                    ->assertSee('report-'.$field, false)
                     ->set('selectorSearch.'.$field, str_repeat('x', 101))
                     ->assertHasErrors('selectorSearch');
             }
         }
+    }
+
+    public function test_lookup_party_livewire_endpoint_enforces_field_and_query_length(): void
+    {
+        // Unsupported arbitrary field throws 422
+        Livewire::test(ReportView::class, ['reportKey' => 'customers.statement'])
+            ->call('lookupParty', 'unsupported_field', '')
+            ->assertStatus(422);
+
+        // Allowed field for reports, but NOT in customers.statement filters (e.g. employee_id) throws 422
+        Livewire::test(ReportView::class, ['reportKey' => 'customers.statement'])
+            ->call('lookupParty', 'employee_id', '')
+            ->assertStatus(422);
+
+        // Query exceeding 100 characters throws 422
+        Livewire::test(ReportView::class, ['reportKey' => 'customers.statement'])
+            ->call('lookupParty', 'customer_id', str_repeat('a', 101))
+            ->assertStatus(422);
+
+        // Valid query length <= 100 on supported field succeeds with assertReturned
+        $validComponent = Livewire::test(ReportView::class, ['reportKey' => 'customers.statement']);
+        $validResults = $this->reportView($validComponent)->lookupParty('customer_id', str_repeat('a', 100));
+        Livewire::test(ReportView::class, ['reportKey' => 'customers.statement'])
+            ->call('lookupParty', 'customer_id', str_repeat('a', 100))
+            ->assertStatus(200)
+            ->assertReturned($validResults);
+    }
+
+    public function test_lookup_party_livewire_endpoint_covers_customer_vendor_and_employee(): void
+    {
+        app()->setLocale('en');
+        $customer = Customer::create(['company_id' => $this->company->id, 'name_ar' => 'عميل تجريبي', 'name_en' => 'Test Customer', 'active' => true, 'created_by' => $this->owner->id]);
+        $vendor = Vendor::create(['company_id' => $this->company->id, 'name_ar' => 'مورد تجريبي', 'name_en' => 'Test Vendor', 'active' => true, 'created_by' => $this->owner->id]);
+        $employee = Employee::create(['company_id' => $this->company->id, 'code' => 'EMP-999', 'name' => 'Test Employee', 'salary_currency_code' => 'USD', 'active' => true, 'created_by' => $this->owner->id]);
+
+        // Customer statement callsite
+        $customerComponent = Livewire::test(ReportView::class, ['reportKey' => 'customers.statement']);
+        $customerComponent->assertSee('report-customer_id', false);
+        $customerResults = $this->reportView($customerComponent)->lookupParty('customer_id', 'Test Customer');
+        $customerComponent->call('lookupParty', 'customer_id', 'Test Customer')
+            ->assertStatus(200)
+            ->assertReturned($customerResults);
+        $this->assertNotEmpty($customerResults);
+        $this->assertSame((string) $customer->id, $customerResults[0]['id']);
+        $this->assertStringContainsString('Test Customer', $customerResults[0]['label']);
+
+        // Vendor statement callsite
+        $vendorComponent = Livewire::test(ReportView::class, ['reportKey' => 'vendors.statement']);
+        $vendorComponent->assertSee('report-vendor_id', false);
+        $vendorResults = $this->reportView($vendorComponent)->lookupParty('vendor_id', 'Test Vendor');
+        $vendorComponent->call('lookupParty', 'vendor_id', 'Test Vendor')
+            ->assertStatus(200)
+            ->assertReturned($vendorResults);
+        $this->assertNotEmpty($vendorResults);
+        $this->assertSame((string) $vendor->id, $vendorResults[0]['id']);
+        $this->assertStringContainsString('Test Vendor', $vendorResults[0]['label']);
+
+        // Payroll summary callsite
+        $payrollComponent = Livewire::test(ReportView::class, ['reportKey' => 'payroll.summary']);
+        $payrollComponent->assertSee('report-employee_id', false);
+        $payrollResults = $this->reportView($payrollComponent)->lookupParty('employee_id', 'Test Employee');
+        $payrollComponent->call('lookupParty', 'employee_id', 'Test Employee')
+            ->assertStatus(200)
+            ->assertReturned($payrollResults);
+        $this->assertNotEmpty($payrollResults);
+        $this->assertSame((string) $employee->id, $payrollResults[0]['id']);
+        $this->assertStringContainsString('Test Employee', $payrollResults[0]['label']);
     }
 
     public function test_party_lookup_bounds_results_and_retains_selected_label(): void
@@ -176,13 +280,238 @@ final class ReportPartySelectorTest extends Phase8TestCase
             'created_by' => $this->owner->id,
         ]);
 
+        // Canonical non-empty balance fixture
+        $draft = app(CreateSalesInvoiceDraftAction::class)->execute($this->company, $this->owner, [
+            'customer_id' => $customer->id,
+            'currency_code' => 'USD',
+            'exchange_rate' => '3.50',
+            'issue_date' => '2026-10-01',
+            'lines' => [['product_id' => null, 'item_description' => 'Test Service', 'quantity' => '1', 'unit_price' => '150.00']],
+        ]);
+        app(PostSalesInvoiceAction::class)->execute($draft, $this->owner);
+
         $statementQuery = app(CustomerStatementQuery::class);
         $result = $statementQuery->execute($customer);
 
         $this->assertArrayHasKey('currencies', $result);
-        foreach ($result['currencies'] as $currencyStatement) {
-            $this->assertNotEmpty($currencyStatement['currency']);
-            $this->assertMatchesRegularExpression('/^-?\d+(\.\d+)?$/', $currencyStatement['closing_balance']);
+        $this->assertNotEmpty($result['currencies']);
+        $this->assertArrayHasKey('USD', $result['currencies']);
+        $currencyStatement = $result['currencies']['USD'];
+        $this->assertSame('USD', $currencyStatement['currency']);
+        $this->assertSame('150.00', $currencyStatement['closing_balance']);
+        $this->assertSame('150.00', $currencyStatement['total_debits']);
+        $this->assertSame('0.00', $currencyStatement['total_credits']);
+        $this->assertSame('0.00', $currencyStatement['opening_balance']);
+    }
+
+    public function test_lookup_party_livewire_endpoint_rejects_foreign_party(): void
+    {
+        $context = app(CompanyContext::class);
+        $context->clear();
+        $otherOwner = User::factory()->create();
+        $otherCompany = app(CreateCompanyAction::class)->execute($otherOwner, [
+            'name_ar' => 'شركة أجنبية',
+            'base_currency_code' => 'ILS',
+        ]);
+        $context->setCompany($otherCompany, $otherOwner);
+        $foreignCustomer = Customer::create([
+            'company_id' => $otherCompany->id,
+            'name_ar' => 'عميل أجنبي',
+            'name_en' => 'Foreign Customer',
+            'active' => true,
+            'created_by' => $otherOwner->id,
+        ]);
+        $context->setCompany($this->company, $this->owner);
+        $this->actingAs($this->owner);
+
+        $component = Livewire::test(ReportView::class, ['reportKey' => 'customers.statement'])
+            ->set('filters.customer_id', (string) $foreignCustomer->id);
+
+        $results = $this->reportView($component)->lookupParty('customer_id', '');
+        $ids = array_column($results, 'id');
+        $this->assertNotContains((string) $foreignCustomer->id, $ids);
+        $component->call('lookupParty', 'customer_id', '')
+            ->assertStatus(200)
+            ->assertReturned($results);
+    }
+
+    public function test_lookup_party_livewire_endpoint_enforces_master_view_permissions(): void
+    {
+        Customer::create(['company_id' => $this->company->id, 'name_ar' => 'عميل سري', 'name_en' => 'Secret Customer', 'active' => true, 'created_by' => $this->owner->id]);
+
+        $limitedUser = User::factory()->create();
+        $this->company->memberships()->create([
+            'user_id' => $limitedUser->id,
+            'status' => 'active',
+            'is_owner' => false,
+        ]);
+        setPermissionsTeamId($this->company->id);
+        $limitedUser->givePermissionTo(['reports.sales.view', 'customers.statement.view']);
+        $this->actingAs($limitedUser);
+        app(CompanyContext::class)->setCompany($this->company, $limitedUser);
+
+        $component = Livewire::test(ReportView::class, ['reportKey' => 'customers.statement']);
+        $component->call('lookupParty', 'customer_id', '')
+            ->assertStatus(200)
+            ->assertReturned([]);
+
+        $limitedUser->givePermissionTo('customers.view');
+        $limitedUser->unsetRelation('roles')->unsetRelation('permissions');
+        $grantComponent = Livewire::test(ReportView::class, ['reportKey' => 'customers.statement']);
+        $resultsAfterGrant = $this->reportView($grantComponent)->lookupParty('customer_id', '');
+        $this->assertNotEmpty($resultsAfterGrant);
+        Livewire::test(ReportView::class, ['reportKey' => 'customers.statement'])
+            ->call('lookupParty', 'customer_id', '')
+            ->assertStatus(200)
+            ->assertReturned($resultsAfterGrant);
+    }
+
+    public function test_lookup_party_livewire_endpoint_denies_revoked_membership(): void
+    {
+        $component = Livewire::test(ReportView::class, ['reportKey' => 'customers.statement']);
+        $this->company->memberships()->where('user_id', $this->owner->id)->update(['status' => 'inactive']);
+        $component->call('lookupParty', 'customer_id', '')->assertStatus(403);
+    }
+
+    public function test_report_view_reset_filters_clears_party_selector_and_retains_query_budget(): void
+    {
+        $customer = Customer::create(['company_id' => $this->company->id, 'name_ar' => 'عميل إعادة', 'name_en' => 'Reset Customer', 'active' => true, 'created_by' => $this->owner->id]);
+
+        $component = Livewire::test(ReportView::class, ['reportKey' => 'customers.statement'])
+            ->set('filters.customer_id', (string) $customer->id)
+            ->set('selectorSearch.customer_id', 'Reset Customer');
+
+        $component->call('resetFilters');
+
+        $this->assertNull($component->get('filters.customer_id'));
+        $this->assertSame([], $component->get('selectorSearch'));
+
+        // Query budget verification through Livewire lookupParty
+        DB::enableQueryLog();
+        $lookupResults = $this->reportView($component)->lookupParty('customer_id', 'Reset Customer');
+        $component->call('lookupParty', 'customer_id', 'Reset Customer')
+            ->assertStatus(200)
+            ->assertReturned($lookupResults);
+        $queries = DB::getQueryLog();
+        DB::disableQueryLog();
+
+        $this->assertNotEmpty($lookupResults);
+        $this->assertSame((string) $customer->id, $lookupResults[0]['id']);
+        $partyQueries = array_filter($queries, fn (array $q): bool => str_contains($q['query'], 'from `customers`'));
+        $this->assertLessThanOrEqual(2, count($partyQueries));
+    }
+
+    public function test_actual_lifecycle_zero_query_ownership_refusal_before_refresh_and_fixtures(): void
+    {
+        $saved = [];
+        foreach (['APP_ENV', 'PHASE8_ALLOW_DISPOSABLE_DB', 'PHASE8_DISPOSABLE_DB_PROOF', 'PHASE8_DISPOSABLE_DB_NONCE', 'PHASE8_TEST_DB_HOST', 'PHASE8_TEST_DB_PORT', 'PHASE8_TEST_DB_USERNAME', 'PHASE8_TEST_DB_PASSWORD', 'PHASE8_TEST_DB_EMPTY_PASSWORD'] as $name) {
+            $saved[$name] = getenv($name);
         }
+
+        $scenarios = [
+            'missing opt-in' => [
+                'env' => ['PHASE8_ALLOW_DISPOSABLE_DB' => '0'],
+                'config' => [],
+                'expected' => 'opt-in flag is missing or not 1',
+            ],
+            'persistent 3353 port' => [
+                'env' => ['PHASE8_ALLOW_DISPOSABLE_DB' => '1'],
+                'config' => ['database.connections.mysql.port' => 3353],
+                'expected' => 'Forbidden: cannot run on persistent 3353 database',
+            ],
+            'persistent 3306 port' => [
+                'env' => ['PHASE8_ALLOW_DISPOSABLE_DB' => '1'],
+                'config' => ['database.connections.mysql.port' => 3306],
+                'expected' => 'Forbidden: cannot run on persistent 3306 database',
+            ],
+            'foreign host' => [
+                'env' => ['PHASE8_ALLOW_DISPOSABLE_DB' => '1'],
+                'config' => ['database.connections.mysql.host' => 'example.invalid'],
+                'expected' => 'connection host must be 127.0.0.1',
+            ],
+            'non-disposable database' => [
+                'env' => ['PHASE8_ALLOW_DISPOSABLE_DB' => '1'],
+                'config' => ['database.connections.mysql.database' => 'accounting'],
+                'expected' => 'database name does not match disposable schema pattern',
+            ],
+            'missing proof' => [
+                'env' => ['PHASE8_ALLOW_DISPOSABLE_DB' => '1', 'PHASE8_DISPOSABLE_DB_PROOF' => ''],
+                'config' => [],
+                'expected' => 'Disposable schema ownership proof is required',
+            ],
+        ];
+
+        try {
+            foreach ($scenarios as $label => $scenario) {
+                foreach ($scenario['env'] as $key => $val) {
+                    putenv($val === '' ? $key : $key.'='.$val);
+                }
+                foreach ($scenario['config'] as $key => $val) {
+                    config([$key => $val]);
+                }
+
+                $queries = [];
+                $listener = function (QueryExecuted $query) use (&$queries): void {
+                    $queries[] = $query->sql;
+                };
+                DB::listen($listener);
+
+                $testInstance = new self('test_dates_default_in_company_timezone');
+                $failure = null;
+
+                try {
+                    $reflection = new ReflectionMethod($testInstance, 'setUpTraits');
+                    $reflection->invoke($testInstance);
+                } catch (RuntimeException $e) {
+                    $failure = $e;
+                } finally {
+                    $tearDownReflection = new ReflectionMethod($testInstance, 'tearDown');
+                    $tearDownReflection->invoke($testInstance);
+                }
+
+                $this->assertInstanceOf(RuntimeException::class, $failure, "Scenario '{$label}' must fail closed.");
+                $this->assertStringContainsString($scenario['expected'], $failure->getMessage(), "Scenario '{$label}' error message mismatch.");
+                $this->assertSame([], $queries, "Scenario '{$label}' must execute ZERO queries before RefreshDatabase/fixtures.");
+
+                // Restore scenario overrides
+                foreach ($saved as $name => $value) {
+                    putenv($value === false ? $name : $name.'='.$value);
+                }
+                $this->refreshApplication();
+            }
+        } finally {
+            foreach ($saved as $name => $value) {
+                putenv($value === false ? $name : $name.'='.$value);
+            }
+            $this->refreshApplication();
+        }
+    }
+
+    public function test_combobox_markup_and_localized_labels_in_both_locales(): void
+    {
+        $customer = Customer::create([
+            'company_id' => $this->company->id,
+            'name_ar' => 'عميل عربي',
+            'name_en' => 'English Customer',
+            'code' => 'C-100',
+            'active' => true,
+            'created_by' => $this->owner->id,
+        ]);
+
+        // Arabic locale
+        app()->setLocale('ar');
+        $arComponent = Livewire::test(ReportView::class, ['reportKey' => 'customers.statement']);
+        $arComponent->assertSeeHtml('role="combobox"')
+            ->assertSeeHtml('role="listbox"')
+            ->assertSeeHtml('dir="auto"')
+            ->assertSeeHtml('min-h-[44px]');
+        $arResults = $this->reportView($arComponent)->lookupParty('customer_id', '');
+        $this->assertSame('عميل عربي (C-100)', $arResults[0]['label']);
+
+        // English locale
+        app()->setLocale('en');
+        $enComponent = Livewire::test(ReportView::class, ['reportKey' => 'customers.statement']);
+        $enResults = $this->reportView($enComponent)->lookupParty('customer_id', '');
+        $this->assertSame('English Customer (C-100)', $enResults[0]['label']);
     }
 }
