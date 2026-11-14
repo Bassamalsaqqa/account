@@ -493,7 +493,7 @@ final class RefusalTest extends TestCase
         $budget->remainingExecutionSeconds();
     }
 
-    public function test_cell_byte_limit_refuses_oversized_blob_before_allocation(): void
+    public function test_cell_byte_limit_refuses_oversized_numeric_check_before_payload_query(): void
     {
         require_once dirname(__DIR__, 3).'/tools/release-audit/Guard.php';
         require_once dirname(__DIR__, 3).'/tools/release-audit/Fingerprint.php';
@@ -501,7 +501,26 @@ final class RefusalTest extends TestCase
         $budget = new \ReleaseAudit\Budget(['max_memory_bytes' => 67108864]);
         $this->expectException(RuntimeException::class);
         $this->expectExceptionMessage('AUDIT_REFUSED');
-        $budget->checkCellBytes(20000000);
+        $budget->checkCellBytes('20000000');
+    }
+
+    public function test_multiquery_service_deadline_decrements_and_refuses_on_expiration(): void
+    {
+        require_once dirname(__DIR__, 3).'/tools/release-audit/Guard.php';
+        require_once dirname(__DIR__, 3).'/tools/release-audit/Fingerprint.php';
+
+        $budget = new \ReleaseAudit\Budget(['max_execution_seconds' => 2]);
+        $d1 = $budget->remainingExecutionSeconds();
+        self::assertLessThanOrEqual(2, $d1);
+        self::assertGreaterThanOrEqual(1, $d1);
+
+        usleep(500000);
+        $budget->assertWithinLimits();
+
+        usleep(1600000);
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('AUDIT_REFUSED');
+        $budget->remainingExecutionSeconds();
     }
 }
 

@@ -20,6 +20,7 @@ use Illuminate\Database\DatabaseManager;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\MySqlConnection;
 use Illuminate\Foundation\Application;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Facade;
 use ReleaseAudit\Budget;
 use ReleaseAudit\Fingerprint;
@@ -72,6 +73,13 @@ try {
     $app->instance('db', $manager);
     Facade::setFacadeApplication($app);
     Model::setConnectionResolver($manager);
+
+    // Register a beforeExecuting hook on DB to enforce query-level remaining deadline
+    // and budget checks before EVERY database query issued by Laravel or reconciliation services.
+    DB::beforeExecuting(static function (string $query, array $bindings, $conn) use ($budget, $pdo): void {
+        $budget->assertWithinLimits();
+        Fingerprint::configureStatementTimeout($pdo, $budget->remainingExecutionSeconds());
+    });
 
     $domains = [];
     $healthy = true;

@@ -566,4 +566,39 @@ final class ReleaseAuditDatabaseTest extends TestCase
         self::assertSame($rowsAfterFirst * 2, $rowsAfterSecond, 'Cumulative budget must accumulate rows across captures without reset');
         self::assertSame($fp1, $fp2);
     }
+
+    public function test_phase_a_aggregate_refuses_oversized_table_before_payload_query(): void
+    {
+        $pdo = DB::connection()->getPdo();
+
+        // Configure budget with max_memory_bytes = 1048576 (1MB), meaning maxCellBytes = 262144 (256KB)
+        // If a table contains a row larger than 256KB, Phase A aggregate query must detect it
+        // and refuse immediately before executing any unbuffered payload streaming query.
+        $strictBudget = new \ReleaseAudit\Budget([
+            'max_memory_bytes' => 1048576,
+            'max_total_bytes' => 1048576,
+        ]);
+
+        // Insert a payload larger than 256KB into an operational table (sessions)
+        $oversizedData = str_repeat('X', 300000);
+        DB::table('sessions')->insert([
+            'id' => 'test_oversized_blob_'.bin2hex(random_bytes(8)),
+            'user_id' => null,
+            'ip_address' => '127.0.0.1',
+            'user_agent' => 'TestRunner',
+            'payload' => $oversizedData,
+            'last_activity' => time(),
+        ]);
+
+        $refused = false;
+        try {
+            Fingerprint::capture($pdo, $strictBudget);
+        } catch (\RuntimeException $e) {
+            $refused = ($e->getMessage() === 'AUDIT_REFUSED');
+        } finally {
+            DB::table('sessions')->where('id', 'like', 'test_oversized_blob_%')->delete();
+        }
+
+        self::assertTrue($refused, 'Phase A numeric aggregate must refuse oversized cell/row before payload query executes');
+    }
 }

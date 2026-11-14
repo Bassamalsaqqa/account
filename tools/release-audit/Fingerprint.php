@@ -55,8 +55,21 @@ final class Budget
         $this->assertWithinLimits();
     }
 
-    public function checkCellBytes(int $bytes): void
+    public function checkCellBytes(int|string|null $bytes): void
     {
+        if ($bytes === null) {
+            return;
+        }
+        if (is_string($bytes)) {
+            if (bccomp($bytes, (string) $this->maxCellBytes) > 0) {
+                Guard::refuse();
+            }
+            if (bccomp(bcadd((string) $this->totalBytes, $bytes), (string) $this->maxTotalBytes) > 0) {
+                Guard::refuse();
+            }
+
+            return;
+        }
         if ($bytes > $this->maxCellBytes || ($this->totalBytes + $bytes) > $this->maxTotalBytes) {
             Guard::refuse();
         }
@@ -381,7 +394,7 @@ final class Fingerprint
             $ddl = $createTable[1];
             $ddlInfo = self::normalizeDdl($ddl);
 
-            // Fetch table column names via zero-row query so we can build bounded engine-side length projections
+            // Fetch table column names via zero-row query
             $colsStmt = $pdo->query("SELECT * FROM `{$name}` LIMIT 0");
             $numCols = $colsStmt->columnCount();
             if ($numCols < 1) {
@@ -396,11 +409,61 @@ final class Fingerprint
                 $cols[] = (string) $meta['name'];
             }
 
-            // Build query projecting engine-side OCTET_LENGTH for every column before column values:
-            // SELECT OCTET_LENGTH(`c1`), ..., OCTET_LENGTH(`cN`), `c1`, ..., `cN` FROM `name` ORDER BY pk...
-            $lenExprs = array_map(fn ($c) => "OCTET_LENGTH(`{$c}`)", $cols);
+            // -------------------------------------------------------------
+            // PHASE A: Engine-only numeric aggregate query.
+            // Returns ONLY bounded numeric aggregates (zero payload materialization).
+            // Computes COUNT(*), MAX row byte sum, SUM total byte sum, and MAX cell bytes per column.
+            // -------------------------------------------------------------
+            $maxCellExprs = array_map(fn ($c) => "MAX(OCTET_LENGTH(`{$c}`))", $cols);
+            $sumRowExpr = 'MAX('.implode(' + ', array_map(fn ($c) => "COALESCE(OCTET_LENGTH(`{$c}`), 0)", $cols)).')';
+            $sumTotalExpr = 'SUM('.implode(' + ', array_map(fn ($c) => "COALESCE(OCTET_LENGTH(`{$c}`), 0)", $cols)).')';
+            $aggSql = 'SELECT COUNT(*), '.$sumRowExpr.', '.$sumTotalExpr.', '.implode(', ', $maxCellExprs)." FROM `{$name}`";
+
+            self::configureStatementTimeout($pdo, $budget->remainingExecutionSeconds());
+            $aggRow = $pdo->query($aggSql)->fetch(PDO::FETCH_NUM);
+            if (! is_array($aggRow) || count($aggRow) !== (3 + $numCols)) {
+                Guard::refuse();
+            }
+
+            $tableRowCount = (string) $aggRow[0];
+            $maxRowBytes = $aggRow[1] !== null ? (string) $aggRow[1] : '0';
+            $sumTableBytes = $aggRow[2] !== null ? (string) $aggRow[2] : '0';
+
+            // Verify row count bounds with overflow safety
+            if (bccomp($tableRowCount, (string) $budget->maxTotalRows()) > 0) {
+                Guard::refuse();
+            }
+            if (bccomp(bcadd((string) $budget->totalRows(), $tableRowCount), (string) $budget->maxTotalRows()) > 0) {
+                Guard::refuse();
+            }
+
+            // Verify single row memory limit: a single row's raw bytes cannot exceed maxMemoryBytes / 4
+            if (bccomp($maxRowBytes, (string) $budget->maxCellBytes()) > 0) {
+                Guard::refuse();
+            }
+
+            // Verify total bytes sum against cumulative budget
+            if (bccomp($sumTableBytes, (string) $budget->maxTotalBytes()) > 0) {
+                Guard::refuse();
+            }
+            if (bccomp(bcadd((string) $budget->totalBytes(), $sumTableBytes), (string) $budget->maxTotalBytes()) > 0) {
+                Guard::refuse();
+            }
+
+            // Verify each column's max cell byte size against maxCellBytes limit
+            for ($c = 0; $c < $numCols; $c++) {
+                $maxCell = $aggRow[3 + $c];
+                if ($maxCell !== null) {
+                    $budget->checkCellBytes((string) $maxCell);
+                }
+            }
+
+            // -------------------------------------------------------------
+            // PHASE B: Stream ONLY values, incremental hash without doubled frame.
+            // Workload is now PROVEN within bounded limits BEFORE payload query runs.
+            // -------------------------------------------------------------
             $valExprs = array_map(fn ($c) => "`{$c}`", $cols);
-            $streamingSql = 'SELECT '.implode(', ', $lenExprs).', '.implode(', ', $valExprs)." FROM `{$name}` ORDER BY ".implode(',', $order);
+            $streamingSql = 'SELECT '.implode(', ', $valExprs)." FROM `{$name}` ORDER BY ".implode(',', $order);
 
             $hash = hash_init('sha256');
 
@@ -415,42 +478,26 @@ final class Fingerprint
             try {
                 $rowsStmt = $pdo->query($streamingSql);
                 while (($row = $rowsStmt->fetch(PDO::FETCH_NUM)) !== false) {
-                    if (count($row) !== ($numCols * 2)) {
-                        Guard::refuse();
-                    }
-
-                    // 1. Check all engine-side byte lengths BEFORE processing or hashing values
-                    $rowPayloadBytes = 0;
-                    for ($c = 0; $c < $numCols; $c++) {
-                        $colLen = $row[$c];
-                        if ($colLen !== null) {
-                            $lenInt = (int) $colLen;
-                            $budget->checkCellBytes($lenInt);
-                            $rowPayloadBytes += (strlen((string) $lenInt) + 2 + $lenInt); // S<len>:<data>
-                        } else {
-                            $rowPayloadBytes += 2; // N;
-                        }
-                    }
-
                     $rowHeader = "R{$numCols};";
-                    $totalRowBytes = strlen($rowHeader) + $rowPayloadBytes;
-                    $budget->recordRow($totalRowBytes);
-
-                    // 2. Incremental streaming hash updates to avoid memory duplicates
                     hash_update($hash, $rowHeader);
-                    for ($c = 0; $c < $numCols; $c++) {
-                        $val = $row[$numCols + $c];
+                    $rowBytes = strlen($rowHeader);
+
+                    foreach ($row as $val) {
                         if ($val === null) {
                             hash_update($hash, 'N;');
+                            $rowBytes += 2;
                         } else {
                             $strVal = (string) $val;
-                            hash_update($hash, 'S'.strlen($strVal).':');
+                            $strLen = strlen($strVal);
+                            hash_update($hash, "S{$strLen}:");
                             hash_update($hash, $strVal);
+                            $rowBytes += (strlen((string) $strLen) + 2 + $strLen);
                         }
                     }
 
+                    $budget->recordRow($rowBytes);
                     $captureRows++;
-                    $captureBytes += $totalRowBytes;
+                    $captureBytes += $rowBytes;
                     $count++;
                 }
                 $completedNormally = true;

@@ -173,12 +173,35 @@ class ClassificationTest(unittest.TestCase):
         ], capture_output=True, text=True, check=True)
         self.assertEqual("AUDIT_REFUSED", proc.stdout)
 
-    def test_cell_byte_limit_refuses_oversized_blob_before_allocation(self):
+    def test_cell_byte_limit_refuses_oversized_numeric_check_before_payload_query(self):
         php_script = (
             "require $argv[1]; require $argv[2];\n"
             "$budget = new \\ReleaseAudit\\Budget(['max_memory_bytes' => 67108864]);\n"
             "try {\n"
-            "    $budget->checkCellBytes(20000000);\n"
+            "    $budget->checkCellBytes('20000000');\n"
+            "    echo 'FAILED';\n"
+            "} catch (\\RuntimeException $e) {\n"
+            "    echo $e->getMessage();\n"
+            "}\n"
+        )
+        proc = subprocess.run([
+            "php", "-r", php_script,
+            str(ROOT / "tools/release-audit/Guard.php"),
+            str(ROOT / "tools/release-audit/Fingerprint.php"),
+        ], capture_output=True, text=True, check=True)
+        self.assertEqual("AUDIT_REFUSED", proc.stdout)
+
+    def test_multiquery_service_deadline_decrements_and_refuses_on_expiration(self):
+        php_script = (
+            "require $argv[1]; require $argv[2];\n"
+            "$budget = new \\ReleaseAudit\\Budget(['max_execution_seconds' => 2]);\n"
+            "$d1 = $budget->remainingExecutionSeconds();\n"
+            "assert($d1 <= 2 && $d1 >= 1);\n"
+            "usleep(500000);\n"
+            "$budget->assertWithinLimits();\n"
+            "usleep(1600000);\n"
+            "try {\n"
+            "    $budget->remainingExecutionSeconds();\n"
             "    echo 'FAILED';\n"
             "} catch (\\RuntimeException $e) {\n"
             "    echo $e->getMessage();\n"
