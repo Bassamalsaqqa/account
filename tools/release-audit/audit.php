@@ -28,6 +28,10 @@ use ReleaseAudit\Guard;
 umask(0077);
 ini_set('display_errors', '0');
 $pdo = null;
+$app = null;
+$manager = null;
+$connection = null;
+
 try {
     $root = dirname(__DIR__, 2);
     $c = Guard::preflight($argv, $root);
@@ -73,6 +77,8 @@ try {
     $healthy = true;
 
     $budget->assertWithinLimits();
+    Fingerprint::configureStatementTimeout($pdo, $budget->remainingExecutionSeconds());
+
     foreach (Company::orderBy('id')->get() as $company) {
         foreach ([
             'accounting' => AccountingReconciliationService::class,
@@ -98,6 +104,7 @@ try {
                 'digest' => hash('sha256', serialize($findings)),
             ];
             $budget->assertWithinLimits();
+            Fingerprint::configureStatementTimeout($pdo, $budget->remainingExecutionSeconds());
         }
     }
 
@@ -138,8 +145,33 @@ try {
     }
     exit($healthy && $domains !== [] ? 0 : 2);
 } catch (Throwable) {
+    // Explicitly sever and purge all Laravel container, connection, facade, and model references.
+    try {
+        if ($manager instanceof DatabaseManager) {
+            $manager->purge('audit');
+            $manager->disconnect('audit');
+        }
+    } catch (Throwable) {
+    }
+    try {
+        Model::unsetConnectionResolver();
+    } catch (Throwable) {
+    }
+    try {
+        Facade::clearResolvedInstances();
+        Facade::setFacadeApplication(null);
+    } catch (Throwable) {
+    }
+    if ($app instanceof Application) {
+        $app->flush();
+    }
+    $app = null;
+    $manager = null;
+    $connection = null;
+
     // Immediately drop PDO so socket aborts without draining unread packets
     $pdo = null;
+
     fwrite(STDERR, "AUDIT_REFUSED\n");
     exit(1);
 }

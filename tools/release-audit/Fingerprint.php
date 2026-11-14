@@ -71,7 +71,7 @@ final class Budget
             $this->peakMemoryBytes = $peak;
         }
 
-        if (($now - $this->startTime) > $this->maxExecutionSeconds) {
+        if (($now - $this->startTime) >= $this->maxExecutionSeconds) {
             Guard::refuse();
         }
         if ($currentMemory > $this->maxMemoryBytes || $peak > $this->maxMemoryBytes) {
@@ -87,10 +87,14 @@ final class Budget
 
     public function remainingExecutionSeconds(): int
     {
+        $this->assertWithinLimits();
         $elapsed = microtime(true) - $this->startTime;
         $remaining = (int) floor($this->maxExecutionSeconds - $elapsed);
+        if ($remaining <= 0) {
+            Guard::refuse();
+        }
 
-        return max(1, $remaining);
+        return $remaining;
     }
 
     public function maxTotalRows(): int
@@ -165,7 +169,9 @@ final class Fingerprint
 
     public static function configureStatementTimeout(PDO $pdo, int $timeoutSeconds): void
     {
-        $timeoutSeconds = max(1, $timeoutSeconds);
+        if ($timeoutSeconds <= 0) {
+            Guard::refuse();
+        }
 
         // Check MariaDB max_statement_time
         try {
@@ -197,70 +203,122 @@ final class Fingerprint
     }
 
     /**
+     * Locate table definition closing parenthesis using quote-aware paren nesting depth,
+     * so that parentheses inside default expressions, column comments, and table comments
+     * are never misidentified as the table definition boundary.
+     *
      * @return array{normalized_schema_sha256: string, auto_increment: int|string|null}
      */
     public static function normalizeDdl(string $ddl): array
     {
-        $lastParen = strrpos($ddl, ')');
-        if ($lastParen === false) {
-            Guard::refuse();
-        }
-
-        $tableDef = substr($ddl, 0, $lastParen + 1);
-        $tableOptions = substr($ddl, $lastParen + 1);
-
-        $len = strlen($tableOptions);
+        $len = strlen($ddl);
         $inQuote = false;
         $quoteChar = '';
-        $cleanOptions = '';
-        $counter = null;
-        $i = 0;
+        $depth = 0;
+        $foundOpen = false;
+        $closingParenIndex = false;
 
-        while ($i < $len) {
-            $ch = $tableOptions[$i];
+        for ($i = 0; $i < $len; $i++) {
+            $ch = $ddl[$i];
             if ($inQuote) {
-                $cleanOptions .= $ch;
-                if ($ch === $quoteChar) {
-                    if ($i + 1 < $len && $tableOptions[$i + 1] === $quoteChar) {
-                        $cleanOptions .= $quoteChar;
-                        $i += 2;
+                if ($ch === '\\' && $i + 1 < $len) {
+                    $i++;
 
-                        continue;
-                    }
-                    if ($i > 0 && $tableOptions[$i - 1] === '\\') {
+                    continue;
+                }
+                if ($ch === $quoteChar) {
+                    if ($i + 1 < $len && $ddl[$i + 1] === $quoteChar) {
                         $i++;
 
                         continue;
                     }
                     $inQuote = false;
                 }
-                $i++;
 
                 continue;
             }
 
-            if ($ch === "'" || $ch === '"') {
+            if ($ch === "'" || $ch === '"' || $ch === '`') {
+                $inQuote = true;
+                $quoteChar = $ch;
+
+                continue;
+            }
+
+            if ($ch === '(') {
+                $depth++;
+                $foundOpen = true;
+            } elseif ($ch === ')') {
+                if ($depth > 0) {
+                    $depth--;
+                    if ($depth === 0 && $foundOpen) {
+                        $closingParenIndex = $i;
+                        break;
+                    }
+                }
+            }
+        }
+
+        if ($closingParenIndex === false) {
+            Guard::refuse();
+        }
+
+        $tableDef = substr($ddl, 0, $closingParenIndex + 1);
+        $tableOptions = substr($ddl, $closingParenIndex + 1);
+
+        $optLen = strlen($tableOptions);
+        $inQuote = false;
+        $quoteChar = '';
+        $cleanOptions = '';
+        $counter = null;
+        $j = 0;
+
+        while ($j < $optLen) {
+            $ch = $tableOptions[$j];
+            if ($inQuote) {
+                $cleanOptions .= $ch;
+                if ($ch === '\\' && $j + 1 < $optLen) {
+                    $cleanOptions .= $tableOptions[$j + 1];
+                    $j += 2;
+
+                    continue;
+                }
+                if ($ch === $quoteChar) {
+                    if ($j + 1 < $optLen && $tableOptions[$j + 1] === $quoteChar) {
+                        $cleanOptions .= $quoteChar;
+                        $j += 2;
+
+                        continue;
+                    }
+                    $inQuote = false;
+                }
+                $j++;
+
+                continue;
+            }
+
+            if ($ch === "'" || $ch === '"' || $ch === '`') {
                 $inQuote = true;
                 $quoteChar = $ch;
                 $cleanOptions .= $ch;
-                $i++;
+                $j++;
 
                 continue;
             }
 
-            // Outside quotes: match \s*AUTO_INCREMENT=(\d+)
-            if (preg_match('/^(\s*AUTO_INCREMENT=(\d+))/i', substr($tableOptions, $i), $matches)) {
+            // Outside quotes in table options: match \s*AUTO_INCREMENT=(\d+)
+            if (preg_match('/^(\s*AUTO_INCREMENT=(\d+))/i', substr($tableOptions, $j), $matches)) {
                 $fullMatch = $matches[1];
                 $digits = $matches[2];
                 $parsedInt = filter_var($digits, FILTER_VALIDATE_INT);
                 $counter = $parsedInt !== false ? $parsedInt : $digits;
-                $i += strlen($fullMatch);
+                $j += strlen($fullMatch);
 
                 continue;
             }
 
             $cleanOptions .= $ch;
-            $i++;
+            $j++;
         }
 
         $normalizedDdl = $tableDef.$cleanOptions;
@@ -282,22 +340,13 @@ final class Fingerprint
         self::configureStatementTimeout($pdo, $budget->remainingExecutionSeconds());
         $previousBuffered = (bool) $pdo->getAttribute(PDO::MYSQL_ATTR_USE_BUFFERED_QUERY);
 
-        $tablesStmt = $pdo->query('SELECT TABLE_NAME, ENGINE, TABLE_TYPE, TABLE_ROWS, DATA_LENGTH FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() ORDER BY BINARY TABLE_NAME');
+        $tablesStmt = $pdo->query('SELECT TABLE_NAME, ENGINE, TABLE_TYPE FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() ORDER BY BINARY TABLE_NAME');
         $tables = $tablesStmt->fetchAll(PDO::FETCH_ASSOC);
         $budget->recordBytes(strlen(serialize($tables)));
 
-        // Validate table cardinality and workload bounds before running full scans
         foreach ($tables as $table) {
             $name = (string) ($table['TABLE_NAME'] ?? '');
             if (($table['ENGINE'] ?? '') !== 'InnoDB' || ($table['TABLE_TYPE'] ?? '') !== 'BASE TABLE' || ! preg_match('/^[a-zA-Z0-9_]+$/D', $name)) {
-                Guard::refuse();
-            }
-
-            // Hard workload refusal if single table estimate already exceeds entire budget
-            if (isset($table['DATA_LENGTH']) && $table['DATA_LENGTH'] !== null && (int) $table['DATA_LENGTH'] > $budget->maxTotalBytes()) {
-                Guard::refuse();
-            }
-            if (isset($table['TABLE_ROWS']) && $table['TABLE_ROWS'] !== null && (int) $table['TABLE_ROWS'] > $budget->maxTotalRows()) {
                 Guard::refuse();
             }
         }
@@ -332,6 +381,27 @@ final class Fingerprint
             $ddl = $createTable[1];
             $ddlInfo = self::normalizeDdl($ddl);
 
+            // Fetch table column names via zero-row query so we can build bounded engine-side length projections
+            $colsStmt = $pdo->query("SELECT * FROM `{$name}` LIMIT 0");
+            $numCols = $colsStmt->columnCount();
+            if ($numCols < 1) {
+                Guard::refuse();
+            }
+            $cols = [];
+            for ($i = 0; $i < $numCols; $i++) {
+                $meta = $colsStmt->getColumnMeta($i);
+                if (! isset($meta['name']) || ! preg_match('/^[a-zA-Z0-9_]+$/D', (string) $meta['name'])) {
+                    Guard::refuse();
+                }
+                $cols[] = (string) $meta['name'];
+            }
+
+            // Build query projecting engine-side OCTET_LENGTH for every column before column values:
+            // SELECT OCTET_LENGTH(`c1`), ..., OCTET_LENGTH(`cN`), `c1`, ..., `cN` FROM `name` ORDER BY pk...
+            $lenExprs = array_map(fn ($c) => "OCTET_LENGTH(`{$c}`)", $cols);
+            $valExprs = array_map(fn ($c) => "`{$c}`", $cols);
+            $streamingSql = 'SELECT '.implode(', ', $lenExprs).', '.implode(', ', $valExprs)." FROM `{$name}` ORDER BY ".implode(',', $order);
+
             $hash = hash_init('sha256');
 
             // Unbuffered streaming: explicitly scope unbuffered attribute for row fetching
@@ -343,25 +413,44 @@ final class Fingerprint
             $completedNormally = false;
 
             try {
-                $rowsStmt = $pdo->query("SELECT * FROM `{$name}` ORDER BY ".implode(',', $order));
+                $rowsStmt = $pdo->query($streamingSql);
                 while (($row = $rowsStmt->fetch(PDO::FETCH_NUM)) !== false) {
-                    $rowHeader = 'R'.count($row).';';
-                    $rowBytes = strlen($rowHeader);
-                    hash_update($hash, $rowHeader);
-
-                    foreach ($row as $value) {
-                        $strValue = $value === null ? null : (string) $value;
-                        if ($strValue !== null) {
-                            $budget->checkCellBytes(strlen($strValue));
-                        }
-                        $framed = self::frame($strValue);
-                        hash_update($hash, $framed);
-                        $rowBytes += strlen($framed);
+                    if (count($row) !== ($numCols * 2)) {
+                        Guard::refuse();
                     }
 
-                    $budget->recordRow($rowBytes);
+                    // 1. Check all engine-side byte lengths BEFORE processing or hashing values
+                    $rowPayloadBytes = 0;
+                    for ($c = 0; $c < $numCols; $c++) {
+                        $colLen = $row[$c];
+                        if ($colLen !== null) {
+                            $lenInt = (int) $colLen;
+                            $budget->checkCellBytes($lenInt);
+                            $rowPayloadBytes += (strlen((string) $lenInt) + 2 + $lenInt); // S<len>:<data>
+                        } else {
+                            $rowPayloadBytes += 2; // N;
+                        }
+                    }
+
+                    $rowHeader = "R{$numCols};";
+                    $totalRowBytes = strlen($rowHeader) + $rowPayloadBytes;
+                    $budget->recordRow($totalRowBytes);
+
+                    // 2. Incremental streaming hash updates to avoid memory duplicates
+                    hash_update($hash, $rowHeader);
+                    for ($c = 0; $c < $numCols; $c++) {
+                        $val = $row[$numCols + $c];
+                        if ($val === null) {
+                            hash_update($hash, 'N;');
+                        } else {
+                            $strVal = (string) $val;
+                            hash_update($hash, 'S'.strlen($strVal).':');
+                            hash_update($hash, $strVal);
+                        }
+                    }
+
                     $captureRows++;
-                    $captureBytes += $rowBytes;
+                    $captureBytes += $totalRowBytes;
                     $count++;
                 }
                 $completedNormally = true;

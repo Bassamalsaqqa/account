@@ -464,5 +464,44 @@ final class RefusalTest extends TestCase
         $this->expectExceptionMessage('AUDIT_REFUSED');
         Fingerprint::configureStatementTimeout($pdo, 30);
     }
+
+    public function test_ddl_normalization_with_nested_parentheses_and_escaped_quotes(): void
+    {
+        require_once dirname(__DIR__, 3).'/tools/release-audit/Guard.php';
+        require_once dirname(__DIR__, 3).'/tools/release-audit/Fingerprint.php';
+
+        $ddl = "CREATE TABLE `complex_tbl` (\n"
+            ."  `id` bigint(20) unsigned NOT NULL,\n"
+            ."  `formula` varchar(255) DEFAULT '(a + b) * (c + d)' COMMENT 'nested (parens) with \'quoted\' text',\n"
+            ."  PRIMARY KEY (`id`)\n"
+            .") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='table (comment) with \'escaped quotes\' inside' AUTO_INCREMENT=9876543210123456789;";
+
+        $result = Fingerprint::normalizeDdl($ddl);
+        self::assertSame('9876543210123456789', $result['auto_increment']);
+        self::assertMatchesRegularExpression('/^[a-f0-9]{64}$/D', $result['normalized_schema_sha256']);
+    }
+
+    public function test_expired_budget_deadline_refuses_immediately(): void
+    {
+        require_once dirname(__DIR__, 3).'/tools/release-audit/Guard.php';
+        require_once dirname(__DIR__, 3).'/tools/release-audit/Fingerprint.php';
+
+        $budget = new \ReleaseAudit\Budget(['max_execution_seconds' => 1]);
+        usleep(1100000);
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('AUDIT_REFUSED');
+        $budget->remainingExecutionSeconds();
+    }
+
+    public function test_cell_byte_limit_refuses_oversized_blob_before_allocation(): void
+    {
+        require_once dirname(__DIR__, 3).'/tools/release-audit/Guard.php';
+        require_once dirname(__DIR__, 3).'/tools/release-audit/Fingerprint.php';
+
+        $budget = new \ReleaseAudit\Budget(['max_memory_bytes' => 67108864]);
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('AUDIT_REFUSED');
+        $budget->checkCellBytes(20000000);
+    }
 }
 

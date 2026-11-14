@@ -94,6 +94,27 @@ class ClassificationTest(unittest.TestCase):
         self.assertIsInstance(data["normalized_schema_sha256"], str)
         self.assertEqual(64, len(data["normalized_schema_sha256"]))
 
+    def test_ddl_normalization_with_nested_parentheses_and_escaped_quotes_in_comments(self):
+        php_script = (
+            "require $argv[1]; require $argv[2];\n"
+            "$ddl = \"CREATE TABLE `complex_tbl` (\\n\" .\n"
+            "       \"  `id` bigint(20) unsigned NOT NULL,\\n\" .\n"
+            "       \"  `formula` varchar(255) DEFAULT '(a + b) * (c + d)' COMMENT 'nested (parens) with \\'quoted\\' text',\\n\" .\n"
+            "       \"  PRIMARY KEY (`id`)\\n\" .\n"
+            "       \") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='table (comment) with \\'escaped quotes\\' inside' AUTO_INCREMENT=9876543210123456789;\";\n"
+            "$info = \\ReleaseAudit\\Fingerprint::normalizeDdl($ddl);\n"
+            "echo json_encode($info);\n"
+        )
+        proc = subprocess.run([
+            "php", "-r", php_script,
+            str(ROOT / "tools/release-audit/Guard.php"),
+            str(ROOT / "tools/release-audit/Fingerprint.php"),
+        ], capture_output=True, text=True, check=True)
+        data = json.loads(proc.stdout)
+        self.assertEqual("9876543210123456789", data["auto_increment"])
+        self.assertIsInstance(data["normalized_schema_sha256"], str)
+        self.assertEqual(64, len(data["normalized_schema_sha256"]))
+
     def test_budget_cumulative_tracking_and_refusal_across_phases(self):
         php_script = (
             "require $argv[1]; require $argv[2];\n"
@@ -121,6 +142,43 @@ class ClassificationTest(unittest.TestCase):
             "$pdo = new PDO('sqlite::memory:');\n"
             "try {\n"
             "    \\ReleaseAudit\\Fingerprint::configureStatementTimeout($pdo, 30);\n"
+            "    echo 'FAILED';\n"
+            "} catch (\\RuntimeException $e) {\n"
+            "    echo $e->getMessage();\n"
+            "}\n"
+        )
+        proc = subprocess.run([
+            "php", "-r", php_script,
+            str(ROOT / "tools/release-audit/Guard.php"),
+            str(ROOT / "tools/release-audit/Fingerprint.php"),
+        ], capture_output=True, text=True, check=True)
+        self.assertEqual("AUDIT_REFUSED", proc.stdout)
+
+    def test_expired_budget_deadline_refuses_immediately(self):
+        php_script = (
+            "require $argv[1]; require $argv[2];\n"
+            "$budget = new \\ReleaseAudit\\Budget(['max_execution_seconds' => 1]);\n"
+            "usleep(1100000);\n"
+            "try {\n"
+            "    $budget->remainingExecutionSeconds();\n"
+            "    echo 'FAILED';\n"
+            "} catch (\\RuntimeException $e) {\n"
+            "    echo $e->getMessage();\n"
+            "}\n"
+        )
+        proc = subprocess.run([
+            "php", "-r", php_script,
+            str(ROOT / "tools/release-audit/Guard.php"),
+            str(ROOT / "tools/release-audit/Fingerprint.php"),
+        ], capture_output=True, text=True, check=True)
+        self.assertEqual("AUDIT_REFUSED", proc.stdout)
+
+    def test_cell_byte_limit_refuses_oversized_blob_before_allocation(self):
+        php_script = (
+            "require $argv[1]; require $argv[2];\n"
+            "$budget = new \\ReleaseAudit\\Budget(['max_memory_bytes' => 67108864]);\n"
+            "try {\n"
+            "    $budget->checkCellBytes(20000000);\n"
             "    echo 'FAILED';\n"
             "} catch (\\RuntimeException $e) {\n"
             "    echo $e->getMessage();\n"
