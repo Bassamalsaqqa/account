@@ -275,6 +275,7 @@ final class ExecuteImmediateOnlineCashSaleAction
             'exchange_rate' => '1.0000000000',
             'reference_number' => null,
             'notes' => 'Mobile online cash sale settlement',
+            'idempotency_key' => 'fin1-payment:'.$idempotencySuffix,
             'allocations' => [
                 [
                     'sales_invoice_id' => (int) $postedInvoice->id,
@@ -286,8 +287,7 @@ final class ExecuteImmediateOnlineCashSaleAction
         $customerPayment = $this->postPaymentAction->execute(
             $company,
             $actor,
-            $paymentData,
-            'fin1-payment:'.$idempotencySuffix
+            $paymentData
         );
 
         // 10. Assemble and return terminal canonical result
