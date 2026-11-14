@@ -2401,6 +2401,7 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
         $metadata = array_merge([
             'scope' => 'ROOT_AUTHORIZED_PAIRED_EXECUTION',
             'runId' => '019ea456-0000-7000-8000-000000000001',
+            'eventId' => 'c0686be5-888f-4890-90bf-1f05f416a19a',
             'schemaName' => 'accounting_p8_tmp_0123456789ab',
             'companyId' => 1,
             'sourceHead' => 'cfc28baaaaf52521ecbc88f1ba4c621afee17221',
@@ -2432,11 +2433,35 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
             'document_sequences' => [],
         ], $overrides['baseline'] ?? []);
 
+        $defaultDeltas = [
+            'sales_invoices' => 1,
+            'sales_invoice_lines' => 1,
+            'sales_invoice_lot_allocations' => 1,
+            'customer_payments' => 1,
+            'customer_payment_allocations' => 1,
+            'mobile_event_receipts' => 1,
+            'stock_movements' => 1,
+            'posting_batches' => 2,
+            'posting_lines' => 4,
+        ];
+
+        $defaultCanonicalGraph = [
+            'client_event_id' => $metadata['eventId'],
+            'sales_invoice_id' => 11,
+            'sales_invoice_public_id' => '01INVTEST0001',
+            'customer_payment_id' => 6,
+            'customer_payment_public_id' => '01PAYTEST0001',
+            'stock_movement_quantity_delta' => '-1.000000',
+            'customer_payment_allocation_amount' => '58.000000',
+            'customer_payment_allocation_payment_currency_amount' => '58.000000',
+            'receipt_status' => 'completed',
+        ];
+
         $deltaResult = array_merge([
             'is_canonical_delta_valid' => true,
             'gl_batches_balanced' => true,
-            'deltas' => [],
-            'canonical_graph' => [],
+            'deltas' => $defaultDeltas,
+            'canonical_graph' => $defaultCanonicalGraph,
         ], $overrides['delta'] ?? []);
 
         $reconcileResult = array_merge([
@@ -2466,10 +2491,14 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
             'expectedSchemaName' => $metadata['schemaName'],
             'companyId' => $metadata['companyId'],
             'expectedRunId' => $metadata['runId'],
+            'expectedEventId' => $metadata['eventId'],
             'expectedBaselineHash' => $report['baseline_hash'],
             'expectedScope' => $metadata['scope'],
             'expectedLifecycle' => 'FINANCIAL_PAIRED_RUN',
         ];
+        if (isset($overrides['expectedPins'])) {
+            $expectedPins = array_merge($expectedPins, $overrides['expectedPins']);
+        }
 
         return [
             'report' => $report,
@@ -2681,6 +2710,7 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
         $metadata = [
             'scope' => 'ROOT_AUTHORIZED_PAIRED_EXECUTION',
             'runId' => '019ea456-0000-7000-8000-000000000001',
+            'eventId' => 'c0686be5-888f-4890-90bf-1f05f416a19a',
             'schemaName' => 'accounting_p8_tmp_0123456789ab',
             'companyId' => 1,
             'sourceHead' => 'cfc28baaaaf52521ecbc88f1ba4c621afee17221',
@@ -2717,11 +2747,19 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
             'expected_delta_one_event' => true,
             'deltas' => [
                 'sales_invoices' => 1,
+                'sales_invoice_lines' => 1,
+                'sales_invoice_lot_allocations' => 1,
                 'customer_payments' => 1,
+                'customer_payment_allocations' => 1,
+                'mobile_event_receipts' => 1,
+                'stock_movements' => 1,
+                'posting_batches' => 2,
+                'posting_lines' => 4,
             ],
             'errors' => [],
             'gl_batches_balanced' => true,
             'canonical_graph' => [
+                'client_event_id' => 'c0686be5-888f-4890-90bf-1f05f416a19a',
                 'sales_invoice_id' => 11,
                 'sales_invoice_public_id' => '01INVTEST0001',
                 'customer_payment_id' => 6,
@@ -2754,6 +2792,7 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
 
         $this->assertSame('ROOT_AUTHORIZED_PAIRED_EXECUTION', $report['scope']);
         $this->assertSame('019ea456-0000-7000-8000-000000000001', $report['run_id']);
+        $this->assertSame('c0686be5-888f-4890-90bf-1f05f416a19a', $report['event_id']);
         $this->assertSame('accounting_p8_tmp_0123456789ab', $report['schema_name']);
         $this->assertSame(1, $report['company_id']);
         $this->assertTrue($report['is_canonical_delta_valid']);
@@ -2876,6 +2915,285 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
         );
         $this->assertFalse($badRunIdResult['is_valid']);
         $this->assertTrue(collect($badRunIdResult['errors'])->contains(fn ($e) => str_contains($e, "'expectedRunId' is mandatory")));
+    }
+
+    #[Test]
+    public function test_outer_validator_rejects_missing_or_invalid_or_mismatched_expected_event_id(): void
+    {
+        $goldenData = $this->getGoldenWireFixtureData();
+        $fixture = $this->createSyntheticTrustedDbReportFixture();
+
+        // 1. Missing expectedEventId rejected
+        $missingEventIdPins = $fixture['expectedPins'];
+        unset($missingEventIdPins['expectedEventId']);
+        $resMissing = \Tests\Support\Harness\DisposableFinancialPostRunInspector::validateOuterEvidenceJson(
+            $goldenData,
+            $missingEventIdPins,
+            $fixture['report']
+        );
+        $this->assertFalse($resMissing['is_valid']);
+        $this->assertTrue(collect($resMissing['errors'])->contains(fn ($e) => str_contains($e, "'expectedEventId' is mandatory")));
+
+        // 2. Malformed expectedEventId format rejected
+        $badFormatPins = $fixture['expectedPins'];
+        $badFormatPins['expectedEventId'] = 'not-a-valid-uuid';
+        $resBadFormat = \Tests\Support\Harness\DisposableFinancialPostRunInspector::validateOuterEvidenceJson(
+            $goldenData,
+            $badFormatPins,
+            $fixture['report']
+        );
+        $this->assertFalse($resBadFormat['is_valid']);
+        $this->assertTrue(collect($resBadFormat['errors'])->contains(fn ($e) => str_contains($e, 'must be a valid UUID')));
+
+        // 3. Mismatched expectedEventId vs report event_id rejected
+        $mismatchPins = $fixture['expectedPins'];
+        $mismatchPins['expectedEventId'] = '00000000-0000-0000-0000-000000000000';
+        $resMismatch = \Tests\Support\Harness\DisposableFinancialPostRunInspector::validateOuterEvidenceJson(
+            $goldenData,
+            $mismatchPins,
+            $fixture['report']
+        );
+        $this->assertFalse($resMismatch['is_valid']);
+        $this->assertTrue(collect($resMismatch['errors'])->contains(fn ($e) => str_contains($e, 'event_id mismatch')));
+
+        // 4. Ambiguous identity: expectedRunId and expectedEventId must not be identical
+        $ambiguousPins = $fixture['expectedPins'];
+        $ambiguousPins['expectedRunId'] = $ambiguousPins['expectedEventId'];
+        $resAmbiguous = \Tests\Support\Harness\DisposableFinancialPostRunInspector::validateOuterEvidenceJson(
+            $goldenData,
+            $ambiguousPins,
+            $fixture['report']
+        );
+        $this->assertFalse($resAmbiguous['is_valid']);
+        $this->assertTrue(collect($resAmbiguous['errors'])->contains(fn ($e) => str_contains($e, 'Ambiguous identity')));
+    }
+
+    #[Test]
+    public function test_outer_validator_rejects_empty_or_invalid_deltas(): void
+    {
+        $goldenData = $this->getGoldenWireFixtureData();
+
+        // 1. Empty deltas rejected
+        $emptyDeltasFixture = $this->createSyntheticTrustedDbReportFixture([
+            'delta' => ['deltas' => []],
+        ]);
+        $resEmpty = \Tests\Support\Harness\DisposableFinancialPostRunInspector::validateOuterEvidenceJson(
+            $goldenData,
+            $emptyDeltasFixture['expectedPins'],
+            $emptyDeltasFixture['report']
+        );
+        $this->assertFalse($resEmpty['is_valid']);
+        $this->assertTrue(collect($resEmpty['errors'])->contains(fn ($e) => str_contains($e, 'deltas array is missing or empty')));
+
+        // 2. Incorrect delta count (sales_invoices = 0)
+        $badCountFixture = $this->createSyntheticTrustedDbReportFixture([
+            'delta' => [
+                'deltas' => [
+                    'sales_invoices' => 0,
+                    'sales_invoice_lines' => 1,
+                    'sales_invoice_lot_allocations' => 1,
+                    'customer_payments' => 1,
+                    'customer_payment_allocations' => 1,
+                    'mobile_event_receipts' => 1,
+                    'stock_movements' => 1,
+                    'posting_batches' => 2,
+                    'posting_lines' => 4,
+                ],
+            ],
+        ]);
+        $resBadCount = \Tests\Support\Harness\DisposableFinancialPostRunInspector::validateOuterEvidenceJson(
+            $goldenData,
+            $badCountFixture['expectedPins'],
+            $badCountFixture['report']
+        );
+        $this->assertFalse($resBadCount['is_valid']);
+        $this->assertTrue(collect($resBadCount['errors'])->contains(fn ($e) => str_contains($e, "delta 'sales_invoices' mismatch")));
+
+        // 3. Insufficient posting lines (< 4)
+        $lowLinesFixture = $this->createSyntheticTrustedDbReportFixture([
+            'delta' => [
+                'deltas' => [
+                    'sales_invoices' => 1,
+                    'sales_invoice_lines' => 1,
+                    'sales_invoice_lot_allocations' => 1,
+                    'customer_payments' => 1,
+                    'customer_payment_allocations' => 1,
+                    'mobile_event_receipts' => 1,
+                    'stock_movements' => 1,
+                    'posting_batches' => 2,
+                    'posting_lines' => 2,
+                ],
+            ],
+        ]);
+        $resLowLines = \Tests\Support\Harness\DisposableFinancialPostRunInspector::validateOuterEvidenceJson(
+            $goldenData,
+            $lowLinesFixture['expectedPins'],
+            $lowLinesFixture['report']
+        );
+        $this->assertFalse($resLowLines['is_valid']);
+        $this->assertTrue(collect($resLowLines['errors'])->contains(fn ($e) => str_contains($e, "delta 'posting_lines' must be >= 4")));
+    }
+
+    #[Test]
+    public function test_outer_validator_rejects_swapped_or_invalid_canonical_graph_identities(): void
+    {
+        $goldenData = $this->getGoldenWireFixtureData();
+
+        // 1. Identical sales_invoice_id and customer_payment_id rejected
+        $identicalIdFixture = $this->createSyntheticTrustedDbReportFixture([
+            'delta' => [
+                'canonical_graph' => [
+                    'client_event_id' => 'c0686be5-888f-4890-90bf-1f05f416a19a',
+                    'sales_invoice_id' => 11,
+                    'sales_invoice_public_id' => '01INVTEST0001',
+                    'customer_payment_id' => 11,
+                    'customer_payment_public_id' => '01PAYTEST0001',
+                    'stock_movement_quantity_delta' => '-1.000000',
+                    'customer_payment_allocation_amount' => '58.000000',
+                    'customer_payment_allocation_payment_currency_amount' => '58.000000',
+                    'receipt_status' => 'completed',
+                ],
+            ],
+        ]);
+        $resIdenticalId = \Tests\Support\Harness\DisposableFinancialPostRunInspector::validateOuterEvidenceJson(
+            $goldenData,
+            $identicalIdFixture['expectedPins'],
+            $identicalIdFixture['report']
+        );
+        $this->assertFalse($resIdenticalId['is_valid']);
+        $this->assertTrue(collect($resIdenticalId['errors'])->contains(fn ($e) => str_contains($e, 'must be distinct')));
+
+        // 2. Mutated allocation amount rejected
+        $badAllocFixture = $this->createSyntheticTrustedDbReportFixture([
+            'delta' => [
+                'canonical_graph' => [
+                    'client_event_id' => 'c0686be5-888f-4890-90bf-1f05f416a19a',
+                    'sales_invoice_id' => 11,
+                    'sales_invoice_public_id' => '01INVTEST0001',
+                    'customer_payment_id' => 6,
+                    'customer_payment_public_id' => '01PAYTEST0001',
+                    'stock_movement_quantity_delta' => '-1.000000',
+                    'customer_payment_allocation_amount' => '50.000000',
+                    'customer_payment_allocation_payment_currency_amount' => '58.000000',
+                    'receipt_status' => 'completed',
+                ],
+            ],
+        ]);
+        $resBadAlloc = \Tests\Support\Harness\DisposableFinancialPostRunInspector::validateOuterEvidenceJson(
+            $goldenData,
+            $badAllocFixture['expectedPins'],
+            $badAllocFixture['report']
+        );
+        $this->assertFalse($resBadAlloc['is_valid']);
+        $this->assertTrue(collect($resBadAlloc['errors'])->contains(fn ($e) => str_contains($e, "customer_payment_allocation_amount must be '58.000000'")));
+
+        // 3. Receipt status not 'completed' rejected
+        $badStatusFixture = $this->createSyntheticTrustedDbReportFixture([
+            'delta' => [
+                'canonical_graph' => [
+                    'client_event_id' => 'c0686be5-888f-4890-90bf-1f05f416a19a',
+                    'sales_invoice_id' => 11,
+                    'sales_invoice_public_id' => '01INVTEST0001',
+                    'customer_payment_id' => 6,
+                    'customer_payment_public_id' => '01PAYTEST0001',
+                    'stock_movement_quantity_delta' => '-1.000000',
+                    'customer_payment_allocation_amount' => '58.000000',
+                    'customer_payment_allocation_payment_currency_amount' => '58.000000',
+                    'receipt_status' => 'posted',
+                ],
+            ],
+        ]);
+        $resBadStatus = \Tests\Support\Harness\DisposableFinancialPostRunInspector::validateOuterEvidenceJson(
+            $goldenData,
+            $badStatusFixture['expectedPins'],
+            $badStatusFixture['report']
+        );
+        $this->assertFalse($resBadStatus['is_valid']);
+        $this->assertTrue(collect($resBadStatus['errors'])->contains(fn ($e) => str_contains($e, "receipt_status must be 'completed'")));
+    }
+
+    #[Test]
+    public function test_outer_validator_rejects_mutated_canonical_graph_due_to_report_digest_mismatch(): void
+    {
+        $goldenData = $this->getGoldenWireFixtureData();
+        $fixture = $this->createSyntheticTrustedDbReportFixture();
+
+        // Tamper with canonical graph in report without recomputing report_digest
+        $tamperedReport = $fixture['report'];
+        $tamperedReport['canonical_graph']['sales_invoice_id'] = 999;
+
+        $res = \Tests\Support\Harness\DisposableFinancialPostRunInspector::validateOuterEvidenceJson(
+            $goldenData,
+            $fixture['expectedPins'],
+            $tamperedReport
+        );
+        $this->assertFalse($res['is_valid']);
+        $this->assertTrue(collect($res['errors'])->contains(fn ($e) => str_contains($e, 'report_digest mismatch')));
+    }
+
+    #[Test]
+    public function test_outer_validator_rejects_not_run_scenario_with_non_null_or_missing_status_code(): void
+    {
+        $goldenData = $this->getGoldenWireFixtureData();
+        $fixture = $this->createSyntheticTrustedDbReportFixture();
+
+        // 1. httpStatusCode = 0 rejected (must be exact JSON null)
+        $payloadWithZero = $goldenData;
+        $payloadWithZero['scenarios'][5]['httpStatusCode'] = 0;
+        $resZero = \Tests\Support\Harness\DisposableFinancialPostRunInspector::validateOuterEvidenceJson(
+            $payloadWithZero,
+            $fixture['expectedPins'],
+            $fixture['report']
+        );
+        $this->assertFalse($resZero['is_valid']);
+        $this->assertTrue(collect($resZero['errors'])->contains(fn ($e) => str_contains($e, 'httpStatusCode must be exact JSON null')));
+
+        // 2. httpStatusCode = "0" rejected
+        $payloadWithString = $goldenData;
+        $payloadWithString['scenarios'][5]['httpStatusCode'] = '0';
+        $resString = \Tests\Support\Harness\DisposableFinancialPostRunInspector::validateOuterEvidenceJson(
+            $payloadWithString,
+            $fixture['expectedPins'],
+            $fixture['report']
+        );
+        $this->assertFalse($resString['is_valid']);
+        $this->assertTrue(collect($resString['errors'])->contains(fn ($e) => str_contains($e, 'httpStatusCode must be exact JSON null')));
+
+        // 3. httpStatusCode = 200 rejected
+        $payloadWith200 = $goldenData;
+        $payloadWith200['scenarios'][5]['httpStatusCode'] = 200;
+        $res200 = \Tests\Support\Harness\DisposableFinancialPostRunInspector::validateOuterEvidenceJson(
+            $payloadWith200,
+            $fixture['expectedPins'],
+            $fixture['report']
+        );
+        $this->assertFalse($res200['is_valid']);
+        $this->assertTrue(collect($res200['errors'])->contains(fn ($e) => str_contains($e, 'httpStatusCode must be exact JSON null')));
+
+        // 4. Missing httpStatusCode rejected
+        $payloadMissing = $goldenData;
+        unset($payloadMissing['scenarios'][5]['httpStatusCode']);
+        $resMissing = \Tests\Support\Harness\DisposableFinancialPostRunInspector::validateOuterEvidenceJson(
+            $payloadMissing,
+            $fixture['expectedPins'],
+            $fixture['report']
+        );
+        $this->assertFalse($resMissing['is_valid']);
+        $this->assertTrue(collect($resMissing['errors'])->contains(fn ($e) => str_contains($e, 'httpStatusCode must be exact JSON null')));
+    }
+
+    #[Test]
+    public function test_inspect_delta_enforces_mandatory_uuid_expected_event_id(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('expectedClientEventId must be a valid non-empty UUID');
+
+        \Tests\Support\Harness\DisposableFinancialPostRunInspector::inspectDelta(
+            1,
+            [],
+            'bad-uuid',
+            'accounting_p8_tmp_0123456789ab'
+        );
     }
 }
 

@@ -130,6 +130,11 @@ if ($evidenceFile !== null) {
         exit(1);
     }
 
+    if ($expectedEventId === null || $expectedEventId === '' || ! preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iD', $expectedEventId)) {
+        fwrite(STDERR, "Error: --expected-event-id=<uuid> is mandatory and must be a valid UUID for evidence validation.\n");
+        exit(1);
+    }
+
     if ($expectedBaselineHash === null || $expectedBaselineHash === '') {
         fwrite(STDERR, "Error: --expected-baseline-hash=<sha256> is mandatory and cannot fall back to trusted DB report.\n");
         exit(1);
@@ -171,12 +176,9 @@ if ($evidenceFile !== null) {
         'expectedSchemaName' => $schemaName ?? '',
         'companyId' => $companyId ?? 0,
         'expectedRunId' => $runId,
+        'expectedEventId' => $expectedEventId,
         'expectedBaselineHash' => $expectedBaselineHash,
     ];
-
-    if ($expectedEventId !== null && $expectedEventId !== '') {
-        $expectedPins['expectedEventId'] = $expectedEventId;
-    }
 
     $validation = DisposableFinancialPostRunInspector::validateOuterEvidenceJson($rawEvidence, $expectedPins, $trustedDbReport);
 
@@ -224,6 +226,10 @@ if ($isComposeTrustedReport) {
         fwrite(STDERR, "Error: --compose-trusted-report requires --expected-handoff-digest=<sha>.\n");
         exit(1);
     }
+    if ($expectedEventId === null || $expectedEventId === '' || ! preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iD', $expectedEventId)) {
+        fwrite(STDERR, "Error: --compose-trusted-report requires valid UUID --expected-event-id=<uuid>.\n");
+        exit(1);
+    }
 
     $baselineData = json_decode((string) file_get_contents($baselineFile), true);
     $deltaData = json_decode((string) file_get_contents($deltaFile), true);
@@ -238,6 +244,7 @@ if ($isComposeTrustedReport) {
         $metadata = [
             'scope' => $expectedScope ?? 'ROOT_AUTHORIZED_PAIRED_EXECUTION',
             'runId' => $runId,
+            'eventId' => $expectedEventId,
             'schemaName' => $schemaName,
             'companyId' => $companyId,
             'sourceHead' => $expectedBackendHead,
@@ -301,6 +308,11 @@ if ($isBaseline) {
 if ($isInspectDelta) {
     if ($baselineFile === null || ! is_file($baselineFile)) {
         fwrite(STDERR, "Error: --inspect-delta requires valid --baseline-file=<path>.\n");
+        exit(1);
+    }
+
+    if ($expectedEventId === null || $expectedEventId === '' || ! preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iD', $expectedEventId)) {
+        fwrite(STDERR, "Error: --inspect-delta requires valid UUID --expected-event-id=<uuid>.\n");
         exit(1);
     }
 

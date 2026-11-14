@@ -13,6 +13,9 @@ use App\Services\Purchasing\PayablesReconciliationService;
 use App\Services\Sales\SalesReconciliationService;
 use App\Support\Tenancy\CompanyContext;
 use Brick\Math\BigDecimal;
+use DateTimeImmutable;
+use DateTimeZone;
+use InvalidArgumentException;
 use PDO;
 use RuntimeException;
 use Tests\Support\DisposableMariaDbSchema;
@@ -352,18 +355,22 @@ final class DisposableFinancialPostRunInspector
      *
      * @param  int  $companyId
      * @param  array<string, mixed>  $baseline
-     * @param  string|null  $expectedClientEventId
+     * @param  string  $expectedClientEventId
      * @param  string  $expectedSchemaName
      * @return array<string, mixed>
      *
-     * @throws RuntimeException
+     * @throws RuntimeException|InvalidArgumentException
      */
     public static function inspectDelta(
         int $companyId,
         array $baseline,
-        ?string $expectedClientEventId,
+        string $expectedClientEventId,
         string $expectedSchemaName
     ): array {
+        if ($expectedClientEventId === '' || ! preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iD', $expectedClientEventId)) {
+            throw new InvalidArgumentException("Inspector refused: expectedClientEventId must be a valid non-empty UUID, got '{$expectedClientEventId}'.");
+        }
+
         $db = self::assertExecutionGates($expectedSchemaName);
         $db->exec('SET SESSION TRANSACTION ISOLATION LEVEL REPEATABLE READ');
         $db->exec('START TRANSACTION WITH CONSISTENT SNAPSHOT, READ ONLY');
@@ -659,7 +666,7 @@ final class DisposableFinancialPostRunInspector
         if (! $newReceipt) {
             $errors[] = 'Newly created mobile_event_receipt row not found.';
         } else {
-            if ($expectedClientEventId !== null && (string) ($newReceipt['client_event_id'] ?? '') !== $expectedClientEventId) {
+            if ((string) ($newReceipt['client_event_id'] ?? '') !== $expectedClientEventId) {
                 $errors[] = "Mobile event receipt client_event_id mismatch: expected '{$expectedClientEventId}', got '".($newReceipt['client_event_id'] ?? 'null')."'.";
             }
             if (($newReceipt['status'] ?? '') !== 'completed') {
@@ -680,6 +687,7 @@ final class DisposableFinancialPostRunInspector
                 'errors' => $errors,
                 'gl_batches_balanced' => $allBatchesBalanced && $hasInvoiceBatch && $hasPaymentBatch,
                 'canonical_graph' => [
+                    'client_event_id' => (string) ($newReceipt['client_event_id'] ?? $expectedClientEventId),
                     'sales_invoice_id' => $newInvoiceId,
                     'sales_invoice_public_id' => $newInvoicePublicId,
                     'customer_payment_id' => $newPaymentId,
@@ -874,6 +882,7 @@ final class DisposableFinancialPostRunInspector
      * @param  array{
      *     scope: string,
      *     runId: string,
+     *     eventId: string,
      *     schemaName: string,
      *     companyId: int,
      *     sourceHead: string,
@@ -890,10 +899,14 @@ final class DisposableFinancialPostRunInspector
         array $deltaResult,
         array $reconcileResult
     ): array {
-        foreach (['scope', 'runId', 'schemaName', 'companyId', 'sourceHead', 'handoffDigest'] as $mKey) {
+        foreach (['scope', 'runId', 'eventId', 'schemaName', 'companyId', 'sourceHead', 'handoffDigest'] as $mKey) {
             if (! isset($metadata[$mKey]) || $metadata[$mKey] === '' || $metadata[$mKey] === 0) {
                 throw new InvalidArgumentException("Missing required metadata field '{$mKey}' for trusted DB report composition.");
             }
+        }
+
+        if (! preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iD', (string) $metadata['eventId'])) {
+            throw new InvalidArgumentException("Invalid eventId format '{$metadata['eventId']}' in metadata: expected UUID.");
         }
 
         // Canonical baseline metrics hash
@@ -927,15 +940,18 @@ final class DisposableFinancialPostRunInspector
         $glBalanced = (bool) ($deltaResult['gl_batches_balanced'] ?? false);
         $allHealthy = (bool) ($reconcileResult['all_healthy'] ?? false);
 
-        // Core deterministic payload for root-pinnable report digest
+        // Core deterministic payload for root-pinnable report digest: binds event identity, deltas, and canonical graph
         $coreDeterministicPayload = [
             'scope' => (string) $metadata['scope'],
             'run_id' => (string) $metadata['runId'],
+            'event_id' => (string) $metadata['eventId'],
             'schema_name' => (string) $metadata['schemaName'],
             'company_id' => (int) $metadata['companyId'],
             'source_head' => (string) $metadata['sourceHead'],
             'handoff_digest' => (string) $metadata['handoffDigest'],
             'baseline_hash' => $baselineHash,
+            'deltas' => $deltaResult['deltas'] ?? [],
+            'canonical_graph' => $deltaResult['canonical_graph'] ?? [],
             'is_canonical_delta_valid' => $isDeltaValid,
             'gl_batches_balanced' => $glBalanced,
             'all_healthy' => $allHealthy,
@@ -947,6 +963,7 @@ final class DisposableFinancialPostRunInspector
         return [
             'scope' => (string) $metadata['scope'],
             'run_id' => (string) $metadata['runId'],
+            'event_id' => (string) $metadata['eventId'],
             'schema_name' => (string) $metadata['schemaName'],
             'company_id' => (int) $metadata['companyId'],
             'source_head' => (string) $metadata['sourceHead'],
@@ -1130,7 +1147,7 @@ final class DisposableFinancialPostRunInspector
                 }
             }
 
-            // Required 2 probe scenarios: MUST be explicitly present and marked 'NOT_RUN' with statusCode 0
+            // Required 2 probe scenarios: MUST be explicitly present and marked 'NOT_RUN' with statusCode exact JSON null
             $requiredProbeScenarios = [
                 'transport_lost_ack_recovery',
                 'stock_permission_rollback_probes',
@@ -1148,9 +1165,9 @@ final class DisposableFinancialPostRunInspector
                 if ($status !== 'NOT_RUN') {
                     $errors[] = "Advanced probe scenario '{$probeName}' cannot claim '{$status}' in basic financial run; must be exactly 'NOT_RUN'.";
                 }
-                $statusCode = $sc['httpStatusCode'] ?? null;
-                if ($statusCode !== null && $statusCode !== 0) {
-                    $errors[] = "Advanced probe scenario '{$probeName}' httpStatusCode must be null or 0, got ".json_encode($statusCode).".";
+                if (! array_key_exists('httpStatusCode', $sc) || $sc['httpStatusCode'] !== null) {
+                    $val = array_key_exists('httpStatusCode', $sc) ? json_encode($sc['httpStatusCode']) : 'MISSING';
+                    $errors[] = "Advanced probe scenario '{$probeName}' httpStatusCode must be exact JSON null, got {$val}.";
                 }
             }
         }
@@ -1175,6 +1192,22 @@ final class DisposableFinancialPostRunInspector
                 }
                 if ((string) ($trustedDbReport['run_id'] ?? '') !== $expectedRunId) {
                     $errors[] = "Trusted DB report run_id mismatch: expected '{$expectedRunId}', got '".($trustedDbReport['run_id'] ?? 'null')."'.";
+                }
+            }
+
+            $expectedEventId = (string) ($expectedPins['expectedEventId'] ?? '');
+            if ($expectedEventId === '' || ! preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iD', $expectedEventId)) {
+                $errors[] = "Expected pin 'expectedEventId' is mandatory and must be a valid UUID; cannot be omitted or empty.";
+            } else {
+                if ($expectedRunId !== '' && $expectedEventId === $expectedRunId) {
+                    $errors[] = "Ambiguous identity: expectedRunId and expectedEventId must not be identical ('{$expectedEventId}').";
+                }
+                if ((string) ($trustedDbReport['event_id'] ?? '') !== $expectedEventId) {
+                    $errors[] = "Trusted DB report event_id mismatch: expected '{$expectedEventId}', got '".($trustedDbReport['event_id'] ?? 'null')."'.";
+                }
+                $graphClientEventId = (string) ($trustedDbReport['canonical_graph']['client_event_id'] ?? '');
+                if ($graphClientEventId !== $expectedEventId) {
+                    $errors[] = "Trusted DB report canonical_graph client_event_id mismatch: expected '{$expectedEventId}', got '{$graphClientEventId}'.";
                 }
             }
 
@@ -1213,15 +1246,90 @@ final class DisposableFinancialPostRunInspector
                 $errors[] = "Trusted DB report baseline_hash mismatch: expected '{$expectedBaselineHash}', got '".($trustedDbReport['baseline_hash'] ?? 'null')."'.";
             }
 
-            // Recompute deterministic core payload and verify self-digest with hash_equals
+            // Assert complete exact expected deltas
+            $deltas = $trustedDbReport['deltas'] ?? null;
+            if (! is_array($deltas) || empty($deltas)) {
+                $errors[] = 'Trusted DB report deltas array is missing or empty.';
+            } else {
+                $expectedDeltaCounts = [
+                    'sales_invoices' => 1,
+                    'sales_invoice_lines' => 1,
+                    'sales_invoice_lot_allocations' => 1,
+                    'customer_payments' => 1,
+                    'customer_payment_allocations' => 1,
+                    'mobile_event_receipts' => 1,
+                    'stock_movements' => 1,
+                    'posting_batches' => 2,
+                ];
+                foreach ($expectedDeltaCounts as $dKey => $expectedCount) {
+                    if (! array_key_exists($dKey, $deltas)) {
+                        $errors[] = "Trusted DB report deltas missing required key '{$dKey}'.";
+                    } elseif ($deltas[$dKey] !== $expectedCount) {
+                        $errors[] = "Trusted DB report delta '{$dKey}' mismatch: expected {$expectedCount}, got {$deltas[$dKey]}.";
+                    }
+                }
+                if (! array_key_exists('posting_lines', $deltas)) {
+                    $errors[] = "Trusted DB report deltas missing required key 'posting_lines'.";
+                } elseif (($deltas['posting_lines'] ?? 0) < 4) {
+                    $errors[] = "Trusted DB report delta 'posting_lines' must be >= 4, got ".($deltas['posting_lines'] ?? 'null').'.';
+                }
+            }
+
+            // Assert complete canonical graph entity identities and relationships
+            $graph = $trustedDbReport['canonical_graph'] ?? null;
+            if (! is_array($graph) || empty($graph)) {
+                $errors[] = 'Trusted DB report canonical_graph is missing or empty.';
+            } else {
+                $invId = $graph['sales_invoice_id'] ?? null;
+                $invPubId = (string) ($graph['sales_invoice_public_id'] ?? '');
+                $payId = $graph['customer_payment_id'] ?? null;
+                $payPubId = (string) ($graph['customer_payment_public_id'] ?? '');
+
+                if (! is_int($invId) || $invId <= 0) {
+                    $errors[] = 'Canonical graph sales_invoice_id must be a positive integer, got '.json_encode($invId).'.';
+                }
+                if ($invPubId === '') {
+                    $errors[] = 'Canonical graph sales_invoice_public_id must be a non-empty string.';
+                }
+                if (! is_int($payId) || $payId <= 0) {
+                    $errors[] = 'Canonical graph customer_payment_id must be a positive integer, got '.json_encode($payId).'.';
+                }
+                if ($payPubId === '') {
+                    $errors[] = 'Canonical graph customer_payment_public_id must be a non-empty string.';
+                }
+                if ($invId !== null && $payId !== null && $invId === $payId) {
+                    $errors[] = "Canonical graph sales_invoice_id and customer_payment_id must be distinct ({$invId}).";
+                }
+                if ($invPubId !== '' && $payPubId !== '' && $invPubId === $payPubId) {
+                    $errors[] = "Canonical graph sales_invoice_public_id and customer_payment_public_id must be distinct ('{$invPubId}').";
+                }
+
+                if (($graph['stock_movement_quantity_delta'] ?? '') !== '-1.000000') {
+                    $errors[] = "Canonical graph stock_movement_quantity_delta must be '-1.000000', got '".($graph['stock_movement_quantity_delta'] ?? 'null')."'.";
+                }
+                if (($graph['customer_payment_allocation_amount'] ?? '') !== '58.000000') {
+                    $errors[] = "Canonical graph customer_payment_allocation_amount must be '58.000000', got '".($graph['customer_payment_allocation_amount'] ?? 'null')."'.";
+                }
+                if (($graph['customer_payment_allocation_payment_currency_amount'] ?? '') !== '58.000000') {
+                    $errors[] = "Canonical graph customer_payment_allocation_payment_currency_amount must be '58.000000', got '".($graph['customer_payment_allocation_payment_currency_amount'] ?? 'null')."'.";
+                }
+                if (($graph['receipt_status'] ?? '') !== 'completed') {
+                    $errors[] = "Canonical graph receipt_status must be 'completed', got '".($graph['receipt_status'] ?? 'null')."'.";
+                }
+            }
+
+            // Recompute deterministic core payload (including event identity, deltas, and graph) and verify self-digest
             $coreDeterministicPayload = [
                 'scope' => (string) ($trustedDbReport['scope'] ?? ''),
                 'run_id' => (string) ($trustedDbReport['run_id'] ?? ''),
+                'event_id' => (string) ($trustedDbReport['event_id'] ?? ''),
                 'schema_name' => (string) ($trustedDbReport['schema_name'] ?? ''),
                 'company_id' => (int) ($trustedDbReport['company_id'] ?? 0),
                 'source_head' => (string) ($trustedDbReport['source_head'] ?? ''),
                 'handoff_digest' => (string) ($trustedDbReport['handoff_digest'] ?? ''),
                 'baseline_hash' => (string) ($trustedDbReport['baseline_hash'] ?? ''),
+                'deltas' => $trustedDbReport['deltas'] ?? [],
+                'canonical_graph' => $trustedDbReport['canonical_graph'] ?? [],
                 'is_canonical_delta_valid' => (bool) ($trustedDbReport['is_canonical_delta_valid'] ?? false),
                 'gl_batches_balanced' => (bool) ($trustedDbReport['gl_batches_balanced'] ?? false),
                 'all_healthy' => (bool) ($trustedDbReport['all_healthy'] ?? false),
