@@ -34,6 +34,7 @@ use App\Services\Sales\DraftInvoiceIntegrity;
 use App\Services\Sales\SalesActorGuard;
 use App\Services\Sales\SalesDocumentRules;
 use App\Services\Sales\SalesPostingLines;
+use App\Support\Mobile\Receipt\CompositeFinancialExecutionScope;
 use App\Support\Tenancy\CompanyContext;
 use Brick\Math\BigDecimal;
 use Brick\Math\RoundingMode;
@@ -54,6 +55,8 @@ class PostSalesInvoiceAction implements StockEventOwner
 
     public function execute(SalesInvoice $invoice, User $user): SalesInvoice
     {
+        CompositeFinancialExecutionScope::guardPartialAction((int) $invoice->company_id, (int) $user->id);
+
         $context = app(CompanyContext::class);
         if (! $context->hasCompany() || (int) $context->companyId() !== (int) $invoice->company_id) {
             throw new NoActiveCompanyException("Active company context does not match invoice company [{$invoice->company_id}].");

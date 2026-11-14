@@ -60,27 +60,13 @@ final class OnlineCashSaleController extends Controller
             );
         }
 
-        $decoded = json_decode($rawBody, true);
-        if (! is_array($decoded)) {
-            return MobileV2ApiBoundary::buildErrorResponse(
-                code: 'VALIDATION_FAILED',
-                message: 'Invalid JSON request payload.',
-                status: 422
-            );
-        }
+        // Peek currency to resolve minor units
+        $peek = json_decode($rawBody, true);
+        $currency = is_array($peek) && isset($peek['currency']) && is_string($peek['currency'])
+            ? $peek['currency']
+            : (string) $company->base_currency_code;
 
-        $clientEventId = (string) ($decoded['client_event_id'] ?? '');
-        if ($clientEventId === '') {
-            return MobileV2ApiBoundary::buildErrorResponse(
-                code: 'VALIDATION_FAILED',
-                message: 'client_event_id is required.',
-                status: 422
-            );
-        }
-
-        // Authoritative server context (resolved by server, never supplied by client on wire)
         try {
-            $currency = (string) ($decoded['currency'] ?? $company->base_currency_code);
             $minorUnits = $currencyResolver->resolveForCompany((int) $company->id, $currency);
         } catch (Throwable $e) {
             return MobileV2ApiBoundary::buildErrorResponse(
@@ -97,8 +83,9 @@ final class OnlineCashSaleController extends Controller
         ];
 
         try {
-            // Construct and validate normative profile
-            $profile = OnlineSaleIntentProfile::construct($serverContext, $decoded);
+            // Construct and validate normative profile from raw wire JSON string directly.
+            // StrictJsonParser parses AST, validates duplicate keys, and constructs normalized profile.
+            $profile = OnlineSaleIntentProfile::construct($serverContext, $rawBody);
             $canonicalBytes = OnlineSaleIntentProfile::serialize($profile);
         } catch (Throwable $e) {
             return MobileV2ApiBoundary::buildErrorResponse(
@@ -107,6 +94,8 @@ final class OnlineCashSaleController extends Controller
                 status: 422
             );
         }
+
+        $clientEventId = (string) $profile['client_event_id'];
 
         try {
             $result = $manager->recordOrReplay(

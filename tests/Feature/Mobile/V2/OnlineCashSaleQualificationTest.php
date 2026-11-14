@@ -7,6 +7,7 @@ namespace Tests\Feature\Mobile\V2;
 use App\Actions\Company\CreateCompanyAction;
 use App\Actions\Company\UpdateRolePermissionsAction;
 use App\Actions\Inventory\PostOpeningStockAction;
+use App\Actions\Sales\CreateSalesInvoiceDraftAction;
 use App\Actions\Sales\ExecuteImmediateOnlineCashSaleAction;
 use App\Domain\Inventory\ValueObjects\Quantity;
 use App\Models\Company;
@@ -47,11 +48,14 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 use ReflectionClass;
+use RuntimeException;
 use Spatie\Permission\Models\Role;
+use Spatie\Permission\PermissionRegistrar;
 use Symfony\Component\Process\Process;
 use Tests\Support\DisposableMariaDbSchema;
 use Tests\Support\EnforcesDisposableDatabaseOwnership;
 use Tests\Support\QualifiedCashFinancialExecutionAdapter;
+use Tests\Support\StrictBarrier;
 use Tests\TestCase;
 
 final class OnlineCashSaleQualificationTest extends TestCase
@@ -732,38 +736,68 @@ final class OnlineCashSaleQualificationTest extends TestCase
     }
 
     /**
-     * T-11: Full rollback atomicity: injected fault restores pre-event database fingerprint with zero sequence leakage.
+     * T-11: Full rollback atomicity: injected fault after actual numbering, stock, GL, payment, allocation,
+     * and receipt write restores pre-event database fingerprint with zero sequence leakage and 100% reconciliation health.
      */
     public function test_all_fault_rollback_restores_pre_event_database_fingerprint(): void
     {
-        // Reduce warehouse stock to 0 to trigger InsufficientStockException during allocation
-        DB::table('inventory_balances')->where('company_id', $this->company->id)->update(['quantity_base' => '0.000000']);
+        $faultFired = false;
+        MobileEventReceipt::created(function () use (&$faultFired): void {
+            $faultFired = true;
+            throw new RuntimeException('Simulated real fault immediately after receipt write');
+        });
 
-        $invoicesBefore = SalesInvoice::withoutGlobalScopes()->where('company_id', $this->company->id)->count();
-        $paymentsBefore = CustomerPayment::withoutGlobalScopes()->where('company_id', $this->company->id)->count();
-        $receiptsBefore = MobileEventReceipt::withoutGlobalScopes()->where('company_id', $this->company->id)->count();
-        $movementsBefore = StockMovement::withoutGlobalScopes()->where('company_id', $this->company->id)->count();
+        try {
+            $invoicesBefore = SalesInvoice::withoutGlobalScopes()->where('company_id', $this->company->id)->count();
+            $paymentsBefore = CustomerPayment::withoutGlobalScopes()->where('company_id', $this->company->id)->count();
+            $receiptsBefore = MobileEventReceipt::withoutGlobalScopes()->where('company_id', $this->company->id)->count();
+            $movementsBefore = StockMovement::withoutGlobalScopes()->where('company_id', $this->company->id)->count();
+            $allocationsBefore = DB::table('customer_payment_allocations')->where('company_id', $this->company->id)->count();
+            $batchesBefore = DB::table('posting_batches')->where('company_id', $this->company->id)->count();
+            $linesBefore = DB::table('posting_lines')->where('company_id', $this->company->id)->count();
 
-        $eventId = (string) Str::uuid();
-        $payload = $this->validSalePayload($eventId);
+            $eventId = (string) Str::uuid();
+            $payload = $this->validSalePayload($eventId);
 
-        $response = $this->withHeader('Authorization', 'Bearer '.$this->rawToken)
-            ->postJson("/api/mobile/v2/companies/{$this->company->public_id}/sales/online-cash", $payload);
+            $response = $this->withHeader('Authorization', 'Bearer '.$this->rawToken)
+                ->postJson("/api/mobile/v2/companies/{$this->company->public_id}/sales/online-cash", $payload);
 
-        // Must fail with 500 domain error or 422
-        $this->assertTrue($response->status() >= 400);
+            $this->assertTrue($response->status() >= 400);
+            $this->assertTrue($faultFired, 'Fault must have fired after numbering, stock, GL, payment, allocation, and receipt write.');
 
-        // Verify zero leakage of any partial state
-        $this->assertSame($invoicesBefore, SalesInvoice::withoutGlobalScopes()->where('company_id', $this->company->id)->count());
-        $this->assertSame($paymentsBefore, CustomerPayment::withoutGlobalScopes()->where('company_id', $this->company->id)->count());
-        $this->assertSame($receiptsBefore, MobileEventReceipt::withoutGlobalScopes()->where('company_id', $this->company->id)->count());
-        $this->assertSame($movementsBefore, StockMovement::withoutGlobalScopes()->where('company_id', $this->company->id)->count());
+            // Verify full tenant fingerprints: zero leakage across all tables
+            $this->assertSame($invoicesBefore, SalesInvoice::withoutGlobalScopes()->where('company_id', $this->company->id)->count());
+            $this->assertSame($paymentsBefore, CustomerPayment::withoutGlobalScopes()->where('company_id', $this->company->id)->count());
+            $this->assertSame($receiptsBefore, MobileEventReceipt::withoutGlobalScopes()->where('company_id', $this->company->id)->count());
+            $this->assertSame($movementsBefore, StockMovement::withoutGlobalScopes()->where('company_id', $this->company->id)->count());
+            $this->assertSame($allocationsBefore, DB::table('customer_payment_allocations')->where('company_id', $this->company->id)->count());
+            $this->assertSame($batchesBefore, DB::table('posting_batches')->where('company_id', $this->company->id)->count());
+            $this->assertSame($linesBefore, DB::table('posting_lines')->where('company_id', $this->company->id)->count());
+
+            // Warehouse inventory balance unmutated (100.000000)
+            $this->assertDatabaseHas('inventory_balances', [
+                'company_id' => $this->company->id,
+                'product_id' => $this->product->id,
+                'quantity_base' => '100.000000',
+            ]);
+
+            // All 6 domain reconciliations remain 100% healthy
+            app(CompanyContext::class)->setCompany($this->company, $this->owner);
+            $this->assertTrue(app(AccountingReconciliationService::class)->reconcile($this->company)->isHealthy, 'Accounting reconciliation must pass');
+            $this->assertTrue(app(InventoryReconciliationService::class)->auditCompany($this->company)->isHealthy, 'Inventory reconciliation must pass');
+            $this->assertTrue(app(SalesReconciliationService::class)->reconcile($this->company)->isHealthy, 'Sales reconciliation must pass');
+            $this->assertTrue(app(PayablesReconciliationService::class)->reconcile($this->company)->isHealthy, 'Payables reconciliation must pass');
+            $this->assertTrue(app(MoneyReconciliationService::class)->reconcile($this->company)->isHealthy, 'Money reconciliation must pass');
+            $this->assertTrue(app(Phase7ReconciliationService::class)->reconcile($this->company)->isHealthy, 'Phase7 reconciliation must pass');
+        } finally {
+            MobileEventReceipt::flushEventListeners();
+        }
     }
 
     /**
      * T-12: Real two-process MariaDB contention test qualifying that concurrent workers with identical
      * (company_id, client_event_id) race under row lock: winner gets created (201), contender gets replayed (200),
-     * with zero sequence leakage and 100% database reconciliation.
+     * proven via StrictBarrier + exact CID processlist pending query holder release ACK with all 6 reconciliations.
      */
     public function test_two_process_concurrent_online_cash_sale_converges_to_single_sale(): void
     {
@@ -786,7 +820,19 @@ final class OnlineCashSaleQualificationTest extends TestCase
             $profile = OnlineSaleIntentProfile::construct($serverContext, $payload);
             $canonicalBytes = OnlineSaleIntentProfile::serialize($profile);
 
-            $input = [
+            $inputHolder = [
+                'company_id' => $this->company->id,
+                'client_event_id' => $eventId,
+                'token_hash' => $this->token->token_hash,
+                'event_version' => 2,
+                'representation' => 'v2_online_sale_intent',
+                'canonical_bytes' => $canonicalBytes,
+                'executor_mode' => 'qualified_cash',
+                'hold_lock_table' => 'companies',
+                'wait_for_file' => 'release-holder',
+            ];
+
+            $inputContender = [
                 'company_id' => $this->company->id,
                 'client_event_id' => $eventId,
                 'token_hash' => $this->token->token_hash,
@@ -796,14 +842,44 @@ final class OnlineCashSaleQualificationTest extends TestCase
                 'executor_mode' => 'qualified_cash',
             ];
 
-            $workerA = $this->startWorkerProcess($schema, $directory, 'worker-a', $input);
-            $workerB = $this->startWorkerProcess($schema, $directory, 'worker-b', $input);
+            $workerA = $this->startWorkerProcess($schema, $directory, 'worker-a', $inputHolder);
+            $workerB = $this->startWorkerProcess($schema, $directory, 'worker-b', $inputContender);
 
-            // Signal go
+            // Signal go to start both workers
             touch($directory.'/go');
 
-            $workerA->wait();
-            $workerB->wait();
+            // Wait until worker A acquires the lock
+            StrictBarrier::await(
+                fn (): bool => is_file($directory.'/worker-a.locked'),
+                fn (): bool => $workerA->isRunning() && $workerB->isRunning()
+            );
+
+            // Wait until worker B's exact CID is pending on the lock in MariaDB processlist
+            StrictBarrier::await(function () use ($directory, $schema): bool {
+                $connectionPath = $directory.'/worker-b.connection';
+                if (! is_file($connectionPath)) {
+                    return false;
+                }
+                $id = trim((string) file_get_contents($connectionPath));
+                if (! ctype_digit($id)) {
+                    return false;
+                }
+                foreach (DB::select('SHOW FULL PROCESSLIST') as $row) {
+                    $sql = strtolower((string) ($row->Info ?? ''));
+                    if ((string) $row->Id === $id && $row->db === $schema->schemaName()
+                        && str_contains($sql, 'from `companies`') && str_contains($sql, 'for update')) {
+                        return true;
+                    }
+                }
+
+                return false;
+            }, fn (): bool => $workerA->isRunning() && $workerB->isRunning());
+
+            // Release the lock holder
+            touch($directory.'/release-holder');
+
+            $this->assertSame(0, $workerA->wait(), 'Worker A failed: '.$workerA->getErrorOutput());
+            $this->assertSame(0, $workerB->wait(), 'Worker B failed: '.$workerB->getErrorOutput());
 
             $outA = json_decode($workerA->getOutput(), true);
             $outB = json_decode($workerB->getOutput(), true);
@@ -824,10 +900,14 @@ final class OnlineCashSaleQualificationTest extends TestCase
             $this->assertSame(1, CustomerPayment::withoutGlobalScopes()->where('company_id', $this->company->id)->count());
             $this->assertSame(1, MobileEventReceipt::withoutGlobalScopes()->where('company_id', $this->company->id)->where('client_event_id', $eventId)->count());
 
-            // Reconciliations pass cleanly
+            // All 6 reconciliations pass cleanly
             app(CompanyContext::class)->setCompany($this->company, $this->owner);
-            $reconciliation = app(AccountingReconciliationService::class)->reconcile($this->company);
-            $this->assertTrue($reconciliation->isHealthy);
+            $this->assertTrue(app(AccountingReconciliationService::class)->reconcile($this->company)->isHealthy, 'Accounting reconciliation must pass');
+            $this->assertTrue(app(InventoryReconciliationService::class)->auditCompany($this->company)->isHealthy, 'Inventory reconciliation must pass');
+            $this->assertTrue(app(SalesReconciliationService::class)->reconcile($this->company)->isHealthy, 'Sales reconciliation must pass');
+            $this->assertTrue(app(PayablesReconciliationService::class)->reconcile($this->company)->isHealthy, 'Payables reconciliation must pass');
+            $this->assertTrue(app(MoneyReconciliationService::class)->reconcile($this->company)->isHealthy, 'Money reconciliation must pass');
+            $this->assertTrue(app(Phase7ReconciliationService::class)->reconcile($this->company)->isHealthy, 'Phase7 reconciliation must pass');
         } finally {
             if (isset($directory) && is_dir($directory)) {
                 @array_map('unlink', glob($directory.'/*') ?: []);
@@ -835,6 +915,230 @@ final class OnlineCashSaleQualificationTest extends TestCase
             }
             $schema->drop();
         }
+    }
+
+    /**
+     * T-13: Prohibit direct execution of partial financial legs by arbitrary executors; negative test ensures
+     * malicious attempt to execute draft/invoice without permit and payment rolls back with zero effects and zero receipts.
+     */
+    public function test_malicious_executor_invoice_only_partial_posting_prohibited(): void
+    {
+        $maliciousExecutor = new class implements FinancialExecutionAdapterInterface
+        {
+            public function authorize(Company $company, User $actor, MobileDevice $device, string $operation, ?array $payload = null): void {}
+
+            public function execute(Company $company, User $actor, MobileDevice $device, array $payload, string $idempotencySuffix, ?NativeFinancialExecutionCapability $capability = null): array
+            {
+                $customer = Customer::where('company_id', $company->id)->firstOrFail();
+                $warehouse = Warehouse::where('company_id', $company->id)->where('is_default', true)->firstOrFail();
+                $product = Product::where('company_id', $company->id)->firstOrFail();
+                $unit = ProductUnit::where('company_id', $company->id)->where('product_id', $product->id)->firstOrFail();
+
+                // Direct call to CreateSalesInvoiceDraftAction without composite permit is denied
+                $draft = app(CreateSalesInvoiceDraftAction::class)->execute($company, $actor, [
+                    'customer_id' => $customer->id,
+                    'warehouse_id' => $warehouse->id,
+                    'currency_code' => $company->base_currency_code,
+                    'exchange_rate' => '1.0000000000',
+                    'issue_date' => now()->toDateString(),
+                    'lines' => [
+                        [
+                            'product_id' => $product->id,
+                            'product_unit_id' => $unit->id,
+                            'item_description' => 'Test item',
+                            'quantity' => '1.000000',
+                            'unit_price' => '10.000000',
+                        ],
+                    ],
+                ]);
+
+                return [
+                    'sales_invoice_id' => (int) $draft->id,
+                    'sales_invoice_public_id' => (string) $draft->public_id,
+                    'customer_payment_id' => null,
+                    'customer_payment_public_id' => null,
+                    'command_receipt_id' => null,
+                    'terminal_canonical_result' => [],
+                ];
+            }
+        };
+
+        $this->app->instance(FinancialExecutionAdapterInterface::class, $maliciousExecutor);
+
+        $eventId = (string) Str::uuid();
+        $payload = $this->validSalePayload($eventId);
+
+        $response = $this->withHeader('Authorization', 'Bearer '.$this->rawToken)
+            ->postJson("/api/mobile/v2/companies/{$this->company->public_id}/sales/online-cash", $payload);
+
+        $this->assertTrue($response->status() >= 400);
+
+        // Zero effects: no invoice, no payment, no receipt
+        $this->assertSame(0, SalesInvoice::withoutGlobalScopes()->where('company_id', $this->company->id)->count());
+        $this->assertSame(0, CustomerPayment::withoutGlobalScopes()->where('company_id', $this->company->id)->count());
+        $this->assertSame(0, MobileEventReceipt::withoutGlobalScopes()->where('company_id', $this->company->id)->count());
+    }
+
+    /**
+     * T-14: Economic payload substitution rejected: deriving canonical profile bytes from executed payload
+     * catches capability event hash mismatch and aborts before consume with zero side effects.
+     */
+    public function test_executor_capability_payload_substitution_fails(): void
+    {
+        $eventId = (string) Str::uuid();
+        $payloadA = $this->validSalePayload($eventId);
+        $payloadB = $payloadA;
+        $payloadB['lines'][0]['quantity'] = '5.000000'; // Substitute economic quantity
+
+        $serverContext = [
+            'actor_id' => (string) $this->staff->public_id,
+            'company_id' => (string) $this->company->public_id,
+            'currency_minor_units' => 2,
+        ];
+        $profileA = OnlineSaleIntentProfile::construct($serverContext, $payloadA);
+        $canonicalBytesA = OnlineSaleIntentProfile::serialize($profileA);
+
+        $substitutingExecutor = new class($payloadB) implements FinancialExecutionAdapterInterface
+        {
+            /**
+             * @param  array<string, mixed>  $substitutedPayload
+             */
+            public function __construct(private array $substitutedPayload) {}
+
+            public function authorize(Company $company, User $actor, MobileDevice $device, string $operation, ?array $payload = null): void {}
+
+            public function execute(Company $company, User $actor, MobileDevice $device, array $payload, string $idempotencySuffix, ?NativeFinancialExecutionCapability $capability = null): array
+            {
+                assert($capability !== null);
+
+                return app(ExecuteImmediateOnlineCashSaleAction::class)->execute(
+                    $capability,
+                    $company,
+                    $actor,
+                    $device,
+                    $this->substitutedPayload,
+                    $idempotencySuffix
+                );
+            }
+        };
+
+        $this->app->instance(FinancialExecutionAdapterInterface::class, $substitutingExecutor);
+
+        $this->expectException(SecurityException::class);
+        $this->expectExceptionMessage('Capability event hash mismatch.');
+
+        $manager = new MobileEventReceiptManager($substitutingExecutor);
+        $manager->recordOrReplay(
+            companyId: (int) $this->company->id,
+            clientEventId: $eventId,
+            tokenHash: $this->token->token_hash,
+            eventVersion: 2,
+            representation: 'v2_online_sale_intent',
+            canonicalBytes: $canonicalBytesA
+        );
+    }
+
+    /**
+     * T-15: Conversion and tax snapshots mismatch against authoritative database state are rejected before effects.
+     */
+    public function test_admitted_conversion_and_tax_snapshots_mismatch_rejected(): void
+    {
+        // 1. Conversion mismatch
+        $eventId1 = (string) Str::uuid();
+        $payload1 = $this->validSalePayload($eventId1);
+        $payload1['lines'][0]['conversion_to_base'] = '9.999999';
+
+        $res1 = $this->withHeader('Authorization', 'Bearer '.$this->rawToken)
+            ->postJson("/api/mobile/v2/companies/{$this->company->public_id}/sales/online-cash", $payload1);
+        $this->assertSame(422, $res1->status());
+        $this->assertStringContainsString('conversion_to_base', (string) $res1->getContent());
+
+        // 2. Tax rate mismatch
+        $eventId2 = (string) Str::uuid();
+        $payload2 = $this->validSalePayload($eventId2);
+        $payload2['lines'][0]['tax_rate'] = '0.999999';
+
+        $res2 = $this->withHeader('Authorization', 'Bearer '.$this->rawToken)
+            ->postJson("/api/mobile/v2/companies/{$this->company->public_id}/sales/online-cash", $payload2);
+        $this->assertSame(422, $res2->status());
+        $this->assertStringContainsString('tax_rate', (string) $res2->getContent());
+
+        // 3. Tax inclusive mismatch
+        $eventId3 = (string) Str::uuid();
+        $payload3 = $this->validSalePayload($eventId3);
+        $payload3['lines'][0]['tax_inclusive'] = true; // tax rate in fixture is exclusive
+
+        $res3 = $this->withHeader('Authorization', 'Bearer '.$this->rawToken)
+            ->postJson("/api/mobile/v2/companies/{$this->company->public_id}/sales/online-cash", $payload3);
+        $this->assertSame(422, $res3->status());
+        $this->assertStringContainsString('tax_inclusive', (string) $res3->getContent());
+
+        // Assert 0 side effects across all attempts
+        $this->assertSame(0, SalesInvoice::withoutGlobalScopes()->where('company_id', $this->company->id)->count());
+        $this->assertSame(0, CustomerPayment::withoutGlobalScopes()->where('company_id', $this->company->id)->count());
+        $this->assertSame(0, MobileEventReceipt::withoutGlobalScopes()->where('company_id', $this->company->id)->count());
+    }
+
+    /**
+     * T-16: Fresh financial permissions on replay: revoking read permissions refuses replay with 403 Forbidden.
+     */
+    public function test_revoked_read_permissions_refuses_replay(): void
+    {
+        $eventId = (string) Str::uuid();
+        $payload = $this->validSalePayload($eventId);
+
+        // Initial creation succeeds (201)
+        $res1 = $this->withHeader('Authorization', 'Bearer '.$this->rawToken)
+            ->postJson("/api/mobile/v2/companies/{$this->company->public_id}/sales/online-cash", $payload);
+        $this->assertSame(201, $res1->status());
+
+        // Revoke view permission from staff
+        app(CompanyContext::class)->setCompany($this->company, $this->owner);
+        setPermissionsTeamId($this->company->id);
+        $this->staff->revokePermissionTo('sales.invoice.view');
+        app(PermissionRegistrar::class)->forgetCachedPermissions();
+
+        // Attempt replay of exact same event
+        $res2 = $this->withHeader('Authorization', 'Bearer '.$this->rawToken)
+            ->postJson("/api/mobile/v2/companies/{$this->company->public_id}/sales/online-cash", $payload);
+
+        // Must be refused with 403 Forbidden
+        $this->assertSame(403, $res2->status());
+    }
+
+    /**
+     * T-17: Raw wire JSON duplicate key validation: StrictJsonParser validates raw AST bytes and rejects duplicate keys.
+     */
+    public function test_raw_request_duplicate_keys_rejected(): void
+    {
+        $eventId = (string) Str::uuid();
+        $validPayload = $this->validSalePayload($eventId);
+        $validJson = json_encode($validPayload, JSON_THROW_ON_ERROR);
+
+        // Inject duplicate key into raw JSON wire bytes
+        $tamperedJson = '{"client_event_id":"'.$eventId.'",'.substr($validJson, 1);
+
+        $response = $this->call(
+            'POST',
+            "/api/mobile/v2/companies/{$this->company->public_id}/sales/online-cash",
+            [],
+            [],
+            [],
+            [
+                'CONTENT_TYPE' => 'application/json',
+                'HTTP_AUTHORIZATION' => 'Bearer '.$this->rawToken,
+            ],
+            $tamperedJson
+        );
+
+        $this->assertSame(422, $response->status());
+        $this->assertSame('VALIDATION_FAILED', $response->json('code'));
+        $this->assertStringContainsString('Duplicate key', (string) $response->json('message'));
+
+        // Zero effects
+        $this->assertSame(0, SalesInvoice::withoutGlobalScopes()->where('company_id', $this->company->id)->count());
+        $this->assertSame(0, CustomerPayment::withoutGlobalScopes()->where('company_id', $this->company->id)->count());
+        $this->assertSame(0, MobileEventReceipt::withoutGlobalScopes()->where('company_id', $this->company->id)->count());
     }
 
     /**

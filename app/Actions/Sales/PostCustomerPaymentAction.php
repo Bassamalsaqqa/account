@@ -33,6 +33,7 @@ use App\Services\Sales\ReceivableBookValue;
 use App\Services\Sales\SalesActorGuard;
 use App\Services\Sales\SalesDocumentRules;
 use App\Services\Sales\SalesPostingLines;
+use App\Support\Mobile\Receipt\CompositeFinancialExecutionScope;
 use App\Support\Tenancy\CompanyContext;
 use Brick\Math\BigDecimal;
 use Brick\Math\Exception\RoundingNecessaryException;
@@ -71,6 +72,8 @@ class PostCustomerPaymentAction
      */
     public function execute(Company $company, User $user, array $data): CustomerPayment
     {
+        CompositeFinancialExecutionScope::guardPartialAction((int) $company->id, (int) $user->id);
+
         $context = app(CompanyContext::class);
         if (! $context->hasCompany() || (int) $context->companyId() !== (int) $company->id) {
             throw new NoActiveCompanyException("Active company context does not match company [{$company->id}].");

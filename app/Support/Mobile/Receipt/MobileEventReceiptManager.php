@@ -415,6 +415,13 @@ final class MobileEventReceiptManager
                             }
                         }
 
+                        // Partial posting omitting payment or invoice is strictly prohibited for online cash sale
+                        if ($representation === 'v2_online_sale_intent') {
+                            if ($invId === null || $payId === null) {
+                                throw new RuntimeException('Immediate online cash sale requires both sales invoice and customer payment (partial posting prohibited).');
+                            }
+                        }
+
                         // Relationship verification between invoice and customer payment
                         if ($invId !== null && $payId !== null) {
                             if ((int) $invRow->customer_id !== (int) $payRow->customer_id) {
@@ -877,6 +884,14 @@ final class MobileEventReceiptManager
         }
 
         return $this->validateEconomicPayload($canonicalBytes);
+    }
+
+    /**
+     * Checks if a native mobile execution context is currently active.
+     */
+    public static function isNativeExecutionContextActive(): bool
+    {
+        return self::$currentInvocationScopeId !== null;
     }
 
     /**

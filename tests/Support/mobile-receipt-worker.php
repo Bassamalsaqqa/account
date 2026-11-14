@@ -22,11 +22,14 @@ use App\Support\Mobile\Receipt\Exceptions\MobileEventDuplicatePayloadException;
 use App\Support\Mobile\Receipt\Exceptions\MobileEventForeignScopeException;
 use App\Support\Mobile\Receipt\FinancialExecutionAdapterInterface;
 use App\Support\Mobile\Receipt\MobileEventReceiptManager;
+use App\Support\Mobile\Receipt\NativeFinancialExecutionCapability;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Support\Facades\DB;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 use Tests\Support\DisposableMariaDbSchema;
+use Tests\Support\QualifiedCashFinancialExecutionAdapter;
+use Tests\Support\StrictBarrier;
 
 require dirname(__DIR__, 2).'/vendor/autoload.php';
 $app = require dirname(__DIR__, 2).'/bootstrap/app.php';
@@ -57,7 +60,7 @@ $companyRecord = Company::findOrFail($companyId);
 // Define executor based on input mode
 $executor = null;
 if ($executorMode === 'qualified_cash') {
-    $executor = new \Tests\Support\QualifiedCashFinancialExecutionAdapter;
+    $executor = new QualifiedCashFinancialExecutionAdapter;
     $app->instance(FinancialExecutionAdapterInterface::class, $executor);
 } elseif ($executorMode === 'canonical') {
     $executor = new class implements FinancialExecutionAdapterInterface
@@ -96,7 +99,7 @@ if ($executorMode === 'qualified_cash') {
             MobileDevice $device,
             array $payload,
             string $idempotencySuffix,
-            ?\App\Support\Mobile\Receipt\NativeFinancialExecutionCapability $capability = null
+            ?NativeFinancialExecutionCapability $capability = null
         ): array {
             $customer = Customer::where('company_id', $company->id)->firstOrFail();
             $warehouse = Warehouse::where('company_id', $company->id)->where('is_default', true)->firstOrFail();
@@ -168,7 +171,34 @@ if ($executorMode === 'qualified_cash') {
     $app->instance(FinancialExecutionAdapterInterface::class, $executor);
 }
 
-// Signal readiness at the barrier
+$holdTable = $input['hold_lock_table'] ?? null;
+$waitForFile = $input['wait_for_file'] ?? null;
+$lockSignaled = false;
+$barrier = new StrictBarrier;
+
+if ($holdTable !== null) {
+    DB::listen(function ($query) use ($holdTable, $directory, $slot, $waitForFile, &$lockSignaled, $barrier) {
+        $sql = strtolower($query->sql);
+        if (! $lockSignaled && $barrier->observe($sql, $holdTable)) {
+            $lockSignaled = true;
+            file_put_contents($directory.'/'.$slot.'.locked', 'locked');
+            if ($waitForFile !== null) {
+                $timeout = microtime(true) + 15;
+                while (! is_file($directory.'/'.$waitForFile)) {
+                    if (microtime(true) > $timeout) {
+                        throw new RuntimeException('Held-lock release ACK deadline expired.');
+                    }
+                    usleep(1000);
+                }
+            } else {
+                throw new RuntimeException('Explicit held-lock release ACK is required; timed holds are unqualified.');
+            }
+        }
+    });
+}
+
+// Signal connection ID and readiness at the barrier
+file_put_contents($directory.'/'.$slot.'.connection', (string) DB::selectOne('SELECT CONNECTION_ID() AS id')->id);
 file_put_contents($directory.'/'.$slot.'.ready', 'ready');
 
 // Wait for go signal

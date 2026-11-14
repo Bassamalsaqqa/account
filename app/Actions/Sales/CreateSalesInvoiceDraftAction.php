@@ -23,6 +23,7 @@ use App\Models\Warehouse;
 use App\Services\Money\CurrencyMinorUnitsResolver;
 use App\Services\Sales\SalesActorGuard;
 use App\Services\Sales\SalesDocumentRules;
+use App\Support\Mobile\Receipt\CompositeFinancialExecutionScope;
 use App\Support\Tenancy\CompanyContext;
 use Brick\Math\BigDecimal;
 use Illuminate\Auth\Access\AuthorizationException;
@@ -62,6 +63,8 @@ class CreateSalesInvoiceDraftAction
      */
     public function execute(Company $company, User $user, array $data): SalesInvoice
     {
+        CompositeFinancialExecutionScope::guardPartialAction((int) $company->id, (int) $user->id);
+
         if (($data['quotation_id'] ?? null) !== null) {
             throw new InvalidArgumentException('Only canonical quotation conversion may link an invoice.');
         }
