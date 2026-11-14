@@ -105,9 +105,9 @@ final class MobileReceiptRollbackAtomicityTest extends TestCase
 
     private Product $product;
 
-    private ProductUnit $productUnit;
-
     private MoneyAccount $cash;
+
+    private Unit $unit;
 
     private MobileDevice $device;
 
@@ -161,6 +161,7 @@ final class MobileReceiptRollbackAtomicityTest extends TestCase
         ]);
 
         $unit = Unit::where('company_id', $this->company->id)->where('code', 'piece')->firstOrFail();
+        $this->unit = $unit;
         $this->warehouse = Warehouse::where('company_id', $this->company->id)->where('is_default', true)->firstOrFail();
 
         $this->product = Product::create([
@@ -175,7 +176,7 @@ final class MobileReceiptRollbackAtomicityTest extends TestCase
             'created_by' => $this->owner->id,
         ]);
 
-        $this->productUnit = ProductUnit::create([
+        ProductUnit::create([
             'company_id' => $this->company->id,
             'product_id' => $this->product->id,
             'unit_id' => $unit->id,
@@ -237,34 +238,32 @@ final class MobileReceiptRollbackAtomicityTest extends TestCase
 
         $raw = [
             'client_event_id' => $clientEventId,
-            'company_id' => (string) $this->company->public_id,
-            'actor_id' => (string) $this->owner->public_id,
-            'device_id' => (string) $this->device->device_id,
             'currency' => 'ILS',
-            'currency_minor_units' => 2,
             'customer_id' => (string) $this->customer->public_id,
-            'warehouse_id' => (string) $this->warehouse->public_id,
+            'device_id' => (string) $this->device->device_id,
             'lines' => [
                 [
-                    'product_id' => (string) $this->product->public_id,
-                    'product_unit_id' => (string) $this->productUnit->unit->public_id,
-                    'quantity' => '2.000000',
-                    'unit_price' => '50.000000',
-                    'tax_rate_id' => null,
-                    'tax_rate' => '0.0000',
-                    'tax_inclusive' => false,
                     'conversion_to_base' => '1.000000',
+                    'product_id' => (string) $this->product->public_id,
+                    'product_unit_id' => (string) $this->unit->public_id,
+                    'quantity' => '2.000000',
+                    'tax_inclusive' => false,
+                    'tax_rate' => '0.0000',
+                    'tax_rate_id' => null,
+                    'unit_price' => '50.000000',
                 ],
             ],
             'payment' => [
+                'amount' => '100.000000',
+                'cash_account_id' => (string) $this->cash->public_id,
                 'payment_method' => 'cash',
                 'settlement_mode' => 'full',
-                'cash_account_id' => (string) $this->cash->public_id,
-                'amount' => '100.00',
             ],
+            'warehouse_id' => (string) $this->warehouse->public_id,
         ];
 
-        $profile = OnlineSaleIntentProfile::construct($serverContext, json_encode($raw));
+        $rawJson = (string) json_encode($raw, JSON_THROW_ON_ERROR);
+        $profile = OnlineSaleIntentProfile::construct($serverContext, $rawJson);
 
         return OnlineSaleIntentProfile::serialize($profile);
     }
