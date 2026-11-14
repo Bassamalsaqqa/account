@@ -31,6 +31,7 @@ use App\Services\Purchasing\PayablesReconciliationService;
 use App\Services\Sales\DocumentSequenceService;
 use App\Services\Sales\SalesReconciliationService;
 use App\Services\Tenancy\CompanyRoleService;
+use App\Support\Mobile\Receipt\CompositeFinancialExecutionScope;
 use App\Support\Mobile\Receipt\FinancialExecutionAdapterInterface;
 use App\Support\Mobile\Receipt\MobileEventReceiptManager;
 use App\Support\Tenancy\CompanyContext;
@@ -258,89 +259,102 @@ final class MobileReceiptRollbackAtomicityTest extends TestCase
                 string $idempotencySuffix,
                 ?\App\Support\Mobile\Receipt\NativeFinancialExecutionCapability $capability = null
             ): array {
-                // 1. Advance numbering
-                $docNumber = app(DocumentSequenceService::class)->generateNextNumber(
-                    (int) $company->id,
-                    DocumentSequence::TYPE_SALES_INVOICE
-                );
+                $run = function () use ($company, $actor, $idempotencySuffix) {
+                    // 1. Advance numbering
+                    $docNumber = app(DocumentSequenceService::class)->generateNextNumber(
+                        (int) $company->id,
+                        DocumentSequence::TYPE_SALES_INVOICE
+                    );
 
-                if ($this->failAt === 'numbering') {
-                    throw new RuntimeException('Simulated fault immediately after numbering');
-                }
+                    if ($this->failAt === 'numbering') {
+                        throw new RuntimeException('Simulated fault immediately after numbering');
+                    }
 
-                // 2. Create invoice draft
-                $invoice = app(CreateSalesInvoiceDraftAction::class)->execute($company, $actor, [
-                    'customer_id' => $this->customer->id,
-                    'warehouse_id' => $this->warehouse->id,
-                    'currency_code' => 'ILS',
-                    'exchange_rate' => '1.0000000000',
-                    'issue_date' => '2026-11-12',
-                    'document_locale' => 'en',
-                    'lines' => [
-                        [
-                            'product_id' => $this->product->id,
-                            'product_unit_id' => $this->productUnit->id,
-                            'item_description' => 'Atomicity verified stock line',
-                            'quantity' => '2.000000',
-                            'unit_price' => '50.000000',
-                            'discount_type' => 'none',
-                            'discount_value' => '0',
-                            'tax_rate_id' => null,
+                    // 2. Create invoice draft
+                    $invoice = app(CreateSalesInvoiceDraftAction::class)->execute($company, $actor, [
+                        'customer_id' => $this->customer->id,
+                        'warehouse_id' => $this->warehouse->id,
+                        'currency_code' => 'ILS',
+                        'exchange_rate' => '1.0000000000',
+                        'issue_date' => '2026-11-12',
+                        'document_locale' => 'en',
+                        'lines' => [
+                            [
+                                'product_id' => $this->product->id,
+                                'product_unit_id' => $this->productUnit->id,
+                                'item_description' => 'Atomicity verified stock line',
+                                'quantity' => '2.000000',
+                                'unit_price' => '50.000000',
+                                'discount_type' => 'none',
+                                'discount_value' => '0',
+                                'tax_rate_id' => null,
+                            ],
                         ],
-                    ],
-                ]);
+                    ]);
 
-                if ($this->failAt === 'draft') {
-                    throw new RuntimeException('Simulated fault after invoice draft creation');
-                }
+                    if ($this->failAt === 'draft') {
+                        throw new RuntimeException('Simulated fault after invoice draft creation');
+                    }
 
-                // 3. Post sales invoice (stock decrement + FEFO + accounting batch)
-                $posted = app(PostSalesInvoiceAction::class)->execute($invoice, $actor);
+                    // 3. Post sales invoice (stock decrement + FEFO + accounting batch)
+                    $posted = app(PostSalesInvoiceAction::class)->execute($invoice, $actor);
 
-                if ($this->failAt === 'posting_or_stock') {
-                    throw new RuntimeException('Simulated fault after invoice posting and inventory decrement');
-                }
+                    if ($this->failAt === 'posting_or_stock') {
+                        throw new RuntimeException('Simulated fault after invoice posting and inventory decrement');
+                    }
 
-                // 4. Post customer payment
-                $payment = app(PostCustomerPaymentAction::class)->execute($company, $actor, [
-                    'customer_id' => $this->customer->id,
-                    'money_account_id' => $this->cash->id,
-                    'payment_method' => 'cash',
-                    'payment_date' => '2026-11-12',
-                    'amount' => '100.000000',
-                    'exchange_rate' => '1.0000000000',
-                    'idempotency_key' => 'atom-pay-'.$idempotencySuffix,
-                    'allocations' => [
-                        [
-                            'sales_invoice_id' => (int) $posted->id,
-                            'allocated_amount' => '100.000000',
+                    // 4. Post customer payment
+                    $payment = app(PostCustomerPaymentAction::class)->execute($company, $actor, [
+                        'customer_id' => $this->customer->id,
+                        'money_account_id' => $this->cash->id,
+                        'payment_method' => 'cash',
+                        'payment_date' => '2026-11-12',
+                        'amount' => '100.000000',
+                        'exchange_rate' => '1.0000000000',
+                        'idempotency_key' => 'atom-pay-'.$idempotencySuffix,
+                        'allocations' => [
+                            [
+                                'sales_invoice_id' => (int) $posted->id,
+                                'allocated_amount' => '100.000000',
+                            ],
                         ],
-                    ],
-                ]);
+                    ]);
 
-                if ($this->failAt === 'payment') {
-                    throw new RuntimeException('Simulated fault after payment creation');
+                    if ($this->failAt === 'payment') {
+                        throw new RuntimeException('Simulated fault after payment creation');
+                    }
+
+                    if ($this->failAt === 'before_receipt_commit') {
+                        throw new RuntimeException('Simulated fault immediately before receipt record commit');
+                    }
+
+                    return [
+                        'sales_invoice_id' => (int) $posted->id,
+                        'sales_invoice_public_id' => $posted->public_id,
+                        'customer_payment_id' => (int) $payment->id,
+                        'customer_payment_public_id' => $payment->public_id,
+                        'command_receipt_id' => null,
+                        'terminal_canonical_result' => [
+                            'status' => 'completed',
+                            'invoice_number' => $docNumber,
+                            'invoice_public_id' => $posted->public_id,
+                            'payment_public_id' => $payment->public_id,
+                            'grand_total' => '100.000000',
+                            'paid_amount' => '100.000000',
+                        ],
+                    ];
+                };
+
+                if ($capability !== null) {
+                    return CompositeFinancialExecutionScope::withPermit(
+                        $capability,
+                        (int) $company->id,
+                        (int) $actor->id,
+                        $run
+                    );
                 }
 
-                if ($this->failAt === 'before_receipt_commit') {
-                    throw new RuntimeException('Simulated fault immediately before receipt record commit');
-                }
-
-                return [
-                    'sales_invoice_id' => (int) $posted->id,
-                    'sales_invoice_public_id' => $posted->public_id,
-                    'customer_payment_id' => (int) $payment->id,
-                    'customer_payment_public_id' => $payment->public_id,
-                    'command_receipt_id' => null,
-                    'terminal_canonical_result' => [
-                        'status' => 'completed',
-                        'invoice_number' => $docNumber,
-                        'invoice_public_id' => $posted->public_id,
-                        'payment_public_id' => $payment->public_id,
-                        'grand_total' => '100.000000',
-                        'paid_amount' => '100.000000',
-                    ],
-                ];
+                return $run();
             }
         };
     }
