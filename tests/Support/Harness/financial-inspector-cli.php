@@ -325,6 +325,11 @@ if ($isInspectDelta) {
         exit(1);
     }
 
+    if ($expectedPayloadDigest === null || $expectedPayloadDigest === '') {
+        fwrite(STDERR, "Error: --inspect-delta requires --expected-payload-digest=<sha256>.\n");
+        exit(1);
+    }
+
     $baselineData = json_decode((string) file_get_contents($baselineFile), true);
     if (! is_array($baselineData)) {
         fwrite(STDERR, "Error: Baseline file does not contain valid JSON.\n");

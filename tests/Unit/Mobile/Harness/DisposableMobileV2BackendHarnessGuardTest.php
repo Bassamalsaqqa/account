@@ -2417,10 +2417,10 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
             'sales_invoice_lines_max_id' => 20,
             'sales_invoice_lot_allocations' => 5,
             'sales_invoice_lot_allocations_max_id' => 5,
-            'customer_payments' => 10,
-            'customer_payments_max_id' => 10,
-            'customer_payment_allocations' => 10,
-            'customer_payment_allocations_max_id' => 10,
+            'customer_payments' => 5,
+            'customer_payments_max_id' => 5,
+            'customer_payment_allocations' => 5,
+            'customer_payment_allocations_max_id' => 5,
             'mobile_event_receipts' => 10,
             'mobile_event_receipts_max_id' => 10,
             'stock_movements' => 20,
@@ -2430,7 +2430,7 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
             'posting_batches_max_id' => 10,
             'posting_lines' => 20,
             'posting_lines_max_id' => 20,
-            'document_sequences' => [],
+            'document_sequences' => ['sales_invoice:2026' => 10, 'customer_payment:2026' => 5],
         ], $overrides['baseline'] ?? []);
 
         $defaultDeltas = [
@@ -2452,7 +2452,7 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
         $lineId = 21;
         $smId = 21;
         $lotAllocId = 6;
-        $payAllocId = 11;
+        $payAllocId = 6;
         $receiptId = 11;
         $invBatchId = 11;
         $payBatchId = 12;
@@ -2479,6 +2479,7 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
             'sales_invoice_line' => [
                 'id' => $lineId,
                 'public_id' => '01LINETEST0001',
+                'company_id' => (int) $metadata['companyId'],
                 'sales_invoice_id' => $invId,
                 'line_number' => 1,
                 'quantity' => '1.000000',
@@ -2487,6 +2488,7 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
             ],
             'sales_invoice_lot_allocation' => [
                 'id' => $lotAllocId,
+                'company_id' => (int) $metadata['companyId'],
                 'sales_invoice_id' => $invId,
                 'sales_invoice_line_id' => $lineId,
                 'stock_movement_id' => $smId,
@@ -2497,12 +2499,16 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
                 'public_id' => $payPubId,
                 'company_id' => (int) $metadata['companyId'],
                 'payment_method' => 'cash',
+                'money_account_id' => 1,
+                'is_reversed' => 0,
+                'reversed_at' => null,
                 'amount' => '58.000000',
                 'amount_base' => '58.000000',
                 'posting_batch_id' => $payBatchId,
             ],
             'customer_payment_allocation' => [
                 'id' => $payAllocId,
+                'company_id' => (int) $metadata['companyId'],
                 'customer_payment_id' => $payId,
                 'sales_invoice_id' => $invId,
                 'allocated_amount' => '58.000000',
@@ -2518,22 +2524,24 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
             'posting_batches' => [
                 [
                     'id' => $invBatchId,
+                    'company_id' => (int) $metadata['companyId'],
                     'source_type' => 'sales_invoice',
                     'source_id' => $invId,
                     'status' => 'posted',
                     'lines' => [
-                        ['id' => 21, 'debit_base' => '58.000000', 'credit_base' => '0.000000'],
-                        ['id' => 22, 'debit_base' => '0.000000', 'credit_base' => '58.000000'],
+                        ['id' => 21, 'company_id' => (int) $metadata['companyId'], 'posting_batch_id' => $invBatchId, 'ledger_account_id' => 101, 'debit_base' => '58.000000', 'credit_base' => '0.000000'],
+                        ['id' => 22, 'company_id' => (int) $metadata['companyId'], 'posting_batch_id' => $invBatchId, 'ledger_account_id' => 102, 'debit_base' => '0.000000', 'credit_base' => '58.000000'],
                     ],
                 ],
                 [
                     'id' => $payBatchId,
+                    'company_id' => (int) $metadata['companyId'],
                     'source_type' => 'customer_payment',
                     'source_id' => $payId,
                     'status' => 'posted',
                     'lines' => [
-                        ['id' => 23, 'debit_base' => '58.000000', 'credit_base' => '0.000000'],
-                        ['id' => 24, 'debit_base' => '0.000000', 'credit_base' => '58.000000'],
+                        ['id' => 23, 'company_id' => (int) $metadata['companyId'], 'posting_batch_id' => $payBatchId, 'ledger_account_id' => 201, 'debit_base' => '58.000000', 'credit_base' => '0.000000'],
+                        ['id' => 24, 'company_id' => (int) $metadata['companyId'], 'posting_batch_id' => $payBatchId, 'ledger_account_id' => 202, 'debit_base' => '0.000000', 'credit_base' => '58.000000'],
                     ],
                 ],
             ],
@@ -3148,12 +3156,37 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
         // Cross-table primary keys may legitimately both be 1 in independent auto-increment tables.
         // Domain distinction is enforced through distinct public ULIDs and strictly validated FK pointers.
         $equalIdFixture = $this->createSyntheticTrustedDbReportFixture([
+            'baseline' => [
+                'sales_invoices' => 0,
+                'sales_invoices_max_id' => 0,
+                'sales_invoice_lines' => 0,
+                'sales_invoice_lines_max_id' => 0,
+                'sales_invoice_lot_allocations' => 0,
+                'sales_invoice_lot_allocations_max_id' => 0,
+                'customer_payments' => 0,
+                'customer_payments_max_id' => 0,
+                'customer_payment_allocations' => 0,
+                'customer_payment_allocations_max_id' => 0,
+                'mobile_event_receipts' => 0,
+                'mobile_event_receipts_max_id' => 0,
+                'stock_movements' => 0,
+                'stock_movements_max_id' => 0,
+                'posting_batches' => 0,
+                'posting_batches_max_id' => 0,
+                'posting_lines' => 0,
+                'posting_lines_max_id' => 0,
+                'document_sequences' => ['sales_invoice:2026' => 1, 'customer_payment:2026' => 1],
+            ],
             'delta' => [
                 'canonical_graph' => [
                     'sales_invoice_id' => 1,
                     'sales_invoice_public_id' => '01INVTEST0001',
                     'customer_payment_id' => 1,
                     'customer_payment_public_id' => '01PAYTEST0001',
+                    'document_sequences' => [
+                        'before' => ['sales_invoice:2026' => 1, 'customer_payment:2026' => 1],
+                        'after' => ['sales_invoice:2026' => 2, 'customer_payment:2026' => 2],
+                    ],
                     'sales_invoice' => [
                         'id' => 1,
                         'public_id' => '01INVTEST0001',
@@ -3165,6 +3198,7 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
                     'sales_invoice_line' => [
                         'id' => 1,
                         'public_id' => '01LINETEST0001',
+                        'company_id' => 1,
                         'sales_invoice_id' => 1,
                         'line_number' => 1,
                         'quantity' => '1.000000',
@@ -3173,6 +3207,7 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
                     ],
                     'sales_invoice_lot_allocation' => [
                         'id' => 1,
+                        'company_id' => 1,
                         'sales_invoice_id' => 1,
                         'sales_invoice_line_id' => 1,
                         'stock_movement_id' => 1,
@@ -3183,12 +3218,16 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
                         'public_id' => '01PAYTEST0001',
                         'company_id' => 1,
                         'payment_method' => 'cash',
+                        'money_account_id' => 1,
+                        'is_reversed' => 0,
+                        'reversed_at' => null,
                         'amount' => '58.000000',
                         'amount_base' => '58.000000',
                         'posting_batch_id' => 2,
                     ],
                     'customer_payment_allocation' => [
                         'id' => 1,
+                        'company_id' => 1,
                         'customer_payment_id' => 1,
                         'sales_invoice_id' => 1,
                         'allocated_amount' => '58.000000',
@@ -3204,22 +3243,24 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
                     'posting_batches' => [
                         [
                             'id' => 1,
+                            'company_id' => 1,
                             'source_type' => 'sales_invoice',
                             'source_id' => 1,
                             'status' => 'posted',
                             'lines' => [
-                                ['id' => 1, 'debit_base' => '58.000000', 'credit_base' => '0.000000'],
-                                ['id' => 2, 'debit_base' => '0.000000', 'credit_base' => '58.000000'],
+                                ['id' => 1, 'company_id' => 1, 'posting_batch_id' => 1, 'ledger_account_id' => 101, 'debit_base' => '58.000000', 'credit_base' => '0.000000'],
+                                ['id' => 2, 'company_id' => 1, 'posting_batch_id' => 1, 'ledger_account_id' => 102, 'debit_base' => '0.000000', 'credit_base' => '58.000000'],
                             ],
                         ],
                         [
                             'id' => 2,
+                            'company_id' => 1,
                             'source_type' => 'customer_payment',
                             'source_id' => 1,
                             'status' => 'posted',
                             'lines' => [
-                                ['id' => 3, 'debit_base' => '58.000000', 'credit_base' => '0.000000'],
-                                ['id' => 4, 'debit_base' => '0.000000', 'credit_base' => '58.000000'],
+                                ['id' => 3, 'company_id' => 1, 'posting_batch_id' => 2, 'ledger_account_id' => 201, 'debit_base' => '58.000000', 'credit_base' => '0.000000'],
+                                ['id' => 4, 'company_id' => 1, 'posting_batch_id' => 2, 'ledger_account_id' => 202, 'debit_base' => '0.000000', 'credit_base' => '58.000000'],
                             ],
                         ],
                     ],
@@ -3280,7 +3321,8 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
             'delta' => [
                 'canonical_graph' => [
                     'customer_payment_allocation' => [
-                        'id' => 11,
+                        'id' => 6,
+                        'company_id' => 1,
                         'customer_payment_id' => 11, // Swapped! Should be 6
                         'sales_invoice_id' => 6,     // Swapped! Should be 11
                         'allocated_amount' => '58.000000',
@@ -3451,6 +3493,9 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
                         'public_id' => '01PAYTEST0001',
                         'company_id' => 1,
                         'payment_method' => 'cash',
+                        'money_account_id' => 1,
+                        'is_reversed' => 0,
+                        'reversed_at' => null,
                         'amount' => '50.000000', // Altered amount
                         'amount_base' => '58.000000',
                         'posting_batch_id' => 12,
@@ -3569,8 +3614,365 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
             1,
             [],
             'bad-uuid',
-            'accounting_p8_tmp_0123456789ab'
+            'accounting_p8_tmp_0123456789ab',
+            '0847e10d89777e103252ebfa2d27f89a95832a5d70e01af57afe6423f703c630'
         );
+    }
+
+    #[Test]
+    public function test_inspect_delta_enforces_mandatory_expected_payload_digest_pure_format(): void
+    {
+        // 1. Empty expectedPayloadDigest throws InvalidArgumentException before PDO
+        try {
+            \Tests\Support\Harness\DisposableFinancialPostRunInspector::inspectDelta(
+                1,
+                [],
+                'c0686be5-888f-4890-90bf-1f05f416a19a',
+                'accounting_p8_tmp_0123456789ab',
+                ''
+            );
+            $this->fail('Expected InvalidArgumentException on empty expectedPayloadDigest.');
+        } catch (\InvalidArgumentException $e) {
+            $this->assertStringContainsString('expectedPayloadDigest must be a non-empty 64-hex SHA-256 hash', $e->getMessage());
+        }
+
+        // 2. Invalid hex length/format throws InvalidArgumentException before PDO
+        try {
+            \Tests\Support\Harness\DisposableFinancialPostRunInspector::inspectDelta(
+                1,
+                [],
+                'c0686be5-888f-4890-90bf-1f05f416a19a',
+                'accounting_p8_tmp_0123456789ab',
+                'not-a-valid-sha'
+            );
+            $this->fail('Expected InvalidArgumentException on invalid expectedPayloadDigest format.');
+        } catch (\InvalidArgumentException $e) {
+            $this->assertStringContainsString('expectedPayloadDigest must be a valid 64-hex SHA-256 hash', $e->getMessage());
+        }
+    }
+
+    #[Test]
+    public function test_outer_validator_rejects_empty_or_unchanged_document_sequences(): void
+    {
+        $goldenData = $this->getGoldenWireFixtureData();
+
+        // 1. Empty document_sequences before/after
+        $emptySeqFixture = $this->createSyntheticTrustedDbReportFixture([
+            'delta' => [
+                'canonical_graph' => [
+                    'document_sequences' => [
+                        'before' => [],
+                        'after' => [],
+                    ],
+                ],
+            ],
+        ]);
+        $resEmpty = \Tests\Support\Harness\DisposableFinancialPostRunInspector::validateOuterEvidenceJson(
+            $goldenData,
+            $emptySeqFixture['expectedPins'],
+            $emptySeqFixture['report']
+        );
+        $this->assertFalse($resEmpty['is_valid']);
+        $this->assertTrue(collect($resEmpty['errors'])->contains(fn ($e) => str_contains($e, 'must be non-empty')));
+
+        // 2. Unchanged document sequences (no increment for sales_invoice and customer_payment)
+        $unchangedSeqFixture = $this->createSyntheticTrustedDbReportFixture([
+            'delta' => [
+                'canonical_graph' => [
+                    'document_sequences' => [
+                        'before' => ['sales_invoice:2026' => 10, 'customer_payment:2026' => 5],
+                        'after' => ['sales_invoice:2026' => 10, 'customer_payment:2026' => 5],
+                    ],
+                ],
+            ],
+        ]);
+        $resUnchanged = \Tests\Support\Harness\DisposableFinancialPostRunInspector::validateOuterEvidenceJson(
+            $goldenData,
+            $unchangedSeqFixture['expectedPins'],
+            $unchangedSeqFixture['report']
+        );
+        $this->assertFalse($resUnchanged['is_valid']);
+        $this->assertTrue(collect($resUnchanged['errors'])->contains(fn ($e) => str_contains($e, 'missing exact +1 increment for sales_invoice')));
+        $this->assertTrue(collect($resUnchanged['errors'])->contains(fn ($e) => str_contains($e, 'missing exact +1 increment for customer_payment')));
+
+        // 3. Mutated unrelated document sequence
+        $mutatedSeqFixture = $this->createSyntheticTrustedDbReportFixture([
+            'baseline' => [
+                'document_sequences' => ['sales_invoice:2026' => 10, 'customer_payment:2026' => 5, 'quote:2026' => 1],
+            ],
+            'delta' => [
+                'canonical_graph' => [
+                    'document_sequences' => [
+                        'before' => ['sales_invoice:2026' => 10, 'customer_payment:2026' => 5, 'quote:2026' => 1],
+                        'after' => ['sales_invoice:2026' => 11, 'customer_payment:2026' => 6, 'quote:2026' => 999],
+                    ],
+                ],
+            ],
+        ]);
+        $resMutated = \Tests\Support\Harness\DisposableFinancialPostRunInspector::validateOuterEvidenceJson(
+            $goldenData,
+            $mutatedSeqFixture['expectedPins'],
+            $mutatedSeqFixture['report']
+        );
+        $this->assertFalse($resMutated['is_valid']);
+        $this->assertTrue(collect($resMutated['errors'])->contains(fn ($e) => str_contains($e, 'Unrelated document sequence')));
+    }
+
+    #[Test]
+    public function test_outer_validator_rejects_baseline_old_entity_ids(): void
+    {
+        $goldenData = $this->getGoldenWireFixtureData();
+
+        // 1. sales_invoice.id <= baseline_max_id (10 <= 10)
+        $oldInvFixture = $this->createSyntheticTrustedDbReportFixture([
+            'delta' => [
+                'canonical_graph' => [
+                    'sales_invoice_id' => 10,
+                    'sales_invoice' => [
+                        'id' => 10,
+                        'public_id' => '01INVTEST0001',
+                        'company_id' => 1,
+                        'status' => 'posted',
+                        'grand_total_base' => '58.000000',
+                        'posting_batch_id' => 11,
+                    ],
+                ],
+            ],
+        ]);
+        $resInv = \Tests\Support\Harness\DisposableFinancialPostRunInspector::validateOuterEvidenceJson(
+            $goldenData,
+            $oldInvFixture['expectedPins'],
+            $oldInvFixture['report']
+        );
+        $this->assertFalse($resInv['is_valid']);
+        $this->assertTrue(collect($resInv['errors'])->contains(fn ($e) => str_contains($e, 'newer than baseline max')));
+
+        // 2. customer_payment.id <= baseline_max_id (5 <= 5)
+        $oldPayFixture = $this->createSyntheticTrustedDbReportFixture([
+            'delta' => [
+                'canonical_graph' => [
+                    'customer_payment_id' => 5,
+                    'customer_payment' => [
+                        'id' => 5,
+                        'public_id' => '01PAYTEST0001',
+                        'company_id' => 1,
+                        'payment_method' => 'cash',
+                        'money_account_id' => 1,
+                        'is_reversed' => 0,
+                        'reversed_at' => null,
+                        'amount' => '58.000000',
+                        'amount_base' => '58.000000',
+                        'posting_batch_id' => 12,
+                    ],
+                ],
+            ],
+        ]);
+        $resPay = \Tests\Support\Harness\DisposableFinancialPostRunInspector::validateOuterEvidenceJson(
+            $goldenData,
+            $oldPayFixture['expectedPins'],
+            $oldPayFixture['report']
+        );
+        $this->assertFalse($resPay['is_valid']);
+        $this->assertTrue(collect($resPay['errors'])->contains(fn ($e) => str_contains($e, 'newer than baseline max')));
+    }
+
+    #[Test]
+    public function test_outer_validator_rejects_duplicate_gl_lines_or_wrong_parent_batch_fk(): void
+    {
+        $goldenData = $this->getGoldenWireFixtureData();
+
+        // 1. Duplicate line ID across batches (line 21 in batch 11 and also in batch 12)
+        $dupLineFixture = $this->createSyntheticTrustedDbReportFixture([
+            'delta' => [
+                'canonical_graph' => [
+                    'posting_batches' => [
+                        [
+                            'id' => 11,
+                            'company_id' => 1,
+                            'source_type' => 'sales_invoice',
+                            'source_id' => 11,
+                            'status' => 'posted',
+                            'lines' => [
+                                ['id' => 21, 'company_id' => 1, 'posting_batch_id' => 11, 'ledger_account_id' => 101, 'debit_base' => '58.000000', 'credit_base' => '0.000000'],
+                                ['id' => 22, 'company_id' => 1, 'posting_batch_id' => 11, 'ledger_account_id' => 102, 'debit_base' => '0.000000', 'credit_base' => '58.000000'],
+                            ],
+                        ],
+                        [
+                            'id' => 12,
+                            'company_id' => 1,
+                            'source_type' => 'customer_payment',
+                            'source_id' => 6,
+                            'status' => 'posted',
+                            'lines' => [
+                                ['id' => 21, 'company_id' => 1, 'posting_batch_id' => 12, 'ledger_account_id' => 201, 'debit_base' => '58.000000', 'credit_base' => '0.000000'], // Duplicate ID 21!
+                                ['id' => 24, 'company_id' => 1, 'posting_batch_id' => 12, 'ledger_account_id' => 202, 'debit_base' => '0.000000', 'credit_base' => '58.000000'],
+                            ],
+                        ],
+                    ],
+                ],
+            ],
+        ]);
+        $resDup = \Tests\Support\Harness\DisposableFinancialPostRunInspector::validateOuterEvidenceJson(
+            $goldenData,
+            $dupLineFixture['expectedPins'],
+            $dupLineFixture['report']
+        );
+        $this->assertFalse($resDup['is_valid']);
+        $this->assertTrue(collect($resDup['errors'])->contains(fn ($e) => str_contains($e, 'Duplicate posting line ID')));
+
+        // 2. Line posting_batch_id mismatch with parent batch id
+        $fkMismatchFixture = $this->createSyntheticTrustedDbReportFixture([
+            'delta' => [
+                'canonical_graph' => [
+                    'posting_batches' => [
+                        [
+                            'id' => 11,
+                            'company_id' => 1,
+                            'source_type' => 'sales_invoice',
+                            'source_id' => 11,
+                            'status' => 'posted',
+                            'lines' => [
+                                ['id' => 21, 'company_id' => 1, 'posting_batch_id' => 999, 'ledger_account_id' => 101, 'debit_base' => '58.000000', 'credit_base' => '0.000000'], // Wrong parent FK 999!
+                                ['id' => 22, 'company_id' => 1, 'posting_batch_id' => 11, 'ledger_account_id' => 102, 'debit_base' => '0.000000', 'credit_base' => '58.000000'],
+                            ],
+                        ],
+                        [
+                            'id' => 12,
+                            'company_id' => 1,
+                            'source_type' => 'customer_payment',
+                            'source_id' => 6,
+                            'status' => 'posted',
+                            'lines' => [
+                                ['id' => 23, 'company_id' => 1, 'posting_batch_id' => 12, 'ledger_account_id' => 201, 'debit_base' => '58.000000', 'credit_base' => '0.000000'],
+                                ['id' => 24, 'company_id' => 1, 'posting_batch_id' => 12, 'ledger_account_id' => 202, 'debit_base' => '0.000000', 'credit_base' => '58.000000'],
+                            ],
+                        ],
+                    ],
+                ],
+            ],
+        ]);
+        $resFk = \Tests\Support\Harness\DisposableFinancialPostRunInspector::validateOuterEvidenceJson(
+            $goldenData,
+            $fkMismatchFixture['expectedPins'],
+            $fkMismatchFixture['report']
+        );
+        $this->assertFalse($resFk['is_valid']);
+        $this->assertTrue(collect($resFk['errors'])->contains(fn ($e) => str_contains($e, 'posting_batch_id mismatch')));
+    }
+
+    #[Test]
+    public function test_outer_validator_rejects_reversed_payment_or_missing_money_account(): void
+    {
+        $goldenData = $this->getGoldenWireFixtureData();
+
+        // 1. is_reversed = 1
+        $reversedFixture = $this->createSyntheticTrustedDbReportFixture([
+            'delta' => [
+                'canonical_graph' => [
+                    'customer_payment' => [
+                        'id' => 6,
+                        'public_id' => '01PAYTEST0001',
+                        'company_id' => 1,
+                        'payment_method' => 'cash',
+                        'money_account_id' => 1,
+                        'is_reversed' => 1, // Reversed!
+                        'reversed_at' => null,
+                        'amount' => '58.000000',
+                        'amount_base' => '58.000000',
+                        'posting_batch_id' => 12,
+                    ],
+                ],
+            ],
+        ]);
+        $resRev = \Tests\Support\Harness\DisposableFinancialPostRunInspector::validateOuterEvidenceJson(
+            $goldenData,
+            $reversedFixture['expectedPins'],
+            $reversedFixture['report']
+        );
+        $this->assertFalse($resRev['is_valid']);
+        $this->assertTrue(collect($resRev['errors'])->contains(fn ($e) => str_contains($e, 'customer_payment.is_reversed must be 0')));
+
+        // 2. reversed_at non-null
+        $reversedAtFixture = $this->createSyntheticTrustedDbReportFixture([
+            'delta' => [
+                'canonical_graph' => [
+                    'customer_payment' => [
+                        'id' => 6,
+                        'public_id' => '01PAYTEST0001',
+                        'company_id' => 1,
+                        'payment_method' => 'cash',
+                        'money_account_id' => 1,
+                        'is_reversed' => 0,
+                        'reversed_at' => '2026-11-15 00:00:00', // Non-null!
+                        'amount' => '58.000000',
+                        'amount_base' => '58.000000',
+                        'posting_batch_id' => 12,
+                    ],
+                ],
+            ],
+        ]);
+        $resRevAt = \Tests\Support\Harness\DisposableFinancialPostRunInspector::validateOuterEvidenceJson(
+            $goldenData,
+            $reversedAtFixture['expectedPins'],
+            $reversedAtFixture['report']
+        );
+        $this->assertFalse($resRevAt['is_valid']);
+        $this->assertTrue(collect($resRevAt['errors'])->contains(fn ($e) => str_contains($e, 'customer_payment.reversed_at must be null')));
+
+        // 3. money_account_id missing or <= 0
+        $badMoneyFixture = $this->createSyntheticTrustedDbReportFixture([
+            'delta' => [
+                'canonical_graph' => [
+                    'customer_payment' => [
+                        'id' => 6,
+                        'public_id' => '01PAYTEST0001',
+                        'company_id' => 1,
+                        'payment_method' => 'cash',
+                        'money_account_id' => 0, // Invalid money account!
+                        'is_reversed' => 0,
+                        'reversed_at' => null,
+                        'amount' => '58.000000',
+                        'amount_base' => '58.000000',
+                        'posting_batch_id' => 12,
+                    ],
+                ],
+            ],
+        ]);
+        $resMoney = \Tests\Support\Harness\DisposableFinancialPostRunInspector::validateOuterEvidenceJson(
+            $goldenData,
+            $badMoneyFixture['expectedPins'],
+            $badMoneyFixture['report']
+        );
+        $this->assertFalse($resMoney['is_valid']);
+        $this->assertTrue(collect($resMoney['errors'])->contains(fn ($e) => str_contains($e, 'customer_payment.money_account_id must be a positive integer')));
+    }
+
+    #[Test]
+    public function test_outer_validator_rejects_missing_or_null_lot_stock_movement_fk(): void
+    {
+        $goldenData = $this->getGoldenWireFixtureData();
+
+        $nullLotSmFixture = $this->createSyntheticTrustedDbReportFixture([
+            'delta' => [
+                'canonical_graph' => [
+                    'sales_invoice_lot_allocation' => [
+                        'id' => 6,
+                        'company_id' => 1,
+                        'sales_invoice_id' => 11,
+                        'sales_invoice_line_id' => 21,
+                        'stock_movement_id' => null, // Missing / null lot movement FK!
+                        'quantity_allocated_base' => '1.000000',
+                    ],
+                ],
+            ],
+        ]);
+        $resLot = \Tests\Support\Harness\DisposableFinancialPostRunInspector::validateOuterEvidenceJson(
+            $goldenData,
+            $nullLotSmFixture['expectedPins'],
+            $nullLotSmFixture['report']
+        );
+        $this->assertFalse($resLot['is_valid']);
+        $this->assertTrue(collect($resLot['errors'])->contains(fn ($e) => str_contains($e, 'sales_invoice_lot_allocation.stock_movement_id must be non-null')));
     }
 }
 

@@ -357,7 +357,7 @@ final class DisposableFinancialPostRunInspector
      * @param  array<string, mixed>  $baseline
      * @param  string  $expectedClientEventId
      * @param  string  $expectedSchemaName
-     * @param  string|null  $expectedPayloadDigest
+     * @param  string  $expectedPayloadDigest
      * @return array<string, mixed>
      *
      * @throws RuntimeException|InvalidArgumentException
@@ -367,20 +367,21 @@ final class DisposableFinancialPostRunInspector
         array $baseline,
         string $expectedClientEventId,
         string $expectedSchemaName,
-        ?string $expectedPayloadDigest = null
+        string $expectedPayloadDigest
     ): array {
         if ($expectedClientEventId === '' || ! preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iD', $expectedClientEventId)) {
             throw new InvalidArgumentException("Inspector refused: expectedClientEventId must be a valid non-empty UUID, got '{$expectedClientEventId}'.");
         }
 
-        $normalizedExpectedDigest = null;
-        if ($expectedPayloadDigest !== null) {
-            $normalizedExpectedDigest = str_starts_with($expectedPayloadDigest, 'sha256:')
-                ? substr($expectedPayloadDigest, 7)
-                : $expectedPayloadDigest;
-            if (! preg_match('/^[0-9a-f]{64}$/D', $normalizedExpectedDigest)) {
-                throw new InvalidArgumentException("Inspector refused: expectedPayloadDigest must be a valid 64-hex SHA-256 hash, got '{$expectedPayloadDigest}'.");
-            }
+        if ($expectedPayloadDigest === '') {
+            throw new InvalidArgumentException('Inspector refused: expectedPayloadDigest must be a non-empty 64-hex SHA-256 hash.');
+        }
+
+        $normalizedExpectedDigest = str_starts_with($expectedPayloadDigest, 'sha256:')
+            ? substr($expectedPayloadDigest, 7)
+            : $expectedPayloadDigest;
+        if (! preg_match('/^[0-9a-f]{64}$/iD', $normalizedExpectedDigest)) {
+            throw new InvalidArgumentException("Inspector refused: expectedPayloadDigest must be a valid 64-hex SHA-256 hash, got '{$expectedPayloadDigest}'.");
         }
 
         $db = self::assertExecutionGates($expectedSchemaName);
@@ -605,8 +606,12 @@ final class DisposableFinancialPostRunInspector
                 if ($newLineId !== null && (int) ($newLotAlloc['sales_invoice_line_id'] ?? 0) !== $newLineId) {
                     $errors[] = "Lot allocation sales_invoice_line_id mismatch: expected line {$newLineId}, got ".($newLotAlloc['sales_invoice_line_id'] ?? 'null').'.';
                 }
-                if ($newSmId !== null && $newLotAlloc['stock_movement_id'] !== null && (int) $newLotAlloc['stock_movement_id'] !== $newSmId) {
-                    $errors[] = "Lot allocation stock_movement_id mismatch: expected stock movement {$newSmId}, got ".($newLotAlloc['stock_movement_id'] ?? 'null').'.';
+                if ($newSmId !== null) {
+                    if (! isset($newLotAlloc['stock_movement_id']) || $newLotAlloc['stock_movement_id'] === null) {
+                        $errors[] = 'Lot allocation stock_movement_id must be non-null.';
+                    } elseif ((int) $newLotAlloc['stock_movement_id'] !== $newSmId) {
+                        $errors[] = "Lot allocation stock_movement_id mismatch: expected stock movement {$newSmId}, got ".($newLotAlloc['stock_movement_id'] ?? 'null').'.';
+                    }
                 }
                 if (BigDecimal::of((string) ($newLotAlloc['quantity_allocated_base'] ?? '0'))->toScale(6)->compareTo(BigDecimal::of('1.000000')) !== 0) {
                     $errors[] = "Lot allocation quantity_allocated_base must be '1.000000', got '".($newLotAlloc['quantity_allocated_base'] ?? 'null')."'.";
@@ -622,6 +627,8 @@ final class DisposableFinancialPostRunInspector
             $hasPaymentBatch = false;
             $allBatchesBalanced = true;
             $structuredBatches = [];
+            $seenBatchIds = [];
+            $seenLineIdsAcrossBatches = [];
 
             if (count($newBatches) !== 2) {
                 $errors[] = 'Expected exactly 2 new posting batches, found '.count($newBatches).'.';
@@ -631,6 +638,19 @@ final class DisposableFinancialPostRunInspector
                 $batchId = (int) $batch['id'];
                 $srcType = (string) ($batch['source_type'] ?? '');
                 $srcId = (int) ($batch['source_id'] ?? 0);
+
+                if (isset($seenBatchIds[$batchId])) {
+                    $errors[] = "Duplicate posting batch id {$batchId} detected.";
+                }
+                $seenBatchIds[$batchId] = true;
+
+                if ($batchId <= (int) $baseline['posting_batches_max_id']) {
+                    $errors[] = "Posting batch id {$batchId} must be newer than baseline max {$baseline['posting_batches_max_id']}.";
+                }
+
+                if ((int) ($batch['company_id'] ?? 0) !== $companyId) {
+                    $errors[] = "Posting batch {$batchId} company_id mismatch: expected {$companyId}, got ".($batch['company_id'] ?? 'null').'.';
+                }
 
                 if (($batch['status'] ?? '') !== 'posted') {
                     $errors[] = "Posting batch {$batchId} status must be 'posted', got '".($batch['status'] ?? 'null')."'.";
@@ -645,7 +665,7 @@ final class DisposableFinancialPostRunInspector
                 }
 
                 // Verify lines balance for THIS specific batch using exact BigDecimal at scale 6
-                $stmtLines = $db->prepare('SELECT `id`, `posting_batch_id`, `debit_base`, `credit_base` FROM `posting_lines` WHERE `company_id` = ? AND `posting_batch_id` = ? ORDER BY `id` ASC');
+                $stmtLines = $db->prepare('SELECT `id`, `company_id`, `posting_batch_id`, `ledger_account_id`, `debit_base`, `credit_base` FROM `posting_lines` WHERE `company_id` = ? AND `posting_batch_id` = ? ORDER BY `id` ASC');
                 $stmtLines->execute([$companyId, $batchId]);
                 $lines = $stmtLines->fetchAll(PDO::FETCH_ASSOC);
 
@@ -657,10 +677,35 @@ final class DisposableFinancialPostRunInspector
                 $creditSum = BigDecimal::zero();
                 $sanitizedLines = [];
                 foreach ($lines as $line) {
+                    $lineId = (int) $line['id'];
+                    if (isset($seenLineIdsAcrossBatches[$lineId])) {
+                        $errors[] = "Duplicate posting line ID {$lineId} detected across posting batches.";
+                    }
+                    $seenLineIdsAcrossBatches[$lineId] = true;
+
+                    if ($lineId <= (int) $baseline['posting_lines_max_id']) {
+                        $errors[] = "Posting line ID {$lineId} must be newer than baseline max {$baseline['posting_lines_max_id']}.";
+                    }
+
+                    if ((int) ($line['company_id'] ?? 0) !== $companyId) {
+                        $errors[] = "Posting line {$lineId} company_id mismatch: expected {$companyId}, got ".($line['company_id'] ?? 'null').'.';
+                    }
+
+                    if ((int) ($line['posting_batch_id'] ?? 0) !== $batchId) {
+                        $errors[] = "Posting line {$lineId} posting_batch_id mismatch: expected {$batchId}, got ".($line['posting_batch_id'] ?? 'null').'.';
+                    }
+
+                    if ((int) ($line['ledger_account_id'] ?? 0) <= 0) {
+                        $errors[] = "Posting line {$lineId} ledger_account_id must be a positive integer.";
+                    }
+
                     $debitSum = $debitSum->plus((string) ($line['debit_base'] ?? '0'));
                     $creditSum = $creditSum->plus((string) ($line['credit_base'] ?? '0'));
                     $sanitizedLines[] = [
-                        'id' => (int) $line['id'],
+                        'id' => $lineId,
+                        'company_id' => (int) ($line['company_id'] ?? $companyId),
+                        'posting_batch_id' => (int) $line['posting_batch_id'],
+                        'ledger_account_id' => (int) $line['ledger_account_id'],
                         'debit_base' => (string) ($line['debit_base'] ?? '0.000000'),
                         'credit_base' => (string) ($line['credit_base'] ?? '0.000000'),
                     ];
@@ -676,6 +721,7 @@ final class DisposableFinancialPostRunInspector
 
                 $structuredBatches[] = [
                     'id' => $batchId,
+                    'company_id' => (int) ($batch['company_id'] ?? $companyId),
                     'source_type' => $srcType,
                     'source_id' => $srcId,
                     'status' => (string) ($batch['status'] ?? ''),
@@ -690,22 +736,49 @@ final class DisposableFinancialPostRunInspector
                 $errors[] = 'Posting batch for newly created customer payment was not found.';
             }
 
+            $totalSelectedLineCount = count($seenLineIdsAcrossBatches);
+            if ($totalSelectedLineCount !== $deltas['posting_lines']) {
+                $errors[] = "Total selected posting lines count {$totalSelectedLineCount} does not match posting_lines delta {$deltas['posting_lines']}.";
+            }
+
             // 8. Inspect Document Sequences increment
             $baseSeqs = $baseline['document_sequences'];
             $currSeqs = $current['document_sequences'];
             $foundInvoiceSeqIncrement = false;
             $foundPaymentSeqIncrement = false;
 
-            foreach ($currSeqs as $typeYear => $currNext) {
-                $baseNext = $baseSeqs[$typeYear] ?? 1;
-                if (str_starts_with($typeYear, 'sales_invoice:')) {
+            if (empty($baseSeqs) || empty($currSeqs)) {
+                $errors[] = 'Document sequences before and after must be non-empty.';
+            }
+
+            foreach ($baseSeqs as $typeYear => $baseNext) {
+                if (! array_key_exists($typeYear, $currSeqs)) {
+                    $errors[] = "Document sequence '{$typeYear}' missing from post-run state.";
+                    continue;
+                }
+                $currNext = $currSeqs[$typeYear];
+                if (str_starts_with((string) $typeYear, 'sales_invoice:')) {
                     if ($currNext === $baseNext + 1) {
                         $foundInvoiceSeqIncrement = true;
+                    } elseif ($currNext !== $baseNext) {
+                        $errors[] = "Document sequence '{$typeYear}' invalid increment: base {$baseNext}, current {$currNext}.";
                     }
-                } elseif (str_starts_with($typeYear, 'customer_payment:')) {
+                } elseif (str_starts_with((string) $typeYear, 'customer_payment:')) {
                     if ($currNext === $baseNext + 1) {
                         $foundPaymentSeqIncrement = true;
+                    } elseif ($currNext !== $baseNext) {
+                        $errors[] = "Document sequence '{$typeYear}' invalid increment: base {$baseNext}, current {$currNext}.";
                     }
+                } else {
+                    if ($currNext !== $baseNext) {
+                        $errors[] = "Unrelated document sequence '{$typeYear}' mutated: base {$baseNext}, current {$currNext}.";
+                    }
+                }
+            }
+
+            foreach ($currSeqs as $typeYear => $currNext) {
+                if (! array_key_exists($typeYear, $baseSeqs)) {
+                    $errors[] = "Unexpected document sequence '{$typeYear}' in post-run state.";
                 }
             }
 
@@ -784,6 +857,7 @@ final class DisposableFinancialPostRunInspector
                     'sales_invoice_line' => $newLine ? [
                         'id' => (int) $newLine['id'],
                         'public_id' => (string) $newLine['public_id'],
+                        'company_id' => (int) ($newLine['company_id'] ?? $companyId),
                         'sales_invoice_id' => (int) $newLine['sales_invoice_id'],
                         'line_number' => (int) $newLine['line_number'],
                         'quantity' => (string) $newLine['quantity'],
@@ -792,6 +866,7 @@ final class DisposableFinancialPostRunInspector
                     ] : null,
                     'sales_invoice_lot_allocation' => $newLotAlloc ? [
                         'id' => (int) $newLotAlloc['id'],
+                        'company_id' => (int) ($newLotAlloc['company_id'] ?? $companyId),
                         'sales_invoice_id' => (int) $newLotAlloc['sales_invoice_id'],
                         'sales_invoice_line_id' => (int) $newLotAlloc['sales_invoice_line_id'],
                         'stock_movement_id' => isset($newLotAlloc['stock_movement_id']) && $newLotAlloc['stock_movement_id'] !== null ? (int) $newLotAlloc['stock_movement_id'] : null,
@@ -802,12 +877,16 @@ final class DisposableFinancialPostRunInspector
                         'public_id' => (string) $newPayment['public_id'],
                         'company_id' => (int) ($newPayment['company_id'] ?? $companyId),
                         'payment_method' => (string) $newPayment['payment_method'],
+                        'money_account_id' => (int) $newPayment['money_account_id'],
+                        'is_reversed' => (int) $newPayment['is_reversed'],
+                        'reversed_at' => $newPayment['reversed_at'],
                         'amount' => (string) $newPayment['amount'],
                         'amount_base' => (string) $newPayment['amount_base'],
                         'posting_batch_id' => (int) $newPayment['posting_batch_id'],
                     ] : null,
                     'customer_payment_allocation' => $newPaymentAlloc ? [
                         'id' => (int) $newPaymentAlloc['id'],
+                        'company_id' => (int) ($newPaymentAlloc['company_id'] ?? $companyId),
                         'customer_payment_id' => (int) $newPaymentAlloc['customer_payment_id'],
                         'sales_invoice_id' => (int) $newPaymentAlloc['sales_invoice_id'],
                         'allocated_amount' => (string) $newPaymentAlloc['allocated_amount'],
@@ -1435,19 +1514,34 @@ final class DisposableFinancialPostRunInspector
             if (! is_array($graph) || empty($graph)) {
                 $errors[] = 'Trusted DB report canonical_graph is missing or empty.';
             } else {
+                $baseMetrics = $trustedDbReport['baseline_metrics'] ?? null;
+                if (! is_array($baseMetrics)) {
+                    $errors[] = 'Trusted DB report missing baseline_metrics.';
+                }
+
+                $invMaxId = (int) ($baseMetrics['sales_invoices_max_id'] ?? 0);
+                $lineMaxId = (int) ($baseMetrics['sales_invoice_lines_max_id'] ?? 0);
+                $lotMaxId = (int) ($baseMetrics['sales_invoice_lot_allocations_max_id'] ?? 0);
+                $payMaxId = (int) ($baseMetrics['customer_payments_max_id'] ?? 0);
+                $payAllocMaxId = (int) ($baseMetrics['customer_payment_allocations_max_id'] ?? 0);
+                $smMaxId = (int) ($baseMetrics['stock_movements_max_id'] ?? 0);
+                $receiptMaxId = (int) ($baseMetrics['mobile_event_receipts_max_id'] ?? 0);
+                $batchMaxId = (int) ($baseMetrics['posting_batches_max_id'] ?? 0);
+                $lineMaxIdGl = (int) ($baseMetrics['posting_lines_max_id'] ?? 0);
+
                 $invId = $graph['sales_invoice_id'] ?? null;
                 $invPubId = (string) ($graph['sales_invoice_public_id'] ?? '');
                 $payId = $graph['customer_payment_id'] ?? null;
                 $payPubId = (string) ($graph['customer_payment_public_id'] ?? '');
 
-                if (! is_int($invId) || $invId <= 0) {
-                    $errors[] = 'Canonical graph sales_invoice_id must be a positive integer, got '.json_encode($invId).'.';
+                if (! is_int($invId) || $invId <= $invMaxId) {
+                    $errors[] = "Canonical graph sales_invoice_id must be newer than baseline max ({$invMaxId}), got ".json_encode($invId).'.';
                 }
                 if ($invPubId === '') {
                     $errors[] = 'Canonical graph sales_invoice_public_id must be a non-empty string.';
                 }
-                if (! is_int($payId) || $payId <= 0) {
-                    $errors[] = 'Canonical graph customer_payment_id must be a positive integer, got '.json_encode($payId).'.';
+                if (! is_int($payId) || $payId <= $payMaxId) {
+                    $errors[] = "Canonical graph customer_payment_id must be newer than baseline max ({$payMaxId}), got ".json_encode($payId).'.';
                 }
                 if ($payPubId === '') {
                     $errors[] = 'Canonical graph customer_payment_public_id must be a non-empty string.';
@@ -1475,6 +1569,9 @@ final class DisposableFinancialPostRunInspector
                 if (! is_array($gInvoice)) {
                     $errors[] = 'Canonical graph sales_invoice entry is missing or not an array.';
                 } else {
+                    if ((int) ($gInvoice['id'] ?? 0) <= $invMaxId) {
+                        $errors[] = "Canonical graph sales_invoice.id must be newer than baseline max ({$invMaxId}), got ".($gInvoice['id'] ?? 'null').'.';
+                    }
                     if ((int) ($gInvoice['id'] ?? 0) !== $invId) {
                         $errors[] = "Canonical graph sales_invoice.id mismatch: expected {$invId}, got ".($gInvoice['id'] ?? 'null').'.';
                     }
@@ -1490,8 +1587,8 @@ final class DisposableFinancialPostRunInspector
                     if (($gInvoice['grand_total_base'] ?? '') !== '58.000000') {
                         $errors[] = "Canonical graph sales_invoice.grand_total_base must be '58.000000', got '".($gInvoice['grand_total_base'] ?? 'null')."'.";
                     }
-                    if (! is_int($gInvoice['posting_batch_id'] ?? null) || ($gInvoice['posting_batch_id'] ?? 0) <= 0) {
-                        $errors[] = 'Canonical graph sales_invoice.posting_batch_id must be a positive integer.';
+                    if (! is_int($gInvoice['posting_batch_id'] ?? null) || ($gInvoice['posting_batch_id'] ?? 0) <= $batchMaxId) {
+                        $errors[] = "Canonical graph sales_invoice.posting_batch_id must be newer than baseline max ({$batchMaxId}).";
                     }
                 }
 
@@ -1502,11 +1599,14 @@ final class DisposableFinancialPostRunInspector
                     $errors[] = 'Canonical graph sales_invoice_line entry is missing or not an array.';
                 } else {
                     $lineId = (int) ($gLine['id'] ?? 0);
-                    if ($lineId <= 0) {
-                        $errors[] = 'Canonical graph sales_invoice_line.id must be a positive integer.';
+                    if ($lineId <= $lineMaxId) {
+                        $errors[] = "Canonical graph sales_invoice_line.id must be newer than baseline max ({$lineMaxId}), got {$lineId}.";
                     }
                     if ((string) ($gLine['public_id'] ?? '') === '') {
                         $errors[] = 'Canonical graph sales_invoice_line.public_id must be a non-empty string.';
+                    }
+                    if ($expectedCompanyId > 0 && (int) ($gLine['company_id'] ?? 0) !== $expectedCompanyId) {
+                        $errors[] = "Canonical graph sales_invoice_line.company_id mismatch: expected {$expectedCompanyId}, got ".($gLine['company_id'] ?? 'null').'.';
                     }
                     if ((int) ($gLine['sales_invoice_id'] ?? 0) !== $invId) {
                         $errors[] = "Canonical graph sales_invoice_line.sales_invoice_id mismatch: expected {$invId}, got ".($gLine['sales_invoice_id'] ?? 'null').'.';
@@ -1529,8 +1629,8 @@ final class DisposableFinancialPostRunInspector
                     $errors[] = 'Canonical graph stock_movement entry is missing or not an array.';
                 } else {
                     $smId = (int) ($gSm['id'] ?? 0);
-                    if ($smId <= 0) {
-                        $errors[] = 'Canonical graph stock_movement.id must be a positive integer.';
+                    if ($smId <= $smMaxId) {
+                        $errors[] = "Canonical graph stock_movement.id must be newer than baseline max ({$smMaxId}), got {$smId}.";
                     }
                     if ($expectedCompanyId > 0 && (int) ($gSm['company_id'] ?? 0) !== $expectedCompanyId) {
                         $errors[] = "Canonical graph stock_movement.company_id mismatch: expected {$expectedCompanyId}, got ".($gSm['company_id'] ?? 'null').'.';
@@ -1551,8 +1651,12 @@ final class DisposableFinancialPostRunInspector
                 if (! is_array($gLotAlloc)) {
                     $errors[] = 'Canonical graph sales_invoice_lot_allocation entry is missing or not an array.';
                 } else {
-                    if ((int) ($gLotAlloc['id'] ?? 0) <= 0) {
-                        $errors[] = 'Canonical graph sales_invoice_lot_allocation.id must be a positive integer.';
+                    $lotId = (int) ($gLotAlloc['id'] ?? 0);
+                    if ($lotId <= $lotMaxId) {
+                        $errors[] = "Canonical graph sales_invoice_lot_allocation.id must be newer than baseline max ({$lotMaxId}), got {$lotId}.";
+                    }
+                    if ($expectedCompanyId > 0 && (int) ($gLotAlloc['company_id'] ?? 0) !== $expectedCompanyId) {
+                        $errors[] = "Canonical graph sales_invoice_lot_allocation.company_id mismatch: expected {$expectedCompanyId}, got ".($gLotAlloc['company_id'] ?? 'null').'.';
                     }
                     if ((int) ($gLotAlloc['sales_invoice_id'] ?? 0) !== $invId) {
                         $errors[] = "Canonical graph sales_invoice_lot_allocation.sales_invoice_id mismatch: expected {$invId}, got ".($gLotAlloc['sales_invoice_id'] ?? 'null').'.';
@@ -1560,7 +1664,9 @@ final class DisposableFinancialPostRunInspector
                     if ($lineId !== null && (int) ($gLotAlloc['sales_invoice_line_id'] ?? 0) !== $lineId) {
                         $errors[] = "Canonical graph sales_invoice_lot_allocation.sales_invoice_line_id mismatch: expected {$lineId}, got ".($gLotAlloc['sales_invoice_line_id'] ?? 'null').'.';
                     }
-                    if ($smId !== null && isset($gLotAlloc['stock_movement_id']) && $gLotAlloc['stock_movement_id'] !== null && (int) $gLotAlloc['stock_movement_id'] !== $smId) {
+                    if (! isset($gLotAlloc['stock_movement_id']) || $gLotAlloc['stock_movement_id'] === null) {
+                        $errors[] = 'Canonical graph sales_invoice_lot_allocation.stock_movement_id must be non-null.';
+                    } elseif ($smId !== null && (int) $gLotAlloc['stock_movement_id'] !== $smId) {
                         $errors[] = "Canonical graph sales_invoice_lot_allocation.stock_movement_id mismatch: expected {$smId}, got ".($gLotAlloc['stock_movement_id'] ?? 'null').'.';
                     }
                     if (($gLotAlloc['quantity_allocated_base'] ?? '') !== '1.000000') {
@@ -1573,6 +1679,9 @@ final class DisposableFinancialPostRunInspector
                 if (! is_array($gPayment)) {
                     $errors[] = 'Canonical graph customer_payment entry is missing or not an array.';
                 } else {
+                    if ((int) ($gPayment['id'] ?? 0) <= $payMaxId) {
+                        $errors[] = "Canonical graph customer_payment.id must be newer than baseline max ({$payMaxId}), got ".($gPayment['id'] ?? 'null').'.';
+                    }
                     if ((int) ($gPayment['id'] ?? 0) !== $payId) {
                         $errors[] = "Canonical graph customer_payment.id mismatch: expected {$payId}, got ".($gPayment['id'] ?? 'null').'.';
                     }
@@ -1585,14 +1694,23 @@ final class DisposableFinancialPostRunInspector
                     if (($gPayment['payment_method'] ?? '') !== 'cash') {
                         $errors[] = "Canonical graph customer_payment.payment_method must be 'cash', got '".($gPayment['payment_method'] ?? 'null')."'.";
                     }
+                    if (! is_int($gPayment['money_account_id'] ?? null) || ($gPayment['money_account_id'] ?? 0) <= 0) {
+                        $errors[] = 'Canonical graph customer_payment.money_account_id must be a positive integer.';
+                    }
+                    if (! array_key_exists('is_reversed', $gPayment) || (int) $gPayment['is_reversed'] !== 0) {
+                        $errors[] = 'Canonical graph customer_payment.is_reversed must be 0.';
+                    }
+                    if (! array_key_exists('reversed_at', $gPayment) || $gPayment['reversed_at'] !== null) {
+                        $errors[] = "Canonical graph customer_payment.reversed_at must be null, got ".json_encode($gPayment['reversed_at'] ?? 'MISSING').'.';
+                    }
                     if (($gPayment['amount'] ?? '') !== '58.000000') {
                         $errors[] = "Canonical graph customer_payment.amount must be '58.000000', got '".($gPayment['amount'] ?? 'null')."'.";
                     }
                     if (($gPayment['amount_base'] ?? '') !== '58.000000') {
                         $errors[] = "Canonical graph customer_payment.amount_base must be '58.000000', got '".($gPayment['amount_base'] ?? 'null')."'.";
                     }
-                    if (! is_int($gPayment['posting_batch_id'] ?? null) || ($gPayment['posting_batch_id'] ?? 0) <= 0) {
-                        $errors[] = 'Canonical graph customer_payment.posting_batch_id must be a positive integer.';
+                    if (! is_int($gPayment['posting_batch_id'] ?? null) || ($gPayment['posting_batch_id'] ?? 0) <= $batchMaxId) {
+                        $errors[] = "Canonical graph customer_payment.posting_batch_id must be newer than baseline max ({$batchMaxId}).";
                     }
                 }
 
@@ -1601,8 +1719,12 @@ final class DisposableFinancialPostRunInspector
                 if (! is_array($gPayAlloc)) {
                     $errors[] = 'Canonical graph customer_payment_allocation entry is missing or not an array.';
                 } else {
-                    if ((int) ($gPayAlloc['id'] ?? 0) <= 0) {
-                        $errors[] = 'Canonical graph customer_payment_allocation.id must be a positive integer.';
+                    $allocId = (int) ($gPayAlloc['id'] ?? 0);
+                    if ($allocId <= $payAllocMaxId) {
+                        $errors[] = "Canonical graph customer_payment_allocation.id must be newer than baseline max ({$payAllocMaxId}), got {$allocId}.";
+                    }
+                    if ($expectedCompanyId > 0 && (int) ($gPayAlloc['company_id'] ?? 0) !== $expectedCompanyId) {
+                        $errors[] = "Canonical graph customer_payment_allocation.company_id mismatch: expected {$expectedCompanyId}, got ".($gPayAlloc['company_id'] ?? 'null').'.';
                     }
                     if ((int) ($gPayAlloc['customer_payment_id'] ?? 0) !== $payId) {
                         $errors[] = "Canonical graph customer_payment_allocation.customer_payment_id mismatch: expected {$payId}, got ".($gPayAlloc['customer_payment_id'] ?? 'null').'.';
@@ -1625,36 +1747,74 @@ final class DisposableFinancialPostRunInspector
                 } else {
                     $foundInvBatch = false;
                     $foundPayBatch = false;
+                    $seenOuterBatchIds = [];
+                    $seenOuterLineIds = [];
+
                     foreach ($gBatches as $b) {
+                        $bId = (int) ($b['id'] ?? 0);
+                        if ($bId <= $batchMaxId) {
+                            $errors[] = "Canonical graph posting batch ID {$bId} must be newer than baseline max ({$batchMaxId}).";
+                        }
+                        if (isset($seenOuterBatchIds[$bId])) {
+                            $errors[] = "Duplicate posting batch ID {$bId} detected in canonical graph.";
+                        }
+                        $seenOuterBatchIds[$bId] = true;
+
+                        if ($expectedCompanyId > 0 && (int) ($b['company_id'] ?? 0) !== $expectedCompanyId) {
+                            $errors[] = "Canonical graph posting batch {$bId} company_id mismatch: expected {$expectedCompanyId}, got ".($b['company_id'] ?? 'null').'.';
+                        }
+
                         $srcType = (string) ($b['source_type'] ?? '');
                         $srcId = (int) ($b['source_id'] ?? 0);
                         $status = (string) ($b['status'] ?? '');
                         if ($status !== 'posted') {
-                            $errors[] = "Canonical graph posting batch {$b['id']} status must be 'posted', got '{$status}'.";
+                            $errors[] = "Canonical graph posting batch {$bId} status must be 'posted', got '{$status}'.";
                         }
                         if ($srcType === 'sales_invoice' && $srcId === $invId) {
                             $foundInvBatch = true;
-                            if (isset($gInvoice['posting_batch_id']) && (int) ($b['id'] ?? 0) !== (int) $gInvoice['posting_batch_id']) {
-                                $errors[] = "Posting batch ID {$b['id']} does not match sales_invoice.posting_batch_id {$gInvoice['posting_batch_id']}.";
+                            if (isset($gInvoice['posting_batch_id']) && $bId !== (int) $gInvoice['posting_batch_id']) {
+                                $errors[] = "Posting batch ID {$bId} does not match sales_invoice.posting_batch_id {$gInvoice['posting_batch_id']}.";
                             }
                         } elseif ($srcType === 'customer_payment' && $srcId === $payId) {
                             $foundPayBatch = true;
-                            if (isset($gPayment['posting_batch_id']) && (int) ($b['id'] ?? 0) !== (int) $gPayment['posting_batch_id']) {
-                                $errors[] = "Posting batch ID {$b['id']} does not match customer_payment.posting_batch_id {$gPayment['posting_batch_id']}.";
+                            if (isset($gPayment['posting_batch_id']) && $bId !== (int) $gPayment['posting_batch_id']) {
+                                $errors[] = "Posting batch ID {$bId} does not match customer_payment.posting_batch_id {$gPayment['posting_batch_id']}.";
                             }
                         }
+
                         $bLines = $b['lines'] ?? [];
                         if (! is_array($bLines) || count($bLines) < 2) {
-                            $errors[] = "Canonical graph posting batch {$b['id']} must have >= 2 posting lines.";
+                            $errors[] = "Canonical graph posting batch {$bId} must have >= 2 posting lines.";
                         } else {
                             $deb = BigDecimal::zero();
                             $crd = BigDecimal::zero();
                             foreach ($bLines as $l) {
+                                $lId = (int) ($l['id'] ?? 0);
+                                if ($lId <= $lineMaxIdGl) {
+                                    $errors[] = "Canonical graph posting line ID {$lId} must be newer than baseline max ({$lineMaxIdGl}).";
+                                }
+                                if (isset($seenOuterLineIds[$lId])) {
+                                    $errors[] = "Duplicate posting line ID {$lId} detected across posting batches.";
+                                }
+                                $seenOuterLineIds[$lId] = true;
+
+                                if ($expectedCompanyId > 0 && (int) ($l['company_id'] ?? 0) !== $expectedCompanyId) {
+                                    $errors[] = "Canonical graph posting line {$lId} company_id mismatch: expected {$expectedCompanyId}, got ".($l['company_id'] ?? 'null').'.';
+                                }
+
+                                if ((int) ($l['posting_batch_id'] ?? 0) !== $bId) {
+                                    $errors[] = "Canonical graph posting line {$lId} posting_batch_id mismatch: expected {$bId}, got ".($l['posting_batch_id'] ?? 'null').'.';
+                                }
+
+                                if ((int) ($l['ledger_account_id'] ?? 0) <= 0) {
+                                    $errors[] = "Canonical graph posting line {$lId} ledger_account_id must be a positive integer.";
+                                }
+
                                 $deb = $deb->plus((string) ($l['debit_base'] ?? '0'));
                                 $crd = $crd->plus((string) ($l['credit_base'] ?? '0'));
                             }
                             if ($deb->isZero() || $crd->isZero() || $deb->toScale(6)->compareTo($crd->toScale(6)) !== 0) {
-                                $errors[] = "Canonical graph posting batch {$b['id']} lines are unbalanced: debit {$deb} vs credit {$crd}.";
+                                $errors[] = "Canonical graph posting batch {$bId} lines are unbalanced: debit {$deb} vs credit {$crd}.";
                             }
                         }
                     }
@@ -1664,12 +1824,68 @@ final class DisposableFinancialPostRunInspector
                     if (! $foundPayBatch) {
                         $errors[] = "Canonical graph missing posting batch for customer_payment {$payId}.";
                     }
+
+                    $totalOuterLines = count($seenOuterLineIds);
+                    if ($totalOuterLines !== ($deltas['posting_lines'] ?? 0)) {
+                        $errors[] = "Canonical graph total posting lines across batches ({$totalOuterLines}) does not match deltas['posting_lines'] (".($deltas['posting_lines'] ?? 'null').").";
+                    }
                 }
 
                 // 8. Document Sequences in canonical_graph
                 $gDocSeqs = $graph['document_sequences'] ?? null;
-                if (! is_array($gDocSeqs) || ! isset($gDocSeqs['before']) || ! isset($gDocSeqs['after'])) {
+                if (! is_array($gDocSeqs) || ! isset($gDocSeqs['before']) || ! isset($gDocSeqs['after']) || ! is_array($gDocSeqs['before']) || ! is_array($gDocSeqs['after'])) {
                     $errors[] = "Canonical graph document_sequences must contain 'before' and 'after' sequence mappings.";
+                } else {
+                    $beforeSeqs = $gDocSeqs['before'];
+                    $afterSeqs = $gDocSeqs['after'];
+                    $pinnedBaseSeqs = $baseMetrics['document_sequences'] ?? null;
+
+                    if (empty($beforeSeqs) || empty($afterSeqs)) {
+                        $errors[] = 'Canonical graph document_sequences before and after maps must be non-empty.';
+                    } elseif ($beforeSeqs !== $pinnedBaseSeqs) {
+                        $errors[] = "Canonical graph document_sequences['before'] must strictly match baseline_metrics['document_sequences'].";
+                    } else {
+                        $foundInvoiceSeqIncrement = false;
+                        $foundPaymentSeqIncrement = false;
+
+                        foreach ($beforeSeqs as $seqKey => $beforeNext) {
+                            if (! array_key_exists($seqKey, $afterSeqs)) {
+                                $errors[] = "Canonical graph document_sequences key '{$seqKey}' missing from after sequences.";
+                                continue;
+                            }
+                            $afterNext = $afterSeqs[$seqKey];
+                            if (str_starts_with((string) $seqKey, 'sales_invoice:')) {
+                                if ($afterNext === $beforeNext + 1) {
+                                    $foundInvoiceSeqIncrement = true;
+                                } elseif ($afterNext !== $beforeNext) {
+                                    $errors[] = "Canonical graph document sequence '{$seqKey}' invalid change: before {$beforeNext}, after {$afterNext}.";
+                                }
+                            } elseif (str_starts_with((string) $seqKey, 'customer_payment:')) {
+                                if ($afterNext === $beforeNext + 1) {
+                                    $foundPaymentSeqIncrement = true;
+                                } elseif ($afterNext !== $beforeNext) {
+                                    $errors[] = "Canonical graph document sequence '{$seqKey}' invalid change: before {$beforeNext}, after {$afterNext}.";
+                                }
+                            } else {
+                                if ($afterNext !== $beforeNext) {
+                                    $errors[] = "Unrelated document sequence '{$seqKey}' mutated: before {$beforeNext}, after {$afterNext}.";
+                                }
+                            }
+                        }
+
+                        foreach ($afterSeqs as $seqKey => $afterNext) {
+                            if (! array_key_exists($seqKey, $beforeSeqs)) {
+                                $errors[] = "Unexpected document sequence key '{$seqKey}' in after sequences.";
+                            }
+                        }
+
+                        if (! $foundInvoiceSeqIncrement) {
+                            $errors[] = 'Canonical graph document_sequences missing exact +1 increment for sales_invoice.';
+                        }
+                        if (! $foundPaymentSeqIncrement) {
+                            $errors[] = 'Canonical graph document_sequences missing exact +1 increment for customer_payment.';
+                        }
+                    }
                 }
 
                 // 9. Mobile Event Receipt in canonical_graph
@@ -1677,8 +1893,9 @@ final class DisposableFinancialPostRunInspector
                 if (! is_array($gReceipt)) {
                     $errors[] = 'Canonical graph mobile_event_receipt entry is missing or not an array.';
                 } else {
-                    if ((int) ($gReceipt['id'] ?? 0) <= 0) {
-                        $errors[] = 'Canonical graph mobile_event_receipt.id must be a positive integer.';
+                    $rId = (int) ($gReceipt['id'] ?? 0);
+                    if ($rId <= $receiptMaxId) {
+                        $errors[] = "Canonical graph mobile_event_receipt.id must be newer than baseline max ({$receiptMaxId}), got {$rId}.";
                     }
                     if ($expectedCompanyId > 0 && (int) ($gReceipt['company_id'] ?? 0) !== $expectedCompanyId) {
                         $errors[] = "Canonical graph mobile_event_receipt.company_id mismatch: expected {$expectedCompanyId}, got ".($gReceipt['company_id'] ?? 'null').'.';
