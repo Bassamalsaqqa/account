@@ -19,6 +19,7 @@ use App\Models\SalesInvoiceLine;
 use App\Models\TaxRate;
 use App\Models\User;
 use App\Models\Warehouse;
+use App\Services\Money\CurrencyMinorUnitsResolver;
 use App\Services\Sales\SalesActorGuard;
 use App\Services\Sales\SalesDocumentRules;
 use App\Support\Tenancy\CompanyContext;
@@ -116,6 +117,11 @@ class UpdateSalesInvoiceDraftAction
             $issueDate = $data['issue_date'] ?? (string) $lockedInvoice->issue_date->format('Y-m-d');
             $dueDate = array_key_exists('due_date', $data) ? ($data['due_date'] ?: null) : $lockedInvoice->due_date?->format('Y-m-d');
 
+            $currencies = array_values(array_unique([$currency, (string) $company->base_currency_code]));
+            $minorUnitsMap = app(CurrencyMinorUnitsResolver::class)->resolveCurrenciesForCompanyWrite((int) $company->id, $currencies, lockForUpdate: true);
+            $minorUnits = $minorUnitsMap[$currency];
+            $baseMinorUnits = $minorUnitsMap[(string) $company->base_currency_code];
+
             app(SalesDocumentRules::class)->header($company, $currency, $fx, $issueDate, $data['document_locale'] ?? $lockedInvoice->document_locale);
             if ($dueDate !== null) {
                 app(SalesDocumentRules::class)->date($dueDate);
@@ -127,9 +133,6 @@ class UpdateSalesInvoiceDraftAction
                 if (empty($data['lines'])) {
                     throw new InvalidArgumentException('Sales invoice must contain at least one line.');
                 }
-
-                $minorUnits = in_array($currency, ['JOD', 'KWD', 'BHD', 'OMR'], true) ? 3 : 2;
-                $baseMinorUnits = in_array($company->base_currency_code, ['JOD', 'KWD', 'BHD', 'OMR'], true) ? 3 : 2;
 
                 app(SalesDocumentRules::class)->header($company, $currency, $fx, $issueDate, $data['document_locale'] ?? $customer->preferred_locale ?? $company->default_locale);
                 $lineResults = [];
@@ -146,7 +149,7 @@ class UpdateSalesInvoiceDraftAction
                             ! empty($lineData['product_unit_id']) ? (int) $lineData['product_unit_id'] : null,
                             app(SalesDocumentRules::class)->quantity($lineData['quantity']));
                         $conversionRatio = BigDecimal::of((string) $productUnit->conversion_to_base);
-                        app(SalesDocumentRules::class)->price($product, $productUnit, $user, $fx, $currency, BigDecimal::of($lineData['unit_price']));
+                        app(SalesDocumentRules::class)->price($product, $productUnit, $user, $fx, $currency, BigDecimal::of($lineData['unit_price']), $minorUnits);
                     } else {
                         app(SalesDocumentRules::class)->quantity($lineData['quantity']);
                         if (! $user->hasPermissionTo('sales.invoice.change_price')) {

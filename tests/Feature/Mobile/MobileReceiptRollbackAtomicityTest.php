@@ -7,12 +7,11 @@ namespace Tests\Feature\Mobile;
 use App\Actions\Company\CreateCompanyAction;
 use App\Actions\Inventory\PostOpeningStockAction;
 use App\Actions\Sales\CreateMoneyAccountAction;
-use App\Actions\Sales\CreateSalesInvoiceDraftAction;
-use App\Actions\Sales\PostCustomerPaymentAction;
-use App\Actions\Sales\PostSalesInvoiceAction;
+use App\Actions\Sales\ExecuteImmediateOnlineCashSaleAction;
 use App\Domain\Inventory\ValueObjects\Quantity;
 use App\Models\Company;
 use App\Models\Customer;
+use App\Models\CustomerPayment;
 use App\Models\DocumentSequence;
 use App\Models\MobileAccessToken;
 use App\Models\MobileDevice;
@@ -20,6 +19,7 @@ use App\Models\MobileEventReceipt;
 use App\Models\MoneyAccount;
 use App\Models\Product;
 use App\Models\ProductUnit;
+use App\Models\SalesInvoice;
 use App\Models\Unit;
 use App\Models\User;
 use App\Models\Warehouse;
@@ -28,9 +28,9 @@ use App\Services\Accounting\Phase7ReconciliationService;
 use App\Services\Inventory\InventoryReconciliationService;
 use App\Services\Money\MoneyReconciliationService;
 use App\Services\Purchasing\PayablesReconciliationService;
-use App\Services\Sales\DocumentSequenceService;
 use App\Services\Sales\SalesReconciliationService;
 use App\Services\Tenancy\CompanyRoleService;
+use App\Support\Mobile\Contract\Revision3\OnlineSaleIntentProfile;
 use App\Support\Mobile\Receipt\FinancialExecutionAdapterInterface;
 use App\Support\Mobile\Receipt\MobileEventReceiptManager;
 use App\Support\Tenancy\CompanyContext;
@@ -40,6 +40,7 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 use RuntimeException;
 use Tests\Support\EnforcesDisposableDatabaseOwnership;
+use Tests\Support\QualifiedCashFinancialExecutionAdapter;
 use Tests\TestCase;
 
 final class MobileReceiptRollbackAtomicityTest extends TestCase
@@ -50,6 +51,7 @@ final class MobileReceiptRollbackAtomicityTest extends TestCase
 
     protected function tearDown(): void
     {
+        ExecuteImmediateOnlineCashSaleAction::$simulatedFaultStage = null;
         self::$failAfterReceiptCreation = false;
 
         if (! $this->isDisposableDatabaseOwnershipAdmitted()) {
@@ -103,9 +105,9 @@ final class MobileReceiptRollbackAtomicityTest extends TestCase
 
     private Product $product;
 
-    private ProductUnit $productUnit;
-
     private MoneyAccount $cash;
+
+    private Unit $unit;
 
     private MobileDevice $device;
 
@@ -116,12 +118,16 @@ final class MobileReceiptRollbackAtomicityTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        self::$failAfterReceiptCreation = false;
+
         $this->assertOwnedDisposableDatabase();
 
-        $this->owner = User::factory()->create([
-            'email' => 'atomicity_owner_'.Str::random(8).'@example.com',
-            'password' => Hash::make('AtomicitySecured!Pass123'),
+        ExecuteImmediateOnlineCashSaleAction::$simulatedFaultStage = null;
+        self::$failAfterReceiptCreation = false;
+
+        $this->owner = User::create([
+            'name' => 'Atomicity Auditor',
+            'email' => 'auditor_'.bin2hex(random_bytes(6)).'@example.com',
+            'password' => Hash::make('password123'),
         ]);
 
         $this->company = app(CreateCompanyAction::class)->execute($this->owner, [
@@ -155,6 +161,7 @@ final class MobileReceiptRollbackAtomicityTest extends TestCase
         ]);
 
         $unit = Unit::where('company_id', $this->company->id)->where('code', 'piece')->firstOrFail();
+        $this->unit = $unit;
         $this->warehouse = Warehouse::where('company_id', $this->company->id)->where('is_default', true)->firstOrFail();
 
         $this->product = Product::create([
@@ -169,7 +176,7 @@ final class MobileReceiptRollbackAtomicityTest extends TestCase
             'created_by' => $this->owner->id,
         ]);
 
-        $this->productUnit = ProductUnit::create([
+        ProductUnit::create([
             'company_id' => $this->company->id,
             'product_id' => $this->product->id,
             'unit_id' => $unit->id,
@@ -211,6 +218,7 @@ final class MobileReceiptRollbackAtomicityTest extends TestCase
             'expires_at' => now()->addDays(7),
         ]);
 
+        $this->app->bind(FinancialExecutionAdapterInterface::class, QualifiedCashFinancialExecutionAdapter::class);
         $this->manager = new MobileEventReceiptManager;
 
         MobileEventReceipt::created(function (): void {
@@ -220,145 +228,89 @@ final class MobileReceiptRollbackAtomicityTest extends TestCase
         });
     }
 
-    private function createFaultInjectingExecutor(
-        ?string $failAt = null
-    ): FinancialExecutionAdapterInterface {
-        $customer = $this->customer;
-        $warehouse = $this->warehouse;
-        $product = $this->product;
-        $productUnit = $this->productUnit;
-        $cash = $this->cash;
+    private function buildNormativePayload(string $clientEventId): string
+    {
+        $serverContext = [
+            'actor_id' => (string) $this->owner->public_id,
+            'company_id' => (string) $this->company->public_id,
+            'currency_minor_units' => 2,
+        ];
 
-        return new class($customer, $warehouse, $product, $productUnit, $cash, $failAt) implements FinancialExecutionAdapterInterface
-        {
-            public function __construct(
-                private Customer $customer,
-                private Warehouse $warehouse,
-                private Product $product,
-                private ProductUnit $productUnit,
-                private MoneyAccount $cash,
-                private ?string $failAt
-            ) {}
+        $raw = [
+            'client_event_id' => $clientEventId,
+            'currency' => 'ILS',
+            'customer_id' => (string) $this->customer->public_id,
+            'device_id' => (string) $this->device->device_id,
+            'lines' => [
+                [
+                    'conversion_to_base' => '1.000000',
+                    'product_id' => (string) $this->product->public_id,
+                    'product_unit_id' => (string) $this->unit->public_id,
+                    'quantity' => '2.000000',
+                    'tax_inclusive' => false,
+                    'tax_rate' => '0.000000',
+                    'tax_rate_id' => null,
+                    'unit_price' => '50.000000',
+                ],
+            ],
+            'payment' => [
+                'amount' => '100.000000',
+                'cash_account_id' => (string) $this->cash->public_id,
+                'payment_method' => 'cash',
+                'settlement_mode' => 'full',
+            ],
+            'warehouse_id' => (string) $this->warehouse->public_id,
+        ];
 
-            public function authorize(
-                Company $company,
-                User $actor,
-                MobileDevice $device,
-                string $operation,
-                ?array $payload = null
-            ): void {
-                // Verified test actor authorization
-            }
+        $rawJson = (string) json_encode($raw, JSON_THROW_ON_ERROR);
+        $profile = OnlineSaleIntentProfile::construct($serverContext, $rawJson);
 
-            public function execute(
-                Company $company,
-                User $actor,
-                MobileDevice $device,
-                array $payload,
-                string $idempotencySuffix
-            ): array {
-                // 1. Advance numbering
-                $docNumber = app(DocumentSequenceService::class)->generateNextNumber(
-                    (int) $company->id,
-                    DocumentSequence::TYPE_SALES_INVOICE
-                );
+        return OnlineSaleIntentProfile::serialize($profile);
+    }
 
-                if ($this->failAt === 'numbering') {
-                    throw new RuntimeException('Simulated fault immediately after numbering');
-                }
+    private function assertFullFingerprintAndReconciliationRollback(): void
+    {
+        $this->assertSame(0, SalesInvoice::withoutGlobalScopes()->where('company_id', $this->company->id)->count());
+        $this->assertSame(0, CustomerPayment::withoutGlobalScopes()->where('company_id', $this->company->id)->count());
+        $this->assertSame(0, DB::table('customer_payment_allocations')->where('company_id', $this->company->id)->count());
+        $this->assertSame(0, MobileEventReceipt::withoutGlobalScopes()->where('company_id', $this->company->id)->count());
+        $this->assertSame(1, DB::table('posting_batches')->where('company_id', $this->company->id)->count()); // only opening stock
+        $this->assertSame(1, DB::table('stock_movements')->where('company_id', $this->company->id)->count()); // only opening stock
 
-                // 2. Create invoice draft
-                $invoice = app(CreateSalesInvoiceDraftAction::class)->execute($company, $actor, [
-                    'customer_id' => $this->customer->id,
-                    'warehouse_id' => $this->warehouse->id,
-                    'currency_code' => 'ILS',
-                    'exchange_rate' => '1.0000000000',
-                    'issue_date' => '2026-11-12',
-                    'document_locale' => 'en',
-                    'lines' => [
-                        [
-                            'product_id' => $this->product->id,
-                            'product_unit_id' => $this->productUnit->id,
-                            'item_description' => 'Atomicity verified stock line',
-                            'quantity' => '2.000000',
-                            'unit_price' => '50.000000',
-                            'discount_type' => 'none',
-                            'discount_value' => '0',
-                            'tax_rate_id' => null,
-                        ],
-                    ],
-                ]);
+        // Inventory balance unmutated at opening stock (10.000000)
+        $this->assertDatabaseHas('inventory_balances', [
+            'company_id' => $this->company->id,
+            'product_id' => $this->product->id,
+            'quantity_base' => '10.000000',
+        ]);
 
-                if ($this->failAt === 'draft') {
-                    throw new RuntimeException('Simulated fault after invoice draft creation');
-                }
+        // Zero sequence leakage
+        $seq = DocumentSequence::where('company_id', $this->company->id)
+            ->where('document_type', DocumentSequence::TYPE_SALES_INVOICE)
+            ->first();
+        $this->assertTrue($seq === null || (int) $seq->next_number === 1);
 
-                // 3. Post sales invoice (stock decrement + FEFO + accounting batch)
-                $posted = app(PostSalesInvoiceAction::class)->execute($invoice, $actor);
-
-                if ($this->failAt === 'posting_or_stock') {
-                    throw new RuntimeException('Simulated fault after invoice posting and inventory decrement');
-                }
-
-                // 4. Post customer payment
-                $payment = app(PostCustomerPaymentAction::class)->execute($company, $actor, [
-                    'customer_id' => $this->customer->id,
-                    'money_account_id' => $this->cash->id,
-                    'payment_method' => 'cash',
-                    'payment_date' => '2026-11-12',
-                    'amount' => '100.000000',
-                    'exchange_rate' => '1.0000000000',
-                    'idempotency_key' => 'atom-pay-'.$idempotencySuffix,
-                    'allocations' => [
-                        [
-                            'sales_invoice_id' => (int) $posted->id,
-                            'allocated_amount' => '100.000000',
-                        ],
-                    ],
-                ]);
-
-                if ($this->failAt === 'payment') {
-                    throw new RuntimeException('Simulated fault after payment creation');
-                }
-
-                if ($this->failAt === 'before_receipt_commit') {
-                    throw new RuntimeException('Simulated fault immediately before receipt record commit');
-                }
-
-                return [
-                    'sales_invoice_id' => (int) $posted->id,
-                    'sales_invoice_public_id' => $posted->public_id,
-                    'customer_payment_id' => (int) $payment->id,
-                    'customer_payment_public_id' => $payment->public_id,
-                    'command_receipt_id' => null,
-                    'terminal_canonical_result' => [
-                        'status' => 'completed',
-                        'invoice_number' => $docNumber,
-                        'invoice_public_id' => $posted->public_id,
-                        'payment_public_id' => $payment->public_id,
-                        'grand_total' => '100.000000',
-                        'paid_amount' => '100.000000',
-                    ],
-                ];
-            }
-        };
+        // Restore context and verify all 6 domain reconciliations
+        app(CompanyContext::class)->setCompany($this->company, $this->owner);
+        $this->assertTrue(app(AccountingReconciliationService::class)->reconcile($this->company)->isHealthy, 'Accounting reconciliation must pass');
+        $this->assertTrue(app(InventoryReconciliationService::class)->auditCompany($this->company)->isHealthy, 'Inventory reconciliation must pass');
+        $this->assertTrue(app(SalesReconciliationService::class)->reconcile($this->company)->isHealthy, 'Sales reconciliation must pass');
+        $this->assertTrue(app(PayablesReconciliationService::class)->reconcile($this->company)->isHealthy, 'Payables reconciliation must pass');
+        $this->assertTrue(app(MoneyReconciliationService::class)->reconcile($this->company)->isHealthy, 'Money reconciliation must pass');
+        $this->assertTrue(app(Phase7ReconciliationService::class)->reconcile($this->company)->isHealthy, 'Phase7 reconciliation must pass');
     }
 
     public function test_full_successful_canonical_execution_commits_all_legs_and_satisfies_all_six_reconciliations(): void
     {
-        $payload = '{"action":"checkout","total":"100.000000"}';
-
-        $this->app->instance(
-            FinancialExecutionAdapterInterface::class,
-            $this->createFaultInjectingExecutor(null)
-        );
+        $eventId = (string) Str::uuid();
+        $payload = $this->buildNormativePayload($eventId);
 
         $result = $this->manager->recordOrReplay(
             companyId: (int) $this->company->id,
-            clientEventId: (string) Str::uuid(),
+            clientEventId: $eventId,
             tokenHash: $this->token->token_hash,
             eventVersion: 2,
-            representation: 'v2_intent',
+            representation: 'v2_online_sale_intent',
             canonicalBytes: $payload
         );
 
@@ -370,6 +322,7 @@ final class MobileReceiptRollbackAtomicityTest extends TestCase
         // Assert exact database counts
         $this->assertSame(1, DB::table('sales_invoices')->where('company_id', $this->company->id)->count());
         $this->assertSame(1, DB::table('customer_payments')->where('company_id', $this->company->id)->count());
+        $this->assertSame(1, DB::table('customer_payment_allocations')->where('company_id', $this->company->id)->count());
         $this->assertSame(1, DB::table('mobile_event_receipts')->where('company_id', $this->company->id)->count());
 
         // Opening stock batch + invoice batch + payment batch = 3 batches
@@ -394,155 +347,116 @@ final class MobileReceiptRollbackAtomicityTest extends TestCase
         $this->assertTrue(app(Phase7ReconciliationService::class)->reconcile($this->company)->isHealthy, 'Phase7 reconciliation must pass');
     }
 
-    public function test_fault_after_numbering_rolls_back_entire_state(): void
+    public function test_fault_after_invoice_draft_rolls_back_entire_state_and_preserves_reconciliations(): void
     {
-        $payload = '{"action":"checkout"}';
+        ExecuteImmediateOnlineCashSaleAction::$simulatedFaultStage = 'after_draft';
 
-        $this->app->instance(
-            FinancialExecutionAdapterInterface::class,
-            $this->createFaultInjectingExecutor('numbering')
-        );
+        $eventId = (string) Str::uuid();
+        $payload = $this->buildNormativePayload($eventId);
 
         try {
             $this->manager->recordOrReplay(
                 companyId: (int) $this->company->id,
-                clientEventId: (string) Str::uuid(),
+                clientEventId: $eventId,
                 tokenHash: $this->token->token_hash,
                 eventVersion: 2,
-                representation: 'v2_intent',
+                representation: 'v2_online_sale_intent',
                 canonicalBytes: $payload
             );
             $this->fail('Expected RuntimeException');
         } catch (RuntimeException $e) {
-            $this->assertStringContainsString('Simulated fault immediately after numbering', $e->getMessage());
+            $this->assertStringContainsString('Simulated fault at stage [after_draft]', $e->getMessage());
         }
 
-        $this->assertSame(0, DB::table('sales_invoices')->where('company_id', $this->company->id)->count());
-        $this->assertSame(0, DB::table('customer_payments')->where('company_id', $this->company->id)->count());
-        $this->assertSame(0, DB::table('mobile_event_receipts')->where('company_id', $this->company->id)->count());
-        $this->assertSame(1, DB::table('posting_batches')->where('company_id', $this->company->id)->count()); // only opening stock
-        $this->assertSame(1, DB::table('stock_movements')->where('company_id', $this->company->id)->count()); // only opening stock
+        $this->assertFullFingerprintAndReconciliationRollback();
     }
 
-    public function test_fault_after_posting_and_stock_movement_rolls_back_inventory_and_invoices(): void
+    public function test_fault_after_posting_and_stock_rolls_back_inventory_and_preserves_reconciliations(): void
     {
-        $payload = '{"action":"checkout"}';
+        ExecuteImmediateOnlineCashSaleAction::$simulatedFaultStage = 'after_posting';
 
-        $this->app->instance(
-            FinancialExecutionAdapterInterface::class,
-            $this->createFaultInjectingExecutor('posting_or_stock')
-        );
+        $eventId = (string) Str::uuid();
+        $payload = $this->buildNormativePayload($eventId);
 
         try {
             $this->manager->recordOrReplay(
                 companyId: (int) $this->company->id,
-                clientEventId: (string) Str::uuid(),
+                clientEventId: $eventId,
                 tokenHash: $this->token->token_hash,
                 eventVersion: 2,
-                representation: 'v2_intent',
+                representation: 'v2_online_sale_intent',
                 canonicalBytes: $payload
             );
             $this->fail('Expected RuntimeException');
         } catch (RuntimeException $e) {
-            $this->assertStringContainsString('Simulated fault after invoice posting', $e->getMessage());
+            $this->assertStringContainsString('Simulated fault at stage [after_posting]', $e->getMessage());
         }
 
-        $this->assertSame(0, DB::table('sales_invoices')->where('company_id', $this->company->id)->count());
-        $this->assertSame(0, DB::table('customer_payments')->where('company_id', $this->company->id)->count());
-        $this->assertSame(0, DB::table('mobile_event_receipts')->where('company_id', $this->company->id)->count());
-        $this->assertSame(1, DB::table('posting_batches')->where('company_id', $this->company->id)->count()); // only opening stock
-        $this->assertSame(1, DB::table('stock_movements')->where('company_id', $this->company->id)->count()); // only opening stock
-        $this->assertDatabaseHas('inventory_balances', [
-            'company_id' => $this->company->id,
-            'product_id' => $this->product->id,
-            'quantity_base' => '10.000000', // unmutated!
-        ]);
+        $this->assertFullFingerprintAndReconciliationRollback();
     }
 
-    public function test_fault_after_payment_rolls_back_payment_and_invoice(): void
+    public function test_fault_after_customer_payment_rolls_back_entire_state_and_preserves_reconciliations(): void
     {
-        $payload = '{"action":"checkout"}';
+        ExecuteImmediateOnlineCashSaleAction::$simulatedFaultStage = 'after_payment';
 
-        $this->app->instance(
-            FinancialExecutionAdapterInterface::class,
-            $this->createFaultInjectingExecutor('payment')
-        );
+        $eventId = (string) Str::uuid();
+        $payload = $this->buildNormativePayload($eventId);
 
         try {
             $this->manager->recordOrReplay(
                 companyId: (int) $this->company->id,
-                clientEventId: (string) Str::uuid(),
+                clientEventId: $eventId,
                 tokenHash: $this->token->token_hash,
                 eventVersion: 2,
-                representation: 'v2_intent',
+                representation: 'v2_online_sale_intent',
                 canonicalBytes: $payload
             );
             $this->fail('Expected RuntimeException');
         } catch (RuntimeException $e) {
-            $this->assertStringContainsString('Simulated fault after payment creation', $e->getMessage());
+            $this->assertStringContainsString('Simulated fault at stage [after_payment]', $e->getMessage());
         }
 
-        $this->assertSame(0, DB::table('sales_invoices')->where('company_id', $this->company->id)->count());
-        $this->assertSame(0, DB::table('customer_payments')->where('company_id', $this->company->id)->count());
-        $this->assertSame(0, DB::table('mobile_event_receipts')->where('company_id', $this->company->id)->count());
-        $this->assertSame(1, DB::table('posting_batches')->where('company_id', $this->company->id)->count());
-        $this->assertSame(1, DB::table('stock_movements')->where('company_id', $this->company->id)->count());
+        $this->assertFullFingerprintAndReconciliationRollback();
     }
 
-    public function test_fault_before_receipt_commit_leaves_zero_partial_state(): void
+    public function test_fault_after_composite_completion_rolls_back_entire_state_and_preserves_reconciliations(): void
     {
-        $payload = '{"action":"checkout"}';
+        ExecuteImmediateOnlineCashSaleAction::$simulatedFaultStage = 'after_composite_completion';
 
-        $this->app->instance(
-            FinancialExecutionAdapterInterface::class,
-            $this->createFaultInjectingExecutor('before_receipt_commit')
-        );
+        $eventId = (string) Str::uuid();
+        $payload = $this->buildNormativePayload($eventId);
 
         try {
             $this->manager->recordOrReplay(
                 companyId: (int) $this->company->id,
-                clientEventId: (string) Str::uuid(),
+                clientEventId: $eventId,
                 tokenHash: $this->token->token_hash,
                 eventVersion: 2,
-                representation: 'v2_intent',
+                representation: 'v2_online_sale_intent',
                 canonicalBytes: $payload
             );
             $this->fail('Expected RuntimeException');
         } catch (RuntimeException $e) {
-            $this->assertStringContainsString('Simulated fault immediately before receipt record commit', $e->getMessage());
+            $this->assertStringContainsString('Simulated fault at stage [after_composite_completion]', $e->getMessage());
         }
 
-        // NO invoice without receipt, NO cash or stock partial!
-        $this->assertSame(0, DB::table('sales_invoices')->where('company_id', $this->company->id)->count());
-        $this->assertSame(0, DB::table('customer_payments')->where('company_id', $this->company->id)->count());
-        $this->assertSame(0, DB::table('mobile_event_receipts')->where('company_id', $this->company->id)->count());
-        $this->assertSame(1, DB::table('posting_batches')->where('company_id', $this->company->id)->count());
-        $this->assertSame(1, DB::table('stock_movements')->where('company_id', $this->company->id)->count());
-        $this->assertDatabaseHas('inventory_balances', [
-            'company_id' => $this->company->id,
-            'product_id' => $this->product->id,
-            'quantity_base' => '10.000000',
-        ]);
+        $this->assertFullFingerprintAndReconciliationRollback();
     }
 
     public function test_fault_after_receipt_creation_rolls_back_entire_state_and_preserves_reconciliations(): void
     {
-        $payload = '{"action":"checkout","total":"100.000000"}';
-
-        $this->app->instance(
-            FinancialExecutionAdapterInterface::class,
-            $this->createFaultInjectingExecutor(null)
-        );
+        $eventId = (string) Str::uuid();
+        $payload = $this->buildNormativePayload($eventId);
 
         self::$failAfterReceiptCreation = true;
 
         try {
             $this->manager->recordOrReplay(
                 companyId: (int) $this->company->id,
-                clientEventId: (string) Str::uuid(),
+                clientEventId: $eventId,
                 tokenHash: $this->token->token_hash,
                 eventVersion: 2,
-                representation: 'v2_intent',
+                representation: 'v2_online_sale_intent',
                 canonicalBytes: $payload
             );
             $this->fail('Expected RuntimeException');
@@ -552,25 +466,6 @@ final class MobileReceiptRollbackAtomicityTest extends TestCase
             self::$failAfterReceiptCreation = false;
         }
 
-        // Complete atomicity: everything rolled back, including receipt, invoice, payment, movements
-        $this->assertSame(0, DB::table('sales_invoices')->where('company_id', $this->company->id)->count());
-        $this->assertSame(0, DB::table('customer_payments')->where('company_id', $this->company->id)->count());
-        $this->assertSame(0, DB::table('mobile_event_receipts')->where('company_id', $this->company->id)->count());
-        $this->assertSame(1, DB::table('posting_batches')->where('company_id', $this->company->id)->count()); // only opening stock
-        $this->assertSame(1, DB::table('stock_movements')->where('company_id', $this->company->id)->count()); // only opening stock
-        $this->assertDatabaseHas('inventory_balances', [
-            'company_id' => $this->company->id,
-            'product_id' => $this->product->id,
-            'quantity_base' => '10.000000',
-        ]);
-
-        // Restore test context and verify all 6 reconciliations pass cleanly with 0 violations
-        app(CompanyContext::class)->setCompany($this->company, $this->owner);
-        $this->assertTrue(app(AccountingReconciliationService::class)->reconcile($this->company)->isHealthy, 'Accounting reconciliation must pass');
-        $this->assertTrue(app(InventoryReconciliationService::class)->auditCompany($this->company)->isHealthy, 'Inventory reconciliation must pass');
-        $this->assertTrue(app(SalesReconciliationService::class)->reconcile($this->company)->isHealthy, 'Sales reconciliation must pass');
-        $this->assertTrue(app(PayablesReconciliationService::class)->reconcile($this->company)->isHealthy, 'Payables reconciliation must pass');
-        $this->assertTrue(app(MoneyReconciliationService::class)->reconcile($this->company)->isHealthy, 'Money reconciliation must pass');
-        $this->assertTrue(app(Phase7ReconciliationService::class)->reconcile($this->company)->isHealthy, 'Phase7 reconciliation must pass');
+        $this->assertFullFingerprintAndReconciliationRollback();
     }
 }

@@ -27,12 +27,14 @@ use App\Services\Inventory\FefoAllocationService;
 use App\Services\Inventory\InventoryMovementService;
 use App\Services\Inventory\OwnsStockEvent;
 use App\Services\Inventory\StockEventOwner;
+use App\Services\Money\CurrencyMinorUnitsResolver;
 use App\Services\Posting\AccountingPostingService;
 use App\Services\Sales\DocumentSequenceService;
 use App\Services\Sales\DraftInvoiceIntegrity;
 use App\Services\Sales\SalesActorGuard;
 use App\Services\Sales\SalesDocumentRules;
 use App\Services\Sales\SalesPostingLines;
+use App\Support\Mobile\Receipt\CompositeFinancialExecutionScope;
 use App\Support\Tenancy\CompanyContext;
 use Brick\Math\BigDecimal;
 use Brick\Math\RoundingMode;
@@ -53,6 +55,8 @@ class PostSalesInvoiceAction implements StockEventOwner
 
     public function execute(SalesInvoice $invoice, User $user): SalesInvoice
     {
+        CompositeFinancialExecutionScope::guardPartialAction((int) $invoice->company_id, (int) $user->id);
+
         $context = app(CompanyContext::class);
         if (! $context->hasCompany() || (int) $context->companyId() !== (int) $invoice->company_id) {
             throw new NoActiveCompanyException("Active company context does not match invoice company [{$invoice->company_id}].");
@@ -97,6 +101,10 @@ class PostSalesInvoiceAction implements StockEventOwner
                 throw new InvalidArgumentException("Cannot post invoice for inactive customer [{$customer->id}].");
             }
 
+            $currencies = array_values(array_unique([$lockedInvoice->currency_code, (string) $company->base_currency_code]));
+            $minorUnitsMap = app(CurrencyMinorUnitsResolver::class)->resolveCurrenciesForCompanyWrite((int) $company->id, $currencies, lockForUpdate: true);
+            $minorUnits = $minorUnitsMap[$lockedInvoice->currency_code];
+
             app(SalesDocumentRules::class)->header($company, $lockedInvoice->currency_code,
                 BigDecimal::of((string) $lockedInvoice->exchange_rate), $lockedInvoice->issue_date->format('Y-m-d'), $lockedInvoice->document_locale);
             $lockedInvoice->customer_snapshot = $customer->only(['name_ar', 'name_en', 'business_name_ar', 'business_name_en', 'business_name', 'address_ar', 'address_en', 'phone', 'email', 'address_line_1_ar', 'address_line_1_en', 'tax_number']);
@@ -113,7 +121,7 @@ class PostSalesInvoiceAction implements StockEventOwner
                         throw new InvalidArgumentException('Draft unit conversion changed; edit and verify the draft before posting.');
                     }
                     app(SalesDocumentRules::class)->price($product, $unit, $user,
-                        BigDecimal::of((string) $lockedInvoice->exchange_rate), $lockedInvoice->currency_code, BigDecimal::of((string) $line->unit_price));
+                        BigDecimal::of((string) $lockedInvoice->exchange_rate), $lockedInvoice->currency_code, BigDecimal::of((string) $line->unit_price), $minorUnits);
                 } elseif (! $user->hasPermissionTo('sales.invoice.change_price')) {
                     throw new AuthorizationException('Manual service price requires price-change permission.');
                 }
