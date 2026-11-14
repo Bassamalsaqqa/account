@@ -611,7 +611,8 @@ final class OnlineCashSaleQualificationTest extends TestCase
         // Verify payment is posted and allocated
         $payment = CustomerPayment::withoutGlobalScopes()->find($paymentId);
         $this->assertNotNull($payment);
-        $this->assertSame('posted', $payment->status);
+        $this->assertFalse($payment->is_reversed);
+        $this->assertNotNull($payment->posting_batch_id);
         $this->assertSame('58.000000', (string) $payment->amount);
 
         $allocation = DB::table('customer_payment_allocations')
@@ -629,7 +630,7 @@ final class OnlineCashSaleQualificationTest extends TestCase
         $this->assertNotNull($stockMovement);
 
         // Verify immutable receipt persisted
-        $receipt = MobileEventReceipt::where('client_event_id', $eventId)->first();
+        $receipt = MobileEventReceipt::withoutGlobalScopes()->where('client_event_id', $eventId)->first();
         $this->assertNotNull($receipt);
         $this->assertSame('completed', $receipt->status);
         $this->assertSame((int) $this->staff->id, (int) $receipt->actor_id);
@@ -724,9 +725,8 @@ final class OnlineCashSaleQualificationTest extends TestCase
      */
     public function test_all_fault_rollback_restores_pre_event_database_fingerprint(): void
     {
-        // Reduce warehouse stock and lots to 0 to trigger InsufficientStockException during allocation
+        // Reduce warehouse stock to 0 to trigger InsufficientStockException during allocation
         DB::table('inventory_balances')->where('company_id', $this->company->id)->update(['quantity_base' => '0.000000']);
-        DB::table('inventory_lots')->where('company_id', $this->company->id)->update(['quantity_remaining_base' => '0.000000']);
 
         $invoicesBefore = SalesInvoice::withoutGlobalScopes()->where('company_id', $this->company->id)->count();
         $paymentsBefore = CustomerPayment::withoutGlobalScopes()->where('company_id', $this->company->id)->count();
@@ -811,7 +811,7 @@ final class OnlineCashSaleQualificationTest extends TestCase
             // Database has exactly 1 invoice, 1 payment, 1 receipt
             $this->assertSame(1, SalesInvoice::withoutGlobalScopes()->where('company_id', $this->company->id)->count());
             $this->assertSame(1, CustomerPayment::withoutGlobalScopes()->where('company_id', $this->company->id)->count());
-            $this->assertSame(1, MobileEventReceipt::where('company_id', $this->company->id)->where('client_event_id', $eventId)->count());
+            $this->assertSame(1, MobileEventReceipt::withoutGlobalScopes()->where('company_id', $this->company->id)->where('client_event_id', $eventId)->count());
 
             // Reconciliations pass cleanly
             app(CompanyContext::class)->setCompany($this->company, $this->owner);
