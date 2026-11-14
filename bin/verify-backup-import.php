@@ -13,24 +13,34 @@ declare(strict_types=1);
  * - Default mode is safe DRY-RUN / PREFLIGHT (0 mutations, exit 0 on valid checks).
  * - Explicit --execute required for actual disposable import.
  * - Umask 077 enforced immediately: directories 0700, files 0600.
- * - Recovery point files must be non-public and protected (not world-readable/executable).
+ * - Recovery point files must be non-public, owned by current operator UID, with exact permissions:
+ *     Directory: 0700
+ *     Files: 0600
+ * - Mandatory external pin --expected-manifest-sha required on execute (64-char hex SHA256).
  * - Requires explicit test environment opt-in:
  *     APP_ENV=testing
  *     PHASE8_ALLOW_DISPOSABLE_DB=1
  *     Server strictly loopback: 127.0.0.1:3342
  * - NO Laravel application bootstrap, NO production database connections, NO migrations run.
- * - Pre-import SQL safety scanner:
- *     Refuses CREATE DATABASE, USE, DROP DATABASE, external DEFINER, and privileged statements.
- *     Fails closed on any unsafe syntax; strictly NO blind string/regex replacements.
+ * - Streaming SQL State Machine Scanner:
+ *     Lexes quoted strings ('...', "...", `...`), line comments (-- , #), block comments,
+ *     and executable comments (/*!... * /). Preserves quote state across multiline statements.
+ *     Refuses CREATE DATABASE, USE, DROP DATABASE, external DEFINER, privileged statements,
+ *     and client commands (\!, \.).
+ *     Strictly NO blind string replacements. NO raw SQL or business data printed in errors.
  * - Fresh owned nonce schema: accounting_p8_tmp_[a-f0-9]{12}
  * - Schema-restricted ephemeral user: u_p8_[a-f0-9]{10}
- *     If admin lacks user creation capability, reports exact required capability
- *     rather than blindly falling back to global test_runner.
- * - Import executed via private client config file (.my.cnf, mode 0600) wiped in finally.
- * - Sanitized aggregate verification: table names, row count totals, migration names,
- *     and structural schema hash only. ZERO business data rows output.
- * - Strict finally block: always drops ONLY the owned schema and owned ephemeral user.
- *     Never touches, adopts, or cleans up existing schemas/users.
+ *     Schema name wildcards escaped in GRANT (addcslashes($schema, '_%')).
+ *     Specific table privileges only; NO broad GRANT ALL; NO global FLUSH PRIVILEGES.
+ * - Collision & Cleanup Ownership Safety:
+ *     Tracks schemaCreated and userCreated booleans only AFTER exclusive creation succeeds.
+ *     If creation fails or aborts, collision object is NEVER dropped.
+ *     Finally block drops ONLY owned created resources and verifies absence before reporting SUCCESS.
+ * - MariaDB CLI import hardening:
+ *     --defaults-extra-file, --binary-mode, --local-infile=0, --skip-reconnect.
+ * - Sanitized aggregate verification:
+ *     Asserts expected 104 tables and 79 migrations before SUCCESS.
+ *     ZERO business data rows output.
  */
 
 namespace SmallTrader\Recovery;
@@ -54,7 +64,17 @@ final class BackupImportVerifier
 
     private string $mariadbBin;
 
+    private ?string $expectedManifestSha;
+
+    private int $expectedTablesCount;
+
+    private int $expectedMigrationsCount;
+
     private ?PDO $adminPdo = null;
+
+    private bool $schemaCreated = false;
+
+    private bool $userCreated = false;
 
     private ?string $ownedSchema = null;
 
@@ -75,6 +95,18 @@ final class BackupImportVerifier
         $this->execute = (bool) ($options['execute'] ?? false);
         $this->mariadbBin = (string) ($options['mariadb-bin'] ?? $this->detectMariaDbBinary());
 
+        $this->expectedManifestSha = isset($options['expected-manifest-sha'])
+            ? (string) $options['expected-manifest-sha']
+            : null;
+
+        $this->expectedTablesCount = isset($options['expected-tables-count'])
+            ? (int) $options['expected-tables-count']
+            : 104;
+
+        $this->expectedMigrationsCount = isset($options['expected-migrations-count'])
+            ? (int) $options['expected-migrations-count']
+            : 79;
+
         $rawPoint = (string) ($options['point-dir'] ?? '');
         if ($rawPoint === '') {
             throw new RuntimeException('POINT_DIR_REQUIRED');
@@ -88,14 +120,13 @@ final class BackupImportVerifier
      */
     public function run(): array
     {
-        // 1. Verify manifest and hash integrity
+        // 1. Verify manifest, external pin, and file permissions
         $manifest = $this->verifyManifestIntegrity();
 
-        // 2. Validate database.sql integrity and permissions
+        // 2. Validate database.sql integrity, permissions, and owner UID
         $sqlPath = $this->pointDir.'/database.sql';
-        if (! is_file($sqlPath) || ! is_readable($sqlPath)) {
-            throw new RuntimeException('DATABASE_SQL_NOT_FOUND_OR_UNREADABLE');
-        }
+        $this->assertSecureFile($sqlPath, 'DATABASE_SQL');
+
         $sqlBytes = filesize($sqlPath);
         if ($sqlBytes === 0) {
             throw new RuntimeException('DATABASE_SQL_EMPTY');
@@ -107,7 +138,7 @@ final class BackupImportVerifier
             throw new RuntimeException('DATABASE_SQL_SHA256_MISMATCH');
         }
 
-        // 3. Fail-Closed Pre-Import SQL Safety Scanner
+        // 3. Streaming SQL State Machine Scanner (lexes strings, comments, and client commands)
         $sqlSafety = $this->scanSqlDumpForSafety($sqlPath);
 
         // 4. Validate Environment Opt-in & Loopback Server Settings
@@ -131,9 +162,15 @@ final class BackupImportVerifier
                     'port' => (int) $this->dbSettings['PORT'],
                     'isolation' => 'LOOPBACK_DISPOSABLE_ONLY',
                 ],
+                'expected_metrics' => [
+                    'tables_count' => $this->expectedTablesCount,
+                    'migrations_count' => $this->expectedMigrationsCount,
+                ],
                 'isolation_policy' => [
                     'schema_prefix' => 'accounting_p8_tmp_',
                     'user_prefix' => 'u_p8_',
+                    'grant_pattern_escaped' => true,
+                    'no_global_flush' => true,
                     'no_application_boot' => true,
                     'no_migrations_run' => true,
                     'strict_finally_cleanup' => true,
@@ -144,6 +181,10 @@ final class BackupImportVerifier
         // =====================================================================
         // EXECUTE MODE: Disposable Import & Verification
         // =====================================================================
+        if ($this->expectedManifestSha === null || ! preg_match('/^[a-f0-9]{64}$/D', $this->expectedManifestSha)) {
+            throw new RuntimeException('EXECUTE_REQUIRES_MANIFEST_SHA_PIN');
+        }
+
         return $this->executeDisposableVerification($sqlPath);
     }
 
@@ -152,31 +193,41 @@ final class BackupImportVerifier
      */
     private function executeDisposableVerification(string $sqlPath): array
     {
-        $this->ownedSchema = 'accounting_p8_tmp_'.bin2hex(random_bytes(6));
-        $this->ownedUser = 'u_p8_'.bin2hex(random_bytes(5));
+        $candidateSchema = 'accounting_p8_tmp_'.bin2hex(random_bytes(6));
+        $candidateUser = 'u_p8_'.bin2hex(random_bytes(5));
         $ephemeralPass = bin2hex(random_bytes(16));
 
         try {
             $this->adminPdo = $this->createAdminPdo();
 
-            // Attempt to establish schema-restricted ephemeral user
-            $this->createEphemeralUser($this->ownedUser, $ephemeralPass, $this->ownedSchema);
+            // Collision guard: verify candidate schema does not already exist
+            $checkStmt = $this->adminPdo->prepare('SELECT SCHEMA_NAME FROM INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME = ?');
+            $checkStmt->execute([$candidateSchema]);
+            if ($checkStmt->fetchColumn() !== false) {
+                throw new RuntimeException('SCHEMA_COLLISION_DETECTED');
+            }
 
-            // Create disposable schema
+            // Create disposable schema exclusively
             $this->adminPdo->exec(sprintf(
                 'CREATE DATABASE `%s` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci',
-                $this->ownedSchema
+                $candidateSchema
             ));
+            // Mark schema created ONLY after successful execution
+            $this->ownedSchema = $candidateSchema;
+            $this->schemaCreated = true;
+
+            // Attempt to establish schema-restricted ephemeral user
+            $this->createEphemeralUser($candidateUser, $ephemeralPass, $candidateSchema);
 
             // Write temporary private .my.cnf for client import
-            $this->myCnfPath = $this->writePrivateClientConfig($this->ownedUser, $ephemeralPass, $this->ownedSchema);
+            $this->myCnfPath = $this->writePrivateClientConfig($candidateUser, $ephemeralPass, $candidateSchema);
 
-            // Execute import via CLI client
+            // Execute import via CLI client with hardening flags
             $importCmd = sprintf(
-                '%s --defaults-extra-file=%s %s < %s',
+                '%s --defaults-extra-file=%s --binary-mode --local-infile=0 --skip-reconnect %s < %s',
                 escapeshellcmd($this->mariadbBin),
                 escapeshellarg($this->myCnfPath),
-                escapeshellarg($this->ownedSchema),
+                escapeshellarg($candidateSchema),
                 escapeshellarg($sqlPath)
             );
 
@@ -189,7 +240,17 @@ final class BackupImportVerifier
             }
 
             // Inspect imported structure and collect sanitized aggregate metrics
-            return $this->collectSanitizedMetrics($this->ownedSchema, $this->ownedUser, $ephemeralPass);
+            $metrics = $this->collectSanitizedMetrics($candidateSchema, $candidateUser, $ephemeralPass);
+
+            // Assert expected counts before SUCCESS
+            if (($metrics['tables_count'] ?? 0) !== $this->expectedTablesCount) {
+                throw new RuntimeException('TABLE_COUNT_MISMATCH');
+            }
+            if (($metrics['migrations_count'] ?? 0) !== $this->expectedMigrationsCount) {
+                throw new RuntimeException('MIGRATION_COUNT_MISMATCH');
+            }
+
+            return $metrics;
         } finally {
             $this->cleanupDisposableResources();
         }
@@ -226,13 +287,11 @@ final class BackupImportVerifier
         $createStatements = [];
 
         foreach ($tables as $tbl) {
-            // Count query
             $cntStmt = $pdo->query(sprintf('SELECT COUNT(*) FROM `%s`', str_replace('`', '``', $tbl)));
             $count = (int) $cntStmt->fetchColumn();
             $tableRowCounts[$tbl] = $count;
             $totalRows += $count;
 
-            // Structure checksum (SHOW CREATE TABLE)
             $createStmt = $pdo->query(sprintf('SHOW CREATE TABLE `%s`', str_replace('`', '``', $tbl)));
             $createRow = $createStmt->fetch(PDO::FETCH_NUM);
             $createStatements[] = (string) ($createRow[1] ?? '');
@@ -295,18 +354,25 @@ final class BackupImportVerifier
                 $user,
                 $this->adminPdo->quote($password)
             ));
+            // Mark user created ONLY after successful execution
+            $this->ownedUser = $user;
+            $this->userCreated = true;
+
+            // Wildcard-safe schema pattern: escape '_' and '%'
+            $escapedSchema = addcslashes($schema, '_%');
+            $specificPrivileges = 'SELECT, INSERT, UPDATE, DELETE, CREATE, DROP, REFERENCES, INDEX, ALTER, CREATE TEMPORARY TABLES, LOCK TABLES, EXECUTE, CREATE VIEW, SHOW VIEW, CREATE ROUTINE, ALTER ROUTINE, EVENT, TRIGGER';
 
             $this->adminPdo->exec(sprintf(
-                "GRANT ALL PRIVILEGES ON `%s`.* TO '%s'@'127.0.0.1'",
-                $schema,
+                "GRANT %s ON `%s`.* TO '%s'@'127.0.0.1'",
+                $specificPrivileges,
+                $escapedSchema,
                 $user
             ));
-
-            $this->adminPdo->exec('FLUSH PRIVILEGES');
+            // Note: NO FLUSH PRIVILEGES
         } catch (PDOException $e) {
             throw new RuntimeException(
                 'USER_CREATION_PRIVILEGE_MISSING: Admin test account lacks CREATE USER or GRANT privileges '.
-                'to create schema-restricted ephemeral user. Refusing global test_runner import.'
+                'to establish schema-restricted ephemeral account. Refusing global test_runner import.'
             );
         }
     }
@@ -333,6 +399,8 @@ final class BackupImportVerifier
 
     private function cleanupDisposableResources(): void
     {
+        $cleanupErrors = [];
+
         // 1. Wipe and unlink temporary .my.cnf
         if ($this->myCnfPath !== null && is_file($this->myCnfPath)) {
             $size = filesize($this->myCnfPath);
@@ -343,28 +411,54 @@ final class BackupImportVerifier
             $this->myCnfPath = null;
         }
 
-        // 2. Drop owned ephemeral user (never touch existing users)
-        if ($this->adminPdo !== null && $this->ownedUser !== null) {
-            if (preg_match(self::EPHEMERAL_USER_REGEX, $this->ownedUser)) {
-                try {
-                    $this->adminPdo->exec(sprintf("DROP USER IF EXISTS '%s'@'127.0.0.1'", $this->ownedUser));
-                } catch (Throwable) {
-                    // Best effort cleanup
-                }
+        // 2. Drop user ONLY if it was actually created by this instance
+        if ($this->userCreated && $this->ownedUser !== null && $this->adminPdo !== null) {
+            try {
+                $this->adminPdo->exec(sprintf("DROP USER '%s'@'127.0.0.1'", $this->ownedUser));
+                $this->userCreated = false;
+            } catch (Throwable) {
+                $cleanupErrors[] = 'USER_DROP_FAILED';
             }
-            $this->ownedUser = null;
         }
 
-        // 3. Drop owned disposable schema (never touch existing schemas)
-        if ($this->adminPdo !== null && $this->ownedSchema !== null) {
-            if (preg_match(self::SCHEMA_REGEX, $this->ownedSchema)) {
+        // 3. Drop schema ONLY if it was actually created by this instance
+        if ($this->schemaCreated && $this->ownedSchema !== null && $this->adminPdo !== null) {
+            try {
+                $this->adminPdo->exec(sprintf('DROP DATABASE `%s`', $this->ownedSchema));
+                $this->schemaCreated = false;
+            } catch (Throwable) {
+                $cleanupErrors[] = 'SCHEMA_DROP_FAILED';
+            }
+        }
+
+        // 4. Verify absence of owned resources before exiting
+        if ($this->adminPdo !== null) {
+            if ($this->ownedSchema !== null) {
                 try {
-                    $this->adminPdo->exec(sprintf('DROP DATABASE IF EXISTS `%s`', $this->ownedSchema));
+                    $st = $this->adminPdo->prepare('SELECT SCHEMA_NAME FROM INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME = ?');
+                    $st->execute([$this->ownedSchema]);
+                    if ($st->fetchColumn() !== false) {
+                        $cleanupErrors[] = 'OWNED_SCHEMA_STILL_EXISTS';
+                    }
                 } catch (Throwable) {
-                    // Best effort cleanup
+                    $cleanupErrors[] = 'SCHEMA_VERIFICATION_FAILED';
                 }
             }
-            $this->ownedSchema = null;
+            if ($this->ownedUser !== null) {
+                try {
+                    $ust = $this->adminPdo->prepare("SELECT User FROM mysql.user WHERE User = ? AND Host = '127.0.0.1'");
+                    $ust->execute([$this->ownedUser]);
+                    if ($ust->fetchColumn() !== false) {
+                        $cleanupErrors[] = 'OWNED_USER_STILL_EXISTS';
+                    }
+                } catch (Throwable) {
+                    $cleanupErrors[] = 'USER_VERIFICATION_FAILED';
+                }
+            }
+        }
+
+        if ($cleanupErrors !== []) {
+            throw new RuntimeException('CLEANUP_FAILED_RESOURCES_REMAIN: '.implode(',', $cleanupErrors));
         }
     }
 
@@ -376,14 +470,9 @@ final class BackupImportVerifier
         $manifestPath = $this->pointDir.'/manifest.json';
         $shaFilePath = $this->pointDir.'/manifest.sha256';
 
-        if (! is_file($manifestPath) || ! is_readable($manifestPath)) {
-            throw new RuntimeException('MANIFEST_JSON_NOT_FOUND_OR_UNREADABLE');
-        }
-        if (! is_file($shaFilePath) || ! is_readable($shaFilePath)) {
-            throw new RuntimeException('MANIFEST_SHA256_FILE_NOT_FOUND_OR_UNREADABLE');
-        }
+        $this->assertSecureFile($manifestPath, 'MANIFEST_JSON');
+        $this->assertSecureFile($shaFilePath, 'MANIFEST_SHA256_FILE');
 
-        // Verify SHA-256 of manifest.json
         $actualManifestSha = hash_file('sha256', $manifestPath);
         $shaContent = (string) file_get_contents($shaFilePath);
         if (! preg_match('/^([a-f0-9]{64})\s+manifest\.json$/mD', $shaContent, $m)) {
@@ -391,6 +480,10 @@ final class BackupImportVerifier
         }
         if (! hash_equals($m[1], $actualManifestSha)) {
             throw new RuntimeException('MANIFEST_DIGEST_CORRUPTED');
+        }
+
+        if ($this->expectedManifestSha !== null && ! hash_equals($this->expectedManifestSha, $actualManifestSha)) {
+            throw new RuntimeException('MANIFEST_SHA_PIN_MISMATCH');
         }
 
         $decoded = json_decode((string) file_get_contents($manifestPath), true);
@@ -401,6 +494,12 @@ final class BackupImportVerifier
         return $decoded;
     }
 
+    /**
+     * Streaming SQL State Machine Scanner
+     * Correctly lexes single-quoted strings, double-quoted strings, backticks,
+     * block comments, line comments, and executable comments (/*!... * /).
+     * Preserves quote state across multiline statements and buffers.
+     */
     private function scanSqlDumpForSafety(string $sqlPath): string
     {
         $handle = fopen($sqlPath, 'rb');
@@ -408,47 +507,229 @@ final class BackupImportVerifier
             throw new RuntimeException('UNABLE_TO_OPEN_SQL_DUMP');
         }
 
-        $lineNum = 0;
+        $inSingleQuote = false;
+        $inDoubleQuote = false;
+        $inBacktick = false;
+        $inLineComment = false;
+        $inBlockComment = false;
+        $inExecComment = false;
+
+        $lineNum = 1;
+        $currentTokens = [];
+        $currentToken = '';
+
         try {
-            while (($line = fgets($handle)) !== false) {
-                $lineNum++;
-                $trimmed = trim($line);
-                if ($trimmed === '' || str_starts_with($trimmed, '--') || str_starts_with($trimmed, '/*')) {
-                    continue;
+            while (! feof($handle)) {
+                $chunk = fread($handle, 65536);
+                if ($chunk === false || $chunk === '') {
+                    break;
                 }
 
-                $upper = strtoupper($trimmed);
+                $len = strlen($chunk);
+                for ($i = 0; $i < $len; $i++) {
+                    $c = $chunk[$i];
+                    $next = $i + 1 < $len ? $chunk[$i + 1] : '';
 
-                // 1. Refuse CREATE DATABASE / SCHEMA
-                if (preg_match('/\bCREATE\s+(DATABASE|SCHEMA)\b/i', $trimmed)) {
-                    throw new RuntimeException("SQL_CONTAINS_FORBIDDEN_CREATE_DATABASE at line {$lineNum}");
-                }
+                    if ($c === "\n") {
+                        $lineNum++;
+                        if ($inLineComment) {
+                            $inLineComment = false;
+                            continue;
+                        }
+                    }
 
-                // 2. Refuse USE statement
-                if (preg_match('/\bUSE\s+[`a-zA-Z0-9_]/i', $trimmed)) {
-                    throw new RuntimeException("SQL_CONTAINS_FORBIDDEN_USE at line {$lineNum}");
-                }
+                    if ($inLineComment) {
+                        continue;
+                    }
 
-                // 3. Refuse DROP DATABASE / SCHEMA
-                if (preg_match('/\bDROP\s+(DATABASE|SCHEMA)\b/i', $trimmed)) {
-                    throw new RuntimeException("SQL_CONTAINS_FORBIDDEN_DROP_DATABASE at line {$lineNum}");
-                }
+                    if ($inBlockComment) {
+                        if ($c === '*' && $next === '/') {
+                            $inBlockComment = false;
+                            $i++;
+                        }
+                        continue;
+                    }
 
-                // 4. Refuse external DEFINER clauses
-                if (preg_match('/\bDEFINER\s*=\s*[`a-zA-Z0-9_]/i', $trimmed)) {
-                    throw new RuntimeException("SQL_CONTAINS_EXTERNAL_DEFINER at line {$lineNum}");
-                }
+                    if ($inExecComment) {
+                        if ($c === '*' && $next === '/') {
+                            $inExecComment = false;
+                            $i++;
+                            continue;
+                        }
+                        // SQL inside /*!... */ is executed: process normally below
+                    }
 
-                // 5. Refuse privileged administrative statements
-                if (preg_match('/\b(GRANT|REVOKE|SHUTDOWN|FLUSH\s+PRIVILEGES|SET\s+GLOBAL|ALTER\s+USER|CREATE\s+USER|DROP\s+USER)\b/i', $trimmed)) {
-                    throw new RuntimeException("SQL_CONTAINS_PRIVILEGED_STATEMENT at line {$lineNum}");
+                    // Inside single-quoted string literal
+                    if ($inSingleQuote) {
+                        if ($c === '\\') {
+                            $i++; // skip escaped character
+                            continue;
+                        }
+                        if ($c === "'") {
+                            if ($next === "'") {
+                                $i++; // '' is escaped single quote
+                                continue;
+                            }
+                            $inSingleQuote = false;
+                        }
+                        continue;
+                    }
+
+                    // Inside double-quoted string literal
+                    if ($inDoubleQuote) {
+                        if ($c === '\\') {
+                            $i++;
+                            continue;
+                        }
+                        if ($c === '"') {
+                            if ($next === '"') {
+                                $i++;
+                                continue;
+                            }
+                            $inDoubleQuote = false;
+                        }
+                        continue;
+                    }
+
+                    // Inside backticks identifier
+                    if ($inBacktick) {
+                        if ($c === '`') {
+                            if ($next === '`') {
+                                $i++;
+                                continue;
+                            }
+                            $inBacktick = false;
+                        }
+                        continue;
+                    }
+
+                    // Outside quotes and comments: check start of comments or quotes
+                    if ($c === "'") {
+                        $this->flushToken($currentToken, $currentTokens);
+                        $inSingleQuote = true;
+                        continue;
+                    }
+                    if ($c === '"') {
+                        $this->flushToken($currentToken, $currentTokens);
+                        $inDoubleQuote = true;
+                        continue;
+                    }
+                    if ($c === '`') {
+                        $this->flushToken($currentToken, $currentTokens);
+                        $inBacktick = true;
+                        continue;
+                    }
+                    if ($c === '#' || ($c === '-' && $next === '-')) {
+                        $this->flushToken($currentToken, $currentTokens);
+                        $inLineComment = true;
+                        if ($c === '-') {
+                            $i++;
+                        }
+                        continue;
+                    }
+                    if ($c === '/' && $next === '*') {
+                        $this->flushToken($currentToken, $currentTokens);
+                        $i++;
+                        $afterStar = $i + 1 < $len ? $chunk[$i + 1] : '';
+                        if ($afterStar === '!') {
+                            $inExecComment = true;
+                            $i++; // skip !
+                            // Skip optional version digits (e.g. /*!50013 ...)
+                            while ($i + 1 < $len && ctype_digit($chunk[$i + 1])) {
+                                $i++;
+                            }
+                        } else {
+                            $inBlockComment = true;
+                        }
+                        continue;
+                    }
+
+                    // Client command escape (\! or \.) outside strings
+                    if ($c === '\\' && ($next === '!' || $next === '.')) {
+                        throw new RuntimeException("SQL_CONTAINS_CLIENT_COMMAND at line {$lineNum}");
+                    }
+
+                    // Statement delimiter
+                    if ($c === ';') {
+                        $this->flushToken($currentToken, $currentTokens);
+                        $this->inspectStatementTokens($currentTokens, $lineNum);
+                        $currentTokens = [];
+                        continue;
+                    }
+
+                    // Token accumulation
+                    if (ctype_alnum($c) || $c === '_' || $c === '@') {
+                        $currentToken .= $c;
+                    } else {
+                        $this->flushToken($currentToken, $currentTokens);
+                    }
                 }
+            }
+
+            // Flush any trailing token
+            $this->flushToken($currentToken, $currentTokens);
+            if ($currentTokens !== []) {
+                $this->inspectStatementTokens($currentTokens, $lineNum);
             }
         } finally {
             fclose($handle);
         }
 
         return 'VERIFIED_SAFE_NO_DANGEROUS_DDL';
+    }
+
+    private function flushToken(string &$currentToken, array &$tokens): void
+    {
+        if ($currentToken !== '') {
+            $tokens[] = strtoupper($currentToken);
+            $currentToken = '';
+        }
+    }
+
+    /**
+     * @param list<string> $tokens
+     */
+    private function inspectStatementTokens(array $tokens, int $lineNum): void
+    {
+        if ($tokens === []) {
+            return;
+        }
+
+        // 1. Refuse CREATE DATABASE / SCHEMA
+        $count = count($tokens);
+        for ($i = 0; $i < $count - 1; $i++) {
+            if ($tokens[$i] === 'CREATE' && ($tokens[$i + 1] === 'DATABASE' || $tokens[$i + 1] === 'SCHEMA')) {
+                throw new RuntimeException("SQL_CONTAINS_FORBIDDEN_CREATE_DATABASE at line {$lineNum}");
+            }
+            if ($tokens[$i] === 'DROP' && ($tokens[$i + 1] === 'DATABASE' || $tokens[$i + 1] === 'SCHEMA')) {
+                throw new RuntimeException("SQL_CONTAINS_FORBIDDEN_DROP_DATABASE at line {$lineNum}");
+            }
+        }
+
+        // 2. Refuse USE statement
+        if ($tokens[0] === 'USE') {
+            throw new RuntimeException("SQL_CONTAINS_FORBIDDEN_USE at line {$lineNum}");
+        }
+
+        // 3. Refuse external DEFINER clauses (even inside /*!... * /)
+        if (in_array('DEFINER', $tokens, true)) {
+            throw new RuntimeException("SQL_CONTAINS_EXTERNAL_DEFINER at line {$lineNum}");
+        }
+
+        // 4. Refuse privileged administrative statements
+        $first = $tokens[0];
+        if (in_array($first, ['GRANT', 'REVOKE', 'SHUTDOWN'], true)) {
+            throw new RuntimeException("SQL_CONTAINS_PRIVILEGED_STATEMENT at line {$lineNum}");
+        }
+        if (in_array($first, ['ALTER', 'CREATE', 'DROP'], true) && isset($tokens[1]) && $tokens[1] === 'USER') {
+            throw new RuntimeException("SQL_CONTAINS_PRIVILEGED_STATEMENT at line {$lineNum}");
+        }
+        if ($first === 'SET' && isset($tokens[1]) && $tokens[1] === 'GLOBAL') {
+            throw new RuntimeException("SQL_CONTAINS_PRIVILEGED_STATEMENT at line {$lineNum}");
+        }
+        if ($first === 'FLUSH' && in_array('PRIVILEGES', $tokens, true)) {
+            throw new RuntimeException("SQL_CONTAINS_PRIVILEGED_STATEMENT at line {$lineNum}");
+        }
     }
 
     /**
@@ -477,12 +758,10 @@ final class BackupImportVerifier
             $settings[$key] = (string) $val;
         }
 
-        // Server strictly loopback
         if (! in_array($settings['HOST'], ['127.0.0.1', 'localhost', '::1'], true)) {
             throw new RuntimeException('DISPOSABLE_DB_REFUSED_NON_LOOPBACK_HOST');
         }
 
-        // Port strictly 3342
         if ($settings['PORT'] !== '3342') {
             throw new RuntimeException('DISPOSABLE_DB_REFUSED_NON_3342_PORT');
         }
@@ -501,18 +780,57 @@ final class BackupImportVerifier
             throw new RuntimeException('POINT_DIR_NOT_FOUND');
         }
 
-        // Check symlinks
-        if (is_link($path) || is_link($real)) {
-            throw new RuntimeException('SYMLINK_REFUSED_POINT_DIR');
+        // Validate ancestors for symlinks and non-public path
+        $anc = $real;
+        do {
+            if (is_link($anc)) {
+                throw new RuntimeException('SYMLINK_REFUSED_POINT_DIR');
+            }
+            $p = dirname($anc);
+            if ($p === $anc) {
+                break;
+            }
+            $anc = $p;
+        } while ($anc !== '.' && $anc !== '');
+
+        if (str_contains($real, '/public_html') || str_contains($real, '/public/')) {
+            throw new RuntimeException('TARGET_DIR_INSIDE_PUBLIC_ROOT');
         }
 
-        // Permissions check: must not be world-readable/writable/executable
-        $perms = fileperms($real) & 0777;
-        if (($perms & 0007) !== 0) {
-            throw new RuntimeException('INSECURE_PERMISSIONS_POINT_DIR_WORLD_ACCESSIBLE');
+        // Validate owner UID matches current process
+        $stat = stat($real);
+        if ($stat === false || $stat['uid'] !== getmyuid()) {
+            throw new RuntimeException('POINT_DIR_OWNER_UID_MISMATCH');
+        }
+
+        // Exact permissions check: must be exactly 0700
+        $perms = $stat['mode'] & 0777;
+        if ($perms !== 0700) {
+            throw new RuntimeException('POINT_DIR_PERMISSIONS_NOT_0700');
         }
 
         return $real;
+    }
+
+    private function assertSecureFile(string $path, string $context): void
+    {
+        if (! is_file($path) || ! is_readable($path)) {
+            throw new RuntimeException("{$context}_NOT_FOUND_OR_UNREADABLE");
+        }
+
+        if (is_link($path)) {
+            throw new RuntimeException("SYMLINK_REFUSED_{$context}");
+        }
+
+        $stat = stat($path);
+        if ($stat === false || $stat['uid'] !== getmyuid()) {
+            throw new RuntimeException("{$context}_OWNER_UID_MISMATCH");
+        }
+
+        $perms = $stat['mode'] & 0777;
+        if ($perms !== 0600) {
+            throw new RuntimeException("{$context}_PERMISSIONS_NOT_0600");
+        }
     }
 
     private function detectMariaDbBinary(): string
@@ -537,10 +855,13 @@ if (PHP_SAPI === 'cli' && realpath((string) ($_SERVER['SCRIPT_FILENAME'] ?? ''))
         foreach (array_slice($argv, 1) as $arg) {
             if ($arg === '--help' || $arg === '-h') {
                 echo "Usage: php bin/verify-backup-import.php [options]\n";
-                echo "  --execute                 Execute disposable MariaDB import (default: safe preflight)\n";
-                echo "  --dry-run                 Explicitly run in safe dry-run mode\n";
-                echo "  --point-dir=<path>        Path to recovery point directory\n";
-                echo "  --mariadb-bin=<path>      Path to mariadb/mysql client CLI\n";
+                echo "  --execute                      Execute disposable MariaDB import (default: safe preflight)\n";
+                echo "  --dry-run                      Explicitly run in safe dry-run mode\n";
+                echo "  --point-dir=<path>             Path to recovery point directory\n";
+                echo "  --expected-manifest-sha=<h>    Expected 64-char manifest SHA256 pin\n";
+                echo "  --expected-tables-count=<n>    Expected table count (default: 104)\n";
+                echo "  --expected-migrations-count=<n> Expected migrations count (default: 79)\n";
+                echo "  --mariadb-bin=<path>           Path to mariadb/mysql client CLI\n";
                 exit(0);
             }
             if ($arg === '--execute') {

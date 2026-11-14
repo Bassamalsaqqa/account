@@ -11,21 +11,28 @@ declare(strict_types=1);
  * Verifies:
  * - (1) Missing invocation arguments fail closed.
  * - (2) Non-existent or symlinked point directory refused.
- * - (3) Insecure point directory permissions (world-accessible) refused.
- * - (4) Corrupted manifest digest refused.
- * - (5) Database SQL missing, empty, or hash mismatch refused.
- * - (6) Pre-import SQL safety scanner:
- *       - Refusal of CREATE DATABASE / SCHEMA
- *       - Refusal of USE statements
- *       - Refusal of DROP DATABASE / SCHEMA
- *       - Refusal of external DEFINER
- *       - Refusal of privileged administrative statements (GRANT, SHUTDOWN, etc.)
- * - (7) Environment opt-in enforcement:
+ * - (3) Insecure point directory permissions (not exact 0700) refused.
+ * - (4) Insecure file permissions (not exact 0600) refused.
+ * - (5) Corrupted manifest digest refused.
+ * - (6) External manifest SHA256 pin mismatch refused.
+ * - (7) Execute mode strictly requires external manifest pin.
+ * - (8) Database SQL missing, empty, or hash mismatch refused.
+ * - (9) Streaming SQL State Machine Scanner:
+ *       - Multiline INSERT statements containing words like REVOKE/GRANT inside string literals PASS.
+ *       - Escaped quotes containing SQL keywords inside string literals PASS.
+ *       - Normal non-executable comments containing keywords PASS.
+ *       - Genuine REVOKE/GRANT outside quotes REJECTED.
+ *       - Executable comments (/*!50013 DEFINER=... * /) containing DEFINER REJECTED.
+ *       - Client commands (\! whoami) REJECTED.
+ *       - Refusal of CREATE DATABASE / SCHEMA.
+ *       - Refusal of USE statements.
+ *       - Refusal of DROP DATABASE / SCHEMA.
+ * - (10) Environment opt-in enforcement:
  *       - APP_ENV must be testing
  *       - PHASE8_ALLOW_DISPOSABLE_DB must be 1
  *       - Host strictly loopback
  *       - Port strictly 3342
- * - (8) Valid clean recovery point passes dry-run preflight with zero mutations.
+ * - (11) Valid clean recovery point passes dry-run preflight with zero mutations.
  */
 
 namespace SmallTrader\Tests\Deployment;
@@ -147,8 +154,8 @@ final class VerifyBackupImportTestRunner
     public function testInsecurePermissionsPointDirRejected(): void
     {
         $pointDir = $this->tempDir.'/insecure_perms_'.bin2hex(random_bytes(4));
-        mkdir($pointDir, 0777, true);
-        chmod($pointDir, 0777); // World-readable/executable
+        mkdir($pointDir, 0755, true);
+        chmod($pointDir, 0755); // Not exact 0700
 
         $output = [];
         $exitCode = 0;
@@ -162,13 +169,27 @@ final class VerifyBackupImportTestRunner
 
         $this->assertSame(1, $exitCode);
         $json = json_decode(implode("\n", $output), true);
-        $this->assertSame('INSECURE_PERMISSIONS_POINT_DIR_WORLD_ACCESSIBLE', $json['error'] ?? null);
+        $this->assertSame('POINT_DIR_PERMISSIONS_NOT_0700', $json['error'] ?? null);
+    }
+
+    public function testInsecureFilePermissionsRejected(): void
+    {
+        $fixture = $this->createFixturePoint('insecure_file_perms');
+        chmod($fixture['pointDir'].'/database.sql', 0644); // Not exact 0600
+
+        $output = [];
+        $exitCode = 0;
+        $cmd = $this->buildPreflightCommand($fixture['pointDir']);
+        exec($cmd, $output, $exitCode);
+
+        $this->assertSame(1, $exitCode);
+        $json = json_decode(implode("\n", $output), true);
+        $this->assertSame('DATABASE_SQL_PERMISSIONS_NOT_0600', $json['error'] ?? null);
     }
 
     public function testManifestJsonMissingOrDigestCorrupted(): void
     {
         $fixture = $this->createFixturePoint('corrupt_manifest');
-        // Corrupt manifest.json content without updating sha256
         file_put_contents($fixture['pointDir'].'/manifest.json', "{\"tampered\": true}\n");
 
         $output = [];
@@ -181,10 +202,48 @@ final class VerifyBackupImportTestRunner
         $this->assertSame('MANIFEST_DIGEST_CORRUPTED', $json['error'] ?? null);
     }
 
+    public function testManifestShaPinMismatchRejected(): void
+    {
+        $fixture = $this->createFixturePoint('manifest_pin_mismatch');
+
+        $output = [];
+        $exitCode = 0;
+        $cmd = sprintf(
+            '%s %s --point-dir=%s --expected-manifest-sha=0000000000000000000000000000000000000000000000000000000000000000',
+            $this->buildEnvPrefix(),
+            escapeshellarg($this->verifierScript),
+            escapeshellarg($fixture['pointDir'])
+        );
+        exec($cmd, $output, $exitCode);
+
+        $this->assertSame(1, $exitCode);
+        $json = json_decode(implode("\n", $output), true);
+        $this->assertSame('MANIFEST_SHA_PIN_MISMATCH', $json['error'] ?? null);
+    }
+
+    public function testExecuteRequiresManifestShaPin(): void
+    {
+        $fixture = $this->createFixturePoint('execute_no_pin');
+
+        $output = [];
+        $exitCode = 0;
+        // Calling --execute without --expected-manifest-sha
+        $cmd = sprintf(
+            '%s %s --execute --point-dir=%s',
+            $this->buildEnvPrefix(),
+            escapeshellarg($this->verifierScript),
+            escapeshellarg($fixture['pointDir'])
+        );
+        exec($cmd, $output, $exitCode);
+
+        $this->assertSame(1, $exitCode);
+        $json = json_decode(implode("\n", $output), true);
+        $this->assertSame('EXECUTE_REQUIRES_MANIFEST_SHA_PIN', $json['error'] ?? null);
+    }
+
     public function testDatabaseSqlMissingOrCorruptedHash(): void
     {
         $fixture = $this->createFixturePoint('corrupt_sql');
-        // Modify database.sql without updating manifest
         file_put_contents($fixture['pointDir'].'/database.sql', "-- tampered sql\n");
 
         $output = [];
@@ -195,6 +254,105 @@ final class VerifyBackupImportTestRunner
         $this->assertSame(1, $exitCode);
         $json = json_decode(implode("\n", $output), true);
         $this->assertSame('DATABASE_SQL_SHA256_MISMATCH', $json['error'] ?? null);
+    }
+
+    public function testSqlScannerAllowsMultilineStringLiteralsWithKeywords(): void
+    {
+        // Synthesize multiline INSERT containing words REVOKE and GRANT inside string literals
+        $sql = [
+            "CREATE TABLE `activity_log` (`id` int(11) NOT NULL, `description` text NOT NULL) ENGINE=InnoDB;\n",
+            "INSERT INTO `activity_log` VALUES (1, 'Admin note:\n",
+            "Please REVOKE all access for old employee\n",
+            "and GRANT read role to supervisor.\n",
+            "Signed by HR department.');\n",
+        ];
+        $fixture = $this->createFixturePoint('multiline_string_keywords', $sql);
+
+        $output = [];
+        $exitCode = 0;
+        $cmd = $this->buildPreflightCommand($fixture['pointDir']);
+        exec($cmd, $output, $exitCode);
+
+        $raw = implode("\n", $output);
+        $this->assertSame(0, $exitCode, "Multiline string literal with keywords must pass: {$raw}");
+        $json = json_decode($raw, true);
+        $this->assertSame('PREFLIGHT_PASSED', $json['status'] ?? null);
+        $this->assertSame('VERIFIED_SAFE_NO_DANGEROUS_DDL', $json['sql_dump']['safety'] ?? null);
+    }
+
+    public function testSqlScannerAllowsEscapedQuotesAndComments(): void
+    {
+        // Synthesize INSERT with escaped quotes (\' and '') containing keywords, plus non-exec comment
+        $sql = [
+            "CREATE TABLE `notes` (`id` int(11) NOT NULL, `body` text NOT NULL) ENGINE=InnoDB;\n",
+            "/* Standard comment containing REVOKE or GRANT */\n",
+            "# Another comment with DROP DATABASE\n",
+            "INSERT INTO `notes` VALUES (1, 'Customer said: \'\'GRANT discount\'\' and don\'t REVOKE points');\n",
+        ];
+        $fixture = $this->createFixturePoint('escaped_quotes_and_comments', $sql);
+
+        $output = [];
+        $exitCode = 0;
+        $cmd = $this->buildPreflightCommand($fixture['pointDir']);
+        exec($cmd, $output, $exitCode);
+
+        $raw = implode("\n", $output);
+        $this->assertSame(0, $exitCode, "Escaped quotes with keywords must pass: {$raw}");
+        $json = json_decode($raw, true);
+        $this->assertSame('PREFLIGHT_PASSED', $json['status'] ?? null);
+    }
+
+    public function testSqlScannerRejectsRealRevokePrivilegedStatement(): void
+    {
+        $fixture = $this->createFixturePoint('real_revoke', [
+            "CREATE TABLE `users` (`id` INT PRIMARY KEY) ENGINE=InnoDB;\n",
+            "REVOKE ALL PRIVILEGES ON *.* FROM 'bad_user'@'%';\n",
+        ]);
+
+        $output = [];
+        $exitCode = 0;
+        $cmd = $this->buildPreflightCommand($fixture['pointDir']);
+        exec($cmd, $output, $exitCode);
+
+        $this->assertSame(1, $exitCode);
+        $json = json_decode(implode("\n", $output), true);
+        $this->assertSame('SQL_CONTAINS_PRIVILEGED_STATEMENT', $json['error'] ?? null);
+    }
+
+    public function testSqlScannerRejectsExecutableCommentDefiner(): void
+    {
+        // Executable comment /*!50013 DEFINER=... */ MUST be inspected and rejected
+        $fixture = $this->createFixturePoint('exec_comment_definer', [
+            "/*!50013 DEFINER=`root`@`localhost` SQL SECURITY DEFINER */\n",
+            "CREATE VIEW `v_users` AS SELECT * FROM `users`;\n",
+        ]);
+
+        $output = [];
+        $exitCode = 0;
+        $cmd = $this->buildPreflightCommand($fixture['pointDir']);
+        exec($cmd, $output, $exitCode);
+
+        $this->assertSame(1, $exitCode);
+        $json = json_decode(implode("\n", $output), true);
+        $this->assertSame('SQL_CONTAINS_EXTERNAL_DEFINER', $json['error'] ?? null);
+    }
+
+    public function testSqlScannerRejectsClientCommands(): void
+    {
+        // Client escape command \! sh
+        $fixture = $this->createFixturePoint('client_command', [
+            "CREATE TABLE `users` (`id` INT PRIMARY KEY) ENGINE=InnoDB;\n",
+            "\\! whoami\n",
+        ]);
+
+        $output = [];
+        $exitCode = 0;
+        $cmd = $this->buildPreflightCommand($fixture['pointDir']);
+        exec($cmd, $output, $exitCode);
+
+        $this->assertSame(1, $exitCode);
+        $json = json_decode(implode("\n", $output), true);
+        $this->assertSame('SQL_CONTAINS_CLIENT_COMMAND', $json['error'] ?? null);
     }
 
     public function testSqlScannerRejectsCreateDatabase(): void
@@ -245,38 +403,6 @@ final class VerifyBackupImportTestRunner
         $this->assertSame(1, $exitCode);
         $json = json_decode(implode("\n", $output), true);
         $this->assertSame('SQL_CONTAINS_FORBIDDEN_DROP_DATABASE', $json['error'] ?? null);
-    }
-
-    public function testSqlScannerRejectsExternalDefiner(): void
-    {
-        $fixture = $this->createFixturePoint('sql_definer', [
-            "CREATE DEFINER=`root`@`%` VIEW `v_users` AS SELECT * FROM users;\n",
-        ]);
-
-        $output = [];
-        $exitCode = 0;
-        $cmd = $this->buildPreflightCommand($fixture['pointDir']);
-        exec($cmd, $output, $exitCode);
-
-        $this->assertSame(1, $exitCode);
-        $json = json_decode(implode("\n", $output), true);
-        $this->assertSame('SQL_CONTAINS_EXTERNAL_DEFINER', $json['error'] ?? null);
-    }
-
-    public function testSqlScannerRejectsPrivilegedStatements(): void
-    {
-        $fixture = $this->createFixturePoint('sql_priv', [
-            "GRANT ALL PRIVILEGES ON *.* TO 'attacker'@'%';\n",
-        ]);
-
-        $output = [];
-        $exitCode = 0;
-        $cmd = $this->buildPreflightCommand($fixture['pointDir']);
-        exec($cmd, $output, $exitCode);
-
-        $this->assertSame(1, $exitCode);
-        $json = json_decode(implode("\n", $output), true);
-        $this->assertSame('SQL_CONTAINS_PRIVILEGED_STATEMENT', $json['error'] ?? null);
     }
 
     public function testEnvironmentOptInAppEnvNotTestingRejected(): void
@@ -339,6 +465,7 @@ final class VerifyBackupImportTestRunner
     {
         $fixture = $this->createFixturePoint('valid_clean_dump', [
             "-- Synthetic MySQL dump\n",
+            "/*!40101 SET @saved_cs_client = @@character_set_client */;\n",
             "CREATE TABLE `users` (`id` int(11) NOT NULL) ENGINE=InnoDB;\n",
             "INSERT INTO `users` VALUES (1);\n",
             "CREATE TABLE `migrations` (`id` int(11) NOT NULL, `migration` varchar(255) NOT NULL, `batch` int(11) NOT NULL) ENGINE=InnoDB;\n",
@@ -360,16 +487,19 @@ final class VerifyBackupImportTestRunner
         $this->assertSame('VERIFIED_SAFE_NO_DANGEROUS_DDL', $json['sql_dump']['safety'] ?? null);
         $this->assertSame(3342, $json['target_server']['port'] ?? null);
         $this->assertSame('127.0.0.1', $json['target_server']['host'] ?? null);
+        $this->assertSame(104, $json['expected_metrics']['tables_count'] ?? null);
+        $this->assertSame(79, $json['expected_metrics']['migrations_count'] ?? null);
     }
 
     /**
      * @param list<string> $sqlStatements
-     * @return array{pointDir: string}
+     * @return array{pointDir: string, manifestSha: string}
      */
     private function createFixturePoint(string $prefix, array $sqlStatements = []): array
     {
         $pointDir = $this->tempDir.'/'.$prefix.'_'.bin2hex(random_bytes(4));
         mkdir($pointDir, 0700, true);
+        chmod($pointDir, 0700);
 
         if ($sqlStatements === []) {
             $sqlStatements = [
@@ -404,13 +534,29 @@ final class VerifyBackupImportTestRunner
         file_put_contents($shaFilePath, "{$manifestSha}  manifest.json\n");
         chmod($shaFilePath, 0600);
 
-        return ['pointDir' => $pointDir];
+        return [
+            'pointDir' => $pointDir,
+            'manifestSha' => $manifestSha,
+        ];
     }
 
     /**
      * @param array<string, string> $envOverrides
      */
     private function buildPreflightCommand(string $pointDir, array $envOverrides = []): string
+    {
+        return sprintf(
+            '%s %s --point-dir=%s',
+            $this->buildEnvPrefix($envOverrides),
+            escapeshellarg($this->verifierScript),
+            escapeshellarg($pointDir)
+        );
+    }
+
+    /**
+     * @param array<string, string> $envOverrides
+     */
+    private function buildEnvPrefix(array $envOverrides = []): string
     {
         $defaultEnv = [
             'APP_ENV' => 'testing',
@@ -427,13 +573,7 @@ final class VerifyBackupImportTestRunner
             $envPrefix .= sprintf('%s=%s ', escapeshellcmd($k), escapeshellarg($v));
         }
 
-        return sprintf(
-            '%s%s %s --point-dir=%s',
-            $envPrefix,
-            escapeshellarg($this->phpBinary),
-            escapeshellarg($this->verifierScript),
-            escapeshellarg($pointDir)
-        );
+        return rtrim($envPrefix);
     }
 
     private function cleanupSandbox(): void
