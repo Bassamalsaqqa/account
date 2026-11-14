@@ -9,8 +9,8 @@
 **Client Handoff Schema Digest**: `edaef0309765e10d6462b36b5c660eb02f65c057c810ab72f756f7664e3ca275`.  
 **Future Pairing Manifest Target Pins (Recorded Externally to Prevent Self-SHA Cycle)**:
 - Backend Target Pin: Evaluated against actual commit SHA at execution time (outside this file)
-- Peer Android Publication HEAD: `6bc22542500ecb0dae5ad99246e82982dcef680f`
-- Peer Android Executable HEAD: `78ac4437e4010b68408278788dc82eb826fe8014`
+- Peer Android Publication HEAD: `c00aedb70ea06f28ae42282149c030df76dc300d` (replaces 6bc following Root 44-test focused pass)
+- Peer Android Executable HEAD: `b7e61eb4ed0aed2f5040d9fc44f9764b310be530` (replaces 78ac following Root 44-test focused pass)
 - Authorized Scope: Existing **`ROOT_AUTHORIZED_PAIRED_EXECUTION`** (`DisposableMobileV2BackendHarness::SCOPE_PAIRED_EXECUTION`) via existing CLI command flag **`--run`**. Zero invented scopes or flags.
 
 ---
@@ -46,7 +46,7 @@ Inspection of the codebase confirms that all core financial execution primitives
 | Child HTTP Bootstrap Binding | `DisposableMobileV2BackendHarness.php` (lines 964–990) | Child `php -S` process already binds `QualifiedCashFinancialExecutionAdapter::class` upon framework boot when MariaDB port 3342 is verified. When authorized under existing scope `ROOT_AUTHORIZED_PAIRED_EXECUTION`, financial routes flow directly to the Laravel kernel. |
 
 ### 2.2 Parent Android Source-Confirmed Financial Mapping
-Inspection of Android repository HEAD (`6bc22542500ecb0dae5ad99246e82982dcef680f`, executable `78ac4437e4010b68408278788dc82eb826fe8014`) confirms exact source-level parser requirements:
+Inspection of Android repository HEAD (`c00aedb70ea06f28ae42282149c030df76dc300d`, executable `b7e61eb4ed0aed2f5040d9fc44f9764b310be530`, verified 44/44 PASS in focused test drill) confirms exact source-level parser requirements:
 - **Source Locations**: `CashPilotHandoffConfig.kt:270, 975` and `SmallTraderOnlineCashPilotSmokeTest.kt:244`.
 - **Runtime Handoff JSON Fields Required for Financial Branch**:
   - `handoff_scope`: `"ROOT_AUTHORIZED_PAIRED_EXECUTION"` (serialized JSON wire key; maps to internal property `scope` in Kotlin client data classes).
@@ -55,9 +55,9 @@ Inspection of Android repository HEAD (`6bc22542500ecb0dae5ad99246e82982dcef680f
 - **Mandatory External Environment Variables**:
   - `SMALL_TRADER_EXPECTED_LIFECYCLE=FINANCIAL_PAIRED_RUN`
   - `SMALL_TRADER_ROOT_APPROVED_HANDOFF_SHA`: Independent whole-file SHA-256 of live `runtime_client_handoff.json` (must equal `SMALL_TRADER_EXPECTED_HANDOFF_SHA`).
-  - `SMALL_TRADER_EXPECTED_CLIENT_SHA`: `6bc22542500ecb0dae5ad99246e82982dcef680f` (publication pin).
-  - `SMALL_TRADER_EXPECTED_CLIENT_EXECUTABLE_SHA`: `78ac4437e4010b68408278788dc82eb826fe8014` (executable pin).
-  - `SMALL_TRADER_EXPECTED_BACKEND_SHA`: Actual backend execution HEAD commit SHA.
+  - `SMALL_TRADER_EXPECTED_CLIENT_SHA`: `c00aedb70ea06f28ae42282149c030df76dc300d` (publication pin).
+  - `SMALL_TRADER_EXPECTED_CLIENT_EXECUTABLE_SHA`: `b7e61eb4ed0aed2f5040d9fc44f9764b310be530` (executable pin).
+  - `SMALL_TRADER_EXPECTED_BACKEND_SHA`: Actual backend execution HEAD commit SHA (evaluated at execution time, not stale commit SHA).
   - `SMALL_TRADER_CASH_PILOT_HANDOFF`: Absolute path to live `runtime_client_handoff.json`.
 - **Client Condition `isFinancialApproved`**:
   `scope == ROOT_AUTHORIZED_PAIRED_EXECUTION && !provisionOnly && !readinessOnly && expectedLifecycle == FINANCIAL_PAIRED_RUN && actualFileSHA == rootApprovedSHA`
