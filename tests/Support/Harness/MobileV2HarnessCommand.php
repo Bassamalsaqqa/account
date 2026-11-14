@@ -30,6 +30,7 @@ class MobileV2HarnessCommand extends Command
         {--provision             : Self-test provision: provision disposable schema, assert PDO 3342, and clean up}
         {--readiness-only        : Strictly bounded readiness self-test: checks only /_harness/readiness nonce, financial endpoints blocked}
         {--readiness-hold-seconds=0 : Number of seconds (0..120) to hold readiness state before cleanup}
+        {--paired-hold-seconds=  : Number of seconds (1..120) for finite automated paired run hold before deadline completion}
         {--start                 : Start transport lifecycle (requires existing live harness owner)}
         {--run                   : Foreground paired lifecycle: provision schema, start supervised transport, wait for shutdown, guaranteed cleanup}
         {--backend-head=         : Full 40-hex SHA of the current backend worktree HEAD (mandatory)}
@@ -63,6 +64,25 @@ class MobileV2HarnessCommand extends Command
             return self::FAILURE;
         }
 
+        $rawPairedHoldSeconds = $this->option('paired-hold-seconds');
+        $pairedHoldSeconds = 0;
+        if ($rawPairedHoldSeconds !== null) {
+            try {
+                $pairedHoldSeconds = DisposableMobileV2BackendHarness::assertPairedHoldBounds($rawPairedHoldSeconds);
+                DisposableMobileV2BackendHarness::assertPcntlAvailableForPairedHold($pairedHoldSeconds);
+            } catch (\InvalidArgumentException|\RuntimeException $e) {
+                $this->error('Invalid --paired-hold-seconds: '.$e->getMessage());
+
+                return self::FAILURE;
+            }
+
+            if (! $run) {
+                $this->error('Option --paired-hold-seconds is strictly restricted to --run mode.');
+
+                return self::FAILURE;
+            }
+        }
+
         if (! $prepare && ! $provision && ! $readinessOnly && ! $start && ! $run) {
             $prepare = true;
         }
@@ -87,11 +107,11 @@ class MobileV2HarnessCommand extends Command
         }
 
         if ($run) {
-            return $this->handleRun($backendHead, $androidHead, $pairingManifest, $pairingManifestSha);
+            return $this->handleRun($backendHead, $androidHead, $pairingManifest, $pairingManifestSha, $pairedHoldSeconds);
         }
 
         if ($start) {
-            return $this->handleStart($backendHead, $androidHead, $pairingManifest, $pairingManifestSha);
+            return $this->handleStart($backendHead, $androidHead, $pairingManifest, $pairingManifestSha, $pairedHoldSeconds);
         }
 
         if ($provision) {
@@ -302,7 +322,8 @@ class MobileV2HarnessCommand extends Command
         string $backendHead,
         string $androidHead,
         ?string $pairingManifest = null,
-        ?string $pairingManifestSha = null
+        ?string $pairingManifestSha = null,
+        int $pairedHoldSeconds = 0
     ): int {
         $this->line('Mobile V2 Harness — Foreground Paired Lifecycle (--run)');
 
@@ -338,8 +359,22 @@ class MobileV2HarnessCommand extends Command
             return self::FAILURE;
         }
 
-        if (! function_exists('pcntl_signal')) {
+        if (! function_exists('pcntl_signal') || ! function_exists('pcntl_signal_dispatch')) {
             $this->error('Harness run refused: pcntl extension is required for safe supervised process signal management.');
+
+            return self::FAILURE;
+        }
+
+        // Handler REGISTRATION before kernel DB, sockets, provision, or transport start
+        $aborted = false;
+        $signalReceived = null;
+        $handler = function (int $signo) use (&$aborted, &$signalReceived): void {
+            $aborted = true;
+            $signalReceived = $signo;
+        };
+
+        if (! DisposableMobileV2BackendHarness::registerEarlyHoldSignalHandlers($handler)) {
+            $this->error('Harness refused: failed to register early signal handlers for SIGINT/SIGTERM.');
 
             return self::FAILURE;
         }
@@ -347,6 +382,15 @@ class MobileV2HarnessCommand extends Command
         $harness = new DisposableMobileV2BackendHarness;
 
         try {
+            // Safe interrupted setup check 1: before provision
+            pcntl_signal_dispatch();
+            if ($aborted) {
+                $sigName = $signalReceived === SIGINT ? 'SIGINT' : ($signalReceived === SIGTERM ? 'SIGTERM' : (string) $signalReceived);
+                $this->error("Paired run ABORTED by interrupt signal {$sigName}.");
+
+                return self::FAILURE;
+            }
+
             $provision = $harness->provision(
                 expectedBackendHead: $backendHead,
                 peerAndroidHead: $androidHead,
@@ -354,6 +398,15 @@ class MobileV2HarnessCommand extends Command
                 manifestShaPin: $pairingManifestSha,
             );
             $this->line('  Provision OK — schema: '.$provision['manifest']['schema_name']);
+
+            // Safe interrupted setup check 2: between provision and start
+            pcntl_signal_dispatch();
+            if ($aborted) {
+                $sigName = $signalReceived === SIGINT ? 'SIGINT' : ($signalReceived === SIGTERM ? 'SIGTERM' : (string) $signalReceived);
+                $this->error("Paired run ABORTED by interrupt signal {$sigName}.");
+
+                return self::FAILURE;
+            }
 
             $transport = $harness->start(
                 peerAndroidHead: $androidHead,
@@ -369,19 +422,50 @@ class MobileV2HarnessCommand extends Command
             $this->line('  Test CA cert     : '.$transport['ca_cert_path'].' (import into Android trust store)');
             $this->line('  Credentials      : '.$transport['credentials_path'].' (chmod 0600)');
             $this->newLine();
-            $this->warn('Press Ctrl+C to stop supervised session and trigger bounded cleanup.');
 
-            $running = true;
-            pcntl_signal(SIGINT, function () use (&$running): void {
-                $running = false;
-            });
-            pcntl_signal(SIGTERM, function () use (&$running): void {
-                $running = false;
-            });
+            // Safe interrupted setup check 3: between start and hold loop
+            pcntl_signal_dispatch();
+            if ($aborted) {
+                $sigName = $signalReceived === SIGINT ? 'SIGINT' : ($signalReceived === SIGTERM ? 'SIGTERM' : (string) $signalReceived);
+                $this->error("Paired run ABORTED by interrupt signal {$sigName}.");
 
-            while ($running) {
-                pcntl_signal_dispatch();
-                usleep(500_000);
+                return self::FAILURE;
+            }
+
+            if ($pairedHoldSeconds > 0) {
+                $this->line("Holding paired state for {$pairedHoldSeconds}s (PID ".getmypid().'). Press Ctrl+C to terminate early.');
+                $elapsedMs = 0;
+                $totalMs = $pairedHoldSeconds * 1000;
+                while ($elapsedMs < $totalMs && ! $aborted) {
+                    pcntl_signal_dispatch();
+                    if ($aborted) {
+                        break;
+                    }
+                    usleep(100000); // 100ms
+                    $elapsedMs += 100;
+                }
+            } else {
+                $this->warn('Press Ctrl+C to stop supervised session and trigger bounded cleanup.');
+                while (! $aborted) {
+                    pcntl_signal_dispatch();
+                    if ($aborted) {
+                        break;
+                    }
+                    usleep(500000); // 500ms
+                }
+            }
+
+            if ($aborted) {
+                $sigName = $signalReceived === SIGINT ? 'SIGINT' : ($signalReceived === SIGTERM ? 'SIGTERM' : (string) $signalReceived);
+                $this->error("Paired run ABORTED by interrupt signal {$sigName}.");
+
+                return self::FAILURE;
+            }
+
+            if ($pairedHoldSeconds > 0) {
+                $this->info("Paired run deadline completed ({$pairedHoldSeconds}s hold expired).");
+
+                return self::SUCCESS;
             }
         } catch (\Throwable $e) {
             $this->error('Run failed: '.$e->getMessage());
@@ -401,11 +485,12 @@ class MobileV2HarnessCommand extends Command
         string $backendHead,
         string $androidHead,
         ?string $pairingManifest = null,
-        ?string $pairingManifestSha = null
+        ?string $pairingManifestSha = null,
+        int $pairedHoldSeconds = 0
     ): int {
         $this->warn('Note: Standalone --start should be used within an active harness lifecycle.');
         $this->line('For full paired integration, use --run which provisions and starts under a single supervised owner.');
 
-        return $this->handleRun($backendHead, $androidHead, $pairingManifest, $pairingManifestSha);
+        return $this->handleRun($backendHead, $androidHead, $pairingManifest, $pairingManifestSha, $pairedHoldSeconds);
     }
 }

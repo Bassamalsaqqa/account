@@ -24,6 +24,7 @@ $androidHead = null;
 $pairingManifest = null;
 $pairingManifestSha = null;
 $readinessHoldSeconds = null;
+$pairedHoldSeconds = null;
 
 foreach ($argvList as $arg) {
     if ($arg === '--prepare') {
@@ -38,6 +39,8 @@ foreach ($argvList as $arg) {
         $isRun = true;
     } elseif (str_starts_with($arg, '--readiness-hold-seconds=')) {
         $readinessHoldSeconds = substr($arg, 25);
+    } elseif (str_starts_with($arg, '--paired-hold-seconds=')) {
+        $pairedHoldSeconds = substr($arg, 22);
     } elseif (str_starts_with($arg, '--backend-head=')) {
         $backendHead = substr($arg, 15);
     } elseif (str_starts_with($arg, '--android-head=')) {
@@ -76,6 +79,30 @@ if ($readinessHoldSeconds !== null) {
         fwrite(STDERR, "Error: {$e->getMessage()}\n");
         exit(1);
     }
+}
+
+if ($pairedHoldSeconds !== null) {
+    try {
+        $parsedPairedHold = DisposableMobileV2BackendHarness::assertPairedHoldBounds($pairedHoldSeconds);
+        if (! $isRun) {
+            fwrite(STDERR, "Error: --paired-hold-seconds is strictly restricted to --run mode.\n");
+            exit(1);
+        }
+        DisposableMobileV2BackendHarness::assertPcntlAvailableForPairedHold($parsedPairedHold);
+        $regOk = DisposableMobileV2BackendHarness::registerEarlyHoldSignalHandlers(static function () {});
+        if (! $regOk) {
+            fwrite(STDERR, "Error: Harness refused: failed to verify early signal registration for SIGINT/SIGTERM.\n");
+            exit(1);
+        }
+    } catch (\InvalidArgumentException|\RuntimeException $e) {
+        fwrite(STDERR, "Error: {$e->getMessage()}\n");
+        exit(1);
+    }
+}
+
+if ($isRun && ! function_exists('pcntl_signal')) {
+    fwrite(STDERR, "Error: Harness run refused: pcntl extension is required for safe supervised process signal management.\n");
+    exit(1);
 }
 
 if ($isPrepare) {

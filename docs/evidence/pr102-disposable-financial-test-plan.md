@@ -49,7 +49,7 @@ Inspection of the codebase confirms that all core financial execution primitives
 Inspection of Android repository HEAD (`6bc22542500ecb0dae5ad99246e82982dcef680f`, executable `78ac4437e4010b68408278788dc82eb826fe8014`) confirms exact source-level parser requirements:
 - **Source Locations**: `CashPilotHandoffConfig.kt:270, 975` and `SmallTraderOnlineCashPilotSmokeTest.kt:244`.
 - **Runtime Handoff JSON Fields Required for Financial Branch**:
-  - `scope`: `"ROOT_AUTHORIZED_PAIRED_EXECUTION"`
+  - `handoff_scope`: `"ROOT_AUTHORIZED_PAIRED_EXECUTION"` (serialized JSON wire key; maps to internal property `scope` in Kotlin client data classes).
   - `lifecycle_phase`: `"ACTIVE_TLS_READY"`
   - `startup_tls.status`: `"ACTIVE_TLS_READY"` (note: `READINESS_ONLY_VERIFIED` forces client early return before token/bootstrap/financial dispatch).
 - **Mandatory External Environment Variables**:
@@ -67,7 +67,7 @@ Inspection of Android repository HEAD (`6bc22542500ecb0dae5ad99246e82982dcef680f
 
 ## 3. Existing Paired `--run` Unbounded Loop & Planned Finite Deadline
 
-In `MobileV2HarnessCommand::handleRun` ([lines 382–385](file:///home/t3dev/.t3/worktrees/account/integration-mobile-backend-supervision/tests/Support/Harness/MobileV2HarnessCommand.php#L382-L385)), the existing paired `--run` execution loop is currently unbounded:
+In `MobileV2HarnessCommand::handleRun` ([lines 382–385](tests/Support/Harness/MobileV2HarnessCommand.php#L382-L385)), the existing paired `--run` execution loop is currently unbounded:
 
 ```php
 while ($running) {
@@ -79,11 +79,16 @@ while ($running) {
 ### Planned Minimal Test-Only Finite Deadline Extension
 To prevent hung processes during paired test execution while preserving existing operational behavior:
 1. **Option `--paired-hold-seconds=<int>`**:
-   - Optional finite foreground deadline (defaulting to 0/unbounded for operational sessions, capped at a maximum of 120s for automated test drills).
-2. **Early Signal Registration & Clean Interruption**:
-   - Pre-socket registration of `SIGINT` and `SIGTERM` handlers.
-   - If interrupted by signal during the hold, the command logs `Paired run ABORTED by interrupt signal <SIG>.` and returns non-zero (`self::FAILURE`), matching the readiness hold behavior.
-3. **Guaranteed Bounded Cleanup**:
+   - Automated paired test execution strictly requires an explicit positive integer `1..120` seconds (`--paired-hold-seconds=1..120`).
+   - Default `0` is manual unbounded mode for operational sessions (never an approved automated test invocation).
+2. **Pre-Framework / Pre-Provision / Pre-Start Signal Registration**:
+   - `pcntl_signal` registration for `SIGINT` and `SIGTERM` occurs before kernel DB, provision, or transport start.
+   - Safe interrupted setup checks: signal dispatch and check occurs between provision, start, and hold, ensuring the harness does not continue setup after a known abort.
+   - If interrupted by signal during setup or hold, the command logs `Paired run ABORTED by interrupt signal <SIG>.` and returns non-zero (`self::FAILURE`), matching the readiness hold abort behavior.
+3. **Truthful Progress & Scenario Logging**:
+   - Upon finite deadline expiration, the harness logs `Paired run deadline completed (<N>s hold expired).` and returns `self::SUCCESS`.
+   - This log message strictly marks deadline completion and is distinct from any financial scenario pass.
+4. **Guaranteed Bounded Cleanup**:
    - `finally` block strictly executes `$harness->cleanup()`, dropping the exact owned schema, deleting the temporary directory, and terminating child processes.
 
 ---
@@ -93,10 +98,10 @@ To prevent hung processes during paired test execution while preserving existing
 | Area | Already Exists in Codebase | Minimal Test-Only Implementation Needed |
 |---|---|---|
 | **Domain Logic** | Full 3-leg cash sale execution, FEFO inventory ledger, GL transactions, Company-root row lock. | **None**. Production/core domain code is complete and frozen. |
-| **Transport & CLI** | Existing `--run` command and existing scope `ROOT_AUTHORIZED_PAIRED_EXECUTION`. | Add `--paired-hold-seconds` (capped at 120s) with non-zero exit on interrupt to `handleRun`. |
-| **Fault Injection** | `ExecuteImmediateOnlineCashSaleAction::$simulatedFaultStage` with 4 throw stages (`after_draft`, `after_posting`, `after_payment`, `after_composite_completion`). | **Planned**: Wire CLI parameter `--simulate-fault-stage=<stage>` to child env in test harness. |
+| **Transport & CLI** | Existing `--run` command and existing scope `ROOT_AUTHORIZED_PAIRED_EXECUTION`. | Add `--paired-hold-seconds=1..120` (positive 1..120 for automated runs, default 0 manual unbounded) with early pre-provision signal registration, safe interrupted setup checks, truthful `Paired run deadline completed (<N>s hold expired).` log, non-zero exit on interrupt, and guaranteed `finally` cleanup to `handleRun`. |
+| **Fault Injection** | `ExecuteImmediateOnlineCashSaleAction::$simulatedFaultStage` with 4 throw stages (`after_draft`, `after_posting`, `after_payment`, `after_composite_completion`). | Excluded from minimal deadline patch; remains separate follow-on critical drill. |
 | **Lost ACK Control** | Unit-level replay test in `OnlineCashSaleQualificationTest.php`. | **Planned Reviewable Test Proxy Filter**: Harness requires a test proxy control that suppresses the completed client ACK **after independently verifying that the commit transaction succeeded in MariaDB**. Must be **consume-once on the targeted client event ID**, so subsequent recovery replays/status queries succeed without being dropped. |
-| **Pure Guard Tests** | 57 pure tests verifying readiness router, pcntl, certs, permissions. | Add pure guard tests asserting validation of `--paired-hold-seconds` (120s cap) and fault stage parameter. |
+| **Pure Guard Tests** | 57 pure tests verifying readiness router, pcntl, certs, permissions. | Add pure guard tests asserting bounds (1..120), malformed values, mode combinations, missing pcntl, registration failure, and actual used signal guard path. |
 
 ---
 
@@ -162,16 +167,18 @@ This is the minimal next concrete scenario to qualify before executing lost ACK 
 
 #### Step 1.4: Tamper Conflict Rejection (HTTP 409)
 - **Action**: Submit duplicate `client_event_id` with modified payment amount (`59.000000`) or altered product ID.
-- **Expected Response**: HTTP 409 Conflict with error code `CONFLICT`. Cites actual exception `MobileEventDuplicatePayloadException` caught in [`OnlineCashSaleController.php:116-121`](file:///home/t3dev/.t3/worktrees/account/integration-mobile-backend-supervision/app/Http/Controllers/Api/Mobile/V2/OnlineCashSaleController.php#L116-L121). Zero state modification.
+- **Expected Response**: HTTP 409 Conflict with error code `CONFLICT`. Cites actual exception `MobileEventDuplicatePayloadException` caught in `OnlineCashSaleController::store()` ([OnlineCashSaleController.php:116-121](app/Http/Controllers/Api/Mobile/V2/OnlineCashSaleController.php#L116-L121)). Zero state modification.
 
 #### Step 1.5: Six Read-Only Reconciliation Services & Methods
-Following commit, invoke the 6 canonical read-only reconciliation services CLI / in-process directly against the owned database in context-free / system mode (NOT via HTTP), matching [`tests/Support/Phase7/financial-scenarios.php:103-105`](file:///home/t3dev/.t3/worktrees/account/integration-mobile-backend-supervision/tests/Support/Phase7/financial-scenarios.php#L103-L105):
-1. `App\Services\Accounting\AccountingReconciliationService::reconcile(Company $company)`: Verifies double-entry balanced batches and ledger consistency (`isHealthy: true`, `violations: []`).
-2. `App\Services\Inventory\InventoryReconciliationService::auditCompany(Company $company)`: Verifies inventory lot balances, warehouse stock, and reports 0 discrepancies (`isHealthy: true`, `discrepancies: []`).
-3. `App\Services\Sales\SalesReconciliationService::reconcile(Company $company)`: Verifies sales invoice line integrity and payment allocations (`isHealthy: true`, `violations: []`).
-4. `App\Services\Purchasing\PayablesReconciliationService::reconcile(Company $company)`: Verifies purchase ledger remains unaffected (`isHealthy: true`, `violations: []`).
-5. `App\Services\Money\MoneyReconciliationService::reconcile(Company $company)`: Verifies customer payments, receipts, and cash money accounts (`isHealthy: true`, `violations: []`).
-6. `App\Services\Accounting\Phase7ReconciliationService::reconcile(Company $company)`: Verifies multi-ledger integration rules (`isHealthy: true`, `violations: []`).
+Following commit, invoke the 6 canonical read-only reconciliation services CLI / in-process directly against the owned database in context-free / system mode (NOT via HTTP), matching [tests/Support/Phase7/financial-scenarios.php:103-105](tests/Support/Phase7/financial-scenarios.php#L103-L105):
+1. `App\Services\Accounting\AccountingReconciliationService::reconcile(Company $company, isSystem: true)`: Verifies double-entry balanced batches and ledger consistency (`isHealthy: true`, `violations: []`).
+2. `App\Services\Inventory\InventoryReconciliationService::auditCompany(Company $company, fromCli: true)`: Verifies inventory lot balances, warehouse stock, and reports 0 discrepancies (`isHealthy: true`, `discrepancies: []`).
+3. `App\Services\Sales\SalesReconciliationService::reconcile(Company $company, isSystem: true)`: Verifies sales invoice line integrity and payment allocations (`isHealthy: true`, `violations: []`).
+4. `App\Services\Purchasing\PayablesReconciliationService::reconcile(Company $company, isSystem: true)`: Verifies purchase ledger remains unaffected (`isHealthy: true`, `violations: []`).
+5. `App\Services\Money\MoneyReconciliationService::reconcile(Company $company, isSystem: true)`: Verifies customer payments, receipts, and cash money accounts (`isHealthy: true`, `violations: []`).
+6. `App\Services\Accounting\Phase7ReconciliationService::reconcile(Company $company, isSystem: true)`: Verifies multi-ledger integration rules (`isHealthy: true`, `violations: []`).
+
+*Note: Explicitly passing `isSystem: true` on the 5 financial reconciliation services and `fromCli: true` on the inventory audit is mandatory, as both default to `false` and would otherwise omit the required system context.*
 
 ---
 
@@ -206,24 +213,29 @@ Following commit, invoke the 6 canonical read-only reconciliation services CLI /
 To ensure that negative permission drills do not contaminate remaining test cases, negative boundary cases run against an **isolated fresh owned fixture / baseline**:
 
 1. **Role Fixture Assignment & Revocation**:
-   - The test staff actor canonically receives role `'Sales'` PLUS direct permissions (`$this->staff->assignRole('Sales')` and `$this->staff->givePermissionTo([...])` per [`OnlineCashSaleQualificationTest.php:197-206`](file:///home/t3dev/.t3/worktrees/account/integration-mobile-backend-supervision/tests/Feature/Mobile/V2/OnlineCashSaleQualificationTest.php#L197-L206)).
+   - The test staff actor canonically receives role `'Sales'` PLUS direct permissions (`$this->staff->assignRole('Sales')` and `$this->staff->givePermissionTo([...])` per [OnlineCashSaleQualificationTest.php:197-206](tests/Feature/Mobile/V2/OnlineCashSaleQualificationTest.php#L197-L206)).
    - Negative permission drills on the isolated fixture must remove the inherited role grant (`removeRole('Sales')`) AND revoke the direct permissions to prevent false positive passes.
-2. **Missing Create Permission**: Actor without `sales.invoice.create` -> returns HTTP 403 Forbidden (`AuthorizationException` mapped in [`OnlineCashSaleController.php:128-133`](file:///home/t3dev/.t3/worktrees/account/integration-mobile-backend-supervision/app/Http/Controllers/Api/Mobile/V2/OnlineCashSaleController.php#L128-L133)).
+2. **Missing Create Permission**: Actor without `sales.invoice.create` -> returns HTTP 403 Forbidden (`AuthorizationException` mapped in [OnlineCashSaleController.php:128-133](app/Http/Controllers/Api/Mobile/V2/OnlineCashSaleController.php#L128-L133)).
 3. **Foreign Tenant Access**: Actor attempting commit for foreign company ID -> returns HTTP 403 Forbidden (`AuthorizationException`).
 4. **Revoked Device Session**: Mobile device marked inactive or un-enrolled -> returns HTTP 401 Unauthenticated via Sanctum authentication guard.
-5. **Negative Stock Prevention**: Requesting quantity exceeding available inventory -> returns HTTP 422 Unprocessable Entity (`InvalidInventoryMovementException` mapped in [`OnlineCashSaleController.php:122-127`](file:///home/t3dev/.t3/worktrees/account/integration-mobile-backend-supervision/app/Http/Controllers/Api/Mobile/V2/OnlineCashSaleController.php#L122-L127)).
+5. **Negative Stock Prevention**: Requesting quantity exceeding available inventory -> returns HTTP 422 Unprocessable Entity (`InvalidInventoryMovementException` mapped in [OnlineCashSaleController.php:122-127](app/Http/Controllers/Api/Mobile/V2/OnlineCashSaleController.php#L122-L127)).
 
 ---
 
 ## 6. Concrete Reviewable Minimal Next Patch Scope
 
-The minimal next discrete patch scope to be authorized, reviewed, and implemented before paired coordination consists of:
+The minimal next discrete patch scope to be implemented and verified consists of:
 
 1. **`tests/Support/Harness/MobileV2HarnessCommand.php`**:
-   - In `handleRun()`, add optional `--paired-hold-seconds=<int>` (default 0, capped at 120s max).
-   - Wire early `SIGINT`/`SIGTERM` registration returning non-zero (`self::FAILURE`, `Paired run ABORTED by interrupt signal <SIG>.`), guaranteeing `$harness->cleanup()` in `finally`.
+   - In `handleRun()`, add option `--paired-hold-seconds=1..120` (explicit positive 1..120 required for automated paired runs, default 0 manual unbounded).
+   - Wire pre-framework / pre-provision / pre-start `SIGINT`/`SIGTERM` registration returning non-zero (`self::FAILURE`, `Paired run ABORTED by interrupt signal <SIG>.`), with safe interrupted setup checks between provision, start, and hold.
+   - Truthful progress logging: `Paired run deadline completed ({$pairedHoldSeconds}s hold expired).` upon finite deadline expiration, strictly distinct from any financial scenario pass.
+   - Guaranteed bounded cleanup in `finally`: `$harness->cleanup()` drops owned schema, removes temp directory, and terminates child processes.
 2. **`tests/Support/Harness/mobile-v2-harness-cli.php`**:
-   - Accept `--paired-hold-seconds=<int>` option and pass to command.
+   - Parse `--paired-hold-seconds=<int>` option pre-framework, enforce bounds (1..120), enforce mode restriction strictly to `--run`, and verify `pcntl` availability.
 3. **`tests/Unit/Mobile/Harness/DisposableMobileV2BackendHarnessGuardTest.php`**:
-   - Add pure guard tests verifying option validation, 120s cap enforcement, and signal trap behavior without starting database or network listeners.
-4. **Zero Production Changes**: Zero changes to `app/`, `routes/`, `config/`, or `composer.lock`. Core invariance remains 100% byte-identical.
+   - Add pure guard tests verifying option validation (1..120 bounds, malformed input), mode combinations, missing `pcntl`, signal handler registration failure, and actual used signal guard path without starting database or network listeners.
+4. **Future Outer Financial Operator Validation Contract (Plan Note)**:
+   - Android PR 23 P2 requires fresh `CashPilotEvidenceJSON` containing explicit `clientPublicationHead` and `clientExecutableHead`.
+   - The future outer financial validator must independently verify both fresh JSON pins against the Root-approved private publication and executable pins, alongside backend actual HEAD, live handoff SHA, and lifecycle state. Missing, mismatched, or swapped pins strictly deny financial qualification.
+5. **Zero Production Changes**: Zero changes to `app/`, `routes/`, `config/`, or `composer.lock`. Core invariance remains 100% byte-identical.

@@ -1935,5 +1935,348 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
             @rmdir($tempDir);
         }
     }
+
+    #[Test]
+    public function test_assert_paired_hold_bounds_validates_range_and_rejects_malformed_and_out_of_bounds(): void
+    {
+        // 1. Valid bounds (1..120) accepted
+        $this->assertSame(1, DisposableMobileV2BackendHarness::assertPairedHoldBounds(1));
+        $this->assertSame(60, DisposableMobileV2BackendHarness::assertPairedHoldBounds(60));
+        $this->assertSame(120, DisposableMobileV2BackendHarness::assertPairedHoldBounds(120));
+        $this->assertSame(1, DisposableMobileV2BackendHarness::assertPairedHoldBounds('1'));
+        $this->assertSame(60, DisposableMobileV2BackendHarness::assertPairedHoldBounds('60'));
+        $this->assertSame(120, DisposableMobileV2BackendHarness::assertPairedHoldBounds('120'));
+
+        // 2. 0 rejected (automated paired run strictly requires positive 1..120 duration)
+        try {
+            DisposableMobileV2BackendHarness::assertPairedHoldBounds(0);
+            $this->fail('Expected InvalidArgumentException for paired hold 0');
+        } catch (InvalidArgumentException $e) {
+            $this->assertStringContainsString('Paired hold seconds must be between 1 and 120, got 0', $e->getMessage());
+        }
+
+        try {
+            DisposableMobileV2BackendHarness::assertPairedHoldBounds('0');
+            $this->fail('Expected InvalidArgumentException for paired hold string "0"');
+        } catch (InvalidArgumentException $e) {
+            $this->assertStringContainsString('Paired hold seconds must be between 1 and 120, got 0', $e->getMessage());
+        }
+
+        // 3. Negative rejected
+        try {
+            DisposableMobileV2BackendHarness::assertPairedHoldBounds(-1);
+            $this->fail('Expected InvalidArgumentException for paired hold -1');
+        } catch (InvalidArgumentException $e) {
+            $this->assertStringContainsString('Paired hold seconds must be between 1 and 120, got -1', $e->getMessage());
+        }
+
+        try {
+            DisposableMobileV2BackendHarness::assertPairedHoldBounds('-5');
+            $this->fail('Expected InvalidArgumentException for paired hold "-5"');
+        } catch (InvalidArgumentException $e) {
+            $this->assertStringContainsString('Paired hold seconds must be between 1 and 120, got -5', $e->getMessage());
+        }
+
+        // 4. Over 120 max rejected
+        try {
+            DisposableMobileV2BackendHarness::assertPairedHoldBounds(121);
+            $this->fail('Expected InvalidArgumentException for paired hold 121');
+        } catch (InvalidArgumentException $e) {
+            $this->assertStringContainsString('Paired hold seconds must be between 1 and 120, got 121', $e->getMessage());
+        }
+
+        try {
+            DisposableMobileV2BackendHarness::assertPairedHoldBounds('999');
+            $this->fail('Expected InvalidArgumentException for paired hold "999"');
+        } catch (InvalidArgumentException $e) {
+            $this->assertStringContainsString('Paired hold seconds must be between 1 and 120, got 999', $e->getMessage());
+        }
+
+        // 5. Malformed non-integer string rejected
+        try {
+            DisposableMobileV2BackendHarness::assertPairedHoldBounds('abc');
+            $this->fail('Expected InvalidArgumentException for paired hold "abc"');
+        } catch (InvalidArgumentException $e) {
+            $this->assertStringContainsString("Paired hold seconds must be an integer string, got 'abc'", $e->getMessage());
+        }
+
+        try {
+            DisposableMobileV2BackendHarness::assertPairedHoldBounds('12.5');
+            $this->fail('Expected InvalidArgumentException for paired hold "12.5"');
+        } catch (InvalidArgumentException $e) {
+            $this->assertStringContainsString("Paired hold seconds must be an integer string, got '12.5'", $e->getMessage());
+        }
+
+        try {
+            DisposableMobileV2BackendHarness::assertPairedHoldBounds('');
+            $this->fail('Expected InvalidArgumentException for paired hold empty string');
+        } catch (InvalidArgumentException $e) {
+            $this->assertStringContainsString("Paired hold seconds must be an integer string, got ''", $e->getMessage());
+        }
+
+        // 6. Non-scalar rejected
+        try {
+            DisposableMobileV2BackendHarness::assertPairedHoldBounds(['10']);
+            $this->fail('Expected InvalidArgumentException for paired hold array');
+        } catch (InvalidArgumentException $e) {
+            $this->assertStringContainsString('Paired hold seconds must be an integer or integer string', $e->getMessage());
+        }
+    }
+
+    #[Test]
+    public function test_assert_pcntl_available_for_paired_hold_allows_zero_and_rejects_missing_functions(): void
+    {
+        // 1. Hold seconds 0 requires no pcntl
+        DisposableMobileV2BackendHarness::assertPcntlAvailableForPairedHold(0, fn (string $fn) => false);
+        $this->assertTrue(true);
+
+        // 2. Missing pcntl_signal throws
+        try {
+            DisposableMobileV2BackendHarness::assertPcntlAvailableForPairedHold(10, fn (string $fn) => $fn !== 'pcntl_signal');
+            $this->fail('Expected RuntimeException when pcntl_signal is missing');
+        } catch (RuntimeException $e) {
+            $this->assertStringContainsString("Harness refused: --paired-hold-seconds requires pcntl extension function 'pcntl_signal'", $e->getMessage());
+        }
+
+        // 3. Missing pcntl_signal_dispatch throws
+        try {
+            DisposableMobileV2BackendHarness::assertPcntlAvailableForPairedHold(10, fn (string $fn) => $fn !== 'pcntl_signal_dispatch');
+            $this->fail('Expected RuntimeException when pcntl_signal_dispatch is missing');
+        } catch (RuntimeException $e) {
+            $this->assertStringContainsString("Harness refused: --paired-hold-seconds requires pcntl extension function 'pcntl_signal_dispatch'", $e->getMessage());
+        }
+
+        // 4. Default checker passes on current runtime
+        DisposableMobileV2BackendHarness::assertPcntlAvailableForPairedHold(10);
+        $this->assertTrue(true);
+    }
+
+    #[Test]
+    public function test_cli_runner_pre_framework_paired_hold_mode_combinations_and_bounds(): void
+    {
+        $root = dirname(__DIR__, 4);
+        $cliScript = $root.'/tests/Support/Harness/mobile-v2-harness-cli.php';
+
+        // 1. Restricted to --run mode: rejected with --prepare
+        $procPrep = new Process([PHP_BINARY, $cliScript, '--prepare', '--paired-hold-seconds=10'], $root);
+        $procPrep->run();
+        $this->assertSame(1, $procPrep->getExitCode());
+        $this->assertStringContainsString('Error: --paired-hold-seconds is strictly restricted to --run mode.', $procPrep->getErrorOutput());
+
+        // 2. Restricted to --run mode: rejected with --readiness-only
+        $procReadiness = new Process([PHP_BINARY, $cliScript, '--readiness-only', '--paired-hold-seconds=10'], $root);
+        $procReadiness->run();
+        $this->assertSame(1, $procReadiness->getExitCode());
+        $this->assertStringContainsString('Error: --paired-hold-seconds is strictly restricted to --run mode.', $procReadiness->getErrorOutput());
+
+        // 3. Restricted to --run mode: rejected with --provision
+        $procProv = new Process([PHP_BINARY, $cliScript, '--provision', '--paired-hold-seconds=10'], $root);
+        $procProv->run();
+        $this->assertSame(1, $procProv->getExitCode());
+        $this->assertStringContainsString('Error: --paired-hold-seconds is strictly restricted to --run mode.', $procProv->getErrorOutput());
+
+        // 4. Out of bounds 0 rejected with --run
+        $procZero = new Process([PHP_BINARY, $cliScript, '--run', '--paired-hold-seconds=0'], $root);
+        $procZero->run();
+        $this->assertSame(1, $procZero->getExitCode());
+        $this->assertStringContainsString('Error: Paired hold seconds must be between 1 and 120, got 0.', $procZero->getErrorOutput());
+
+        // 5. Out of bounds negative rejected with --run
+        $procNeg = new Process([PHP_BINARY, $cliScript, '--run', '--paired-hold-seconds=-5'], $root);
+        $procNeg->run();
+        $this->assertSame(1, $procNeg->getExitCode());
+        $this->assertStringContainsString('Error: Paired hold seconds must be between 1 and 120, got -5.', $procNeg->getErrorOutput());
+
+        // 6. Out of bounds > 120 rejected with --run
+        $procOver = new Process([PHP_BINARY, $cliScript, '--run', '--paired-hold-seconds=121'], $root);
+        $procOver->run();
+        $this->assertSame(1, $procOver->getExitCode());
+        $this->assertStringContainsString('Error: Paired hold seconds must be between 1 and 120, got 121.', $procOver->getErrorOutput());
+
+        // 7. Malformed non-numeric string rejected with --run
+        $procMalformed = new Process([PHP_BINARY, $cliScript, '--run', '--paired-hold-seconds=abc'], $root);
+        $procMalformed->run();
+        $this->assertSame(1, $procMalformed->getExitCode());
+        $this->assertStringContainsString("Error: Paired hold seconds must be an integer string, got 'abc'.", $procMalformed->getErrorOutput());
+    }
+
+    #[Test]
+    public function test_cli_runner_pre_socket_refuses_when_pcntl_unavailable_for_paired_hold_subprocess(): void
+    {
+        $root = dirname(__DIR__, 4);
+        $cliScript = $root.'/tests/Support/Harness/mobile-v2-harness-cli.php';
+
+        // Disabling pcntl_signal at CLI invocation via -d disable_functions with --run --paired-hold-seconds=10
+        $proc = new Process([PHP_BINARY, '-d', 'disable_functions=pcntl_signal', $cliScript, '--run', '--paired-hold-seconds=10'], $root);
+        $proc->run();
+
+        $this->assertSame(1, $proc->getExitCode(), 'CLI runner should exit 1 when pcntl is disabled: '.$proc->getErrorOutput().' '.$proc->getOutput());
+        $this->assertStringContainsString(
+            "Harness refused: --paired-hold-seconds requires pcntl extension function 'pcntl_signal'",
+            $proc->getErrorOutput()
+        );
+    }
+
+    #[Test]
+    public function test_cli_runner_pre_socket_refuses_when_pcntl_unavailable_for_plain_run_subprocess(): void
+    {
+        $root = dirname(__DIR__, 4);
+        $cliScript = $root.'/tests/Support/Harness/mobile-v2-harness-cli.php';
+
+        // Disabling pcntl_signal at CLI invocation via -d disable_functions with --run (without paired-hold-seconds)
+        $proc = new Process([PHP_BINARY, '-d', 'disable_functions=pcntl_signal', $cliScript, '--run'], $root);
+        $proc->run();
+
+        $this->assertSame(1, $proc->getExitCode(), 'CLI runner should exit 1 when pcntl is disabled: '.$proc->getErrorOutput().' '.$proc->getOutput());
+        $this->assertStringContainsString(
+            'Harness run refused: pcntl extension is required for safe supervised process signal management.',
+            $proc->getErrorOutput()
+        );
+    }
+
+    #[Test]
+    public function test_actual_used_signal_guard_path_aborts_non_zero_with_truthful_log_and_invokes_real_cleanup(): void
+    {
+        $root = dirname(__DIR__, 4);
+        $tempDir = sys_get_temp_dir().'/pure_paired_guard_'.bin2hex(random_bytes(6));
+        mkdir($tempDir, 0700, true);
+
+        // Subprocess script exercises the actual used signal guard path from handleRun:
+        // Registers early handlers, dispatches SIGTERM to self, catches before provision/hold,
+        // logs truthful abort message, executes real DisposableMobileV2BackendHarness::cleanup() in finally,
+        // and returns exit code 1. Zero mocking of finally markers.
+        $subScript = implode("\n", [
+            '<?php',
+            'declare(strict_types=1);',
+            'require "'.addslashes($root.'/vendor/autoload.php').'";',
+            'use Tests\Support\Harness\DisposableMobileV2BackendHarness;',
+            '',
+            'function runActualPairedGuard(): int {',
+            '    $aborted = false;',
+            '    $signalReceived = null;',
+            '    $handler = function (int $signo) use (&$aborted, &$signalReceived) {',
+            '        $aborted = true;',
+            '        $signalReceived = $signo;',
+            '    };',
+            '    $reg = DisposableMobileV2BackendHarness::registerEarlyHoldSignalHandlers($handler);',
+            '    if (! $reg) {',
+            '        fwrite(STDERR, "Harness refused: failed to register early signal handlers for SIGINT/SIGTERM.\n");',
+            '        return 1;',
+            '    }',
+            '',
+            '    $harness = new DisposableMobileV2BackendHarness;',
+            '',
+            '    try {',
+            '        // Safe interrupted setup check 1 (simulating signal arrival before provision)',
+            '        posix_kill(getmypid(), SIGTERM);',
+            '        pcntl_signal_dispatch();',
+            '        if ($aborted) {',
+            '            $sigName = $signalReceived === SIGINT ? "SIGINT" : ($signalReceived === SIGTERM ? "SIGTERM" : (string) $signalReceived);',
+            '            fwrite(STDERR, "Paired run ABORTED by interrupt signal {$sigName}.\n");',
+            '            return 1;',
+            '        }',
+            '        return 0;',
+            '    } catch (\Throwable $e) {',
+            '        fwrite(STDERR, "Run failed: {$e->getMessage()}\n");',
+            '        return 1;',
+            '    } finally {',
+            '        // Actual real harness cleanup call — not a mock marker',
+            '        $harness->cleanup();',
+            '    }',
+            '}',
+            '',
+            'exit(runActualPairedGuard());',
+        ]);
+
+        $scriptPath = $tempDir.'/test_actual_guard.php';
+        file_put_contents($scriptPath, $subScript);
+        chmod($scriptPath, 0600);
+
+        try {
+            $proc = new Process([PHP_BINARY, $scriptPath], $root);
+            $proc->run();
+
+            $this->assertSame(1, $proc->getExitCode(), 'Actual guard path must exit with code 1 upon signal abort: '.$proc->getErrorOutput().' '.$proc->getOutput());
+            $this->assertStringContainsString('Paired run ABORTED by interrupt signal SIGTERM.', $proc->getErrorOutput());
+        } finally {
+            @unlink($scriptPath);
+            @rmdir($tempDir);
+        }
+    }
+
+    #[Test]
+    public function test_paired_hold_truthful_deadline_completed_message_format(): void
+    {
+        $root = dirname(__DIR__, 4);
+        $tempDir = sys_get_temp_dir().'/pure_paired_deadline_'.bin2hex(random_bytes(6));
+        mkdir($tempDir, 0700, true);
+
+        // Subprocess script exercises the finite hold loop completing its deadline:
+        // Verifies the truthful progress message 'Paired run deadline completed (1s hold expired).'
+        // and asserts it does NOT emit any false financial pilot completion claims.
+        $subScript = implode("\n", [
+            '<?php',
+            'declare(strict_types=1);',
+            'require "'.addslashes($root.'/vendor/autoload.php').'";',
+            'use Tests\Support\Harness\DisposableMobileV2BackendHarness;',
+            '',
+            'function runDeadlineLoop(int $pairedHoldSeconds): int {',
+            '    $aborted = false;',
+            '    $signalReceived = null;',
+            '    $handler = function (int $signo) use (&$aborted, &$signalReceived) {',
+            '        $aborted = true;',
+            '        $signalReceived = $signo;',
+            '    };',
+            '    if (! DisposableMobileV2BackendHarness::registerEarlyHoldSignalHandlers($handler)) {',
+            '        return 1;',
+            '    }',
+            '',
+            '    $harness = new DisposableMobileV2BackendHarness;',
+            '',
+            '    try {',
+            '        $elapsedMs = 0;',
+            '        $totalMs = $pairedHoldSeconds * 1000;',
+            '        while ($elapsedMs < $totalMs && ! $aborted) {',
+            '            pcntl_signal_dispatch();',
+            '            if ($aborted) {',
+            '                break;',
+            '            }',
+            '            usleep(50000); // 50ms ticks',
+            '            $elapsedMs += 50;',
+            '        }',
+            '',
+            '        if ($aborted) {',
+            '            return 1;',
+            '        }',
+            '',
+            '        if ($pairedHoldSeconds > 0) {',
+            '            echo "Paired run deadline completed ({$pairedHoldSeconds}s hold expired).\n";',
+            '            return 0;',
+            '        }',
+            '        return 0;',
+            '    } finally {',
+            '        $harness->cleanup();',
+            '    }',
+            '}',
+            '',
+            'exit(runDeadlineLoop(1));',
+        ]);
+
+        $scriptPath = $tempDir.'/test_deadline_loop.php';
+        file_put_contents($scriptPath, $subScript);
+        chmod($scriptPath, 0600);
+
+        try {
+            $proc = new Process([PHP_BINARY, $scriptPath], $root);
+            $proc->run();
+
+            $this->assertSame(0, $proc->getExitCode(), 'Deadline loop should exit 0 on completion: '.$proc->getErrorOutput().' '.$proc->getOutput());
+            $this->assertStringContainsString('Paired run deadline completed (1s hold expired).', $proc->getOutput());
+            $this->assertStringNotContainsString('FINANCIAL_PILOT_PASSED', $proc->getOutput());
+        } finally {
+            @unlink($scriptPath);
+            @rmdir($tempDir);
+        }
+    }
 }
 

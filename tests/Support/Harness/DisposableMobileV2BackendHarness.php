@@ -94,6 +94,12 @@ final class DisposableMobileV2BackendHarness
 
     public const int MAX_READINESS_HOLD_SECONDS = 120;
 
+    public const int DEFAULT_PAIRED_HOLD_SECONDS = 0;
+
+    public const int MIN_PAIRED_HOLD_SECONDS = 1;
+
+    public const int MAX_PAIRED_HOLD_SECONDS = 120;
+
     private bool $provisioned = false;
 
     private ?DisposableMariaDbSchema $schema = null;
@@ -750,6 +756,40 @@ final class DisposableMobileV2BackendHarness
     }
 
     /**
+     * Asserts that paired hold duration is an integer within bounds (1..120 seconds).
+     *
+     * @param  mixed  $seconds
+     * @return int
+     *
+     * @throws InvalidArgumentException
+     */
+    public static function assertPairedHoldBounds(mixed $seconds): int
+    {
+        if (is_int($seconds)) {
+            if ($seconds < self::MIN_PAIRED_HOLD_SECONDS || $seconds > self::MAX_PAIRED_HOLD_SECONDS) {
+                throw new InvalidArgumentException("Paired hold seconds must be between ".self::MIN_PAIRED_HOLD_SECONDS." and ".self::MAX_PAIRED_HOLD_SECONDS.", got {$seconds}.");
+            }
+
+            return $seconds;
+        }
+
+        if (is_string($seconds)) {
+            $isIntegerString = $seconds !== '' && (ctype_digit($seconds) || (str_starts_with($seconds, '-') && ctype_digit(substr($seconds, 1))));
+            if (! $isIntegerString) {
+                throw new InvalidArgumentException("Paired hold seconds must be an integer string, got '{$seconds}'.");
+            }
+            $val = (int) $seconds;
+            if ($val < self::MIN_PAIRED_HOLD_SECONDS || $val > self::MAX_PAIRED_HOLD_SECONDS) {
+                throw new InvalidArgumentException("Paired hold seconds must be between ".self::MIN_PAIRED_HOLD_SECONDS." and ".self::MAX_PAIRED_HOLD_SECONDS.", got {$val}.");
+            }
+
+            return $val;
+        }
+
+        throw new InvalidArgumentException('Paired hold seconds must be an integer or integer string.');
+    }
+
+    /**
      * Asserts that pcntl signal handling functions are available for readiness hold.
      * Fails closed before framework boot, database connection, or socket opening.
      *
@@ -769,6 +809,30 @@ final class DisposableMobileV2BackendHarness
         foreach ($required as $fn) {
             if (! $checker($fn)) {
                 throw new RuntimeException("Harness refused: --readiness-hold-seconds requires pcntl extension function '{$fn}'.");
+            }
+        }
+    }
+
+    /**
+     * Asserts that pcntl signal handling functions are available for paired hold.
+     * Fails closed before framework boot, database connection, or socket opening.
+     *
+     * @param  int  $holdSeconds
+     * @param  (callable(string): bool)|null  $functionExistsChecker  Optional seam for testing
+     *
+     * @throws RuntimeException
+     */
+    public static function assertPcntlAvailableForPairedHold(int $holdSeconds, ?callable $functionExistsChecker = null): void
+    {
+        if ($holdSeconds <= 0) {
+            return;
+        }
+
+        $checker = $functionExistsChecker ?? 'function_exists';
+        $required = ['pcntl_signal', 'pcntl_signal_dispatch'];
+        foreach ($required as $fn) {
+            if (! $checker($fn)) {
+                throw new RuntimeException("Harness refused: --paired-hold-seconds requires pcntl extension function '{$fn}'.");
             }
         }
     }
