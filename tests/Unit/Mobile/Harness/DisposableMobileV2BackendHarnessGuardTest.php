@@ -1655,5 +1655,162 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
         $this->assertSame('0', $option->getDefault());
         $this->assertStringContainsString('0..120', $option->getDescription());
     }
+
+    #[Test]
+    public function test_generate_test_tls_certificates_creates_valid_x509_v3_extensions(): void
+    {
+        $tempDir = sys_get_temp_dir().'/pure_cert_ext_test_'.bin2hex(random_bytes(6));
+        mkdir($tempDir, 0700, true);
+
+        try {
+            $certs = DisposableMobileV2BackendHarness::generateTestTlsCertificates($tempDir);
+
+            $this->assertFileExists($certs['ca_cert_path']);
+            $this->assertFileExists($certs['ca_key_path']);
+            $this->assertFileExists($certs['server_cert_path']);
+            $this->assertFileExists($certs['server_key_path']);
+
+            $this->assertSame('0600', substr(sprintf('%o', fileperms($certs['ca_key_path'])), -4));
+            $this->assertSame('0644', substr(sprintf('%o', fileperms($certs['ca_cert_path'])), -4));
+            $this->assertSame('0600', substr(sprintf('%o', fileperms($certs['server_key_path'])), -4));
+            $this->assertSame('0644', substr(sprintf('%o', fileperms($certs['server_cert_path'])), -4));
+
+            // Inspect CA cert extensions
+            $procCaText = new Process(['openssl', 'x509', '-in', $certs['ca_cert_path'], '-text', '-noout']);
+            $procCaText->mustRun();
+            $caOutput = $procCaText->getOutput();
+            $this->assertStringContainsString('X509v3 Basic Constraints: critical', $caOutput);
+            $this->assertStringContainsString('CA:TRUE', $caOutput);
+            $this->assertStringContainsString('X509v3 Key Usage: critical', $caOutput);
+            $this->assertStringContainsString('Certificate Sign, CRL Sign', $caOutput);
+            $this->assertStringContainsString('X509v3 Subject Key Identifier:', $caOutput);
+            $this->assertStringContainsString('X509v3 Authority Key Identifier:', $caOutput);
+
+            // Inspect Server cert extensions
+            $procServerText = new Process(['openssl', 'x509', '-in', $certs['server_cert_path'], '-text', '-noout']);
+            $procServerText->mustRun();
+            $serverOutput = $procServerText->getOutput();
+            $this->assertStringContainsString('X509v3 Basic Constraints: critical', $serverOutput);
+            $this->assertStringContainsString('CA:FALSE', $serverOutput);
+            $this->assertStringContainsString('X509v3 Key Usage: critical', $serverOutput);
+            $this->assertStringContainsString('Digital Signature, Key Encipherment', $serverOutput);
+            $this->assertStringContainsString('X509v3 Extended Key Usage:', $serverOutput);
+            $this->assertStringContainsString('TLS Web Server Authentication', $serverOutput);
+            $this->assertStringContainsString('X509v3 Subject Alternative Name:', $serverOutput);
+            $this->assertStringContainsString('DNS:localhost', $serverOutput);
+            $this->assertStringContainsString('IP Address:127.0.0.1', $serverOutput);
+            $this->assertStringContainsString('IP Address:10.0.2.2', $serverOutput);
+        } finally {
+            $files = glob($tempDir.'/*');
+            if (is_array($files)) {
+                foreach ($files as $file) {
+                    @unlink($file);
+                }
+            }
+            @rmdir($tempDir);
+        }
+    }
+
+    #[Test]
+    public function test_generate_test_tls_certificates_passes_openssl_verify_strict(): void
+    {
+        $tempDir = sys_get_temp_dir().'/pure_cert_verify_test_'.bin2hex(random_bytes(6));
+        mkdir($tempDir, 0700, true);
+
+        try {
+            $certs = DisposableMobileV2BackendHarness::generateTestTlsCertificates($tempDir);
+
+            $procVerify = new Process([
+                'openssl', 'verify', '-x509_strict',
+                '-CAfile', $certs['ca_cert_path'],
+                $certs['server_cert_path'],
+            ]);
+            $procVerify->run();
+
+            $this->assertSame(0, $procVerify->getExitCode(), 'openssl verify -x509_strict failed: '.$procVerify->getErrorOutput());
+            $this->assertStringContainsString('OK', $procVerify->getOutput());
+        } finally {
+            $files = glob($tempDir.'/*');
+            if (is_array($files)) {
+                foreach ($files as $file) {
+                    @unlink($file);
+                }
+            }
+            @rmdir($tempDir);
+        }
+    }
+
+    #[Test]
+    public function test_generate_test_tls_certificates_passes_python3_ssl_strict_trust(): void
+    {
+        $tempDir = sys_get_temp_dir().'/pure_python_ssl_test_'.bin2hex(random_bytes(6));
+        mkdir($tempDir, 0700, true);
+
+        try {
+            $certs = DisposableMobileV2BackendHarness::generateTestTlsCertificates($tempDir);
+
+            $pyScript = implode("\n", [
+                'import sys, ssl, socket, threading',
+                'ca_cert = sys.argv[1]',
+                'server_cert = sys.argv[2]',
+                'server_key = sys.argv[3]',
+                '',
+                'srv_ctx = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)',
+                'srv_ctx.load_cert_chain(certfile=server_cert, keyfile=server_key)',
+                '',
+                'client_ctx = ssl.create_default_context(cafile=ca_cert)',
+                'client_ctx.check_hostname = True',
+                'client_ctx.verify_mode = ssl.CERT_REQUIRED',
+                '',
+                "for host in ['127.0.0.1', 'localhost', '10.0.2.2']:",
+                '    s1, s2 = socket.socketpair()',
+                '    def srv():',
+                '        conn = srv_ctx.wrap_socket(s1, server_side=True)',
+                '        conn.sendall(b"PONG")',
+                '        conn.close()',
+                '    t = threading.Thread(target=srv)',
+                '    t.start()',
+                '    c = client_ctx.wrap_socket(s2, server_hostname=host)',
+                '    msg = c.recv(1024)',
+                '    assert msg == b"PONG"',
+                '    c.close()',
+                '    t.join()',
+                '',
+                '# Test negative hostname mismatch rejects handshake with CertificateError',
+                's1, s2 = socket.socketpair()',
+                'def srv_bad():',
+                '    try:',
+                '        conn = srv_ctx.wrap_socket(s1, server_side=True)',
+                '        conn.close()',
+                '    except Exception:',
+                '        pass',
+                't_bad = threading.Thread(target=srv_bad)',
+                't_bad.start()',
+                'try:',
+                '    c = client_ctx.wrap_socket(s2, server_hostname="unauthorized.domain.invalid")',
+                '    raise AssertionError("Expected SSL CertificateError for mismatched hostname")',
+                'except (ssl.CertificateError, ssl.SSLError):',
+                '    pass',
+                'finally:',
+                '    t_bad.join()',
+                '',
+                'print("PYTHON_STRICT_SSL_OK")',
+            ]);
+
+            $procPy = new Process(['python3', '-c', $pyScript, $certs['ca_cert_path'], $certs['server_cert_path'], $certs['server_key_path']]);
+            $procPy->run();
+
+            $this->assertSame(0, $procPy->getExitCode(), 'Python 3 strict SSL verification failed: '.$procPy->getErrorOutput().' '.$procPy->getOutput());
+            $this->assertStringContainsString('PYTHON_STRICT_SSL_OK', $procPy->getOutput());
+        } finally {
+            $files = glob($tempDir.'/*');
+            if (is_array($files)) {
+                foreach ($files as $file) {
+                    @unlink($file);
+                }
+            }
+            @rmdir($tempDir);
+        }
+    }
 }
 

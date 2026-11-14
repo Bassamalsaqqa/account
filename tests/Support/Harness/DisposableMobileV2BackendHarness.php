@@ -248,6 +248,91 @@ final class DisposableMobileV2BackendHarness
     }
 
     /**
+     * Generates a private test CA and server TLS certificate with standard X.509 v3 extensions.
+     * Enforces strict CA key usage (keyCertSign, cRLSign, basicConstraints CA:TRUE) and
+     * server extended key usage (serverAuth, digitalSignature, keyEncipherment, SAN, basicConstraints CA:FALSE).
+     *
+     * @param  string  $outputDir  Directory where certificates and keys will be written
+     * @return array{ca_cert_path: string, ca_key_path: string, server_cert_path: string, server_key_path: string}
+     */
+    public static function generateTestTlsCertificates(string $outputDir): array
+    {
+        $caCertPath = $outputDir.'/test-ca.pem';
+        $caKeyPath = $outputDir.'/test-ca-key.pem';
+        $serverCertPath = $outputDir.'/server-cert.pem';
+        $serverKeyPath = $outputDir.'/server-key.pem';
+        $serverCsrPath = $outputDir.'/server.csr';
+        $serverExtPath = $outputDir.'/server.ext';
+
+        $caKeyGen = new Process([
+            'openssl', 'req', '-x509', '-newkey', 'rsa:2048',
+            '-keyout', $caKeyPath,
+            '-out', $caCertPath,
+            '-days', '1',
+            '-nodes',
+            '-subj', '/CN=HarnessTestCA/O=Integration/C=IL',
+            '-addext', 'basicConstraints = critical, CA:TRUE',
+            '-addext', 'keyUsage = critical, keyCertSign, cRLSign',
+            '-addext', 'subjectKeyIdentifier = hash',
+            '-addext', 'authorityKeyIdentifier = keyid:always,issuer',
+        ]);
+        $caKeyGen->run();
+        if (! $caKeyGen->isSuccessful()) {
+            throw new RuntimeException('Failed to generate test CA certificate: '.$caKeyGen->getErrorOutput());
+        }
+        chmod($caKeyPath, 0600);
+        chmod($caCertPath, 0644);
+
+        $serverKeyGen = new Process([
+            'openssl', 'req', '-newkey', 'rsa:2048',
+            '-keyout', $serverKeyPath,
+            '-out', $serverCsrPath,
+            '-nodes',
+            '-subj', '/CN=localhost/O=Integration/C=IL',
+        ]);
+        $serverKeyGen->run();
+        if (! $serverKeyGen->isSuccessful()) {
+            throw new RuntimeException('Failed to generate server key/CSR: '.$serverKeyGen->getErrorOutput());
+        }
+        chmod($serverKeyPath, 0600);
+
+        file_put_contents($serverExtPath, implode("\n", [
+            '[server_ext]',
+            'basicConstraints = critical, CA:FALSE',
+            'keyUsage = critical, digitalSignature, keyEncipherment',
+            'extendedKeyUsage = serverAuth',
+            'subjectAltName = DNS:localhost,IP:127.0.0.1,IP:10.0.2.2',
+            'subjectKeyIdentifier = hash',
+            'authorityKeyIdentifier = keyid,issuer',
+            '',
+        ]));
+
+        $certSign = new Process([
+            'openssl', 'x509', '-req',
+            '-in', $serverCsrPath,
+            '-CA', $caCertPath,
+            '-CAkey', $caKeyPath,
+            '-CAcreateserial',
+            '-out', $serverCertPath,
+            '-days', '1',
+            '-extensions', 'server_ext',
+            '-extfile', $serverExtPath,
+        ]);
+        $certSign->run();
+        if (! $certSign->isSuccessful()) {
+            throw new RuntimeException('Failed to sign server certificate: '.$certSign->getErrorOutput());
+        }
+        chmod($serverCertPath, 0644);
+
+        return [
+            'ca_cert_path' => $caCertPath,
+            'ca_key_path' => $caKeyPath,
+            'server_cert_path' => $serverCertPath,
+            'server_key_path' => $serverKeyPath,
+        ];
+    }
+
+    /**
      * Build secure Caddyfile configuration string.
      * Guarantees admin off, auto_https off, explicit 127.0.0.1 bind, and SAN host matchers.
      */
@@ -1684,62 +1769,12 @@ PHP;
         file_put_contents($httpBootstrapPath, $httpBootstrapContent);
         chmod($httpBootstrapPath, 0600);
 
-        // Generate private test TLS CA and server cert with explicit SAN
-        $caCertPath = $bootstrapDir.'/test-ca.pem';
-        $caKeyPath = $bootstrapDir.'/test-ca-key.pem';
-        $serverCertPath = $bootstrapDir.'/server-cert.pem';
-        $serverKeyPath = $bootstrapDir.'/server-key.pem';
-
-        $caKeyGen = new Process([
-            'openssl', 'req', '-x509', '-newkey', 'rsa:2048',
-            '-keyout', $caKeyPath,
-            '-out', $caCertPath,
-            '-days', '1',
-            '-nodes',
-            '-subj', '/CN=HarnessTestCA/O=Integration/C=IL',
-        ]);
-        $caKeyGen->run();
-        if (! $caKeyGen->isSuccessful()) {
-            throw new RuntimeException('Failed to generate test CA certificate: '.$caKeyGen->getErrorOutput());
-        }
-        chmod($caKeyPath, 0600);
-        chmod($caCertPath, 0644);
-
-        $serverKeyGen = new Process([
-            'openssl', 'req', '-newkey', 'rsa:2048',
-            '-keyout', $serverKeyPath,
-            '-out', $bootstrapDir.'/server.csr',
-            '-nodes',
-            '-subj', '/CN=localhost/O=Integration/C=IL',
-        ]);
-        $serverKeyGen->run();
-        if (! $serverKeyGen->isSuccessful()) {
-            throw new RuntimeException('Failed to generate server key/CSR: '.$serverKeyGen->getErrorOutput());
-        }
-        chmod($serverKeyPath, 0600);
-
-        $sanExtPath = $bootstrapDir.'/san.ext';
-        file_put_contents($sanExtPath, implode("\n", [
-            '[SAN]',
-            'subjectAltName=DNS:localhost,IP:127.0.0.1,IP:10.0.2.2',
-        ]));
-
-        $certSign = new Process([
-            'openssl', 'x509', '-req',
-            '-in', $bootstrapDir.'/server.csr',
-            '-CA', $caCertPath,
-            '-CAkey', $caKeyPath,
-            '-CAcreateserial',
-            '-out', $serverCertPath,
-            '-days', '1',
-            '-extensions', 'SAN',
-            '-extfile', $sanExtPath,
-        ]);
-        $certSign->run();
-        if (! $certSign->isSuccessful()) {
-            throw new RuntimeException('Failed to sign server certificate: '.$certSign->getErrorOutput());
-        }
-        chmod($serverCertPath, 0644);
+        // Generate private test TLS CA and server cert with standard X.509 v3 extensions
+        $certs = self::generateTestTlsCertificates($bootstrapDir);
+        $caCertPath = $certs['ca_cert_path'];
+        $caKeyPath = $certs['ca_key_path'];
+        $serverCertPath = $certs['server_cert_path'];
+        $serverKeyPath = $certs['server_key_path'];
 
         // Write secure Caddyfile with admin off and auto_https off
         $caddyConfigPath = $bootstrapDir.'/Caddyfile';
