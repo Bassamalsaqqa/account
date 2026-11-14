@@ -33,6 +33,7 @@ $expectedHandoffDigest = null;
 $expectedBaselineHash = null;
 $expectedDbReportSha = null;
 $expectedEvidenceSha = null;
+$expectedPayloadDigest = null;
 $expectedScope = null;
 
 foreach ($argvList as $arg) {
@@ -80,6 +81,8 @@ foreach ($argvList as $arg) {
         $expectedDbReportSha = substr($arg, 25);
     } elseif (str_starts_with($arg, '--expected-evidence-sha=')) {
         $expectedEvidenceSha = substr($arg, 24);
+    } elseif (str_starts_with($arg, '--expected-payload-digest=')) {
+        $expectedPayloadDigest = substr($arg, 26);
     } elseif (str_starts_with($arg, '--expected-scope=')) {
         $expectedScope = substr($arg, 17);
     }
@@ -140,6 +143,11 @@ if ($evidenceFile !== null) {
         exit(1);
     }
 
+    if ($expectedPayloadDigest === null || $expectedPayloadDigest === '') {
+        fwrite(STDERR, "Error: --expected-payload-digest=<sha256> is mandatory for outer evidence validation.\n");
+        exit(1);
+    }
+
     if ($trustedDbReportFile === null) {
         fwrite(STDERR, "Error: --trusted-db-report=<file> is mandatory for outer evidence validation.\n");
         exit(1);
@@ -178,6 +186,7 @@ if ($evidenceFile !== null) {
         'expectedRunId' => $runId,
         'expectedEventId' => $expectedEventId,
         'expectedBaselineHash' => $expectedBaselineHash,
+        'expectedPayloadDigest' => $expectedPayloadDigest,
     ];
 
     $validation = DisposableFinancialPostRunInspector::validateOuterEvidenceJson($rawEvidence, $expectedPins, $trustedDbReport);
@@ -327,7 +336,8 @@ if ($isInspectDelta) {
             $companyId,
             $baselineData,
             $expectedEventId,
-            $schemaName
+            $schemaName,
+            $expectedPayloadDigest
         );
 
         $outJson = json_encode($deltaResult, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);

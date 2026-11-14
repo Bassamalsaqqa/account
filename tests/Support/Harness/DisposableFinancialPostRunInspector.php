@@ -357,6 +357,7 @@ final class DisposableFinancialPostRunInspector
      * @param  array<string, mixed>  $baseline
      * @param  string  $expectedClientEventId
      * @param  string  $expectedSchemaName
+     * @param  string|null  $expectedPayloadDigest
      * @return array<string, mixed>
      *
      * @throws RuntimeException|InvalidArgumentException
@@ -365,10 +366,21 @@ final class DisposableFinancialPostRunInspector
         int $companyId,
         array $baseline,
         string $expectedClientEventId,
-        string $expectedSchemaName
+        string $expectedSchemaName,
+        ?string $expectedPayloadDigest = null
     ): array {
         if ($expectedClientEventId === '' || ! preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iD', $expectedClientEventId)) {
             throw new InvalidArgumentException("Inspector refused: expectedClientEventId must be a valid non-empty UUID, got '{$expectedClientEventId}'.");
+        }
+
+        $normalizedExpectedDigest = null;
+        if ($expectedPayloadDigest !== null) {
+            $normalizedExpectedDigest = str_starts_with($expectedPayloadDigest, 'sha256:')
+                ? substr($expectedPayloadDigest, 7)
+                : $expectedPayloadDigest;
+            if (! preg_match('/^[0-9a-f]{64}$/D', $normalizedExpectedDigest)) {
+                throw new InvalidArgumentException("Inspector refused: expectedPayloadDigest must be a valid 64-hex SHA-256 hash, got '{$expectedPayloadDigest}'.");
+            }
         }
 
         $db = self::assertExecutionGates($expectedSchemaName);
@@ -377,308 +389,373 @@ final class DisposableFinancialPostRunInspector
 
         try {
             // Fail-closed checks on baseline integrity: company and schema must match exactly
-        if (($baseline['company_id'] ?? null) !== $companyId) {
-            throw new RuntimeException("Baseline company_id mismatch: expected {$companyId}, got ".($baseline['company_id'] ?? 'null').'.');
-        }
-        if (($baseline['schema_name'] ?? null) !== $expectedSchemaName) {
-            throw new RuntimeException("Baseline schema_name mismatch: expected '{$expectedSchemaName}', got '".($baseline['schema_name'] ?? 'null')."'.");
-        }
-
-        $requiredBaselineKeys = [
-            'company_id', 'schema_name',
-            'sales_invoices', 'sales_invoices_max_id',
-            'sales_invoice_lines', 'sales_invoice_lines_max_id',
-            'sales_invoice_lot_allocations', 'sales_invoice_lot_allocations_max_id',
-            'customer_payments', 'customer_payments_max_id',
-            'customer_payment_allocations', 'customer_payment_allocations_max_id',
-            'mobile_event_receipts', 'mobile_event_receipts_max_id',
-            'stock_movements', 'stock_movements_max_id', 'stock_movements_qty_sum',
-            'posting_batches', 'posting_batches_max_id',
-            'posting_lines', 'posting_lines_max_id',
-            'document_sequences',
-        ];
-        foreach ($requiredBaselineKeys as $reqKey) {
-            if (! array_key_exists($reqKey, $baseline)) {
-                throw new RuntimeException("Baseline missing required key '{$reqKey}'. Cannot default to 0.");
+            if (($baseline['company_id'] ?? null) !== $companyId) {
+                throw new RuntimeException("Baseline company_id mismatch: expected {$companyId}, got ".($baseline['company_id'] ?? 'null').'.');
             }
-        }
-
-        $current = self::captureMetricsWithVerifiedPdo($companyId, $expectedSchemaName, $db);
-
-        $deltas = [
-            'sales_invoices' => $current['sales_invoices'] - $baseline['sales_invoices'],
-            'sales_invoice_lines' => $current['sales_invoice_lines'] - $baseline['sales_invoice_lines'],
-            'sales_invoice_lot_allocations' => $current['sales_invoice_lot_allocations'] - $baseline['sales_invoice_lot_allocations'],
-            'customer_payments' => $current['customer_payments'] - $baseline['customer_payments'],
-            'customer_payment_allocations' => $current['customer_payment_allocations'] - $baseline['customer_payment_allocations'],
-            'mobile_event_receipts' => $current['mobile_event_receipts'] - $baseline['mobile_event_receipts'],
-            'stock_movements' => $current['stock_movements'] - $baseline['stock_movements'],
-            'posting_batches' => $current['posting_batches'] - $baseline['posting_batches'],
-            'posting_lines' => $current['posting_lines'] - $baseline['posting_lines'],
-        ];
-
-        $errors = [];
-
-        // 1. Exact canonical counts assertions for ONE committed event
-        if ($deltas['sales_invoices'] !== 1) {
-            $errors[] = "Expected sales_invoices delta 1, got {$deltas['sales_invoices']}.";
-        }
-        if ($deltas['sales_invoice_lines'] !== 1) {
-            $errors[] = "Expected sales_invoice_lines delta 1, got {$deltas['sales_invoice_lines']}.";
-        }
-        if ($deltas['sales_invoice_lot_allocations'] !== 1) {
-            $errors[] = "Expected sales_invoice_lot_allocations delta 1 (FEFO lot deduction), got {$deltas['sales_invoice_lot_allocations']}.";
-        }
-        if ($deltas['customer_payments'] !== 1) {
-            $errors[] = "Expected customer_payments delta 1, got {$deltas['customer_payments']}.";
-        }
-        if ($deltas['customer_payment_allocations'] !== 1) {
-            $errors[] = "Expected customer_payment_allocations delta 1, got {$deltas['customer_payment_allocations']}.";
-        }
-        if ($deltas['mobile_event_receipts'] !== 1) {
-            $errors[] = "Expected mobile_event_receipts delta 1, got {$deltas['mobile_event_receipts']}.";
-        }
-        if ($deltas['stock_movements'] !== 1) {
-            $errors[] = "Expected stock_movements delta 1 (deduction movement vs baseline opening stock), got {$deltas['stock_movements']}.";
-        }
-        if ($deltas['posting_batches'] !== 2) {
-            $errors[] = "Expected posting_batches delta 2 (1 invoice + 1 payment), got {$deltas['posting_batches']}.";
-        }
-        if ($deltas['posting_lines'] < 4) {
-            $errors[] = "Expected posting_lines delta >= 4 (at least 2 lines per batch), got {$deltas['posting_lines']}.";
-        }
-
-        // 2. Query and inspect the newly created Sales Invoice
-        $stmtInv = $db->prepare('SELECT `id`, `public_id`, `status`, `grand_total_base`, `posting_batch_id` FROM `sales_invoices` WHERE `company_id` = ? AND `id` > ? ORDER BY `id` ASC LIMIT 1');
-        $stmtInv->execute([$companyId, (int) $baseline['sales_invoices_max_id']]);
-        $newInvoice = $stmtInv->fetch(PDO::FETCH_ASSOC);
-
-        $newInvoiceId = null;
-        $newInvoicePublicId = null;
-        if (! $newInvoice) {
-            $errors[] = 'Newly created sales invoice row not found.';
-        } else {
-            $newInvoiceId = (int) $newInvoice['id'];
-            $newInvoicePublicId = (string) $newInvoice['public_id'];
-            if (($newInvoice['status'] ?? '') !== 'posted') {
-                $errors[] = "Newly created sales invoice status must be 'posted', got '".($newInvoice['status'] ?? 'null')."'.";
-            }
-            if (BigDecimal::of((string) ($newInvoice['grand_total_base'] ?? '0'))->toScale(6)->compareTo(BigDecimal::of('58.000000')) !== 0) {
-                $errors[] = "Newly created sales invoice grand_total_base must be '58.000000', got '".($newInvoice['grand_total_base'] ?? 'null')."'.";
-            }
-        }
-
-        // 3. Query and inspect the newly created Customer Payment using actual migration columns
-        // (is_reversed = 0, reversed_at IS NULL, payment_method = 'cash', money_account_id non-null, amount = 58.000000, amount_base = 58.000000, non-null posting_batch_id)
-        $stmtPay = $db->prepare('SELECT `id`, `public_id`, `payment_method`, `money_account_id`, `is_reversed`, `reversed_at`, `amount`, `amount_base`, `posting_batch_id` FROM `customer_payments` WHERE `company_id` = ? AND `id` > ? ORDER BY `id` ASC LIMIT 1');
-        $stmtPay->execute([$companyId, (int) $baseline['customer_payments_max_id']]);
-        $newPayment = $stmtPay->fetch(PDO::FETCH_ASSOC);
-
-        $newPaymentId = null;
-        $newPaymentPublicId = null;
-        if (! $newPayment) {
-            $errors[] = 'Newly created customer payment row not found.';
-        } else {
-            $newPaymentId = (int) $newPayment['id'];
-            $newPaymentPublicId = (string) $newPayment['public_id'];
-            if ((int) ($newPayment['is_reversed'] ?? 1) !== 0) {
-                $errors[] = 'Newly created customer payment must not be reversed (is_reversed must be 0).';
-            }
-            if ($newPayment['reversed_at'] !== null) {
-                $errors[] = "Newly created customer payment must have null reversed_at, got '{$newPayment['reversed_at']}'.";
-            }
-            if (($newPayment['payment_method'] ?? '') !== 'cash') {
-                $errors[] = "Newly created customer payment payment_method must be 'cash', got '".($newPayment['payment_method'] ?? 'null')."'.";
-            }
-            if (empty($newPayment['money_account_id'])) {
-                $errors[] = 'Newly created customer payment must have non-null money_account_id.';
-            }
-            if (empty($newPayment['posting_batch_id'])) {
-                $errors[] = 'Newly created customer payment must have valid non-null posting_batch_id.';
-            }
-            if (BigDecimal::of((string) ($newPayment['amount'] ?? '0'))->toScale(6)->compareTo(BigDecimal::of('58.000000')) !== 0) {
-                $errors[] = "Newly created customer payment amount must be '58.000000', got '".($newPayment['amount'] ?? 'null')."'.";
-            }
-            if (BigDecimal::of((string) ($newPayment['amount_base'] ?? '0'))->toScale(6)->compareTo(BigDecimal::of('58.000000')) !== 0) {
-                $errors[] = "Newly created customer payment amount_base must be '58.000000', got '".($newPayment['amount_base'] ?? 'null')."'.";
-            }
-        }
-
-        // 4. Query and inspect the newly created Customer Payment Allocation
-        // Both allocated_amount AND payment_currency_amount must be 58.000000
-        $stmtAlloc = $db->prepare('SELECT `id`, `customer_payment_id`, `sales_invoice_id`, `allocated_amount`, `payment_currency_amount`, `base_amount_applied_to_receivable` FROM `customer_payment_allocations` WHERE `company_id` = ? AND `id` > ? ORDER BY `id` ASC LIMIT 1');
-        $stmtAlloc->execute([$companyId, (int) $baseline['customer_payment_allocations_max_id']]);
-        $newPaymentAlloc = $stmtAlloc->fetch(PDO::FETCH_ASSOC);
-
-        if (! $newPaymentAlloc) {
-            $errors[] = 'Newly created customer_payment_allocation row not found.';
-        } else {
-            if ($newPaymentId !== null && (int) ($newPaymentAlloc['customer_payment_id'] ?? 0) !== $newPaymentId) {
-                $errors[] = "Customer payment allocation customer_payment_id mismatch: expected {$newPaymentId}, got ".($newPaymentAlloc['customer_payment_id'] ?? 'null').'.';
-            }
-            if ($newInvoiceId !== null && (int) ($newPaymentAlloc['sales_invoice_id'] ?? 0) !== $newInvoiceId) {
-                $errors[] = "Customer payment allocation sales_invoice_id mismatch: expected {$newInvoiceId}, got ".($newPaymentAlloc['sales_invoice_id'] ?? 'null').'.';
-            }
-            if (BigDecimal::of((string) ($newPaymentAlloc['allocated_amount'] ?? '0'))->toScale(6)->compareTo(BigDecimal::of('58.000000')) !== 0) {
-                $errors[] = "Customer payment allocation allocated_amount must be '58.000000', got '".($newPaymentAlloc['allocated_amount'] ?? 'null')."'.";
-            }
-            if (BigDecimal::of((string) ($newPaymentAlloc['payment_currency_amount'] ?? '0'))->toScale(6)->compareTo(BigDecimal::of('58.000000')) !== 0) {
-                $errors[] = "Customer payment allocation payment_currency_amount must be '58.000000', got '".($newPaymentAlloc['payment_currency_amount'] ?? 'null')."'.";
-            }
-        }
-
-        // 5. Query and inspect the newly created Stock Movement
-        $stmtSm = $db->prepare('SELECT `id`, `quantity_delta_base`, `unit_cost_base`, `value_delta_base`, `source_type`, `source_id` FROM `stock_movements` WHERE `company_id` = ? AND `id` > ? ORDER BY `id` ASC LIMIT 1');
-        $stmtSm->execute([$companyId, (int) $baseline['stock_movements_max_id']]);
-        $newSm = $stmtSm->fetch(PDO::FETCH_ASSOC);
-
-        if (! $newSm) {
-            $errors[] = 'Newly created stock_movement row not found.';
-        } else {
-            if (BigDecimal::of((string) ($newSm['quantity_delta_base'] ?? '0'))->toScale(6)->compareTo(BigDecimal::of('-1.000000')) !== 0) {
-                $errors[] = "Stock movement quantity_delta_base must be '-1.000000', got '".($newSm['quantity_delta_base'] ?? 'null')."'.";
-            }
-            if (($newSm['source_type'] ?? '') !== 'sales_invoice') {
-                $errors[] = "Stock movement source_type must be 'sales_invoice', got '".($newSm['source_type'] ?? 'null')."'.";
-            }
-            if ($newInvoiceId !== null && (int) ($newSm['source_id'] ?? 0) !== $newInvoiceId) {
-                $errors[] = "Stock movement source_id mismatch: expected invoice {$newInvoiceId}, got ".($newSm['source_id'] ?? 'null').'.';
-            }
-        }
-
-        // Net stock quantity delta across company must be exactly -1.000000
-        $qtyDelta = BigDecimal::of((string) $current['stock_movements_qty_sum'])
-            ->minus(BigDecimal::of((string) $baseline['stock_movements_qty_sum']))
-            ->toScale(6);
-        if ($qtyDelta->compareTo(BigDecimal::of('-1.000000')) !== 0) {
-            $errors[] = "Net stock quantity delta must be '-1.000000', got '{$qtyDelta}'.";
-        }
-
-        // 6. Query and inspect the newly created Lot Allocation
-        $stmtLot = $db->prepare('SELECT `id`, `sales_invoice_id`, `quantity_allocated_base` FROM `sales_invoice_lot_allocations` WHERE `company_id` = ? AND `id` > ? ORDER BY `id` ASC LIMIT 1');
-        $stmtLot->execute([$companyId, (int) $baseline['sales_invoice_lot_allocations_max_id']]);
-        $newLotAlloc = $stmtLot->fetch(PDO::FETCH_ASSOC);
-
-        if (! $newLotAlloc) {
-            $errors[] = 'Newly created sales_invoice_lot_allocation row not found.';
-        } else {
-            if ($newInvoiceId !== null && (int) ($newLotAlloc['sales_invoice_id'] ?? 0) !== $newInvoiceId) {
-                $errors[] = "Lot allocation sales_invoice_id mismatch: expected {$newInvoiceId}, got ".($newLotAlloc['sales_invoice_id'] ?? 'null').'.';
-            }
-            if (BigDecimal::of((string) ($newLotAlloc['quantity_allocated_base'] ?? '0'))->toScale(6)->compareTo(BigDecimal::of('1.000000')) !== 0) {
-                $errors[] = "Lot allocation quantity_allocated_base must be '1.000000', got '".($newLotAlloc['quantity_allocated_base'] ?? 'null')."'.";
-            }
-        }
-
-        // 7. Inspect GL Posting Batches: verify source provenance and per-batch balance at scale 6
-        $stmtBatches = $db->prepare('SELECT `id`, `source_type`, `source_id`, `status` FROM `posting_batches` WHERE `company_id` = ? AND `id` > ? ORDER BY `id` ASC');
-        $stmtBatches->execute([$companyId, (int) $baseline['posting_batches_max_id']]);
-        $newBatches = $stmtBatches->fetchAll(PDO::FETCH_ASSOC);
-
-        $hasInvoiceBatch = false;
-        $hasPaymentBatch = false;
-        $allBatchesBalanced = true;
-
-        if (count($newBatches) !== 2) {
-            $errors[] = 'Expected exactly 2 new posting batches, found '.count($newBatches).'.';
-        }
-
-        foreach ($newBatches as $batch) {
-            $batchId = (int) $batch['id'];
-            $srcType = (string) ($batch['source_type'] ?? '');
-            $srcId = (int) ($batch['source_id'] ?? 0);
-
-            if (($batch['status'] ?? '') !== 'posted') {
-                $errors[] = "Posting batch {$batchId} status must be 'posted', got '".($batch['status'] ?? 'null')."'.";
+            if (($baseline['schema_name'] ?? null) !== $expectedSchemaName) {
+                throw new RuntimeException("Baseline schema_name mismatch: expected '{$expectedSchemaName}', got '".($baseline['schema_name'] ?? 'null')."'.");
             }
 
-            if ($srcType === 'sales_invoice' && $newInvoiceId !== null && $srcId === $newInvoiceId) {
-                $hasInvoiceBatch = true;
-            } elseif ($srcType === 'customer_payment' && $newPaymentId !== null && $srcId === $newPaymentId) {
-                $hasPaymentBatch = true;
+            $requiredBaselineKeys = [
+                'company_id', 'schema_name',
+                'sales_invoices', 'sales_invoices_max_id',
+                'sales_invoice_lines', 'sales_invoice_lines_max_id',
+                'sales_invoice_lot_allocations', 'sales_invoice_lot_allocations_max_id',
+                'customer_payments', 'customer_payments_max_id',
+                'customer_payment_allocations', 'customer_payment_allocations_max_id',
+                'mobile_event_receipts', 'mobile_event_receipts_max_id',
+                'stock_movements', 'stock_movements_max_id', 'stock_movements_qty_sum',
+                'posting_batches', 'posting_batches_max_id',
+                'posting_lines', 'posting_lines_max_id',
+                'document_sequences',
+            ];
+            foreach ($requiredBaselineKeys as $reqKey) {
+                if (! array_key_exists($reqKey, $baseline)) {
+                    throw new RuntimeException("Baseline missing required key '{$reqKey}'. Cannot default to 0.");
+                }
+            }
+
+            $current = self::captureMetricsWithVerifiedPdo($companyId, $expectedSchemaName, $db);
+
+            $deltas = [
+                'sales_invoices' => $current['sales_invoices'] - $baseline['sales_invoices'],
+                'sales_invoice_lines' => $current['sales_invoice_lines'] - $baseline['sales_invoice_lines'],
+                'sales_invoice_lot_allocations' => $current['sales_invoice_lot_allocations'] - $baseline['sales_invoice_lot_allocations'],
+                'customer_payments' => $current['customer_payments'] - $baseline['customer_payments'],
+                'customer_payment_allocations' => $current['customer_payment_allocations'] - $baseline['customer_payment_allocations'],
+                'mobile_event_receipts' => $current['mobile_event_receipts'] - $baseline['mobile_event_receipts'],
+                'stock_movements' => $current['stock_movements'] - $baseline['stock_movements'],
+                'posting_batches' => $current['posting_batches'] - $baseline['posting_batches'],
+                'posting_lines' => $current['posting_lines'] - $baseline['posting_lines'],
+            ];
+
+            $errors = [];
+
+            // 1. Exact canonical counts assertions for ONE committed event
+            if ($deltas['sales_invoices'] !== 1) {
+                $errors[] = "Expected sales_invoices delta 1, got {$deltas['sales_invoices']}.";
+            }
+            if ($deltas['sales_invoice_lines'] !== 1) {
+                $errors[] = "Expected sales_invoice_lines delta 1, got {$deltas['sales_invoice_lines']}.";
+            }
+            if ($deltas['sales_invoice_lot_allocations'] !== 1) {
+                $errors[] = "Expected sales_invoice_lot_allocations delta 1 (FEFO lot deduction), got {$deltas['sales_invoice_lot_allocations']}.";
+            }
+            if ($deltas['customer_payments'] !== 1) {
+                $errors[] = "Expected customer_payments delta 1, got {$deltas['customer_payments']}.";
+            }
+            if ($deltas['customer_payment_allocations'] !== 1) {
+                $errors[] = "Expected customer_payment_allocations delta 1, got {$deltas['customer_payment_allocations']}.";
+            }
+            if ($deltas['mobile_event_receipts'] !== 1) {
+                $errors[] = "Expected mobile_event_receipts delta 1, got {$deltas['mobile_event_receipts']}.";
+            }
+            if ($deltas['stock_movements'] !== 1) {
+                $errors[] = "Expected stock_movements delta 1 (deduction movement vs baseline opening stock), got {$deltas['stock_movements']}.";
+            }
+            if ($deltas['posting_batches'] !== 2) {
+                $errors[] = "Expected posting_batches delta 2 (1 invoice + 1 payment), got {$deltas['posting_batches']}.";
+            }
+            if ($deltas['posting_lines'] < 4) {
+                $errors[] = "Expected posting_lines delta >= 4 (at least 2 lines per batch), got {$deltas['posting_lines']}.";
+            }
+
+            // 2. Query and inspect the newly created Sales Invoice
+            $stmtInv = $db->prepare('SELECT `id`, `public_id`, `company_id`, `status`, `grand_total_base`, `posting_batch_id` FROM `sales_invoices` WHERE `company_id` = ? AND `id` > ? ORDER BY `id` ASC LIMIT 1');
+            $stmtInv->execute([$companyId, (int) $baseline['sales_invoices_max_id']]);
+            $newInvoice = $stmtInv->fetch(PDO::FETCH_ASSOC);
+
+            $newInvoiceId = null;
+            $newInvoicePublicId = null;
+            if (! $newInvoice) {
+                $errors[] = 'Newly created sales invoice row not found.';
             } else {
-                $errors[] = "Unexpected posting batch provenance: id={$batchId}, source_type={$srcType}, source_id={$srcId}.";
-            }
-
-            // Verify lines balance for THIS specific batch using exact BigDecimal at scale 6
-            $stmtLines = $db->prepare('SELECT `debit_base`, `credit_base` FROM `posting_lines` WHERE `company_id` = ? AND `posting_batch_id` = ?');
-            $stmtLines->execute([$companyId, $batchId]);
-            $lines = $stmtLines->fetchAll(PDO::FETCH_ASSOC);
-
-            if (count($lines) < 2) {
-                $errors[] = "Posting batch {$batchId} has fewer than 2 posting lines.";
-            }
-
-            $debitSum = BigDecimal::zero();
-            $creditSum = BigDecimal::zero();
-            foreach ($lines as $line) {
-                $debitSum = $debitSum->plus((string) ($line['debit_base'] ?? '0'));
-                $creditSum = $creditSum->plus((string) ($line['credit_base'] ?? '0'));
-            }
-
-            if ($debitSum->isZero() || $creditSum->isZero()) {
-                $errors[] = "Posting batch {$batchId} has zero debits or credits.";
-                $allBatchesBalanced = false;
-            } elseif ($debitSum->toScale(6)->compareTo($creditSum->toScale(6)) !== 0) {
-                $errors[] = "Posting batch {$batchId} unbalanced: debit {$debitSum} vs credit {$creditSum}.";
-                $allBatchesBalanced = false;
-            }
-        }
-
-        if (! $hasInvoiceBatch) {
-            $errors[] = 'Posting batch for newly created sales invoice was not found.';
-        }
-        if (! $hasPaymentBatch) {
-            $errors[] = 'Posting batch for newly created customer payment was not found.';
-        }
-
-        // 8. Inspect Document Sequences increment
-        $baseSeqs = $baseline['document_sequences'];
-        $currSeqs = $current['document_sequences'];
-        $foundInvoiceSeqIncrement = false;
-        $foundPaymentSeqIncrement = false;
-
-        foreach ($currSeqs as $typeYear => $currNext) {
-            $baseNext = $baseSeqs[$typeYear] ?? 1;
-            if (str_starts_with($typeYear, 'sales_invoice:')) {
-                if ($currNext === $baseNext + 1) {
-                    $foundInvoiceSeqIncrement = true;
+                $newInvoiceId = (int) $newInvoice['id'];
+                $newInvoicePublicId = (string) $newInvoice['public_id'];
+                if (($newInvoice['status'] ?? '') !== 'posted') {
+                    $errors[] = "Newly created sales invoice status must be 'posted', got '".($newInvoice['status'] ?? 'null')."'.";
                 }
-            } elseif (str_starts_with($typeYear, 'customer_payment:')) {
-                if ($currNext === $baseNext + 1) {
-                    $foundPaymentSeqIncrement = true;
+                if (BigDecimal::of((string) ($newInvoice['grand_total_base'] ?? '0'))->toScale(6)->compareTo(BigDecimal::of('58.000000')) !== 0) {
+                    $errors[] = "Newly created sales invoice grand_total_base must be '58.000000', got '".($newInvoice['grand_total_base'] ?? 'null')."'.";
                 }
             }
-        }
 
-        if (! $foundInvoiceSeqIncrement) {
-            $errors[] = 'Document sequence for sales_invoice did not increment by 1.';
-        }
-        if (! $foundPaymentSeqIncrement) {
-            $errors[] = 'Document sequence for customer_payment did not increment by 1.';
-        }
+            // 2b. Query and inspect the newly created Sales Invoice Line
+            $stmtLine = $db->prepare('SELECT `id`, `public_id`, `company_id`, `sales_invoice_id`, `line_number`, `quantity`, `unit_price`, `line_total` FROM `sales_invoice_lines` WHERE `company_id` = ? AND `id` > ? ORDER BY `id` ASC LIMIT 1');
+            $stmtLine->execute([$companyId, (int) $baseline['sales_invoice_lines_max_id']]);
+            $newLine = $stmtLine->fetch(PDO::FETCH_ASSOC);
 
-        // 9. Inspect Mobile Event Receipt (status must be 'completed', NOT 'posted')
-        $stmtReceipt = $db->prepare('SELECT `id`, `client_event_id`, `status`, `sales_invoice_public_id`, `customer_payment_public_id` FROM `mobile_event_receipts` WHERE `company_id` = ? AND `id` > ? ORDER BY `id` ASC LIMIT 1');
-        $stmtReceipt->execute([$companyId, (int) $baseline['mobile_event_receipts_max_id']]);
-        $newReceipt = $stmtReceipt->fetch(PDO::FETCH_ASSOC);
+            $newLineId = null;
+            if (! $newLine) {
+                $errors[] = 'Newly created sales invoice line row not found.';
+            } else {
+                $newLineId = (int) $newLine['id'];
+                if ($newInvoiceId !== null && (int) ($newLine['sales_invoice_id'] ?? 0) !== $newInvoiceId) {
+                    $errors[] = "Sales invoice line sales_invoice_id mismatch: expected invoice {$newInvoiceId}, got ".($newLine['sales_invoice_id'] ?? 'null').'.';
+                }
+                if (BigDecimal::of((string) ($newLine['quantity'] ?? '0'))->toScale(6)->compareTo(BigDecimal::of('1.000000')) !== 0) {
+                    $errors[] = "Sales invoice line quantity must be '1.000000', got '".($newLine['quantity'] ?? 'null')."'.";
+                }
+                if (BigDecimal::of((string) ($newLine['line_total'] ?? '0'))->toScale(6)->compareTo(BigDecimal::of('58.000000')) !== 0) {
+                    $errors[] = "Sales invoice line line_total must be '58.000000', got '".($newLine['line_total'] ?? 'null')."'.";
+                }
+            }
 
-        if (! $newReceipt) {
-            $errors[] = 'Newly created mobile_event_receipt row not found.';
-        } else {
-            if ((string) ($newReceipt['client_event_id'] ?? '') !== $expectedClientEventId) {
-                $errors[] = "Mobile event receipt client_event_id mismatch: expected '{$expectedClientEventId}', got '".($newReceipt['client_event_id'] ?? 'null')."'.";
+            // 3. Query and inspect the newly created Customer Payment
+            $stmtPay = $db->prepare('SELECT `id`, `public_id`, `company_id`, `payment_method`, `money_account_id`, `is_reversed`, `reversed_at`, `amount`, `amount_base`, `posting_batch_id` FROM `customer_payments` WHERE `company_id` = ? AND `id` > ? ORDER BY `id` ASC LIMIT 1');
+            $stmtPay->execute([$companyId, (int) $baseline['customer_payments_max_id']]);
+            $newPayment = $stmtPay->fetch(PDO::FETCH_ASSOC);
+
+            $newPaymentId = null;
+            $newPaymentPublicId = null;
+            if (! $newPayment) {
+                $errors[] = 'Newly created customer payment row not found.';
+            } else {
+                $newPaymentId = (int) $newPayment['id'];
+                $newPaymentPublicId = (string) $newPayment['public_id'];
+                if ((int) ($newPayment['is_reversed'] ?? 1) !== 0) {
+                    $errors[] = 'Newly created customer payment must not be reversed (is_reversed must be 0).';
+                }
+                if ($newPayment['reversed_at'] !== null) {
+                    $errors[] = "Newly created customer payment must have null reversed_at, got '{$newPayment['reversed_at']}'.";
+                }
+                if (($newPayment['payment_method'] ?? '') !== 'cash') {
+                    $errors[] = "Newly created customer payment payment_method must be 'cash', got '".($newPayment['payment_method'] ?? 'null')."'.";
+                }
+                if (empty($newPayment['money_account_id'])) {
+                    $errors[] = 'Newly created customer payment must have non-null money_account_id.';
+                }
+                if (empty($newPayment['posting_batch_id'])) {
+                    $errors[] = 'Newly created customer payment must have valid non-null posting_batch_id.';
+                }
+                if (BigDecimal::of((string) ($newPayment['amount'] ?? '0'))->toScale(6)->compareTo(BigDecimal::of('58.000000')) !== 0) {
+                    $errors[] = "Newly created customer payment amount must be '58.000000', got '".($newPayment['amount'] ?? 'null')."'.";
+                }
+                if (BigDecimal::of((string) ($newPayment['amount_base'] ?? '0'))->toScale(6)->compareTo(BigDecimal::of('58.000000')) !== 0) {
+                    $errors[] = "Newly created customer payment amount_base must be '58.000000', got '".($newPayment['amount_base'] ?? 'null')."'.";
+                }
             }
-            if (($newReceipt['status'] ?? '') !== 'completed') {
-                $errors[] = "Mobile event receipt status must be 'completed', got '".($newReceipt['status'] ?? 'null')."'.";
+
+            // 4. Query and inspect the newly created Customer Payment Allocation
+            $stmtAlloc = $db->prepare('SELECT `id`, `company_id`, `customer_payment_id`, `sales_invoice_id`, `allocated_amount`, `payment_currency_amount`, `base_amount_applied_to_receivable` FROM `customer_payment_allocations` WHERE `company_id` = ? AND `id` > ? ORDER BY `id` ASC LIMIT 1');
+            $stmtAlloc->execute([$companyId, (int) $baseline['customer_payment_allocations_max_id']]);
+            $newPaymentAlloc = $stmtAlloc->fetch(PDO::FETCH_ASSOC);
+
+            $newPaymentAllocId = null;
+            if (! $newPaymentAlloc) {
+                $errors[] = 'Newly created customer_payment_allocation row not found.';
+            } else {
+                $newPaymentAllocId = (int) $newPaymentAlloc['id'];
+                if ($newPaymentId !== null && (int) ($newPaymentAlloc['customer_payment_id'] ?? 0) !== $newPaymentId) {
+                    $errors[] = "Customer payment allocation customer_payment_id mismatch: expected {$newPaymentId}, got ".($newPaymentAlloc['customer_payment_id'] ?? 'null').'.';
+                }
+                if ($newInvoiceId !== null && (int) ($newPaymentAlloc['sales_invoice_id'] ?? 0) !== $newInvoiceId) {
+                    $errors[] = "Customer payment allocation sales_invoice_id mismatch: expected {$newInvoiceId}, got ".($newPaymentAlloc['sales_invoice_id'] ?? 'null').'.';
+                }
+                if (BigDecimal::of((string) ($newPaymentAlloc['allocated_amount'] ?? '0'))->toScale(6)->compareTo(BigDecimal::of('58.000000')) !== 0) {
+                    $errors[] = "Customer payment allocation allocated_amount must be '58.000000', got '".($newPaymentAlloc['allocated_amount'] ?? 'null')."'.";
+                }
+                if (BigDecimal::of((string) ($newPaymentAlloc['payment_currency_amount'] ?? '0'))->toScale(6)->compareTo(BigDecimal::of('58.000000')) !== 0) {
+                    $errors[] = "Customer payment allocation payment_currency_amount must be '58.000000', got '".($newPaymentAlloc['payment_currency_amount'] ?? 'null')."'.";
+                }
             }
-            if ($newInvoicePublicId !== null && (string) ($newReceipt['sales_invoice_public_id'] ?? '') !== $newInvoicePublicId) {
-                $errors[] = "Mobile event receipt sales_invoice_public_id mismatch: expected '{$newInvoicePublicId}', got '".($newReceipt['sales_invoice_public_id'] ?? 'null')."'.";
+
+            // 5. Query and inspect the newly created Stock Movement
+            $stmtSm = $db->prepare('SELECT `id`, `company_id`, `source_type`, `source_id`, `quantity_delta_base`, `unit_cost_base`, `value_delta_base` FROM `stock_movements` WHERE `company_id` = ? AND `id` > ? ORDER BY `id` ASC LIMIT 1');
+            $stmtSm->execute([$companyId, (int) $baseline['stock_movements_max_id']]);
+            $newSm = $stmtSm->fetch(PDO::FETCH_ASSOC);
+
+            $newSmId = null;
+            if (! $newSm) {
+                $errors[] = 'Newly created stock_movement row not found.';
+            } else {
+                $newSmId = (int) $newSm['id'];
+                if (BigDecimal::of((string) ($newSm['quantity_delta_base'] ?? '0'))->toScale(6)->compareTo(BigDecimal::of('-1.000000')) !== 0) {
+                    $errors[] = "Stock movement quantity_delta_base must be '-1.000000', got '".($newSm['quantity_delta_base'] ?? 'null')."'.";
+                }
+                if (($newSm['source_type'] ?? '') !== 'sales_invoice') {
+                    $errors[] = "Stock movement source_type must be 'sales_invoice', got '".($newSm['source_type'] ?? 'null')."'.";
+                }
+                if ($newInvoiceId !== null && (int) ($newSm['source_id'] ?? 0) !== $newInvoiceId) {
+                    $errors[] = "Stock movement source_id mismatch: expected invoice {$newInvoiceId}, got ".($newSm['source_id'] ?? 'null').'.';
+                }
             }
-            if ($newPaymentPublicId !== null && (string) ($newReceipt['customer_payment_public_id'] ?? '') !== $newPaymentPublicId) {
-                $errors[] = "Mobile event receipt customer_payment_public_id mismatch: expected '{$newPaymentPublicId}', got '".($newReceipt['customer_payment_public_id'] ?? 'null')."'.";
+
+            // Net stock quantity delta across company must be exactly -1.000000
+            $qtyDelta = BigDecimal::of((string) $current['stock_movements_qty_sum'])
+                ->minus(BigDecimal::of((string) $baseline['stock_movements_qty_sum']))
+                ->toScale(6);
+            if ($qtyDelta->compareTo(BigDecimal::of('-1.000000')) !== 0) {
+                $errors[] = "Net stock quantity delta must be '-1.000000', got '{$qtyDelta}'.";
             }
-        }
+
+            // 6. Query and inspect the newly created Lot Allocation
+            $stmtLot = $db->prepare('SELECT `id`, `company_id`, `sales_invoice_id`, `sales_invoice_line_id`, `stock_movement_id`, `quantity_allocated_base` FROM `sales_invoice_lot_allocations` WHERE `company_id` = ? AND `id` > ? ORDER BY `id` ASC LIMIT 1');
+            $stmtLot->execute([$companyId, (int) $baseline['sales_invoice_lot_allocations_max_id']]);
+            $newLotAlloc = $stmtLot->fetch(PDO::FETCH_ASSOC);
+
+            $newLotAllocId = null;
+            if (! $newLotAlloc) {
+                $errors[] = 'Newly created sales_invoice_lot_allocation row not found.';
+            } else {
+                $newLotAllocId = (int) $newLotAlloc['id'];
+                if ($newInvoiceId !== null && (int) ($newLotAlloc['sales_invoice_id'] ?? 0) !== $newInvoiceId) {
+                    $errors[] = "Lot allocation sales_invoice_id mismatch: expected {$newInvoiceId}, got ".($newLotAlloc['sales_invoice_id'] ?? 'null').'.';
+                }
+                if ($newLineId !== null && (int) ($newLotAlloc['sales_invoice_line_id'] ?? 0) !== $newLineId) {
+                    $errors[] = "Lot allocation sales_invoice_line_id mismatch: expected line {$newLineId}, got ".($newLotAlloc['sales_invoice_line_id'] ?? 'null').'.';
+                }
+                if ($newSmId !== null && $newLotAlloc['stock_movement_id'] !== null && (int) $newLotAlloc['stock_movement_id'] !== $newSmId) {
+                    $errors[] = "Lot allocation stock_movement_id mismatch: expected stock movement {$newSmId}, got ".($newLotAlloc['stock_movement_id'] ?? 'null').'.';
+                }
+                if (BigDecimal::of((string) ($newLotAlloc['quantity_allocated_base'] ?? '0'))->toScale(6)->compareTo(BigDecimal::of('1.000000')) !== 0) {
+                    $errors[] = "Lot allocation quantity_allocated_base must be '1.000000', got '".($newLotAlloc['quantity_allocated_base'] ?? 'null')."'.";
+                }
+            }
+
+            // 7. Inspect GL Posting Batches: verify source provenance and per-batch balance at scale 6
+            $stmtBatches = $db->prepare('SELECT `id`, `company_id`, `source_type`, `source_id`, `status` FROM `posting_batches` WHERE `company_id` = ? AND `id` > ? ORDER BY `id` ASC');
+            $stmtBatches->execute([$companyId, (int) $baseline['posting_batches_max_id']]);
+            $newBatches = $stmtBatches->fetchAll(PDO::FETCH_ASSOC);
+
+            $hasInvoiceBatch = false;
+            $hasPaymentBatch = false;
+            $allBatchesBalanced = true;
+            $structuredBatches = [];
+
+            if (count($newBatches) !== 2) {
+                $errors[] = 'Expected exactly 2 new posting batches, found '.count($newBatches).'.';
+            }
+
+            foreach ($newBatches as $batch) {
+                $batchId = (int) $batch['id'];
+                $srcType = (string) ($batch['source_type'] ?? '');
+                $srcId = (int) ($batch['source_id'] ?? 0);
+
+                if (($batch['status'] ?? '') !== 'posted') {
+                    $errors[] = "Posting batch {$batchId} status must be 'posted', got '".($batch['status'] ?? 'null')."'.";
+                }
+
+                if ($srcType === 'sales_invoice' && $newInvoiceId !== null && $srcId === $newInvoiceId) {
+                    $hasInvoiceBatch = true;
+                } elseif ($srcType === 'customer_payment' && $newPaymentId !== null && $srcId === $newPaymentId) {
+                    $hasPaymentBatch = true;
+                } else {
+                    $errors[] = "Unexpected posting batch provenance: id={$batchId}, source_type={$srcType}, source_id={$srcId}.";
+                }
+
+                // Verify lines balance for THIS specific batch using exact BigDecimal at scale 6
+                $stmtLines = $db->prepare('SELECT `id`, `posting_batch_id`, `debit_base`, `credit_base` FROM `posting_lines` WHERE `company_id` = ? AND `posting_batch_id` = ? ORDER BY `id` ASC');
+                $stmtLines->execute([$companyId, $batchId]);
+                $lines = $stmtLines->fetchAll(PDO::FETCH_ASSOC);
+
+                if (count($lines) < 2) {
+                    $errors[] = "Posting batch {$batchId} has fewer than 2 posting lines.";
+                }
+
+                $debitSum = BigDecimal::zero();
+                $creditSum = BigDecimal::zero();
+                $sanitizedLines = [];
+                foreach ($lines as $line) {
+                    $debitSum = $debitSum->plus((string) ($line['debit_base'] ?? '0'));
+                    $creditSum = $creditSum->plus((string) ($line['credit_base'] ?? '0'));
+                    $sanitizedLines[] = [
+                        'id' => (int) $line['id'],
+                        'debit_base' => (string) ($line['debit_base'] ?? '0.000000'),
+                        'credit_base' => (string) ($line['credit_base'] ?? '0.000000'),
+                    ];
+                }
+
+                if ($debitSum->isZero() || $creditSum->isZero()) {
+                    $errors[] = "Posting batch {$batchId} has zero debits or credits.";
+                    $allBatchesBalanced = false;
+                } elseif ($debitSum->toScale(6)->compareTo($creditSum->toScale(6)) !== 0) {
+                    $errors[] = "Posting batch {$batchId} unbalanced: debit {$debitSum} vs credit {$creditSum}.";
+                    $allBatchesBalanced = false;
+                }
+
+                $structuredBatches[] = [
+                    'id' => $batchId,
+                    'source_type' => $srcType,
+                    'source_id' => $srcId,
+                    'status' => (string) ($batch['status'] ?? ''),
+                    'lines' => $sanitizedLines,
+                ];
+            }
+
+            if (! $hasInvoiceBatch) {
+                $errors[] = 'Posting batch for newly created sales invoice was not found.';
+            }
+            if (! $hasPaymentBatch) {
+                $errors[] = 'Posting batch for newly created customer payment was not found.';
+            }
+
+            // 8. Inspect Document Sequences increment
+            $baseSeqs = $baseline['document_sequences'];
+            $currSeqs = $current['document_sequences'];
+            $foundInvoiceSeqIncrement = false;
+            $foundPaymentSeqIncrement = false;
+
+            foreach ($currSeqs as $typeYear => $currNext) {
+                $baseNext = $baseSeqs[$typeYear] ?? 1;
+                if (str_starts_with($typeYear, 'sales_invoice:')) {
+                    if ($currNext === $baseNext + 1) {
+                        $foundInvoiceSeqIncrement = true;
+                    }
+                } elseif (str_starts_with($typeYear, 'customer_payment:')) {
+                    if ($currNext === $baseNext + 1) {
+                        $foundPaymentSeqIncrement = true;
+                    }
+                }
+            }
+
+            if (! $foundInvoiceSeqIncrement) {
+                $errors[] = 'Document sequence for sales_invoice did not increment by 1.';
+            }
+            if (! $foundPaymentSeqIncrement) {
+                $errors[] = 'Document sequence for customer_payment did not increment by 1.';
+            }
+
+            // 9. Inspect Mobile Event Receipt
+            $stmtReceipt = $db->prepare('SELECT `id`, `company_id`, `client_event_id`, `payload_digest`, `sales_invoice_id`, `sales_invoice_public_id`, `customer_payment_id`, `customer_payment_public_id`, `status` FROM `mobile_event_receipts` WHERE `company_id` = ? AND `id` > ? ORDER BY `id` ASC LIMIT 1');
+            $stmtReceipt->execute([$companyId, (int) $baseline['mobile_event_receipts_max_id']]);
+            $newReceipt = $stmtReceipt->fetch(PDO::FETCH_ASSOC);
+
+            $newReceiptId = null;
+            if (! $newReceipt) {
+                $errors[] = 'Newly created mobile_event_receipt row not found.';
+            } else {
+                $newReceiptId = (int) $newReceipt['id'];
+                if ((int) ($newReceipt['company_id'] ?? 0) !== $companyId) {
+                    $errors[] = "Mobile event receipt company_id mismatch: expected {$companyId}, got ".($newReceipt['company_id'] ?? 'null').'.';
+                }
+                if ((string) ($newReceipt['client_event_id'] ?? '') !== $expectedClientEventId) {
+                    $errors[] = "Mobile event receipt client_event_id mismatch: expected '{$expectedClientEventId}', got '".($newReceipt['client_event_id'] ?? 'null')."'.";
+                }
+                if (($newReceipt['status'] ?? '') !== 'completed') {
+                    $errors[] = "Mobile event receipt status must be 'completed', got '".($newReceipt['status'] ?? 'null')."'.";
+                }
+                if ($newInvoiceId !== null && (int) ($newReceipt['sales_invoice_id'] ?? 0) !== $newInvoiceId) {
+                    $errors[] = "Mobile event receipt sales_invoice_id mismatch: expected {$newInvoiceId}, got ".($newReceipt['sales_invoice_id'] ?? 'null').'.';
+                }
+                if ($newInvoicePublicId !== null && (string) ($newReceipt['sales_invoice_public_id'] ?? '') !== $newInvoicePublicId) {
+                    $errors[] = "Mobile event receipt sales_invoice_public_id mismatch: expected '{$newInvoicePublicId}', got '".($newReceipt['sales_invoice_public_id'] ?? 'null')."'.";
+                }
+                if ($newPaymentId !== null && (int) ($newReceipt['customer_payment_id'] ?? 0) !== $newPaymentId) {
+                    $errors[] = "Mobile event receipt customer_payment_id mismatch: expected {$newPaymentId}, got ".($newReceipt['customer_payment_id'] ?? 'null').'.';
+                }
+                if ($newPaymentPublicId !== null && (string) ($newReceipt['customer_payment_public_id'] ?? '') !== $newPaymentPublicId) {
+                    $errors[] = "Mobile event receipt customer_payment_public_id mismatch: expected '{$newPaymentPublicId}', got '".($newReceipt['customer_payment_public_id'] ?? 'null')."'.";
+                }
+                if ($normalizedExpectedDigest !== null) {
+                    $normReceiptDigest = str_starts_with((string) ($newReceipt['payload_digest'] ?? ''), 'sha256:')
+                        ? substr((string) $newReceipt['payload_digest'], 7)
+                        : (string) ($newReceipt['payload_digest'] ?? '');
+                    if (! hash_equals($normalizedExpectedDigest, $normReceiptDigest)) {
+                        $errors[] = "Mobile event receipt payload_digest mismatch: expected '{$normalizedExpectedDigest}', got '{$normReceiptDigest}'.";
+                    }
+                }
+            }
 
             return [
                 'is_canonical_delta_valid' => $errors === [],
@@ -692,10 +769,73 @@ final class DisposableFinancialPostRunInspector
                     'sales_invoice_public_id' => $newInvoicePublicId,
                     'customer_payment_id' => $newPaymentId,
                     'customer_payment_public_id' => $newPaymentPublicId,
-                    'stock_movement_quantity_delta' => '-1.000000',
-                    'customer_payment_allocation_amount' => '58.000000',
-                    'customer_payment_allocation_payment_currency_amount' => '58.000000',
-                    'receipt_status' => $newReceipt['status'] ?? null,
+                    'stock_movement_quantity_delta' => $newSm !== null ? (string) ($newSm['quantity_delta_base'] ?? '') : null,
+                    'customer_payment_allocation_amount' => $newPaymentAlloc !== null ? (string) ($newPaymentAlloc['allocated_amount'] ?? '') : null,
+                    'customer_payment_allocation_payment_currency_amount' => $newPaymentAlloc !== null ? (string) ($newPaymentAlloc['payment_currency_amount'] ?? '') : null,
+                    'receipt_status' => $newReceipt !== null ? (string) ($newReceipt['status'] ?? '') : null,
+                    'sales_invoice' => $newInvoice ? [
+                        'id' => (int) $newInvoice['id'],
+                        'public_id' => (string) $newInvoice['public_id'],
+                        'company_id' => (int) ($newInvoice['company_id'] ?? $companyId),
+                        'status' => (string) $newInvoice['status'],
+                        'grand_total_base' => (string) $newInvoice['grand_total_base'],
+                        'posting_batch_id' => (int) $newInvoice['posting_batch_id'],
+                    ] : null,
+                    'sales_invoice_line' => $newLine ? [
+                        'id' => (int) $newLine['id'],
+                        'public_id' => (string) $newLine['public_id'],
+                        'sales_invoice_id' => (int) $newLine['sales_invoice_id'],
+                        'line_number' => (int) $newLine['line_number'],
+                        'quantity' => (string) $newLine['quantity'],
+                        'unit_price' => (string) $newLine['unit_price'],
+                        'line_total' => (string) $newLine['line_total'],
+                    ] : null,
+                    'sales_invoice_lot_allocation' => $newLotAlloc ? [
+                        'id' => (int) $newLotAlloc['id'],
+                        'sales_invoice_id' => (int) $newLotAlloc['sales_invoice_id'],
+                        'sales_invoice_line_id' => (int) $newLotAlloc['sales_invoice_line_id'],
+                        'stock_movement_id' => isset($newLotAlloc['stock_movement_id']) && $newLotAlloc['stock_movement_id'] !== null ? (int) $newLotAlloc['stock_movement_id'] : null,
+                        'quantity_allocated_base' => (string) $newLotAlloc['quantity_allocated_base'],
+                    ] : null,
+                    'customer_payment' => $newPayment ? [
+                        'id' => (int) $newPayment['id'],
+                        'public_id' => (string) $newPayment['public_id'],
+                        'company_id' => (int) ($newPayment['company_id'] ?? $companyId),
+                        'payment_method' => (string) $newPayment['payment_method'],
+                        'amount' => (string) $newPayment['amount'],
+                        'amount_base' => (string) $newPayment['amount_base'],
+                        'posting_batch_id' => (int) $newPayment['posting_batch_id'],
+                    ] : null,
+                    'customer_payment_allocation' => $newPaymentAlloc ? [
+                        'id' => (int) $newPaymentAlloc['id'],
+                        'customer_payment_id' => (int) $newPaymentAlloc['customer_payment_id'],
+                        'sales_invoice_id' => (int) $newPaymentAlloc['sales_invoice_id'],
+                        'allocated_amount' => (string) $newPaymentAlloc['allocated_amount'],
+                        'payment_currency_amount' => (string) $newPaymentAlloc['payment_currency_amount'],
+                    ] : null,
+                    'stock_movement' => $newSm ? [
+                        'id' => (int) $newSm['id'],
+                        'company_id' => (int) ($newSm['company_id'] ?? $companyId),
+                        'source_type' => (string) $newSm['source_type'],
+                        'source_id' => (int) $newSm['source_id'],
+                        'quantity_delta_base' => (string) $newSm['quantity_delta_base'],
+                    ] : null,
+                    'posting_batches' => $structuredBatches,
+                    'document_sequences' => [
+                        'before' => $baseSeqs,
+                        'after' => $currSeqs,
+                    ],
+                    'mobile_event_receipt' => $newReceipt ? [
+                        'id' => (int) $newReceipt['id'],
+                        'company_id' => (int) $newReceipt['company_id'],
+                        'client_event_id' => (string) $newReceipt['client_event_id'],
+                        'payload_digest' => (string) $newReceipt['payload_digest'],
+                        'sales_invoice_id' => (int) $newReceipt['sales_invoice_id'],
+                        'sales_invoice_public_id' => (string) $newReceipt['sales_invoice_public_id'],
+                        'customer_payment_id' => (int) $newReceipt['customer_payment_id'],
+                        'customer_payment_public_id' => (string) $newReceipt['customer_payment_public_id'],
+                        'status' => (string) $newReceipt['status'],
+                    ] : null,
                 ],
             ];
         } finally {
@@ -1014,7 +1154,11 @@ final class DisposableFinancialPostRunInspector
      *     expectedLifecycle?: string,
      *     expectedSchemaName?: string,
      *     companyId?: int,
-     *     expectedEventId?: string,
+     *     expectedRunId: string,
+     *     expectedEventId: string,
+     *     expectedPayloadDigest: string,
+     *     expectedBaselineHash: string,
+     *     expectedReportDigest?: string,
      *     expectedScope?: string
      * }  $expectedPins
      * @param  array<string, mixed>|null  $trustedDbReport  Separate trusted DB inspection report (MANDATORY)
@@ -1199,15 +1343,26 @@ final class DisposableFinancialPostRunInspector
             if ($expectedEventId === '' || ! preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iD', $expectedEventId)) {
                 $errors[] = "Expected pin 'expectedEventId' is mandatory and must be a valid UUID; cannot be omitted or empty.";
             } else {
-                if ($expectedRunId !== '' && $expectedEventId === $expectedRunId) {
-                    $errors[] = "Ambiguous identity: expectedRunId and expectedEventId must not be identical ('{$expectedEventId}').";
-                }
                 if ((string) ($trustedDbReport['event_id'] ?? '') !== $expectedEventId) {
                     $errors[] = "Trusted DB report event_id mismatch: expected '{$expectedEventId}', got '".($trustedDbReport['event_id'] ?? 'null')."'.";
                 }
                 $graphClientEventId = (string) ($trustedDbReport['canonical_graph']['client_event_id'] ?? '');
                 if ($graphClientEventId !== $expectedEventId) {
                     $errors[] = "Trusted DB report canonical_graph client_event_id mismatch: expected '{$expectedEventId}', got '{$graphClientEventId}'.";
+                }
+            }
+
+            $expectedPayloadDigest = (string) ($expectedPins['expectedPayloadDigest'] ?? '');
+            $normExpectedDigest = null;
+            if ($expectedPayloadDigest === '') {
+                $errors[] = "Expected pin 'expectedPayloadDigest' is mandatory and external; cannot be omitted or empty.";
+            } else {
+                $normExpectedDigest = str_starts_with($expectedPayloadDigest, 'sha256:')
+                    ? substr($expectedPayloadDigest, 7)
+                    : $expectedPayloadDigest;
+                if (! preg_match('/^[0-9a-f]{64}$/iD', $normExpectedDigest)) {
+                    $errors[] = "Invalid expectedPayloadDigest format '{$expectedPayloadDigest}': expected 64-character hex SHA-256.";
+                    $normExpectedDigest = null;
                 }
             }
 
@@ -1297,9 +1452,7 @@ final class DisposableFinancialPostRunInspector
                 if ($payPubId === '') {
                     $errors[] = 'Canonical graph customer_payment_public_id must be a non-empty string.';
                 }
-                if ($invId !== null && $payId !== null && $invId === $payId) {
-                    $errors[] = "Canonical graph sales_invoice_id and customer_payment_id must be distinct ({$invId}).";
-                }
+                // Domain distinction is enforced through distinct public ULIDs and strictly validated FK pointers
                 if ($invPubId !== '' && $payPubId !== '' && $invPubId === $payPubId) {
                     $errors[] = "Canonical graph sales_invoice_public_id and customer_payment_public_id must be distinct ('{$invPubId}').";
                 }
@@ -1315,6 +1468,246 @@ final class DisposableFinancialPostRunInspector
                 }
                 if (($graph['receipt_status'] ?? '') !== 'completed') {
                     $errors[] = "Canonical graph receipt_status must be 'completed', got '".($graph['receipt_status'] ?? 'null')."'.";
+                }
+
+                // 1. Sales Invoice entity in canonical_graph
+                $gInvoice = $graph['sales_invoice'] ?? null;
+                if (! is_array($gInvoice)) {
+                    $errors[] = 'Canonical graph sales_invoice entry is missing or not an array.';
+                } else {
+                    if ((int) ($gInvoice['id'] ?? 0) !== $invId) {
+                        $errors[] = "Canonical graph sales_invoice.id mismatch: expected {$invId}, got ".($gInvoice['id'] ?? 'null').'.';
+                    }
+                    if ((string) ($gInvoice['public_id'] ?? '') !== $invPubId) {
+                        $errors[] = "Canonical graph sales_invoice.public_id mismatch: expected '{$invPubId}', got '".($gInvoice['public_id'] ?? 'null')."'.";
+                    }
+                    if ($expectedCompanyId > 0 && (int) ($gInvoice['company_id'] ?? 0) !== $expectedCompanyId) {
+                        $errors[] = "Canonical graph sales_invoice.company_id mismatch: expected {$expectedCompanyId}, got ".($gInvoice['company_id'] ?? 'null').'.';
+                    }
+                    if (($gInvoice['status'] ?? '') !== 'posted') {
+                        $errors[] = "Canonical graph sales_invoice.status must be 'posted', got '".($gInvoice['status'] ?? 'null')."'.";
+                    }
+                    if (($gInvoice['grand_total_base'] ?? '') !== '58.000000') {
+                        $errors[] = "Canonical graph sales_invoice.grand_total_base must be '58.000000', got '".($gInvoice['grand_total_base'] ?? 'null')."'.";
+                    }
+                    if (! is_int($gInvoice['posting_batch_id'] ?? null) || ($gInvoice['posting_batch_id'] ?? 0) <= 0) {
+                        $errors[] = 'Canonical graph sales_invoice.posting_batch_id must be a positive integer.';
+                    }
+                }
+
+                // 2. Sales Invoice Line entity in canonical_graph
+                $gLine = $graph['sales_invoice_line'] ?? null;
+                $lineId = null;
+                if (! is_array($gLine)) {
+                    $errors[] = 'Canonical graph sales_invoice_line entry is missing or not an array.';
+                } else {
+                    $lineId = (int) ($gLine['id'] ?? 0);
+                    if ($lineId <= 0) {
+                        $errors[] = 'Canonical graph sales_invoice_line.id must be a positive integer.';
+                    }
+                    if ((string) ($gLine['public_id'] ?? '') === '') {
+                        $errors[] = 'Canonical graph sales_invoice_line.public_id must be a non-empty string.';
+                    }
+                    if ((int) ($gLine['sales_invoice_id'] ?? 0) !== $invId) {
+                        $errors[] = "Canonical graph sales_invoice_line.sales_invoice_id mismatch: expected {$invId}, got ".($gLine['sales_invoice_id'] ?? 'null').'.';
+                    }
+                    if (($gLine['quantity'] ?? '') !== '1.000000') {
+                        $errors[] = "Canonical graph sales_invoice_line.quantity must be '1.000000', got '".($gLine['quantity'] ?? 'null')."'.";
+                    }
+                    if (($gLine['unit_price'] ?? '') !== '58.000000') {
+                        $errors[] = "Canonical graph sales_invoice_line.unit_price must be '58.000000', got '".($gLine['unit_price'] ?? 'null')."'.";
+                    }
+                    if (($gLine['line_total'] ?? '') !== '58.000000') {
+                        $errors[] = "Canonical graph sales_invoice_line.line_total must be '58.000000', got '".($gLine['line_total'] ?? 'null')."'.";
+                    }
+                }
+
+                // 3. Stock Movement entity in canonical_graph
+                $gSm = $graph['stock_movement'] ?? null;
+                $smId = null;
+                if (! is_array($gSm)) {
+                    $errors[] = 'Canonical graph stock_movement entry is missing or not an array.';
+                } else {
+                    $smId = (int) ($gSm['id'] ?? 0);
+                    if ($smId <= 0) {
+                        $errors[] = 'Canonical graph stock_movement.id must be a positive integer.';
+                    }
+                    if ($expectedCompanyId > 0 && (int) ($gSm['company_id'] ?? 0) !== $expectedCompanyId) {
+                        $errors[] = "Canonical graph stock_movement.company_id mismatch: expected {$expectedCompanyId}, got ".($gSm['company_id'] ?? 'null').'.';
+                    }
+                    if (($gSm['source_type'] ?? '') !== 'sales_invoice') {
+                        $errors[] = "Canonical graph stock_movement.source_type must be 'sales_invoice', got '".($gSm['source_type'] ?? 'null')."'.";
+                    }
+                    if ((int) ($gSm['source_id'] ?? 0) !== $invId) {
+                        $errors[] = "Canonical graph stock_movement.source_id mismatch: expected {$invId}, got ".($gSm['source_id'] ?? 'null').'.';
+                    }
+                    if (($gSm['quantity_delta_base'] ?? '') !== '-1.000000') {
+                        $errors[] = "Canonical graph stock_movement.quantity_delta_base must be '-1.000000', got '".($gSm['quantity_delta_base'] ?? 'null')."'.";
+                    }
+                }
+
+                // 4. Sales Invoice Lot Allocation entity in canonical_graph
+                $gLotAlloc = $graph['sales_invoice_lot_allocation'] ?? null;
+                if (! is_array($gLotAlloc)) {
+                    $errors[] = 'Canonical graph sales_invoice_lot_allocation entry is missing or not an array.';
+                } else {
+                    if ((int) ($gLotAlloc['id'] ?? 0) <= 0) {
+                        $errors[] = 'Canonical graph sales_invoice_lot_allocation.id must be a positive integer.';
+                    }
+                    if ((int) ($gLotAlloc['sales_invoice_id'] ?? 0) !== $invId) {
+                        $errors[] = "Canonical graph sales_invoice_lot_allocation.sales_invoice_id mismatch: expected {$invId}, got ".($gLotAlloc['sales_invoice_id'] ?? 'null').'.';
+                    }
+                    if ($lineId !== null && (int) ($gLotAlloc['sales_invoice_line_id'] ?? 0) !== $lineId) {
+                        $errors[] = "Canonical graph sales_invoice_lot_allocation.sales_invoice_line_id mismatch: expected {$lineId}, got ".($gLotAlloc['sales_invoice_line_id'] ?? 'null').'.';
+                    }
+                    if ($smId !== null && isset($gLotAlloc['stock_movement_id']) && $gLotAlloc['stock_movement_id'] !== null && (int) $gLotAlloc['stock_movement_id'] !== $smId) {
+                        $errors[] = "Canonical graph sales_invoice_lot_allocation.stock_movement_id mismatch: expected {$smId}, got ".($gLotAlloc['stock_movement_id'] ?? 'null').'.';
+                    }
+                    if (($gLotAlloc['quantity_allocated_base'] ?? '') !== '1.000000') {
+                        $errors[] = "Canonical graph sales_invoice_lot_allocation.quantity_allocated_base must be '1.000000', got '".($gLotAlloc['quantity_allocated_base'] ?? 'null')."'.";
+                    }
+                }
+
+                // 5. Customer Payment entity in canonical_graph
+                $gPayment = $graph['customer_payment'] ?? null;
+                if (! is_array($gPayment)) {
+                    $errors[] = 'Canonical graph customer_payment entry is missing or not an array.';
+                } else {
+                    if ((int) ($gPayment['id'] ?? 0) !== $payId) {
+                        $errors[] = "Canonical graph customer_payment.id mismatch: expected {$payId}, got ".($gPayment['id'] ?? 'null').'.';
+                    }
+                    if ((string) ($gPayment['public_id'] ?? '') !== $payPubId) {
+                        $errors[] = "Canonical graph customer_payment.public_id mismatch: expected '{$payPubId}', got '".($gPayment['public_id'] ?? 'null')."'.";
+                    }
+                    if ($expectedCompanyId > 0 && (int) ($gPayment['company_id'] ?? 0) !== $expectedCompanyId) {
+                        $errors[] = "Canonical graph customer_payment.company_id mismatch: expected {$expectedCompanyId}, got ".($gPayment['company_id'] ?? 'null').'.';
+                    }
+                    if (($gPayment['payment_method'] ?? '') !== 'cash') {
+                        $errors[] = "Canonical graph customer_payment.payment_method must be 'cash', got '".($gPayment['payment_method'] ?? 'null')."'.";
+                    }
+                    if (($gPayment['amount'] ?? '') !== '58.000000') {
+                        $errors[] = "Canonical graph customer_payment.amount must be '58.000000', got '".($gPayment['amount'] ?? 'null')."'.";
+                    }
+                    if (($gPayment['amount_base'] ?? '') !== '58.000000') {
+                        $errors[] = "Canonical graph customer_payment.amount_base must be '58.000000', got '".($gPayment['amount_base'] ?? 'null')."'.";
+                    }
+                    if (! is_int($gPayment['posting_batch_id'] ?? null) || ($gPayment['posting_batch_id'] ?? 0) <= 0) {
+                        $errors[] = 'Canonical graph customer_payment.posting_batch_id must be a positive integer.';
+                    }
+                }
+
+                // 6. Customer Payment Allocation entity in canonical_graph
+                $gPayAlloc = $graph['customer_payment_allocation'] ?? null;
+                if (! is_array($gPayAlloc)) {
+                    $errors[] = 'Canonical graph customer_payment_allocation entry is missing or not an array.';
+                } else {
+                    if ((int) ($gPayAlloc['id'] ?? 0) <= 0) {
+                        $errors[] = 'Canonical graph customer_payment_allocation.id must be a positive integer.';
+                    }
+                    if ((int) ($gPayAlloc['customer_payment_id'] ?? 0) !== $payId) {
+                        $errors[] = "Canonical graph customer_payment_allocation.customer_payment_id mismatch: expected {$payId}, got ".($gPayAlloc['customer_payment_id'] ?? 'null').'.';
+                    }
+                    if ((int) ($gPayAlloc['sales_invoice_id'] ?? 0) !== $invId) {
+                        $errors[] = "Canonical graph customer_payment_allocation.sales_invoice_id mismatch: expected {$invId}, got ".($gPayAlloc['sales_invoice_id'] ?? 'null').'.';
+                    }
+                    if (($gPayAlloc['allocated_amount'] ?? '') !== '58.000000') {
+                        $errors[] = "Canonical graph customer_payment_allocation.allocated_amount must be '58.000000', got '".($gPayAlloc['allocated_amount'] ?? 'null')."'.";
+                    }
+                    if (($gPayAlloc['payment_currency_amount'] ?? '') !== '58.000000') {
+                        $errors[] = "Canonical graph customer_payment_allocation.payment_currency_amount must be '58.000000', got '".($gPayAlloc['payment_currency_amount'] ?? 'null')."'.";
+                    }
+                }
+
+                // 7. GL Posting Batches in canonical_graph
+                $gBatches = $graph['posting_batches'] ?? null;
+                if (! is_array($gBatches) || count($gBatches) !== 2) {
+                    $errors[] = 'Canonical graph posting_batches must contain exactly 2 batches, got '.(is_array($gBatches) ? count($gBatches) : 'non-array').'.';
+                } else {
+                    $foundInvBatch = false;
+                    $foundPayBatch = false;
+                    foreach ($gBatches as $b) {
+                        $srcType = (string) ($b['source_type'] ?? '');
+                        $srcId = (int) ($b['source_id'] ?? 0);
+                        $status = (string) ($b['status'] ?? '');
+                        if ($status !== 'posted') {
+                            $errors[] = "Canonical graph posting batch {$b['id']} status must be 'posted', got '{$status}'.";
+                        }
+                        if ($srcType === 'sales_invoice' && $srcId === $invId) {
+                            $foundInvBatch = true;
+                            if (isset($gInvoice['posting_batch_id']) && (int) ($b['id'] ?? 0) !== (int) $gInvoice['posting_batch_id']) {
+                                $errors[] = "Posting batch ID {$b['id']} does not match sales_invoice.posting_batch_id {$gInvoice['posting_batch_id']}.";
+                            }
+                        } elseif ($srcType === 'customer_payment' && $srcId === $payId) {
+                            $foundPayBatch = true;
+                            if (isset($gPayment['posting_batch_id']) && (int) ($b['id'] ?? 0) !== (int) $gPayment['posting_batch_id']) {
+                                $errors[] = "Posting batch ID {$b['id']} does not match customer_payment.posting_batch_id {$gPayment['posting_batch_id']}.";
+                            }
+                        }
+                        $bLines = $b['lines'] ?? [];
+                        if (! is_array($bLines) || count($bLines) < 2) {
+                            $errors[] = "Canonical graph posting batch {$b['id']} must have >= 2 posting lines.";
+                        } else {
+                            $deb = BigDecimal::zero();
+                            $crd = BigDecimal::zero();
+                            foreach ($bLines as $l) {
+                                $deb = $deb->plus((string) ($l['debit_base'] ?? '0'));
+                                $crd = $crd->plus((string) ($l['credit_base'] ?? '0'));
+                            }
+                            if ($deb->isZero() || $crd->isZero() || $deb->toScale(6)->compareTo($crd->toScale(6)) !== 0) {
+                                $errors[] = "Canonical graph posting batch {$b['id']} lines are unbalanced: debit {$deb} vs credit {$crd}.";
+                            }
+                        }
+                    }
+                    if (! $foundInvBatch) {
+                        $errors[] = "Canonical graph missing posting batch for sales_invoice {$invId}.";
+                    }
+                    if (! $foundPayBatch) {
+                        $errors[] = "Canonical graph missing posting batch for customer_payment {$payId}.";
+                    }
+                }
+
+                // 8. Document Sequences in canonical_graph
+                $gDocSeqs = $graph['document_sequences'] ?? null;
+                if (! is_array($gDocSeqs) || ! isset($gDocSeqs['before']) || ! isset($gDocSeqs['after'])) {
+                    $errors[] = "Canonical graph document_sequences must contain 'before' and 'after' sequence mappings.";
+                }
+
+                // 9. Mobile Event Receipt in canonical_graph
+                $gReceipt = $graph['mobile_event_receipt'] ?? null;
+                if (! is_array($gReceipt)) {
+                    $errors[] = 'Canonical graph mobile_event_receipt entry is missing or not an array.';
+                } else {
+                    if ((int) ($gReceipt['id'] ?? 0) <= 0) {
+                        $errors[] = 'Canonical graph mobile_event_receipt.id must be a positive integer.';
+                    }
+                    if ($expectedCompanyId > 0 && (int) ($gReceipt['company_id'] ?? 0) !== $expectedCompanyId) {
+                        $errors[] = "Canonical graph mobile_event_receipt.company_id mismatch: expected {$expectedCompanyId}, got ".($gReceipt['company_id'] ?? 'null').'.';
+                    }
+                    if ($expectedEventId !== '' && (string) ($gReceipt['client_event_id'] ?? '') !== $expectedEventId) {
+                        $errors[] = "Canonical graph mobile_event_receipt.client_event_id mismatch: expected '{$expectedEventId}', got '".($gReceipt['client_event_id'] ?? 'null')."'.";
+                    }
+                    if (($gReceipt['status'] ?? '') !== 'completed') {
+                        $errors[] = "Canonical graph mobile_event_receipt.status must be 'completed', got '".($gReceipt['status'] ?? 'null')."'.";
+                    }
+                    if ((int) ($gReceipt['sales_invoice_id'] ?? 0) !== $invId) {
+                        $errors[] = "Canonical graph mobile_event_receipt.sales_invoice_id mismatch: expected {$invId}, got ".($gReceipt['sales_invoice_id'] ?? 'null').'.';
+                    }
+                    if ((string) ($gReceipt['sales_invoice_public_id'] ?? '') !== $invPubId) {
+                        $errors[] = "Canonical graph mobile_event_receipt.sales_invoice_public_id mismatch: expected '{$invPubId}', got '".($gReceipt['sales_invoice_public_id'] ?? 'null')."'.";
+                    }
+                    if ((int) ($gReceipt['customer_payment_id'] ?? 0) !== $payId) {
+                        $errors[] = "Canonical graph mobile_event_receipt.customer_payment_id mismatch: expected {$payId}, got ".($gReceipt['customer_payment_id'] ?? 'null').'.';
+                    }
+                    if ((string) ($gReceipt['customer_payment_public_id'] ?? '') !== $payPubId) {
+                        $errors[] = "Canonical graph mobile_event_receipt.customer_payment_public_id mismatch: expected '{$payPubId}', got '".($gReceipt['customer_payment_public_id'] ?? 'null')."'.";
+                    }
+                    if ($normExpectedDigest !== null) {
+                        $rDigest = (string) ($gReceipt['payload_digest'] ?? '');
+                        $normReceiptDigest = str_starts_with($rDigest, 'sha256:') ? substr($rDigest, 7) : $rDigest;
+                        if (! hash_equals($normExpectedDigest, $normReceiptDigest)) {
+                            $errors[] = "Canonical graph mobile_event_receipt.payload_digest mismatch: expected '{$normExpectedDigest}', got '{$normReceiptDigest}'.";
+                        }
+                    }
                 }
             }
 
