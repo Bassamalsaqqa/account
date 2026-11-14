@@ -850,7 +850,11 @@ PHP;
 
             // 3. Missing nonce proof capability refuses before socket
             $cfgValid = $this->createChildConfigFile($schema);
-            $procNoProof = new Process([PHP_BINARY, $scriptPath, $cfgValid], dirname(__DIR__, 3), ['APP_ENV' => 'testing']);
+            $procNoProof = new Process([PHP_BINARY, $scriptPath, $cfgValid], dirname(__DIR__, 3), [
+                'APP_ENV' => 'testing',
+                'PHASE8_DISPOSABLE_DB_PROOF' => '',
+                'PHASE8_DISPOSABLE_DB_NONCE' => '',
+            ]);
             $procNoProof->run();
             self::assertSame(2, $procNoProof->getExitCode(), 'Child must reject missing nonce proof before socket');
             self::assertStringContainsString('REFUSED_PROOF_CHECK', $procNoProof->getErrorOutput());
