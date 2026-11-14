@@ -1,0 +1,83 @@
+{
+    "manifest_version": "1.0.0",
+    "review_context": {
+        "review_id": "5905683371",
+        "fetched_head_sha": "6e8c01cbfed9d11fd79e50699ff1a51ae8f4e72e",
+        "fetched_at": "2026-11-14T16:06:33Z",
+        "review_scope": "SOURCE_ONLY_EVIDENCE_PUBLICATION",
+        "existing_core_status": "ACCEPTED_DO_NOT_REDO",
+        "qualified_core_sha": "6981511405d7bcd04cd8f8a09e64443ce0aaf47e",
+        "core_invariance_verified": true
+    },
+    "provenance_and_pins": {
+        "client_handoff_schema_sha256": "edaef0309765e10d6462b36b5c660eb02f65c057c810ab72f756f7664e3ca275",
+        "source_fixture_sha256": "c84162a7d20e231f4cf41e13de665b5ee8c220caf379225d62f2cfcc01bfce17",
+        "guard_test_sha256": "bc2f388eb4c889e2088728bceb5d4d1fb1acb07c2828fc84ed7d980a5833ce08",
+        "cli_command_sha256": "bb951b183ba2249cf76b43a18638d78fb27829fa3dfa948ea515c4ad8d1e8d92",
+        "cli_runner_sha256": "3de792b8b584e69a202248976885e4c5cc819e53707f0462d3e4c6dc1330400e",
+        "runtime_pairing_manifest_sha256": "5d829519aae663812f9b73604fa270b810c34b3e6157ae5bd0c9e06c628669a9",
+        "runtime_pairing_scope": "ROOT_AUTHORIZED_READINESS_ONLY",
+        "peer_android_approved_head_sha": "019ea39af09558c2622356cb22235572747e3ddc",
+        "peer_android_executable_head_sha": "ddfc75536e647c65a6a7e8868c9336cee93769ec"
+    },
+    "historical_vs_current_execution": {
+        "prior_standalone_provision_head": "4a2e0b28f8b4a4bced4a4aed3e7f69abaf7c3ac1",
+        "current_head_execution": {
+            "head_sha": "6e8c01cbfed9d11fd79e50699ff1a51ae8f4e72e",
+            "command": "mobile-v2-harness-cli.php --run --readiness-only",
+            "duration_seconds": 8.236,
+            "exit_code": 0,
+            "pure_guard_tests": {
+                "tests": 44,
+                "assertions": 163,
+                "errors": 0,
+                "failures": 0,
+                "database_sockets": 0,
+                "network_sockets": 0
+            },
+            "disposable_schema_name": "accounting_p8_tmp_ad42c06ee92a",
+            "disposable_schema_dropped": true
+        }
+    },
+    "captured_artifact_qualification": {
+        "status": "PROVISIONED_AWAITING_TLS_START_ONLY",
+        "captured_handoff_sha256": "964e7bcfe6b8a140f043e921e99da6020258434b6649a47dcf9225c7ddcad6d3",
+        "raw_wire_sample_sha256": "17439ef479eef0328b178c72e0b5214bcd8937eac1b20de95fed132ed3488822",
+        "canonical_intent_profile_digest": "sha256:e63c977f609de1794833d2dca34978ddfbf7126af3a30a6a202bf14b1689a86f",
+        "test_ca_cert_sha256": "478a81b5dc2b3e7ac34abf365d82c1ada3d8cfe53c63289d40daec58ac7cd9e2",
+        "active_tls_ready_file_hash": null,
+        "root_ready_file_hash": null,
+        "credentials_or_tokens_published": false
+    },
+    "cleanup_verification": {
+        "root_verified": true,
+        "schemas_remaining": 0,
+        "temp_directories_remaining": 0,
+        "ports_listening": [],
+        "worktree_clean": true
+    },
+    "unexecuted_gaps_record": [
+        "Readiness TLS negative test cases (negative CA cert rejection, nonce mismatch, HTTP method/path negatives) not executed against live proxy",
+        "Intermediate transport process failure cleanup (simulated killed child / crashed caddy during active transport) not exercised live",
+        "Standalone --prepare and --provision exact logs on 6e8c not retained (only --run --readiness-only logged)",
+        "Pure guard tests include pre-socket refusals and fresh subprocess router test, NOT live network HTTP financial 403 proof"
+    ],
+    "gate_checklist_review_5905683371": {
+        "accepted": [
+            "Core 187/1440 qualification and route cache DAG invariance",
+            "Child process autoload sequencing moved before readiness route handler",
+            "Pure guard test suite passing (44 tests, 163 assertions, 0 errors, 0 failures)",
+            "Subprocess router execution test verifying classloader isolation pre-framework",
+            "Lifecycle scope assertions (assertLifecycleScope) enforcing ROOT_AUTHORIZED_READINESS_ONLY",
+            "Pure source invariance maintained against 6981511405d7bcd04cd8f8a09e64443ce0aaf47e",
+            "Worker TLS readiness probe verified HTTP 200 with matching nonce over CA-trusted TLS",
+            "Bounded cleanup verified (schemas=0, temp dirs=0, ports free, lease released)"
+        ],
+        "pending": [
+            "Live TLS negative cases (untrusted CA, corrupted nonce) on live proxy",
+            "Intermediate transport process failure recovery live drill",
+            "Android track coordination (candidate ad10 P1 being fixed source-first; no approved new runner, no TLS start, no pair grant)",
+            "Paired execution gate (requires new reviewed Android runner and fresh ACTIVE_TLS_READY handoff hash verified by Root)"
+        ]
+    }
+}
