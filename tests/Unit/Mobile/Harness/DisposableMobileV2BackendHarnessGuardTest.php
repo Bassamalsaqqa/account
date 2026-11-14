@@ -415,7 +415,7 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
     {
         // Port 59876 is an unassigned dynamic port; calling assertPortsAvailable on it should succeed
         DisposableMobileV2BackendHarness::assertPortsAvailable(59876);
-        $this->assertTrue(true);
+        $this->expectNotToPerformAssertions();
     }
 
     #[Test]

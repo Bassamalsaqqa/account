@@ -2,6 +2,12 @@
 
 declare(strict_types=1);
 
+use Illuminate\Contracts\Console\Kernel;
+use Illuminate\Foundation\Application;
+use Symfony\Component\Console\Application as ConsoleApplication;
+use Tests\Support\Harness\DisposableMobileV2BackendHarness;
+use Tests\Support\Harness\MobileV2HarnessCommand;
+
 // CLI entrypoint for Mobile V2 Harness driver (tests/Support/Harness)
 // Does NOT modify production application or console commands.
 // Zero-framework bootstrap on --prepare or argument validation failure.
@@ -44,9 +50,6 @@ if (! $isProvision && ! $isStart && ! $isRun) {
 
 // SAFE AUTOLOAD ONLY (no bootstrap/app.php, no Laravel kernel, zero repo .env loading)
 require __DIR__.'/../../../vendor/autoload.php';
-
-use Tests\Support\Harness\DisposableMobileV2BackendHarness;
-use Tests\Support\Harness\MobileV2HarnessCommand;
 
 if ($isPrepare) {
     echo "Mobile V2 Harness — Source-Only Prepare (zero sockets, zero DB, zero framework boot)\n";
@@ -109,7 +112,7 @@ try {
         manifestPath: $pairingManifest,
         manifestShaPin: $pairingManifestSha,
     );
-} catch (\Throwable $e) {
+} catch (Throwable $e) {
     fwrite(STDERR, "Harness refused before framework boot: {$e->getMessage()}\n");
     exit(1);
 }
@@ -143,13 +146,13 @@ foreach ($isolatedEnv as $k => $v) {
     $_SERVER[$k] = $v;
 }
 
-/** @var \Illuminate\Foundation\Application $app */
+/** @var Application $app */
 $app = require __DIR__.'/../../../bootstrap/app.php';
 
-$kernel = $app->make(\Illuminate\Contracts\Console\Kernel::class);
+$kernel = $app->make(Kernel::class);
 $kernel->bootstrap();
 
-$console = new \Symfony\Component\Console\Application('Mobile V2 Harness CLI', '1.0.0');
+$console = new ConsoleApplication('Mobile V2 Harness CLI', '1.0.0');
 $command = new MobileV2HarnessCommand;
 $command->setLaravel($app);
 $console->addCommand($command);

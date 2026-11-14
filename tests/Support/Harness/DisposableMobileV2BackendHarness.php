@@ -4,22 +4,23 @@ declare(strict_types=1);
 
 namespace Tests\Support\Harness;
 
+use App\Actions\Company\CreateCompanyAction;
 use App\Actions\Inventory\PostOpeningStockAction;
-use App\Actions\Tenancy\CreateCompanyAction;
-use App\Models\Accounting\MoneyAccount;
+use App\Domain\Inventory\ValueObjects\Quantity;
 use App\Models\Company;
 use App\Models\CompanyUser;
 use App\Models\Customer;
-use App\Models\Inventory\Product;
-use App\Models\Inventory\UnitOfMeasure;
-use App\Models\Inventory\Warehouse;
-use App\Models\Mobile\MobileAccessToken;
-use App\Models\Mobile\MobileDevice;
-use App\Models\Tax\TaxRate;
+use App\Models\MobileAccessToken;
+use App\Models\MobileDevice;
+use App\Models\MoneyAccount;
+use App\Models\Product;
+use App\Models\ProductUnit;
+use App\Models\TaxRate;
+use App\Models\Unit;
 use App\Models\User;
-use App\Services\CompanyContext;
+use App\Models\Warehouse;
 use App\Services\Tenancy\CompanyRoleService;
-use App\ValueObjects\Quantity;
+use App\Support\Tenancy\CompanyContext;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
@@ -154,6 +155,9 @@ final class DisposableMobileV2BackendHarness
      */
     private ?array $fixtureManifest = null;
 
+    /**
+     * @return array<string, mixed>|null
+     */
     public function getFixtureManifest(): ?array
     {
         return $this->fixtureManifest;
@@ -629,46 +633,45 @@ final class DisposableMobileV2BackendHarness
                 'default_currency_code' => 'ILS',
                 'preferred_locale' => 'ar',
                 'status' => 'active',
+                'created_by' => $owner->id,
             ]);
 
-            $warehouse = Warehouse::create([
+            $warehouse = Warehouse::where('company_id', $company->id)->where('is_default', true)->firstOrFail();
+
+            $baseUnit = Unit::where('company_id', $company->id)->where('code', 'piece')->firstOrFail();
+
+            $product = Product::create([
                 'company_id' => $company->id,
-                'name_ar' => 'المستودع الرئيسي للتكامل',
-                'name_en' => 'Main Integration Warehouse',
-                'status' => 'active',
-                'is_default' => true,
+                'base_unit_id' => $baseUnit->id,
+                'name_ar' => 'منتج تكامل مؤهل',
+                'name_en' => 'Qualified Integration Product',
+                'sku' => 'QUAL-PROD-001',
+                'product_type' => 'stock',
+                'track_stock' => true,
+                'active' => true,
+                'created_by' => $owner->id,
             ]);
 
-            $baseUnit = UnitOfMeasure::create([
+            ProductUnit::create([
                 'company_id' => $company->id,
-                'name_ar' => 'قطعة',
-                'name_en' => 'Piece',
-                'code' => 'PCS',
-                'status' => 'active',
+                'product_id' => $product->id,
+                'unit_id' => $baseUnit->id,
+                'conversion_to_base' => '1.000000',
+                'is_base' => true,
+                'is_default_sale' => true,
+                'is_default_purchase' => true,
+                'active' => true,
+                'default_sale_price_base' => '50.000000',
             ]);
 
             $taxRate = TaxRate::create([
                 'company_id' => $company->id,
-                'name_ar' => 'ضريبة القيمة المضافة',
+                'code' => 'VAT16',
+                'name_ar' => 'ضريبة القيمة المضافة 16%',
                 'name_en' => 'VAT 16%',
                 'rate' => '16.000000',
-                'tax_type' => TaxRate::TYPE_STANDARD,
-                'status' => 'active',
-            ]);
-
-            $product = Product::create([
-                'company_id' => $company->id,
-                'name_ar' => 'منتج تكامل مؤهل',
-                'name_en' => 'Qualified Integration Product',
-                'sku' => 'QUAL-PROD-001',
-                'type' => Product::TYPE_STOCK,
-                'base_unit_id' => $baseUnit->id,
-                'base_unit_price' => '50.000000',
-                'default_tax_rate_id' => $taxRate->id,
-                'is_tax_inclusive' => false,
-                'currency_code' => 'ILS',
-                'track_inventory' => true,
-                'status' => 'active',
+                'calculation' => 'exclusive',
+                'active' => true,
             ]);
 
             // Post opening stock under explicit owner authentication context
