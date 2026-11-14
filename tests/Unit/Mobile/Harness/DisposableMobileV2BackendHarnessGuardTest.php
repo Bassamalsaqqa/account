@@ -6,37 +6,59 @@ namespace Tests\Unit\Mobile\Harness;
 
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
+use ReflectionClass;
 use RuntimeException;
 use Tests\Support\Harness\DisposableMobileV2BackendHarness;
 
 /**
- * Pure Source-Only No-Socket Guard Tests for Backend Harness.
+ * Pure source-only guard tests for DisposableMobileV2BackendHarness.
  *
- * Verifies pre-socket failure invariants, fail-closed assertions, transport guard
- * semantics, candidate rejection, Caddy security config, and cleanup semantics
- * with zero database sockets, zero background processes, and zero network calls.
- *
- * All tests run as plain PHPUnit (no Laravel boot). APP_ENV=testing is provided
- * by phpunit.xml; PHASE8_ALLOW_DISPOSABLE_DB and PHASE8_TEST_DB_* are explicitly
- * managed per test to exercise each guard layer independently.
+ * Exercises execution environment invariants, default-deny boundaries, port assertions,
+ * and dual manifest validation WITHOUT touching any database, listening sockets, or background processes.
  */
-final class DisposableMobileV2BackendHarnessGuardTest extends TestCase
+class DisposableMobileV2BackendHarnessGuardTest extends TestCase
 {
+    private ?string $originalEnable;
+
+    private ?string $originalHost;
+
+    private ?string $originalPort;
+
+    private ?string $originalAllowDb;
+
+    private ?string $originalListener;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        $this->originalEnable = getenv('MOBILE_V2_HARNESS_ENABLE') ?: null;
+        $this->originalHost = getenv('PHASE8_TEST_DB_HOST') ?: null;
+        $this->originalPort = getenv('PHASE8_TEST_DB_PORT') ?: null;
+        $this->originalAllowDb = getenv('PHASE8_ALLOW_DISPOSABLE_DB') ?: null;
+        $this->originalListener = getenv('MOBILE_V2_HARNESS_START_LISTENER') ?: null;
+    }
+
     protected function tearDown(): void
     {
-        putenv('MOBILE_V2_HARNESS_ENABLE');
-        putenv('MOBILE_V2_HARNESS_START_LISTENER');
-        putenv('PHASE8_TEST_DB_HOST');
-        putenv('PHASE8_TEST_DB_PORT');
+        $this->restoreEnv('MOBILE_V2_HARNESS_ENABLE', $this->originalEnable);
+        $this->restoreEnv('PHASE8_TEST_DB_HOST', $this->originalHost);
+        $this->restoreEnv('PHASE8_TEST_DB_PORT', $this->originalPort);
+        $this->restoreEnv('PHASE8_ALLOW_DISPOSABLE_DB', $this->originalAllowDb);
+        $this->restoreEnv('MOBILE_V2_HARNESS_START_LISTENER', $this->originalListener);
         parent::tearDown();
     }
 
-    // -------------------------------------------------------------------------
-    // Pre-socket invariant guards (source-only, no DB/process)
-    // -------------------------------------------------------------------------
+    private function restoreEnv(string $key, ?string $value): void
+    {
+        if ($value !== null) {
+            putenv("{$key}={$value}");
+        } else {
+            putenv($key);
+        }
+    }
 
     #[Test]
-    public function test_assert_pre_socket_invariants_fails_closed_when_harness_not_enabled(): void
+    public function test_default_deny_when_env_flag_missing(): void
     {
         putenv('MOBILE_V2_HARNESS_ENABLE');
 
@@ -49,14 +71,13 @@ final class DisposableMobileV2BackendHarnessGuardTest extends TestCase
     }
 
     #[Test]
-    public function test_assert_pre_socket_invariants_fails_closed_on_invalid_db_host(): void
+    public function test_assert_pre_socket_invariants_rejects_non_loopback_db_host(): void
     {
         putenv('MOBILE_V2_HARNESS_ENABLE=1');
         putenv('PHASE8_TEST_DB_HOST=192.168.1.100');
-        putenv('PHASE8_TEST_DB_PORT=3342');
 
         $this->expectException(RuntimeException::class);
-        $this->expectExceptionMessage('Harness refused: DB host must be explicitly 127.0.0.1');
+        $this->expectExceptionMessage("Harness refused: DB host must be explicitly 127.0.0.1, got '192.168.1.100'.");
 
         DisposableMobileV2BackendHarness::assertPreSocketInvariants(
             expectedBackendHead: DisposableMobileV2BackendHarness::QUALIFIED_EXECUTION_HEAD
@@ -64,14 +85,14 @@ final class DisposableMobileV2BackendHarnessGuardTest extends TestCase
     }
 
     #[Test]
-    public function test_assert_pre_socket_invariants_fails_closed_on_invalid_db_port(): void
+    public function test_assert_pre_socket_invariants_rejects_wrong_db_port(): void
     {
         putenv('MOBILE_V2_HARNESS_ENABLE=1');
         putenv('PHASE8_TEST_DB_HOST=127.0.0.1');
         putenv('PHASE8_TEST_DB_PORT=3306');
 
         $this->expectException(RuntimeException::class);
-        $this->expectExceptionMessage('Harness refused: DB port must be explicitly 3342');
+        $this->expectExceptionMessage("Harness refused: DB port must be explicitly 3342, got '3306'.");
 
         DisposableMobileV2BackendHarness::assertPreSocketInvariants(
             expectedBackendHead: DisposableMobileV2BackendHarness::QUALIFIED_EXECUTION_HEAD
@@ -79,29 +100,29 @@ final class DisposableMobileV2BackendHarnessGuardTest extends TestCase
     }
 
     #[Test]
-    public function test_assert_pre_socket_invariants_fails_closed_on_mismatched_expected_backend_head(): void
+    public function test_assert_pre_socket_invariants_rejects_empty_or_invalid_backend_head(): void
     {
         putenv('MOBILE_V2_HARNESS_ENABLE=1');
         putenv('PHASE8_TEST_DB_HOST=127.0.0.1');
         putenv('PHASE8_TEST_DB_PORT=3342');
 
         $this->expectException(RuntimeException::class);
-        $this->expectExceptionMessage("Harness refused: current git HEAD does not match expected backend HEAD '0000000000000000000000000000000000000000'");
+        $this->expectExceptionMessage("Harness refused: expectedBackendHead must be a full 40-hex SHA, got 'invalid-head'.");
 
         DisposableMobileV2BackendHarness::assertPreSocketInvariants(
-            expectedBackendHead: '0000000000000000000000000000000000000000'
+            expectedBackendHead: 'invalid-head'
         );
     }
 
     #[Test]
-    public function test_assert_pre_socket_invariants_fails_closed_on_invalid_peer_android_head(): void
+    public function test_assert_pre_socket_invariants_rejects_invalid_peer_android_head_format(): void
     {
         putenv('MOBILE_V2_HARNESS_ENABLE=1');
         putenv('PHASE8_TEST_DB_HOST=127.0.0.1');
         putenv('PHASE8_TEST_DB_PORT=3342');
 
         $this->expectException(RuntimeException::class);
-        $this->expectExceptionMessage('Harness refused: peerAndroidHead must be a valid 40-hex SHA');
+        $this->expectExceptionMessage("Harness refused: peerAndroidHead must be a valid 40-hex SHA, got 'not-a-valid-sha'.");
 
         DisposableMobileV2BackendHarness::assertPreSocketInvariants(
             expectedBackendHead: DisposableMobileV2BackendHarness::QUALIFIED_EXECUTION_HEAD,
@@ -128,30 +149,26 @@ final class DisposableMobileV2BackendHarnessGuardTest extends TestCase
     }
 
     #[Test]
-    public function test_start_fails_closed_on_invalid_peer_android_head_format(): void
+    public function test_start_args_rejects_invalid_peer_android_head_format(): void
     {
-        $harness = new DisposableMobileV2BackendHarness;
-
         $this->expectException(RuntimeException::class);
-        $this->expectExceptionMessageMatches('/Harness refused: must be provisioned before start/');
+        $this->expectExceptionMessage("Harness refused: start requires valid 40-hex peerAndroidHead SHA, got 'bad-format'.");
 
-        $harness->start(
+        DisposableMobileV2BackendHarness::validateStartArgs(
             peerAndroidHead: 'bad-format',
-            backendHead: '0000000000000000000000000000000000000000',
+            backendHead: DisposableMobileV2BackendHarness::QUALIFIED_EXECUTION_HEAD
         );
     }
 
     #[Test]
-    public function test_start_fails_closed_on_invalid_backend_head_format(): void
+    public function test_start_args_rejects_invalid_backend_head_format(): void
     {
-        $harness = new DisposableMobileV2BackendHarness;
-
         $this->expectException(RuntimeException::class);
-        $this->expectExceptionMessageMatches('/Harness refused: must be provisioned before start/');
+        $this->expectExceptionMessage("Harness refused: start requires valid 40-hex backendHead SHA, got 'not-a-sha'.");
 
-        $harness->start(
-            peerAndroidHead: '0000000000000000000000000000000000000000',
-            backendHead: 'not-a-sha',
+        DisposableMobileV2BackendHarness::validateStartArgs(
+            peerAndroidHead: DisposableMobileV2BackendHarness::QUALIFIED_EXECUTION_HEAD,
+            backendHead: 'not-a-sha'
         );
     }
 
@@ -164,37 +181,55 @@ final class DisposableMobileV2BackendHarnessGuardTest extends TestCase
         DisposableMobileV2BackendHarness::assertDualManifestPin(
             backendHead: DisposableMobileV2BackendHarness::QUALIFIED_EXECUTION_HEAD,
             peerAndroidHead: DisposableMobileV2BackendHarness::ANDROID_CANDIDATE_KNOWN_BAD,
+            manifestShaPin: str_repeat('a', 64),
         );
     }
 
     #[Test]
-    public function test_dual_manifest_pin_refuses_when_no_approved_android_head_provided(): void
+    public function test_dual_manifest_pin_requires_mandatory_manifest_sha_pin(): void
     {
         $this->expectException(RuntimeException::class);
-        $this->expectExceptionMessageMatches('/no approved peer Android HEAD provided/');
+        $this->expectExceptionMessage('Harness refused: mandatory external pairing manifest SHA-256 pin is required.');
 
         DisposableMobileV2BackendHarness::assertDualManifestPin(
             backendHead: DisposableMobileV2BackendHarness::QUALIFIED_EXECUTION_HEAD,
             peerAndroidHead: '1111111111111111111111111111111111111111',
-            approvedAndroidHead: null,
+            manifestShaPin: null,
         );
     }
 
     #[Test]
-    public function test_dual_manifest_pin_refuses_mismatched_approved_android_head(): void
+    public function test_dual_manifest_pin_refuses_manifest_sha_mismatch(): void
     {
         $this->expectException(RuntimeException::class);
-        $this->expectExceptionMessageMatches('/does not match Root-approved HEAD/');
+        $this->expectExceptionMessageMatches('/integration manifest SHA mismatch/');
 
         DisposableMobileV2BackendHarness::assertDualManifestPin(
             backendHead: DisposableMobileV2BackendHarness::QUALIFIED_EXECUTION_HEAD,
             peerAndroidHead: '1111111111111111111111111111111111111111',
-            approvedAndroidHead: '2222222222222222222222222222222222222222',
+            manifestShaPin: str_repeat('f', 64),
         );
     }
 
     #[Test]
-    public function test_start_listener_gate_refuses_without_env_flag(): void
+    public function test_dual_manifest_pin_refuses_unset_peer_android_head_in_manifest(): void
+    {
+        $manifestPath = dirname(__DIR__, 4).'/docs/integration/mobile-v2-integration-manifest.json';
+        $actualSha = hash_file('sha256', $manifestPath);
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessageMatches('/pairing manifest has unapproved peer Android HEAD/');
+
+        DisposableMobileV2BackendHarness::assertDualManifestPin(
+            backendHead: DisposableMobileV2BackendHarness::QUALIFIED_EXECUTION_HEAD,
+            peerAndroidHead: '1111111111111111111111111111111111111111',
+            manifestPath: $manifestPath,
+            manifestShaPin: (string) $actualSha,
+        );
+    }
+
+    #[Test]
+    public function test_start_fails_closed_without_start_listener_env_flag(): void
     {
         putenv('MOBILE_V2_HARNESS_START_LISTENER');
 
@@ -202,6 +237,30 @@ final class DisposableMobileV2BackendHarnessGuardTest extends TestCase
 
         $this->expectException(RuntimeException::class);
         $this->expectExceptionMessage('Harness refused: must be provisioned before start');
+
+        $harness->start(
+            peerAndroidHead: '0000000000000000000000000000000000000000',
+            backendHead: DisposableMobileV2BackendHarness::QUALIFIED_EXECUTION_HEAD,
+        );
+    }
+
+    #[Test]
+    public function test_start_refuses_when_harness_nonce_is_unset(): void
+    {
+        $harness = new DisposableMobileV2BackendHarness;
+
+        // Inject provisioned state via reflection while leaving harnessNonce null
+        $ref = new ReflectionClass($harness);
+        $propProv = $ref->getProperty('provisioned');
+        $propProv->setValue($harness, true);
+
+        // Dummy non-null schema to reach nonce check
+        $propSchema = $ref->getProperty('schema');
+        $schemaMock = $this->createMock(\Tests\Support\DisposableMariaDbSchema::class);
+        $propSchema->setValue($harness, $schemaMock);
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('Harness start refused: harness nonce is unset. Harness must be provisioned before start.');
 
         $harness->start(
             peerAndroidHead: '0000000000000000000000000000000000000000',

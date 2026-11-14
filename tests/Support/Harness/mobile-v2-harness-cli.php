@@ -14,6 +14,8 @@ $isStart = false;
 $isRun = false;
 $backendHead = null;
 $androidHead = null;
+$pairingManifest = null;
+$pairingManifestSha = null;
 
 foreach ($argvList as $arg) {
     if ($arg === '--prepare') {
@@ -28,6 +30,10 @@ foreach ($argvList as $arg) {
         $backendHead = substr($arg, 15);
     } elseif (str_starts_with($arg, '--android-head=')) {
         $androidHead = substr($arg, 15);
+    } elseif (str_starts_with($arg, '--pairing-manifest=')) {
+        $pairingManifest = substr($arg, 19);
+    } elseif (str_starts_with($arg, '--pairing-manifest-sha=')) {
+        $pairingManifestSha = substr($arg, 23);
     }
 }
 
@@ -58,7 +64,8 @@ if ($isPrepare) {
     echo "  MOBILE_V2_HARNESS_ENABLE=1 MOBILE_V2_HARNESS_START_LISTENER=1 PHASE8_ALLOW_DISPOSABLE_DB=1 \\\n";
     echo "    PHASE8_TEST_DB_HOST=127.0.0.1 PHASE8_TEST_DB_PORT=3342 \\\n";
     echo "    PHASE8_TEST_DB_USERNAME=<user> PHASE8_TEST_DB_PASSWORD=<pass> \\\n";
-    echo "    php tests/Support/Harness/mobile-v2-harness-cli.php --run --backend-head=<40hex> --android-head=<40hex>\n\n";
+    echo "    php tests/Support/Harness/mobile-v2-harness-cli.php --run --backend-head=<40hex> --android-head=<40hex> \\\n";
+    echo "      --pairing-manifest-sha=<64hex>\n\n";
     echo "Prepare phase complete. Zero framework booted. Zero listeners started.\n";
     exit(0);
 }
@@ -88,10 +95,55 @@ if (($isStart || $isRun) && getenv('MOBILE_V2_HARNESS_START_LISTENER') !== '1') 
     exit(1);
 }
 
+if (($isStart || $isRun) && ($pairingManifestSha === null || $pairingManifestSha === '')) {
+    fwrite(STDERR, "Harness start refused: --pairing-manifest-sha=<64hex> is mandatory for --start or --run.\n");
+    exit(1);
+}
+
+// Enforce pre-socket invariant checks BEFORE loading Laravel framework or repo .env
+try {
+    DisposableMobileV2BackendHarness::assertPreSocketInvariants($backendHead, $androidHead);
+    if ($isStart || $isRun) {
+        DisposableMobileV2BackendHarness::assertDualManifestPin(
+            backendHead: $backendHead,
+            peerAndroidHead: (string) $androidHead,
+            manifestPath: $pairingManifest,
+            manifestShaPin: $pairingManifestSha,
+        );
+    }
+} catch (\Throwable $e) {
+    fwrite(STDERR, "Harness refused before framework boot: {$e->getMessage()}\n");
+    exit(1);
+}
+
 // Ensure isolated testing environment without loading repository .env defaults
-putenv('APP_ENV=testing');
-$_ENV['APP_ENV'] = 'testing';
-$_SERVER['APP_ENV'] = 'testing';
+$cliCacheDir = sys_get_temp_dir().'/cli_harness_cache_'.bin2hex(random_bytes(6));
+if (! is_dir($cliCacheDir)) {
+    mkdir($cliCacheDir, 0700, true);
+}
+
+$isolatedEnv = [
+    'APP_ENV' => 'testing',
+    'PHASE8_ALLOW_DISPOSABLE_DB' => '1',
+    'MOBILE_V2_HARNESS_ENABLE' => '1',
+    'DB_CONNECTION' => 'mysql',
+    'DB_HOST' => '127.0.0.1',
+    'DB_PORT' => '3342',
+    'DB_DATABASE' => 'unconnectable_preboot_guard',
+    'CACHE_STORE' => 'array',
+    'SESSION_DRIVER' => 'array',
+    'QUEUE_CONNECTION' => 'sync',
+    'APP_CONFIG_CACHE' => $cliCacheDir.'/config.php',
+    'APP_SERVICES_CACHE' => $cliCacheDir.'/services.php',
+    'APP_PACKAGES_CACHE' => $cliCacheDir.'/packages.php',
+    'APP_ROUTES_CACHE' => $cliCacheDir.'/routes-v7.php',
+];
+
+foreach ($isolatedEnv as $k => $v) {
+    putenv("{$k}={$v}");
+    $_ENV[$k] = $v;
+    $_SERVER[$k] = $v;
+}
 
 /** @var \Illuminate\Foundation\Application $app */
 $app = require __DIR__.'/../../../bootstrap/app.php';

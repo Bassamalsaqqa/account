@@ -21,17 +21,19 @@ use Illuminate\Console\Command;
  * Usage examples:
  *   php tests/Support/Harness/mobile-v2-harness-cli.php --prepare
  *   php tests/Support/Harness/mobile-v2-harness-cli.php --provision --backend-head=<40hex>
- *   php tests/Support/Harness/mobile-v2-harness-cli.php --run --backend-head=<40hex> --android-head=<40hex>
+ *   php tests/Support/Harness/mobile-v2-harness-cli.php --run --backend-head=<40hex> --android-head=<40hex> --pairing-manifest-sha=<64hex>
  */
 class MobileV2HarnessCommand extends Command
 {
     protected $signature = 'mobile:v2-harness
-        {--prepare         : Source-only phase: validate invariants and emit TLS config source (no sockets, no framework boot)}
-        {--provision       : Self-test provision: provision disposable schema, assert PDO 3342, and clean up}
-        {--start           : Start transport lifecycle (requires existing live harness owner)}
-        {--run             : Foreground paired lifecycle: provision schema, start supervised transport, wait for shutdown, guaranteed cleanup}
-        {--backend-head=   : Full 40-hex SHA of the current backend worktree HEAD (mandatory)}
-        {--android-head=   : Full 40-hex SHA of the peer Android integration HEAD}';
+        {--prepare               : Source-only phase: validate invariants and emit TLS config source (no sockets, no framework boot)}
+        {--provision             : Self-test provision: provision disposable schema, assert PDO 3342, and clean up}
+        {--start                 : Start transport lifecycle (requires existing live harness owner)}
+        {--run                   : Foreground paired lifecycle: provision schema, start supervised transport, wait for shutdown, guaranteed cleanup}
+        {--backend-head=         : Full 40-hex SHA of the current backend worktree HEAD (mandatory)}
+        {--android-head=         : Full 40-hex SHA of the peer Android integration HEAD}
+        {--pairing-manifest=     : Path to integration pairing manifest (defaults to docs/integration/mobile-v2-integration-manifest.json)}
+        {--pairing-manifest-sha= : Mandatory SHA-256 pin of the pairing manifest}';
 
     protected $description = 'Drive the Mobile V2 paired HTTPS integration harness (source-only by default)';
 
@@ -48,6 +50,8 @@ class MobileV2HarnessCommand extends Command
 
         $backendHead = (string) ($this->option('backend-head') ?? '');
         $androidHead = (string) ($this->option('android-head') ?? '');
+        $pairingManifest = $this->option('pairing-manifest') ? (string) $this->option('pairing-manifest') : null;
+        $pairingManifestSha = $this->option('pairing-manifest-sha') ? (string) $this->option('pairing-manifest-sha') : null;
 
         if ($prepare) {
             return $this->handlePrepare();
@@ -60,15 +64,15 @@ class MobileV2HarnessCommand extends Command
         }
 
         if ($run) {
-            return $this->handleRun($backendHead, $androidHead);
+            return $this->handleRun($backendHead, $androidHead, $pairingManifest, $pairingManifestSha);
         }
 
         if ($start) {
-            return $this->handleStart($backendHead, $androidHead);
+            return $this->handleStart($backendHead, $androidHead, $pairingManifest, $pairingManifestSha);
         }
 
         if ($provision) {
-            return $this->handleProvision($backendHead, $androidHead !== '' ? $androidHead : null);
+            return $this->handleProvision($backendHead, $androidHead !== '' ? $androidHead : null, $pairingManifest, $pairingManifestSha);
         }
 
         return $this->handlePrepare();
@@ -93,15 +97,20 @@ class MobileV2HarnessCommand extends Command
         $this->line('  MOBILE_V2_HARNESS_ENABLE=1 MOBILE_V2_HARNESS_START_LISTENER=1 PHASE8_ALLOW_DISPOSABLE_DB=1 \\');
         $this->line('    PHASE8_TEST_DB_HOST=127.0.0.1 PHASE8_TEST_DB_PORT=3342 \\');
         $this->line('    PHASE8_TEST_DB_USERNAME=<user> PHASE8_TEST_DB_PASSWORD=<pass> \\');
-        $this->line('    php tests/Support/Harness/mobile-v2-harness-cli.php --run --backend-head=<40hex> --android-head=<40hex>');
+        $this->line('    php tests/Support/Harness/mobile-v2-harness-cli.php --run --backend-head=<40hex> --android-head=<40hex> \\');
+        $this->line('      --pairing-manifest-sha=<64hex>');
         $this->newLine();
         $this->info('Prepare phase complete. Zero listeners started.');
 
         return self::SUCCESS;
     }
 
-    private function handleProvision(string $backendHead, ?string $androidHead): int
-    {
+    private function handleProvision(
+        string $backendHead,
+        ?string $androidHead,
+        ?string $pairingManifest = null,
+        ?string $pairingManifestSha = null
+    ): int {
         $this->line('Mobile V2 Harness — Provision Self-Test');
 
         if (getenv('MOBILE_V2_HARNESS_ENABLE') !== '1') {
@@ -116,6 +125,8 @@ class MobileV2HarnessCommand extends Command
             $result = $harness->provision(
                 expectedBackendHead: $backendHead,
                 peerAndroidHead: $androidHead,
+                manifestPath: $pairingManifest,
+                manifestShaPin: $pairingManifestSha,
             );
 
             $manifest = $result['manifest'];
@@ -139,8 +150,12 @@ class MobileV2HarnessCommand extends Command
         return self::SUCCESS;
     }
 
-    private function handleRun(string $backendHead, string $androidHead): int
-    {
+    private function handleRun(
+        string $backendHead,
+        string $androidHead,
+        ?string $pairingManifest = null,
+        ?string $pairingManifestSha = null
+    ): int {
         $this->line('Mobile V2 Harness — Foreground Paired Lifecycle (--run)');
 
         if ($androidHead === '') {
@@ -169,6 +184,12 @@ class MobileV2HarnessCommand extends Command
             return self::FAILURE;
         }
 
+        if ($pairingManifestSha === null || $pairingManifestSha === '') {
+            $this->error('--run requires --pairing-manifest-sha=<64hex>.');
+
+            return self::FAILURE;
+        }
+
         if (! function_exists('pcntl_signal')) {
             $this->error('Harness run refused: pcntl extension is required for safe supervised process signal management.');
 
@@ -181,12 +202,16 @@ class MobileV2HarnessCommand extends Command
             $provision = $harness->provision(
                 expectedBackendHead: $backendHead,
                 peerAndroidHead: $androidHead,
+                manifestPath: $pairingManifest,
+                manifestShaPin: $pairingManifestSha,
             );
             $this->line('  Provision OK — schema: '.$provision['manifest']['schema_name']);
 
             $transport = $harness->start(
                 peerAndroidHead: $androidHead,
                 backendHead: $backendHead,
+                manifestPath: $pairingManifest,
+                manifestShaPin: $pairingManifestSha,
             );
 
             $this->info('Supervised transport active.');
@@ -224,11 +249,15 @@ class MobileV2HarnessCommand extends Command
         return self::SUCCESS;
     }
 
-    private function handleStart(string $backendHead, string $androidHead): int
-    {
+    private function handleStart(
+        string $backendHead,
+        string $androidHead,
+        ?string $pairingManifest = null,
+        ?string $pairingManifestSha = null
+    ): int {
         $this->warn('Note: Standalone --start should be used within an active harness lifecycle.');
         $this->line('For full paired integration, use --run which provisions and starts under a single supervised owner.');
 
-        return $this->handleRun($backendHead, $androidHead);
+        return $this->handleRun($backendHead, $androidHead, $pairingManifest, $pairingManifestSha);
     }
 }
