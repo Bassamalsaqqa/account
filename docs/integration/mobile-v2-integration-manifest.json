@@ -7,9 +7,11 @@
   "peer_android_pr_head_sha": "UNSET_AWAITING_ANDROID_PAIRING",
   "status": "SOURCE_ONLY_PREPARATION_NO_EXECUTE",
   "source_fixture_class": "Tests\\Support\\Harness\\DisposableMobileV2BackendHarness",
-  "source_fixture_sha256": "bde045ee4c736edb4dac27c6cd10b1d75f8f2fc8d18443150ca068f861dc6675",
+  "source_fixture_sha256": "be3367541fe74ce11adbf0934f23d915fdea49b771a3fa25c31d2b2360d848ee",
   "guard_test_class": "Tests\\Unit\\Mobile\\Harness\\DisposableMobileV2BackendHarnessGuardTest",
-  "guard_test_sha256": "303d6ea22be7784b09c137b06ad2d4166ca65c10a68c8fb59fe69ca2434af9d5",
+  "guard_test_sha256": "254146cf1ba147d6fc137dec00beeb12b37f328214558613f8a143bdfac7bf13",
+  "cli_command_class": "App\\Console\\Commands\\MobileV2HarnessCommand",
+  "cli_command_sha256": "f53220e4077b064cbfba69a8447445eaaf5eafb2c445d97bd6d825b8fc8ea466",
   "schema_manifest_digests": {
     "sale-commit-response.json": "401dbb3c2528a30edfb6beaa5065e89bf225c348a4d88eba9d47d7f93cff543a",
     "sale-event-status-response.json": "25e6c6173d646ee4b1dc8dbb0d26d20f0311535863e3d73836af7474c6714591",
