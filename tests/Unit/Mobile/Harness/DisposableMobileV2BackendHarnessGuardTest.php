@@ -2817,6 +2817,186 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
         $this->assertSame($report['report_digest'], $report2['report_digest']);
         $this->assertSame($report['baseline_hash'], $report2['baseline_hash']);
     }
+
+    #[Test]
+    public function test_secure_bootstrap_credentials_loader_enforces_permissions_and_schema_match(): void
+    {
+        $tmpDir = sys_get_temp_dir().'/guard_test_creds_'.bin2hex(random_bytes(6));
+        mkdir($tmpDir, 0700, true);
+        chmod($tmpDir, 0700);
+
+        $validConfig = [
+            'db_host' => '127.0.0.1',
+            'db_port' => '3342',
+            'db_username' => 'test_user',
+            'db_password' => 'test_pass',
+            'schema_name' => 'accounting_p8_tmp_0123456789ab',
+            'proof_path' => '/tmp/proof.txt',
+            'proof_nonce' => 'nonce123',
+        ];
+
+        $configFile = $tmpDir.'/child_bootstrap_config.json';
+        file_put_contents($configFile, json_encode($validConfig, JSON_PRETTY_PRINT));
+        chmod($configFile, 0600);
+
+        try {
+            // 1. Valid config parses successfully
+            $creds = \Tests\Support\Harness\DisposableFinancialPostRunInspector::loadSecureBootstrapCredentials(
+                $configFile,
+                'accounting_p8_tmp_0123456789ab'
+            );
+            $this->assertSame('127.0.0.1', $creds['host']);
+            $this->assertSame('3342', $creds['port']);
+            $this->assertSame('test_user', $creds['username']);
+            $this->assertSame('test_pass', $creds['password']);
+            $this->assertSame('accounting_p8_tmp_0123456789ab', $creds['schema_name']);
+            $this->assertSame('127.0.0.1', getenv('PHASE8_TEST_DB_HOST'));
+            $this->assertSame('3342', getenv('PHASE8_TEST_DB_PORT'));
+
+            // 2. Insecure file permissions rejected
+            chmod($configFile, 0666);
+            $insecureException = null;
+            try {
+                \Tests\Support\Harness\DisposableFinancialPostRunInspector::loadSecureBootstrapCredentials(
+                    $configFile,
+                    'accounting_p8_tmp_0123456789ab'
+                );
+            } catch (\RuntimeException $e) {
+                $insecureException = $e;
+            }
+            $this->assertNotNull($insecureException);
+            $this->assertStringContainsString('BOOTSTRAP_CONFIG_INSECURE_PERMS', $insecureException->getMessage());
+            chmod($configFile, 0600);
+
+            // 3. Schema mismatch throws
+            $mismatchException = null;
+            try {
+                \Tests\Support\Harness\DisposableFinancialPostRunInspector::loadSecureBootstrapCredentials(
+                    $configFile,
+                    'accounting_p8_tmp_ffffffffffff'
+                );
+            } catch (\RuntimeException $e) {
+                $mismatchException = $e;
+            }
+            $this->assertNotNull($mismatchException);
+            $this->assertStringContainsString('BOOTSTRAP_CONFIG_SCHEMA_MISMATCH', $mismatchException->getMessage());
+        } finally {
+            @unlink($configFile);
+            @rmdir($tmpDir);
+        }
+    }
+
+    #[Test]
+    public function test_outer_validator_recomputes_report_digest_and_rejects_corrupted_digest_or_missing_run_id(): void
+    {
+        $fixturePath = dirname(__DIR__, 3).'/Support/Harness/fixtures/synthetic-financial-golden-wire.json';
+        $goldenData = json_decode((string) file_get_contents($fixturePath), true);
+
+        $fixturePins = [
+            'clientPublicationHead' => 'c00aedb70ea06f28ae42282149c030df76dc300d',
+            'clientExecutableHead' => 'b7e61eb4ed0aed2f5040d9fc44f9764b310be530',
+            'backendExecutionHead' => 'cfc28baaaaf52521ecbc88f1ba4c621afee17221',
+            'handoffDigest' => '8e48f3692a88f5ac3f333f81536d70eb3541228959968697fda03f68df44befc',
+            'expectedLifecycle' => 'FINANCIAL_PAIRED_RUN',
+            'expectedScope' => 'ROOT_AUTHORIZED_PAIRED_EXECUTION',
+            'expectedSchemaName' => 'accounting_p8_tmp_0123456789ab',
+            'companyId' => 1,
+            'expectedRunId' => '019ea456-0000-7000-8000-000000000001',
+            'expectedBaselineHash' => 'b1a2c3d4e5f60123456789abcdef0123456789abcdef0123456789abcdef0123',
+        ];
+
+        // Valid composed trusted DB report
+        $metadata = [
+            'scope' => 'ROOT_AUTHORIZED_PAIRED_EXECUTION',
+            'runId' => '019ea456-0000-7000-8000-000000000001',
+            'schemaName' => 'accounting_p8_tmp_0123456789ab',
+            'companyId' => 1,
+            'sourceHead' => 'cfc28baaaaf52521ecbc88f1ba4c621afee17221',
+            'handoffDigest' => '8e48f3692a88f5ac3f333f81536d70eb3541228959968697fda03f68df44befc',
+        ];
+
+        $baseline = [
+            'company_id' => 1,
+            'schema_name' => 'accounting_p8_tmp_0123456789ab',
+            'sales_invoices' => 1,
+            'sales_invoices_max_id' => 1,
+            'sales_invoice_lines' => 1,
+            'sales_invoice_lines_max_id' => 1,
+            'sales_invoice_lot_allocations' => 0,
+            'sales_invoice_lot_allocations_max_id' => 0,
+            'customer_payments' => 1,
+            'customer_payments_max_id' => 1,
+            'customer_payment_allocations' => 1,
+            'customer_payment_allocations_max_id' => 1,
+            'mobile_event_receipts' => 0,
+            'mobile_event_receipts_max_id' => 0,
+            'stock_movements' => 1,
+            'stock_movements_max_id' => 1,
+            'stock_movements_qty_sum' => '1.000000',
+            'posting_batches' => 1,
+            'posting_batches_max_id' => 1,
+            'posting_lines' => 2,
+            'posting_lines_max_id' => 2,
+            'document_sequences' => [],
+        ];
+
+        $deltaResult = [
+            'is_canonical_delta_valid' => true,
+            'gl_batches_balanced' => true,
+            'deltas' => [],
+            'canonical_graph' => [],
+        ];
+
+        $reconcileResult = [
+            'all_healthy' => true,
+            'reconciler_results' => [
+                'AccountingReconciliationService' => ['healthy' => true, 'issue_count' => 0],
+                'InventoryReconciliationService' => ['healthy' => true, 'issue_count' => 0],
+                'SalesReconciliationService' => ['healthy' => true, 'issue_count' => 0],
+                'PayablesReconciliationService' => ['healthy' => true, 'issue_count' => 0],
+                'MoneyReconciliationService' => ['healthy' => true, 'issue_count' => 0],
+                'Phase7ReconciliationService' => ['healthy' => true, 'issue_count' => 0],
+            ],
+        ];
+
+        $composedReport = \Tests\Support\Harness\DisposableFinancialPostRunInspector::composeTrustedDbReport(
+            $metadata,
+            $baseline,
+            $deltaResult,
+            $reconcileResult
+        );
+        $fixturePins['expectedBaselineHash'] = $composedReport['baseline_hash'];
+
+        // 1. Valid composed report passes
+        $validResult = \Tests\Support\Harness\DisposableFinancialPostRunInspector::validateOuterEvidenceJson(
+            $goldenData,
+            $fixturePins,
+            $composedReport
+        );
+        $this->assertTrue($validResult['is_valid'], 'Expected valid result: '.implode('; ', $validResult['errors']));
+
+        // 2. Corrupted report_digest is rejected
+        $corruptDigestReport = $composedReport;
+        $corruptDigestReport['report_digest'] = str_repeat('f', 64);
+        $badDigestResult = \Tests\Support\Harness\DisposableFinancialPostRunInspector::validateOuterEvidenceJson(
+            $goldenData,
+            $fixturePins,
+            $corruptDigestReport
+        );
+        $this->assertFalse($badDigestResult['is_valid']);
+        $this->assertTrue(collect($badDigestResult['errors'])->contains(fn ($e) => str_contains($e, 'report_digest mismatch')));
+
+        // 3. Missing expectedRunId is rejected
+        $missingRunIdPins = $fixturePins;
+        unset($missingRunIdPins['expectedRunId']);
+        $badRunIdResult = \Tests\Support\Harness\DisposableFinancialPostRunInspector::validateOuterEvidenceJson(
+            $goldenData,
+            $missingRunIdPins,
+            $composedReport
+        );
+        $this->assertFalse($badRunIdResult['is_valid']);
+        $this->assertTrue(collect($badRunIdResult['errors'])->contains(fn ($e) => str_contains($e, "'expectedRunId' is mandatory")));
+    }
 }
 
 

@@ -31,6 +31,8 @@ $expectedAndroidPub = null;
 $expectedAndroidExe = null;
 $expectedHandoffDigest = null;
 $expectedBaselineHash = null;
+$expectedDbReportSha = null;
+$expectedEvidenceSha = null;
 $expectedScope = null;
 
 foreach ($argvList as $arg) {
@@ -74,6 +76,10 @@ foreach ($argvList as $arg) {
         $expectedHandoffDigest = substr($arg, 26);
     } elseif (str_starts_with($arg, '--expected-baseline-hash=')) {
         $expectedBaselineHash = substr($arg, 25);
+    } elseif (str_starts_with($arg, '--expected-db-report-sha=')) {
+        $expectedDbReportSha = substr($arg, 25);
+    } elseif (str_starts_with($arg, '--expected-evidence-sha=')) {
+        $expectedEvidenceSha = substr($arg, 24);
     } elseif (str_starts_with($arg, '--expected-scope=')) {
         $expectedScope = substr($arg, 17);
     }
@@ -83,29 +89,15 @@ foreach ($argvList as $arg) {
 require __DIR__.'/../../../vendor/autoload.php';
 
 // Safe extraction of private proof credentials if provided (no secret stdout)
-if ($credentialsFile !== null && is_file($credentialsFile)) {
-    $content = (string) file_get_contents($credentialsFile);
-    $parsed = json_decode($content, true);
-    if (! is_array($parsed)) {
-        $parsed = [];
-        $lines = explode("\n", $content);
-        foreach ($lines as $line) {
-            $line = trim($line);
-            if ($line === '' || str_starts_with($line, '#')) {
-                continue;
-            }
-            if (str_contains($line, '=')) {
-                [$k, $v] = explode('=', $line, 2);
-                $parsed[trim($k)] = trim($v, " \t\n\r\0\x0B\"'");
-            }
+if ($credentialsFile !== null) {
+    try {
+        $creds = DisposableFinancialPostRunInspector::loadSecureBootstrapCredentials($credentialsFile, $schemaName);
+        if ($schemaName === null || $schemaName === '') {
+            $schemaName = $creds['schema_name'];
         }
-    }
-    foreach ($parsed as $k => $v) {
-        if (in_array($k, ['HOST', 'PORT', 'USERNAME', 'PASSWORD', 'EMPTY_PASSWORD'], true)) {
-            putenv("PHASE8_TEST_DB_{$k}={$v}");
-        } elseif (str_starts_with($k, 'PHASE8_TEST_DB_') || in_array($k, ['PHASE8_ALLOW_DISPOSABLE_DB', 'MOBILE_V2_HARNESS_ENABLE', 'APP_ENV'], true)) {
-            putenv("{$k}={$v}");
-        }
+    } catch (\Throwable $e) {
+        fwrite(STDERR, "Error: Credentials file verification failed: {$e->getMessage()}\n");
+        exit(1);
     }
 }
 
@@ -122,23 +114,45 @@ if ($evidenceFile !== null) {
         exit(1);
     }
 
-    $rawEvidence = file_get_contents($evidenceFile);
-    if ($rawEvidence === false) {
-        fwrite(STDERR, "Error: Unable to read evidence file '{$evidenceFile}'.\n");
+    $rawEvidence = (string) file_get_contents($evidenceFile);
+    if ($expectedEvidenceSha !== null && $expectedEvidenceSha !== '') {
+        $actualEvidenceSha = hash('sha256', $rawEvidence);
+        if (! hash_equals($expectedEvidenceSha, $actualEvidenceSha)) {
+            fwrite(STDERR, "Error: Evidence file SHA256 mismatch: expected '{$expectedEvidenceSha}', got '{$actualEvidenceSha}'.\n");
+            exit(1);
+        }
+    }
+
+    if ($runId === null || $runId === '') {
+        fwrite(STDERR, "Error: --run-id=<uuid> is mandatory and cannot be omitted for evidence validation.\n");
         exit(1);
     }
 
-    $trustedDbReport = null;
-    if ($trustedDbReportFile !== null) {
-        if (! is_file($trustedDbReportFile)) {
-            fwrite(STDERR, "Error: Trusted DB report file '{$trustedDbReportFile}' not found.\n");
-            exit(1);
-        }
-        $trustedDbReport = json_decode((string) file_get_contents($trustedDbReportFile), true);
-        if (! is_array($trustedDbReport)) {
-            fwrite(STDERR, "Error: Trusted DB report file contains invalid JSON.\n");
-            exit(1);
-        }
+    if ($trustedDbReportFile === null) {
+        fwrite(STDERR, "Error: --trusted-db-report=<file> is mandatory for outer evidence validation.\n");
+        exit(1);
+    }
+
+    if (! is_file($trustedDbReportFile)) {
+        fwrite(STDERR, "Error: Trusted DB report file '{$trustedDbReportFile}' not found.\n");
+        exit(1);
+    }
+
+    $rawDbReportBytes = (string) file_get_contents($trustedDbReportFile);
+    $actualDbReportSha = hash('sha256', $rawDbReportBytes);
+    if ($expectedDbReportSha === null || $expectedDbReportSha === '') {
+        fwrite(STDERR, "Error: --expected-db-report-sha=<sha256> is mandatory when validating against trusted DB report.\n");
+        exit(1);
+    }
+    if (! hash_equals($expectedDbReportSha, $actualDbReportSha)) {
+        fwrite(STDERR, "Error: Trusted DB report file SHA256 mismatch: expected '{$expectedDbReportSha}', got '{$actualDbReportSha}'.\n");
+        exit(1);
+    }
+
+    $trustedDbReport = json_decode($rawDbReportBytes, true);
+    if (! is_array($trustedDbReport)) {
+        fwrite(STDERR, "Error: Trusted DB report file contains invalid JSON.\n");
+        exit(1);
     }
 
     $expectedPins = [
@@ -149,7 +163,7 @@ if ($evidenceFile !== null) {
         'expectedScope' => $expectedScope ?? 'ROOT_AUTHORIZED_PAIRED_EXECUTION',
         'expectedSchemaName' => $schemaName ?? '',
         'companyId' => $companyId ?? 0,
-        'expectedRunId' => $runId ?? '',
+        'expectedRunId' => $runId,
         'expectedBaselineHash' => $expectedBaselineHash ?? ($trustedDbReport['baseline_hash'] ?? ''),
     ];
 

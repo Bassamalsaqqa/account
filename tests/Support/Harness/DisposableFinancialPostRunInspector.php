@@ -46,6 +46,126 @@ final class DisposableFinancialPostRunInspector
     public const string SCHEMA_REGEX = '/^accounting_p8_tmp_[a-f0-9]{12}$/D';
 
     /**
+     * Safely parses child_bootstrap_config.json credentials with strict POSIX permissions
+     * (0600 file, 0700 parent directory, no symlinks, owner UID match) and maps lowercase
+     * keys to PHASE8_TEST_DB_* and PHASE8_DISPOSABLE_DB_* without exposing secrets.
+     *
+     * @param  string  $filePath
+     * @param  string|null  $expectedSchemaName
+     * @return array{
+     *     host: string,
+     *     port: string,
+     *     username: string,
+     *     password: string,
+     *     schema_name: string,
+     *     proof_path: ?string,
+     *     proof_nonce: ?string
+     * }
+     */
+    public static function loadSecureBootstrapCredentials(string $filePath, ?string $expectedSchemaName = null): array
+    {
+        if (is_link($filePath)) {
+            throw new RuntimeException('BOOTSTRAP_CONFIG_SYMLINK_REJECTED');
+        }
+        if (! is_file($filePath)) {
+            throw new RuntimeException('BOOTSTRAP_CONFIG_FILE_NOT_FOUND');
+        }
+
+        $parentDir = dirname($filePath);
+        if (is_link($parentDir)) {
+            throw new RuntimeException('BOOTSTRAP_CONFIG_PARENT_SYMLINK_REJECTED');
+        }
+
+        $currentUid = function_exists('posix_getuid') ? posix_getuid() : getmyuid();
+
+        $filePerms = fileperms($filePath) & 0777;
+        if ($filePerms !== 0600) {
+            throw new RuntimeException(sprintf('BOOTSTRAP_CONFIG_INSECURE_PERMS: expected 0600, got %04o', $filePerms));
+        }
+
+        $fileOwner = fileowner($filePath);
+        if ($fileOwner !== $currentUid) {
+            throw new RuntimeException('BOOTSTRAP_CONFIG_OWNER_MISMATCH');
+        }
+
+        $parentPerms = fileperms($parentDir) & 0777;
+        if ($parentPerms !== 0700) {
+            throw new RuntimeException(sprintf('BOOTSTRAP_CONFIG_PARENT_INSECURE_PERMS: expected 0700, got %04o', $parentPerms));
+        }
+
+        $parentOwner = fileowner($parentDir);
+        if ($parentOwner !== $currentUid) {
+            throw new RuntimeException('BOOTSTRAP_CONFIG_PARENT_OWNER_MISMATCH');
+        }
+
+        $raw = (string) file_get_contents($filePath);
+        try {
+            $data = json_decode($raw, true, 512, JSON_THROW_ON_ERROR);
+        } catch (\JsonException $e) {
+            throw new RuntimeException('BOOTSTRAP_CONFIG_INVALID_JSON: '.$e->getMessage());
+        }
+
+        if (! is_array($data)) {
+            throw new RuntimeException('BOOTSTRAP_CONFIG_INVALID_JSON_STRUCTURE');
+        }
+
+        $host = (string) ($data['db_host'] ?? '');
+        if (! in_array($host, ['127.0.0.1', 'localhost'], true)) {
+            throw new RuntimeException("BOOTSTRAP_CONFIG_INVALID_HOST: expected 127.0.0.1 or localhost, got '{$host}'");
+        }
+
+        $port = (string) ($data['db_port'] ?? '');
+        if ($port !== '3342') {
+            throw new RuntimeException("BOOTSTRAP_CONFIG_INVALID_PORT: expected 3342, got '{$port}'");
+        }
+
+        $schema = (string) ($data['schema_name'] ?? '');
+        if (! preg_match(self::SCHEMA_REGEX, $schema)) {
+            throw new RuntimeException("BOOTSTRAP_CONFIG_INVALID_SCHEMA: '{$schema}'");
+        }
+
+        if ($expectedSchemaName !== null && $expectedSchemaName !== '' && $schema !== $expectedSchemaName) {
+            throw new RuntimeException("BOOTSTRAP_CONFIG_SCHEMA_MISMATCH: expected '{$expectedSchemaName}', got '{$schema}'");
+        }
+
+        $user = (string) ($data['db_username'] ?? '');
+        if ($user === '') {
+            throw new RuntimeException('BOOTSTRAP_CONFIG_MISSING_USERNAME');
+        }
+
+        $pass = (string) ($data['db_password'] ?? '');
+
+        // Safe environment assignment
+        putenv("PHASE8_TEST_DB_HOST={$host}");
+        putenv("PHASE8_TEST_DB_PORT={$port}");
+        putenv("PHASE8_TEST_DB_USERNAME={$user}");
+        putenv("PHASE8_TEST_DB_PASSWORD={$pass}");
+        if ($pass === '') {
+            putenv('PHASE8_TEST_DB_EMPTY_PASSWORD=1');
+        }
+
+        $proofPath = isset($data['proof_path']) ? (string) $data['proof_path'] : null;
+        if ($proofPath !== null && $proofPath !== '') {
+            putenv("PHASE8_DISPOSABLE_DB_PROOF={$proofPath}");
+        }
+
+        $proofNonce = isset($data['proof_nonce']) ? (string) $data['proof_nonce'] : null;
+        if ($proofNonce !== null && $proofNonce !== '') {
+            putenv("PHASE8_DISPOSABLE_DB_NONCE={$proofNonce}");
+        }
+
+        return [
+            'host' => $host,
+            'port' => $port,
+            'username' => $user,
+            'password' => $pass,
+            'schema_name' => $schema,
+            'proof_path' => $proofPath,
+            'proof_nonce' => $proofNonce,
+        ];
+    }
+
+    /**
      * Asserts execution environment invariants, verifies ownership proof,
      * and binds a dedicated read-only PDO connection directly to MariaDB port 3342.
      * Default NO-EXECUTE: fails closed if harness or disposable DB flags are missing.
@@ -591,13 +711,11 @@ final class DisposableFinancialPostRunInspector
      */
     public static function runSixReconciliations(Company|int $companyOrId, string $expectedSchemaName): array
     {
-        $pdo = self::assertExecutionGates($expectedSchemaName);
-        $pdo->exec('SET SESSION TRANSACTION ISOLATION LEVEL REPEATABLE READ');
-        $pdo->exec('START TRANSACTION WITH CONSISTENT SNAPSHOT, READ ONLY');
-
+        $previousGlobalContainer = \Illuminate\Container\Container::getInstance();
         $previousApp = function_exists('app') ? \Illuminate\Support\Facades\Facade::getFacadeApplication() : null;
         $previousResolver = \Illuminate\Database\Eloquent\Model::getConnectionResolver();
 
+        $pdo = null;
         $app = null;
         $manager = null;
         $connection = null;
@@ -605,6 +723,10 @@ final class DisposableFinancialPostRunInspector
         $allHealthy = true;
 
         try {
+            $pdo = self::assertExecutionGates($expectedSchemaName);
+            $pdo->exec('SET SESSION TRANSACTION ISOLATION LEVEL REPEATABLE READ');
+            $pdo->exec('START TRANSACTION WITH CONSISTENT SNAPSHOT, READ ONLY');
+
             // Minimal isolated container: autoload only, no full service providers, sessions, cache, or background jobs.
             $appDir = dirname(__DIR__, 3);
             $app = new \Illuminate\Foundation\Application($appDir);
@@ -693,17 +815,19 @@ final class DisposableFinancialPostRunInspector
                 $context->clear(sessionless: true);
             }
         } finally {
-            try {
-                $pdo->rollBack();
-            } catch (\Throwable) {
+            if ($pdo instanceof PDO) {
+                try {
+                    $pdo->rollBack();
+                } catch (\Throwable) {
+                }
             }
 
-            try {
-                if ($manager instanceof \Illuminate\Database\DatabaseManager) {
+            if ($manager instanceof \Illuminate\Database\DatabaseManager) {
+                try {
                     $manager->purge('disposable_inspector');
                     $manager->disconnect('disposable_inspector');
+                } catch (\Throwable) {
                 }
-            } catch (\Throwable) {
             }
 
             try {
@@ -721,8 +845,18 @@ final class DisposableFinancialPostRunInspector
             } catch (\Throwable) {
             }
 
+            try {
+                if ($previousGlobalContainer !== null) {
+                    \Illuminate\Container\Container::setInstance($previousGlobalContainer);
+                }
+            } catch (\Throwable) {
+            }
+
             if ($app instanceof \Illuminate\Foundation\Application) {
-                $app->flush();
+                try {
+                    $app->flush();
+                } catch (\Throwable) {
+                }
             }
         }
 
@@ -1032,14 +1166,16 @@ final class DisposableFinancialPostRunInspector
                 $errors[] = "Trusted DB report scope mismatch: expected '{$expectedScope}', got '{$actualScope}'.";
             }
 
-            $expectedRunId = (string) ($expectedPins['expectedRunId'] ?? ($data['runId'] ?? ''));
+            $expectedRunId = (string) ($expectedPins['expectedRunId'] ?? '');
             if ($expectedRunId === '') {
-                $errors[] = 'Expected runId is required for trusted DB binding.';
-            } elseif ((string) ($trustedDbReport['run_id'] ?? '') !== $expectedRunId) {
-                $errors[] = "Trusted DB report run_id mismatch: expected '{$expectedRunId}', got '".($trustedDbReport['run_id'] ?? 'null')."'.";
-            }
-            if ((string) ($data['runId'] ?? '') !== '' && (string) ($trustedDbReport['run_id'] ?? '') !== (string) $data['runId']) {
-                $errors[] = 'Evidence runId does not match trusted DB report run_id.';
+                $errors[] = "Expected pin 'expectedRunId' is mandatory and external; cannot be omitted or empty.";
+            } else {
+                if ((string) ($data['runId'] ?? '') !== $expectedRunId) {
+                    $errors[] = "Evidence runId mismatch: expected '{$expectedRunId}', got '".($data['runId'] ?? 'null')."'.";
+                }
+                if ((string) ($trustedDbReport['run_id'] ?? '') !== $expectedRunId) {
+                    $errors[] = "Trusted DB report run_id mismatch: expected '{$expectedRunId}', got '".($trustedDbReport['run_id'] ?? 'null')."'.";
+                }
             }
 
             $expectedSchema = (string) ($expectedPins['expectedSchemaName'] ?? '');
@@ -1075,6 +1211,37 @@ final class DisposableFinancialPostRunInspector
                 $errors[] = 'Expected baseline_hash is required for trusted DB binding.';
             } elseif ((string) ($trustedDbReport['baseline_hash'] ?? '') !== $expectedBaselineHash) {
                 $errors[] = "Trusted DB report baseline_hash mismatch: expected '{$expectedBaselineHash}', got '".($trustedDbReport['baseline_hash'] ?? 'null')."'.";
+            }
+
+            // Recompute deterministic core payload and verify self-digest with hash_equals
+            $coreDeterministicPayload = [
+                'scope' => (string) ($trustedDbReport['scope'] ?? ''),
+                'run_id' => (string) ($trustedDbReport['run_id'] ?? ''),
+                'schema_name' => (string) ($trustedDbReport['schema_name'] ?? ''),
+                'company_id' => (int) ($trustedDbReport['company_id'] ?? 0),
+                'source_head' => (string) ($trustedDbReport['source_head'] ?? ''),
+                'handoff_digest' => (string) ($trustedDbReport['handoff_digest'] ?? ''),
+                'baseline_hash' => (string) ($trustedDbReport['baseline_hash'] ?? ''),
+                'is_canonical_delta_valid' => (bool) ($trustedDbReport['is_canonical_delta_valid'] ?? false),
+                'gl_batches_balanced' => (bool) ($trustedDbReport['gl_batches_balanced'] ?? false),
+                'all_healthy' => (bool) ($trustedDbReport['all_healthy'] ?? false),
+                'reconciler_results' => $trustedDbReport['reconciler_results'] ?? [],
+            ];
+            $recomputedDigest = hash('sha256', (string) json_encode($coreDeterministicPayload, JSON_UNESCAPED_SLASHES));
+            $actualDigest = (string) ($trustedDbReport['report_digest'] ?? '');
+            if ($actualDigest === '' || ! hash_equals($recomputedDigest, $actualDigest)) {
+                $errors[] = "Trusted DB report report_digest mismatch: recomputed '{$recomputedDigest}', got '{$actualDigest}'.";
+            }
+            if (isset($expectedPins['expectedReportDigest']) && ! hash_equals((string) $expectedPins['expectedReportDigest'], $actualDigest)) {
+                $errors[] = "Expected report_digest mismatch: expected '{$expectedPins['expectedReportDigest']}', got '{$actualDigest}'.";
+            }
+
+            // Recompute baseline metrics hash if baseline_metrics is present
+            if (isset($trustedDbReport['baseline_metrics']) && is_array($trustedDbReport['baseline_metrics'])) {
+                $recomputedBaselineHash = hash('sha256', (string) json_encode($trustedDbReport['baseline_metrics'], JSON_UNESCAPED_SLASHES));
+                if (! hash_equals($recomputedBaselineHash, (string) ($trustedDbReport['baseline_hash'] ?? ''))) {
+                    $errors[] = "Trusted DB report baseline_metrics recomputed hash '{$recomputedBaselineHash}' does not match baseline_hash '".($trustedDbReport['baseline_hash'] ?? 'null')."'.";
+                }
             }
 
             // Verify canonical graph and batch balance
