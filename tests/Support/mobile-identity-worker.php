@@ -491,6 +491,7 @@ try {
         'retries' => $retries,
         'duration' => microtime(true) - $startTime,
     ], JSON_THROW_ON_ERROR);
+    $hasFatalError = true;
 }
 
 if ($holdTable !== null) {
@@ -501,6 +502,6 @@ if ($holdTable !== null) {
         exit(1);
     }
 }
-if (isset($e) && $e instanceof Throwable && ! ($e instanceof MobileEventAuthenticationException)) {
+if (isset($hasFatalError) && $hasFatalError) {
     exit(1);
 }
