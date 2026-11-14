@@ -2285,15 +2285,17 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
         putenv('MOBILE_V2_HARNESS_ENABLE');
         putenv('PHASE8_ALLOW_DISPOSABLE_DB');
 
+        $sampleSchema = 'accounting_p8_tmp_0123456789ab';
+
         try {
-            \Tests\Support\Harness\DisposableFinancialPostRunInspector::assertExecutionGates();
+            \Tests\Support\Harness\DisposableFinancialPostRunInspector::assertExecutionGates($sampleSchema);
             $this->fail('Expected RuntimeException for missing harness enable flag');
         } catch (\RuntimeException $e) {
             $this->assertStringContainsString('Inspector refused: defaults to NO-EXECUTE', $e->getMessage());
         }
 
         try {
-            \Tests\Support\Harness\DisposableFinancialPostRunInspector::captureBaseline(1);
+            \Tests\Support\Harness\DisposableFinancialPostRunInspector::captureBaseline(1, $sampleSchema);
             $this->fail('Expected RuntimeException for captureBaseline without flags');
         } catch (\RuntimeException $e) {
             $this->assertStringContainsString('Inspector refused: defaults to NO-EXECUTE', $e->getMessage());
@@ -2301,26 +2303,102 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
     }
 
     #[Test]
-    public function test_financial_outer_validator_accepts_valid_evidence_and_enforces_approved_pins(): void
+    public function test_financial_post_run_inspector_refuses_malformed_or_unproven_disposable_schema(): void
+    {
+        putenv('MOBILE_V2_HARNESS_ENABLE=1');
+        putenv('PHASE8_ALLOW_DISPOSABLE_DB=1');
+
+        // 1. Refuse malformed schema name
+        try {
+            \Tests\Support\Harness\DisposableFinancialPostRunInspector::assertExecutionGates('production_db');
+            $this->fail('Expected RuntimeException for non-disposable schema name');
+        } catch (\RuntimeException $e) {
+            $this->assertStringContainsString('Inspector refused: invalid disposable schema name', $e->getMessage());
+        }
+
+        // 2. Refuse when ownership proof is missing
+        putenv('PHASE8_DISPOSABLE_DB_PROOF');
+        putenv('PHASE8_DISPOSABLE_DB_NONCE');
+        try {
+            \Tests\Support\Harness\DisposableFinancialPostRunInspector::assertExecutionGates('accounting_p8_tmp_deadbeef0000');
+            $this->fail('Expected RuntimeException for missing proof');
+        } catch (\RuntimeException $e) {
+            $this->assertStringContainsString('Disposable schema ownership proof is required', $e->getMessage());
+        }
+    }
+
+    #[Test]
+    public function test_financial_outer_validator_accepts_valid_golden_android_evidence_and_trusted_db_report(): void
     {
         $validPayload = [
+            'runId' => 'run-financial-20261114-001',
+            'timestamp' => '2026-11-14T20:00:00Z',
+            'backendHead' => 'cfc28baaaaf52521ecbc88f1ba4c621afee17221',
+            'clientHead' => \Tests\Support\Harness\DisposableFinancialPostRunInspector::APPROVED_ANDROID_EXECUTABLE_SHA,
             'clientPublicationHead' => \Tests\Support\Harness\DisposableFinancialPostRunInspector::APPROVED_ANDROID_PUBLICATION_SHA,
             'clientExecutableHead' => \Tests\Support\Harness\DisposableFinancialPostRunInspector::APPROVED_ANDROID_EXECUTABLE_SHA,
-            'backendExecutionHead' => 'cfc28baaaaf52521ecbc88f1ba4c621afee17221',
-            'handoffDigest' => '11223344556677889900aabbccddeeff11223344556677889900aabbccddeeff',
-            'lifecycle' => 'FINANCIAL_PAIRED_RUN',
+            'manifestDigest' => '11223344556677889900aabbccddeeff11223344556677889900aabbccddeeff',
+            'baseUrl' => 'https://127.0.0.1:18443',
+            'lifecycleGrant' => 'FINANCIAL_PAIRED_RUN',
+            'ttlExpiresAt' => 1795000000,
+            'overallStatus' => 'PASS',
             'scenarios' => [
-                'fresh_online_cash_commit_201' => 'PASS',
-                'idempotent_exact_replay_200' => 'PASS',
-                'event_status_query_parity_200' => 'PASS',
-                'tamper_conflict_rejection_409' => 'PASS',
+                [
+                    'name' => 'readiness_probe',
+                    'status' => 'PASS',
+                    'httpStatusCode' => 200,
+                    'latencyMs' => 45,
+                    'details' => 'Readiness probe 200 OK',
+                ],
+                [
+                    'name' => 'financial_cash_fresh_commit_201',
+                    'status' => 'PASS',
+                    'httpStatusCode' => 201,
+                    'latencyMs' => 120,
+                    'details' => 'Fresh online cash sale 201 Created',
+                ],
+                [
+                    'name' => 'financial_cash_idempotent_replay_200',
+                    'status' => 'PASS',
+                    'httpStatusCode' => 200,
+                    'latencyMs' => 60,
+                    'details' => 'Exact idempotent replay 200 OK',
+                ],
+                [
+                    'name' => 'financial_cash_event_status_posted',
+                    'status' => 'PASS',
+                    'httpStatusCode' => 200,
+                    'latencyMs' => 50,
+                    'details' => 'Status query 200 OK (completed)',
+                ],
+                [
+                    'name' => 'financial_cash_tamper_409',
+                    'status' => 'PASS',
+                    'httpStatusCode' => 409,
+                    'latencyMs' => 52,
+                    'details' => 'Tamper detected 409 Conflict',
+                ],
+                [
+                    'name' => 'transport_lost_ack_recovery',
+                    'status' => 'NOT_RUN',
+                    'httpStatusCode' => 0,
+                    'latencyMs' => 0,
+                    'details' => 'Not executed in basic run',
+                ],
+                [
+                    'name' => 'stock_permission_rollback_probes',
+                    'status' => 'NOT_RUN',
+                    'httpStatusCode' => 0,
+                    'latencyMs' => 0,
+                    'details' => 'Not executed in basic run',
+                ],
             ],
-            'lost_ack_recovery' => 'NOT_RUN',
-            'rollback_fault_injection' => 'NOT_RUN',
-            'side_effects' => [
-                'event_count_delta' => 1,
-                'reconciliations_healthy_count' => 6,
-            ],
+        ];
+
+        $trustedDbReport = [
+            'is_canonical_delta_valid' => true,
+            'gl_batches_balanced' => true,
+            'all_healthy' => true,
         ];
 
         $expectedPins = [
@@ -2330,7 +2408,11 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
             'handoffDigest' => '11223344556677889900aabbccddeeff11223344556677889900aabbccddeeff',
         ];
 
-        $result = \Tests\Support\Harness\DisposableFinancialPostRunInspector::validateOuterEvidenceJson($validPayload, $expectedPins);
+        $result = \Tests\Support\Harness\DisposableFinancialPostRunInspector::validateOuterEvidenceJson(
+            $validPayload,
+            $expectedPins,
+            $trustedDbReport
+        );
 
         $this->assertTrue($result['is_valid']);
         $this->assertSame([], $result['errors']);
@@ -2340,19 +2422,32 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
     public function test_financial_outer_validator_strictly_rejects_unadmitted_wrong_owner_publication_sha(): void
     {
         $payloadWithBadPub = [
+            'runId' => 'run-bad-pub',
+            'timestamp' => '2026-11-14T20:00:00Z',
+            'backendHead' => 'cfc28baaaaf52521ecbc88f1ba4c621afee17221',
+            'clientHead' => \Tests\Support\Harness\DisposableFinancialPostRunInspector::APPROVED_ANDROID_EXECUTABLE_SHA,
             'clientPublicationHead' => \Tests\Support\Harness\DisposableFinancialPostRunInspector::UNADMITTED_ANDROID_PUBLICATION_SHA,
             'clientExecutableHead' => \Tests\Support\Harness\DisposableFinancialPostRunInspector::APPROVED_ANDROID_EXECUTABLE_SHA,
-            'backendExecutionHead' => 'cfc28baaaaf52521ecbc88f1ba4c621afee17221',
-            'handoffDigest' => '11223344556677889900aabbccddeeff11223344556677889900aabbccddeeff',
-            'lifecycle' => 'FINANCIAL_PAIRED_RUN',
+            'manifestDigest' => '11223344556677889900aabbccddeeff11223344556677889900aabbccddeeff',
+            'baseUrl' => 'https://127.0.0.1:18443',
+            'lifecycleGrant' => 'FINANCIAL_PAIRED_RUN',
+            'ttlExpiresAt' => 1795000000,
+            'overallStatus' => 'PASS',
             'scenarios' => [
-                'fresh_online_cash_commit_201' => 'PASS',
-                'idempotent_exact_replay_200' => 'PASS',
-                'event_status_query_parity_200' => 'PASS',
-                'tamper_conflict_rejection_409' => 'PASS',
+                ['name' => 'readiness_probe', 'status' => 'PASS', 'httpStatusCode' => 200, 'latencyMs' => 10, 'details' => ''],
+                ['name' => 'financial_cash_fresh_commit_201', 'status' => 'PASS', 'httpStatusCode' => 201, 'latencyMs' => 10, 'details' => ''],
+                ['name' => 'financial_cash_idempotent_replay_200', 'status' => 'PASS', 'httpStatusCode' => 200, 'latencyMs' => 10, 'details' => ''],
+                ['name' => 'financial_cash_event_status_posted', 'status' => 'PASS', 'httpStatusCode' => 200, 'latencyMs' => 10, 'details' => ''],
+                ['name' => 'financial_cash_tamper_409', 'status' => 'PASS', 'httpStatusCode' => 409, 'latencyMs' => 10, 'details' => ''],
+                ['name' => 'transport_lost_ack_recovery', 'status' => 'NOT_RUN', 'httpStatusCode' => 0, 'latencyMs' => 0, 'details' => ''],
+                ['name' => 'stock_permission_rollback_probes', 'status' => 'NOT_RUN', 'httpStatusCode' => 0, 'latencyMs' => 0, 'details' => ''],
             ],
-            'lost_ack_recovery' => 'NOT_RUN',
-            'rollback_fault_injection' => 'NOT_RUN',
+        ];
+
+        $trustedDbReport = [
+            'is_canonical_delta_valid' => true,
+            'gl_batches_balanced' => true,
+            'all_healthy' => true,
         ];
 
         $expectedPins = [
@@ -2362,7 +2457,11 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
             'handoffDigest' => '11223344556677889900aabbccddeeff11223344556677889900aabbccddeeff',
         ];
 
-        $result = \Tests\Support\Harness\DisposableFinancialPostRunInspector::validateOuterEvidenceJson($payloadWithBadPub, $expectedPins);
+        $result = \Tests\Support\Harness\DisposableFinancialPostRunInspector::validateOuterEvidenceJson(
+            $payloadWithBadPub,
+            $expectedPins,
+            $trustedDbReport
+        );
 
         $this->assertFalse($result['is_valid']);
         $this->assertTrue(collect($result['errors'])->contains(fn ($err) => str_contains($err, 'unadmitted wrong-owner publication pin')));
@@ -2378,44 +2477,82 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
             'handoffDigest' => '11223344556677889900aabbccddeeff11223344556677889900aabbccddeeff',
         ];
 
+        $trustedDbReport = [
+            'is_canonical_delta_valid' => true,
+            'gl_batches_balanced' => true,
+            'all_healthy' => true,
+        ];
+
         // 1. Swapped pub and exe pins rejected
         $swappedPayload = [
+            'runId' => 'run-swapped',
+            'timestamp' => '2026-11-14T20:00:00Z',
+            'backendHead' => 'cfc28baaaaf52521ecbc88f1ba4c621afee17221',
+            'clientHead' => \Tests\Support\Harness\DisposableFinancialPostRunInspector::APPROVED_ANDROID_PUBLICATION_SHA,
             'clientPublicationHead' => \Tests\Support\Harness\DisposableFinancialPostRunInspector::APPROVED_ANDROID_EXECUTABLE_SHA,
             'clientExecutableHead' => \Tests\Support\Harness\DisposableFinancialPostRunInspector::APPROVED_ANDROID_PUBLICATION_SHA,
-            'backendExecutionHead' => 'cfc28baaaaf52521ecbc88f1ba4c621afee17221',
-            'handoffDigest' => '11223344556677889900aabbccddeeff11223344556677889900aabbccddeeff',
-            'lifecycle' => 'FINANCIAL_PAIRED_RUN',
+            'manifestDigest' => '11223344556677889900aabbccddeeff11223344556677889900aabbccddeeff',
+            'baseUrl' => 'https://127.0.0.1:18443',
+            'lifecycleGrant' => 'FINANCIAL_PAIRED_RUN',
+            'ttlExpiresAt' => 1795000000,
+            'overallStatus' => 'PASS',
             'scenarios' => [
-                'fresh_online_cash_commit_201' => 'PASS',
-                'idempotent_exact_replay_200' => 'PASS',
-                'event_status_query_parity_200' => 'PASS',
-                'tamper_conflict_rejection_409' => 'PASS',
+                ['name' => 'readiness_probe', 'status' => 'PASS', 'httpStatusCode' => 200, 'latencyMs' => 10, 'details' => ''],
+                ['name' => 'financial_cash_fresh_commit_201', 'status' => 'PASS', 'httpStatusCode' => 201, 'latencyMs' => 10, 'details' => ''],
+                ['name' => 'financial_cash_idempotent_replay_200', 'status' => 'PASS', 'httpStatusCode' => 200, 'latencyMs' => 10, 'details' => ''],
+                ['name' => 'financial_cash_event_status_posted', 'status' => 'PASS', 'httpStatusCode' => 200, 'latencyMs' => 10, 'details' => ''],
+                ['name' => 'financial_cash_tamper_409', 'status' => 'PASS', 'httpStatusCode' => 409, 'latencyMs' => 10, 'details' => ''],
+                ['name' => 'transport_lost_ack_recovery', 'status' => 'NOT_RUN', 'httpStatusCode' => 0, 'latencyMs' => 0, 'details' => ''],
+                ['name' => 'stock_permission_rollback_probes', 'status' => 'NOT_RUN', 'httpStatusCode' => 0, 'latencyMs' => 0, 'details' => ''],
             ],
-            'lost_ack_recovery' => 'NOT_RUN',
-            'rollback_fault_injection' => 'NOT_RUN',
         ];
-        $resultSwapped = \Tests\Support\Harness\DisposableFinancialPostRunInspector::validateOuterEvidenceJson($swappedPayload, $expectedPins);
+        $resultSwapped = \Tests\Support\Harness\DisposableFinancialPostRunInspector::validateOuterEvidenceJson($swappedPayload, $expectedPins, $trustedDbReport);
         $this->assertFalse($resultSwapped['is_valid']);
 
         // 2. Over-claiming full pilot when lost_ack was claimed PASS rejected
         $overclaimPayload = [
+            'runId' => 'run-overclaim',
+            'timestamp' => '2026-11-14T20:00:00Z',
+            'backendHead' => 'cfc28baaaaf52521ecbc88f1ba4c621afee17221',
+            'clientHead' => \Tests\Support\Harness\DisposableFinancialPostRunInspector::APPROVED_ANDROID_EXECUTABLE_SHA,
             'clientPublicationHead' => \Tests\Support\Harness\DisposableFinancialPostRunInspector::APPROVED_ANDROID_PUBLICATION_SHA,
             'clientExecutableHead' => \Tests\Support\Harness\DisposableFinancialPostRunInspector::APPROVED_ANDROID_EXECUTABLE_SHA,
-            'backendExecutionHead' => 'cfc28baaaaf52521ecbc88f1ba4c621afee17221',
-            'handoffDigest' => '11223344556677889900aabbccddeeff11223344556677889900aabbccddeeff',
-            'lifecycle' => 'FINANCIAL_PAIRED_RUN',
+            'manifestDigest' => '11223344556677889900aabbccddeeff11223344556677889900aabbccddeeff',
+            'baseUrl' => 'https://127.0.0.1:18443',
+            'lifecycleGrant' => 'FINANCIAL_PAIRED_RUN',
+            'ttlExpiresAt' => 1795000000,
+            'overallStatus' => 'PASS',
             'scenarios' => [
-                'fresh_online_cash_commit_201' => 'PASS',
-                'idempotent_exact_replay_200' => 'PASS',
-                'event_status_query_parity_200' => 'PASS',
-                'tamper_conflict_rejection_409' => 'PASS',
+                ['name' => 'readiness_probe', 'status' => 'PASS', 'httpStatusCode' => 200, 'latencyMs' => 10, 'details' => ''],
+                ['name' => 'financial_cash_fresh_commit_201', 'status' => 'PASS', 'httpStatusCode' => 201, 'latencyMs' => 10, 'details' => ''],
+                ['name' => 'financial_cash_idempotent_replay_200', 'status' => 'PASS', 'httpStatusCode' => 200, 'latencyMs' => 10, 'details' => ''],
+                ['name' => 'financial_cash_event_status_posted', 'status' => 'PASS', 'httpStatusCode' => 200, 'latencyMs' => 10, 'details' => ''],
+                ['name' => 'financial_cash_tamper_409', 'status' => 'PASS', 'httpStatusCode' => 409, 'latencyMs' => 10, 'details' => ''],
+                ['name' => 'transport_lost_ack_recovery', 'status' => 'PASS', 'httpStatusCode' => 200, 'latencyMs' => 10, 'details' => ''],
+                ['name' => 'stock_permission_rollback_probes', 'status' => 'NOT_RUN', 'httpStatusCode' => 0, 'latencyMs' => 0, 'details' => ''],
             ],
-            'lost_ack_recovery' => 'PASS',
-            'rollback_fault_injection' => 'NOT_RUN',
         ];
-        $resultOverclaim = \Tests\Support\Harness\DisposableFinancialPostRunInspector::validateOuterEvidenceJson($overclaimPayload, $expectedPins);
+        $resultOverclaim = \Tests\Support\Harness\DisposableFinancialPostRunInspector::validateOuterEvidenceJson($overclaimPayload, $expectedPins, $trustedDbReport);
         $this->assertFalse($resultOverclaim['is_valid']);
-        $this->assertTrue(collect($resultOverclaim['errors'])->contains(fn ($err) => str_contains($err, 'cannot claim Lost ACK or Rollback passed')));
+        $this->assertTrue(collect($resultOverclaim['errors'])->contains(fn ($err) => str_contains($err, 'cannot claim \'PASS\' in basic financial run')));
+
+        // 3. Rejects missing separate trusted DB report
+        $resultNoDb = \Tests\Support\Harness\DisposableFinancialPostRunInspector::validateOuterEvidenceJson($validPayload ?? $overclaimPayload, $expectedPins, null);
+        $this->assertFalse($resultNoDb['is_valid']);
+        $this->assertTrue(collect($resultNoDb['errors'])->contains(fn ($err) => str_contains($err, 'Separate REQUIRED trusted owned DB inspection report is missing')));
+    }
+
+    #[Test]
+    public function test_financial_inspector_cli_defaults_to_no_execute(): void
+    {
+        $cliPath = dirname(__DIR__, 3).'/Support/Harness/financial-inspector-cli.php';
+        $this->assertFileExists($cliPath);
+
+        $process = new \Symfony\Component\Process\Process([PHP_BINARY, $cliPath]);
+        $process->run();
+
+        $this->assertSame(1, $process->getExitCode());
+        $this->assertStringContainsString('Inspector defaults to NO-EXECUTE', $process->getErrorOutput());
     }
 }
 
