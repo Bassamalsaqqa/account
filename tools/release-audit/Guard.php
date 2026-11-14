@@ -120,7 +120,13 @@ final class Guard
         $c['limits'] = $limits;
 
         // Cryptographic runner capability is mandatory before opening a socket.
+        if (! is_file($root.'/vendor/autoload.php')) {
+            self::refuse();
+        }
         require_once $root.'/vendor/autoload.php';
+        if (! class_exists(\Brick\Math\BigInteger::class) && ! function_exists('bccomp')) {
+            self::refuse();
+        }
         DisposableMariaDbSchema::assertPrimarySchema($c['schema']);
 
         return $c;

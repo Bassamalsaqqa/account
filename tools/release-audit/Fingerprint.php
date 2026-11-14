@@ -55,16 +55,70 @@ final class Budget
         $this->assertWithinLimits();
     }
 
+    public static function compareExact(int|string $a, int|string $b): int
+    {
+        if (class_exists(\Brick\Math\BigInteger::class)) {
+            return \Brick\Math\BigInteger::of((string) $a)->compareTo(\Brick\Math\BigInteger::of((string) $b));
+        }
+        if (function_exists('bccomp')) {
+            return bccomp((string) $a, (string) $b);
+        }
+        $sa = ltrim((string) $a, '0');
+        if ($sa === '') {
+            $sa = '0';
+        }
+        $sb = ltrim((string) $b, '0');
+        if ($sb === '') {
+            $sb = '0';
+        }
+        $la = strlen($sa);
+        $lb = strlen($sb);
+        if ($la !== $lb) {
+            return $la < $lb ? -1 : 1;
+        }
+
+        return strcmp($sa, $sb);
+    }
+
+    public static function addExact(int|string $a, int|string $b): string
+    {
+        if (class_exists(\Brick\Math\BigInteger::class)) {
+            return (string) \Brick\Math\BigInteger::of((string) $a)->plus(\Brick\Math\BigInteger::of((string) $b));
+        }
+        if (function_exists('bcadd')) {
+            return bcadd((string) $a, (string) $b);
+        }
+        $sa = (string) $a;
+        $sb = (string) $b;
+        $i = strlen($sa) - 1;
+        $j = strlen($sb) - 1;
+        $carry = 0;
+        $res = '';
+        while ($i >= 0 || $j >= 0 || $carry > 0) {
+            $sum = $carry;
+            if ($i >= 0) {
+                $sum += (int) $sa[$i--];
+            }
+            if ($j >= 0) {
+                $sum += (int) $sb[$j--];
+            }
+            $res = ($sum % 10).$res;
+            $carry = intdiv($sum, 10);
+        }
+
+        return $res === '' ? '0' : $res;
+    }
+
     public function checkCellBytes(int|string|null $bytes): void
     {
         if ($bytes === null) {
             return;
         }
         if (is_string($bytes)) {
-            if (bccomp($bytes, (string) $this->maxCellBytes) > 0) {
+            if (self::compareExact($bytes, (string) $this->maxCellBytes) > 0) {
                 Guard::refuse();
             }
-            if (bccomp(bcadd((string) $this->totalBytes, $bytes), (string) $this->maxTotalBytes) > 0) {
+            if (self::compareExact(self::addExact((string) $this->totalBytes, $bytes), (string) $this->maxTotalBytes) > 0) {
                 Guard::refuse();
             }
 
@@ -430,23 +484,23 @@ final class Fingerprint
             $sumTableBytes = $aggRow[2] !== null ? (string) $aggRow[2] : '0';
 
             // Verify row count bounds with overflow safety
-            if (bccomp($tableRowCount, (string) $budget->maxTotalRows()) > 0) {
+            if (Budget::compareExact($tableRowCount, (string) $budget->maxTotalRows()) > 0) {
                 Guard::refuse();
             }
-            if (bccomp(bcadd((string) $budget->totalRows(), $tableRowCount), (string) $budget->maxTotalRows()) > 0) {
+            if (Budget::compareExact(Budget::addExact((string) $budget->totalRows(), $tableRowCount), (string) $budget->maxTotalRows()) > 0) {
                 Guard::refuse();
             }
 
             // Verify single row memory limit: a single row's raw bytes cannot exceed maxMemoryBytes / 4
-            if (bccomp($maxRowBytes, (string) $budget->maxCellBytes()) > 0) {
+            if (Budget::compareExact($maxRowBytes, (string) $budget->maxCellBytes()) > 0) {
                 Guard::refuse();
             }
 
             // Verify total bytes sum against cumulative budget
-            if (bccomp($sumTableBytes, (string) $budget->maxTotalBytes()) > 0) {
+            if (Budget::compareExact($sumTableBytes, (string) $budget->maxTotalBytes()) > 0) {
                 Guard::refuse();
             }
-            if (bccomp(bcadd((string) $budget->totalBytes(), $sumTableBytes), (string) $budget->maxTotalBytes()) > 0) {
+            if (Budget::compareExact(Budget::addExact((string) $budget->totalBytes(), $sumTableBytes), (string) $budget->maxTotalBytes()) > 0) {
                 Guard::refuse();
             }
 
