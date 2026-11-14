@@ -36,9 +36,11 @@ final class Budget
         $this->maxExecutionSeconds = $limits['max_execution_seconds'] ?? 60;
         $this->maxTotalRows = $limits['max_total_rows'] ?? 500000;
         $this->maxTotalBytes = $limits['max_total_bytes'] ?? 104857600;
-        $this->maxMemoryBytes = $limits['max_memory_bytes'] ?? 67108864;
-        $this->maxCellBytes = min(16777216, max(65536, intdiv($this->maxMemoryBytes, 4)));
-        $this->peakMemoryBytes = memory_get_peak_usage(true);
+        $this->maxMemoryBytes = $limits['max_memory_bytes'] ?? max(67108864, memory_get_usage(true) + 67108864);
+        $this->maxCellBytes = isset($limits['max_cell_bytes'])
+            ? (int) $limits['max_cell_bytes']
+            : min(16777216, max(65536, intdiv($this->maxMemoryBytes, 4)));
+        $this->peakMemoryBytes = memory_get_usage(true);
         $this->assertWithinLimits();
     }
 
@@ -133,15 +135,14 @@ final class Budget
     {
         $now = microtime(true);
         $currentMemory = memory_get_usage(true);
-        $peak = memory_get_peak_usage(true);
-        if ($peak > $this->peakMemoryBytes) {
-            $this->peakMemoryBytes = $peak;
+        if ($currentMemory > $this->peakMemoryBytes) {
+            $this->peakMemoryBytes = $currentMemory;
         }
 
         if (($now - $this->startTime) >= $this->maxExecutionSeconds) {
             Guard::refuse();
         }
-        if ($currentMemory > $this->maxMemoryBytes || $peak > $this->maxMemoryBytes) {
+        if ($this->peakMemoryBytes > $this->maxMemoryBytes) {
             Guard::refuse();
         }
         if ($this->totalRows > $this->maxTotalRows) {
@@ -156,7 +157,7 @@ final class Budget
     {
         $this->assertWithinLimits();
         $elapsed = microtime(true) - $this->startTime;
-        $remaining = (int) floor($this->maxExecutionSeconds - $elapsed);
+        $remaining = (int) ceil($this->maxExecutionSeconds - $elapsed);
         if ($remaining <= 0) {
             Guard::refuse();
         }
@@ -197,6 +198,11 @@ final class Budget
     public function totalBytes(): int
     {
         return $this->totalBytes;
+    }
+
+    public function peakMemoryBytes(): int
+    {
+        return $this->peakMemoryBytes;
     }
 
     /**
@@ -240,27 +246,21 @@ final class Fingerprint
             Guard::refuse();
         }
 
-        // Check MariaDB max_statement_time
+        // Try MariaDB max_statement_time directly (seconds)
         try {
-            $stmt = $pdo->query('SELECT @@session.max_statement_time');
-            if ($stmt !== false && $stmt->fetchColumn() !== false) {
-                $pdo->exec("SET SESSION max_statement_time = {$timeoutSeconds}");
+            $pdo->exec("SET SESSION max_statement_time = {$timeoutSeconds}");
 
-                return;
-            }
+            return;
         } catch (\Throwable) {
             // Fall through
         }
 
-        // Check MySQL max_execution_time (milliseconds)
+        // Try MySQL max_execution_time (milliseconds)
         try {
-            $stmt = $pdo->query('SELECT @@session.max_execution_time');
-            if ($stmt !== false && $stmt->fetchColumn() !== false) {
-                $timeoutMs = $timeoutSeconds * 1000;
-                $pdo->exec("SET SESSION max_execution_time = {$timeoutMs}");
+            $timeoutMs = $timeoutSeconds * 1000;
+            $pdo->exec("SET SESSION max_execution_time = {$timeoutMs}");
 
-                return;
-            }
+            return;
         } catch (\Throwable) {
             // Fall through
         }
@@ -406,82 +406,91 @@ final class Fingerprint
 
         self::configureStatementTimeout($pdo, $budget->remainingExecutionSeconds());
         $previousBuffered = (bool) $pdo->getAttribute(PDO::MYSQL_ATTR_USE_BUFFERED_QUERY);
+        $pdo->setAttribute(PDO::MYSQL_ATTR_USE_BUFFERED_QUERY, true);
 
-        $tablesStmt = $pdo->query('SELECT TABLE_NAME, ENGINE, TABLE_TYPE FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() ORDER BY BINARY TABLE_NAME');
-        $tables = $tablesStmt->fetchAll(PDO::FETCH_ASSOC);
-        $budget->recordBytes(strlen(serialize($tables)));
+        try {
+            $tablesStmt = $pdo->query('SELECT TABLE_NAME, ENGINE, TABLE_TYPE FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() ORDER BY BINARY TABLE_NAME');
+            $tables = $tablesStmt->fetchAll(PDO::FETCH_ASSOC);
+            $tablesStmt->closeCursor();
+            $budget->recordBytes(strlen(serialize($tables)));
 
-        foreach ($tables as $table) {
-            $name = (string) ($table['TABLE_NAME'] ?? '');
-            if (($table['ENGINE'] ?? '') !== 'InnoDB' || ($table['TABLE_TYPE'] ?? '') !== 'BASE TABLE' || ! preg_match('/^[a-zA-Z0-9_]+$/D', $name)) {
-                Guard::refuse();
-            }
-        }
-
-        $result = [];
-        $captureRows = 0;
-        $captureBytes = 0;
-        $captureStartTime = microtime(true);
-
-        foreach ($tables as $table) {
-            $name = (string) $table['TABLE_NAME'];
-            $budget->assertWithinLimits();
-
-            $pkStmt = $pdo->query("SHOW INDEX FROM `{$name}` WHERE Key_name = 'PRIMARY'");
-            $pk = $pkStmt->fetchAll(PDO::FETCH_ASSOC);
-            if ($pk === []) {
-                Guard::refuse();
-            }
-            usort($pk, fn ($a, $b) => $a['Seq_in_index'] <=> $b['Seq_in_index']);
-            $order = [];
-            foreach ($pk as $key) {
-                if (! preg_match('/^[a-zA-Z0-9_]+$/D', (string) $key['Column_name'])) {
+            foreach ($tables as $table) {
+                $name = (string) ($table['TABLE_NAME'] ?? '');
+                if (($table['ENGINE'] ?? '') !== 'InnoDB' || ($table['TABLE_TYPE'] ?? '') !== 'BASE TABLE' || ! preg_match('/^[a-zA-Z0-9_]+$/D', $name)) {
                     Guard::refuse();
                 }
-                $order[] = '`'.$key['Column_name'].'`';
             }
 
-            $createTable = $pdo->query("SHOW CREATE TABLE `{$name}`")->fetch(PDO::FETCH_NUM);
-            if (! is_array($createTable) || ! isset($createTable[1]) || ! is_string($createTable[1])) {
-                Guard::refuse();
-            }
-            $ddl = $createTable[1];
-            $ddlInfo = self::normalizeDdl($ddl);
+            $result = [];
+            $captureRows = 0;
+            $captureBytes = 0;
+            $captureStartTime = microtime(true);
 
-            // Fetch table column names via zero-row query
-            $colsStmt = $pdo->query("SELECT * FROM `{$name}` LIMIT 0");
-            $numCols = $colsStmt->columnCount();
-            if ($numCols < 1) {
-                Guard::refuse();
-            }
-            $cols = [];
-            for ($i = 0; $i < $numCols; $i++) {
-                $meta = $colsStmt->getColumnMeta($i);
-                if (! isset($meta['name']) || ! preg_match('/^[a-zA-Z0-9_]+$/D', (string) $meta['name'])) {
+            foreach ($tables as $table) {
+                $name = (string) $table['TABLE_NAME'];
+                $budget->assertWithinLimits();
+
+                $pkStmt = $pdo->query("SHOW INDEX FROM `{$name}` WHERE Key_name = 'PRIMARY'");
+                $pk = $pkStmt->fetchAll(PDO::FETCH_ASSOC);
+                $pkStmt->closeCursor();
+                if ($pk === []) {
                     Guard::refuse();
                 }
-                $cols[] = (string) $meta['name'];
-            }
+                usort($pk, fn ($a, $b) => $a['Seq_in_index'] <=> $b['Seq_in_index']);
+                $order = [];
+                foreach ($pk as $key) {
+                    if (! preg_match('/^[a-zA-Z0-9_]+$/D', (string) $key['Column_name'])) {
+                        Guard::refuse();
+                    }
+                    $order[] = '`'.$key['Column_name'].'`';
+                }
 
-            // -------------------------------------------------------------
-            // PHASE A: Engine-only numeric aggregate query.
-            // Returns ONLY bounded numeric aggregates (zero payload materialization).
-            // Computes COUNT(*), MAX row byte sum, SUM total byte sum, and MAX cell bytes per column.
-            // -------------------------------------------------------------
-            $maxCellExprs = array_map(fn ($c) => "MAX(OCTET_LENGTH(`{$c}`))", $cols);
-            $sumRowExpr = 'MAX('.implode(' + ', array_map(fn ($c) => "COALESCE(OCTET_LENGTH(`{$c}`), 0)", $cols)).')';
-            $sumTotalExpr = 'SUM('.implode(' + ', array_map(fn ($c) => "COALESCE(OCTET_LENGTH(`{$c}`), 0)", $cols)).')';
-            $aggSql = 'SELECT COUNT(*), '.$sumRowExpr.', '.$sumTotalExpr.', '.implode(', ', $maxCellExprs)." FROM `{$name}`";
+                $createStmt = $pdo->query("SHOW CREATE TABLE `{$name}`");
+                $createTable = $createStmt->fetch(PDO::FETCH_NUM);
+                $createStmt->closeCursor();
+                if (! is_array($createTable) || ! isset($createTable[1]) || ! is_string($createTable[1])) {
+                    Guard::refuse();
+                }
+                $ddl = $createTable[1];
+                $ddlInfo = self::normalizeDdl($ddl);
 
-            self::configureStatementTimeout($pdo, $budget->remainingExecutionSeconds());
-            $aggRow = $pdo->query($aggSql)->fetch(PDO::FETCH_NUM);
-            if (! is_array($aggRow) || count($aggRow) !== (3 + $numCols)) {
-                Guard::refuse();
-            }
+                // Fetch table column names via zero-row query
+                $colsStmt = $pdo->query("SELECT * FROM `{$name}` LIMIT 0");
+                $numCols = $colsStmt->columnCount();
+                if ($numCols < 1) {
+                    Guard::refuse();
+                }
+                $cols = [];
+                for ($i = 0; $i < $numCols; $i++) {
+                    $meta = $colsStmt->getColumnMeta($i);
+                    if (! isset($meta['name']) || ! preg_match('/^[a-zA-Z0-9_]+$/D', (string) $meta['name'])) {
+                        Guard::refuse();
+                    }
+                    $cols[] = (string) $meta['name'];
+                }
+                $colsStmt->closeCursor();
 
-            $tableRowCount = (string) $aggRow[0];
-            $maxRowBytes = $aggRow[1] !== null ? (string) $aggRow[1] : '0';
-            $sumTableBytes = $aggRow[2] !== null ? (string) $aggRow[2] : '0';
+                // -------------------------------------------------------------
+                // PHASE A: Engine-only numeric aggregate query.
+                // Returns ONLY bounded numeric aggregates (zero payload materialization).
+                // Computes COUNT(*), MAX row byte sum, SUM total byte sum, and MAX cell bytes per column.
+                // -------------------------------------------------------------
+                $maxCellExprs = array_map(fn ($c) => "MAX(OCTET_LENGTH(`{$c}`))", $cols);
+                $sumRowExpr = 'MAX('.implode(' + ', array_map(fn ($c) => "COALESCE(OCTET_LENGTH(`{$c}`), 0)", $cols)).')';
+                $sumTotalExpr = 'SUM('.implode(' + ', array_map(fn ($c) => "COALESCE(OCTET_LENGTH(`{$c}`), 0)", $cols)).')';
+                $aggSql = 'SELECT COUNT(*), '.$sumRowExpr.', '.$sumTotalExpr.', '.implode(', ', $maxCellExprs)." FROM `{$name}`";
+
+                self::configureStatementTimeout($pdo, $budget->remainingExecutionSeconds());
+                $aggStmt = $pdo->query($aggSql);
+                $aggRow = $aggStmt->fetch(PDO::FETCH_NUM);
+                $aggStmt->closeCursor();
+                if (! is_array($aggRow) || count($aggRow) !== (3 + $numCols)) {
+                    Guard::refuse();
+                }
+
+                $tableRowCount = (string) $aggRow[0];
+                $maxRowBytes = $aggRow[1] !== null ? (string) $aggRow[1] : '0';
+                $sumTableBytes = $aggRow[2] !== null ? (string) $aggRow[2] : '0';
 
             // Verify row count bounds with overflow safety
             if (Budget::compareExact($tableRowCount, (string) $budget->maxTotalRows()) > 0) {
@@ -579,6 +588,9 @@ final class Fingerprint
                 'classification' => in_array($name, self::OPERATIONAL_MUTABLE_TABLES, true) ? 'operational_mutable' : 'preservation',
             ];
         }
+    } finally {
+        $pdo->setAttribute(PDO::MYSQL_ATTR_USE_BUFFERED_QUERY, $previousBuffered);
+    }
 
         self::$lastMetrics = [
             'total_rows' => $captureRows,

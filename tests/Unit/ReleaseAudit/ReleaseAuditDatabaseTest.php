@@ -590,10 +590,9 @@ final class ReleaseAuditDatabaseTest extends TestCase
             }
         };
 
-        // Strict budget: max_memory_bytes = 1048576 (1MB), meaning maxCellBytes = 262144 (256KB)
+        // Strict budget: max_cell_bytes = 100000 (100KB)
         $strictBudget = new \ReleaseAudit\Budget([
-            'max_memory_bytes' => 1048576,
-            'max_total_bytes' => 1048576,
+            'max_cell_bytes' => 100000,
         ]);
 
         // Insert a payload larger than 256KB into an operational table (sessions)
