@@ -2,24 +2,16 @@
 
 > **OPERATIONAL LANE & ROLE BOUNDARY**  
 > - **Preparation Lane**: Source-only recovery preparation, validation utilities, and runbook authoring.  
-> - **Operator Authority**: **Root is the sole production operator.**  
-> - **Agent Constraint**: Strictly source-only implementation. No remote SSH commands, no database queries/writes, no build execution, no child agents.  
-> - **Release Candidate (PR 99)**: Git commit `8cd432220801b08b10b6f25f9ee9a215de94d44c` (0 migrations).  
-> - **Live Production Baseline**: Git commit `f8a0cf7012c4875bec7320d42e0f8dde58593b52` (deployed on `account.palsync.net`).  
-> - **Current Live State**: Availability restored to baseline `f8a0cf7` (maintenance OFF at 08:06:03Z).  
-> - **Verified Production Capture Point**:  
->   `coherent_recovery_20261114_080534Z_f8a0cf7_bdcbd0448a45`  
->   Manifest SHA-256: `5d9dd7208c876a626b4ea13708b6ba2d89d3a8078edb748eb8b4bb8068e0ba02`  
->   All 7 components verified (`database.sql` 736,679 bytes, `complete_recovery_bundle.tar` 76,277,760 bytes).  
-> - **Off-Host Custody**: Transferred to Owner custody at `/home/t3dev/.secure-recovery/account-palsync/` (0700 dir, 0600 files).  
-> - **Actual Restore Verification**: **VERIFIED SUCCESSFUL AT 08:22:07Z** by Root on source `c4e6e6d5fcb6f7c9ea98e37455eeaf3877dc78cd`.  
->   - Owned disposable schema: `accounting_p8_tmp_6f912f8371f0` via schema-restricted ephemeral user.  
->   - Restored metrics: 104 tables, 79 migrations, 2,681 rows, structure SHA: `2fb72ba50815240d10099e6b8f2a2c9c34d86cb1518ae16dc5630badf699cdc6`.  
->   - Independent cleanup: Completed at 08:22:17Z (0 exact owned schemas or restore accounts remaining).  
->   - Private restore report: Stored at `~/.secure-recovery/account-palsync/restore-c4e6-report.json`.  
->   - Attestation Notice: Contemporaneous QA evidence is recorded as limited root attestation. PR 101 is **DISPOSABLE-ONLY** and is never run live or approved as production tooling.  
-> - **Symlink Containment Notice**: Existing `public_assets ./storage` symlink targets `/home/u556956644/domains/palsync.net/accounting/storage/app/public`. It is preserved as metadata only and MUST NOT be followed or activated during isolated restore (actual data is preserved in `private_storage.tar.gz`).  
-> - **Preserved Live Untracked Assets**: `storage/framework/asset-stage.Rod9Vi`, `storage/framework/deepseek-assets.cCmzPJ`, `storage/framework/deepseek-assets.fYgzxl`, `storage/framework/deploy.lock`. Strictly retain; do not prune or clean up.  
+> - **Operator Authority**: **Root is the sole production operator.** Zero production writes or database connections executed by AGY.  
+> - **Release Candidate (PR 99)**: Git commit `8cd432220801b08b10b6f25f9ee9a215de94d44c` (0 migrations). PR 99 HEAD is NOT altered.  
+> - **Deployment Execution**: **DEPLOYED & REOPENED AT 2026-11-14T11:29:56Z**.  
+>   - Live deployed commit: `8cd432220801b08b10b6f25f9ee9a215de94d44c`  
+>   - Public build manifest: `12cee9f9dc2213615ff19d48060308c1a89030f255e694c530083538bd15fedd`  
+>   - Public `.htaccess`: `071652f64ad14f324544e95317aed883e59a9337acb5e1b3519bf0e71a36bdcc`  
+>   - Maintenance status: `maintenance OFF` (online)  
+>   - Pre-cutover coherent capture: `coherent_recovery_20261114_112352Z_f8a0cf7_c63e5ae869cf` (all 7 components verified off-host before checkout; not separately restored).  
+>   - Detailed release attestation: See [`docs/evidence/PR99_WEB_DEPLOYMENT_RELEASE_RECORD_20261114.md`](file:///home/t3dev/.t3/worktrees/account/t3-f4f3ec29-51a247ef1ca09050/docs/evidence/PR99_WEB_DEPLOYMENT_RELEASE_RECORD_20261114.md).  
+> - **Preserved Live Untracked Assets**: `storage/framework/asset-stage.Rod9Vi`, `storage/framework/deepseek-assets.cCmzPJ`, `storage/framework/deepseek-assets.fYgzxl`, `storage/framework/deploy.lock`. Strictly retain; do not prune.  
 
 ---
 
