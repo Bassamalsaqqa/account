@@ -6,9 +6,7 @@ namespace App\Support\Mobile\Receipt\Exceptions;
 
 use RuntimeException;
 
-class SecurityException extends RuntimeException
-{
-}
+class SecurityException extends RuntimeException {}
 
 if (! class_exists('SecurityException', false)) {
     class_alias(SecurityException::class, 'SecurityException');

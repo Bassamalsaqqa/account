@@ -34,6 +34,7 @@ use App\Services\Tenancy\CompanyRoleService;
 use App\Support\Mobile\Receipt\CompositeFinancialExecutionScope;
 use App\Support\Mobile\Receipt\FinancialExecutionAdapterInterface;
 use App\Support\Mobile\Receipt\MobileEventReceiptManager;
+use App\Support\Mobile\Receipt\NativeFinancialExecutionCapability;
 use App\Support\Tenancy\CompanyContext;
 use App\Support\Tenancy\CompanyScope;
 use Illuminate\Support\Facades\DB;
@@ -257,7 +258,7 @@ final class MobileReceiptRollbackAtomicityTest extends TestCase
                 MobileDevice $device,
                 array $payload,
                 string $idempotencySuffix,
-                ?\App\Support\Mobile\Receipt\NativeFinancialExecutionCapability $capability = null
+                ?NativeFinancialExecutionCapability $capability = null
             ): array {
                 $run = function () use ($company, $actor, $idempotencySuffix) {
                     // 1. Advance numbering

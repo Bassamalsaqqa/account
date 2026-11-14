@@ -6,9 +6,7 @@ namespace App\Support\Mobile\Receipt\Exceptions;
 
 use LogicException;
 
-class IllegalStateException extends LogicException
-{
-}
+class IllegalStateException extends LogicException {}
 
 if (! class_exists('IllegalStateException', false)) {
     class_alias(IllegalStateException::class, 'IllegalStateException');

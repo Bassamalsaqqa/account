@@ -57,6 +57,9 @@ final class NativeFinancialExecutionCapability
         throw new BadMethodCallException('NativeFinancialExecutionCapability cannot be serialized.');
     }
 
+    /**
+     * @param  array<string, mixed>  $data
+     */
     public function __unserialize(array $data): void
     {
         throw new BadMethodCallException('NativeFinancialExecutionCapability cannot be deserialized.');
