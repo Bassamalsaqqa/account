@@ -1,0 +1,11 @@
+PHPUnit 12.5.36 by Sebastian Bergmann and contributors.
+
+Runtime:       PHP 8.4.27
+Configuration: /home/t3dev/.t3/worktrees/account/integration-mobile-backend-supervision/phpunit.xml
+
+................................................................. 65 / 92 ( 70%)
+...........................                                       92 / 92 (100%)
+
+Time: 00:03.038, Memory: 32.50 MB
+
+[30;42mOK (92 tests, 458 assertions)[0m
