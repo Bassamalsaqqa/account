@@ -681,7 +681,7 @@ final class ReleaseAuditDatabaseTest extends TestCase
         }
     }
 
-    public function test_multiquery_service_deadline_and_early_abort_process_cleanup(): void
+    public function test_budget_deadline_math_unit_expiration_and_peak_memory_tracking(): void
     {
         $pdo = DB::connection()->getPdo();
 
@@ -705,5 +705,207 @@ final class ReleaseAuditDatabaseTest extends TestCase
         $peak = $budget->peakMemoryBytes();
         self::assertGreaterThan(0, $peak);
         self::assertLessThan(134217728, $peak);
+    }
+
+    public function test_multiquery_service_deadline_enforced_across_engine_queries_via_before_executing_hook(): void
+    {
+        $pdo = DB::connection()->getPdo();
+
+        // Shared budget with 1 second max_execution_seconds
+        $budget = new Budget(['max_execution_seconds' => 1]);
+
+        $executedQueries = [];
+        $hook = static function (string $query, array $bindings, $conn) use ($budget, $pdo, &$executedQueries): void {
+            $executedQueries[] = $query;
+            $budget->assertWithinLimits();
+            Fingerprint::configureStatementTimeout($pdo, $budget->remainingExecutionSeconds());
+        };
+
+        // Register Laravel query hook as used in audit.php
+        DB::beforeExecuting($hook);
+
+        $refused = false;
+        $queriesCompleted = 0;
+
+        try {
+            // Sequence of real engine queries, each under statement timeout (0.35s < 1s)
+            DB::select('SELECT 1 AS q1, SLEEP(0.35)');
+            $queriesCompleted++;
+
+            DB::select('SELECT 2 AS q2, SLEEP(0.35)');
+            $queriesCompleted++;
+
+            DB::select('SELECT 3 AS q3, SLEEP(0.35)');
+            $queriesCompleted++;
+
+            // Query 4 should be intercepted and refused by beforeExecuting hook before engine execution
+            DB::select('SELECT 4 AS q4, SLEEP(0.35)');
+            $queriesCompleted++;
+        } catch (\RuntimeException $e) {
+            $refused = ($e->getMessage() === 'AUDIT_REFUSED');
+        } finally {
+            $beforeExecutingProperty = (new \ReflectionClass(DB::connection()))->getProperty('beforeExecutingCallbacks');
+            $beforeExecutingProperty->setValue(DB::connection(), []);
+        }
+
+        self::assertTrue($refused, 'Service deadline must trigger AUDIT_REFUSED via beforeExecuting hook before issuing query that exceeds cumulative budget');
+        self::assertSame(3, $queriesCompleted, 'Exactly 3 queries should complete before the 1-second cumulative budget deadline halts execution');
+        self::assertCount(4, $executedQueries, 'The 4th query must be registered at the hook stage but aborted before successful completion');
+    }
+
+    public function test_early_unbuffered_abort_supervised_cli_and_observer_connection_verifies_engine_termination(): void
+    {
+        $schema = DB::connection()->getDatabaseName();
+        $observerPdo = DB::connection()->getPdo();
+
+        $host = (string) config('database.connections.mysql.host', '127.0.0.1');
+        $port = (string) config('database.connections.mysql.port', '3342');
+        $user = (string) config('database.connections.mysql.username', 'test_runner');
+        $pass = (string) config('database.connections.mysql.password', '');
+
+        // Launch supervised child CLI process that initiates an unbuffered long-running query
+        $childScript = implode("\n", [
+            '<?php',
+            'declare(strict_types=1);',
+            '$pdo = new PDO("mysql:host='.$host.';port='.$port.';dbname='.$schema.';charset=utf8mb4", "'.$user.'", "'.$pass.'", [',
+            '    PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,',
+            '    PDO::MYSQL_ATTR_USE_BUFFERED_QUERY => false,',
+            ']);',
+            '$cid = (int) $pdo->query("SELECT CONNECTION_ID()")->fetchColumn();',
+            'fwrite(STDOUT, "CID:{$cid}\n");',
+            'fflush(STDOUT);',
+            '$stmt = $pdo->query("SELECT SLEEP(15)");',
+            'fwrite(STDOUT, "COMPLETED\n");',
+        ]);
+
+        $child = new Process([PHP_BINARY, '-r', $childScript], dirname(__DIR__, 3), null, null, 10.0);
+        $child->start();
+
+        $childConnectionId = null;
+        $startTime = microtime(true);
+        while ($child->isRunning() && microtime(true) - $startTime < 4.0) {
+            $output = $child->getIncrementalOutput();
+            if (preg_match('/CID:(\d+)/', $output, $matches)) {
+                $childConnectionId = (int) $matches[1];
+                break;
+            }
+            usleep(20000);
+        }
+
+        self::assertNotNull($childConnectionId, 'Child process must establish connection and emit owned CONNECTION_ID');
+
+        // Observer connection checks INFORMATION_SCHEMA.PROCESSLIST to verify query is actively executing in MariaDB
+        $checkStmt = $observerPdo->prepare('SELECT ID, USER, DB, COMMAND, TIME, INFO FROM INFORMATION_SCHEMA.PROCESSLIST WHERE ID = ?');
+        $checkStmt->execute([$childConnectionId]);
+        $activeRow = $checkStmt->fetch(PDO::FETCH_ASSOC);
+
+        self::assertIsArray($activeRow, 'Child connection must be visible in MariaDB processlist while running unbuffered query');
+        self::assertSame($schema, $activeRow['DB'], 'Child connection must be bound to the exact owned nonce schema');
+        self::assertStringContainsString('SLEEP', (string) $activeRow['INFO'], 'Child query must be actively executing in MariaDB engine');
+
+        // Abort child process
+        $child->stop(0.2, SIGTERM);
+
+        self::assertFalse($child->isRunning(), 'Supervised child process must be terminated');
+        self::assertStringNotContainsString('COMPLETED', $child->getOutput(), 'Aborted child must never reach completion output');
+
+        // Observer connection polls PROCESSLIST to verify MariaDB pruned the severed connection
+        $isGone = false;
+        for ($i = 0; $i < 20; $i++) {
+            $checkStmt->execute([$childConnectionId]);
+            if ($checkStmt->fetch(PDO::FETCH_ASSOC) === false) {
+                $isGone = true;
+                break;
+            }
+            usleep(50000);
+        }
+
+        self::assertTrue($isGone, 'MariaDB engine must prune connection and terminate query upon socket closure from client abort');
+    }
+
+    public function test_representative_bounded_multi_mb_streaming_with_memory_ceiling_and_phase_a_refusal(): void
+    {
+        $schema = DB::connection()->getDatabaseName();
+        $pdo = DB::connection()->getPdo();
+
+        self::assertStringStartsWith('accounting_p8_tmp_', $schema, 'Fixture must strictly reside in owned nonce schema');
+
+        $tableName = 'test_bounded_streaming_fixture';
+        $pdo->exec("CREATE TABLE `{$tableName}` (
+            `id` INT AUTO_INCREMENT PRIMARY KEY,
+            `payload` MEDIUMTEXT NOT NULL
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+
+        $host = (string) config('database.connections.mysql.host', '127.0.0.1');
+        $port = (string) config('database.connections.mysql.port', '3342');
+        $user = (string) config('database.connections.mysql.username', 'test_runner');
+        $pass = (string) config('database.connections.mysql.password', '');
+
+        try {
+            $chunkString = str_repeat('B', 1000);
+            $values = implode(',', array_fill(0, 500, "('{$chunkString}')"));
+            for ($c = 0; $c < 6; $c++) {
+                $pdo->exec("INSERT INTO `{$tableName}` (`payload`) VALUES {$values}");
+            }
+
+            $totalCount = (int) $pdo->query("SELECT COUNT(*) FROM `{$tableName}`")->fetchColumn();
+            self::assertSame(3000, $totalCount);
+
+            // PART 1: Successful bounded streaming within budget
+            $validBudget = new Budget([
+                'max_total_bytes' => 10485760,
+                'max_cell_bytes' => 100000,
+                'max_total_rows' => 10000,
+            ]);
+
+            $memBefore = memory_get_usage(true);
+            $fp = Fingerprint::capture($pdo, $validBudget);
+            $memAfter = memory_get_usage(true);
+            $memGrowth = $memAfter - $memBefore;
+
+            self::assertArrayHasKey($tableName, $fp);
+            self::assertSame(3000, $fp[$tableName]['rows']);
+            self::assertNotEmpty($fp[$tableName]['rows_sha256']);
+            self::assertSame(3000, $validBudget->totalRows());
+            self::assertGreaterThanOrEqual(3000000, $validBudget->totalBytes());
+            self::assertLessThan(8388608, $memGrowth, 'Unbuffered streaming must keep memory usage strictly bounded');
+
+            // PART 2: Phase A numeric aggregate refusal proof on total payload bytes limit
+            $strictBudget = new Budget([
+                'max_total_bytes' => 2097152,
+                'max_cell_bytes' => 100000,
+                'max_total_rows' => 10000,
+            ]);
+
+            $observerPdo = new class("mysql:host={$host};port={$port};dbname={$schema};charset=utf8mb4", $user, $pass, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]) extends PDO
+            {
+                /** @var list<string> */
+                public array $executedQueries = [];
+
+                public function query(string $query, ?int $fetchMode = null, mixed ...$fetchModeArgs): \PDOStatement|false
+                {
+                    $this->executedQueries[] = $query;
+
+                    return parent::query($query, ...($fetchMode !== null ? [$fetchMode, ...$fetchModeArgs] : []));
+                }
+            };
+
+            $refused = false;
+            try {
+                Fingerprint::capture($observerPdo, $strictBudget);
+            } catch (\RuntimeException $e) {
+                $refused = ($e->getMessage() === 'AUDIT_REFUSED');
+            }
+
+            self::assertTrue($refused, 'Phase A numeric aggregate must refuse when table byte sum exceeds budget');
+
+            $aggQueries = array_filter($observerPdo->executedQueries, fn ($q) => str_contains($q, 'SELECT COUNT(*)') && str_contains($q, "`{$tableName}`"));
+            self::assertNotEmpty($aggQueries, 'Phase A aggregate query for table must be executed');
+
+            $payloadQueries = array_filter($observerPdo->executedQueries, fn ($q) => str_contains($q, "FROM `{$tableName}`") && str_contains($q, 'ORDER BY'));
+            self::assertEmpty($payloadQueries, 'Phase B payload streaming query must NEVER be executed when Phase A aggregate detects exceeded budget');
+        } finally {
+            $pdo->exec("DROP TABLE IF EXISTS `{$tableName}`");
+        }
     }
 }

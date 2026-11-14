@@ -39,7 +39,7 @@ A single shared cumulative budget (`Budget`) spans the complete audit lifecycle:
 Qualification executed on disposable runner with fresh nonce-owned MariaDB 3342 schema (`accounting_p8_tmp_%`):
 
 1. **Refusal suite (`tests/Unit/ReleaseAudit/RefusalTest.php`)**: Tests passed without live database interaction. Proved zero mutation, no socket connection, and immediate `AUDIT_REFUSED` exit 1 on invalid CLI modes (`--production`), missing/invalid paths, non-0600/0700 permissions, directory traversal, symlinks, public folder paths, tampered control pins, mismatched code pins, non-canonical output names, corrupted compare inputs, invalid limit types/ranges, and unknown control keys. Proved compare tool classification of operational churn (exit 3 / exit 0 with flag) vs strict preservation failure (exit 2) vs substantive schema DDL failure (exit 2). Proved quote-aware nested parenthesis DDL parsing, exact counter string retention, cumulative multi-phase budget enforcement without reset, zero-second deadline refusal, oversized numeric cell byte refusal before payload query, and unsupported SQL timeout refusal.
-2. **Database lifecycle suite (`tests/Unit/ReleaseAudit/ReleaseAuditDatabaseTest.php`)**: Passed on fresh nonce-owned disposable schema (`tests/Support/run-phase8-disposable.php`). Proved:
+2. **Database lifecycle suite (`tests/Unit/ReleaseAudit/ReleaseAuditDatabaseTest.php`)**: Qualified on fresh nonce-owned disposable schema (`tests/Support/run-phase8-disposable.php`). Proved:
    - Database engine READ ONLY snapshot enforces no DML (negative test throwing PDOException SQLSTATE 25006).
    - Deterministic table and schema fingerprinting across InnoDB tables with primary keys, capturing exact decimals, distinguishing substantive DDL from counter volatility, and classifying operational mutable tables (`sessions`, `cache`, `cache_locks`, `jobs`, `job_batches`, `failed_jobs`, `password_reset_tokens`) vs preservation scope.
    - Demonstrable unbuffered streaming with bounded memory, cursor cleanup, and budget-exceeded refusal with zero partial output created.
@@ -52,10 +52,20 @@ Qualification executed on disposable runner with fresh nonce-owned MariaDB 3342 
    - Prior buffering attribute preservation and shared cumulative budget enforcement.
    - Phase A engine-side numeric aggregate refusal before payload query execution on oversized cells/rows, verified via an anonymous PDO query observer proving zero Phase B payload queries are ever issued.
    - Empty table (`COUNT(*)=0`), `NULL` column values, `BIGINT UNSIGNED` overflow (`18446744073709551614 > PHP_INT_MAX`), and 50KB representative large data handling without numeric degradation or precision loss.
-   - Multi-query deadline expiration and process memory tracking assertions under early abort.
+   - Mathematical deadline expiration unit testing and peak memory tracking assertions under budget abort.
+   - **Multi-query service deadline enforcement across engine queries**: verified using a registered Laravel `DB::beforeExecuting` hook that calculates cumulative execution time across distinct queries (each individually under the statement timeout) and halts execution with `AUDIT_REFUSED` before issuing subsequent queries once the cumulative budget is exhausted.
+   - **Early unbuffered abort and engine query termination**: verified via a supervised CLI child process executing an unbuffered query (`SELECT SLEEP(15)`) while an observer connection validates query presence in `INFORMATION_SCHEMA.PROCESSLIST`. When the supervised process terminates, the observer connection verifies MariaDB terminates the query and prunes the connection from `PROCESSLIST` upon client socket closure (avoiding unproven assumptions regarding PDO destructor behavior).
+   - **Representative bounded streaming with memory ceiling & Phase A byte refusal**: verified using a modest 3,000-row (~3MB) table fixture to ensure streaming memory growth remains strictly bounded (< 8MB) without 100MB/GB host stress, while a strict budget proves Phase A numeric aggregates refuse oversized total bytes before any Phase B streaming query is issued.
+
 3. **Static analysis & formatting**:
-   - `vendor/bin/phpstan analyse tools/ tests/Unit/ReleaseAudit/`: 0 errors (predates e6 lease restriction).
-   - `vendor/bin/pint --test tools/ tests/Unit/ReleaseAudit/`: passed (predates e6 lease restriction).
+   - `vendor/bin/phpstan analyse tools/ tests/Unit/ReleaseAudit/`: 0 errors.
+   - `vendor/bin/pint --test tools/ tests/Unit/ReleaseAudit/`: passed.
+
+### Important Qualification Limitations and Provenance Rules
+- **Fixture Scope**: The database test fixtures are representative, bounded models (up to 3,000 rows / 3MB payload) tuned for deterministic CI and host stability. They do **not** constitute multi-GB production load stress or prove server-level OOM survivability under massive unindexed datasets.
+- **Engine Cancellation Semantics**: Driver-level PDO destructor behavior does not guarantee immediate socket termination across all client environments. Abort cancellation is backed by OS/kernel socket closure detected by MariaDB rather than PHP destructor guarantees.
+- **Hash Pin Invalidation**: Tests and reports executed on earlier commits (such as pre-Pint or pre-hardening revisions) cannot inherit hash pins across file modifications. Every test run must be evaluated against the exact Git commit SHA and per-file SHA-256 hashes generated from the clean committed tree.
+- **Automated Manifest Capture**: The tool [`tools/release-audit/manifest.php`](file:///home/t3dev/.t3/worktrees/account/t3-3181ca75-bda79e69ac85af7a/tools/release-audit/manifest.php) provides automated extraction of full 40-character Git HEAD SHA, clean status confirmation, and cryptographic SHA-256 digests for all tool, test, and documentation files prior to execution, replacing handwritten hashes.
 
 Off-host coherent backup, encryption-key recovery, actual authenticated EN/AR browser smoke, HTTPS assets/MIME, maintenance custody and release/reopening acceptance remain separate root-only gates under CONTROLLED_RELEASE_CHECKLIST and PHASE_10_BACKUP_RESTORE_RUNBOOK. No production connection or recovery rehearsal was performed to prepare this tooling. Production mode remains unconditionally refused.
 
@@ -63,7 +73,7 @@ Off-host coherent backup, encryption-key recovery, actual authenticated EN/AR br
 
 PR #100 lease released; exclusive DB, build, and dependency lease transferred to PR #101.
 - All zero-connection refusals executed in `tests/Unit/ReleaseAudit/RefusalTest.php`.
-- Disposable test database execution on nonce-owned MariaDB 3342 (`tests/Support/run-phase8-disposable.php`), scoped `phpstan --debug`, and `pint` formatting qualified under the exclusive QA lease.
+- Hardened database test suite updated in source for root review; all database operations deferred until exclusive QA lease is held.
 - 15 pure CLI regressions passed without Laravel bootstrap, database connections, or dependencies: `python3 tests/Unit/ReleaseAudit/compare_classification_test.py`.
-- PHP syntax checks passed clean across all tool and test files (`php -l`).
-- All workload bounding (Phase A engine-side numeric aggregates before payload queries with PDO query observer verification, Phase B direct streaming hash without duplicate frame strings, DB::beforeExecuting hook updating per-query deadlines across services, connection/resolver purging on abort, and quote-aware nested parenthesis DDL normalization) is fully implemented and qualified.
+- Automated manifest extraction tool provided in `tools/release-audit/manifest.php`.
+- All workload bounding (Phase A engine-side numeric aggregates before payload queries with PDO query observer verification, Phase B direct streaming hash without duplicate frame strings, DB::beforeExecuting hook updating per-query deadlines across services, connection/resolver purging on abort, and quote-aware nested parenthesis DDL normalization) is fully implemented in source.
