@@ -248,7 +248,7 @@ final class MobileReceiptRollbackAtomicityTest extends TestCase
                     'product_unit_id' => (string) $this->unit->public_id,
                     'quantity' => '2.000000',
                     'tax_inclusive' => false,
-                    'tax_rate' => '0.0000',
+                    'tax_rate' => '0.000000',
                     'tax_rate_id' => null,
                     'unit_price' => '50.000000',
                 ],
