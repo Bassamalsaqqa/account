@@ -361,6 +361,9 @@ final class MobileEventReceiptManager
                             'invocation_scope_id' => $invocationScopeId,
                             'active' => true,
                             'consumed' => false,
+                            'composite_completed' => false,
+                            'completed_invoice_id' => null,
+                            'completed_payment_id' => null,
                         ];
 
                         try {
@@ -374,8 +377,37 @@ final class MobileEventReceiptManager
                             self::$currentInvocationScopeId = null;
                         }
 
-                        // 9. Strict entity ownership & public ID derivation from locked canonical entities
+                        // 9. Financial execution validation: require capability consumption & closed composite completion
+                        $capRec = self::getCapabilityRecord($capability);
                         $invId = $financialResult['sales_invoice_id'] ?? null;
+                        $payId = $financialResult['customer_payment_id'] ?? null;
+
+                        if ($invId !== null || $payId !== null) {
+                            if ($representation !== 'v2_online_sale_intent') {
+                                throw new SecurityException("Unsupported financial representation [{$representation}] produced financial entities.");
+                            }
+
+                            if ($invId === null || $payId === null) {
+                                throw new SecurityException('Partial financial execution (invoice-only or payment-only) is prohibited.');
+                            }
+
+                            if (! ($capRec['consumed'] ?? false)) {
+                                throw new SecurityException('Financial execution failed to consume required capability.');
+                            }
+
+                            if (! ($capRec['composite_completed'] ?? false)) {
+                                throw new SecurityException('Financial execution failed to achieve verified closed composite completion.');
+                            }
+
+                            if ((int) $invId !== (int) ($capRec['completed_invoice_id'] ?? 0) ||
+                                (int) $payId !== (int) ($capRec['completed_payment_id'] ?? 0)) {
+                                throw new SecurityException('Financial entity IDs do not match closed composite completion.');
+                            }
+                        } elseif ($representation === 'v2_online_sale_intent') {
+                            throw new SecurityException('Online cash sale execution failed to produce required financial composite.');
+                        }
+
+                        // 10. Strict entity ownership & public ID derivation from locked canonical entities
                         $canonicalInvPublicId = null;
                         $invRow = null;
                         if ($invId !== null) {
@@ -415,15 +447,9 @@ final class MobileEventReceiptManager
                             }
                         }
 
-                        // Partial posting omitting payment or invoice is strictly prohibited for online cash sale
-                        if ($representation === 'v2_online_sale_intent') {
-                            if ($invId === null || $payId === null) {
-                                throw new RuntimeException('Immediate online cash sale requires both sales invoice and customer payment (partial posting prohibited).');
-                            }
-                        }
-
                         // Relationship verification between invoice and customer payment
-                        if ($invId !== null && $payId !== null) {
+                        /** @phpstan-ignore notIdentical.alwaysTrue */
+                        if ($invRow !== null && $payRow !== null) {
                             if ((int) $invRow->customer_id !== (int) $payRow->customer_id) {
                                 throw new RuntimeException('Customer mismatch between sales invoice and customer payment.');
                             }
@@ -956,5 +982,52 @@ final class MobileEventReceiptManager
         $record['consumed'] = true;
         $record['active'] = false;
         self::$capabilityRegistry[$capability] = $record;
+    }
+
+    /**
+     * Records closed composite completion for an attested capability.
+     * Accessible exclusively to canonical multi-leg composite action boundaries.
+     */
+    public static function markCompositeCompleted(
+        NativeFinancialExecutionCapability $capability,
+        int $companyId,
+        int $actorId,
+        int $invoiceId,
+        int $paymentId
+    ): void {
+        if (self::$capabilityRegistry === null || ! self::$capabilityRegistry->offsetExists($capability)) {
+            throw new SecurityException('Unauthorized financial capability: capability was not minted by an active admission.');
+        }
+
+        $record = self::$capabilityRegistry[$capability];
+
+        if (! ($record['consumed'] ?? false)) {
+            throw new SecurityException('Capability must be consumed before marking composite completion.');
+        }
+
+        if ($record['composite_completed'] ?? false) {
+            throw new SecurityException('Composite completion has already been recorded for this capability.');
+        }
+
+        if ((int) ($record['company_id'] ?? 0) !== $companyId || (int) ($record['actor_id'] ?? 0) !== $actorId) {
+            throw new SecurityException('Scope mismatch on composite completion registration.');
+        }
+
+        $record['composite_completed'] = true;
+        $record['completed_invoice_id'] = $invoiceId;
+        $record['completed_payment_id'] = $paymentId;
+        self::$capabilityRegistry[$capability] = $record;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private static function getCapabilityRecord(NativeFinancialExecutionCapability $capability): array
+    {
+        if (self::$capabilityRegistry === null || ! self::$capabilityRegistry->offsetExists($capability)) {
+            return [];
+        }
+
+        return self::$capabilityRegistry[$capability];
     }
 }

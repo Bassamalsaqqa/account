@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Support\Mobile\Receipt;
 
 use App\Support\Mobile\Receipt\Exceptions\SecurityException;
-use Closure;
 use LogicException;
 
 /**
@@ -23,19 +22,16 @@ final class CompositeFinancialExecutionScope
     private static int $activeActorId = 0;
 
     /**
-     * Executes the given callback with an active composite permit.
+     * Activates composite-scope permit for the designated capability, company, and actor.
+     * Accessible exclusively to closed canonical multi-leg action boundaries via private binding.
      *
-     * @template T
-     *
-     * @param  Closure(): T  $callback
-     * @return T
+     * @phpstan-ignore method.unused
      */
-    public static function withPermit(
+    private static function activatePermit(
         NativeFinancialExecutionCapability $capability,
         int $companyId,
-        int $actorId,
-        Closure $callback
-    ): mixed {
+        int $actorId
+    ): void {
         if (self::$activeCapability !== null) {
             throw new LogicException('CompositeFinancialExecutionScope does not support nested composite permits.');
         }
@@ -43,14 +39,18 @@ final class CompositeFinancialExecutionScope
         self::$activeCapability = $capability;
         self::$activeCompanyId = $companyId;
         self::$activeActorId = $actorId;
+    }
 
-        try {
-            return $callback();
-        } finally {
-            self::$activeCapability = null;
-            self::$activeCompanyId = 0;
-            self::$activeActorId = 0;
-        }
+    /**
+     * Deactivates the currently active composite-scope permit.
+     *
+     * @phpstan-ignore method.unused
+     */
+    private static function deactivatePermit(): void
+    {
+        self::$activeCapability = null;
+        self::$activeCompanyId = 0;
+        self::$activeActorId = 0;
     }
 
     /**

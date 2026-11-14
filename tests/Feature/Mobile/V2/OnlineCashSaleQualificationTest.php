@@ -1143,6 +1143,149 @@ final class OnlineCashSaleQualificationTest extends TestCase
     }
 
     /**
+     * T-18: Concrete online cash sale attack where executor attempts extra invoice creation / posting,
+     * followed by legitimate composite execution: denied by closed permit boundary and rolls back ALL effects.
+     */
+    public function test_concrete_extra_invoice_attack_fails_and_rolls_back(): void
+    {
+        $maliciousExecutor = new class implements FinancialExecutionAdapterInterface
+        {
+            public function authorize(Company $company, User $actor, MobileDevice $device, string $operation, ?array $payload = null): void {}
+
+            public function execute(Company $company, User $actor, MobileDevice $device, array $payload, string $idempotencySuffix, ?NativeFinancialExecutionCapability $capability = null): array
+            {
+                $customer = Customer::where('company_id', $company->id)->firstOrFail();
+                $warehouse = Warehouse::where('company_id', $company->id)->where('is_default', true)->firstOrFail();
+                $product = Product::where('company_id', $company->id)->firstOrFail();
+                $unit = ProductUnit::where('company_id', $company->id)->where('product_id', $product->id)->firstOrFail();
+
+                // Malicious attempt: executor attempts to draft and post an EXTRA invoice before legitimate composite
+                app(CreateSalesInvoiceDraftAction::class)->execute($company, $actor, [
+                    'customer_id' => $customer->id,
+                    'warehouse_id' => $warehouse->id,
+                    'currency_code' => $company->base_currency_code,
+                    'exchange_rate' => '1.0000000000',
+                    'issue_date' => now()->toDateString(),
+                    'lines' => [
+                        [
+                            'product_id' => $product->id,
+                            'product_unit_id' => $unit->id,
+                            'item_description' => 'Malicious extra line',
+                            'quantity' => '1.000000',
+                            'unit_price' => '999.000000',
+                        ],
+                    ],
+                ]);
+
+                // Even if it attempts legitimate composite afterwards, transaction is aborted
+                return app(ExecuteImmediateOnlineCashSaleAction::class)->execute(
+                    $capability,
+                    $company,
+                    $actor,
+                    $device,
+                    $payload,
+                    $idempotencySuffix
+                );
+            }
+        };
+
+        $this->app->instance(FinancialExecutionAdapterInterface::class, $maliciousExecutor);
+
+        $eventId = (string) Str::uuid();
+        $payload = $this->validSalePayload($eventId);
+
+        $response = $this->withHeader('Authorization', 'Bearer '.$this->rawToken)
+            ->postJson("/api/mobile/v2/companies/{$this->company->public_id}/sales/online-cash", $payload);
+
+        $this->assertTrue($response->status() >= 400);
+
+        // Entire transaction rolled back: zero extra invoices, zero legitimate invoices, zero payments, zero receipts
+        $this->assertSame(0, SalesInvoice::withoutGlobalScopes()->where('company_id', $this->company->id)->count());
+        $this->assertSame(0, CustomerPayment::withoutGlobalScopes()->where('company_id', $this->company->id)->count());
+        $this->assertSame(0, MobileEventReceipt::withoutGlobalScopes()->where('company_id', $this->company->id)->count());
+    }
+
+    /**
+     * T-19: Unsupported representation returning financial entities fails closed with SecurityException.
+     */
+    public function test_unsupported_representation_returning_financial_entities_fails_closed(): void
+    {
+        $bypassExecutor = new class implements FinancialExecutionAdapterInterface
+        {
+            public function authorize(Company $company, User $actor, MobileDevice $device, string $operation, ?array $payload = null): void {}
+
+            public function execute(Company $company, User $actor, MobileDevice $device, array $payload, string $idempotencySuffix, ?NativeFinancialExecutionCapability $capability = null): array
+            {
+                return [
+                    'sales_invoice_id' => 99999,
+                    'sales_invoice_public_id' => 'sinv_fake',
+                    'customer_payment_id' => 88888,
+                    'customer_payment_public_id' => 'cpay_fake',
+                    'command_receipt_id' => null,
+                    'terminal_canonical_result' => ['status' => 'completed'],
+                ];
+            }
+        };
+
+        $this->app->instance(FinancialExecutionAdapterInterface::class, $bypassExecutor);
+
+        $this->expectException(SecurityException::class);
+        $this->expectExceptionMessage('Unsupported financial representation [v2_intent] produced financial entities.');
+
+        $manager = new MobileEventReceiptManager;
+        $manager->recordOrReplay(
+            (int) $this->company->id,
+            (string) Str::uuid(),
+            $this->token->token_hash,
+            2,
+            'v2_intent',
+            '{"action":"checkout"}'
+        );
+    }
+
+    /**
+     * T-20: Missing closed composite completion fails closed with SecurityException.
+     */
+    public function test_unattested_composite_completion_fails_closed(): void
+    {
+        $unattestedExecutor = new class implements FinancialExecutionAdapterInterface
+        {
+            public function authorize(Company $company, User $actor, MobileDevice $device, string $operation, ?array $payload = null): void {}
+
+            public function execute(Company $company, User $actor, MobileDevice $device, array $payload, string $idempotencySuffix, ?NativeFinancialExecutionCapability $capability = null): array
+            {
+                return [
+                    'sales_invoice_id' => 11111,
+                    'sales_invoice_public_id' => 'sinv_unattested',
+                    'customer_payment_id' => 22222,
+                    'customer_payment_public_id' => 'cpay_unattested',
+                    'command_receipt_id' => null,
+                    'terminal_canonical_result' => ['status' => 'completed'],
+                ];
+            }
+        };
+
+        $this->app->instance(FinancialExecutionAdapterInterface::class, $unattestedExecutor);
+
+        $this->expectException(SecurityException::class);
+        $this->expectExceptionMessage('Financial execution failed to consume required capability.');
+
+        $manager = new MobileEventReceiptManager;
+        $eventId = (string) Str::uuid();
+        $payload = $this->validSalePayload($eventId);
+        $canonicalBytes = OnlineSaleIntentProfile::serialize($payload);
+
+        $manager->recordOrReplay(
+            (int) $this->company->id,
+            $eventId,
+            $this->token->token_hash,
+            2,
+            'v2_online_sale_intent',
+            $canonicalBytes
+        );
+    }
+
+    /**
      * @param  array<string, mixed>  $input
      */
     private function startWorkerProcess(DisposableMariaDbSchema $schema, string $directory, string $slot, array $input): Process

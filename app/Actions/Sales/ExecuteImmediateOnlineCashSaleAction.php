@@ -24,6 +24,7 @@ use App\Support\Mobile\Receipt\Exceptions\SecurityException;
 use App\Support\Mobile\Receipt\MobileEventReceiptManager;
 use App\Support\Mobile\Receipt\NativeFinancialExecutionCapability;
 use Brick\Math\BigDecimal;
+use Closure;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
@@ -47,12 +48,40 @@ use Spatie\Permission\PermissionRegistrar;
  */
 final class ExecuteImmediateOnlineCashSaleAction
 {
+    /**
+     * @internal Narrow test hook for fault injection testing of canonical pipeline stages.
+     *
+     * @var (Closure(string, array<string, mixed>): void)|null
+     */
+    public static ?Closure $stageFaultHook = null;
+
     public function __construct(
         private readonly CreateSalesInvoiceDraftAction $createDraftAction,
         private readonly PostSalesInvoiceAction $postInvoiceAction,
         private readonly PostCustomerPaymentAction $postPaymentAction,
         private readonly CurrencyMinorUnitsResolver $currencyResolver,
     ) {}
+
+    private function openCompositePermit(
+        NativeFinancialExecutionCapability $capability,
+        int $companyId,
+        int $actorId
+    ): void {
+        (Closure::bind(
+            static fn () => CompositeFinancialExecutionScope::activatePermit($capability, $companyId, $actorId),
+            null,
+            CompositeFinancialExecutionScope::class
+        ))();
+    }
+
+    private function closeCompositePermit(): void
+    {
+        (Closure::bind(
+            static fn () => CompositeFinancialExecutionScope::deactivatePermit(),
+            null,
+            CompositeFinancialExecutionScope::class
+        ))();
+    }
 
     /**
      * @param  array<string, mixed>  $payload
@@ -307,107 +336,119 @@ final class ExecuteImmediateOnlineCashSaleAction
             ];
         }
 
-        // 7. Execute all financial legs under composite-scope permit
-        return CompositeFinancialExecutionScope::withPermit(
-            $capability,
-            (int) $company->id,
-            (int) $actor->id,
-            function () use (
+        // 7. Execute all financial legs under closed composite-scope permit
+        $this->openCompositePermit($capability, (int) $company->id, (int) $actor->id);
+        try {
+            // Leg 1: Create sales invoice draft
+            $draftData = [
+                'customer_id' => (int) $customer->id,
+                'warehouse_id' => (int) $warehouse->id,
+                'currency_code' => $currency,
+                'exchange_rate' => '1.0000000000',
+                'issue_date' => now()->toDateString(),
+                'due_date' => now()->toDateString(),
+                'document_locale' => $customer->preferred_locale ?? 'ar',
+                'lines' => $draftLines,
+            ];
+
+            $draft = $this->createDraftAction->execute($company, $actor, $draftData);
+            if (self::$stageFaultHook !== null) {
+                (self::$stageFaultHook)('after_draft', ['draft' => $draft]);
+            }
+
+            // Leg 2: Post sales invoice (sequence reservation, FEFO lot allocation, GL posting batch)
+            $postedInvoice = $this->postInvoiceAction->execute($draft, $actor);
+            if (self::$stageFaultHook !== null) {
+                (self::$stageFaultHook)('after_posting', ['invoice' => $postedInvoice]);
+            }
+
+            // Verify payment amount matches posted grand total exactly
+            $expectedGrandTotal = (string) $postedInvoice->grand_total_currency;
+            $paymentAmountStr = (string) ($paymentIntent['amount'] ?? '');
+            if (! BigDecimal::of($paymentAmountStr)->isEqualTo($expectedGrandTotal)) {
+                throw new InvalidArgumentException("Payment amount [{$paymentAmountStr}] does not match invoice grand total [{$expectedGrandTotal}].");
+            }
+
+            if (! PaymentSettlementValidator::verifyPaymentDecimalConsistency($paymentIntent, $expectedGrandTotal, $minorUnits)) {
+                throw new InvalidArgumentException('Payment intent violates decimal consistency with grand total.');
+            }
+
+            // Leg 3: Post customer payment with 100% allocation to posted sales invoice
+            $paymentData = [
+                'customer_id' => (int) $customer->id,
+                'money_account_id' => (int) $cashAccount->id,
+                'payment_date' => $draftData['issue_date'],
+                'payment_method' => 'cash',
+                'document_locale' => $postedInvoice->document_locale ?? 'ar',
+                'amount' => $expectedGrandTotal,
+                'exchange_rate' => '1.0000000000',
+                'reference_number' => null,
+                'notes' => 'Mobile online cash sale settlement',
+                'idempotency_key' => 'fin1-payment:'.$idempotencySuffix,
+                'allocations' => [
+                    [
+                        'sales_invoice_id' => (int) $postedInvoice->id,
+                        'allocated_amount' => $expectedGrandTotal,
+                    ],
+                ],
+            ];
+
+            $customerPayment = $this->postPaymentAction->execute(
                 $company,
                 $actor,
-                $customer,
-                $warehouse,
-                $currency,
-                $draftLines,
-                $paymentIntent,
-                $minorUnits,
-                $idempotencySuffix,
-                $cashAccount
-            ): array {
-                // Leg 1: Create sales invoice draft
-                $draftData = [
-                    'customer_id' => (int) $customer->id,
-                    'warehouse_id' => (int) $warehouse->id,
-                    'currency_code' => $currency,
-                    'exchange_rate' => '1.0000000000',
-                    'issue_date' => now()->toDateString(),
-                    'due_date' => now()->toDateString(),
-                    'document_locale' => $customer->preferred_locale ?? 'ar',
-                    'lines' => $draftLines,
-                ];
-
-                $draft = $this->createDraftAction->execute($company, $actor, $draftData);
-
-                // Leg 2: Post sales invoice (sequence reservation, FEFO lot allocation, GL posting batch)
-                $postedInvoice = $this->postInvoiceAction->execute($draft, $actor);
-
-                // Verify payment amount matches posted grand total exactly
-                $expectedGrandTotal = (string) $postedInvoice->grand_total_currency;
-                $paymentAmountStr = (string) ($paymentIntent['amount'] ?? '');
-                if (! BigDecimal::of($paymentAmountStr)->isEqualTo($expectedGrandTotal)) {
-                    throw new InvalidArgumentException("Payment amount [{$paymentAmountStr}] does not match invoice grand total [{$expectedGrandTotal}].");
-                }
-
-                if (! PaymentSettlementValidator::verifyPaymentDecimalConsistency($paymentIntent, $expectedGrandTotal, $minorUnits)) {
-                    throw new InvalidArgumentException('Payment intent violates decimal consistency with grand total.');
-                }
-
-                // Leg 3: Post customer payment with 100% allocation to posted sales invoice
-                $paymentData = [
-                    'customer_id' => (int) $customer->id,
-                    'money_account_id' => (int) $cashAccount->id,
-                    'payment_date' => $draftData['issue_date'],
-                    'payment_method' => 'cash',
-                    'document_locale' => $postedInvoice->document_locale ?? 'ar',
-                    'amount' => $expectedGrandTotal,
-                    'exchange_rate' => '1.0000000000',
-                    'reference_number' => null,
-                    'notes' => 'Mobile online cash sale settlement',
-                    'idempotency_key' => 'fin1-payment:'.$idempotencySuffix,
-                    'allocations' => [
-                        [
-                            'sales_invoice_id' => (int) $postedInvoice->id,
-                            'allocated_amount' => $expectedGrandTotal,
-                        ],
-                    ],
-                ];
-
-                $customerPayment = $this->postPaymentAction->execute(
-                    $company,
-                    $actor,
-                    $paymentData
-                );
-
-                // Assemble and return terminal canonical result
-                $terminalResult = [
-                    'status' => 'completed',
-                    'sales_invoice_id' => (int) $postedInvoice->id,
-                    'sales_invoice_public_id' => (string) $postedInvoice->public_id,
-                    'invoice_public_id' => (string) $postedInvoice->public_id,
-                    'invoice_number' => (string) $postedInvoice->invoice_number,
-                    'customer_payment_id' => (int) $customerPayment->id,
-                    'customer_payment_public_id' => (string) $customerPayment->public_id,
-                    'payment_public_id' => (string) $customerPayment->public_id,
-                    'command_receipt_id' => null,
-                    'customer_id' => (int) $postedInvoice->customer_id,
-                    'customer_public_id' => (string) $customer->public_id,
-                    'currency' => (string) $postedInvoice->currency_code,
-                    'total_amount' => (string) $postedInvoice->grand_total_currency,
-                    'grand_total' => (string) $postedInvoice->grand_total_currency,
-                    'paid_amount' => (string) $customerPayment->amount,
-                    'amount' => (string) $customerPayment->amount,
-                    'lines_count' => count($postedInvoice->lines),
-                ];
-
-                return [
-                    'sales_invoice_id' => (int) $postedInvoice->id,
-                    'sales_invoice_public_id' => (string) $postedInvoice->public_id,
-                    'customer_payment_id' => (int) $customerPayment->id,
-                    'customer_payment_public_id' => (string) $customerPayment->public_id,
-                    'command_receipt_id' => null,
-                    'terminal_canonical_result' => $terminalResult,
-                ];
+                $paymentData
+            );
+            if (self::$stageFaultHook !== null) {
+                (self::$stageFaultHook)('after_payment', ['payment' => $customerPayment]);
             }
-        );
+
+            // Mark closed composite completion in MobileEventReceiptManager registry
+            MobileEventReceiptManager::markCompositeCompleted(
+                $capability,
+                (int) $company->id,
+                (int) $actor->id,
+                (int) $postedInvoice->id,
+                (int) $customerPayment->id
+            );
+
+            if (self::$stageFaultHook !== null) {
+                (self::$stageFaultHook)('after_composite_completion', [
+                    'invoice' => $postedInvoice,
+                    'payment' => $customerPayment,
+                ]);
+            }
+
+            // Assemble and return terminal canonical result
+            $terminalResult = [
+                'status' => 'completed',
+                'sales_invoice_id' => (int) $postedInvoice->id,
+                'sales_invoice_public_id' => (string) $postedInvoice->public_id,
+                'invoice_public_id' => (string) $postedInvoice->public_id,
+                'invoice_number' => (string) $postedInvoice->invoice_number,
+                'customer_payment_id' => (int) $customerPayment->id,
+                'customer_payment_public_id' => (string) $customerPayment->public_id,
+                'payment_public_id' => (string) $customerPayment->public_id,
+                'command_receipt_id' => null,
+                'customer_id' => (int) $postedInvoice->customer_id,
+                'customer_public_id' => (string) $customer->public_id,
+                'currency' => (string) $postedInvoice->currency_code,
+                'total_amount' => (string) $postedInvoice->grand_total_currency,
+                'grand_total' => (string) $postedInvoice->grand_total_currency,
+                'paid_amount' => (string) $customerPayment->amount,
+                'amount' => (string) $customerPayment->amount,
+                'lines_count' => count($postedInvoice->lines),
+            ];
+
+            return [
+                'sales_invoice_id' => (int) $postedInvoice->id,
+                'sales_invoice_public_id' => (string) $postedInvoice->public_id,
+                'customer_payment_id' => (int) $customerPayment->id,
+                'customer_payment_public_id' => (string) $customerPayment->public_id,
+                'command_receipt_id' => null,
+                'terminal_canonical_result' => $terminalResult,
+            ];
+        } finally {
+            $this->closeCompositePermit();
+        }
     }
 }
