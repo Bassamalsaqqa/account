@@ -1,5 +1,5 @@
 {
-  "report_version": "1.0.0",
+  "report_version": "1.0.1",
   "evidence_id": "root-readiness-bar7pq1o",
   "review_context": {
     "review_id": "5906317848",
@@ -50,23 +50,26 @@
         "path": "/_harness/readiness",
         "status": 200,
         "nonce_verified": true,
-        "ca_trusted": true
+        "ca_trusted": true,
+        "description": "Readiness probe verified HTTP 200 with matching nonce via CA-trusted TLS"
       },
       {
         "method": "POST",
         "path": "/_harness/readiness",
         "status": 405,
-        "description": "Method Not Allowed strictly enforced"
+        "description": "HTTP 405 Method Not Allowed strictly enforced on probe route"
       },
       {
         "method": "GET",
-        "path": "/api/mobile/v2/companies/01M7DFH8JRTYG1CE3TXX8Z5ZT8/sales/online-cash",
+        "path": "/_readiness_forbidden_probe",
         "status": 403,
-        "description": "Readiness-only barrier strictly blocks non-readiness routes"
+        "description": "Safe non-readiness probe path returning HTTP 403 (readiness-only barrier strictly blocks non-readiness routes; zero financial routes called)"
       }
     ],
     "wrong_ca_rejected": true,
-    "mismatched_expected_nonce_rejected": true,
+    "wrong_ca_verification_mode": "ACTUAL_TLS_NEGATIVE_PASS",
+    "nonce_comparison_check_passed": true,
+    "nonce_comparison_detail": "Local comparison check json_nonce != '0'*32 passed; live corrupted nonce over network / client path negative remains UNPROVEN",
     "verified_at": 1794681744.315548
   },
   "android_client_execution": {
@@ -112,8 +115,9 @@
     "fresh_readiness_json_present": false,
     "client_http_requests_sent": false,
     "financial_requests_sent": false,
-    "pre_test_git_tree_sha256": "7280a75fcd482b311a15ed4f9996537b523423c666f3956a5ee64d5101ac72a8",
-    "post_test_git_tree_sha256": "7280a75fcd482b311a15ed4f9996537b523423c666f3956a5ee64d5101ac72a8",
+    "pre_execution_state_json_sha256": "7280a75fcd482b311a15ed4f9996537b523423c666f3956a5ee64d5101ac72a8",
+    "post_execution_state_json_sha256": "7280a75fcd482b311a15ed4f9996537b523423c666f3956a5ee64d5101ac72a8",
+    "state_json_note": "SHA-256 of android_pre.json and android_post.json tracking HEAD, status, and source file hashmap; NOT a git object tree hash",
     "source_mutations": 0
   },
   "overall_run_outcome": {
@@ -130,7 +134,7 @@
     "temp_dir": "/tmp/v2_harness_a7c718c045489fbb",
     "temp_dir_deleted": true,
     "ports_closed": [18080, 18443],
-    "orphan_processes": 0
+    "ports_verification_method": "Python socket.connect_ex non-zero (connection refused)"
   },
   "historical_run_distinction": {
     "prior_run_eb_1btu5": {
@@ -207,9 +211,9 @@
     }
   },
   "unexecuted_gaps_record": [
+    "Live corrupted nonce over network / client path negative (only local comparison json_nonce != '0'*32 executed; live transport negative unproven)",
     "Live SIGINT abort drill (only SIGTERM was exercised on PID 1185016)",
     "Intermediate proxy failure / crash during active client HTTP traffic",
-    "Live wrong-nonce server fault injection drill",
     "Financial pilot execution (strictly NOT RUN; readiness-only lifecycle scope forbids financial network requests)"
   ],
   "confidential_data_protection": {

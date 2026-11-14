@@ -57,7 +57,8 @@ All changes on branch `t3/recover-cash-writer` since `6981511405d7bcd04cd8f8a09e
   - Root: `0.965s` (`OK (53 tests, 227 assertions)`).
   - Configured X.509 v3 CA (`basicConstraints=CA:TRUE`, `keyUsage=critical,keyCertSign,cRLSign`) and server (`basicConstraints=CA:FALSE`, `keyUsage=digitalSignature,keyEncipherment`, `extendedKeyUsage=serverAuth`, `SAN=IP:127.0.0.1,IP:10.0.2.2`) extensions for strict Python 3.13 and OpenSSL verification.
 - **Current Head Execution (`a8540ff83513b49988d90c77cf284831cfd5b2de`)**:
-  - Root: `1.082s` (`OK (57 tests, 241 assertions)`).
+  - **Root Guard Run**: `1.180s` (`OK (57 tests, 241 assertions)`).
+  - **Worker Guard Run**: `1.116s` (`OK (57 tests, 241 assertions)`).
   - Enforced pre-socket `pcntl` extension availability, early signal handler registration before DB/sockets, `0600` permissions on CA/server certs and private keys, and `0700` parent directory permissions.
 
 ---
@@ -91,12 +92,12 @@ Four distinct execution runs are documented with exact provenance:
 - **Live Handoff Snapshot SHA-256**: `3c51b313c8307e85f2e1e4d9d8bc940b8d3ead5bb7999730859520d2c0805253` (transient runtime file, now deleted; never a reusable endpoint)
 - **Live CA Certificate SHA-256**: `b5f7f5b100a2d40c8746eba466e569178f988ea61a470a4906152738556c4066`
 
-#### Root TLS Probe Verification (All Passed)
+#### Root TLS Probe Verification
 1. **Strict CA/SAN GET 200**: Verified HTTP 200 and matching nonce via CA-trusted TLS on `https://127.0.0.1:18443/_harness/readiness`.
-2. **Readiness Probe POST 405**: Verified HTTP 405 Method Not Allowed enforced on readiness route.
-3. **Non-Readiness Route GET 403**: Verified HTTP 403 Forbidden on `/api/mobile/v2/.../sales/online-cash` (readiness-only barrier strictly blocks financial routes).
-4. **Untrusted / Wrong CA Rejection**: Verified strict TLS handshake rejection when connecting with an untrusted CA.
-5. **Mismatched Expected Nonce Rejection**: Verified client fails closed on mismatched probe nonce.
+2. **Readiness Probe POST 405**: Verified HTTP 405 Method Not Allowed enforced on readiness route `/_harness/readiness`.
+3. **Safe Non-Readiness Route GET 403**: Verified HTTP 403 Forbidden on safe probe path `/_readiness_forbidden_probe`. Readiness-only boundary strictly blocks non-readiness routes; zero financial network routes called.
+4. **Untrusted / Wrong CA Rejection**: **ACTUAL LIVE TLS NEGATIVE PASS**. Verified strict TLS handshake rejection when connecting with an untrusted CA.
+5. **Nonce Mismatch Check**: **LOCAL COMPARISON CHECK**. In-memory comparison check (`json_nonce != '0'*32`) passed; live corrupted nonce over network / client path negative remains **UNPROVEN**.
 
 #### Android Client JVM Execution & Parser Pin Failure
 - **Invocations**: Exactly **1 JVM invocation** (`./gradlew cleanTestDebugUnitTest testDebugUnitTest ...`, duration `27.16s`, exit code `1`).
@@ -114,34 +115,35 @@ Four distinct execution runs are documented with exact provenance:
 - **Execution Timing**: Failed during configuration parsing in Kotlin **before any client HTTP request was sent**.
 - **Client Output**: Zero fresh client readiness JSON was generated.
 - **Financial Boundary**: Zero financial requests dispatched; strictly `NOT_RUN`.
-- **Android Git Tree Integrity**: Pre-test and post-test tree hashes are identical (`7280a75fcd482b311a15ed4f9996537b523423c666f3956a5ee64d5101ac72a8`, zero mutations).
+- **Pre/Post State JSON SHA-256**: Both `android_pre.json` and `android_post.json` are verified identical at SHA-256 `7280a75fcd482b311a15ed4f9996537b523423c666f3956a5ee64d5101ac72a8` (this is the digest of the JSON file recording HEAD, git status, and source file hashmap; NOT a git object tree hash). Zero mutations occurred.
 
 #### Backend Hold Interruption & SIGTERM Drill
 - **Process PID**: `1185016`
 - **Interrupt Signal**: SIGTERM issued by Root during readiness hold.
 - **Early Signal Handler Response**: Caught SIGTERM, logged `Readiness hold ABORTED by interrupt signal SIGTERM.`, and exited with code **1** (`FAILURE`, non-zero).
-- **Cleanup Guarantee**: Guaranteed `finally` cleanup verified:
+- **Cleanup Guarantee**: Verified via MariaDB and Python `socket.connect_ex`:
   - Exact owned MariaDB schema `accounting_p8_tmp_3a598a57cc05` dropped.
-  - Exact owned directory `/tmp/v2_harness_a7c718c045489fbb` deleted.
-  - Loopback port `18080` and TLS proxy port `18443` closed.
-  - Zero orphan background processes.
+  - Exact owned directory `/tmp/v2_harness_a7c718c045489fbb` absent.
+  - Loopback port `18080` and TLS proxy port `18443` verified closed via Python `socket.connect_ex` non-zero (connection refused).
 
 ---
 
 ## 5. Retained Evidence Artifacts Matrix (`/tmp/root-readiness-bar7pq1o`)
+
+All 14 artifacts verified against private files:
 
 | File Name | SHA-256 Digest | Bytes | Description |
 |---|---|---|---|
 | `0-TEST-...SmallTraderOnlineCashPilotSmokeTest.xml` | `dc2340af6bfabddcef4fd1793a334de2ca5d47686e26b62d9fed1beaaa702e9d` | 5,392 | JUnit test report: 2 tests, 1 PASS, 1 FAIL (pin mismatch at line 603) |
 | `android_command.json` | `be6ca6ec0995080dc155528ee55f08e7aac0f39bdc66ddeb29e4b7afe14317f9` | 1,124 | Gradle command-line arguments and sanitized nonsecret environment |
 | `android.log` | `d0cc29dcc956a8c2f80b3ada823e15fe8deccab599dc6983fd6b8b04d3b955b6` | 3,296 | Raw Gradle test task execution output (BUILD FAILED in 26s) |
-| `android_pre.json` | `7280a75fcd482b311a15ed4f9996537b523423c666f3956a5ee64d5101ac72a8` | 27,141 | Pre-execution Android repository tree state |
-| `android_post.json` | `7280a75fcd482b311a15ed4f9996537b523423c666f3956a5ee64d5101ac72a8` | 27,141 | Post-execution Android repository tree state (identical to pre) |
+| `android_pre.json` | `7280a75fcd482b311a15ed4f9996537b523423c666f3956a5ee64d5101ac72a8` | 27,141 | Pre-execution state JSON (HEAD, status, and source file hashmap) |
+| `android_post.json` | `7280a75fcd482b311a15ed4f9996537b523423c666f3956a5ee64d5101ac72a8` | 27,141 | Post-execution state JSON (identical to pre; zero mutations) |
 | `android_result.json` | `89469c9e6b8652a074e4dcac9b662f0920a2d157f4dc1394551b32b8a0991cec` | 616 | Android test run metadata (duration 27.16s, exit 1, artifacts mapping) |
 | `backend_exit.json` | `cb8cd4906b5e40e60c90b877f8767d77fd9217bba6ab7e6ff490d024de788ea5` | 46 | Backend harness process exit status (`{"exit": 1, "finished_at": ...}`) |
 | `backend.log` | `65110f2352ec6a2979cf87766a6fa7203147f41cb98635655346fb81ab971304` | 756 | Backend harness execution log with SIGTERM abort and cleanup |
-| `live_handoff_snapshot.json` | `3c51b313c8307e85f2e1e4d9d8bc940b8d3ead5bb7999730859520d2c0805253` | 5,457 | Transient runtime handoff artifact snapshot |
-| `live_verified.json` | `928b08e700b1ecbd1febc9ca8b947a3467097a1b94aa55df463110ac89907716` | 654 | Root TLS probe outcomes (GET 200, POST 405, GET 403, wrong CA rejection) |
+| `live_handoff_snapshot.json` | `3c51b313c8307e85f2e1e4d9d8bc940b8d3ead5bb7999730859520d2c0805253` | 5,457 | Transient runtime handoff artifact snapshot (now deleted) |
+| `live_verified.json` | `928b08e700b1ecbd1febc9ca8b947a3467097a1b94aa55df463110ac89907716` | 654 | Root TLS probe outcomes (GET 200, POST 405, safe GET 403, wrong CA rejection) |
 | `manifest.json` | `76a7326baa90c2dc43d89d75998518bded17856d5ad2752e0a7a676237456f3b` | 5,118 | Pairing manifest defining authorized scope `ROOT_AUTHORIZED_READINESS_ONLY` |
 | `operator.json` | `cf79dea8480ad890380916335efab393420d0db63e85b2c8592c832ee3d9677c` | 515 | Root harness command invocation arguments and manifest SHA pin |
 | `pid` | `68eb480291680e36768324c8a4f24a5f3b889e47a558ac7687ac97618ea21f1c` | 7 | Backend harness PID recording file (`1185016`) |
@@ -171,9 +173,8 @@ Cleanup completed.
 
 Cleanup was independently verified for exact owned resources:
 - **Owned MariaDB Schema**: Exact owned schema `accounting_p8_tmp_3a598a57cc05` dropped (verified absent via MariaDB information schema; no wildcard drops).
-- **Owned Temporary Directory**: Exact owned directory `/tmp/v2_harness_a7c718c045489fbb` deleted (verified absent).
-- **Network Sockets**: Ports `127.0.0.1:18080` (HTTP loopback) and `127.0.0.1:18443` (TLS proxy) verified closed and free via `ss -tulpn`.
-- **Processes**: Zero orphan `php`, `caddy`, or `java` processes remaining.
+- **Owned Temporary Directory**: Exact owned directory `/tmp/v2_harness_a7c718c045489fbb` absent (verified deleted).
+- **Network Sockets**: Ports `127.0.0.1:18080` (HTTP loopback) and `127.0.0.1:18443` (TLS proxy) verified closed via Python `socket.connect_ex` non-zero (connection refused).
 - **Working Tree**: `git status` clean (zero uncommitted edits).
 - **Lease Status**: Explicitly **FREE / RELEASED**.
 
@@ -183,12 +184,12 @@ Cleanup was independently verified for exact owned resources:
 
 In strict adherence to reporting integrity, the following review items were **not executed** in this pass and remain open gaps:
 
-1. **Live SIGINT Abort Drill**:
+1. **Live Corrupted Nonce over Network / Client Path Negative**:
+   - The nonce mismatch check in Run 4 was an in-memory comparison check (`json_nonce != '0'*32`), NOT an actual client validator or failed HTTP request. Corrupted nonce validation over the live TLS proxy stream remains **unproven**.
+2. **Live SIGINT Abort Drill**:
    - The readiness hold was interrupted live via **SIGTERM** (exercising signal handler, abortion exit code 1, and schema cleanup). A live **SIGINT** (Ctrl+C) drill on the running hold was not executed.
-2. **Intermediate Transport Process Failure Recovery**:
+3. **Intermediate Transport Process Failure Recovery**:
    - Simulated ungraceful transport failure (e.g. killing `php -S` or crashing Caddy while client HTTP traffic is active) was not exercised live on actual transport.
-3. **Live Wrong-Nonce Server Fault Injection**:
-   - Mismatched nonce verification was tested by client expectation validation, but live server-side corruption of the nonce header over an active TLS stream was not injected.
 4. **Financial Pilot Execution**:
    - Strictly **NOT RUN**. Readiness-only lifecycle scope strictly forbids network calls to financial routes.
 
@@ -199,16 +200,18 @@ In strict adherence to reporting integrity, the following review items were **no
 | Item | Status | Verification & Evidence |
 |---|---|---|
 | Core 187/1440 qualification & route cache DAG invariance | **ACCEPTED** | Verified 100% byte-identical against `6981511405d7bcd04cd8f8a09e64443ce0aaf47e` |
-| Pure guard test suite passing | **ACCEPTED** | 57 tests, 241 assertions, 0 errors, 0 failures, `1.082s` (0 sockets, 0 DB) |
+| Pure guard test suite passing | **ACCEPTED** | 57 tests, 241 assertions, 0 errors, 0 failures (Root: `1.180s`, Worker: `1.116s`) |
 | Strict X.509 v3 CA & server extensions | **ACCEPTED** | Verified via pure OpenSSL / Python strict validation tests |
 | Pre-socket pcntl availability & early signal registration | **ACCEPTED** | Verified in `DisposableMobileV2BackendHarness.php` and pure CLI test |
 | File permission policy (0600 certs/keys, 0700 dir) | **ACCEPTED** | Verified in source fixture and pure guard test |
 | Root strict CA/SAN TLS GET 200 with nonce | **VERIFIED** | Live Root probe verified HTTP 200 with matching nonce over CA-trusted TLS |
-| Readiness POST 405 & financial GET 403 barriers | **VERIFIED** | Live Root probes verified POST 405 and GET 403 enforced |
-| Root wrong CA refusal & wrong nonce refusal | **VERIFIED** | Live Root probes verified fail-closed rejection |
+| Readiness POST 405 & safe GET 403 barriers | **VERIFIED** | Live Root probes verified POST 405 and safe GET 403 on `/_readiness_forbidden_probe` enforced |
+| Root wrong CA refusal (live TLS negative) | **VERIFIED** | Live Root probe verified strict TLS handshake failure on untrusted CA cert |
+| Nonce mismatch negative check | **LOCAL CHECK** | Local comparison check passed; live network client path negative remains unproven |
 | Root SIGTERM abort drill & schema drop | **VERIFIED** | PID 1185016 aborted by SIGTERM, exited 1, dropped schema `accounting_p8_tmp_3a598a57cc05` |
 | Failure first stop honored (no autorestart) | **VERIFIED** | First failure stopped immediately; 0 automatic retries |
 | Android client pin parser fix | **PENDING** | Bug in `CashPilotHandoffConfig.kt:603` assigned to Android sole writer lane |
+| Live corrupted nonce client path negative drill | **PENDING** | Pending live network drill |
 | Live SIGINT drill on active hold | **PENDING** | SIGTERM verified; SIGINT drill pending future pass |
 | Intermediate transport crash drill during active traffic | **PENDING** | Pending future coordinated drill |
 | Paired execution authorization | **PENDING** | Requires reviewed Android runner with parser fix and fresh Root-verified `ACTIVE_TLS_READY` handoff hash |
