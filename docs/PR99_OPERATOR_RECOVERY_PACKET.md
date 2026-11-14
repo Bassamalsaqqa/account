@@ -299,8 +299,8 @@ STAGING_DIR="/home/u556956644/domains/palsync.net/accounting-release-staging/pr9
 PUBLIC_DIR="/home/u556956644/domains/palsync.net/public_html/account"
 
 # 1. Fetch Candidate Commit from Verified Bundle
-git fetch "$STAGING_DIR/source-v1.bundle" refs/heads/release-candidate:refs/remotes/bundle/pr99
-git checkout 8cd432220801b08b10b6f25f9ee9a215de94d44c
+git fetch "$STAGING_DIR/source-v1.bundle" refs/heads/t3/controlled-web-release-nov13
+git checkout --detach 8cd432220801b08b10b6f25f9ee9a215de94d44c
 
 # Verify git HEAD
 test "$(git rev-parse HEAD)" = "8cd432220801b08b10b6f25f9ee9a215de94d44c" || {
@@ -330,7 +330,7 @@ sha256sum "$PUBLIC_DIR/build/manifest.json" | grep -q "12cee9f9dc2213615ff19d480
     echo "ERROR: Deployed build manifest does not match candidate SHA"; exit 1;
 }
 
-# 3. Run deploy preparation (PR 99 has 0 migrations; default skips migrations)
+# 3. Run deploy preparation (PR 99 has 0 migrations; default deploy.sh skips migrations and bootstrap)
 PHP_BIN=/opt/alt/php84/usr/bin/php ./bin/deploy.sh
 
 # 4. Execute the 6 Domain Reconciliations While Maintenance Is Held
@@ -340,7 +340,7 @@ PHP_BIN=/opt/alt/php84/usr/bin/php ./bin/deploy.sh
 /opt/alt/php84/usr/bin/php artisan money:reconcile
 /opt/alt/php84/usr/bin/php artisan phase7:reconcile
 
-# Payables Reconciliation: Iterate over all active companies
+# Payables Reconciliation: Iterate over all companies (without active-only filter)
 /opt/alt/php84/usr/bin/php -r '
     require "vendor/autoload.php";
     $app = require_once "bootstrap/app.php";
