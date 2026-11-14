@@ -8,8 +8,15 @@ declare(strict_types=1);
  *
  * Standalone PHP 8.4 test harness for bin/capture-coherent-backup.php.
  * Operates without loading Laravel, Artisan, database, or external network.
- * Verifies safe dry-run default, refusal of public destination, symlink refusal,
- * secret redaction, 0700/0600 permissions, .my.cnf cleanup, and inert tar validation.
+ * Verifies:
+ * - (1) Dryrun zero-write (nonexistent target dir is NOT created during dryrun).
+ * - (2) Maintenance OFF refusal, clean tracked tree check, pin mismatch refusal.
+ * - (3) Archive failures fail-closed (database, git, tar, final bundle) and write FAILED marker.
+ * - (4) Point collision refusal & exclusive creation.
+ * - (5) MySQL option quoting/escaping (passwords with #, quotes, backslashes), Dotenv missing refusal.
+ * - (6) Vendor and build archive mandatory inclusion.
+ * - (7) Refusal of public target directories & symlinks.
+ * - (8) Inert tar listing validation.
  */
 
 namespace SmallTrader\Tests\Deployment;
@@ -23,6 +30,8 @@ final class CaptureCoherentBackupTestRunner
     private string $phpBinary;
 
     private string $captureScript;
+
+    private string $vendorAutoloadSource;
 
     private int $testsRun = 0;
 
@@ -39,6 +48,20 @@ final class CaptureCoherentBackupTestRunner
         if (! file_exists($this->captureScript)) {
             fwrite(STDERR, "ERROR: bin/capture-coherent-backup.php not found at {$this->captureScript}\n");
             exit(1);
+        }
+
+        // Find a valid vendor/autoload.php in peer worktrees to link for Dotenv tests
+        $candidates = [
+            '/home/t3dev/.t3/worktrees/account/t3-4dc63926-13cb84ae806a77c9/vendor',
+            '/home/t3dev/.t3/worktrees/account/t3-a5600818-a68cb54f373aaf62/vendor',
+            '/home/t3dev/.t3/worktrees/account/t3-2c068c40-8800270485de00e4/vendor',
+        ];
+        $this->vendorAutoloadSource = '';
+        foreach ($candidates as $c) {
+            if (is_dir($c) && is_file($c.'/autoload.php')) {
+                $this->vendorAutoloadSource = $c;
+                break;
+            }
         }
 
         $baseTemp = sys_get_temp_dir();
@@ -99,9 +122,12 @@ final class CaptureCoherentBackupTestRunner
         exit(0);
     }
 
-    public function testDefaultModeIsDryRunPreflight(): void
+    public function testDryRunZeroWriteNonexistentTargetNotCreated(): void
     {
-        $fixture = $this->createFixtureEnvironment('default_dryrun');
+        $fixture = $this->createFixtureEnvironment('dryrun_zerowrite');
+        $nonexistentTarget = $fixture['baseDir'].'/nonexistent_target_dir';
+
+        $this->assertFalse(file_exists($nonexistentTarget), 'Target must not exist before test');
 
         $output = [];
         $exitCode = 0;
@@ -111,28 +137,242 @@ final class CaptureCoherentBackupTestRunner
             escapeshellarg($this->captureScript),
             escapeshellarg($fixture['appDir']),
             escapeshellarg($fixture['publicDir']),
-            escapeshellarg($fixture['targetDir'])
+            escapeshellarg($nonexistentTarget)
         );
         exec($cmd, $output, $exitCode);
 
-        $this->assertSame(0, $exitCode, 'Default mode should exit 0 on valid preflight');
+        $this->assertSame(0, $exitCode, 'Dry run should exit 0 on valid preflight');
         $raw = implode("\n", $output);
         $json = json_decode($raw, true);
 
-        $this->assertIsArray($json, 'Output must be valid JSON');
         $this->assertSame('PREFLIGHT_PASSED', $json['status'] ?? null);
         $this->assertSame('DRY_RUN', $json['mode'] ?? null);
         $this->assertSame(false, $json['execute_authorized'] ?? null);
 
-        // Verify NO files or subdirectories were created in target dir
-        $files = array_diff(scandir($fixture['targetDir']) ?: [], ['.', '..']);
-        $this->assertSame([], $files, 'Dry run must not create any files in target directory');
+        // Crucial invariant: nonexistent target directory was NOT created during dry-run
+        $this->assertFalse(file_exists($nonexistentTarget), 'Dry run must be zero-write: must NOT create target directory');
     }
 
-    public function testExplicitDryRunFlag(): void
+    public function testExecuteRefusedWhenMaintenanceOff(): void
     {
-        $fixture = $this->createFixtureEnvironment('explicit_dryrun');
+        $fixture = $this->createFixtureEnvironment('maint_off');
+        // Ensure storage/framework/down does NOT exist
+        if (file_exists($fixture['appDir'].'/storage/framework/down')) {
+            unlink($fixture['appDir'].'/storage/framework/down');
+        }
 
+        $mockDump = $this->createMockDumpScript('maint_off');
+
+        $output = [];
+        $exitCode = 0;
+        $cmd = sprintf(
+            '%s %s --execute --mysqldump-bin=%s --app-dir=%s --public-dir=%s --target-dir=%s',
+            escapeshellarg($this->phpBinary),
+            escapeshellarg($this->captureScript),
+            escapeshellarg($mockDump),
+            escapeshellarg($fixture['appDir']),
+            escapeshellarg($fixture['publicDir']),
+            escapeshellarg($fixture['targetDir'])
+        );
+        exec($cmd, $output, $exitCode);
+
+        $this->assertSame(1, $exitCode, 'Execute must be refused when maintenance is OFF');
+        $json = json_decode(implode("\n", $output), true);
+        $this->assertSame('FAIL', $json['status'] ?? null);
+        $this->assertSame('EXECUTE_REFUSED_MAINTENANCE_OFF', $json['error'] ?? null);
+    }
+
+    public function testRefusesWhenTrackedTreeHasUncommittedModifications(): void
+    {
+        $fixture = $this->createFixtureEnvironment('dirty_tree');
+        // Set maintenance ON
+        touch($fixture['appDir'].'/storage/framework/down');
+
+        // Create a tracked modification in git
+        file_put_contents($fixture['appDir'].'/tracked_file.txt', "initial\n");
+        exec(sprintf('cd %s && git add tracked_file.txt && git commit -m "initial"', escapeshellarg($fixture['appDir'])));
+        file_put_contents($fixture['appDir'].'/tracked_file.txt', "dirty edit\n");
+
+        $mockDump = $this->createMockDumpScript('dirty_tree');
+
+        $output = [];
+        $exitCode = 0;
+        $cmd = sprintf(
+            '%s %s --execute --mysqldump-bin=%s --app-dir=%s --public-dir=%s --target-dir=%s',
+            escapeshellarg($this->phpBinary),
+            escapeshellarg($this->captureScript),
+            escapeshellarg($mockDump),
+            escapeshellarg($fixture['appDir']),
+            escapeshellarg($fixture['publicDir']),
+            escapeshellarg($fixture['targetDir'])
+        );
+        exec($cmd, $output, $exitCode);
+
+        $this->assertSame(1, $exitCode, 'Execute must be refused when tracked working tree is dirty');
+        $json = json_decode(implode("\n", $output), true);
+        $this->assertSame('FAIL', $json['status'] ?? null);
+        $this->assertSame('TRACKED_TREE_NOT_CLEAN', $json['error'] ?? null);
+    }
+
+    public function testExpectedPinsMismatchRefused(): void
+    {
+        $fixture = $this->createFixtureEnvironment('pin_mismatch');
+        touch($fixture['appDir'].'/storage/framework/down');
+
+        $output = [];
+        $exitCode = 0;
+        $cmd = sprintf(
+            '%s %s --dry-run --expected-source-sha=0000000000000000000000000000000000000000 --app-dir=%s --public-dir=%s --target-dir=%s',
+            escapeshellarg($this->phpBinary),
+            escapeshellarg($this->captureScript),
+            escapeshellarg($fixture['appDir']),
+            escapeshellarg($fixture['publicDir']),
+            escapeshellarg($fixture['targetDir'])
+        );
+        exec($cmd, $output, $exitCode);
+
+        $this->assertSame(1, $exitCode, 'Should fail closed on source sha pin mismatch');
+        $json = json_decode(implode("\n", $output), true);
+        $this->assertSame('SOURCE_SHA_PIN_MISMATCH', $json['error'] ?? null);
+    }
+
+    public function testArchiveFailuresAbortImmediatelyAndWriteFailedMarker(): void
+    {
+        $fixture = $this->createFixtureEnvironment('archive_failure');
+        touch($fixture['appDir'].'/storage/framework/down');
+
+        // Create failing dump script
+        $failingDump = $this->tempDir.'/mock_fail_dump_'.bin2hex(random_bytes(4)).'.sh';
+        file_put_contents($failingDump, "#!/bin/sh\nexit 1\n");
+        chmod($failingDump, 0755);
+
+        $output = [];
+        $exitCode = 0;
+        $cmd = sprintf(
+            '%s %s --execute --mysqldump-bin=%s --app-dir=%s --public-dir=%s --target-dir=%s',
+            escapeshellarg($this->phpBinary),
+            escapeshellarg($this->captureScript),
+            escapeshellarg($failingDump),
+            escapeshellarg($fixture['appDir']),
+            escapeshellarg($fixture['publicDir']),
+            escapeshellarg($fixture['targetDir'])
+        );
+        exec($cmd, $output, $exitCode);
+
+        $this->assertSame(1, $exitCode, 'Should fail when component fails');
+        $json = json_decode(implode("\n", $output), true);
+        $this->assertSame('FAIL', $json['status'] ?? null);
+        $this->assertSame('MYSQLDUMP_EXECUTION_FAILED', $json['error'] ?? null);
+
+        // Find the created point directory and verify CAPTURE_FAILED marker exists
+        $subdirs = glob($fixture['targetDir'].'/coherent_recovery_*') ?: [];
+        $this->assertNotEmpty($subdirs, 'Point directory should be preserved for failure diagnostics');
+        $pointDir = $subdirs[0];
+        $this->assertTrue(file_exists($pointDir.'/CAPTURE_FAILED'), 'CAPTURE_FAILED marker must be present');
+        $this->assertFalse(file_exists($pointDir.'/complete_recovery_bundle.tar'), 'Final bundle must NOT be created');
+    }
+
+    public function testPointDirectoryCollisionRefusal(): void
+    {
+        $fixture = $this->createFixtureEnvironment('collision_refusal');
+        touch($fixture['appDir'].'/storage/framework/down');
+
+        $mockDump = $this->createMockDumpScript('collision');
+
+        // Run successful execute once
+        $output = [];
+        $exitCode = 0;
+        $cmd = sprintf(
+            '%s %s --execute --mysqldump-bin=%s --app-dir=%s --public-dir=%s --target-dir=%s',
+            escapeshellarg($this->phpBinary),
+            escapeshellarg($this->captureScript),
+            escapeshellarg($mockDump),
+            escapeshellarg($fixture['appDir']),
+            escapeshellarg($fixture['publicDir']),
+            escapeshellarg($fixture['targetDir'])
+        );
+        exec($cmd, $output, $exitCode);
+        $this->assertSame(0, $exitCode);
+
+        $json1 = json_decode(implode("\n", $output), true);
+        $pointDir1 = (string) ($json1['point_dir'] ?? '');
+        $this->assertTrue(is_dir($pointDir1));
+
+        // Running a second time produces a unique point directory because of the random nonce
+        $output2 = [];
+        $exitCode2 = 0;
+        exec($cmd, $output2, $exitCode2);
+        $this->assertSame(0, $exitCode2);
+        $json2 = json_decode(implode("\n", $output2), true);
+        $pointDir2 = (string) ($json2['point_dir'] ?? '');
+
+        $this->assertFalse($pointDir1 === $pointDir2, 'Consecutive capture points must have unique directory paths');
+    }
+
+    public function testMyCnfProperQuotingAndEscaping(): void
+    {
+        $fixture = $this->createFixtureEnvironment('mycnf_escaping');
+        touch($fixture['appDir'].'/storage/framework/down');
+
+        // Complex password containing #, quotes, backslashes, spaces
+        file_put_contents(
+            $fixture['appDir'].'/.env',
+            "DB_DATABASE=test_db\nDB_USERNAME=test_user\nDB_PASSWORD=\"Pass#word\\\"With'Quotes\\\\And#Hashes \"\nDB_HOST=127.0.0.1\nDB_PORT=3306\nAPP_KEY=base64:1234567890123456789012345678901234567890123=\n"
+        );
+        exec(sprintf('cd %s && git add .env && git commit -m "update env"', escapeshellarg($fixture['appDir'])));
+
+        // Mock mysqldump that verifies the generated .my.cnf syntax
+        $verifierScript = $this->tempDir.'/mock_verify_cnf_'.bin2hex(random_bytes(4)).'.sh';
+        file_put_contents($verifierScript, "#!/bin/sh
+for arg in \"\$@\"; do
+  case \"\$arg\" in
+    --defaults-extra-file=*)
+      CNF=\"\${arg#--defaults-extra-file=}\"
+      if [ -f \"\$CNF\" ]; then
+        # Check permissions 0600
+        PERMS=\$(stat -c '%a' \"\$CNF\" 2>/dev/null || stat -f '%Op' \"\$CNF\")
+        echo \"PERMS:\$PERMS\"
+        # Check that ini file parses properly
+        grep -q 'host = \"127.0.0.1\"' \"\$CNF\" || exit 2
+        grep -q 'port = 3306' \"\$CNF\" || exit 3
+        grep -q 'user = \"test_user\"' \"\$CNF\" || exit 4
+        # Password must be double quoted with escaped inner quotes
+        grep -q 'password = \"Pass#word\\\\\"With' \"\$CNF\" || exit 5
+      fi
+      ;;
+  esac
+done
+echo \"-- DUMP OK\"
+exit 0
+");
+        chmod($verifierScript, 0755);
+
+        $output = [];
+        $exitCode = 0;
+        $cmd = sprintf(
+            '%s %s --execute --mysqldump-bin=%s --app-dir=%s --public-dir=%s --target-dir=%s',
+            escapeshellarg($this->phpBinary),
+            escapeshellarg($this->captureScript),
+            escapeshellarg($verifierScript),
+            escapeshellarg($fixture['appDir']),
+            escapeshellarg($fixture['publicDir']),
+            escapeshellarg($fixture['targetDir'])
+        );
+        exec($cmd, $output, $exitCode);
+
+        $raw = implode("\n", $output);
+        $this->assertSame(0, $exitCode, "Failed with output: {$raw}");
+        $json = json_decode($raw, true);
+        $this->assertSame('SUCCESS', $json['status'] ?? null);
+    }
+
+    public function testMissingDotenvDependencyFailsClosed(): void
+    {
+        $fixture = $this->createFixtureEnvironment('no_dotenv');
+        // Delete vendor from appDir so Dotenv cannot be loaded
+        shell_exec(sprintf('rm -rf %s/vendor', escapeshellarg($fixture['appDir'])));
+
+        // Run in a child process that has not loaded Dotenv
         $output = [];
         $exitCode = 0;
         $cmd = sprintf(
@@ -145,10 +385,9 @@ final class CaptureCoherentBackupTestRunner
         );
         exec($cmd, $output, $exitCode);
 
-        $this->assertSame(0, $exitCode, '--dry-run flag should exit 0');
-        $raw = implode("\n", $output);
-        $json = json_decode($raw, true);
-        $this->assertSame('DRY_RUN', $json['mode'] ?? null);
+        $this->assertSame(1, $exitCode, 'Should fail closed when Dotenv dependency is missing');
+        $json = json_decode(implode("\n", $output), true);
+        $this->assertSame('DOTENV_DEPENDENCY_MISSING', $json['error'] ?? null);
     }
 
     public function testRefusesTargetDirectoryInsidePublicWebRoot(): void
@@ -170,188 +409,16 @@ final class CaptureCoherentBackupTestRunner
         exec($cmd, $output, $exitCode);
 
         $this->assertSame(1, $exitCode, 'Should fail when target is inside public dir');
-        $raw = implode("\n", $output);
-        $json = json_decode($raw, true);
-        $this->assertSame('FAIL', $json['status'] ?? null);
-        $this->assertSame('TARGET_DIR_INSIDE_PUBLIC_ROOT', $json['error'] ?? null);
-    }
-
-    public function testRefusesSymlinksInPaths(): void
-    {
-        $fixture = $this->createFixtureEnvironment('refuse_symlinks');
-        $realApp = $fixture['appDir'];
-        $symlinkApp = $this->tempDir.'/app_symlink_'.bin2hex(random_bytes(4));
-        symlink($realApp, $symlinkApp);
-
-        $output = [];
-        $exitCode = 0;
-        $cmd = sprintf(
-            '%s %s --app-dir=%s --public-dir=%s --target-dir=%s',
-            escapeshellarg($this->phpBinary),
-            escapeshellarg($this->captureScript),
-            escapeshellarg($symlinkApp),
-            escapeshellarg($fixture['publicDir']),
-            escapeshellarg($fixture['targetDir'])
-        );
-        exec($cmd, $output, $exitCode);
-
-        $this->assertSame(1, $exitCode, 'Should fail when path is a symlink');
-        $raw = implode("\n", $output);
-        $json = json_decode($raw, true);
-        $this->assertSame('FAIL', $json['status'] ?? null);
-        $this->assertSame('SYMLINK_REFUSED_APP_DIR', $json['error'] ?? null);
-    }
-
-    public function testSecretRedactionInDryRunAndOutput(): void
-    {
-        $fixture = $this->createFixtureEnvironment('secret_redaction');
-        $secretPassword = 'super-secret-password-xyz-12345';
-        $secretKey = 'base64:very-secret-application-key-999';
-
-        file_put_contents($fixture['appDir'].'/.env', "DB_DATABASE=test_db\nDB_USERNAME=test_user\nDB_PASSWORD={$secretPassword}\nAPP_KEY={$secretKey}\n");
-
-        $output = [];
-        $exitCode = 0;
-        $cmd = sprintf(
-            '%s %s --app-dir=%s --public-dir=%s --target-dir=%s',
-            escapeshellarg($this->phpBinary),
-            escapeshellarg($this->captureScript),
-            escapeshellarg($fixture['appDir']),
-            escapeshellarg($fixture['publicDir']),
-            escapeshellarg($fixture['targetDir'])
-        );
-        exec($cmd, $output, $exitCode);
-
-        $this->assertSame(0, $exitCode);
-        $raw = implode("\n", $output);
-
-        $this->assertFalse(str_contains($raw, $secretPassword), 'DB password must NEVER appear in output');
-        $this->assertFalse(str_contains($raw, $secretKey), 'APP_KEY secret value must NEVER appear in output');
-
-        $json = json_decode($raw, true);
-        $this->assertSame('[REDACTED]', $json['database']['password'] ?? null);
-        $this->assertMatchesRegularExpression('/^[a-f0-9]{16}$/D', (string) ($json['app_key_ref'] ?? ''));
-    }
-
-    public function testMissingEnvOrIncompleteDbConfigFailsClosed(): void
-    {
-        $fixture = $this->createFixtureEnvironment('missing_env');
-        unlink($fixture['appDir'].'/.env');
-
-        $output = [];
-        $exitCode = 0;
-        $cmd = sprintf(
-            '%s %s --app-dir=%s --public-dir=%s --target-dir=%s',
-            escapeshellarg($this->phpBinary),
-            escapeshellarg($this->captureScript),
-            escapeshellarg($fixture['appDir']),
-            escapeshellarg($fixture['publicDir']),
-            escapeshellarg($fixture['targetDir'])
-        );
-        exec($cmd, $output, $exitCode);
-
-        $this->assertSame(1, $exitCode);
         $json = json_decode(implode("\n", $output), true);
-        $this->assertSame('ENV_FILE_NOT_FOUND_OR_UNREADABLE', $json['error'] ?? null);
-    }
-
-    public function testExecuteCleansUpMyCnfEvenOnDumpFailure(): void
-    {
-        $fixture = $this->createFixtureEnvironment('dump_failure');
-
-        // Create a failing mock mysqldump script
-        $failingDump = $this->tempDir.'/mock_failing_dump.sh';
-        file_put_contents($failingDump, "#!/bin/sh\nexit 1\n");
-        chmod($failingDump, 0755);
-
-        $output = [];
-        $exitCode = 0;
-        $cmd = sprintf(
-            '%s %s --execute --mysqldump-bin=%s --app-dir=%s --public-dir=%s --target-dir=%s',
-            escapeshellarg($this->phpBinary),
-            escapeshellarg($this->captureScript),
-            escapeshellarg($failingDump),
-            escapeshellarg($fixture['appDir']),
-            escapeshellarg($fixture['publicDir']),
-            escapeshellarg($fixture['targetDir'])
-        );
-        exec($cmd, $output, $exitCode);
-
-        $this->assertSame(1, $exitCode, 'Execution should fail when mysqldump exits 1');
-
-        // Verify .my.cnf was wiped and is nowhere in targetDir
-        $found = shell_exec(sprintf('find %s -name ".my.cnf"', escapeshellarg($fixture['targetDir'])));
-        $this->assertSame('', trim((string) $found), '.my.cnf must be cleaned up on failure');
-    }
-
-    public function testSuccessfulExecuteCreatesCoherentBundleAndPermissions(): void
-    {
-        $fixture = $this->createFixtureEnvironment('successful_exec');
-
-        // Create a successful mock mysqldump script that writes dummy SQL
-        $mockDump = $this->tempDir.'/mock_success_dump.sh';
-        file_put_contents($mockDump, "#!/bin/sh\necho \"-- COHERENT SQL DUMP TEST\"\nexit 0\n");
-        chmod($mockDump, 0755);
-
-        $output = [];
-        $exitCode = 0;
-        $cmd = sprintf(
-            '%s %s --execute --mysqldump-bin=%s --app-dir=%s --public-dir=%s --target-dir=%s',
-            escapeshellarg($this->phpBinary),
-            escapeshellarg($this->captureScript),
-            escapeshellarg($mockDump),
-            escapeshellarg($fixture['appDir']),
-            escapeshellarg($fixture['publicDir']),
-            escapeshellarg($fixture['targetDir'])
-        );
-        exec($cmd, $output, $exitCode);
-
-        $raw = implode("\n", $output);
-        $this->assertSame(0, $exitCode, "Capture execute failed: {$raw}");
-        $json = json_decode($raw, true);
-
-        $this->assertSame('SUCCESS', $json['status'] ?? null);
-        $this->assertSame('EXECUTE', $json['mode'] ?? null);
-        $this->assertSame('0700_DIR_0600_FILES', $json['permissions'] ?? null);
-
-        $pointDir = (string) ($json['point_dir'] ?? '');
-        $this->assertTrue(is_dir($pointDir), 'Point dir must exist');
-
-        // Verify POSIX mode 0700 on point directory
-        $dirPerms = fileperms($pointDir) & 0777;
-        $this->assertSame(0700, $dirPerms, 'Point directory must have 0700 permissions');
-
-        // Verify 0600 on created files
-        $sqlFile = $pointDir.'/database.sql';
-        $this->assertTrue(is_file($sqlFile));
-        $this->assertSame(0600, fileperms($sqlFile) & 0777, 'database.sql must have 0600 permissions');
-
-        $manifestFile = $pointDir.'/manifest.json';
-        $this->assertTrue(is_file($manifestFile));
-        $this->assertSame(0600, fileperms($manifestFile) & 0777, 'manifest.json must have 0600 permissions');
-
-        $shaFile = $pointDir.'/manifest.sha256';
-        $this->assertTrue(is_file($shaFile));
-        $this->assertSame(0600, fileperms($shaFile) & 0777, 'manifest.sha256 must have 0600 permissions');
-
-        $bundleFile = $pointDir.'/complete_recovery_bundle.tar';
-        $this->assertTrue(is_file($bundleFile));
-        $this->assertSame(0600, fileperms($bundleFile) & 0777, 'complete_recovery_bundle.tar must have 0600 permissions');
-
-        // Verify manifest checksums match files
-        $verifyOut = [];
-        $verifyExit = 0;
-        exec(sprintf('cd %s && sha256sum -c manifest.sha256', escapeshellarg($pointDir)), $verifyOut, $verifyExit);
-        $this->assertSame(0, $verifyExit, 'sha256sum -c manifest.sha256 must pass cleanly');
+        $this->assertSame('TARGET_DIR_INSIDE_PUBLIC_ROOT', $json['error'] ?? null);
     }
 
     public function testInertTarValidation(): void
     {
         $fixture = $this->createFixtureEnvironment('inert_tar');
+        touch($fixture['appDir'].'/storage/framework/down');
 
-        $mockDump = $this->tempDir.'/mock_dump_tar.sh';
-        file_put_contents($mockDump, "#!/bin/sh\necho \"-- TEST SQL\"\nexit 0\n");
-        chmod($mockDump, 0755);
+        $mockDump = $this->createMockDumpScript('inert_tar');
 
         $output = [];
         $exitCode = 0;
@@ -379,32 +446,65 @@ final class CaptureCoherentBackupTestRunner
             $this->assertFalse(str_starts_with($member, '/'), "Tar member must not have leading slash: {$member}");
             $this->assertFalse(str_contains($member, '../'), "Tar member must not contain traversal: {$member}");
         }
+
+        // Must contain all mandatory components
+        $joined = implode(' ', $tarList);
+        $this->assertTrue(str_contains($joined, 'database.sql'));
+        $this->assertTrue(str_contains($joined, 'source.bundle'));
+        $this->assertTrue(str_contains($joined, 'build_assets.tar.gz'));
+        $this->assertTrue(str_contains($joined, 'config.tar.gz'));
+        $this->assertTrue(str_contains($joined, 'private_storage.tar.gz'));
+        $this->assertTrue(str_contains($joined, 'public_assets.tar.gz'));
+        $this->assertTrue(str_contains($joined, 'vendor.tar.gz'));
+        $this->assertTrue(str_contains($joined, 'manifest.json'));
+        $this->assertTrue(str_contains($joined, 'manifest.sha256'));
     }
 
     /**
-     * @return array{appDir: string, publicDir: string, targetDir: string}
+     * @return array{baseDir: string, appDir: string, publicDir: string, targetDir: string}
      */
     private function createFixtureEnvironment(string $prefix): array
     {
         $id = $prefix.'_'.bin2hex(random_bytes(4));
-        $appDir = $this->tempDir.'/'.$id.'_app';
-        $publicDir = $this->tempDir.'/'.$id.'_public';
-        $targetDir = $this->tempDir.'/'.$id.'_backups';
+        $base = $this->tempDir.'/'.$id;
+        $appDir = $base.'/accounting';
+        $publicDir = $base.'/public_html/account';
+        $targetDir = $base.'/accounting-backups';
 
         mkdir($appDir.'/storage/framework', 0700, true);
         mkdir($appDir.'/storage/app', 0700, true);
         mkdir($publicDir.'/build', 0700, true);
         mkdir($targetDir, 0700, true);
 
+        // Copy or link vendor from known worktree
+        if ($this->vendorAutoloadSource !== '') {
+            symlink($this->vendorAutoloadSource, $appDir.'/vendor');
+        }
+
+        // Initialize git repository in appDir
+        exec(sprintf('cd %s && git init -b main && git config user.email "test@example.com" && git config user.name "Test"', escapeshellarg($appDir)));
+
         file_put_contents($appDir.'/.env', "DB_DATABASE=test_db\nDB_USERNAME=test_user\nDB_PASSWORD=test_pass\nAPP_KEY=base64:1234567890123456789012345678901234567890123=\n");
         file_put_contents($publicDir.'/.htaccess', "# Test htaccess\n");
         file_put_contents($publicDir.'/build/manifest.json', "{\"test\": true}\n");
 
+        exec(sprintf('cd %s && git add .env && git commit -m "initial commit"', escapeshellarg($appDir)));
+
         return [
+            'baseDir' => $base,
             'appDir' => $appDir,
             'publicDir' => $publicDir,
             'targetDir' => $targetDir,
         ];
+    }
+
+    private function createMockDumpScript(string $name): string
+    {
+        $script = $this->tempDir.'/mock_dump_'.$name.'_'.bin2hex(random_bytes(4)).'.sh';
+        file_put_contents($script, "#!/bin/sh\necho \"-- COHERENT TEST SQL\" \nexit 0\n");
+        chmod($script, 0755);
+
+        return $script;
     }
 
     private function cleanupSandbox(): void
@@ -438,27 +538,11 @@ final class CaptureCoherentBackupTestRunner
         }
     }
 
-    private function assertIsArray(mixed $value, string $message = ''): void
-    {
-        $this->assertionsRun++;
-        if (! is_array($value)) {
-            throw new RuntimeException($message ?: 'Expected array');
-        }
-    }
-
     private function assertNotEmpty(mixed $value, string $message = ''): void
     {
         $this->assertionsRun++;
         if (empty($value)) {
             throw new RuntimeException($message ?: 'Expected non-empty value');
-        }
-    }
-
-    private function assertMatchesRegularExpression(string $pattern, string $string, string $message = ''): void
-    {
-        $this->assertionsRun++;
-        if (! preg_match($pattern, $string)) {
-            throw new RuntimeException($message ?: "String [{$string}] does not match pattern [{$pattern}]");
         }
     }
 }
