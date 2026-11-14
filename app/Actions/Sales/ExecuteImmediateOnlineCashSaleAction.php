@@ -231,7 +231,16 @@ final class ExecuteImmediateOnlineCashSaleAction
         $payload = $canonicalProfile;
 
         // 5. Canonical entity locking in acyclic order:
-        // Warehouse -> Customer -> Products (ordered by ID) -> Units -> Cash Account
+        // Scoped Company-Root Serialization Invariant:
+        // All mutating financial operations for a tenant execute within TenantWriteAccess::transaction()
+        // which acquires an exclusive row lock on the Company root (Company::whereKey($companyId)->lockForUpdate()),
+        // serializing concurrent mutating writers within the tenant boundary.
+        // Within this serialized scope, row locks are acquired in canonical sequence:
+        // Warehouse -> Customer -> Products (ordered ascending by ID) -> ProductUnits -> TaxRates -> MoneyAccount.
+        // Because concurrent mutations within the company are serialized at the Company root,
+        // line-ordered ProductUnit and TaxRate acquisitions cannot interleave to form cross-transaction
+        // deadlock cycles. Across distinct companies, strict company_id partitioning prevents any overlap.
+        // This establishes bounded concurrency safety without speculative global DAG claims.
         $warehouseId = $payload['warehouse_id'] ?? null;
         /** @var Warehouse $warehouse */
         $warehouse = is_numeric($warehouseId)
