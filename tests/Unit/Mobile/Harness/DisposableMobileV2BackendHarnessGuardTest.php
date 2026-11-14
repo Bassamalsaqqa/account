@@ -549,13 +549,19 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
             'backend_execution_head_sha' => str_repeat('b', 40),
             'qualified_app_tree_sha' => DisposableMobileV2BackendHarness::QUALIFIED_APP_TREE,
             'peer_android_approved_head_sha' => DisposableMobileV2BackendHarness::APPROVED_ANDROID_HEAD,
-            'peer_android_executable_head_sha' => 'ddfc75536e647c65a6a7e8868c9336cee93769ec',
+            'peer_android_executable_head_sha' => DisposableMobileV2BackendHarness::APPROVED_ANDROID_EXECUTABLE_HEAD,
+            'source_fixture_sha256' => str_repeat('1', 64),
+            'guard_test_sha256' => str_repeat('2', 64),
+            'cli_command_sha256' => str_repeat('3', 64),
+            'cli_runner_sha256' => str_repeat('4', 64),
+            'pairing_manifest_sha256' => str_repeat('5', 64),
         ];
 
         $fixture = [
             'schema_name' => 'harness_test_db',
             'company_public_id' => '01M7CZPF6TP283F3ZRXF5P8GT2',
             'company_base_currency' => 'ILS',
+            'currency_minor_units' => 2,
             'staff_actor_public_id' => '01M7CZPF6TP283F3ZRXF5P8GT1',
             'device_id' => 'f81d4fae-7dec-11d0-a765-00a0c91e6bf6',
             'customer_public_id' => '01M7CZPF6TP283F3ZRXF5P8GT3',
@@ -573,13 +579,31 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
             'customer_id' => '01M7CZPF6TP283F3ZRXF5P8GT3',
             'warehouse_id' => '01M7CZPF6TP283F3ZRXF5P8GT4',
             'currency' => 'ILS',
-            'lines' => [],
+            'lines' => [
+                [
+                    'product_id' => '01M7CZPF6TP283F3ZRXF5P8GT5',
+                    'product_unit_id' => '01M7CZPF6TP283F3ZRXF5P8GT6',
+                    'conversion_to_base' => '1.000000',
+                    'quantity' => '1.000000',
+                    'unit_price' => '50.000000',
+                    'tax_rate_id' => '01M7CZPF6TP283F3ZRXF5P8GT7',
+                    'tax_rate' => '16.000000',
+                    'tax_inclusive' => false,
+                ],
+            ],
             'payment' => [
                 'settlement_mode' => 'full',
                 'payment_method' => 'cash',
                 'cash_account_id' => '01M7CZPF6TP283F3ZRXF5P8GT8',
                 'amount' => '58.000000',
             ],
+        ];
+
+        $rawWireJson = json_encode($sampleRequest, JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT);
+        $rawWireSample = [
+            'raw_wire_payload_json' => (string) $rawWireJson,
+            'raw_wire_payload_sha256' => hash('sha256', (string) $rawWireJson),
+            'parsed_request' => $sampleRequest,
         ];
 
         $serverContext = [
@@ -592,13 +616,16 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
             runtimePins: $runtimePins,
             fixture: $fixture,
             credentialsPath: '/tmp/test/runtime_credentials.json',
-            sampleRequest: $sampleRequest,
+            rawWireSample: $rawWireSample,
             serverContext: $serverContext,
             canonicalDigest: 'sha256:0847e10d89777e103252ebfa2d27f89a95832a5d70e01af57afe6423f703c630',
+            handoffScope: DisposableMobileV2BackendHarness::SCOPE_READINESS_ONLY,
+            lifecyclePhase: 'PROVISIONED_AWAITING_TLS_START',
         );
 
         $this->assertSame('1.0.0', $handoff['schema_version']);
-        $this->assertSame('mobile_v2_online_cash_sale', $handoff['handoff_scope']);
+        $this->assertSame(DisposableMobileV2BackendHarness::SCOPE_READINESS_ONLY, $handoff['handoff_scope']);
+        $this->assertSame('PROVISIONED_AWAITING_TLS_START', $handoff['lifecycle_phase']);
         $this->assertSame('/tmp/test/runtime_credentials.json', $handoff['credentials_path']);
         $this->assertSame('sha256:0847e10d89777e103252ebfa2d27f89a95832a5d70e01af57afe6423f703c630', $handoff['canonical_intent_profile_digest']);
         $this->assertSame('UNAVAILABLE_AWAITING_TLS_START', $handoff['startup_tls']['status']);
@@ -606,5 +633,83 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
         $this->assertNull($handoff['startup_tls']['ca_cert_sha256']);
         $this->assertNull($handoff['startup_tls']['readiness_url']);
         $this->assertNull($handoff['startup_tls']['readiness_nonce']);
+
+        // Assert valid handoff passes strict validateClientHandoff
+        DisposableMobileV2BackendHarness::validateClientHandoff($handoff);
+    }
+
+    #[Test]
+    public function test_validate_client_handoff_fails_closed_on_missing_pin(): void
+    {
+        $handoff = [
+            'schema_version' => '1.0.0',
+            'handoff_scope' => DisposableMobileV2BackendHarness::SCOPE_READINESS_ONLY,
+            'lifecycle_phase' => 'PROVISIONED_AWAITING_TLS_START',
+            'created_at' => now()->toIso8601String(),
+            'expires_at' => now()->addHours(1)->toIso8601String(),
+            'backend_runtime_pins' => ['qualified_core_head_sha' => str_repeat('a', 40)], // Missing remaining 9 pins
+            'endpoints' => [],
+            'fixture' => [],
+            'credentials_path' => '/tmp/credentials.json',
+            'raw_wire_sample' => [],
+            'server_synthesized_context' => [],
+            'canonical_intent_profile_digest' => 'sha256:'.str_repeat('a', 64),
+            'historical_ca5a_reference' => [],
+            'startup_tls' => ['status' => 'UNAVAILABLE_AWAITING_TLS_START'],
+        ];
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage("Malformed client handoff artifact: missing or empty pin 'backend_execution_head_sha'.");
+        DisposableMobileV2BackendHarness::validateClientHandoff($handoff);
+    }
+
+    #[Test]
+    public function test_validate_client_handoff_fails_closed_on_fabricated_tls_during_awaiting(): void
+    {
+        $handoff = [
+            'schema_version' => '1.0.0',
+            'handoff_scope' => DisposableMobileV2BackendHarness::SCOPE_READINESS_ONLY,
+            'lifecycle_phase' => 'PROVISIONED_AWAITING_TLS_START',
+            'created_at' => now()->toIso8601String(),
+            'expires_at' => now()->addHours(1)->toIso8601String(),
+            'backend_runtime_pins' => [
+                'qualified_core_head_sha' => str_repeat('a', 40),
+                'backend_execution_head_sha' => str_repeat('b', 40),
+                'qualified_app_tree_sha' => str_repeat('c', 40),
+                'peer_android_approved_head_sha' => str_repeat('d', 40),
+                'peer_android_executable_head_sha' => str_repeat('e', 40),
+                'source_fixture_sha256' => str_repeat('1', 64),
+                'guard_test_sha256' => str_repeat('2', 64),
+                'cli_command_sha256' => str_repeat('3', 64),
+                'cli_runner_sha256' => str_repeat('4', 64),
+                'pairing_manifest_sha256' => str_repeat('5', 64),
+            ],
+            'endpoints' => [],
+            'fixture' => [],
+            'credentials_path' => '/tmp/credentials.json',
+            'raw_wire_sample' => [
+                'raw_wire_payload_json' => '{}',
+                'raw_wire_payload_sha256' => hash('sha256', '{}'),
+                'parsed_request' => ['valid' => true],
+            ],
+            'server_synthesized_context' => [
+                'company_id' => '01M7CZPF6TP283F3ZRXF5P8GT2',
+                'actor_id' => '01M7CZPF6TP283F3ZRXF5P8GT1',
+                'currency_minor_units' => 2,
+            ],
+            'canonical_intent_profile_digest' => 'sha256:'.str_repeat('a', 64),
+            'historical_ca5a_reference' => [],
+            'startup_tls' => [
+                'status' => 'UNAVAILABLE_AWAITING_TLS_START',
+                'ca_cert_path' => '/fake/ca.pem', // Fabricated before start!
+                'ca_cert_sha256' => null,
+                'readiness_url' => null,
+                'readiness_nonce' => null,
+            ],
+        ];
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('Malformed client handoff artifact: startup_tls fields must be null when awaiting start.');
+        DisposableMobileV2BackendHarness::validateClientHandoff($handoff);
     }
 }

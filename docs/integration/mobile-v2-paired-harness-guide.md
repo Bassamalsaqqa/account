@@ -342,16 +342,29 @@ To eliminate prose-only handoffs and provide a machine-verifiable contract for t
 
 The formal JSON Schema is located at [`docs/integration/mobile-v2-client-handoff-schema.json`](file:///home/t3dev/.t3/worktrees/account/t3-9723058c-3d0a7ebb15fba29a/docs/integration/mobile-v2-client-handoff-schema.json).
 
-### B. Core Artifact Fields
-1. **Schema & Scope**:
-   - `schema_version`: `"1.0.0"`
-   - `handoff_scope`: `"mobile_v2_online_cash_sale"`
-2. **Backend Runtime Pins**:
+### B. Core Artifact Fields & Authoritative Rules
+1. **Schema, Scope & Lifecycle Phase**:
+   - `schema_version`: Strict `"1.0.0"`.
+   - `handoff_scope`: `"ROOT_AUTHORIZED_READINESS_ONLY"` or `"ROOT_AUTHORIZED_PAIRED_EXECUTION"`.
+   - `lifecycle_phase`: Explicitly declares harness readiness state:
+     - `"PROVISIONED_AWAITING_TLS_START"`: Prepared disposable schema and fixture seeded; TLS proxy not yet launched (not execution success).
+     - `"ACTIVE_TLS_READY"`: Supervised TLS proxy running, certificate generated, readiness probe verified.
+     - `"READINESS_ONLY_VERIFIED"`: Supervised TLS running in strictly bounded readiness-only mode (financial endpoints blocked).
+   - `created_at`: Strict ISO 8601 creation timestamp (e.g. `"2026-11-14T17:00:00+02:00"`).
+   - `expires_at`: Strict ISO 8601 expiration timestamp (e.g. `"2026-11-14T18:00:00+02:00"`).
+
+2. **Complete Mandatory Backend Runtime Pins (10 Pins, Zero Optional)**:
    - `qualified_core_head_sha`: Qualified core commit SHA (`6981511405d7bcd04cd8f8a09e64443ce0aaf47e`).
    - `backend_execution_head_sha`: Current worktree HEAD SHA.
    - `qualified_app_tree_sha`: Qualified app tree hash (`34d1da0ae82b182fa2c0adafd785416a86834a20`).
    - `peer_android_approved_head_sha`: Root-approved Android candidate HEAD (`019ea39af09558c2622356cb22235572747e3ddc`).
    - `peer_android_executable_head_sha`: Peer Android implementation qualified executable SHA (`ddfc75536e647c65a6a7e8868c9336cee93769ec`).
+   - `source_fixture_sha256`: SHA-256 of `tests/Support/Harness/DisposableMobileV2BackendHarness.php`.
+   - `guard_test_sha256`: SHA-256 of `tests/Unit/Mobile/Harness/DisposableMobileV2BackendHarnessGuardTest.php`.
+   - `cli_command_sha256`: SHA-256 of `tests/Support/Harness/MobileV2HarnessCommand.php`.
+   - `cli_runner_sha256`: SHA-256 of `tests/Support/Harness/mobile-v2-harness-cli.php`.
+   - `pairing_manifest_sha256`: SHA-256 pin of the pairing manifest.
+
 3. **Endpoints**:
    - `base_url`: `https://10.0.2.2:18443/api/mobile/v2` (Android emulator loopback)
    - `loopback_base_url`: `https://127.0.0.1:18443/api/mobile/v2`
@@ -359,33 +372,51 @@ The formal JSON Schema is located at [`docs/integration/mobile-v2-client-handoff
      - `online_cash_sale`: `/companies/{companyId}/sales/online-cash`
      - `offline_event_status`: `/companies/{companyId}/offline-events/{clientEventId}/status`
      - `readiness_probe`: `/_harness/readiness`
-4. **Authoritative Fixture & Context**:
-   - `fixture`: Schema name, tenant company public ID, staff actor public ID, device ID, customer, warehouse, product, unit, tax rate, and cash money account public IDs.
+
+4. **Authoritative Fixture & Context (No Hardcoded Defaults)**:
+   - `fixture`: Schema name, tenant company public ID, staff actor public ID, device ID, customer, warehouse, product, unit, tax rate, and cash money account public IDs. Includes fresh resolved `currency_minor_units`.
    - `server_synthesized_context`:
      - `company_id`: Company public ULID
      - `actor_id`: Staff actor public ULID
-     - `currency_minor_units`: Standard minor unit integer (`2` for ILS)
-   - `sample_raw_wire_request`: Canonical 7-key client request wire payload (`client_event_id`, `device_id`, `customer_id`, `warehouse_id`, `currency`, `lines`, `payment`).
-5. **Canonical OnlineSaleIntentProfile Digest**:
+     - `currency_minor_units`: Dynamically resolved from company base currency via `App\Services\Money\CurrencyMinorUnitsResolver::resolve($currencyCode)` (integer 0..6, no static fallbacks).
+
+5. **Lossless Raw Wire Sample Bytes (Wire-Byte Integrity ONLY)**:
+   - `raw_wire_sample`:
+     - `raw_wire_payload_json`: Exact serialized wire string bytes of the raw 7-key request (`client_event_id`, `device_id`, `customer_id`, `warehouse_id`, `currency`, `lines`, `payment`).
+     - `raw_wire_payload_sha256`: SHA-256 hash of `raw_wire_payload_json` for wire-byte integrity verification ONLY.
+     - `parsed_request`: Normative structured JSON object preserving exact decimal lexemes.
+
+6. **Canonical OnlineSaleIntentProfile Digest**:
    - The digest is computed authoritatively using `App\Support\Mobile\Contract\Revision3\OnlineSaleIntentProfile::construct($serverContext, $sampleRequest)` and `OnlineSaleIntentProfile::computeDigest($profile)`.
-   - Never computed from raw HTTP wire body SHA-256. Follows RFC 8785 JSON Canonicalization Scheme (JCS).
-   - Formatted as `sha256:<64hex>`.
-6. **Private Credentials Path**:
+   - Follows RFC 8785 JSON Canonicalization Scheme (JCS) and Revision 3 normalization rules.
+   - Distinct from raw wire body SHA-256. Formatted as `sha256:<64hex>`.
+
+7. **Historical CA5A Reference Kept Separate**:
+   - `historical_ca5a_reference`:
+     - `ca5a_manifest_sha256`: `3248b9721c3e2a09e84ae478ddb0171c3ea576fd0cbdd70b3606e4cdda4ff3e7`
+     - `ca5a_canonical_digest`: `0847e10d89777e103252ebfa2d27f89a95832a5d70e01af57afe6423f703c630`
+   - Preserved purely for historical fixture audit; never substituted for the fresh runtime digest.
+
+8. **Private Credentials Path**:
    - `credentials_path`: Points to `runtime_credentials.json` (chmod `0600`), storing `raw_token`, `token_hash`, `device_id`, `staff_email`, and `schema`.
    - Raw tokens are never outputted to stdout, logs, or public command arrays.
-7. **Lifecycle-Governed Startup TLS**:
-   - During `provision()`, TLS is not yet started:
+
+9. **Lifecycle-Governed Startup TLS**:
+   - During `provision()` (`"PROVISIONED_AWAITING_TLS_START"`):
      - `status`: `"UNAVAILABLE_AWAITING_TLS_START"`
      - `ca_cert_path`: `null`
      - `ca_cert_sha256`: `null`
      - `readiness_url`: `null`
      - `readiness_nonce`: `null`
-   - Upon `start()`, TLS is generated and supervised:
+   - Upon `start()` (`"ACTIVE_TLS_READY"` or `"READINESS_ONLY_VERIFIED"`):
      - `status`: `"ACTIVE_TLS_READY"`
      - `ca_cert_path`: `<harnessTempDir>/bootstrap/test-ca.pem`
      - `ca_cert_sha256`: SHA-256 of generated test CA certificate
      - `readiness_url`: `https://127.0.0.1:18443/_harness/readiness`
      - `readiness_nonce`: Active 128-bit hex harness nonce
+
+10. **Fail-Closed Artifact Validation**:
+    - `DisposableMobileV2BackendHarness::validateClientHandoff(array $handoff)` strictly validates all required keys, pin counts, SHA-256 checksums, and non-fabricated TLS fields before artifact emission. Any malformed artifact throws `RuntimeException` and fails closed immediately.
 
 ---
 
